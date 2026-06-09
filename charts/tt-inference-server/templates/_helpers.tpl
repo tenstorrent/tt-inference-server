@@ -205,3 +205,27 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "tt-inference-server.secretName" -}}
 {{- printf "%s-secret" (include "tt-inference-server.fullname" .) }}
 {{- end }}
+
+{{/*
+Compose the final affinity object.
+
+Always prepends a hardcoded device-collision podAntiAffinity term to any
+user-supplied affinity. The term label-selects every pod of this chart
+across releases and uses topologyKey=kubernetes.io/hostname to enforce
+1:1 Pod-to-Node placement (issue #2801). Operators can freely add
+nodeAffinity / podAffinity / extra anti-affinity terms via .Values.affinity
+without losing the guarantee; the chart's term is unconditional and not
+values-driven so it cannot be disabled accidentally.
+*/}}
+{{- define "tt-inference-server.affinity" -}}
+{{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml -}}
+{{- $aff := deepCopy (default (dict) $cfg.affinity) -}}
+{{- $autoTerm := dict
+     "labelSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" (include "tt-inference-server.name" .)))
+     "topologyKey"   "kubernetes.io/hostname" -}}
+{{- $paa := default (dict) (index $aff "podAntiAffinity") -}}
+{{- $req := default (list) (index $paa "requiredDuringSchedulingIgnoredDuringExecution") -}}
+{{- $_   := set $paa "requiredDuringSchedulingIgnoredDuringExecution" (prepend $req $autoTerm) -}}
+{{- $_   := set $aff "podAntiAffinity" $paa -}}
+{{- toYaml $aff -}}
+{{- end -}}
