@@ -102,16 +102,11 @@ BENCHMARK_ISL_OSL_PAIRS = [
 ]
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
-#   * ``spec_bench`` — hemingkx Spec-Bench, 480 prompts, 13 categories: writing, roleplay,
-#      reasoning, math, coding, extraction, stem, humanities, translation, summarization, qa,
-#       math_reasoning, rag.
-#       aiperf exposes only the whole-dataset (13 splits is treated as one dataset)
-#   * ``speed_bench_<category>`` — nvidia Speed Bench Qualitative split for speed bench.
+#   1. ``speed_bench_<category>`` — nvidia Speed Bench Qualitative split for speed bench.
 #     ~80 prompts per category. 11 categories: coding, humanities, math,
 #     multilingual, qa, rag, reasoning, roleplay, stem, summarization,
 #     writing.
-#   * ``speed_bench_throughput_{1k,2k,8k,16k,32k}`` — SPEED-Bench Throughput
-#     split
+#   2. ``speed_bench_throughput_{1k,2k,8k,16k,32k}`` — SPEED-Bench Throughput + manually selected isl/osl sweeps
 
 SPEED_BENCH_QUALITATIVE_CATEGORIES = (
     "coding",
@@ -132,7 +127,6 @@ SPEED_BENCH_THROUGHPUT_ISLS = ("1k", "2k", "8k", "16k", "32k")
 THROUGHPUT_CONCURRENCY_SWEEP = (1, 16, 64)
 
 # Every SPEED-Bench qualitative category holds exactly 80 prompts. aiperf does
-# NOT auto-size --request-count to the dataset; left unset it falls back to
 # max(10, concurrency*2) == 10 for conc=1, so the count must be passed
 # explicitly to consume the whole category. The default SHUFFLE sampler draws
 # without replacement, so a count equal to the category size sends each prompt
@@ -140,8 +134,8 @@ THROUGHPUT_CONCURRENCY_SWEEP = (1, 16, 64)
 SPEED_BENCH_QUALITATIVE_NUM_PROMPTS = 80
 
 # Cap output tokens on the throughput sweep so a handful of long-decoding
-# prompts can't blow up the wall-clock. Injected as
-# ``--extra-inputs max_completion_tokens:<N>`` (a ceiling, not a forced length).
+# prompts can't blow up the runtime. Injected as
+# ``--extra-inputs max_completion_tokens:<N>`` (a ceiling, not a hard fixed length).
 THROUGHPUT_MAX_COMPLETION_TOKENS = 8192
 
 SPEC_DECODE_PROFILES: Dict[str, List[SpecDecodeRunSpec]] = {
@@ -152,11 +146,6 @@ SPEC_DECODE_PROFILES: Dict[str, List[SpecDecodeRunSpec]] = {
             num_prompts=4,
         ),
     ],
-    # Full sweep — output length is left natural
-    #   - speed_bench_<category> × 11 categories × conc=1 (every prompt in
-    #     the category; request-count pinned to the 80-prompt category size)
-    #   - speed_bench_throughput_{1k..32k} × conc{1,16,64}, output capped at
-    #     THROUGHPUT_MAX_COMPLETION_TOKENS to bound wall-clock
     "full": [
         SpecDecodeRunSpec(
             public_dataset=f"speed_bench_{category}",

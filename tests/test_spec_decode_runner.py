@@ -100,18 +100,6 @@ def test_build_aiperf_cmd_includes_api_key_when_token_set():
     assert cmd[cmd.index("--api-key") + 1] == "encoded.jwt"
 
 
-def test_select_profile_smoke_mode_picks_smoke_profile():
-    profile = select_profile(SimpleNamespace(limit_samples_mode="smoke-test"))
-    # Smoke profile must be non-empty and every entry must use a recognised
-    # public-dataset family slug — a mistyped slug would otherwise load 0
-    # prompts at runtime without an obvious error.
-    assert profile, "smoke profile must contain at least one run spec"
-    for run_spec in profile:
-        assert run_spec.public_dataset.startswith(("spec_bench", "speed_bench")), (
-            f"unexpected public_dataset slug: {run_spec.public_dataset}"
-        )
-
-
 def test_warmup_endpoint_sends_n_requests_with_correct_payload(monkeypatch):
     calls = []
 

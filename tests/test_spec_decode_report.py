@@ -23,11 +23,6 @@ def _write(path: Path, data: dict) -> None:
         json.dump(data, f)
 
 
-# ---------------------------------------------------------------------------
-# Filename regex
-# ---------------------------------------------------------------------------
-
-
 def test_extract_params_spec_decode_spec_role():
     name = (
         "benchmark_spec_decode_spec_id_tt-transformers_Llama-3.1-8B-Instruct_"
@@ -74,12 +69,6 @@ def test_extract_params_speed_bench_throughput_slug():
     )
     params = extract_params_from_filename(name)
     assert params["public_dataset"] == "speed_bench_throughput_1k"
-
-
-# ---------------------------------------------------------------------------
-# process_benchmark_file
-# ---------------------------------------------------------------------------
-
 
 def test_process_spec_decode_pair_file(tmp_path):
     name = (
@@ -174,11 +163,6 @@ def test_process_spec_decode_handles_missing_annotation(tmp_path):
     assert metrics.get("acceptance_rate") in (None, "n/a")
 
 
-# ---------------------------------------------------------------------------
-# Display dicts
-# ---------------------------------------------------------------------------
-
-
 def test_create_spec_decode_display_dict_columns():
     result = {
         "endpoint_role": "spec",
@@ -217,11 +201,6 @@ def test_create_spec_decode_pair_display_dict_columns():
     assert d["Speedup p95"] == "1.6"
     assert d["Output Tput Ratio"] == "1.75"
     assert d["Accept Rate"] == "0.82"
-
-
-# ---------------------------------------------------------------------------
-# render_spec_decode_sections
-# ---------------------------------------------------------------------------
 
 
 def test_render_returns_empty_when_no_results():

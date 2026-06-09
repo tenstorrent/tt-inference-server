@@ -35,13 +35,8 @@ class SpecDecodeRunSpec:
     num_prompts: Optional[int] = None
     output_len: Optional[int] = None
     # Upper bound on tokens generated per request, injected as
-    # ``--extra-inputs max_completion_tokens:<N>``. Unlike ``output_len``
-    # (which forces *exactly* N tokens via ``--output-tokens-mean`` +
-    # ``ignore_eos:true``), this is only a cap — the model still stops early
-    # at its natural EOS. Used to bound wall-clock on throughput sweeps where
-    # a few prompts would otherwise decode for a very long time.
-    max_completion_tokens: Optional[int] = None
-
+    # ``--extra-inputs max_completion_tokens:<N>``. this is not a lower bound, the model 
+    # is allowed to output its natural length, then it cuts off at N to prevent timeout
     def __post_init__(self) -> None:
         if not self.public_dataset:
             raise ValueError("public_dataset is required")

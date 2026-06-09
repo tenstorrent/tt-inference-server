@@ -4,14 +4,12 @@
 
 """Speculative-Decoding Benchmark Runner for tt-inference-server.
 
-Drives ``aiperf profile`` against the upstream Spec-Bench and SPEED-Bench
-``--public-dataset`` slugs, scrapes per-run acceptance-rate metrics from the
+Drives ``aiperf profile`` against SPEED-Bench. Scrapes per-run acceptance-rate metrics from the
 vLLM server's Prometheus ``/metrics`` endpoint, and merges them into each
 result JSON. Designed for **sequential, one-server-at-a-time** use so the
 same workflow fits limited-memory targets and bigger models.
 
-Each benchmarking phase begins with an identical **warmup**: 4 short
-chat-completion requests against the endpoint.
+warmup added: 4 short chat-completion requests against the endpoint.
 
 """
 
@@ -54,7 +52,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_WARMUP_REQUESTS = 4
 PHASE_BASELINE = "baseline"
 PHASE_SPEC = "spec"
-VALID_PHASES = (PHASE_BASELINE, PHASE_SPEC)
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,9 +69,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def parse_workflow_args(workflow_args_str: Optional[str]) -> Dict[str, str]:
-    """Parse 'key1=val1 key2=val2' (the --workflow-args format) into a dict.
-
-    Tokens without '=' are skipped. Mirrors run_guidellm_benchmarks.py's parser.
+    """ Tokens without '=' are skipped. otherwise, mirrors run_guidellm_benchmarks.py's parser.
     """
     parsed: Dict[str, str] = {}
     if not workflow_args_str:
@@ -111,8 +106,8 @@ def build_aiperf_cmd(
     """Build the ``aiperf profile`` command for one ``SpecDecodeRunSpec``.
 
     Spec-decode-specific knobs vs. the general aiperf perf runner:
-      - ``--public-dataset <slug>`` instead of synthetic-token prompts (real
-        prompts are required for meaningful draft/target acceptance rates).
+      - ``--public-dataset <name>`` so far only run with speed-bench, but can be 
+        extended for other datasets (such as spec-bench) that aiperf supports.
       - ``--extra-inputs temperature:0`` so draft/target sampling is
         deterministic; matches the spec-decode comparison convention.
       - When ``run_spec.output_len`` is set, ``--output-tokens-mean/-stddev``
@@ -307,11 +302,6 @@ def warmup_endpoint(
 ) -> int:
     """Send ``num_requests`` identical short chat-completion requests.
 
-    The point is to warm CUDA/HBM kernel cache, JITs, autotune passes, and
-    KV-cache machinery so the first measured benchmark request isn't paying
-    cold-start cost. The payload is intentionally tiny and identical across
-    baseline and spec phases so neither side is "more warmed" than the other.
-
     Returns the number of successful warmup requests (0 to num_requests).
     """
     if num_requests <= 0:
@@ -404,10 +394,6 @@ def _run_one_sweep(
     if artifact_dir.exists():
         shutil.rmtree(artifact_dir)
     artifact_dir.mkdir(parents=True, exist_ok=True)
-
-    # Snapshot /metrics so _annotate_with_metrics can diff against post-run
-    # counters. A missing endpoint is non-fatal: empty baseline → the eventual
-    # acceptance_rate just reflects cumulative-since-server-start counters.
     try:
         before = fetch_prometheus_counters(url)
     except Exception as exc:  # noqa: BLE001
@@ -472,10 +458,6 @@ def run_benchmark_phase(
     return_codes: List[int] = []
     for i, run_spec in enumerate(profile, 1):
         run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        # Filename prefix ``benchmark_spec_decode_<role>_`` is load-bearing:
-        # ``summary_report.py``'s spec-decode regex matches on it and routes
-        # baseline vs. spec rows for the per-run table and the in-memory
-        # speedup pairing.
         result_path = output_dir / (
             f"benchmark_spec_decode_{role}_{model_id}_{device}_"
             f"{run_timestamp}_{run_spec.slug}.json"
@@ -508,11 +490,6 @@ def main() -> int:
 
     workflow_args = parse_workflow_args(runtime_config.workflow_args)
     phase = workflow_args.get("phase", PHASE_SPEC).strip().lower()
-    if phase not in VALID_PHASES:
-        logger.error(
-            "Invalid phase %r. Expected one of: %s", phase, ", ".join(VALID_PHASES)
-        )
-        return 1
 
     service_port = int(runtime_config.service_port)
     url = workflow_args.get("url", f"http://127.0.0.1:{service_port}")
