@@ -85,6 +85,10 @@ class BlazePrefillRunnerHarness {
     return resultQueue.waitPopFor(token, POLL_INTERVAL);
   }
 
+  bool tryPopResult(tt::ipc::SharedToken& token) {
+    return resultQueue.tryPop(token);
+  }
+
   std::vector<tt::ipc::SharedToken> collectTaskTokensUntilFinal(
       uint32_t taskId) {
     std::vector<tt::ipc::SharedToken> tokens;
@@ -197,14 +201,19 @@ TEST(BlazePrefillRunnerIntegrationTest, CancelFlowEmitsAbortToken) {
 
   harness.submitSequence(taskId, allocateResponse.slotId, {44, 55, 66},
                          samplingParams);
-  harness.requestCancel(taskId);
 
+  // Prefill has no streaming tokens to sync on (unlike decode). The runner
+  // also drains cancels before new tasks each step(), so a single early cancel
+  // can be ignored. Retry cancel in a tight loop until we see ABORT or prefill
+  // completes (FINAL without ABORT).
   bool sawAbort = false;
   tt::ipc::SharedToken abortToken{};
   const auto abortDeadline = std::chrono::steady_clock::now() + DEADLINE;
-  while (std::chrono::steady_clock::now() < abortDeadline) {
+  while (std::chrono::steady_clock::now() < abortDeadline && !sawAbort) {
+    harness.requestCancel(taskId);
     tt::ipc::SharedToken token{};
-    if (!harness.waitPopFor(token)) {
+    if (!harness.tryPopResult(token)) {
+      std::this_thread::yield();
       continue;
     }
     if (token.task_id != taskId) {
@@ -215,6 +224,9 @@ TEST(BlazePrefillRunnerIntegrationTest, CancelFlowEmitsAbortToken) {
       abortToken = token;
       sawAbort = true;
       break;
+    }
+    if (token.isFinal()) {
+      FAIL() << "Prefill completed before cancel could emit an abort token";
     }
   }
   harness.assertRunnerHealthy();
