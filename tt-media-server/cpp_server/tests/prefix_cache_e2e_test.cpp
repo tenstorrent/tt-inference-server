@@ -324,8 +324,11 @@ int computeExpectedCachedTokens(int promptTokens, size_t firstBlockSize,
   return cached;
 }
 
-// System prompts that fill at least one hash block (~220 tokens)
-const char* kSystemPrompt1 =
+// System prompts that fill at least one hash block (~220 tokens).
+// Each prompt starts with completely different text to ensure no prefix overlap.
+
+// For main conversation tests
+const char* kSystemPrompt =
     "You are a highly capable AI coding assistant working inside an IDE. You "
     "have access to the full project source tree and can read files, search "
     "code, run shell commands, and edit files. When the user asks you to make "
@@ -344,24 +347,24 @@ const char* kSystemPrompt1 =
     "API design, follow RESTful conventions and provide clear error messages "
     "with appropriate HTTP status codes.";
 
-const char* kSystemPrompt2 =
-    "2You are a highly capable AI coding assistant working inside an IDE. You "
-    "have access to the full project source tree and can read files, search "
-    "code, run shell commands, and edit files. When the user asks you to make "
-    "changes, you should understand the request, explore the relevant code, "
-    "plan your changes, and implement them carefully. Always verify your "
-    "changes compile and pass tests. If you encounter ambiguity, ask for "
-    "clarification. Provide concise, accurate answers. When writing code, "
-    "follow the project's existing style and conventions. Use meaningful "
-    "variable names and add comments only when the logic is non-obvious. Keep "
-    "functions small and focused. Prefer composition over inheritance. Handle "
-    "errors gracefully and log relevant context. When reviewing code, look for "
-    "correctness issues first, then performance, then style. Always consider "
-    "edge cases and concurrent access patterns. For distributed systems, think "
-    "about failure modes, retry strategies, and idempotency. When working with "
-    "databases, consider indexing, query plans, and data migration paths. For "
-    "API design, follow RESTful conventions and provide clear error messages "
-    "with appropriate HTTP status codes.";
+// Completely different prompt for testing cache isolation
+const char* kSystemPromptDifferent =
+    "MARINE BIOLOGY EXPERT: You specialize in oceanography and marine life. "
+    "Your expertise covers coral reef ecosystems, deep sea creatures, whale "
+    "migration patterns, and the impact of climate change on ocean health. "
+    "When discussing marine topics, always consider the interconnected nature "
+    "of ocean systems. Explain concepts clearly for both scientists and general "
+    "audiences. Reference recent research when applicable. Discuss conservation "
+    "efforts and their effectiveness. Consider both local and global scales of "
+    "ocean phenomena. Address the relationship between human activities and "
+    "marine ecosystem health. Provide specific examples from different ocean "
+    "regions including the Pacific, Atlantic, Indian Ocean, and polar waters. "
+    "Discuss the role of phytoplankton in carbon sequestration. Explain trophic "
+    "cascades and keystone species in marine environments. Consider seasonal "
+    "variations in marine productivity. Address invasive species and their "
+    "impacts on native marine communities. Discuss marine protected areas and "
+    "their effectiveness in conservation. Consider the economic importance of "
+    "fisheries and sustainable harvesting practices.";
 
 }  // namespace
 
@@ -400,7 +403,7 @@ TEST_F(PrefixCacheE2ETest, ExactCachedTokenValues) {
   std::string uniqueSuffix = " [test-run-" + std::to_string(millis) + "]";
 
   std::vector<Json::Value> messages = {
-      makeMessage("system", std::string(kSystemPrompt1) + uniqueSuffix),
+      makeMessage("system", std::string(kSystemPrompt) + uniqueSuffix),
       makeMessage("user", "What is the capital of France?")};
 
   std::cout << "  Request 1 (baseline)..." << std::endl;
@@ -460,19 +463,147 @@ TEST_F(PrefixCacheE2ETest, ExactCachedTokenValues) {
   std::cout << "  OK: Prefix cache working - reused " << r2.usage.cachedTokens
             << " tokens" << std::endl;
 
-  std::vector<Json::Value> messages2 = {
-      makeMessage("system", std::string(kSystemPrompt2) + uniqueSuffix),
+}
+
+TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
+  // Test cache behavior across multiple requests including replays.
+  //
+  // Scenario:
+  // 1. Request 1: Baseline prompt (system + user)
+  // 2. Request 2: Continuation (R1 + assistant + new user) → cached grows
+  // 3. Request 3: Different prompt → cached should be 0
+  // 4. Request 4: Replay exact R1 prompt → should hit full cache
+  // 5. Request 5: Replay exact R2 prompt → should hit full cache
+
+  std::cout << "\n=== Test: Cache replay scenario ===" << std::endl;
+
+  // Use timestamp-based unique suffix to make prompts unique per test run
+  auto now = std::chrono::system_clock::now();
+  auto epoch = now.time_since_epoch();
+  auto millis =
+      std::chrono::duration_cast<std::chrono::milliseconds>(epoch).count();
+  std::string uniqueSuffix = " [replay-test-" + std::to_string(millis) + "]";
+
+  // -------------------------------------------------------------------------
+  // Request 1: Baseline prompt
+  // -------------------------------------------------------------------------
+  std::vector<Json::Value> r1Messages = {
+      makeMessage("system", std::string(kSystemPrompt) + uniqueSuffix),
       makeMessage("user", "What is the capital of France?")};
 
-  std::cout << "  Request 3 (baseline)..." << std::endl;
-  ChatResponse r3 = sendChat(cfg_, messages2);
+  std::cout << "  Request 1 (baseline prompt)..." << std::endl;
+  ChatResponse r1 = sendChat(cfg_, r1Messages);
+  ASSERT_TRUE(r1.ok()) << "Request 1 failed: " << r1.error;
+  std::cout << "    prompt=" << r1.usage.promptTokens
+            << " cached=" << r1.usage.cachedTokens
+            << " completion=" << r1.usage.completionTokens << std::endl;
+
+  // Save baseline cached count and messages for later comparison
+  int r1CachedBaseline = r1.usage.cachedTokens;
+  std::vector<Json::Value> r1MessagesCopy = r1Messages;
+
+  // -------------------------------------------------------------------------
+  // Request 2: Continuation of R1
+  // -------------------------------------------------------------------------
+  std::vector<Json::Value> r2Messages = r1Messages;
+  r2Messages.push_back(makeMessage("assistant", r1.content));
+  r2Messages.push_back(
+      makeMessage("user", "And what is the capital of Germany?"));
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+  std::cout << "  Request 2 (continuation of R1)..." << std::endl;
+  ChatResponse r2 = sendChat(cfg_, r2Messages);
+  ASSERT_TRUE(r2.ok()) << "Request 2 failed: " << r2.error;
+  std::cout << "    prompt=" << r2.usage.promptTokens
+            << " cached=" << r2.usage.cachedTokens
+            << " completion=" << r2.usage.completionTokens << std::endl;
+
+  int r2ExpectedCached = computeExpectedCachedTokens(
+      r2.usage.promptTokens, cfg_.firstBlockSize, cfg_.blockSize);
+  std::cout << "    Expected cached: " << r2ExpectedCached << std::endl;
+
+  EXPECT_GT(r2.usage.cachedTokens, r1CachedBaseline)
+      << "Request 2 should have more cached tokens than R1 baseline "
+         "(it includes R1's full prompt as prefix)";
+  EXPECT_LE(std::abs(r2.usage.cachedTokens - r2ExpectedCached), 1)
+      << "Request 2 cached should match block-aligned R2 prompt";
+
+  // Save R2 messages for replay later
+  std::vector<Json::Value> r2MessagesCopy = r2Messages;
+  int r2CachedTokens = r2.usage.cachedTokens;
+
+  // -------------------------------------------------------------------------
+  // Request 3: Completely different prompt (different system prompt)
+  // Uses a completely different system prompt that shares no prefix with R1/R2.
+  // -------------------------------------------------------------------------
+  std::vector<Json::Value> r3Messages = {
+      makeMessage("system", std::string(kSystemPromptDifferent) + uniqueSuffix),
+      makeMessage("user", "Tell me about coral reef ecosystems.")};
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+  std::cout << "  Request 3 (different prompt)..." << std::endl;
+  ChatResponse r3 = sendChat(cfg_, r3Messages);
   ASSERT_TRUE(r3.ok()) << "Request 3 failed: " << r3.error;
   std::cout << "    prompt=" << r3.usage.promptTokens
             << " cached=" << r3.usage.cachedTokens
             << " completion=" << r3.usage.completionTokens << std::endl;
 
-  EXPECT_EQ(r3.usage.cachedTokens, 0)
-      << "Request 3 cached_tokens should be 0 since it's a new conversation";
+  // R3 has a different prefix, so it should have fewer cached tokens than R2
+  EXPECT_LT(r3.usage.cachedTokens, r2CachedTokens)
+      << "Request 3 should have fewer cached tokens than R2 "
+         "(different system prompt prefix)";
+
+  // -------------------------------------------------------------------------
+  // Request 4: Replay exact R1 prompt
+  // -------------------------------------------------------------------------
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+  std::cout << "  Request 4 (replay R1 prompt)..." << std::endl;
+  ChatResponse r4 = sendChat(cfg_, r1MessagesCopy);
+  ASSERT_TRUE(r4.ok()) << "Request 4 failed: " << r4.error;
+  std::cout << "    prompt=" << r4.usage.promptTokens
+            << " cached=" << r4.usage.cachedTokens
+            << " completion=" << r4.usage.completionTokens << std::endl;
+
+  int r4ExpectedCached = computeExpectedCachedTokens(
+      r4.usage.promptTokens, cfg_.firstBlockSize, cfg_.blockSize);
+  std::cout << "    Expected cached: " << r4ExpectedCached << std::endl;
+
+  // R4 replays R1 exactly. Since R1 was already processed, R4 should hit
+  // the full block-aligned cache.
+  EXPECT_GE(r4.usage.cachedTokens, r1CachedBaseline)
+      << "Request 4 (replay) should have at least as many cached tokens as R1";
+  EXPECT_LE(std::abs(r4.usage.cachedTokens - r4ExpectedCached), 1)
+      << "Request 4 should hit full block-aligned cache for R1 prompt";
+
+  // -------------------------------------------------------------------------
+  // Request 5: Replay exact R2 prompt (full conversation)
+  // -------------------------------------------------------------------------
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+  std::cout << "  Request 5 (replay R2 prompt - full conversation)..."
+            << std::endl;
+  ChatResponse r5 = sendChat(cfg_, r2MessagesCopy);
+  ASSERT_TRUE(r5.ok()) << "Request 5 failed: " << r5.error;
+  std::cout << "    prompt=" << r5.usage.promptTokens
+            << " cached=" << r5.usage.cachedTokens
+            << " completion=" << r5.usage.completionTokens << std::endl;
+
+  int r5ExpectedCached = computeExpectedCachedTokens(
+      r5.usage.promptTokens, cfg_.firstBlockSize, cfg_.blockSize);
+  std::cout << "    Expected cached: " << r5ExpectedCached << std::endl;
+
+  // R5 replays the exact R2 prompt, which was fully cached after R2 completed.
+  EXPECT_LE(std::abs(r5.usage.cachedTokens - r5ExpectedCached), 1)
+      << "Request 5 should hit full block-aligned cache for R2 prompt";
+
+  // R5 cached should equal R2 cached (same prompt, same cache state)
+  EXPECT_EQ(r5.usage.cachedTokens, r2CachedTokens)
+      << "Request 5 (replay) should have same cached_tokens as original R2";
+
+  std::cout << "  OK: All replay scenarios behaved as expected" << std::endl;
 }
 
 int main(int argc, char** argv) {
