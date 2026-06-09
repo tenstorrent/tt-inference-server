@@ -209,9 +209,8 @@ class MockDecodeServer {
         EXPECT_EQ(tt::sockets::wire::readMessageType(rawData),
                   std::string(tt::sockets::tags::PREFILL_REGISTRATION));
 
-        auto registration =
-            tt::sockets::wire::deserializePayload<
-                tt::sockets::PrefillRegistrationMessage>(rawData);
+        auto registration = tt::sockets::wire::deserializePayload<
+            tt::sockets::PrefillRegistrationMessage>(rawData);
         EXPECT_EQ(registration.server_id, EXPECTED_PREFILL_SERVER_ID);
         EXPECT_FALSE(registration.server_id.empty());
         EXPECT_EQ(registration.max_in_flight, EXPECTED_PREFILL_MAX_IN_FLIGHT);
