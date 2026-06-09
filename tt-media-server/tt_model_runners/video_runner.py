@@ -95,10 +95,13 @@ class _EncodeJob:
     """Work item handed off from rank-0 inference to the encoder thread.
 
     The encoder thread is the *sole* writer of ``output_shm``, for both success
-    and failure paths. Exactly one of ``frames`` or ``error`` is set:
+    and failure paths. Exactly one of ``frames``, ``mp4_path``, or ``error`` is
+    set:
 
-    - ``frames`` set → run ffmpeg, write SUCCESS response.
-    - ``error``  set → skip ffmpeg, write ERROR response directly.
+    - ``frames``   set → run ffmpeg, write SUCCESS response.
+    - ``mp4_path`` set → runner already wrote a finished MP4 (e.g. LTX emits an
+      AV file directly); pass it through untouched, write SUCCESS response.
+    - ``error``    set → skip ffmpeg, write ERROR response directly.
 
     This single-writer invariant eliminates out-of-order responses that would
     otherwise occur when an inference failure short-circuited the queue while
@@ -107,6 +110,7 @@ class _EncodeJob:
 
     task_id: str
     frames: Optional[Any] = None
+    mp4_path: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -363,10 +367,19 @@ def _encoder_loop(
             continue
 
         try:
-            mp4_path = video_manager.export_to_mp4(job.frames)
-            _log.info(
-                f"Encoder thread: encoded mp4 for task {job.task_id} at {mp4_path}"
-            )
+            if job.mp4_path is not None:
+                # Runner already wrote a finished MP4 (e.g. LTX AV output);
+                # re-encoding through ffmpeg would discard the audio track.
+                mp4_path = job.mp4_path
+                _log.info(
+                    f"Encoder thread: passing through runner mp4 for task "
+                    f"{job.task_id} at {mp4_path}"
+                )
+            else:
+                mp4_path = video_manager.export_to_mp4(job.frames)
+                _log.info(
+                    f"Encoder thread: encoded mp4 for task {job.task_id} at {mp4_path}"
+                )
             _write_response_to_shm(output_shm, job.task_id, mp4_path)
         except Exception as encode_err:
             _log.error(
@@ -453,16 +466,29 @@ def _run_inference_loop(
             video_gen_req = video_request_to_generate_request(req, image_prompts)
 
             _log.info(f"Rank {rank}: Starting inference for task {req.task_id}")
-            frames = runner.run([video_gen_req])
+            result = runner.run([video_gen_req])
             _log.info(f"Rank {rank}: Inference done for task {req.task_id}")
 
             if rank == 0:
-                # Hand the frames off to the encoder thread and immediately
+                # Hand the result off to the encoder thread and immediately
                 # loop back to read_request — this frees the mesh while
                 # ffmpeg runs in parallel. `put` is bounded; if the encoder
                 # falls behind we block here, naturally back-pressuring
                 # inference (no memory blowup).
-                encode_queue.put(_EncodeJob(task_id=req.task_id, frames=frames))
+                #
+                # A finished-MP4 path (str or 1-element list[str]) routes to
+                # mp4_path so the encoder passes it through unmodified.
+                if isinstance(result, str):
+                    job = _EncodeJob(task_id=req.task_id, mp4_path=result)
+                elif (
+                    isinstance(result, (list, tuple))
+                    and len(result) == 1
+                    and isinstance(result[0], str)
+                ):
+                    job = _EncodeJob(task_id=req.task_id, mp4_path=result[0])
+                else:
+                    job = _EncodeJob(task_id=req.task_id, frames=result)
+                encode_queue.put(job)
 
         except Exception as e:
             _log.error(
