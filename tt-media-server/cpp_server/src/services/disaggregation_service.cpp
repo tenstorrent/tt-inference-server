@@ -3,7 +3,6 @@
 
 #include "services/disaggregation_service.hpp"
 
-#include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/llm_service.hpp"
@@ -54,8 +53,14 @@ void DisaggregationService::setupSocketHandlers() {
                 "[DisaggregationService] Prefill error received for task {}, "
                 "propagating error to client",
                 message.task_id);
-            callback.value()(makeErrorChunk(message.task_id, "prefill error"),
-                             /*isFinal=*/true);
+            const auto reason =
+                tt::sockets::errorReasonFromPrefillResult(message);
+            callback.value()(
+                makeErrorChunk(message.task_id,
+                               isTimeoutError(reason) ? "prefill timeout"
+                                                      : "prefill error",
+                               reason),
+                /*isFinal=*/true);
             return;
           }
 
@@ -201,9 +206,13 @@ void DisaggregationService::setupSocketHandlers() {
                       prefillResult.fast_mode = message.fast_mode;
                       prefillResult.cached_tokens = cachedTokens;
 
-                      bool isError =
-                          !response.choices.empty() &&
-                          response.choices.back().finish_reason == "error";
+                      const auto finishReason =
+                          response.choices.empty()
+                              ? std::optional<std::string>{}
+                              : response.choices.back().finish_reason;
+                      const bool isError =
+                          finishReason.has_value() &&
+                          isErrorFinishReason(finishReason.value());
                       if (isError) {
                         TT_LOG_WARN(
                             "[DisaggregationService] Prefill error for task "
@@ -211,6 +220,11 @@ void DisaggregationService::setupSocketHandlers() {
                             message.task_id);
                         prefillResult.error = true;
                         prefillResult.finished = true;
+                        const auto reason =
+                            errorReasonFromFinishReason(finishReason.value());
+                        prefillResult.generated_text =
+                            tt::sockets::prefillErrorTextForReason(
+                                reason, response.error.value_or("error"));
                       } else {
                         prefillResult.remaining_tokens =
                             maxTokens.has_value()
@@ -250,6 +264,9 @@ void DisaggregationService::setupSocketHandlers() {
                 prefillResult.slot_id = slotId;
                 prefillResult.error = true;
                 prefillResult.finished = true;
+                prefillResult.generated_text =
+                    tt::sockets::prefillErrorTextForReason(
+                        LLMErrorReason::GENERIC, std::string(error));
                 socketService->sendPrefillResult(prefillResult);
               });
         });
