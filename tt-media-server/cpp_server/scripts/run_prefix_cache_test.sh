@@ -4,26 +4,17 @@
 #
 # One-shot prefix-cache E2E test.
 #
-# Starts the cpp_server, waits for readiness, runs the prefix-cache test
-# suite against it, then tears everything down.
-#
-# By default tests hit the cpp_server's HTTP endpoint directly (port 8000),
-# which exercises the same LLMPipeline / SessionManager / prefix-cache code
-# as the full Dynamo path.  To test through the Dynamo frontend (requires
-# etcd), use: USE_DYNAMO=1 ./scripts/run_prefix_cache_test.sh
+# Starts the Dynamo frontend + cpp_server backend, waits for readiness,
+# runs the prefix-cache test suite, then tears everything down.
 #
 # Usage:
 #   ./scripts/run_prefix_cache_test.sh
-#   TEST_VERBOSE=1 ./scripts/run_prefix_cache_test.sh
-#   USE_DYNAMO=1 ./scripts/run_prefix_cache_test.sh   # full Dynamo stack
 #
 # Env vars:
-#   SERVER_PORT         cpp_server HTTP port   (default 8000)
-#   USE_DYNAMO          Set to 1 to start full Dynamo frontend + etcd path
-#   HTTP_PORT           Dynamo frontend port   (default 9000, only with USE_DYNAMO)
-#   MODEL_NAME          Model name             (default tt-cpp-server)
-#   TEST_VERBOSE        Set to 1 for verbose test output
-#   TEST_TIMEOUT        Seconds to wait for server readiness (default 90)
+#   SERVER_PORT         cpp_server HTTP port        (default 8000)
+#   HTTP_PORT           Dynamo frontend port        (default 9000)
+#   MODEL_NAME          Model name                  (default tt-cpp-server)
+#   TEST_TIMEOUT        Seconds to wait for server  (default 90)
 
 set -euo pipefail
 
@@ -36,17 +27,13 @@ SERVER_PORT="${SERVER_PORT:-8000}"
 HTTP_PORT="${HTTP_PORT:-9000}"
 MODEL_NAME="${MODEL_NAME:-tt-cpp-server}"
 TEST_TIMEOUT="${TEST_TIMEOUT:-90}"
-TEST_VERBOSE="${TEST_VERBOSE:-0}"
-USE_DYNAMO="${USE_DYNAMO:-0}"
 
-BACKEND_PID=""
 STACK_PID=""
 
 cleanup() {
     echo ""
     echo "Tearing down…"
-    [[ -n "${STACK_PID}" ]]   && { kill -- -"${STACK_PID}" 2>/dev/null || kill "${STACK_PID}" 2>/dev/null || true; }
-    [[ -n "${BACKEND_PID}" ]] && kill "${BACKEND_PID}" 2>/dev/null || true
+    [[ -n "${STACK_PID}" ]] && { kill -- -"${STACK_PID}" 2>/dev/null || kill "${STACK_PID}" 2>/dev/null || true; }
     wait 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
@@ -58,33 +45,23 @@ if [[ ! -x "${BIN}" ]]; then
     "${CPP_DIR}/build.sh"
 fi
 
-# --- start stack --------------------------------------------------------------
+# --- start Dynamo stack -------------------------------------------------------
 
-if [[ "${USE_DYNAMO}" == "1" ]]; then
-    echo "=== Prefix-cache E2E test (Dynamo frontend) ==="
-    echo "  Frontend : http://127.0.0.1:${HTTP_PORT}"
-    echo "  Backend  : http://127.0.0.1:${SERVER_PORT}"
-    echo ""
-    export HTTP_PORT SERVER_PORT MODEL_NAME
-    "${SCRIPT_DIR}/start_dynamo.sh" &
-    STACK_PID=$!
-    TEST_PORT="${HTTP_PORT}"
-else
-    echo "=== Prefix-cache E2E test (cpp_server direct) ==="
-    echo "  cpp_server : http://127.0.0.1:${SERVER_PORT}"
-    echo ""
-    "${BIN}" -p "${SERVER_PORT}" &
-    BACKEND_PID=$!
-    TEST_PORT="${SERVER_PORT}"
-fi
+echo "=== Prefix-cache E2E test (Dynamo frontend) ==="
+echo "  Frontend : http://127.0.0.1:${HTTP_PORT}"
+echo "  Backend  : http://127.0.0.1:${SERVER_PORT}"
+echo ""
+export HTTP_PORT SERVER_PORT MODEL_NAME
+"${SCRIPT_DIR}/start_dynamo.sh" &
+STACK_PID=$!
 
 # --- wait for readiness -------------------------------------------------------
 
-echo "Waiting for server on :${TEST_PORT}…"
+echo "Waiting for server on :${HTTP_PORT}…"
 DEADLINE=$((SECONDS + TEST_TIMEOUT))
 READY=0
 while (( SECONDS < DEADLINE )); do
-    if curl -sf "http://127.0.0.1:${TEST_PORT}/health" >/dev/null 2>&1; then
+    if curl -sf "http://127.0.0.1:${HTTP_PORT}/health" >/dev/null 2>&1; then
         READY=1
         break
     fi
@@ -99,19 +76,13 @@ echo "Server ready."
 
 # --- run tests ----------------------------------------------------------------
 
-VERBOSE_FLAG=""
-if [[ "${TEST_VERBOSE}" == "1" ]]; then
-    VERBOSE_FLAG="--verbose"
-fi
-
 echo ""
 echo "Running prefix-cache tests…"
 echo ""
 
 python3 "${CPP_DIR}/tests/test_prefix_cache_e2e.py" \
-    --port "${TEST_PORT}" \
-    --timeout 30 \
-    ${VERBOSE_FLAG}
+    --port "${HTTP_PORT}" \
+    --timeout 30
 
 EXIT_CODE=$?
 
