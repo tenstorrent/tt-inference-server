@@ -51,6 +51,7 @@ void configureEnv() {
   setenv("LLM_MODE", "prefill", 1);
   setenv("DEVICE_IDS", "(0)", 1);
   setenv("MAX_NUM_SESSIONS", "4", 1);
+  setenv("MIN_TOKENS_TO_COPY", "32", 1);
   setenv("KV_CACHE_FIRST_BLOCK_SIZE", "32", 1);
   setenv("KV_CACHE_BLOCK_SIZE", "32", 1);
   setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
@@ -500,7 +501,6 @@ TEST_F(PrefillIntegrationTest, MultiTurn_SubsequentRequestsAreContinuations) {
 //      should HIT C's newly registered session (confirms prefix hashes were
 //      propagated to the new session created by slot copy).
 TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
-  setenv("MIN_TOKENS_TO_COPY", "32", 1);
   server->setMemoryAutoRespond(false);
 
   // Track prefillSlotIds across requests to verify session reuse.
@@ -753,7 +753,6 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
   }
 
   server->setMemoryAutoRespond(true);
-  unsetenv("MIN_TOKENS_TO_COPY");
 }
 
 // ---------------------------------------------------------------------------
