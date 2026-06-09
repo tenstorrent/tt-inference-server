@@ -18,6 +18,18 @@ from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+
+def user_error(message: str) -> None:
+    """Raise a plain-English ValueError for user-fixable errors.
+
+    Library functions call this to signal a misconfiguration.  The
+    top-level entry-point (run.py / setup_host.py main()) catches
+    ValueError and either prints it cleanly (default) or re-raises with
+    a full traceback when --debug is set.
+    """
+    raise ValueError(message)
+
+
 # SDXL num prompts limits
 SDXL_DEFAULT_NUM_PROMPTS = 100
 SDXL_LOWER_BOUND_NUM_PROMPTS = 2

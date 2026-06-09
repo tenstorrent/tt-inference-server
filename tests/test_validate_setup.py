@@ -203,9 +203,7 @@ class TestValidateBindMountPermissions:
                 "workflows.validate_setup._try_fix_path_permissions_for_uid",
                 return_value=False,
             ):
-                with pytest.raises(
-                    ValueError, match="Bind mount permission check failed"
-                ):
+                with pytest.raises(ValueError, match="bind-mounted"):
                     validate_bind_mount_permissions(args)
         finally:
             os.chmod(d, 0o700)
@@ -238,9 +236,7 @@ class TestValidateBindMountPermissions:
                 "workflows.validate_setup._try_fix_path_permissions_for_uid",
                 return_value=False,
             ):
-                with pytest.raises(
-                    ValueError, match="Bind mount permission check failed"
-                ):
+                with pytest.raises(ValueError, match="bind-mounted"):
                     validate_bind_mount_permissions(args)
         finally:
             os.chmod(d, 0o700)
@@ -261,9 +257,7 @@ class TestValidateBindMountPermissions:
                 "workflows.validate_setup._try_fix_path_permissions_for_uid",
                 return_value=False,
             ):
-                with pytest.raises(
-                    ValueError, match="Bind mount permission check failed"
-                ):
+                with pytest.raises(ValueError, match="bind-mounted"):
                     validate_bind_mount_permissions(args)
         finally:
             os.chmod(d, 0o700)
@@ -302,8 +296,11 @@ class TestValidateBindMountPermissions:
                 "workflows.validate_setup._try_fix_path_permissions_for_uid",
                 return_value=False,
             ):
-                with pytest.raises(ValueError, match="chmod/chown"):
+                with pytest.raises(ValueError) as exc_info:
                     validate_bind_mount_permissions(args)
+            msg = str(exc_info.value)
+            assert "chown" in msg
+            assert "chmod" in msg
         finally:
             os.chmod(d, 0o700)
 
@@ -336,9 +333,7 @@ class TestLocalServerValidation:
             "workflows.validate_setup.MODEL_SPECS",
             {model_spec.model_id: model_spec},
         ):
-            with pytest.raises(
-                ValueError, match="requires --tt-metal-home or TT_METAL_HOME"
-            ):
+            with pytest.raises(ValueError, match="TT_METAL_HOME"):
                 validate_runtime_args(model_spec, runtime_config)
 
     def test_runtime_args_allow_tt_metal_home_from_env(self):
@@ -420,7 +415,7 @@ class TestLocalServerValidation:
             },
         )
 
-        with pytest.raises(ValueError, match="did not contain a cached snapshot"):
+        with pytest.raises(ValueError, match="cached snapshot"):
             validate_local_server_paths(args)
 
     def test_validate_local_server_paths_accepts_cached_hf_snapshot(self, tmp_path):
@@ -536,7 +531,7 @@ class TestLocalServerValidation:
 
         mock_get_log_dir.return_value = tmp_path / "logs"
 
-        with pytest.raises(ValueError, match="requires the `vllm` Python package"):
+        with pytest.raises(ValueError, match="vllm Python package"):
             validate_local_setup(model_spec, runtime_config, tmp_path / "runtime.json")
 
         mock_ensure_dir.assert_called_once_with(tmp_path / "logs")
@@ -643,10 +638,7 @@ class TestLocalServerValidation:
         with patch(
             "workflows.validate_setup.run_command", side_effect=[0, 1]
         ) as mock_validate_run_command:
-            with pytest.raises(
-                ValueError,
-                match=r"`vllm_tt_plugin` Python package",
-            ):
+            with pytest.raises(ValueError, match="vllm-tt-plugin"):
                 validate_local_setup(
                     model_spec, runtime_config, tmp_path / "runtime.json"
                 )

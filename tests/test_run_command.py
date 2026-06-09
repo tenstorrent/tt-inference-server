@@ -417,9 +417,7 @@ class TestSystemSoftwareValidationCheckFalse:
             mock_venv_config.setup.return_value = True
             mock_venv_configs.__getitem__.return_value = mock_venv_config
 
-            with pytest.raises(
-                ValueError, match="validating system software dependencies failed"
-            ):
+            with pytest.raises(ValueError, match="software validation failed"):
                 validate_local_setup(
                     mock_model_spec, mock_runtime_config, "/fake/json/path"
                 )

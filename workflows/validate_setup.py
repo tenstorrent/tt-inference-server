@@ -21,6 +21,7 @@ from workflows.utils import (
     parse_version_tuple,
     resolve_hf_snapshot_dir,
     run_command,
+    user_error,
 )
 from workflows.workflow_types import (
     DeviceTypes,
@@ -61,10 +62,12 @@ def _check_image_version_supported(model_spec):
         min_str = ".".join(str(p) for p in MIN_SUPPORTED_IMAGE_VERSION)
         tag = f"v{model_spec.version}"
         raise RuntimeError(
-            f"⛔ Image v{model_spec.version} is not supported in this "
-            f"version of run.py (need v{min_str}+). Check out the matching "
-            f"release tag {tag} and re-run:\n"
-            f"    git checkout {tag}"
+            f"ERROR: Docker image v{model_spec.version} is not supported by this version of run.py.\n"
+            f"This run.py requires vLLM image v{min_str} or newer (the Docker interface changed in v{min_str}).\n"
+            f"\nTo fix this:\n"
+            f"  1. Check out the matching release tag: git checkout {tag}\n"
+            f"  2. Re-run this script\n"
+            f"\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
         )
 
 
@@ -74,60 +77,114 @@ def validate_runtime_args(model_spec, runtime_config):
 
     if not args.device:
         # TODO: detect phy device
-        raise NotImplementedError("Device detection not implemented yet")
+        user_error(
+            "ERROR: No device specified and automatic device detection is not yet implemented.\n"
+            "You must tell run.py which Tenstorrent device to target.\n"
+            "\nTo fix this:\n"
+            "  1. Add --tt-device <device> to your command (e.g. --tt-device n150)\n"
+            "  2. Re-run this script\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+        )
 
     model_id = model_spec.model_id
 
     # Check if the model_id exists in MODEL_SPECS (this validates device support)
     if model_id not in MODEL_SPECS:
-        raise ValueError(
-            f"model:={runtime_config.model} does not support device:={runtime_config.device}"
+        user_error(
+            f"ERROR: Model '{runtime_config.model}' does not support device '{runtime_config.device}'.\n"
+            "This combination is not listed in the supported model specs.\n"
+            "\nTo fix this:\n"
+            "  1. Run: python run.py --help  to see the list of supported --model / --tt-device pairs\n"
+            "  2. Choose a supported combination and re-run this script\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
         )
 
     _check_image_version_supported(model_spec)
 
-    assert not (args.docker_server and args.local_server), (
-        "Cannot run --docker-server and --local-server"
-    )
+    if args.docker_server and args.local_server:
+        user_error(
+            "ERROR: --docker-server and --local-server cannot be used at the same time.\n"
+            "These flags are mutually exclusive — pick one mode.\n"
+            "\nTo fix this:\n"
+            "  1. Use --docker-server to run inside a Docker container, OR\n"
+            "  2. Use --local-server to run directly on the host\n"
+            "  3. Re-run this script with only one of those flags\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+        )
 
     if workflow_type == WorkflowType.EVALS:
-        assert model_spec.model_name in EVAL_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
-        )
+        if model_spec.model_name not in EVAL_CONFIGS:
+            user_error(
+                f"ERROR: Model '{model_spec.model_name}' does not have an eval configuration.\n"
+                "The --workflow evals mode requires a config entry in EVAL_CONFIGS.\n"
+                "\nTo fix this:\n"
+                "  1. Choose a model that supports evals (run python run.py --help for the list)\n"
+                "  2. Or use a different --workflow\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
     if workflow_type == WorkflowType.BENCHMARKS:
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
-        assert model_spec.model_id in BENCHMARK_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
-        )
+        if model_spec.model_id not in BENCHMARK_CONFIGS:
+            user_error(
+                f"ERROR: Model '{model_spec.model_name}' does not have a benchmark configuration.\n"
+                "The --workflow benchmarks mode requires a config entry in BENCHMARK_CONFIGS.\n"
+                "\nTo fix this:\n"
+                "  1. Choose a model that supports benchmarks (run python run.py --help for the list)\n"
+                "  2. Or use a different --workflow\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
     if workflow_type == WorkflowType.STRESS_TESTS:
         pass  # Model support already validated via MODEL_SPECS check
 
     if workflow_type == WorkflowType.TESTS:
-        assert model_spec.model_name in TEST_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in TEST_CONFIGS"
-        )
+        if model_spec.model_name not in TEST_CONFIGS:
+            user_error(
+                f"ERROR: Model '{model_spec.model_name}' does not have a test configuration.\n"
+                "The --workflow tests mode requires a config entry in TEST_CONFIGS.\n"
+                "\nTo fix this:\n"
+                "  1. Choose a model that supports tests (run python run.py --help for the list)\n"
+                "  2. Or use a different --workflow\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
     if workflow_type == WorkflowType.REPORTS:
         pass
     if workflow_type == WorkflowType.SERVER:
         if not (args.docker_server or args.local_server):
-            raise ValueError(
-                f"Workflow {args.workflow} requires --docker-server or --local-server"
+            user_error(
+                f"ERROR: The '{args.workflow}' workflow requires a server mode flag.\n"
+                "You must tell run.py where to run the inference server.\n"
+                "\nTo fix this:\n"
+                "  1. Add --docker-server to run inside a Docker container, OR\n"
+                "  2. Add --local-server to run directly on the host\n"
+                "  3. Re-run this script\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
             )
         if (
             args.local_server
             and model_spec.inference_engine != InferenceEngine.VLLM.value
         ):
-            raise NotImplementedError(
-                "--local-server currently supports only vLLM-backed model specs"
+            user_error(
+                f"ERROR: --local-server only supports vLLM-backed models, but '{model_spec.model_name}' uses engine '{model_spec.inference_engine}'.\n"
+                "Local server mode is not yet implemented for other inference engines.\n"
+                "\nTo fix this:\n"
+                "  1. Use --docker-server instead, OR\n"
+                "  2. Choose a vLLM-backed model\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
             )
 
         # For partitioning Galaxy per tray as T3K
         # TODO: Add a check to verify whether these devices belong to the same tray
         if DeviceTypes.from_string(args.device) == DeviceTypes.GALAXY_T3K:
             if not args.device_id or len(args.device_id) != 8:
-                raise ValueError(
-                    "Galaxy T3K requires exactly 8 device IDs specified with --device-id (e.g. '0,1,2,3,4,5,6,7'). These must be devices within the same tray."
+                user_error(
+                    "ERROR: Galaxy T3K requires exactly 8 device IDs but the wrong number was specified.\n"
+                    "Each T3K tray contains 8 Tenstorrent devices that must all be listed.\n"
+                    "\nTo fix this:\n"
+                    "  1. Run: tt-smi  to list the PCI device indices available on this host\n"
+                    "  2. Add --device-id 0,1,2,3,4,5,6,7  (using the 8 indices from the same tray)\n"
+                    "  3. Re-run this script\n"
+                    "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
                 )
 
     if workflow_type == WorkflowType.RELEASE:
@@ -135,22 +192,45 @@ def validate_runtime_args(model_spec, runtime_config):
         # today this will stop models defined in MODEL_SPECS
         # but not in EVAL_CONFIGS or BENCHMARK_CONFIGS, e.g. non-instruct models
         # a run_*.log fill will be made for the failed combination indicating this
-        assert model_spec.model_name in EVAL_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
-        )
-        assert model_spec.model_id in BENCHMARK_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
-        )
+        if model_spec.model_name not in EVAL_CONFIGS:
+            user_error(
+                f"ERROR: Model '{model_spec.model_name}' is missing an eval configuration required by the release workflow.\n"
+                "The release workflow requires both EVAL_CONFIGS and BENCHMARK_CONFIGS entries.\n"
+                "\nTo fix this:\n"
+                "  1. Use a model that has a complete release configuration\n"
+                "  2. Or use a different --workflow (e.g. --workflow server)\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
+        if model_spec.model_id not in BENCHMARK_CONFIGS:
+            user_error(
+                f"ERROR: Model '{model_spec.model_name}' is missing a benchmark configuration required by the release workflow.\n"
+                "The release workflow requires both EVAL_CONFIGS and BENCHMARK_CONFIGS entries.\n"
+                "\nTo fix this:\n"
+                "  1. Use a model that has a complete release configuration\n"
+                "  2. Or use a different --workflow (e.g. --workflow server)\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
 
     if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
         if args.docker_server or args.local_server:
-            raise NotImplementedError(
-                "GPU support for running inference server not implemented yet"
+            user_error(
+                "ERROR: Running the inference server on GPU is not yet implemented.\n"
+                "GPU device support for --docker-server and --local-server is a planned feature.\n"
+                "\nTo fix this:\n"
+                "  1. Use a Tenstorrent device (e.g. --tt-device n150) instead of GPU\n"
+                "  2. Or remove --docker-server / --local-server to run workflows without a server\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
             )
 
     if args.local_server and not args.tt_metal_home:
-        raise ValueError(
-            "--local-server requires --tt-metal-home or TT_METAL_HOME to be set"
+        user_error(
+            "ERROR: --local-server requires a tt-metal build directory but none was specified.\n"
+            "The local server needs the compiled tt-metal libraries to run.\n"
+            "\nTo fix this:\n"
+            "  1. Set the environment variable: export TT_METAL_HOME=/path/to/tt-metal\n"
+            "  2. Or pass the flag: --tt-metal-home /path/to/tt-metal\n"
+            "  3. Re-run this script\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
         )
 
     # Validate mutual exclusivity of weight source options
@@ -160,14 +240,28 @@ def validate_runtime_args(model_spec, runtime_config):
         getattr(args, "host_weights_dir", None),
     ]
     if sum(1 for a in weight_source_args if a) > 1:
-        raise ValueError(
-            "Only one of --host-volume, --host-hf-cache, --host-weights-dir can be specified."
+        user_error(
+            "ERROR: More than one weight source flag was specified.\n"
+            "Only one of --host-volume, --host-hf-cache, or --host-weights-dir may be used at a time.\n"
+            "\nTo fix this:\n"
+            "  1. Choose one weight source:\n"
+            "     --host-volume       for a Docker named volume\n"
+            "     --host-hf-cache     to reuse an existing HuggingFace cache directory\n"
+            "     --host-weights-dir  to point at a pre-downloaded weights directory\n"
+            "  2. Remove the other flags and re-run this script\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
         )
 
     if "ENABLE_AUTO_TOOL_CHOICE" in os.environ:
-        raise AssertionError(
-            "Setting ENABLE_AUTO_TOOL_CHOICE has been deprecated, use the VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI.\n"
-            'Enable auto tool choice by adding --vllm-override-args \'{"enable-auto-tool-choice": true, "tool-call-parser": <parser-name>}\' when calling run.py'
+        user_error(
+            "ERROR: The ENABLE_AUTO_TOOL_CHOICE environment variable is no longer supported.\n"
+            "This setting was deprecated and has been replaced by --vllm-override-args.\n"
+            "\nTo fix this:\n"
+            "  1. Unset the variable: unset ENABLE_AUTO_TOOL_CHOICE\n"
+            "  2. Pass the setting via the CLI flag instead:\n"
+            '     --vllm-override-args \'{"enable-auto-tool-choice": true, "tool-call-parser": <parser-name>}\'\n'
+            "  3. Re-run this script\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
         )
 
 
@@ -181,14 +275,28 @@ def _get_local_server_python_env_dir(runtime_config) -> Path:
 def _validate_local_vllm_installation(runtime_config):
     venv_python = _get_local_server_python_env_dir(runtime_config) / "bin" / "python"
     if not venv_python.exists():
-        raise ValueError(f"⛔ Missing required python venv interpreter: {venv_python}")
+        user_error(
+            f"ERROR: The Python virtual environment for tt-metal was not found.\n"
+            f"Expected interpreter at: {venv_python}\n"
+            "\nTo fix this:\n"
+            "  1. Build the tt-metal Python environment by following:\n"
+            "     https://github.com/tenstorrent/tt-metal/blob/main/INSTALLING.md\n"
+            "  2. Verify the path is correct with --tt-metal-home or TT_METAL_HOME\n"
+            "  3. Re-run this script\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+        )
 
     return_code = run_command([str(venv_python), "-c", "import vllm"], logger=logger)
     if return_code != 0:
-        raise ValueError(
-            "⛔ --local-server with inference engine vLLM requires the `vllm` Python "
-            f"package to be installed in the tt-metal python environment. Could not "
-            f"import `vllm` with: {venv_python}"
+        user_error(
+            "ERROR: The vllm Python package is not installed in the tt-metal virtual environment.\n"
+            f"Tried to import vllm using: {venv_python}\n"
+            "\nTo fix this:\n"
+            "  1. Activate the tt-metal venv and install vLLM:\n"
+            f"     {venv_python} -m pip install vllm\n"
+            "  2. Or follow the full local install guide: vllm-tt-metal/README.md\n"
+            "  3. Re-run this script\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
         )
     logger.info(f"✅ validated vLLM Python package import with: {venv_python}")
 
@@ -243,17 +351,17 @@ def _validate_local_vllm_tt_plugin(runtime_config, venv_python: Path):
     )
     return_code = run_command([str(venv_python), "-c", check_script], logger=logger)
     if return_code != 0:
-        raise ValueError(
-            "⛔ --local-server with inference engine vLLM requires the "
-            "`vllm_tt_plugin` Python package (the TT platform plugin) "
-            "to be installed in the tt-metal python environment and to register "
-            "the `tt` entry under the `vllm.platform_plugins` entry-point group.\n"
+        vllm_dir = _get_local_vllm_dir(runtime_config)
+        user_error(
+            "ERROR: The vllm-tt-plugin package is not installed or not registered in the tt-metal venv.\n"
+            "This plugin is required for the TT platform backend since vLLM extracted it into a separate package.\n"
             f"Plugin source detected at: {plugin_path}\n"
-            "Auto-install via this validator failed or the entry point did not "
-            "register. Re-install the plugin by running the canonical script "
-            f"from the vLLM repo: `cd {_get_local_vllm_dir(runtime_config)} && "
-            "bash tt_metal/install-vllm-tt.sh`\n"
-            "See vllm-tt-metal/README.md for the full local installation steps."
+            "\nTo fix this:\n"
+            f"  1. Run the install script from the vLLM repo:\n"
+            f"     cd {vllm_dir} && bash tt_metal/install-vllm-tt.sh\n"
+            "  2. Or see the full local install guide: vllm-tt-metal/README.md\n"
+            "  3. Re-run this script\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
         )
     logger.info(
         f"✅ validated vllm-tt-plugin install and `tt` platform_plugins entry "
@@ -294,10 +402,16 @@ def validate_local_setup(model_spec, runtime_config, json_fpath):
         return_code = run_command(cmd, logger=logger)
 
         if return_code != 0:
-            raise ValueError(
-                "⛔ validating system software dependencies failed. See errors above for "
-                "required version, and System Info section above for current system versions."
-                "\nTo skip system software validation, use the flag: --skip-system-sw-validation"
+            user_error(
+                "ERROR: System software validation failed.\n"
+                "One or more required software versions (drivers, firmware, tt-smi) did not meet the minimum requirements.\n"
+                "\nTo fix this:\n"
+                "  1. Check the errors above for the specific version that failed\n"
+                "  2. Install or upgrade the flagged software to the required version\n"
+                "  3. Re-run this script\n"
+                "\nIf you are debugging and want to skip this check temporarily, add:\n"
+                "  --skip-system-sw-validation\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
             )
         logger.info("✅ validating system software dependencies completed")
 
@@ -359,9 +473,16 @@ def run_multihost_validation_subprocess(
     return_code = run_command(cmd, logger=logger)
 
     if return_code != 0:
-        raise ValueError(
-            "⛔ Multi-host validation failed. See errors above.\n"
-            "To skip system software validation, use the flag: --skip-system-sw-validation"
+        user_error(
+            "ERROR: Multi-host validation failed.\n"
+            "One or more remote hosts failed software or connectivity checks.\n"
+            "\nTo fix this:\n"
+            "  1. Check the errors above for the specific host and check that failed\n"
+            "  2. Ensure all hosts are reachable over SSH and meet the software requirements\n"
+            "  3. Re-run this script\n"
+            "\nIf you are debugging and want to skip this check temporarily, add:\n"
+            "  --skip-system-sw-validation\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
         )
 
     logger.info("✅ Multi-host validation completed")
@@ -452,12 +573,16 @@ def validate_bind_mount_permissions(args):
             )
         if not ok:
             access_type = "read+write" if need_write else "read"
-            raise ValueError(
-                f"⛔ Bind mount permission check failed for {flag}={host_path}\n"
-                f"  Container user (--image-user={uid}) needs {access_type} access.\n"
-                f"  {reason}\n"
-                f"  Fix: set --image-user to match the path owner UID, or adjust "
-                f"permissions with chmod/chown on the host path."
+            user_error(
+                f"ERROR: The Docker container user cannot access a bind-mounted host path.\n"
+                f"  Path: {host_path}  (flag: {flag})\n"
+                f"  Container user UID {uid} needs {access_type} access but was denied.\n"
+                f"  Reason: {reason}\n"
+                f"\nTo fix this:\n"
+                f"  Option A — match the UID: add --image-user $(id -u) to your run.py command\n"
+                f"  Option B — fix the path permissions: sudo chown -R {uid}:{uid} {host_path}\n"
+                f"  Option C — use chmod: chmod o+{'rw' if need_write else 'r'} {host_path}\n"
+                f"\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
             )
         logger.info(
             f"✅ Bind mount permission check passed for {flag}={host_path} "
@@ -470,15 +595,36 @@ def validate_local_server_paths(args):
     if not args.local_server:
         return
     if not args.tt_metal_home:
-        raise ValueError(
-            "--local-server requires --tt-metal-home or TT_METAL_HOME to be set"
+        user_error(
+            "ERROR: --local-server requires a tt-metal build directory but none was specified.\n"
+            "The local server needs the compiled tt-metal libraries to run.\n"
+            "\nTo fix this:\n"
+            "  1. Set the environment variable: export TT_METAL_HOME=/path/to/tt-metal\n"
+            "  2. Or pass the flag: --tt-metal-home /path/to/tt-metal\n"
+            "  3. Re-run this script\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
         )
 
     tt_metal_home = Path(args.tt_metal_home).expanduser().resolve()
     if not tt_metal_home.exists():
-        raise ValueError(f"⛔ --tt-metal-home path does not exist: {tt_metal_home}")
+        user_error(
+            f"ERROR: The --tt-metal-home path does not exist: {tt_metal_home}\n"
+            "This path must point to a built tt-metal repository.\n"
+            "\nTo fix this:\n"
+            "  1. Build tt-metal following: https://github.com/tenstorrent/tt-metal/blob/main/INSTALLING.md\n"
+            "  2. Update TT_METAL_HOME or --tt-metal-home to the correct path\n"
+            "  3. Re-run this script\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+        )
     if not tt_metal_home.is_dir():
-        raise ValueError(f"⛔ --tt-metal-home is not a directory: {tt_metal_home}")
+        user_error(
+            f"ERROR: The --tt-metal-home path exists but is not a directory: {tt_metal_home}\n"
+            "This path must point to the root directory of a built tt-metal repository.\n"
+            "\nTo fix this:\n"
+            "  1. Check that TT_METAL_HOME or --tt-metal-home is set to a directory path, not a file\n"
+            "  2. Re-run this script\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+        )
 
     python_env_dir = _get_local_server_python_env_dir(args)
     vllm_dir = (
@@ -500,26 +646,55 @@ def validate_local_server_paths(args):
     ]
     for label, path in required_paths:
         if not path.exists():
-            raise ValueError(f"⛔ Missing required {label}: {path}")
+            user_error(
+                f"ERROR: A required path for --local-server is missing.\n"
+                f"  Missing: {label}\n"
+                f"  Expected at: {path}\n"
+                "\nTo fix this:\n"
+                "  1. Ensure tt-metal is fully built and --tt-metal-home points to the right directory\n"
+                "  2. If using a custom vLLM directory, check --vllm-dir is correct\n"
+                "  3. Re-run this script\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
 
     if args.host_hf_cache:
         host_hf_cache = Path(args.host_hf_cache).expanduser().resolve()
         if not host_hf_cache.exists():
-            raise ValueError(f"⛔ --host-hf-cache path does not exist: {host_hf_cache}")
+            user_error(
+                f"ERROR: The --host-hf-cache directory does not exist: {host_hf_cache}\n"
+                "This path must point to an existing HuggingFace cache directory.\n"
+                "\nTo fix this:\n"
+                f"  1. Create the directory: mkdir -p {host_hf_cache}\n"
+                "  2. Or point to your existing HuggingFace cache (usually ~/.cache/huggingface)\n"
+                "  3. Re-run this script\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
         snapshot_dir = resolve_hf_snapshot_dir(
             args.runtime_model_spec["hf_weights_repo"], host_hf_cache
         )
         if snapshot_dir is None:
-            raise ValueError(
-                f"⛔ --host-hf-cache did not contain a cached snapshot for "
-                f"{args.runtime_model_spec['hf_weights_repo']}: {host_hf_cache}"
+            hf_repo = args.runtime_model_spec["hf_weights_repo"]
+            user_error(
+                f"ERROR: No cached snapshot found for '{hf_repo}' in the HuggingFace cache.\n"
+                f"Cache directory: {host_hf_cache}\n"
+                "\nTo fix this:\n"
+                f"  1. Download the model weights first: huggingface-cli download {hf_repo}\n"
+                "  2. Or remove --host-hf-cache to let the server download weights on first start\n"
+                "  3. Re-run this script\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
             )
 
     if args.host_weights_dir:
         host_weights_dir = Path(args.host_weights_dir).expanduser().resolve()
         if not host_weights_dir.exists():
-            raise ValueError(
-                f"⛔ --host-weights-dir path does not exist: {host_weights_dir}"
+            user_error(
+                f"ERROR: The --host-weights-dir directory does not exist: {host_weights_dir}\n"
+                "This path must point to a directory containing pre-downloaded model weights.\n"
+                "\nTo fix this:\n"
+                f"  1. Download the model weights to that directory, or\n"
+                "  2. Update --host-weights-dir to point to where your weights are stored\n"
+                "  3. Re-run this script\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
             )
 
 

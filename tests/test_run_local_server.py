@@ -471,7 +471,7 @@ class TestRunLocalServer:
         ):
             with pytest.raises(
                 PermissionError,
-                match="invoking host user.*ignores --image-user",
+                match="current host user",
             ) as exc_info:
                 build_local_server_env(
                     self._make_model_spec(),
@@ -481,9 +481,7 @@ class TestRunLocalServer:
                     repo_root=repo_root,
                 )
 
-        assert "persistent_volume tree was created by Docker or another UID" in str(
-            exc_info.value
-        )
+        assert "owned by a different user" in str(exc_info.value)
         assert "sudo chown -R $(id -u):$(id -g)" in str(exc_info.value)
 
     def test_format_env_exports_only_logs_overrides(self):
