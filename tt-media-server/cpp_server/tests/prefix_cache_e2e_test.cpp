@@ -3,12 +3,6 @@
 //
 // End-to-end prefix cache verification via Dynamo frontend.
 //
-// Tests that KV-cache prefix reuse works correctly by checking exact
-// cached_tokens counts:
-//   - First request: all tokens newly cached, cached_tokens=0 (nothing reused)
-//   - Second request with same history: prefix reused, cached_tokens equals
-//     the expected block-aligned count
-//
 // This test connects to an external Dynamo frontend server. Set environment
 // variables to configure:
 //   DYNAMO_HOST (default: 127.0.0.1)
@@ -409,7 +403,6 @@ class PrefixCacheE2ETest : public ::testing::Test {
     std::cout << "Server ready." << std::endl;
   }
 
-  // NOLINTNEXTLINE(readability-identifier-naming)
   static TestConfig cfg_;
 };
 
@@ -648,7 +641,7 @@ TEST_F(PrefixCacheE2ETest, SessionEvictionUnderLoad) {
       std::chrono::duration_cast<std::chrono::milliseconds>(epoch).count();
 
   // Create many unique conversations to trigger potential eviction
-  // Each conversation has a unique system prompt PREFIX (not suffix!) to change
+  // Each conversation has a unique system prompt prefix to change
   // the first block hash and prevent cache hits between conversations
   constexpr int kNumConversations = 20;
 
