@@ -714,4 +714,124 @@ TEST(SessionManagerResponseId,
   manager.getSession(sessionId)->clearInFlight();
 }
 
+// ---------------------------------------------------------------------------
+// Performance: tryAcquireByPrefixHash with large hash vectors
+// ---------------------------------------------------------------------------
+
+TEST(SessionManagerPerformance,
+     TryAcquireByPrefixHash_LargeBlockInfos_MeasureTime) {
+  // Setup: 5 sessions with 1600 hashes each.
+  //   - Session 0: different initial hash (key hash = 9999)
+  //   - Sessions 1-4: same initial hash (key hash = 1), remaining hashes
+  //     differ in length of shared prefix with the lookup query.
+  //
+  // Lookup query: 1500 hashes long with key hash = 1.
+  // We measure how long tryAcquireByPrefixHash takes in both scenarios:
+  //   1. Lookup with key hash 9999 (only session 0 matches the key → fast,
+  //      single candidate).
+  //   2. Lookup with key hash 1 (sessions 1-4 all match the key → must
+  //      compare remaining hashes to find best match).
+
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  constexpr size_t NUM_HASHES = 3400;
+  constexpr size_t LOOKUP_SIZE = 3300;
+
+  // --- Register session 0: unique key hash (9999), 1600 blocks ---
+  {
+    std::vector<tt::utils::BlockHashInfo> blocks;
+    blocks.reserve(NUM_HASHES);
+    blocks.push_back({9999, 0});  // unique key hash
+    for (size_t i = 1; i < NUM_HASHES; ++i) {
+      blocks.push_back({static_cast<uint64_t>(i + 1000), 0});
+    }
+    createSessionWithSlot(manager, lf.loop, 0, blocks);
+  }
+
+  // --- Register sessions 1-4: shared key hash (1), varying remaining blocks.
+  // Session 1: matches 1500/1599 remaining blocks with the lookup query.
+  // Session 2: matches 1200/1599 remaining blocks.
+  // Session 3: matches 800/1599 remaining blocks.
+  // Session 4: matches 400/1599 remaining blocks.
+  const std::vector<size_t> matchLengths = {3300, 2600, 1700, 800};
+  for (size_t s = 0; s < 4; ++s) {
+    std::vector<tt::utils::BlockHashInfo> blocks;
+    blocks.reserve(NUM_HASHES);
+    blocks.push_back({1, 0});  // shared key hash
+    // First `matchLengths[s]` remaining blocks match the lookup query.
+    for (size_t i = 1; i <= matchLengths[s]; ++i) {
+      blocks.push_back({static_cast<uint64_t>(i * 10), 0});
+    }
+    // Remaining blocks diverge.
+    for (size_t i = matchLengths[s] + 1; i < NUM_HASHES; ++i) {
+      blocks.push_back({static_cast<uint64_t>((s + 1) * 1000000 + i * 10), 0});
+    }
+    createSessionWithSlot(manager, lf.loop, static_cast<uint32_t>(s + 1),
+                          blocks);
+  }
+
+  // --- Build lookup queries ---
+  // Query A: key hash 9999, 1500 remaining blocks.
+  std::vector<tt::utils::BlockHashInfo> queryA;
+  queryA.reserve(LOOKUP_SIZE);
+  queryA.push_back({9999, 0});
+  for (size_t i = 1; i < LOOKUP_SIZE; ++i) {
+    queryA.push_back({static_cast<uint64_t>(i + 1000), 0});
+  }
+
+  // Query B: key hash 1, 1500 remaining blocks (matches session 1 best).
+  std::vector<tt::utils::BlockHashInfo> queryB;
+  queryB.reserve(LOOKUP_SIZE);
+  queryB.push_back({1, 0});
+  for (size_t i = 1; i < LOOKUP_SIZE; ++i) {
+    queryB.push_back({static_cast<uint64_t>(i * 10), 0});
+  }
+
+  // --- Measure: single-candidate lookup (unique key hash) ---
+  constexpr int ITERATIONS = 100;
+  {
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERATIONS; ++i) {
+      auto result = manager.tryAcquireByPrefixHash(queryA, nullptr);
+      ASSERT_TRUE(result.has_value());
+      if (result->sessionFound) {
+        manager.releaseInFlight(result->sessionId);
+      }
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    auto durationUs =
+        std::chrono::duration_cast<std::chrono::microseconds>(end - start)
+            .count();
+    std::cout << "[PerfTest] Single-candidate lookup (key=9999, " << LOOKUP_SIZE
+              << " blocks): " << durationUs / ITERATIONS << " µs/call ("
+              << ITERATIONS << " iterations, total " << durationUs << " µs)"
+              << std::endl;
+    EXPECT_LT(durationUs / ITERATIONS, 600)
+        << "Single-candidate lookup must complete in under 600 µs";
+  }
+
+  // --- Measure: multi-candidate lookup (shared key hash, 4 candidates) ---
+  {
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERATIONS; ++i) {
+      auto result = manager.tryAcquireByPrefixHash(queryB, nullptr);
+      ASSERT_TRUE(result.has_value());
+      if (result->sessionFound) {
+        manager.releaseInFlight(result->sessionId);
+      }
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    auto durationUs =
+        std::chrono::duration_cast<std::chrono::microseconds>(end - start)
+            .count();
+    std::cout << "[PerfTest] Multi-candidate lookup (key=1, 4 candidates, "
+              << LOOKUP_SIZE << " blocks): " << durationUs / ITERATIONS
+              << " µs/call (" << ITERATIONS << " iterations, total "
+              << durationUs << " µs)" << std::endl;
+    EXPECT_LT(durationUs / ITERATIONS, 1000)
+        << "Multi-candidate lookup must complete in under 1000 µs";
+  }
+}
+
 }  // namespace
