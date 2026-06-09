@@ -42,10 +42,9 @@ void BlazePrefillRunner::run() {
     TT_LOG_DEBUG("[BlazePrefillRunner] Starting prefill for task {}",
                  sequence->taskId);
 
-    if (sequence->getNumberOfDecodeSkipTokens() > 0) {
-      TT_LOG_INFO(
-          "[BlazePrefillRunner] task {} has numberOfDecodeSkipTokens={}",
-          sequence->taskId, sequence->getNumberOfDecodeSkipTokens());
+    if (sequence->getDecodePositionId() > 0) {
+      TT_LOG_INFO("[BlazePrefillRunner] task {} has decodePositionId={}",
+                  sequence->taskId, sequence->getDecodePositionId());
     }
 
     auto result = modelRunner->forward(

@@ -620,7 +620,161 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 13
+      },
+      "id": 113,
+      "title": "Prefix Caching",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Committed KV-cache blocks occupied by each slot (logical prefix-cache view: 1 key block + remaining blocks, full blocks only). Refreshed when a session's prefix is registered at turn end; the series is removed when the slot is deallocated. Each line is one slot.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 411,
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "tt_slot_blocks",
+          "legendFormat": "slot {{slot_id}}"
+        }
+      ],
+      "title": "KV Blocks per Slot",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Current committed KV-cache block count per slot (instant snapshot). Mirrors the per-slot timeseries to the left as a bar view for quick comparison of occupancy across slots.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "id": 412,
+      "options": {
+        "barRadius": 0,
+        "barWidth": 0.97,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "orientation": "auto",
+        "showValue": "auto",
+        "stacking": "none",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "xField": "slot_id",
+        "xTickLabelRotation": 90,
+        "xTickLabelSpacing": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "label_replace(tt_slot_blocks, \"metric\", \"blocks\", \"slot_id\", \".*\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "slot {{slot_id}}",
+          "refId": "BLOCKS"
+        }
+      ],
+      "title": "KV Blocks per slot_id",
+      "type": "barchart",
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns",
+            "valueLabel": "metric"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "instance": true,
+              "job": true,
+              "language": true,
+              "metric": true,
+              "model_name": true,
+              "service": true,
+              "worker_id": true
+            },
+            "indexByName": {
+              "slot_id": 0,
+              "blocks": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 51
       },
       "id": 101,
       "title": "Request Latency",
@@ -651,7 +805,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 31
+        "y": 52
       },
       "id": 10,
       "options": {
@@ -722,7 +876,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 31
+        "y": 52
       },
       "id": 11,
       "options": {
@@ -774,7 +928,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 34
       },
       "id": 102,
       "title": "Decode Performance",
@@ -872,7 +1026,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 35
       },
       "id": 22,
       "options": {
@@ -971,7 +1125,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 40
+        "y": 61
       },
       "id": 102,
       "options": {
@@ -1039,7 +1193,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 22
+        "y": 43
       },
       "id": 20,
       "options": {
@@ -1102,7 +1256,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 22
+        "y": 43
       },
       "id": 23,
       "options": {
@@ -1165,7 +1319,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 40
+        "y": 61
       },
       "id": 21,
       "options": {
@@ -1201,7 +1355,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 69
       },
       "id": 103,
       "title": "Requests",
@@ -1236,7 +1390,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 49
+        "y": 70
       },
       "id": 30,
       "options": {
@@ -1283,7 +1437,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 49
+        "y": 70
       },
       "id": 31,
       "options": {
@@ -1342,7 +1496,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 57
+        "y": 78
       },
       "id": 32,
       "options": {
@@ -1378,7 +1532,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 65
+        "y": 86
       },
       "id": 200,
       "title": "Worker Health",
@@ -1425,7 +1579,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 66
+        "y": 87
       },
       "id": 202,
       "options": {
@@ -1488,7 +1642,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 66
+        "y": 87
       },
       "id": 203,
       "options": {
@@ -1536,7 +1690,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 66
+        "y": 87
       },
       "id": 204,
       "options": {
@@ -1564,7 +1718,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 75
+        "y": 96
       },
       "id": 104,
       "title": "Infrastructure (per-process CPU / memory / threads)",
@@ -1599,7 +1753,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 76
+        "y": 97
       },
       "id": 105,
       "options": {
@@ -1657,7 +1811,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 76
+        "y": 97
       },
       "id": 106,
       "options": {
@@ -1715,7 +1869,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 76
+        "y": 97
       },
       "id": 107,
       "options": {
@@ -1773,7 +1927,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 84
+        "y": 105
       },
       "id": 108,
       "options": {
@@ -1831,7 +1985,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 84
+        "y": 105
       },
       "id": 109,
       "options": {
@@ -1889,7 +2043,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 84
+        "y": 105
       },
       "id": 110,
       "options": {
@@ -1932,7 +2086,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 92
+        "y": 113
       },
       "id": 111,
       "title": "HTTP Requests",
@@ -2000,7 +2154,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 93
+        "y": 114
       },
       "id": 112,
       "options": {
@@ -2044,7 +2198,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 60
       },
       "id": 300,
       "title": "System Throughput",
@@ -2056,7 +2210,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 94
+        "y": 115
       },
       "id": 400,
       "title": "Per-Slot Performance (TPOT / ISL / OSL / Acceptance)",
@@ -2101,7 +2255,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 95
+        "y": 116
       },
       "id": 401,
       "options": {
@@ -2155,7 +2309,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 95
+        "y": 116
       },
       "id": 402,
       "options": {
@@ -2209,7 +2363,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 95
+        "y": 116
       },
       "id": 403,
       "options": {
@@ -2290,7 +2444,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 95
+        "y": 116
       },
       "id": 404,
       "options": {
@@ -2350,7 +2504,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 99
+        "y": 120
       },
       "id": 405,
       "options": {
@@ -2404,7 +2558,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 99
+        "y": 120
       },
       "id": 406,
       "options": {
@@ -2456,7 +2610,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 107
+        "y": 128
       },
       "id": 407,
       "options": {
@@ -2508,7 +2662,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 107
+        "y": 128
       },
       "id": 408,
       "options": {
@@ -2558,7 +2712,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 115
+        "y": 136
       },
       "id": 409,
       "options": {
@@ -2582,7 +2736,7 @@
           "color": "rgba(255,0,255,0.7)"
         },
         "filterValues": {
-          "le": 1e-9
+          "le": 1e-09
         },
         "legend": {
           "show": true
@@ -2633,7 +2787,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 123
+        "y": 144
       },
       "id": 410,
       "options": {
@@ -2719,5 +2873,5 @@
   "timezone": "browser",
   "title": "TT Inference Server",
   "uid": "tt-inference-server",
-  "version": 2
+  "version": 3
 }
