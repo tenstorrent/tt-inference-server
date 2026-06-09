@@ -48,7 +48,7 @@ constexpr size_t MIN_TOKENS_TO_COPY =
     1024;  // min matched tokens to justify slot copy
 constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
 constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
-constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 80;
+constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 40;
 constexpr bool USE_FAST_MODE = false;
 constexpr const char* KAFKA_BROKERS = "localhost:9092";
 constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";

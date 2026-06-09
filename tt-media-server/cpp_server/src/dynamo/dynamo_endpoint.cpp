@@ -184,6 +184,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       bool inReasoning;
       int completion = 0;
       int reasoning = 0;
+      // Prefix-cache reuse reported by the prefill server in disaggregation
+      // (carried on the first stream chunk). 0 in non-disaggregated runs.
+      int cachedTokens = 0;
     };
     auto usage = std::make_shared<UsageAccum>();
     {
@@ -310,6 +313,14 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                   sinceDispatchMs);
             }
 
+            // Disaggregation: the decode server stamps the prefill server's
+            // prefix-cache reuse count onto the first chunk. Capture it so the
+            // final usage block can report it (the decode-side request is not a
+            // continuation, so the formula below would otherwise yield 0).
+            if (chunk.cached_prompt_tokens.has_value()) {
+              usage->cachedTokens = *chunk.cached_prompt_tokens;
+            }
+
             // Track token for prefix cache hash accumulation
             if (req->session && !chunk.choices.empty() &&
                 chunk.choices[0].token_id) {
@@ -343,9 +354,15 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               du.prompt_tokens = req->full_prompt_tokens_count;
               du.completion_tokens = usage->completion;
               du.total_tokens = du.prompt_tokens + du.completion_tokens;
-              int cached = req->continuation ? req->full_prompt_tokens_count -
-                                                   req->prompt_tokens_count
-                                             : 0;
+              // Prefer the prefix-cache reuse reported by the prefill server in
+              // disaggregation; fall back to the aggregated-path formula
+              // (continuation delta) when not disaggregated.
+              int cached =
+                  usage->cachedTokens > 0
+                      ? usage->cachedTokens
+                      : (req->continuation ? req->full_prompt_tokens_count -
+                                                 req->prompt_tokens_count
+                                           : 0);
               du.cached_tokens = cached < 0 ? 0 : cached;
               // Only report reasoning_tokens for models that have think tokens.
               const auto kNo = tt::utils::tokenizers::kNoTokenId;
