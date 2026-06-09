@@ -325,7 +325,8 @@ int computeExpectedCachedTokens(int promptTokens, size_t firstBlockSize,
 }
 
 // System prompts that fill at least one hash block (~220 tokens).
-// Each prompt starts with completely different text to ensure no prefix overlap.
+// Each prompt starts with completely different text to ensure no prefix
+// overlap.
 
 // For main conversation tests
 const char* kSystemPrompt =
@@ -353,13 +354,16 @@ const char* kSystemPromptDifferent =
     "Your expertise covers coral reef ecosystems, deep sea creatures, whale "
     "migration patterns, and the impact of climate change on ocean health. "
     "When discussing marine topics, always consider the interconnected nature "
-    "of ocean systems. Explain concepts clearly for both scientists and general "
-    "audiences. Reference recent research when applicable. Discuss conservation "
+    "of ocean systems. Explain concepts clearly for both scientists and "
+    "general "
+    "audiences. Reference recent research when applicable. Discuss "
+    "conservation "
     "efforts and their effectiveness. Consider both local and global scales of "
     "ocean phenomena. Address the relationship between human activities and "
     "marine ecosystem health. Provide specific examples from different ocean "
     "regions including the Pacific, Atlantic, Indian Ocean, and polar waters. "
-    "Discuss the role of phytoplankton in carbon sequestration. Explain trophic "
+    "Discuss the role of phytoplankton in carbon sequestration. Explain "
+    "trophic "
     "cascades and keystone species in marine environments. Consider seasonal "
     "variations in marine productivity. Address invasive species and their "
     "impacts on native marine communities. Discuss marine protected areas and "
@@ -462,7 +466,6 @@ TEST_F(PrefixCacheE2ETest, ExactCachedTokenValues) {
 
   std::cout << "  OK: Prefix cache working - reused " << r2.usage.cachedTokens
             << " tokens" << std::endl;
-
 }
 
 TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
