@@ -324,6 +324,49 @@ def get_mesh_grid(dp_rank=0):
     return mesh_grid
 
 
+def _maybe_join_shared_distributed_context() -> bool:
+    """Join an externally-launched ttnn distributed context when co-located.
+
+    When the inference server is co-launched with a trainer under a single
+    ``tt-run`` (one MPI world + an MGD that fabric-connects the two meshes),
+    set ``TT_COLOCATED_INFERENCE=1``. We then initialize/join the shared ttnn
+    distributed context (idempotent) so ``open_mesh_device`` opens only this
+    rank's bound submesh (rank -> mesh via the rank-binding) instead of
+    grabbing every visible device, and so it can later create a
+    ``MeshSocket`` / ``WeightBridge`` to the peer (trainer) mesh for runtime
+    weight updates. Returns True when co-located.
+    """
+    if os.environ.get("TT_COLOCATED_INFERENCE") != "1":
+        return False
+    try:
+        if not ttnn.distributed_context_is_initialized():
+            ttnn.init_distributed_context()
+    except AttributeError:
+        # Older ttnn without the standalone context API; the launcher
+        # (tt-run) has already initialized it, so this is a no-op.
+        logger.warning(
+            "ttnn distributed-context API unavailable; assuming the launcher "
+            "(tt-run) already initialized the shared context."
+        )
+    logger.info("Co-located inference: joined shared ttnn distributed context.")
+    return True
+
+
+def _set_colocated_fabric(override_tt_config) -> None:
+    """Enable 2D fabric for co-located cross-mesh device sockets.
+
+    Honors an explicit ``fabric_config`` in override_tt_config when present;
+    otherwise forces FABRIC_2D, which inter-mesh ``MeshSocket`` transfer
+    requires (unlike the 1D / 1D_RING fabric used for single-mesh inference).
+    """
+    if override_tt_config and "fabric_config" in override_tt_config:
+        # Honor explicit operator choice (validated in get_fabric_config).
+        set_fabric(override_tt_config, 2)
+        return
+    ttnn.set_fabric_config(ttnn.FabricConfig.FABRIC_2D)
+    logger.info("Co-located inference: set FABRIC_2D for cross-mesh sockets.")
+
+
 def open_mesh_device(override_tt_config, trace_mode, dp_rank=0, model_config=None):
     assert dp_rank == 0, "open_mesh_device must run on DP rank 0"
     mesh_grid = get_mesh_grid(dp_rank)
@@ -332,9 +375,17 @@ def open_mesh_device(override_tt_config, trace_mode, dp_rank=0, model_config=Non
         override_tt_config, trace_mode, model_config
     )
 
+    # Co-located deployment (RL: trainer + inference under one tt-run): join the
+    # launcher's shared distributed context BEFORE opening/fabric so this rank
+    # opens only its bound submesh and can socket-rendezvous with the trainer.
+    colocated = _maybe_join_shared_distributed_context()
+
     # Set fabric before opening the device
     num_devices_requested = mesh_grid[0] * mesh_grid[1]
-    set_fabric(override_tt_config, num_devices_requested)
+    if colocated:
+        _set_colocated_fabric(override_tt_config)
+    else:
+        set_fabric(override_tt_config, num_devices_requested)
 
     mesh_device = ttnn.open_mesh_device(
         ttnn.MeshShape(*mesh_grid),

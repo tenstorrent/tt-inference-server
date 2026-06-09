@@ -14,9 +14,11 @@ weights of a live inference server without restarting it:
 
 These endpoints reach the engine via ``app.state.engine_client`` (set by
 vLLM's ``init_app_state``) and invoke the worker's ``update_weights`` method
-through ``collective_rpc``. The actual in-place on-device overwrite lives in
-the worker (tt-vllm-plugin ``TTWorker.update_weights``) and the tt-metal
-model (``Generator.update_weights`` / ``Transformer.update``).
+through ``collective_rpc``. The worker (tt-vllm-plugin ``TTWorker``) receives
+the new weights as an HF-keyed dict over tt-metal's ``WeightBridge`` (PR
+#45734) and applies them in place via the model's
+``update_weights(hf_dict, hf_rope=...)`` (tt-metal
+``Transformer.update_weights`` / per-module ``update``).
 
 Wiring: ``install(...)`` monkeypatches ``vllm.entrypoints.openai.api_server``
 ``build_app`` so the router is mounted on the same FastAPI app (and behind the
@@ -37,12 +39,14 @@ router = APIRouter(prefix="/v1/internal/weights", tags=["tt-weight-update"])
 
 
 class WeightUpdateRequest(BaseModel):
-    weights_path: str = Field(
-        ...,
+    sender_rank: int = Field(
+        default=0,
         description=(
-            "Path to an HF-format checkpoint, reachable from the inference "
-            "container's filesystem (e.g. a bind-mounted MODEL_WEIGHTS_DIR or "
-            "a shared/NFS checkpoint directory written by the trainer)."
+            "Distributed-context (MPI) rank of the training process that sends "
+            "the weights -- the WeightBridge sender (TTML_RANK, default 0). The "
+            "trainer streams the new weights device-to-device over TT-Fabric "
+            "into the inference mesh; the worker is the bridge receiver "
+            "(role='ttt', TTT_RANK)."
         ),
     )
     version: Optional[int] = Field(
@@ -50,6 +54,14 @@ class WeightUpdateRequest(BaseModel):
         description=(
             "Optional caller-assigned weights/policy version to record. If "
             "omitted, the server increments its internal counter."
+        ),
+    )
+    hf_rope: bool = Field(
+        default=False,
+        description=(
+            "Forwarded to the model's update_weights(). False means Q/K rows "
+            "are already in the inference model's RoPE convention (correct for "
+            "the ttml -> tt-transformers Llama transfer)."
         ),
     )
 
@@ -84,7 +96,13 @@ def _engine_client(request: Request):
 
 @router.post("/update", response_model=WeightUpdateResponse)
 async def update_weights(body: WeightUpdateRequest, request: Request):
-    """Apply an in-place weight update to the live model.
+    """Apply an in-place weight update streamed over a device socket.
+
+    The trainer (sender_rank) is the ``WeightBridge`` sender: it ships a
+    JSON manifest over host MPI then streams every weight tensor over a fabric
+    ``MeshSocket``. The inference worker is the bridge receiver; it
+    materializes the HF-keyed dict and copies each tensor in place. This
+    endpoint only triggers/awaits the receive on the worker side.
 
     Note on quiescing: ``collective_rpc`` is serialized with engine scheduler
     steps, so the update never interleaves with a single ``execute_model``
@@ -93,16 +111,22 @@ async def update_weights(body: WeightUpdateRequest, request: Request):
     submitting rollouts and let the server drain before calling this endpoint;
     every response is tagged with the version returned here so stale samples
     can be detected.
+
+    The caller must coordinate timing: both ranks must reach
+    ``bridge.connect()`` (and the final ``bridge.barrier()``) together, so the
+    trainer should call its send side around the same time as this request.
     """
     engine_client = _engine_client(request)
 
     try:
         results = await engine_client.collective_rpc(
             "update_weights",
-            kwargs={"weights_path": body.weights_path, "version": body.version},
+            kwargs={
+                "sender_rank": body.sender_rank,
+                "version": body.version,
+                "hf_rope": body.hf_rope,
+            },
         )
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
     except NotImplementedError as exc:
         raise HTTPException(status_code=501, detail=str(exc))
     except Exception as exc:  # noqa: BLE001 - surface engine errors to caller
