@@ -885,6 +885,16 @@ add_test(NAME CancellationE2E
 )
 set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 120)
 
+# Prefix cache E2E test (requires external Dynamo server)
+add_executable(prefix_cache_e2e_test tests/prefix_cache_e2e_test.cpp)
+target_link_libraries(prefix_cache_e2e_test PRIVATE
+    JsonCpp::JsonCpp
+    GTest::gtest_main
+)
+target_include_directories(prefix_cache_e2e_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 # Tokenizer benchmark
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)
 target_link_libraries(tokenizer_benchmark PRIVATE llm_runner_lib)
