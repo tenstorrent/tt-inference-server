@@ -391,22 +391,22 @@ const char* kSystemPromptAstronomy =
 class PrefixCacheE2ETest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
-    cfg_ = TestConfig::fromEnv();
-    std::cout << "Prefix cache E2E test against " << cfg_.host << ":"
-              << cfg_.port << std::endl;
-    std::cout << "  model=" << cfg_.model
-              << "  firstBlockSize=" << cfg_.firstBlockSize
-              << "  blockSize=" << cfg_.blockSize << std::endl;
+    cfg = TestConfig::fromEnv();
+    std::cout << "Prefix cache E2E test against " << cfg.host << ":" << cfg.port
+              << std::endl;
+    std::cout << "  model=" << cfg.model
+              << "  firstBlockSize=" << cfg.firstBlockSize
+              << "  blockSize=" << cfg.blockSize << std::endl;
     std::cout << "Waiting for server..." << std::endl;
 
-    ASSERT_TRUE(waitForServer(cfg_)) << "Server not ready within timeout";
+    ASSERT_TRUE(waitForServer(cfg)) << "Server not ready within timeout";
     std::cout << "Server ready." << std::endl;
   }
 
-  static TestConfig cfg_;
+  static TestConfig cfg;
 };
 
-TestConfig PrefixCacheE2ETest::cfg_;
+TestConfig PrefixCacheE2ETest::cfg;
 
 TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
   // Test cache behavior across multiple requests including replays.
@@ -434,7 +434,7 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
       makeMessage("user", "What is the capital of France?")};
 
   std::cout << "  Request 1 (fresh prompt)..." << std::endl;
-  ChatResponse r1 = sendChat(cfg_, r1Messages);
+  ChatResponse r1 = sendChat(cfg, r1Messages);
   ASSERT_TRUE(r1.ok()) << "Request 1 failed: " << r1.error;
   std::cout << "    prompt=" << r1.usage.promptTokens
             << " cached=" << r1.usage.cachedTokens
@@ -456,7 +456,7 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
   std::cout << "  Request 2 (continuation of R1)..." << std::endl;
-  ChatResponse r2 = sendChat(cfg_, r2Messages);
+  ChatResponse r2 = sendChat(cfg, r2Messages);
   ASSERT_TRUE(r2.ok()) << "Request 2 failed: " << r2.error;
   std::cout << "    prompt=" << r2.usage.promptTokens
             << " cached=" << r2.usage.cachedTokens
@@ -466,7 +466,7 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
   // produces different token IDs than R1's original completion. So R2 only
   // matches R1's prompt prefix.
   int r2ExpectedCached = computeExpectedCachedTokens(
-      r1.usage.promptTokens, cfg_.firstBlockSize, cfg_.blockSize);
+      r1.usage.promptTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    Expected cached: " << r2ExpectedCached << std::endl;
 
   EXPECT_GT(r2.usage.cachedTokens, 0)
@@ -489,7 +489,7 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
   std::cout << "  Request 3 (different prompt)..." << std::endl;
-  ChatResponse r3 = sendChat(cfg_, r3Messages);
+  ChatResponse r3 = sendChat(cfg, r3Messages);
   ASSERT_TRUE(r3.ok()) << "Request 3 failed: " << r3.error;
   std::cout << "    prompt=" << r3.usage.promptTokens
             << " cached=" << r3.usage.cachedTokens
@@ -504,14 +504,14 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
   std::cout << "  Request 4 (replay R1 prompt)..." << std::endl;
-  ChatResponse r4 = sendChat(cfg_, r1MessagesCopy);
+  ChatResponse r4 = sendChat(cfg, r1MessagesCopy);
   ASSERT_TRUE(r4.ok()) << "Request 4 failed: " << r4.error;
   std::cout << "    prompt=" << r4.usage.promptTokens
             << " cached=" << r4.usage.cachedTokens
             << " completion=" << r4.usage.completionTokens << std::endl;
 
   int r4ExpectedCached = computeExpectedCachedTokens(
-      r4.usage.promptTokens, cfg_.firstBlockSize, cfg_.blockSize);
+      r4.usage.promptTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    Expected cached: " << r4ExpectedCached << std::endl;
 
   EXPECT_GT(r4.usage.cachedTokens, 0)
@@ -525,7 +525,7 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
   std::cout << "  Request 5 (replay R2 prompt)..." << std::endl;
-  ChatResponse r5 = sendChat(cfg_, r2MessagesCopy);
+  ChatResponse r5 = sendChat(cfg, r2MessagesCopy);
   ASSERT_TRUE(r5.ok()) << "Request 5 failed: " << r5.error;
   std::cout << "    prompt=" << r5.usage.promptTokens
             << " cached=" << r5.usage.cachedTokens
@@ -534,7 +534,7 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
   // R5 replays R2 exactly. Like R2, it only matches R1's prompt prefix
   // because re-tokenization of the assistant text diverges from cached tokens.
   int r5ExpectedCached = computeExpectedCachedTokens(
-      r1.usage.promptTokens, cfg_.firstBlockSize, cfg_.blockSize);
+      r1.usage.promptTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    Expected cached: " << r5ExpectedCached << std::endl;
 
   EXPECT_LE(std::abs(r5.usage.cachedTokens - r5ExpectedCached), 1)
@@ -573,7 +573,7 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
       makeMessage("user", "What is a hash table?")};
 
   std::cout << "  Turn 1..." << std::endl;
-  ChatResponse t1 = sendChat(cfg_, messages);
+  ChatResponse t1 = sendChat(cfg, messages);
   ASSERT_TRUE(t1.ok()) << "Turn 1 failed: " << t1.error;
   std::cout << "    prompt=" << t1.usage.promptTokens
             << " cached=" << t1.usage.cachedTokens << std::endl;
@@ -588,14 +588,14 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
   std::cout << "  Turn 2..." << std::endl;
-  ChatResponse t2 = sendChat(cfg_, messages);
+  ChatResponse t2 = sendChat(cfg, messages);
   ASSERT_TRUE(t2.ok()) << "Turn 2 failed: " << t2.error;
   std::cout << "    prompt=" << t2.usage.promptTokens
             << " cached=" << t2.usage.cachedTokens << std::endl;
 
   // Turn 2 should hit cache on turn 1's prefix
-  int t2ExpectedCached = computeExpectedCachedTokens(
-      t1Prompt, cfg_.firstBlockSize, cfg_.blockSize);
+  int t2ExpectedCached =
+      computeExpectedCachedTokens(t1Prompt, cfg.firstBlockSize, cfg.blockSize);
   EXPECT_GT(t2.usage.cachedTokens, 0) << "Turn 2 should hit prefix cache";
   EXPECT_LE(std::abs(t2.usage.cachedTokens - t2ExpectedCached), 1)
       << "Turn 2 cached should match block-aligned turn 1 prompt";
@@ -609,14 +609,14 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
   std::cout << "  Turn 3..." << std::endl;
-  ChatResponse t3 = sendChat(cfg_, messages);
+  ChatResponse t3 = sendChat(cfg, messages);
   ASSERT_TRUE(t3.ok()) << "Turn 3 failed: " << t3.error;
   std::cout << "    prompt=" << t3.usage.promptTokens
             << " cached=" << t3.usage.cachedTokens << std::endl;
 
   // Turn 3 should hit cache on turn 2's prompt prefix (block-aligned)
-  int t3ExpectedCached = computeExpectedCachedTokens(
-      t2Prompt, cfg_.firstBlockSize, cfg_.blockSize);
+  int t3ExpectedCached =
+      computeExpectedCachedTokens(t2Prompt, cfg.firstBlockSize, cfg.blockSize);
   EXPECT_GT(t3.usage.cachedTokens, 0) << "Turn 3 should hit prefix cache";
   EXPECT_LE(std::abs(t3.usage.cachedTokens - t3ExpectedCached), 1)
       << "Turn 3 cached should match block-aligned turn 2 prompt";
@@ -656,7 +656,7 @@ TEST_F(PrefixCacheE2ETest, SessionEvictionUnderLoad) {
         makeMessage("system", uniquePrefix + std::string(kSystemPromptCoding)),
         makeMessage("user", "Question " + std::to_string(i))};
 
-    ChatResponse r = sendChat(cfg_, messages);
+    ChatResponse r = sendChat(cfg, messages);
     ASSERT_TRUE(r.ok()) << "Conversation " << i << " failed: " << r.error;
 
     // First request for each unique conversation should have cached=0
@@ -676,7 +676,7 @@ TEST_F(PrefixCacheE2ETest, SessionEvictionUnderLoad) {
       makeMessage("user", "Tell me about whales.")};
 
   std::cout << "  Final conversation - request 1 (fresh)..." << std::endl;
-  ChatResponse f1 = sendChat(cfg_, finalMessages);
+  ChatResponse f1 = sendChat(cfg, finalMessages);
   ASSERT_TRUE(f1.ok()) << "Final request 1 failed: " << f1.error;
   std::cout << "    prompt=" << f1.usage.promptTokens
             << " cached=" << f1.usage.cachedTokens << std::endl;
@@ -687,13 +687,13 @@ TEST_F(PrefixCacheE2ETest, SessionEvictionUnderLoad) {
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
   std::cout << "  Final conversation - request 2 (replay)..." << std::endl;
-  ChatResponse f2 = sendChat(cfg_, finalMessages);
+  ChatResponse f2 = sendChat(cfg, finalMessages);
   ASSERT_TRUE(f2.ok()) << "Final request 2 failed: " << f2.error;
   std::cout << "    prompt=" << f2.usage.promptTokens
             << " cached=" << f2.usage.cachedTokens << std::endl;
 
   int f2ExpectedCached = computeExpectedCachedTokens(
-      f2.usage.promptTokens, cfg_.firstBlockSize, cfg_.blockSize);
+      f2.usage.promptTokens, cfg.firstBlockSize, cfg.blockSize);
   EXPECT_GT(f2.usage.cachedTokens, 0)
       << "Final R2 should hit cache (system still functional after load)";
   EXPECT_LE(std::abs(f2.usage.cachedTokens - f2ExpectedCached), 1)
