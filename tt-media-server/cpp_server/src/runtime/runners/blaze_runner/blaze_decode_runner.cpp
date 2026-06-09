@@ -221,6 +221,13 @@ inline void BlazeDecodeRunner::handleMemoryRequest(
     const tt::domain::ManageMemoryTask& request) {
   switch (request.action) {
     case tt::domain::MemoryManagementAction::ALLOCATE: {
+      auto slotIdToCopyFrom = request.slotIdToCopyFrom;
+      if (slotIdToCopyFrom.has_value()) {
+        TT_LOG_DEBUG(
+            "[BlazeDecodeRunner] handleMemoryRequest: allocating slotId={} "
+            "to copy from slotId={}",
+            request.slotId, *slotIdToCopyFrom);
+      }
       handleAllocateRequest(request);
       break;
     }

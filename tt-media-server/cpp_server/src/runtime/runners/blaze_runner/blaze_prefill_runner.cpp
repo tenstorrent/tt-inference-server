@@ -225,6 +225,13 @@ inline void BlazePrefillRunner::handleMemoryRequest(
     const tt::domain::ManageMemoryTask& request) {
   switch (request.action) {
     case tt::domain::MemoryManagementAction::ALLOCATE: {
+      auto slotIdToCopyFrom = request.slotIdToCopyFrom;
+      if (slotIdToCopyFrom.has_value()) {
+        TT_LOG_DEBUG(
+            "[BlazePrefillRunner] handleMemoryRequest: allocating slotId={} "
+            "to copy from slotId={}",
+            request.slotId, *slotIdToCopyFrom);
+      }
       handleAllocateRequest(request);
       break;
     }
@@ -636,6 +643,13 @@ void BlazePrefillRunner::handleRequest(
   auto slotId = request->getPrefillKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
   assert(slotId < tt::config::pmMaxUsers());
+
+  auto decodePositionId = request->getDecodePositionId();
+  auto decodeSkipTokens = request->getDecodeSkipTokens();
+  TT_LOG_DEBUG(
+      "[BlazePrefillRunner] handleRequest: taskId={}, slotId={}, "
+      "decodePositionId={}, decodeSkipTokens={}",
+      request->taskId, slotId, decodePositionId, decodeSkipTokens);
 
   auto& slotContext = slotManager.getSlotContext(slotId);
   switch (slotContext.state) {
