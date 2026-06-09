@@ -296,7 +296,9 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "TCP direct split prefill"
           cd cpp_server/build
           NS=tcp_prefill
-          SOCKET_TRANSPORT=tcp LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          SOCKET_TRANSPORT=tcp LLM_MODE=prefill LLM_DEVICE_BACKEND=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
+          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -321,7 +323,7 @@ jobs:
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8001 \
             --dataset-name random \
-            --random-input-len 128 \
+            --random-input-len 1024 \
             --random-output-len 128 \
             --num-prompts 1000 \
             --max-concurrency 64 \
@@ -360,7 +362,9 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "ZMQ direct split prefill"
           cd cpp_server/build
           NS=zmq_prefill
-          SOCKET_TRANSPORT=zmq LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          SOCKET_TRANSPORT=zmq LLM_MODE=prefill LLM_DEVICE_BACKEND=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
+          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -385,7 +389,7 @@ jobs:
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8001 \
             --dataset-name random \
-            --random-input-len 128 \
+            --random-input-len 1024 \
             --random-output-len 128 \
             --num-prompts 1000 \
             --max-concurrency 64 \
@@ -512,7 +516,7 @@ jobs:
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8000 \
             --dataset-name random \
-            --random-input-len 128 \
+            --random-input-len 1024 \
             --random-output-len 128 \
             --num-prompts 1000 \
             --max-concurrency 64 \
@@ -695,7 +699,9 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8201 --port 9201 --label "TCP gateway prefill-1"
           cd cpp_server/build
           NS=gw_prefill1
-          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9201 \
+          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill LLM_DEVICE_BACKEND=prefill SOCKET_PORT=9201 \
+          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
+          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
           PREFILL_SERVER_ID=prefill-1 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
@@ -714,7 +720,9 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8202 --port 9202 --label "TCP gateway prefill-2"
           cd cpp_server/build
           NS=gw_prefill2
-          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9202 \
+          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill LLM_DEVICE_BACKEND=prefill SOCKET_PORT=9202 \
+          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
+          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
           PREFILL_SERVER_ID=prefill-2 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
@@ -803,7 +811,7 @@ jobs:
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8200 \
             --dataset-name random \
-            --random-input-len 128 \
+            --random-input-len 1024 \
             --random-output-len 128 \
             --num-prompts 1000 \
             --max-concurrency 64 \
@@ -826,8 +834,10 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8201 --label "ZMQ gateway prefill-1"
           cd cpp_server/build
           NS=gw_zmq_prefill1
-          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
+          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill LLM_DEVICE_BACKEND=prefill \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9201 \
+          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
+          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
           PREFILL_SERVER_ID=prefill-1 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
@@ -846,8 +856,10 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8202 --label "ZMQ gateway prefill-2"
           cd cpp_server/build
           NS=gw_zmq_prefill2
-          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
+          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill LLM_DEVICE_BACKEND=prefill \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9201 \
+          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
+          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
           PREFILL_SERVER_ID=prefill-2 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
@@ -935,7 +947,7 @@ jobs:
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8200 \
             --dataset-name random \
-            --random-input-len 128 \
+            --random-input-len 1024 \
             --random-output-len 128 \
             --num-prompts 1000 \
             --max-concurrency 64 \
