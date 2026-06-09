@@ -23,6 +23,8 @@
 
 #include "gateway/affinity_cache.hpp"
 #include "gateway/dispatcher.hpp"
+#include "gateway/gateway_health.hpp"
+#include "gateway/gateway_health_server.hpp"
 #include "gateway/gateway_metrics.hpp"
 #include "gateway/gateway_metrics_server.hpp"
 #include "gateway/prefill_registry.hpp"
@@ -63,7 +65,7 @@ uint16_t ephemeralPort() {
   return port;
 }
 
-std::string httpGetMetrics(uint16_t port) {
+std::string httpGet(uint16_t port, std::string_view path) {
   int s = socket(AF_INET, SOCK_STREAM, 0);
   EXPECT_GE(s, 0);
 
@@ -76,8 +78,9 @@ std::string httpGetMetrics(uint16_t port) {
     return {};
   }
 
-  const std::string request =
-      "GET /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+  const std::string request = "GET " + std::string(path) +
+                              " HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                              "Connection: close\r\n\r\n";
   if (send(s, request.data(), request.size(), 0) !=
       static_cast<ssize_t>(request.size())) {
     close(s);
@@ -94,6 +97,8 @@ std::string httpGetMetrics(uint16_t port) {
   close(s);
   return response;
 }
+
+std::string httpGetMetrics(uint16_t port) { return httpGet(port, "/metrics"); }
 
 struct PrefillConnectionState {
   void setServerId(const std::string& serverId) {
@@ -207,6 +212,13 @@ class FakeDecode {
           assignments_.push_back(msg);
           cv_.notify_all();
         });
+    sm_.registerHandler<tt::sockets::PrefillHealthStatusMessage>(
+        tt::sockets::tags::PREFILL_HEALTH_STATUS,
+        [this](const tt::sockets::PrefillHealthStatusMessage& msg) {
+          std::lock_guard<std::mutex> lock(mutex_);
+          healthStatuses_.push_back(msg);
+          cv_.notify_all();
+        });
   }
 
   ~FakeDecode() { sm_.stop(); }
@@ -233,6 +245,11 @@ class FakeDecode {
     sm_.sendObject(tt::sockets::tags::CANCEL_PREFILL, cancel);
   }
 
+  void sendHealthRequest() {
+    sm_.sendObject(tt::sockets::tags::PREFILL_HEALTH_REQUEST,
+                   tt::sockets::PrefillHealthRequestMessage{});
+  }
+
   bool isConnected() const { return sm_.isConnected(); }
 
   size_t resultCount() {
@@ -251,6 +268,10 @@ class FakeDecode {
     std::lock_guard<std::mutex> lock(mutex_);
     return assignments_;
   }
+  std::vector<tt::sockets::PrefillHealthStatusMessage> healthStatuses() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return healthStatuses_;
+  }
 
  private:
   tt::sockets::SocketManager sm_;
@@ -258,6 +279,7 @@ class FakeDecode {
   std::condition_variable cv_;
   std::vector<tt::sockets::PrefillResultMessage> results_;
   std::vector<tt::sockets::PrefillAssignmentMessage> assignments_;
+  std::vector<tt::sockets::PrefillHealthStatusMessage> healthStatuses_;
 };
 
 // Real-sockets gateway wired the same way as main.cpp.
@@ -341,6 +363,16 @@ class GatewayHarness {
         tt::sockets::tags::CANCEL_PREFILL,
         [this](const tt::sockets::CancelPrefillMessage& msg) {
           dispatcher_->onPrefillCancel(msg);
+        });
+    decodeSm_.registerHandler<tt::sockets::PrefillHealthRequestMessage>(
+        tt::sockets::tags::PREFILL_HEALTH_REQUEST,
+        [this](const tt::sockets::PrefillHealthRequestMessage&) {
+          const auto health = buildGatewayHealthStatus(registry_, "tcp",
+                                                       decodeSm_.isConnected());
+          tt::sockets::PrefillHealthStatusMessage response;
+          response.ready = health.ready;
+          decodeSm_.sendObject(tt::sockets::tags::PREFILL_HEALTH_STATUS,
+                               response);
         });
   }
 
@@ -545,6 +577,16 @@ class ZmqRouterGatewayHarness {
         [this](const tt::sockets::CancelPrefillMessage& msg) {
           dispatcher_->onPrefillCancel(msg);
         });
+    decodeSm_.registerHandler<tt::sockets::PrefillHealthRequestMessage>(
+        tt::sockets::tags::PREFILL_HEALTH_REQUEST,
+        [this](const tt::sockets::PrefillHealthRequestMessage&) {
+          const auto health = buildGatewayHealthStatus(registry_, "zmq",
+                                                       decodeSm_.isConnected());
+          tt::sockets::PrefillHealthStatusMessage response;
+          response.ready = health.ready;
+          decodeSm_.sendObject(tt::sockets::tags::PREFILL_HEALTH_STATUS,
+                               response);
+        });
   }
 
   ~ZmqRouterGatewayHarness() {
@@ -639,6 +681,16 @@ TEST_F(GatewayE2ETest, RequestIsRoutedAndResultFlowsBack) {
   uint32_t total =
       prefillA_->receivedTaskCount() + prefillB_->receivedTaskCount();
   EXPECT_EQ(total, 1u);
+}
+
+TEST_F(GatewayE2ETest, HealthProbeReportsReadyPrefills) {
+  decode_->sendHealthRequest();
+
+  ASSERT_TRUE(waitFor([&] { return !decode_->healthStatuses().empty(); }))
+      << "Decode should receive gateway prefill health status";
+  const auto statuses = decode_->healthStatuses();
+  ASSERT_EQ(statuses.size(), 1u);
+  EXPECT_TRUE(statuses[0].ready);
 }
 
 TEST_F(GatewayE2ETest, RequestForwardsAllRegistrationHashesToPrefill) {
@@ -1014,6 +1066,45 @@ TEST(GatewayMetricsServerTest, ServesPrometheusTextOnMetricsPath) {
            response.find("tt_gateway_routing_decisions_total") !=
                std::string::npos;
   }));
+  const std::string healthResponse = httpGet(port, "/health");
+  EXPECT_NE(healthResponse.find("HTTP/1.1 404 Not Found"), std::string::npos);
+
+  server.stop();
+}
+
+TEST(GatewayHealthServerTest, ServesLivenessAndReadinessSeparately) {
+  const uint16_t port = ephemeralPort();
+  GatewayHealthServer server;
+  server.setHealthProvider([] {
+    GatewayHealthStatus status;
+    status.livenessJson =
+        R"({"status":"alive","transport":"tcp","registered_prefills":2,"healthy_prefills":2,"accepting_prefills":2,"decode_connected":false})"
+        "\n";
+    status.healthJson =
+        R"({"status":"unhealthy","error":"decode not connected","transport":"tcp","registered_prefills":2,"healthy_prefills":2,"accepting_prefills":2,"decode_connected":false})"
+        "\n";
+    status.ready = false;
+    status.error = "decode not connected";
+    return status;
+  });
+  ASSERT_TRUE(server.start(port));
+
+  ASSERT_TRUE(waitFor([&] {
+    const std::string response = httpGet(port, "/tt-liveness");
+    return response.find("HTTP/1.1 200 OK") != std::string::npos &&
+           response.find("Content-Type: application/json") !=
+               std::string::npos &&
+           response.find(R"("status":"alive")") != std::string::npos &&
+           response.find(R"("healthy_prefills":2)") != std::string::npos &&
+           response.find(R"("decode_connected":false)") != std::string::npos;
+  }));
+
+  const std::string healthResponse = httpGet(port, "/health");
+  EXPECT_NE(healthResponse.find("HTTP/1.1 503 Service Unavailable"),
+            std::string::npos);
+  EXPECT_NE(healthResponse.find(R"("status":"unhealthy")"), std::string::npos);
+  EXPECT_NE(healthResponse.find(R"("error":"decode not connected")"),
+            std::string::npos);
 
   server.stop();
 }

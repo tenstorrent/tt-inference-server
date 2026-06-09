@@ -1,0 +1,4 @@
+Make sure that you are in tt-metal venv and this is where you install mooncake
+
+install the wheel into the venv:
+pip install mooncake-transfer-engine==0.3.6.post1

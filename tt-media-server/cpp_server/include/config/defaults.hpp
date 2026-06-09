@@ -44,9 +44,11 @@ constexpr size_t SESSION_EVICTION_COUNT = 10;
 constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 1000;
 constexpr size_t MAX_CONTEXT_LENGTH = 65536;  // 64k
 constexpr size_t MAX_ISL = 51200;             // 50k (max input sequence length)
+constexpr size_t MIN_TOKENS_TO_COPY =
+    1024;  // min matched tokens to justify slot copy
 constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
 constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
-constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 80;
+constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 40;
 constexpr bool USE_FAST_MODE = false;
 constexpr const char* KAFKA_BROKERS = "localhost:9092";
 constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";
@@ -67,7 +69,6 @@ constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
 constexpr const char* TT_WORKER_METRICS_SHM = "/tt_worker_metrics";
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 128;
-constexpr bool USE_DEEPSEEK_MD_FORMAT = false;
 constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
 /**
  * Max time (ms) the runner may go without producing a model output while at
@@ -78,6 +79,7 @@ constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
 constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 60000;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
+constexpr const char* WIRE_FORMAT = "deepseek";
 
 constexpr const char* SERVER_HOST = "0.0.0.0";
 constexpr uint16_t SERVER_PORT = 8000;

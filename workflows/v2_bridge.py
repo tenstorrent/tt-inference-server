@@ -52,6 +52,7 @@ _V2_ROUTED_MODELS = frozenset(
         "Motif-Image-6B-Preview",
         "whisper-large-v3",
         "distil-large-v3",
+        "Z-Image-Turbo",
     }
 )
 

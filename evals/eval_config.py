@@ -1106,9 +1106,16 @@ _eval_config_list = [
                     "max_length": 65536,
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
+                # max_gen_toks lowered from 32768 to 12288 so `prompt + max_gen_toks`
+                # fits the forge_vllm_plugin P150 max_model_len=16384 envelope.
+                # Observed r1_gpqa_diamond prompts run up to ~2.4k tokens, so a
+                # 12288 output cap leaves ~3700-token headroom. The original 32K
+                # output budget is intended for ≥64K-context devices; clamping
+                # here is safe at 16K but caps reasoning depth on long-context
+                # devices too — revisit if a >16K-context Qwen3-8B impl lands.
                 gen_kwargs={
                     "stream": "true",
-                    "max_gen_toks": 32768,
+                    "max_gen_toks": 12288,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 0.6,
@@ -1142,9 +1149,15 @@ _eval_config_list = [
                     "timeout": "3600",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
+                # max_gen_toks lowered 32768 -> 12288 for forge P150 (max_model_len=16384).
+                # Earlier value 14336 assumed prompts ≤ ~1.1k tokens; observed CI
+                # prompts run up to 2477, so 14336 + 2477 = 16813 > 16384 → 4xx
+                # rejection on every long-prompt sample, cascading into a 6h
+                # workflow timeout. 12288 matches r1_gpqa_diamond and leaves
+                # ~3700 tokens of prompt headroom. Tracked in #4000.
                 gen_kwargs={
                     "stream": "true",
-                    "max_gen_toks": 32768,
+                    "max_gen_toks": 12288,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 0.6,
@@ -1180,9 +1193,12 @@ _eval_config_list = [
                 model_kwargs={
                     "max_length": 65536,
                 },
+                # max_gen_toks lowered 32768 -> 12288 so `prompt + max_gen_toks`
+                # fits forge_vllm_plugin P150 max_model_len=16384. See the same
+                # note on the Qwen3-8B r1_gpqa_diamond entry above.
                 gen_kwargs={
                     "stream": "true",
-                    "max_gen_toks": 32768,
+                    "max_gen_toks": 12288,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 0.6,
@@ -1215,9 +1231,12 @@ _eval_config_list = [
                     "max_length": 65536,
                     "timeout": "3600",
                 },
+                # max_gen_toks lowered 32768 -> 12288 so `prompt + max_gen_toks`
+                # fits forge P150 max_model_len=16384. See the same note on the
+                # Qwen3-8B mmlu_pro entry above. Tracked in #4000.
                 gen_kwargs={
                     "stream": "true",
-                    "max_gen_toks": 32768,
+                    "max_gen_toks": 12288,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 0.6,
@@ -2611,6 +2630,23 @@ _eval_config_list = [
     ),
     EvalConfig(
         hf_model_repo="Motif-Technologies/Motif-Image-6B-Preview",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Tongyi-MAI/Z-Image-Turbo",
         tasks=[
             EvalTask(
                 task_name="load_image",

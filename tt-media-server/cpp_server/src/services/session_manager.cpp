@@ -35,9 +35,12 @@ int computeFailureCount(int attemptsRemaining) {
          attemptsRemaining;
 }
 
-domain::ManageMemoryTask makeAllocTask() {
-  return domain::ManageMemoryTask(tt::utils::TaskIDGenerator::generate(),
-                                  domain::MemoryManagementAction::ALLOCATE);
+domain::ManageMemoryTask makeAllocTask(
+    std::optional<uint32_t> slotIdToCopyFrom = std::nullopt) {
+  domain::ManageMemoryTask task(tt::utils::TaskIDGenerator::generate(),
+                                domain::MemoryManagementAction::ALLOCATE);
+  task.slotIdToCopyFrom = slotIdToCopyFrom;
+  return task;
 }
 
 domain::ManageMemoryTask makeDeallocTask(uint32_t slotId) {
@@ -100,6 +103,7 @@ void SessionManager::finalizeSessionClose(const std::string& sessionId,
                                           const domain::Session& session) {
   if (session.getSlotId() != tt::domain::INVALID_SLOT_ID) {
     sendDeallocRequest(sessionId, session.getSlotId());
+    tt::metrics::ServerMetrics::instance().removeSlot(session.getSlotId());
   }
   TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
   updateSessionCountMetric();
@@ -195,6 +199,10 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
 
 domain::Session* SessionManager::getSession(const std::string& sessionId) {
   return sessions.getPtr(sessionId);
+}
+
+void SessionManager::releaseInFlight(const std::string& sessionId) {
+  sessions.modify(sessionId, [](domain::Session& s) { s.clearInFlight(); });
 }
 
 size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
@@ -318,7 +326,7 @@ void SessionManager::createSession(
     std::function<void(std::string_view errorMessage)> onError,
     trantor::EventLoop* callerEventLoop,
     std::vector<utils::BlockHashInfo> initialBlockInfos,
-    std::optional<uint32_t> slotId) {
+    std::optional<uint32_t> slotId, std::optional<uint32_t> slotIdToCopyFrom) {
   TT_LOG_DEBUG(
       "[SessionManager] createSession called, slotId={}, activeSessions={}",
       slotId.has_value() ? std::to_string(slotId.value()) : "none",
@@ -358,6 +366,7 @@ void SessionManager::createSession(
       .eventLoop = callerEventLoop,
       .attemptsRemaining =
           static_cast<int>(tt::config::sessionAllocationMaxRetries()),
+      .slotIdToCopyFrom = slotIdToCopyFrom,
   };
 
   sendAsyncAllocationRequest(pendingAllocation);
@@ -401,7 +410,7 @@ void SessionManager::sendAsyncAllocationRequest(
     return;
   }
 
-  auto task = makeAllocTask();
+  auto task = makeAllocTask(pendingAllocation.slotIdToCopyFrom);
   TT_LOG_DEBUG(
       "[SessionManager] sendAsyncAllocationRequest: taskId={}, "
       "sessionId={}, attemptsRemaining={}",
@@ -667,6 +676,37 @@ SessionManager::tryAcquireByPrefixHash(
   return AcquiredSession{false, {}, 0, 0, 0, std::move(candidates)};
 }
 
+std::optional<SessionManager::Candidate> SessionManager::findASlotToCopyFrom(
+    const std::vector<Candidate>& candidates) const {
+  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
+  const size_t blockSize = tt::config::kvCacheBlockSize();
+  const size_t minTokens = tt::config::minTokensToCopy();
+
+  for (const auto& candidate : candidates) {
+    if (candidate.matchedBlocks == 0) continue;
+
+    const size_t matchedTokens =
+        firstBlockSize + (candidate.matchedBlocks > 1
+                              ? (candidate.matchedBlocks - 1) * blockSize
+                              : 0);
+
+    if (matchedTokens >= minTokens) {
+      TT_LOG_DEBUG(
+          "[SessionManager] findASlotToCopyFrom: candidate sessionId={} "
+          "matchedBlocks={} matchedTokens={} >= minTokensToCopy={}",
+          candidate.sessionId, candidate.matchedBlocks, matchedTokens,
+          minTokens);
+      return candidate;
+    }
+  }
+
+  TT_LOG_DEBUG(
+      "[SessionManager] findASlotToCopyFrom: no candidate meets threshold "
+      "(minTokensToCopy={}, candidates={})",
+      minTokens, candidates.size());
+  return std::nullopt;
+}
+
 void SessionManager::registerPrefixHash(
     const std::string& sessionId,
     const std::vector<utils::BlockHashInfo>& blockInfos) {
@@ -681,9 +721,11 @@ void SessionManager::registerPrefixHash(
 
   // Update session's hash field (stores the key for staleness checks).
   uint64_t oldHash = 0;
-  bool sessionFound =
-      sessions.modify(sessionId, [&oldHash, keyHash](domain::Session& s) {
+  uint32_t slotId = tt::domain::INVALID_SLOT_ID;
+  bool sessionFound = sessions.modify(
+      sessionId, [&oldHash, &slotId, keyHash](domain::Session& s) {
         oldHash = s.getHash();
+        slotId = s.getSlotId();
         s.setHash(keyHash);
       });
 
@@ -753,6 +795,12 @@ void SessionManager::registerPrefixHash(
       "[SessionManager] registerPrefixHash: registered sessionId={} under "
       "keyHash={} with {} remaining blocks",
       sessionId, keyHash, remaining.size());
+
+  // Publish the slot's committed block count (1 key block + remaining).
+  if (slotId != tt::domain::INVALID_SLOT_ID) {
+    tt::metrics::ServerMetrics::instance().setSlotBlocks(
+        slotId, static_cast<double>(blockInfos.size()));
+  }
 }
 
 void SessionManager::updateSessionCountMetric() {

@@ -24,10 +24,16 @@ ARG DEBIAN_FRONTEND=noninteractive
 # submodule's .git tree at build time.
 ARG TT_METAL_COMMIT_SHA_OR_TAG=unknown
 ARG TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG=unknown
+# tt-llm-engine submodule commit, pinned to the superproject gitlink. Required;
+# pass at build time, e.g.:
+#   docker build --build-arg TT_LLM_ENGINE_COMMIT="$(git rev-parse \
+#     :tt-media-server/cpp_server/tt-llm-engine)" ...
+ARG TT_LLM_ENGINE_COMMIT
 
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 ENV TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG=${TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG}
+ENV TT_LLM_ENGINE_COMMIT=${TT_LLM_ENGINE_COMMIT}
 
 ENV ENVIRONMENT=development
 ENV TT_MM_THROTTLE_PERF=5
@@ -133,15 +139,21 @@ RUN export CARGO_HOME=${HOME_DIR}/.cargo \
     && . ${HOME_DIR}/.cargo/env \
     && rustup default stable
 
-# add tt-llm-engine (clone using GitHub token from secret)
+# add tt-llm-engine — shallow-clone, then fetch + check out the pinned
+# TT_LLM_ENGINE_COMMIT (same pattern as tt-metal in tt-media-server/Dockerfile),
+# keeping the image in lockstep with the superproject's submodule gitlink. The
+# nested tt-metal submodule is pinned transitively to whatever that commit references.
 RUN --mount=type=secret,id=github_token \
-    rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine \
+    : "${TT_LLM_ENGINE_COMMIT:?must be set to the pinned tt-llm-engine submodule SHA, e.g. --build-arg TT_LLM_ENGINE_COMMIT=\$(git rev-parse :tt-media-server/cpp_server/tt-llm-engine)}" \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine \
     && GITHUB_TOKEN=$(cat /run/secrets/github_token) \
     && git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:" \
-    && git clone --depth 1 --branch main https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-llm-engine.git ${APP_DIR}/server/cpp_server/tt-llm-engine \
+    && git clone --depth 1 https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-llm-engine.git ${APP_DIR}/server/cpp_server/tt-llm-engine \
     && cd ${APP_DIR}/server/cpp_server/tt-llm-engine \
+    && git fetch --depth 1 origin ${TT_LLM_ENGINE_COMMIT} \
+    && git checkout ${TT_LLM_ENGINE_COMMIT} \
     && git submodule update --init --recursive --depth 1 || echo "Some submodules failed, continuing..." \
-    && (cd tt-metal && ./build_metal.sh --disable-profiler && ./create_venv.sh) \
+    && (cd tt-metal && ./build_metal.sh --disable-profiler && ./create_venv.sh --bundle-python) \
     && ./setup.sh --ds-full \
     && git config --global --unset url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf
 
@@ -170,6 +182,76 @@ RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal/.github \
     && rm -rf /usr/local/rustup \
     && rm -rf /usr/include
+
+
+# ==============================================================================
+# STRIP SOURCE - remove first-party C/C++ source from the app tree
+# ==============================================================================
+# Done in the BUILDER, before the cross-stage COPY, so source bytes never enter
+# any layer of the final image. A copy-then-rm in the runtime stage would only
+# add a whiteout: the source would still live in the COPY layer, fully
+# recoverable via `docker save`.
+#
+# Policy: ship the Python app + compiled artifacts only.
+#   DELETE: our cpp_server source (src/include), the blaze engine source
+#           (tt-llm-engine/{src,include}), prefill_gateway, and the build-only
+#           third_party tree (boost/mooncake/...). Then sweep any remaining
+#           C/C++ source under cpp_server (e.g. CMake _deps, generated headers).
+#   KEEP:   every compiled artifact (tt_media_server_cpp, *.so, build-full libs),
+#           the vendored tt-metal tree in full (its kernels are JIT-compiled
+#           from source at runtime, and it holds python_env + build/lib), the
+#           blaze kernels tree (potential runtime JIT), and the runtime data
+#           dirs (tokenizers/resources/monitoring) plus all *.py.
+#
+# NOTE: `-prune` is incompatible with `-delete` (which forces `-depth`), so the
+# sweep collects with `-print0` and removes via `xargs` to honour the excludes.
+RUN set -eux; \
+    SRV="${APP_DIR}/server"; \
+    ENG="${SRV}/cpp_server/tt-llm-engine"; \
+    rm -rf "${SRV}/cpp_server/src" "${SRV}/cpp_server/include" \
+           "${SRV}/prefill_gateway" \
+           "${ENG}/src" "${ENG}/include" "${ENG}/third_party"; \
+    find "${SRV}/cpp_server" \
+        -path "${ENG}/tt-metal" -prune -o \
+        -path "${ENG}/kernels" -prune -o \
+        -type f \( \
+           -name '*.c'  -o -name '*.cc'  -o -name '*.cpp' -o -name '*.cxx' \
+        -o -name '*.h'  -o -name '*.hh'  -o -name '*.hpp' -o -name '*.hxx' \
+        -o -name '*.cu' -o -name '*.cuh' \) -print0 \
+      | xargs -0 -r rm -f; \
+    REMAIN="$(find "${SRV}/cpp_server" \
+        -path "${ENG}/tt-metal" -prune -o \
+        -path "${ENG}/kernels" -prune -o \
+        -type f \( \
+           -name '*.c'  -o -name '*.cc'  -o -name '*.cpp' -o -name '*.cxx' \
+        -o -name '*.h'  -o -name '*.hh'  -o -name '*.hpp' -o -name '*.hxx' \
+        -o -name '*.cu' -o -name '*.cuh' \) -print)"; \
+    if [ -n "${REMAIN}" ]; then \
+        echo "ERROR: first-party C/C++ source survived the strip:"; echo "${REMAIN}"; exit 1; \
+    fi; \
+    echo "OK: first-party C/C++ source stripped (tt-metal + blaze kernels kept for runtime JIT)"
+
+# ==============================================================================
+# STRIP SYMBOLS - remove debug info + symbol tables from first-party artifacts
+# ==============================================================================
+# Deleting .cpp source is not enough: an unstripped binary/.so carries DWARF
+# debug info (.debug_*) and a full local symbol table (.symtab), which let a
+# decompiler (Ghidra/IDA) reconstruct near-source pseudocode with the original
+# names, types and line numbers, and embeds source paths. Strip our compiled
+# artifacts so only opaque machine code ships.
+#   * executable  -> --strip-all
+#   * shared libs -> --strip-debug --strip-unneeded (keeps .dynsym, so the
+#     LD_PRELOADed blaze symbols and any dlsym lookups still resolve)
+# tt-metal / ttnn libs are upstream open-source and intentionally left untouched.
+RUN set -eux; \
+    SRV="${APP_DIR}/server"; \
+    ENG="${SRV}/cpp_server/tt-llm-engine"; \
+    BIN="${SRV}/cpp_server/build/tt_media_server_cpp"; \
+    if [ -f "${BIN}" ]; then strip --strip-all "${BIN}"; fi; \
+    find "${SRV}/cpp_server/build" "${ENG}/build-full" \
+        -type f \( -name '*.so' -o -name '*.so.*' \) \
+        -exec strip --strip-debug --strip-unneeded {} +; \
+    echo "OK: stripped symbols + debug info from first-party binary and shared libs"
 
 
 # ==============================================================================
@@ -222,13 +304,42 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user ${HOME_DIR}
 
-# Copy uv's Python installation (venv symlinks point to /root/.local/share/uv/python)
-# Make parent directories traversable and uv directory fully accessible
-COPY --from=builder /root/.local/share/uv /root/.local/share/uv
-RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local/share/uv
-
 # Fix venv permissions (COPY --chown can break symlink permissions)
 RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
+
+# ── Verify the final image carries no first-party C/C++ source ──────────────
+# The builder already strips + gates this; re-asserted here so a regression in
+# the wholesale COPY can never ship first-party source to production. The
+# vendored tt-metal tree and the blaze kernels tree are excluded on purpose
+# (their source is JIT-compiled at runtime).
+RUN SRV="${APP_DIR}/server"; \
+    ENG="${SRV}/cpp_server/tt-llm-engine"; \
+    SRC="$(find "${SRV}/cpp_server" \
+        -path "${ENG}/tt-metal" -prune -o \
+        -path "${ENG}/kernels" -prune -o \
+        -type f \( \
+           -name '*.c'  -o -name '*.cc'  -o -name '*.cpp' -o -name '*.cxx' \
+        -o -name '*.h'  -o -name '*.hh'  -o -name '*.hpp' -o -name '*.hxx' \
+        -o -name '*.cu' -o -name '*.cuh' \) -print)"; \
+    if [ -n "${SRC}" ]; then \
+        echo "ERROR: first-party C/C++ source present in runtime image:"; echo "${SRC}"; exit 1; \
+    fi; \
+    echo "verified: no first-party C/C++ source under ${SRV}/cpp_server (tt-metal + kernels excluded)"
+
+# ── Informational: surface any unresolved shared libs for the C++ binary ────
+# A linking gap (e.g. Drogon, the blaze libtt_llm_engine, or an RPATH into a
+# stripped build tree) shows up here in the build log. Non-fatal by design.
+RUN BIN="${APP_DIR}/server/cpp_server/build/tt_media_server_cpp"; \
+    if [ -x "$BIN" ]; then \
+        echo "ldd $BIN:"; ldd "$BIN" || true; \
+        if ldd "$BIN" 2>/dev/null | grep -q "not found"; then \
+            echo "WARNING: unresolved shared libraries for $BIN (see 'not found' above)"; \
+        else \
+            echo "ldd: all shared libraries resolved for $BIN"; \
+        fi; \
+    else \
+        echo "note: cpp binary absent; skipping ldd check"; \
+    fi
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal
