@@ -43,6 +43,17 @@ std::string envString(const char* name, const std::string& defaultValue) {
   return v ? std::string(v) : defaultValue;
 }
 
+std::string resolveBlazeSocketDescriptorPrefix() {
+  switch (modelType()) {
+    case ModelType::DEEPSEEK_R1_0528:
+      return "deepseek";
+    case ModelType::LLAMA_3_1_8B_INSTRUCT:
+      return "llama";
+    case ModelType::KIMI_K2_6:
+      return "kimi";
+  }
+}
+
 /** Read env string and convert to lowercase for case-insensitive parsing. */
 std::string envStringLower(const char* name, const std::string& defaultValue) {
   return toLower(envString(name, defaultValue));
@@ -215,7 +226,7 @@ std::string visibleDevicesForWorker(size_t workerIndex) {
 std::string blazeSocketDescriptorPrefix() {
   static const std::string cached =
       envString("BLAZE_SOCKET_DESCRIPTOR_PREFIX",
-                defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX);
+                resolveBlazeSocketDescriptorPrefix());
   return cached;
 }
 

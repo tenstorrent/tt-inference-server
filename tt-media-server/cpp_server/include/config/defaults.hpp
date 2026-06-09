@@ -34,7 +34,7 @@ constexpr size_t MAX_QUEUE_SIZE = 1000;
 constexpr const char* SCHEDULING_POLICY =
     "prefill_first";  // "prefill_first" or "max_occupancy"
 constexpr const char* LLM_DEVICE_BACKEND =
-    "mock_pipeline";  // "mock", "mock_pipeline", "pipeline", "llama"
+    "pipeline_manager";  // "mock", "mock_pipeline", "pipeline", "llama"
 constexpr const bool ENABLE_ACCUMULATED_STREAMING = false;
 constexpr size_t MAX_ACCUMULATED_TOKENS = 5;
 constexpr size_t MAX_IN_FLIGHT_COUNT = 32;
@@ -57,7 +57,6 @@ constexpr const char* KAFKA_GROUP_ID = "migration-workers";
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 constexpr unsigned PREFILL_TIMEOUT_MS = 20000;
 
-constexpr const char* BLAZE_SOCKET_DESCRIPTOR_PREFIX = "deepseek";
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
 constexpr const char* TT_RESULT_QUEUE = "tt_results";
 constexpr const char* TT_CANCEL_QUEUE = "tt_cancels";
@@ -79,7 +78,7 @@ constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
 constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 60000;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
-constexpr const char* WIRE_FORMAT = "deepseek";
+constexpr const char* WIRE_FORMAT = "blaze";
 
 constexpr const char* SERVER_HOST = "0.0.0.0";
 constexpr uint16_t SERVER_PORT = 8000;
