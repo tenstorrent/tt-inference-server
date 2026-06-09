@@ -52,8 +52,7 @@ void printUsage(const char* prog) {
   std::cerr
       << "Usage: " << prog
       << " --decode-port=<PORT> --prefill-bind=<HOST>:<PORT>\n"
-      << "       " << prog
-      << " --decode-port=<PORT> --prefill=<HOST>:<PORT> "
+      << "       " << prog << " --decode-port=<PORT> --prefill=<HOST>:<PORT> "
       << "[--prefill=<HOST>:<PORT> ...]  # SOCKET_TRANSPORT=tcp\n\n"
       << "  --decode-port=PORT   Port the gateway listens on for decode.\n"
       << "  --prefill=HOST:PORT  TCP prefill server to connect to "
@@ -84,8 +83,7 @@ void printUsage(const char* prog) {
          "0 to disable. Default: 0.\n"
       << "  --help               Print this message.\n\n"
       << "Example:\n"
-      << "  " << prog
-      << " --decode-port=7100 --prefill-bind=0.0.0.0:7200\n";
+      << "  " << prog << " --decode-port=7100 --prefill-bind=0.0.0.0:7200\n";
 }
 
 std::optional<PrefillEndpoint> parsePrefillArg(std::string_view value) {

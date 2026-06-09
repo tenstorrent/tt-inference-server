@@ -322,14 +322,13 @@ temporarily make that prefill ineligible for new tasks according to
 Without the gateway the decode server is the socket **server** and the prefill
 is the socket **client** that dials into it. Two terminals suffice.
 
-### TCP
+### ZMQ
 
 #### Terminal A — decode (listens on :9000)
 
 ```bash
 cd tt-media-server/cpp_server
 LLM_MODE=decode \
-SOCKET_TRANSPORT=tcp \
 MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
 SOCKET_HOST=0.0.0.0 \
 SOCKET_PORT=9000 \
@@ -342,7 +341,6 @@ TT_LOG_LEVEL=info \
 ```bash
 cd tt-media-server/cpp_server
 LLM_MODE=prefill \
-SOCKET_TRANSPORT=tcp \
 SOCKET_HOST=127.0.0.1 \
 SOCKET_PORT=9000 \
 LLM_DEVICE_BACKEND=mock \
@@ -350,8 +348,7 @@ TT_LOG_LEVEL=info \
 ./build/tt_media_server_cpp -p 8002
 ```
 
-For the default ZMQ transport, omit `SOCKET_TRANSPORT` or set
-`SOCKET_TRANSPORT=zmq` on **both** processes.
+For TCP, set `SOCKET_TRANSPORT=tcp` on **both** processes.
 
 #### Terminal C — drive a request
 
