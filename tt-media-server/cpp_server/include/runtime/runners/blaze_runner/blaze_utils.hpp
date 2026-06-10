@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
@@ -21,11 +22,17 @@ namespace sch = tt_llm_engine::scheduler;
 namespace ds = sch::decode;
 namespace ps = sch::prefill;
 
-inline sch::ISRequest makeAllocateRequest(uint32_t requestId) {
-  return {.type = ds::RequestType::ALLOCATE,
+inline sch::ISRequest makeAllocateRequest(uint32_t requestId,std::optional<uint32_t> migrateFromSlot = std::nullopt) {
+  auto req = sch::ISRequest{.type = ds::RequestType::ALLOCATE,
           .request_id = requestId,
           .tokens = {},
-          .gen = {}};
+          .gen = {
+          },
+        };
+  if (migrateFromSlot.has_value()) {
+    req.gen.migrate_from_slot = *migrateFromSlot;
+  }
+  return req;
 }
 
 inline sch::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {

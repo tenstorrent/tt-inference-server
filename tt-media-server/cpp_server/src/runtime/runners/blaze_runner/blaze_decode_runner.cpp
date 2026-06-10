@@ -221,13 +221,6 @@ inline void BlazeDecodeRunner::handleMemoryRequest(
     const tt::domain::ManageMemoryTask& request) {
   switch (request.action) {
     case tt::domain::MemoryManagementAction::ALLOCATE: {
-      auto slotIdToCopyFrom = request.slotIdToCopyFrom;
-      if (slotIdToCopyFrom.has_value()) {
-        TT_LOG_DEBUG(
-            "[BlazeDecodeRunner] handleMemoryRequest: allocating slotId={} "
-            "to copy from slotId={}",
-            request.slotId, *slotIdToCopyFrom);
-      }
       handleAllocateRequest(request);
       break;
     }
@@ -345,7 +338,7 @@ inline void BlazeDecodeRunner::handleEvictRequest(
 
 inline void BlazeDecodeRunner::handleAllocateRequest(
     const tt::domain::ManageMemoryTask& request) {
-  auto allocateRequest = utils::makeAllocateRequest(request.taskId);
+  auto allocateRequest = utils::makeAllocateRequest(request.taskId, request.slotIdToCopyFrom);
   if (!decodeScheduler->push_request(allocateRequest)) {
     TT_LOG_WARN(
         "[BlazeDecodeRunner] handleAllocateRequest: scheduler queue full, "
