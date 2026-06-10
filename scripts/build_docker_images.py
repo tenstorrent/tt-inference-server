@@ -1097,6 +1097,31 @@ def should_push_image(image_tag, force_push=False):
     return local_exists and (not remote_exists or force_push)
 
 
+def _tt_symbiote_version_for_commit_pair(tt_metal_commit, vllm_commit):
+    """Return the tt_symbiote release version to install for a commit pair.
+
+    Scans MODEL_SPECS for an ``impl=tt_symbiote`` model whose
+    (tt_metal_commit, vllm_commit) matches the image being built. Commit
+    matching is prefix-tolerant because the catalog may store short SHAs while
+    the build resolves full SHAs. Returns ``None`` if no tt_symbiote model maps
+    to this pair (tt_transformers-only image).
+    """
+
+    def _commit_match(a, b):
+        if not a or not b:
+            return a == b
+        return a.startswith(b) or b.startswith(a)
+
+    for spec in MODEL_SPECS.values():
+        if getattr(spec.impl, "impl_id", None) != "tt_symbiote":
+            continue
+        if _commit_match(tt_metal_commit, spec.tt_metal_commit) and _commit_match(
+            vllm_commit, spec.vllm_commit
+        ):
+            return spec.version
+    return None
+
+
 def build_dev_image(
     image_tags, tt_metal_commit, vllm_commit, container_app_uid, logger
 ):
@@ -1137,6 +1162,20 @@ def build_dev_image(
         "vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile",
         ".",
     ]
+
+    # If any tt_symbiote-impl model maps to this (tt_metal, vllm) commit pair,
+    # install that tt_symbiote release into the image (--no-deps; see Dockerfile).
+    tt_symbiote_version = _tt_symbiote_version_for_commit_pair(
+        tt_metal_commit, vllm_commit
+    )
+    if tt_symbiote_version:
+        logger.info(
+            f"Including tt_symbiote=={tt_symbiote_version} in image {dev_image_tag}"
+        )
+        build_command[-1:-1] = [
+            "--build-arg",
+            f"TT_SYMBIOTE_VERSION={tt_symbiote_version}",
+        ]
 
     run_command_with_logging(build_command, logger=logger, check=True, cwd=repo_root)
     logger.info(f"Successfully built dev image: {dev_image_tag}")

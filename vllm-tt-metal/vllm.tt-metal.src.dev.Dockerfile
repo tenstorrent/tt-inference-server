@@ -125,6 +125,9 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 ARG APP_DIR="${HOME_DIR}/app"
+# tt_symbiote release installed --no-deps so it uses the source-built ttnn (from
+# TT_METAL_COMMIT_SHA_OR_TAG) instead of its PyPI ttnn pin. Empty => skip install.
+ARG TT_SYMBIOTE_VERSION=""
 
 # IDENTICAL environment variables as builder stage
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
@@ -140,8 +143,11 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     TT_SMI_DIR=${HOME_DIR}/tt-smi \
     LOGURU_LEVEL=INFO \
     TT_METAL_LOGS_PATH=${HOME_DIR}/logs
-# Environment variables defined by other env vars
-ENV PYTHONPATH=${TT_METAL_HOME}:${APP_DIR} \
+# Environment variables defined by other env vars.
+# ${APP_DIR}/src is on PYTHONPATH so tt-inference-server serving adapters (e.g.
+# tt_symbiote_generators) are importable by vLLM worker subprocesses when the
+# ModelRegistry lazy-import string is resolved.
+ENV PYTHONPATH=${TT_METAL_HOME}:${APP_DIR}:${APP_DIR}/src \
     PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env \
     LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
 
@@ -203,6 +209,18 @@ RUN cd ${PYTHON_ENV_DIR}/bin \
     && uv pip install --no-cache-dir -r ${APP_DIR}/requirements.txt \
     && uv cache clean" \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
+
+# Install tt_symbiote (HuggingFace-shaped TTNN model library) --no-deps so it
+# does NOT pull its pinned PyPI ttnn and instead uses the ttnn already built
+# from source at TT_METAL_COMMIT_SHA_OR_TAG. tt_symbiote relies on torch /
+# transformers / pillow which are already present in the tt-metal venv. Skipped
+# when TT_SYMBIOTE_VERSION is empty (tt_transformers-only images).
+RUN if [ -n "${TT_SYMBIOTE_VERSION}" ]; then \
+    /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && uv pip install --no-cache-dir --no-deps tt_symbiote==${TT_SYMBIOTE_VERSION} \
+    && uv cache clean" \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}; \
+    fi
 
 # Fix venv permissions (COPY --chown can break symlink permissions)
 RUN chmod -R +x ${PYTHON_ENV_DIR}/bin

@@ -273,6 +273,18 @@ sdxl_forge_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server",
     code_path="tt-media-server/tt_model_runners/forge_runners/sdxl_forge_runner.py",
 )
+# Models ported with the tt_symbiote library (HuggingFace-shaped TTNN model
+# package). The pinned tt_metal_commit is the commit tt_symbiote verified the
+# recipe against (mirrors tt_symbiote RUNTIME_PINS); ttnn is source-built from
+# that commit in the image and tt_symbiote is pip-installed on top with
+# --no-deps so it uses that ttnn rather than its PyPI pin. The vLLM serving
+# adapter lives in tt-inference-server (vllm-tt-metal/src/tt_symbiote_generators.py).
+tt_symbiote_impl = ImplSpec(
+    impl_id="tt_symbiote",
+    impl_name="tt-symbiote",
+    repo_url="https://github.com/tenstorrent/tt_symbiote",
+    code_path="src/tt_symbiote",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
@@ -285,6 +297,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "forge_vllm_plugin": forge_vllm_plugin_impl,
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
+    "tt_symbiote": tt_symbiote_impl,
 }
 
 

@@ -311,3 +311,47 @@ templates:
   supported_modalities:
     - text
     - image
+
+# =============================================================================
+# tt_symbiote-ported VLM templates
+# -----------------------------------------------------------------------------
+# These models are served via the tt_symbiote library (HuggingFace-shaped TTNN
+# package), wrapped by the vLLM Generator adapter in
+# vllm-tt-metal/src/tt_symbiote_generators.py. The pinned tt_metal_commit MUST
+# match tt_symbiote RUNTIME_PINS for the model's HF architecture; ttnn is
+# source-built from that commit and tt_symbiote installed --no-deps on top.
+# =============================================================================
+- weights:
+    - rednote-hilab/dots.ocr
+  impl: tt_symbiote
+  inference_engine: VLLM
+  model_type: VLM
+  version: "0.1.4"  # tt_symbiote release version
+  # == tt_symbiote RUNTIME_PINS["DotsOCRForCausalLM"]["tt_metal_commit"] ==
+  tt_metal_commit: c09f09c35a1a59a428f0e1b5cdaa8fe59fb1b195
+  # Tenstorrent vLLM fork commit compatible with the tt-metal commit above.
+  # TODO(validate): confirm against a built image; set to the vllm fork commit
+  # paired with tt-metal c09f09c3 in tt-metal's install-vllm-tt.sh era.
+  vllm_commit: 7678b70
+  device_model_specs:
+    - device: T3K
+      # S0 greedy-engine bridge serves one request at a time (the pipeline's DP
+      # batch is same-prompt replication, not vLLM request batching). See
+      # tt_inference_server_integration.md §9.2/§9.6.
+      max_concurrency: 1
+      max_context: 32768       # 32 * 1024
+      default_impl: true
+      vllm_args:
+        mm-processor-cache-gb: 0
+        limit-mm-per-prompt: '{"image": 1}'
+        max-num-seqs: 1
+      override_tt_config:
+        # dots.ocr captures large prefill+decode traces; matches the e2e demo's
+        # ttnn.open_mesh_device(trace_region_size=200_000_000).
+        trace_region_size: 200000000
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  supported_modalities:
+    - text
+    - image
