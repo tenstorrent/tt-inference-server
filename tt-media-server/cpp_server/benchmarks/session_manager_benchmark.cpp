@@ -161,15 +161,15 @@ struct ResponseIdFixture : benchmark::Fixture {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  static constexpr size_t numSessions = 100;
+  static constexpr size_t NUM_SESSIONS = 100;
   std::vector<std::string> responseIds;
   std::string targetResponseId;
 
   void SetUp(const benchmark::State& /*state*/) override {
     if (!responseIds.empty()) return;
 
-    responseIds.reserve(numSessions);
-    for (size_t i = 0; i < numSessions; ++i) {
+    responseIds.reserve(NUM_SESSIONS);
+    for (size_t i = 0; i < NUM_SESSIONS; ++i) {
       // Create a session with a unique slot and trivial block info.
       std::vector<tt::utils::BlockHashInfo> blocks = {
           {static_cast<uint64_t>(i + 5000), 0}};
