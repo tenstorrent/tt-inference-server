@@ -5,7 +5,8 @@
 
 Stateless service that lets a single decode server fan requests out across N
 prefill servers. The gateway manages prefill liveness and routes each request
-using sticky-hash → least-in-flight → round-robin order.
+using longest-prefix-match over cached block hashes, then least-in-flight, then
+round-robin order.
 
 ## Build
 
@@ -300,8 +301,8 @@ Expected gateway log lines for a successful request:
 
 If a prefill goes down mid-request, the gateway emits a
 `PrefillResultMessage` with `error=true` and `generated_text="prefill_down"`
-to the decode for any task that was on that prefill, plus evicts the
-affected affinity entries.
+to the decode for any task that was on that prefill and excludes that prefill
+from future routing until it registers again.
 
 If a prefill accepts a request but does not return a result before
 `--request-timeout-ms`, the gateway emits a `PrefillResultMessage` with

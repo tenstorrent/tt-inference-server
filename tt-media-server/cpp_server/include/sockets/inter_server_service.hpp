@@ -109,6 +109,8 @@ class InterServerService {
    */
   bool sendPrefillCancel(uint32_t taskId);
 
+  bool sendPrefillCacheBlocksAdded(const std::vector<uint64_t>& blockHashes);
+
   /**
    * @brief Send health check information
    * @param server_id This server's identifier

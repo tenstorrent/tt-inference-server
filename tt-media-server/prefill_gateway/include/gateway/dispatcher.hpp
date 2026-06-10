@@ -20,7 +20,7 @@ class PrefillRegistry;
 class AffinityCache;
 
 /**
- * @brief Glues prefills + selector + affinity cache into the request lifecycle.
+ * @brief Glues prefills + selector into the request lifecycle.
  *
  * Sockets are injected as Senders (function objects) so unit tests can run
  * without real sockets.
@@ -79,7 +79,6 @@ class Dispatcher {
  private:
   struct InFlightEntry {
     std::string prefill_id;
-    uint64_t affinity_key = 0;
     Clock::time_point started_at;
   };
 

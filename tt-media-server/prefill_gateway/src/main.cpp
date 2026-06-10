@@ -517,10 +517,15 @@ int main(int argc, char** argv) {
   }
 
   std::jthread metricsSnapshotThread(
-      [&registry, &affinity, &metrics](std::stop_token stopToken) {
+      [&registry, &metrics](std::stop_token stopToken) {
         while (!stopToken.stop_requested()) {
-          metrics.setPrefillSnapshots(buildPrefillMetrics(registry));
-          metrics.setRoutingTableSize(affinity.size());
+          const auto snapshots = buildPrefillMetrics(registry);
+          size_t cachedBlocks = 0;
+          for (const auto& snapshot : snapshots) {
+            cachedBlocks += snapshot.cached_blocks;
+          }
+          metrics.setPrefillSnapshots(snapshots);
+          metrics.setRoutingTableSize(cachedBlocks);
           std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
       });

@@ -35,14 +35,16 @@ void Dispatcher::onPrefillRequest(
   auto prefills = registry_.snapshot();
   const uint64_t affinityKey =
       msg.registration_hashes.empty() ? 0 : msg.registration_hashes.front();
-  auto sticky =
-      (affinityKey != 0) ? affinity_cache_.lookup(affinityKey) : std::nullopt;
 
   auto selection =
-      selectPrefill(prefills, affinityKey, sticky, round_robin_cursor_);
+      selectPrefill(prefills, msg.registration_hashes, round_robin_cursor_);
   GatewayMetrics::instance().recordRoutingDecision(
       routingReasonName(selection.reason));
-  GatewayMetrics::instance().setRoutingTableSize(affinity_cache_.size());
+  size_t cachedBlocks = 0;
+  for (const auto& prefill : prefills) {
+    cachedBlocks += prefill.cached_blocks;
+  }
+  GatewayMetrics::instance().setRoutingTableSize(cachedBlocks);
   if (!selection.server_id.has_value()) {
     const auto summary = summarizePrefillEligibility(prefills);
     TT_LOG_WARN(
@@ -55,20 +57,20 @@ void Dispatcher::onPrefillRequest(
   }
 
   const std::string& chosen = *selection.server_id;
-  const bool usedSticky = selection.reason == PrefillRoutingReason::PrefixMatch;
-  if (usedSticky) {
+  if (selection.prefix_match_depth > 0) {
     GatewayMetrics::instance().observePrefixMatchDepth(
-        msg.registration_hashes.size());
+        selection.prefix_match_depth);
   }
   TT_LOG_INFO(
-      "[Dispatcher] taskId={} route prefill='{}' reason={} sticky={} hash={}",
-      msg.task_id, chosen, routingReasonName(selection.reason), usedSticky,
-      affinityKey);
+      "[Dispatcher] taskId={} route prefill='{}' reason={} "
+      "prefix_match_depth={} hash={}",
+      msg.task_id, chosen, routingReasonName(selection.reason),
+      selection.prefix_match_depth, affinityKey);
 
   registry_.incrementInflight(chosen);
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);
-    in_flight_[msg.task_id] = {chosen, affinityKey, Clock::now()};
+    in_flight_[msg.task_id] = {chosen, Clock::now()};
   }
 
   // Send assignment first so decode can prep KV-transfer ahead of the result.
@@ -125,12 +127,6 @@ void Dispatcher::onPrefillResult(const std::string& fromServerId,
   // result still decrements the right counter.
   registry_.decrementInflight(fromServerId);
   const auto latency = Clock::now() - entry->started_at;
-
-  // Don't cache failures — they'd resend to the same broken prefill.
-  if (!msg.error && entry->affinity_key != 0) {
-    affinity_cache_.record(entry->affinity_key, fromServerId);
-    GatewayMetrics::instance().setRoutingTableSize(affinity_cache_.size());
-  }
 
   if (msg.error) {
     TT_LOG_ERROR("[Dispatcher] taskId={} result error from prefill='{}'",

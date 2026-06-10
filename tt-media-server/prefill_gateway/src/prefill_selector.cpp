@@ -5,6 +5,8 @@
 
 #include <algorithm>
 
+#include "utils/prefix_match.hpp"
+
 namespace tt::gateway {
 
 namespace {
@@ -14,14 +16,6 @@ bool isEligible(const PrefillSnapshot& p) {
   if (!p.accepting_tasks) return false;
   if (p.max_in_flight > 0 && p.in_flight >= p.max_in_flight) return false;
   return true;
-}
-
-const PrefillSnapshot* findById(const std::vector<PrefillSnapshot>& prefills,
-                                const std::string& serverId) {
-  auto it = std::ranges::find_if(prefills, [&](const PrefillSnapshot& p) {
-    return p.server_id == serverId;
-  });
-  return it == prefills.end() ? nullptr : &*it;
 }
 
 }  // namespace
@@ -51,8 +45,6 @@ std::string_view routingReasonName(PrefillRoutingReason reason) {
   switch (reason) {
     case PrefillRoutingReason::PrefixMatch:
       return "prefix_match";
-    case PrefillRoutingReason::StickyFallback:
-      return "sticky_fallback";
     case PrefillRoutingReason::LeastInflight:
       return "least_inflight";
     case PrefillRoutingReason::RoundRobin:
@@ -63,18 +55,9 @@ std::string_view routingReasonName(PrefillRoutingReason reason) {
   return "unknown";
 }
 
-PrefillSelection selectPrefill(const std::vector<PrefillSnapshot>& prefills,
-                               size_t registrationHash,
-                               const std::optional<std::string>& stickyTarget,
-                               size_t& roundRobinCursor) {
-  const bool hasStickyHint = registrationHash != 0 && stickyTarget.has_value();
-  if (hasStickyHint) {
-    const PrefillSnapshot* hit = findById(prefills, *stickyTarget);
-    if (hit && isEligible(*hit)) {
-      return {*stickyTarget, PrefillRoutingReason::PrefixMatch};
-    }
-  }
-
+PrefillSelection selectPrefill(
+    const std::vector<PrefillSnapshot>& prefills,
+    const std::vector<uint64_t>& registrationHashes, size_t& roundRobinCursor) {
   std::vector<const PrefillSnapshot*> eligible;
   eligible.reserve(prefills.size());
   for (const auto& p : prefills) {
@@ -85,28 +68,54 @@ PrefillSelection selectPrefill(const std::vector<PrefillSnapshot>& prefills,
     return {std::nullopt, PrefillRoutingReason::NoEligiblePrefill};
   }
 
+  size_t bestPrefixDepth = 0;
+  std::vector<const PrefillSnapshot*> prefixMatches;
+  if (!registrationHashes.empty()) {
+    for (const auto* p : eligible) {
+      const size_t depth = tt::utils::countMatchingPrefixDepth(
+          registrationHashes, [p](uint64_t hash) {
+            return p->cached_block_hashes.contains(hash);
+          });
+      if (depth == 0) {
+        continue;
+      }
+      if (depth > bestPrefixDepth) {
+        bestPrefixDepth = depth;
+        prefixMatches.clear();
+      }
+      if (depth == bestPrefixDepth) {
+        prefixMatches.push_back(p);
+      }
+    }
+  }
+
+  const std::vector<const PrefillSnapshot*>& candidates =
+      bestPrefixDepth > 0 ? prefixMatches : eligible;
+
   const auto minInFlight =
-      (*std::ranges::min_element(eligible, {}, [](const PrefillSnapshot* p) {
+      (*std::ranges::min_element(candidates, {}, [](const PrefillSnapshot* p) {
         return p->in_flight;
       }))->in_flight;
 
   std::vector<const PrefillSnapshot*> leastLoaded;
-  leastLoaded.reserve(eligible.size());
-  for (const auto* p : eligible) {
+  leastLoaded.reserve(candidates.size());
+  for (const auto* p : candidates) {
     if (p->in_flight == minInFlight) leastLoaded.push_back(p);
   }
 
   if (leastLoaded.size() == 1) {
     return {leastLoaded.front()->server_id,
-            hasStickyHint ? PrefillRoutingReason::StickyFallback
-                          : PrefillRoutingReason::LeastInflight};
+            bestPrefixDepth > 0 ? PrefillRoutingReason::PrefixMatch
+                                : PrefillRoutingReason::LeastInflight,
+            bestPrefixDepth};
   }
 
   const size_t pickIndex = roundRobinCursor % leastLoaded.size();
   ++roundRobinCursor;
   return {leastLoaded[pickIndex]->server_id,
-          hasStickyHint ? PrefillRoutingReason::StickyFallback
-                        : PrefillRoutingReason::RoundRobin};
+          bestPrefixDepth > 0 ? PrefillRoutingReason::PrefixMatch
+                              : PrefillRoutingReason::RoundRobin,
+          bestPrefixDepth};
 }
 
 }  // namespace tt::gateway

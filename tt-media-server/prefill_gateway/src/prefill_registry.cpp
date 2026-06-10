@@ -37,6 +37,7 @@ void PrefillRegistry::markDown(const std::string& serverId) {
     if (it != prefills_.end()) {
       wasKnown = true;
       it->second.healthy = false;
+      it->second.cached_blocks.clear();
       // Keep in_flight unchanged: dispatcher's onPrefillDown will fail those
       // tasks and decrement counts via the normal path.
       downCb = on_prefill_down_;
@@ -97,6 +98,7 @@ std::vector<PrefillSnapshot> PrefillRegistry::snapshot() const {
     snap.in_flight = peer.in_flight;
     snap.max_in_flight = peer.max_in_flight;
     snap.cached_blocks = peer.cached_blocks.size();
+    snap.cached_block_hashes = peer.cached_blocks;
     snap.last_heartbeat = peer.last_heartbeat;
     out.push_back(std::move(snap));
   }

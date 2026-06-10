@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 //
 // End-to-end integration test for PrefillGateway over real loopback sockets.
-// Validates registration handshake, routing (round-robin + sticky-by-hash),
+// Validates registration handshake, routing (round-robin + prefix match),
 // result/assignment delivery, and prefill-down failover.
 
 #include <arpa/inet.h>
@@ -719,7 +719,7 @@ TEST_F(GatewayE2ETest, CancelIsForwardedToAssignedPrefill) {
   prefillA_->setAutoReply(false);
   prefillB_->setAutoReply(false);
 
-  gateway_->affinity().record(/*hash=*/77, "prefill-A");
+  gateway_->registry().addCachedBlocks("prefill-A", {77});
   decode_->sendRequest(/*task_id=*/88, /*hash=*/77);
 
   ASSERT_TRUE(waitFor([&] { return prefillA_->receivedTaskCount() >= 1; }));
@@ -740,7 +740,7 @@ TEST_F(GatewayE2ETest, RequestTimeoutFailsTaskToDecode) {
   prefillA_->setAutoReply(false);
   prefillB_->setAutoReply(false);
 
-  gateway_->affinity().record(/*hash=*/77, "prefill-A");
+  gateway_->registry().addCachedBlocks("prefill-A", {77});
   decode_->sendRequest(/*task_id=*/89, /*hash=*/77);
 
   ASSERT_TRUE(waitFor([&] { return prefillA_->receivedTaskCount() >= 1; }));
@@ -764,28 +764,24 @@ TEST_F(GatewayE2ETest, RequestTimeoutFailsTaskToDecode) {
   EXPECT_EQ(cancelled[0], 89u);
 }
 
-TEST_F(GatewayE2ETest, StickyRoutingByRegistrationHash) {
-  decode_->sendRequest(/*task_id=*/1, /*hash=*/42);
-  ASSERT_TRUE(waitFor([&] { return decode_->resultCount() >= 1; }));
-  auto firstAssignments = decode_->assignments();
-  ASSERT_EQ(firstAssignments.size(), 1u);
-  const std::string firstServer = firstAssignments[0].server_id;
+TEST_F(GatewayE2ETest, PrefixRoutingByRegistrationHash) {
+  gateway_->registry().addCachedBlocks("prefill-A", {42});
 
   decode_->sendRequest(/*task_id=*/2, /*hash=*/42);
-  ASSERT_TRUE(waitFor([&] { return decode_->resultCount() >= 2; }));
+  ASSERT_TRUE(waitFor([&] { return decode_->resultCount() >= 1; }));
   auto allAssignments = decode_->assignments();
-  ASSERT_EQ(allAssignments.size(), 2u);
-  EXPECT_EQ(allAssignments[1].server_id, firstServer)
-      << "Sticky routing should reuse the previous prefill";
-  EXPECT_EQ(allAssignments[1].task_id, 2u);
+  ASSERT_EQ(allAssignments.size(), 1u);
+  EXPECT_EQ(allAssignments[0].server_id, "prefill-A")
+      << "Prefix routing should choose the prefill with the cached block";
+  EXPECT_EQ(allAssignments[0].task_id, 2u);
 }
 
 TEST_F(GatewayE2ETest, PrefillDownFailsInFlightTaskToDecode) {
   prefillA_->setAutoReply(false);
   prefillB_->setAutoReply(false);
 
-  // Seed affinity so we know which prefill will take the request.
-  gateway_->affinity().record(/*hash=*/77, "prefill-A");
+  // Seed the cache view so we know which prefill will take the request.
+  gateway_->registry().addCachedBlocks("prefill-A", {77});
   decode_->sendRequest(/*task_id=*/55, /*hash=*/77);
 
   ASSERT_TRUE(waitFor([&] { return prefillA_->receivedTaskCount() >= 1; }));
@@ -803,7 +799,6 @@ TEST_F(GatewayE2ETest, PrefillDownFailsInFlightTaskToDecode) {
   EXPECT_EQ(results[0].task_id, 55u);
   EXPECT_TRUE(results[0].error);
   EXPECT_EQ(results[0].generated_text, "prefill_down");
-  EXPECT_FALSE(gateway_->affinity().lookup(77).has_value());
 }
 
 TEST(ZmqRouterGatewayE2ETest, PrefillsCanStartBeforeGateway) {
@@ -871,7 +866,7 @@ TEST(ZmqRouterGatewayE2ETest, CancelIsForwardedToAssignedPrefill) {
     return healthy == 2 && decode.isConnected();
   })) << "Timed out waiting for ZMQ gateway cluster";
 
-  gateway.affinity().record(/*hash=*/77, "prefill-A");
+  gateway.registry().addCachedBlocks("prefill-A", {77});
   decode.sendRequest(/*task_id=*/303, /*hash=*/77);
 
   ASSERT_TRUE(waitFor([&] { return prefillA.receivedTaskCount() >= 1; }));
