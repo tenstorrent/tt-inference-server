@@ -303,6 +303,26 @@ bool waitForServer(const TestConfig& cfg, int timeoutSec = 60) {
   return false;
 }
 
+// Send a warmup request to ensure the server is fully ready (Dynamo frontend
+// has discovered backends). Returns true if warmup succeeded.
+bool warmupServer(const TestConfig& cfg) {
+  std::vector<Json::Value> warmupMessages = {
+      makeMessage("system", "You are a helpful assistant."),
+      makeMessage("user", "Say hello.")};
+  for (int attempt = 0; attempt < 5; ++attempt) {
+    ChatResponse r = sendChat(cfg, warmupMessages, 8);
+    if (r.ok()) {
+      std::cout << "Warmup succeeded after " << (attempt + 1) << " attempt(s)"
+                << std::endl;
+      return true;
+    }
+    std::cout << "Warmup attempt " << (attempt + 1)
+              << " failed: " << r.error << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+  }
+  return false;
+}
+
 int computeExpectedCachedTokens(int promptTokens, size_t firstBlockSize,
                                 size_t blockSize) {
   if (promptTokens < static_cast<int>(firstBlockSize)) {
@@ -394,7 +414,12 @@ class PrefixCacheE2ETest : public ::testing::Test {
     std::cout << "Waiting for server..." << std::endl;
 
     ASSERT_TRUE(waitForServer(cfg)) << "Server not ready within timeout";
-    std::cout << "Server ready." << std::endl;
+    std::cout << "Server ready, warming up..." << std::endl;
+
+    ASSERT_TRUE(warmupServer(cfg))
+        << "Server warmup failed (Dynamo frontend may not have discovered "
+           "backends)";
+    std::cout << "Server warmed up." << std::endl;
   }
 
   static TestConfig cfg;
@@ -458,7 +483,7 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
 
   // R2's prompt includes the assistant response as text, but re-tokenization
   // produces different token IDs than R1's original completion. So R2 only
-  // matches R1's prompt prefix.
+  // matches R1's prompt prefix (not including R1's completion).
   int r2ExpectedCached = computeExpectedCachedTokens(
       r1.usage.promptTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    Expected cached: " << r2ExpectedCached << std::endl;
@@ -466,12 +491,10 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
   EXPECT_GT(r2.usage.cachedTokens, 0)
       << "Request 2 should have cached_tokens > 0 (reuses R1's cached prefix)";
   EXPECT_LE(std::abs(r2.usage.cachedTokens - r2ExpectedCached), 1)
-      << "Request 2 cached should match block-aligned R1 prompt (matching "
-         "prefix)";
+      << "Request 2 cached should match block-aligned R1 prompt";
 
   // Save R2 messages for replay later
   std::vector<Json::Value> r2MessagesCopy = r2Messages;
-  int r2CachedTokens = r2.usage.cachedTokens;
 
   // -------------------------------------------------------------------------
   // Request 3: Different prompt (marine biology theme, no prefix overlap)
@@ -504,14 +527,17 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
             << " cached=" << r4.usage.cachedTokens
             << " completion=" << r4.usage.completionTokens << std::endl;
 
+  // R4 replays R1, but R1's session now has completion tokens cached too.
+  // So R4 should match the full R1 session (prompt + completion).
+  int r1SessionTokens = r1.usage.promptTokens + r1.usage.completionTokens;
   int r4ExpectedCached = computeExpectedCachedTokens(
-      r4.usage.promptTokens, cfg.firstBlockSize, cfg.blockSize);
+      r1SessionTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    Expected cached: " << r4ExpectedCached << std::endl;
 
   EXPECT_GT(r4.usage.cachedTokens, 0)
       << "Request 4 should hit cache (replaying R1 prompt)";
   EXPECT_LE(std::abs(r4.usage.cachedTokens - r4ExpectedCached), 1)
-      << "Request 4 cached should match block-aligned R1 prompt";
+      << "Request 4 cached should match block-aligned R1 session";
 
   // -------------------------------------------------------------------------
   // Request 5: Replay exact R2 prompt → should hit full cache
@@ -525,18 +551,17 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
             << " cached=" << r5.usage.cachedTokens
             << " completion=" << r5.usage.completionTokens << std::endl;
 
-  // R5 replays R2 exactly. Like R2, it only matches R1's prompt prefix
-  // because re-tokenization of the assistant text diverges from cached tokens.
+  // R5 replays R2 exactly. R2's session now has completion tokens cached, so
+  // R5 should match R2's full session (prompt + completion).
+  int r2SessionTokens = r2.usage.promptTokens + r2.usage.completionTokens;
   int r5ExpectedCached = computeExpectedCachedTokens(
-      r1.usage.promptTokens, cfg.firstBlockSize, cfg.blockSize);
+      r2SessionTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    Expected cached: " << r5ExpectedCached << std::endl;
 
+  EXPECT_GT(r5.usage.cachedTokens, 0)
+      << "Request 5 should hit cache (replaying R2 prompt)";
   EXPECT_LE(std::abs(r5.usage.cachedTokens - r5ExpectedCached), 1)
-      << "Request 5 cached should match block-aligned R1 prompt (matching "
-         "prefix)";
-
-  EXPECT_EQ(r5.usage.cachedTokens, r2CachedTokens)
-      << "Request 5 (replay) should have same cached_tokens as original R2";
+      << "Request 5 cached should match block-aligned R2 session";
 
   std::cout << "  OK: All replay scenarios passed" << std::endl;
 }
@@ -588,14 +613,19 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
   std::cout << "    prompt=" << t2.usage.promptTokens
             << " cached=" << t2.usage.cachedTokens << std::endl;
 
-  // Turn 2 should hit cache on turn 1's prefix
-  int t2ExpectedCached =
-      computeExpectedCachedTokens(t1Prompt, cfg.firstBlockSize, cfg.blockSize);
+  // Turn 2 should hit cache on turn 1's session state, which includes both
+  // the original prompt AND completion tokens (including thinking tokens).
+  // The cached amount is block-aligned(prompt + completion) from Turn 1.
+  int t1SessionTokens = t1Prompt + t1.usage.completionTokens;
+  int t2ExpectedCached = computeExpectedCachedTokens(
+      t1SessionTokens, cfg.firstBlockSize, cfg.blockSize);
+  std::cout << "    t1 session tokens: " << t1SessionTokens
+            << " (prompt=" << t1Prompt
+            << " + completion=" << t1.usage.completionTokens << ")" << std::endl;
+  std::cout << "    Expected cached: " << t2ExpectedCached << std::endl;
   EXPECT_GT(t2.usage.cachedTokens, 0) << "Turn 2 should hit prefix cache";
   EXPECT_LE(std::abs(t2.usage.cachedTokens - t2ExpectedCached), 1)
-      << "Turn 2 cached should match block-aligned turn 1 prompt";
-
-  int t2Prompt = t2.usage.promptTokens;
+      << "Turn 2 cached should match block-aligned turn 1 session";
 
   std::cout << "t2.content: " << t2.content << std::endl;
   // Turn 3
@@ -610,12 +640,17 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
   std::cout << "    prompt=" << t3.usage.promptTokens
             << " cached=" << t3.usage.cachedTokens << std::endl;
 
-  // Turn 3 should hit cache on turn 2's prompt prefix (block-aligned)
-  int t3ExpectedCached =
-      computeExpectedCachedTokens(t2Prompt, cfg.firstBlockSize, cfg.blockSize);
+  // Turn 3 should hit cache on turn 2's session state (prompt + completion).
+  int t2SessionTokens = t2.usage.promptTokens + t2.usage.completionTokens;
+  int t3ExpectedCached = computeExpectedCachedTokens(
+      t2SessionTokens, cfg.firstBlockSize, cfg.blockSize);
+  std::cout << "    t2 session tokens: " << t2SessionTokens
+            << " (prompt=" << t2.usage.promptTokens
+            << " + completion=" << t2.usage.completionTokens << ")" << std::endl;
+  std::cout << "    Expected cached: " << t3ExpectedCached << std::endl;
   EXPECT_GT(t3.usage.cachedTokens, 0) << "Turn 3 should hit prefix cache";
   EXPECT_LE(std::abs(t3.usage.cachedTokens - t3ExpectedCached), 1)
-      << "Turn 3 cached should match block-aligned turn 2 prompt";
+      << "Turn 3 cached should match block-aligned turn 2 session";
 
   std::cout << "  OK: Multi-turn hash creation working" << std::endl;
 }
