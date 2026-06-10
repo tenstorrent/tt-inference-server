@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import NamedTuple, Tuple
 
@@ -1401,3 +1402,25 @@ _DEFAULT_SAMPLING_PARAMS = {
 
 # Sentinel object for worker shutdown signaling
 SHUTDOWN_SIGNAL = {"__shutdown__": True}
+
+
+# Reserved task_ids for canary-monitor probes (see health_monitoring/).
+# Must not contain "_chunk_", must be <= 36 bytes, and must not collide with UUID4 task_ids.
+CANARY_TASK_ID = "__canary__"  # shallow: bare host-collective probe
+CANARY_DEEP_TASK_ID = (
+    "__canary_deep__"  # deep: replays compiled warmup forward to certify silicon
+)
+CANARY_TASK_IDS = frozenset({CANARY_TASK_ID, CANARY_DEEP_TASK_ID})
+
+
+@dataclass(frozen=True)
+class CanaryProbeRequest:
+    """Sentinel put on the scheduler task_queue by the canary monitor.
+
+    Workers route it to ``runner.health_check()`` instead of ``runner.run()``.
+    Frozen dataclass so it pickles cleanly across the multiprocessing queue.
+    """
+
+    _task_id: str = field(default=CANARY_TASK_ID)
+    stream: bool = field(default=False)
+    deep: bool = field(default=False)

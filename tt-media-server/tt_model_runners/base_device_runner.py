@@ -64,6 +64,15 @@ class BaseDeviceRunner(ABC):
     def run(self, *args, **kwargs):
         pass
 
+    def health_check(self, deep: bool = False) -> bool:
+        """Liveness probe called by the device worker instead of ``run()`` for canary probes.
+
+        Returning ``True`` here proves the worker process and its dequeue loop are alive.
+        Override in multi-host runners to perform a real IPC round-trip; honour ``deep``
+        to also certify device liveness via a minimal forward pass.
+        """
+        return True
+
     def set_device(self):
         return {}
 
