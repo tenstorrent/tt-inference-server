@@ -104,7 +104,9 @@ def run_exabox(ctx, tests: Optional[str] = None) -> List[ExaboxResult]:
                     "return_code": proc.returncode,
                     "elapsed_seconds": round(elapsed, 1),
                     "results_dir": str(out_dir),
-                    "result_files": sorted(f.name for f in out_dir.glob("*.json")),
+                    "result_files": sorted(
+                        f.name for f in out_dir.iterdir() if f.is_file()
+                    ),
                 },
             )
         )
