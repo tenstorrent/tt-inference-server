@@ -22,13 +22,15 @@ namespace sch = tt_llm_engine::scheduler;
 namespace ds = sch::decode;
 namespace ps = sch::prefill;
 
-inline sch::ISRequest makeAllocateRequest(uint32_t requestId,std::optional<uint32_t> migrateFromSlot = std::nullopt) {
-  auto req = sch::ISRequest{.type = ds::RequestType::ALLOCATE,
-          .request_id = requestId,
-          .tokens = {},
-          .gen = {
-          },
-        };
+inline sch::ISRequest makeAllocateRequest(
+    uint32_t requestId,
+    std::optional<uint32_t> migrateFromSlot = std::nullopt) {
+  auto req = sch::ISRequest{
+      .type = ds::RequestType::ALLOCATE,
+      .request_id = requestId,
+      .tokens = {},
+      .gen = {},
+  };
   if (migrateFromSlot.has_value()) {
     req.gen.migrate_from_slot = *migrateFromSlot;
   }
