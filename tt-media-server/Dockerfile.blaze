@@ -259,6 +259,50 @@ RUN set -eux; \
 
 
 # ==============================================================================
+# STRIP cpp_server BUILD ARTIFACTS - drop ~2 GB of build-time-only state
+# ==============================================================================
+# Verified by readelf -d + ldd on tt_media_server_cpp:
+#   RUNPATH = $ORIGIN/tt-llm-engine:/opt/tt-llm-engine-src/tt-metal/build_Release/lib:/opt/tt-llm-engine/lib
+#   All NEEDED .so deps resolve from system paths + the two engine prefixes
+#   above. NOTHING inside cpp_server/build/ is on the runtime lookup path.
+# What we delete and why:
+#   - build/CMakeFiles/ (342 MB)     CMake build-graph bookkeeping
+#   - build/_deps/      (795 MB)     FetchContent source/build intermediates
+#                                    incl. Rust proc-macro .so files (compile-time only)
+#   - build/{CMakeCache.txt, build.ninja, *.cmake, compile_commands.json, ...}
+#                                    cmake/ninja generator state
+#   - top-level *_test, test_*, *_benchmark (~810 MB)  CTest binaries, not run in prod
+#   - top-level *.a (libllm_runner_lib.a, 26 MB)       link-time only; already in binary
+#   - dangling cpp_server/compile_commands.json symlink
+# Safety gates at the bottom: binary must still exist + ldd must still resolve.
+RUN set -eux; \
+    BUILD="${APP_DIR}/server/cpp_server/build"; \
+    echo "cpp_server/build/ BEFORE strip:"; du -sh "${BUILD}" || true; \
+    rm -rf "${BUILD}/CMakeFiles" "${BUILD}/_deps" ; \
+    rm -f  "${BUILD}/CMakeCache.txt" \
+           "${BUILD}/build.ninja" \
+           "${BUILD}/.ninja_log" \
+           "${BUILD}/.ninja_deps" \
+           "${BUILD}/compile_commands.json" \
+           "${BUILD}/cmake_install.cmake" ; \
+    find "${BUILD}" -maxdepth 1 -type f \
+        \( -name '*.cmake' -o -name 'CTestTestfile.cmake' \) -delete ; \
+    find "${BUILD}" -maxdepth 1 -type f \
+        \( -name '*_test' -o -name 'test_*' -o -name '*_benchmark' \) -delete ; \
+    find "${BUILD}" -maxdepth 1 -type f \
+        \( -name '*.a' -o -name '*.o' \) -delete ; \
+    rm -f "${APP_DIR}/server/cpp_server/compile_commands.json" ; \
+    echo "cpp_server/build/ AFTER strip:"; du -sh "${BUILD}" || true; \
+    test -x "${BUILD}/tt_media_server_cpp" || { echo "ERROR: tt_media_server_cpp missing after strip"; exit 1; } ; \
+    if ldd "${BUILD}/tt_media_server_cpp" 2>/dev/null | grep -q "not found" ; then \
+        echo "ERROR: unresolved .so deps for tt_media_server_cpp after strip" ; \
+        ldd "${BUILD}/tt_media_server_cpp" ; \
+        exit 1 ; \
+    fi ; \
+    echo "OK: cpp_server build artifacts stripped (~1.97 GB); binary intact + linkable"
+
+
+# ==============================================================================
 # RUNTIME STAGE - final lightweight image
 # ==============================================================================
 # Same shape as before; path expectations changed (TT_METAL_HOME under /opt,
