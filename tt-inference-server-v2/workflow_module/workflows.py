@@ -67,6 +67,52 @@ class AgenticWorkflow(WorkflowExecution):
         return [TaskOutcome("evaluation", 0, elapsed, blocks[0].kind)]
 
 
+class ExaboxWorkflow(WorkflowExecution):
+    """Exabox shell benchmark suites (guidellm soaks, long-context, ...).
+
+    Bypasses the media-task dispatcher: each suite under
+    ``test_module/exabox`` is a self-contained shell harness driven by
+    ``run_test.sh``, which manages its own per-suite uv venv. Emits one
+    Block(kind="exabox") per suite.
+    """
+
+    name = "exabox"
+    task_types = ()
+
+    def run_tasks(self) -> List[TaskOutcome]:
+        from test_module.exabox.runner import run_exabox
+
+        opts = self.orchestrator_metadata.exabox
+        tests = opts.tests if opts is not None else None
+        self.logger.info("→ task=exabox tests=%s", tests or "all")
+        started = time.time()
+        try:
+            results = run_exabox(self.ctx, tests=tests)
+        except Exception as e:
+            elapsed = time.time() - started
+            self.logger.exception("✘ exabox raised after %.1fs: %s", elapsed, e)
+            return [TaskOutcome("exabox", 1, elapsed, None)]
+
+        if not results:
+            elapsed = time.time() - started
+            self.logger.error("✘ exabox ran no suites (%.1fs)", elapsed)
+            return [TaskOutcome("exabox", 1, elapsed, None)]
+
+        for r in results:
+            mark = "✓" if r.return_code == 0 else "✘"
+            self.logger.info(
+                "%s exabox:%s rc=%d (%.1fs)",
+                mark,
+                r.test,
+                r.return_code,
+                r.elapsed_seconds,
+            )
+        return [
+            TaskOutcome(f"exabox:{r.test}", r.return_code, r.elapsed_seconds, "exabox")
+            for r in results
+        ]
+
+
 class BenchmarksWorkflow(WorkflowExecution):
     name = "benchmarks"
     task_types = (MediaTaskType.BENCHMARK,)
@@ -161,6 +207,7 @@ WORKFLOW_REGISTRY: Dict[str, Type[WorkflowExecution]] = {
     EvalsWorkflow.name: EvalsWorkflow,
     AgenticWorkflow.name: AgenticWorkflow,
     BenchmarksWorkflow.name: BenchmarksWorkflow,
+    ExaboxWorkflow.name: ExaboxWorkflow,
     SpecTestsWorkflow.name: SpecTestsWorkflow,
     ReleaseWorkflow.name: ReleaseWorkflow,
 }
@@ -178,6 +225,7 @@ __all__ = [
     "AgenticWorkflow",
     "BenchmarksWorkflow",
     "EvalsWorkflow",
+    "ExaboxWorkflow",
     "ReleaseWorkflow",
     "SpecTestsWorkflow",
     "WORKFLOW_REGISTRY",

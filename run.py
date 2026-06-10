@@ -407,6 +407,21 @@ def parse_arguments():
     )
 
     # Prefix-cache benchmark
+    exabox_group = parser.add_argument_group(
+        "EXABOX workflow (v2)",
+        "Arguments for --workflow exabox (shell benchmark suites, routed to v2)",
+    )
+    exabox_group.add_argument(
+        "--exabox-tests",
+        type=str,
+        default=None,
+        help="Comma-separated exabox suites to run (default: all suites under "
+        "tt-inference-server-v2/test_module/exabox, e.g. agentic_bench, benchmark, "
+        "guidellm_sweep, long_context_bench, multi_user_turn_bench, "
+        "sharegpt_multiturn, summarize_bench). Suite knobs (DURATION, "
+        "TARGET_CONCURRENCY, ...) are read from the environment.",
+    )
+
     prefix_cache_group = parser.add_argument_group(
         "Prefix-cache benchmark (v2)",
         "Arguments for --workflow benchmarks --prefix-cache (routed to v2)",
@@ -517,6 +532,12 @@ def parse_arguments():
             f"(got --workflow {args.workflow})."
         )
 
+    if args.exabox_tests and args.workflow != "exabox":
+        parser.error(
+            "--exabox-tests requires --workflow exabox "
+            f"(got --workflow {args.workflow})."
+        )
+
     return args
 
 
@@ -540,6 +561,7 @@ def handle_secrets(runtime_config):
         WorkflowType.TESTS,
         WorkflowType.SPEC_TESTS,
         WorkflowType.REPORTS,
+        WorkflowType.EXABOX,
     }
     # --docker-server requires the HF_TOKEN env var to be available
     huggingface_required = (

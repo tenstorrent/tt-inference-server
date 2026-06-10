@@ -34,6 +34,7 @@ _V2_WORKFLOW_NAMES = {
     WorkflowType.SPEC_TESTS: "spec_tests",
     WorkflowType.RELEASE: "release",
     WorkflowType.AGENTIC: "agentic",
+    WorkflowType.EXABOX: "exabox",
 }
 
 _V2_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
@@ -68,10 +69,12 @@ def _is_prefix_cache_run(wf, runtime_config) -> bool:
 
 def can_route_to_v2(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
-    # Agentic evals and the prefix-cache benchmark are v2-only features with no
-    # v1 driver. They route to v2 for ANY model (not just the image/audio set in
-    # _V2_ROUTED_MODELS), launched through their dedicated venv launchers.
-    if wf == WorkflowType.AGENTIC or _is_prefix_cache_run(wf, runtime_config):
+    # Agentic evals, exabox benchmark suites, and the prefix-cache benchmark
+    # are v2-only features with no v1 driver. They route to v2 for ANY model
+    # (not just the image/audio set in _V2_ROUTED_MODELS).
+    if wf in (WorkflowType.AGENTIC, WorkflowType.EXABOX) or _is_prefix_cache_run(
+        wf, runtime_config
+    ):
         return True
     if not is_v2_routed_model(model_spec):
         return False
@@ -136,9 +139,12 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
         ]
         if runtime_config.docker_server:
             cmd.append("--docker-server")
-        sdxl_n = getattr(runtime_config, "sdxl_num_prompts", None)
-        if sdxl_n not in (None, "", "0"):
-            cmd.extend(["--num-prompts", str(sdxl_n)])
+        if wf == WorkflowType.EXABOX:
+            _extend_if_set(cmd, "--exabox-tests", runtime_config.exabox_tests)
+        else:
+            sdxl_n = getattr(runtime_config, "sdxl_num_prompts", None)
+            if sdxl_n not in (None, "", "0"):
+                cmd.extend(["--num-prompts", str(sdxl_n)])
         _warn_on_unsupported_args(runtime_config)
         delegate_desc = "run.py"
 

@@ -83,6 +83,17 @@ class PrefixCacheOptions:
 
 
 @dataclass(frozen=True)
+class ExaboxOptions:
+    """Exabox suite selection forwarded to ``ExaboxWorkflow``.
+
+    ``tests`` is the comma-separated suite list from ``--exabox-tests``;
+    ``None`` runs every suite under ``test_module/exabox``.
+    """
+
+    tests: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class OrchestratorMetadata:
     """Top-level metadata the per-task runners can't see themselves.
 
@@ -94,6 +105,7 @@ class OrchestratorMetadata:
     run_command: Optional[str] = None
     runtime_model_spec_json: Optional[str] = None
     prefix_cache: Optional[PrefixCacheOptions] = None
+    exabox: Optional[ExaboxOptions] = None
 
 
 class WorkflowExecution(ABC):
@@ -268,6 +280,7 @@ class WorkflowExecution(ABC):
 
 
 __all__ = [
+    "ExaboxOptions",
     "OrchestratorMetadata",
     "PrefixCacheOptions",
     "TaskOutcome",

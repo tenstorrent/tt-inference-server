@@ -263,6 +263,21 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    # ----- Exabox benchmark suites (--workflow exabox) ----------------
+    parser.add_argument(
+        "--exabox-tests",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated exabox suites to run (default: all suites under "
+            "test_module/exabox, e.g. agentic_bench, benchmark, "
+            "guidellm_sweep, long_context_bench, multi_user_turn_bench, "
+            "sharegpt_multiturn, summarize_bench). Suite knobs (DURATION, "
+            "TARGET_CONCURRENCY, ...) are read from the environment; see "
+            "each suite's defaults.env."
+        ),
+    )
+
     args = parser.parse_args()
     if args.repeat < 1:
         parser.error("--repeat must be >= 1")
@@ -282,6 +297,11 @@ def parse_args() -> argparse.Namespace:
     if args.prefix_cache and args.workflow != "benchmarks":
         parser.error(
             "--prefix-cache currently requires --workflow benchmarks "
+            f"(got --workflow {args.workflow})."
+        )
+    if args.exabox_tests and args.workflow != "exabox":
+        parser.error(
+            "--exabox-tests requires --workflow exabox "
             f"(got --workflow {args.workflow})."
         )
     if args.output_dir is None:

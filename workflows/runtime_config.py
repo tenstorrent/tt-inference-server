@@ -77,6 +77,7 @@ class RuntimeConfig:
     prefix_cache_scenarios_json: Optional[str] = None
     prefix_cache_trace: Optional[str] = None
     jwt_secret: Optional[str] = None
+    exabox_tests: Optional[str] = None
 
     # Device configuration
     device_id: Optional[List[int]] = None
@@ -153,6 +154,7 @@ class RuntimeConfig:
             ),
             prefix_cache_trace=getattr(args, "prefix_cache_trace", None),
             jwt_secret=getattr(args, "jwt_secret", None),
+            exabox_tests=getattr(args, "exabox_tests", None),
             device_id=args.device_id,
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,
