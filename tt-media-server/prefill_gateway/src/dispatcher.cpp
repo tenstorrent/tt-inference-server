@@ -9,7 +9,6 @@
 #include <utility>
 #include <vector>
 
-#include "gateway/affinity_cache.hpp"
 #include "gateway/gateway_metrics.hpp"
 #include "gateway/prefill_registry.hpp"
 #include "gateway/prefill_selector.hpp"
@@ -17,23 +16,21 @@
 
 namespace tt::gateway {
 
-Dispatcher::Dispatcher(PrefillRegistry& registry, AffinityCache& affinityCache,
-                       Senders senders)
-    : Dispatcher(registry, affinityCache, std::move(senders),
+Dispatcher::Dispatcher(PrefillRegistry& registry, Senders senders)
+    : Dispatcher(registry, std::move(senders),
                  Options{std::chrono::minutes(5), std::chrono::minutes(1),
                          std::chrono::seconds(30), 3}) {}
 
-Dispatcher::Dispatcher(PrefillRegistry& registry, AffinityCache& affinityCache,
-                       Senders senders, Options options)
+Dispatcher::Dispatcher(PrefillRegistry& registry, Senders senders,
+                       Options options)
     : registry_(registry),
-      affinity_cache_(affinityCache),
       senders_(std::move(senders)),
       options_(options) {}
 
 void Dispatcher::onPrefillRequest(
     const tt::sockets::PrefillRequestMessage& msg) {
   auto prefills = registry_.routingSnapshot(msg.registration_hashes);
-  const uint64_t affinityKey =
+  const uint64_t firstRegistrationHash =
       msg.registration_hashes.empty() ? 0 : msg.registration_hashes.front();
 
   auto selection = selectPrefill(prefills, round_robin_cursor_);
@@ -64,7 +61,7 @@ void Dispatcher::onPrefillRequest(
       "[Dispatcher] taskId={} route prefill='{}' reason={} "
       "prefix_match_depth={} hash={}",
       msg.task_id, chosen, routingReasonName(selection.reason),
-      selection.prefix_match_depth, affinityKey);
+      selection.prefix_match_depth, firstRegistrationHash);
 
   registry_.incrementInflight(chosen);
   {
@@ -193,8 +190,6 @@ void Dispatcher::onCacheBlocksEvicted(
 }
 
 void Dispatcher::onPrefillDown(const std::string& serverId) {
-  affinity_cache_.evictPrefill(serverId);
-
   std::vector<std::pair<uint32_t, InFlightEntry>> orphaned;
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);

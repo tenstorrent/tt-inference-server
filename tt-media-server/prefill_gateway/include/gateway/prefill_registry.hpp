@@ -78,8 +78,14 @@ class PrefillRegistry {
   void setOnPrefillDown(PrefillStateCallback callback);
 
  private:
+  void removeCachedBlockFromIndex(uint64_t block_hash,
+                                  const std::string& server_id);
+  static PrefillSnapshot makeSnapshot(const PrefillPeer& peer,
+                                      size_t prefix_match_depth);
+
   mutable std::mutex mutex_;
   std::unordered_map<std::string, PrefillPeer> prefills_;
+  // Inverted cache index used for request-time longest-prefix matching.
   std::unordered_map<uint64_t, std::unordered_set<std::string>>
       cache_block_index_;
 

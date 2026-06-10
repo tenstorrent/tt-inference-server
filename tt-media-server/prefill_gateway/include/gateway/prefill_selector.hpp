@@ -22,6 +22,13 @@ struct PrefillSnapshot {
   size_t cached_blocks = 0;
   size_t prefix_match_depth = 0;
   std::chrono::steady_clock::time_point last_heartbeat{};
+
+  bool isEligible() const {
+    if (!healthy) return false;
+    if (!accepting_tasks) return false;
+    if (max_in_flight > 0 && in_flight >= max_in_flight) return false;
+    return true;
+  }
 };
 
 enum class PrefillRoutingReason {

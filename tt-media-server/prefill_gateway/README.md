@@ -19,8 +19,8 @@ cmake --build build -j
 This produces:
 
 - `build/prefill_gateway` — the gateway binary.
-- `build/prefill_selector_test`, `build/affinity_cache_test`,
-  `build/prefill_registry_test`, `build/dispatcher_test` — unit tests
+- `build/prefill_selector_test`, `build/prefill_registry_test`,
+  `build/dispatcher_test` — unit tests
   (no I/O).
 - `build/gateway_e2e_test` — integration test with real
   `SocketManager` instances over loopback (decode + gateway + 2 prefills in

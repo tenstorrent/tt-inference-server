@@ -7,22 +7,20 @@
 
 namespace tt::gateway {
 
-namespace {
-
-void removeFromIndex(
-    std::unordered_map<uint64_t, std::unordered_set<std::string>>& index,
-    uint64_t blockHash, const std::string& serverId) {
-  auto indexIt = index.find(blockHash);
-  if (indexIt == index.end()) {
+void PrefillRegistry::removeCachedBlockFromIndex(uint64_t blockHash,
+                                                 const std::string& serverId) {
+  auto indexIt = cache_block_index_.find(blockHash);
+  if (indexIt == cache_block_index_.end()) {
     return;
   }
   indexIt->second.erase(serverId);
   if (indexIt->second.empty()) {
-    index.erase(indexIt);
+    cache_block_index_.erase(indexIt);
   }
 }
 
-PrefillSnapshot makeSnapshot(const PrefillPeer& peer, size_t prefixMatchDepth) {
+PrefillSnapshot PrefillRegistry::makeSnapshot(const PrefillPeer& peer,
+                                              size_t prefixMatchDepth) {
   PrefillSnapshot snap;
   snap.server_id = peer.server_id;
   snap.healthy = peer.healthy;
@@ -34,8 +32,6 @@ PrefillSnapshot makeSnapshot(const PrefillPeer& peer, size_t prefixMatchDepth) {
   snap.last_heartbeat = peer.last_heartbeat;
   return snap;
 }
-
-}  // namespace
 
 void PrefillRegistry::preRegister(const std::string& serverId,
                                   tt::sockets::SocketManager* manager) {
@@ -68,7 +64,7 @@ void PrefillRegistry::markDown(const std::string& serverId) {
       wasKnown = true;
       it->second.healthy = false;
       for (const uint64_t blockHash : it->second.cached_blocks) {
-        removeFromIndex(cache_block_index_, blockHash, serverId);
+        removeCachedBlockFromIndex(blockHash, serverId);
       }
       it->second.cached_blocks.clear();
       // Keep in_flight unchanged: dispatcher's onPrefillDown will fail those
@@ -120,7 +116,7 @@ void PrefillRegistry::evictCachedBlocks(
   if (it == prefills_.end()) return;
   for (uint64_t h : blockHashes) {
     if (it->second.cached_blocks.erase(h) > 0) {
-      removeFromIndex(cache_block_index_, h, serverId);
+      removeCachedBlockFromIndex(h, serverId);
     }
   }
 }

@@ -21,7 +21,6 @@
 #include <vector>
 #include <zmq.hpp>
 
-#include "gateway/affinity_cache.hpp"
 #include "gateway/dispatcher.hpp"
 #include "gateway/gateway_health.hpp"
 #include "gateway/gateway_health_server.hpp"
@@ -328,8 +327,7 @@ class GatewayHarness {
       return decodeSm_.sendObject("prefill_result", m);
     };
 
-    dispatcher_ =
-        std::make_unique<Dispatcher>(registry_, affinity_, std::move(senders));
+    dispatcher_ = std::make_unique<Dispatcher>(registry_, std::move(senders));
 
     registry_.setOnPrefillDown(
         [this](const std::string& id) { dispatcher_->onPrefillDown(id); });
@@ -416,13 +414,11 @@ class GatewayHarness {
   }
 
   PrefillRegistry& registry() { return registry_; }
-  AffinityCache& affinity() { return affinity_; }
   Dispatcher& dispatcher() { return *dispatcher_; }
 
  private:
   uint16_t decodePort_;
   PrefillRegistry registry_;
-  AffinityCache affinity_;
   tt::sockets::SocketManager decodeSm_;
   std::vector<std::unique_ptr<tt::sockets::SocketManager>> prefillSms_;
   std::unique_ptr<Dispatcher> dispatcher_;
@@ -560,8 +556,7 @@ class ZmqRouterGatewayHarness {
       return decodeSm_.sendObject("prefill_result", msg);
     };
 
-    dispatcher_ =
-        std::make_unique<Dispatcher>(registry_, affinity_, std::move(senders));
+    dispatcher_ = std::make_unique<Dispatcher>(registry_, std::move(senders));
 
     registry_.setOnPrefillDown(
         [this](const std::string& id) { dispatcher_->onPrefillDown(id); });
@@ -618,13 +613,11 @@ class ZmqRouterGatewayHarness {
   }
 
   PrefillRegistry& registry() { return registry_; }
-  AffinityCache& affinity() { return affinity_; }
 
  private:
   uint16_t decodePort_;
   uint16_t prefillRouterPort_;
   PrefillRegistry registry_;
-  AffinityCache affinity_;
   tt::sockets::SocketManager decodeSm_;
   ZmqPrefillRouter prefillRouter_;
   std::unique_ptr<Dispatcher> dispatcher_;

@@ -9,7 +9,6 @@
 #include <memory>
 #include <vector>
 
-#include "gateway/affinity_cache.hpp"
 #include "gateway/gateway_metrics.hpp"
 #include "gateway/prefill_registry.hpp"
 
@@ -60,7 +59,7 @@ class DispatcherTest : public ::testing::Test {
           return true;
         };
 
-    dispatcher = std::make_unique<Dispatcher>(registry, affinity, senders);
+    dispatcher = std::make_unique<Dispatcher>(registry, senders);
   }
 
   void markAllHealthy() {
@@ -84,7 +83,6 @@ class DispatcherTest : public ::testing::Test {
   }
 
   PrefillRegistry registry;
-  AffinityCache affinity;
   std::unique_ptr<Dispatcher> dispatcher;
 
   std::vector<CapturedRequest> requests;
@@ -140,34 +138,6 @@ TEST_F(DispatcherTest, CachedBlockHitDrivesPrefixRouting) {
   EXPECT_EQ(requests[0].prefillServerId, "B");
   ASSERT_EQ(assignments.size(), 1u);
   EXPECT_EQ(assignments[0].server_id, "B");
-}
-
-TEST_F(DispatcherTest, ResultDoesNotCreateRoutingCacheEntry) {
-  markAllHealthy();
-  dispatcher->onPrefillRequest(makeRequest(1, /*hash=*/123));
-  ASSERT_EQ(requests.size(), 1u);
-  const std::string chosen = requests[0].prefillServerId;
-
-  tt::sockets::PrefillResultMessage ok(1);
-  ok.error = false;
-  ok.finished = true;
-  dispatcher->onPrefillResult(chosen, ok);
-
-  EXPECT_FALSE(affinity.lookup(123).has_value());
-}
-
-TEST_F(DispatcherTest, ErrorResultDoesNotRecordAffinity) {
-  markAllHealthy();
-  dispatcher->onPrefillRequest(makeRequest(1, /*hash=*/123));
-  ASSERT_EQ(requests.size(), 1u);
-  const std::string chosen = requests[0].prefillServerId;
-
-  tt::sockets::PrefillResultMessage bad(1);
-  bad.error = true;
-  bad.finished = true;
-  dispatcher->onPrefillResult(chosen, bad);
-
-  EXPECT_FALSE(affinity.lookup(123).has_value());
 }
 
 TEST_F(DispatcherTest, ResultIsForwardedToDecode) {
@@ -277,10 +247,9 @@ TEST_F(DispatcherTest, LateResultAfterTimeoutIsDropped) {
   dispatcher->onPrefillResult(chosen, late);
 
   EXPECT_TRUE(results.empty());
-  EXPECT_FALSE(affinity.lookup(123).has_value());
 }
 
-TEST_F(DispatcherTest, PrefillDownFailsOrphanedTasksAndEvictsAffinity) {
+TEST_F(DispatcherTest, PrefillDownFailsOrphanedTasks) {
   markAllHealthy();
   registry.addCachedBlocks("A", {77});
 
@@ -362,7 +331,6 @@ TEST_F(DispatcherTest, LateResultAfterCancelIsDropped) {
   dispatcher->onPrefillResult(chosen, late);
 
   EXPECT_TRUE(results.empty());
-  EXPECT_FALSE(affinity.lookup(99).has_value());
 }
 
 TEST_F(DispatcherTest, SendFailureToPrefillRollsBackAndFailsTask) {

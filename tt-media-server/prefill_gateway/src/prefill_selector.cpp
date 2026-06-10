@@ -12,26 +12,19 @@ namespace {
 struct Candidate {
   const PrefillSnapshot* prefill = nullptr;
   size_t prefix_match_depth = 0;
-};
 
-bool isEligible(const PrefillSnapshot& p) {
-  if (!p.healthy) return false;
-  if (!p.accepting_tasks) return false;
-  if (p.max_in_flight > 0 && p.in_flight >= p.max_in_flight) return false;
-  return true;
-}
-
-bool isBetterCandidate(const Candidate& candidate, const Candidate& best) {
-  if (candidate.prefix_match_depth != best.prefix_match_depth) {
-    return candidate.prefix_match_depth > best.prefix_match_depth;
+  bool isBetterThan(const Candidate& other) const {
+    if (prefix_match_depth != other.prefix_match_depth) {
+      return prefix_match_depth > other.prefix_match_depth;
+    }
+    return prefill->in_flight < other.prefill->in_flight;
   }
-  return candidate.prefill->in_flight < best.prefill->in_flight;
-}
 
-bool isTiedCandidate(const Candidate& candidate, const Candidate& best) {
-  return candidate.prefix_match_depth == best.prefix_match_depth &&
-         candidate.prefill->in_flight == best.prefill->in_flight;
-}
+  bool isTiedWith(const Candidate& other) const {
+    return prefix_match_depth == other.prefix_match_depth &&
+           prefill->in_flight == other.prefill->in_flight;
+  }
+};
 
 }  // namespace
 
@@ -76,17 +69,17 @@ PrefillSelection selectPrefill(const std::vector<PrefillSnapshot>& prefills,
   bestCandidates.reserve(prefills.size());
 
   for (const auto& p : prefills) {
-    if (!isEligible(p)) {
+    if (!p.isEligible()) {
       continue;
     }
 
     Candidate candidate{&p, p.prefix_match_depth};
     if (bestCandidates.empty() ||
-        isBetterCandidate(candidate, bestCandidates.front())) {
+        candidate.isBetterThan(bestCandidates.front())) {
       bestCandidates = {candidate};
       continue;
     }
-    if (isTiedCandidate(candidate, bestCandidates.front())) {
+    if (candidate.isTiedWith(bestCandidates.front())) {
       bestCandidates.push_back(candidate);
     }
   }
