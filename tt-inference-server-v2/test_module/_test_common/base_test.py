@@ -78,6 +78,10 @@ class BaseTest(ABC):
             if ctx is not None
             else os.getenv("SERVICE_PORT", "8000")
         )
+
+        self.base_url = (
+            ctx.base_url if ctx is not None else f"http://localhost:{self.service_port}"
+        )
         self.timeout = config.get("timeout")
         self.retry_attempts = config.get("retry_attempts")
         self.break_on_failure = config.get("break_on_failure")
@@ -149,7 +153,7 @@ class BaseTest(ABC):
         response that shows insufficient chips, e.g. a ``*LoadTest`` running
         on a Galaxy board where some workers aren't ready.
         """
-        health_url = f"http://localhost:{self.service_port}/tt-liveness"
+        health_url = f"{self.base_url}/tt-liveness"
         try:
             response = requests.get(health_url, timeout=HEALTH_CHECK_CONFIG.TIMEOUT)
         except requests.exceptions.RequestException as e:
@@ -424,7 +428,8 @@ class BaseTest(ABC):
         retry_delay = (
             retry_delay if retry_delay is not None else HEALTH_CHECK_CONFIG.RETRY_DELAY
         )
-        health_url = f"http://localhost:{service_port}/tt-liveness"
+        host = self.ctx.server_host if self.ctx is not None else "http://localhost"
+        health_url = f"{host}:{service_port}/tt-liveness"
         logger.info("Waiting for server at %s ...", health_url)
 
         for attempt in range(1, max_attempts + 1):
