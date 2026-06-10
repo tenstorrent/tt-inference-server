@@ -15,10 +15,9 @@ from dataclasses import dataclass
 from typing import Dict, Tuple
 
 TILE = 32
-# Per-core L1 budget for circular buffers.
-# Matches DEFAULT_L1_BUDGET_BYTES in benchmarks/matmul/config.py.
-DEFAULT_L1_BUDGET_BYTES = 1_440_000
 BF16_TILE_BYTES = 32 * 32 * 2  # 2048 bytes per bf16 tile
+# Fallback when no HardwareConfig is provided — matches the p150 91.5% budget.
+_DEFAULT_L1_BUDGET_BYTES = 1_439_170
 
 
 class ShapeNotSupportedError(ValueError):
@@ -93,17 +92,15 @@ def resolve_attn_config(
     N_kv_heads: int,
     head_dim: int,
     max_seq_len: int,
-    l1_budget: int = DEFAULT_L1_BUDGET_BYTES,
+    hw_config=None,
 ) -> Dict:
     """Find a valid flash attention config for the given model dimensions.
 
-    Returns a dict of kwargs for make_flash_attn_kernel.
+    Returns a dict of kwargs for make_flash_attn_kernel (includes hw_config).
     Raises ShapeNotSupportedError if no valid config exists.
     """
+    l1_budget = hw_config.l1_budget() if hw_config is not None else _DEFAULT_L1_BUDGET_BYTES
     head_dim_padded = tile_align(head_dim)
-    if head_dim_padded != head_dim:
-        pass  # padding is handled transparently
-
     head_dim_tiles = head_dim_padded // TILE
 
     # Try kv_chunk_tiles from 1 up to 4 — larger chunks use more L1
@@ -115,12 +112,14 @@ def resolve_attn_config(
                 "N_kv_heads": N_kv_heads,
                 "head_dim_tiles": head_dim_tiles,
                 "kv_chunk_tiles": kv_chunk_tiles,
+                "hw_config": hw_config,
             }
 
     raise ShapeNotSupportedError(
         f"Flash attention config not feasible: head_dim={head_dim} requires "
         f"{l1_bytes_for_attn(head_dim_tiles, 1) // 1024} KiB L1 but budget is "
-        f"{l1_budget // 1024} KiB. Consider reducing head_dim or L1 budget."
+        f"{l1_budget // 1024} KiB ({hw_config.name if hw_config else 'default'}). "
+        f"Consider reducing head_dim or L1 budget."
     )
 
 
@@ -129,13 +128,14 @@ def resolve_swiglu_config(
     K: int,
     N: int,
     activation: str = "silu",
-    l1_budget: int = DEFAULT_L1_BUDGET_BYTES,
+    hw_config=None,
 ) -> Dict:
     """Find a valid SwiGLU config for the given dimensions.
 
     Returns a dict of kwargs for make_swiglu_kernel.
     Raises ShapeNotSupportedError if no valid config exists.
     """
+    l1_budget = hw_config.l1_budget() if hw_config is not None else _DEFAULT_L1_BUDGET_BYTES
     M_tiles = to_tiles(M)
     K_tiles = to_tiles(K)
     N_tiles = to_tiles(N)
