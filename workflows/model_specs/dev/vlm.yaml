@@ -326,7 +326,10 @@ templates:
   impl: tt_symbiote
   inference_engine: VLLM
   model_type: VLM
-  version: "0.1.4"  # tt_symbiote release version
+  # NOTE: `version` is the tt-inference-server IMAGE version (gated >= 0.11.0,
+  # used in the image tag) — NOT the tt_symbiote library version. Omitted here so
+  # it defaults to the current tt-inference-server VERSION. The tt_symbiote pip
+  # version lives in `metadata` below and is read by build_docker_images.py.
   # == tt_symbiote RUNTIME_PINS["DotsOCRForCausalLM"]["tt_metal_commit"] ==
   tt_metal_commit: c09f09c35a1a59a428f0e1b5cdaa8fe59fb1b195
   # Tenstorrent vLLM fork commit compatible with the tt-metal commit above.
@@ -339,9 +342,25 @@ templates:
       # batch is same-prompt replication, not vLLM request batching). See
       # tt_inference_server_integration.md §9.2/§9.6.
       max_concurrency: 1
-      max_context: 32768       # 32 * 1024
+      # Capped at 4096 so warmup trace capture stays at/below 2048-token prefill.
+      # tt_symbiote's dots.ocr prefill is not chunked, so >=4096-token prefill
+      # overflows L1 (TT_THROW program.cpp:934 circular-buffer/L1 clash). Prefill
+      # is validated working through 2048 on the T3K (8,1) DP mesh. Raising this
+      # requires prefill chunking in the tt_symbiote dots.ocr pipeline.
+      max_context: 4096        # 4 * 1024 (warmup sweeps PADDED_SEQ_LENS <= max_context-osl)
       default_impl: true
+      env_vars:
+        # tt_symbiote's dots.ocr is laid out data-parallel on T3K and its
+        # @run_on_devices(T3K, mesh_shape=(8, 1)) guard requires the live mesh to
+        # be (8, 1). vLLM's TT platform opens the mesh from MESH_DEVICE; the
+        # default "T3K" maps to (1, 8) (tensor-parallel), so override to the
+        # (8, 1) DP layout the model expects. tt-metal/vLLM accept MESH_DEVICE as
+        # a literal shape tuple (same convention the TG specs use for "(4, 8)").
+        MESH_DEVICE: "(8, 1)"
       vllm_args:
+        # dots.ocr ships custom modeling code on the HF Hub, so vLLM's
+        # ModelConfig requires trust_remote_code to load it.
+        trust-remote-code: true
         mm-processor-cache-gb: 0
         limit-mm-per-prompt: '{"image": 1}'
         max-num-seqs: 1
@@ -350,8 +369,26 @@ templates:
         # ttnn.open_mesh_device(trace_region_size=200_000_000).
         trace_region_size: 200000000
   status: EXPERIMENTAL
+  # Skip tt-inference-server's generic background trace-capture sweep. That sweep
+  # (utils/prompt_client.py::DEFAULT_IMAGE_RESOLUTIONS = [(512,512),(512,1024),
+  # (1024,512),(1024,1024)]) feeds arbitrary image resolutions to the model. The
+  # tt_symbiote dots.ocr vision tower is only tuned for the validated patch grid
+  # (84,132)=11088 patches (box 1848x1176); off-grid resolutions select an
+  # untuned vision-SDPA program config whose static circular buffers overflow L1
+  # (TT_THROW program.cpp:925, >1.5 MB) and crash EngineCore during warmup.
+  # Instead, rely on tt_symbiote's lazy trace capture: the vision/decode traces
+  # are captured on the FIRST real request for that request's exact geometry —
+  # the same path the standalone e2e (examples/e2e/dots_ocr/run_dots_ocr.py)
+  # validates. Requests should resize images to the (84,132) grid until the
+  # vision tower's SDPA buckets cover arbitrary resolutions.
+  has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   supported_modalities:
     - text
     - image
+  metadata:
+    rednote-hilab/dots.ocr:
+      # tt_symbiote pip version installed into the image (build_docker_images.py
+      # reads this; default index is the production PyPI — see the Dockerfile note).
+      tt_symbiote_version: "0.1.4"

@@ -669,4 +669,36 @@ for model_id, model_spec in MODEL_SPECS.items():
             )
         )
 
+    # dots.ocr (tt_symbiote S0 OCR adapter): restrict the sweep to a single
+    # validated-geometry image+text benchmark. Rationale:
+    #   * The vision tower is tuned ONLY for the validated patch grid
+    #     (84,132)=11088 patches (box 1848x1176). The generic VLM image
+    #     resolutions (512..1024) select an untuned vision-SDPA program config
+    #     that overflows L1 and crashes EngineCore (see vlm.yaml has_builtin_warmup
+    #     note). 1848x1176 (2,173,248 px) maps to exactly grid (84,132) on the
+    #     server processor (empirically: prompt_tokens ~= 2772 vision tokens).
+    #   * Structured-output / guided decoding is incompatible with the S0
+    #     one-hot-logits bridge (vLLM masks logits that are already argmax'd
+    #     on device), so the VLM structured-output tasks are dropped.
+    #   * Text-only sweeps don't exercise the OCR vision path we care about.
+    # isl=128/osl=128 -> ~2772 vision + 128 text + 128 out < 4096 max_context.
+    if model_spec.model_name == "dots.ocr":
+        tasks = [
+            BenchmarkTask(
+                param_map={
+                    device: _expand_image_sweep_params(
+                        isl=128,
+                        osl=128,
+                        image_height=1176,
+                        image_width=1848,
+                        images_per_prompt=1,
+                        max_context=max_context,
+                        max_tokens_all_users=max_tokens_all_users,
+                        model_max_concurrency=model_max_concurrency,
+                        model_name=model_spec.model_name,
+                    )
+                }
+            )
+        ]
+
     BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(model_id=model_id, tasks=tasks)

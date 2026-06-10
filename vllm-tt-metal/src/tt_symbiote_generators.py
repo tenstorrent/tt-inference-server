@@ -35,6 +35,29 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+
+def _ensure_transformers_vision2seq_alias() -> None:
+    """Bridge a transformers 4.x→5.x rename for tt-metal's import chain.
+
+    tt_symbiote requires transformers 5.9.0, which removed ``AutoModelForVision2Seq``
+    (renamed to ``AutoModelForImageTextToText`` — same auto class). tt-metal's vLLM
+    ``Generator`` base transitively imports ``models/common/llama_models.py``, which
+    still does ``from transformers import AutoModelForVision2Seq`` (true at both the
+    dots.ocr pin c09f09c3 and later commits). Pure tt_symbiote HF usage never imports
+    that module, so this incompatibility only appears on the tt-inference-server
+    integration path — making the integration layer the right place to bridge it.
+    Aliasing the old name is semantically exact (it is the same class, renamed).
+    """
+    import transformers
+
+    if not hasattr(transformers, "AutoModelForVision2Seq") and hasattr(
+        transformers, "AutoModelForImageTextToText"
+    ):
+        transformers.AutoModelForVision2Seq = transformers.AutoModelForImageTextToText
+
+
+_ensure_transformers_vision2seq_alias()
+
 # tt-metal's Generator base. Importable in the image because TT_METAL_HOME is on
 # PYTHONPATH; importing this module does not import ttnn/torch eagerly.
 from models.tt_transformers.tt.generator import Generator  # noqa: E402
@@ -153,6 +176,32 @@ class _TTSymbioteGenerator(Generator):
             recipe.multimodal,
             max_seq_len,
         )
+        # vLLM's TT platform opens the mesh from MESH_DEVICE, which a model spec
+        # may set to a literal shape tuple (e.g. "(8, 1)" so dots.ocr's required
+        # T3K data-parallel mesh is created). But tt_symbiote resolves the device
+        # *arch* from MESH_DEVICE as an arch NAME ("T3K") in several build-time
+        # places (e.g. the dots.ocr attention-class selection,
+        # _select_attention_class) and forward-time @run_on_devices guards. Now
+        # that the worker has already opened the mesh, normalize MESH_DEVICE to
+        # the arch name implied by the *live* device so every tt_symbiote arch
+        # lookup resolves. determine_device_name disambiguates Wormhole/Blackhole
+        # via ttnn.get_arch_name() + device count.
+        try:
+            from tt_symbiote.core.arch import determine_device_name
+
+            arch_name = determine_device_name(mesh_device)
+            if arch_name and os.environ.get("MESH_DEVICE") != arch_name:
+                logger.info(
+                    "tt_symbiote: normalizing MESH_DEVICE %r -> %r (from live mesh)",
+                    os.environ.get("MESH_DEVICE"),
+                    arch_name,
+                )
+                os.environ["MESH_DEVICE"] = arch_name
+        except Exception as e:
+            logger.warning(
+                "tt_symbiote: could not normalize MESH_DEVICE from live device: %s", e
+            )
+
         model = AutoModelForCausalLM.from_pretrained(
             model_path,
             trust_remote_code=True,
@@ -269,6 +318,20 @@ class _TTSymbioteGenerator(Generator):
             "see design §9.2."
         )
 
+    def process_decode_output_host(self, tt_out: Any, is_tokens: bool = False) -> Any:
+        """Pass-through host post-processing for the plugin's async-decode path.
+
+        ``async_decode.finalize_decode`` calls this whenever the model defines it.
+        The tt-metal ``Generator`` base implementation converts on-device ttnn
+        outputs to torch using ``self.model_args``/per-DP model objects — neither
+        of which a tt_symbiote adapter has. Every tt_symbiote tier's
+        ``decode_forward`` already returns host torch logits (S0's one-hot bridge,
+        S1/S2 real logits), which is exactly what ``finalize_decode`` falls back
+        to consuming when ``process_decode_output_host`` is absent. Overriding it
+        as a pass-through keeps that contract without the on-device-token machinery.
+        """
+        return tt_out
+
     # ------------------------------------------------------------------
     # S0: one-hot-logits bridge over a token-emitting pipeline
     # ------------------------------------------------------------------
@@ -298,8 +361,35 @@ class _TTSymbioteGenerator(Generator):
         if input_ids.dim() == 1:
             input_ids = input_ids.unsqueeze(0)
 
+        # vLLM's TT model_runner delivers multimodal kwargs as nested lists
+        # (per request -> per image, with None for text-only requests). Flatten
+        # to the single concatenated pixel tensor + stacked grid the HF-shaped
+        # pipeline expects. Mirrors tt-metal's Qwen2.5-VL generator_vllm
+        # prefill_forward normalization.
+        def _flatten_mm(nested: Any) -> list:
+            items: list = []
+            if nested is None:
+                return items
+            if not isinstance(nested, (list, tuple)):
+                return [nested]
+            for per_user in nested:
+                if per_user is None:
+                    continue
+                if isinstance(per_user, (list, tuple)):
+                    items.extend([x for x in per_user if x is not None])
+                else:
+                    items.append(per_user)
+            return items
+
         pixel_values = kwargs.get("pixel_values")
         image_grid_thw = kwargs.get("image_grid_thw")
+        if isinstance(pixel_values, (list, tuple)):
+            pv_items = _flatten_mm(pixel_values)
+            pixel_values = torch.concat(pv_items, dim=0) if pv_items else None
+        if isinstance(image_grid_thw, (list, tuple)):
+            grid_items = _flatten_mm(image_grid_thw)
+            image_grid_thw = torch.stack(grid_items, dim=0) if grid_items else None
+
         if pixel_values is not None and pixel_values.dtype != torch.bfloat16:
             pixel_values = pixel_values.to(torch.bfloat16)
 
@@ -498,13 +588,98 @@ TIER_TO_CLASS: Dict[str, type] = {
 _MODULE = "tt_symbiote_generators"
 
 
+def _copy_native_multimodal_registration(arch: str, subclass: type) -> bool:
+    """Attach vLLM's native per-arch multimodal processor onto ``subclass``.
+
+    vLLM ships built-in multimodal model classes (e.g.
+    ``vllm.model_executor.models.dots_ocr.DotsOCRForCausalLM``) already decorated
+    with ``@MULTIMODAL_REGISTRY.register_processor(...)``, which sets a
+    ``_processor_factory`` (info + dummy-inputs + processor). vLLM's v1
+    ``InputProcessor`` requires the *registered* model class to carry that factory
+    (``multimodal/registry.py``). The tt_symbiote serving adapter reuses the
+    native processor verbatim (no reimplemented image preprocessing), so a VLM is
+    still a single RUNTIME_PINS row. Returns True if a native registration was
+    found and copied.
+    """
+    try:
+        from vllm import ModelRegistry as _VllmRegistry
+
+        native_cls = _VllmRegistry._try_load_model_cls(arch)
+    except Exception as e:  # pragma: no cover - import-environment dependent
+        logger.debug("tt_symbiote MM: _try_load_model_cls(%s) raised: %r", arch, e)
+        return False
+    if native_cls is None:
+        logger.debug("tt_symbiote MM: no native vLLM model registered for %s", arch)
+        return False
+    factory = getattr(native_cls, "_processor_factory", None)
+    if factory is None:
+        logger.debug(
+            "tt_symbiote MM: native %s (%s) has no _processor_factory", arch, native_cls
+        )
+        return False
+    logger.info("tt_symbiote MM: wired %s multimodal processor from native %s", arch, native_cls)
+    subclass._processor_factory = factory
+    # Mirror the capability flags vLLM queries on the model *class* so the
+    # multimodal pipeline treats the adapter like the native VLM.
+    subclass.supports_multimodal = True
+    for flag in (
+        "supports_multimodal_raw_input_only",
+        "supports_multimodal_pruning",
+        "supports_pp",
+    ):
+        if hasattr(native_cls, flag):
+            setattr(subclass, flag, getattr(native_cls, flag))
+    # vLLM's chat templating calls ``get_placeholder_str`` on the model *class*
+    # to insert the per-modality placeholder tokens (e.g. the dots.ocr
+    # <|imgpad|> span) into the prompt. It is a pure classmethod (modality -> str,
+    # no instance state), so rebind the native implementation onto the subclass.
+    native_gph = getattr(native_cls, "get_placeholder_str", None)
+    if native_gph is not None:
+        func = getattr(native_gph, "__func__", native_gph)
+        subclass.get_placeholder_str = classmethod(func)
+    return True
+
+
+def _build_registered_classes() -> Dict[str, type]:
+    """Resolve, per arch, the concrete class to register under ``TT<Arch>``.
+
+    Text-only archs register the shared tier class. Multimodal archs get a
+    per-arch subclass (so the per-class ``_processor_factory`` does not leak
+    across archs that share a tier) with vLLM's native processor copied in. The
+    subclasses are injected as module globals so the lazily-imported registry
+    path ``"tt_symbiote_generators:<name>"`` resolves in any process (including a
+    vLLM engine subprocess that re-imports this module).
+    """
+    out: Dict[str, type] = {}
+    for arch, recipe in get_serving_recipes().items():
+        base = TIER_TO_CLASS.get(recipe.tier, TTSymbioteGeneratorS1)
+        if not recipe.multimodal:
+            out[arch] = base
+            continue
+        name = f"{base.__name__}_{arch}"
+        cls = globals().get(name)
+        if cls is None:
+            cls = type(name, (base,), {"__module__": __name__})
+            _copy_native_multimodal_registration(arch, cls)
+            globals()[name] = cls
+        out[arch] = cls
+    return out
+
+
+# Built at import so synthesized multimodal subclasses exist as importable
+# module globals everywhere this module is loaded. Guarded so a missing
+# tt_symbiote/vLLM at import time never breaks registration outright.
+try:
+    _REGISTERED_CLASSES: Dict[str, type] = _build_registered_classes()
+except Exception as e:  # pragma: no cover - import-environment dependent
+    logger.warning("tt_symbiote registered-class build failed: %s", e)
+    _REGISTERED_CLASSES = {}
+
+
 def registration_entries() -> Dict[str, str]:
-    """Return ``{"TT<Arch>": "tt_symbiote_generators:<TierClass>"}`` for every
+    """Return ``{"TT<Arch>": "tt_symbiote_generators:<Class>"}`` for every
     tt_symbiote serving recipe. Drives ModelRegistry registration so adding a
     model is a single RUNTIME_PINS row, no code here.
     """
-    entries: Dict[str, str] = {}
-    for arch, recipe in get_serving_recipes().items():
-        cls = TIER_TO_CLASS.get(recipe.tier, TTSymbioteGeneratorS1)
-        entries[f"TT{arch}"] = f"{_MODULE}:{cls.__name__}"
-    return entries
+    classes = _REGISTERED_CLASSES or _build_registered_classes()
+    return {f"TT{arch}": f"{_MODULE}:{cls.__name__}" for arch, cls in classes.items()}
