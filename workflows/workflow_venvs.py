@@ -296,6 +296,31 @@ STRUCTURED_OUTPUT_FETCH_FILES = (
 STRUCTURED_OUTPUT_SCRIPT_NAME = "benchmark_serving_structured_output.py"
 
 
+def _force_identity_encoding(client_path: Path) -> None:
+    """Add Accept-Encoding: identity to the vendored benchmark client.
+
+    The downloaded backend_request_func.py sends aiohttp's default headers,
+    which advertise gzip. Gateways (e.g. console.tenstorrent.com) compress SSE
+    for gzip-accepting clients and buffer each response until generation
+    completes, so every chunk arrives at once and TTFT/TPOT/ITL are garbage.
+    The script has no --header passthrough, so patch the headers dict instead.
+    """
+    text = client_path.read_text()
+    if '"Accept-Encoding"' in text:
+        return
+    anchor = '"Content-Type": "application/json",'
+    patched = text.replace(
+        anchor, anchor + '\n            "Accept-Encoding": "identity",'
+    )
+    if patched == text:
+        logger.warning(
+            f"could not patch Accept-Encoding into {client_path}; "
+            "streaming metrics may be invalid behind compressing gateways"
+        )
+        return
+    client_path.write_text(patched)
+
+
 def fetch_structured_output_scripts(
     venv_config: "VenvConfig",
     model_spec: "ModelSpec",
@@ -319,6 +344,8 @@ def fetch_structured_output_scripts(
         )
         if return_code != 0:
             return False
+        if dst_rel == "backend_request_func.py":
+            _force_identity_encoding(dst)
     return True
 
 

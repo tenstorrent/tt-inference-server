@@ -346,6 +346,14 @@ def build_benchmark_command(
         "--result-filename", str(result_filename),
     ]
 
+    # aiohttp advertises gzip by default; gateways (e.g. console) compress
+    # SSE for gzip-accepting clients and buffer each response until
+    # generation completes, which breaks TTFT/TPOT/ITL measurement.
+    # NOTE: vllm bench serve defines --header with nargs="*", so a repeated
+    # --header flag silently overwrites the previous one; all headers must be
+    # passed as values of a single --header occurrence.
+    extra_headers = ["Accept-Encoding=identity"]
+
     if remote_server:
         # Already probed via _wait_for_remote_openai_ready; vllm's internal check
         # uses --host/--port defaults (HTTP, no auth) and would spin for 600s.
@@ -353,8 +361,10 @@ def build_benchmark_command(
         # vllm bench serve does not auto-read OPENAI_API_KEY; pass it explicitly.
         api_key = os.environ.get("OPENAI_API_KEY", "")
         if api_key:
-            cmd.extend(["--header", f"Authorization=Bearer {api_key}"])
+            extra_headers.append(f"Authorization=Bearer {api_key}")
         cmd.extend(["--trust-remote-code"])
+
+    cmd.extend(["--header", *extra_headers])
 
     # only truncate prompts for local vLLM; console rejects vLLM-specific extra fields
     if params.task_type == "text" and not remote_server:
@@ -496,7 +506,7 @@ def main():
     logger.info(f"remote_server=: {remote_server}")
 
     # set environment vars
-    _setup_benchmark_auth(jwt_secret, model_spec, logger)
+    _setup_benchmark_auth(jwt_secret, model_spec, logger, remote_server=remote_server)
 
     env_vars = os.environ.copy()
     if tools == "genai":
