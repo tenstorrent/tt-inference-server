@@ -96,9 +96,9 @@ tt::utils::PrefixCachingInfo computeRoutingInfo(
  * only prefills the uncached suffix. Expects prompt to already be a
  * vector<int> at this point. No-op if matchedTokens >= prompt size.
  */
-void applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
-                      uint32_t matchedTokens) {
-  if (tt::config::llmMode() != tt::config::LLMMode::REGULAR) {
+void applyDeltaPrompt(tt::domain::llm::LLMRequest& req, uint32_t matchedTokens,
+                      bool force = false) {
+  if (!force && tt::config::llmMode() != tt::config::LLMMode::REGULAR) {
     return;
   }
   auto& tokens = std::get<std::vector<int>>(req.prompt);
@@ -414,6 +414,14 @@ void LLMPipeline::dispatchGeneration(
 
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     if (shouldDoPrefillOnDecode(request)) {
+      // If continuation, trim prompt to only the uncached delta before
+      // submitting to the local decode device.
+      if (request.continuation && request.kv_position_id.has_value()) {
+        uint32_t matchedTokens =
+            *request.kv_position_id + 1 -
+            static_cast<uint32_t>(request.accumulated_think_tokens);
+        applyDeltaPrompt(request, matchedTokens, /*force=*/true);
+      }
       TT_LOG_DEBUG("[LLMPipeline] Using prefill on decode for sessionId: {}",
                    request.sessionId.value_or("none"));
       service_->submitStreamingRequest(request, cb, /*skipPreProcess=*/true);
@@ -459,10 +467,16 @@ bool LLMPipeline::shouldDoPrefillOnDecode(
   }
 
   const size_t maxTokens = tt::config::maxTokensToPrefillOnDecode();
-  const size_t promptTokens = static_cast<size_t>(request.prompt_tokens_count);
+  size_t promptTokens = static_cast<size_t>(request.prompt_tokens_count);
 
-  // delta is already applied so no matter if session is found
-  // compare prompt (new or remaining) with max tokens
+  // If we have a prefix-cache hit, the matched tokens are already in the KV
+  // cache and won't need prefilling again — deduct them from the effective
+  // prompt size used for the threshold comparison.
+  if (request.kv_position_id.has_value()) {
+    const size_t cached = static_cast<size_t>(*request.kv_position_id);
+    promptTokens = (promptTokens > cached) ? promptTokens - cached : 0;
+  }
+
   return promptTokens < maxTokens;
 }
 
