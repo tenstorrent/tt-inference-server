@@ -79,7 +79,7 @@ async def stream_chat_completion(
             line = raw_line.strip()
             if not line or not line.startswith("data: "):
                 continue
-            json_str = line[len("data: "):]
+            json_str = line[len("data: ") :]
             if json_str == "[DONE]":
                 break
             try:
@@ -192,7 +192,9 @@ def format_user_log(session: UserSession) -> str:
             total_ttft_values.append(turn.ttft_ms)
 
     avg_tps = sum(total_tps_values) / len(total_tps_values) if total_tps_values else 0
-    avg_ttft = sum(total_ttft_values) / len(total_ttft_values) if total_ttft_values else 0
+    avg_ttft = (
+        sum(total_ttft_values) / len(total_ttft_values) if total_ttft_values else 0
+    )
 
     lines.append(f"\n{'-' * 60}")
     lines.append(
@@ -321,7 +323,9 @@ async def main():
     parser.add_argument("--prompts", default="prompts.json")
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--max-tokens", type=int, default=8192)
-    parser.add_argument("--timeout", type=float, default=600.0, help="Per-request timeout in seconds")
+    parser.add_argument(
+        "--timeout", type=float, default=600.0, help="Per-request timeout in seconds"
+    )
     parser.add_argument("--fast-mode", action="store_true", default=True)
     parser.add_argument("--no-fast-mode", action="store_true")
     parser.add_argument("--log-file", default="inference_log.txt")
@@ -340,7 +344,9 @@ async def main():
     num_users = len(all_prompts)
     batch_size = args.batch_size
     print(f"Loaded {num_users} user sessions from {prompts_path}")
-    print(f"Batch size: {batch_size} | Max tokens: {args.max_tokens} | Fast mode: {fast_mode}")
+    print(
+        f"Batch size: {batch_size} | Max tokens: {args.max_tokens} | Fast mode: {fast_mode}"
+    )
     print(f"Server URL: {args.url}")
     print(f"Log file: {args.log_file}\n")
 
@@ -350,10 +356,10 @@ async def main():
     async with httpx.AsyncClient(http2=False) as client:
         for batch_start in range(0, num_users, batch_size):
             batch_end = min(batch_start + batch_size, num_users)
-            batch_users = [
-                (i, all_prompts[i]) for i in range(batch_start, batch_end)
-            ]
-            print(f">>> Starting batch: Users {batch_start}-{batch_end - 1} ({len(batch_users)} users)")
+            batch_users = [(i, all_prompts[i]) for i in range(batch_start, batch_end)]
+            print(
+                f">>> Starting batch: Users {batch_start}-{batch_end - 1} ({len(batch_users)} users)"
+            )
             batch_results = await run_batch(
                 client, args.url, batch_users, args.max_tokens, fast_mode, args.timeout
             )
@@ -365,7 +371,9 @@ async def main():
     log_parts: list[str] = []
     log_parts.append(f"Inference Benchmark Run - {time.strftime('%Y-%m-%d %H:%M:%S')}")
     log_parts.append(f"Server: {args.url}")
-    log_parts.append(f"Batch size: {batch_size} | Max tokens: {args.max_tokens} | Fast mode: {fast_mode}")
+    log_parts.append(
+        f"Batch size: {batch_size} | Max tokens: {args.max_tokens} | Fast mode: {fast_mode}"
+    )
     log_parts.append(f"Total users: {num_users}\n")
 
     for session in all_sessions:
