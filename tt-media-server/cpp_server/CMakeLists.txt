@@ -808,6 +808,32 @@ target_include_directories(tool_calling_integration_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
+# Disaggregation integration test: verifies prefill↔decode socket communication
+# using in-process mock transports. Lightweight — no subprocess orchestration.
+add_executable(disaggregation_integration_test
+    tests/integration/disaggregation_integration_test.cpp
+    src/sockets/socket_manager.cpp
+    src/sockets/tcp_socket_transport.cpp
+    src/sockets/zmq_socket_transport.cpp
+    src/sockets/socket_transport_factory.cpp
+)
+target_link_libraries(disaggregation_integration_test PRIVATE
+    llm_runner_lib
+    cereal::cereal
+    GTest::gtest_main)
+if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+    target_link_libraries(disaggregation_integration_test PRIVATE PkgConfig::ZMQ)
+elseif(TARGET libzmq-static)
+    target_link_libraries(disaggregation_integration_test PRIVATE libzmq-static)
+elseif(TARGET libzmq)
+    target_link_libraries(disaggregation_integration_test PRIVATE libzmq)
+endif()
+target_include_directories(disaggregation_integration_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cppzmq_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+)
+
 include(GoogleTest)
 # main_integration_test boots the whole server stack (services, IPC queues,
 # Drogon listener, worker subprocess) once per process via SetUpTestSuite, and
@@ -816,10 +842,12 @@ include(GoogleTest)
 # times AND exposing a racy teardown. Run all six tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
 add_test(NAME ToolCallingIntegrationTest COMMAND tool_calling_integration_test)
+add_test(NAME DisaggregationIntegrationTest COMMAND disaggregation_integration_test)
 set_tests_properties(ToolCallingIntegrationTest PROPERTIES TIMEOUT 120)
 # Locally the suite finishes in ~5s; cap well above that so a wedged TEST_F
 # fails with ctest's captured stdout instead of hanging the job indefinitely.
 set_tests_properties(MainIntegrationTest PROPERTIES TIMEOUT 120)
+set_tests_properties(DisaggregationIntegrationTest PROPERTIES TIMEOUT 60)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 if(ENABLE_BLAZE)
