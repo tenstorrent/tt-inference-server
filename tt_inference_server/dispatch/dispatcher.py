@@ -7,6 +7,8 @@ At init:
   1. Loads model_matrix.toml and validates schema_version.
   2. Acquires a file lock at ~/.dispatch.lock to prevent concurrent device use.
   3. Validates every model entry (GQA constraint).
+  4. Warms the tt-metal kernel cache from pre-compiled binaries in kernels/manifest.json
+     (if present); falls back to JIT with a warning when binaries are missing.
 
 At inference:
   - dispatch_* methods cache compiled kernel instances keyed by shape.
@@ -16,8 +18,11 @@ At inference:
 from __future__ import annotations
 
 import fcntl
+import hashlib
+import json
 import os
 import pathlib
+import tarfile
 import tomllib
 import warnings
 from dataclasses import dataclass
@@ -36,6 +41,9 @@ DISPATCHER_SCHEMA_VERSION = 1
 
 _DEFAULT_MATRIX_PATH = pathlib.Path(__file__).parent / "model_matrix.toml"
 _DEVICE_LOCK_PATH = pathlib.Path.home() / ".dispatch.lock"
+_KERNELS_DIR = pathlib.Path(__file__).parent.parent / "kernels"
+_MANIFEST_PATH = _KERNELS_DIR / "manifest.json"
+_TT_METAL_CACHE = pathlib.Path.home() / ".cache" / "tt-metal-cache"
 
 
 @dataclass
@@ -108,6 +116,7 @@ class KernelDispatcher:
         self._lock_fh = None
 
         self._acquire_device_lock()
+        _warm_kernel_cache(device)
 
         matrix_path = matrix_path or _DEFAULT_MATRIX_PATH
         self._matrix, self._index = _load_and_validate_matrix(matrix_path)
@@ -264,6 +273,103 @@ class KernelDispatcher:
 
     def cache_size(self) -> int:
         return len(self._cache)
+
+
+# ------------------------------------------------------------------
+# Pre-compiled kernel cache warming
+# ------------------------------------------------------------------
+
+def _sha256(path: pathlib.Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _device_build_key(device) -> Optional[str]:
+    """Return the tt-metal build key dir name for the current device.
+
+    The build key is the numeric directory under ~/.cache/tt-metal-cache/ that
+    tt-metal creates for this hardware/toolchain combination.  We identify it as
+    the directory that contains a 'kernels/' subdirectory (vs. 'firmware/').
+    Returns None if nothing is found (cache empty or not yet populated).
+    """
+    if not _TT_METAL_CACHE.is_dir():
+        return None
+    candidates = [
+        d for d in _TT_METAL_CACHE.iterdir()
+        if d.is_dir() and (d / "kernels").is_dir()
+    ]
+    if not candidates:
+        return None
+    # Pick the most recently modified — matches the current running device.
+    return max(candidates, key=lambda p: p.stat().st_mtime).name
+
+
+def _warm_kernel_cache(device) -> None:
+    """Extract pre-compiled kernel ELFs into the tt-metal disk cache.
+
+    Reads manifest.json from the kernels/ package directory.  For each variant
+    whose bundle (.tar.gz) is present and whose sha256 matches, extracts the
+    bundle into ~/.cache/tt-metal-cache/<build_key>/.  This makes the tt-metal
+    JIT cache warm so the first kernel call skips the 30–120 s Clang compilation.
+
+    Falls back silently (with a one-time warning) when:
+      - manifest.json is absent (no pre-compiled binaries shipped)
+      - a bundle file is missing
+      - sha256 mismatch (corrupted download)
+    """
+    if not _MANIFEST_PATH.is_file():
+        return
+
+    try:
+        with open(_MANIFEST_PATH) as f:
+            manifest = json.load(f)
+    except Exception as exc:
+        warnings.warn(f"Could not read kernel manifest ({exc}); using JIT compilation.", UserWarning)
+        return
+
+    build_key = _device_build_key(device)
+    if build_key is None:
+        # Cache dir not yet populated — tt-metal hasn't compiled anything yet.
+        # We can't extract to the right location, so let JIT run on first call.
+        return
+
+    cache_dest = _TT_METAL_CACHE / build_key
+    warmed = 0
+    missing = 0
+
+    for variant_key, entry in manifest.get("variants", {}).items():
+        bundle_path = _KERNELS_DIR / entry["path"]
+        if not bundle_path.is_file():
+            missing += 1
+            continue
+
+        expected_sha = entry.get("sha256", "")
+        if expected_sha and _sha256(bundle_path) != expected_sha:
+            warnings.warn(
+                f"Kernel bundle sha256 mismatch for '{variant_key}' — skipping pre-compiled binary.",
+                UserWarning,
+            )
+            missing += 1
+            continue
+
+        # Extract only entries whose paths don't already exist (avoid re-extracting on every init).
+        with tarfile.open(bundle_path, "r:gz") as tar:
+            for member in tar.getmembers():
+                dest = cache_dest / member.name
+                if not dest.exists():
+                    tar.extract(member, path=cache_dest, set_attrs=False)
+        warmed += 1
+
+    if missing > 0 and warmed == 0:
+        warnings.warn(
+            f"{missing} kernel variant(s) have no pre-compiled binary in {_KERNELS_DIR}. "
+            "First inference will trigger JIT compilation (30–120 s per variant). "
+            "Run `make release-kernels` in tt-lang to build the binaries.",
+            UserWarning,
+        )
 
 
 # ------------------------------------------------------------------
