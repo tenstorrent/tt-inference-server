@@ -316,8 +316,8 @@ bool warmupServer(const TestConfig& cfg) {
                 << std::endl;
       return true;
     }
-    std::cout << "Warmup attempt " << (attempt + 1)
-              << " failed: " << r.error << std::endl;
+    std::cout << "Warmup attempt " << (attempt + 1) << " failed: " << r.error
+              << std::endl;
     std::this_thread::sleep_for(std::chrono::seconds(2));
   }
   return false;
@@ -621,7 +621,8 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
       t1SessionTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    t1 session tokens: " << t1SessionTokens
             << " (prompt=" << t1Prompt
-            << " + completion=" << t1.usage.completionTokens << ")" << std::endl;
+            << " + completion=" << t1.usage.completionTokens << ")"
+            << std::endl;
   std::cout << "    Expected cached: " << t2ExpectedCached << std::endl;
   EXPECT_GT(t2.usage.cachedTokens, 0) << "Turn 2 should hit prefix cache";
   EXPECT_LE(std::abs(t2.usage.cachedTokens - t2ExpectedCached), 1)
@@ -646,7 +647,8 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
       t2SessionTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    t2 session tokens: " << t2SessionTokens
             << " (prompt=" << t2.usage.promptTokens
-            << " + completion=" << t2.usage.completionTokens << ")" << std::endl;
+            << " + completion=" << t2.usage.completionTokens << ")"
+            << std::endl;
   std::cout << "    Expected cached: " << t3ExpectedCached << std::endl;
   EXPECT_GT(t3.usage.cachedTokens, 0) << "Turn 3 should hit prefix cache";
   EXPECT_LE(std::abs(t3.usage.cachedTokens - t3ExpectedCached), 1)
