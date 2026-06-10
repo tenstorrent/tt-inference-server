@@ -1098,13 +1098,18 @@ def should_push_image(image_tag, force_push=False):
 
 
 def _tt_symbiote_version_for_commit_pair(tt_metal_commit, vllm_commit):
-    """Return the tt_symbiote release version to install for a commit pair.
+    """Return the tt_symbiote pip version to install for a commit pair.
 
     Scans MODEL_SPECS for an ``impl=tt_symbiote`` model whose
     (tt_metal_commit, vllm_commit) matches the image being built. Commit
     matching is prefix-tolerant because the catalog may store short SHAs while
     the build resolves full SHAs. Returns ``None`` if no tt_symbiote model maps
     to this pair (tt_transformers-only image).
+
+    NOTE: this is the tt_symbiote *library* version, read from the model spec's
+    ``metadata["tt_symbiote_version"]`` — NOT ``spec.version`` (which is the
+    tt-inference-server image version, gated >= 0.11.0 and used in the image
+    tag). The two are intentionally decoupled.
     """
 
     def _commit_match(a, b):
@@ -1118,7 +1123,15 @@ def _tt_symbiote_version_for_commit_pair(tt_metal_commit, vllm_commit):
         if _commit_match(tt_metal_commit, spec.tt_metal_commit) and _commit_match(
             vllm_commit, spec.vllm_commit
         ):
-            return spec.version
+            version = (spec.metadata or {}).get("tt_symbiote_version")
+            if not version:
+                logger.warning(
+                    "tt_symbiote model %s matches commit pair but has no "
+                    "metadata.tt_symbiote_version; skipping tt_symbiote install.",
+                    getattr(spec, "model_name", "?"),
+                )
+                return None
+            return version
     return None
 
 
@@ -1169,13 +1182,28 @@ def build_dev_image(
         tt_metal_commit, vllm_commit
     )
     if tt_symbiote_version:
+        # Index tt_symbiote is pulled from. The Dockerfile defaults to the
+        # production PyPI index. To validate a pre-release, set
+        # TT_SYMBIOTE_INDEX_URL=https://test.pypi.org/simple/ in the build
+        # environment. Only the tt_symbiote wheel is fetched from it (--no-deps).
+        tt_symbiote_index_url = os.environ.get("TT_SYMBIOTE_INDEX_URL")
+        index_note = (
+            f" from {tt_symbiote_index_url}"
+            if tt_symbiote_index_url
+            else " from the Dockerfile default index (PyPI)"
+        )
         logger.info(
-            f"Including tt_symbiote=={tt_symbiote_version} in image {dev_image_tag}"
+            f"Including tt_symbiote=={tt_symbiote_version} in image {dev_image_tag}{index_note}"
         )
         build_command[-1:-1] = [
             "--build-arg",
             f"TT_SYMBIOTE_VERSION={tt_symbiote_version}",
         ]
+        if tt_symbiote_index_url:
+            build_command[-1:-1] = [
+                "--build-arg",
+                f"TT_SYMBIOTE_INDEX_URL={tt_symbiote_index_url}",
+            ]
 
     run_command_with_logging(build_command, logger=logger, check=True, cwd=repo_root)
     logger.info(f"Successfully built dev image: {dev_image_tag}")

@@ -128,6 +128,13 @@ ARG APP_DIR="${HOME_DIR}/app"
 # tt_symbiote release installed --no-deps so it uses the source-built ttnn (from
 # TT_METAL_COMMIT_SHA_OR_TAG) instead of its PyPI ttnn pin. Empty => skip install.
 ARG TT_SYMBIOTE_VERSION=""
+# Package index tt_symbiote is pulled from. Defaults to the production PyPI
+# index (tt_symbiote 0.1.4+ is published there). To install a pre-release from
+# TestPyPI for validation, override the build-arg:
+#     --build-arg TT_SYMBIOTE_INDEX_URL=https://test.pypi.org/simple/
+# Safe with --no-deps below: ONLY the tt_symbiote wheel is resolved from this
+# index; torch / transformers / ttnn come from the tt-metal venv, not here.
+ARG TT_SYMBIOTE_INDEX_URL="https://pypi.org/simple/"
 
 # IDENTICAL environment variables as builder stage
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
@@ -215,9 +222,14 @@ RUN cd ${PYTHON_ENV_DIR}/bin \
 # from source at TT_METAL_COMMIT_SHA_OR_TAG. tt_symbiote relies on torch /
 # transformers / pillow which are already present in the tt-metal venv. Skipped
 # when TT_SYMBIOTE_VERSION is empty (tt_transformers-only images).
+#
+# NOTE: pulled from TT_SYMBIOTE_INDEX_URL, which defaults to the production PyPI
+# index (see ARG above). Override the build-arg to TestPyPI to validate a
+# pre-release. --no-deps guarantees only the tt_symbiote wheel is fetched from
+# this index.
 RUN if [ -n "${TT_SYMBIOTE_VERSION}" ]; then \
     /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && uv pip install --no-cache-dir --no-deps tt_symbiote==${TT_SYMBIOTE_VERSION} \
+    && uv pip install --no-cache-dir --no-deps --index-url \"${TT_SYMBIOTE_INDEX_URL}\" tt_symbiote==${TT_SYMBIOTE_VERSION} \
     && uv cache clean" \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}; \
     fi

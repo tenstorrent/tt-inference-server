@@ -1142,7 +1142,10 @@ templates:
     - inclusionAI/Ling-mini-2.0
   impl: tt_symbiote
   inference_engine: VLLM
-  version: "0.1.4"  # tt_symbiote release version
+  # NOTE: `version` is the tt-inference-server IMAGE version (gated >= 0.11.0,
+  # used in the image tag) — NOT the tt_symbiote library version. Omitted here so
+  # it defaults to the current tt-inference-server VERSION. The tt_symbiote pip
+  # version lives in `metadata` below and is read by build_docker_images.py.
   # == tt_symbiote RUNTIME_PINS["BailingMoeV2ForCausalLM"]["tt_metal_commit"] ==
   tt_metal_commit: f2e12917564cfdfd50f81debcc12970a557412c8
   # Tenstorrent vLLM fork commit compatible with the tt-metal commit above.
@@ -1164,3 +1167,8 @@ templates:
   status: EXPERIMENTAL
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    inclusionAI/Ling-mini-2.0:
+      # tt_symbiote pip version installed into the image (build_docker_images.py
+      # reads this; default index is the production PyPI — see the Dockerfile note).
+      tt_symbiote_version: "0.1.4"
