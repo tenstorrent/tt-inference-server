@@ -193,7 +193,6 @@ inline pl::PrefillPipelineConfig makePrefillPipelineConfig(
       return pl::PrefillH2DConfig{
           .service_id = tt::config::blazeSocketDescriptorPrefix(),
           .connect_timeout_ms = tt::config::pmConnectTimeoutMs()};
-    case tt::config::ModelRunnerType::PREFILL:
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return pl::PrefillMockConfig{.auto_layer_acks = true};
     default:
@@ -210,7 +209,6 @@ inline pl::CounterChannelConfig makePrefillAckChannelConfig(
                       tt::config::blazeSocketDescriptorPrefix(),
           .connect_timeout_ms = 60000,
       };
-    case tt::config::ModelRunnerType::PREFILL:
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return pl::SingleProcessCounterChannelConfig{};
     default:
