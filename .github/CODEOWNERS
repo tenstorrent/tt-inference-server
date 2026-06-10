@@ -22,9 +22,15 @@ workflows/model_specs/dev/ @tenstorrent/tt-inference-server-codeowners
 workflows/model_specs/prod/ @acvejicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @vcankovicTT @tstescoTT @bgoelTT
 
 # helm charts
-charts/tt-inference-server/ @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @tenstorrent/tt-inference-server-codeowners
-workflows/helm_generator/ @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @tenstorrent/tt-inference-server-codeowners
-tests/test_helm_generator/ @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @tenstorrent/tt-inference-server-codeowners
+charts/ @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT
+workflows/helm_generator/ @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT 
+tests/test_helm_generator/ @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT
+
+# github actions
+.github/workflows/models-ci-config-schema.json @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT 
+.github/workflows/mvalidate-models-ci-config.yml @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT 
+.github/workflows/models-ci-config.json @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT 
+
 
 # benchmarking
 benchmarking/ @tstescoTT @bgoelTT @stisiTT @gtobarTT @arobergeTT @ssanjayTT @tenstorrent/tt-inference-server-codeowners
