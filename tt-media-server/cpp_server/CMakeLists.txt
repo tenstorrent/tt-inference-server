@@ -87,6 +87,16 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# Google Benchmark for microbenchmarks
+FetchContent_Declare(googlebenchmark
+    GIT_REPOSITORY https://github.com/google/benchmark.git
+    GIT_TAG        v1.9.1
+    GIT_SHALLOW    TRUE
+)
+set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googlebenchmark)
+
 # GCC 12's libstdc++ still uses the C++17-deprecated std::get_temporary_buffer
 # inside std::stable_sort, which gtest.cc triggers when sorting TestInfo*.
 # Silence on the googletest targets only — keep -Wdeprecated-declarations active
@@ -897,6 +907,21 @@ set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 120)
 # Tokenizer benchmark
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)
 target_link_libraries(tokenizer_benchmark PRIVATE llm_runner_lib)
+
+# Session manager microbenchmark (Google Benchmark)
+add_executable(session_manager_benchmark
+    benchmarks/session_manager_benchmark.cpp
+    src/domain/session.cpp
+    src/services/session_manager.cpp
+    src/metrics/metrics.cpp
+)
+target_link_libraries(session_manager_benchmark PRIVATE
+    llm_runner_lib Drogon::Drogon prometheus-cpp::core benchmark::benchmark benchmark::benchmark_main)
+target_include_directories(session_manager_benchmark PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+add_test(NAME SessionManagerBenchmark COMMAND session_manager_benchmark --benchmark_min_time=0.1s)
 
 # Kafka messaging support (optional)
 if(KAFKA_ENABLED)
