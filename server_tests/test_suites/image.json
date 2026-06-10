@@ -170,6 +170,36 @@
                     }
                 }
             ]
+        },
+        {
+            "_comment": "Z-Image-Turbo: Decoupled-DMD distilled — runner hard-codes steps=9 and guidance_scale=0.0 internally, so request-side step/guidance values are ignored. Only one load case is meaningful. image_generation_time is a placeholder; calibrate from first golden run on QB2 (2x p300, TP=4) and tighten.",
+            "models": [
+                "tt-z-image-turbo"
+            ],
+            "devices": [
+                "p300x2"
+            ],
+            "num_of_devices": 1,
+            "test_cases": [
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "9 inference steps",
+                    "targets": {
+                        "num_inference_steps": 9
+                    },
+                    "model_targets": {
+                        "tt-z-image-turbo+p300x2": {
+                            "image_generation_time": 10
+                        }
+                    }
+                },
+                {
+                    "template": "ImageGenerationParamTest",
+                    "enabled": true,
+                    "description": "Param validation"
+                }
+            ]
         }
     ],
     "test_suites": []

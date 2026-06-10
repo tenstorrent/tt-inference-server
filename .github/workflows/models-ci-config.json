@@ -20,23 +20,6 @@
         }
       }
     },
-    "Llama-3.1-8B": {
-      "inference_engine": "vLLM",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "P150",
-            "P300X2"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P150",
-            "P300X2"
-          ]
-        }
-      }
-    },
     "Llama-3.1-8B-Instruct": {
       "implementations": [
         {
@@ -278,22 +261,41 @@
       }
     },
     "Qwen3-32B": {
-      "inference_engine": "vLLM",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "GALAXY",
-            "BH_GALAXY",
-            "P300X2",
-            "T3K"
-          ]
+      "implementations": [
+        {
+          "inference_engine": "vLLM",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "GALAXY",
+                "BH_GALAXY",
+                "P300X2",
+                "T3K"
+              ]
+            },
+            "weekly": {
+              "devices": [
+                "GALAXY"
+              ]
+            },
+            "release": {
+              "devices": [
+                "P300X2"
+              ]
+            }
+          }
         },
-        "weekly": {
-          "devices": [
-            "GALAXY"
-          ]
+        {
+          "inference_engine": "FORGE",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ]
+            }
+          }
         }
-      }
+      ]
     },
     "Qwen3-8B": {
       "implementations": [
@@ -507,6 +509,16 @@
         }
       }
     },
+    "gemma-4-31b-it": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        }
+      }
+    },
     "gpt-oss-120b": {
       "inference_engine": "vLLM",
       "ci": {
@@ -519,7 +531,8 @@
         },
         "release": {
           "devices": [
-            "GALAXY"
+            "GALAXY",
+            "P300X2"
           ]
         }
       }
@@ -731,6 +744,16 @@
         "release": {
           "devices": [
             "P150",
+            "P300X2"
+          ]
+        }
+      }
+    },
+    "Z-Image-Turbo": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "nightly": {
+          "devices": [
             "P300X2"
           ]
         }

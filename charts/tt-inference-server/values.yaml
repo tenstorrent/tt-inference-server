@@ -65,6 +65,12 @@ defaults:
       initialDelaySeconds: 2400
   nodeSelector: {}
   tolerations: []
+  # User-supplied affinity. MERGED with the chart's hardcoded device-collision
+  # podAntiAffinity term (see tt-inference-server.affinity in _helpers.tpl) —
+  # nodeAffinity / podAffinity / extra podAntiAffinity terms all apply, but
+  # the 1:1 Pod-to-Node guarantee from issue #2801 is unconditional and cannot
+  # be disabled from values. replicaCount must not exceed the number of nodes
+  # matching nodeSelector/tolerations or pods will sit Pending.
   affinity: {}
   extraEnv: []
 
@@ -7498,3 +7504,28 @@ models:
               - name: MESH_DEVICE
                 value: P150
     defaultEngine: forge
+  Z-Image-Turbo:
+    media:
+      p300x2:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server
+              tag: 0.1.0-9cc43dd
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 16Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: P300x2
+    defaultEngine: media

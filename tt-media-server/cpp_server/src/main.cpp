@@ -384,6 +384,6 @@ int main(int argc, char* argv[]) {
   }
 
   // `shm`'s destructor runs on scope exit and handles munmap + shm_unlink.
-  TT_LOG_INFO("[Main] Server shutdown complete");
+  TT_LOG_INFO("[Main] Server shutdown complete (graceful)");
   return 0;
 }

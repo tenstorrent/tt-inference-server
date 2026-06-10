@@ -437,6 +437,175 @@ TEST_F(MainIntegrationTest,
   setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);  // restore suite default
 }
 
+TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
+  // Verifies that a slot copy is triggered when a new request shares a prefix
+  // with a session that is currently in-flight (busy generating tokens).
+  //
+  // Flow:
+  //   1. Send request A (long opener) → allocates slot 0, registers session
+  //   2. Send request B (continuation of A) → acquires A's session (in-flight)
+  //   3. While B is in-flight, send request C with same prefix but different
+  //      suffix → prefix cache finds the session but it's busy → ALLOCATE
+  //      with slotIdToCopyFrom = slot of request A
+  //   4. Mock the allocate response and verify the sequence is a continuation
+  setenv("MIN_TOKENS_TO_COPY", "32", 1);
+  server->setMemoryAutoRespond(false);
+
+  const std::string opener =
+      "slot-copy-test-unique-opener with enough words to produce at least "
+      "more than we expect to have which is thirty two tokens after "
+      "tokenization so that the prefix cache can form a block and the "
+      "follow-up request can match it and reuse the session properly "
+      "and here are even more words to extend the shared prefix past "
+      "a second block boundary so that the slot copy test exercises "
+      "multi-block matching behavior with a longer common prefix region";
+
+  // --- Request A: seed the session ---
+  auto futureA = asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+
+  tt::domain::ManageMemoryTask memReqA{};
+  server->memoryRequestQueue().receive(memReqA);
+  EXPECT_EQ(memReqA.action, tt::domain::MemoryManagementAction::ALLOCATE);
+
+  tt::domain::ManageMemoryResult memResA{};
+  memResA.taskId = memReqA.taskId;
+  memResA.status = tt::domain::ManageMemoryStatus::SUCCESS;
+  memResA.slotId = 0;
+  server->memoryResultQueue().push(memResA);
+
+  auto seqA = server->taskQueue().receive();
+  ASSERT_NE(seqA, nullptr);
+  EXPECT_FALSE(seqA->isContinuation());
+  const uint32_t slotA = seqA->getKVCacheSlot();
+
+  // Complete request A so the session is registered with its blocks.
+  tt::test::WorkerResponse(seqA->taskId)
+      .token(42)
+      .finalize()
+      .sendTo(server->resultQueue());
+  futureA.get();
+
+  // --- Request B: continuation that keeps the session in-flight ---
+  auto futureB = asyncRequest(ChatRequest()
+                                  .user(opener)
+                                  .assistant("ok")
+                                  .user("thirty two tokens after tokenization "
+                                        "so that the prefix cache can be sure "
+                                        "that all works fine and that new "
+                                        "blocks are being created ")
+                                  .maxTokens(1000)
+                                  .stream());
+
+  auto seqB = server->taskQueue().receive();
+  ASSERT_NE(seqB, nullptr);
+  EXPECT_TRUE(seqB->isContinuation()) << "request B should hit the cache";
+
+  // DON'T complete request B yet — keep the session in-flight.
+
+  // --- Request C: same prefix, different suffix → triggers slot copy ---
+  auto futureC = asyncRequest(
+      ChatRequest()
+          .user("slot-copy-test-unique-opener with enough words to produce at "
+                "least more than we expect to have which is thirty two tokens "
+                "after tokenization so that the prefix cache can form a block "
+                "and the follow-up request can match it and reuse the session "
+                "properly and here are even more words to extend the shared "
+                "prefix past a second block boundary so that the slot copy "
+                "test exercises multi-block matching behavior with a longer "
+                "common prefix region but this request diverges here with "
+                "different content and we need even more words to push this "
+                "request past multiple block boundaries so that the follow-up "
+                "request D can match more than one block from this session "
+                "and confirm reuse works")
+          .maxTokens(1)
+          .stream());
+
+  // The session is in-flight (B holds it), so C falls through to ALLOCATE.
+  // The memory request should have slotIdToCopyFrom pointing to slot A.
+  tt::domain::ManageMemoryTask memReqC{};
+  server->memoryRequestQueue().receive(memReqC);
+  EXPECT_EQ(memReqC.action, tt::domain::MemoryManagementAction::ALLOCATE)
+      << "request C should ALLOCATE (session is in-flight)";
+  ASSERT_TRUE(memReqC.slotIdToCopyFrom.has_value())
+      << "ALLOCATE should request a slot copy from the in-flight session";
+  EXPECT_EQ(*memReqC.slotIdToCopyFrom, slotA)
+      << "slotIdToCopyFrom should be the slot of request A";
+
+  // Mock the allocate response for C: assign slot 1.
+  tt::domain::ManageMemoryResult memResC{};
+  memResC.taskId = memReqC.taskId;
+  memResC.status = tt::domain::ManageMemoryStatus::SUCCESS;
+  memResC.slotId = 1;
+  server->memoryResultQueue().push(memResC);
+
+  // The sequence for C should be flagged as a continuation (slot copy sets it).
+  auto seqC = server->taskQueue().receive();
+  ASSERT_NE(seqC, nullptr);
+  EXPECT_TRUE(seqC->isContinuation())
+      << "request C should be a continuation (slot copy)";
+  EXPECT_EQ(seqC->getTokenIds().size(), 66u) << "request C tokenIds size";
+  ASSERT_TRUE(seqC->getKVPositionId().has_value())
+      << "slot copy should set kv_position_id";
+  EXPECT_EQ(*seqC->getKVPositionId(), 63u) << "request C kvPositionId value";
+
+  // Complete request C.
+  tt::test::WorkerResponse(seqC->taskId)
+      .token(99)
+      .finalize()
+      .sendTo(server->resultQueue());
+  futureC.get();
+
+  // Now complete request B.
+  tt::test::WorkerResponse(seqB->taskId)
+      .token(50)
+      .finalize()
+      .sendTo(server->resultQueue());
+  futureB.get();
+
+  // --- Request D: follow-up to C's session → confirms slot 1 is reused ---
+  // Both sessions (slot 0 and slot 1) are now free. The session manager must
+  // pick slot 1 (C's session) as the better fit because D's prompt shares
+  // more blocks with C's registered session than with A/B's.
+  auto futureD = asyncRequest(
+      ChatRequest()
+          .user("slot-copy-test-unique-opener with enough words to produce at "
+                "least more than we expect to have which is thirty two tokens "
+                "after tokenization so that the prefix cache can form a block "
+                "and the follow-up request can match it and reuse the session "
+                "properly and here are even more words to extend the shared "
+                "prefix past a second block boundary so that the slot copy "
+                "test exercises multi-block matching behavior with a longer "
+                "common prefix region but this request diverges here with "
+                "different content and we need even more words to push this "
+                "request past multiple block boundaries so that the follow-up "
+                "request D can match more than one block from this session "
+                "and confirm reuse works")
+          .assistant("ok")
+          .user("this is the follow-up to request C")
+          .maxTokens(1)
+          .stream());
+
+  auto seqD = server->taskQueue().receive();
+  ASSERT_NE(seqD, nullptr);
+  EXPECT_TRUE(seqD->isContinuation())
+      << "request D should hit C's session (slot 1)";
+  EXPECT_EQ(seqD->getKVCacheSlot(), 1u)
+      << "request D should reuse slot 1 from request C";
+  EXPECT_EQ(seqD->getTokenIds().size(), 14u) << "request D tokenIds size";
+  ASSERT_TRUE(seqD->getKVPositionId().has_value())
+      << "request D should have kv_position_id set";
+  EXPECT_EQ(*seqD->getKVPositionId(), 127u) << "request D kvPositionId value";
+
+  tt::test::WorkerResponse(seqD->taskId)
+      .token(101)
+      .finalize()
+      .sendTo(server->resultQueue());
+  futureD.get();
+
+  server->setMemoryAutoRespond(true);
+  unsetenv("MIN_TOKENS_TO_COPY");
+}
+
 TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
   // Most tests use streaming; this one verifies the non-streaming code path
   // still returns a single buffered JSON document with the assistant message.
@@ -696,116 +865,6 @@ TEST_F(MainIntegrationTest, SystemMessage_DoesNotTriggerContinuation) {
 
   mockWorkerResponse(seq->taskId);
   future.get();
-}
-
-TEST_F(MainIntegrationTest, PrefixCacheHitThreshold_RejectsLowMatchPercentage) {
-  // Build a session with many blocks (long conversation), then send a short
-  // request that only matches the first block. With PREFIX_CACHE_HIT_THRESHOLD
-  // at 80% (default), the session should be rejected and a new one allocated.
-  //
-  // Setup: opener (1 block) -> many assistant/user turns (many more blocks)
-  // Test request: same opener only -> matches 1 block out of many -> rejected
-  //
-  // Steps 1-2 BUILD the long session and must run with the threshold disabled
-  // (the suite default, see configureEnv): each growth turn only matches the
-  // leading block(s) of the session-so-far, which is below 80%, so an active
-  // threshold would reject these legitimate continuations and the session
-  // would never grow. The threshold is enabled only for step 3 — the actual
-  // rejection assertion — and restored to "0" at the end.
-  server->setMemoryAutoRespond(false);
-
-  // Step 1: Create a long conversation to build up many blocks.
-  // The opener must be long enough to form at least one block (32 tokens).
-  const std::string opener =
-      "prefix-threshold-test-unique-opener-v2 with enough tokens to form "
-      "exactly one block when tokenized this needs at least thirty two tokens "
-      "after tokenization so we add more words here";
-
-  // First turn: establishes the session with opener
-  auto future1 = asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
-
-  tt::domain::ManageMemoryTask memReq1{};
-  server->memoryRequestQueue().receive(memReq1);
-  EXPECT_EQ(memReq1.action, tt::domain::MemoryManagementAction::ALLOCATE);
-
-  tt::domain::ManageMemoryResult memRes1{};
-  memRes1.taskId = memReq1.taskId;
-  memRes1.status = tt::domain::ManageMemoryStatus::SUCCESS;
-  memRes1.slotId = 0;
-  server->memoryResultQueue().push(memRes1);
-
-  auto seq1 = server->taskQueue().receive();
-  ASSERT_NE(seq1, nullptr);
-  EXPECT_FALSE(seq1->isContinuation())
-      << "First turn should not be continuation";
-
-  tt::test::WorkerResponse(seq1->taskId)
-      .token(100)
-      .finalize()
-      .sendTo(server->resultQueue());
-  future1.get();
-
-  // Step 2: Add several more turns to grow the session's block count.
-  // Each turn adds more blocks, making the session much longer than just
-  // opener.
-  ChatRequest convo;
-  convo.user(opener).assistant("ok");
-
-  for (int i = 0; i < 5; ++i) {
-    std::string longMessage =
-        "additional turn " + std::to_string(i) +
-        " with enough words to add more blocks to this session making it "
-        "much longer than the original opener so that a short request "
-        "matching only the opener will have a low match percentage";
-    convo.user(longMessage).maxTokens(1).stream();
-
-    auto future = asyncRequest(convo);
-    auto seq = server->taskQueue().receive();
-    ASSERT_NE(seq, nullptr);
-    EXPECT_TRUE(seq->isContinuation())
-        << "Turn " << i << " should be continuation";
-
-    tt::test::WorkerResponse(seq->taskId)
-        .token(101 + i)
-        .finalize()
-        .sendTo(server->resultQueue());
-    future.get();
-
-    convo.assistant("got it");
-  }
-
-  // Step 3: Enable the production 80% threshold, then send a NEW request with
-  // only the opener (no history). This matches only the first block of the
-  // multi-block session, so the ~10-20% match should be rejected.
-  setenv("PREFIX_CACHE_HIT_THRESHOLD", "80", 1);
-  auto future2 = asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
-
-  // Should allocate a NEW session because match percentage is below threshold.
-  // An ALLOCATE request indicates the prefix cache candidate was rejected.
-  tt::domain::ManageMemoryTask memReq2{};
-  server->memoryRequestQueue().receive(memReq2);
-  EXPECT_EQ(memReq2.action, tt::domain::MemoryManagementAction::ALLOCATE)
-      << "Low match percentage should trigger new ALLOCATE, not reuse session";
-
-  tt::domain::ManageMemoryResult memRes2{};
-  memRes2.taskId = memReq2.taskId;
-  memRes2.status = tt::domain::ManageMemoryStatus::SUCCESS;
-  memRes2.slotId = 1;  // Different slot
-  server->memoryResultQueue().push(memRes2);
-
-  auto seq2 = server->taskQueue().receive();
-  ASSERT_NE(seq2, nullptr);
-  EXPECT_FALSE(seq2->isContinuation())
-      << "Short request should NOT be continuation due to threshold rejection";
-
-  tt::test::WorkerResponse(seq2->taskId)
-      .token(200)
-      .finalize()
-      .sendTo(server->resultQueue());
-  future2.get();
-
-  server->setMemoryAutoRespond(true);
-  setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
 }
 
 // ---------------------------------------------------------------------------

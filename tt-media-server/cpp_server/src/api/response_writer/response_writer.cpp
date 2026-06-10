@@ -36,13 +36,21 @@ int ResponseWriter::noteToken(const LLMChoice& choice) {
   return current;
 }
 
+void ResponseWriter::observeCachedTokens(const LLMStreamChunk& chunk) {
+  if (chunk.cached_prompt_tokens.has_value()) {
+    cachedTokensOverride.store(*chunk.cached_prompt_tokens);
+  }
+}
+
 CompletionUsage ResponseWriter::buildUsage() const {
   const int tokens = completionTokens.load();
   const int reasoning = reasoningTokens.load();
   const int totalTokens = params.promptTokenCount + tokens;
 
   PromptTokensDetails promptDetails;
-  promptDetails.cached_tokens = params.cachedTokenCount;
+  const int cachedOverride = cachedTokensOverride.load();
+  promptDetails.cached_tokens =
+      cachedOverride >= 0 ? cachedOverride : params.cachedTokenCount;
 
   CompletionTokensDetails completionDetails;
   completionDetails.reasoning_tokens = reasoning;

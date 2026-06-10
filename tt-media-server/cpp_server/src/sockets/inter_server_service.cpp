@@ -144,8 +144,8 @@ bool InterServerService::sendPrefillRequest(
     uint32_t taskId, const std::vector<uint64_t>& registrationHashes,
     const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens,
     std::optional<uint32_t> slotId,
-    const tt::domain::llm::SamplingParams& sampling,
-    int numberOfDecodeSkipTokens) {
+    const tt::domain::llm::SamplingParams& sampling, int decodePositionId,
+    int decodeSkipTokens) {
   if (!enabled_) {
     return false;
   }
@@ -159,7 +159,8 @@ bool InterServerService::sendPrefillRequest(
   message.top_p = sampling.top_p;
   message.top_k = sampling.top_k;
   message.fast_mode = sampling.fast_mode;
-  message.number_of_decode_skip_tokens = numberOfDecodeSkipTokens;
+  message.decode_position_id = decodePositionId;
+  message.decode_skip_tokens = decodeSkipTokens;
 
   return socket_manager_.sendObject("prefill_request", message);
 }
@@ -291,11 +292,7 @@ void InterServerService::setupMessageHandlers() {
       });
 
   socket_manager_.registerHandler<PrefillRegistrationMessage>(
-      tags::PREFILL_REGISTRATION, [](const PrefillRegistrationMessage& msg) {
-        TT_LOG_DEBUG(
-            "[InterServerService] Prefill '{}' announced (direct mode)",
-            msg.server_id);
-      });
+      tags::PREFILL_REGISTRATION, [](const PrefillRegistrationMessage& msg) {});
 
   // Handle incoming prefill results
   socket_manager_.registerHandler<PrefillResultMessage>(
@@ -340,12 +337,7 @@ void InterServerService::sendRegistration() {
   msg.max_in_flight = tt::config::prefillMaxInFlight();
 
   bool ok = socket_manager_.sendObject(tags::PREFILL_REGISTRATION, msg);
-  if (ok) {
-    TT_LOG_DEBUG(
-        "[InterServerService] Sent PrefillRegistration: id='{}' "
-        "max_in_flight={}",
-        msg.server_id, msg.max_in_flight);
-  } else {
+  if (!ok) {
     TT_LOG_WARN("[InterServerService] Failed to send PrefillRegistration");
   }
 }

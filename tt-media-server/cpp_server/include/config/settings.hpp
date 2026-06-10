@@ -102,15 +102,13 @@ bool usePrefillGateway();
 std::string prefillServerId();
 
 /**
- * Per-process identity for log lines, e.g. "decode/bh-47:9000 pid=3363530".
- * Format: "<role>/<instance> pid=<pid>" where role is the LLM_MODE
- * (decode/prefill/regular) for the LLM service or the service name otherwise,
- * and instance is prefillServerId() ("<hostname>:<SOCKET_PORT>" by default).
+ * Role shown in every log line, e.g. "decode", "prefill", "prefill-worker0".
+ * The role is the LLM_MODE (decode/prefill/regular) for the LLM service or the
+ * service name (image/embedding) otherwise; a forked worker subprocess appends
+ * "-worker<index>" so worker lines are distinguishable from the HTTP node.
  *
  * @param workerIndex >=0 for a forked worker subprocess; appends
- *   "-worker<index>" to the role (e.g. "decode-worker0") so worker lines stay
- *   attributable to their node even when decode/prefill are colocated and
- *   share host:SOCKET_PORT.
+ *   "-worker<index>" to the role (e.g. "decode-worker0").
  */
 std::string logInstanceTag(int workerIndex = -1);
 
@@ -215,9 +213,17 @@ std::string blazeSocketDescriptorPrefix();
  * defaults::PM_CONNECT_TIMEOUT_MS. */
 unsigned pmConnectTimeoutMs();
 
-/** Decode scheduler max users from DS_MAX_USERS. Default:
- * defaults::DS_MAX_USERS. */
-size_t dsMaxUsers();
+/** Pipeline manager max users from PM_MAX_USERS. Default:
+ * defaults::PM_MAX_USERS. */
+size_t pmMaxUsers();
+
+/** Prefill number of layers from PREFILL_NUM_LAYERS. Default:
+ * defaults::PREFILL_NUM_LAYERS. */
+std::string prefillNumLayers();
+
+/** Prefill chunk size from PREFILL_CHUNK_SIZE. Default:
+ * defaults::PREFILL_CHUNK_SIZE. */
+std::string prefillChunkSize();
 
 /** Warmup timeout (ms) while waiting for the first token during runner warmup.
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */

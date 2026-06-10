@@ -48,7 +48,7 @@ constexpr size_t MIN_TOKENS_TO_COPY =
     1024;  // min matched tokens to justify slot copy
 constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
 constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
-constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 80;
+constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 40;
 constexpr bool USE_FAST_MODE = false;
 constexpr const char* KAFKA_BROKERS = "localhost:9092";
 constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";
@@ -67,6 +67,8 @@ constexpr const char* TT_WARMUP_SIGNALS_QUEUE = "tt_warmup_signals";
 constexpr const char* TT_MEMORY_REQUEST_QUEUE = "tt_mem_requests";
 constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
 constexpr const char* TT_WORKER_METRICS_SHM = "/tt_worker_metrics";
+constexpr const char* PREFILL_NUM_LAYERS = "61";
+constexpr const char* PREFILL_CHUNK_SIZE = "5120";
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 128;
 constexpr unsigned WARMUP_TIMEOUT_MS = 10000;

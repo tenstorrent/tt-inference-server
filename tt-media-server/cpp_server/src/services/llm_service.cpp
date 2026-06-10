@@ -319,6 +319,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       bool isError = token.isError();
       bool isFinal = token.isFinal();
       bool isAbort = token.isAbort();
+      const auto errorReason = tt::ipc::errorReasonFromToken(token);
 
       if (isAbort && !isFinal) {
         // Client-initiated abort: LLMService::abortRequest has already taken
@@ -361,8 +362,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         }
         streamDecoders.erase(taskId);
         reasoningSuppressedMap.take(taskId);
-        tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId,
-                                                                  "error");
+        tt::metrics::ServerMetrics::instance().onRequestCompleted(
+            taskId, finishReasonForError(errorReason));
         if (reasoningParser) {
           reasoningParser->finalizeTask(taskId);
         }
@@ -378,7 +379,11 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
           toolCallParser->finalizeTask(taskId);
         }
         toolChoiceMap.take(taskId);  // Clean up
-        auto errorChunk = makeErrorChunk(taskId, "runner reported error");
+        auto errorChunk = makeErrorChunk(taskId,
+                                         isTimeoutError(errorReason)
+                                             ? "runner timeout"
+                                             : "runner reported error",
+                                         errorReason);
         entry->callback(errorChunk, /*isFinal=*/true);
         continue;
       }
@@ -626,7 +631,8 @@ void LLMService::produceStream(
       request.continuation, request.disaggregated,
       std::make_unique<tt::domain::llm::SamplingParams>(
           tt::utils::mapper::mapSamplingParams(request)),
-      request.kv_position_id, request.number_of_decode_skip_tokens);
+      request.kv_position_id, request.decode_position_id,
+      request.decode_skip_tokens);
   taskQueue->push(*std::move(sequence));
 }
 

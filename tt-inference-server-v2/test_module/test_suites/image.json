@@ -303,6 +303,26 @@
                     }
                 }
             ]
+        },
+        {
+            "models": [
+                "z_image_turbo"
+            ],
+            "devices": [
+                "p300x2"
+            ],
+            "num_of_devices": 1,
+            "test_cases": [
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "9 iterations (Z-Image-Turbo)",
+                    "targets": {
+                        "num_inference_steps": 9,
+                        "image_generation_time": 15
+                    }
+                }
+            ]
         }
     ],
     "test_suites": [

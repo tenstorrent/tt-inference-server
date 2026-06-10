@@ -34,11 +34,25 @@ class SpPipelineWorkerMetricsRenderer : public IWorkerMetricsRenderer {
   void render(const WorkerMetricsShm& shm, int workerId, bool isAlive) override;
 
  private:
+  struct SlotGauges {
+    prometheus::Gauge* input_tokens{nullptr};
+    prometheus::Gauge* output_tokens{nullptr};
+    prometheus::Gauge* current_output_tokens{nullptr};
+    prometheus::Gauge* tpot_seconds{nullptr};
+    prometheus::Gauge* acceptance_rate{nullptr};
+  };
+
   struct WorkerGauges {
     prometheus::Gauge* alive{nullptr};
     prometheus::Gauge* step_age{nullptr};
     prometheus::Gauge* output_age{nullptr};
     prometheus::Gauge* active_requests{nullptr};
+    prometheus::Gauge* prompt_tokens_total{nullptr};
+    prometheus::Gauge* generation_tokens_total{nullptr};
+    prometheus::Gauge* spec_accepts_total{nullptr};
+    prometheus::Gauge* spec_rejects_total{nullptr};
+    prometheus::Gauge* total_acceptance_rate{nullptr};
+    std::vector<SlotGauges> slots;
     // One gauge per BlazeRunner event, parallel to the BLAZE_EVENTS table in
     // the .cpp (same order).
     std::vector<prometheus::Gauge*> events;
@@ -48,6 +62,17 @@ class SpPipelineWorkerMetricsRenderer : public IWorkerMetricsRenderer {
   prometheus::Family<prometheus::Gauge>* step_age_family_{nullptr};
   prometheus::Family<prometheus::Gauge>* output_age_family_{nullptr};
   prometheus::Family<prometheus::Gauge>* active_family_{nullptr};
+  prometheus::Family<prometheus::Gauge>* prompt_tokens_family_{nullptr};
+  prometheus::Family<prometheus::Gauge>* generation_tokens_family_{nullptr};
+  prometheus::Family<prometheus::Gauge>* spec_accepts_family_{nullptr};
+  prometheus::Family<prometheus::Gauge>* spec_rejects_family_{nullptr};
+  prometheus::Family<prometheus::Gauge>* total_acceptance_rate_family_{nullptr};
+  prometheus::Family<prometheus::Gauge>* slot_input_tokens_family_{nullptr};
+  prometheus::Family<prometheus::Gauge>* slot_output_tokens_family_{nullptr};
+  prometheus::Family<prometheus::Gauge>* slot_current_output_tokens_family_{
+      nullptr};
+  prometheus::Family<prometheus::Gauge>* slot_tpot_seconds_family_{nullptr};
+  prometheus::Family<prometheus::Gauge>* slot_acceptance_rate_family_{nullptr};
   prometheus::Family<prometheus::Gauge>* events_family_{nullptr};
 
   std::unordered_map<int, WorkerGauges> gauges_;
