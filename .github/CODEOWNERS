@@ -4,7 +4,7 @@
 *       @tenstorrent/tt-inference-server-codeowners
 
 # tt-media-server
-tt-media-server/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @knovokmetTT @vpetrovicTT @ddjukicTT @lmuravljovTT @nanicicTT
+tt-media-server/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @knovokmetTT @vpetrovicTT @ddjukicTT @lmuravljovTT @nanicicTT @visnjakrsmanovicTT
 tt-media-server/tt_model_runners/forge_runners/ @vmilosevic @mcupacTT @mmilosevicTT
 
 # tt-vllm-plugin
@@ -18,6 +18,8 @@ run.py @tstescoTT @bgoelTT @stisiTT @tenstorrent/tt-inference-server-codeowners
 workflows/ @tstescoTT @tenstorrent/tt-inference-server-codeowners
 workflows/model_spec.py @tstescoTT @bgoelTT @idjuricTT @tenstorrent/tt-inference-server-codeowners
 workflows/run_reports.py @acvejicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @vcankovicTT @tenstorrent/tt-inference-server-codeowners
+workflows/model_specs/dev/ @tenstorrent/tt-inference-server-codeowners
+workflows/model_specs/prod/ @acvejicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @vcankovicTT @tstescoTT @bgoelTT
 
 # helm charts
 charts/tt-inference-server/ @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @tenstorrent/tt-inference-server-codeowners
@@ -48,5 +50,8 @@ scripts/release/* @vmaksimovicTT @tstescoTT @bgoelTT
 docs/ @tenstorrent/tt-inference-server-codeowners
 README.md @tstescoTT @bgoelTT @idjuricTT
 
-# tt-infenrece-server-v2
-tt-infenrece-server-v2/ @idjuricTT @fivanovicTT @vpetrovicTT @ddjukicTT
+# dynamo_frontend
+dynamo_frontend/ @idjuricTT @ljovanovicTT @lmuravljovTT @vpetrovicTT @ztorlakTT
+
+# tt-inference-server-v2
+tt-inference-server-v2/ @idjuricTT @fivanovicTT @vpetrovicTT @ddjukicTT

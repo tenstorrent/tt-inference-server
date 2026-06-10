@@ -23,7 +23,7 @@ namespace tt::utils::tokenizers {
 using namespace tt::domain::llm;
 
 // Matches tt_llm_engine EMPTY_TOKEN: disables thinking-phase token matching.
-constexpr int64_t kNoThinkTokenId =
+constexpr int64_t kNoTokenId =
     static_cast<int64_t>(std::numeric_limits<uint32_t>::max());
 
 /**
@@ -210,9 +210,10 @@ const Tokenizer& activeTokenizer();
 struct StaticTokenizerInfo {
   std::string_view modelName;
   std::vector<int64_t> stopTokenIds;
+  int64_t eosTokenId = kNoTokenId;
   std::vector<int> assistantHeaderSequence;
-  int64_t thinkStartTokenId = kNoThinkTokenId;
-  int64_t thinkEndTokenId = kNoThinkTokenId;
+  int64_t thinkStartTokenId = kNoTokenId;
+  int64_t thinkEndTokenId = kNoTokenId;
 };
 
 /** Per-model thinking marker token IDs (O(1), no tokenizer.json parse). */

@@ -8,6 +8,7 @@ templates:
 - weights:
     - BAAI/bge-large-en-v1.5
   tt_metal_commit: "65718bb"
+  version: "0.12.0"
   impl: tt_vllm_plugin
   min_disk_gb: 15
   min_ram_gb: 6
@@ -64,64 +65,9 @@ templates:
         TT_METAL_INSPECTOR_RPC: "0"
 
 - weights:
-    - BAAI/bge-m3
-  tt_metal_commit: "ec28d12"
-  impl: tt_vllm_plugin
-  min_disk_gb: 15
-  min_ram_gb: 6
-  model_type: EMBEDDING
-  inference_engine: MEDIA
-  device_model_specs:
-    - device: N150
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-      env_vars:
-        VLLM__MAX_NUM_BATCHED_TOKENS: "262144"
-        VLLM__MAX_MODEL_LENGTH: "8192"
-        VLLM__MIN_CONTEXT_LENGTH: "32"
-        VLLM__MAX_NUM_SEQS: "32"
-        MAX_BATCH_SIZE: "32"
-        DEFAULT_THROTTLE_LEVEL: "0"
-    - device: N300
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-      env_vars:
-        VLLM__MAX_NUM_BATCHED_TOKENS: "262144"
-        VLLM__MAX_MODEL_LENGTH: "8192"
-        VLLM__MIN_CONTEXT_LENGTH: "32"
-        VLLM__MAX_NUM_SEQS: "32"
-        MAX_BATCH_SIZE: "32"
-        DEFAULT_THROTTLE_LEVEL: "0"
-    - device: T3K
-      max_concurrency: 4
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-      env_vars:
-        VLLM__MAX_NUM_BATCHED_TOKENS: "262144"
-        VLLM__MAX_MODEL_LENGTH: "8192"
-        VLLM__MIN_CONTEXT_LENGTH: "32"
-        VLLM__MAX_NUM_SEQS: "32"
-        MAX_BATCH_SIZE: "32"
-        DEFAULT_THROTTLE_LEVEL: "0"
-    - device: GALAXY
-      max_concurrency: 32
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-      env_vars:
-        VLLM__MAX_NUM_BATCHED_TOKENS: "262144"
-        VLLM__MAX_MODEL_LENGTH: "8192"
-        VLLM__MIN_CONTEXT_LENGTH: "32"
-        VLLM__MAX_NUM_SEQS: "32"
-        MAX_BATCH_SIZE: "32"
-        DEFAULT_THROTTLE_LEVEL: "0"
-        # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
-        TT_METAL_INSPECTOR_RPC: "0"
-
-- weights:
     - Qwen/Qwen3-Embedding-8B
   tt_metal_commit: "555f240"
+  version: "0.12.0"
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
@@ -169,6 +115,7 @@ templates:
 - weights:
     - Qwen/Qwen3-Embedding-4B
   tt_metal_commit: "2496be4"
+  version: "0.12.0"
   impl: forge_vllm_plugin
   min_disk_gb: 15
   min_ram_gb: 6

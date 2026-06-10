@@ -188,8 +188,20 @@ GenerateRequest parse_generate_request(const std::vector<uint8_t>& bodyBytes) {
     if (sc.isMember("min_tokens") && !sc["min_tokens"].isNull()) {
       req.min_tokens = sc["min_tokens"].asInt();
     }
-    if (sc.isMember("stop_token_ids") && sc["stop_token_ids"].isArray()) {
-      for (const auto& t : sc["stop_token_ids"]) {
+    // Dynamo's StopConditions serializes the token-id stop list as
+    // `stop_token_ids_hidden` (see lib/llm/src/protocols/common.rs — the Rust
+    // field has no serde rename). Prefer that key, but also accept the plain
+    // `stop_token_ids` name for forward-compatibility / other senders.
+    const Json::Value* stopIds = nullptr;
+    if (sc.isMember("stop_token_ids_hidden") &&
+        sc["stop_token_ids_hidden"].isArray()) {
+      stopIds = &sc["stop_token_ids_hidden"];
+    } else if (sc.isMember("stop_token_ids") &&
+               sc["stop_token_ids"].isArray()) {
+      stopIds = &sc["stop_token_ids"];
+    }
+    if (stopIds != nullptr) {
+      for (const auto& t : *stopIds) {
         req.stop_token_ids.push_back(t.asInt());
       }
     }
@@ -260,6 +272,29 @@ std::vector<uint8_t> encode_stream_chunk(const TokenChunk& chunk) {
     tokenData["finish_reason"] = *chunk.finish_reason;
   } else {
     tokenData["finish_reason"] = Json::Value::null;
+  }
+
+  // BackendOutput.completion_usage (async-openai CompletionUsage shape). The
+  // frontend's chat/completions aggregator copies prompt_tokens_details from
+  // here; the (currently missing) completion_tokens_details copy is what makes
+  // reasoning_tokens surface once the frontend is patched.
+  if (chunk.completion_usage.has_value()) {
+    const auto& u = *chunk.completion_usage;
+    Json::Value cu(Json::objectValue);
+    cu["prompt_tokens"] = u.prompt_tokens;
+    cu["completion_tokens"] = u.completion_tokens;
+    cu["total_tokens"] = u.total_tokens;
+    if (u.cached_tokens.has_value()) {
+      Json::Value ptd(Json::objectValue);
+      ptd["cached_tokens"] = *u.cached_tokens;
+      cu["prompt_tokens_details"] = std::move(ptd);
+    }
+    if (u.reasoning_tokens.has_value()) {
+      Json::Value ctd(Json::objectValue);
+      ctd["reasoning_tokens"] = *u.reasoning_tokens;
+      cu["completion_tokens_details"] = std::move(ctd);
+    }
+    tokenData["completion_usage"] = std::move(cu);
   }
 
   // Annotated<T>: {"data": <token_data>}

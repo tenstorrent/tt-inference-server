@@ -19,7 +19,7 @@ namespace tt::api {
  * Response writer that accumulates chunks into a single JSON response body.
  *
  * The non-streaming counterpart to StreamingResponseWriter: the controller
- * drives the same Streamable producer (LLMService::submitStreamingRequest or
+ * drives the same streaming producer (LLMService::submitStreamingRequest or
  * the disaggregation service) and forwards every chunk here instead of out to
  * SSE. Tool-call streaming deltas are accumulated into a single `tool_calls`
  * array. On the final chunk the writer builds the assembled `LLMResponse`,

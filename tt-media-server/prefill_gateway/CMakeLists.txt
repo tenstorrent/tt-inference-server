@@ -98,6 +98,7 @@ set(GATEWAY_CORE_SOURCES
     src/prefill_registry.cpp
     src/dispatcher.cpp
     src/gateway_metrics.cpp
+    src/gateway_health.cpp
     ${CPP_SERVER_DIR}/src/utils/logger.cpp
 )
 
@@ -186,20 +187,22 @@ elseif(TARGET libzmq)
 endif()
 target_compile_features(prefill_gateway_io PUBLIC cxx_std_20)
 
-# Small gateway-owned HTTP endpoint for Prometheus scrapes.
-add_library(prefill_gateway_metrics_http STATIC
+# Small gateway-owned HTTP endpoint servers for Prometheus and health checks.
+add_library(prefill_gateway_http_servers STATIC
+    src/gateway_health_server.cpp
+    src/gateway_http_server.cpp
     src/gateway_metrics_server.cpp
 )
-target_include_directories(prefill_gateway_metrics_http PUBLIC
+target_include_directories(prefill_gateway_http_servers PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CPP_SERVER_DIR}/include
 )
-target_link_libraries(prefill_gateway_metrics_http PUBLIC
+target_link_libraries(prefill_gateway_http_servers PUBLIC
     prefill_gateway_core
     spdlog::spdlog
 )
-target_compile_features(prefill_gateway_metrics_http PUBLIC cxx_std_20)
-target_compile_options(prefill_gateway_metrics_http PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_features(prefill_gateway_http_servers PUBLIC cxx_std_20)
+target_compile_options(prefill_gateway_http_servers PRIVATE -Wall -Wextra -Wpedantic)
 
 # prefill_gateway binary — wires core library to real SocketManagers.
 add_executable(prefill_gateway src/main.cpp)
@@ -209,7 +212,7 @@ target_include_directories(prefill_gateway PRIVATE
 target_link_libraries(prefill_gateway PRIVATE
     prefill_gateway_core
     prefill_gateway_io
-    prefill_gateway_metrics_http
+    prefill_gateway_http_servers
 )
 target_compile_features(prefill_gateway PUBLIC cxx_std_20)
 target_compile_options(prefill_gateway PRIVATE -Wall -Wextra -Wpedantic)
@@ -230,7 +233,7 @@ endfunction()
 function(_gateway_add_e2e_test name)
     add_executable(${name} tests/${name}.cpp)
     target_link_libraries(${name} PRIVATE
-        prefill_gateway_core prefill_gateway_io prefill_gateway_metrics_http
+        prefill_gateway_core prefill_gateway_io prefill_gateway_http_servers
         GTest::gtest_main)
     target_include_directories(${name} PRIVATE ${CPP_SERVER_DIR}/include)
     gtest_discover_tests(${name})
@@ -241,4 +244,5 @@ _gateway_add_unit_test(affinity_cache_test)
 _gateway_add_unit_test(prefill_registry_test)
 _gateway_add_unit_test(dispatcher_test)
 _gateway_add_unit_test(gateway_metrics_test)
+_gateway_add_unit_test(gateway_health_test)
 _gateway_add_e2e_test(gateway_e2e_test)

@@ -91,13 +91,21 @@ _GALAXY_PAGE_GROUP = HardwarePageGroup(
     name=DeviceTypes.GALAXY.to_product_str(),
     device_ordering=(DeviceTypes.GALAXY, DeviceTypes.GALAXY_T3K),
 )
-_WH_SINGLE_CARD_PAGE_GROUP = HardwarePageGroup(
-    name="N150/N300",
-    device_ordering=(DeviceTypes.N150, DeviceTypes.N300),
+_N150_PAGE_GROUP = HardwarePageGroup(
+    name="N150",
+    device_ordering=(DeviceTypes.N150,),
 )
-_BH_SINGLE_CARD_PAGE_GROUP = HardwarePageGroup(
-    name="P100/P150",
-    device_ordering=(DeviceTypes.P100, DeviceTypes.P150),
+_N300_PAGE_GROUP = HardwarePageGroup(
+    name="N300",
+    device_ordering=(DeviceTypes.N300,),
+)
+_P100_PAGE_GROUP = HardwarePageGroup(
+    name="P100",
+    device_ordering=(DeviceTypes.P100,),
+)
+_P150_PAGE_GROUP = HardwarePageGroup(
+    name="P150",
+    device_ordering=(DeviceTypes.P150,),
 )
 _DUAL_GALAXY_PAGE_GROUP = HardwarePageGroup.from_device_type(DeviceTypes.DUAL_GALAXY)
 _QUAD_GALAXY_PAGE_GROUP = HardwarePageGroup.from_device_type(DeviceTypes.QUAD_GALAXY)
@@ -117,11 +125,11 @@ DEVICE_HARDWARE_PAGE_GROUPS_MAPPING: Dict[DeviceTypes, HardwarePageGroup] = {
     DeviceTypes.P150X8: HardwarePageGroup.from_device_type(DeviceTypes.P150X8),
     DeviceTypes.P150X4: HardwarePageGroup.from_device_type(DeviceTypes.P150X4),
     DeviceTypes.P300X2: HardwarePageGroup.from_device_type(DeviceTypes.P300X2),
-    DeviceTypes.P150: _BH_SINGLE_CARD_PAGE_GROUP,
-    DeviceTypes.P100: _BH_SINGLE_CARD_PAGE_GROUP,
+    DeviceTypes.P100: _P100_PAGE_GROUP,
+    DeviceTypes.P150: _P150_PAGE_GROUP,
     DeviceTypes.T3K: HardwarePageGroup.from_device_type(DeviceTypes.T3K),
-    DeviceTypes.N300: _WH_SINGLE_CARD_PAGE_GROUP,
-    DeviceTypes.N150: _WH_SINGLE_CARD_PAGE_GROUP,
+    DeviceTypes.N150: _N150_PAGE_GROUP,
+    DeviceTypes.N300: _N300_PAGE_GROUP,
 }
 
 UNIQUE_DEVICE_PAGE_GROUPS = {

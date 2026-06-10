@@ -8,7 +8,7 @@
 
 `AFM-4.5B` is also supported on hardware:
 
-- [N150/N300](AFM-4.5B_n150.md)
+- [N300](AFM-4.5B_n300.md)
 
 ## Quickstart - Deploy AFM-4.5B Inference Server on WH LoudBox/QuietBox
 

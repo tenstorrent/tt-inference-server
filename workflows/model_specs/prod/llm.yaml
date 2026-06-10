@@ -83,33 +83,6 @@ templates:
       tool_call_parser_name: openai
 
 - weights:
-    - openai/gpt-oss-120b
-  impl: gpt_oss
-  tt_metal_commit: 747215b  # handrew/gpt-oss-p150 branch
-  vllm_commit: 7678b70  # stable branch
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P300X2
-      max_concurrency: 1
-      max_context: 131072  # 128 * 1024
-      default_impl: true
-      tensor_cache_timeout: 5400.0
-      env_vars:
-        MESH_DEVICE: "(1, 4)"
-        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
-      override_tt_config:
-        trace_region_size: 58000000
-        sample_on_device_mode: decode_only
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    openai/gpt-oss-120b:
-      reasoning_parser_name: openai_gptoss
-      tool_call_parser_name: openai
-
-- weights:
     - arcee-ai/AFM-4.5B
   impl: tt_transformers
   version: "0.3.0"
@@ -162,7 +135,7 @@ templates:
   device_model_specs:
     - device: N150
       max_concurrency: 32
-      max_context: 32768  # 32 * 1024
+      max_context: 40960
       default_impl: true
       override_tt_config:
         trace_region_size: 51000000
@@ -189,8 +162,6 @@ templates:
       max_concurrency: 128  # 32 * 4
       max_context: 40960
       default_impl: true
-      vllm_args:
-        data_parallel_size: 4
       env_vars:
         TT_MM_THROTTLE_PERF: 5
   status: FUNCTIONAL
@@ -313,7 +284,7 @@ templates:
     kmd:
       specifier: ">=2.4.1"
       mode: STRICT
-  version: "0.10.0"
+  version: "0.10.1"
   tt_metal_commit: 555f240
   vllm_commit: 22be241
   inference_engine: VLLM
@@ -387,31 +358,6 @@ templates:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
 
 - weights:
-    - mistralai/Mistral-Small-3.1-24B-Instruct-2503
-  impl: tt_transformers
-  tt_metal_commit: 9e3b1b3
-  vllm_commit: 1d0aa18
-  inference_engine: VLLM
-  device_model_specs:
-    - device: T3K
-      max_concurrency: 32
-      max_context: 131072  # 128 * 1024
-      default_impl: true
-      override_tt_config:
-        trace_region_size: 90000000
-      vllm_args:
-        limit-mm-per-prompt: '{"image": 1}'
-        mm-processor-cache-gb: 0
-  model_type: VLM
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-  supported_modalities:
-    - text
-    - image
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-
-- weights:
     - Qwen/QwQ-32B
   impl: tt_transformers
   version: "0.9.0"
@@ -427,8 +373,6 @@ templates:
       max_concurrency: 128  # 32 * 4
       max_context: 131072  # 128 * 1024
       default_impl: true
-      vllm_args:
-        data_parallel_size: 4
       override_tt_config:
         trace_region_size: 27381760
       env_vars:
@@ -471,8 +415,6 @@ templates:
       max_context: 131072  # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
-      vllm_args:
-        data_parallel_size: 4
       override_tt_config:
         trace_region_size: 66000000
       env_vars:
@@ -508,8 +450,8 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: N300
-      max_concurrency: 16
-      max_context: 32768  # 32 * 1024
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 60000000
@@ -668,7 +610,7 @@ templates:
     - meta-llama/Llama-3.1-70B-Instruct
     - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
   impl: tt_transformers
-  version: "0.10.0"
+  version: "0.10.1"
   tt_metal_commit: 555f240
   vllm_commit: 22be241
   inference_engine: VLLM
@@ -726,7 +668,7 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.10.0"
+  version: "0.10.1"
   tt_metal_commit: 555f240
   vllm_commit: 22be241
   inference_engine: VLLM
@@ -739,7 +681,6 @@ templates:
       override_tt_config:
         trace_region_size: 402653184  # 384 * 1024 * 1024
   status: FUNCTIONAL
-  has_builtin_warmup: true
   metadata:
     meta-llama/Llama-3.3-70B-Instruct:
       tool_call_parser_name: llama3_json
@@ -865,13 +806,13 @@ templates:
   device_model_specs:
     - device: N150
       max_concurrency: 32
-      max_context: 32768  # 32 * 1024
+      max_context: 65536  # 64 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 52000000
     - device: N300
       max_concurrency: 32
-      max_context: 32768  # 32 * 1024
+      max_context: 131072  # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 70000000
@@ -884,7 +825,7 @@ templates:
     - device: GPU
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
-      default_impl: true
+      default_impl: false
   status: COMPLETE
   metadata:
     meta-llama/Llama-3.1-8B:
@@ -923,16 +864,14 @@ templates:
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
   version: "0.10.0"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
+  tt_metal_commit: 55fd115
+  vllm_commit: aa4ae1e
   inference_engine: VLLM
   device_model_specs:
     - device: P150X4
       max_concurrency: 128  # 32 * 4
       max_context: 131072  # 128 * 1024
       default_impl: true
-      vllm_args:
-        data_parallel_size: 4
       override_tt_config:
         sample_on_device_mode: decode_only
         trace_region_size: 70000000
@@ -954,7 +893,7 @@ templates:
     kmd:
       specifier: ">=2.4.1"
       mode: STRICT
-  version: "0.10.0"
+  version: "0.10.1"
   tt_metal_commit: 555f240
   vllm_commit: 22be241
   inference_engine: VLLM
@@ -985,9 +924,9 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.14.0"
-  tt_metal_commit: 80180b9
-  vllm_commit: 7678b70
+  version: "0.10.1"
+  tt_metal_commit: 555f240
+  vllm_commit: 22be241
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2

@@ -101,6 +101,17 @@ bool usePrefillGateway();
  * "<hostname>:<SOCKET_PORT>". From PREFILL_SERVER_ID. */
 std::string prefillServerId();
 
+/**
+ * Role shown in every log line, e.g. "decode", "prefill", "prefill-worker0".
+ * The role is the LLM_MODE (decode/prefill/regular) for the LLM service or the
+ * service name (image/embedding) otherwise; a forked worker subprocess appends
+ * "-worker<index>" so worker lines are distinguishable from the HTTP node.
+ *
+ * @param workerIndex >=0 for a forked worker subprocess; appends
+ *   "-worker<index>" to the role (e.g. "decode-worker0").
+ */
+std::string logInstanceTag(int workerIndex = -1);
+
 /** Capacity hint for the gateway, 0 = unlimited. From PREFILL_MAX_IN_FLIGHT. */
 uint32_t prefillMaxInFlight();
 
@@ -153,6 +164,10 @@ size_t maxContextLength();
  * defaults::MAX_ISL. */
 size_t maxISL();
 
+/** Minimum matched tokens required to justify a slot copy operation.
+ * From MIN_TOKENS_TO_COPY. Default: defaults::MIN_TOKENS_TO_COPY. */
+size_t minTokensToCopy();
+
 /** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
  * defaults::KV_CACHE_BLOCK_SIZE. */
 size_t kvCacheBlockSize();
@@ -186,10 +201,6 @@ std::string kafkaGroupId();
  * defaults::SESSION_ALLOCATION_MAX_RETRIES. */
 unsigned sessionAllocationMaxRetries();
 
-/** Prefill timeout in milliseconds from PREFILL_TIMEOUT_MS. Default:
- * defaults::PREFILL_TIMEOUT_MS. */
-unsigned prefillTimeoutMs();
-
 /** Blaze socket descriptor prefix from BLAZE_SOCKET_DESCRIPTOR_PREFIX. Default:
  * defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX. */
 std::string blazeSocketDescriptorPrefix();
@@ -198,9 +209,17 @@ std::string blazeSocketDescriptorPrefix();
  * defaults::PM_CONNECT_TIMEOUT_MS. */
 unsigned pmConnectTimeoutMs();
 
-/** Decode scheduler max users from DS_MAX_USERS. Default:
- * defaults::DS_MAX_USERS. */
-size_t dsMaxUsers();
+/** Pipeline manager max users from PM_MAX_USERS. Default:
+ * defaults::PM_MAX_USERS. */
+size_t pmMaxUsers();
+
+/** Prefill number of layers from PREFILL_NUM_LAYERS. Default:
+ * defaults::PREFILL_NUM_LAYERS. */
+std::string prefillNumLayers();
+
+/** Prefill chunk size from PREFILL_CHUNK_SIZE. Default:
+ * defaults::PREFILL_CHUNK_SIZE. */
+std::string prefillChunkSize();
 
 /** Warmup timeout (ms) while waiting for the first token during runner warmup.
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
@@ -245,9 +264,7 @@ std::string ttMemoryResultQueueName();
  * Inherited across fork+execv so main and worker resolve to the same name. */
 std::string workerMetricsShmName();
 
-/** Use DeepSeek markdown format from USE_DEEPSEEK_MD_FORMAT. Default:
- * defaults::USE_DEEPSEEK_MD_FORMAT. */
-bool useDeepseekMdFormat();
+std::string wireFormat();
 
 // IPC queue capacities - configurable via environment variables
 /** Result queue capacity from RESULT_QUEUE_CAPACITY. Default:

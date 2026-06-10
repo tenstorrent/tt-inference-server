@@ -124,8 +124,7 @@ class ImageGenerationLoraLoadTest(BaseTest):
     async def _fire_batch(
         self, specs: list[RequestSpec], num_inference_steps: int
     ) -> list[RequestResult]:
-        base_url = f"{self.base_url}"
-        url = f"{base_url}/{ENDPOINT}"
+        url = f"{self.base_url}/{ENDPOINT}"
         headers = {
             "accept": "application/json",
             "Authorization": f"Bearer {DEFAULT_AUTHORIZATION}",

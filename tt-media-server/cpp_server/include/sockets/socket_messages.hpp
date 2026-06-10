@@ -9,8 +9,10 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
+#include "domain/llm/llm_error_reason.hpp"
 #include "domain/sentinel_values.hpp"
 
 namespace tt::sockets {
@@ -44,6 +46,8 @@ struct PrefillRequestMessage {
   std::optional<float> top_p;
   std::optional<int> top_k;
   bool fast_mode = false;
+  int decode_position_id = 0;
+  int decode_skip_tokens = 0;
 
   explicit PrefillRequestMessage(uint32_t taskId) : task_id(taskId) {}
 
@@ -58,7 +62,8 @@ struct PrefillRequestMessage {
     bool hasTopK = top_k.has_value();
     int topKVal = top_k.value_or(0);
     ar(task_id, registration_hashes, token_ids, mt, sid, hasTemp, tempVal,
-       hasTopP, topPVal, hasTopK, topKVal, fast_mode);
+       hasTopP, topPVal, hasTopK, topKVal, fast_mode, decode_position_id,
+       decode_skip_tokens);
   }
 
   template <class Archive>
@@ -75,8 +80,10 @@ struct PrefillRequestMessage {
     bool hasTopK;
     int topKVal;
     bool fastMode;
+    int decodePositionId;
+    int decodeSkipTokens;
     ar(tid, hashes, tids, mt, sid, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
-       topKVal, fastMode);
+       topKVal, fastMode, decodePositionId, decodeSkipTokens);
     PrefillRequestMessage msg(tid);
     msg.registration_hashes = std::move(hashes);
     msg.token_ids = std::move(tids);
@@ -88,6 +95,8 @@ struct PrefillRequestMessage {
     if (hasTopP) msg.top_p = topPVal;
     if (hasTopK) msg.top_k = topKVal;
     msg.fast_mode = fastMode;
+    msg.decode_position_id = decodePositionId;
+    msg.decode_skip_tokens = decodeSkipTokens;
     return msg;
   }
 };
@@ -113,6 +122,10 @@ struct PrefillResultMessage {
   std::optional<float> top_p;
   std::optional<int> top_k;
   bool fast_mode = false;
+  // Number of prompt tokens the prefill server served from its KV cache
+  // (prefix-cache reuse). The decode server surfaces this as
+  // usage.prompt_tokens_details.cached_tokens.
+  int cached_tokens = 0;
 
   explicit PrefillResultMessage(uint32_t taskId) : task_id(taskId) {}
 
@@ -128,7 +141,7 @@ struct PrefillResultMessage {
     int topKVal = top_k.value_or(0);
     ar(task_id, generated_text, finished, tokens_generated, processing_time_ms,
        token_ids, rt, sid, error, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
-       topKVal, fast_mode);
+       topKVal, fast_mode, cached_tokens);
   }
 
   template <class Archive>
@@ -149,8 +162,9 @@ struct PrefillResultMessage {
     bool hasTopK;
     int topKVal;
     bool fastMode;
+    int cachedTokens;
     ar(tid, genText, fin, tg, pt, tids, rt, sid, err, hasTemp, tempVal, hasTopP,
-       topPVal, hasTopK, topKVal, fastMode);
+       topPVal, hasTopK, topKVal, fastMode, cachedTokens);
     PrefillResultMessage msg(tid);
     msg.generated_text = std::move(genText);
     msg.finished = fin;
@@ -166,9 +180,27 @@ struct PrefillResultMessage {
     if (hasTopP) msg.top_p = topPVal;
     if (hasTopK) msg.top_k = topKVal;
     msg.fast_mode = fastMode;
+    msg.cached_tokens = cachedTokens;
     return msg;
   }
 };
+
+inline constexpr std::string_view PREFILL_TIMEOUT_ERROR_TEXT = "timeout";
+
+inline tt::domain::llm::LLMErrorReason errorReasonFromPrefillResult(
+    const PrefillResultMessage& message) {
+  return message.error && message.generated_text == PREFILL_TIMEOUT_ERROR_TEXT
+             ? tt::domain::llm::LLMErrorReason::TIMEOUT
+             : tt::domain::llm::LLMErrorReason::GENERIC;
+}
+
+inline std::string prefillErrorTextForReason(
+    tt::domain::llm::LLMErrorReason reason, std::string genericError) {
+  if (reason == tt::domain::llm::LLMErrorReason::TIMEOUT) {
+    return std::string(PREFILL_TIMEOUT_ERROR_TEXT);
+  }
+  return genericError.empty() ? "error" : std::move(genericError);
+}
 
 /**
  * @brief Health check message
@@ -186,6 +218,34 @@ struct HealthCheckMessage : SerializableMessage<HealthCheckMessage> {
   template <class F>
   void fields(F&& f) const {
     f(server_id, cpu_usage, memory_usage, active_tasks);
+  }
+};
+
+struct PrefillHealthRequestMessage
+    : SerializableMessage<PrefillHealthRequestMessage> {
+  uint32_t nonce = 0;
+
+  template <class F>
+  void fields(F&& f) {
+    f(nonce);
+  }
+  template <class F>
+  void fields(F&& f) const {
+    f(nonce);
+  }
+};
+
+struct PrefillHealthStatusMessage
+    : SerializableMessage<PrefillHealthStatusMessage> {
+  bool ready = false;
+
+  template <class F>
+  void fields(F&& f) {
+    f(ready);
+  }
+  template <class F>
+  void fields(F&& f) const {
+    f(ready);
   }
 };
 
@@ -316,6 +376,8 @@ constexpr std::string_view PREFILL_CACHE_BLOCKS_EVICTED =
     "prefill_cache_evicted";
 constexpr std::string_view REGISTRATION_PROBE = "registration_probe";
 constexpr std::string_view CANCEL_PREFILL = "cancel_prefill";
+constexpr std::string_view PREFILL_HEALTH_REQUEST = "prefill_health_request";
+constexpr std::string_view PREFILL_HEALTH_STATUS = "prefill_health_status";
 }  // namespace tags
 
 }  // namespace tt::sockets

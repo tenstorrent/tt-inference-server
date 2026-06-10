@@ -11,8 +11,7 @@
 namespace tt::utils::mapper {
 
 std::vector<uint32_t> mergeStopTokenIds(const std::vector<int>& requestStops) {
-  const auto& modelStops =
-      tt::utils::tokenizers::activeTokenizer().stopTokenIds();
+  const auto& modelStops = tt::utils::tokenizers::staticInfo().stopTokenIds;
   std::vector<uint32_t> merged;
   merged.reserve(requestStops.size() + modelStops.size());
   for (auto id : requestStops) merged.push_back(static_cast<uint32_t>(id));
