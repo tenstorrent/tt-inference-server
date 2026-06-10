@@ -481,17 +481,18 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
             << " cached=" << r2.usage.cachedTokens
             << " completion=" << r2.usage.completionTokens << std::endl;
 
-  // R2's prompt includes the assistant response as text, but re-tokenization
-  // produces different token IDs than R1's original completion. So R2 only
-  // matches R1's prompt prefix (not including R1's completion).
+  // R2's prompt includes the assistant response as text. With mock_pipeline,
+  // the tokenized assistant text round-trips to the same tokens as R1's
+  // completion, so R2 matches R1's full session (prompt + completion).
+  int r1SessionTokens = r1.usage.promptTokens + r1.usage.completionTokens;
   int r2ExpectedCached = computeExpectedCachedTokens(
-      r1.usage.promptTokens, cfg.firstBlockSize, cfg.blockSize);
+      r1SessionTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    Expected cached: " << r2ExpectedCached << std::endl;
 
   EXPECT_GT(r2.usage.cachedTokens, 0)
       << "Request 2 should have cached_tokens > 0 (reuses R1's cached prefix)";
   EXPECT_LE(std::abs(r2.usage.cachedTokens - r2ExpectedCached), 1)
-      << "Request 2 cached should match block-aligned R1 prompt";
+      << "Request 2 cached should match block-aligned R1 session";
 
   // Save R2 messages for replay later
   std::vector<Json::Value> r2MessagesCopy = r2Messages;
@@ -527,17 +528,17 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
             << " cached=" << r4.usage.cachedTokens
             << " completion=" << r4.usage.completionTokens << std::endl;
 
-  // R4 replays R1, but R1's session now has completion tokens cached too.
-  // So R4 should match the full R1 session (prompt + completion).
-  int r1SessionTokens = r1.usage.promptTokens + r1.usage.completionTokens;
+  // R4 replays R1's original prompt exactly. R1's session has completion tokens
+  // cached, but R4 only sends the original prompt tokens, so the match is
+  // limited to min(r4_prompt, r1_session) = r4_prompt tokens.
   int r4ExpectedCached = computeExpectedCachedTokens(
-      r1SessionTokens, cfg.firstBlockSize, cfg.blockSize);
+      r4.usage.promptTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    Expected cached: " << r4ExpectedCached << std::endl;
 
   EXPECT_GT(r4.usage.cachedTokens, 0)
       << "Request 4 should hit cache (replaying R1 prompt)";
   EXPECT_LE(std::abs(r4.usage.cachedTokens - r4ExpectedCached), 1)
-      << "Request 4 cached should match block-aligned R1 session";
+      << "Request 4 cached should match block-aligned R4 prompt";
 
   // -------------------------------------------------------------------------
   // Request 5: Replay exact R2 prompt → should hit full cache
@@ -551,17 +552,17 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
             << " cached=" << r5.usage.cachedTokens
             << " completion=" << r5.usage.completionTokens << std::endl;
 
-  // R5 replays R2 exactly. R2's session now has completion tokens cached, so
-  // R5 should match R2's full session (prompt + completion).
-  int r2SessionTokens = r2.usage.promptTokens + r2.usage.completionTokens;
+  // R5 replays R2 exactly. R5's tokens match R1's session (prompt + completion)
+  // up to that point, then diverge at the user2 message. The match is limited
+  // to R1's session tokens.
   int r5ExpectedCached = computeExpectedCachedTokens(
-      r2SessionTokens, cfg.firstBlockSize, cfg.blockSize);
+      r1SessionTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    Expected cached: " << r5ExpectedCached << std::endl;
 
   EXPECT_GT(r5.usage.cachedTokens, 0)
       << "Request 5 should hit cache (replaying R2 prompt)";
   EXPECT_LE(std::abs(r5.usage.cachedTokens - r5ExpectedCached), 1)
-      << "Request 5 cached should match block-aligned R2 session";
+      << "Request 5 cached should match block-aligned R1 session";
 
   std::cout << "  OK: All replay scenarios passed" << std::endl;
 }
