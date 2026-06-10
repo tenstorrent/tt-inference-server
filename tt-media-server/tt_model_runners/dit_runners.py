@@ -404,6 +404,7 @@ class TTWan22Runner(TTDiTRunner):
         try:
             return WanPipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
+                checkpoint_name=self.settings.model_weights_path,
                 height=self.resolution.height,
                 width=self.resolution.width,
                 num_frames=WAN22_NUM_FRAMES,
