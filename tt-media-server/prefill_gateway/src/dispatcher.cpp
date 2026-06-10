@@ -32,12 +32,11 @@ Dispatcher::Dispatcher(PrefillRegistry& registry, AffinityCache& affinityCache,
 
 void Dispatcher::onPrefillRequest(
     const tt::sockets::PrefillRequestMessage& msg) {
-  auto prefills = registry_.snapshot();
+  auto prefills = registry_.routingSnapshot(msg.registration_hashes);
   const uint64_t affinityKey =
       msg.registration_hashes.empty() ? 0 : msg.registration_hashes.front();
 
-  auto selection =
-      selectPrefill(prefills, msg.registration_hashes, round_robin_cursor_);
+  auto selection = selectPrefill(prefills, round_robin_cursor_);
   GatewayMetrics::instance().recordRoutingDecision(
       routingReasonName(selection.reason));
   size_t cachedBlocks = 0;

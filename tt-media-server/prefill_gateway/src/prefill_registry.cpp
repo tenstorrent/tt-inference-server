@@ -7,6 +7,36 @@
 
 namespace tt::gateway {
 
+namespace {
+
+void removeFromIndex(
+    std::unordered_map<uint64_t, std::unordered_set<std::string>>& index,
+    uint64_t blockHash, const std::string& serverId) {
+  auto indexIt = index.find(blockHash);
+  if (indexIt == index.end()) {
+    return;
+  }
+  indexIt->second.erase(serverId);
+  if (indexIt->second.empty()) {
+    index.erase(indexIt);
+  }
+}
+
+PrefillSnapshot makeSnapshot(const PrefillPeer& peer, size_t prefixMatchDepth) {
+  PrefillSnapshot snap;
+  snap.server_id = peer.server_id;
+  snap.healthy = peer.healthy;
+  snap.accepting_tasks = peer.accepting_tasks;
+  snap.in_flight = peer.in_flight;
+  snap.max_in_flight = peer.max_in_flight;
+  snap.cached_blocks = peer.cached_blocks.size();
+  snap.prefix_match_depth = prefixMatchDepth;
+  snap.last_heartbeat = peer.last_heartbeat;
+  return snap;
+}
+
+}  // namespace
+
 void PrefillRegistry::preRegister(const std::string& serverId,
                                   tt::sockets::SocketManager* manager) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -37,6 +67,9 @@ void PrefillRegistry::markDown(const std::string& serverId) {
     if (it != prefills_.end()) {
       wasKnown = true;
       it->second.healthy = false;
+      for (const uint64_t blockHash : it->second.cached_blocks) {
+        removeFromIndex(cache_block_index_, blockHash, serverId);
+      }
       it->second.cached_blocks.clear();
       // Keep in_flight unchanged: dispatcher's onPrefillDown will fail those
       // tasks and decrement counts via the normal path.
@@ -73,7 +106,11 @@ void PrefillRegistry::addCachedBlocks(
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = prefills_.find(serverId);
   if (it == prefills_.end()) return;
-  it->second.cached_blocks.insert(blockHashes.begin(), blockHashes.end());
+  for (const uint64_t blockHash : blockHashes) {
+    if (it->second.cached_blocks.insert(blockHash).second) {
+      cache_block_index_[blockHash].insert(serverId);
+    }
+  }
 }
 
 void PrefillRegistry::evictCachedBlocks(
@@ -82,7 +119,9 @@ void PrefillRegistry::evictCachedBlocks(
   auto it = prefills_.find(serverId);
   if (it == prefills_.end()) return;
   for (uint64_t h : blockHashes) {
-    it->second.cached_blocks.erase(h);
+    if (it->second.cached_blocks.erase(h) > 0) {
+      removeFromIndex(cache_block_index_, h, serverId);
+    }
   }
 }
 
@@ -91,16 +130,48 @@ std::vector<PrefillSnapshot> PrefillRegistry::snapshot() const {
   std::vector<PrefillSnapshot> out;
   out.reserve(prefills_.size());
   for (const auto& [_, peer] : prefills_) {
-    PrefillSnapshot snap;
-    snap.server_id = peer.server_id;
-    snap.healthy = peer.healthy;
-    snap.accepting_tasks = peer.accepting_tasks;
-    snap.in_flight = peer.in_flight;
-    snap.max_in_flight = peer.max_in_flight;
-    snap.cached_blocks = peer.cached_blocks.size();
-    snap.cached_block_hashes = peer.cached_blocks;
-    snap.last_heartbeat = peer.last_heartbeat;
-    out.push_back(std::move(snap));
+    out.push_back(makeSnapshot(peer, /*prefixMatchDepth=*/0));
+  }
+  return out;
+}
+
+std::vector<PrefillSnapshot> PrefillRegistry::routingSnapshot(
+    const std::vector<uint64_t>& registrationHashes) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  std::unordered_map<std::string, size_t> prefixDepthByServer;
+  std::unordered_set<std::string> candidates;
+
+  for (size_t depth = 0; depth < registrationHashes.size(); ++depth) {
+    auto indexIt = cache_block_index_.find(registrationHashes[depth]);
+    if (indexIt == cache_block_index_.end()) {
+      break;
+    }
+
+    if (depth == 0) {
+      candidates = indexIt->second;
+    } else {
+      std::erase_if(candidates, [&](const std::string& serverId) {
+        return !indexIt->second.contains(serverId);
+      });
+    }
+
+    if (candidates.empty()) {
+      break;
+    }
+
+    for (const auto& serverId : candidates) {
+      prefixDepthByServer[serverId] = depth + 1;
+    }
+  }
+
+  std::vector<PrefillSnapshot> out;
+  out.reserve(prefills_.size());
+  for (const auto& [serverId, peer] : prefills_) {
+    const auto depthIt = prefixDepthByServer.find(serverId);
+    const size_t prefixDepth =
+        depthIt == prefixDepthByServer.end() ? 0 : depthIt->second;
+    out.push_back(makeSnapshot(peer, prefixDepth));
   }
   return out;
 }

@@ -8,7 +8,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_set>
 #include <vector>
 
 namespace tt::gateway {
@@ -21,7 +20,7 @@ struct PrefillSnapshot {
   uint32_t in_flight = 0;
   uint32_t max_in_flight = 0;  // 0 = unlimited
   size_t cached_blocks = 0;
-  std::unordered_set<uint64_t> cached_block_hashes;
+  size_t prefix_match_depth = 0;
   std::chrono::steady_clock::time_point last_heartbeat{};
 };
 
@@ -51,7 +50,6 @@ PrefillEligibilitySummary summarizePrefillEligibility(
 std::string_view routingReasonName(PrefillRoutingReason reason);
 
 PrefillSelection selectPrefill(const std::vector<PrefillSnapshot>& prefills,
-                               const std::vector<uint64_t>& registrationHashes,
                                size_t& roundRobinCursor);
 
 }  // namespace tt::gateway

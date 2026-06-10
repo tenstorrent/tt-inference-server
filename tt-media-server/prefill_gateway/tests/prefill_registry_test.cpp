@@ -129,5 +129,49 @@ TEST(PrefillRegistryTest, CacheBlockDeltasAreTrackedPerPrefill) {
   SUCCEED();
 }
 
+TEST(PrefillRegistryTest, RoutingSnapshotComputesContiguousPrefixDepth) {
+  PrefillRegistry reg;
+  reg.preRegister("A", nullptr);
+  reg.preRegister("B", nullptr);
+  reg.markRegistered("A", 4);
+  reg.markRegistered("B", 4);
+  reg.addCachedBlocks("A", {10, 30});
+  reg.addCachedBlocks("B", {10, 20});
+
+  auto snaps = reg.routingSnapshot({10, 20, 30});
+
+  ASSERT_EQ(snaps.size(), 2u);
+  for (const auto& snap : snaps) {
+    if (snap.server_id == "A") {
+      EXPECT_EQ(snap.prefix_match_depth, 1u);
+    } else if (snap.server_id == "B") {
+      EXPECT_EQ(snap.prefix_match_depth, 2u);
+    } else {
+      FAIL() << "Unexpected server id " << snap.server_id;
+    }
+  }
+}
+
+TEST(PrefillRegistryTest, RoutingSnapshotReflectsEvictionsAndMarkDown) {
+  PrefillRegistry reg;
+  reg.preRegister("A", nullptr);
+  reg.markRegistered("A", 4);
+  reg.addCachedBlocks("A", {10, 20});
+
+  auto snaps = reg.routingSnapshot({10, 20});
+  ASSERT_EQ(snaps.size(), 1u);
+  EXPECT_EQ(snaps[0].prefix_match_depth, 2u);
+
+  reg.evictCachedBlocks("A", {20});
+  snaps = reg.routingSnapshot({10, 20});
+  ASSERT_EQ(snaps.size(), 1u);
+  EXPECT_EQ(snaps[0].prefix_match_depth, 1u);
+
+  reg.markDown("A");
+  snaps = reg.routingSnapshot({10});
+  ASSERT_EQ(snaps.size(), 1u);
+  EXPECT_EQ(snaps[0].prefix_match_depth, 0u);
+}
+
 }  // namespace
 }  // namespace tt::gateway

@@ -69,6 +69,8 @@ class PrefillRegistry {
                          const std::vector<uint64_t>& block_hashes);
 
   std::vector<PrefillSnapshot> snapshot() const;
+  std::vector<PrefillSnapshot> routingSnapshot(
+      const std::vector<uint64_t>& registration_hashes) const;
 
   // Non-owning. Valid until the next markDown() for `server_id`.
   tt::sockets::SocketManager* getSocketManager(const std::string& server_id);
@@ -78,6 +80,8 @@ class PrefillRegistry {
  private:
   mutable std::mutex mutex_;
   std::unordered_map<std::string, PrefillPeer> prefills_;
+  std::unordered_map<uint64_t, std::unordered_set<std::string>>
+      cache_block_index_;
 
   PrefillStateCallback on_prefill_down_;
 };
