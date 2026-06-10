@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <iterator>
 #include <thread>
 
 #include "config/settings.hpp"
@@ -13,7 +12,6 @@
 #include "metrics/metrics.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
-#include "utils/prefix_match.hpp"
 
 namespace tt::services {
 
@@ -568,15 +566,15 @@ SessionManager::tryAcquireByPrefixHash(
       // Count consecutive matching remaining hashes.
       size_t matched = 0;
       uint32_t lastMatchedThinkCount = entry.keyBlockThinkTokens;
-      matched = tt::utils::countEqualPrefix(
-          callerRemaining.begin(), callerRemaining.end(),
-          entry.remainingBlocks.begin(), entry.remainingBlocks.end(),
-          [](const RemainingBlockInfo& block) { return block.hash; },
-          [](const RemainingBlockInfo& block) { return block.hash; });
-      if (matched > 0) {
-        auto lastMatched = entry.remainingBlocks.begin();
-        std::advance(lastMatched, matched - 1);
-        lastMatchedThinkCount = lastMatched->accumulatedThinkTokens;
+      auto callerIt = callerRemaining.begin();
+      auto entryIt = entry.remainingBlocks.begin();
+      while (callerIt != callerRemaining.end() &&
+             entryIt != entry.remainingBlocks.end() &&
+             callerIt->hash == entryIt->hash) {
+        lastMatchedThinkCount = entryIt->accumulatedThinkTokens;
+        ++matched;
+        ++callerIt;
+        ++entryIt;
       }
       // key hash itself counts as 1 block match.
       size_t totalMatched = 1 + matched;

@@ -5,8 +5,6 @@
 
 #include <algorithm>
 
-#include "utils/prefix_match.hpp"
-
 namespace tt::gateway {
 
 namespace {
@@ -16,6 +14,18 @@ bool isEligible(const PrefillSnapshot& p) {
   if (!p.accepting_tasks) return false;
   if (p.max_in_flight > 0 && p.in_flight >= p.max_in_flight) return false;
   return true;
+}
+
+size_t prefixMatchDepth(const std::vector<uint64_t>& registrationHashes,
+                        const PrefillSnapshot& prefill) {
+  size_t depth = 0;
+  for (const uint64_t hash : registrationHashes) {
+    if (!prefill.cached_block_hashes.contains(hash)) {
+      break;
+    }
+    ++depth;
+  }
+  return depth;
 }
 
 }  // namespace
@@ -72,10 +82,7 @@ PrefillSelection selectPrefill(
   std::vector<const PrefillSnapshot*> prefixMatches;
   if (!registrationHashes.empty()) {
     for (const auto* p : eligible) {
-      const size_t depth = tt::utils::countMatchingPrefixDepth(
-          registrationHashes, [p](uint64_t hash) {
-            return p->cached_block_hashes.contains(hash);
-          });
+      const size_t depth = prefixMatchDepth(registrationHashes, *p);
       if (depth == 0) {
         continue;
       }
