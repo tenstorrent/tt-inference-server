@@ -38,14 +38,16 @@ constexpr int DEFAULT_BLOCK_SIZE = 1;
 
 class BlazePrefillRunnerHarness {
  public:
-  BlazePrefillRunnerHarness() {
+  explicit BlazePrefillRunnerHarness(
+      tt::config::ModelRunnerType runnerType =
+          tt::config::ModelRunnerType::MOCK_PIPELINE) {
     memoryRequestQueue =
         std::make_shared<tt::ipc::in_memory::MemoryRequestQueue>();
     memoryResultQueue =
         std::make_shared<tt::ipc::in_memory::MemoryResultQueue>();
     auto memoryManager = std::make_unique<tt::services::MemoryManager>(
         memoryRequestQueue, memoryResultQueue);
-    config.runner_type = tt::config::ModelRunnerType::MOCK_PIPELINE;
+    config.runner_type = runnerType;
     runner = std::make_unique<BlazePrefillRunner>(config, &resultQueue,
                                                   &taskQueue, &cancelQueue,
                                                   std::move(memoryManager));
@@ -184,6 +186,16 @@ TEST(BlazePrefillRunnerIntegrationTest,
     EXPECT_FALSE(token.isAbort());
   }
   expectNoDecodeTokens(producedTokens);
+}
+
+TEST(BlazePrefillRunnerIntegrationTest, PrefillBackendUsesSimulatorPipeline) {
+  BlazePrefillRunnerHarness harness(tt::config::ModelRunnerType::PREFILL);
+
+  const uint32_t taskId = 4243;
+  const auto allocateResponse = harness.allocate(taskId);
+  ASSERT_EQ(allocateResponse.status, tt::domain::ManageMemoryStatus::SUCCESS);
+  ASSERT_NE(allocateResponse.slotId, tt::domain::INVALID_SLOT_ID);
+  harness.assertRunnerHealthy();
 }
 
 TEST(BlazePrefillRunnerIntegrationTest, CancelFlowEmitsAbortToken) {

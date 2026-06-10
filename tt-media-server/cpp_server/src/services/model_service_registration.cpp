@@ -82,6 +82,16 @@ void registerLLM() {
   runners.registerIpcRunner(config::ModelService::LLM,
                             config::ModelRunnerType::MOCK_PIPELINE,
                             blazeFactory);
+  runners.registerIpcRunner(
+      config::ModelService::LLM, config::ModelRunnerType::PREFILL,
+      [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
+         ipc::ITaskQueue* taskQueue,
+         ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
+        TT_LOG_INFO("[RunnerRegistry] Creating Blaze prefill runner");
+        const auto& llm = std::get<config::LLMConfig>(cfg);
+        return std::make_unique<runners::blaze::BlazePrefillRunner>(
+            llm, resultQueue, taskQueue, cancelQueue);
+      });
 #endif
 
   auto& routes = api::RouteRegistry::instance();
