@@ -1393,41 +1393,21 @@ _DEFAULT_SAMPLING_PARAMS = {
 SHUTDOWN_SIGNAL = {"__shutdown__": True}
 
 
-# Reserved task_id for the canary-monitor probe (see health_monitoring/).
-# Constraints it must satisfy:
-#   - a string (result_listener/error_listener route by string task_id),
-#   - no "_chunk_" substring (error_listener splits on it, scheduler.py),
-#   - cannot collide with the UUID4 task_ids the API emits,
-#   - <= VideoShm.TASK_ID_SIZE (36) bytes, since SPRunner reuses it as the
-#     SHM-wire task_id for its canary round-trip.
-CANARY_TASK_ID = "__canary__"
-# Reserved task_id for the *deep* canary probe. Same contract/constraints as
-# CANARY_TASK_ID, but the pipeline answers it by replaying its compiled warmup
-# forward (real device work) instead of a bare host-side collective, so it also
-# proves silicon liveness.
-CANARY_DEEP_TASK_ID = "__canary_deep__"
-# All reserved canary task ids
+# Reserved task_ids for canary-monitor probes (see health_monitoring/).
+# Must not contain "_chunk_", must be <= 36 bytes, and must not collide with UUID4 task_ids.
+CANARY_TASK_ID = "__canary__"  # shallow: bare host-collective probe
+CANARY_DEEP_TASK_ID = (
+    "__canary_deep__"  # deep: replays compiled warmup forward to certify silicon
+)
 CANARY_TASK_IDS = frozenset({CANARY_TASK_ID, CANARY_DEEP_TASK_ID})
 
 
 @dataclass(frozen=True)
 class CanaryProbeRequest:
-    """Sentinel request the canary monitor puts on the scheduler ``task_queue``.
+    """Sentinel put on the scheduler task_queue by the canary monitor.
 
-    The device workers recognise it by ``isinstance`` before calling
-    ``runner.run()`` and route it to ``runner.health_check()`` instead, so the
-    probe never enters the model forward path. It lives here next to
-    ``CANARY_TASK_ID`` (and ``SHUTDOWN_SIGNAL``) so the workers can import the
-    whole reserved-probe contract from one light module, without pulling the
-    monitor's telemetry/asyncio dependencies into every worker process. It is a
-    plain frozen dataclass so it pickles cleanly across the multiprocessing
-    queue.
-
-    It carries the attributes the worker loop reads off every request:
-    ``_task_id`` (for result routing), ``stream`` (to stay on the non-streaming
-    path), and ``deep`` (whether the runner should run the deeper device probe).
-    The monitor sets ``_task_id`` to ``CANARY_TASK_ID`` or ``CANARY_DEEP_TASK_ID``
-    to match ``deep``.
+    Workers route it to ``runner.health_check()`` instead of ``runner.run()``.
+    Frozen dataclass so it pickles cleanly across the multiprocessing queue.
     """
 
     _task_id: str = field(default=CANARY_TASK_ID)
