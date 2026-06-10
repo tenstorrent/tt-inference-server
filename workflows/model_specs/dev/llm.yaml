@@ -954,6 +954,8 @@ templates:
       max_concurrency: 32
       max_context: 65536  # 64 * 1024
       default_impl: true
+      override_tt_config:
+        trace_region_size: 90000000  # match P100 (single BH chip); 50MB default too small for prefill trace (#4005)
   status: EXPERIMENTAL
   metadata:
     meta-llama/Llama-3.1-8B:
