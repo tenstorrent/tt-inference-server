@@ -55,12 +55,12 @@ void DisaggregationService::setupSocketHandlers() {
                 message.task_id);
             const auto reason =
                 tt::sockets::errorReasonFromPrefillResult(message);
-            callback.value()(
-                makeErrorChunk(message.task_id,
-                               isTimeoutError(reason) ? "prefill timeout"
-                                                      : "prefill error",
-                               reason),
-                /*isFinal=*/true);
+            callback.value()(makeErrorChunk(message.task_id,
+                                            reason == LLMErrorReason::TIMEOUT
+                                                ? "prefill timeout"
+                                                : "prefill error",
+                                            reason),
+                             /*isFinal=*/true);
             return;
           }
 

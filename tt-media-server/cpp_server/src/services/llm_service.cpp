@@ -380,7 +380,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         }
         toolChoiceMap.take(taskId);  // Clean up
         auto errorChunk = makeErrorChunk(taskId,
-                                         isTimeoutError(errorReason)
+                                         errorReason == LLMErrorReason::TIMEOUT
                                              ? "runner timeout"
                                              : "runner reported error",
                                          errorReason);

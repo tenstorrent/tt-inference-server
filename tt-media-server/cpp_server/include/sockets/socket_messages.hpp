@@ -196,7 +196,7 @@ inline tt::domain::llm::LLMErrorReason errorReasonFromPrefillResult(
 
 inline std::string prefillErrorTextForReason(
     tt::domain::llm::LLMErrorReason reason, std::string genericError) {
-  if (tt::domain::llm::isTimeoutError(reason)) {
+  if (reason == tt::domain::llm::LLMErrorReason::TIMEOUT) {
     return std::string(PREFILL_TIMEOUT_ERROR_TEXT);
   }
   return genericError.empty() ? "error" : std::move(genericError);

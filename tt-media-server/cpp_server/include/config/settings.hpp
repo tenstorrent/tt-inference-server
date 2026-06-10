@@ -201,10 +201,6 @@ std::string kafkaGroupId();
  * defaults::SESSION_ALLOCATION_MAX_RETRIES. */
 unsigned sessionAllocationMaxRetries();
 
-/** Prefill timeout in milliseconds from PREFILL_TIMEOUT_MS. Default:
- * defaults::PREFILL_TIMEOUT_MS. */
-unsigned prefillTimeoutMs();
-
 /** Blaze socket descriptor prefix from BLAZE_SOCKET_DESCRIPTOR_PREFIX. Default:
  * defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX. */
 std::string blazeSocketDescriptorPrefix();
