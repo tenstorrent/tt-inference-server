@@ -133,7 +133,17 @@ struct LLMRequest : BaseRequest {
 
   // Number of tokens already in the decode-side KV cache that the prefill
   // prefill should not send this part of KV.
-  int number_of_decode_skip_tokens = 0;
+  int decode_position_id = 0;
+
+  // Accumulated think (reasoning) tokens in the matched prefix, folded into
+  // kv_position_id during decode-side session resolution. Used to derive
+  // decode_skip_tokens. Set on a prefix-cache hit.
+  int accumulated_think_tokens = 0;
+
+  // Same leading reused prefix as decode_position_id but excluding the
+  // accumulated think tokens. Computed on the decode side and forwarded to the
+  // prefill server, which stores it on the Sequence.
+  int decode_skip_tokens = 0;
 
   std::optional<bool> disaggregation_override;
 

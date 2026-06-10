@@ -14,9 +14,9 @@ from tt_model_runners.sp_runner import SPRunner
 _mock_settings = MagicMock()
 _mock_settings.device_mesh_shape = (1, 1)
 _mock_settings.use_dynamic_batcher = False
-# Concrete numeric required: ``SPRunner._read_response_for`` does
-# ``time.monotonic() + timeout_s`` and compares ``remaining <= 0``; a
-# default MagicMock attribute breaks that arithmetic with a TypeError.
+# Concrete numeric required: ``SPRunner.await_result`` feeds
+# ``video_request_timeout_seconds`` into ``asyncio.wait_for``; a default
+# MagicMock attribute breaks that arithmetic with a TypeError.
 _mock_settings.video_request_timeout_seconds = 60.0
 
 
