@@ -593,7 +593,7 @@ jobs:
       DYNAMO_COMPONENT: backend
       DYNAMO_ENDPOINT_NAME: generate
       DYNAMO_ENDPOINT_ENABLED: "1"
-      LLM_DEVICE_BACKEND: mock
+      LLM_DEVICE_BACKEND: mock_pipeline
       MODEL_NAME: deepseek-ai/DeepSeek-R1-0528
     defaults:
       run:
