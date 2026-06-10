@@ -473,7 +473,8 @@ bool LLMPipeline::shouldDoPrefillOnDecode(
   // cache and won't need prefilling again — deduct them from the effective
   // prompt size used for the threshold comparison.
   if (request.kv_position_id.has_value()) {
-    const size_t cached = static_cast<size_t>(*request.kv_position_id);
+    const size_t cached = static_cast<size_t>(*request.kv_position_id + 1) -
+                          static_cast<size_t>(request.accumulated_think_tokens);
     promptTokens = (promptTokens > cached) ? promptTokens - cached : 0;
   }
 
