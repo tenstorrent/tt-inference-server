@@ -115,6 +115,10 @@ class _TTSymbioteGenerator(Generator):
         # tt_symbiote attaches the optimized TTNN pipeline (S0 models) at
         # set_device time via recipe.make_kv_cache.
         self.pipeline = getattr(hf_model, "_tt_pipeline", None)
+        # S2 models attach a TTNNPagedAttentionKVCache to ``_tt_kv_cache`` at
+        # set_device time. vLLM re-sizes it to its own block budget in
+        # allocate_kv_cache; until then this is a sensible default.
+        self._paged_cache = getattr(hf_model, "_tt_kv_cache", None)
         self.data_parallel = 1
         self.mode = None
         self._warmed_up = False
@@ -184,16 +188,63 @@ class _TTSymbioteGenerator(Generator):
     # ------------------------------------------------------------------
     # KV cache
     # ------------------------------------------------------------------
-    def allocate_kv_cache(self, *args: Any, **kwargs: Any) -> Any:
-        if self.SERVING_TIER == S2_PAGED:
-            raise NotImplementedError(
-                "S2 paged KV allocation not yet wired. Build the model's "
-                "TTNNPagedAttentionKVCache sized to vLLM (num_blocks, block_size) "
-                "and expose its TT tensors (mirror allocate_vllm_kv_cache). See "
-                "tt_symbiote docs/development/tt_inference_server_integration.md §9.2."
+    def allocate_kv_cache(
+        self,
+        kv_cache_shape: Any = None,
+        dtype: Any = None,
+        num_layers: Any = None,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        """Build the paged KV cache vLLM will drive (S2 only).
+
+        The vLLM TTModelRunner calls this with
+        ``kv_cache_shape = (num_blocks, num_kv_heads, block_size, head_size)``
+        — exactly tt_symbiote's :class:`TTNNPagedAttentionKVCache` cache shape —
+        and uses the return value as the ``kv_cache`` kwarg to prefill/decode.
+
+        For S0/S1 the model owns its KV cache and vLLM does not page it, so we
+        return ``None``.
+        """
+        if self.SERVING_TIER != S2_PAGED:
+            return None
+
+        import torch
+        from tt_symbiote.modules.ttnn_attention import (
+            PagedAttentionConfig,
+            TTNNPagedAttentionKVCache,
+        )
+
+        if kv_cache_shape is None or len(kv_cache_shape) != 4:
+            raise ValueError(
+                f"S2 allocate_kv_cache expects a 4-tuple "
+                f"(num_blocks, num_kv_heads, block_size, head_size); got {kv_cache_shape!r}"
             )
-        # S0 / S1: the model owns its KV cache; vLLM does not page it.
-        return None
+        num_blocks, num_kv_heads, block_size, head_size = kv_cache_shape
+        layers = int(num_layers) if num_layers is not None else self.hf_model.config.num_hidden_layers
+
+        config = PagedAttentionConfig(
+            block_size=int(block_size),
+            max_num_blocks=int(num_blocks),
+            batch_size=1,
+        )
+        cache = TTNNPagedAttentionKVCache(
+            num_layers=layers,
+            num_kv_heads=int(num_kv_heads),
+            head_dim=int(head_size),
+            config=config,
+            device=None,
+            dtype=torch.bfloat16,
+        ).to_device(self.mesh_device)
+        # Make the model forward use this exact cache as its HF past_key_values.
+        self._paged_cache = cache
+        self.hf_model._tt_kv_cache = cache
+        logger.info(
+            "tt_symbiote S2: allocated paged KV cache shape=%s layers=%s",
+            tuple(kv_cache_shape),
+            layers,
+        )
+        return cache
 
     # ------------------------------------------------------------------
     # prefill / decode dispatch by tier
@@ -201,14 +252,18 @@ class _TTSymbioteGenerator(Generator):
     def prefill_forward(self, *args: Any, **kwargs: Any) -> Any:
         if self.SERVING_TIER == S0_GREEDY_ENGINE:
             return self._prefill_s0(*args, **kwargs)
+        if self.SERVING_TIER == S2_PAGED:
+            return self._prefill_s2(*args, **kwargs)
         raise NotImplementedError(
             f"prefill_forward for tier {self.SERVING_TIER} not implemented; "
-            "see design §9.2 (S1: per-request logits loop; S2: paged forward)."
+            "see design §9.2 (S1: per-request logits loop)."
         )
 
     def decode_forward(self, *args: Any, **kwargs: Any) -> Any:
         if self.SERVING_TIER == S0_GREEDY_ENGINE:
             return self._decode_s0(*args, **kwargs)
+        if self.SERVING_TIER == S2_PAGED:
+            return self._decode_s2(*args, **kwargs)
         raise NotImplementedError(
             f"decode_forward for tier {self.SERVING_TIER} not implemented; "
             "see design §9.2."
@@ -278,6 +333,101 @@ class _TTSymbioteGenerator(Generator):
         nxt = self.pipeline.decode_step(prev)
         token_ids = self._as_token_list(nxt)
         return self._onehot_logits(token_ids)
+
+    # ------------------------------------------------------------------
+    # S2: paged forward over a vLLM-page-table-aware KV cache
+    #
+    # The model stays pure HF: we install vLLM's block table on the paged cache
+    # via the shared `set_vllm_page_table` hook (validated on T3K), then call
+    # `hf_model(...)` with that cache as `past_key_values` and return the logits
+    # vLLM samples from. No model code is vLLM-aware.
+    #
+    # NOTE: hardware-validated at the hook level (paged_fill + paged_sdpa_decode
+    # honor the external table); full multi-user continuous-batching e2e is
+    # pending a registered S2 model (see design §9.2 / M2 follow-up).
+    # ------------------------------------------------------------------
+    def _resolve_paged_cache(self, kv_cache: Any):
+        from tt_symbiote.modules.ttnn_attention import TTNNPagedAttentionKVCache
+
+        if isinstance(kv_cache, TTNNPagedAttentionKVCache):
+            return kv_cache
+        if isinstance(self._paged_cache, TTNNPagedAttentionKVCache):
+            return self._paged_cache
+        raise RuntimeError(
+            "tt_symbiote S2 adapter: no TTNNPagedAttentionKVCache available; "
+            "allocate_kv_cache must run first."
+        )
+
+    @staticmethod
+    def _install_page_table(cache, page_table: Any) -> None:
+        if page_table is None:
+            return
+        import torch
+
+        pt = page_table if torch.is_tensor(page_table) else torch.as_tensor(page_table)
+        if pt.dim() == 1:
+            pt = pt.unsqueeze(0)
+        cache.set_vllm_page_table(pt.to(torch.int32))
+
+    def _prefill_s2(
+        self,
+        tokens: Any,
+        page_table: Any = None,
+        kv_cache: Any = None,
+        prompt_lens: Any = None,
+        empty_slots: Any = None,
+        **kwargs: Any,
+    ) -> Any:
+        import torch
+
+        cache = self._resolve_paged_cache(kv_cache)
+        self._install_page_table(cache, page_table)
+
+        input_ids = tokens if torch.is_tensor(tokens) else torch.as_tensor(tokens)
+        if input_ids.dim() == 1:
+            input_ids = input_ids.unsqueeze(0)
+        cache_position = torch.arange(input_ids.shape[-1])
+
+        out = self.hf_model(
+            input_ids=input_ids,
+            past_key_values=cache,
+            cache_position=cache_position,
+            use_cache=True,
+        )
+        # vLLM expects logits [B, seq, vocab]; it slices [:, -1, :] itself.
+        return out.logits
+
+    def _decode_s2(
+        self,
+        tokens: Any,
+        start_pos: Any = None,
+        page_table: Any = None,
+        kv_cache: Any = None,
+        **kwargs: Any,
+    ) -> Any:
+        import torch
+
+        cache = self._resolve_paged_cache(kv_cache)
+        self._install_page_table(cache, page_table)
+
+        input_ids = tokens if torch.is_tensor(tokens) else torch.as_tensor(tokens)
+        if input_ids.dim() == 1:
+            input_ids = input_ids.unsqueeze(-1)  # [B] -> [B, 1]
+        if start_pos is not None:
+            pos = start_pos if torch.is_tensor(start_pos) else torch.as_tensor(start_pos)
+            cache_position = pos.reshape(-1)[:1].to(torch.long)
+        else:
+            cache_position = torch.as_tensor([cache.get_seq_length(0)], dtype=torch.long)
+
+        out = self.hf_model(
+            input_ids=input_ids,
+            past_key_values=cache,
+            cache_position=cache_position,
+            use_cache=True,
+        )
+        logits = out.logits
+        # vLLM decode expects [B, vocab]; collapse the length-1 sequence axis.
+        return logits[:, -1, :] if logits.dim() == 3 else logits
 
     # ------------------------------------------------------------------
     # helpers
