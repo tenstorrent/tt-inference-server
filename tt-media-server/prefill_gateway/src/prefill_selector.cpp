@@ -65,9 +65,9 @@ std::string_view routingReasonName(PrefillRoutingReason reason) {
   return "unknown";
 }
 
-PrefillSelection selectPrefill(
-    const std::vector<PrefillSnapshot>& prefills,
-    const std::vector<uint64_t>& registrationHashes, size_t& roundRobinCursor) {
+PrefillSelection selectPrefill(const std::vector<PrefillSnapshot>& prefills,
+                               const std::vector<uint64_t>& registrationHashes,
+                               size_t& roundRobinCursor) {
   std::vector<const PrefillSnapshot*> eligible;
   eligible.reserve(prefills.size());
   for (const auto& p : prefills) {

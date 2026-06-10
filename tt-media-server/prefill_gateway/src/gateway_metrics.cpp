@@ -122,7 +122,8 @@ class GatewayMetrics::Impl {
     routing_table_size_ =
         &prometheus::BuildGauge()
              .Name("tt_gateway_routing_table_size")
-             .Help("Number of cache block routing entries known by the gateway.")
+             .Help(
+                 "Number of cache block routing entries known by the gateway.")
              .Register(*registry_)
              .Add({});
     decode_connected_ =

@@ -29,7 +29,8 @@ PrefillSnapshot cachedPrefill(std::string id, std::vector<uint64_t> hashes,
 std::optional<std::string> selectedServer(
     const std::vector<PrefillSnapshot>& prefills,
     const std::vector<uint64_t>& registrationHashes, size_t& roundRobinCursor) {
-  return selectPrefill(prefills, registrationHashes, roundRobinCursor).server_id;
+  return selectPrefill(prefills, registrationHashes, roundRobinCursor)
+      .server_id;
 }
 
 TEST(PrefillSelectorTest, NoPeersAvailableWhenAllDown) {
