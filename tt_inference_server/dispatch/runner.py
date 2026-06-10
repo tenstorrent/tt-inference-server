@@ -487,11 +487,19 @@ class TTModelRunner:
         return self._lm_head(hidden_tt)
 
     def _embed(self, token_id: int):
-        """Lookup embedding, apply optional scale, and upload to device as (TILE, hidden_p)."""
-        h = self._embed_w_cpu[token_id].float() * self._embed_scale   # (hidden,)
-        row = torch.zeros(TILE, _tile_align(self._cfg.hidden_size), dtype=torch.bfloat16)
-        row[0, :self._cfg.hidden_size] = h.bfloat16()
-        return _to_tt(row, self._device)
+        """Lookup embedding on-device, apply optional scale. Returns (TILE, hidden_p)."""
+        import ttnn
+        self._token_id_cpu[0, 0] = token_id
+        token_tt = ttnn.from_torch(self._token_id_cpu, device=self._device,
+                                   memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        # ttnn.embedding([1,1], [vocab, hidden_p]) → [1, TILE, hidden_p] in TILE_LAYOUT
+        emb_tt = ttnn.embedding(token_tt, self._embed_tt, layout=ttnn.TILE_LAYOUT)
+        ttnn.deallocate(token_tt)
+        hidden_p = _tile_align(self._cfg.hidden_size)
+        hidden_tt = ttnn.reshape(emb_tt, [TILE, hidden_p])
+        if self._embed_scale != 1.0:
+            hidden_tt = ttnn.multiply(hidden_tt, self._embed_scale)
+        return hidden_tt
 
     def _layer_forward(self, hidden_tt, layer_idx: int, kv_pos: int):
         import ttnn
@@ -722,8 +730,26 @@ class TTModelRunner:
         cfg = self._cfg
         layers_list = getattr(backbone, layers_attr)
 
-        # Embedding (stays on CPU)
-        self._embed_w_cpu = _find_embed_tokens(backbone).weight.detach().float()
+        # Embedding — upload to device DRAM once; free CPU copy to save ~1-2 GB RAM.
+        # For tied embeddings (Llama), lm_head.weight is the same CPU tensor but
+        # the two device tensors need different layouts (ROW_MAJOR vs TILE+transposed),
+        # so they are uploaded separately.
+        import ttnn as _ttnn
+        embed_module = _find_embed_tokens(backbone)
+        embed_cpu = embed_module.weight.detach().bfloat16()       # [vocab, hidden]
+        hidden_p  = _tile_align(cfg.hidden_size)
+        if hidden_p != cfg.hidden_size:
+            embed_cpu = torch.nn.functional.pad(embed_cpu, (0, hidden_p - cfg.hidden_size))
+        self._embed_tt = _ttnn.from_torch(
+            embed_cpu,
+            dtype=_ttnn.bfloat16,
+            layout=_ttnn.ROW_MAJOR_LAYOUT,
+            device=self._device,
+            memory_config=_ttnn.DRAM_MEMORY_CONFIG,
+        )
+        del embed_cpu
+        # Keep a null reference so any stale access fails fast instead of silently using CPU
+        self._embed_w_cpu = None
 
         # Detect if this model uses Gemma-style (1+w) norms
         first_layer = layers_list[0]
@@ -981,6 +1007,8 @@ class TTModelRunner:
         self._fa_out_tt       = z(TILE, cfg.num_heads * hd_p)
 
         # Pre-allocated CPU tensors reused each token (avoids torch.zeros() in hot loop)
+        # Single-token embedding ID staging buffer — filled in _embed() each step
+        self._token_id_cpu = torch.zeros(1, 1, dtype=torch.int32)
         self._k_in_cpu  = torch.zeros(1, nkv, TILE, hd_p, dtype=torch.bfloat16)
         self._v_in_cpu  = torch.zeros(1, nkv, TILE, hd_p, dtype=torch.bfloat16)
         # Q for flash-attn: [N_heads*TILE, head_dim_p] (one TILE-block per head)
