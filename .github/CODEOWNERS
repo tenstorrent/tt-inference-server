@@ -28,7 +28,7 @@ tests/test_helm_generator/ @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicT
 
 # github actions
 .github/workflows/models-ci-config-schema.json @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT 
-.github/workflows/mvalidate-models-ci-config.yml @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT 
+.github/workflows/validate-models-ci-config.yml @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT 
 .github/workflows/models-ci-config.json @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT 
 
 
