@@ -55,7 +55,6 @@ constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";
 constexpr const char* KAFKA_GROUP_ID = "migration-workers";
 
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
-constexpr unsigned PREFILL_TIMEOUT_MS = 20000;
 
 constexpr const char* BLAZE_SOCKET_DESCRIPTOR_PREFIX = "deepseek";
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
