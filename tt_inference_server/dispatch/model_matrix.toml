@@ -1,0 +1,108 @@
+# model_matrix.toml — Runtime dispatch config
+# Maps model architecture family → kernel variant → hardware grid assignment.
+# Resolved once at load_model() time by KernelDispatcher.
+#
+# Schema:
+#   [models.<family>]
+#   arch         = "HuggingFace architecture class name"
+#   kernel       = "flash_attn variant tag (matches kernels/manifest.json)"
+#   grid_x       = Tensix core grid width
+#   grid_y       = Tensix core grid height (always 1 for current kernels)
+#   status       = "passing" | "failing" | "untested"
+#   issue        = GitHub issue number (optional — for known bugs)
+#   notes        = free-text notes (optional)
+
+# ---------------------------------------------------------------------------
+# Llama 3 family (Meta)
+# ---------------------------------------------------------------------------
+
+[models.llama3-8b]
+arch         = "LlamaForCausalLM"
+kernel       = "flash_attn__N32_Nkv8_hd4_kv1"
+grid_x       = 32
+grid_y       = 1
+status       = "passing"
+notes        = "Baseline model. 32 Q-heads, 8 KV-heads, head_dim=128 (4 tiles)."
+
+[models.llama3-70b]
+arch         = "LlamaForCausalLM"
+kernel       = "flash_attn__N64_Nkv8_hd4_kv1"
+grid_x       = 64
+grid_y       = 1
+status       = "untested"
+notes        = "70B variant — exceeds single-card DRAM; multi-card work tracked in #17."
+
+# ---------------------------------------------------------------------------
+# Qwen 2.5 family (Alibaba)
+# ---------------------------------------------------------------------------
+
+[models.qwen2_5-7b]
+arch         = "Qwen2ForCausalLM"
+kernel       = "flash_attn__N28_Nkv4_hd4_kv1"
+grid_x       = 28
+grid_y       = 1
+status       = "failing"
+issue        = 22
+notes        = "BUG-MISTRAL-01: degenerate output. Shares root cause with mistral-7b."
+
+[models.qwen2_5-72b]
+arch         = "Qwen2ForCausalLM"
+kernel       = "flash_attn__N64_Nkv8_hd4_kv1"
+grid_x       = 64
+grid_y       = 1
+status       = "untested"
+
+# ---------------------------------------------------------------------------
+# Mistral / Mixtral family (Mistral AI)
+# ---------------------------------------------------------------------------
+
+[models.mistral-7b]
+arch         = "MistralForCausalLM"
+kernel       = "flash_attn__N32_Nkv8_hd4_kv1"
+grid_x       = 32
+grid_y       = 1
+status       = "failing"
+issue        = 22
+notes        = "BUG-MISTRAL-01: hidden-state divergence produces degenerate output."
+
+[models.mixtral-8x7b]
+arch         = "MixtralForCausalLM"
+kernel       = "flash_attn__N32_Nkv8_hd4_kv1"
+grid_x       = 32
+grid_y       = 1
+status       = "untested"
+notes        = "MoE routing dispatched via moe_route(). Requires 8 expert shards."
+
+# ---------------------------------------------------------------------------
+# Gemma 3 family (Google)
+# ---------------------------------------------------------------------------
+
+[models.gemma3-4b]
+arch         = "Gemma3ForCausalLM"
+kernel       = "flash_attn__N8_Nkv4_hd8_kv1"
+grid_x       = 8
+grid_y       = 1
+status       = "untested"
+issue        = 21
+notes        = "Benchmark run tracked in #21. 4-norm architecture."
+
+[models.gemma2-9b]
+arch         = "Gemma2ForCausalLM"
+kernel       = "flash_attn__N16_Nkv8_hd8_kv1"
+grid_x       = 16
+grid_y       = 1
+status       = "failing"
+issue        = 10
+notes        = "L1 overflow on hidden_size=3584. Real fix requires constrained program_config grid."
+
+# ---------------------------------------------------------------------------
+# Hardware target
+# ---------------------------------------------------------------------------
+
+[hardware]
+card         = "bh_p150"
+tensix_cores = 120
+l1_budget_bytes = 1_440_000
+pcie_gen     = 5
+device_ids   = [0]
+notes        = "Single Blackhole p150. Multi-card support tracked in #17."
