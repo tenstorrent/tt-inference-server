@@ -103,6 +103,22 @@ def _pad_o_proj_per_head(w_raw: torch.Tensor, n_heads: int, head_dim: int) -> to
     return w_padded.reshape(out_dim, n_heads * hd_p).contiguous()
 
 
+# CPU-fallback tracking. _matmul_safe falls back to torch.matmul on L1 overflow —
+# correct, but it defeats the "hardware-native" goal, so the test harness treats any
+# fallback as a FAILURE (a model that only "works" on CPU isn't running on the card).
+# Counter is module-level because _matmul_safe is a free function.
+_CPU_FALLBACK_COUNT = 0
+
+
+def reset_cpu_fallback_count():
+    global _CPU_FALLBACK_COUNT
+    _CPU_FALLBACK_COUNT = 0
+
+
+def get_cpu_fallback_count() -> int:
+    return _CPU_FALLBACK_COUNT
+
+
 def _matmul_safe(a, b, device, output_tensor=None):
     """ttnn.matmul with CPU fallback on L1 overflow.
 
@@ -126,7 +142,10 @@ def _matmul_safe(a, b, device, output_tensor=None):
         msg = str(e)
         if "1572864" not in msg and "Statically allocated circular buffers" not in msg:
             raise
-        # L1 overflow — fall back to CPU matmul (output_tensor not used on CPU path)
+        # L1 overflow — fall back to CPU matmul (output_tensor not used on CPU path).
+        # Count it: the harness treats any CPU fallback as a failure (not hardware-native).
+        global _CPU_FALLBACK_COUNT
+        _CPU_FALLBACK_COUNT += 1
         a_cpu = ttnn.to_torch(a).float()
         b_cpu = ttnn.to_torch(b).float()
         result = torch.matmul(a_cpu, b_cpu).bfloat16()
