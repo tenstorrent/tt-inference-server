@@ -33,14 +33,5 @@ class ModelConfig:
             intermediate_size=intermediate,
         )
 
-
-# Qwen 2.5 known variants
-CONFIGS = {
-    "0.5B": ModelConfig(hidden_size=896,  num_heads=14, num_kv_heads=2,  head_dim=64,  intermediate_size=4864),
-    "1.5B": ModelConfig(hidden_size=1536, num_heads=12, num_kv_heads=2,  head_dim=128, intermediate_size=8960),
-    "3B":   ModelConfig(hidden_size=2048, num_heads=16, num_kv_heads=2,  head_dim=128, intermediate_size=11008),
-    "7B":   ModelConfig(hidden_size=3584, num_heads=28, num_kv_heads=4,  head_dim=128, intermediate_size=18944),
-    "14B":  ModelConfig(hidden_size=5120, num_heads=40, num_kv_heads=8,  head_dim=128, intermediate_size=13824),
-    "32B":  ModelConfig(hidden_size=5120, num_heads=64, num_kv_heads=8,  head_dim=80,  intermediate_size=27648),
-    "72B":  ModelConfig(hidden_size=8192, num_heads=64, num_kv_heads=8,  head_dim=128, intermediate_size=29568),
-}
+# Per-size dim tables (CONFIGS) were retired in #3 Phase D — dims for listed models now
+# live in model_matrix.toml (authoritative); novel models derive via from_hf_config above.

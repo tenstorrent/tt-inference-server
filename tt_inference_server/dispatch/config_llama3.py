@@ -8,7 +8,7 @@ try:
 except ImportError:
     from .config_qwen2_5 import ModelConfig  # script mode
 
-CONFIGS = {
-    "8B":  ModelConfig(hidden_size=4096, num_heads=32, num_kv_heads=8,  head_dim=128, intermediate_size=14336),
-    "70B": ModelConfig(hidden_size=8192, num_heads=64, num_kv_heads=8,  head_dim=128, intermediate_size=28672),
-}
+# Per-size dim tables (CONFIGS) were retired in #3 Phase D — dims for listed models now
+# live in model_matrix.toml; novel models derive via ModelConfig.from_hf_config. This
+# module is kept so registry._FAMILY_MAP can resolve LlamaForCausalLM to ModelConfig.
+__all__ = ["ModelConfig"]

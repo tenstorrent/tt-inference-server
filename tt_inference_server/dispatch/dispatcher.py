@@ -60,6 +60,23 @@ class Capabilities:
     attn_backend: str
 
 
+@dataclass
+class ResolvedConfig:
+    """Model dims view exposing the ModelConfig attribute names the runner reads.
+
+    Built from a matrix entry so the matrix is authoritative for dims (#3 Phase D),
+    replacing the per-arch dim modules / hardcoded CONFIGS dicts in registry.py for
+    listed models. Novel models keep detect_model_family()'s HF-config introspection.
+    """
+    hidden_size: int
+    num_heads: int
+    num_kv_heads: int
+    head_dim: int
+    intermediate_size: int
+    activation: str
+    norm_type: str
+
+
 def _compute_capabilities(
     *,
     norm_type: str,
@@ -184,6 +201,18 @@ class ModelMatrixEntry:
     attn_backend: str = "ttnn"          # ttnn | custom | cpu (#34 backend-per-op)
     issue: Optional[int] = None
     notes: str = ""
+
+    def model_config(self) -> ResolvedConfig:
+        """Return the matrix-authoritative dims view consumed by the runner as self._cfg."""
+        return ResolvedConfig(
+            hidden_size=self.hidden_size,
+            num_heads=self.n_heads,
+            num_kv_heads=self.n_kv_heads,
+            head_dim=self.head_dim,
+            intermediate_size=self.intermediate_size,
+            activation=self.activation,
+            norm_type=self.norm_type,
+        )
 
     def capabilities(self, hw_config=None) -> Capabilities:
         """Compute the DERIVED decode-path gates from fields + dims.

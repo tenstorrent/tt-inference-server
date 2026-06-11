@@ -507,6 +507,9 @@ class TTModelRunner:
         self._entry = self._dispatcher.lookup(model_path)
         self._listed = self._entry is not None
         if self._entry is not None:
+            # Matrix is authoritative for dims for listed models (#3 Phase D); novel
+            # models keep detect_model_family()'s HF-config introspection above.
+            self._cfg = self._entry.model_config()
             self._caps = self._entry.capabilities(self._dispatcher._hw_config)
             self._community = (self._entry.status == "community")
             print(f"  Matrix: '{self._entry.name}' (status={self._entry.status}, "

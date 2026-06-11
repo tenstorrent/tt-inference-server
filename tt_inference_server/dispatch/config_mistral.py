@@ -18,8 +18,6 @@ class MoEModelConfig(ModelConfig):
     num_experts_per_tok: int = 2
 
 
-CONFIGS = {
-    "7B":      ModelConfig(hidden_size=4096, num_heads=32, num_kv_heads=8,  head_dim=128, intermediate_size=14336),
-    "8x7B":    MoEModelConfig(hidden_size=4096, num_heads=32, num_kv_heads=8, head_dim=128, intermediate_size=14336, num_experts=8, num_experts_per_tok=2),
-    "8x22B":   MoEModelConfig(hidden_size=6144, num_heads=48, num_kv_heads=8, head_dim=128, intermediate_size=16384, num_experts=8, num_experts_per_tok=2),
-}
+# Per-size dim tables (CONFIGS) were retired in #3 Phase D — dims for listed models now
+# live in model_matrix.toml; novel models derive via ModelConfig.from_hf_config.
+# MoEModelConfig is retained: detect_model_family builds it for MoE archs from hf_config.
