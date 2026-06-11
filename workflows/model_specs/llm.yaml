@@ -814,6 +814,13 @@ templates:
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
       default_impl: true
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32  
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      vllm_args:
+        data_parallel_size: 32  # one P150 chip per replica, TP=1 (validated via tt-transformers demo)
+
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   status: FUNCTIONAL
