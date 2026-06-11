@@ -139,6 +139,83 @@ def _chat(text, max_tokens=8, timeout=120):
     }
 
 
+def _chat_stream(text, max_tokens=16, timeout=120):
+    # Stream a chat completion over SSE and time the first content delta (TTFT).
+    # stream_options.include_usage asks the frontend for a trailing usage-only chunk.
+    payload = {
+        "model": MODEL,
+        "messages": [{"role": "user", "content": text}],
+        "max_tokens": max_tokens,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+    r = urllib.request.Request(
+        TARGET + "/v1/chat/completions",
+        data=json.dumps(payload).encode(),
+        method="POST",
+    )
+    r.add_header("Content-Type", "application/json")
+    r.add_header("Accept", "text/event-stream")
+    if API_KEY:
+        r.add_header("Authorization", "Bearer " + API_KEY)
+    t0 = time.monotonic()
+    ttft = None
+    chunks = 0
+    pieces = []
+    usage = None
+    finish = None
+    with urllib.request.urlopen(r, timeout=timeout) as resp:
+        assert resp.status == 200, resp.status
+        for raw in resp:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            body = line[len("data:") :].strip()
+            if body == "[DONE]":
+                break
+            ev = json.loads(body)
+            if ev.get("usage"):
+                usage = ev["usage"]
+            for ch in ev.get("choices", []):
+                delta = ch.get("delta") or {}
+                piece = delta.get("content") or delta.get("reasoning_content")
+                if piece:
+                    if ttft is None:
+                        ttft = time.monotonic() - t0
+                    pieces.append(piece)
+                    chunks += 1
+                if ch.get("finish_reason"):
+                    finish = ch["finish_reason"]
+    total_s = time.monotonic() - t0
+    out = "".join(pieces)
+    u = usage or {}
+    cached = (u.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
+    _log(
+        "stream ttft=%s total=%.3fs chunks=%s finish=%s prompt=%s cached=%s completion=%s"
+        % (
+            ("%.3fs" % ttft) if ttft is not None else None,
+            total_s,
+            chunks,
+            finish,
+            u.get("prompt_tokens"),
+            cached,
+            u.get("completion_tokens"),
+        )
+    )
+    _log("  output[:120]=%r" % (out[:120],))
+    return {
+        "ttft": ttft,
+        "total_s": total_s,
+        "chunks": chunks,
+        "finish": finish,
+        "output": out,
+        "prompt_tokens": u.get("prompt_tokens"),
+        "cached_tokens": cached,
+        "completion_tokens": u.get("completion_tokens"),
+        "usage": usage,
+    }
+
+
 def _fire(text, max_tokens=4, timeout=10):
     # POST a completion; return the usage dict if it completes, or None if the
     # client times out (an offloaded request never completes on the mock stack).
@@ -168,8 +245,8 @@ def _since(path, offset):
 
 
 # Assert a HIT or MISS in the decode log after `offset`. For HITs, return the
-# matchedTokens count — the server-side measure of prefix reuse (the usage
-# block's cached_tokens stays 0 in decode mode, see module docstring).
+# matchedTokens count — the server-side measure of prefix reuse, which the usage
+# block's cached_tokens now mirrors.
 def _expect_cache_event(offset, kind):
     time.sleep(LOG_SETTLE_S)
     tail = _since(DECODE_LOG, offset)
@@ -328,9 +405,7 @@ def test_03_prefix_cache_slow_growth():
             matched = _expect_cache_event(d_off, "HIT")
             assert r["cached_tokens"] > 0, (
                 "turn %d: decode log matchedTokens=%s but API cached_tokens=0 — "
-                "known bug: applyDeltaPrompt no-ops outside LLM_MODE=regular "
-                "(#3911), so usage never reflects local prefix-cache reuse"
-                % (i, matched),
+                "usage should reflect local prefix-cache reuse" % (i, matched),
                 r,
             )
     cached = [r["cached_tokens"] for r in results]
@@ -365,9 +440,8 @@ def test_04_shared_prefix_stays_local():
     hit = _expect_cache_event(d_off, "HIT")
     assert b["prompt_tokens"] >= 1.5 * a["prompt_tokens"], (a, b)
     assert b["cached_tokens"] >= a["prompt_tokens"] - 2 * FIRST_BLOCK, (
-        "decode log matchedTokens=%s but API cached_tokens=%s — known bug: "
-        "applyDeltaPrompt no-ops outside LLM_MODE=regular (#3911)"
-        % (hit, b["cached_tokens"]),
+        "decode log matchedTokens=%s but API cached_tokens=%s — usage should "
+        "reflect local prefix-cache reuse" % (hit, b["cached_tokens"]),
         a,
         b,
     )
@@ -390,6 +464,54 @@ def test_05_large_isl_offloads_to_prefill():
     assert offloaded >= THRESHOLD, "offloaded token count %d < threshold %d" % (
         offloaded,
         THRESHOLD,
+    )
+
+
+# 6. Streaming TTFT: same sub-threshold prefix streamed cold (MISS) then warm (HIT).
+#    Hard asserts cover streaming correctness (first delta timed, token-by-token,
+#    usage present) and the decode-log cache event. The cold-vs-warm TTFT gap is
+#    logged with only a generous upper bound: on this MOCK stack compute is mocked,
+#    so the HIT does not actually skip real prefill work and a tight inequality would
+#    flake. On real hardware the HIT should drop TTFT measurably — tighten there.
+def test_06_streaming_ttft_hit_vs_miss():
+    _log(
+        "--------- Test06 Streaming TTFT: cold MISS then warm HIT on a shared prefix ---------"
+    )
+    _ensure_server()
+    _ensure_disaggregated()
+    prompt = _unique() + _filler(110)
+
+    d_off = _offset(DECODE_LOG)
+    cold = _chat_stream(prompt, max_tokens=16)
+    assert cold["ttft"] is not None, ("no content delta streamed", cold)
+    assert cold["chunks"] >= 2, ("expected token-by-token stream, not one blob", cold)
+    assert cold["output"], cold
+    assert cold["finish"], ("stream ended without a finish_reason", cold)
+    if cold["prompt_tokens"] is not None:
+        assert cold["prompt_tokens"] < THRESHOLD, cold
+        assert cold["cached_tokens"] == 0, ("cold stream should be a cold cache", cold)
+    _expect_cache_event(d_off, "MISS")
+
+    d_off = _offset(DECODE_LOG)
+    warm = _chat_stream(prompt, max_tokens=16)
+    assert warm["ttft"] is not None, ("no content delta streamed", warm)
+    assert warm["chunks"] >= 2, warm
+    assert warm["output"], warm
+    matched = _expect_cache_event(d_off, "HIT")
+    if warm["prompt_tokens"] is not None:
+        assert warm["cached_tokens"] > 0, (
+            "streamed warm HIT: decode log matchedTokens=%s but API cached_tokens=0 — "
+            "usage should reflect local prefix-cache reuse" % matched,
+            warm,
+        )
+    _log(
+        "TTFT cold(MISS)=%.3fs warm(HIT)=%.3fs matchedTokens=%s"
+        % (cold["ttft"], warm["ttft"], matched)
+    )
+    assert warm["ttft"] <= cold["ttft"] * 3 + 0.5, (
+        "warm-HIT TTFT unexpectedly high vs cold-MISS",
+        cold,
+        warm,
     )
 
 
