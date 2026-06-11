@@ -41,7 +41,9 @@ namespace {
 class FakeService : public tt::services::IService {
  public:
   FakeService(bool modelReady, bool workerReady = true, bool workerAlive = true)
-      : modelReady(modelReady), workerReady(workerReady), workerAlive(workerAlive) {}
+      : modelReady(modelReady),
+        workerReady(workerReady),
+        workerAlive(workerAlive) {}
 
   static std::shared_ptr<FakeService> throwing() {
     auto service = std::make_shared<FakeService>(/*modelReady=*/false);
@@ -61,11 +63,10 @@ class FakeService : public tt::services::IService {
     status.modelReady = modelReady;
     status.queueSize = 0;
     status.maxQueueSize = 1000;
-    status.workerInfo.push_back(tt::worker::WorkerInfo{
-        .worker_id = "0",
-        .is_ready = workerReady,
-        .is_alive = workerAlive,
-        .pid = 1});
+    status.workerInfo.push_back(tt::worker::WorkerInfo{.worker_id = "0",
+                                                       .is_ready = workerReady,
+                                                       .is_alive = workerAlive,
+                                                       .pid = 1});
     return status;
   }
 
@@ -106,9 +107,8 @@ drogon::HttpResponsePtr callLiveness(
   installControllerDependencies(std::move(service), std::move(socketStatus));
   tt::api::HealthController controller;
   drogon::HttpResponsePtr response;
-  controller.ready(nullptr, [&](const drogon::HttpResponsePtr& resp) {
-    response = resp;
-  });
+  controller.ready(
+      nullptr, [&](const drogon::HttpResponsePtr& resp) { response = resp; });
   clearControllerDependencies();
   return response;
 }
@@ -121,9 +121,8 @@ drogon::HttpResponsePtr callHealth(
                                 socketConnected);
   tt::api::HealthController controller;
   drogon::HttpResponsePtr response;
-  controller.health(nullptr, [&](const drogon::HttpResponsePtr& resp) {
-    response = resp;
-  });
+  controller.health(
+      nullptr, [&](const drogon::HttpResponsePtr& resp) { response = resp; });
   clearControllerDependencies();
   return response;
 }
@@ -131,9 +130,8 @@ drogon::HttpResponsePtr callHealth(
 drogon::HttpResponsePtr callGetMaxSessionCount() {
   tt::api::HealthController controller;
   drogon::HttpResponsePtr response;
-  controller.getMaxSessionCount(nullptr, [&](const drogon::HttpResponsePtr& resp) {
-    response = resp;
-  });
+  controller.getMaxSessionCount(
+      nullptr, [&](const drogon::HttpResponsePtr& resp) { response = resp; });
   return response;
 }
 
@@ -146,9 +144,8 @@ drogon::HttpResponsePtr callSetMaxSessionCount(const std::string& body,
     request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   }
   request->setBody(body);
-  controller.setMaxSessionCount(request, [&](const drogon::HttpResponsePtr& resp) {
-    response = resp;
-  });
+  controller.setMaxSessionCount(
+      request, [&](const drogon::HttpResponsePtr& resp) { response = resp; });
   return response;
 }
 
@@ -174,15 +171,15 @@ TEST(HealthControllerTest, LivenessReturnsInternalServerErrorWithoutService) {
   clearControllerDependencies();
   tt::api::HealthController controller;
   drogon::HttpResponsePtr response;
-  controller.ready(nullptr, [&](const drogon::HttpResponsePtr& resp) {
-    response = resp;
-  });
+  controller.ready(
+      nullptr, [&](const drogon::HttpResponsePtr& resp) { response = resp; });
 
   ASSERT_NE(response, nullptr);
   EXPECT_EQ(response->getStatusCode(), drogon::k500InternalServerError);
 }
 
-TEST(HealthControllerTest, LivenessReturnsInternalServerErrorOnStatusException) {
+TEST(HealthControllerTest,
+     LivenessReturnsInternalServerErrorOnStatusException) {
   const auto response = callLiveness(FakeService::throwing());
 
   ASSERT_NE(response, nullptr);
@@ -190,9 +187,9 @@ TEST(HealthControllerTest, LivenessReturnsInternalServerErrorOnStatusException) 
 }
 
 TEST(HealthControllerTest, LivenessIncludesGatewayPrefillHealthReadyStatus) {
-  const auto response = callLiveness(
-      std::make_shared<FakeService>(/*modelReady=*/true),
-      "client:connected, prefill_health=ready");
+  const auto response =
+      callLiveness(std::make_shared<FakeService>(/*modelReady=*/true),
+                   "client:connected, prefill_health=ready");
 
   ASSERT_NE(response, nullptr);
   EXPECT_EQ(response->getStatusCode(), drogon::k200OK);
@@ -202,9 +199,9 @@ TEST(HealthControllerTest, LivenessIncludesGatewayPrefillHealthReadyStatus) {
 
 TEST(HealthControllerTest,
      LivenessIncludesGatewayPrefillHealthUnavailableStatus) {
-  const auto response = callLiveness(
-      std::make_shared<FakeService>(/*modelReady=*/true),
-      "client:connected, prefill_health=unavailable");
+  const auto response =
+      callLiveness(std::make_shared<FakeService>(/*modelReady=*/true),
+                   "client:connected, prefill_health=unavailable");
 
   ASSERT_NE(response, nullptr);
   EXPECT_EQ(response->getStatusCode(), drogon::k200OK);
@@ -244,10 +241,10 @@ TEST(HealthControllerTest, HealthReturnsUnavailableWhenNoWorkersReady) {
 }
 
 TEST(HealthControllerTest, HealthReturnsUnavailableWhenSocketDisconnected) {
-  const auto response = callHealth(
-      std::make_shared<FakeService>(/*modelReady=*/true),
-      "client:disconnected, prefill_health=unavailable",
-      /*socketConnected=*/false);
+  const auto response =
+      callHealth(std::make_shared<FakeService>(/*modelReady=*/true),
+                 "client:disconnected, prefill_health=unavailable",
+                 /*socketConnected=*/false);
 
   ASSERT_NE(response, nullptr);
   EXPECT_EQ(response->getStatusCode(), drogon::k503ServiceUnavailable);
