@@ -365,6 +365,27 @@ WAN_DISTILL_FAST_ENCODE_FLAGS = {
     "WAN_DISTILL_ONDEVICE_COND": "1",
 }
 
+# AniSora V3.2 reuses the same fast-image-encode optimizations (via the shared
+# FastImageEncodeMixin) behind AniSora-scoped flags. All three enabled takes the
+# traced 8-step 4x32 pipeline image-encode from ~7.5s to ~0.35s (total ~16s ->
+# ~9.3s) with quality matching the full-encode baseline. ENCODER_T_OUT_1 MUST
+# accompany FAST_VAE_ENCODER to avoid the temporal-blocking artifact.
+WAN_ANISORA_FAST_ENCODE_FLAGS = {
+    "WAN_ANISORA_FAST_VAE_ENCODER": "1",
+    "WAN_ANISORA_ENCODER_T_OUT_1": "1",
+    "WAN_ANISORA_ONDEVICE_COND": "1",
+}
+
+# AniSora runs real CFG (guidance 3.5 on both experts) and its fully-optimized
+# 8-step trace needs the same ~200MB region as the distill (the shared 125MB
+# default OOMs during warmup).
+WAN22_ANISORA_BH_TRACE_REGION_BYTES = 200_000_000
+WAN22_ANISORA_GUIDANCE_SCALE = 3.5
+# Fixed step count (mirrors the distill forcing 4): AniSora always runs 8 steps,
+# the validated good-quality / low-latency point (~9.3s traced). The client's
+# num_inference_steps is ignored, same as the distill runner.
+WAN22_ANISORA_NUM_STEPS = 8
+
 
 def _wan22_needs_ring_fabric(mesh_shape: tuple) -> bool:
     """Return True when Wan2.2 must advertise FABRIC_1D_RING for ``mesh_shape``."""
@@ -694,6 +715,18 @@ class TTWan22I2VAniSoraRunner(TTDiTRunner):
                 AniSoraPipeline,
             )
 
+            # Enable the fast-image-encode path before the pipeline reads these
+            # flags at build time. setdefault keeps any deployment-provided value.
+            for flag, value in WAN_ANISORA_FAST_ENCODE_FLAGS.items():
+                os.environ.setdefault(flag, value)
+            self.logger.info(
+                "AniSora fast-encode flags: "
+                + ", ".join(
+                    f"{flag}={os.environ.get(flag)}"
+                    for flag in WAN_ANISORA_FAST_ENCODE_FLAGS
+                )
+            )
+
             return AniSoraPipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
                 height=self.resolution.height,
@@ -731,12 +764,23 @@ class TTWan22I2VAniSoraRunner(TTDiTRunner):
             self.resolution,
             image_prompt=self._build_image_prompt(request),
         )
+        # AniSora-specific: force 8 steps (ignore the client's num_inference_steps,
+        # same as the distill forces 4) and use the model's real CFG (3.5 on both
+        # experts) rather than the shared 4.0/3.0 default.
+        pipeline_args["num_inference_steps"] = WAN22_ANISORA_NUM_STEPS
+        pipeline_args["guidance_scale"] = WAN22_ANISORA_GUIDANCE_SCALE
+        pipeline_args["guidance_scale_2"] = WAN22_ANISORA_GUIDANCE_SCALE
         frames = self.pipeline(**pipeline_args)
         self.logger.debug(f"Device {self.device_id}: AniSora inference completed")
         return frames
 
     def get_pipeline_device_params(self):
-        return _wan22_dit_device_params(self.settings.device_mesh_shape)
+        # Start from the shared Wan2.2 fabric/trace defaults, then bump the trace
+        # region for AniSora's fully-optimized 8-step trace (see constant above).
+        device_params = _wan22_dit_device_params(self.settings.device_mesh_shape)
+        if is_large_mesh(self.settings.device_mesh_shape) and is_blackhole():
+            device_params["trace_region_size"] = WAN22_ANISORA_BH_TRACE_REGION_BYTES
+        return device_params
 
     def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
         return _wan22_i2v_warmup_request("An anime girl smiling, soft lighting")
