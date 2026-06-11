@@ -3,6 +3,10 @@
 
 """Fused SwiGLU / GeGLU / ReGLU MLP gate kernel.
 
+STATUS (2026-06-11): NOT WIRED into the runner — `_mlp()` uses `ttnn.matmul` +
+`ttnn.silu`/`ttnn.gelu` directly. Available if we decide to move the MLP off ttnn
+primitives onto the custom kernel. See issue #34 (kernel strategy).
+
 Computes: out = activation(gate @ w_gate + bias_gate) * (up @ w_up + bias_up)
 where activation is one of silu (SwiGLU), gelu (GeGLU), or relu2 (ReGLU).
 

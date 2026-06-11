@@ -3,6 +3,10 @@
 
 """KV cache decode-phase read kernel.
 
+STATUS (2026-06-11): SUPERSEDED / NOT WIRED — the decode path uses either ttnn paged
+SDPA (#30) or the custom `flash_attn` kernel. This standalone decode-read kernel is
+unused; candidate for removal. See issue #34 (kernel strategy).
+
 During autoregressive decode, each new token attends to the full KV cache
 (one row per past token). This kernel reads a single query row and the
 accumulated KV cache and produces a single output row — the dominant

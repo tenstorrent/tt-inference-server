@@ -3,6 +3,10 @@
 
 """LayerNorm kernel.
 
+STATUS (2026-06-11): NOT YET WIRED — the runner uses a CPU LayerNorm fallback
+(`_layernorm_cpu` in runner.py). This kernel is the planned on-device LayerNorm path
+for pythia / stablelm / bloom. See issues #29 and #34 (kernel strategy).
+
 Computes: out = (x - mean(x)) / sqrt(var(x) + eps) * weight + bias
 
 Used by BERT, Falcon, GPT-NeoX, and other pre-2023 transformers that

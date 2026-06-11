@@ -3,6 +3,9 @@
 
 """Mixture-of-Experts router projection + softmax kernel.
 
+STATUS (2026-06-11): NOT WIRED into the runner — no MoE model in the registry yet.
+Kept for future MoE support. See issue #34 (kernel strategy).
+
 Computes: probs = softmax(hidden @ w_router)
 
 Top-k selection is intentionally left to the dispatch layer (torch.topk on
