@@ -1,5 +1,9 @@
 # model_matrix.toml — Runtime dispatch config
-# Single source of truth for model architecture configs and kernel assignments.
+# Authoritative for the models it LISTS; not a gate on what can run (two-tier resolution, #3):
+#   1. Matrix entry present -> resolve config + capabilities from it (trusted, hw-tuned).
+#   2. No entry (novel model) -> auto-derive from the HF config (the runner's introspection),
+#      gated --unsafe and labeled community. The matrix OVERRIDES auto-detection; it never
+#      removes the ability to run an unlisted model whose weights are introspectable.
 # Resolved once at load_model() time by KernelDispatcher.
 #
 # status field:
