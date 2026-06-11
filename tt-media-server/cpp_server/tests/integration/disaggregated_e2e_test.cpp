@@ -509,11 +509,11 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
 
   // --- Part 2: Continuation with small delta ---
   // Send a follow-up message that extends the conversation.
-  // The routing decision is based on TOTAL prompt size (not delta), so large
-  // prompts always go to prefill. But prefill should get a prefix cache HIT
-  // and only process the small delta.
-  TT_LOG_INFO("[Test] Sending continuation request (total prompt still >1000, "
-              "so forwarded to prefill, but prefill should get prefix cache HIT)");
+  // The decode server should hit its prefix cache and see that the delta is
+  // small (<1000 tokens), so it handles locally (prefill-on-decode) instead
+  // of forwarding to prefill.
+  TT_LOG_INFO("[Test] Sending continuation request (expecting prefix cache HIT on decode, "
+              "small delta handled locally, NOT forwarded to prefill)");
 
   // Add a small follow-up message to the same conversation
   std::string followUpMessage = "What about this?";
@@ -531,56 +531,22 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
         "your-secret-key", /*idleTimeoutMs=*/10000);
   });
 
-  // The continuation is still forwarded to prefill (total prompt > 1000),
-  // but prefill should hit its prefix cache (no new ALLOCATE).
-  // Wait briefly to see if ALLOCATE arrives.
-  std::this_thread::sleep_for(std::chrono::milliseconds(500));
-  tt::domain::ManageMemoryTask continuationAlloc{};
-  bool gotContinuationAlloc = prefillServer_->memoryRequestQueue().tryPop(continuationAlloc);
-
-  if (gotContinuationAlloc) {
-    TT_LOG_INFO("[Test] Continuation got ALLOCATE (prefix cache MISS on prefill)");
-    // Respond to allocation
-    tt::domain::ManageMemoryResult continuationMemRes{};
-    continuationMemRes.taskId = continuationAlloc.taskId;
-    continuationMemRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
-    continuationMemRes.slotId = 1;
-    prefillServer_->memoryResultQueue().push(continuationMemRes);
-
-    // Read and respond to task queue
-    auto continuationSeq = prefillServer_->taskQueue().receive();
-    if (continuationSeq) {
-      TT_LOG_INFO("[Test] Continuation prefill Sequence: numPromptTokens={}, "
-                  "isContinuation={}",
-                  continuationSeq->getNumPromptTokens(),
-                  continuationSeq->isContinuation());
-      tt::test::WorkerResponse(continuationSeq->taskId)
-          .token(43)
-          .finalize()
-          .sendTo(prefillServer_->resultQueue());
-    }
-  } else {
-    TT_LOG_INFO("[Test] Continuation got NO ALLOCATE (prefix cache HIT on prefill)");
-    // Prefill should still get a task (continuation) - check task queue
-    auto continuationSeq = prefillServer_->taskQueue().tryPop();
-    if (continuationSeq) {
-      TT_LOG_INFO("[Test] Continuation prefill Sequence (from cache): "
-                  "numPromptTokens={} (delta only), isContinuation={}",
-                  continuationSeq->getNumPromptTokens(),
-                  continuationSeq->isContinuation());
-      tt::test::WorkerResponse(continuationSeq->taskId)
-          .token(43)
-          .finalize()
-          .sendTo(prefillServer_->resultQueue());
-    }
-  }
-
-  // Wait for the response to complete
+  // Wait for the response to complete - it should be handled locally by decode.
   const auto continuationRawResponse = continuationFuture.get();
   const auto continuationResponse = tt::test::HttpResponse::parse(continuationRawResponse);
   EXPECT_EQ(continuationResponse.statusCode(), 200);
 
-  TT_LOG_INFO("[Test] Continuation test completed");
+  // Verify prefill did NOT receive anything for the continuation.
+  // The decode server should have hit its prefix cache, computed the delta,
+  // and handled it locally since delta < 1000 tokens.
+  tt::domain::ManageMemoryTask continuationAlloc{};
+  bool gotContinuationAlloc = prefillServer_->memoryRequestQueue().tryPop(continuationAlloc);
+  EXPECT_FALSE(gotContinuationAlloc)
+      << "Prefill should NOT have received an ALLOCATE for continuation - "
+         "decode should have hit prefix cache and handled the small delta locally";
+
+  TT_LOG_INFO("[Test] Continuation test completed - decode handled locally (prefix cache HIT, "
+              "small delta)");
 
   prefillServer_->setMemoryAutoRespond(true);
 }
