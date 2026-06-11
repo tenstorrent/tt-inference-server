@@ -47,20 +47,20 @@ class TestExaboxWorkflowRunTasks:
         return ExaboxWorkflow(_make_ctx(), orchestrator_metadata=metadata)
 
     def test_one_outcome_per_suite(self):
-        wf = self._make_workflow(tests="benchmark,summarize_bench")
+        wf = self._make_workflow(tests="benchmark,agentic_bench")
         results = [
             ExaboxResult("benchmark", 0, 1.0),
-            ExaboxResult("summarize_bench", 7, 2.0),
+            ExaboxResult("agentic_bench", 7, 2.0),
         ]
         with patch(
             "test_module.exabox.runner.run_exabox", return_value=results
         ) as mock_run:
             outcomes = wf.run_tasks()
 
-        mock_run.assert_called_once_with(wf.ctx, tests="benchmark,summarize_bench")
+        mock_run.assert_called_once_with(wf.ctx, tests="benchmark,agentic_bench")
         assert [o.task_type for o in outcomes] == [
             "exabox:benchmark",
-            "exabox:summarize_bench",
+            "exabox:agentic_bench",
         ]
         assert [o.exit_code for o in outcomes] == [0, 7]
         assert all(o.block_kind == "exabox" for o in outcomes)
@@ -107,13 +107,11 @@ class TestExaboxRunner:
         with patch(
             "test_module.exabox.runner.subprocess.run", return_value=completed
         ) as mock_run:
-            results = run_exabox(ctx, tests="long-context-bench")
+            results = run_exabox(ctx, tests="agentic-bench")
 
-        assert results == [
-            ExaboxResult("long_context_bench", 0, results[0].elapsed_seconds)
-        ]
+        assert results == [ExaboxResult("agentic_bench", 0, results[0].elapsed_seconds)]
         cmd = mock_run.call_args[0][0]
-        assert "long_context_bench" in cmd
+        assert "agentic_bench" in cmd
 
     def test_target_is_ctx_base_url(self, tmp_path):
         ctx = _make_ctx()

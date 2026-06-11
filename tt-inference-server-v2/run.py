@@ -270,11 +270,9 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Comma-separated exabox suites to run (default: all suites under "
-            "test_module/exabox, e.g. agentic_bench, benchmark, "
-            "guidellm_sweep, long_context_bench, multi_user_turn_bench, "
-            "sharegpt_multiturn, summarize_bench). Suite knobs (DURATION, "
-            "TARGET_CONCURRENCY, ...) are read from the environment; see "
-            "each suite's defaults.env."
+            "test_module/exabox, e.g. agentic_bench, benchmark). Suite knobs "
+            "(DURATION, TARGET_CONCURRENCY, ...) are read from the environment; "
+            "see each suite's defaults.env."
         ),
     )
 

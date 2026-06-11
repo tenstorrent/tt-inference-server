@@ -68,7 +68,7 @@ class AgenticWorkflow(WorkflowExecution):
 
 
 class ExaboxWorkflow(WorkflowExecution):
-    """Exabox shell benchmark suites (guidellm soaks, long-context, ...).
+    """Exabox shell benchmark suites (agentic_bench, benchmark).
 
     Bypasses the media-task dispatcher: each suite under
     ``test_module/exabox`` is a self-contained shell harness driven by

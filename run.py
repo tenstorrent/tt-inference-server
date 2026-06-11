@@ -416,10 +416,9 @@ def parse_arguments():
         type=str,
         default=None,
         help="Comma-separated exabox suites to run (default: all suites under "
-        "tt-inference-server-v2/test_module/exabox, e.g. agentic_bench, benchmark, "
-        "guidellm_sweep, long_context_bench, multi_user_turn_bench, "
-        "sharegpt_multiturn, summarize_bench). Suite knobs (DURATION, "
-        "TARGET_CONCURRENCY, ...) are read from the environment.",
+        "tt-inference-server-v2/test_module/exabox, e.g. agentic_bench, benchmark). "
+        "Suite knobs (DURATION, TARGET_CONCURRENCY, ...) are read from the "
+        "environment.",
     )
 
     prefix_cache_group = parser.add_argument_group(
