@@ -1,41 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 //
-// Disaggregated end-to-end test: runs a REAL decode server (child process)
-// and a REAL prefill server (in-process), connected via ZMQ sockets.
+// Disaggregated end-to-end test: runs a MockDecodeServer (ZMQ ROUTER) and a
+// REAL prefill server (in-process), connected via ZMQ sockets.
 //
-// The test sends an HTTP request with a long prompt (>1000 tokens) to the
-// decode server. The decode server decides the prompt is too large for local
-// prefill and forwards it to the prefill server via the inter-server socket.
-// The test then reads the prefill server's task queue to verify all tokens
-// arrived, mocks the prefill worker's response, and asserts the HTTP response
-// completes successfully.
+// The test sends a PrefillRequestMessage with an exact token count directly
+// from the mock decode server to the prefill server via ZMQ. The test then
+// reads the prefill server's task queue to verify all tokens arrived, mocks
+// the prefill worker's response, and asserts the PrefillResultMessage is
+// returned successfully.
 //
 // Architecture:
-//   - Decode server: child process (fork+exec with --decode-server)
-//     * LLM_MODE=decode, mock backend, HTTP listener, ZMQ ROUTER
-//     * Own IPC queues (e2e_dc_* prefix), own worker subprocess
-//     * Internal memory auto-responder + tokenizer warmup
+//   - Mock decode server: in-process ZMQ ROUTER that sends PrefillRequestMessage
 //   - Prefill server: in-process (PrefillTestServer pattern)
-//     * LLM_MODE=prefill, mock backend, ZMQ DEALER connecting to decode
+//     * LLM_MODE=prefill, mock backend, ZMQ DEALER connecting to mock decode
 //     * Own IPC queues (e2e_pf_* prefix), own worker subprocess
-//   - Test process: reads prefill's task queue, mocks worker, sends HTTP
+//   - Test process: reads prefill's task queue, mocks worker, verifies result
 
 #include <gtest/gtest.h>
-#include <arpa/inet.h>
-#include <drogon/drogon.h>
-#include <sys/prctl.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <unistd.h>
+#include <zmq.hpp>
 
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
-#include <future>
 #include <memory>
 #include <string>
 #include <thread>
@@ -48,11 +36,8 @@
 #include "ipc/boost/boost_task_queue.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
-#include "sockets/inter_server_service.hpp"
-#include "support/chat_completion_stream.hpp"
-#include "support/chat_request.hpp"
-#include "support/http_client.hpp"
-#include "support/http_response.hpp"
+#include "sockets/socket_messages.hpp"
+#include "sockets/socket_serialization.hpp"
 #include "support/test_worker_main.hpp"
 #include "support/worker_response.hpp"
 #include "utils/logger.hpp"
@@ -60,10 +45,9 @@
 
 namespace {
 
-constexpr uint16_t DECODE_HTTP_PORT = 18084;
-constexpr uint16_t INTER_SERVER_PORT = 19501;
+constexpr uint16_t MOCK_DECODE_PORT = 19501;
+constexpr const char* EXPECTED_PREFILL_SERVER_ID = "e2e-prefill-server";
 
-const std::string DECODE_QUEUE_PREFIX = "e2e_dc_";
 const std::string PREFILL_QUEUE_PREFIX = "e2e_pf_";
 
 // ---------------------------------------------------------------------------
@@ -80,154 +64,122 @@ void setQueueEnv(const std::string& prefix) {
   setenv("TT_WORKER_METRICS_SHM", (prefix + "metrics").c_str(), 1);
 }
 
-void configureCommonEnv() {
+void configurePrefillEnv() {
   setenv("LLM_DEVICE_BACKEND", "mock", 1);
+  setenv("LLM_MODE", "prefill", 1);
   setenv("DEVICE_IDS", "(0)", 1);
   setenv("MAX_NUM_SESSIONS", "4", 1);
   setenv("SOCKET_TRANSPORT", "zmq", 1);
   setenv("SOCKET_HOST", "127.0.0.1", 1);
-  setenv("SOCKET_PORT", std::to_string(INTER_SERVER_PORT).c_str(), 1);
+  setenv("SOCKET_PORT", std::to_string(MOCK_DECODE_PORT).c_str(), 1);
   setenv("USE_PREFILL_GATEWAY", "0", 1);
   setenv("KV_CACHE_FIRST_BLOCK_SIZE", "32", 1);
   setenv("KV_CACHE_BLOCK_SIZE", "32", 1);
-}
-
-void configureDecodeEnv() {
-  configureCommonEnv();
-  setenv("LLM_MODE", "decode", 1);
-  setQueueEnv(DECODE_QUEUE_PREFIX);
-}
-
-void configurePrefillEnv() {
-  configureCommonEnv();
-  setenv("LLM_MODE", "prefill", 1);
-  setenv("PREFILL_SERVER_ID", "e2e-prefill-server", 1);
+  setenv("PREFILL_SERVER_ID", EXPECTED_PREFILL_SERVER_ID, 1);
   setenv("MIN_TOKENS_TO_COPY", "32", 1);
   setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
   setQueueEnv(PREFILL_QUEUE_PREFIX);
 }
 
 // ---------------------------------------------------------------------------
-// Decode server subprocess
+// MockDecodeServer: a ZMQ ROUTER that impersonates the decode server.
 // ---------------------------------------------------------------------------
 
-// Runs in the child process after fork+exec with --decode-server.
-// Boots a full decode server (HTTP + ZMQ ROUTER + mock worker), writes a
-// sentinel file when ready, then idles until SIGTERM.
-[[noreturn]] void runDecodeServerSubprocess(const char* sentinelPath) {
-  configureDecodeEnv();
-  tt::utils::ZeroOverheadLogger::initialize();
-
-  tt::utils::service_factory::initializeServices();
-  tt::utils::service_factory::startConfiguredService();
-
-  // Wait for worker warmup.
-  auto llm = std::dynamic_pointer_cast<tt::services::LLMService>(
-      tt::services::ServiceContainer::instance().getService(
-          tt::config::ModelService::LLM));
-  if (!llm) std::_Exit(1);
-
-  auto deadline =
-      std::chrono::steady_clock::now() + std::chrono::seconds(30);
-  while (!llm->isModelReady()) {
-    if (std::chrono::steady_clock::now() >= deadline) std::_Exit(1);
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+class MockDecodeServer {
+ public:
+  explicit MockDecodeServer(uint16_t port)
+      : context_(1), socket_(context_, zmq::socket_type::router) {
+    socket_.set(zmq::sockopt::linger, 0);
+    socket_.set(zmq::sockopt::rcvtimeo, 5000);
+    std::string endpoint = "tcp://*:" + std::to_string(port);
+    socket_.bind(endpoint);
   }
 
-  // Open IPC queues for internal use.
-  auto taskQueue = std::make_unique<tt::ipc::boost::TaskQueue>(
-      tt::config::ttTaskQueueName());
-  auto resultQueue = std::make_unique<tt::ipc::boost::ResultQueue>(
-      std::string(tt::config::ttResultQueueName()) + "0");
-  auto memReqQueue = tt::ipc::boost::MemoryRequestQueue::openExisting(
-      tt::config::ttMemoryRequestQueueName());
-  auto memResQueue = tt::ipc::boost::MemoryResultQueue::openExisting(
-      tt::config::ttMemoryResultQueueName());
+  ~MockDecodeServer() { socket_.close(); }
 
-  // Memory auto-responder: ack every ALLOCATE with SUCCESS.
-  std::atomic<bool> stopAutoResponder{false};
-  std::thread autoResponder([&] {
-    tt::domain::ManageMemoryTask req{};
-    while (!stopAutoResponder.load()) {
-      if (memReqQueue->tryPop(req)) {
-        if (req.action == tt::domain::MemoryManagementAction::ALLOCATE) {
-          tt::domain::ManageMemoryResult res{};
-          res.taskId = req.taskId;
-          res.status = tt::domain::ManageMemoryStatus::SUCCESS;
-          res.slotId = 0;
-          memResQueue->push(res);
+  std::vector<uint8_t> waitForPeer(
+      std::chrono::milliseconds timeout = std::chrono::milliseconds(10000)) {
+    auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+      zmq::message_t identity;
+      auto res = socket_.recv(identity, zmq::recv_flags::dontwait);
+      if (res.has_value() && identity.size() > 0) {
+        peerId_.assign(static_cast<uint8_t*>(identity.data()),
+                       static_cast<uint8_t*>(identity.data()) + identity.size());
+        if (!identity.more()) {
+          ADD_FAILURE() << "Prefill registration payload was missing";
+          return {};
         }
-      } else {
+
+        zmq::message_t dataFrame;
+        auto dataRes = socket_.recv(dataFrame, zmq::recv_flags::none);
+        if (!dataRes.has_value() || dataFrame.size() == 0) {
+          ADD_FAILURE() << "Prefill registration frame was empty";
+          return {};
+        }
+
+        auto* ptr = static_cast<uint8_t*>(dataFrame.data());
+        std::vector<uint8_t> rawData(ptr, ptr + dataFrame.size());
+        EXPECT_EQ(tt::sockets::wire::readMessageType(rawData),
+                  std::string(tt::sockets::tags::PREFILL_REGISTRATION));
+
+        auto registration = tt::sockets::wire::deserializePayload<
+            tt::sockets::PrefillRegistrationMessage>(rawData);
+        EXPECT_EQ(registration.server_id, EXPECTED_PREFILL_SERVER_ID);
+        return peerId_;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    return {};
+  }
+
+  template <typename T>
+  bool send(std::string_view messageType, const T& obj) {
+    if (peerId_.empty()) return false;
+
+    auto data = tt::sockets::wire::serializeMessage(messageType, obj);
+    zmq::message_t idFrame(peerId_.data(), peerId_.size());
+    socket_.send(idFrame, zmq::send_flags::sndmore);
+    zmq::message_t msg(data.data(), data.size());
+    auto result = socket_.send(msg, zmq::send_flags::dontwait);
+    return result.has_value();
+  }
+
+  template <typename T>
+  std::optional<T> receive(
+      std::string_view expectedType,
+      std::chrono::milliseconds timeout = std::chrono::milliseconds(5000)) {
+    auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+      zmq::message_t identity;
+      auto res = socket_.recv(identity, zmq::recv_flags::dontwait);
+      if (!res.has_value()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        continue;
+      }
+      peerId_.assign(static_cast<uint8_t*>(identity.data()),
+                     static_cast<uint8_t*>(identity.data()) + identity.size());
+      if (!identity.more()) continue;
+
+      zmq::message_t dataFrame;
+      auto dataRes = socket_.recv(dataFrame, zmq::recv_flags::none);
+      if (!dataRes.has_value() || dataFrame.size() == 0) continue;
+
+      auto* ptr = static_cast<uint8_t*>(dataFrame.data());
+      std::vector<uint8_t> rawData(ptr, ptr + dataFrame.size());
+      std::string msgType = tt::sockets::wire::readMessageType(rawData);
+      if (msgType == expectedType) {
+        return tt::sockets::wire::deserializePayload<T>(rawData);
       }
     }
-  });
-
-  // Start HTTP listener (on a background thread so we can continue setup).
-  std::thread drogonThread([] {
-    drogon::app()
-        .addListener("127.0.0.1", DECODE_HTTP_PORT)
-        .setThreadNum(1)
-        .run();
-  });
-
-  // Wait for HTTP listener to accept connections.
-  {
-    auto listenerDeadline =
-        std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    while (std::chrono::steady_clock::now() < listenerDeadline) {
-      int sock = ::socket(AF_INET, SOCK_STREAM, 0);
-      sockaddr_in addr{};
-      addr.sin_family = AF_INET;
-      addr.sin_port = htons(DECODE_HTTP_PORT);
-      ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-      bool up = (::connect(sock, reinterpret_cast<sockaddr*>(&addr),
-                           sizeof(addr)) == 0);
-      ::close(sock);
-      if (up) break;
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
+    return std::nullopt;
   }
 
-  // Tokenizer warmup: send a small request through the full pipeline.
-  // The decode server handles small prompts locally (prefill-on-decode),
-  // so this works even before the prefill server connects.
-  {
-    std::thread mockWorker([&] {
-      auto seq = taskQueue->receive();
-      if (seq) {
-        tt::test::WorkerResponse(seq->taskId)
-            .token(0)
-            .finalize()
-            .sendTo(*resultQueue);
-      }
-    });
-    (void)tt::test::sendAndReceive(
-        "127.0.0.1", DECODE_HTTP_PORT,
-        R"({"model":"warmup","messages":[{"role":"user","content":"hi"}],)"
-        R"("max_tokens":1,"stream":true})",
-        "your-secret-key", /*idleTimeoutMs=*/2000);
-    mockWorker.join();
-  }
-
-  // Signal readiness to the parent.
-  { std::ofstream(sentinelPath) << "ready"; }
-  TT_LOG_INFO("[DecodeSubprocess] Ready, sentinel written to {}", sentinelPath);
-
-  // Idle until SIGTERM.
-  static std::atomic<bool> done{false};
-  std::signal(SIGTERM, [](int) { done.store(true); });
-  std::signal(SIGINT, [](int) { done.store(true); });
-  while (!done.load()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  }
-
-  stopAutoResponder.store(true);
-  autoResponder.join();
-  drogon::app().quit();
-  drogonThread.join();
-  std::_Exit(0);
-}
+ private:
+  zmq::context_t context_;
+  zmq::socket_t socket_;
+  std::vector<uint8_t> peerId_;
+};
 
 // ---------------------------------------------------------------------------
 // PrefillTestServer (in-process, same pattern as prefill_integration_test)
@@ -242,19 +194,19 @@ class PrefillTestServer {
   }
 
   ~PrefillTestServer() {
-    stopAutoResponder.store(true);
-    if (memoryAutoResponderThread.joinable()) memoryAutoResponderThread.join();
+    stopAutoResponder_.store(true);
+    if (memoryAutoResponderThread_.joinable()) memoryAutoResponderThread_.join();
   }
 
-  tt::ipc::boost::TaskQueue& taskQueue() { return *taskQueuePtr; }
-  tt::ipc::boost::ResultQueue& resultQueue() { return *resultQueuePtr; }
+  tt::ipc::boost::TaskQueue& taskQueue() { return *taskQueuePtr_; }
+  tt::ipc::boost::ResultQueue& resultQueue() { return *resultQueuePtr_; }
   tt::ipc::boost::MemoryRequestQueue& memoryRequestQueue() {
-    return *memoryRequestQueuePtr;
+    return *memoryRequestQueuePtr_;
   }
   tt::ipc::boost::MemoryResultQueue& memoryResultQueue() {
-    return *memoryResultQueuePtr;
+    return *memoryResultQueuePtr_;
   }
-  void setMemoryAutoRespond(bool on) { autoRespond.store(on); }
+  void setMemoryAutoRespond(bool on) { autoRespond_.store(on); }
 
  private:
   static constexpr int STARTUP_TIMEOUT_S = 30;
@@ -288,21 +240,21 @@ class PrefillTestServer {
   }
 
   void openIpcQueues() {
-    taskQueuePtr = std::make_unique<tt::ipc::boost::TaskQueue>(
+    taskQueuePtr_ = std::make_unique<tt::ipc::boost::TaskQueue>(
         tt::config::ttTaskQueueName());
-    resultQueuePtr = std::make_unique<tt::ipc::boost::ResultQueue>(
+    resultQueuePtr_ = std::make_unique<tt::ipc::boost::ResultQueue>(
         std::string(tt::config::ttResultQueueName()) + "0");
-    memoryRequestQueuePtr = tt::ipc::boost::MemoryRequestQueue::openExisting(
+    memoryRequestQueuePtr_ = tt::ipc::boost::MemoryRequestQueue::openExisting(
         tt::config::ttMemoryRequestQueueName());
-    memoryResultQueuePtr = tt::ipc::boost::MemoryResultQueue::openExisting(
+    memoryResultQueuePtr_ = tt::ipc::boost::MemoryResultQueue::openExisting(
         tt::config::ttMemoryResultQueueName());
   }
 
   void startMemoryAutoResponder() {
-    memoryAutoResponderThread = std::thread([this] {
+    memoryAutoResponderThread_ = std::thread([this] {
       tt::domain::ManageMemoryTask req{};
-      while (!stopAutoResponder.load()) {
-        if (!autoRespond.load() || !memoryRequestQueuePtr->tryPop(req)) {
+      while (!stopAutoResponder_.load()) {
+        if (!autoRespond_.load() || !memoryRequestQueuePtr_->tryPop(req)) {
           std::this_thread::sleep_for(std::chrono::milliseconds(10));
           continue;
         }
@@ -311,41 +263,20 @@ class PrefillTestServer {
           res.taskId = req.taskId;
           res.status = tt::domain::ManageMemoryStatus::SUCCESS;
           res.slotId = 0;
-          memoryResultQueuePtr->push(res);
+          memoryResultQueuePtr_->push(res);
         }
       }
     });
   }
 
-  std::unique_ptr<tt::ipc::boost::TaskQueue> taskQueuePtr;
-  std::unique_ptr<tt::ipc::boost::ResultQueue> resultQueuePtr;
-  std::unique_ptr<tt::ipc::boost::MemoryRequestQueue> memoryRequestQueuePtr;
-  std::unique_ptr<tt::ipc::boost::MemoryResultQueue> memoryResultQueuePtr;
-  std::thread memoryAutoResponderThread;
-  std::atomic<bool> autoRespond{true};
-  std::atomic<bool> stopAutoResponder{false};
+  std::unique_ptr<tt::ipc::boost::TaskQueue> taskQueuePtr_;
+  std::unique_ptr<tt::ipc::boost::ResultQueue> resultQueuePtr_;
+  std::unique_ptr<tt::ipc::boost::MemoryRequestQueue> memoryRequestQueuePtr_;
+  std::unique_ptr<tt::ipc::boost::MemoryResultQueue> memoryResultQueuePtr_;
+  std::thread memoryAutoResponderThread_;
+  std::atomic<bool> autoRespond_{true};
+  std::atomic<bool> stopAutoResponder_{false};
 };
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-bool fileExists(const std::string& path) {
-  struct stat st {};
-  return stat(path.c_str(), &st) == 0;
-}
-
-// Generate a long user message that will tokenize to well over 1000 tokens.
-// Uses numbered sentences; each sentence is ~5-8 tokens with BPE tokenizers.
-std::string generateLongPrompt(size_t targetSentences = 250) {
-  std::string msg;
-  msg.reserve(targetSentences * 40);
-  for (size_t i = 0; i < targetSentences; ++i) {
-    msg += "This is test sentence number " + std::to_string(i) +
-           " for the disaggregated prefill end to end verification test. ";
-  }
-  return msg;
-}
 
 }  // namespace
 
@@ -358,141 +289,68 @@ class DisaggregatedE2ETest : public ::testing::Test {
   static void SetUpTestSuite() {
     tt::utils::ZeroOverheadLogger::initialize();
 
-    // 1. Fork+exec the decode server subprocess.
-    sentinelPath_ =
-        "/tmp/e2e_decode_ready_" + std::to_string(getpid());
-    startDecodeSubprocess();
+    // 1. Start the mock decode server BEFORE the prefill server boots.
+    mockDecode_ = std::make_unique<MockDecodeServer>(MOCK_DECODE_PORT);
 
-    // 2. Wait for decode server to be fully ready.
-    waitForDecodeReady();
-
-    // 3. Start the prefill server in-process.
+    // 2. Start the prefill server in-process.
     configurePrefillEnv();
     prefillServer_ = PrefillTestServer::start();
 
-    // 4. Wait for the prefill server to connect to decode's ZMQ socket.
-    //    The prefill sends a PrefillRegistrationMessage on connect;
-    //    allow time for the decode side's ZMQ monitor to process the
-    //    ACCEPTED event so isConnected() returns true on both sides.
-    waitForSocketConnection();
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    // 3. Wait for the prefill server to connect (sends registration message).
+    auto peer = mockDecode_->waitForPeer();
+    if (peer.empty()) {
+      throw std::runtime_error("Prefill server never connected to mock decode");
+    }
   }
 
   static void TearDownTestSuite() {
     prefillServer_.reset();
-
-    if (decodePid_ > 0) {
-      kill(decodePid_, SIGTERM);
-      int status = 0;
-      waitpid(decodePid_, &status, 0);
-    }
-
-    unlink(sentinelPath_.c_str());
+    mockDecode_.reset();
   }
 
   static std::unique_ptr<PrefillTestServer> prefillServer_;
-  static pid_t decodePid_;
-  static std::string sentinelPath_;
-
- private:
-  static void startDecodeSubprocess() {
-    char exePath[PATH_MAX];
-    ssize_t n = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
-    if (n <= 0) throw std::runtime_error("readlink /proc/self/exe failed");
-    exePath[n] = '\0';
-
-    decodePid_ = fork();
-    if (decodePid_ == 0) {
-      prctl(PR_SET_PDEATHSIG, SIGTERM);
-      char* args[] = {exePath, const_cast<char*>("--decode-server"),
-                      const_cast<char*>(sentinelPath_.c_str()), nullptr};
-      execv(exePath, args);
-      perror("execv");
-      _exit(1);
-    }
-    if (decodePid_ < 0) {
-      throw std::runtime_error("fork() failed");
-    }
-  }
-
-  static void waitForDecodeReady() {
-    auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::seconds(60);
-    while (std::chrono::steady_clock::now() < deadline) {
-      if (fileExists(sentinelPath_)) return;
-
-      // Check child hasn't crashed.
-      int status = 0;
-      pid_t w = waitpid(decodePid_, &status, WNOHANG);
-      if (w == decodePid_) {
-        throw std::runtime_error(
-            "Decode server subprocess exited prematurely with status " +
-            std::to_string(WEXITSTATUS(status)));
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    }
-    throw std::runtime_error(
-        "Decode server subprocess never signaled readiness");
-  }
-
-  static void waitForSocketConnection() {
-    auto socket =
-        tt::services::ServiceContainer::instance().socket();
-    if (!socket) {
-      throw std::runtime_error(
-          "InterServerService not available in prefill server");
-    }
-
-    auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    while (std::chrono::steady_clock::now() < deadline) {
-      if (socket->isConnected()) return;
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-    throw std::runtime_error(
-        "Prefill server never connected to decode server");
-  }
+  static std::unique_ptr<MockDecodeServer> mockDecode_;
 };
 
 std::unique_ptr<PrefillTestServer> DisaggregatedE2ETest::prefillServer_;
-pid_t DisaggregatedE2ETest::decodePid_ = -1;
-std::string DisaggregatedE2ETest::sentinelPath_;
+std::unique_ptr<MockDecodeServer> DisaggregatedE2ETest::mockDecode_;
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-// Core scenario: a prompt with >1000 tokens is sent to the decode server
-// via HTTP. The decode server determines the prompt is too large for local
-// prefill (exceeds MAX_TOKENS_TO_PREFILL_ON_DECODE) and forwards it to the
-// prefill server via the inter-server socket. The test verifies:
-//   1. The prefill server's task queue receives a Sequence
-//   2. The Sequence contains all the prompt tokens (>1000)
-//   3. After mocking the prefill worker response, the HTTP response completes
-TEST_F(DisaggregatedE2ETest,
-       LargePrompt_ForwardedToPrefill_AllTokensArrive) {
+// Core scenario: the mock decode server sends a PrefillRequestMessage with
+// exactly 1100 tokens to the prefill server via ZMQ. The test verifies:
+//   1. The prefill server's memory queue receives an ALLOCATE request
+//   2. The prefill server's task queue receives a Sequence with exactly 1100
+//      tokens
+//   3. After mocking the prefill worker response, a PrefillResultMessage is
+//      returned successfully
+TEST_F(DisaggregatedE2ETest, ExactTokenCount_AllTokensArrive) {
   prefillServer_->setMemoryAutoRespond(false);
 
-  // Generate a prompt that will tokenize to well over 1000 tokens.
-  std::string longPrompt = generateLongPrompt(250);
+  // Build a PrefillRequestMessage with exactly 1100 tokens.
+  constexpr size_t EXPECTED_TOKEN_COUNT = 1100;
+  const uint32_t taskId = 99001;
+  tt::sockets::PrefillRequestMessage prefillReq(taskId);
+  prefillReq.token_ids.reserve(EXPECTED_TOKEN_COUNT);
+  for (size_t i = 0; i < EXPECTED_TOKEN_COUNT; ++i) {
+    prefillReq.token_ids.push_back(static_cast<int64_t>(i + 100));
+  }
+  prefillReq.max_tokens = 10;
+  prefillReq.slot_id = 0;
+  prefillReq.temperature = 0.7f;
+  prefillReq.top_p = 0.9f;
 
-  // Send the streaming HTTP request to the decode server (child process).
-  auto responseFuture = std::async(std::launch::async, [&] {
-    return tt::test::sendAndReceive(
-        "127.0.0.1", DECODE_HTTP_PORT,
-        tt::test::ChatRequest()
-            .user(longPrompt)
-            .maxTokens(1)
-            .stream()
-            .toJson(),
-        "your-secret-key", /*idleTimeoutMs=*/5000);
-  });
+  // Send the prefill request from mock decode to our prefill server.
+  bool sent = mockDecode_->send("prefill_request", prefillReq);
+  ASSERT_TRUE(sent) << "Failed to send PrefillRequestMessage to prefill server";
 
   // The prefill server should receive a memory ALLOCATE (new session).
   tt::domain::ManageMemoryTask memReq{};
   {
     auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(10000);
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
     bool received = false;
     while (std::chrono::steady_clock::now() < deadline) {
       if (prefillServer_->memoryRequestQueue().tryPop(memReq)) {
@@ -519,14 +377,10 @@ TEST_F(DisaggregatedE2ETest,
   ASSERT_NE(seq, nullptr)
       << "Prefill task queue should have received a Sequence";
 
-  // Core assertion: the prompt tokens forwarded to prefill exceed the
-  // prefill-on-decode threshold, proving the decode server routed to prefill.
+  // Core assertion: the prefill server received exactly 1100 tokens.
   const size_t numPromptTokens = seq->getNumPromptTokens();
-  const size_t threshold = 1000;  // MAX_TOKENS_TO_PREFILL_ON_DECODE default
-  EXPECT_GT(numPromptTokens, threshold)
-      << "Prompt token count (" << numPromptTokens
-      << ") should exceed the prefill-on-decode threshold (" << threshold
-      << "); decode should have forwarded to prefill";
+  EXPECT_EQ(numPromptTokens, EXPECTED_TOKEN_COUNT)
+      << "Prompt token count should be exactly " << EXPECTED_TOKEN_COUNT;
 
   // Verify the Sequence's token IDs vector is consistent.
   EXPECT_EQ(seq->getTokenIds().size(), numPromptTokens)
@@ -538,17 +392,13 @@ TEST_F(DisaggregatedE2ETest,
       .finalize()
       .sendTo(prefillServer_->resultQueue());
 
-  // The prefill server sends PrefillResultMessage back to decode via socket.
-  // The decode server receives it, and since max_tokens=1 → remaining=0,
-  // it sends the final HTTP response without local decode.
-  const auto rawResponse = responseFuture.get();
-  const auto response = tt::test::HttpResponse::parse(rawResponse);
-  EXPECT_EQ(response.statusCode(), 200)
-      << "HTTP response should be 200 OK after full disaggregated round trip";
-
-  const auto stream = tt::test::ChatCompletionStream::parse(response);
-  EXPECT_TRUE(stream.endedWithDone())
-      << "SSE stream should end with [DONE]";
+  // The prefill server should send back a PrefillResultMessage.
+  auto result = mockDecode_->receive<tt::sockets::PrefillResultMessage>(
+      "prefill_result", std::chrono::milliseconds(5000));
+  ASSERT_TRUE(result.has_value())
+      << "Expected PrefillResultMessage back from prefill server";
+  EXPECT_EQ(result->task_id, taskId);
+  EXPECT_FALSE(result->error);
 
   prefillServer_->setMemoryAutoRespond(true);
 }
@@ -560,10 +410,6 @@ TEST_F(DisaggregatedE2ETest,
 int main(int argc, char** argv) {
   if (argc >= 3 && std::strcmp(argv[1], "--worker") == 0) {
     return tt::test::runWorkerSubprocess(std::atoi(argv[2]));
-  }
-
-  if (argc >= 3 && std::strcmp(argv[1], "--decode-server") == 0) {
-    runDecodeServerSubprocess(argv[2]);
   }
 
   tt::utils::ZeroOverheadLogger::initialize();
