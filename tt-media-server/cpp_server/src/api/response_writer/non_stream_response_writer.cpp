@@ -10,7 +10,6 @@
 #include "api/error_response.hpp"
 #include "domain/llm/chat_completion_response.hpp"
 #include "domain/llm/llm_response.hpp"
-#include "utils/logger.hpp"
 
 namespace tt::api {
 
@@ -52,9 +51,6 @@ void NonStreamResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
   if (chunk.choices.empty()) return;
 
   const auto& choice = chunk.choices[0];
-  if (choice.reasoning.has_value()) {
-    accumulatedReasoning << choice.reasoning.value();
-  }
   accumulatedAnswer << choice.text;
 
   // Accumulate tool call data from streaming deltas
@@ -107,10 +103,6 @@ void NonStreamResponseWriter::finalize() {
 
   LLMChoice choice;
   choice.index = 0;
-  choice.reasoning =
-      accumulatedReasoning.tellp() == 0
-          ? std::nullopt
-          : std::optional<std::string>(accumulatedReasoning.str());
 
   // Build tool_calls if any were accumulated
   if (!accumulatedToolCalls.empty()) {

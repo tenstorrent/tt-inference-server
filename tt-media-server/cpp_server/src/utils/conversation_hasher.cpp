@@ -205,7 +205,7 @@ std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
 
   for (int token : tokens) {
     if (filterThinking) {
-      // Mirror ReasoningParser::processToken() state machine
+      // Mirror the session-side think marker state machine.
       if (token == static_cast<int>(thinkStartId)) {
         inThinking = true;
         continue;  // Skip marker, don't count
