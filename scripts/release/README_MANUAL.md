@@ -48,7 +48,9 @@ git checkout -b stable
 
 ## Step 1: update `models-ci-config.json`
 
-Within the `models-ci-config.json` file, update which models and devices should belong to the upcoming release. Remove all the entries from the release list, which are not going to be actually released.
+Within the `models-ci-config.json` file, update which models and devices should belong to the upcoming release. 
+Remove all the entries from the release list, which are not going to be actually released. 
+Open question: do we need to do the same on the main branch as well? or to introduce new file with final list of models that are going to be released?
 
 ## Step 2: update `VERSION` file
 
