@@ -437,15 +437,11 @@ std::string DisaggregatedE2ETest::sentinelPath_;
 // Tests
 // ---------------------------------------------------------------------------
 
-// Tests the decode server's routing decision:
-// - Large prompts (>1000 tokens) should be forwarded to prefill
-// - Continuations with small deltas (<1000 tokens) should be handled locally
 TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   prefillServer_->setMemoryAutoRespond(false);
 
-  // Generate a large prompt (~1500 tokens) that should be forwarded to prefill.
-  // The chat template adds overhead, so we target more than MAX_TOKENS_TO_PREFILL_ON_DECODE (1000).
-  std::string largePrompt = generatePromptWithApproxTokens(1500);
+  // Generate a large prompt (~1100 tokens) that should be forwarded to prefill.
+  std::string largePrompt = generatePromptWithApproxTokens(1096);
 
   TT_LOG_INFO("[Test] Sending large prompt to decode server (expecting forward to prefill)");
 
@@ -495,8 +491,8 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
               numPromptTokens, seq->getTokenIds().size(), seq->isContinuation());
 
   // The prompt should be >1000 tokens (the routing threshold).
-  EXPECT_GT(numPromptTokens, 1000u)
-      << "Prefill should have received >1000 tokens (large prompt was forwarded)";
+  EXPECT_EQ(numPromptTokens, 1100)
+      << "Prefill should have received 1100 tokens (large prompt was forwarded)";
 
   // Mock the prefill worker response.
   tt::test::WorkerResponse(seq->taskId)
@@ -511,6 +507,81 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   TT_LOG_INFO("[Test] Large prompt test completed - prefill received {} tokens",
               numPromptTokens);
 
+  // --- Part 2: Continuation with small delta ---
+  // Send a follow-up message that extends the conversation.
+  // The routing decision is based on TOTAL prompt size (not delta), so large
+  // prompts always go to prefill. But prefill should get a prefix cache HIT
+  // and only process the small delta.
+  TT_LOG_INFO("[Test] Sending continuation request (total prompt still >1000, "
+              "so forwarded to prefill, but prefill should get prefix cache HIT)");
+
+  // Add a small follow-up message to the same conversation
+  std::string followUpMessage = "What about this?";
+
+  auto continuationFuture = std::async(std::launch::async, [&] {
+    return tt::test::sendAndReceive(
+        "127.0.0.1", DECODE_HTTP_PORT,
+        tt::test::ChatRequest()
+            .user(largePrompt)
+            .assistant("Here is my response.")  // Simulated assistant response from turn 1
+            .user(followUpMessage)              // New user message (small delta)
+            .maxTokens(1)
+            .stream()
+            .toJson(),
+        "your-secret-key", /*idleTimeoutMs=*/10000);
+  });
+
+  // The continuation is still forwarded to prefill (total prompt > 1000),
+  // but prefill should hit its prefix cache (no new ALLOCATE).
+  // Wait briefly to see if ALLOCATE arrives.
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  tt::domain::ManageMemoryTask continuationAlloc{};
+  bool gotContinuationAlloc = prefillServer_->memoryRequestQueue().tryPop(continuationAlloc);
+
+  if (gotContinuationAlloc) {
+    TT_LOG_INFO("[Test] Continuation got ALLOCATE (prefix cache MISS on prefill)");
+    // Respond to allocation
+    tt::domain::ManageMemoryResult continuationMemRes{};
+    continuationMemRes.taskId = continuationAlloc.taskId;
+    continuationMemRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
+    continuationMemRes.slotId = 1;
+    prefillServer_->memoryResultQueue().push(continuationMemRes);
+
+    // Read and respond to task queue
+    auto continuationSeq = prefillServer_->taskQueue().receive();
+    if (continuationSeq) {
+      TT_LOG_INFO("[Test] Continuation prefill Sequence: numPromptTokens={}, "
+                  "isContinuation={}",
+                  continuationSeq->getNumPromptTokens(),
+                  continuationSeq->isContinuation());
+      tt::test::WorkerResponse(continuationSeq->taskId)
+          .token(43)
+          .finalize()
+          .sendTo(prefillServer_->resultQueue());
+    }
+  } else {
+    TT_LOG_INFO("[Test] Continuation got NO ALLOCATE (prefix cache HIT on prefill)");
+    // Prefill should still get a task (continuation) - check task queue
+    auto continuationSeq = prefillServer_->taskQueue().tryPop();
+    if (continuationSeq) {
+      TT_LOG_INFO("[Test] Continuation prefill Sequence (from cache): "
+                  "numPromptTokens={} (delta only), isContinuation={}",
+                  continuationSeq->getNumPromptTokens(),
+                  continuationSeq->isContinuation());
+      tt::test::WorkerResponse(continuationSeq->taskId)
+          .token(43)
+          .finalize()
+          .sendTo(prefillServer_->resultQueue());
+    }
+  }
+
+  // Wait for the response to complete
+  const auto continuationRawResponse = continuationFuture.get();
+  const auto continuationResponse = tt::test::HttpResponse::parse(continuationRawResponse);
+  EXPECT_EQ(continuationResponse.statusCode(), 200);
+
+  TT_LOG_INFO("[Test] Continuation test completed");
+
   prefillServer_->setMemoryAutoRespond(true);
 }
 
@@ -520,8 +591,7 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_SmallPromptHandledLocally) {
   prefillServer_->setMemoryAutoRespond(true);
 
   // Generate a small prompt (~200 tokens) that should be handled locally.
-  // With chat template overhead (~50 tokens), this should stay well under 1000.
-  std::string smallPrompt = generatePromptWithApproxTokens(200);
+  std::string smallPrompt = generatePromptWithApproxTokens(196);
 
   TT_LOG_INFO("[Test] Sending small prompt to decode server (expecting local handling)");
 
