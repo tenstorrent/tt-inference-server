@@ -37,17 +37,21 @@ int computeFailureCount(int attemptsRemaining) {
 
 domain::ManageMemoryTask makeAllocTask(
     std::optional<uint32_t> slotIdToCopyFrom = std::nullopt) {
-  domain::ManageMemoryTask task(tt::utils::TaskIDGenerator::generate(),
-                                domain::MemoryManagementAction::ALLOCATE);
-  task.slotIdToCopyFrom = slotIdToCopyFrom;
-  return task;
+  return domain::ManageMemoryTask{
+      .taskId = tt::utils::TaskIDGenerator::generate(),
+      .action = domain::MemoryManagementAction::ALLOCATE,
+      .slotIdToCopyFrom = slotIdToCopyFrom,
+  };
 }
 
 domain::ManageMemoryTask makeDeallocTask(uint32_t slotId) {
-  domain::ManageMemoryTask task(tt::utils::TaskIDGenerator::generate(),
-                                domain::MemoryManagementAction::DEALLOCATE);
-  task.memoryLayout = domain::KvMemoryLayout::PAGED;
-  task.slotId = slotId;
+  domain::ManageMemoryTask task{
+      .taskId = tt::utils::TaskIDGenerator::generate(),
+      .action = domain::MemoryManagementAction::DEALLOCATE,
+      .memoryLayout = domain::KvMemoryLayout::PAGED,
+      .slotId = slotId,
+      .slotIdToCopyFrom = std::nullopt,
+  };
   return task;
 }
 }  // namespace

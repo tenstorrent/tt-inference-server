@@ -34,12 +34,11 @@ BlazePrefillRunner::BlazePrefillRunner(
   TT_LOG_INFO(
       "BlazePrefillRunner: Constructing PrefillScheduler with SocketConfig...");
   auto pipelineConfig = utils::makePrefillPipelineConfig(config);
-  ps::SchedulerParams managerParams{
-      .layers_per_chunk =
-          static_cast<uint32_t>(std::stoi(tt::config::prefillNumLayers())),
-      .chunk_size =
-          static_cast<uint32_t>(std::stoi(tt::config::prefillChunkSize())),
-  };
+  ps::SchedulerParams managerParams{};
+  managerParams.layers_per_chunk =
+      static_cast<uint32_t>(std::stoi(tt::config::prefillNumLayers()));
+  managerParams.chunk_size =
+      static_cast<uint32_t>(std::stoi(tt::config::prefillChunkSize()));
   managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
   auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
   prefillScheduler = std::make_unique<ps::PrefillScheduler>(
@@ -493,6 +492,7 @@ inline void BlazePrefillRunner::handleDeferred(SlotContext& slot) {
         .taskId = evictReq.request_id,
         .action = tt::domain::MemoryManagementAction::DEALLOCATE,
         .slotId = evictReq.slot_id,
+        .slotIdToCopyFrom = std::nullopt,
     });
   } else if (slot.deferredContinue) {
     // move clears slot.deferredContinue
