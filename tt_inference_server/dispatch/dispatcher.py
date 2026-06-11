@@ -60,6 +60,99 @@ class Capabilities:
     attn_backend: str
 
 
+def _compute_capabilities(
+    *,
+    norm_type: str,
+    rotary_pct: float,
+    attn_bias: bool,
+    head_norm: bool,
+    head_dim: int,
+    n_heads: int,
+    n_kv_heads: int,
+    attn_backend: str = "ttnn",
+) -> Capabilities:
+    """Shared capability formula used by both the matrix entry and the unlisted
+    auto-derive path, so listed and novel models compute eligibility identically.
+
+    fast_path (traced-ttnn decode) is eligible iff the model is a plain RMSNorm
+    full-RoPE attention with no bias / head-norm, a tile-aligned head_dim, and a GQA
+    group the decode SDPA's pad-to-32 can represent (group | 32, nh <= 32). This merges
+    the runner's `_ondevice_attn_eligible` flag with the `_setup_paged_decode` ok_shape
+    gate (and the nh<=32 / group|32 check).
+
+    lm_head_ondevice (on-device final-norm + matmul + argmax) needs an RMSNorm-family
+    final norm — rmsnorm or gemma_rms, the latter being rmsnorm with a (1+w) weight baked
+    in at upload. LayerNorm (mean-sub + bias) is not yet supported on-device. Unaligned
+    vocab is handled by the runner's pad-mask, so no vocab alignment constraint applies.
+    This matches the runner's current `not self._uses_layernorm` gate.
+    """
+    group = (n_heads // n_kv_heads) if n_kv_heads else 0
+    fast_path = (
+        norm_type == "rmsnorm"
+        and rotary_pct == 1.0
+        and not attn_bias
+        and not head_norm
+        and head_dim % 32 == 0
+        and group >= 1
+        and 32 % group == 0
+        and n_heads <= 32
+    )
+    lm_head_ondevice = (norm_type != "layernorm")
+    return Capabilities(
+        fast_path=fast_path,
+        lm_head_ondevice=lm_head_ondevice,
+        attn_backend=attn_backend,
+    )
+
+
+def derive_capabilities(hf_config) -> Capabilities:
+    """Auto-derive decode-path capabilities for an UNLISTED (novel) model from its
+    HuggingFace config alone — the universal floor of the two-tier resolution (#3).
+
+    This is intentionally config-only and conservative; the matrix overrides it for
+    listed models. A novel model still runs (flagged community/unverified); the output
+    validator catches breakage. NOTE: some signals the runner sniffs from loaded module
+    structure (e.g. Qwen2's always-on qkv bias) are not visible here — those are exactly
+    the cases the matrix is meant to record an override for.
+    """
+    text_cfg = getattr(hf_config, "text_config", hf_config)
+    archs = getattr(hf_config, "architectures", None) or []
+    arch = archs[0] if archs else ""
+    model_type = str(getattr(text_cfg, "model_type", "")).lower()
+
+    n_heads = getattr(text_cfg, "num_attention_heads", 32)
+    n_kv = getattr(text_cfg, "num_key_value_heads", n_heads) or n_heads
+    hidden = getattr(text_cfg, "hidden_size", 4096)
+    head_dim = getattr(text_cfg, "head_dim", None) or (hidden // n_heads)
+
+    if "gemma" in model_type or arch.startswith("Gemma"):
+        norm_type = "gemma_rms"
+    elif hasattr(text_cfg, "rms_norm_eps"):
+        norm_type = "rmsnorm"
+    elif hasattr(text_cfg, "layer_norm_eps") or hasattr(text_cfg, "layer_norm_epsilon"):
+        norm_type = "layernorm"
+    else:
+        norm_type = "rmsnorm"
+
+    rotary_pct = float(getattr(text_cfg, "partial_rotary_factor",
+                               getattr(text_cfg, "rotary_pct", 1.0)) or 1.0)
+    # LayerNorm-family archs (GPTNeoX/Pythia) carry qkv bias; otherwise read the flag.
+    attn_bias = bool(getattr(text_cfg, "attention_bias", False)) or (norm_type == "layernorm")
+    head_norm = arch.startswith("Qwen3") or "gemma3" in model_type
+    attn_backend = "ttnn" if (n_kv and n_heads % n_kv == 0 and 32 % (n_heads // n_kv) == 0) else "custom"
+
+    return _compute_capabilities(
+        norm_type=norm_type,
+        rotary_pct=rotary_pct,
+        attn_bias=attn_bias,
+        head_norm=head_norm,
+        head_dim=head_dim,
+        n_heads=n_heads,
+        n_kv_heads=n_kv,
+        attn_backend=attn_backend,
+    )
+
+
 @dataclass
 class ModelMatrixEntry:
     name: str
@@ -95,31 +188,16 @@ class ModelMatrixEntry:
     def capabilities(self, hw_config=None) -> Capabilities:
         """Compute the DERIVED decode-path gates from fields + dims.
 
-        fast_path (traced-ttnn decode) is eligible iff the model is a plain RMSNorm
-        full-RoPE attention with no bias / head-norm, a tile-aligned head_dim, and a
-        GQA group that the decode SDPA's pad-to-32 can represent (group | 32, nh <= 32).
-        This merges the runner's `_ondevice_attn_eligible` flag with the
-        `_setup_paged_decode` ok_shape gate (and the nh<=32 / group|32 check).
-
-        lm_head_ondevice (on-device final-norm + matmul + argmax) needs only an RMSNorm
-        final norm; unaligned vocab is handled by the runner's pad-mask, so no vocab
-        alignment constraint is imposed here.
+        See _compute_capabilities for the eligibility rules.
         """
-        group = (self.n_heads // self.n_kv_heads) if self.n_kv_heads else 0
-        fast_path = (
-            self.norm_type == "rmsnorm"
-            and self.rotary_pct == 1.0
-            and not self.attn_bias
-            and not self.head_norm
-            and self.head_dim % 32 == 0
-            and group >= 1
-            and 32 % group == 0
-            and self.n_heads <= 32
-        )
-        lm_head_ondevice = (self.norm_type == "rmsnorm")
-        return Capabilities(
-            fast_path=fast_path,
-            lm_head_ondevice=lm_head_ondevice,
+        return _compute_capabilities(
+            norm_type=self.norm_type,
+            rotary_pct=self.rotary_pct,
+            attn_bias=self.attn_bias,
+            head_norm=self.head_norm,
+            head_dim=self.head_dim,
+            n_heads=self.n_heads,
+            n_kv_heads=self.n_kv_heads,
             attn_backend=self.attn_backend,
         )
 
@@ -245,6 +323,24 @@ class KernelDispatcher:
                 stacklevel=2,
             )
 
+        return entry
+
+    def lookup(self, model_name_or_path: str) -> Optional[ModelMatrixEntry]:
+        """Return the ModelMatrixEntry for a name/path, or None if unlisted.
+
+        Unlike resolve(), this applies no trust (unsafe) gate and never raises — it
+        answers only "is there a matrix entry?". The runner uses it to prefer the matrix
+        for listed models and fall back to derive_capabilities() for novel ones. The
+        --unsafe / community gating is enforced at the load_model() layer (#25) via
+        resolve().
+        """
+        entry = self._index.get(model_name_or_path)
+        if entry is None:
+            basename = pathlib.Path(model_name_or_path).name
+            for e in self._matrix:
+                if pathlib.Path(e.local_path).name == basename:
+                    entry = e
+                    break
         return entry
 
     def models(self) -> List[ModelMatrixEntry]:

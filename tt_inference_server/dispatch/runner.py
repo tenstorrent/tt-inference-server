@@ -465,15 +465,18 @@ class TTModelRunner:
         device,
         max_seq: int = 2048,
         lm_head_on_device: bool = False,
+        unsafe: bool = False,
     ):
         import ttnn
         from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
         from tt_inference_server.dispatch.registry import detect_model_family
-        from tt_inference_server.dispatch.dispatcher import KernelDispatcher
+        from tt_inference_server.dispatch.dispatcher import (
+            KernelDispatcher, derive_capabilities)
 
         self._device = device
         self._max_seq = max_seq
         self._lm_head_on_device = lm_head_on_device
+        self._unsafe = unsafe
 
         print(f"Loading {model_path} ...")
         hf_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
@@ -490,7 +493,30 @@ class TTModelRunner:
         )
         hf_model.eval()
 
-        self._dispatcher = KernelDispatcher(device)
+        self._dispatcher = KernelDispatcher(device, unsafe=unsafe)
+
+        # Two-tier resolution (#3): prefer the matrix entry for listed models; fall back
+        # to HF-config auto-derivation for novel/unlisted ones (the universal floor). The
+        # resolved entry + capabilities are wired here; the inline gates that consume them
+        # are migrated one at a time in Phase C, so behavior is unchanged at this step.
+        self._entry = self._dispatcher.lookup(model_path)
+        self._listed = self._entry is not None
+        if self._entry is not None:
+            self._caps = self._entry.capabilities(self._dispatcher._hw_config)
+            self._community = (self._entry.status == "community")
+            print(f"  Matrix: '{self._entry.name}' (status={self._entry.status}, "
+                  f"backend={self._caps.attn_backend}, fast_path={self._caps.fast_path}, "
+                  f"lm_head_ondevice={self._caps.lm_head_ondevice})")
+            if self._community and not unsafe:
+                print(f"  WARNING: '{self._entry.name}' is status=community (unverified); "
+                      "correctness is not guaranteed. Pass --unsafe to silence (#25).")
+        else:
+            self._caps = derive_capabilities(hf_config)
+            self._community = True
+            print(f"  Matrix: no entry for arch '{arch}' -> auto-derived (community, "
+                  f"unverified). fast_path={self._caps.fast_path}, "
+                  f"lm_head_ondevice={self._caps.lm_head_ondevice}. "
+                  "Output validity unverified on this hardware.")
 
         print("  Uploading to device ...")
         try:
@@ -1721,6 +1747,8 @@ def main():
                         help="Max KV cache sequence length")
     parser.add_argument("--no-chat",    action="store_true",
                         help="Skip chat template (raw completion mode)")
+    parser.add_argument("--unsafe",     action="store_true",
+                        help="Allow community/unlisted (unverified) models without warning (#25)")
     args = parser.parse_args()
 
     import ttnn, os
@@ -1728,7 +1756,7 @@ def main():
     _tr = 134217728 if os.environ.get("DISPATCH_TRACE", "0") == "1" else 0
     device = ttnn.open_device(device_id=0, trace_region_size=_tr)
     try:
-        runner = TTModelRunner(args.model, device, max_seq=args.max_seq)
+        runner = TTModelRunner(args.model, device, max_seq=args.max_seq, unsafe=args.unsafe)
         print(f"\nPROMPT: {args.prompt}")
         output = runner.generate(args.prompt, max_new_tokens=args.max_tokens,
                                  chat=not args.no_chat)
