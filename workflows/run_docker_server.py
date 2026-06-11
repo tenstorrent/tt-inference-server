@@ -76,6 +76,74 @@ _CPP_SDXL_DEVICE_DEFAULTS = {
 }
 
 
+def _vllm_tt_metal_dev_mounts(
+    repo_root_path: Path, user_home_path: str, model_spec
+) -> List[str]:
+    """Bind-mount tt-metal patches pinned to the image's metal commit."""
+    if "gemma-4" not in model_spec.hf_model_repo.lower():
+        return []
+
+    mounts: List[str] = []
+    gemma4_generator = (
+        repo_root_path
+        / "vllm-tt-metal/patches/gemma4_generator_vllm_9970093.py"
+    )
+    gemma4_platform = (
+        repo_root_path
+        / "vllm-tt-metal/patches/gemma4_platform_vllm_3334377.py"
+    )
+    if not gemma4_generator.is_file():
+        return mounts
+
+    container_path = f"{user_home_path}/tt-metal/models/demos/gemma4/tt/generator_vllm.py"
+    mounts.extend(
+        [
+            "--mount",
+            f"type=bind,src={gemma4_generator},dst={container_path}",
+        ]
+    )
+    logger.info(f"Dev mode: mounting Gemma4 vLLM bridge patch from {gemma4_generator}")
+
+    if gemma4_platform.is_file():
+        platform_container_path = (
+            f"{user_home_path}/vllm/plugins/vllm-tt-plugin/src/vllm_tt_plugin/platform.py"
+        )
+        mounts.extend(
+            [
+                "--mount",
+                f"type=bind,src={gemma4_platform},dst={platform_container_path}",
+            ]
+        )
+        logger.info(
+            f"Dev mode: mounting Gemma4 unified platform patch from {gemma4_platform}"
+        )
+
+    gemma4_reasoning_parser = (
+        repo_root_path
+        / "vllm-tt-metal/patches/gemma4_reasoning_parser_vllm_3334377.py"
+    )
+    gemma4_reasoning_init = (
+        repo_root_path
+        / "vllm-tt-metal/patches/gemma4_reasoning_init_vllm_3334377.py"
+    )
+    if gemma4_reasoning_parser.is_file() and gemma4_reasoning_init.is_file():
+        reasoning_dir = f"{user_home_path}/vllm/vllm/reasoning"
+        mounts.extend(
+            [
+                "--mount",
+                f"type=bind,src={gemma4_reasoning_parser},dst={reasoning_dir}/gemma4_reasoning_parser.py",
+                "--mount",
+                f"type=bind,src={gemma4_reasoning_init},dst={reasoning_dir}/__init__.py",
+            ]
+        )
+        logger.info(
+            "Dev mode: mounting Gemma4 reasoning parser patches from "
+            f"{gemma4_reasoning_parser} and {gemma4_reasoning_init}"
+        )
+
+    return mounts
+
+
 def _is_cpp_media_spec(model_spec) -> bool:
     """True if this MEDIA spec should run on the cpp_server backend."""
     defaults = _CPP_SDXL_DEVICE_DEFAULTS.get(model_spec.device_type.name.lower())
@@ -385,6 +453,9 @@ def generate_docker_run_command(
             docker_command += [
                 "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal/src,dst={user_home_path}/app/src",
             ]
+            docker_command += _vllm_tt_metal_dev_mounts(
+                repo_root_path, user_home_path, model_spec
+            )
         # fmt: on
 
     for key, value in docker_env_vars.items():
