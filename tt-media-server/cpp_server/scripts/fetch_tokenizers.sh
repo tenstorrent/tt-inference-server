@@ -193,8 +193,6 @@ download_tokenizer \
     "tiktoken"
 
 # GPT-OSS 120B (public, no auth)
-# tokenizer.json is an LFS file, so use /resolve/main (which redirects to the
-# real bytes); /raw/main would return the LFS pointer text and fail to parse.
 download_tokenizer \
     "openai/gpt-oss-120b" \
     "https://huggingface.co/openai/gpt-oss-120b/resolve/main" \
