@@ -86,12 +86,19 @@ download_hf_file() {
 #   requires_auth       - "true" if gated model requiring HF_TOKEN
 #   placeholder_config  - Fallback config.json content if HF fetch fails
 #   tokenizer_type      - "json" (default) for tokenizer.json, "tiktoken" for tiktoken.model
+#   needs_chat_template - "true" if the model ships its chat template as a
+#                         separate chat_template.jinja (rather than inline in
+#                         tokenizer_config.json). Required by the Dynamo
+#                         frontend's PromptFormatter. (tiktoken always fetches
+#                         it regardless of this flag.)
 download_tokenizer() {
     local model_name="$1"
     local hf_repo="$2"
     local requires_auth="$3"
     local placeholder_config="${4:-}"
     local tokenizer_type="${5:-json}"
+    local needs_chat_template="${6:-false}"
+    local needs_gen_config="${7:-false}"
 
     local model_dir="${TOKENIZER_DIR}/${model_name}"
     local model_config="${model_dir}/config.json"
@@ -102,6 +109,15 @@ download_tokenizer() {
         required_files+=("tiktoken.model" "chat_template.jinja")
     else
         required_files+=("tokenizer.json")
+        if [ "${needs_chat_template}" = "true" ]; then
+            required_files+=("chat_template.jinja")
+        fi
+    fi
+    # generation_config.json carries eos_token_id / sampling defaults. Some
+    # models (e.g. MiniMax) omit eos_token_id from config.json, and the Dynamo
+    # frontend hard-fails to load them without it.
+    if [ "${needs_gen_config}" = "true" ]; then
+        required_files+=("generation_config.json")
     fi
 
     # Check if all required files exist
@@ -177,17 +193,24 @@ download_tokenizer \
     "tiktoken"
 
 # GPT-OSS 120B (public, no auth)
+# tokenizer.json is an LFS file, so use /resolve/main (which redirects to the
+# real bytes); /raw/main would return the LFS pointer text and fail to parse.
 download_tokenizer \
     "openai/gpt-oss-120b" \
-    "https://huggingface.co/openai/gpt-oss-120b/raw/main" \
+    "https://huggingface.co/openai/gpt-oss-120b/resolve/main" \
     "false" \
-    '{"model_type":"gpt_oss","architectures":["GptOssForCausalLM"]}'
+    '{"model_type":"gpt_oss","architectures":["GptOssForCausalLM"]}' \
+    "json" \
+    "true"
 
 # MiniMax M2 (public, no auth)
 download_tokenizer \
     "MiniMaxAI/MiniMax-M2.7" \
-    "https://huggingface.co/MiniMaxAI/MiniMax-M2.7/raw/main" \
+    "https://huggingface.co/MiniMaxAI/MiniMax-M2.7/resolve/main" \
     "false" \
-    '{"model_type":"minimax_m2","architectures":["MiniMaxM2ForCausalLM"]}'
+    '{"model_type":"minimax_m2","architectures":["MiniMaxM2ForCausalLM"]}' \
+    "json" \
+    "true" \
+    "true"
 
 echo ""
