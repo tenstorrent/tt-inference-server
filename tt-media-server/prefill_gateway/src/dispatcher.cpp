@@ -23,9 +23,7 @@ Dispatcher::Dispatcher(PrefillRegistry& registry, Senders senders)
 
 Dispatcher::Dispatcher(PrefillRegistry& registry, Senders senders,
                        Options options)
-    : registry_(registry),
-      senders_(std::move(senders)),
-      options_(options) {}
+    : registry_(registry), senders_(std::move(senders)), options_(options) {}
 
 void Dispatcher::onPrefillRequest(
     const tt::sockets::PrefillRequestMessage& msg) {
