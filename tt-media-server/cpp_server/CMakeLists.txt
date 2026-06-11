@@ -709,19 +709,6 @@ target_include_directories(media_payload_ipc_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# Reasoning parser test
-add_executable(test_reasoning_parser
-    tests/test_reasoning_parser.cpp
-    src/services/reasoning_parser.cpp
-)
-target_link_libraries(test_reasoning_parser PRIVATE
-    llm_runner_lib
-    ${CMAKE_THREAD_LIBS_INIT}
-)
-target_include_directories(test_reasoning_parser PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
 add_executable(worker_metrics_shm_test
     tests/worker_metrics_shm_test.cpp
     src/runtime/worker/worker_metrics_shm.cpp
@@ -800,7 +787,6 @@ add_executable(llm_service_test
     src/services/image_service.cpp
     src/services/media_worker_scheduler.cpp
     src/services/model_service_registration.cpp
-    src/services/reasoning_parser.cpp
     src/runtime/worker/worker_manager.cpp
     src/runtime/worker/process_liveness.cpp
     src/runtime/worker/single_process_worker.cpp
@@ -839,7 +825,6 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/model_service_registration.cpp
-    src/services/reasoning_parser.cpp
     src/services/session_manager.cpp
     src/services/memory_services/memory_manager.cpp
     src/domain/session.cpp
@@ -1006,7 +991,6 @@ gtest_discover_tests(media_payload_ipc_test)
 add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
 add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
 add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
-add_test(NAME ReasoningParser COMMAND test_reasoning_parser)
 
 add_executable(test_apply_delta_prompt tests/test_apply_delta_prompt.cpp)
 target_link_libraries(test_apply_delta_prompt PRIVATE GTest::gtest_main llm_runner_lib)
@@ -1114,7 +1098,6 @@ set(SOURCES
     src/api/info_controller.cpp
     src/api/openapi.cpp
     src/services/llm_service.cpp
-    src/services/reasoning_parser.cpp
     src/services/deepseek_tool_call_parser.cpp
     src/services/json_tool_call_parser.cpp
     src/services/session_manager.cpp
