@@ -37,13 +37,27 @@ from .compat import (
 )
 
 # Must match schema_version in model_matrix.toml.  Bump both together.
-DISPATCHER_SCHEMA_VERSION = 1
+DISPATCHER_SCHEMA_VERSION = 2
 
 _DEFAULT_MATRIX_PATH = pathlib.Path(__file__).parent / "model_matrix.toml"
 _DEVICE_LOCK_PATH = pathlib.Path.home() / ".dispatch.lock"
 _KERNELS_DIR = pathlib.Path(__file__).parent.parent / "kernels"
 _MANIFEST_PATH = _KERNELS_DIR / "manifest.json"
 _TT_METAL_CACHE = pathlib.Path.home() / ".cache" / "tt-metal-cache"
+
+
+@dataclass
+class Capabilities:
+    """Derived (not stored) decode-path capabilities for a resolved model.
+
+    Computed from a ModelMatrixEntry's behavioral fields + dims (+ HardwareConfig).
+    These replace the runner's inline eligibility computations:
+      fast_path        <- _ondevice_attn_eligible + _setup_paged_decode ok_shape
+      lm_head_ondevice <- _setup_ondevice_lmhead eligibility
+    """
+    fast_path: bool
+    lm_head_ondevice: bool
+    attn_backend: str
 
 
 @dataclass
@@ -65,8 +79,49 @@ class ModelMatrixEntry:
     kernels: List[str]
     min_hw: str
     status: str
+    # --- behavioral fields (schema v2, issue #3). Defaults reproduce today's
+    #     HF-derived behavior so an entry that omits them is a no-op. ---
+    norm_type: str = "rmsnorm"          # rmsnorm | layernorm | gemma_rms
+    activation: str = "silu"            # silu | gelu | gelu_tanh | relu2
+    rotary_pct: float = 1.0             # 1.0 full; 0.25 partial (GPTNeoX/StableLM)
+    attn_bias: bool = False             # qkv + o-proj bias present
+    head_norm: bool = False             # per-head q/k RMSNorm (Qwen3/Gemma3)
+    parallel_residual: bool = False     # attn + MLP branch the same pre-norm (GPTNeoX)
+    embed_scale: str = "none"           # none | sqrt_hidden (Gemma scales embeds)
+    attn_backend: str = "ttnn"          # ttnn | custom | cpu (#34 backend-per-op)
     issue: Optional[int] = None
     notes: str = ""
+
+    def capabilities(self, hw_config=None) -> Capabilities:
+        """Compute the DERIVED decode-path gates from fields + dims.
+
+        fast_path (traced-ttnn decode) is eligible iff the model is a plain RMSNorm
+        full-RoPE attention with no bias / head-norm, a tile-aligned head_dim, and a
+        GQA group that the decode SDPA's pad-to-32 can represent (group | 32, nh <= 32).
+        This merges the runner's `_ondevice_attn_eligible` flag with the
+        `_setup_paged_decode` ok_shape gate (and the nh<=32 / group|32 check).
+
+        lm_head_ondevice (on-device final-norm + matmul + argmax) needs only an RMSNorm
+        final norm; unaligned vocab is handled by the runner's pad-mask, so no vocab
+        alignment constraint is imposed here.
+        """
+        group = (self.n_heads // self.n_kv_heads) if self.n_kv_heads else 0
+        fast_path = (
+            self.norm_type == "rmsnorm"
+            and self.rotary_pct == 1.0
+            and not self.attn_bias
+            and not self.head_norm
+            and self.head_dim % 32 == 0
+            and group >= 1
+            and 32 % group == 0
+            and self.n_heads <= 32
+        )
+        lm_head_ondevice = (self.norm_type == "rmsnorm")
+        return Capabilities(
+            fast_path=fast_path,
+            lm_head_ondevice=lm_head_ondevice,
+            attn_backend=self.attn_backend,
+        )
 
 
 class SchemaVersionError(RuntimeError):
@@ -413,6 +468,14 @@ def _load_and_validate_matrix(
             kernels=list(raw_entry["kernels"]),
             min_hw=raw_entry["min_hw"],
             status=raw_entry["status"],
+            norm_type=raw_entry.get("norm_type", "rmsnorm"),
+            activation=raw_entry.get("activation", "silu"),
+            rotary_pct=float(raw_entry.get("rotary_pct", 1.0)),
+            attn_bias=raw_entry.get("attn_bias", False),
+            head_norm=raw_entry.get("head_norm", False),
+            parallel_residual=raw_entry.get("parallel_residual", False),
+            embed_scale=raw_entry.get("embed_scale", "none"),
+            attn_backend=raw_entry.get("attn_backend", "ttnn"),
             issue=raw_entry.get("issue"),
             notes=raw_entry.get("notes", ""),
         )

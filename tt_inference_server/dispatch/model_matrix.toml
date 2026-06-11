@@ -15,9 +15,21 @@
 #   2. n_heads % n_kv_heads == 0 for every entry
 #   3. Every validated entry has n_heads >= 1
 #
+# Behavioral fields (schema v2, #3) — override the runner's HF-config introspection.
+# Each defaults to today's HF-derived value, so an omitted field is a no-op:
+#   norm_type         rmsnorm | layernorm | gemma_rms        (default rmsnorm)
+#   activation        silu | gelu | gelu_tanh | relu2        (default silu)
+#   rotary_pct        1.0 full | 0.25 partial rope           (default 1.0)
+#   attn_bias         qkv + o-proj bias present              (default false)
+#   head_norm         per-head q/k RMSNorm (Qwen3/Gemma3)    (default false)
+#   parallel_residual attn+MLP share pre-norm (GPTNeoX)      (default false)
+#   embed_scale       none | sqrt_hidden (Gemma)             (default none)
+#   attn_backend      ttnn | custom | cpu (#34)              (default ttnn)
+# fast_path / lm_head_ondevice are DERIVED from these by ModelMatrixEntry.capabilities().
+#
 # Do not edit ttl_kernels/configs/ — that is the legacy POC reference only.
 
-schema_version = 1
+schema_version = 2
 
 # ---------------------------------------------------------------------------
 # Llama 3 family (Meta)
@@ -41,7 +53,15 @@ tie_embeddings    = false
 kernels           = ["flash_attn", "rmsnorm"]
 min_hw            = "bh_p150_1card"
 status            = "validated"
-notes             = "Baseline reference model. GQA 8 KV heads."
+norm_type         = "rmsnorm"
+activation        = "silu"
+rotary_pct        = 1.0
+attn_bias         = false
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "ttnn"
+notes             = "Baseline reference model. GQA 8 KV heads. fast_path eligible."
 
 [[model]]
 name              = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
@@ -61,7 +81,15 @@ tie_embeddings    = false
 kernels           = ["flash_attn", "rmsnorm"]
 min_hw            = "bh_p150_1card"
 status            = "validated"
-notes             = "Llama 3 8B fine-tune. Identical kernel config to llama3-8b."
+norm_type         = "rmsnorm"
+activation        = "silu"
+rotary_pct        = 1.0
+attn_bias         = false
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "ttnn"
+notes             = "Llama 3 8B fine-tune. Identical kernel config to llama3-8b. fast_path eligible."
 
 # ---------------------------------------------------------------------------
 # Qwen 2.5 family (Alibaba)
@@ -86,7 +114,15 @@ kernels           = ["flash_attn", "rmsnorm"]
 min_hw            = "bh_p150_1card"
 status            = "validated"
 issue             = 22
-notes             = "BUG-MISTRAL-01: degenerate output, tracked in #22. swa_window=131072 is effectively full attention at max_seq=2048."
+norm_type         = "rmsnorm"
+activation        = "silu"
+rotary_pct        = 1.0
+attn_bias         = true
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "custom"
+notes             = "BUG-MISTRAL-01: degenerate output, tracked in #22. swa_window=131072 is effectively full attention at max_seq=2048. Qwen2 has qkv bias (attn_bias=true); GQA group=7 does not divide 32 -> attn_backend=custom, fast_path NOT eligible."
 
 # ---------------------------------------------------------------------------
 # Mistral family (Mistral AI)
@@ -111,7 +147,15 @@ kernels           = ["flash_attn", "rmsnorm"]
 min_hw            = "bh_p150_1card"
 status            = "validated"
 issue             = 22
-notes             = "BUG-MISTRAL-01: hidden-state divergence produces degenerate output. v0.3 has no SWA (removed from v0.1) and rope_theta=1e6."
+norm_type         = "rmsnorm"
+activation        = "silu"
+rotary_pct        = 1.0
+attn_bias         = false
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "ttnn"
+notes             = "BUG-MISTRAL-01: hidden-state divergence produces degenerate output. v0.3 has no SWA (removed from v0.1) and rope_theta=1e6. fast_path eligible (the #22 bug is numeric, not a path-eligibility issue)."
 
 # ---------------------------------------------------------------------------
 # Gemma 2 family (Google)
@@ -136,7 +180,15 @@ kernels           = ["flash_attn", "rmsnorm"]
 min_hw            = "bh_p150_1card"
 status            = "validated"
 issue             = 10
-notes             = "L1 budget borderline due to head_dim=256 (8 tiles). CPU fallback active via #10. 2B variant on disk (not 9B)."
+norm_type         = "gemma_rms"
+activation        = "gelu_tanh"
+rotary_pct        = 1.0
+attn_bias         = false
+head_norm         = false
+parallel_residual = false
+embed_scale       = "sqrt_hidden"
+attn_backend      = "ttnn"
+notes             = "L1 budget borderline due to head_dim=256 (8 tiles). CPU fallback active via #10. 2B variant on disk (not 9B). gemma_rms (4-norm (1+w)) + gelu_tanh + sqrt(hidden) embed scaling -> fast_path NOT eligible (CPU-RoPE + flash_attn path)."
 
 # ---------------------------------------------------------------------------
 # Phi-3.5 family (Microsoft)
@@ -160,7 +212,47 @@ tie_embeddings    = false
 kernels           = ["flash_attn", "rmsnorm"]
 min_hw            = "bh_p150_1card"
 status            = "validated"
-notes             = "MHA (no GQA, n_kv_heads=n_heads=32). swa_window=262144 is effectively full attention at max_seq=2048. head_dim=96 (3 tiles)."
+norm_type         = "rmsnorm"
+activation        = "silu"
+rotary_pct        = 1.0
+attn_bias         = false
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "ttnn"
+notes             = "MHA (no GQA, n_kv_heads=n_heads=32). swa_window=262144 is effectively full attention at max_seq=2048. head_dim=96 (3 tiles). fast_path eligible."
+
+# ---------------------------------------------------------------------------
+# OLMo family (AllenAI)
+# ---------------------------------------------------------------------------
+
+[[model]]
+name              = "allenai/OLMo-1B-hf"
+arch              = "OlmoForCausalLM"
+local_path        = "models/allenai-OLMo-1B-hf"
+hidden_size       = 2048
+intermediate_size = 8192
+n_layers          = 16
+vocab_size        = 50304
+n_heads           = 16
+n_kv_heads        = 16
+head_dim          = 128
+max_seq           = 2048
+rope_theta        = 10000.0
+swa_window        = -1
+tie_embeddings    = true
+kernels           = ["flash_attn", "rmsnorm"]
+min_hw            = "bh_p150_1card"
+status            = "validated"
+norm_type         = "rmsnorm"
+activation        = "silu"
+rotary_pct        = 1.0
+attn_bias         = false
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "ttnn"
+notes             = "MHA nh=nkv=16 (group=1), non-parametric LayerNorm runs on the RMSNorm path today (no learned weight/bias) so norm_type=rmsnorm reproduces current behavior. vocab 50304 is tile-aligned. fast_path eligible (nh<32 proportional-pad path)."
 
 # ---------------------------------------------------------------------------
 # NOTE: Falcon-7b absent by design
@@ -196,7 +288,15 @@ kernels           = ["flash_attn", "rmsnorm"]
 min_hw            = "bh_p150_1card"
 status            = "community"
 issue             = 11
-notes             = "Parallel residual handled. Known limitations: LayerNorm applied as RMSNorm (no mean-sub/bias), partial rotary (rotary_pct=0.25) treated as full RoPE, QKV attention bias ignored. head_dim=80 padded to 96 tiles."
+norm_type         = "layernorm"
+activation        = "gelu"
+rotary_pct        = 0.25
+attn_bias         = true
+head_norm         = false
+parallel_residual = true
+embed_scale       = "none"
+attn_backend      = "custom"
+notes             = "Parallel residual handled. Known limitations: LayerNorm applied as RMSNorm (no mean-sub/bias), partial rotary (rotary_pct=0.25) treated as full RoPE, QKV attention bias ignored. head_dim=80 padded to 96 tiles. layernorm + partial rope + bias + parallel residual -> fast_path NOT eligible."
 
 # ---------------------------------------------------------------------------
 # Hardware target
