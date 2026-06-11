@@ -48,7 +48,7 @@ git checkout -b stable
 
 ## Step 1: update `models-ci-config.json`
 
-Within the `models-ci-config.json` file, update which models and devices should belong to the upcoming release.
+Within the `models-ci-config.json` file, update which models and devices should belong to the upcoming release. Remove all the entries from the release list, which are not going to be actually released.
 
 ## Step 2: update `VERSION` file
 
@@ -87,16 +87,21 @@ Examples of the commits can be found inside the `Build Results Artifact` section
 For specific model/device combination update manually relevant commit sha references for tt-metal and vllm commit fields (if applicable) in models_spec dev catalogue. Also the upcoming release version should be set for models/devices that are in the scope to be released.
 
 Changes are being set within the model_specs development catalogue:
+
 `https://github.com/tenstorrent/tt-inference-server/tree/main/workflows/model_specs/dev`
 
 Take into account, that during the release cycle some changes already might happen in development catalogue. We need to pick what is trully relevant.
 Once we have everything set in development catalogue, we need to promote such changes from development to a production catalogue.
 
 Production catalogue is being maintained at:
+
 `https://github.com/tenstorrent/tt-inference-server/tree/main/workflows/model_specs/prod`
 
 Script that will execute this promotion autoamtically is:
+
 `python3  scripts/release/promote_dev_spec_to_prod.py`
+
+Script will take into account only models which are planned for the current release (defined `release` job in models-ci-config.json`)
 
 Once the script is executed we need to verify which changes are being introduced into the production catalogue.
 
@@ -109,11 +114,15 @@ After changes in production catalogue have been added and committed, re-generate
 python3 scripts/release/update_model_spec.py --output-only --output-json release_model_spec.json
 ```
 
+`update_model_spec.py` will retrieve entries from the "dev" or "prod" catalogue???
+
 Verify that this script will not produce changes in models which are not in the scope of this release. In case it did, revert all changes that happenned in `release_model_spec.json`  for models out of scope. All modifications should be tracked using the `git diff` command.
 
 Afterwards, `git add/commit/push` the changes for the `release_model_spec.json` file.
 
 Additionally, `git add/commit/push` only untracked/modified docs files in `docs/model_support/`, but also only for models in the current scope.
+
+
 
 #### outputs
 
@@ -128,13 +137,23 @@ Additionally, `git add/commit/push` only untracked/modified docs files in `docs/
 
 Once we have new set of production data and values we can run the python script which will re-generate the values.yml.
 
+`python -m venv .venv`
+
+`source .venv/bin/activate`
+
+`pip install -r requirements-dev.txt`
+
 `python -m workflows.helm_generator`
+
+`deactivate`
 
 In case when we have new device definitions and support for new models the general README file should be changed as well.
 
 `helm-docs --chart-search-root=charts/tt-inference-server \
   --template-files=_supportedModels.gotmpl \
   --template-files=README.md.gotmpl`
+
+Afterwards we will push all those changes to the stable branch.
 
 ## Generate docker images as release artifacts
 
