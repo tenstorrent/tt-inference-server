@@ -341,6 +341,30 @@ WAN22_BH_RING_MESH_SHAPES = frozenset({(1, 4)})
 WAN22_GALAXY_BH_TRACE_REGION_BYTES = 125_000_000
 WAN22_GALAXY_ROUTER_MAX_PAYLOAD_BYTES = 8192
 
+# The LightX2V 4-step distill, with the fast-VAE-encode + on-device conditioning
+# optimizations enabled, captures a larger trace than the shared 125MB default
+# (the fully-optimized 4x32 traced run needs ~200MB; 125MB hits the TT_FATAL
+# `trace_buffers_size <= trace_region_size` during warmup). Distill-only so the
+# other Wan2.2 runners keep the shared default.
+WAN22_DISTILL_BH_TRACE_REGION_BYTES = 200_000_000
+
+# Fast-image-encode optimizations for the LightX2V distill pipeline. Enabling all
+# three takes the traced 4x32 pipeline from ~6-7s to ~4s with no quality loss
+# (validated via per-frame PCC + visual checks against the full-encode baseline):
+#   - WAN_DISTILL_FAST_VAE_ENCODER: rebuild the VAE encoder at the real resolution
+#     so it keys the swept conv3d blockings (encoder compute 1.44s -> 0.21s).
+#   - WAN_DISTILL_ENCODER_T_OUT_1: cap conv3d T_out_block at 1, which removes the
+#     temporal-blocking "duplicate subject" artifact the swept encoder otherwise
+#     introduces in the 4-step distill. MUST accompany FAST_VAE_ENCODER.
+#   - WAN_DISTILL_ONDEVICE_COND: assemble the (mostly-zero) conditioning video on
+#     device instead of transferring it from host (prepare_latents 2.99s -> 0.38s).
+# Set via setdefault so a deployment can still pin any flag to "0" to disable.
+WAN_DISTILL_FAST_ENCODE_FLAGS = {
+    "WAN_DISTILL_FAST_VAE_ENCODER": "1",
+    "WAN_DISTILL_ENCODER_T_OUT_1": "1",
+    "WAN_DISTILL_ONDEVICE_COND": "1",
+}
+
 
 def _wan22_needs_ring_fabric(mesh_shape: tuple) -> bool:
     """Return True when Wan2.2 must advertise FABRIC_1D_RING for ``mesh_shape``."""
@@ -736,6 +760,18 @@ class TTWan22I2VDistillRunner(TTDiTRunner):
                 WanDistillPipelineI2V,
             )
 
+            # Enable the fast-image-encode path before the pipeline reads these
+            # flags at build time. setdefault keeps any deployment-provided value.
+            for flag, value in WAN_DISTILL_FAST_ENCODE_FLAGS.items():
+                os.environ.setdefault(flag, value)
+            self.logger.info(
+                "Distill fast-encode flags: "
+                + ", ".join(
+                    f"{flag}={os.environ.get(flag)}"
+                    for flag in WAN_DISTILL_FAST_ENCODE_FLAGS
+                )
+            )
+
             return WanDistillPipelineI2V.create_pipeline(
                 mesh_device=self.ttnn_device,
                 height=self.resolution.height,
@@ -783,7 +819,12 @@ class TTWan22I2VDistillRunner(TTDiTRunner):
         return frames
 
     def get_pipeline_device_params(self):
-        return _wan22_dit_device_params(self.settings.device_mesh_shape)
+        # Start from the shared Wan2.2 fabric/trace defaults, then bump the trace
+        # region for the distill's fully-optimized trace (see constant above).
+        device_params = _wan22_dit_device_params(self.settings.device_mesh_shape)
+        if is_large_mesh(self.settings.device_mesh_shape) and is_blackhole():
+            device_params["trace_region_size"] = WAN22_DISTILL_BH_TRACE_REGION_BYTES
+        return device_params
 
     def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
         return _wan22_i2v_warmup_request()
