@@ -360,8 +360,11 @@ void LLMPipeline::resolveSession(
           fullPrompt = *p;
         }
 
-        // If we copied from a slot, mark as continuation with kv_position_id.
+        // If we copied from a slot, set slotToCopyFrom and kv_position_id.
+        // The Sequence constructor enforces continuation=false when
+        // slotToCopyFrom is set (it's a fresh submit with seeded KV).
         if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
+          req->slotToCopyFrom = slotToCopyFrom;
           req->continuation = true;
           req->kv_position_id = copyMatchedTokens - 1;
           applyDeltaPrompt(*req, copyMatchedTokens);

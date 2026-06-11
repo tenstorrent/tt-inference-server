@@ -171,6 +171,10 @@ struct LLMRequest : BaseRequest {
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;
   std::optional<uint32_t> prefillSlotId;
+  // When set, the decode runner should copy KV cache from this slot into the
+  // newly allocated slot before prefilling. The sequence is NOT a continuation
+  // in this case — it's a fresh submit whose KV was seeded by copy.
+  std::optional<uint32_t> slotToCopyFrom;
   tt::domain::Session* session =
       nullptr;  // Pointer to session in SessionManager
   bool continuation =
