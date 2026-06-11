@@ -4,6 +4,7 @@
 #include "services/llm_pipeline.hpp"
 
 #include <chrono>
+#include <functional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -108,6 +109,35 @@ void applyDeltaPrompt(tt::domain::llm::LLMRequest& req, uint32_t matchedTokens,
   }
   tokens.erase(tokens.begin(), tokens.begin() + static_cast<ptrdiff_t>(skip));
   req.prompt_tokens_count = static_cast<int>(tokens.size());
+}
+
+/**
+ * Wrap a streaming callback so the first chunk reports `cachedPromptTokens` via
+ * LLMStreamChunk::cached_prompt_tokens — the same field the prefill server uses
+ * for offloaded requests — so a locally-served prefix-cache hit surfaces in
+ * usage.prompt_tokens_details.cached_tokens. Returns `cb` unchanged when there
+ * is nothing to report.
+ */
+std::function<void(const tt::domain::llm::LLMStreamChunk&, bool)>
+stampCachedPromptTokens(
+    std::function<void(const tt::domain::llm::LLMStreamChunk&, bool)> cb,
+    int cachedPromptTokens) {
+  if (cachedPromptTokens <= 0) {
+    return cb;
+  }
+  // Per-request callbacks are serialized, so a plain `stamped` flag is enough.
+  return
+      [cb = std::move(cb), cachedPromptTokens, stamped = false](
+          const tt::domain::llm::LLMStreamChunk& chunk, bool isFinal) mutable {
+        if (stamped) {
+          cb(chunk, isFinal);
+          return;
+        }
+        stamped = true;
+        tt::domain::llm::LLMStreamChunk first = chunk;
+        first.cached_prompt_tokens = cachedPromptTokens;
+        cb(first, isFinal);
+      };
 }
 
 }  // namespace
@@ -415,16 +445,26 @@ void LLMPipeline::dispatchGeneration(
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     if (shouldDoPrefillOnDecode(request)) {
       // If continuation, trim prompt to only the uncached delta before
-      // submitting to the local decode device.
+      // submitting to the local decode device. The trimmed-off prefix is what
+      // the local KV cache served, i.e.
+      // usage.prompt_tokens_details.cached_tokens.
+      int reusedPrefixTokens = 0;
       if (request.continuation && request.kv_position_id.has_value()) {
         uint32_t matchedTokens =
             *request.kv_position_id + 1 -
             static_cast<uint32_t>(request.accumulated_think_tokens);
+        const auto fullPromptTokens =
+            std::get<std::vector<int>>(request.prompt).size();
         applyDeltaPrompt(request, matchedTokens, /*force=*/true);
+        reusedPrefixTokens =
+            static_cast<int>(fullPromptTokens -
+                             std::get<std::vector<int>>(request.prompt).size());
       }
       TT_LOG_DEBUG("[LLMPipeline] Using prefill on decode for sessionId: {}",
                    request.sessionId.value_or("none"));
-      service_->submitStreamingRequest(request, cb, /*skipPreProcess=*/true);
+      service_->submitStreamingRequest(
+          request, stampCachedPromptTokens(cb, reusedPrefixTokens),
+          /*skipPreProcess=*/true);
     } else {
       TT_LOG_DEBUG(
           "[LLMPipeline] Using disaggregated prefill for request with "
