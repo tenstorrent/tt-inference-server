@@ -205,9 +205,8 @@ void DisaggregationService::setupSocketHandlers() {
                 llmService->submitStreamingRequest(
                     *request,
                     [this, prefillSessionId, message, maxTokens, slotId,
-                     cachedTokens,
-                     migrationId](const LLMStreamChunk& response,
-                                  bool /*isFinal*/) {
+                     cachedTokens, migrationId](const LLMStreamChunk& response,
+                                                bool /*isFinal*/) {
                       auto prefillResult =
                           tt::sockets::PrefillResultMessage(message.task_id);
                       prefillResult.slot_id = slotId;

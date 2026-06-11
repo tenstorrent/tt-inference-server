@@ -454,7 +454,7 @@ void LLMPipeline::dispatchGeneration(
             *request.kv_position_id + 1 -
             static_cast<uint32_t>(request.accumulated_think_tokens);
         // WARNING - TEMP CHANGE - PREFILL WILL OVERRIDE THINKING TOKENS
-        *request.kv_position_id = matchedTokens -1;
+        *request.kv_position_id = matchedTokens - 1;
         if (sessionManager_ && request.sessionId.has_value()) {
           sessionManager_->clearSessionBlockThinkTokens(*request.sessionId);
         }

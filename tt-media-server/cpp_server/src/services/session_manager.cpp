@@ -1008,19 +1008,19 @@ void SessionManager::clearSessionBlockThinkTokens(
     return;
   }
 
-  prefixIndex.modify(keyHash, [&sessionId](
-                                  std::vector<PrefixIndexEntry>& entries) {
-    for (auto& entry : entries) {
-      bool hasSession =
-          std::find(entry.sessionIds.begin(), entry.sessionIds.end(),
-                    sessionId) != entry.sessionIds.end();
-      if (!hasSession) continue;
-      entry.keyBlockThinkTokens = 0;
-      for (auto& block : entry.remainingBlocks) {
-        block.accumulatedThinkTokens = 0;
-      }
-    }
-  });
+  prefixIndex.modify(
+      keyHash, [&sessionId](std::vector<PrefixIndexEntry>& entries) {
+        for (auto& entry : entries) {
+          bool hasSession =
+              std::find(entry.sessionIds.begin(), entry.sessionIds.end(),
+                        sessionId) != entry.sessionIds.end();
+          if (!hasSession) continue;
+          entry.keyBlockThinkTokens = 0;
+          for (auto& block : entry.remainingBlocks) {
+            block.accumulatedThinkTokens = 0;
+          }
+        }
+      });
 
   TT_LOG_INFO(
       "[SessionManager] clearSessionBlockThinkTokens: reset think tokens for "
