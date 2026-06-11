@@ -14,6 +14,7 @@ FROM ${TT_METAL_DOCKERFILE_URL} AS builder
 ARG TT_METAL_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_COMMIT_SHA_OR_TAG
 ARG TT_SMI_COMMIT_SHA_OR_TAG=v3.1.1
+ARG INSTALL_GEMMA4_REQUIREMENTS=0
 ARG CONTAINER_APP_UID=1000
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CONTAINER_APP_USERNAME=container_app_user
@@ -98,6 +99,15 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} 
     && VLLM_TARGET_DEVICE=empty uv pip install --index-strategy unsafe-best-match -e . --extra-index-url https://download.pytorch.org/whl/cpu \
     && if [ -d plugins/vllm-tt-plugin ]; then uv pip install --index-strategy unsafe-best-match -e 'plugins/vllm-tt-plugin[runtime]' --extra-index-url https://download.pytorch.org/whl/cpu; fi \
     && rm -rf ${vllm_dir}/.git"
+
+# Optional Gemma 4 deps (transformers 5.x). Installed after vLLM so they override 4.x pins.
+ARG INSTALL_GEMMA4_REQUIREMENTS=0
+RUN /bin/bash -c "if [ \"${INSTALL_GEMMA4_REQUIREMENTS}\" = \"1\" ]; then \
+    source ${PYTHON_ENV_DIR}/bin/activate \
+    && gemma4_reqs='${TT_METAL_HOME}/models/demos/gemma4/requirements.txt' \
+    && if [ ! -f \"\${gemma4_reqs}\" ]; then echo \"INSTALL_GEMMA4_REQUIREMENTS=1 but \${gemma4_reqs} not found\" >&2; exit 1; fi \
+    && uv pip install -r \"\${gemma4_reqs}\"; \
+    fi"
 
 # Build tt-smi in separate venv to avoid conflicts with tt-metal venv
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/tt-smi.git ${TT_SMI_DIR} \
@@ -193,6 +203,34 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "utils" "${APP_DIR}/utils"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
+
+# Bake Gemma 4 tt-metal/vLLM patches into the image so it runs correctly WITHOUT
+# --dev-mode (which otherwise bind-mounts these from the host repo, see
+# workflows/run_docker_server.py::_vllm_tt_metal_dev_mounts). Gated on
+# INSTALL_GEMMA4_REQUIREMENTS so non-Gemma images built from this Dockerfile are
+# untouched. The patch filenames are pinned to the Gemma 4 tt-metal (9970093) and
+# vLLM (3334377) commits; build with those commits (build_docker_images.py sets the
+# flag automatically for Gemma 4 model combos).
+ARG INSTALL_GEMMA4_REQUIREMENTS=0
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    "vllm-tt-metal/patches" "${APP_DIR}/patches"
+RUN /bin/bash -c "if [ \"${INSTALL_GEMMA4_REQUIREMENTS}\" = \"1\" ]; then \
+    set -e; \
+    p='${APP_DIR}/patches'; \
+    gen='${TT_METAL_HOME}/models/demos/gemma4/tt/generator_vllm.py'; \
+    plat='${vllm_dir}/plugins/vllm-tt-plugin/src/vllm_tt_plugin/platform.py'; \
+    rparser='${vllm_dir}/vllm/reasoning/gemma4_reasoning_parser.py'; \
+    rinit='${vllm_dir}/vllm/reasoning/__init__.py'; \
+    for f in gemma4_generator_vllm_9970093.py gemma4_platform_vllm_3334377.py gemma4_reasoning_parser_vllm_3334377.py gemma4_reasoning_init_vllm_3334377.py; do \
+        if [ ! -f \"\${p}/\${f}\" ]; then echo \"Missing Gemma4 patch: \${p}/\${f}\" >&2; exit 1; fi; \
+    done; \
+    cp \"\${p}/gemma4_generator_vllm_9970093.py\" \"\${gen}\"; \
+    cp \"\${p}/gemma4_platform_vllm_3334377.py\" \"\${plat}\"; \
+    cp \"\${p}/gemma4_reasoning_parser_vllm_3334377.py\" \"\${rparser}\"; \
+    cp \"\${p}/gemma4_reasoning_init_vllm_3334377.py\" \"\${rinit}\"; \
+    chown ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \"\${gen}\" \"\${plat}\" \"\${rparser}\" \"\${rinit}\"; \
+    echo '✅ Baked Gemma4 patches into image'; \
+    else echo 'Skipping Gemma4 patch bake (INSTALL_GEMMA4_REQUIREMENTS != 1)'; fi"
 
 # Fix venv symlinks after copy and install additional app requirements
 RUN cd ${PYTHON_ENV_DIR}/bin \
