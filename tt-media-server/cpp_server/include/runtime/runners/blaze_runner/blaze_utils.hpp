@@ -138,7 +138,8 @@ inline void logSchedTx(const char* role, const sch::ISRequest& req) {
 }
 
 // Scheduler -> runner. Ack for an ALLOCATE / SUBMIT / EVICT / STOP.
-inline void logSchedRxAck(const char* role, const sch::SchedulerResponse& resp) {
+inline void logSchedRxAck(const char* role,
+                          const sch::SchedulerResponse& resp) {
   TT_LOG_INFO(
       "[BORDER] {}<<sched ACK {} req={} slot={} err={} status={} startPos={}",
       role, requestTypeName(resp.request_type), resp.request_id, resp.slot_id,
@@ -147,10 +148,9 @@ inline void logSchedRxAck(const char* role, const sch::SchedulerResponse& resp) 
 
 // Scheduler -> runner. A generated/prefill OutputMessage. `level` lets the
 // per-token decode path drop to DEBUG while low-volume callers stay at INFO.
-inline void logSchedRxOutput(
-    const char* role, const sch::OutputMessage& out,
-    tt::utils::ZeroOverheadLogger::Level level =
-        tt::utils::ZeroOverheadLogger::INFO) {
+inline void logSchedRxOutput(const char* role, const sch::OutputMessage& out,
+                             tt::utils::ZeroOverheadLogger::Level level =
+                                 tt::utils::ZeroOverheadLogger::INFO) {
   tt::utils::ZeroOverheadLogger::log(
       level,
       "[BORDER] {}<<sched OUT slot={} tok={} isComplete={} prefillComplete={} "
@@ -169,9 +169,9 @@ inline void logResultTx(const char* role, uint32_t taskId, uint64_t tokenId,
                         tt::utils::ZeroOverheadLogger::Level level =
                             tt::utils::ZeroOverheadLogger::INFO) {
   tt::utils::ZeroOverheadLogger::log(
-      level,
-      "[BORDER] {}>>resultq taskId={} tok={} final={} abort={} error={}", role,
-      taskId, tokenId, static_cast<bool>(flag & tt::ipc::SharedToken::FLAG_FINAL),
+      level, "[BORDER] {}>>resultq taskId={} tok={} final={} abort={} error={}",
+      role, taskId, tokenId,
+      static_cast<bool>(flag & tt::ipc::SharedToken::FLAG_FINAL),
       static_cast<bool>(flag & tt::ipc::SharedToken::FLAG_ABORT),
       static_cast<bool>(flag & tt::ipc::SharedToken::FLAG_ERROR));
 }
@@ -179,14 +179,14 @@ inline void logResultTx(const char* role, uint32_t taskId, uint64_t tokenId,
 // Memory queue -> runner. A ManageMemoryTask read from the MemoryManager.
 inline void logMemQueueRx(const char* role,
                           const tt::domain::ManageMemoryTask& task) {
-  TT_LOG_INFO(
-      "[BORDER] {}<<memq taskId={} action={} slot={} copyFrom={}", role,
-      task.taskId,
-      task.action == tt::domain::MemoryManagementAction::ALLOCATE ? "ALLOCATE"
-      : task.action == tt::domain::MemoryManagementAction::DEALLOCATE
-          ? "DEALLOCATE"
-          : "MOVE",
-      task.slotId, optU32(task.slotIdToCopyFrom));
+  TT_LOG_INFO("[BORDER] {}<<memq taskId={} action={} slot={} copyFrom={}", role,
+              task.taskId,
+              task.action == tt::domain::MemoryManagementAction::ALLOCATE
+                  ? "ALLOCATE"
+              : task.action == tt::domain::MemoryManagementAction::DEALLOCATE
+                  ? "DEALLOCATE"
+                  : "MOVE",
+              task.slotId, optU32(task.slotIdToCopyFrom));
 }
 
 // Task queue -> runner. A Sequence read from the task queue. `slotId` is the
