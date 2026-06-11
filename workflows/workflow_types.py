@@ -345,6 +345,7 @@ class InferenceEngine(Enum):
     VLLM = "vLLM"
     MEDIA = "media"
     FORGE = "forge"
+    DISPATCH = "dispatch"
 
     @property
     def display_name(self) -> str:
@@ -352,6 +353,7 @@ class InferenceEngine(Enum):
             InferenceEngine.VLLM: "vLLM (tt-metal integration fork)",
             InferenceEngine.MEDIA: "tt-media-server",
             InferenceEngine.FORGE: "tt-media-server (forge plugin)",
+            InferenceEngine.DISPATCH: "dispatch (hardware-native runtime, OpenAI API)",
         }[self]
 
     @classmethod

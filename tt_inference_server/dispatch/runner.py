@@ -602,6 +602,56 @@ class TTModelRunner:
 
         return self._tokenizer.decode(output_ids, skip_special_tokens=True)
 
+    def generate_stream(
+        self,
+        prompt: str,
+        max_new_tokens: int = 50,
+        temperature: float = 1.0,
+        chat: bool = True,
+    ):
+        """Generator yielding decoded text deltas one token at a time.
+
+        Same decode loop as generate(), but re-decodes the running id list each step and
+        yields the newly-appended substring — correct across BPE merges/multi-byte chars.
+        The final yielded item is a dict {"finish_reason", "prompt_tokens",
+        "completion_tokens"} so callers can build an OpenAI-style usage block.
+        """
+        if chat and hasattr(self._tokenizer, "apply_chat_template"):
+            try:
+                messages = [{"role": "user", "content": prompt}]
+                input_ids = self._tokenizer.apply_chat_template(
+                    messages, add_generation_prompt=True, return_tensors="pt"
+                )[0].tolist()
+            except Exception:
+                input_ids = self._tokenizer.encode(prompt, return_tensors="pt")[0].tolist()
+        else:
+            input_ids = self._tokenizer.encode(prompt, return_tensors="pt")[0].tolist()
+        self.reset_cache()
+
+        next_id = None
+        for pos, tok_id in enumerate(input_ids):
+            next_id = self._decode_step(tok_id, pos)
+
+        output_ids = []
+        emitted = ""
+        finish_reason = "length"
+        for _ in range(max_new_tokens):
+            if next_id == self._tokenizer.eos_token_id:
+                finish_reason = "stop"
+                break
+            output_ids.append(next_id)
+            text = self._tokenizer.decode(output_ids, skip_special_tokens=True)
+            if len(text) > len(emitted):
+                yield text[len(emitted):]
+                emitted = text
+            next_id = self._decode_step(next_id, len(input_ids) + len(output_ids) - 1)
+
+        yield {
+            "finish_reason": finish_reason,
+            "prompt_tokens": len(input_ids),
+            "completion_tokens": len(output_ids),
+        }
+
     def benchmark(self, prompt: str, n_tokens: int = 50, warmup: int = 3) -> tuple:
         """Measure steady-state decode throughput. Returns (tok_s, output_text).
 

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Convenience wrapper so `tt-inference-server serve --unsafe <model-id>` works.
+# Add this dir to PATH:  export PATH="$HOME/dispatch/tt-inference-server/bin:$PATH"
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VENV_PY="$HOME/dispatch/tt-metal/python_env/bin/python3"
+PY="$([ -x "$VENV_PY" ] && echo "$VENV_PY" || command -v python3)"
+
+export PYTHONPATH="$REPO:${PYTHONPATH:-}"
+exec "$PY" -m tt_inference_server.dispatch.serve "$@"

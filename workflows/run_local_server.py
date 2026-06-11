@@ -80,6 +80,11 @@ def get_local_server_paths(runtime_config, repo_root=None):
         "venv_python": python_env_dir / "bin" / "python",
         "entrypoint_path": entrypoint_path,
         "requirements_path": repo_root_path / "vllm-tt-metal" / "requirements.txt",
+        # The dispatch engine's OpenAI server entrypoint (resolves its own imports via
+        # the app_dir on PYTHONPATH set in build_local_server_env).
+        "dispatch_entrypoint_path": (
+            repo_root_path / "tt_inference_server" / "dispatch" / "serve.py"
+        ),
     }
 
 
@@ -207,11 +212,6 @@ def build_local_server_env(
 def generate_local_run_command(
     model_spec, runtime_config, json_fpath, setup_config: SetupConfig, repo_root=None
 ):
-    if model_spec.inference_engine != InferenceEngine.VLLM.value:
-        raise NotImplementedError(
-            "--local-server currently supports only vLLM-backed model specs."
-        )
-
     paths = get_local_server_paths(runtime_config, repo_root=repo_root)
     env = build_local_server_env(
         model_spec,
@@ -221,6 +221,29 @@ def generate_local_run_command(
         repo_root=paths["repo_root"],
     )
     process_name = f"tt-inference-server-local-{short_uuid()}"
+
+    if model_spec.inference_engine == InferenceEngine.DISPATCH.value:
+        # Dispatch engine: launch the OpenAI-compatible server (tt_inference_server.dispatch
+        # .serve). It downloads/loads any HF id itself and owns its ttnn device. --unsafe is
+        # always passed: models served this way carry no SLA guarantee (#3/#25).
+        command = [
+            str(paths["venv_python"]),
+            str(paths["dispatch_entrypoint_path"]),
+            "serve",
+            "--unsafe",
+            model_spec.hf_model_repo,
+            "--port",
+            str(runtime_config.service_port or 8000),
+        ]
+        if runtime_config.disable_trace_capture:
+            command.append("--no-trace")
+        return command, env, process_name
+
+    if model_spec.inference_engine != InferenceEngine.VLLM.value:
+        raise NotImplementedError(
+            "--local-server currently supports only vLLM- and dispatch-backed model specs."
+        )
+
     command = [
         str(paths["venv_python"]),
         str(paths["entrypoint_path"]),
@@ -354,7 +377,10 @@ def run_local_server(model_spec, runtime_config, json_fpath, setup_config: Setup
         / f"vllm_local_{timestamp}_{runtime_config.model}_{runtime_config.device}_{runtime_config.workflow}.log"
     )
 
-    install_local_server_requirements(runtime_config)
+    # The dispatch engine runs in the tt-metal venv as-is (no extra deps); only the
+    # vLLM-backed local server needs its requirements installed.
+    if model_spec.inference_engine != InferenceEngine.DISPATCH.value:
+        install_local_server_requirements(runtime_config)
     command, env, process_name = generate_local_run_command(
         model_spec, runtime_config, json_fpath, setup_config
     )
