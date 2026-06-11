@@ -37,7 +37,6 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
                    std::unique_ptr<SamplingParams> inputSamplingParams,
                    std::optional<uint32_t> kvPositionId, int decodePositionId,
                    int decodeSkipTokens,
-                   std::optional<uint32_t> slotToCopyFrom,
                    uint64_t migrationId)
     : taskId(taskId),
       status(SequenceStatus::WAITING),
@@ -52,7 +51,6 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
       disaggregated(disaggregated),
       decodePositionId(decodePositionId),
       decodeSkipTokens(decodeSkipTokens),
-      slotToCopyFrom(slotToCopyFrom),
       migrationId(migrationId) {
   if (!tokenIds.empty()) {
     lastToken = tokenIds.back();

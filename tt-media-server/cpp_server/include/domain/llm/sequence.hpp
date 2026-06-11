@@ -44,7 +44,6 @@ class Sequence {
            bool disaggregated, std::unique_ptr<SamplingParams> samplingParams,
            std::optional<uint32_t> kvPositionId = std::nullopt,
            int decodePositionId = 0, int decodeSkipTokens = 0,
-           std::optional<uint32_t> slotToCopyFrom = std::nullopt,
            uint64_t migrationId = 0);
 
   void serialize(std::ostream& os) const;
@@ -117,9 +116,6 @@ class Sequence {
   int getDecodeSkipTokens() const { return decodeSkipTokens; }
   void setDecodeSkipTokens(int n) { decodeSkipTokens = n; }
 
-  std::optional<uint32_t> getSlotToCopyFrom() const { return slotToCopyFrom; }
-  void setSlotToCopyFrom(std::optional<uint32_t> s) { slotToCopyFrom = s; }
-
   uint64_t getMigrationId() const { return migrationId; }
   void setMigrationId(uint64_t id) { migrationId = id; }
 
@@ -141,9 +137,6 @@ class Sequence {
   // Reused prefix length excluding accumulated think tokens, forwarded from the
   // decode server. Stored only; not yet consumed by the runner.
   int decodeSkipTokens = 0;
-  // When set, the decode runner should copy KV from this source slot into the
-  // sequence's slot before prefilling. Enforces continuation=false.
-  std::optional<uint32_t> slotToCopyFrom = std::nullopt;
   // Unique 64-bit ID correlating this sequence with a prefill migration.
   uint64_t migrationId = 0;
 };

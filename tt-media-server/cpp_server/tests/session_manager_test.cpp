@@ -714,4 +714,61 @@ TEST(SessionManagerResponseId,
   manager.getSession(sessionId)->clearInFlight();
 }
 
+// ---------------------------------------------------------------------------
+// clearSessionBlockThinkTokens tests
+// ---------------------------------------------------------------------------
+
+TEST(SessionManagerClearThinkTokens, ResetsThinkTokensToZero) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  // Register a session with blocks that have non-zero think token counts.
+  std::vector<tt::utils::BlockHashInfo> blocks = {
+      {100, 5},   // key block with 5 think tokens
+      {200, 12},  // remaining block 1 with 12 accumulated think tokens
+      {300, 20},  // remaining block 2 with 20 accumulated think tokens
+  };
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 70u, blocks);
+  ASSERT_FALSE(sessionId.empty());
+
+  // Verify think tokens are reported before clearing.
+  auto [matchedBefore, thinkBefore] =
+      manager.computeMatchedTokens(sessionId, blocks);
+  EXPECT_GT(matchedBefore, 0u);
+  EXPECT_EQ(thinkBefore, 20u)
+      << "Think tokens should reflect the last matched block's accumulated "
+         "count";
+
+  // Clear think tokens for this session.
+  manager.clearSessionBlockThinkTokens(sessionId);
+
+  // After clearing, computeMatchedTokens should still match all blocks (hashes
+  // are unchanged) but report 0 think tokens.
+  auto [matchedAfter, thinkAfter] =
+      manager.computeMatchedTokens(sessionId, blocks);
+  EXPECT_EQ(matchedAfter, matchedBefore)
+      << "Block matching should be unaffected (hashes unchanged)";
+  EXPECT_EQ(thinkAfter, 0u)
+      << "Think tokens should be 0 after clearSessionBlockThinkTokens";
+}
+
+TEST(SessionManagerClearThinkTokens, NoOpForUnknownSession) {
+  tt::services::SessionManager manager;
+
+  // Should not crash when called with a session that doesn't exist.
+  EXPECT_NO_THROW(manager.clearSessionBlockThinkTokens("nonexistent-session"));
+}
+
+TEST(SessionManagerClearThinkTokens, NoOpForSessionWithNoBlocks) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  // Create a session without any block infos (hash will be 0).
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 71u);
+  ASSERT_FALSE(sessionId.empty());
+
+  // Should not crash when the session has no prefix index entry.
+  EXPECT_NO_THROW(manager.clearSessionBlockThinkTokens(sessionId));
+}
+
 }  // namespace
