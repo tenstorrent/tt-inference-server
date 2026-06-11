@@ -506,7 +506,7 @@ def main():
     logger.info(f"remote_server=: {remote_server}")
 
     # set environment vars
-    _setup_benchmark_auth(jwt_secret, model_spec, logger, remote_server=remote_server)
+    _setup_benchmark_auth(jwt_secret, model_spec, logger)
 
     env_vars = os.environ.copy()
     if tools == "genai":
