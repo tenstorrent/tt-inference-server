@@ -202,6 +202,10 @@ std::string tokenizerDirForModel(config::ModelType model) {
       return "moonshotai/Kimi-K2.6";
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return "meta-llama/Llama-3.1-8B-Instruct";
+    case config::ModelType::GPT_OSS_120B:
+      return "openai/gpt-oss-120b";
+    case config::ModelType::MINIMAX_M2_7:
+      return "MiniMaxAI/MiniMax-M2.7";
     case config::ModelType::DEEPSEEK_R1_0528:
     default:
       return "deepseek-ai/DeepSeek-R1-0528";
@@ -217,6 +221,12 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
       // Kimi K2.6 uses model-specific files, but currently shares the same
       // chat-template/tool-call behavior as DeepSeek until a dedicated
       // Kimi tokenizer implementation is added.
+      return std::make_unique<DeepseekTokenizer>(path);
+    case config::ModelType::GPT_OSS_120B:
+    case config::ModelType::MINIMAX_M2_7:
+      // These load their own model-specific files but currently reuse the
+      // DeepSeek chat-template/tool-call behavior until a dedicated tokenizer
+      // implementation is added.
       return std::make_unique<DeepseekTokenizer>(path);
     case config::ModelType::DEEPSEEK_R1_0528:
     default:
@@ -273,6 +283,36 @@ const StaticTokenizerInfo& kimiK26Info() {
   return kInfo;
 }
 
+// IDs verified against the fetched o200k_harmony tokenizer. gpt-oss uses the
+// Harmony channel format rather than <think> tags, so no think tokens; the
+// assistant turn ends on <|return|> (200002) and a tool call on <|call|>
+// (200012). assistantHeaderSequence is left empty (the Harmony header is
+// multi-token and handled by the chat template, not a fixed prefix here).
+const StaticTokenizerInfo& gptOss120bInfo() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"openai/gpt-oss-120b",
+      // generation_config.json eos_token_id: [200002, 199999, 200012] =
+      // <|return|> (final turn), <|endoftext|>, <|call|> (tool call).
+      /*stopTokenIds=*/{199999, 200012},
+      /*eosTokenId=*/200002,  // <|return|> (primary, per config.json)
+      /*assistantHeaderSequence=*/{},
+  };
+  return kInfo;
+}
+
+// IDs verified against the fetched MiniMax-M2.7 tokenizer.
+const StaticTokenizerInfo& minimaxM27Info() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"MiniMaxAI/MiniMax-M2.7",
+      /*stopTokenIds=*/{},
+      /*eosTokenId=*/200020,  // [e~[
+      /*assistantHeaderSequence=*/{},
+      /*thinkStartTokenId=*/200050,  // <think>
+      /*thinkEndTokenId=*/200051,    // </think>
+  };
+  return kInfo;
+}
+
 }  // namespace
 
 const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
@@ -283,6 +323,10 @@ const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
       return llama31Info();
     case config::ModelType::KIMI_K2_6:
       return kimiK26Info();
+    case config::ModelType::GPT_OSS_120B:
+      return gptOss120bInfo();
+    case config::ModelType::MINIMAX_M2_7:
+      return minimaxM27Info();
   }
   throw std::invalid_argument(
       "tokenizers::staticInfoFor: no static info registered for ModelType " +

@@ -43,7 +43,7 @@ class AudioTranscriptionLoadTest(BaseTest):
     HARDWARE_REQUIREMENT = HardwareRequirement.FULL_BOARD
 
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/v1/audio/transcriptions"
+        self.url = f"{self.base_url}/v1/audio/transcriptions"
         logger.info(self.targets)
         num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         audio_transcription_time = self.targets.get(

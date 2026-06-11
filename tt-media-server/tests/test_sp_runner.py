@@ -39,7 +39,7 @@ from tt_model_runners.sp_runner import SPRunner
 _mock_settings = MagicMock()
 _mock_settings.device_mesh_shape = (1, 1)
 _mock_settings.use_dynamic_batcher = False
-# Concrete numeric: ``_read_response_for`` does ``time.monotonic() + timeout``.
+# Concrete numeric: ``await_result`` does ``time.monotonic() + timeout``.
 _mock_settings.video_request_timeout_seconds = 60.0
 
 
@@ -745,6 +745,56 @@ class TestSPRunnerWarmup:
         assert result is True
         # If clamping failed the loop would burn the entire 2 s budget in
         # zero-second chunks and exhaust mock side_effect → StopIteration.
+        assert mock_output.read_response.call_count == 2
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_stale_canary_ack_is_skipped_then_warmup_succeeds(
+        self, MockVideoShm, _enable_warmup_ping, monkeypatch
+    ):
+        """A canary ack left in the output ring by a prior session must be
+        discarded, not treated as a fatal desync. The one-shot drain in
+        set_device() races with canary requests still queued in the input
+        ring, which the peer answers after the drain. Before the fix this
+        surfaced as ``unexpected response task_id='__canary__'`` and warmup
+        failed, wedging the worker at is_ready=False. After the fix the loop
+        skips the stale canary ack and waits for the real ``__sp_warmup__``
+        ack."""
+        from config.constants import CANARY_TASK_ID
+        from ipc.video_shm import SP_WARMUP_TASK_ID
+
+        monkeypatch.setattr(_mock_settings, "sp_warmup_timeout_seconds", 5.0)
+        # Pin the heartbeat so the ack-wait loop's chunking is deterministic and
+        # independent of whatever a sibling suite left on the module global.
+        monkeypatch.setattr("tt_model_runners.sp_runner._WARMUP_HEARTBEAT_SECONDS", 1.0)
+
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+        mock_input.queue_depth.return_value = 0
+        mock_input.INPUT_SLOTS = 8
+        mock_input.write_request.return_value = True
+        mock_output.read_response.side_effect = [
+            VideoResponse(
+                task_id=CANARY_TASK_ID,
+                status=VideoStatus.SUCCESS,
+                file_path="",
+                error_message="",
+            ),
+            VideoResponse(
+                task_id=SP_WARMUP_TASK_ID,
+                status=VideoStatus.SUCCESS,
+                file_path="",
+                error_message="",
+            ),
+        ]
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+
+        import asyncio
+
+        result = asyncio.run(runner.warmup())
+
+        assert result is True, "stale canary ack must not fail warmup"
+        # First read = stale canary probe (skipped), second = the real warmup ack.
         assert mock_output.read_response.call_count == 2
 
 

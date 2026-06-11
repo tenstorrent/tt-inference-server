@@ -3158,7 +3158,7 @@ _eval_config_list = [
                 task_name="aime25",
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.05,  # 30 samples * 0.05 ~= 1 sample
-                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 30 samples * 0.2 = 6 samples
+                    EvalLimitMode.CI_NIGHTLY: 0.33,  # 30 samples * 0.2 = 6 samples
                 },
                 score=EvalTaskScore(
                     published_score=92.5,  # AIME 2025 score (without tools)
@@ -3302,6 +3302,34 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="google/gemma-4-31b-it",
+        tasks=[
+            EvalTask(
+                task_name="ifeval",
+                score=EvalTaskScore(
+                    # First TT user of gemma-4-31b-it (no prior TTNN entry) and
+                    # no published gemma-4 reference yet -- fill published_score /
+                    # gpu_reference_score from the first CI_NIGHTLY run.
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                # Downsampled: first user of the model, trim nightly runtime.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.1,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
