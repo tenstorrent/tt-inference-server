@@ -386,6 +386,10 @@ TEST_F(PrefillIntegrationTest, PrefillRequest_TriggersSessionAllocation) {
   EXPECT_EQ(seq->getPrefillKVCacheSlot(), 2u)
       << "prefill-side allocation must be the prefill KV cache slot";
 
+  // Verify migrationId was generated and propagated to the Sequence.
+  EXPECT_NE(seq->getMigrationId(), 0u)
+      << "Sequence must carry a non-zero migrationId";
+
   tt::test::WorkerResponse(seq->taskId)
       .tokenWithFlags(42, tt::ipc::SharedToken::FLAG_FINAL)
       .sendTo(server->resultQueue());
@@ -397,6 +401,14 @@ TEST_F(PrefillIntegrationTest, PrefillRequest_TriggersSessionAllocation) {
       << "Expected PrefillResultMessage back from prefill server";
   EXPECT_EQ(result->task_id, taskId);
   EXPECT_FALSE(result->error);
+
+  // The prefill server must generate a non-zero migration_id and return it.
+  EXPECT_NE(result->migration_id, 0u)
+      << "Expected a non-zero migration_id in PrefillResultMessage";
+
+  // The migration_id on the result must match the one on the Sequence.
+  EXPECT_EQ(result->migration_id, seq->getMigrationId())
+      << "PrefillResultMessage.migration_id must match Sequence.migrationId";
 
   server->setMemoryAutoRespond(true);
 }
