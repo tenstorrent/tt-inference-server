@@ -41,6 +41,11 @@ TILE = 32
 # Utility helpers
 # ------------------------------------------------------------------
 
+# Activation strings mapped to ttnn.gelu — both the matrix's canonical "gelu_tanh"/"gelu"
+# and the raw HuggingFace act names that the auto-derive (unlisted) path passes through.
+_GELU_ACTS = ("gelu_tanh", "gelu", "gelu_pytorch_tanh", "gelu_new", "gelu_fast")
+
+
 def _tile_align(n: int) -> int:
     return math.ceil(n / TILE) * TILE
 
@@ -1128,7 +1133,9 @@ class TTModelRunner:
         """
         import ttnn
         lw   = self._layers[layer_idx]
-        act  = self._cfg.activation
+        # (#3 Phase C) listed -> matrix activation (canonical silu/gelu/gelu_tanh/relu2);
+        # novel -> _cfg.activation (raw HF act string). Both are matched below.
+        act  = self._entry.activation if self._listed else self._cfg.activation
         mot  = self._matmul_ot
         muot = self._mul_ot
 
@@ -1138,7 +1145,7 @@ class TTModelRunner:
             up_tt = _matmul_safe(normed_tt, lw.up_w, self._device, output_tensor=up_ot)
             if act == "silu":
                 act_tt = ttnn.silu(up_tt)
-            elif act in ("gelu_pytorch_tanh", "gelu_new", "gelu_fast", "gelu"):
+            elif act in _GELU_ACTS:
                 act_tt = ttnn.gelu(up_tt)
             else:
                 act_tt = ttnn.relu(up_tt)
@@ -1158,7 +1165,7 @@ class TTModelRunner:
         if act == "silu":
             activated_tt = ttnn.multiply(ttnn.silu(gate_tt), up_tt,
                                          **({"output_tensor": act_ot} if act_ot else {}))
-        elif act in ("gelu_pytorch_tanh", "gelu_new", "gelu_fast", "gelu"):
+        elif act in _GELU_ACTS:
             activated_tt = ttnn.multiply(ttnn.gelu(gate_tt), up_tt,
                                          **({"output_tensor": act_ot} if act_ot else {}))
         else:  # relu2
@@ -1200,7 +1207,10 @@ class TTModelRunner:
             return
         vocab   = int(self._lm_head_w_cpu.shape[0])          # [vocab, hidden]
         vocab_p = int(self._lm_head_w_tt.shape[-1])          # uploaded [hidden_p, vocab_p]
-        if self._uses_layernorm:
+        # (#3 Phase C) listed -> derived lm_head_ondevice (norm_type != layernorm);
+        # novel -> the introspection floor (not _uses_layernorm). Equivalent by construction.
+        norm_ok = self._caps.lm_head_ondevice if self._listed else (not self._uses_layernorm)
+        if not norm_ok:
             print("  On-device lm_head: NOT eligible (LayerNorm final norm not yet "
                   "supported on-device) -> CPU lm_head")
             return
@@ -1319,23 +1329,30 @@ class TTModelRunner:
         # Keep a null reference so any stale access fails fast instead of silently using CPU
         self._embed_w_cpu = None
 
-        # Detect if this model uses Gemma-style (1+w) norms
+        # Behavioral flags (#3 Phase C). For a LISTED model these come from the matrix
+        # entry (trusted, hardware-tuned); for a novel/unlisted model they fall back to the
+        # HF/module introspection that is the universal floor. The matrix was populated to
+        # match introspection, so listed models are byte-identical to the pre-#3 behavior.
         first_layer = layers_list[0]
-        self._gemma_norm = (hasattr(first_layer, "pre_feedforward_layernorm") and
-                            hasattr(first_layer, "post_feedforward_layernorm"))
-
-        # GPTNeoX parallel residual: attn and MLP both branch from the same pre-norm hidden
-        self._parallel_residual = getattr(self._hf_cfg, "use_parallel_residual", False)
-
-        # LayerNorm detection: GPTNeoX / Pythia use mean-subtraction + bias; RMSNorm models don't
-        first_norms = _find_layer_norms(first_layer)
-        first_norm  = first_norms[0]
-        self._uses_layernorm = (hasattr(first_norm, "bias") and first_norm.bias is not None)
-
-        # Gemma family scales input embeddings by sqrt(hidden_size)
-        text_cfg   = getattr(self._hf_cfg, "text_config", self._hf_cfg)
-        model_type = getattr(text_cfg, "model_type", "")
-        self._embed_scale = math.sqrt(cfg.hidden_size) if "gemma" in model_type.lower() else 1.0
+        if self._listed:
+            self._gemma_norm        = (self._entry.norm_type == "gemma_rms")
+            self._uses_layernorm    = (self._entry.norm_type == "layernorm")
+            self._parallel_residual = self._entry.parallel_residual
+            self._embed_scale       = (math.sqrt(cfg.hidden_size)
+                                       if self._entry.embed_scale == "sqrt_hidden" else 1.0)
+        else:
+            # Gemma-style (1+w) 4-norm pattern
+            self._gemma_norm = (hasattr(first_layer, "pre_feedforward_layernorm") and
+                                hasattr(first_layer, "post_feedforward_layernorm"))
+            # GPTNeoX parallel residual: attn and MLP branch the same pre-norm hidden
+            self._parallel_residual = getattr(self._hf_cfg, "use_parallel_residual", False)
+            # LayerNorm (mean-sub + bias) vs RMSNorm: GPTNeoX/Pythia carry a norm bias
+            first_norm = _find_layer_norms(first_layer)[0]
+            self._uses_layernorm = (hasattr(first_norm, "bias") and first_norm.bias is not None)
+            # Gemma family scales input embeddings by sqrt(hidden_size)
+            text_cfg   = getattr(self._hf_cfg, "text_config", self._hf_cfg)
+            model_type = getattr(text_cfg, "model_type", "")
+            self._embed_scale = math.sqrt(cfg.hidden_size) if "gemma" in model_type.lower() else 1.0
 
         # Final norm
         final_norm = _find_final_norm(backbone)
@@ -1644,8 +1661,12 @@ class TTModelRunner:
 
         # Partial RoPE (GPTNeoX/Pythia): only rotary_pct of head dims are rotated.
         # rotary_ndims = round(head_dim * rotary_pct) — must be even.
-        rotary_pct    = getattr(cfg, "partial_rotary_factor",
-                                getattr(cfg, "rotary_pct", 1.0))
+        # (#3 Phase C) listed -> matrix rotary_pct; novel -> HF-config introspection.
+        if self._listed:
+            rotary_pct = self._entry.rotary_pct
+        else:
+            rotary_pct = getattr(cfg, "partial_rotary_factor",
+                                 getattr(cfg, "rotary_pct", 1.0))
         rotary_ndims  = round(dim * rotary_pct)
         if rotary_ndims % 2 != 0:
             rotary_ndims -= 1
@@ -1680,7 +1701,11 @@ class TTModelRunner:
         no_bias     = all(lw.qkv_b is None for lw in self._layers)
         no_headnorm = all(lw.q_norm_w is None and lw.k_norm_w is None for lw in self._layers)
         full_rope   = (self._rotary_ndims == hd)
-        eligible    = bool(full_rope and hd_p == hd and no_bias and no_headnorm and not self._uses_layernorm)
+        introspect_eligible = bool(full_rope and hd_p == hd and no_bias and no_headnorm and not self._uses_layernorm)
+        # (#3 Phase C) listed -> derived fast_path capability (which also folds in the
+        # group|32 / nh<=32 SDPA-pad constraint from _setup_paged_decode); novel -> the
+        # introspection floor. They agree for every listed fast-path model.
+        eligible    = self._caps.fast_path if self._listed else introspect_eligible
         self._ondevice_attn_eligible = eligible
         # Opt-in (default OFF): the eager on-device path is CORRECT but slower than the
         # CPU-RoPE path because it trades one PCIe readback for ~25 host-dispatched device
@@ -1702,6 +1727,12 @@ class TTModelRunner:
         elif eligible:
             print("  On-device RoPE/attention: eligible but OFF "
                   "(set DISPATCH_ONDEVICE_ATTN=1 to enable; faster once trace-captured, see #30)")
+        elif self._listed and introspect_eligible:
+            # Introspection alone would have marked this eligible, but the matrix entry
+            # overrides it (e.g. gemma_rms norm / group∤32) -> stay on the CPU RoPE path.
+            print(f"  On-device RoPE/attention: not eligible "
+                  f"(matrix override: norm_type={self._entry.norm_type}, "
+                  f"backend={self._caps.attn_backend}) -> CPU RoPE path")
         else:
             print(f"  On-device RoPE/attention: not eligible "
                   f"(full_rope={full_rope} hd_p==hd={hd_p == hd} no_bias={no_bias} "
