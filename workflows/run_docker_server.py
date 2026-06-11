@@ -390,6 +390,10 @@ def generate_docker_run_command(
             docker_env_vars["TT_CACHE_PATH"] = (
                 setup_config.container_tt_metal_cache_dir / device_cache_dir
             )
+        # In CI, persist tt-triage hang logs on the cache_root volume; the default
+        # /home/container_app_user/logs is ephemeral and lost on teardown. See #2670.
+        if runtime_config.ci_mode:
+            docker_env_vars["TT_METAL_LOGS_PATH"] = f"{setup_config.cache_root}/logs"
 
     if (
         model_spec.inference_engine == InferenceEngine.FORGE.value

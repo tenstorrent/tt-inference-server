@@ -28,7 +28,9 @@ inline sch::ISRequest makeAllocateRequest(uint32_t requestId) {
   return {.type = ds::RequestType::ALLOCATE,
           .request_id = requestId,
           .tokens = {},
-          .gen = {}};
+          .gen = {},
+          .position_id = std::nullopt,
+          .dest_slot_id = std::nullopt};
 }
 
 inline sch::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {
@@ -36,7 +38,9 @@ inline sch::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {
           .request_id = requestId,
           .slot_id = slotId,
           .tokens = {},
-          .gen = {}};
+          .gen = {},
+          .position_id = std::nullopt,
+          .dest_slot_id = std::nullopt};
 }
 
 inline sch::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
@@ -44,7 +48,9 @@ inline sch::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
           .request_id = requestId,
           .slot_id = slotId,
           .tokens = {},
-          .gen = {}};
+          .gen = {},
+          .position_id = std::nullopt,
+          .dest_slot_id = std::nullopt};
 }
 
 inline sch::GenerationParams makeGenerationParams(
