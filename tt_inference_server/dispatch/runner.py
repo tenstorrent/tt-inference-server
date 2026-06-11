@@ -961,15 +961,28 @@ class TTModelRunner:
         cfg = self._cfg
         hd, nh, nkv = cfg.head_dim, cfg.num_heads, cfg.num_kv_heads
         hd_p = _tile_align(hd)
-        if not (self._ondevice_attn_eligible and nh == 32 and hd_p == hd):
-            print(f"  Paged decode: NOT eligible (need eligible on-device attn + nh==32 + tile head_dim; nh={nh}, hd_p==hd={hd_p==hd})")
+        group = (nh // nkv) if nkv else 0
+        # Proportional kv-head padding (#35): the decode SDPA pads Q to 32 heads and groups
+        # GQA as padded_nh/nkv. Pad q->32 AND kv->32/group so the padded grouping equals the
+        # real group; real q-heads then map to real kv-heads (probe_nh_lt32_padkv.py, 1.0
+        # cos-sim). For nh==32 this is a no-op (nkv_pad==nkv) — preserves the validated path.
+        # Requires group | 32 (else padded grouping can't match the real group). NOTE: padding
+        # nh<32 up to 32 wastes attention compute (32/nh x query heads) — benchmark the tax;
+        # group-does-not-divide-32 models (starcoder g=12, qwen2.5 g=7) take the custom route.
+        ok_shape = (nkv > 0 and nh % nkv == 0 and group > 0 and 32 % group == 0 and nh <= 32)
+        if not (self._ondevice_attn_eligible and hd_p == hd and ok_shape):
+            print(f"  Paged decode: NOT eligible (need eligible on-device attn + tile head_dim "
+                  f"+ nh<=32 with group|32; nh={nh}, nkv={nkv}, group={group}, hd_p==hd={hd_p == hd})")
             return
+        self._nh, self._nkv = nh, nkv          # real head counts
+        self._nh_pad = 32                       # decode SDPA pads Q to 32
+        self._nkv_pad = 32 // group             # == nkv when nh==32 (no-op)
         self._block = 32
         self._nblocks = math.ceil(_tile_align(self._max_seq) / self._block)
         n = len(self._layers)
 
         def zc():
-            return ttnn.zeros([self._nblocks, nkv, self._block, hd], dtype=ttnn.bfloat16,
+            return ttnn.zeros([self._nblocks, self._nkv_pad, self._block, hd], dtype=ttnn.bfloat16,
                               layout=ttnn.TILE_LAYOUT, device=self._device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
         self._kp = [zc() for _ in range(n)]
         self._vp = [zc() for _ in range(n)]
@@ -995,7 +1008,9 @@ class TTModelRunner:
         self._trace_id = None
         self._traced_hidden = None
         self._paged_attn = True
-        print(f"  Paged decode: ENABLED ({self._nblocks} blocks × {self._block}, {n} layers, nkv={nkv})"
+        pad_note = "" if self._nh_pad == nh else f", q {nh}->32 / kv {nkv}->{self._nkv_pad} (group {group})"
+        print(f"  Paged decode: ENABLED ({self._nblocks} blocks × {self._block}, {n} layers, "
+              f"nkv={nkv}{pad_note})"
               f"{' + TRACE' if self._traced else ''}")
 
     def _paged_attention(self, qkv_tt, layer_idx: int, lw):
@@ -1026,7 +1041,9 @@ class TTModelRunner:
         q_rot = self._dev_rope(q4, c4, s4)
         k_rot = self._dev_rope(k4, c4, s4)
 
-        # pad kv heads to TILE, shard, write to paged cache at the device position
+        # pad kv heads to TILE, shard, write to paged cache at the device position.
+        # The cache has self._nkv_pad heads; paged_update_cache writes its first nkv_pad heads
+        # from the 32-padded input (real kv in 0..nkv-1, pad heads nkv..nkv_pad-1 stay zero).
         pad = [(0, 0), (0, 0), (0, TILE - nkv), (0, 0)]
         k_sh = ttnn.interleaved_to_sharded(ttnn.pad(k_rot, pad, 0.0), self._kv_shard)
         v_sh = ttnn.interleaved_to_sharded(ttnn.pad(v4,    pad, 0.0), self._kv_shard)
@@ -1035,11 +1052,19 @@ class TTModelRunner:
         ttnn.experimental.paged_update_cache(self._vp[layer_idx], v_sh,
                                              update_idxs_tensor=self._cur_pos_dev, page_table=self._page_table)
 
+        # Proportional kv-pad (#35): pad Q to 32 heads so padded grouping (32/nkv_pad) == real
+        # group; no-op when nh==32. SDPA returns [1,1,32,hd]; keep only the real heads.
+        if self._nh_pad != nh:
+            q_rot = ttnn.pad(q_rot, [(0, 0), (0, 0), (0, self._nh_pad - nh), (0, 0)], 0.0)
+
         attn = ttnn.transformer.paged_scaled_dot_product_attention_decode(
             q_rot, self._kp[layer_idx], self._vp[layer_idx],
             cur_pos_tensor=self._cur_pos_dev, page_table_tensor=self._page_table,
             scale=1.0 / math.sqrt(hd), program_config=self._sdpa_pcfg,
-            memory_config=ttnn.DRAM_MEMORY_CONFIG)   # [1,1,nh,hd]
+            memory_config=ttnn.DRAM_MEMORY_CONFIG)   # [1,1,nh_pad,hd]
+
+        if self._nh_pad != nh:
+            attn = ttnn.slice(attn, [0, 0, 0, 0], [1, 1, nh, hd_p])   # real heads only
 
         # flatten heads -> [1, nh*hd_p] (head-major matches O-proj weight), broadcast to TILE rows
         attn_flat = ttnn.reshape(attn, [1, nh * hd_p])
