@@ -36,7 +36,9 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
                    bool disaggregated,
                    std::unique_ptr<SamplingParams> inputSamplingParams,
                    std::optional<uint32_t> kvPositionId, int decodePositionId,
-                   int decodeSkipTokens)
+                   int decodeSkipTokens,
+                   std::optional<uint32_t> slotToCopyFrom,
+                   uint64_t migrationId)
     : taskId(taskId),
       status(SequenceStatus::WAITING),
       tokenIds(std::move(inputTokenIds)),
@@ -49,7 +51,9 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
       continuation(continuation),
       disaggregated(disaggregated),
       decodePositionId(decodePositionId),
-      decodeSkipTokens(decodeSkipTokens) {
+      decodeSkipTokens(decodeSkipTokens),
+      slotToCopyFrom(slotToCopyFrom),
+      migrationId(migrationId) {
   if (!tokenIds.empty()) {
     lastToken = tokenIds.back();
   }
@@ -117,6 +121,7 @@ void Sequence::serialize(std::ostream& os) const {
            sizeof(decodePositionId));
   os.write(reinterpret_cast<const char*>(&decodeSkipTokens),
            sizeof(decodeSkipTokens));
+  os.write(reinterpret_cast<const char*>(&migrationId), sizeof(migrationId));
 }
 
 Sequence Sequence::deserialize(std::istream& is) {
@@ -171,6 +176,7 @@ Sequence Sequence::deserialize(std::istream& is) {
           sizeof(seq.decodePositionId));
   is.read(reinterpret_cast<char*>(&seq.decodeSkipTokens),
           sizeof(seq.decodeSkipTokens));
+  is.read(reinterpret_cast<char*>(&seq.migrationId), sizeof(seq.migrationId));
   return seq;
 }
 
