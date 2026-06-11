@@ -21,7 +21,7 @@ from workflows.workflow_types import DeviceTypes
 from test_module import MediaContext
 
 from .commands import Command, SummaryCommand, WorkflowCommand
-from .execution import ExaboxOptions, OrchestratorMetadata, PrefixCacheOptions
+from .execution import OrchestratorMetadata, PrefixCacheOptions, ServingBenchOptions
 
 logger = logging.getLogger(__name__)
 
@@ -152,14 +152,16 @@ def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetada
         run_command=_capture_run_command(),
         runtime_model_spec_json=args.runtime_model_spec_json,
         prefix_cache=_build_prefix_cache_options(args),
-        exabox=_build_exabox_options(args),
+        serving_bench=_build_serving_bench_options(args),
     )
 
 
-def _build_exabox_options(args: argparse.Namespace) -> Optional[ExaboxOptions]:
-    if getattr(args, "workflow", None) != "exabox":
+def _build_serving_bench_options(
+    args: argparse.Namespace,
+) -> Optional[ServingBenchOptions]:
+    if getattr(args, "workflow", None) != "serving_bench":
         return None
-    return ExaboxOptions(tests=getattr(args, "exabox_tests", None))
+    return ServingBenchOptions(suites=getattr(args, "serving_bench_suites", None))
 
 
 def _build_prefix_cache_options(

@@ -406,19 +406,20 @@ def parse_arguments():
         help="List matching tests without running them (dry-run)",
     )
 
-    # Prefix-cache benchmark
-    exabox_group = parser.add_argument_group(
-        "EXABOX workflow (v2)",
-        "Arguments for --workflow exabox (shell benchmark suites, routed to v2)",
+    # Serving-bench shell benchmark suites
+    serving_bench_group = parser.add_argument_group(
+        "serving_bench workflow (v2)",
+        "Arguments for --workflow serving_bench (shell benchmark suites against a "
+        "running server, routed to v2)",
     )
-    exabox_group.add_argument(
-        "--exabox-tests",
+    serving_bench_group.add_argument(
+        "--serving-bench-suites",
         type=str,
         default=None,
-        help="Comma-separated exabox suites to run (default: all suites under "
-        "tt-inference-server-v2/test_module/exabox, e.g. agentic_bench, benchmark). "
-        "Suite knobs (DURATION, TARGET_CONCURRENCY, ...) are read from the "
-        "environment.",
+        help="Comma-separated serving-bench suites to run (default: all suites under "
+        "tt-inference-server-v2/test_module/serving_bench, e.g. agentic_bench, "
+        "benchmark). Suite knobs (DURATION, TARGET_CONCURRENCY, ...) are read from "
+        "the environment; --limit-samples-mode selects a knob preset.",
     )
 
     prefix_cache_group = parser.add_argument_group(
@@ -531,9 +532,9 @@ def parse_arguments():
             f"(got --workflow {args.workflow})."
         )
 
-    if args.exabox_tests and args.workflow != "exabox":
+    if args.serving_bench_suites and args.workflow != "serving_bench":
         parser.error(
-            "--exabox-tests requires --workflow exabox "
+            "--serving-bench-suites requires --workflow serving_bench "
             f"(got --workflow {args.workflow})."
         )
 
@@ -560,7 +561,7 @@ def handle_secrets(runtime_config):
         WorkflowType.TESTS,
         WorkflowType.SPEC_TESTS,
         WorkflowType.REPORTS,
-        WorkflowType.EXABOX,
+        WorkflowType.SERVING_BENCH,
     }
     # --docker-server requires the HF_TOKEN env var to be available
     huggingface_required = (

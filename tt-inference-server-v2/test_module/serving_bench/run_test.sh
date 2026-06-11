@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: (c) 2025 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 #
-# run_test.sh - dispatcher for tests/exabox/<test>/ benchmarks.
+# run_test.sh - dispatcher for serving_bench/<suite>/ benchmarks.
 #
 # Usage:
 #   run_test.sh --test <name> --target <url> [--output-dir DIR]
@@ -16,7 +16,7 @@
 # Designed to be runnable locally against `kubectl port-forward`:
 #   kubectl -n ttop-ci port-forward svc/blaze-a29-server 8000:8000 &
 #   DURATION=60 TARGET_CONCURRENCY=2 \
-#     tests/exabox/run_test.sh \
+#     test_module/serving_bench/run_test.sh \
 #       --test agentic_bench --target http://localhost:8000 \
 #       --output-dir /tmp/results
 
@@ -47,7 +47,7 @@ done
 [ -n "$TEST" ]   || { echo "ERROR: --test required" >&2; exit 2; }
 [ -n "$TARGET" ] || { echo "ERROR: --target required" >&2; exit 2; }
 
-# These tests live at tt-inference-server-v2/test_module/exabox inside
+# These suites live at tt-inference-server-v2/test_module/serving_bench inside
 # tt-inference-server, so the repo root three levels up is the default;
 # --inference-server-dir overrides it to run against a different checkout.
 if [ -z "$INFERENCE_SERVER_DIR" ]; then

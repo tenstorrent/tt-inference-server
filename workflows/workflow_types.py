@@ -16,7 +16,7 @@ class WorkflowType(IntEnum):
     RELEASE = auto()
     SPEC_TESTS = auto()
     AGENTIC = auto()
-    EXABOX = auto()
+    SERVING_BENCH = auto()
 
     @classmethod
     def from_string(cls, name: str):

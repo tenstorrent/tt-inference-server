@@ -5,7 +5,7 @@
 from .blocks_sink import BlockAccumulator, accept_blocks, get_default_accumulator
 
 _LAZY_FROM_EXECUTION = {
-    "ExaboxOptions",
+    "ServingBenchOptions",
     "OrchestratorMetadata",
     "PrefixCacheOptions",
     "TaskOutcome",
@@ -16,7 +16,7 @@ _LAZY_FROM_EXECUTION = {
 _LAZY_FROM_WORKFLOWS = {
     "BenchmarksWorkflow",
     "EvalsWorkflow",
-    "ExaboxWorkflow",
+    "ServingBenchWorkflow",
     "ReleaseWorkflow",
     "SpecTestsWorkflow",
     "WORKFLOW_REGISTRY",

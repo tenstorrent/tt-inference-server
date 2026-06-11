@@ -83,14 +83,14 @@ class PrefixCacheOptions:
 
 
 @dataclass(frozen=True)
-class ExaboxOptions:
-    """Exabox suite selection forwarded to ``ExaboxWorkflow``.
+class ServingBenchOptions:
+    """Serving-bench suite selection forwarded to ``ServingBenchWorkflow``.
 
-    ``tests`` is the comma-separated suite list from ``--exabox-tests``;
-    ``None`` runs every suite under ``test_module/exabox``.
+    ``suites`` is the comma-separated suite list from ``--serving-bench-suites``;
+    ``None`` runs every suite under ``test_module/serving_bench``.
     """
 
-    tests: Optional[str] = None
+    suites: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -105,7 +105,7 @@ class OrchestratorMetadata:
     run_command: Optional[str] = None
     runtime_model_spec_json: Optional[str] = None
     prefix_cache: Optional[PrefixCacheOptions] = None
-    exabox: Optional[ExaboxOptions] = None
+    serving_bench: Optional[ServingBenchOptions] = None
 
 
 class WorkflowExecution(ABC):
@@ -280,7 +280,7 @@ class WorkflowExecution(ABC):
 
 
 __all__ = [
-    "ExaboxOptions",
+    "ServingBenchOptions",
     "OrchestratorMetadata",
     "PrefixCacheOptions",
     "TaskOutcome",

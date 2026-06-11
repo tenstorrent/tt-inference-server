@@ -263,16 +263,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
-    # ----- Exabox benchmark suites (--workflow exabox) ----------------
+    # ----- Serving-bench suites (--workflow serving_bench) ------------
     parser.add_argument(
-        "--exabox-tests",
+        "--serving-bench-suites",
         type=str,
         default=None,
         help=(
-            "Comma-separated exabox suites to run (default: all suites under "
-            "test_module/exabox, e.g. agentic_bench, benchmark). Suite knobs "
-            "(DURATION, TARGET_CONCURRENCY, ...) are read from the environment; "
-            "see each suite's defaults.env."
+            "Comma-separated serving-bench suites to run (default: all suites "
+            "under test_module/serving_bench, e.g. agentic_bench, benchmark). "
+            "Suite knobs (DURATION, TARGET_CONCURRENCY, ...) are read from the "
+            "environment; --limit-samples-mode selects a knob preset and each "
+            "suite's defaults.env fills the rest."
         ),
     )
 
@@ -297,9 +298,9 @@ def parse_args() -> argparse.Namespace:
             "--prefix-cache currently requires --workflow benchmarks "
             f"(got --workflow {args.workflow})."
         )
-    if args.exabox_tests and args.workflow != "exabox":
+    if args.serving_bench_suites and args.workflow != "serving_bench":
         parser.error(
-            "--exabox-tests requires --workflow exabox "
+            "--serving-bench-suites requires --workflow serving_bench "
             f"(got --workflow {args.workflow})."
         )
     if args.output_dir is None:
