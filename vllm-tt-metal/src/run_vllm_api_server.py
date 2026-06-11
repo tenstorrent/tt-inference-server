@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_VLLM_SERVER_PORT = "8000"
+GEMMA4_HF_REPO_PREFIX = "google/gemma-4-"
+GEMMA4_UNIFIED_HF_REPOS = frozenset({"google/gemma-4-12b-it"})
 
 
 def parse_args():
@@ -602,6 +604,74 @@ def start_trace_capture(
     )
 
 
+def _is_gemma4_hf_repo(hf_model_repo: str) -> bool:
+    return hf_model_repo.startswith(GEMMA4_HF_REPO_PREFIX)
+
+
+def _is_gemma4_unified_hf_repo(hf_model_repo: str) -> bool:
+    return hf_model_repo in GEMMA4_UNIFIED_HF_REPOS
+
+
+def apply_model_metadata_vllm_args(model_spec_json: dict, vllm_args: dict) -> dict:
+    """Promote model-spec metadata fields into vLLM CLI args when unset."""
+    metadata = model_spec_json.get("metadata") or {}
+    if not metadata:
+        return vllm_args
+
+    updated_vllm_args = dict(vllm_args)
+    metadata_to_vllm_arg = {
+        "reasoning_parser_name": "reasoning_parser",
+        "tool_call_parser_name": "tool_call_parser",
+    }
+    for metadata_key, vllm_arg_key in metadata_to_vllm_arg.items():
+        metadata_value = metadata.get(metadata_key)
+        if metadata_value and vllm_arg_key not in updated_vllm_args:
+            updated_vllm_args[vllm_arg_key] = metadata_value
+    return updated_vllm_args
+
+
+def apply_local_hf_model_vllm_args(model_spec_json: dict, vllm_args: dict) -> dict:
+    """Ensure Gemma4 vLLM args keep the HF repo id for TT plugin registration.
+
+    ``model_setup()`` symlinks cached weights and sets ``HF_MODEL``; the Gemma4
+    bridge reads that env var in ``initialize_vllm_model`` for safetensor
+    loading. vLLM's ``--model`` must stay as the HuggingFace repo id so the TT
+    plugin resolves the Gemma4 bridge — remapping to a local path breaks
+    architecture lookup.
+
+    Unified checkpoints (e.g. ``google/gemma-4-12b-it``) keep their native
+    ``Gemma4UnifiedForConditionalGeneration`` arch. Dev-mode vLLM patches
+    register ``TTGemma4UnifiedForConditionalGeneration`` and the ``gemma4``
+    reasoning parser in all worker processes.
+    """
+    hf_model_repo = model_spec_json.get("hf_model_repo", "")
+    if not _is_gemma4_hf_repo(hf_model_repo):
+        return apply_model_metadata_vllm_args(model_spec_json, vllm_args)
+
+    local_weights_path = os.getenv("HF_MODEL")
+    if not local_weights_path:
+        logger.warning(
+            "Gemma4 model requires HF_MODEL for local weight loading, but HF_MODEL "
+            "is not set; the bridge may reload via AutoModelForCausalLM instead of "
+            "safetensors"
+        )
+
+    updated_vllm_args = apply_model_metadata_vllm_args(model_spec_json, vllm_args)
+    if not updated_vllm_args.get("served-model-name"):
+        updated_vllm_args["served-model-name"] = hf_model_repo
+    if _is_gemma4_unified_hf_repo(hf_model_repo):
+        logger.info(
+            f"Using native Gemma4 unified architecture for {hf_model_repo}; "
+            "registered bridge + gemma4 reasoning parser will handle chat output"
+        )
+    if local_weights_path:
+        logger.info(
+            f"Gemma4 weights will load from HF_MODEL={local_weights_path}; "
+            f"vLLM --model stays as {updated_vllm_args.get('model')}"
+        )
+    return updated_vllm_args
+
+
 def _normalize_vllm_arg_name(arg_name: str) -> str:
     return arg_name.lstrip("-").split("=", 1)[0].replace("-", "_")
 
@@ -757,6 +827,7 @@ def main():
     set_runtime_env_vars(model_spec)
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
+    default_vllm_args = apply_local_hf_model_vllm_args(model_spec, default_vllm_args)
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
 
     # Step 5: Start trace capture if needed
