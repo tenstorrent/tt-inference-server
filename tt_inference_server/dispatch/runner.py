@@ -84,6 +84,25 @@ def _pad_qkv_per_head(w: torch.Tensor, n_heads: int, head_dim: int) -> torch.Ten
     return w_padded.reshape(n_heads * hd_p, in_dim).T.contiguous()    # (in, n_heads*hd_p)
 
 
+def _pad_o_proj_per_head(w_raw: torch.Tensor, n_heads: int, head_dim: int) -> torch.Tensor:
+    """Pad the per-head input dimension of the O projection weight for tile alignment.
+
+    The flash-attn output is (TILE, n_heads * hd_p) where hd_p = tile_align(head_dim).
+    When head_dim is not tile-aligned (e.g. 80 → 96), the O-proj weight must accept
+    n_heads * hd_p inputs instead of n_heads * head_dim.
+
+    w_raw: (out_dim, n_heads * head_dim) — raw HF weight, pre-transpose
+    Returns: (out_dim, n_heads * hd_p)
+    """
+    hd_p = _tile_align(head_dim)
+    if hd_p == head_dim:
+        return w_raw
+    out_dim = w_raw.shape[0]
+    w = w_raw.reshape(out_dim, n_heads, head_dim)
+    w_padded = torch.nn.functional.pad(w, (0, hd_p - head_dim))
+    return w_padded.reshape(out_dim, n_heads * hd_p).contiguous()
+
+
 def _matmul_safe(a, b, device, output_tensor=None):
     """ttnn.matmul with CPU fallback on L1 overflow.
 
@@ -201,14 +220,27 @@ def _split_qkv_weights(attn, cfg):
     """Return (q_cpu, k_cpu, v_cpu) bfloat16 weight tensors shaped (in, out).
 
     Handles separate q/k/v projections and all common fused-QKV variants:
-    - query_key_value (GPTNeoX, BLOOM, Falcon): (3*h, in) stacked evenly
-    - qkv_proj (Phi-3):                         (q+k+v out, in) by head counts
-    - wqkv (InternLM2):                          same layout as qkv_proj
-    - c_attn (GPT-2 style):                      same as query_key_value
+    - query_key_value (GPTNeoX, BLOOM): interleaved per head [Q_0,K_0,V_0, Q_1,K_1,V_1, ...]
+    - qkv_proj (Phi-3):                block layout [Q_all; K_all; V_all]
+    - wqkv (InternLM2):                block layout [Q_all; K_all; V_all]
+    - c_attn (GPT-2 style):            block layout [Q_all; K_all; V_all]
     """
-    # Fused QKV — split by head counts then transpose
-    fused = (getattr(attn, "query_key_value", None) or
-             getattr(attn, "qkv_proj", None) or
+    qkv_interleaved = getattr(attn, "query_key_value", None)
+    if qkv_interleaved is not None:
+        # GPTNeoX / BLOOM: rows interleaved per head [Q_0,K_0,V_0, Q_1,K_1,V_1, ...]
+        w = qkv_interleaved.weight.detach().bfloat16()  # (n_heads*3*head_dim, in)
+        n_h  = cfg.num_heads
+        n_kv = cfg.num_kv_heads
+        hd   = cfg.head_dim
+        # Reshape to (n_heads, 3, head_dim, in), then extract Q/K/V per head
+        w_r = w.view(n_h, 3, hd, w.shape[1])
+        q = w_r[:, 0, :, :].reshape(n_h  * hd, w.shape[1]).T.contiguous()
+        k = w_r[:n_kv, 1, :, :].reshape(n_kv * hd, w.shape[1]).T.contiguous()
+        v = w_r[:n_kv, 2, :, :].reshape(n_kv * hd, w.shape[1]).T.contiguous()
+        return q, k, v
+
+    # Block-layout fused QKV — [Q_all; K_all; V_all]
+    fused = (getattr(attn, "qkv_proj", None) or
              getattr(attn, "wqkv", None) or
              getattr(attn, "c_attn", None))
     if fused is not None:
@@ -230,6 +262,69 @@ def _split_qkv_weights(attn, cfg):
     k = attn.k_proj.weight.detach().bfloat16().T.contiguous()
     v = attn.v_proj.weight.detach().bfloat16().T.contiguous()
     return q, k, v
+
+
+def _get_qkv_bias(attn, cfg) -> "torch.Tensor | None":
+    """Return concatenated (q_b, k_b, v_b) CPU float bias, or None.
+
+    Handles interleaved (query_key_value) and block (qkv_proj etc.) layouts.
+    The returned tensor has the same head-dim padding as the weight matrices
+    produced by _split_qkv_weights / _pad_qkv_per_head: each head's slice is
+    zero-padded from head_dim to tile_align(head_dim).
+    """
+    hd   = cfg.head_dim
+    hd_p = _tile_align(hd)
+    n_h  = cfg.num_heads
+    n_kv = cfg.num_kv_heads
+
+    def _pad_bias_heads(b_raw, n_heads):
+        """Pad (n_heads * head_dim,) → (n_heads * hd_p,)."""
+        if hd_p == hd:
+            return b_raw.float()
+        bh = b_raw.float().view(n_heads, hd)
+        return torch.nn.functional.pad(bh, (0, hd_p - hd)).view(n_heads * hd_p)
+
+    qkv_interleaved = getattr(attn, "query_key_value", None)
+    if qkv_interleaved is not None:
+        b = getattr(qkv_interleaved, "bias", None)
+        if b is None:
+            return None
+        b = b.detach()
+        # Interleaved: [Q_0,K_0,V_0, Q_1,K_1,V_1, ...]
+        b_r = b.view(n_h, 3, hd)
+        q_b = _pad_bias_heads(b_r[:, 0, :].reshape(n_h  * hd), n_h)
+        k_b = _pad_bias_heads(b_r[:n_kv, 1, :].reshape(n_kv * hd), n_kv)
+        v_b = _pad_bias_heads(b_r[:n_kv, 2, :].reshape(n_kv * hd), n_kv)
+        return torch.cat([q_b, k_b, v_b])
+
+    fused = (getattr(attn, "qkv_proj", None) or getattr(attn, "wqkv", None) or
+             getattr(attn, "c_attn", None))
+    if fused is not None:
+        b = getattr(fused, "bias", None)
+        if b is None:
+            return None
+        b = b.detach()
+        q_out = n_h  * hd
+        k_out = n_kv * hd
+        q_b = _pad_bias_heads(b[:q_out], n_h)
+        k_b = _pad_bias_heads(b[q_out:q_out + k_out], n_kv)
+        v_b = _pad_bias_heads(b[q_out + k_out:q_out + k_out + k_out], n_kv)
+        return torch.cat([q_b, k_b, v_b])
+
+    # Separate q/k/v — each may have its own bias
+    def _get_sep_bias(mod_name):
+        m = getattr(attn, mod_name, None)
+        b = getattr(m, "bias", None) if m else None
+        return b.detach().float() if b is not None else None
+    q_b = _get_sep_bias("q_proj")
+    k_b = _get_sep_bias("k_proj")
+    v_b = _get_sep_bias("v_proj")
+    if q_b is None and k_b is None and v_b is None:
+        return None
+    q_b2 = _pad_bias_heads(q_b, n_h)  if q_b is not None else torch.zeros(n_h  * hd_p)
+    k_b2 = _pad_bias_heads(k_b, n_kv) if k_b is not None else torch.zeros(n_kv * hd_p)
+    v_b2 = _pad_bias_heads(v_b, n_kv) if v_b is not None else torch.zeros(n_kv * hd_p)
+    return torch.cat([q_b2, k_b2, v_b2])
 
 
 def _find_o_proj_weight(attn):
@@ -302,6 +397,7 @@ class _LayerWeights:
     gate_w:   object   # ttnn.Tensor (hidden_p, intermediate_p)
     up_w:     object
     down_w:   object   # ttnn.Tensor (intermediate_p, hidden_p)
+    qkv_b:    object   # torch.Tensor (total_qkv_p,) CPU float -- None if no bias
     gate_b:   object   # ttnn.Tensor (TILE, intermediate_p) -- zero if no bias
     up_b:     object
     # Optional extra norms (Gemma 3 style: norm applied to sub-layer OUTPUT)
@@ -314,6 +410,22 @@ class _LayerWeights:
     # Optional per-head Q/K norms (Gemma 3, Qwen 3) -- stored as (head_dim,) CPU tensors
     q_norm_w: object = None   # torch.Tensor or None
     k_norm_w: object = None
+    # LayerNorm weight+bias (CPU float tensors; None for RMSNorm models)
+    norm1_w_cpu: object = None
+    norm1_b: object = None
+    norm2_w_cpu: object = None
+    norm2_b: object = None
+
+
+def _layernorm_cpu(x: torch.Tensor, weight, bias, eps: float) -> torch.Tensor:
+    mean = x.mean(-1, keepdim=True)
+    var  = ((x - mean).pow(2)).mean(-1, keepdim=True)
+    x_norm = (x - mean) / (var + eps).sqrt()
+    if weight is not None:
+        x_norm = x_norm * weight
+    if bias is not None:
+        x_norm = x_norm + bias
+    return x_norm
 
 
 # ------------------------------------------------------------------
@@ -492,11 +604,13 @@ class TTModelRunner:
         self._token_id_cpu[0, 0] = token_id
         token_tt = ttnn.from_torch(self._token_id_cpu, device=self._device,
                                    memory_config=ttnn.DRAM_MEMORY_CONFIG)
-        # ttnn.embedding([1,1], [vocab, hidden_p]) → [1, TILE, hidden_p] in TILE_LAYOUT
-        emb_tt = ttnn.embedding(token_tt, self._embed_tt, layout=ttnn.TILE_LAYOUT)
+        # ttnn.embedding returns ROW_MAJOR [1, 1, hidden_size]; reshape to [1, hidden_p]
+        # then convert to TILE_LAYOUT which pads the first dim to TILE automatically.
+        emb_tt = ttnn.embedding(token_tt, self._embed_tt)
         ttnn.deallocate(token_tt)
         hidden_p = _tile_align(self._cfg.hidden_size)
-        hidden_tt = ttnn.reshape(emb_tt, [TILE, hidden_p])
+        emb_tt = ttnn.reshape(emb_tt, [1, hidden_p])
+        hidden_tt = ttnn.to_layout(emb_tt, ttnn.TILE_LAYOUT)
         if self._embed_scale != 1.0:
             hidden_tt = ttnn.multiply(hidden_tt, self._embed_scale)
         return hidden_tt
@@ -529,6 +643,37 @@ class TTModelRunner:
             mlp_raw_tt  = self._mlp(normed2_tt, layer_idx)
             mlp_normed  = self._dispatcher.rmsnorm(mlp_raw_tt, lw.norm4_w, lw.norm4_sc, rmsnorm_buf())
             hidden_tt   = ttnn.add(hidden_tt, mlp_normed, **aot)
+        elif lw.norm_style == "gpt_neox":
+            # GPTNeoX parallel residual pattern:
+            #   attn and MLP both branch from the same pre-norm hidden state
+            #   hidden += attn(norm1(hidden)) + mlp(norm2(hidden))
+            if self._uses_layernorm:
+                eps = getattr(self._hf_cfg, "layer_norm_eps",
+                              getattr(self._hf_cfg, "rms_norm_eps", 1e-5))
+                hidden_size = self._cfg.hidden_size
+                hidden_p    = _tile_align(hidden_size)
+                h_torch = ttnn.to_torch(hidden_tt)
+                # hidden_tt is (TILE, hidden_p); the actual data is in row 0
+                hidden_cpu = h_torch[0, :hidden_size].float()
+                normed1_cpu = _layernorm_cpu(hidden_cpu, lw.norm1_w_cpu, lw.norm1_b, eps)
+                normed2_cpu = _layernorm_cpu(hidden_cpu, lw.norm2_w_cpu, lw.norm2_b, eps)
+                # Upload as (TILE, hidden_p) — same shape as rmsnorm output buffer
+                def _ln_to_tt(v_cpu):
+                    v_row = torch.nn.functional.pad(
+                        v_cpu.bfloat16(), (0, hidden_p - hidden_size)).unsqueeze(0)
+                    v_2d = v_row.expand(TILE, -1).contiguous()
+                    return ttnn.from_torch(v_2d, dtype=ttnn.bfloat16,
+                                          layout=ttnn.TILE_LAYOUT, device=self._device,
+                                          memory_config=ttnn.DRAM_MEMORY_CONFIG)
+                normed1_tt = _ln_to_tt(normed1_cpu)
+                normed2_tt = _ln_to_tt(normed2_cpu)
+            else:
+                normed1_tt = self._dispatcher.rmsnorm(hidden_tt, lw.norm1_w, lw.norm1_sc, rmsnorm_buf())
+                normed2_tt = self._dispatcher.rmsnorm(hidden_tt, lw.norm2_w, lw.norm2_sc, rmsnorm_buf())
+            attn_out_tt = self._attention(normed1_tt, layer_idx, kv_pos)
+            mlp_out_tt = self._mlp(normed2_tt, layer_idx)
+            hidden_tt = ttnn.add(hidden_tt, attn_out_tt, **aot)
+            hidden_tt = ttnn.add(hidden_tt, mlp_out_tt, **aot)
         else:
             # Llama / Qwen / Mistral pattern:
             #   hidden += attn(norm1(hidden))
@@ -589,9 +734,17 @@ class TTModelRunner:
         # Fused QKV projection — write into pre-allocated scratch (no mmap)
         qkv_ot  = self._qkv_scratch_tt if self._matmul_ot else None
         qkv_tt  = _matmul_safe(normed_tt, lw.qkv_w, self._device, output_tensor=qkv_ot)
+
+        # On-device path (issue #8): split + RoPE + KV-write + flash_attn entirely on
+        # device — no QKV readback. Gated at load time by self._ondevice_attn.
+        if self._ondevice_attn:
+            return self._attention_ondevice(qkv_tt, layer_idx, kv_pos, lw)
+
         qkv_cpu = ttnn.to_torch(qkv_tt)[0].float()   # (total_qkv_p,)
         if qkv_ot is None:
             ttnn.deallocate(qkv_tt)
+        if lw.qkv_b is not None:
+            qkv_cpu += lw.qkv_b
 
         q_cpu = qkv_cpu[:lw.q_end].view(cfg.num_heads,    hd_p)[:, :hd].contiguous()
         k_cpu = qkv_cpu[lw.q_end:lw.k_end].view(cfg.num_kv_heads, hd_p)[:, :hd].contiguous()
@@ -644,6 +797,81 @@ class TTModelRunner:
         )
 
         # O projection — _fa_out_tt is [TILE, N_heads*hd_p], already O-proj compatible
+        return _matmul_safe(self._fa_out_tt, lw.o_w, self._device)
+
+    def _dev_rope(self, x4, c4, s4):
+        """Elementwise RoPE on device. x4: [1,1,H,head_dim]; c4/s4: [1,1,1,head_dim].
+
+        Validated 1:1 vs CPU _apply_rope for full rope. Only valid when
+        rotary_ndims == head_dim (gated by self._ondevice_attn).
+        """
+        import ttnn
+        hd   = self._cfg.head_dim
+        half = hd // 2
+        H    = x4.shape[2]
+        a  = ttnn.slice(x4, [0, 0, 0, 0],    [1, 1, H, half])
+        b  = ttnn.slice(x4, [0, 0, 0, half], [1, 1, H, hd])
+        rh = ttnn.concat([ttnn.neg(b), a], dim=-1)
+        return ttnn.add(ttnn.multiply(x4, c4), ttnn.multiply(rh, s4))
+
+    def _attention_ondevice(self, qkv_tt, layer_idx: int, kv_pos: int, lw):
+        """On-device attention: split QKV + RoPE + KV-cache write + flash_attn, no readback.
+
+        Feeds the same proven flash_attn + O-proj path as the CPU route; only the
+        split/RoPE/KV-staging move on-device. Eliminates the per-token QKV->CPU
+        readback (issue #8). All reshapes validated on-card in
+        tests/diagnostic/probe_split_rope_layout.py.
+        """
+        import ttnn
+        cfg  = self._cfg
+        hd   = cfg.head_dim
+        hd_p = _tile_align(hd)                 # == hd here (gated)
+        nh   = cfg.num_heads
+        nkv  = cfg.num_kv_heads
+        qp   = nh * hd_p
+        kp   = nkv * hd_p
+        qend, kend, qkvp = qp, qp + kp, qp + 2 * kp
+        ms_p = _tile_align(self._max_seq)
+
+        # cos/sin for this position, gathered on-device from the resident tables
+        self._pos_idx_cpu[0, 0] = kv_pos
+        pidx = ttnn.from_torch(self._pos_idx_cpu, dtype=ttnn.uint32,
+                               layout=ttnn.ROW_MAJOR_LAYOUT, device=self._device,
+                               memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        c4 = ttnn.unsqueeze_to_4D(ttnn.embedding(pidx, self._rope_cos_dev, layout=ttnn.TILE_LAYOUT))
+        s4 = ttnn.unsqueeze_to_4D(ttnn.embedding(pidx, self._rope_sin_dev, layout=ttnn.TILE_LAYOUT))
+
+        # split row 0 of qkv into per-head Q/K/V, then RoPE Q and K
+        row = ttnn.slice(qkv_tt, [0, 0], [1, qkvp])
+        q4  = ttnn.reshape(ttnn.slice(row, [0, 0],    [1, qend]), [1, 1, nh,  hd_p])
+        k4  = ttnn.reshape(ttnn.slice(row, [0, qend], [1, kend]), [1, 1, nkv, hd_p])
+        v4  = ttnn.reshape(ttnn.slice(row, [0, kend], [1, qkvp]), [1, 1, nkv, hd_p])
+        q_rot = self._dev_rope(q4, c4, s4)
+        k_rot = self._dev_rope(k4, c4, s4)
+
+        # flash_attn Q layout: [N_heads*TILE, hd_p] (each head row replicated across a tile)
+        q_tt = ttnn.repeat_interleave(ttnn.reshape(q_rot, [nh, hd_p]), TILE, dim=0)
+        q_tt = ttnn.to_layout(q_tt, ttnn.TILE_LAYOUT)
+
+        # write post-RoPE K and V into the on-device KV cache at kv_pos
+        k_in = ttnn.pad(ttnn.transpose(k_rot, 1, 2), [(0, 0), (0, 0), (0, TILE - 1), (0, 0)], 0.0)
+        v_in = ttnn.pad(ttnn.transpose(v4,    1, 2), [(0, 0), (0, 0), (0, TILE - 1), (0, 0)], 0.0)
+        ttnn.kv_cache.update_cache_for_token_(self._k_dev[layer_idx], k_in, kv_pos, 0)
+        ttnn.kv_cache.update_cache_for_token_(self._v_dev[layer_idx], v_in, kv_pos, 0)
+
+        # reshape device KV cache for flash_attn, build causal mask, run kernel
+        K_2d = ttnn.reshape(self._k_dev[layer_idx], [nkv * ms_p, hd_p])
+        V_2d = ttnn.reshape(self._v_dev[layer_idx], [nkv * ms_p, hd_p])
+        self._mask_cpu.fill_(float("-inf"))
+        self._mask_cpu[0, :kv_pos + 1] = 0.0
+        mask_tt = _to_tt(self._mask_cpu, self._device)
+        self._dispatcher.flash_attn(
+            q_tt, K_2d, V_2d,
+            self._fa_scale_tt, self._fa_ninf_tt, self._fa_zero_tt,
+            self._fa_zero_head_tt, self._fa_ones_tt,
+            mask_tt, self._fa_out_tt,
+            N_heads=nh, N_kv_heads=nkv,
+        )
         return _matmul_safe(self._fa_out_tt, lw.o_w, self._device)
 
     def _mlp(self, normed_tt, layer_idx: int):
@@ -713,11 +941,18 @@ class TTModelRunner:
         can mis-rank logits for large vocabularies due to precision loss.
         """
         import ttnn
-        normed_tt  = self._dispatcher.rmsnorm(hidden_tt, self._final_norm_w_tt,
-                                               self._final_norm_sc_tt,
-                                               self._rmsnorm_buf_tt)
         hidden = self._cfg.hidden_size
-        normed_cpu = ttnn.to_torch(normed_tt)[0, :hidden].float()   # (hidden,)
+        if self._uses_layernorm:
+            eps = getattr(self._hf_cfg, "layer_norm_eps",
+                          getattr(self._hf_cfg, "rms_norm_eps", 1e-5))
+            hidden_cpu = ttnn.to_torch(hidden_tt)[0, :hidden].float()
+            normed_cpu = _layernorm_cpu(hidden_cpu, self._final_norm_w_cpu,
+                                        self._final_norm_b_cpu, eps)
+        else:
+            normed_tt  = self._dispatcher.rmsnorm(hidden_tt, self._final_norm_w_tt,
+                                                   self._final_norm_sc_tt,
+                                                   self._rmsnorm_buf_tt)
+            normed_cpu = ttnn.to_torch(normed_tt)[0, :hidden].float()   # (hidden,)
         logits = normed_cpu @ self._lm_head_w_cpu.T                 # (vocab,)
         return int(logits.argmax())
 
@@ -756,6 +991,14 @@ class TTModelRunner:
         self._gemma_norm = (hasattr(first_layer, "pre_feedforward_layernorm") and
                             hasattr(first_layer, "post_feedforward_layernorm"))
 
+        # GPTNeoX parallel residual: attn and MLP both branch from the same pre-norm hidden
+        self._parallel_residual = getattr(self._hf_cfg, "use_parallel_residual", False)
+
+        # LayerNorm detection: GPTNeoX / Pythia use mean-subtraction + bias; RMSNorm models don't
+        first_norms = _find_layer_norms(first_layer)
+        first_norm  = first_norms[0]
+        self._uses_layernorm = (hasattr(first_norm, "bias") and first_norm.bias is not None)
+
         # Gemma family scales input embeddings by sqrt(hidden_size)
         text_cfg   = getattr(self._hf_cfg, "text_config", self._hf_cfg)
         model_type = getattr(text_cfg, "model_type", "")
@@ -768,9 +1011,14 @@ class TTModelRunner:
         self._final_norm_w_cpu = ((1.0 + final_w) if self._gemma_norm else final_w) if final_w is not None else None
         self._final_norm_w_tt  = self._upload_norm_w(final_w, gemma_style=self._gemma_norm)
         self._final_norm_sc_tt = self._make_scaler_tt(cfg.hidden_size)
+        _fnb = getattr(final_norm, "bias", None)
+        self._final_norm_b_cpu = _fnb.detach().float() if _fnb is not None else None
 
-        # lm_head
-        self._lm_head_w_cpu = hf_model.lm_head.weight.detach().float()
+        # lm_head (GPTNeoX names it embed_out)
+        lm_head_mod = getattr(hf_model, "lm_head", None) or getattr(hf_model, "embed_out", None)
+        if lm_head_mod is None:
+            raise RuntimeError(f"Cannot find lm_head / embed_out on {type(hf_model).__name__}")
+        self._lm_head_w_cpu = lm_head_mod.weight.detach().float()
         self._lm_head_w_tt  = self._upload_linear_w(self._lm_head_w_cpu)
 
         # Per-layer weights
@@ -784,7 +1032,12 @@ class TTModelRunner:
 
             has_pre_ff  = n3 is not None
             has_post_ff = n4 is not None
-            norm_style  = "gemma" if (has_pre_ff and has_post_ff) else "llama"
+            if has_pre_ff and has_post_ff:
+                norm_style = "gemma"
+            elif self._parallel_residual:
+                norm_style = "gpt_neox"
+            else:
+                norm_style = "llama"
             gemma_norm  = (norm_style == "gemma")
 
             # QKV — handle fused and separate projections.
@@ -819,15 +1072,21 @@ class TTModelRunner:
                 getattr(up_m, "bias", None) if up_m else None,
                 cfg.intermediate_size)
 
+            qkv_b_cpu = _get_qkv_bias(attn, cfg)
+
             lw = _LayerWeights(
                 norm1_w  = self._upload_norm_w(getattr(n1, "weight", None), gemma_norm),
                 norm1_sc = self._make_scaler_tt(cfg.hidden_size),
                 norm2_w  = self._upload_norm_w(getattr(n2, "weight", None), gemma_norm),
                 norm2_sc = self._make_scaler_tt(cfg.hidden_size),
                 qkv_w = _to_tt(qkv_cat, self._device),
+                qkv_b = qkv_b_cpu,
                 q_end = q_out_p,
                 k_end = q_out_p + k_out_p,
-                o_w   = self._upload_linear_w(_find_o_proj_weight(attn)),
+                o_w   = self._upload_linear_w(
+                            _pad_o_proj_per_head(
+                                _find_o_proj_weight(attn).detach().bfloat16(),
+                                cfg.num_heads, cfg.head_dim)),
                 gate_w = gate_w_tt,
                 up_w   = self._upload_linear_w(up_raw),
                 down_w = self._upload_linear_w(down_raw),
@@ -840,6 +1099,10 @@ class TTModelRunner:
                 norm_style = norm_style,
                 q_norm_w = self._load_head_norm_w(attn, "q_norm", gemma_norm),
                 k_norm_w = self._load_head_norm_w(attn, "k_norm", gemma_norm),
+                norm1_w_cpu = n1.weight.detach().float() if self._uses_layernorm else None,
+                norm1_b     = n1.bias.detach().float()   if (self._uses_layernorm and getattr(n1, "bias", None) is not None) else None,
+                norm2_w_cpu = n2.weight.detach().float() if self._uses_layernorm else None,
+                norm2_b     = n2.bias.detach().float()   if (self._uses_layernorm and getattr(n2, "bias", None) is not None) else None,
             )
             self._layers.append(lw)
         print()
@@ -963,12 +1226,12 @@ class TTModelRunner:
         import ttnn, inspect
         cfg  = self._cfg
         hid_p    = _tile_align(cfg.hidden_size)
-        q_out_p  = _tile_align(cfg.num_heads    * cfg.head_dim)
-        kv_out_p = _tile_align(cfg.num_kv_heads * cfg.head_dim)
+        hd_p     = _tile_align(cfg.head_dim)
+        q_out_p  = cfg.num_heads    * hd_p   # use tile-padded hd_p, not raw head_dim
+        kv_out_p = cfg.num_kv_heads * hd_p
         qkv_p    = q_out_p + 2 * kv_out_p
         int_p    = _tile_align(cfg.intermediate_size)
         nkv      = cfg.num_kv_heads
-        hd_p     = _tile_align(cfg.head_dim)
 
         def z(*shape):
             return ttnn.zeros(list(shape), dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT,
@@ -1008,7 +1271,9 @@ class TTModelRunner:
 
         # Pre-allocated CPU tensors reused each token (avoids torch.zeros() in hot loop)
         # Single-token embedding ID staging buffer — filled in _embed() each step
-        self._token_id_cpu = torch.zeros(1, 1, dtype=torch.int32)
+        self._token_id_cpu = torch.zeros(1, 1, dtype=torch.int64)
+        # Position index staging for on-device RoPE cos/sin gather (issue #8)
+        self._pos_idx_cpu = torch.zeros(1, 1, dtype=torch.int32)
         self._k_in_cpu  = torch.zeros(1, nkv, TILE, hd_p, dtype=torch.bfloat16)
         self._v_in_cpu  = torch.zeros(1, nkv, TILE, hd_p, dtype=torch.bfloat16)
         # Q for flash-attn: [N_heads*TILE, head_dim_p] (one TILE-block per head)
@@ -1044,6 +1309,15 @@ class TTModelRunner:
         theta   = getattr(cfg, "rope_theta", 10000.0)
         max_pos = self._max_seq
 
+        # Partial RoPE (GPTNeoX/Pythia): only rotary_pct of head dims are rotated.
+        # rotary_ndims = round(head_dim * rotary_pct) — must be even.
+        rotary_pct    = getattr(cfg, "partial_rotary_factor",
+                                getattr(cfg, "rotary_pct", 1.0))
+        rotary_ndims  = round(dim * rotary_pct)
+        if rotary_ndims % 2 != 0:
+            rotary_ndims -= 1
+        self._rotary_ndims = rotary_ndims   # used in _apply_rope
+
         # Linear RoPE scaling: compress positions by dividing by scale factor.
         # Do NOT change theta -- scale the position indices instead.
         scale_factor = 1.0
@@ -1053,15 +1327,48 @@ class TTModelRunner:
                 scale_factor = rope_cfg.get("factor", 1.0)
 
         positions = torch.arange(max_pos, dtype=torch.float32) / scale_factor
-        freqs     = 1.0 / (theta ** (torch.arange(0, dim, 2).float() / dim))
-        angles    = torch.outer(positions, freqs)      # (max_pos, dim/2)
-        cos_half  = torch.cos(angles)                  # (max_pos, dim/2)
+        freqs     = 1.0 / (theta ** (torch.arange(0, rotary_ndims, 2).float() / rotary_ndims))
+        angles    = torch.outer(positions, freqs)      # (max_pos, rotary_ndims/2)
+        cos_half  = torch.cos(angles)                  # (max_pos, rotary_ndims/2)
         sin_half  = torch.sin(angles)
 
-        # HuggingFace convention: expand to full dim by tiling [half, half].
-        # Rotation uses grouped halves (i, i+dim//2) not interleaved pairs (i, i+1).
-        self._rope_cos = torch.cat([cos_half, cos_half], dim=-1)  # (max_pos, dim)
+        # HuggingFace convention: expand to rotary_ndims by tiling [half, half].
+        # Rotation uses grouped halves (i, i+rotary_ndims//2) not interleaved pairs.
+        self._rope_cos = torch.cat([cos_half, cos_half], dim=-1)  # (max_pos, rotary_ndims)
         self._rope_sin = torch.cat([sin_half, sin_half], dim=-1)
+
+        # On-device RoPE (issue #8): decide applicability and upload cos/sin tables.
+        # Approach A — elementwise RoPE on DRAM tensors feeding the existing flash_attn,
+        # eliminating the per-token QKV->CPU readback. Gated to the families it cleanly
+        # covers; everything else keeps the CPU path unchanged.
+        import ttnn as _ttnn
+        hd   = self._cfg.head_dim
+        hd_p = _tile_align(hd)
+        no_bias     = all(lw.qkv_b is None for lw in self._layers)
+        no_headnorm = all(lw.q_norm_w is None and lw.k_norm_w is None for lw in self._layers)
+        full_rope   = (self._rotary_ndims == hd)
+        eligible    = bool(full_rope and hd_p == hd and no_bias and no_headnorm and not self._uses_layernorm)
+        # Opt-in (default OFF): the eager on-device path is CORRECT but slower than the
+        # CPU-RoPE path because it trades one PCIe readback for ~25 host-dispatched device
+        # ops/layer. The perf win lands once the decode step is trace-captured (#30), which
+        # removes per-op host dispatch. Until then, keep it opt-in so baseline tok/s holds.
+        import os
+        self._ondevice_attn = eligible and os.environ.get("DISPATCH_ONDEVICE_ATTN", "0") == "1"
+        if self._ondevice_attn:
+            self._rope_cos_dev = _ttnn.from_torch(
+                self._rope_cos.bfloat16(), dtype=_ttnn.bfloat16, layout=_ttnn.ROW_MAJOR_LAYOUT,
+                device=self._device, memory_config=_ttnn.DRAM_MEMORY_CONFIG)
+            self._rope_sin_dev = _ttnn.from_torch(
+                self._rope_sin.bfloat16(), dtype=_ttnn.bfloat16, layout=_ttnn.ROW_MAJOR_LAYOUT,
+                device=self._device, memory_config=_ttnn.DRAM_MEMORY_CONFIG)
+            print("  On-device RoPE/attention: ENABLED (DISPATCH_ONDEVICE_ATTN=1)")
+        elif eligible:
+            print("  On-device RoPE/attention: eligible but OFF "
+                  "(set DISPATCH_ONDEVICE_ATTN=1 to enable; faster once trace-captured, see #30)")
+        else:
+            print(f"  On-device RoPE/attention: not eligible "
+                  f"(full_rope={full_rope} hd_p==hd={hd_p == hd} no_bias={no_bias} "
+                  f"no_headnorm={no_headnorm} rmsnorm={not self._uses_layernorm}) -> CPU RoPE path")
 
     def _apply_head_norm(self, x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
         """Apply per-head RMSNorm. x: (n_heads, head_dim), w: (head_dim,) already (1+w) or w."""
@@ -1069,15 +1376,24 @@ class TTModelRunner:
         return (x / rms) * w
 
     def _apply_rope(self, x: torch.Tensor, position: int) -> torch.Tensor:
-        """Apply RoPE to x (n_heads, head_dim) using HuggingFace convention."""
+        """Apply RoPE to x (n_heads, head_dim) using HuggingFace convention.
+
+        Supports partial RoPE (GPTNeoX/Pythia): only the first rotary_ndims dimensions
+        are rotated; the remaining pass-through dimensions are left unchanged.
+        """
         if position >= self._rope_cos.shape[0]:
             return x
-        cos = self._rope_cos[position]   # (dim,)
+        cos = self._rope_cos[position]   # (rotary_ndims,)
         sin = self._rope_sin[position]
-        dim = x.shape[-1]
-        # Rotate: x_rot = [-x[dim//2:], x[:dim//2]]
-        x_rot = torch.cat([-x[..., dim // 2:], x[..., :dim // 2]], dim=-1)
-        return x * cos + x_rot * sin
+        nd  = self._rotary_ndims
+        x_rot_in = x[..., :nd]
+        # Rotate: x_rot = [-x_rot_in[nd//2:], x_rot_in[:nd//2]]
+        x_rot = torch.cat([-x_rot_in[..., nd // 2:], x_rot_in[..., :nd // 2]], dim=-1)
+        rotated = x_rot_in * cos + x_rot * sin
+        if nd == x.shape[-1]:
+            return rotated
+        # Concat rotated prefix with unrotated suffix
+        return torch.cat([rotated, x[..., nd:]], dim=-1)
 
 
 # ------------------------------------------------------------------

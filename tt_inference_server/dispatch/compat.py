@@ -96,7 +96,7 @@ def resolve_attn_config(
 ) -> Dict:
     """Find a valid flash attention config for the given model dimensions.
 
-    Returns a dict of kwargs for make_flash_attn_kernel (includes hw_config).
+    Returns a dict of kwargs for make_flash_attn_kernel.
     Raises ShapeNotSupportedError if no valid config exists.
     """
     l1_budget = hw_config.l1_budget() if hw_config is not None else _DEFAULT_L1_BUDGET_BYTES
@@ -112,7 +112,6 @@ def resolve_attn_config(
                 "N_kv_heads": N_kv_heads,
                 "head_dim_tiles": head_dim_tiles,
                 "kv_chunk_tiles": kv_chunk_tiles,
-                "hw_config": hw_config,
             }
 
     raise ShapeNotSupportedError(

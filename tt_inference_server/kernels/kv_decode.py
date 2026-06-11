@@ -9,6 +9,11 @@ accumulated KV cache and produces a single output row — the dominant
 memory-bandwidth operation in decode.
 
 Double-buffered DFBs overlap DRAM prefetch with compute for each KV chunk.
+
+ttl 1.1.3 API:
+  - reduce_max(input, *, dims)       — no scaler arg
+  - reduce_sum(input, *, dims)       — no scaler arg
+  - broadcast(input, *, dims, shape) — shape is static tuple of ints
 """
 
 import ttl  # must be a global for the DSL tracer
@@ -30,34 +35,33 @@ def make_kv_decode_kernel(
     """
 
     @ttl.operation(grid=(N_kv_heads, 1))
-    def kv_decode_kernel(Q, K_cache, V_cache, scale_tile, neg_inf_tile, zero_tile, zero_head, ones_tile, out):
+    def kv_decode_kernel(Q, K_cache, V_cache, scale_tile, neg_inf_tile, zero_tile, zero_head, out):
         n_chunks = max_seq_tiles // kv_chunk_tiles
 
-        q_dfb = ttl.make_dataflow_buffer_like(Q, shape=(1, head_dim_tiles), block_count=1)
-        k_dfb = ttl.make_dataflow_buffer_like(K_cache, shape=(kv_chunk_tiles, head_dim_tiles), block_count=2)
-        v_dfb = ttl.make_dataflow_buffer_like(V_cache, shape=(kv_chunk_tiles, head_dim_tiles), block_count=2)
-        sc_dfb = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, 1), block_count=1)
-        ninf_dfb = ttl.make_dataflow_buffer_like(neg_inf_tile, shape=(1, 1), block_count=1)
-        zero_dfb  = ttl.make_dataflow_buffer_like(zero_tile,  shape=(1, 1), block_count=1)
-        zero_head_dfb = ttl.make_dataflow_buffer_like(zero_head, shape=(1, head_dim_tiles), block_count=1)
-        ones_dfb      = ttl.make_dataflow_buffer_like(ones_tile, shape=(1, 1),              block_count=1)
+        q_dfb         = ttl.make_dataflow_buffer_like(Q,          shape=(1, head_dim_tiles),          block_count=1)
+        k_dfb         = ttl.make_dataflow_buffer_like(K_cache,    shape=(kv_chunk_tiles, head_dim_tiles), block_count=2)
+        v_dfb         = ttl.make_dataflow_buffer_like(V_cache,    shape=(kv_chunk_tiles, head_dim_tiles), block_count=2)
+        sc_dfb        = ttl.make_dataflow_buffer_like(scale_tile,  shape=(1, 1), block_count=1)
+        ninf_dfb      = ttl.make_dataflow_buffer_like(neg_inf_tile,shape=(1, 1), block_count=1)
+        zero_dfb      = ttl.make_dataflow_buffer_like(zero_tile,   shape=(1, 1), block_count=1)
+        zero_head_dfb = ttl.make_dataflow_buffer_like(zero_head,   shape=(1, head_dim_tiles), block_count=1)
 
-        kt_dfb = ttl.make_dataflow_buffer_like(K_cache, shape=(head_dim_tiles, kv_chunk_tiles), block_count=2)
-        qk_dfb = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, kv_chunk_tiles), block_count=2)
-        exp_dfb = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, kv_chunk_tiles), block_count=2)
-        pv_dfb = ttl.make_dataflow_buffer_like(Q, shape=(1, head_dim_tiles), block_count=2)
-        m_dfb = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, 1), block_count=2)
-        l_dfb = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, 1), block_count=2)
-        o_dfb = ttl.make_dataflow_buffer_like(Q, shape=(1, head_dim_tiles), block_count=2)
-        m_new_dfb = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, 1), block_count=2)
-        alpha_dfb = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, 1), block_count=2)
-        alpha_bcast_dfb = ttl.make_dataflow_buffer_like(Q, shape=(1, head_dim_tiles), block_count=2)
+        kt_dfb        = ttl.make_dataflow_buffer_like(K_cache,    shape=(head_dim_tiles, kv_chunk_tiles), block_count=2)
+        qk_dfb        = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, kv_chunk_tiles), block_count=2)
+        exp_dfb       = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, kv_chunk_tiles), block_count=2)
+        pv_dfb        = ttl.make_dataflow_buffer_like(Q,          shape=(1, head_dim_tiles), block_count=2)
+        m_dfb         = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, 1), block_count=2)
+        l_dfb         = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, 1), block_count=2)
+        o_dfb         = ttl.make_dataflow_buffer_like(Q,          shape=(1, head_dim_tiles), block_count=2)
+        m_new_dfb     = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, 1), block_count=2)
+        alpha_dfb     = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, 1), block_count=2)
+        alpha_bcast_dfb = ttl.make_dataflow_buffer_like(Q,        shape=(1, head_dim_tiles), block_count=2)
         chunk_max_dfb = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, 1), block_count=2)
         chunk_sum_dfb = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, 1), block_count=2)
-        m_bcast_dfb = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, kv_chunk_tiles), block_count=2)
-        o_corr_dfb = ttl.make_dataflow_buffer_like(Q, shape=(1, head_dim_tiles), block_count=2)
-        l_bcast_dfb = ttl.make_dataflow_buffer_like(Q, shape=(1, head_dim_tiles), block_count=2)
-        out_dfb = ttl.make_dataflow_buffer_like(out, shape=(1, head_dim_tiles), block_count=2)
+        m_bcast_dfb   = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, kv_chunk_tiles), block_count=2)
+        o_corr_dfb    = ttl.make_dataflow_buffer_like(Q,          shape=(1, head_dim_tiles), block_count=2)
+        l_bcast_dfb   = ttl.make_dataflow_buffer_like(Q,          shape=(1, head_dim_tiles), block_count=2)
+        out_dfb       = ttl.make_dataflow_buffer_like(out,        shape=(1, head_dim_tiles), block_count=2)
 
         @ttl.compute()
         def compute():
@@ -69,7 +73,6 @@ def make_kv_decode_kernel(
                 ninf_dfb.wait() as ninf,
                 zero_dfb.wait() as zero,
                 zero_head_dfb.wait() as zh,
-                ones_dfb.wait() as ones,
             ):
                 with m_dfb.reserve() as m_init:
                     m_init.store(ninf)
@@ -86,7 +89,7 @@ def make_kv_decode_kernel(
 
                     with qk_dfb.wait() as qkv:
                         with chunk_max_dfb.reserve() as cm:
-                            cm.store(ttl.math.reduce_max(qkv, ones, dims=[-1]))
+                            cm.store(ttl.math.reduce_max(qkv, dims=[-1]))
                         with qk_dfb.reserve() as qk_copy:
                             qk_copy.store(qkv)
 
@@ -97,7 +100,7 @@ def make_kv_decode_kernel(
                             with alpha_dfb.reserve() as alpha:
                                 alpha.store(ttl.math.exp(m_old - mn))
                             with m_bcast_dfb.reserve() as mn_bc:
-                                mn_bc.store(ttl.math.broadcast(mn, mn_bc, dims=[-1]))
+                                mn_bc.store(ttl.math.broadcast(mn, dims=[-1], shape=(1, kv_chunk_tiles)))
                             with m_dfb.reserve() as m_next:
                                 m_next.store(mn)
 
@@ -106,7 +109,7 @@ def make_kv_decode_kernel(
 
                     with exp_dfb.wait() as ex:
                         with chunk_sum_dfb.reserve() as cs:
-                            cs.store(ttl.math.reduce_sum(ex, ones, dims=[-1]))
+                            cs.store(ttl.math.reduce_sum(ex, dims=[-1]))
                         with exp_dfb.reserve() as ex_copy:
                             ex_copy.store(ex)
 
@@ -114,7 +117,7 @@ def make_kv_decode_kernel(
                         with l_dfb.reserve() as l_new:
                             l_new.store(alph * l_old + cs)
                         with alpha_bcast_dfb.reserve() as ab:
-                            ab.store(ttl.math.broadcast(alph, ab, dims=[-1]))
+                            ab.store(ttl.math.broadcast(alph, dims=[-1], shape=(1, head_dim_tiles)))
 
                     with alpha_bcast_dfb.wait() as ab, o_dfb.wait() as o_old, o_corr_dfb.reserve() as oc:
                         oc.store(ab * o_old)
@@ -126,7 +129,7 @@ def make_kv_decode_kernel(
                         o_new.store(oc + pv)
 
                 with l_dfb.wait() as l_final, l_bcast_dfb.reserve() as lb:
-                    lb.store(ttl.math.broadcast(l_final, lb, dims=[-1]))
+                    lb.store(ttl.math.broadcast(l_final, dims=[-1], shape=(1, head_dim_tiles)))
                 with o_dfb.wait() as o_final, l_bcast_dfb.wait() as lb, out_dfb.reserve() as final_out:
                     final_out.store(o_final * ttl.math.recip(lb))
 
@@ -145,8 +148,6 @@ def make_kv_decode_kernel(
                 ttl.copy(zero_tile[0, 0], blk).wait()
             with zero_head_dfb.reserve() as blk:
                 ttl.copy(zero_head[0, 0:head_dim_tiles], blk).wait()
-            with ones_dfb.reserve() as blk:
-                ttl.copy(ones_tile[0, 0], blk).wait()
 
             kv_base = h * max_seq_tiles
             for c in range(n_chunks):

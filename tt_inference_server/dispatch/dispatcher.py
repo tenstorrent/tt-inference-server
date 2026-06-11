@@ -222,7 +222,7 @@ class KernelDispatcher:
             self._cache[key] = make_flash_attn_kernel(**cfg)
         return self._cache[key](Q, K, V, scale, neg_inf, zero, zero_head, ones, mask, out)
 
-    def kv_decode(self, Q, K_cache, V_cache, scale, neg_inf, zero, zero_head, ones, out):
+    def kv_decode(self, Q, K_cache, V_cache, scale, neg_inf, zero, zero_head, out, ones=None):
         from tt_inference_server.kernels.kv_decode import make_kv_decode_kernel
         N_kv_heads, head_dim = Q.shape[0], Q.shape[1]
         max_seq = K_cache.shape[0] // N_kv_heads
@@ -233,7 +233,7 @@ class KernelDispatcher:
                 head_dim_tiles=to_tiles(head_dim),
                 max_seq_tiles=to_tiles(max_seq),
             )
-        return self._cache[key](Q, K_cache, V_cache, scale, neg_inf, zero, zero_head, ones, out)
+        return self._cache[key](Q, K_cache, V_cache, scale, neg_inf, zero, zero_head, out)
 
     def rmsnorm(self, x, weight, scaler, out):
         from tt_inference_server.kernels.rmsnorm import make_rmsnorm_kernel
@@ -253,7 +253,7 @@ class KernelDispatcher:
             self._cache[key] = make_layernorm_kernel(**cfg)
         return self._cache[key](x, weight, bias, scaler, out)
 
-    def moe_route(self, hidden, w_router, ones, probs_out, N_experts: int, top_k: int):
+    def moe_route(self, hidden, w_router, probs_out, N_experts: int, top_k: int, ones=None):
         """Run router projection + softmax on device, then top-k on host."""
         import torch
         import ttnn
@@ -266,7 +266,7 @@ class KernelDispatcher:
                 hidden_tiles=to_tiles(hidden_dim),
                 expert_tiles=expert_tiles,
             )
-        self._cache[key](hidden, w_router, ones, probs_out)
+        self._cache[key](hidden, w_router, probs_out)
         probs = ttnn.to_torch(probs_out).float()[:, :N_experts]
         weights, indices = torch.topk(probs, k=top_k, dim=-1)
         return indices, weights

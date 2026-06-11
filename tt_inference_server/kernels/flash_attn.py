@@ -15,12 +15,11 @@ Tensor layout conventions (all in tile units):
   K, V: [N_kv_heads * kv_seq_tiles, head_dim_tiles]
   out:  [1,          N_heads * head_dim_tiles]  — all heads concatenated in one tile row
 
-ttl 1.1.1 API:
-  - ttl.math.transpose(x)             — not ttl.transpose
-  - ttl.math.reduce_max(x, scaler, dims=[-1])
-  - ttl.math.reduce_sum(x, scaler, dims=[-1])
-  - ttl.math.broadcast(x, out_block, dims=[-1])
-  - ones_tile scaler needed for plain sum/max (no normalization)
+ttl 1.1.3 API:
+  - ttl.math.transpose(x)                              — not ttl.transpose
+  - ttl.math.reduce_max(x, dims=[-1])                  — no scaler arg
+  - ttl.math.reduce_sum(x, dims=[-1])                  — no scaler arg
+  - ttl.math.broadcast(x, dims=[-1], shape=(rows, cols)) — shape is static tuple
 """
 
 import ttl  # must be a global for the DSL tracer
@@ -147,9 +146,8 @@ def make_flash_attn_kernel(
                         sc_out.store(scale * qk + msk)
 
                     with scaled_dfb.wait() as sv:
-                        # reduce_max needs a scaler block (use ones for plain max)
                         with chunk_max_dfb.reserve() as cm:
-                            cm.store(ttl.math.reduce_max(sv, ones, dims=[-1]))
+                            cm.store(ttl.math.reduce_max(sv, dims=[-1]))
                         with scaled_dfb.reserve() as sv_copy:
                             sv_copy.store(sv)
 
@@ -162,7 +160,7 @@ def make_flash_attn_kernel(
                                 alpha.store(ttl.math.exp(m_old - mn))
                             with m_bcast_dfb.reserve() as mn_bc:
                                 mn_bc.store(
-                                    ttl.math.broadcast(mn, mn_bc, dims=[-1])
+                                    ttl.math.broadcast(mn, dims=[-1], shape=(1, kv_chunk_tiles))
                                 )
                             with m_dfb.reserve() as m_next:
                                 m_next.store(mn)
@@ -176,7 +174,7 @@ def make_flash_attn_kernel(
 
                     with exp_dfb.wait() as ex:
                         with chunk_sum_dfb.reserve() as cs:
-                            cs.store(ttl.math.reduce_sum(ex, ones, dims=[-1]))
+                            cs.store(ttl.math.reduce_sum(ex, dims=[-1]))
                         with exp_dfb.reserve() as ex_copy:
                             ex_copy.store(ex)
 
@@ -189,7 +187,7 @@ def make_flash_attn_kernel(
                             l_new.store(alph * l_old + cs)
                         with alpha_bcast_dfb.reserve() as ab:
                             ab.store(
-                                ttl.math.broadcast(alph, ab, dims=[-1])
+                                ttl.math.broadcast(alph, dims=[-1], shape=(1, head_dim_tiles))
                             )
                     with (
                         alpha_bcast_dfb.wait() as ab,
@@ -209,7 +207,7 @@ def make_flash_attn_kernel(
                         o_new.store(oc + pv)
 
                 with l_dfb.wait() as l_final, l_bcast_dfb.reserve() as lb:
-                    lb.store(ttl.math.broadcast(l_final, lb, dims=[-1]))
+                    lb.store(ttl.math.broadcast(l_final, dims=[-1], shape=(1, head_dim_tiles)))
                 with (
                     o_dfb.wait() as o_final,
                     l_bcast_dfb.wait() as lb,
