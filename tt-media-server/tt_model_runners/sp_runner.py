@@ -25,7 +25,9 @@ import tempfile
 import threading
 import time
 from concurrent.futures import Future as CFuture
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 
+from config.constants import CANARY_DEEP_TASK_ID, CANARY_TASK_ID, CANARY_TASK_IDS
 from ipc.video_shm import (
     MAX_IMAGE_PATH_LEN,
     SP_WARMUP_TASK_ID,
@@ -227,6 +229,110 @@ class SPRunner(BaseDeviceRunner):
     def load_weights(self):
         return True
 
+    @staticmethod
+    def _build_canary_request(task_id: str) -> VideoRequest:
+        """Reserved zero-cost VideoRequest for the canary round-trip.
+
+        The body is empty for both shallow and deep probes — the pipeline keys
+        off ``task_id`` to decide whether to run a bare collective or replay its
+        compiled warmup forward, so the server never has to know the shape.
+        """
+        return VideoRequest(
+            task_id=task_id,
+            prompt="",
+            negative_prompt="",
+            num_inference_steps=0,
+            seed=0,
+            height=0,
+            width=0,
+            num_frames=0,
+            guidance_scale=0.0,
+            guidance_scale_2=0.0,
+            image_path="",
+        )
+
+    def _round_trip_canary(
+        self, task_id: str, timeout_s: float
+    ) -> VideoResponse | None:
+        """Write the canary probe and read its ack within a single ``timeout_s`` budget.
+
+        Routes through the same future/drainer machinery real requests use: the
+        drainer thread owns every output-ring read and demultiplexes responses to
+        ``_pending`` futures by ``task_id``. The canary MUST NOT read the ring
+        itself — a second reader would race the drainer and one of them would
+        miss the ack. Returns ``None`` on ring-full, timeout, or a probe that is
+        already in flight (all treated as a miss by the caller).
+        """
+        fut: CFuture = CFuture()
+        with self._pending_lock:
+            if task_id in self._pending:
+                self.logger.warning(
+                    f"{self._log_id} canary probe: {task_id!r} already in flight; "
+                    "treating as miss"
+                )
+                return None
+            self._pending[task_id] = fut
+
+        try:
+            deadline = time.monotonic() + timeout_s
+            wrote = self._input_shm.write_request(
+                self._build_canary_request(task_id), timeout_s
+            )
+            if not wrote:
+                self.logger.warning(
+                    f"{self._log_id} canary probe: input ring full; treating as miss"
+                )
+                return None
+            # Start the drainer if no real request has yet (an idle server still
+            # needs the ack routed to our future instead of nobody reading it).
+            self._ensure_drainer()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            return fut.result(timeout=remaining)
+        except FuturesTimeoutError:
+            return None
+        finally:
+            with self._pending_lock:
+                self._pending.pop(task_id, None)
+
+    def health_check(self, deep: bool = False) -> bool:
+        """End-to-end liveness probe for the multihost video pipeline.
+
+        Round-trips a reserved canary ``VideoRequest`` over the SAME
+        single-writer SHM input ring real requests use, and waits for the
+        pipeline's ack. ``video_runner`` handles ``CANARY_TASK_ID`` by
+        broadcasting to all ranks and running a bare MPI collective
+        (``skip=False``), so a wedged sub-rank fails this probe — unlike the
+        warmup ping, which short-circuits the collective and cannot see it.
+
+        When ``deep`` is set the probe uses ``CANARY_DEEP_TASK_ID``: the pipeline
+        replays its compiled warmup forward across all ranks, so the ack also
+        proves the device can still compute (not just that hosts are looping).
+        Deep probes get the larger ``canary_deep_probe_timeout_seconds`` budget
+        since a real forward is seconds, not the ~ms of a barrier.
+        """
+        if self._input_shm is None or self._output_shm is None:
+            self.logger.error(f"{self._log_id} health_check called before set_device()")
+            return False
+
+        task_id = CANARY_DEEP_TASK_ID if deep else CANARY_TASK_ID
+        timeout_s = (
+            self.settings.canary_deep_probe_timeout_seconds
+            if deep
+            else self.settings.canary_probe_timeout_seconds
+        )
+        try:
+            resp = self._round_trip_canary(task_id, timeout_s)
+        except Exception:
+            self.logger.exception(f"{self._log_id} canary probe: probe failed")
+            return False
+
+        if resp is None:
+            return False
+        self._try_unlink(resp.file_path)
+        return resp.status != VideoStatus.ERROR
+
     async def _await_ping_ack_with_heartbeat(
         self, timeout_s: float
     ) -> VideoResponse | None:
@@ -261,6 +367,20 @@ class SPRunner(BaseDeviceRunner):
                 return None
 
             if resp is not None:
+                # A leftover canary ack can only be stale here: this session's
+                # canary monitor starts only AFTER warmup flips the worker ready.
+                # The one-shot drain in set_device() races with canary requests
+                # still queued in the input ring from a prior session, which the
+                # peer answers into the output ring after the drain. Discarding
+                # them (instead of failing as "desynced") keeps the warmup
+                # handshake robust across restarts; the deadline still bounds us.
+                if resp.task_id in CANARY_TASK_IDS:
+                    self.logger.warning(
+                        f"{self._log_id} warmup: discarding stale canary ack "
+                        f"left by a prior session, still awaiting warmup ack"
+                    )
+                    self._try_unlink(resp.file_path)
+                    continue
                 return resp
 
             elapsed = time.monotonic() - start_t
@@ -412,9 +532,16 @@ class SPRunner(BaseDeviceRunner):
                 fut = self._pending.get(resp.task_id)
 
             if fut is None:
-                self.logger.warning(
-                    f"[SP] orphan response task_id={resp.task_id!r}; unlinking"
+                # Reserved control acks (canary / warmup) are routinely orphaned:
+                # a probe that timed out leaves its future popped, and stale acks
+                # from a prior session get flushed on recovery. Log those at debug
+                # so recovery doesn't drown the logs; a real UUID orphan is unusual
+                # and stays at warning.
+                is_control = (
+                    resp.task_id in CANARY_TASK_IDS or resp.task_id == SP_WARMUP_TASK_ID
                 )
+                log = self.logger.debug if is_control else self.logger.warning
+                log(f"[SP] orphan response task_id={resp.task_id!r}; unlinking")
                 self._try_unlink(resp.file_path)
                 continue
 

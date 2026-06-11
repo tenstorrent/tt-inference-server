@@ -224,7 +224,7 @@ unsigned pmConnectTimeoutMs() {
       envUlong("PM_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
 }
 
-size_t dsMaxUsers() {
+size_t pmMaxUsers() {
   return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
 }
 
@@ -265,6 +265,14 @@ std::string ttMediaResultQueueName() {
 std::string ttWarmupSignalsQueueName() {
   return envString("TT_WARMUP_SIGNALS_QUEUE",
                    defaults::TT_WARMUP_SIGNALS_QUEUE);
+}
+
+std::string prefillNumLayers() {
+  return envString("PREFILL_NUM_LAYERS", defaults::PREFILL_NUM_LAYERS);
+}
+
+std::string prefillChunkSize() {
+  return envString("PREFILL_CHUNK_SIZE", defaults::PREFILL_CHUNK_SIZE);
 }
 
 std::string ttMemoryRequestQueueName() {
@@ -460,6 +468,8 @@ ModelType modelType() {
     if (m == "moonshotai/Kimi-K2.6") return ModelType::KIMI_K2_6;
     if (m == "meta-llama/Llama-3.1-8B-Instruct")
       return ModelType::LLAMA_3_1_8B_INSTRUCT;
+    if (m == "openai/gpt-oss-120b") return ModelType::GPT_OSS_120B;
+    if (m == "MiniMaxAI/MiniMax-M2.7") return ModelType::MINIMAX_M2_7;
     return ModelType::DEEPSEEK_R1_0528;
   }();
   return cached;
@@ -666,11 +676,6 @@ unsigned sessionAllocationMaxRetries() {
   return static_cast<unsigned>(
       envUlong("SESSION_ALLOCATION_MAX_RETRIES",
                defaults::SESSION_ALLOCATION_MAX_RETRIES));
-}
-
-unsigned prefillTimeoutMs() {
-  return static_cast<unsigned>(
-      envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
 }
 
 bool dynamoEndpointEnabled() {

@@ -12,7 +12,6 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import List, Optional
-from urllib.parse import urlparse
 
 import jwt
 
@@ -22,6 +21,7 @@ sys.path.insert(0, str(project_root))
 
 from utils.media_clients.base_strategy_interface import BaseMediaStrategy
 from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
+from utils.url_helpers import build_base_url, resolve_deploy_url
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -435,22 +435,6 @@ def parse_args():
     return ret_args
 
 
-def _build_base_url(deploy_url: str, service_port: str) -> str:
-    """Construct a base URL from a deploy URL and service port.
-
-    Normalizes the deploy URL by stripping trailing slashes.  When the URL
-    already contains an explicit port (e.g. ``http://host:9000``) that port is
-    used and *service_port* is ignored so that the resulting URL is never of
-    the form ``http://host:9000:8000``.
-    """
-    normalized = deploy_url.rstrip("/")
-    parsed = urlparse(normalized)
-    if parsed.port is not None:
-        # URL already includes a port; use as-is
-        return normalized
-    return f"{normalized}:{service_port}"
-
-
 def build_eval_command(
     task: EvalTask,
     model_spec,
@@ -475,7 +459,7 @@ def build_eval_command(
 
     # Audio models use tt-media-server which has endpoints at /audio (not /v1/audio)
     # Other models use vLLM which has endpoints at /v1
-    host_with_port = _build_base_url(deploy_url, service_port)
+    host_with_port = build_base_url(deploy_url, service_port)
     if task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
         base_url = host_with_port
     else:
@@ -912,8 +896,7 @@ def main():
     # explicitly re-read so in-process PromptClient sees later env updates
     # (mirrors run_benchmarks.py:439).
     env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
-    if getattr(runtime_config, "server_url", None):
-        env_config.deploy_url = runtime_config.server_url
+    env_config.deploy_url = resolve_deploy_url(runtime_config)
 
     if (
         model_spec.model_type in EVAL_TASK_TYPES

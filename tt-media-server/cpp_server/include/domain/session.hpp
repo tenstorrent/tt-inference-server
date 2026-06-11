@@ -53,6 +53,21 @@ class Session {
   void setHash(size_t hash) { hash_ = hash; }
 
   /**
+   * Get the response id this session is currently registered under.
+   * Empty when the session has never been registered under a response id.
+   */
+  const std::string& getResponseId() const { return response_id_; }
+
+  /**
+   * Update the response id this session is registered under (called when a
+   * turn completes and the next turn should be reachable via
+   * previous_response_id).
+   */
+  void setResponseId(const std::string& responseId) {
+    response_id_ = responseId;
+  }
+
+  /**
    * Get the assigned slot ID.
    * @return Slot ID, or max uint32_t if unassigned
    */
@@ -125,8 +140,11 @@ class Session {
   }
 
  private:
-  std::string session_id_;  // Stable UUID, never changes
-  size_t hash_;             // Current content hash, changes with conversation
+  std::string session_id_;   // Stable UUID, never changes
+  size_t hash_;              // Current content hash, changes with conversation
+  std::string response_id_;  // Current response id (Responses API key), empty
+                             // until registered. Kept on the session so
+                             // close/evict can remove the matching index entry.
   uint32_t slot_id_;
   SessionState state_{SessionState::IDLE};
   std::chrono::system_clock::time_point last_activity_time_;

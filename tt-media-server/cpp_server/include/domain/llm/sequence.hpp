@@ -43,7 +43,7 @@ class Sequence {
            std::optional<uint32_t> prefillSlotId, bool continuation,
            bool disaggregated, std::unique_ptr<SamplingParams> samplingParams,
            std::optional<uint32_t> kvPositionId = std::nullopt,
-           int numberOfDecodeSkipTokens = 0);
+           int decodePositionId = 0, int decodeSkipTokens = 0);
 
   void serialize(std::ostream& os) const;
   static Sequence deserialize(std::istream& is);
@@ -109,8 +109,11 @@ class Sequence {
   std::optional<uint32_t> getKVPositionId() const { return kvPositionId; }
   void setKVPositionId(uint32_t positionId) { kvPositionId = positionId; }
 
-  int getNumberOfDecodeSkipTokens() const { return numberOfDecodeSkipTokens; }
-  void setNumberOfDecodeSkipTokens(int n) { numberOfDecodeSkipTokens = n; }
+  int getDecodePositionId() const { return decodePositionId; }
+  void setDecodePositionId(int n) { decodePositionId = n; }
+
+  int getDecodeSkipTokens() const { return decodeSkipTokens; }
+  void setDecodeSkipTokens(int n) { decodeSkipTokens = n; }
 
  private:
   SequenceStatus status = SequenceStatus::WAITING;
@@ -126,7 +129,10 @@ class Sequence {
   uint32_t prefillKvCacheSlot = tt::domain::INVALID_SLOT_ID;
   bool continuation = false;   // True if this continues an existing session
   bool disaggregated = false;  // True if this is a disaggregated request
-  int numberOfDecodeSkipTokens = 0;
+  int decodePositionId = 0;
+  // Reused prefix length excluding accumulated think tokens, forwarded from the
+  // decode server. Stored only; not yet consumed by the runner.
+  int decodeSkipTokens = 0;
 };
 
 }  // namespace tt::domain::llm

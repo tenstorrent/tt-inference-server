@@ -17,6 +17,8 @@ CLANG_TIDY="OFF"
 TOOLCHAIN_PATH_ARG=""
 CXX_COMPILER_PATH=""
 KAFKA_ENABLED="OFF"
+ENABLE_MOONCAKE="OFF"
+ENABLE_MOONCAKE_RDMA="OFF"
 FRESH_CONFIGURE="OFF"
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -51,6 +53,17 @@ while [[ $# -gt 0 ]]; do
             KAFKA_ENABLED="ON"
             shift
             ;;
+        --mooncake)
+            ENABLE_MOONCAKE="ON"
+            ENABLE_BLAZE="ON"
+            shift
+            ;;
+        --mooncake-rdma)
+            ENABLE_MOONCAKE="ON"
+            ENABLE_MOONCAKE_RDMA="ON"
+            ENABLE_BLAZE="ON"
+            shift
+            ;;
         --fresh)
             FRESH_CONFIGURE="ON"
             shift
@@ -74,6 +87,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --blaze              Build with tt-blaze pipeline_manager support"
             echo "  --clang-tidy          Run clang-tidy during build (lint = build, same as tt-metal)"
             echo "  --kafka              Enable Kafka (CMake KAFKA_ENABLED=ON; needs librdkafka-dev)"
+            echo "  --mooncake           Build tt-llm-engine with Mooncake transport (implies --blaze)"
+            echo "  --mooncake-rdma      Also build Mooncake's RDMA transport (implies --mooncake)"
             echo "  --fresh              Wipe CMake cache and reconfigure from scratch"
             echo "  --toolchain-path P   Use CMake toolchain file (overrides TT_METAL_HOME toolchain)"
             echo "  --cxx-compiler-path P  Set C++ compiler (overrides toolchain)"
@@ -228,6 +243,8 @@ CMAKE_ARGS=(
     -DENABLE_BLAZE="${ENABLE_BLAZE}"
     -DCLANG_TIDY="${CLANG_TIDY}"
     -DKAFKA_ENABLED="${KAFKA_ENABLED}"
+    -DENABLE_MOONCAKE="${ENABLE_MOONCAKE}"
+    -DENABLE_MOONCAKE_RDMA="${ENABLE_MOONCAKE_RDMA}"
 )
 [ -n "${TT_METAL_HOME}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
 [ -n "${FETCHCONTENT_BASE_DIR:-}" ] && CMAKE_ARGS+=(-DFETCHCONTENT_BASE_DIR="${FETCHCONTENT_BASE_DIR}")

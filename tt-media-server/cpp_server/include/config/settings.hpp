@@ -201,10 +201,6 @@ std::string kafkaGroupId();
  * defaults::SESSION_ALLOCATION_MAX_RETRIES. */
 unsigned sessionAllocationMaxRetries();
 
-/** Prefill timeout in milliseconds from PREFILL_TIMEOUT_MS. Default:
- * defaults::PREFILL_TIMEOUT_MS. */
-unsigned prefillTimeoutMs();
-
 /** Blaze socket descriptor prefix from BLAZE_SOCKET_DESCRIPTOR_PREFIX. Default:
  * defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX. */
 std::string blazeSocketDescriptorPrefix();
@@ -213,9 +209,17 @@ std::string blazeSocketDescriptorPrefix();
  * defaults::PM_CONNECT_TIMEOUT_MS. */
 unsigned pmConnectTimeoutMs();
 
-/** Decode scheduler max users from DS_MAX_USERS. Default:
- * defaults::DS_MAX_USERS. */
-size_t dsMaxUsers();
+/** Pipeline manager max users from PM_MAX_USERS. Default:
+ * defaults::PM_MAX_USERS. */
+size_t pmMaxUsers();
+
+/** Prefill number of layers from PREFILL_NUM_LAYERS. Default:
+ * defaults::PREFILL_NUM_LAYERS. */
+std::string prefillNumLayers();
+
+/** Prefill chunk size from PREFILL_CHUNK_SIZE. Default:
+ * defaults::PREFILL_CHUNK_SIZE. */
+std::string prefillChunkSize();
 
 /** Warmup timeout (ms) while waiting for the first token during runner warmup.
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */

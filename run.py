@@ -406,6 +406,64 @@ def parse_arguments():
         help="List matching tests without running them (dry-run)",
     )
 
+    # Prefix-cache benchmark
+    prefix_cache_group = parser.add_argument_group(
+        "Prefix-cache benchmark (v2)",
+        "Arguments for --workflow benchmarks --prefix-cache (routed to v2)",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache",
+        action="store_true",
+        help="Switch --workflow benchmarks to the v2 AIPerf prefix-caching scenario sweep. "
+        "Routes the run through the v2 engine. Requires --workflow benchmarks.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-preset",
+        type=str,
+        choices=["ci", "full"],
+        default="full",
+        help="Preset for --prefix-cache (default: full). 'ci' is a short regression sweep.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-scenarios",
+        type=str,
+        default=None,
+        help="Comma-separated subset of prefix-cache scenarios (shared_system, prefix_pool, "
+        "multi_turn, baseline, mooncake_trace). When unset, runs every scenario from the preset.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-arrival",
+        type=str,
+        choices=["constant", "poisson", "gamma"],
+        default=None,
+        help="Override the arrival pattern for every prefix-cache run.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-request-rate",
+        type=float,
+        default=None,
+        help="Override the target request rate (req/s) for every prefix-cache run.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-scenarios-json",
+        type=str,
+        default=None,
+        help="Path to a custom prefix-cache scenarios JSON file.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-trace",
+        type=str,
+        default=None,
+        help="Path to a mooncake-format JSONL trace file for mooncake_trace scenarios.",
+    )
+    prefix_cache_group.add_argument(
+        "--jwt-secret",
+        type=str,
+        default=None,
+        help="JWT secret for prefix-cache runs that hit an inference server behind JWT auth. "
+        "Reads $JWT_SECRET when omitted.",
+    )
+
     args = parser.parse_args()
 
     if args.tt_device and args.device and args.tt_device != args.device:
@@ -452,6 +510,12 @@ def parse_arguments():
 
     if args.eval_samples and args.limit_samples_mode:
         parser.error("--eval-samples and --limit-samples-mode are mutually exclusive.")
+
+    if args.prefix_cache and args.workflow != "benchmarks":
+        parser.error(
+            "--prefix-cache currently requires --workflow benchmarks "
+            f"(got --workflow {args.workflow})."
+        )
 
     return args
 
