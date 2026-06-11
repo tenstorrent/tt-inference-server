@@ -490,6 +490,7 @@ class TTModelRunner:
         self._init_kv_cache()
         self._init_scratch_bufs()
         self._setup_paged_decode()
+        self._setup_ondevice_lmhead()
 
         del hf_model  # free CPU memory
         print(f"  Ready. {len(self._layers)} layers on device.")
@@ -625,11 +626,24 @@ class TTModelRunner:
             hidden_tt = self._layer_forward(hidden_tt, i, 0)   # kv_pos unused on paged path
         return hidden_tt
 
+    def _run_decode_graph(self):
+        """The captured decode graph: embed + layers, plus on-device lm_head when enabled.
+
+        Returns the argmax-index tensor when lm_head is folded in (#31), otherwise the
+        final hidden state (lm_head then runs eagerly off the trace).
+        """
+        hidden_tt = self._run_embed_layers()
+        if self._ondevice_lmhead:
+            return self._lm_head_graph(hidden_tt)
+        return hidden_tt
+
     def _decode_step_traced(self, token_id: int) -> int:
         """Trace-replayed decode (#30): host-free embed+layers run from a captured trace.
 
-        Only PCIe per token: write token id + position into pinned buffers, then read the
-        final logits for lm_head (which stays eager — on-device lm_head/sampling is #31).
+        Per-token PCIe: write token id + position into pinned buffers, execute the trace,
+        read back the result. With DISPATCH_ONDEVICE_LMHEAD=1 (#31) the final norm +
+        lm_head + argmax are folded into the trace, so the read-back is just the 4-byte
+        sampled id; otherwise the final hidden state is read back for an eager CPU lm_head.
         """
         import ttnn
         dev = self._device
@@ -638,14 +652,17 @@ class TTModelRunner:
             ttnn.from_torch(self._tok_cpu, dtype=ttnn.uint32, layout=ttnn.ROW_MAJOR_LAYOUT),
             self._tok_dev)
         if self._trace_id is None:
-            # warmup (compiles kernels) then capture embed+layers as a replayable trace
-            self._run_embed_layers()
+            # warmup (compiles kernels) then capture the decode graph as a replayable trace
+            self._run_decode_graph()
             self._trace_id = ttnn.begin_trace_capture(dev, cq_id=0)
-            self._traced_hidden = self._run_embed_layers()
+            self._traced_out = self._run_decode_graph()
             ttnn.end_trace_capture(dev, self._trace_id, cq_id=0)
-            print(f"  Decode trace captured (id={self._trace_id})")
+            print(f"  Decode trace captured (id={self._trace_id}"
+                  f"{', lm_head folded in' if self._ondevice_lmhead else ''})")
         ttnn.execute_trace(dev, self._trace_id, cq_id=0, blocking=True)
-        return self._lm_head(self._traced_hidden)
+        if self._ondevice_lmhead:
+            return int(ttnn.to_torch(self._traced_out).flatten()[0])
+        return self._lm_head(self._traced_out)
 
     def _embed(self, token_id: int):
         """Lookup embedding on-device, apply optional scale. Returns (TILE, hidden_p)."""
@@ -1089,13 +1106,96 @@ class TTModelRunner:
             ttnn.deallocate(activated_tt)
         return result
 
+    def _setup_ondevice_lmhead(self):
+        """Set up the on-device final-norm + lm_head + argmax path (issue #31), gated by env.
+
+        DISPATCH_ONDEVICE_LMHEAD=1 keeps the whole final stage on the card: rms_norm →
+        ttnn.matmul(normed, lm_head_w) → ttnn.argmax. Eliminates the per-token logits
+        readback (the last big device→host transfer besides the 4-byte sampled id) and,
+        when combined with DISPATCH_TRACE=1, folds into the captured decode trace so the
+        full step is host-free.
+
+        Eligibility (first cut — the validated nh==32 GQA models, llama3 / DeepSeek-Llama):
+          - RMSNorm final norm (LayerNorm final-norm bias not yet uploaded to device).
+          - Tile-aligned vocab: padding columns of the uploaded weight are zero, so an
+            unaligned vocab could let argmax pick a zero-logit padding index. Validated on
+            card (probe_ondevice_lmhead.py): bf16 matmul + fp32-acc gives logit cos-sim
+            ~1.0 vs CPU fp32; greedy picks differ only on genuine near-ties.
+        """
+        import os, ttnn
+        self._ondevice_lmhead = False
+        if os.environ.get("DISPATCH_ONDEVICE_LMHEAD", "0") != "1":
+            return
+        vocab   = int(self._lm_head_w_cpu.shape[0])          # [vocab, hidden]
+        vocab_p = int(self._lm_head_w_tt.shape[-1])          # uploaded [hidden_p, vocab_p]
+        if self._uses_layernorm:
+            print("  On-device lm_head: NOT eligible (LayerNorm final norm not yet "
+                  "supported on-device) -> CPU lm_head")
+            return
+        if vocab_p != vocab:
+            print(f"  On-device lm_head: NOT eligible (vocab {vocab} not tile-aligned "
+                  f"(padded to {vocab_p}); padding cols would corrupt argmax) -> CPU lm_head")
+            return
+        # HiFi4 + fp32 dest accumulation: maximize precision of the 4096-wide bf16 dot
+        # products over a ~128k vocab so greedy argmax matches the CPU fp32 reference.
+        self._lmhead_ckc = ttnn.WormholeComputeKernelConfig(
+            math_fidelity=ttnn.MathFidelity.HiFi4, math_approx_mode=False,
+            fp32_dest_acc_en=True, packer_l1_acc=True)
+        self._ondevice_lmhead = True
+        print(f"  On-device lm_head: ENABLED (DISPATCH_ONDEVICE_LMHEAD=1; "
+              f"norm+matmul+argmax on device, vocab={vocab})"
+              + (" + folded into decode trace" if getattr(self, "_traced", False) else ""))
+
+    def _lm_head_graph(self, hidden_tt):
+        """On-device final norm + lm_head matmul + argmax. Returns the argmax index tensor
+        (device-resident). Trace-safe: rms_norm writes the reused _rmsnorm_buf_tt, matmul
+        and argmax allocate fixed-address buffers captured by the trace (no host roundtrip).
+        """
+        import ttnn
+        normed_tt = self._dispatcher.rmsnorm(hidden_tt, self._final_norm_w_tt,
+                                             self._final_norm_sc_tt, self._rmsnorm_buf_tt)
+        logits_tt = ttnn.matmul(normed_tt, self._lm_head_w_tt,
+                                compute_kernel_config=self._lmhead_ckc)
+        return ttnn.argmax(logits_tt, dim=-1)
+
+    def _lm_head_ondevice(self, hidden_tt) -> int:
+        """Eager (non-traced) on-device lm_head — reads back only the 4-byte argmax id.
+
+        DISPATCH_LMHEAD_DEBUG=1 additionally computes the CPU fp32 reference argmax from
+        the same hidden state and logs any divergence with the fp32 logit gap between the
+        two picks — a tiny gap means a benign bf16 near-tie, a large gap means a real
+        ranking bug. Diagnostic only (the readback defeats the host-free goal).
+        """
+        import os, ttnn
+        out_tt = self._lm_head_graph(hidden_tt)
+        dev_idx = int(ttnn.to_torch(out_tt).flatten()[0])
+        if os.environ.get("DISPATCH_LMHEAD_DEBUG", "0") == "1":
+            hidden = self._cfg.hidden_size
+            h_cpu = ttnn.to_torch(hidden_tt)[0, :hidden].float()
+            rms = h_cpu.pow(2).mean().add(
+                getattr(self._hf_cfg, "rms_norm_eps", 1e-5)).sqrt()
+            normed = (h_cpu / rms) * self._final_norm_w_cpu
+            ref_logits = normed @ self._lm_head_w_cpu.T
+            ref_idx = int(ref_logits.argmax())
+            if dev_idx != ref_idx:
+                gap = float(ref_logits[ref_idx] - ref_logits[dev_idx])
+                rng = float(ref_logits.max() - ref_logits.min())
+                print(f"  [lmhead-debug] divergence: dev={dev_idx} cpu={ref_idx} "
+                      f"fp32_gap={gap:.5f} (logit_range={rng:.2f}, rel={gap/rng:.2e})",
+                      flush=True)
+        return dev_idx
+
     def _lm_head(self, hidden_tt) -> int:
         """Final norm (device) + lm_head matmul + argmax (CPU). Returns next token id.
 
         lm_head runs on CPU in float32 for accuracy — bfloat16 argmax on device
-        can mis-rank logits for large vocabularies due to precision loss.
+        can mis-rank logits for large vocabularies due to precision loss. The
+        on-device path (issue #31, DISPATCH_ONDEVICE_LMHEAD=1) uses fp32-accumulated
+        bf16 matmul + ttnn.argmax instead; see _setup_ondevice_lmhead.
         """
         import ttnn
+        if self._ondevice_lmhead:
+            return self._lm_head_ondevice(hidden_tt)
         hidden = self._cfg.hidden_size
         if self._uses_layernorm:
             eps = getattr(self._hf_cfg, "layer_norm_eps",
