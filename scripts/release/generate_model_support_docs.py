@@ -16,11 +16,8 @@ For example, GALAXY and GALAXY_T3K share a single page with sections for each de
 
 Usage:
     python scripts/release/generate_model_support_docs.py
-    python scripts/release/generate_model_support_docs.py --dry-run
-    python scripts/release/generate_model_support_docs.py --output-dir docs/model_support
 """
 
-import argparse
 import re
 import sys
 from collections import defaultdict
@@ -1108,31 +1105,21 @@ def update_readme_model_support(
         print(f"Warning: README.md not found at {readme_path}, skipping update")
         return
 
-    # Generate the model support content directly (no intermediate file)
     model_support_content = generate_directory_readme(templates)
 
-    # Adjust relative paths to work from repo root
-    # - Links like (llm/README.md) -> (docs/model_support/llm/README.md)
-    # - Links like (models_by_hardware.md#...) -> (docs/model_support/models_by_hardware.md#...)
-    # - Links like (llm/Model.md) -> (docs/model_support/llm/Model.md)
-    # Skip external links (http/https) and parent links (..)
     def adjust_link(match):
         link_text = match.group(1)
         link_path = match.group(2)
 
-        # Skip external links and parent directory links
         if link_path.startswith(("http://", "https://", "..")):
             return match.group(0)
 
-        # Prepend docs/model_support/ to relative paths
         return f"[{link_text}](docs/model_support/{link_path})"
 
     adjusted_content = re.sub(
         r"\[([^\]]+)\]\(([^)]+)\)", adjust_link, model_support_content
     )
 
-    # Remove the "# Model Support" header since README.md already has "## Model Support"
-    # and remove the intro line about "This directory contains..."
     lines = adjusted_content.split("\n")
     filtered_lines = []
     skip_next_empty = False
@@ -1151,11 +1138,9 @@ def update_readme_model_support(
 
     model_support_section = "\n".join(filtered_lines).strip()
 
-    # Read current README content
     with open(readme_file, "r") as f:
         content = f.read()
 
-    # Replace content between MODEL_SUPPORT markers
     start_marker = "<!-- MODEL_SUPPORT_START -->"
     end_marker = "<!-- MODEL_SUPPORT_END -->"
 
@@ -1168,7 +1153,6 @@ def update_readme_model_support(
         )
         return
 
-    # Build new section with markers
     new_section = f"{start_marker}\n{model_support_section}\n{end_marker}"
 
     end_pos += len(end_marker)
@@ -1179,7 +1163,6 @@ def update_readme_model_support(
         print(f"  Section length: {len(new_section)} characters")
         return
 
-    # Write back to file
     with open(readme_file, "w") as f:
         f.write(updated_content)
 
@@ -1187,56 +1170,21 @@ def update_readme_model_support(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate Model Support documentation from MODEL_SPECS"
-    )
-    parser.add_argument(
-        "--output-dir",
-        default="docs/model_support",
-        help="Output directory (default: docs/model_support)",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print what would be generated without writing files",
-    )
-    parser.add_argument(
-        "--model-spec-path",
-        default="workflows/model_spec.py",
-        help="Path to model_spec.py (default: workflows/model_spec.py)",
-    )
-    parser.add_argument(
-        "--readme-path",
-        default="README.md",
-        help="Path to README.md to update (default: README.md)",
-    )
-    parser.add_argument(
-        "--skip-readme",
-        action="store_true",
-        help="Only generate docs/model_support/ pages; do not update the README Model Support section",
-    )
-
-    args = parser.parse_args()
-
     templates = spec_templates
-
-    generate_doc_pages(templates, args.output_dir, args.dry_run)
+    generate_doc_pages(templates)
 
     # Update the root README.md Model Support section (between markers)
-    if not args.skip_readme:
-        print()
-        update_readme_model_support(templates, args.readme_path, args.dry_run)
+    print()
+    update_readme_model_support(templates)
 
     print()
     print("Documentation generation complete!")
-    if not args.dry_run:
-        print(f"Output directory: {args.output_dir}")
-        print()
-        print(
-            "NOTE: Old per-device pages (e.g., Llama-3.1-8B_galaxy_t3k.md) should be removed"
-        )
-        print("      manually, as they have been replaced by combined page group pages")
-        print("      (e.g., Llama-3.1-8B_galaxy.md covers both GALAXY and GALAXY_T3K)")
+    print()
+    print(
+        "NOTE: Old per-device pages (e.g., Llama-3.1-8B_galaxy_t3k.md) should be removed"
+    )
+    print("      manually, as they have been replaced by combined page group pages")
+    print("      (e.g., Llama-3.1-8B_galaxy.md covers both GALAXY and GALAXY_T3K)")
 
 
 if __name__ == "__main__":
