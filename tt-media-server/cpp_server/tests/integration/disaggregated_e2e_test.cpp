@@ -400,6 +400,12 @@ TEST_F(DisaggregatedE2ETest, ExactTokenCount_AllTokensArrive) {
   EXPECT_EQ(result->task_id, taskId);
   EXPECT_FALSE(result->error);
 
+  // Log how many tokens came back from prefill to decode.
+  TT_LOG_INFO("[Test] PrefillResultMessage received: token_ids.size()={}, "
+              "tokens_generated={}, cached_tokens={}",
+              result->token_ids.size(), result->tokens_generated,
+              result->cached_tokens);
+
   prefillServer_->setMemoryAutoRespond(true);
 }
 
