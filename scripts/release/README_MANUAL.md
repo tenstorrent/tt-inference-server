@@ -151,9 +151,7 @@ Once we have new set of production data and values we can run the python script 
 
 In case when we have new device definitions and support for new models the general README file should be changed as well.
 
-`helm-docs --chart-search-root=charts/tt-inference-server \
-  --template-files=_supportedModels.gotmpl \
-  --template-files=README.md.gotmpl`
+`helm-docs --chart-search-root=charts/tt-inference-server --template-files=_supportedModels.gotmpl --template-files=README.md.gotmpl`
 
 Afterwards we will push all those changes to the stable branch.
 
