@@ -760,10 +760,21 @@ jobs:
         run: |
           CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
           CHECK=cpp_server/scripts/ci/check_vllm_result.py
+          THRESHOLD_LOG=benchmark_thresholds.log
           FAIL=0
+          : > "$THRESHOLD_LOG"
+
+          set +e
           python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock \
-            --result vllm-bench-mock.json || FAIL=1
+            --result vllm-bench-mock.json 2>&1 | tee -a "$THRESHOLD_LOG"
+          STATUS=${PIPESTATUS[0]}
+          set -e
+
+          if [[ "$STATUS" -ne 0 ]]; then
+            FAIL=1
+          fi
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
+          echo "BENCH_THRESHOLD_LOG=$THRESHOLD_LOG" >> "$GITHUB_ENV"
 
       # ── Artifacts & logs ─────────────────────────────────────────────
       - name: Show server logs
@@ -794,7 +805,17 @@ jobs:
 
       - name: Check benchmark result
         if: always()
-        run: exit "${BENCH_FAIL:-0}"
+        run: |
+          if [[ "${BENCH_FAIL:-0}" -ne 0 ]]; then
+            LOG="${BENCH_THRESHOLD_LOG:-benchmark_thresholds.log}"
+            echo "::error::Benchmark threshold check failed. Details from $LOG:"
+            if [[ -f "$LOG" ]]; then
+              cat "$LOG"
+            else
+              echo "No benchmark threshold log found; see the 'Check all benchmark thresholds' step."
+            fi
+            exit 1
+          fi
 
   prefill-gateway-build:
     needs: detect-changes
