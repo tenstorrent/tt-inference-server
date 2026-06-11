@@ -75,6 +75,7 @@ CONTAINER_APP_UID=1000
 TT_METAL_COMMIT_SHA_OR_TAG=v0.56.0-rc6
 TT_VLLM_COMMIT_SHA_OR_TAG=b9564bf364e95a3850619fc7b2ed968cc71e30b7
 TAG_SUFFIX=""
+INSTALL_GEMMA4_REQUIREMENTS=0
 IMAGE_REPO="ghcr.io/tenstorrent/tt-inference-server"
 # ------------------------------------------------------------------------------
 # Process CLI options
@@ -96,6 +97,9 @@ while [ $# -gt 0 ]; do
             ;;
         --release)
             release=true
+            ;;
+        --install-gemma4-requirements)
+            INSTALL_GEMMA4_REQUIREMENTS=1
             ;;
         --tt-metal-commit)
             if [ $# -lt 2 ]; then
@@ -280,6 +284,7 @@ generate_model_specs_json()
         --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
         --build-arg TT_VLLM_COMMIT_SHA_OR_TAG="${TT_VLLM_COMMIT_SHA_OR_TAG}" \
         --build-arg CONTAINER_APP_UID="${CONTAINER_APP_UID}" \
+        --build-arg INSTALL_GEMMA4_REQUIREMENTS="${INSTALL_GEMMA4_REQUIREMENTS}" \
         . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile
 
         echo "✅ built image: ${dev_image_tag}"
