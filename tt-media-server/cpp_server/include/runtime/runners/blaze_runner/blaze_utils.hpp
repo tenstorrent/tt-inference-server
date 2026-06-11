@@ -73,6 +73,9 @@ inline sch::ISRequest makeSubmitRequest(
   req.slot_id = slotId;
   req.dest_slot_id = destSlotId;
   fillSequenceFields(req, seq);
+  if (seq.getSlotToCopyFrom().has_value()) {
+    req.gen.migrate_from_slot = *seq.getSlotToCopyFrom();
+  }
   return req;
 }
 
