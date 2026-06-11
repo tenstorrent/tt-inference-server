@@ -87,6 +87,16 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# Google Benchmark for microbenchmarks
+FetchContent_Declare(googlebenchmark
+    GIT_REPOSITORY https://github.com/google/benchmark.git
+    GIT_TAG        v1.9.1
+    GIT_SHALLOW    TRUE
+)
+set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googlebenchmark)
+
 # GCC 12's libstdc++ still uses the C++17-deprecated std::get_temporary_buffer
 # inside std::stable_sort, which gtest.cc triggers when sorting TestInfo*.
 # Silence on the googletest targets only — keep -Wdeprecated-declarations active
@@ -221,11 +231,39 @@ FetchContent_MakeAvailable(cppzmq)
 # Option to enable tt-llm-engine (formerly tt-blaze pipeline_manager)
 option(ENABLE_BLAZE "Enable tt-llm-engine support" OFF)
 
+# Mooncake transport lives inside tt-llm-engine (third_party/mooncake) and is
+# built there via its DS_ENABLE_MOONCAKE / DS_MOONCAKE_WITH_RDMA options.
+option(ENABLE_MOONCAKE "Build tt-llm-engine with Mooncake transport (requires ENABLE_BLAZE)" OFF)
+option(ENABLE_MOONCAKE_RDMA "Include Mooncake's RDMA transport (implies ENABLE_MOONCAKE)" OFF)
+if(ENABLE_MOONCAKE_RDMA)
+    set(ENABLE_MOONCAKE ON)
+endif()
+if(ENABLE_MOONCAKE AND NOT ENABLE_BLAZE)
+    message(FATAL_ERROR
+        "ENABLE_MOONCAKE requires ENABLE_BLAZE=ON (Mooncake is built inside tt-llm-engine).")
+endif()
+
 if(ENABLE_BLAZE)
     # tt-llm-engine (Core-only at compile time when TT::Metalium is not in scope;
     # the Full target adds SocketPipeline support when Metalium is available).
     set(DS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    # Propagate Mooncake selection into the tt-llm-engine sub-build before
+    # add_subdirectory so its option() calls pick up these values.
+    if(ENABLE_MOONCAKE)
+        set(DS_ENABLE_MOONCAKE ON CACHE BOOL "" FORCE)
+        set(DS_MOONCAKE_WITH_RDMA ${ENABLE_MOONCAKE_RDMA} CACHE BOOL "" FORCE)
+        message(STATUS "Mooncake transport: ENABLED (RDMA=${ENABLE_MOONCAKE_RDMA})")
+    else()
+        message(STATUS "Mooncake transport: DISABLED (use -DENABLE_MOONCAKE=ON to enable)")
+    endif()
+    # Mooncake's source has C++11 braced-init narrowing (e.g. int -> uint16_t in
+    # tcp_transport.cpp) that GCC (its usual compiler) only warns on, but the
+    # tt-metal clang-20 toolchain rejects as a hard error. Downgrade it to a
+    # warning for the sub-build only; restore our stricter flags afterwards.
+    set(_tt_saved_cxx_flags "${CMAKE_CXX_FLAGS}")
+    string(APPEND CMAKE_CXX_FLAGS " -Wno-c++11-narrowing")
     add_subdirectory(tt-llm-engine)
+    set(CMAKE_CXX_FLAGS "${_tt_saved_cxx_flags}")
     message(STATUS "tt-llm-engine: ENABLED")
 else()
     message(STATUS "tt-llm-engine: DISABLED (use -DENABLE_BLAZE=ON to enable)")
@@ -468,6 +506,76 @@ if(SANITIZE_ADDRESS)
     target_link_options(llm_runner_lib PUBLIC -fsanitize=address)
 endif()
 
+# Transport layer placeholder (#3890, "Custom backend for DRAM access via UMD").
+# Models the Transfer Engine's two mechanisms at the cpp_server level:
+#   - storage  : IStorageBackend + host/device-DRAM backends, the device one
+#                being the custom UMD backend (umd_device_access wrapper);
+#   - transport: the Mooncake Transfer Engine wrapper (TCP/RDMA).
+# Plus the migration-worker spike (write-on-sender / transfer / verify-on-
+# receiver). Self-contained stubs with no Mooncake/tt-metal deps, so this builds
+# in every configuration; the real backends land behind the pimpls.
+add_library(transport_lib
+    src/transport/host_dram_storage_backend.cpp
+    src/transport/device_dram_storage_backend.cpp
+    src/transport/umd_device_access.cpp
+    src/transport/mooncake_transfer_engine.cpp
+    src/transport/mooncake_migration_worker.cpp
+    src/utils/logger.cpp
+)
+target_include_directories(transport_lib PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(transport_lib PUBLIC spdlog::spdlog)
+if(USE_EXTERNAL_FMT)
+    target_link_libraries(transport_lib PUBLIC fmt::fmt)
+endif()
+# Real UMD device-DRAM backend (umd_device_access.cpp) is compiled against
+# tt-metal when available; otherwise it falls back to a no-op (see the
+# USE_METAL_CPP_LIB guard in that file), keeping transport_lib buildable in
+# every configuration.
+if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
+    target_compile_definitions(transport_lib PUBLIC USE_METAL_CPP_LIB)
+    target_include_directories(transport_lib PUBLIC ${TT_METAL_INCLUDE_DIRS})
+    set(_tt_metal_lib_dir "")
+    if(EXISTS "${TT_METAL_HOME}/build_Release/lib/libtt_metal.so")
+        set(_tt_metal_lib_dir "${TT_METAL_HOME}/build_Release/lib")
+    elseif(EXISTS "${TT_METAL_HOME}/build/lib/libtt_metal.so")
+        set(_tt_metal_lib_dir "${TT_METAL_HOME}/build/lib")
+    endif()
+    if(_tt_metal_lib_dir)
+        target_link_directories(transport_lib PUBLIC "${_tt_metal_lib_dir}")
+        target_link_libraries(transport_lib PUBLIC tt_metal tt_stl fmt)
+    endif()
+endif()
+# Real Mooncake transport (mooncake_transfer_engine.cpp) is compiled against the
+# Mooncake Transfer Engine when it is part of the build (ENABLE_MOONCAKE builds
+# the `transfer_engine` target inside tt-llm-engine); otherwise it falls back to
+# a no-op (see the TT_TRANSPORT_WITH_MOONCAKE guard in that file).
+if(TARGET transfer_engine)
+    target_compile_definitions(transport_lib PUBLIC TT_TRANSPORT_WITH_MOONCAKE)
+    target_include_directories(transport_lib PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/third_party/mooncake/mooncake-transfer-engine/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/third_party/mooncake/mooncake-common/include")
+    target_link_libraries(transport_lib PUBLIC transfer_engine)
+    message(STATUS "transport_lib: building with Mooncake transport")
+endif()
+target_compile_features(transport_lib PUBLIC cxx_std_20)
+target_compile_options(transport_lib PRIVATE -Wall -Wextra -Wpedantic)
+
+# Two-process acceptance harness for the #3890 migration path (the "Two
+# galaxies" validation in mooncake/poc-transfer-engine/adr-mooncake-backend.md). It is a manual
+# sender/receiver driver, not a ctest case, and is only built when Mooncake is
+# in the build (the engine is otherwise a no-op). Run it via
+# tests/integration/run_transport_migration_e2e.sh.
+if(TARGET transfer_engine)
+    add_executable(transport_migration_e2e
+        tests/integration/transport_migration_e2e.cpp)
+    target_link_libraries(transport_migration_e2e PRIVATE transport_lib)
+    target_include_directories(transport_migration_e2e PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    message(STATUS "transport_migration_e2e: ENABLED (Mooncake acceptance harness)")
+endif()
+
 # Unit tests (link llm_runner_lib)
 enable_testing()
 add_executable(scheduler_test tests/scheduler_test.cpp)
@@ -479,6 +587,13 @@ target_include_directories(scheduler_test PRIVATE
 add_executable(llm_runner_test tests/llm_runner_test.cpp)
 target_link_libraries(llm_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(llm_runner_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Transport layer placeholder smoke test (also forces transport_lib to link).
+add_executable(transport_test tests/transport_test.cpp)
+target_link_libraries(transport_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(transport_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -849,6 +964,7 @@ set_tests_properties(MainIntegrationTest ToolCallingIntegrationTest PrefillInteg
 )
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
+gtest_discover_tests(transport_test)
 if(ENABLE_BLAZE)
     gtest_discover_tests(blaze_decode_runner_test)
     gtest_discover_tests(blaze_prefill_runner_test)
@@ -898,9 +1014,34 @@ add_test(NAME CancellationE2E
 )
 set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 120)
 
+# Prefix cache E2E test (requires external Dynamo server)
+add_executable(prefix_cache_e2e_test tests/prefix_cache_e2e_test.cpp)
+target_link_libraries(prefix_cache_e2e_test PRIVATE
+    JsonCpp::JsonCpp
+    GTest::gtest_main
+)
+target_include_directories(prefix_cache_e2e_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 # Tokenizer benchmark
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)
 target_link_libraries(tokenizer_benchmark PRIVATE llm_runner_lib)
+
+# Session manager microbenchmark (Google Benchmark)
+add_executable(session_manager_benchmark
+    benchmarks/session_manager_benchmark.cpp
+    src/domain/session.cpp
+    src/services/session_manager.cpp
+    src/metrics/metrics.cpp
+)
+target_link_libraries(session_manager_benchmark PRIVATE
+    llm_runner_lib Drogon::Drogon prometheus-cpp::core benchmark::benchmark benchmark::benchmark_main)
+target_include_directories(session_manager_benchmark PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+add_test(NAME SessionManagerBenchmark COMMAND session_manager_benchmark --benchmark_min_time=0.1s)
 
 # Kafka messaging support (optional)
 if(KAFKA_ENABLED)
