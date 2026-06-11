@@ -6,17 +6,14 @@
 
 `SpecDecodeRunSpec` describes a single sweep config (dataset, output length,
 concurrency). `merge_acceptance_rate` annotates the per-sweep result JSON in
-place with metrics scraped from Prometheus. `compute_speedup` takes two
-already-loaded baseline+spec result dicts (vllm-bench schema) and returns
-the per-percentile speedup ratios — called in-memory by
-``summary_report._pair_spec_decode_results`` during report generation.
+place with metrics scraped from Prometheus.
 
 Kept separate from the aiperf-specific runner so a future
 ``run_sglang_spec_decode_benchmarks.py`` (or any other client tool) can reuse
-the same sweep specs, result annotation, and pairing math. The runner is
-responsible for normalising tool-specific output JSON into the vllm-bench
-field names (``mean_e2el_ms``, ``p50_e2el_ms``, ``output_throughput``, etc.)
-that ``compute_speedup`` reads here.
+the same sweep specs and result annotation. The runner is responsible for
+normalising tool-specific output JSON into the vllm-bench field names
+(``mean_e2el_ms``, ``p50_e2el_ms``, ``output_throughput``, etc.) that the
+report layer reads.
 """
 
 import json
@@ -34,10 +31,11 @@ class SpecDecodeRunSpec:
     max_concurrency: int
     num_prompts: Optional[int] = None
     output_len: Optional[int] = None
-
     # Upper bound on tokens generated per request, injected as
     # ``--extra-inputs max_completion_tokens:<N>``. this is not a lower bound, the model
     # is allowed to output its natural length, then it cuts off at N to prevent timeout
+    max_completion_tokens: Optional[int] = None
+
     def __post_init__(self) -> None:
         if not self.public_dataset:
             raise ValueError("public_dataset is required")
@@ -81,51 +79,3 @@ def merge_acceptance_rate(
     with open(tmp_path, "w") as f:
         json.dump(data, f, indent=2)
     tmp_path.replace(path)
-
-
-def _safe_ratio(
-    numerator: Optional[float], denominator: Optional[float]
-) -> Optional[float]:
-    if numerator is None or denominator is None or denominator == 0:
-        return None
-    return numerator / denominator
-
-
-def compute_speedup(baseline: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, Any]:
-    """Compute per-percentile speedup from two already-loaded result dicts.
-
-    Each dict must use the vllm-bench field names (``mean_e2el_ms``,
-    ``p50_e2el_ms``, ``output_throughput``, ...) — the runner is responsible
-    for that normalisation regardless of which client tool produced the raw
-    output. E2EL ratios are baseline/spec (values > 1 mean spec is faster);
-    throughput is spec/baseline (also > 1 when spec is faster). Returns
-    ``None`` for any ratio whose numerator or denominator is missing or
-    zero, so callers can distinguish "not measured" from a legitimate zero.
-
-    Acceptance rates are read out of each side's ``spec_decode_metrics``
-    block when present — typically the baseline lacks one (it ran without
-    speculation), so ``baseline_acceptance_rate`` is usually ``None``.
-    """
-
-    def latency_speedup(field: str) -> Optional[float]:
-        return _safe_ratio(baseline.get(field), spec.get(field))
-
-    return {
-        "speedup_mean_e2el": latency_speedup("mean_e2el_ms"),
-        "speedup_p50_e2el": latency_speedup("p50_e2el_ms"),
-        "speedup_p95_e2el": latency_speedup("p95_e2el_ms"),
-        "speedup_p99_e2el": latency_speedup("p99_e2el_ms"),
-        "tpot_ratio_p50": latency_speedup("p50_tpot_ms"),
-        "tpot_ratio_p95": latency_speedup("p95_tpot_ms"),
-        "tpot_ratio_p99": latency_speedup("p99_tpot_ms"),
-        "output_tput_ratio": _safe_ratio(
-            spec.get("output_throughput"),
-            baseline.get("output_throughput"),
-        ),
-        "baseline_acceptance_rate": (
-            (baseline.get("spec_decode_metrics") or {}).get("acceptance_rate")
-        ),
-        "spec_acceptance_rate": (
-            (spec.get("spec_decode_metrics") or {}).get("acceptance_rate")
-        ),
-    }

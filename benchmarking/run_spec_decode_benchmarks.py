@@ -31,7 +31,7 @@ sys.path.insert(0, str(project_root))
 import jwt
 import requests
 
-from benchmarking.benchmark_config import SPEC_DECODE_PROFILES
+from benchmarking.benchmark_config import SPEC_DECODE_SWEEP
 from benchmarking.spec_decode_common import (
     SpecDecodeRunSpec,
     merge_acceptance_rate,
@@ -44,14 +44,12 @@ from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
 from workflows.runtime_config import RuntimeConfig
 from workflows.utils import run_command
-from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
+from workflows.workflow_types import WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_WARMUP_REQUESTS = 4
-PHASE_BASELINE = "baseline"
-PHASE_SPEC = "spec"
 
 
 def parse_args() -> argparse.Namespace:
@@ -79,18 +77,6 @@ def parse_workflow_args(workflow_args_str: Optional[str]) -> Dict[str, str]:
         key, value = token.split("=", 1)
         parsed[key.strip()] = value.strip()
     return parsed
-
-
-def select_profile(runtime_config: RuntimeConfig) -> List[SpecDecodeRunSpec]:
-    """Pick the smoke or full profile from SPEC_DECODE_PROFILES."""
-    if runtime_config.limit_samples_mode:
-        try:
-            mode = EvalLimitMode.from_string(runtime_config.limit_samples_mode)
-        except ValueError:
-            mode = None
-        if mode == EvalLimitMode.SMOKE_TEST:
-            return list(SPEC_DECODE_PROFILES["smoke"])
-    return list(SPEC_DECODE_PROFILES["full"])
 
 
 def build_aiperf_cmd(
@@ -200,11 +186,10 @@ def translate_aiperf_to_vllm_bench_json(
 ) -> bool:
     """Read aiperf's summary JSON and write a vllm-bench-shaped result JSON.
 
-    Downstream code (``summary_report.render_spec_decode_sections``, which
-    calls ``spec_decode_common.compute_speedup``) reads field names from
-    the historical vllm-bench schema (``mean_e2el_ms``, ``p50_e2el_ms``,
-    ``output_throughput``, ...). This normaliser keeps that contract
-    stable across tool swaps.
+    Downstream code (``summary_report.render_spec_decode_sections``) reads
+    field names from the historical vllm-bench schema (``mean_e2el_ms``,
+    ``p50_e2el_ms``, ``output_throughput``, ...). This normaliser keeps
+    that contract stable across tool swaps.
     """
     summary_path = _find_aiperf_summary(artifact_dir)
     if summary_path is None:
@@ -345,8 +330,6 @@ def _annotate_with_metrics(
     before: Dict[str, float],
     result_path: Path,
     run_spec: SpecDecodeRunSpec,
-    *,
-    role: str,
 ) -> None:
     try:
         metrics = scrape_spec_decode_metrics(base_url, before)
@@ -358,11 +341,8 @@ def _annotate_with_metrics(
             exc,
         )
         return
-    metrics["benchmark_kind"] = (
-        "spec_decode_baseline" if role == PHASE_BASELINE else "spec_decode"
-    )
+    metrics["benchmark_kind"] = "spec_decode"
     metrics["public_dataset"] = run_spec.public_dataset
-    metrics["endpoint_role"] = role
     try:
         merge_acceptance_rate(result_path, metrics)
     except (OSError, json.JSONDecodeError) as exc:
@@ -372,8 +352,7 @@ def _annotate_with_metrics(
         return
     rate = metrics.get("acceptance_rate")
     logger.info(
-        "[%s] acceptance_rate=%.3f for %s",
-        role,
+        "acceptance_rate=%.3f for %s",
         rate if rate is not None else float("nan"),
         run_spec.slug,
     )
@@ -381,7 +360,6 @@ def _annotate_with_metrics(
 
 def _run_one_sweep(
     *,
-    role: str,
     url: str,
     venv_python: Path,
     hf_model_repo: str,
@@ -409,8 +387,7 @@ def _run_one_sweep(
     return_code = run_command(cmd, logger=logger)
     if return_code != 0:
         logger.error(
-            "[%s] aiperf profile failed (rc=%d) for %s",
-            role,
+            "aiperf profile failed (rc=%d) for %s",
             return_code,
             run_spec.slug,
         )
@@ -419,19 +396,17 @@ def _run_one_sweep(
         artifact_dir, result_path, hf_model_repo=hf_model_repo, run_spec=run_spec
     ):
         logger.error(
-            "[%s] could not translate aiperf output to result JSON for %s",
-            role,
+            "could not translate aiperf output to result JSON for %s",
             run_spec.slug,
         )
         return 1
-    _annotate_with_metrics(url, before, result_path, run_spec, role=role)
+    _annotate_with_metrics(url, before, result_path, run_spec)
     return 0
 
 
-def run_benchmark_phase(
+def run_benchmark_sweep(
     *,
-    role: str,
-    profile: Sequence[SpecDecodeRunSpec],
+    sweep: Sequence[SpecDecodeRunSpec],
     venv_python: Path,
     output_dir: Path,
     model_id: str,
@@ -441,13 +416,12 @@ def run_benchmark_phase(
     jwt_token: str,
     warmup_requests: int = DEFAULT_WARMUP_REQUESTS,
 ) -> List[int]:
-    """Run one phase (baseline or spec) against a single endpoint."""
-    assert role in (PHASE_BASELINE, PHASE_SPEC), f"invalid role: {role!r}"
+    """Run the full sweep against a single endpoint."""
     output_dir.mkdir(parents=True, exist_ok=True)
     artifact_root = output_dir / "aiperf_artifacts"
 
     if not wait_for_url_healthy(url, jwt_token=jwt_token):
-        logger.error("⛔️ %s endpoint not healthy at %s. Aborting phase.", role, url)
+        logger.error("⛔️ endpoint not healthy at %s. Aborting.", url)
         return [1]
 
     warmup_endpoint(
@@ -455,18 +429,17 @@ def run_benchmark_phase(
     )
 
     return_codes: List[int] = []
-    for i, run_spec in enumerate(profile, 1):
+    for i, run_spec in enumerate(sweep, 1):
         run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         result_path = output_dir / (
-            f"benchmark_spec_decode_{role}_{model_id}_{device}_"
+            f"benchmark_spec_decode_{model_id}_{device}_"
             f"{run_timestamp}_{run_spec.slug}.json"
         )
-        artifact_dir = artifact_root / f"{role}_{run_timestamp}_{run_spec.slug}"
-        logger.info("[%s %d/%d] running %s", role, i, len(profile), run_spec.slug)
+        artifact_dir = artifact_root / f"{run_timestamp}_{run_spec.slug}"
+        logger.info("[%d/%d] running %s", i, len(sweep), run_spec.slug)
         time.sleep(2)  # small gap so /metrics ticks settle between runs
         return_codes.append(
             _run_one_sweep(
-                role=role,
                 url=url,
                 venv_python=venv_python,
                 hf_model_repo=hf_model_repo,
@@ -488,7 +461,6 @@ def main() -> int:
     runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
     workflow_args = parse_workflow_args(runtime_config.workflow_args)
-    phase = workflow_args.get("phase", PHASE_SPEC).strip().lower()
 
     service_port = int(runtime_config.service_port)
     url = workflow_args.get("url", f"http://127.0.0.1:{service_port}")
@@ -504,7 +476,6 @@ def main() -> int:
     logger.info("=" * 60)
     logger.info("Speculative-Decoding Benchmark")
     logger.info("=" * 60)
-    logger.info("phase:           %s", phase)
     logger.info("model:           %s", model_spec.model_name)
     logger.info("device:          %s", device)
     logger.info("url:             %s", url)
@@ -512,9 +483,9 @@ def main() -> int:
     logger.info("output_path:     %s", output_dir)
     logger.info("=" * 60)
 
-    profile = select_profile(runtime_config)
-    if not profile:
-        logger.error("Selected profile is empty; nothing to run.")
+    sweep = list(SPEC_DECODE_SWEEP)
+    if not sweep:
+        logger.error("Spec-decode sweep is empty; nothing to run.")
         return 1
 
     jwt_token = ""
@@ -533,9 +504,8 @@ def main() -> int:
     venv_config = VENV_CONFIGS[WorkflowVenvType.BENCHMARKS_SPEC_DECODE]
     venv_python = venv_config.venv_python
 
-    return_codes = run_benchmark_phase(
-        role=phase,
-        profile=profile,
+    return_codes = run_benchmark_sweep(
+        sweep=sweep,
         venv_python=venv_python,
         output_dir=output_dir,
         model_id=model_spec.model_id,
@@ -547,9 +517,9 @@ def main() -> int:
     )
 
     if all(rc == 0 for rc in return_codes):
-        logger.info("✅ phase=%s completed.", phase)
+        logger.info("✅ spec-decode sweep completed.")
         return 0
-    logger.error("⛔️ phase=%s had failures: %s", phase, return_codes)
+    logger.error("⛔️ spec-decode sweep had failures: %s", return_codes)
     return 1
 
 

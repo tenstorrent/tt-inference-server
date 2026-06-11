@@ -110,21 +110,25 @@ SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
 SPEED_BENCH_QUALITATIVE_CATEGORIES = (
     "coding",
-    "humanities",
-    "math",
-    "multilingual",
-    "qa",
-    "rag",
-    "reasoning",
-    "roleplay",
-    "stem",
-    "summarization",
-    "writing",
+    # "humanities",
+    # "math",
+    # "multilingual",
+    # "qa",
+    # "rag",
+    # "reasoning",
+    # "roleplay",
+    # "stem",
+    # "summarization",
+    # "writing",
 )
 
-SPEED_BENCH_THROUGHPUT_ISLS = ("1k", "2k", "8k", "16k", "32k")
+SPEED_BENCH_THROUGHPUT_ISLS = ("1k",
+                                # "2k", "8k", "16k", "32k"
+                                )
 
-THROUGHPUT_CONCURRENCY_SWEEP = (1, 16, 64)
+THROUGHPUT_CONCURRENCY_SWEEP = (1,
+                                #  16, 64
+                                 )
 
 # Every SPEED-Bench qualitative category holds exactly 80 prompts. aiperf does
 # max(10, concurrency*2) == 10 for conc=1, so the count must be passed
@@ -136,35 +140,26 @@ SPEED_BENCH_QUALITATIVE_NUM_PROMPTS = 80
 # Cap output tokens on the throughput sweep so a handful of long-decoding
 # prompts can't blow up the runtime. Injected as
 # ``--extra-inputs max_completion_tokens:<N>`` (a ceiling, not a hard fixed length).
-THROUGHPUT_MAX_COMPLETION_TOKENS = 8192
+SPEC_DECODE_MAX_COMPLETION_TOKENS = 8192
 
-SPEC_DECODE_PROFILES: Dict[str, List[SpecDecodeRunSpec]] = {
-    "smoke": [
-        SpecDecodeRunSpec(
-            public_dataset="speed_bench_coding",
-            max_concurrency=1,
-            num_prompts=4,
-        ),
-    ],
-    "full": [
-        SpecDecodeRunSpec(
-            public_dataset=f"speed_bench_{category}",
-            max_concurrency=1,
-            num_prompts=SPEED_BENCH_QUALITATIVE_NUM_PROMPTS,  # whole category
-        )
-        for category in SPEED_BENCH_QUALITATIVE_CATEGORIES
-    ]
-    + [
-        SpecDecodeRunSpec(
-            public_dataset=f"speed_bench_throughput_{isl}",
-            max_concurrency=concurrency,
-            num_prompts=max(32, 4 * concurrency),
-            max_completion_tokens=THROUGHPUT_MAX_COMPLETION_TOKENS,
-        )
-        for isl in SPEED_BENCH_THROUGHPUT_ISLS
-        for concurrency in THROUGHPUT_CONCURRENCY_SWEEP
-    ],
-}
+SPEC_DECODE_SWEEP: List[SpecDecodeRunSpec] = [
+    SpecDecodeRunSpec(
+        public_dataset=f"speed_bench_{category}",
+        max_concurrency=1,
+        num_prompts=SPEED_BENCH_QUALITATIVE_NUM_PROMPTS,  # whole category
+        max_completion_tokens=SPEC_DECODE_MAX_COMPLETION_TOKENS, 
+    )
+    for category in SPEED_BENCH_QUALITATIVE_CATEGORIES
+] + [
+    SpecDecodeRunSpec(
+        public_dataset=f"speed_bench_throughput_{isl}",
+        max_concurrency=concurrency,
+        num_prompts=max(32, 4 * concurrency),
+        max_completion_tokens=SPEC_DECODE_MAX_COMPLETION_TOKENS,
+    )
+    for isl in SPEED_BENCH_THROUGHPUT_ISLS
+    for concurrency in THROUGHPUT_CONCURRENCY_SWEEP
+]
 
 
 # Image resolution pairs for multimodal benchmarks

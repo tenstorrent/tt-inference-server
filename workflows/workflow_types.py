@@ -36,6 +36,7 @@ class WorkflowVenvType(IntEnum):
     REPORTS_RUN_SCRIPT = auto()
     V2_RUN_SCRIPT = auto()
     V2_PREFIX_CACHE = auto()
+    V2_SPEC_DECODE = auto()
     EVALS_COMMON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()
