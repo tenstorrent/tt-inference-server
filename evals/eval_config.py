@@ -173,7 +173,6 @@ _eval_config_list = [
                     "timeout": 7200,
                 },
                 gen_kwargs={
-
                     "max_gen_toks": 120 * 1024,
                     "until": ["[EOS]"],
                     "do_sample": "true",
@@ -221,7 +220,7 @@ _eval_config_list = [
                         "llm_kwargs": {
                             "top_p": 1.0,
                             "max_tokens": 128 * 1024,
-                            "timeout":  60 * 60,
+                            "timeout": 60 * 60,
                         },
                         # "llm_call_kwargs": {
                         #     "extra_body": {
@@ -271,7 +270,7 @@ _eval_config_list = [
                     temperature=1.0,
                     top_p=1.0,
                     # max inputs tokens should be increased when we get a chance
-                    max_input_tokens=48 * 1024, 
+                    max_input_tokens=48 * 1024,
                     max_output_tokens=32 * 1024,
                     # mini_last_n_observations is ommitted for now
                     # mini_last_n_observations=15,
@@ -286,7 +285,7 @@ _eval_config_list = [
                             "pytest-dev__pytest-5262",
                             "django__django-14672",
                             "sympy__sympy-13551",
-                            "sphinx-doc__sphinx-9281"
+                            "sphinx-doc__sphinx-9281",
                         ],
                     },
                 ),
