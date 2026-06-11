@@ -46,6 +46,7 @@ enum class ModelType {
   DEEPSEEK_R1_0528,
   LLAMA_3_1_8B_INSTRUCT,
   KIMI_K2_6,
+  GPT_OSS,
 };
 
 /** Map lowercase `LLM_DEVICE_BACKEND` values to `ModelType`:

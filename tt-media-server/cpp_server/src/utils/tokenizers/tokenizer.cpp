@@ -273,6 +273,18 @@ const StaticTokenizerInfo& kimiK26Info() {
   return kInfo;
 }
 
+const StaticTokenizerInfo& gptOssInfo() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"openai/gpt-oss-120b",
+      /*stopTokenIds=*/{200012},
+      /*eosTokenId=*/200002,
+      /*assistantHeaderSequence=*/{},
+      /*thinkStartTokenId=*/kNoTokenId,
+      /*thinkEndTokenId=*/kNoTokenId,
+  };
+  return kInfo;
+}
+
 }  // namespace
 
 const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {

@@ -468,6 +468,7 @@ ModelType modelType() {
     if (m == "moonshotai/Kimi-K2.6") return ModelType::KIMI_K2_6;
     if (m == "meta-llama/Llama-3.1-8B-Instruct")
       return ModelType::LLAMA_3_1_8B_INSTRUCT;
+    if (m == "openai/gpt-oss-120b") return ModelType::GPT_OSS;
     return ModelType::DEEPSEEK_R1_0528;
   }();
   return cached;
