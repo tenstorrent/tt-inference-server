@@ -91,6 +91,12 @@ download_hf_file() {
 #                         tokenizer_config.json). Required by the Dynamo
 #                         frontend's PromptFormatter. (tiktoken always fetches
 #                         it regardless of this flag.)
+#
+# generation_config.json (eos_token_id / sampling defaults) is fetched
+# best-effort for EVERY model — it's optional (a 404 is non-fatal) since not
+# all models ship it and config.json may already carry eos_token_id. When
+# present, discovery.cpp publishes it in the MDC so the frontend gets the full
+# eos set (e.g. gpt-oss's <|call|>, MiniMax's only eos).
 download_tokenizer() {
     local model_name="$1"
     local hf_repo="$2"
@@ -98,10 +104,10 @@ download_tokenizer() {
     local placeholder_config="${4:-}"
     local tokenizer_type="${5:-json}"
     local needs_chat_template="${6:-false}"
-    local needs_gen_config="${7:-false}"
 
     local model_dir="${TOKENIZER_DIR}/${model_name}"
     local model_config="${model_dir}/config.json"
+    local gen_config="${model_dir}/generation_config.json"
 
     # Determine required files based on tokenizer type
     local required_files=("tokenizer_config.json")
@@ -113,14 +119,27 @@ download_tokenizer() {
             required_files+=("chat_template.jinja")
         fi
     fi
-    # generation_config.json carries eos_token_id / sampling defaults. Some
-    # models (e.g. MiniMax) omit eos_token_id from config.json, and the Dynamo
-    # frontend hard-fails to load them without it.
-    if [ "${needs_gen_config}" = "true" ]; then
-        required_files+=("generation_config.json")
+
+    # Skip gated models without auth token (covers all downloads below).
+    if [ "${requires_auth}" = "true" ] && [ -z "${HF_TOKEN_RESOLVED}" ]; then
+        echo "  Skipping ${model_name} (gated model — set HF_TOKEN to download)."
+        return 0
     fi
 
-    # Check if all required files exist
+    mkdir -p "${model_dir}"
+
+    # Best-effort generation_config.json (optional, every model).
+    if [ ! -f "${gen_config}" ]; then
+        if download_hf_file "${gen_config}" "${hf_repo}/generation_config.json" \
+                "${requires_auth}" "${model_name}" >/dev/null 2>&1; then
+            echo "  ${model_name}/generation_config.json downloaded"
+        else
+            rm -f "${gen_config}"
+            echo "  note: no generation_config.json for ${model_name} (optional; skipped)"
+        fi
+    fi
+
+    # Fast path: tokenizer essentials + config already present.
     local all_exist=true
     for f in "${required_files[@]}"; do
         if [ ! -f "${model_dir}/${f}" ]; then
@@ -133,13 +152,6 @@ download_tokenizer() {
         return 0
     fi
 
-    # Skip gated models without auth token
-    if [ "${requires_auth}" = "true" ] && [ -z "${HF_TOKEN_RESOLVED}" ]; then
-        echo "  Skipping ${model_name} (gated model — set HF_TOKEN to download)."
-        return 0
-    fi
-
-    mkdir -p "${model_dir}"
     echo "Downloading ${model_name} tokenizer..."
 
     # Download required tokenizer files
@@ -193,6 +205,11 @@ download_tokenizer \
     "tiktoken"
 
 # GPT-OSS 120B (public, no auth)
+# generation_config.json (fetched best-effort for all models) is important here:
+# config.json declares only eos_token_id=200002, but the full stop set lives in
+# generation_config.json's eos_token_id array [200002, 199999, 200012]
+# (<|return|>, <|endoftext|>, <|call|>) — without it the frontend never stops on
+# a tool call (<|call|>).
 download_tokenizer \
     "openai/gpt-oss-120b" \
     "https://huggingface.co/openai/gpt-oss-120b/resolve/main" \
@@ -208,7 +225,6 @@ download_tokenizer \
     "false" \
     '{"model_type":"minimax_m2","architectures":["MiniMaxM2ForCausalLM"]}' \
     "json" \
-    "true" \
     "true"
 
 echo ""

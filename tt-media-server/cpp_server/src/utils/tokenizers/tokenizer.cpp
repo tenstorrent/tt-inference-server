@@ -291,8 +291,10 @@ const StaticTokenizerInfo& kimiK26Info() {
 const StaticTokenizerInfo& gptOss120bInfo() {
   static const StaticTokenizerInfo kInfo{
       /*modelName=*/"openai/gpt-oss-120b",
-      /*stopTokenIds=*/{200002, 200012},  // <|return|>, <|call|>
-      /*eosTokenId=*/200002,              // <|return|>
+      // generation_config.json eos_token_id: [200002, 199999, 200012] =
+      // <|return|> (final turn), <|endoftext|>, <|call|> (tool call).
+      /*stopTokenIds=*/{199999, 200012},
+      /*eosTokenId=*/200002,  // <|return|> (primary, per config.json)
       /*assistantHeaderSequence=*/{},
   };
   return kInfo;
@@ -302,8 +304,8 @@ const StaticTokenizerInfo& gptOss120bInfo() {
 const StaticTokenizerInfo& minimaxM27Info() {
   static const StaticTokenizerInfo kInfo{
       /*modelName=*/"MiniMaxAI/MiniMax-M2.7",
-      /*stopTokenIds=*/{200020},  // [e~[
-      /*eosTokenId=*/200020,      // [e~[
+      /*stopTokenIds=*/{},
+      /*eosTokenId=*/200020,  // [e~[
       /*assistantHeaderSequence=*/{},
       /*thinkStartTokenId=*/200050,  // <think>
       /*thinkEndTokenId=*/200051,    // </think>
