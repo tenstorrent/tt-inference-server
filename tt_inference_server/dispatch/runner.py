@@ -1115,15 +1115,17 @@ class TTModelRunner:
         when combined with DISPATCH_TRACE=1, folds into the captured decode trace so the
         full step is host-free.
 
-        Eligibility (first cut — the validated nh==32 GQA models, llama3 / DeepSeek-Llama):
+        Eligibility (the nh==32 GQA/MHA validated targets — llama3, DeepSeek-Llama, Phi-3.5):
           - RMSNorm final norm (LayerNorm final-norm bias not yet uploaded to device).
-          - Tile-aligned vocab: padding columns of the uploaded weight are zero, so an
-            unaligned vocab could let argmax pick a zero-logit padding index. Validated on
-            card (probe_ondevice_lmhead.py): bf16 matmul + fp32-acc gives logit cos-sim
-            ~1.0 vs CPU fp32; greedy picks differ only on genuine near-ties.
+        Non-tile-aligned vocab (e.g. granite 49155) IS supported: the uploaded weight's
+        padding columns are zero (logit 0), which could win argmax if all real logits are
+        negative, so a constant [vocab:vocab_p] = -inf mask is added before argmax. Validated
+        on card (probe_ondevice_lmhead.py): bf16 matmul + fp32-acc gives logit cos-sim ~1.0
+        vs CPU fp32; greedy picks differ only on genuine near-ties.
         """
         import os, ttnn
         self._ondevice_lmhead = False
+        self._lmhead_pad_mask = None
         if os.environ.get("DISPATCH_ONDEVICE_LMHEAD", "0") != "1":
             return
         vocab   = int(self._lm_head_w_cpu.shape[0])          # [vocab, hidden]
@@ -1132,18 +1134,22 @@ class TTModelRunner:
             print("  On-device lm_head: NOT eligible (LayerNorm final norm not yet "
                   "supported on-device) -> CPU lm_head")
             return
-        if vocab_p != vocab:
-            print(f"  On-device lm_head: NOT eligible (vocab {vocab} not tile-aligned "
-                  f"(padded to {vocab_p}); padding cols would corrupt argmax) -> CPU lm_head")
-            return
-        # HiFi4 + fp32 dest accumulation: maximize precision of the 4096-wide bf16 dot
-        # products over a ~128k vocab so greedy argmax matches the CPU fp32 reference.
+        # HiFi4 + fp32 dest accumulation: maximize precision of the wide bf16 dot
+        # products over a large vocab so greedy argmax matches the CPU fp32 reference.
         self._lmhead_ckc = ttnn.WormholeComputeKernelConfig(
             math_fidelity=ttnn.MathFidelity.HiFi4, math_approx_mode=False,
             fp32_dest_acc_en=True, packer_l1_acc=True)
+        # Unaligned vocab: mask the zero-weight padding columns so argmax can't pick them.
+        if vocab_p != vocab:
+            m = torch.zeros(TILE, vocab_p, dtype=torch.bfloat16)
+            m[:, vocab:] = float("-inf")
+            self._lmhead_pad_mask = ttnn.from_torch(
+                m, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT,
+                device=self._device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
         self._ondevice_lmhead = True
         print(f"  On-device lm_head: ENABLED (DISPATCH_ONDEVICE_LMHEAD=1; "
-              f"norm+matmul+argmax on device, vocab={vocab})"
+              f"norm+matmul+argmax on device, vocab={vocab}"
+              + (f", {vocab_p - vocab} padding cols masked" if vocab_p != vocab else "") + ")"
               + (" + folded into decode trace" if getattr(self, "_traced", False) else ""))
 
     def _lm_head_graph(self, hidden_tt):
@@ -1156,6 +1162,8 @@ class TTModelRunner:
                                              self._final_norm_sc_tt, self._rmsnorm_buf_tt)
         logits_tt = ttnn.matmul(normed_tt, self._lm_head_w_tt,
                                 compute_kernel_config=self._lmhead_ckc)
+        if self._lmhead_pad_mask is not None:
+            logits_tt = ttnn.add(logits_tt, self._lmhead_pad_mask)
         return ttnn.argmax(logits_tt, dim=-1)
 
     def _lm_head_ondevice(self, hidden_tt) -> int:
