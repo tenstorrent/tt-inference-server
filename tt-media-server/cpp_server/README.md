@@ -21,7 +21,7 @@ Solution approach:
 - Performance benchmarks to catch regressions before they ship.
 - Tools and agent skills to help diagnose and fix performance issues.
 
-### 2. Minimize recompute
+### 2. Minimize KV cache recomputations
 
 Computed KV cache is preserved and reused as long as possible. 
 
