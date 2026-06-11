@@ -10,7 +10,7 @@ To run only one eval at a time you can comment/ uncomment evals lines 145-312 at
 
 You will to obtain a huggingface token. For GPQA-Diamond you will need to grant access to the dataset on huggingface.
 
-You can obtain an API_KEY directly at [https://console.tenstorrent.com/dashboard/inference/keys](https://console.tenstorrent.com/dashboard/inference/keyshttps://console.tenstorrent.com/dashboard/inference/keys)
+You can obtain an API_KEY directly at [https://console.tenstorrent.com/dashboard/inference/keys](https://console.tenstorrent.com/dashboard/inference/keys)
 ```bash
 HF_TOKEN="" API_KEY="" .venv/bin/python run.py --model Kimi-K2.6 --workflow evals --device gpu --server-url https://console.tenstorrent.com:443
 ```
