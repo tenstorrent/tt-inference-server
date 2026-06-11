@@ -263,6 +263,13 @@ def generate_docker_run_command(
         *( ["--user", str(runtime_config.image_user)] if runtime_config.image_user and str(runtime_config.image_user) != "1000" else []),
         "--env-file", str(default_dotenv_path),
         "--ipc", "host",
+        # TT device DMA pins 1GB hugepages and maps them to the device. The container needs
+        # CAP_IPC_LOCK + unlimited memlock (and full device/BAR access via --privileged), or UMD
+        # cannot pin the hugepages and falls back to a non-hugepage IOMMU mapping that returns an
+        # invalid device IOVA -> "Bus error: Non-existent physical address" during weight upload.
+        "--privileged",
+        "--cap-add", "IPC_LOCK",
+        "--ulimit", "memlock=-1:-1",
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]

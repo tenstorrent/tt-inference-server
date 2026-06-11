@@ -227,14 +227,14 @@ templates:
 - weights:
     - Qwen/Qwen3.5-9B
   impl: qwen35_9b_blackhole
-  version: "0.12.0"
-  tt_metal_commit: 07e4d5fe7c4
+  version: "0.15.0"
+  tt_metal_commit: fbca6d05661
   vllm_commit: 0410f6b0c
   inference_engine: VLLM
   device_model_specs:
     - device: P150
       max_concurrency: 1
-      max_context: 131072
+      max_context: 262144  # 256K
       default_impl: true
       # Prefix caching forces vLLM into "align" mamba-cache mode,
       # which requires chunked prefill
@@ -247,6 +247,63 @@ templates:
   has_builtin_warmup: true
   metadata:
     Qwen/Qwen3.5-9B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes
+
+# Qwen3.5-27B (bf16) and Qwen3.6-27B reuse the SAME tt-metal code as the 9B
+# (models/demos/blackhole/qwen3_5_9b; shared Qwen35ForCausalLM vLLM wrapper) — the model is
+# selected by HF_MODEL + MESH_DEVICE=P150x4 (tensor parallel across 4 P150s; the mesh drives TP,
+# so no vLLM parallel arg). B=1 serving. tt_metal_commit fbca6d05661 keeps Q in bf16 through the
+# chunked SDPA (the bf8-Q long-context degeneration fix) + the get_max_tokens 256k override, plus
+# the rope-dim / decode-drift / long-context-degeneration fixes layered on top of 8ebeaba79ac;
+# validated to 256K ISL on bf16 27B (250k-token prompt → coherent summary) and 64K on 3.6-27B.
+- weights:
+    - Qwen/Qwen3.5-27B
+  impl: qwen35_9b_blackhole
+  version: "0.15.0"
+  tt_metal_commit: fbca6d05661
+  vllm_commit: 0410f6b0c
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X4
+      max_concurrency: 1
+      max_context: 262144  # 256K (chunk-outer prefill + bf16-Q; validated to 256k)
+      default_impl: true
+      # Prefix caching forces vLLM into "align" mamba-cache mode, which requires chunked prefill
+      vllm_args:
+        no-enable-prefix-caching: true
+      override_tt_config:
+        trace_mode: all
+        trace_region_size: 268435456  # 256 MB
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.5-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes
+
+- weights:
+    - Qwen/Qwen3.6-27B
+  impl: qwen35_9b_blackhole
+  version: "0.15.0"
+  tt_metal_commit: fbca6d05661
+  vllm_commit: 0410f6b0c
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X4
+      max_concurrency: 1
+      max_context: 262144  # 256K (chunk-outer prefill + bf16-Q; 64k validated, same path as 3.5-27B)
+      default_impl: true
+      # Prefix caching forces vLLM into "align" mamba-cache mode, which requires chunked prefill
+      vllm_args:
+        no-enable-prefix-caching: true
+      override_tt_config:
+        trace_mode: all
+        trace_region_size: 268435456  # 256 MB
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.6-27B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: hermes
 
