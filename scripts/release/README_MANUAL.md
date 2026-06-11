@@ -124,6 +124,17 @@ Additionally, `git add/commit/push` only untracked/modified docs files in `docs/
 - `docs/model_support/`: regenerated model support documentation (model type pages, individual model pages)
 - `docs/model_support/{type}/README.md`: model/device STATUS changes are also noted here
 
+## Generate new values.yml
+
+Once we have new set of production data and values we can run the python script which will re-generate the values.yml.
+
+`python -m workflows.helm_generator`
+
+In case when we have new device definitions and support for new models the general README file should be changed as well.
+
+`helm-docs --chart-search-root=charts/tt-inference-server \
+  --template-files=_supportedModels.gotmpl \
+  --template-files=README.md.gotmpl`
 
 ## Generate docker images as release artifacts
 
