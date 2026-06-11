@@ -489,6 +489,7 @@ class TTModelRunner:
         self._build_attn_scalars()
         self._init_kv_cache()
         self._init_scratch_bufs()
+        self._setup_paged_decode()
 
         del hf_model  # free CPU memory
         print(f"  Ready. {len(self._layers)} layers on device.")
@@ -593,10 +594,58 @@ class TTModelRunner:
 
     def _decode_step(self, token_id: int, kv_pos: int) -> int:
         """Single-token forward pass. Returns next token id (int)."""
+        import ttnn
+        if self._paged_attn:
+            # Write the position into the pinned device tensor once; all layers' paged
+            # KV-write + SDPA read it (trace-safe — device-tensor index, not a Python int).
+            self._cur_pos_cpu[0] = kv_pos
+            ttnn.copy_host_to_device_tensor(
+                ttnn.from_torch(self._cur_pos_cpu, dtype=ttnn.int32, layout=ttnn.ROW_MAJOR_LAYOUT),
+                self._cur_pos_dev)
+        if self._traced:
+            return self._decode_step_traced(token_id)
         hidden_tt = self._embed(token_id)
         for i in range(len(self._layers)):
             hidden_tt = self._layer_forward(hidden_tt, i, kv_pos)
         return self._lm_head(hidden_tt)
+
+    def _embed_traced(self):
+        """Host-free embed: reads the pinned token-id device tensor (no from_torch)."""
+        import ttnn
+        emb = ttnn.embedding(self._tok_dev, self._embed_tt)
+        emb = ttnn.reshape(emb, [1, _tile_align(self._cfg.hidden_size)])
+        h = ttnn.to_layout(emb, ttnn.TILE_LAYOUT)
+        if self._embed_scale != 1.0:
+            h = ttnn.multiply(h, self._embed_scale)
+        return h
+
+    def _run_embed_layers(self):
+        hidden_tt = self._embed_traced()
+        for i in range(len(self._layers)):
+            hidden_tt = self._layer_forward(hidden_tt, i, 0)   # kv_pos unused on paged path
+        return hidden_tt
+
+    def _decode_step_traced(self, token_id: int) -> int:
+        """Trace-replayed decode (#30): host-free embed+layers run from a captured trace.
+
+        Only PCIe per token: write token id + position into pinned buffers, then read the
+        final logits for lm_head (which stays eager — on-device lm_head/sampling is #31).
+        """
+        import ttnn
+        dev = self._device
+        self._tok_cpu[0, 0] = token_id
+        ttnn.copy_host_to_device_tensor(
+            ttnn.from_torch(self._tok_cpu, dtype=ttnn.uint32, layout=ttnn.ROW_MAJOR_LAYOUT),
+            self._tok_dev)
+        if self._trace_id is None:
+            # warmup (compiles kernels) then capture embed+layers as a replayable trace
+            self._run_embed_layers()
+            self._trace_id = ttnn.begin_trace_capture(dev, cq_id=0)
+            self._traced_hidden = self._run_embed_layers()
+            ttnn.end_trace_capture(dev, self._trace_id, cq_id=0)
+            print(f"  Decode trace captured (id={self._trace_id})")
+        ttnn.execute_trace(dev, self._trace_id, cq_id=0, blocking=True)
+        return self._lm_head(self._traced_hidden)
 
     def _embed(self, token_id: int):
         """Lookup embedding on-device, apply optional scale. Returns (TILE, hidden_p)."""
@@ -734,6 +783,10 @@ class TTModelRunner:
         # Fused QKV projection — write into pre-allocated scratch (no mmap)
         qkv_ot  = self._qkv_scratch_tt if self._matmul_ot else None
         qkv_tt  = _matmul_safe(normed_tt, lw.qkv_w, self._device, output_tensor=qkv_ot)
+
+        # Paged path (issue #30): trace-safe device-indexed KV write + paged SDPA decode.
+        if self._paged_attn:
+            return self._paged_attention(qkv_tt, layer_idx, lw)
 
         # On-device path (issue #8): split + RoPE + KV-write + flash_attn entirely on
         # device — no QKV readback. Gated at load time by self._ondevice_attn.
@@ -873,6 +926,108 @@ class TTModelRunner:
             N_heads=nh, N_kv_heads=nkv,
         )
         return _matmul_safe(self._fa_out_tt, lw.o_w, self._device)
+
+    def _setup_paged_decode(self):
+        """Set up the paged trace-safe decode path (issue #30), gated by env.
+
+        DISPATCH_PAGED_ATTN=1 enables eager paged attention; DISPATCH_TRACE=1 also
+        captures the decode step as a replayable trace. Only the clean GQA case is
+        supported (nh==32 so the decode SDPA's pad-to-32 is a no-op and grouping stays
+        nh/nkv); other shapes fall back to the existing path.
+        """
+        import os, ttnn
+        self._paged_attn = False
+        self._traced = False
+        want = os.environ.get("DISPATCH_PAGED_ATTN", "0") == "1" or os.environ.get("DISPATCH_TRACE", "0") == "1"
+        if not want:
+            return
+        cfg = self._cfg
+        hd, nh, nkv = cfg.head_dim, cfg.num_heads, cfg.num_kv_heads
+        hd_p = _tile_align(hd)
+        if not (self._ondevice_attn_eligible and nh == 32 and hd_p == hd):
+            print(f"  Paged decode: NOT eligible (need eligible on-device attn + nh==32 + tile head_dim; nh={nh}, hd_p==hd={hd_p==hd})")
+            return
+        self._block = 32
+        self._nblocks = math.ceil(_tile_align(self._max_seq) / self._block)
+        n = len(self._layers)
+
+        def zc():
+            return ttnn.zeros([self._nblocks, nkv, self._block, hd], dtype=ttnn.bfloat16,
+                              layout=ttnn.TILE_LAYOUT, device=self._device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        self._kp = [zc() for _ in range(n)]
+        self._vp = [zc() for _ in range(n)]
+        pt = torch.arange(self._nblocks, dtype=torch.int32).reshape(1, self._nblocks)
+        self._page_table = ttnn.from_torch(pt, dtype=ttnn.int32, layout=ttnn.ROW_MAJOR_LAYOUT,
+                                           device=self._device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        grid = ttnn.num_cores_to_corerangeset(1, self._device.compute_with_storage_grid_size(), True)
+        self._kv_shard = ttnn.MemoryConfig(
+            ttnn.TensorMemoryLayout.HEIGHT_SHARDED, ttnn.BufferType.L1,
+            ttnn.ShardSpec(grid, [32, hd], ttnn.ShardOrientation.ROW_MAJOR))
+        self._sdpa_pcfg = ttnn.SDPAProgramConfig(
+            compute_with_storage_grid_size=(8, 1), q_chunk_size=32, k_chunk_size=self._block)
+        self._cur_pos_cpu = torch.zeros(1, dtype=torch.int32)
+        self._cur_pos_dev = ttnn.from_torch(self._cur_pos_cpu, dtype=ttnn.int32,
+                                            layout=ttnn.ROW_MAJOR_LAYOUT, device=self._device,
+                                            memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        assert hasattr(self, "_rope_cos_dev"), "rope device tables missing (should be uploaded in _build_rope_table)"
+        # Pinned token-id buffer for host-free embed inside the trace (#30)
+        self._tok_cpu = torch.zeros(1, 1, dtype=torch.int32)
+        self._tok_dev = ttnn.from_torch(self._tok_cpu, dtype=ttnn.uint32, layout=ttnn.ROW_MAJOR_LAYOUT,
+                                        device=self._device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        self._traced = os.environ.get("DISPATCH_TRACE", "0") == "1"
+        self._trace_id = None
+        self._traced_hidden = None
+        self._paged_attn = True
+        print(f"  Paged decode: ENABLED ({self._nblocks} blocks × {self._block}, {n} layers, nkv={nkv})"
+              f"{' + TRACE' if self._traced else ''}")
+
+    def _paged_attention(self, qkv_tt, layer_idx: int, lw):
+        """Trace-safe paged attention (issue #30): device-indexed KV write + paged SDPA.
+
+        Position is read from the pinned self._cur_pos_dev (written once per token in
+        _decode_step), so this contains no Python-int args and no host round-trips —
+        it is fully trace-capturable. Validated core: probe_traced_decode.py.
+        """
+        import ttnn
+        cfg = self._cfg
+        hd = cfg.head_dim
+        hd_p = _tile_align(hd)
+        nh, nkv = cfg.num_heads, cfg.num_kv_heads
+        qp, kp = nh * hd_p, nkv * hd_p
+        qend, kend, qkvp = qp, qp + kp, qp + 2 * kp
+
+        # cos/sin for the current position, gathered on-device from the pinned pos tensor
+        pidx = ttnn.reshape(ttnn.typecast(self._cur_pos_dev, ttnn.uint32), [1, 1])
+        c4 = ttnn.unsqueeze_to_4D(ttnn.embedding(pidx, self._rope_cos_dev, layout=ttnn.TILE_LAYOUT))
+        s4 = ttnn.unsqueeze_to_4D(ttnn.embedding(pidx, self._rope_sin_dev, layout=ttnn.TILE_LAYOUT))
+
+        # split row 0 -> per-head Q/K/V, RoPE Q and K
+        row = ttnn.slice(qkv_tt, [0, 0], [1, qkvp])
+        q4 = ttnn.reshape(ttnn.slice(row, [0, 0],    [1, qend]), [1, 1, nh,  hd_p])
+        k4 = ttnn.reshape(ttnn.slice(row, [0, qend], [1, kend]), [1, 1, nkv, hd_p])
+        v4 = ttnn.reshape(ttnn.slice(row, [0, kend], [1, qkvp]), [1, 1, nkv, hd_p])
+        q_rot = self._dev_rope(q4, c4, s4)
+        k_rot = self._dev_rope(k4, c4, s4)
+
+        # pad kv heads to TILE, shard, write to paged cache at the device position
+        pad = [(0, 0), (0, 0), (0, TILE - nkv), (0, 0)]
+        k_sh = ttnn.interleaved_to_sharded(ttnn.pad(k_rot, pad, 0.0), self._kv_shard)
+        v_sh = ttnn.interleaved_to_sharded(ttnn.pad(v4,    pad, 0.0), self._kv_shard)
+        ttnn.experimental.paged_update_cache(self._kp[layer_idx], k_sh,
+                                             update_idxs_tensor=self._cur_pos_dev, page_table=self._page_table)
+        ttnn.experimental.paged_update_cache(self._vp[layer_idx], v_sh,
+                                             update_idxs_tensor=self._cur_pos_dev, page_table=self._page_table)
+
+        attn = ttnn.transformer.paged_scaled_dot_product_attention_decode(
+            q_rot, self._kp[layer_idx], self._vp[layer_idx],
+            cur_pos_tensor=self._cur_pos_dev, page_table_tensor=self._page_table,
+            scale=1.0 / math.sqrt(hd), program_config=self._sdpa_pcfg,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG)   # [1,1,nh,hd]
+
+        # flatten heads -> [1, nh*hd_p] (head-major matches O-proj weight), broadcast to TILE rows
+        attn_flat = ttnn.reshape(attn, [1, nh * hd_p])
+        attn_t = ttnn.repeat(attn_flat, ttnn.Shape([TILE, 1]))
+        return _matmul_safe(attn_t, lw.o_w, self._device)
 
     def _mlp(self, normed_tt, layer_idx: int):
         """MLP using ttnn.matmul for large weight matrices.
@@ -1348,19 +1503,23 @@ class TTModelRunner:
         no_headnorm = all(lw.q_norm_w is None and lw.k_norm_w is None for lw in self._layers)
         full_rope   = (self._rotary_ndims == hd)
         eligible    = bool(full_rope and hd_p == hd and no_bias and no_headnorm and not self._uses_layernorm)
+        self._ondevice_attn_eligible = eligible
         # Opt-in (default OFF): the eager on-device path is CORRECT but slower than the
         # CPU-RoPE path because it trades one PCIe readback for ~25 host-dispatched device
         # ops/layer. The perf win lands once the decode step is trace-captured (#30), which
         # removes per-op host dispatch. Until then, keep it opt-in so baseline tok/s holds.
         import os
         self._ondevice_attn = eligible and os.environ.get("DISPATCH_ONDEVICE_ATTN", "0") == "1"
-        if self._ondevice_attn:
+        # The paged trace-safe path (#30) also needs the on-device rope tables.
+        _paged_want = os.environ.get("DISPATCH_PAGED_ATTN", "0") == "1" or os.environ.get("DISPATCH_TRACE", "0") == "1"
+        if eligible and (self._ondevice_attn or _paged_want):
             self._rope_cos_dev = _ttnn.from_torch(
                 self._rope_cos.bfloat16(), dtype=_ttnn.bfloat16, layout=_ttnn.ROW_MAJOR_LAYOUT,
                 device=self._device, memory_config=_ttnn.DRAM_MEMORY_CONFIG)
             self._rope_sin_dev = _ttnn.from_torch(
                 self._rope_sin.bfloat16(), dtype=_ttnn.bfloat16, layout=_ttnn.ROW_MAJOR_LAYOUT,
                 device=self._device, memory_config=_ttnn.DRAM_MEMORY_CONFIG)
+        if self._ondevice_attn:
             print("  On-device RoPE/attention: ENABLED (DISPATCH_ONDEVICE_ATTN=1)")
         elif eligible:
             print("  On-device RoPE/attention: eligible but OFF "
@@ -1412,8 +1571,10 @@ def main():
                         help="Skip chat template (raw completion mode)")
     args = parser.parse_args()
 
-    import ttnn
-    device = ttnn.open_device(device_id=0)
+    import ttnn, os
+    # Reserve a trace region when the trace-replay decode path (#30) is enabled.
+    _tr = 134217728 if os.environ.get("DISPATCH_TRACE", "0") == "1" else 0
+    device = ttnn.open_device(device_id=0, trace_region_size=_tr)
     try:
         runner = TTModelRunner(args.model, device, max_seq=args.max_seq)
         print(f"\nPROMPT: {args.prompt}")
