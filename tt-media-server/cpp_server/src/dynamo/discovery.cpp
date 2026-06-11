@@ -148,6 +148,12 @@ RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
   if (modelType == "llama") {
     return {nullptr, nullptr};
   }
+  if (modelType == "gpt_oss") {
+    return {"gpt_oss", "harmony"};
+  }
+  if (modelType == "minimax_m2") {
+    return {"deepseek_r1", nullptr};
+  }
   // deepseek_v3 and unknown types default to DeepSeek R1 reasoning.
   return {"deepseek_r1", nullptr};
 }

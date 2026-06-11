@@ -176,4 +176,18 @@ download_tokenizer \
     '{"model_type":"kimi_k25","architectures":["KimiK25ForConditionalGeneration"]}' \
     "tiktoken"
 
+# GPT-OSS 120B (public, no auth)
+download_tokenizer \
+    "openai/gpt-oss-120b" \
+    "https://huggingface.co/openai/gpt-oss-120b/raw/main" \
+    "false" \
+    '{"model_type":"gpt_oss","architectures":["GptOssForCausalLM"]}'
+
+# MiniMax M2 (public, no auth)
+download_tokenizer \
+    "MiniMaxAI/MiniMax-M2.7" \
+    "https://huggingface.co/MiniMaxAI/MiniMax-M2.7/raw/main" \
+    "false" \
+    '{"model_type":"minimax_m2","architectures":["MiniMaxM2ForCausalLM"]}'
+
 echo ""
