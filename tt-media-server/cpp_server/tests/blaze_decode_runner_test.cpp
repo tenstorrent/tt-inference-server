@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runtime/runners/blaze_runner/blaze_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_decode_runner.hpp"
 
 #include <gtest/gtest.h>
 
@@ -35,9 +35,9 @@ constexpr uint64_t MOCK_PIPELINE_TOKEN_ID = 12345u;
 constexpr int DEFAULT_BLOCK_SIZE = 1;
 const std::vector<int64_t> DEFAULT_STOP_TOKEN_IDS = {987654321};
 
-class BlazeRunnerHarness {
+class BlazeDecodeRunnerHarness {
  public:
-  explicit BlazeRunnerHarness(
+  explicit BlazeDecodeRunnerHarness(
       std::vector<int64_t> stopTokenIds = DEFAULT_STOP_TOKEN_IDS) {
     memoryRequestQueue =
         std::make_shared<tt::ipc::in_memory::MemoryRequestQueue>();
@@ -47,9 +47,9 @@ class BlazeRunnerHarness {
         memoryRequestQueue, memoryResultQueue);
     config.runner_type = tt::config::ModelRunnerType::MOCK_PIPELINE;
     config.stop_token_ids = std::move(stopTokenIds);
-    runner =
-        std::make_unique<BlazeRunner>(config, &resultQueue, &taskQueue,
-                                      &cancelQueue, std::move(memoryManager));
+    runner = std::make_unique<BlazeDecodeRunner>(config, &resultQueue,
+                                                 &taskQueue, &cancelQueue,
+                                                 std::move(memoryManager));
 
     runnerThread = std::thread([this]() {
       try {
@@ -60,7 +60,7 @@ class BlazeRunnerHarness {
     });
   }
 
-  ~BlazeRunnerHarness() { shutdown(); }
+  ~BlazeDecodeRunnerHarness() { shutdown(); }
 
   tt::domain::ManageMemoryResult allocate(uint32_t taskId) {
     tt::domain::ManageMemoryTask request{};
@@ -134,7 +134,7 @@ class BlazeRunnerHarness {
   tt::ipc::in_memory::TaskQueue taskQueue;
   tt::ipc::in_memory::CancelQueue cancelQueue;
   tt::config::LLMConfig config{};
-  std::unique_ptr<BlazeRunner> runner;
+  std::unique_ptr<BlazeDecodeRunner> runner;
   std::thread runnerThread;
   std::exception_ptr runnerError;
   bool isShutdown = false;
@@ -142,8 +142,9 @@ class BlazeRunnerHarness {
 
 }  // namespace
 
-TEST(BlazeRunnerIntegrationTest, InMemoryQueuesRoundTripThroughSimulator) {
-  BlazeRunnerHarness harness;
+TEST(BlazeDecodeRunnerIntegrationTest,
+     InMemoryQueuesRoundTripThroughSimulator) {
+  BlazeDecodeRunnerHarness harness;
 
   const uint32_t taskId = 4242;
   const auto allocateResponse = harness.allocate(taskId);
@@ -161,9 +162,9 @@ TEST(BlazeRunnerIntegrationTest, InMemoryQueuesRoundTripThroughSimulator) {
   harness.assertRunnerHealthy();
 
   ASSERT_FALSE(producedTokens.empty())
-      << "Expected BlazeRunner to emit at least one token";
+      << "Expected BlazeDecodeRunner to emit at least one token";
   EXPECT_TRUE(producedTokens.back().isFinal())
-      << "Expected BlazeRunner to emit a final token";
+      << "Expected BlazeDecodeRunner to emit a final token";
 
   for (const auto& token : producedTokens) {
     EXPECT_EQ(token.task_id, taskId);
@@ -173,8 +174,8 @@ TEST(BlazeRunnerIntegrationTest, InMemoryQueuesRoundTripThroughSimulator) {
   }
 }
 
-TEST(BlazeRunnerIntegrationTest, CancelFlowEmitsAbortToken) {
-  BlazeRunnerHarness harness;
+TEST(BlazeDecodeRunnerIntegrationTest, CancelFlowEmitsAbortToken) {
+  BlazeDecodeRunnerHarness harness;
 
   const uint32_t taskId = 5252;
   const auto allocateResponse = harness.allocate(taskId);
@@ -234,9 +235,9 @@ TEST(BlazeRunnerIntegrationTest, CancelFlowEmitsAbortToken) {
   EXPECT_EQ(abortToken.token_id, 0u);
 }
 
-TEST(BlazeRunnerIntegrationTest, StopsOnConfiguredStopToken) {
+TEST(BlazeDecodeRunnerIntegrationTest, StopsOnConfiguredStopToken) {
   // Mock simulator emits token_id=12345; this forces stop-token completion.
-  BlazeRunnerHarness harness({MOCK_PIPELINE_TOKEN_ID});
+  BlazeDecodeRunnerHarness harness({MOCK_PIPELINE_TOKEN_ID});
 
   const uint32_t taskId = 6262;
   const auto allocateResponse = harness.allocate(taskId);
@@ -264,8 +265,8 @@ TEST(BlazeRunnerIntegrationTest, StopsOnConfiguredStopToken) {
   EXPECT_FALSE(producedTokens.front().isAbort());
 }
 
-TEST(BlazeRunnerIntegrationTest, TwoConcurrentTasksStayIsolated) {
-  BlazeRunnerHarness harness;
+TEST(BlazeDecodeRunnerIntegrationTest, TwoConcurrentTasksStayIsolated) {
+  BlazeDecodeRunnerHarness harness;
 
   const uint32_t taskA = 7001;
   const uint32_t taskB = 7002;
@@ -338,14 +339,14 @@ TEST(BlazeRunnerIntegrationTest, TwoConcurrentTasksStayIsolated) {
   }
 }
 
-TEST(BlazeRunnerIntegrationTest,
+TEST(BlazeDecodeRunnerIntegrationTest,
      ManyConcurrentUsersGenerateTokensUnderBackpressure) {
-  BlazeRunnerHarness harness;
+  BlazeDecodeRunnerHarness harness;
 
   constexpr uint32_t kFirstTaskId = 9000;
   constexpr size_t kRequestedUsers = 128;
   constexpr int kMaxTokensPerUser = 4;
-  const size_t userCount = std::min(kRequestedUsers, tt::config::dsMaxUsers());
+  const size_t userCount = std::min(kRequestedUsers, tt::config::pmMaxUsers());
   ASSERT_GE(userCount, 2u)
       << "Need at least two scheduler users for backpressure coverage";
 

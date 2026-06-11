@@ -25,18 +25,18 @@ namespace tt::runners::blaze {
 
 namespace ds = tt_llm_engine::scheduler::decode;
 
-class BlazeRunner : public IRunner {
+class BlazeDecodeRunner : public IRunner {
  public:
-  BlazeRunner(
+  BlazeDecodeRunner(
       const tt::config::LLMConfig& config, ipc::IResultQueue* resultQueue,
       tt::ipc::ITaskQueue* taskQueue, tt::ipc::ICancelQueue* cancelQueue,
       std::unique_ptr<tt::services::MemoryManager> memoryManager = nullptr);
-  ~BlazeRunner() override;
+  ~BlazeDecodeRunner() override;
 
   void run() override;
   void stop() override;
   bool warmup() override;
-  const char* runnerType() const override { return "BlazeRunner"; }
+  const char* runnerType() const override { return "BlazeDecodeRunner"; }
 
  private:
   void step();

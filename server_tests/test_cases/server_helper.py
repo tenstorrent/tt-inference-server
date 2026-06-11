@@ -7,27 +7,16 @@ import os
 import subprocess
 from pathlib import Path
 
+from utils.url_helpers import DEFAULT_DEPLOY_URL, build_base_url
+
 SERVER_STARTUP_TIMEOUT = 5 * 60  # wait up to 5 minutes for server to start
 SERVER_SHUTDOWN_TIMEOUT = 20
 
-
-def _build_server_base_url() -> str:
-    """Resolve the server base URL from DEPLOY_URL / SERVICE_PORT (set by
-    the workflow runner from --server-url), defaulting to localhost for
-    direct script invocations.
-    """
-    from urllib.parse import urlparse
-
-    deploy_url = os.environ.get("DEPLOY_URL", "http://127.0.0.1").rstrip("/")
-    parsed = urlparse(deploy_url)
-    if parsed.port is not None:
-        return deploy_url
-    port = os.environ.get("SERVICE_PORT", "8000")
-    return f"{deploy_url}:{port}"
-
-
 # Base URL (host:port only) for building v1 API paths in eval tests
-SERVER_BASE_URL = _build_server_base_url()
+SERVER_BASE_URL = build_base_url(
+    os.environ.get("DEPLOY_URL", DEFAULT_DEPLOY_URL),
+    os.environ.get("SERVICE_PORT", "8000"),
+)
 # Full URL to CNN search-image endpoint
 SERVER_DEFAULT_URL = f"{SERVER_BASE_URL}/v1/cnn/search-image"
 DEFAULT_AUTHORIZATION = "your-secret-key"

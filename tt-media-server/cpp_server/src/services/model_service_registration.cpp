@@ -12,7 +12,6 @@
 #include "config/settings.hpp"
 #include "config/types.hpp"
 #include "ipc/media_payload_ipc.hpp"
-#include "runtime/runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 #include "runtime/runners/embedding_runner.hpp"
 #include "runtime/runners/image_ipc_runner.hpp"
 #include "runtime/runners/llm_runner.hpp"
@@ -28,7 +27,8 @@
 #include "utils/logger.hpp"
 
 #ifdef ENABLE_BLAZE
-#include "runtime/runners/blaze_runner/blaze_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_decode_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_prefill_runner.hpp"
 #endif
 
 namespace tt::services {
@@ -61,19 +61,6 @@ void registerLLM() {
                             config::ModelRunnerType::MOCK, llmFactory);
   runners.registerIpcRunner(config::ModelService::LLM,
                             config::ModelRunnerType::LLAMA, llmFactory);
-
-  // Disaggregated prefill is independent of ENABLE_BLAZE.
-  runners.registerIpcRunner(
-      config::ModelService::LLM, config::ModelRunnerType::PREFILL,
-      [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
-         ipc::ITaskQueue* taskQueue, ipc::ICancelQueue* /*cancelQueue*/)
-          -> std::unique_ptr<runners::IRunner> {
-        TT_LOG_INFO("[RunnerRegistry] Creating Blaze Prefill runner");
-        const auto& llm = std::get<config::LLMConfig>(cfg);
-        return std::make_unique<runners::BlazePrefillRunner>(llm, resultQueue,
-                                                             taskQueue);
-      });
-
 #ifdef ENABLE_BLAZE
   auto blazeFactory =
       [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
@@ -81,8 +68,13 @@ void registerLLM() {
          ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
     TT_LOG_INFO("[RunnerRegistry] Creating Blaze runner (pipeline_manager)");
     const auto& llm = std::get<config::LLMConfig>(cfg);
-    return std::make_unique<runners::blaze::BlazeRunner>(
-        llm, resultQueue, taskQueue, cancelQueue);
+    if (config::llmMode() != config::LLMMode::PREFILL_ONLY) {
+      return std::make_unique<runners::blaze::BlazeDecodeRunner>(
+          llm, resultQueue, taskQueue, cancelQueue);
+    } else {
+      return std::make_unique<runners::blaze::BlazePrefillRunner>(
+          llm, resultQueue, taskQueue, cancelQueue);
+    }
   };
   runners.registerIpcRunner(config::ModelService::LLM,
                             config::ModelRunnerType::PIPELINE_MANAGER,
