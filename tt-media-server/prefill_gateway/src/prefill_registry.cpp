@@ -7,6 +7,25 @@
 
 namespace tt::gateway {
 
+void PrefillRegistry::addCachedBlock(PrefillPeer& peer, uint64_t blockHash) {
+  if (peer.cached_blocks.insert(blockHash).second) {
+    cache_block_index_[blockHash].insert(peer.server_id);
+  }
+}
+
+void PrefillRegistry::removeCachedBlock(PrefillPeer& peer, uint64_t blockHash) {
+  if (peer.cached_blocks.erase(blockHash) > 0) {
+    removeCachedBlockFromIndex(blockHash, peer.server_id);
+  }
+}
+
+void PrefillRegistry::clearCachedBlocks(PrefillPeer& peer) {
+  for (const uint64_t blockHash : peer.cached_blocks) {
+    removeCachedBlockFromIndex(blockHash, peer.server_id);
+  }
+  peer.cached_blocks.clear();
+}
+
 void PrefillRegistry::removeCachedBlockFromIndex(uint64_t blockHash,
                                                  const std::string& serverId) {
   auto indexIt = cache_block_index_.find(blockHash);
@@ -36,11 +55,11 @@ PrefillSnapshot PrefillRegistry::makeSnapshot(const PrefillPeer& peer,
 void PrefillRegistry::preRegister(const std::string& serverId,
                                   tt::sockets::SocketManager* manager) {
   std::lock_guard<std::mutex> lock(mutex_);
-  PrefillPeer peer;
-  peer.server_id = serverId;
-  peer.socket_manager = manager;
-  // healthy stays false until markRegistered() arrives.
-  prefills_.emplace(serverId, std::move(peer));
+  // New entries stay unhealthy until markRegistered() arrives. Existing entries
+  // keep their runtime/cache state but refresh the non-owning socket pointer.
+  auto it = prefills_.try_emplace(serverId).first;
+  it->second.server_id = serverId;
+  it->second.socket_manager = manager;
 }
 
 bool PrefillRegistry::markRegistered(const std::string& serverId,
@@ -63,10 +82,7 @@ void PrefillRegistry::markDown(const std::string& serverId) {
     if (it != prefills_.end()) {
       wasKnown = true;
       it->second.healthy = false;
-      for (const uint64_t blockHash : it->second.cached_blocks) {
-        removeCachedBlockFromIndex(blockHash, serverId);
-      }
-      it->second.cached_blocks.clear();
+      clearCachedBlocks(it->second);
       // Keep in_flight unchanged: dispatcher's onPrefillDown will fail those
       // tasks and decrement counts via the normal path.
       downCb = on_prefill_down_;
@@ -103,9 +119,7 @@ void PrefillRegistry::addCachedBlocks(
   auto it = prefills_.find(serverId);
   if (it == prefills_.end()) return;
   for (const uint64_t blockHash : blockHashes) {
-    if (it->second.cached_blocks.insert(blockHash).second) {
-      cache_block_index_[blockHash].insert(serverId);
-    }
+    addCachedBlock(it->second, blockHash);
   }
 }
 
@@ -115,9 +129,7 @@ void PrefillRegistry::evictCachedBlocks(
   auto it = prefills_.find(serverId);
   if (it == prefills_.end()) return;
   for (uint64_t h : blockHashes) {
-    if (it->second.cached_blocks.erase(h) > 0) {
-      removeCachedBlockFromIndex(h, serverId);
-    }
+    removeCachedBlock(it->second, h);
   }
 }
 

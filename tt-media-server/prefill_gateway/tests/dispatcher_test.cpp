@@ -367,8 +367,14 @@ TEST_F(DispatcherTest, CacheBlocksAddedAndEvictedAreNoThrow) {
   evicted.block_hashes = {2};
   dispatcher->onCacheBlocksEvicted(evicted);
 
-  // No public read API on the cache view; we assert reachability only.
-  SUCCEED();
+  const auto snaps = registry.routingSnapshot({1, 2, 3});
+  ASSERT_EQ(snaps.size(), 3u);
+  for (const auto& snap : snaps) {
+    if (snap.server_id == "A") {
+      EXPECT_EQ(snap.prefix_match_depth, 1u);
+      EXPECT_EQ(snap.cached_blocks, 2u);
+    }
+  }
 }
 
 TEST_F(DispatcherTest, RecordsRoutingAndOutcomeMetrics) {
