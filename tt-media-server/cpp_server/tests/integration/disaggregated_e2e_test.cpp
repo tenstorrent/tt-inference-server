@@ -319,7 +319,7 @@ bool fileExists(const std::string& path) {
 // Generate a prompt with approximately the target number of tokens.
 // Uses simple repeated words to get predictable token counts.
 // "hello " is typically 1 token, so we use word count ≈ target tokens.
-// Account for chat template overhead (~20-50 tokens).
+// "Approx" due to chat template overhead tokens.
 std::string generatePromptWithApproxTokens(size_t targetTokens) {
   std::string msg;
   // Use simple words that are single tokens
@@ -490,7 +490,7 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
       "tokenIds.size()={}, isContinuation={}",
       numPromptTokens, seq->getTokenIds().size(), seq->isContinuation());
 
-  // The prompt should be >1000 tokens (the routing threshold).
+  // The prompt should be 1100 tokens.
   EXPECT_EQ(numPromptTokens, 1100) << "Prefill should have received 1100 "
                                       "tokens (large prompt was forwarded)";
 
@@ -573,6 +573,10 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
       "but delta >1000 tokens so forwarded to prefill)");
 
   // Generate a large follow-up message (~1200 tokens delta)
+  // IMPORTANT: This conversation diverges from Part 2 after the first assistant
+  // response. Part 2 used followUpMessage ("What about this?"), but Part 3 uses
+  // bigFollowUp directly. This ensures Part 3's delta is large (~1200 tokens),
+  // not just a small addition to Part 2's cached conversation.
   std::string bigFollowUp = generatePromptWithApproxTokens(1196);
 
   auto bigDeltaFuture = std::async(std::launch::async, [&] {
@@ -580,8 +584,7 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
         "127.0.0.1", DECODE_HTTP_PORT,
         tt::test::ChatRequest()
             .user(largePrompt)
-            .assistant("Here is my response.")  // Simulated assistant response
-                                                // from turn 1
+            .assistant("Here is my response.")  // Same as Part 1's response
             .user(bigFollowUp)                  // Big delta (~1200 tokens)
             .maxTokens(1)
             .stream()
@@ -592,23 +595,31 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // The prefill server should receive a memory ALLOCATE (big delta was
   // forwarded).
   tt::domain::ManageMemoryTask bigDeltaAlloc{};
+  bool bigDeltaReceived = false;
   {
     auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(10000);
-    bool received = false;
     while (std::chrono::steady_clock::now() < deadline) {
       if (prefillServer_->memoryRequestQueue().tryPop(bigDeltaAlloc)) {
-        received = true;
+        bigDeltaReceived = true;
         break;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    ASSERT_TRUE(received)
-        << "Expected ALLOCATE on prefill's memory queue - decode should have "
-           "forwarded the big delta continuation to prefill";
-    EXPECT_EQ(bigDeltaAlloc.action,
-              tt::domain::MemoryManagementAction::ALLOCATE);
   }
+
+  // If we didn't receive the ALLOCATE, the request was handled locally by
+  // decode. We need to wait for the future to complete before asserting to
+  // avoid hanging.
+  if (!bigDeltaReceived) {
+    // Wait for the HTTP response (it should complete since decode handled it)
+    bigDeltaFuture.wait();
+    FAIL()
+        << "Expected ALLOCATE on prefill's memory queue - decode should have "
+           "forwarded the big delta continuation to prefill, but it was "
+           "handled locally";
+  }
+  EXPECT_EQ(bigDeltaAlloc.action, tt::domain::MemoryManagementAction::ALLOCATE);
 
   tt::domain::ManageMemoryResult bigDeltaMemRes{};
   bigDeltaMemRes.taskId = bigDeltaAlloc.taskId;
@@ -646,20 +657,14 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // --- Verification 2: decodeSkipTokens is propagated ---
   // decodeSkipTokens represents the number of tokens decode already has in its
   // KV cache from the prefix cache hit. This should be > 0 for a continuation.
-  // It should roughly match the original large prompt size (~1100 tokens),
-  // aligned to block boundaries (32 tokens).
-  EXPECT_GT(decodeSkipTokens, 0)
-      << "decodeSkipTokens should be > 0 (decode had prefix cache hit)";
-  EXPECT_GE(decodeSkipTokens, 1024)
-      << "decodeSkipTokens should be >= 1024 (decode matched ~1100 tokens from "
-         "part 1)";
-  EXPECT_LE(decodeSkipTokens, 1120)
-      << "decodeSkipTokens should be <= 1120 (roughly the original prompt "
-         "size, block-aligned)";
-  TT_LOG_INFO(
-      "[Test] PASS: decodeSkipTokens propagated: {} (decode's prefix cache "
-      "match)",
-      decodeSkipTokens);
+  // Part 1 had 1100 prompt tokens. Block-aligned (32 tokens/block):
+  // floor(1100/32) * 32 = 34 * 32 = 1088 tokens.
+  constexpr int kExpectedDecodeSkipTokens = 1088;
+  EXPECT_EQ(decodeSkipTokens, kExpectedDecodeSkipTokens)
+      << "decodeSkipTokens should be 1088 (1100 tokens from Part 1, "
+         "block-aligned to 32)";
+  TT_LOG_INFO("[Test] PASS: decodeSkipTokens propagated: {} (expected {})",
+              decodeSkipTokens, kExpectedDecodeSkipTokens);
 
   // --- Verification 3: decodePositionId is propagated ---
   // decodePositionId is the position in the KV cache where decode will resume.
@@ -747,18 +752,23 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
 
   // Should go to prefill again (big delta).
   tt::domain::ManageMemoryTask secondBigDeltaAlloc{};
+  bool secondBigDeltaReceived = false;
   {
     auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(10000);
-    bool received = false;
     while (std::chrono::steady_clock::now() < deadline) {
       if (prefillServer_->memoryRequestQueue().tryPop(secondBigDeltaAlloc)) {
-        received = true;
+        secondBigDeltaReceived = true;
         break;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    ASSERT_TRUE(received) << "Expected ALLOCATE for second big delta";
+  }
+
+  if (!secondBigDeltaReceived) {
+    secondBigDeltaFuture.wait();
+    FAIL()
+        << "Expected ALLOCATE for second big delta, but it was handled locally";
   }
 
   tt::domain::ManageMemoryResult secondBigDeltaMemRes{};
@@ -780,20 +790,18 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // --- Verification 7: Prefix cache was updated after Part 3 ---
   // The decodeSkipTokens should now be larger than in Part 3, reflecting that
   // decode's prefix cache was updated to include the big follow-up from Part 3.
-  // Part 3 had ~1100 tokens cached. After Part 3 completed, the cache should
-  // include ~1100 (original) + ~1200 (big follow-up) + ~4 (response) = ~2304
-  // tokens.
-  EXPECT_GT(secondDecodeSkipTokens, decodeSkipTokens)
-      << "Prefix cache should have been updated: second decodeSkipTokens "
-         "should be "
-         "larger than first ("
-      << secondDecodeSkipTokens << " vs " << decodeSkipTokens << ")";
-  EXPECT_GE(secondDecodeSkipTokens, 2200)
-      << "Second decodeSkipTokens should be >= 2200 (includes Part 1 + Part 3 "
-         "content)";
+  // Part 3 conversation: largePrompt (1100) + assistant (~6) + bigFollowUp
+  // (1200)
+  //                    = ~2306 tokens, block-aligned: floor(2306/32)*32 = 2304
+  constexpr int kExpectedSecondDecodeSkipTokens = 2304;
+  EXPECT_EQ(secondDecodeSkipTokens, kExpectedSecondDecodeSkipTokens)
+      << "Second decodeSkipTokens should be 2304 (Part 3 conversation "
+         "block-aligned)";
   TT_LOG_INFO(
-      "[Test] PASS: Prefix cache updated - decodeSkipTokens grew from {} to {}",
-      decodeSkipTokens, secondDecodeSkipTokens);
+      "[Test] PASS: Prefix cache updated - decodeSkipTokens grew from {} to {} "
+      "(expected {})",
+      decodeSkipTokens, secondDecodeSkipTokens,
+      kExpectedSecondDecodeSkipTokens);
 
   // Mock the prefill worker response for second big delta.
   tt::test::WorkerResponse(secondBigDeltaSeq->taskId)
