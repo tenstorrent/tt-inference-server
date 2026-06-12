@@ -24,7 +24,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
-from urllib.parse import urlparse
 
 import jwt
 import requests
@@ -36,6 +35,7 @@ sys.path.insert(0, str(project_root))
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
+from utils.url_helpers import build_base_url, resolve_deploy_url, resolve_host_port
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
 from workflows.runtime_config import RuntimeConfig
@@ -472,14 +472,10 @@ def send_warmup_requests(
         try:
             logger.info(f"Sending warm-up request {i + 1}/{num_requests}...")
 
-            # Use the prompt client's URL and auth. Honor an explicit port on
-            # env_config.deploy_url to avoid double-port URLs when --server-url
-            # already carries one.
-            _parsed = urlparse(prompt_client.env_config.deploy_url.rstrip("/"))
-            _base = (
-                prompt_client.env_config.deploy_url.rstrip("/")
-                if _parsed.port is not None
-                else f"{prompt_client.env_config.deploy_url.rstrip('/')}:{prompt_client.env_config.service_port}"
+            # Use the prompt client's URL and auth.
+            _base = build_base_url(
+                prompt_client.env_config.deploy_url,
+                prompt_client.env_config.service_port,
             )
             url = f"{_base}/v1/chat/completions"
             headers = {"Content-Type": "application/json"}
@@ -570,14 +566,8 @@ def main():
     # runtime config loaded from JSON
     device_str = runtime_config.device
     service_port = runtime_config.service_port
-    deploy_url = getattr(runtime_config, "server_url", None) or os.environ.get(
-        "DEPLOY_URL", "http://127.0.0.1"
-    )
-    # An explicit port on deploy_url wins over service_port so AIPerf doesn't
-    # connect to host:service_port when --server-url already carries a port.
-    _parsed = urlparse(deploy_url.rstrip("/"))
-    aiperf_host = _parsed.hostname or "localhost"
-    aiperf_port = str(_parsed.port) if _parsed.port is not None else str(service_port)
+    deploy_url = resolve_deploy_url(runtime_config)
+    aiperf_host, aiperf_port = resolve_host_port(deploy_url, service_port)
     aiperf_url = f"{aiperf_host}:{aiperf_port}"
 
     device = DeviceTypes.from_string(device_str)

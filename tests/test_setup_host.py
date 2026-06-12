@@ -10,6 +10,7 @@ Each test verifies SetupConfig fields, setup_host() completion, and docker comma
 
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
@@ -23,7 +24,11 @@ from workflows.model_spec import (
     ImplSpec,
     ModelSpec,
 )
-from workflows.run_docker_server import generate_docker_run_command
+from workflows.run_docker_server import (
+    generate_docker_run_command,
+    _vllm_override_cli_args,
+    _RESERVED_WRAPPER_FLAGS,
+)
 from workflows.setup_host import HostSetupManager, SetupConfig, setup_host
 from workflows.workflow_types import (
     DeviceTypes,
@@ -662,6 +667,110 @@ class TestSetupHostDockerCommand:
         assert "readonly_weights_mount" in model_weights_dir
         # Docker named volume used for cache_root (not host volume)
         assert "--volume" in docker_command
+
+    def test_vllm_override_args_forwarded_as_passthrough(
+        self, tiny_model_spec, mock_cli_args, temp_dir
+    ):
+        """vllm_override_args are appended to the docker command as vLLM
+        passthrough CLI flags (so run_vllm_api_server forwards them to
+        `vllm serve`)."""
+        mock_cli_args.vllm_override_args = (
+            '{"enable-auto-tool-choice": true, "tool-call-parser": "hermes"}'
+        )
+        config = SetupConfig(model_spec=tiny_model_spec)
+        json_fpath = self._make_json_fpath(temp_dir)
+
+        docker_command, _ = self._generate_cmd(
+            tiny_model_spec, mock_cli_args, config, json_fpath
+        )
+
+        # tool-calling flags present as passthrough args
+        assert "--enable-auto-tool-choice" in docker_command
+        i = docker_command.index("--tool-call-parser")
+        assert docker_command[i + 1] == "hermes"
+
+
+class TestVllmOverrideCliArgs:
+    """Unit tests for the --vllm-override-args -> CLI flag renderer."""
+
+    def test_bool_true_renders_bare_flag(self):
+        assert _vllm_override_cli_args('{"enable-auto-tool-choice": true}') == [
+            "--enable-auto-tool-choice"
+        ]
+
+    def test_string_renders_flag_and_value(self):
+        assert _vllm_override_cli_args('{"tool-call-parser": "hermes"}') == [
+            "--tool-call-parser",
+            "hermes",
+        ]
+
+    def test_snake_case_keys_are_normalized_to_kebab_case(self):
+        assert _vllm_override_cli_args('{"max_model_len": 4096}') == [
+            "--max-model-len",
+            "4096",
+        ]
+
+    def test_false_and_null_omitted(self):
+        assert _vllm_override_cli_args('{"a": false, "b": null}') == []
+
+    def test_none_and_empty_and_malformed_return_empty(self):
+        assert _vllm_override_cli_args(None) == []
+        assert _vllm_override_cli_args("") == []
+        assert _vllm_override_cli_args("not-json") == []
+        assert _vllm_override_cli_args("[1, 2]") == []
+
+    def test_reserved_wrapper_flags_are_rejected(self):
+        """Keys that collide with run_vllm_api_server wrapper flags (esp.
+        no-auth) must not pass through, while real vLLM args still do."""
+        out = _vllm_override_cli_args(
+            '{"no-auth": true, "model": "evil", "no_auth": true, '
+            '"tool-call-parser": "hermes"}'
+        )
+        assert "--no-auth" not in out
+        assert "--model" not in out
+        assert out == ["--tool-call-parser", "hermes"]
+
+    def test_port_and_host_are_rejected(self):
+        """--port/--host are orchestrator-managed (Docker port mapping +
+        0.0.0.0 bind); overriding them yields an unreachable server, so they
+        must be filtered out."""
+        assert _vllm_override_cli_args('{"port": 9000}') == []
+        assert _vllm_override_cli_args('{"host": "127.0.0.1"}') == []
+
+    def test_false_or_null_value_warns(self):
+        """false/null emit no flag, but should warn (not silently no-op)."""
+        with patch("workflows.run_docker_server.logger") as mock_logger:
+            assert _vllm_override_cli_args('{"enable-prefix-caching": false}') == []
+            assert mock_logger.warning.called
+
+    def test_reserved_set_covers_wrapper_args_no_drift(self):
+        """Guard against drift: every CLI flag run_vllm_api_server.parse_args()
+        consumes as a wrapper arg must be in _RESERVED_WRAPPER_FLAGS, else it
+        becomes silently overridable via --vllm-override-args. Scrapes the
+        source so it tracks the actual parser without importing vLLM deps."""
+        src_path = (
+            Path(__file__).resolve().parents[1]
+            / "vllm-tt-metal"
+            / "src"
+            / "run_vllm_api_server.py"
+        )
+        if not src_path.exists():
+            pytest.skip(f"run_vllm_api_server.py not found at {src_path}")
+        src = src_path.read_text()
+        start = src.index("def parse_args(")
+        end = src.index("\ndef ", start + 1)
+        wrapper_flags = {
+            m.lstrip("-")
+            for m in re.findall(
+                r'add_argument\(\s*["\'](--[a-z0-9-]+)["\']', src[start:end]
+            )
+        }
+        assert wrapper_flags, "failed to scrape wrapper flags from run_vllm_api_server"
+        missing = wrapper_flags - _RESERVED_WRAPPER_FLAGS
+        assert not missing, (
+            "run_vllm_api_server wrapper flags missing from "
+            f"_RESERVED_WRAPPER_FLAGS (drift!): {sorted(missing)}"
+        )
 
 
 class TestSetupHostValidation:

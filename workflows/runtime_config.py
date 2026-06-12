@@ -68,6 +68,16 @@ class RuntimeConfig:
     eval_samples: Optional[str] = None
     sdxl_num_prompts: str = "100"
 
+    # Prefix-cache benchmark
+    prefix_cache: bool = False
+    prefix_cache_preset: str = "full"
+    prefix_cache_scenarios: Optional[str] = None
+    prefix_cache_arrival: Optional[str] = None
+    prefix_cache_request_rate: Optional[float] = None
+    prefix_cache_scenarios_json: Optional[str] = None
+    prefix_cache_trace: Optional[str] = None
+    jwt_secret: Optional[str] = None
+
     # Device configuration
     device_id: Optional[List[int]] = None
 
@@ -79,6 +89,10 @@ class RuntimeConfig:
 
     # Validation
     skip_system_sw_validation: bool = False
+
+    # CI mode (set from --ci-mode): triggers CI-friendly behavior such as
+    # persisting tt-triage logs to the mounted cache_root volume.
+    ci_mode: bool = False
 
     # Misc
     tt_metal_python_venv_dir: Optional[str] = None
@@ -133,12 +147,23 @@ class RuntimeConfig:
             limit_samples_mode=args.limit_samples_mode,
             eval_samples=args.eval_samples,
             sdxl_num_prompts=args.sdxl_num_prompts,
+            prefix_cache=getattr(args, "prefix_cache", False),
+            prefix_cache_preset=getattr(args, "prefix_cache_preset", "full"),
+            prefix_cache_scenarios=getattr(args, "prefix_cache_scenarios", None),
+            prefix_cache_arrival=getattr(args, "prefix_cache_arrival", None),
+            prefix_cache_request_rate=getattr(args, "prefix_cache_request_rate", None),
+            prefix_cache_scenarios_json=getattr(
+                args, "prefix_cache_scenarios_json", None
+            ),
+            prefix_cache_trace=getattr(args, "prefix_cache_trace", None),
+            jwt_secret=getattr(args, "jwt_secret", None),
             device_id=args.device_id,
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,
             host_weights_dir=args.host_weights_dir,
             image_user=args.image_user,
             skip_system_sw_validation=args.skip_system_sw_validation,
+            ci_mode=args.ci_mode,
             tt_metal_python_venv_dir=args.tt_metal_python_venv_dir,
             tt_metal_home=args.tt_metal_home,
             vllm_dir=args.vllm_dir,

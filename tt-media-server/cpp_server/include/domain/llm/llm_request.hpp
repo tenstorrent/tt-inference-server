@@ -133,7 +133,17 @@ struct LLMRequest : BaseRequest {
 
   // Number of tokens already in the decode-side KV cache that the prefill
   // prefill should not send this part of KV.
-  int number_of_decode_skip_tokens = 0;
+  int decode_position_id = 0;
+
+  // Accumulated think (reasoning) tokens in the matched prefix, folded into
+  // kv_position_id during decode-side session resolution. Used to derive
+  // decode_skip_tokens. Set on a prefix-cache hit.
+  int accumulated_think_tokens = 0;
+
+  // Same leading reused prefix as decode_position_id but excluding the
+  // accumulated think tokens. Computed on the decode side and forwarded to the
+  // prefill server, which stores it on the Sequence.
+  int decode_skip_tokens = 0;
 
   std::optional<bool> disaggregation_override;
 
@@ -145,16 +155,12 @@ struct LLMRequest : BaseRequest {
   // Structured output constraint
   std::optional<ResponseFormat> response_format;
 
-  // When false, reasoning tokens are suppressed from the response.
-  bool enable_reasoning = true;
-
   // When true, skip adding <bos><user> and <assistant> tags in chat template.
   bool skip_apply_chat_template = false;
 
   // When true, the consumer emits chunks carrying only `token_id` and
-  // skips decode / reasoning / tool-call parsing. Used by transports
-  // that forward raw token_ids and handle detokenization downstream
-  // (e.g. Dynamo).
+  // skips decode / tool-call parsing. Used by transports that forward raw
+  // token_ids and handle detokenization downstream (e.g. Dynamo).
   bool skip_text_decode = false;
 
   // Session management (internal use only, not parsed from JSON)
@@ -165,6 +171,9 @@ struct LLMRequest : BaseRequest {
       nullptr;  // Pointer to session in SessionManager
   bool continuation =
       false;  // True if this request continues an existing session
+
+  std::optional<std::string> previousResponseId;
+  std::optional<std::string> responseId;
 
   std::string toString() const {
     std::string promptInfo;

@@ -71,6 +71,14 @@ std::shared_ptr<tt::domain::llm::LLMRequest> buildLLMRequest(
   if (dyn.repetition_penalty.has_value())
     req->repetition_penalty = *dyn.repetition_penalty;
 
+  const std::string prevResponseId =
+      dyn.raw.get("previous_response_id", "").asString();
+  if (!prevResponseId.empty()) req->previousResponseId = prevResponseId;
+
+  std::string currentId = dyn.raw.get("id", "").asString();
+  if (currentId.empty()) currentId = dyn.raw.get("request_id", "").asString();
+  if (!currentId.empty()) req->responseId = currentId;
+
   return req;
 }
 
@@ -171,6 +179,20 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
 
     trantor::EventLoop* loop = pool->getNextLoop();
     auto req = buildLLMRequest(dynReq);
+
+    // Interface border: what dynamo handed us off the wire. "[BORDER]" tags
+    // every cross-boundary log so `grep '\[BORDER\]'` traces a request end to
+    // end. Optionals render as -1 when unset.
+    TT_LOG_INFO(
+        "[BORDER] dynamo<<recv taskId={} reqId={} model={} promptTok={} "
+        "maxTok={} minTok={} temp={:.3f} topP={:.3f} topK={} ignoreEos={} "
+        "stopTokIds={} stopStr={}",
+        req->task_id, probeId.empty() ? "?" : probeId, dynReq.model,
+        dynReq.token_ids.size(), dynReq.max_tokens,
+        dynReq.min_tokens.value_or(-1), dynReq.temperature.value_or(-1.0f),
+        dynReq.top_p.value_or(-1.0f), dynReq.top_k.value_or(-1),
+        dynReq.ignore_eos, dynReq.stop_token_ids.size(), dynReq.stop.size());
+
     auto svc = pipeline->service();
 
     // Reasoning/usage accounting for the Dynamo path. The worker doesn't decode
@@ -371,6 +393,15 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               }
               out.completion_usage = du;
             }
+            // Interface border: what we stream back to the dynamo frontend.
+            // "emitted" is the running completion-token count (incremented
+            // above before this send).
+            TT_LOG_INFO(
+                "[BORDER] dynamo>>resp taskId={} reqId={} tok={} final={} "
+                "finishReason={} emitted={}",
+                req->task_id, probeId.empty() ? "?" : probeId,
+                out.token_ids.empty() ? -1 : out.token_ids.front(), isFinal,
+                out.finish_reason.value_or("-"), usage->completion);
             const bool sent = sendChunk(out);
             if (isFinal) {
               signalDone();

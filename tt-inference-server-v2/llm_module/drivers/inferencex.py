@@ -55,6 +55,8 @@ class InferenceMaxDriver(LLMDriver):
             "/v1/chat/completions",
             "--model",
             server.model,
+            "--host",
+            server.host,
             "--port",
             str(server.service_port),
             "--dataset-name",
