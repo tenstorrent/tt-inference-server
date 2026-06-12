@@ -27,9 +27,16 @@
 #   attn_backend      ttnn | custom | cpu (#34)              (default ttnn)
 # fast_path / lm_head_ondevice are DERIVED from these by ModelMatrixEntry.capabilities().
 #
+# Granite architectural scaling factors (schema v3, #43). Omit = fall through to the HF
+# config value (no-op for non-Granite); set = OVERRIDES it. Read by runner._scaling_factor():
+#   embedding_multiplier   scales input embeddings
+#   residual_multiplier    scales each sublayer output before its residual add
+#   attention_multiplier   overrides the 1/sqrt(head_dim) attention softmax scale
+#   logits_scaling         divides final logits (no-op for greedy argmax)
+#
 # Do not edit ttl_kernels/configs/ — that is the legacy POC reference only.
 
-schema_version = 2
+schema_version = 3
 
 # ---------------------------------------------------------------------------
 # Llama 3 family (Meta)
@@ -396,6 +403,42 @@ parallel_residual = false
 embed_scale       = "none"
 attn_backend      = "custom"
 notes             = "VALIDATED 2026-06-12 (#27/#29), fixed alongside GPTNeoX/BLOOM. StarCoder2 has qkv+o-proj+MLP bias, sequential LayerNorm, and gelu_pytorch_tanh — all three were wrong (dropped o-proj/MLP biases, RMSNorm-instead-of-LayerNorm on the sequential branch, exact-erf instead of tanh GELU). Verified COHERENT 2026-06-12: 'def fibonacci(n):' -> correct recursive impl @ 7.11 tok/s, cpu_fallbacks=0. GQA group=12 does not divide 32 -> attn_backend=custom, NOT fast-path eligible."
+
+# ---------------------------------------------------------------------------
+# Granite family (IBM) — Llama-like + architectural scaling factors
+# ---------------------------------------------------------------------------
+
+[[model]]
+name                 = "ibm-granite/granite-3.1-2b-instruct"
+arch                 = "GraniteForCausalLM"
+local_path           = "models/ibm-granite-granite-3.1-2b-instruct"
+hidden_size          = 2048
+intermediate_size    = 8192
+n_layers             = 40
+vocab_size           = 49155
+n_heads              = 32
+n_kv_heads           = 8
+head_dim             = 64
+max_seq              = 2048
+rope_theta           = 5000000.0
+swa_window           = -1
+tie_embeddings       = true
+kernels              = ["flash_attn", "rmsnorm"]
+min_hw               = "bh_p150_1card"
+status               = "validated"
+norm_type            = "rmsnorm"
+activation           = "silu"
+rotary_pct           = 1.0
+attn_bias            = false
+head_norm            = false
+parallel_residual    = false
+embed_scale          = "none"
+attn_backend         = "ttnn"
+embedding_multiplier = 12.0
+residual_multiplier  = 0.22
+attention_multiplier = 0.015625
+logits_scaling       = 8.0
+notes                = "VALIDATED 2026-06-12 (#43). Granite needs four architectural scaling factors plain Llama lacks; the runner applied none, producing garbage. attention_multiplier=0.015625 (=1/64) replaces the default 1/sqrt(64)=0.125 (scores were 8x too large); embedding_multiplier scales embeds 12x; residual_multiplier scales each sublayer output 0.22 before its residual add; logits_scaling divides logits (no-op for greedy argmax). Verified vs HF fp32 greedy: 20/20 exact tokens on BOTH baseline and traced fast path ('The theory of relativity, proposed by Albert Einstein, consists of two parts'), cpu_fallbacks=0. fast_path eligible (rmsnorm, full rope, no head-norm, nh=32 MHA, GQA group=4 | 32)."
 
 # ---------------------------------------------------------------------------
 # Hardware target

@@ -868,6 +868,13 @@ class TTModelRunner:
         # eliminating 2 device tensor allocations per layer per token.
         aot = {"output_tensor": self._hidden_scratch_tt} if self._add_ot else {}
 
+        def add_resid(h_tt, sub_tt):
+            """Residual add, scaling the sublayer output by residual_multiplier first
+            (Granite, #43). No-op multiply skipped when residual_mult == 1.0 (all other arches)."""
+            if self._residual_mult != 1.0:
+                sub_tt = ttnn.multiply(sub_tt, self._residual_mult)
+            return ttnn.add(h_tt, sub_tt, **aot)
+
         if lw.norm_style == "gemma":
             # Gemma pattern:
             #   normed  = norm1(hidden)
@@ -914,19 +921,19 @@ class TTModelRunner:
                 normed2_tt = self._dispatcher.rmsnorm(hidden_tt, lw.norm2_w, lw.norm2_sc, rmsnorm_buf())
             attn_out_tt = self._attention(normed1_tt, layer_idx, kv_pos)
             mlp_out_tt = self._mlp(normed2_tt, layer_idx)
-            hidden_tt = ttnn.add(hidden_tt, attn_out_tt, **aot)
-            hidden_tt = ttnn.add(hidden_tt, mlp_out_tt, **aot)
+            hidden_tt = add_resid(hidden_tt, attn_out_tt)
+            hidden_tt = add_resid(hidden_tt, mlp_out_tt)
         else:
             # Llama / Qwen / Mistral / (LayerNorm: BLOOM, StableLM, Falcon) pattern:
             #   hidden += attn(norm1(hidden))
             #   hidden += mlp(norm2(hidden))
             normed1_tt = seq_norm(hidden_tt, lw.norm1_w, lw.norm1_sc, lw.norm1_w_cpu, lw.norm1_b)
             attn_out_tt = self._attention(normed1_tt, layer_idx, kv_pos)
-            hidden_tt = ttnn.add(hidden_tt, attn_out_tt, **aot)
+            hidden_tt = add_resid(hidden_tt, attn_out_tt)
 
             normed2_tt = seq_norm(hidden_tt, lw.norm2_w, lw.norm2_sc, lw.norm2_w_cpu, lw.norm2_b)
             mlp_out_tt = self._mlp(normed2_tt, layer_idx)
-            hidden_tt = ttnn.add(hidden_tt, mlp_out_tt, **aot)
+            hidden_tt = add_resid(hidden_tt, mlp_out_tt)
 
         return hidden_tt
 
@@ -1242,7 +1249,7 @@ class TTModelRunner:
         attn = ttnn.transformer.paged_scaled_dot_product_attention_decode(
             q_rot, self._kp[layer_idx], self._vp[layer_idx],
             cur_pos_tensor=self._cur_pos_dev, page_table_tensor=self._page_table,
-            scale=1.0 / math.sqrt(hd), program_config=self._sdpa_pcfg,
+            scale=self._attn_scale_value(), program_config=self._sdpa_pcfg,
             memory_config=ttnn.DRAM_MEMORY_CONFIG)   # [1,1,nh_pad,hd]
 
         if self._nh_pad != nh:
@@ -1464,6 +1471,11 @@ class TTModelRunner:
                                                    self._rmsnorm_buf_tt)
             normed_cpu = ttnn.to_torch(normed_tt)[0, :hidden].float()   # (hidden,)
         logits = normed_cpu @ self._lm_head_w_cpu.T                 # (vocab,)
+        # Granite divides logits by logits_scaling (#43). No effect on greedy argmax
+        # (positive divisor), applied for correctness / future temperature sampling.
+        logits_scaling = self._scaling_factor("logits_scaling", 1.0)
+        if logits_scaling != 1.0:
+            logits = logits / logits_scaling
         return int(logits.argmax())
 
     # ------------------------------------------------------------------
@@ -1529,6 +1541,17 @@ class TTModelRunner:
             text_cfg   = getattr(self._hf_cfg, "text_config", self._hf_cfg)
             model_type = getattr(text_cfg, "model_type", "")
             self._embed_scale = math.sqrt(cfg.hidden_size) if "gemma" in model_type.lower() else 1.0
+
+        # Granite architectural scaling factors (#43). No-op (1.0) for every other arch.
+        # embedding_multiplier folds into the existing embed-scale multiply; residual_multiplier
+        # scales each sublayer output before its residual add (applied in _layer_forward); the
+        # attention scale override is read via _attn_scale_value(); logits_scaling divides the
+        # final logits (no effect on greedy argmax, applied in _lm_head for completeness).
+        # Sourced from the raw HF config (not self._cfg): a listed model rebuilds self._cfg from
+        # the matrix entry, which does not carry these fields — reading _hf_cfg keeps the fix
+        # correct whether or not Granite is ever promoted to a matrix entry.
+        self._embed_scale   *= self._scaling_factor("embedding_multiplier", 1.0)
+        self._residual_mult  = self._scaling_factor("residual_multiplier", 1.0)
 
         # Final norm
         final_norm = _find_final_norm(backbone)
@@ -1767,9 +1790,28 @@ class TTModelRunner:
     # Attention scalars
     # ------------------------------------------------------------------
 
+    def _scaling_factor(self, name: str, default: float):
+        """Read a Granite-style architectural scaling factor (#43). Two-tier, matching the
+        matrix's other behavioral fields: a listed entry that sets the field OVERRIDES; an
+        unset entry (or novel model) falls through to the raw HF config (text_config-aware).
+        Sourced from _hf_cfg, not _cfg, since _cfg is rebuilt from the matrix entry for a
+        listed model and does not carry these fields."""
+        if self._listed:
+            v = getattr(self._entry, name, None)
+            if v is not None:
+                return v
+        tc = getattr(self._hf_cfg, "text_config", self._hf_cfg)
+        return getattr(tc, name, default)
+
+    def _attn_scale_value(self) -> float:
+        """Attention softmax scale. Granite (#43) overrides the standard 1/sqrt(head_dim)
+        with its config attention_multiplier; every other arch returns 1/sqrt(head_dim)."""
+        am = self._scaling_factor("attention_multiplier", None)
+        return am if am is not None else (1.0 / math.sqrt(self._cfg.head_dim))
+
     def _build_attn_scalars(self):
         cfg = self._cfg
-        scale = 1.0 / math.sqrt(cfg.head_dim)
+        scale = self._attn_scale_value()
         self._attn_scale_tt = _to_tt(
             torch.full((TILE, TILE), scale, dtype=torch.bfloat16), self._device)
         self._neg_inf_tt = _to_tt(
@@ -1848,7 +1890,7 @@ class TTModelRunner:
                               device=self._device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
 
         ms_p = _tile_align(self._max_seq)
-        scale_val = 1.0 / math.sqrt(cfg.head_dim)
+        scale_val = self._attn_scale_value()
 
         # Existing rmsnorm output scratch
         self._rmsnorm_buf_tt        = z(TILE, hid_p)

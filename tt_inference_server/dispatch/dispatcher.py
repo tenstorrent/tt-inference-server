@@ -37,7 +37,7 @@ from .compat import (
 )
 
 # Must match schema_version in model_matrix.toml.  Bump both together.
-DISPATCHER_SCHEMA_VERSION = 2
+DISPATCHER_SCHEMA_VERSION = 3
 
 _DEFAULT_MATRIX_PATH = pathlib.Path(__file__).parent / "model_matrix.toml"
 _DEVICE_LOCK_PATH = pathlib.Path.home() / ".dispatch.lock"
@@ -199,6 +199,13 @@ class ModelMatrixEntry:
     parallel_residual: bool = False     # attn + MLP branch the same pre-norm (GPTNeoX)
     embed_scale: str = "none"           # none | sqrt_hidden (Gemma scales embeds)
     attn_backend: str = "ttnn"          # ttnn | custom | cpu (#34 backend-per-op)
+    # Granite (#43) architectural scaling factors. None = fall through to the HF config
+    # value (so an omitted field is a no-op); a set value OVERRIDES it, same as the other
+    # behavioral fields. Read by the runner's _scaling_factor().
+    embedding_multiplier: Optional[float] = None   # scales input embeddings
+    residual_multiplier: Optional[float] = None    # scales each sublayer output pre-residual-add
+    attention_multiplier: Optional[float] = None   # overrides the 1/sqrt(head_dim) softmax scale
+    logits_scaling: Optional[float] = None          # divides final logits (no-op for greedy argmax)
     issue: Optional[int] = None
     notes: str = ""
 
@@ -564,6 +571,11 @@ def _warm_kernel_cache(device) -> None:
 # Matrix loading helpers
 # ------------------------------------------------------------------
 
+def _opt_float(v):
+    """Coerce an optional numeric matrix field to float, preserving None (= unset)."""
+    return None if v is None else float(v)
+
+
 def _load_and_validate_matrix(
     path: pathlib.Path,
 ) -> Tuple[List[ModelMatrixEntry], Dict[str, ModelMatrixEntry]]:
@@ -609,6 +621,10 @@ def _load_and_validate_matrix(
             parallel_residual=raw_entry.get("parallel_residual", False),
             embed_scale=raw_entry.get("embed_scale", "none"),
             attn_backend=raw_entry.get("attn_backend", "ttnn"),
+            embedding_multiplier=_opt_float(raw_entry.get("embedding_multiplier")),
+            residual_multiplier=_opt_float(raw_entry.get("residual_multiplier")),
+            attention_multiplier=_opt_float(raw_entry.get("attention_multiplier")),
+            logits_scaling=_opt_float(raw_entry.get("logits_scaling")),
             issue=raw_entry.get("issue"),
             notes=raw_entry.get("notes", ""),
         )
