@@ -171,26 +171,26 @@ void configurePrefillEnv() {
         .run();
   });
 
-  {
-    auto listenerDeadline =
-        std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    while (std::chrono::steady_clock::now() < listenerDeadline) {
-      int sock = ::socket(AF_INET, SOCK_STREAM, 0);
-      sockaddr_in addr{};
-      addr.sin_family = AF_INET;
-      addr.sin_port = htons(DECODE_HTTP_PORT);
-      ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-      bool up = (::connect(sock, reinterpret_cast<sockaddr*>(&addr),
-                           sizeof(addr)) == 0);
-      ::close(sock);
-      if (up) break;
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
+  auto listenerDeadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(30);
+  bool listenerUp = false;
+  while (std::chrono::steady_clock::now() < listenerDeadline) {
+    int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(DECODE_HTTP_PORT);
+    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+    listenerUp = (::connect(sock, reinterpret_cast<sockaddr*>(&addr),
+                            sizeof(addr)) == 0);
+    ::close(sock);
+    if (listenerUp) break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+  if (!listenerUp) {
+    std::_Exit(1);
   }
 
-  {
-    std::ofstream(sentinelPath) << "ready";
-  }
+  std::ofstream(sentinelPath) << "ready";
   TT_LOG_INFO("[DecodeSubprocess] Ready, sentinel written to {}", sentinelPath);
 
   static std::atomic<bool> done{false};
