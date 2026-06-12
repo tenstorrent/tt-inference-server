@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 import requests
 from report_module.schema import Block
 
+from utils.url_helpers import DEFAULT_DEPLOY_URL, build_base_url
+
 from .blockify import block_id
 from .hardware_requirements import HardwareRequirement
 from .test_classes import TestConfig
@@ -80,7 +82,9 @@ class BaseTest(ABC):
         )
 
         self.base_url = (
-            ctx.base_url if ctx is not None else f"http://localhost:{self.service_port}"
+            ctx.base_url
+            if ctx is not None
+            else build_base_url(DEFAULT_DEPLOY_URL, self.service_port)
         )
         self.timeout = config.get("timeout")
         self.retry_attempts = config.get("retry_attempts")
@@ -428,8 +432,13 @@ class BaseTest(ABC):
         retry_delay = (
             retry_delay if retry_delay is not None else HEALTH_CHECK_CONFIG.RETRY_DELAY
         )
-        host = self.ctx.server_host if self.ctx is not None else "http://localhost"
-        health_url = f"{host}:{service_port}/tt-liveness"
+        # build_base_url applies the port-wins rule: an explicit port on the
+        # server URL overrides service_port, so targeting --server-url
+        # http://host:9000 health-checks :9000, not the default :8000.
+        deploy_url = (
+            self.ctx._deploy_url if self.ctx is not None else DEFAULT_DEPLOY_URL
+        )
+        health_url = f"{build_base_url(deploy_url, service_port)}/tt-liveness"
         logger.info("Waiting for server at %s ...", health_url)
 
         for attempt in range(1, max_attempts + 1):
