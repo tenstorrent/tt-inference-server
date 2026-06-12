@@ -13,7 +13,6 @@
 #include <gtest/gtest.h>
 #include <sys/prctl.h>
 #include <sys/socket.h>
-#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -21,6 +20,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <future>
 #include <memory>
@@ -310,11 +310,6 @@ class PrefillTestServer {
 // Helpers
 // ---------------------------------------------------------------------------
 
-bool fileExists(const std::string& path) {
-  struct stat st{};
-  return stat(path.c_str(), &st) == 0;
-}
-
 // Generate a prompt with approximately the target number of tokens.
 // Uses simple repeated words to get predictable token counts.
 // "hello " is typically 1 token, so we use word count ≈ target tokens.
@@ -393,7 +388,7 @@ class DisaggregatedE2ETest : public ::testing::Test {
   static void waitForDecodeReady() {
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
     while (std::chrono::steady_clock::now() < deadline) {
-      if (fileExists(sentinelPath)) return;
+      if (std::filesystem::exists(sentinelPath)) return;
 
       int status = 0;
       pid_t w = waitpid(decodePid, &status, WNOHANG);
