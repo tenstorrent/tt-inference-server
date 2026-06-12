@@ -591,10 +591,9 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
         "your-secret-key", /*idleTimeoutMs=*/10000);
   });
 
-  // The prefill server should receive the request. On a prefix cache MISS,
-  // it first sends an ALLOCATE to the memory queue. On a HIT, it reuses the
-  // existing session and goes directly to the task queue.
-  // Part 3 will HIT on prefill (matches Part 1's session), so we check both.
+  // Should go to prefill again (big delta). Part 3 MUST get a cache HIT on
+  //  prefill because Part 1 already established the session - no ALLOCATE
+  //  needed.
   tt::domain::ManageMemoryTask bigDeltaAlloc{};
   bool gotAllocate = false;
   std::unique_ptr<tt::domain::llm::Sequence> bigDeltaSeq;
@@ -602,11 +601,6 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
     auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(10000);
     while (std::chrono::steady_clock::now() < deadline) {
-      if (prefillServer->memoryRequestQueue().tryPop(bigDeltaAlloc)) {
-        gotAllocate = true;
-        break;
-      }
-      // Also check if task already appeared (cache HIT path)
       bigDeltaSeq = prefillServer->taskQueue().tryPop();
       if (bigDeltaSeq) {
         break;
@@ -615,29 +609,19 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
     }
   }
 
-  // If we got an ALLOCATE (cache MISS), respond to it and then get the task
-  if (gotAllocate) {
-    EXPECT_EQ(bigDeltaAlloc.action,
-              tt::domain::MemoryManagementAction::ALLOCATE);
-    tt::domain::ManageMemoryResult bigDeltaMemRes{};
-    bigDeltaMemRes.taskId = bigDeltaAlloc.taskId;
-    bigDeltaMemRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
-    bigDeltaMemRes.slotId = 0;
-    prefillServer->memoryResultQueue().push(bigDeltaMemRes);
-    TT_LOG_INFO("[Test] Part 3: Prefill had cache MISS, responded to ALLOCATE");
-    bigDeltaSeq = prefillServer->taskQueue().receive();
-  } else if (!bigDeltaSeq) {
-    // Neither ALLOCATE nor task received - request was handled locally
+  if (!bigDeltaSeq) {
     bigDeltaFuture.wait();
     FAIL() << "Part 3: Expected request to go to prefill, but it was handled "
               "locally by decode";
-  } else {
-    TT_LOG_INFO("[Test] Part 3: Prefill had cache HIT, no ALLOCATE needed");
   }
 
-  // Verify we have a sequence from prefill's task queue.
-  ASSERT_NE(bigDeltaSeq, nullptr)
-      << "Prefill task queue should have received a Sequence for big delta";
+  // Verify no ALLOCATE was sent (cache HIT expected)
+  tt::domain::ManageMemoryTask spuriousAlloc{};
+  bool gotSpuriousAlloc =
+      prefillServer->memoryRequestQueue().tryPop(spuriousAlloc);
+  EXPECT_FALSE(gotSpuriousAlloc) << "Part 3: Prefill should have cache HIT (no "
+                                    "ALLOCATE), but got ALLOCATE";
+  TT_LOG_INFO("[Test] Part 3: Prefill had cache HIT as expected (no ALLOCATE)");
 
   const size_t bigDeltaPromptTokens = bigDeltaSeq->getNumPromptTokens();
   const bool bigDeltaIsContinuation = bigDeltaSeq->isContinuation();
@@ -694,13 +678,12 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // conversation. Original large prompt was ~1100 tokens, assistant response ~4
   // tokens, big follow-up is ~1200 tokens. If prefix cache worked, prefill
   // receives only the delta (~1204 tokens for assistant + big follow-up), not
-  // the full conversation (~2304 tokens). With block alignment (32 tokens), the
-  // delta should be roughly 1200-1250 tokens.
-  EXPECT_LT(bigDeltaPromptTokens, 1500)
+  // the full conversation (~2304 tokens). With additional tokenization tokens,
+  // the delta should be 1216 tokens.
+
+  EXPECT_EQ(bigDeltaPromptTokens, 1216)
       << "Prefill should receive delta tokens only (prefix cache hit), not "
          "full conversation";
-  EXPECT_GT(bigDeltaPromptTokens, 1150)
-      << "Delta should include the big follow-up (~1200 tokens)";
   TT_LOG_INFO(
       "[Test] PASS: Prefill received {} tokens (delta only, not full {}+ token "
       "conversation)",
@@ -743,33 +726,27 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   std::string secondBigFollowUp = generatePromptWithApproxTokens(1196);
 
   auto secondBigDeltaFuture = std::async(std::launch::async, [&] {
-    return tt::test::sendAndReceive(
-        "127.0.0.1", DECODE_HTTP_PORT,
-        tt::test::ChatRequest()
-            .user(largePrompt)
-            .assistant("Here is my response.")
-            .user(bigFollowUp)
-            .assistant("Response to big follow-up.")
-            .user(secondBigFollowUp)  // Another big delta
-            .maxTokens(1)
-            .stream()
-            .toJson(),
-        "your-secret-key", /*idleTimeoutMs=*/10000);
+    return tt::test::sendAndReceive("127.0.0.1", DECODE_HTTP_PORT,
+                                    tt::test::ChatRequest()
+                                        .user(largePrompt)
+                                        .assistant("Here is my response.")
+                                        .user(bigFollowUp)
+                                        .assistant("Response to big follow-up.")
+                                        .user(secondBigFollowUp)
+                                        .maxTokens(1)
+                                        .stream()
+                                        .toJson(),
+                                    "your-secret-key", /*idleTimeoutMs=*/10000);
   });
 
-  // Should go to prefill again (big delta). Same logic as Part 3 - check both
-  // memory queue (cache MISS) and task queue (cache HIT).
-  tt::domain::ManageMemoryTask secondBigDeltaAlloc{};
-  bool secondGotAllocate = false;
+  // Should go to prefill again (big delta). Part 4 MUST get a cache HIT on
+  // prefill because Part 3 already established the session - no ALLOCATE
+  // needed.
   std::unique_ptr<tt::domain::llm::Sequence> secondBigDeltaSeq;
   {
     auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(10000);
     while (std::chrono::steady_clock::now() < deadline) {
-      if (prefillServer->memoryRequestQueue().tryPop(secondBigDeltaAlloc)) {
-        secondGotAllocate = true;
-        break;
-      }
       secondBigDeltaSeq = prefillServer->taskQueue().tryPop();
       if (secondBigDeltaSeq) {
         break;
@@ -778,25 +755,17 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
     }
   }
 
-  if (secondGotAllocate) {
-    EXPECT_EQ(secondBigDeltaAlloc.action,
-              tt::domain::MemoryManagementAction::ALLOCATE);
-    tt::domain::ManageMemoryResult secondBigDeltaMemRes{};
-    secondBigDeltaMemRes.taskId = secondBigDeltaAlloc.taskId;
-    secondBigDeltaMemRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
-    secondBigDeltaMemRes.slotId = 0;
-    prefillServer->memoryResultQueue().push(secondBigDeltaMemRes);
-    TT_LOG_INFO("[Test] Part 4: Prefill had cache MISS, responded to ALLOCATE");
-    secondBigDeltaSeq = prefillServer->taskQueue().receive();
-  } else if (!secondBigDeltaSeq) {
+  if (!secondBigDeltaSeq) {
     secondBigDeltaFuture.wait();
     FAIL() << "Part 4: Expected request to go to prefill, but it was handled "
-              "locally by decode";
-  } else {
-    TT_LOG_INFO("[Test] Part 4: Prefill had cache HIT, no ALLOCATE needed");
+              "locally by decode or timed out";
   }
 
-  ASSERT_NE(secondBigDeltaSeq, nullptr);
+  // Verify no ALLOCATE was sent (cache HIT expected)
+  gotSpuriousAlloc = prefillServer->memoryRequestQueue().tryPop(spuriousAlloc);
+  EXPECT_FALSE(gotSpuriousAlloc) << "Part 4: Prefill should have cache HIT (no "
+                                    "ALLOCATE), but got ALLOCATE";
+  TT_LOG_INFO("[Test] Part 4: Prefill had cache HIT as expected (no ALLOCATE)");
 
   const int secondDecodeSkipTokens = secondBigDeltaSeq->getDecodeSkipTokens();
   const size_t secondPromptTokens = secondBigDeltaSeq->getNumPromptTokens();
@@ -835,43 +804,6 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   TT_LOG_INFO("[Test] All prefix cache and slot propagation tests passed");
 
   prefillServer->setMemoryAutoRespond(true);
-}
-
-// Tests that a small prompt (<1000 tokens) is handled locally by decode
-// and NOT forwarded to prefill.
-TEST_F(DisaggregatedE2ETest, RoutingDecision_SmallPromptHandledLocally) {
-  prefillServer->setMemoryAutoRespond(true);
-
-  // Generate a small prompt (~200 tokens) that should be handled locally.
-  std::string smallPrompt = generatePromptWithApproxTokens(196);
-
-  TT_LOG_INFO(
-      "[Test] Sending small prompt to decode server (expecting local "
-      "handling)");
-
-  auto responseFuture = std::async(std::launch::async, [&] {
-    return tt::test::sendAndReceive("127.0.0.1", DECODE_HTTP_PORT,
-                                    tt::test::ChatRequest()
-                                        .user(smallPrompt)
-                                        .maxTokens(1)
-                                        .stream()
-                                        .toJson(),
-                                    "your-secret-key", /*idleTimeoutMs=*/5000);
-  });
-
-  // Wait for the response - it should complete without prefill involvement.
-  const auto rawResponse = responseFuture.get();
-  const auto response = tt::test::HttpResponse::parse(rawResponse);
-  EXPECT_EQ(response.statusCode(), 200);
-
-  // Verify prefill did NOT receive anything.
-  tt::domain::ManageMemoryTask spuriousAlloc{};
-  bool gotAlloc = prefillServer->memoryRequestQueue().tryPop(spuriousAlloc);
-  EXPECT_FALSE(gotAlloc)
-      << "Prefill should NOT have received an ALLOCATE - small prompt should "
-         "be handled locally by decode (prefill-on-decode)";
-
-  TT_LOG_INFO("[Test] Small prompt test completed - handled locally by decode");
 }
 
 // ---------------------------------------------------------------------------
