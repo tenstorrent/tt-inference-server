@@ -17,6 +17,10 @@
 #include "domain/sentinel_values.hpp"
 #include "utils/conversation_hasher.hpp"
 
+namespace tt::services {
+class SessionManager;  // friend: owns the locked state transitions below
+}
+
 namespace tt::domain {
 
 // Lifecycle state of a Session.  IDLE --(markPrepared)--> PREPARED
@@ -77,16 +81,8 @@ class Session {
 
   bool isIdle() const { return state_ == SessionState::IDLE; }
   bool isInFlight() const { return state_ == SessionState::IN_FLIGHT; }
-
   bool isPrepared() const { return state_ == SessionState::PREPARED; }
-  bool markPrepared();
-
   SessionState getState() const { return state_; }
-
-  // Transition methods return false (without changing state) if the
-  // precondition is not met.
-  bool markInFlight();   // IDLE      -> IN_FLIGHT
-  bool clearInFlight();  // IN_FLIGHT -> IDLE, also clears cancelFn
 
   void setCancelFn(std::function<void()> fn) { cancelFn_ = std::move(fn); }
   std::function<void()> takeCancelFn() {
@@ -148,6 +144,18 @@ class Session {
     json["slot_id"] = slot_id_;
     return json;
   }
+
+ protected:
+  // State transitions are owned by SessionManager, which performs them under
+  // the ConcurrentMap lock (serializing them against evictOldSessions()).
+  // Protected + friend so only SessionManager — or a test subclass — can call
+  // them; a direct unlocked call would re-introduce the clearInFlight()-vs-
+  // eviction data race. Each returns false (state unchanged) if its
+  // precondition is not met.
+  friend class tt::services::SessionManager;
+  bool markPrepared();   // IDLE           -> PREPARED
+  bool markInFlight();   // IDLE/PREPARED  -> IN_FLIGHT
+  bool clearInFlight();  // IN_FLIGHT      -> IDLE, also clears cancelFn
 
  private:
   std::string session_id_;   // Stable UUID, never changes
