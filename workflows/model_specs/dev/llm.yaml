@@ -166,15 +166,30 @@ templates:
       env_vars:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
+        # The bounded-sliding-KV path in the gemma4 vLLM bridge corrupts attention on the
+        # P300x2 4-chip mesh (garbage output). Disable it to match the 12B config and the
+        # standalone text_demo_v2 (bounded_sliding=False), which produces coherent output.
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 500000000
+        # The gemma4 model's lm_head skips the TP vocab all-gather in decode whenever
+        # its on-device sampling module exists (model.py:_apply_lm_head), expecting
+        # the sampler to consume the TP-sharded logits. Without this set, the plugin
+        # falls back to HOST sampling, which then only sees device 0's vocab shard
+        # (ids 0..65535) — so any token id >= 65536 (notably ALL digits, ~236xxx) is
+        # unreachable in decode. Enabling on-device sampling for decode performs the
+        # cross-shard argmax/sampling on device and returns correct global token ids.
+        sample_on_device_mode: decode_only
       vllm_args:
         override_generation_config: '{"temperature": 1.0, "top_k": 64, "top_p": 0.95}'
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-31b-it:
+      reasoning_parser_name: gemma4
 
 - weights:
     - google/gemma-4-12b-it
