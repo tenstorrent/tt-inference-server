@@ -71,7 +71,6 @@ class NonStreamResponseWriter : public ResponseWriter {
   ResponseBuilder builder;
 
   std::ostringstream accumulatedAnswer;
-  std::ostringstream accumulatedReasoning;
   std::vector<AccumulatedToolCall> accumulatedToolCalls;
   std::string finishReason = "stop";
 };

@@ -1,0 +1,3 @@
+# Install yolox without dependencies to avoid onnxruntime==1.8.0 conflict.
+# This is needed for yolox nano. 
+yolox==0.3.0

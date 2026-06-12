@@ -36,14 +36,15 @@ BlazeDecodeRunner::BlazeDecodeRunner(
   auto migrationClientInterface = utils::makeMigrationClientInterface(config);
   auto thinkTokenIds = tt::utils::tokenizers::thinkTokenIds();
   auto eosTokenId = tt::utils::tokenizers::staticInfo().eosTokenId;
-  ds::SchedulerParams managerParams{
-      .eos_token = static_cast<uint32_t>(eosTokenId),
-      .think_open_token_id = static_cast<uint32_t>(thinkTokenIds.first),
-      .think_close_token_id = static_cast<uint32_t>(thinkTokenIds.second),
-  };
+  ds::SchedulerParams managerParams{};
+  managerParams.eos_token = static_cast<uint32_t>(eosTokenId);
+  managerParams.think_open_token_id =
+      static_cast<uint32_t>(thinkTokenIds.first);
+  managerParams.think_close_token_id =
+      static_cast<uint32_t>(thinkTokenIds.second);
   managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
-  decodeScheduler =
-      std::make_unique<ds::DecodeScheduler>(pipelineConfig, managerParams, std::move(migrationClientInterface));
+  decodeScheduler = std::make_unique<ds::DecodeScheduler>(
+      pipelineConfig, managerParams, std::move(migrationClientInterface));
   TT_LOG_INFO(
       "BlazeDecodeRunner: DecodeScheduler constructed, calling start()...");
   decodeScheduler->start();

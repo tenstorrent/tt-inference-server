@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# Dependencies for the BENCHMARKS_VLLM_FORGE workflow venv (Python 3.11).
+#
+# Forge-only benchmark client. The shared benchmarks-vllm.txt stays on its
+# older pins so qualified TTNN models are untouched; forge models need newer
+# vllm/transformers to load their tokenizers. Keep the vllm pin in sync with
+# FORGE_VLLM_PIN_VERSION in workflow_venvs.py.
+
+-c constraints.txt
+
+vllm==0.19.1
+transformers==5.5.1
+torch
+# Extra deps required by benchmark_serving_structured_output.py; the
+# `vllm bench serve` CLI does not pull these in transitively.
+datasets
+pandas
+xgrammar

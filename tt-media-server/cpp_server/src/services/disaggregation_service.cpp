@@ -79,12 +79,6 @@ void DisaggregationService::setupSocketHandlers() {
                                 (!message.remaining_tokens.has_value() ||
                                  message.remaining_tokens.value() > 0);
           if (continueDecode) {
-            if (auto* reasoningParser = llmService->getReasoningParser()) {
-              reasoningParser->initializeTask(message.task_id);
-              reasoningParser->processToken(message.task_id,
-                                            message.token_ids.back(),
-                                            /*decodedText=*/"");
-            }
             auto request = LLMRequest(message.task_id);
             request.disaggregated = true;
             request.migrationId = message.migration_id;
@@ -205,9 +199,8 @@ void DisaggregationService::setupSocketHandlers() {
                 llmService->submitStreamingRequest(
                     *request,
                     [this, prefillSessionId, message, maxTokens, slotId,
-                     cachedTokens,
-                     migrationId](const LLMStreamChunk& response,
-                                  bool /*isFinal*/) {
+                     cachedTokens, migrationId](const LLMStreamChunk& response,
+                                                bool /*isFinal*/) {
                       auto prefillResult =
                           tt::sockets::PrefillResultMessage(message.task_id);
                       prefillResult.slot_id = slotId;
