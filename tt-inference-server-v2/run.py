@@ -267,18 +267,12 @@ def parse_args() -> argparse.Namespace:
     if args.repeat < 1:
         parser.error("--repeat must be >= 1")
     if args.server_url:
-        from urllib.parse import urlparse
+        from utils.url_helpers import normalize_server_url
 
-        server_url = args.server_url.strip().rstrip("/")
-        parsed = urlparse(server_url)
-        if not parsed.scheme:
-            server_url = f"http://{server_url}"
-            parsed = urlparse(server_url)
-        if not parsed.hostname:
-            parser.error(
-                "--server-url must include a hostname (e.g. 'http://127.0.0.1')."
-            )
-        args.server_url = server_url
+        try:
+            args.server_url = normalize_server_url(args.server_url)
+        except ValueError as e:
+            parser.error(str(e))
     if args.prefix_cache and args.workflow != "benchmarks":
         parser.error(
             "--prefix-cache currently requires --workflow benchmarks "

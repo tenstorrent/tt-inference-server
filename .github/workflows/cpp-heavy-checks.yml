@@ -187,10 +187,21 @@ jobs:
         run: |
           CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
           CHECK=cpp_server/scripts/ci/check_vllm_result.py
+          THRESHOLD_LOG=benchmark_thresholds.log
           FAIL=0
+          : > "$THRESHOLD_LOG"
+
+          set +e
           python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock_pipeline \
-            --result vllm-bench-mock-pipeline.json || FAIL=1
+            --result vllm-bench-mock-pipeline.json 2>&1 | tee -a "$THRESHOLD_LOG"
+          STATUS=${PIPESTATUS[0]}
+          set -e
+
+          if [[ "$STATUS" -ne 0 ]]; then
+            FAIL=1
+          fi
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
+          echo "BENCH_THRESHOLD_LOG=$THRESHOLD_LOG" >> "$GITHUB_ENV"
 
       # ── Artifacts & logs ─────────────────────────────────────────────
       - name: Show server logs
@@ -221,7 +232,17 @@ jobs:
 
       - name: Check benchmark result
         if: always()
-        run: exit "${BENCH_FAIL:-0}"
+        run: |
+          if [[ "${BENCH_FAIL:-0}" -ne 0 ]]; then
+            LOG="${BENCH_THRESHOLD_LOG:-benchmark_thresholds.log}"
+            echo "::error::Benchmark threshold check failed. Details from $LOG:"
+            if [[ -f "$LOG" ]]; then
+              cat "$LOG"
+            else
+              echo "No benchmark threshold log found; see the 'Check benchmark thresholds' step."
+            fi
+            exit 1
+          fi
 
   cpp-server-prefill-decode-split:
     name: C++ Server Prefill/Decode Split Test
@@ -573,14 +594,32 @@ jobs:
         run: |
           CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
           CHECK=cpp_server/scripts/ci/check_vllm_result.py
+          THRESHOLD_LOG=benchmark_thresholds.log
           FAIL=0
-          python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_tcp \
-            --result vllm-bench-split-tcp-result.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_zmq \
-            --result vllm-bench-split-zmq-result.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_runner \
-            --result vllm-bench-split-runner-result.json || FAIL=1
+          : > "$THRESHOLD_LOG"
+
+          check_threshold() {
+            local scenario="$1"
+            local result="$2"
+            echo "=== $scenario ($result) ===" | tee -a "$THRESHOLD_LOG"
+
+            set +e
+            python3 "$CHECK" --config "$CONFIG" --scenario "$scenario" \
+              --result "$result" 2>&1 | tee -a "$THRESHOLD_LOG"
+            local status=${PIPESTATUS[0]}
+            set -e
+
+            echo "" | tee -a "$THRESHOLD_LOG"
+            if [[ "$status" -ne 0 ]]; then
+              FAIL=1
+            fi
+          }
+
+          check_threshold prefill_decode_split_tcp vllm-bench-split-tcp-result.json
+          check_threshold prefill_decode_split_zmq vllm-bench-split-zmq-result.json
+          check_threshold prefill_decode_split_runner vllm-bench-split-runner-result.json
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
+          echo "BENCH_THRESHOLD_LOG=$THRESHOLD_LOG" >> "$GITHUB_ENV"
 
       - name: Show server logs
         if: always()
@@ -680,7 +719,17 @@ jobs:
 
       - name: Check benchmark result
         if: always()
-        run: exit "${BENCH_FAIL:-0}"
+        run: |
+          if [[ "${BENCH_FAIL:-0}" -ne 0 ]]; then
+            LOG="${BENCH_THRESHOLD_LOG:-benchmark_thresholds.log}"
+            echo "::error::Benchmark threshold check failed. Details from $LOG:"
+            if [[ -f "$LOG" ]]; then
+              cat "$LOG"
+            else
+              echo "No benchmark threshold log found; see the 'Check benchmark thresholds' step."
+            fi
+            exit 1
+          fi
 
   cpp-server-gateway-split:
     name: C++ Server Gateway Split Test
@@ -1092,12 +1141,31 @@ jobs:
         run: |
           CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
           CHECK=cpp_server/scripts/ci/check_vllm_result.py
+          THRESHOLD_LOG=benchmark_thresholds.log
           FAIL=0
-          python3 "$CHECK" --config "$CONFIG" --scenario gateway_split_tcp \
-            --result vllm-bench-gateway-split-tcp-result.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario gateway_split_zmq \
-            --result vllm-bench-gateway-split-zmq-result.json || FAIL=1
+          : > "$THRESHOLD_LOG"
+
+          check_threshold() {
+            local scenario="$1"
+            local result="$2"
+            echo "=== $scenario ($result) ===" | tee -a "$THRESHOLD_LOG"
+
+            set +e
+            python3 "$CHECK" --config "$CONFIG" --scenario "$scenario" \
+              --result "$result" 2>&1 | tee -a "$THRESHOLD_LOG"
+            local status=${PIPESTATUS[0]}
+            set -e
+
+            echo "" | tee -a "$THRESHOLD_LOG"
+            if [[ "$status" -ne 0 ]]; then
+              FAIL=1
+            fi
+          }
+
+          check_threshold gateway_split_tcp vllm-bench-gateway-split-tcp-result.json
+          check_threshold gateway_split_zmq vllm-bench-gateway-split-zmq-result.json
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
+          echo "BENCH_THRESHOLD_LOG=$THRESHOLD_LOG" >> "$GITHUB_ENV"
 
       - name: Show server logs
         if: always()
@@ -1145,7 +1213,17 @@ jobs:
 
       - name: Check benchmark result
         if: always()
-        run: exit "${BENCH_FAIL:-0}"
+        run: |
+          if [[ "${BENCH_FAIL:-0}" -ne 0 ]]; then
+            LOG="${BENCH_THRESHOLD_LOG:-benchmark_thresholds.log}"
+            echo "::error::Benchmark threshold check failed. Details from $LOG:"
+            if [[ -f "$LOG" ]]; then
+              cat "$LOG"
+            else
+              echo "No benchmark threshold log found; see the 'Check benchmark thresholds' step."
+            fi
+            exit 1
+          fi
 
 
   dynamo-frontend-integration:
