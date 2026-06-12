@@ -1371,6 +1371,16 @@ class TTModelRunner:
             print("  On-device lm_head: NOT eligible (LayerNorm final norm not yet "
                   "supported on-device) -> CPU lm_head")
             return
+        # On-device lm_head only PAYS OFF folded into the decode trace (#31). Run
+        # standalone (model not on the traced fast path) it adds a per-token device
+        # matmul+argmax that is slower than the CPU lm_head — measured -14..-18% on
+        # gemma2/gemma3/qwen3 (fast_path=False but norm_type!=layernorm). Bundle it with
+        # the fast path: apply it only when this model is actually tracing, so each
+        # optimization reaches only the models that benefit from it.
+        if not getattr(self, "_traced", False):
+            print("  On-device lm_head: skipped (only beneficial folded into the decode "
+                  "trace; model not on fast path) -> CPU lm_head")
+            return
         # HiFi4 + fp32 dest accumulation: maximize precision of the wide bf16 dot
         # products over a large vocab so greedy argmax matches the CPU fp32 reference.
         self._lmhead_ckc = ttnn.WormholeComputeKernelConfig(
