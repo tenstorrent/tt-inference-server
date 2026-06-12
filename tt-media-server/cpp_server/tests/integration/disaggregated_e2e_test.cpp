@@ -548,6 +548,98 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   TT_LOG_INFO("[Test] Continuation test completed - decode handled locally (prefix cache HIT, "
               "small delta)");
 
+  // --- Part 3: Continuation with BIG delta ---
+  // Send another follow-up message with a large delta (>1000 tokens).
+  // The decode server should hit its prefix cache, compute the delta, and
+  // forward to prefill because delta > 1000 tokens.
+  TT_LOG_INFO("[Test] Sending continuation with BIG delta (expecting prefix cache HIT on decode, "
+              "but delta >1000 tokens so forwarded to prefill)");
+
+  // Generate a large follow-up message (~1200 tokens delta)
+  std::string bigFollowUp = generatePromptWithApproxTokens(1196);
+
+  auto bigDeltaFuture = std::async(std::launch::async, [&] {
+    return tt::test::sendAndReceive(
+        "127.0.0.1", DECODE_HTTP_PORT,
+        tt::test::ChatRequest()
+            .user(largePrompt)
+            .assistant("Here is my response.")  // Simulated assistant response from turn 1
+            .user(bigFollowUp)                  // Big delta (~1200 tokens)
+            .maxTokens(1)
+            .stream()
+            .toJson(),
+        "your-secret-key", /*idleTimeoutMs=*/10000);
+  });
+
+  // The prefill server should receive a memory ALLOCATE (big delta was forwarded).
+  tt::domain::ManageMemoryTask bigDeltaAlloc{};
+  {
+    auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(10000);
+    bool received = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (prefillServer_->memoryRequestQueue().tryPop(bigDeltaAlloc)) {
+        received = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(received)
+        << "Expected ALLOCATE on prefill's memory queue - decode should have "
+           "forwarded the big delta continuation to prefill";
+    EXPECT_EQ(bigDeltaAlloc.action, tt::domain::MemoryManagementAction::ALLOCATE);
+  }
+
+  tt::domain::ManageMemoryResult bigDeltaMemRes{};
+  bigDeltaMemRes.taskId = bigDeltaAlloc.taskId;
+  bigDeltaMemRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
+  bigDeltaMemRes.slotId = 0;
+  prefillServer_->memoryResultQueue().push(bigDeltaMemRes);
+
+  // Read the Sequence from the prefill's task queue.
+  auto bigDeltaSeq = prefillServer_->taskQueue().receive();
+  ASSERT_NE(bigDeltaSeq, nullptr) << "Prefill task queue should have received a Sequence for big delta";
+
+  const size_t bigDeltaPromptTokens = bigDeltaSeq->getNumPromptTokens();
+  const bool bigDeltaIsContinuation = bigDeltaSeq->isContinuation();
+
+  TT_LOG_INFO("[Test] Big delta prefill received: numPromptTokens={}, "
+              "tokenIds.size()={}, isContinuation={}",
+              bigDeltaPromptTokens, bigDeltaSeq->getTokenIds().size(),
+              bigDeltaIsContinuation);
+
+  // The request should be marked as a continuation (decode had prefix cache hit).
+  EXPECT_TRUE(bigDeltaIsContinuation)
+      << "Big delta should be marked as continuation (decode had prefix cache HIT)";
+
+  // The prefill should receive only the delta tokens, not the full conversation.
+  // Original large prompt was ~1100 tokens, assistant response ~4 tokens,
+  // big follow-up is ~1200 tokens. If prefix cache worked, prefill receives
+  // only the delta (~1204 tokens for assistant + big follow-up), not the full
+  // conversation (~2304 tokens).
+  // With block alignment (32 tokens), the delta should be roughly 1200-1250 tokens.
+  EXPECT_LT(bigDeltaPromptTokens, 1500)
+      << "Prefill should receive delta tokens only (prefix cache hit), not full conversation";
+  EXPECT_GT(bigDeltaPromptTokens, 1150)
+      << "Delta should include the big follow-up (~1200 tokens)";
+
+  TT_LOG_INFO("[Test] Big delta verification: prefill received {} tokens (delta only, not full {}+ token conversation)",
+              bigDeltaPromptTokens, 2300);
+
+  // Mock the prefill worker response.
+  tt::test::WorkerResponse(bigDeltaSeq->taskId)
+      .token(43)
+      .finalize()
+      .sendTo(prefillServer_->resultQueue());
+
+  const auto bigDeltaRawResponse = bigDeltaFuture.get();
+  const auto bigDeltaResponse = tt::test::HttpResponse::parse(bigDeltaRawResponse);
+  EXPECT_EQ(bigDeltaResponse.statusCode(), 200);
+
+  TT_LOG_INFO("[Test] Big delta continuation completed - forwarded to prefill with {} delta tokens "
+              "(prefix cache HIT on decode, but delta exceeded threshold)",
+              bigDeltaPromptTokens);
+
   prefillServer_->setMemoryAutoRespond(true);
 }
 
