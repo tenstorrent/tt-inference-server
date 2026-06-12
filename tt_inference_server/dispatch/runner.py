@@ -44,6 +44,9 @@ TILE = 32
 # Activation strings mapped to ttnn.gelu — both the matrix's canonical "gelu_tanh"/"gelu"
 # and the raw HuggingFace act names that the auto-derive (unlisted) path passes through.
 _GELU_ACTS = ("gelu_tanh", "gelu", "gelu_pytorch_tanh", "gelu_new", "gelu_fast")
+# Tanh-approximation GELU family -> ttnn.gelu(fast_and_approximate_mode=True).
+# Plain "gelu" is exact-erf (GPTNeoX) and uses fast_and_approximate_mode=False.
+_GELU_TANH_ACTS = ("gelu_tanh", "gelu_pytorch_tanh", "gelu_new", "gelu_fast")
 
 
 def _tile_align(n: int) -> int:
@@ -351,13 +354,48 @@ def _get_qkv_bias(attn, cfg) -> "torch.Tensor | None":
     return torch.cat([q_b2, k_b2, v_b2])
 
 
-def _find_o_proj_weight(attn):
-    """Find output projection weight regardless of attribute name."""
+def _find_o_proj(attn):
+    """Find the output-projection module regardless of attribute name."""
     for attr in ("o_proj", "out_proj", "dense", "wo", "c_proj"):
         m = getattr(attn, attr, None)
         if m is not None and hasattr(m, "weight"):
-            return m.weight
+            return m
     raise RuntimeError(f"Cannot find output projection in {type(attn).__name__}")
+
+
+def _find_o_proj_weight(attn):
+    """Find output projection weight regardless of attribute name."""
+    return _find_o_proj(attn).weight
+
+
+def _find_mlp_modules(mlp):
+    """Return (gate_mod, up_mod, down_mod) MLP modules so callers can read .bias.
+
+    Mirrors _find_mlp_weights' resolution order. gate_mod is None for 2-proj and
+    fused gate+up MLPs. For fused gate+up (Phi-3) up_mod is the fused module —
+    its bias (if any) spans [gate;up]; Phi-3 has no MLP bias so this stays None
+    in practice.
+    """
+    gate = getattr(mlp, "gate_proj", None) or getattr(mlp, "w1", None)
+    up   = getattr(mlp, "up_proj", None) or getattr(mlp, "w3", None)
+    down = getattr(mlp, "down_proj", None) or getattr(mlp, "w2", None)
+    if gate is not None and up is not None and down is not None:
+        return gate, up, down
+
+    gate_up = getattr(mlp, "gate_up_proj", None)
+    down2   = getattr(mlp, "down_proj", None)
+    if gate_up is not None and down2 is not None:
+        return None, gate_up, down2
+
+    up_2 = (getattr(mlp, "dense_h_to_4h", None) or   # GPTNeoX, BLOOM
+            getattr(mlp, "c_fc", None) or              # Starcoder2
+            getattr(mlp, "ff_proj", None) or           # OLMo
+            getattr(mlp, "fc_in", None))
+    dn_2 = (getattr(mlp, "dense_4h_to_h", None) or   # GPTNeoX, BLOOM
+            getattr(mlp, "c_proj", None) or            # Starcoder2
+            getattr(mlp, "ff_out", None) or            # OLMo
+            getattr(mlp, "fc_out", None))
+    return None, up_2, dn_2
 
 
 def _find_mlp_weights(mlp, cfg):
@@ -422,8 +460,10 @@ class _LayerWeights:
     up_w:     object
     down_w:   object   # ttnn.Tensor (intermediate_p, hidden_p)
     qkv_b:    object   # torch.Tensor (total_qkv_p,) CPU float -- None if no bias
-    gate_b:   object   # ttnn.Tensor (TILE, intermediate_p) -- zero if no bias
-    up_b:     object
+    gate_b:   object   # ttnn.Tensor (TILE, intermediate_p) -- None if no bias
+    up_b:     object   # ttnn.Tensor (TILE, intermediate_p) -- None if no bias
+    o_b:      object = None  # ttnn.Tensor (TILE, hidden_p) o-proj bias -- None if absent
+    down_b:   object = None  # ttnn.Tensor (TILE, hidden_p) MLP down bias -- None if absent
     # Optional extra norms (Gemma 3 style: norm applied to sub-layer OUTPUT)
     norm3_w:  object = None  # pre_feedforward_layernorm
     norm3_sc: object = None
@@ -709,9 +749,25 @@ class TTModelRunner:
         if self._traced:
             return self._decode_step_traced(token_id)
         hidden_tt = self._embed(token_id)
+        if self._embed_ln_w_cpu is not None:        # BLOOM word_embeddings_layernorm
+            hidden_tt = self._apply_embed_ln(hidden_tt)
         for i in range(len(self._layers)):
             hidden_tt = self._layer_forward(hidden_tt, i, kv_pos)
         return self._lm_head(hidden_tt)
+
+    def _apply_embed_ln(self, hidden_tt):
+        """Apply the embedding LayerNorm (BLOOM) on CPU, returning (TILE, hidden_p)."""
+        import ttnn
+        eps = getattr(self._hf_cfg, "layer_norm_eps",
+                      getattr(self._hf_cfg, "rms_norm_eps", 1e-5))
+        hsz = self._cfg.hidden_size
+        hp  = _tile_align(hsz)
+        hcpu = ttnn.to_torch(hidden_tt)[0, :hsz].float()
+        ncpu = _layernorm_cpu(hcpu, self._embed_ln_w_cpu, self._embed_ln_b_cpu, eps)
+        v_row = torch.nn.functional.pad(ncpu.bfloat16(), (0, hp - hsz)).unsqueeze(0)
+        v_2d  = v_row.expand(TILE, -1).contiguous()
+        return ttnn.from_torch(v_2d, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT,
+                               device=self._device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
 
     def _embed_traced(self):
         """Host-free embed: reads the pinned token-id device tensor (no from_torch)."""
@@ -791,6 +847,23 @@ class TTModelRunner:
         def rmsnorm_buf():
             return self._rmsnorm_buf_tt
 
+        def seq_norm(h_tt, w_tt, sc_tt, w_cpu, b_cpu):
+            """Pre-sublayer norm for the sequential (llama-style) residual path.
+            CPU LayerNorm (mean-sub + bias) for LayerNorm models (BLOOM, StableLM,
+            Falcon); on-device RMSNorm otherwise. Mirrors the gpt_neox branch."""
+            if not self._uses_layernorm:
+                return self._dispatcher.rmsnorm(h_tt, w_tt, sc_tt, rmsnorm_buf())
+            eps = getattr(self._hf_cfg, "layer_norm_eps",
+                          getattr(self._hf_cfg, "rms_norm_eps", 1e-5))
+            hsz = self._cfg.hidden_size
+            hp  = _tile_align(hsz)
+            hcpu = ttnn.to_torch(h_tt)[0, :hsz].float()
+            ncpu = _layernorm_cpu(hcpu, w_cpu, b_cpu, eps)
+            v_row = torch.nn.functional.pad(ncpu.bfloat16(), (0, hp - hsz)).unsqueeze(0)
+            v_2d  = v_row.expand(TILE, -1).contiguous()
+            return ttnn.from_torch(v_2d, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT,
+                                   device=self._device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+
         # output_tensor= for residual adds writes into pre-allocated hidden scratch,
         # eliminating 2 device tensor allocations per layer per token.
         aot = {"output_tensor": self._hidden_scratch_tt} if self._add_ot else {}
@@ -844,14 +917,14 @@ class TTModelRunner:
             hidden_tt = ttnn.add(hidden_tt, attn_out_tt, **aot)
             hidden_tt = ttnn.add(hidden_tt, mlp_out_tt, **aot)
         else:
-            # Llama / Qwen / Mistral pattern:
+            # Llama / Qwen / Mistral / (LayerNorm: BLOOM, StableLM, Falcon) pattern:
             #   hidden += attn(norm1(hidden))
             #   hidden += mlp(norm2(hidden))
-            normed1_tt = self._dispatcher.rmsnorm(hidden_tt, lw.norm1_w, lw.norm1_sc, rmsnorm_buf())
+            normed1_tt = seq_norm(hidden_tt, lw.norm1_w, lw.norm1_sc, lw.norm1_w_cpu, lw.norm1_b)
             attn_out_tt = self._attention(normed1_tt, layer_idx, kv_pos)
             hidden_tt = ttnn.add(hidden_tt, attn_out_tt, **aot)
 
-            normed2_tt = self._dispatcher.rmsnorm(hidden_tt, lw.norm2_w, lw.norm2_sc, rmsnorm_buf())
+            normed2_tt = seq_norm(hidden_tt, lw.norm2_w, lw.norm2_sc, lw.norm2_w_cpu, lw.norm2_b)
             mlp_out_tt = self._mlp(normed2_tt, layer_idx)
             hidden_tt = ttnn.add(hidden_tt, mlp_out_tt, **aot)
 
@@ -929,13 +1002,19 @@ class TTModelRunner:
         if lw.k_norm_w is not None:
             k_cpu = self._apply_head_norm(k_cpu, lw.k_norm_w)
 
-        # RoPE
-        q_cpu = self._apply_rope(q_cpu, kv_pos)
-        k_cpu = self._apply_rope(k_cpu, kv_pos)
+        # RoPE — skipped for ALiBi models (BLOOM), which carry no rotary embedding
+        if not getattr(self, "_no_rope", False):
+            q_cpu = self._apply_rope(q_cpu, kv_pos)
+            k_cpu = self._apply_rope(k_cpu, kv_pos)
 
         # Update CPU history mirrors (kept for debugging / fallback)
         self._k_hist_cpu[layer_idx][:, kv_pos, :] = k_cpu.float()
         self._v_hist_cpu[layer_idx][:, kv_pos, :] = v_cpu.float()
+
+        # ALiBi (BLOOM): per-head positional bias can't fold into the shared-mask
+        # flash_attn kernel — run CPU softmax+ALiBi attention from the history mirrors.
+        if getattr(self, "_uses_alibi", False):
+            return self._attention_cpu_alibi(q_cpu, layer_idx, kv_pos, lw)
 
         # Write post-RoPE K/V into the on-device KV cache
         self._write_kv_to_device(layer_idx, kv_pos, k_cpu, v_cpu)
@@ -970,7 +1049,7 @@ class TTModelRunner:
         )
 
         # O projection — _fa_out_tt is [TILE, N_heads*hd_p], already O-proj compatible
-        return _matmul_safe(self._fa_out_tt, lw.o_w, self._device)
+        return self._o_proj(self._fa_out_tt, lw)
 
     def _dev_rope(self, x4, c4, s4):
         """Elementwise RoPE on device. x4: [1,1,H,head_dim]; c4/s4: [1,1,1,head_dim].
@@ -1045,7 +1124,7 @@ class TTModelRunner:
             mask_tt, self._fa_out_tt,
             N_heads=nh, N_kv_heads=nkv,
         )
-        return _matmul_safe(self._fa_out_tt, lw.o_w, self._device)
+        return self._o_proj(self._fa_out_tt, lw)
 
     def _setup_paged_decode(self):
         """Set up the paged trace-safe decode path (issue #30), gated by env.
@@ -1172,7 +1251,7 @@ class TTModelRunner:
         # flatten heads -> [1, nh*hd_p] (head-major matches O-proj weight), broadcast to TILE rows
         attn_flat = ttnn.reshape(attn, [1, nh * hd_p])
         attn_t = ttnn.repeat(attn_flat, ttnn.Shape([TILE, 1]))
-        return _matmul_safe(attn_t, lw.o_w, self._device)
+        return self._o_proj(attn_t, lw)
 
     def _mlp(self, normed_tt, layer_idx: int):
         """MLP using ttnn.matmul for large weight matrices.
@@ -1193,19 +1272,28 @@ class TTModelRunner:
         muot = self._mul_ot
 
         if lw.gate_w is None:
-            # 2-proj MLP: act(up(x)) → down  (GPTNeoX, BLOOM, Starcoder2, OLMo)
+            # 2-proj MLP: act(up(x)+up_b) → down(·)+down_b  (GPTNeoX, BLOOM, Starcoder2, OLMo)
             up_ot = self._up_scratch_tt if mot else None
             up_tt = _matmul_safe(normed_tt, lw.up_w, self._device, output_tensor=up_ot)
+            if lw.up_b is not None:                 # bias before activation
+                up_biased = ttnn.add(up_tt, lw.up_b)
+                if up_ot is None:
+                    ttnn.deallocate(up_tt)
+                up_tt, up_ot = up_biased, None      # own the fresh tensor now
             if act == "silu":
                 act_tt = ttnn.silu(up_tt)
             elif act in _GELU_ACTS:
-                act_tt = ttnn.gelu(up_tt)
+                act_tt = ttnn.gelu(up_tt, fast_and_approximate_mode=(act in _GELU_TANH_ACTS))
             else:
                 act_tt = ttnn.relu(up_tt)
             if up_ot is None:
                 ttnn.deallocate(up_tt)
             result = _matmul_safe(act_tt, lw.down_w, self._device)
             ttnn.deallocate(act_tt)
+            if lw.down_b is not None:
+                res_biased = ttnn.add(result, lw.down_b)
+                ttnn.deallocate(result)
+                result = res_biased
             return result
 
         # SwiGLU: act(gate(x)) * up(x) → down
@@ -1214,13 +1302,25 @@ class TTModelRunner:
         gate_tt = _matmul_safe(normed_tt, lw.gate_w, self._device, output_tensor=gate_ot)
         up_tt   = _matmul_safe(normed_tt, lw.up_w,   self._device, output_tensor=up_ot)
 
+        if lw.gate_b is not None:                   # presence-driven; no-op for Llama-style
+            t = ttnn.add(gate_tt, lw.gate_b)
+            if gate_ot is None:
+                ttnn.deallocate(gate_tt)
+            gate_tt, gate_ot = t, None
+        if lw.up_b is not None:
+            t = ttnn.add(up_tt, lw.up_b)
+            if up_ot is None:
+                ttnn.deallocate(up_tt)
+            up_tt, up_ot = t, None
+
         act_ot = self._activated_scratch_tt if muot else None
         if act == "silu":
             activated_tt = ttnn.multiply(ttnn.silu(gate_tt), up_tt,
                                          **({"output_tensor": act_ot} if act_ot else {}))
         elif act in _GELU_ACTS:
-            activated_tt = ttnn.multiply(ttnn.gelu(gate_tt), up_tt,
-                                         **({"output_tensor": act_ot} if act_ot else {}))
+            activated_tt = ttnn.multiply(
+                ttnn.gelu(gate_tt, fast_and_approximate_mode=(act in _GELU_TANH_ACTS)), up_tt,
+                **({"output_tensor": act_ot} if act_ot else {}))
         else:  # relu2
             r = ttnn.relu(gate_tt)
             activated_tt = ttnn.multiply(ttnn.multiply(r, r), up_tt,
@@ -1234,6 +1334,10 @@ class TTModelRunner:
         result = _matmul_safe(activated_tt, lw.down_w, self._device)
         if act_ot is None:
             ttnn.deallocate(activated_tt)
+        if lw.down_b is not None:
+            res_biased = ttnn.add(result, lw.down_b)
+            ttnn.deallocate(result)
+            result = res_biased
         return result
 
     def _setup_ondevice_lmhead(self):
@@ -1382,6 +1486,15 @@ class TTModelRunner:
         # Keep a null reference so any stale access fails fast instead of silently using CPU
         self._embed_w_cpu = None
 
+        # Embedding LayerNorm (BLOOM: word_embeddings_layernorm, applied to the embedding
+        # before layer 0). CPU LayerNorm — None for every other arch (no-op).
+        embed_ln = (getattr(backbone, "word_embeddings_layernorm", None)
+                    or getattr(backbone, "embeddings_layernorm", None))
+        self._embed_ln_w_cpu = embed_ln.weight.detach().float() if embed_ln is not None else None
+        self._embed_ln_b_cpu = (embed_ln.bias.detach().float()
+                                if embed_ln is not None and getattr(embed_ln, "bias", None) is not None
+                                else None)
+
         # Behavioral flags (#3 Phase C). For a LISTED model these come from the matrix
         # entry (trusted, hardware-tuned); for a novel/unlisted model they fall back to the
         # HF/module introspection that is the universal floor. The matrix was populated to
@@ -1460,20 +1573,25 @@ class TTModelRunner:
 
             # MLP — handle SwiGLU, 2-proj, fused gate+up
             gate_raw, up_raw, down_raw = _find_mlp_weights(mlp, cfg)
-            if gate_raw is None:
-                # 2-proj MLP: gate_w=None signals _mlp to skip gating
-                gate_w_tt = None
-                gate_b_tt = None
-            else:
-                gate_w_tt = self._upload_linear_w(gate_raw)
-                gate_m    = getattr(mlp, "gate_proj", None)
-                gate_b_tt = self._upload_bias(
-                    getattr(gate_m, "bias", None) if gate_m else None,
-                    cfg.intermediate_size)
-            up_m   = getattr(mlp, "up_proj", None)
-            up_b_tt = self._upload_bias(
-                getattr(up_m, "bias", None) if up_m else None,
+            gate_w_tt = None if gate_raw is None else self._upload_linear_w(gate_raw)
+
+            # Biases are presence-driven: loaded from the actual resolved modules
+            # (dense_h_to_4h / dense_4h_to_h for GPTNeoX/BLOOM, not the hardcoded
+            # up_proj name) and applied only when present. None for bias-free MLPs.
+            gate_mod, up_mod, down_mod = _find_mlp_modules(mlp)
+            gate_b_tt = self._upload_bias(
+                getattr(gate_mod, "bias", None) if gate_mod is not None else None,
                 cfg.intermediate_size)
+            up_b_tt = self._upload_bias(
+                getattr(up_mod, "bias", None) if up_mod is not None else None,
+                cfg.intermediate_size)
+            down_b_tt = self._upload_bias(
+                getattr(down_mod, "bias", None) if down_mod is not None else None,
+                cfg.hidden_size)
+
+            # O-projection bias (GPTNeoX/BLOOM attention.dense.bias; None for Llama-style)
+            o_mod  = _find_o_proj(attn)
+            o_b_tt = self._upload_bias(getattr(o_mod, "bias", None), cfg.hidden_size)
 
             qkv_b_cpu = _get_qkv_bias(attn, cfg)
 
@@ -1495,6 +1613,8 @@ class TTModelRunner:
                 down_w = self._upload_linear_w(down_raw),
                 gate_b = gate_b_tt,
                 up_b   = up_b_tt,
+                down_b = down_b_tt,
+                o_b    = o_b_tt,
                 norm3_w  = self._upload_norm_w(getattr(n3, "weight", None), gemma_norm) if has_pre_ff else None,
                 norm3_sc = self._make_scaler_tt(cfg.hidden_size) if has_pre_ff else None,
                 norm4_w  = self._upload_norm_w(getattr(n4, "weight", None), gemma_norm) if has_post_ff else None,
@@ -1543,13 +1663,89 @@ class TTModelRunner:
         return _to_tt(w.detach().bfloat16().T.contiguous(), self._device)
 
     def _upload_bias(self, b: Optional[torch.Tensor], out_dim: int):
-        """Upload bias as (TILE, out_p) or zeros if None."""
-        if b is not None:
-            b_1d = _pad_to_tiles(b.detach().bfloat16())
-            b_2d = b_1d.unsqueeze(0).expand(TILE, -1).contiguous()
-        else:
-            b_2d = torch.zeros(TILE, _tile_align(out_dim), dtype=torch.bfloat16)
+        """Upload bias as (TILE, out_p), or None when the module has no bias.
+
+        Returning None (not a zero tensor) lets the forward pass skip the add
+        entirely for bias-free models (Llama/Qwen/StableLM/OLMo/Phi-3) — keeping
+        the generic bias support a true no-op for them.
+        """
+        if b is None:
+            return None
+        b_1d = _pad_to_tiles(b.detach().bfloat16())
+        b_2d = b_1d.unsqueeze(0).expand(TILE, -1).contiguous()
         return _to_tt(b_2d, self._device)
+
+    def _o_proj(self, inp, lw):
+        """O-projection matmul + optional bias (GPTNeoX/BLOOM attention.dense.bias).
+
+        Bias is presence-driven (lw.o_b is None for Llama-style attn) so this is a
+        no-op for bias-free models on every attention path (CPU-readback/ondevice/paged).
+        """
+        import ttnn
+        out = _matmul_safe(inp, lw.o_w, self._device)
+        if lw.o_b is not None:
+            biased = ttnn.add(out, lw.o_b)
+            ttnn.deallocate(out)
+            out = biased
+        return out
+
+    @staticmethod
+    def _build_alibi_slopes(n_heads: int) -> torch.Tensor:
+        """ALiBi per-head slopes (HF BLOOM scheme). slope_h = 2^(-8h/n) for h=1..n
+        when n is a power of two; otherwise the nearest-lower-power-of-two set plus
+        the interleaved extra slopes. Returns a (n_heads,) float tensor."""
+        def pow2_slopes(n):
+            start = 2.0 ** (-8.0 / n)
+            return [start ** (i + 1) for i in range(n)]
+
+        if math.log2(n_heads).is_integer():
+            slopes = pow2_slopes(n_heads)
+        else:
+            closest = 2 ** int(math.floor(math.log2(n_heads)))
+            slopes = pow2_slopes(closest)
+            extra = pow2_slopes(2 * closest)[0::2][: n_heads - closest]
+            slopes = slopes + extra
+        return torch.tensor(slopes, dtype=torch.float32)
+
+    def _attention_cpu_alibi(self, q_cpu, layer_idx: int, kv_pos: int, lw):
+        """CPU softmax attention with ALiBi positional bias (BLOOM).
+
+        BLOOM has no RoPE and uses per-head ALiBi slopes that the shared-mask
+        flash_attn kernel can't express; it's already off the device fast path
+        (head_dim=80, LayerNorm), so attention runs on CPU from the K/V history
+        mirrors. Softmax is shift-invariant per query row, so the absolute-key-pos
+        bias (slope_h * key_pos) is equivalent to the relative ALiBi form.
+        Projections (qkv/o-proj) stay on device.
+        """
+        cfg = self._cfg
+        hd  = cfg.head_dim
+        nh  = cfg.num_heads
+        nkv = cfg.num_kv_heads
+        L   = kv_pos + 1
+
+        K = self._k_hist_cpu[layer_idx][:, :L, :].float()   # (nkv, L, hd)
+        V = self._v_hist_cpu[layer_idx][:, :L, :].float()
+        if nh != nkv:                                       # GQA expand (BLOOM is MHA)
+            rep = nh // nkv
+            K = K.repeat_interleave(rep, dim=0)
+            V = V.repeat_interleave(rep, dim=0)
+        q = q_cpu.float()                                   # (nh, hd)
+
+        scale  = 1.0 / math.sqrt(hd)
+        scores = torch.einsum("hd,hld->hl", q, K) * scale   # (nh, L)
+        key_pos = torch.arange(L, dtype=torch.float32)
+        scores = scores + self._alibi_slopes.view(nh, 1) * key_pos.view(1, L)
+        attn = torch.softmax(scores, dim=-1)                # (nh, L)
+        out  = torch.einsum("hl,hld->hd", attn, V)          # (nh, hd)
+
+        # Pack into the _fa_out_tt layout [TILE, nh*hd_p]: row 0 = per-head outputs,
+        # each head padded hd -> hd_p, matching the o-proj weight layout.
+        hd_p  = _tile_align(hd)
+        out_p = torch.zeros(nh, hd_p, dtype=torch.float32)
+        out_p[:, :hd] = out
+        fa = torch.zeros(TILE, nh * hd_p, dtype=torch.bfloat16)
+        fa[0] = out_p.reshape(nh * hd_p).bfloat16()
+        return self._o_proj(_to_tt(fa, self._device), lw)
 
     def _make_scaler_tt(self, dim: int):
         """Return (TILE, TILE) tile filled with 1/dim on device."""
@@ -1724,6 +1920,21 @@ class TTModelRunner:
         if rotary_ndims % 2 != 0:
             rotary_ndims -= 1
         self._rotary_ndims = rotary_ndims   # used in _apply_rope
+
+        # ALiBi models (BLOOM) have NO RoPE — they add a per-head linear positional
+        # bias to the attention scores instead. Detect and disable rope; the per-head
+        # slopes can't fold into the shared-mask flash_attn kernel, so BLOOM runs a CPU
+        # softmax+ALiBi attention path (see _attention_cpu_alibi).
+        text_cfg   = getattr(cfg, "text_config", cfg)
+        model_type = getattr(text_cfg, "model_type", "")
+        archs      = getattr(cfg, "architectures", None) or []
+        self._uses_alibi = (model_type == "bloom"
+                            or any("Bloom" in a for a in archs)
+                            or bool(getattr(cfg, "alibi", False)))
+        self._no_rope = self._uses_alibi
+        if self._uses_alibi:
+            self._rotary_ndims = 0
+            self._alibi_slopes = self._build_alibi_slopes(self._cfg.num_heads)
 
         # Linear RoPE scaling: compress positions by dividing by scale factor.
         # Do NOT change theta -- scale the position indices instead.

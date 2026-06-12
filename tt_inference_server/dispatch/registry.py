@@ -64,13 +64,22 @@ def _from_hf_config_generic(hf_config) -> ModelConfig:
     if hasattr(hf_config, "layer_norm_eps") and not hasattr(hf_config, "rms_norm_eps"):
         norm_type = "layernorm"
 
-    # Determine activation
+    # Determine activation. "gelu" is exact-erf (GPTNeoX); the *_new/_fast/_pytorch_tanh
+    # variants are the tanh approximation (distinguished from "gelu" so the runner can
+    # pick the matching ttnn.gelu mode).
     act_map = {
         "silu": "silu", "swish": "silu",
-        "gelu": "gelu", "gelu_new": "gelu", "gelu_fast": "gelu",
+        "gelu": "gelu",
+        "gelu_tanh": "gelu_tanh",
+        "gelu_new": "gelu_tanh", "gelu_fast": "gelu_tanh",
+        "gelu_pytorch_tanh": "gelu_tanh",
         "relu": "relu2",
     }
-    hf_act = getattr(hf_config, "hidden_act", "silu")
+    model_type = getattr(getattr(hf_config, "text_config", hf_config), "model_type", "")
+    hf_act = getattr(hf_config, "hidden_act", None)
+    if hf_act is None:
+        # BLOOM carries no hidden_act and hardcodes tanh-approx GELU (BloomGelu).
+        hf_act = "gelu_tanh" if model_type == "bloom" else "silu"
     activation = act_map.get(hf_act, "silu")
 
     eps = getattr(hf_config, "rms_norm_eps",
