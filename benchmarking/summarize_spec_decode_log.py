@@ -152,8 +152,10 @@ def extract_runs(lines, log_path):
     for slug, logged_path in artifact_dirs.items():
         art_dir = resolve_artifact_dir(logged_path, log_path)
         if art_dir is None:
-            print(f"warning: artifact dir not found for {slug}: {logged_path}",
-                  file=sys.stderr)
+            print(
+                f"warning: artifact dir not found for {slug}: {logged_path}",
+                file=sys.stderr,
+            )
             continue
         csv_path = art_dir / "profile_export_aiperf.csv"
         if not csv_path.is_file():

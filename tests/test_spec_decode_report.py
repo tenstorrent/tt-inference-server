@@ -11,7 +11,6 @@ import pytest
 
 from benchmarking.summary_report import (
     create_spec_decode_display_dict,
-    create_spec_decode_pair_display_dict,
     extract_params_from_filename,
     process_benchmark_file,
     render_spec_decode_sections,
@@ -23,14 +22,13 @@ def _write(path: Path, data: dict) -> None:
         json.dump(data, f)
 
 
-def test_extract_params_spec_decode_spec_role():
+def test_extract_params_spec_decode():
     name = (
-        "benchmark_spec_decode_spec_id_tt-transformers_Llama-3.1-8B-Instruct_"
+        "benchmark_spec_decode_id_tt-transformers_Llama-3.1-8B-Instruct_"
         "gpu_2026-05-20_10-00-00_spec_bench_osl-128_maxcon-4_n-16.json"
     )
     params = extract_params_from_filename(name)
     assert params["task_type"] == "spec_decode"
-    assert params["endpoint_role"] == "spec"
     assert params["public_dataset"] == "spec_bench"
     assert params["device"] == "gpu"
     assert params["output_sequence_length"] == 128
@@ -38,32 +36,21 @@ def test_extract_params_spec_decode_spec_role():
     assert params["num_requests"] == 16
 
 
-def test_extract_params_spec_decode_baseline_role():
+def test_extract_params_spec_decode_natural_length():
+    # osl and n omitted: natural EOS decode over the whole dataset.
     name = (
-        "benchmark_spec_decode_baseline_modelid_gpu_"
-        "2026-05-20_10-00-00_spec_bench_osl-512_maxcon-1_n-4.json"
+        "benchmark_spec_decode_modelid_gpu_2026-05-20_10-00-00_spec_bench_maxcon-1.json"
     )
     params = extract_params_from_filename(name)
     assert params["task_type"] == "spec_decode"
-    assert params["endpoint_role"] == "baseline"
-    assert params["public_dataset"] == "spec_bench"
-
-
-def test_extract_params_spec_decode_pair_role():
-    name = (
-        "benchmark_spec_decode_pair_modelid_gpu_"
-        "2026-05-20_10-00-00_speed_bench_coding_osl-128_maxcon-4_n-16.json"
-    )
-    params = extract_params_from_filename(name)
-    assert params["task_type"] == "spec_decode_pair"
-    assert params["endpoint_role"] == "pair"
-    assert params["public_dataset"] == "speed_bench_coding"
+    assert params["output_sequence_length"] is None
+    assert params["num_requests"] is None
 
 
 def test_extract_params_speed_bench_throughput_slug():
     # Multi-token slugs (speed_bench_throughput_1k) must be captured whole.
     name = (
-        "benchmark_spec_decode_spec_modelid_gpu_"
+        "benchmark_spec_decode_modelid_gpu_"
         "2026-05-20_10-00-00_speed_bench_throughput_1k_"
         "osl-512_maxcon-4_n-16.json"
     )
@@ -71,38 +58,9 @@ def test_extract_params_speed_bench_throughput_slug():
     assert params["public_dataset"] == "speed_bench_throughput_1k"
 
 
-def test_process_spec_decode_pair_file(tmp_path):
+def test_process_spec_decode_file_lifts_metrics(tmp_path):
     name = (
-        "benchmark_spec_decode_pair_mid_gpu_"
-        "2026-05-20_10-00-00_spec_bench_osl-128_maxcon-4_n-16.json"
-    )
-    path = tmp_path / name
-    _write(
-        path,
-        {
-            "benchmark_kind": "spec_decode_pair",
-            "slug": "spec_bench_osl-128_maxcon-4_n-16",
-            "speedup_p50_e2el": 1.8,
-            "speedup_p95_e2el": 1.6,
-            "speedup_p99_e2el": 1.5,
-            "output_tput_ratio": 1.75,
-            "spec_acceptance_rate": 0.82,
-            "baseline_acceptance_rate": None,
-            "public_dataset": "spec_bench",
-        },
-    )
-    metrics = process_benchmark_file(str(path))
-    assert metrics["task_type"] == "spec_decode_pair"
-    assert metrics["endpoint_role"] == "pair"
-    assert metrics["speedup_p50_e2el"] == pytest.approx(1.8)
-    assert metrics["output_tput_ratio"] == pytest.approx(1.75)
-    assert metrics["spec_acceptance_rate"] == pytest.approx(0.82)
-    assert metrics["public_dataset"] == "spec_bench"
-
-
-def test_process_spec_decode_spec_file_lifts_metrics(tmp_path):
-    name = (
-        "benchmark_spec_decode_spec_mid_gpu_"
+        "benchmark_spec_decode_mid_gpu_"
         "2026-05-20_10-00-00_spec_bench_osl-128_maxcon-4_n-16.json"
     )
     path = tmp_path / name
@@ -123,13 +81,11 @@ def test_process_spec_decode_spec_file_lifts_metrics(tmp_path):
                 "draft_tokens": 1585,
                 "num_drafts": 480,
                 "public_dataset": "spec_bench",
-                "endpoint_role": "spec",
             },
         },
     )
     metrics = process_benchmark_file(str(path))
     assert metrics["task_type"] == "spec_decode"
-    assert metrics["endpoint_role"] == "spec"
     assert metrics["public_dataset"] == "spec_bench"
     assert metrics["acceptance_rate"] == pytest.approx(0.82)
     assert metrics["mean_accepted_length"] == pytest.approx(2.7)
@@ -144,7 +100,7 @@ def test_process_spec_decode_handles_missing_annotation(tmp_path):
     # The processor should still emit a spec_decode result with None fields
     # rather than crashing.
     name = (
-        "benchmark_spec_decode_spec_mid_gpu_"
+        "benchmark_spec_decode_mid_gpu_"
         "2026-05-20_10-00-00_spec_bench_osl-128_maxcon-1_n-4.json"
     )
     path = tmp_path / name
@@ -166,7 +122,6 @@ def test_process_spec_decode_handles_missing_annotation(tmp_path):
 
 def test_create_spec_decode_display_dict_columns():
     result = {
-        "endpoint_role": "spec",
         "public_dataset": "spec_bench",
         "output_sequence_length": 128,
         "max_con": 4,
@@ -179,86 +134,41 @@ def test_create_spec_decode_display_dict_columns():
         "total_token_throughput": 300.0,
     }
     d = create_spec_decode_display_dict(result)
-    assert d["Role"] == "spec"
     assert d["Dataset"] == "spec_bench"
     assert d["Accept Rate"] == "0.82"
     assert d["E2EL (ms)"] == "200.0"
 
 
-def test_create_spec_decode_pair_display_dict_columns():
-    result = {
-        "public_dataset": "speed_bench_coding",
-        "output_sequence_length": 128,
-        "max_con": 4,
-        "speedup_p50_e2el": 1.8,
-        "speedup_p95_e2el": 1.6,
-        "speedup_p99_e2el": 1.5,
-        "output_tput_ratio": 1.75,
-        "spec_acceptance_rate": 0.82,
-    }
-    d = create_spec_decode_pair_display_dict(result)
-    assert d["Dataset"] == "speed_bench_coding"
-    assert d["Speedup p50"] == "1.8"
-    assert d["Speedup p95"] == "1.6"
-    assert d["Output Tput Ratio"] == "1.75"
-    assert d["Accept Rate"] == "0.82"
-
-
 def test_render_returns_empty_when_no_results():
-    sections = render_spec_decode_sections([], [], "model", "gpu")
+    sections = render_spec_decode_sections([], "model", "gpu")
     assert sections == []
 
 
-def test_render_per_run_section_only():
+def test_render_per_run_section():
     per_run = [
         {
             "task_type": "spec_decode",
-            "endpoint_role": "baseline",
-            "public_dataset": "spec_bench",
-            "output_sequence_length": 128,
-            "max_con": 1,
-            "mean_e2el_ms": 200.0,
-        },
-        {
-            "task_type": "spec_decode",
-            "endpoint_role": "spec",
-            "public_dataset": "spec_bench",
+            "public_dataset": "speed_bench_coding",
             "output_sequence_length": 128,
             "max_con": 1,
             "mean_e2el_ms": 100.0,
             "acceptance_rate": 0.8,
         },
-    ]
-    sections = render_spec_decode_sections(per_run, [], "model", "gpu")
-    assert len(sections) == 1
-    assert "Speculative Decoding Per-Run" in sections[0]
-    # baseline row should come before spec row in the rendered table
-    lines = sections[0].splitlines()
-    baseline_line = next(i for i, line in enumerate(lines) if "baseline" in line)
-    # match "spec" as the Role cell, not "spec_bench" in the Dataset column
-    spec_line = next(
-        i
-        for i, line in enumerate(lines)
-        if line.lstrip().startswith("|") and " spec " in line[: line.find("spec_bench")]
-    )
-    assert baseline_line < spec_line
-
-
-def test_render_includes_pair_section_when_pair_results_present():
-    pair = [
         {
-            "task_type": "spec_decode_pair",
+            "task_type": "spec_decode",
             "public_dataset": "spec_bench",
             "output_sequence_length": 128,
             "max_con": 1,
-            "speedup_p50_e2el": 1.8,
-            "speedup_p95_e2el": 1.6,
-            "speedup_p99_e2el": 1.5,
-            "output_tput_ratio": 1.75,
-            "spec_acceptance_rate": 0.82,
-        }
+            "mean_e2el_ms": 200.0,
+        },
     ]
-    sections = render_spec_decode_sections([], pair, "model", "gpu")
+    sections = render_spec_decode_sections(per_run, "model", "gpu")
     assert len(sections) == 1
-    assert "Speedup vs Baseline" in sections[0]
-    assert "Speedup p50" in sections[0]
+    assert "Speculative Decoding Per-Run" in sections[0]
+    # Rows sorted by dataset: spec_bench before speed_bench_coding.
+    lines = sections[0].splitlines()
+    spec_bench_line = next(i for i, line in enumerate(lines) if "| spec_bench" in line)
+    coding_line = next(
+        i for i, line in enumerate(lines) if "speed_bench_coding" in line
+    )
+    assert spec_bench_line < coding_line

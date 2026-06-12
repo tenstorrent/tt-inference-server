@@ -26,10 +26,7 @@ def _spec_bench_run(*, output_len=None, num_prompts=16) -> SpecDecodeRunSpec:
 
 
 def test_parse_workflow_args_key_value_pairs():
-    parsed = parse_workflow_args(
-        "phase=baseline url=http://localhost:8000 warmup-requests=8"
-    )
-    assert parsed["phase"] == "baseline"
+    parsed = parse_workflow_args("url=http://localhost:8000 warmup-requests=8")
     assert parsed["url"] == "http://localhost:8000"
     assert parsed["warmup-requests"] == "8"
     assert parse_workflow_args(None) == {}

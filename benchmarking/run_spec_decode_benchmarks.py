@@ -90,21 +90,19 @@ def build_aiperf_cmd(
 ) -> List[str]:
     """Build the ``aiperf profile`` command for one ``SpecDecodeRunSpec``.
 
-    Spec-decode-specific knobs vs. the general aiperf perf runner:
-      - ``--public-dataset <name>`` so far only run with speed-bench, but can be
-        extended for other datasets (such as spec-bench) that aiperf supports.
-      - ``--extra-inputs temperature:0`` so draft/target sampling is
-        deterministic; matches the spec-decode comparison convention.
+    Spec-decode-specific parameters:
+      - ``--public-dataset <name>``: speed-bench is supported, but can be
+        extended for other datasets (such as spec-bench).
       - When ``run_spec.output_len`` is set, ``--output-tokens-mean/-stddev``
         and ``ignore_eos:true`` force each request to emit exactly that many
         tokens. When unset (the default), the model decodes to its natural
         EOS — variable-length outputs that better exercise real decode
         behavior across prompt types.
-      - When ``run_spec.max_completion_tokens`` is set, it is injected as
-        ``--extra-inputs max_completion_tokens:<N>``: an upper bound on the
-        generated tokens that still lets requests stop early at EOS. Used on
-        the throughput sweep to keep a few long-decoding prompts from
-        dominating wall-clock.
+        - ``--extra-inputs temperature:0`` so draft/target sampling is
+        deterministic
+      - ``--extra-inputs max_completion_tokens:<N>``: when set, provides
+        an upper bound on the generated tokens but requests can stop earlier
+        than that if the model emits EOS.
     """
     if not url.startswith("http"):
         url = f"http://{url}"

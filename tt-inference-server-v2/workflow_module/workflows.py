@@ -16,12 +16,18 @@ from typing import ClassVar, Dict, List, Sequence, Type
 
 from test_module.task_types import MediaTaskType
 
-from .execution import PrefixCacheOptions, TaskOutcome, WorkflowExecution
+from .execution import (
+    PrefixCacheOptions,
+    SpecDecodeOptions,
+    TaskOutcome,
+    WorkflowExecution,
+)
 
-# Synthetic task label used for the prefix-cache run in TaskOutcome /
-# acceptance summary tables. Not a member of MediaTaskType because the
-# sweep bypasses the media-task dispatcher.
+# Synthetic task labels used for the prefix-cache / spec-decode runs in
+# TaskOutcome / acceptance summary tables. Not members of MediaTaskType
+# because these sweeps bypass the media-task dispatcher.
 _PREFIX_CACHE_TASK_LABEL = "prefix_cache"
+_SPEC_DECODE_TASK_LABEL = "spec_decode"
 
 
 class EvalsWorkflow(WorkflowExecution):
@@ -72,10 +78,13 @@ class BenchmarksWorkflow(WorkflowExecution):
     task_types = (MediaTaskType.BENCHMARK,)
 
     def run_tasks(self) -> List[TaskOutcome]:
-        opts = self.orchestrator_metadata.prefix_cache
-        if opts is None:
-            return super().run_tasks()
-        return [self._run_prefix_cache_task(opts)]
+        prefix_cache_opts = self.orchestrator_metadata.prefix_cache
+        if prefix_cache_opts is not None:
+            return [self._run_prefix_cache_task(prefix_cache_opts)]
+        spec_decode_opts = self.orchestrator_metadata.spec_decode
+        if spec_decode_opts is not None:
+            return [self._run_spec_decode_task(spec_decode_opts)]
+        return super().run_tasks()
 
     def _run_prefix_cache_task(self, opts: PrefixCacheOptions) -> TaskOutcome:
         """Drive the AIPerf prefix-cache sweep in place of media benchmarks.
@@ -134,6 +143,60 @@ class BenchmarksWorkflow(WorkflowExecution):
             elapsed,
         )
         return TaskOutcome(_PREFIX_CACHE_TASK_LABEL, 0, elapsed, block_kind)
+
+    def _run_spec_decode_task(self, opts: SpecDecodeOptions) -> TaskOutcome:
+        """Drive one spec-decode phase in place of media benchmarks.
+
+        Delegates to :func:`test_module.llm_tests.spec_decode_tests.run_spec_decode`,
+        which builds the sweep plan, runs each AIPerf invocation, and
+        forwards the resulting Blocks to the accumulator. We only need
+        to translate its ``list[Block]`` return into a single
+        :class:`TaskOutcome`.
+
+        Imported from the leaf submodule (not ``test_module``) so the
+        spec-decode code path skips the audio/image/video/CNN/TTS/
+        embedding runner imports that ``test_module/__init__.py`` would
+        otherwise trigger.
+        """
+        from test_module.llm_tests.spec_decode_tests import run_spec_decode
+
+        self.logger.info("→ task=%s preset=%s", _SPEC_DECODE_TASK_LABEL, opts.preset)
+        started = time.time()
+        try:
+            blocks = run_spec_decode(
+                self.ctx,
+                preset=opts.preset,
+                warmup_requests=opts.warmup_requests,
+                auth_token=opts.auth_token,
+            )
+        except Exception as e:
+            elapsed = time.time() - started
+            self.logger.exception(
+                "✘ task=%s raised after %.1fs: %s",
+                _SPEC_DECODE_TASK_LABEL,
+                elapsed,
+                e,
+            )
+            return TaskOutcome(_SPEC_DECODE_TASK_LABEL, 1, elapsed, None)
+
+        elapsed = time.time() - started
+        if not blocks:
+            self.logger.error(
+                "✘ task=%s produced no blocks (%.1fs)",
+                _SPEC_DECODE_TASK_LABEL,
+                elapsed,
+            )
+            return TaskOutcome(_SPEC_DECODE_TASK_LABEL, 1, elapsed, None)
+
+        block_kind = blocks[0].kind
+        self.logger.info(
+            "✓ task=%s blocks=%d kind=%s (%.1fs)",
+            _SPEC_DECODE_TASK_LABEL,
+            len(blocks),
+            block_kind,
+            elapsed,
+        )
+        return TaskOutcome(_SPEC_DECODE_TASK_LABEL, 0, elapsed, block_kind)
 
 
 class SpecTestsWorkflow(WorkflowExecution):
