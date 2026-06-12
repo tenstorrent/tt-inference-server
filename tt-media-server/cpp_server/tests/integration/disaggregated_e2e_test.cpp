@@ -691,8 +691,15 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // This is verified by the numPromptTokens being much smaller than the full
   // conversation (already checked above).
   // The prefillSlotId should be valid if prefill found a matching session.
+  // --- Verification 7: Prefill slot ID is valid ---
+  // The prefill server should have resolved its own prefix cache and assigned
+  // a valid slot ID. This verifies prefill-side prefix-cache resolution works.
+  EXPECT_NE(prefillSlotId, tt::domain::INVALID_SLOT_ID)
+      << "Prefill slot ID should be valid (prefill resolved its own prefix "
+         "cache)";
   TT_LOG_INFO(
-      "[Test] Prefill slot ID: {} (prefill's own prefix cache resolution)",
+      "[Test] PASS: Prefill slot ID: {} (prefill's own prefix cache "
+      "resolution)",
       prefillSlotId);
 
   // Mock the prefill worker response.
@@ -764,10 +771,12 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
 
   const int secondDecodeSkipTokens = secondBigDeltaSeq->getDecodeSkipTokens();
   const size_t secondPromptTokens = secondBigDeltaSeq->getNumPromptTokens();
+  const uint32_t secondPrefillSlotId = secondBigDeltaSeq->getPrefillKVCacheSlot();
 
   TT_LOG_INFO(
-      "[Test] Second big delta: numPromptTokens={}, decodeSkipTokens={}",
-      secondPromptTokens, secondDecodeSkipTokens);
+      "[Test] Second big delta: numPromptTokens={}, decodeSkipTokens={}, "
+      "prefillSlotId={}",
+      secondPromptTokens, secondDecodeSkipTokens, secondPrefillSlotId);
 
   // --- Verification 7: Prefix cache was updated after Part 3 ---
   // The decodeSkipTokens should now be larger than in Part 3, reflecting that
@@ -784,6 +793,13 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
       "(expected {})",
       decodeSkipTokens, secondDecodeSkipTokens,
       kExpectedSecondDecodeSkipTokens);
+
+  // --- Verification 9: Prefill slot ID is valid for Part 4 ---
+  // Same as Part 3: prefill should have resolved its own prefix cache.
+  EXPECT_NE(secondPrefillSlotId, tt::domain::INVALID_SLOT_ID)
+      << "Part 4: Prefill slot ID should be valid (prefill resolved its own "
+         "prefix cache)";
+  TT_LOG_INFO("[Test] PASS: Part 4 prefill slot ID: {}", secondPrefillSlotId);
 
   // Mock the prefill worker response for second big delta.
   tt::test::WorkerResponse(secondBigDeltaSeq->taskId)
