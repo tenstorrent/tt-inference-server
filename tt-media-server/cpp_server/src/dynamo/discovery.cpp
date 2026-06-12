@@ -120,6 +120,7 @@ Json::Value buildInstanceJson(const DiscoveryConfig& c) {
 /// Dynamo frontend parser names advertised in the MDC runtime_config.
 struct RuntimeParsers {
   const char* tool_call = nullptr;
+  const char* reasoning = nullptr;
 };
 
 /// Read HuggingFace `model_type` from config.json (empty if
@@ -140,20 +141,28 @@ std::string readModelType(const std::string& configPath) {
 }
 
 /// Map HF model_type (from tokenizers/<model>/config.json) to Dynamo parsers.
+/// Reasoning parser names mirror workflows/model_specs (e.g. deepseek_r1 for
+/// models that emit <think>…</think> spans).
 RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
   if (modelType == "kimi_k25") {
-    return {"kimi_k2"};
+    return {"kimi_k2", "deepseek_r1"};
+  }
+  if (modelType == "deepseek_v3") {
+    return {nullptr, "deepseek_r1"};
   }
   if (modelType == "llama") {
-    return {nullptr};
+    return {nullptr, nullptr};
   }
   if (modelType == "gpt_oss") {
-    return {"harmony"};
+    return {"harmony", "openai_gptoss"};
   }
   if (modelType == "minimax_m2") {
-    return {"minimax_m2"};
+    return {"minimax_m2", "deepseek_r1"};
   }
-  return {nullptr};
+  if (modelType == "qwen3") {
+    return {nullptr, "qwen3"};
+  }
+  return {nullptr, nullptr};
 }
 
 RuntimeParsers runtimeParsersForModelPath(const std::string& modelPath) {
@@ -259,7 +268,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   runtime["max_num_seqs"] = Json::Value::null;
   runtime["max_num_batched_tokens"] = Json::Value::null;
   const RuntimeParsers parsers = runtimeParsersForModelPath(c.model_path);
-  runtime["reasoning_parser"] = Json::Value::null;
+  setRuntimeParserField(runtime, "reasoning_parser", parsers.reasoning);
   setRuntimeParserField(runtime, "tool_call_parser", parsers.tool_call);
   runtime["exclude_tools_when_tool_choice_none"] = true;
   runtime["data_parallel_start_rank"] = 0;
