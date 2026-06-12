@@ -306,13 +306,13 @@ void SessionManager::evictOldSessions() {
           sessionId);
       continue;
     }
-    auto& evicted_s = *ms;  // shared_ptr taken out of the map
+    auto& evictedS = *ms;  // shared_ptr taken out of the map
     TT_LOG_DEBUG(
         "[SessionManager] evictOldSessions: evicting sessionId={}, slotId={}",
-        sessionId, evicted_s->getSlotId());
-    removeFromPrefixIndex(sessionId, evicted_s->getHash());
-    removeFromResponseIdIndex(sessionId, evicted_s->getResponseId());
-    finalizeSessionClose(sessionId, *evicted_s);
+        sessionId, evictedS->getSlotId());
+    removeFromPrefixIndex(sessionId, evictedS->getHash());
+    removeFromResponseIdIndex(sessionId, evictedS->getResponseId());
+    finalizeSessionClose(sessionId, *evictedS);
     ++evicted;
   }
 
