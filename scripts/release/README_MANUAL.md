@@ -125,13 +125,13 @@ Afterwards, `git add/commit/push` the changes for the `release_model_spec.json` 
 Additionally, `git add/commit/push` only untracked/modified docs files in `docs/model_support/`, but also only for models in the current scope.
 
 Alternatively, the new script can be invoked:
-# Generate everything (docs + README + release_model_spec.json) from the prod catalogue
+ Generate everything (docs + README + release_model_spec.json) from the prod catalogue
 `python3 scripts/release/export_model_spec.py`
 
-# Use the dev catalogue instead
+ Use the dev catalogue instead
 `python3 scripts/release/export_model_spec.py --env dev`
 
-# Only one of the two outputs
+ Only one of the two outputs
 `python3 scripts/release/export_model_spec.py --docs-only   # docs + README, no JSON`
 `python3 scripts/release/export_model_spec.py --json-only   # release_model_spec.json only`
 
