@@ -334,12 +334,11 @@ void DisaggregationService::resolvePrefillSession(
     onResolved();
   } else {
     // Check if there's a candidate slot worth copying from.
-    auto copyPlan =
-        acquired.has_value()
-            ? session_resolution::prepareSlotCopy(
-                  *sessionManager, acquired->candidatesList, request->task_id,
-                  "[DisaggregationService]")
-            : session_resolution::SlotCopyPlan{};
+    auto copyPlan = acquired.has_value()
+                        ? session_resolution::prepareSlotCopy(
+                              *sessionManager, acquired->candidatesList,
+                              request->task_id, "[DisaggregationService]")
+                        : session_resolution::SlotCopyPlan{};
     std::optional<uint32_t> slotToCopyFrom = copyPlan.slotToCopyFrom;
     uint32_t copyMatchedTokens = copyPlan.matchedTokens;
 

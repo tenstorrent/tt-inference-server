@@ -62,10 +62,11 @@ struct SlotCopyPlan {
 };
 
 // Pick and lock a source slot for KV-copy allocation, if a candidate is worth
-// copying. The caller owns unlocking slotToCopyFrom after createSession returns.
-SlotCopyPlan prepareSlotCopy(SessionManager& sessionManager,
-                             const std::vector<SessionManager::Candidate>&
-                                 candidates,
-                             uint32_t taskId, std::string_view logPrefix);
+// copying. The caller owns unlocking slotToCopyFrom after createSession
+// returns.
+SlotCopyPlan prepareSlotCopy(
+    SessionManager& sessionManager,
+    const std::vector<SessionManager::Candidate>& candidates, uint32_t taskId,
+    std::string_view logPrefix);
 
 }  // namespace tt::services::session_resolution

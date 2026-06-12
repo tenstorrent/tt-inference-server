@@ -187,11 +187,10 @@ void LLMPipeline::resolveSession(
             sessionManager_->computeMatchedTokens(acquired->sessionId,
                                                   routingInfo.blocks);
         req->kv_position_id = matchedTokens - 1 + thinkTokens;
-        session_resolution::applyDeltaPrompt(
-            *req, matchedTokens,
-            {.skipUnlessRegularMode = true,
-             .setKvPositionId = false,
-             .logPrefix = {}});
+        session_resolution::applyDeltaPrompt(*req, matchedTokens,
+                                             {.skipUnlessRegularMode = true,
+                                              .setKvPositionId = false,
+                                              .logPrefix = {}});
         TT_LOG_INFO(
             "[LLMPipeline] Response-id delta taskId={} matchedTokens={} "
             "thinkTokens={} deltaTokens={}",
@@ -273,11 +272,10 @@ void LLMPipeline::resolveSession(
         if (auto* p = std::get_if<std::vector<int>>(&req->prompt)) {
           fullPrompt = *p;
         }
-        session_resolution::applyDeltaPrompt(
-            *req, deltaMatchedTokens,
-            {.skipUnlessRegularMode = true,
-             .setKvPositionId = false,
-             .logPrefix = {}});
+        session_resolution::applyDeltaPrompt(*req, deltaMatchedTokens,
+                                             {.skipUnlessRegularMode = true,
+                                              .setKvPositionId = false,
+                                              .logPrefix = {}});
 
         if (!fullPrompt.empty()) {
           req->session->initTokenAccumulator(
@@ -317,12 +315,11 @@ void LLMPipeline::resolveSession(
 
   // Layer 2: Allocate a new session. Async — onCompletion runs on `loop`.
   // Before allocating, check if there's a candidate slot worth copying from.
-  auto copyPlan =
-      acquired.has_value()
-          ? session_resolution::prepareSlotCopy(
-                *sessionManager_, acquired->candidatesList, req->task_id,
-                "[LLMPipeline]")
-          : session_resolution::SlotCopyPlan{};
+  auto copyPlan = acquired.has_value()
+                      ? session_resolution::prepareSlotCopy(
+                            *sessionManager_, acquired->candidatesList,
+                            req->task_id, "[LLMPipeline]")
+                      : session_resolution::SlotCopyPlan{};
   std::optional<uint32_t> slotToCopyFrom = copyPlan.slotToCopyFrom;
   uint32_t copyMatchedTokens = copyPlan.matchedTokens;
 
@@ -371,11 +368,10 @@ void LLMPipeline::resolveSession(
         if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
           req->continuation = true;
           req->kv_position_id = copyMatchedTokens - 1;
-          session_resolution::applyDeltaPrompt(
-              *req, copyMatchedTokens,
-              {.skipUnlessRegularMode = true,
-               .setKvPositionId = false,
-               .logPrefix = {}});
+          session_resolution::applyDeltaPrompt(*req, copyMatchedTokens,
+                                               {.skipUnlessRegularMode = true,
+                                                .setKvPositionId = false,
+                                                .logPrefix = {}});
         } else {
           req->continuation = false;
         }
