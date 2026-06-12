@@ -188,6 +188,7 @@ def _base_v2_cmd(
     sdxl_n = getattr(runtime_config, "sdxl_num_prompts", None)
     if sdxl_n not in (None, "", "0"):
         cmd.extend(["--num-prompts", str(sdxl_n)])
+    return cmd
 
 
 def _build_agentic_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):
