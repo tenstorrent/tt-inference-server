@@ -771,7 +771,8 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
 
   const int secondDecodeSkipTokens = secondBigDeltaSeq->getDecodeSkipTokens();
   const size_t secondPromptTokens = secondBigDeltaSeq->getNumPromptTokens();
-  const uint32_t secondPrefillSlotId = secondBigDeltaSeq->getPrefillKVCacheSlot();
+  const uint32_t secondPrefillSlotId =
+      secondBigDeltaSeq->getPrefillKVCacheSlot();
 
   TT_LOG_INFO(
       "[Test] Second big delta: numPromptTokens={}, decodeSkipTokens={}, "
