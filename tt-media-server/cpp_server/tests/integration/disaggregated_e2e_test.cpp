@@ -1,26 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 //
-// Disaggregated end-to-end test: runs a REAL decode server (child process)
-// and a REAL prefill server (in-process), connected via ZMQ sockets.
+// Disaggregated end-to-end test: runs a decode server
+// and a prefill server, connected via ZMQ sockets.
 //
 // The test sends HTTP requests to the decode server, which decides whether to
 // handle locally (prefill-on-decode) or forward to the prefill server based on
 // MAX_TOKENS_TO_PREFILL_ON_DECODE threshold. This tests the full routing logic.
-//
-// Architecture:
-//   - Decode server: child process (fork+exec with --decode-server)
-//     * LLM_MODE=decode, mock backend, HTTP listener, ZMQ ROUTER
-//     * Own IPC queues (e2e_dc_* prefix), own worker subprocess
-//     * Internal memory auto-responder + tokenizer warmup
-//   - Prefill server: in-process (PrefillTestServer pattern)
-//     * LLM_MODE=prefill, mock backend, ZMQ DEALER connecting to decode
-//     * Own IPC queues (e2e_pf_* prefix), own worker subprocess
-//   - Test process: reads prefill's task queue, mocks worker, sends HTTP
 
-#include <gtest/gtest.h>
 #include <arpa/inet.h>
 #include <drogon/drogon.h>
+#include <gtest/gtest.h>
 #include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -160,9 +150,10 @@ void configurePrefillEnv() {
     while (!stopTaskResponder.load()) {
       auto seq = taskQueue->tryPop();
       if (seq) {
-        TT_LOG_INFO("[DecodeSubprocess] Handling request locally (prefill-on-decode): "
-                    "taskId={}, numPromptTokens={}",
-                    seq->taskId, seq->getNumPromptTokens());
+        TT_LOG_INFO(
+            "[DecodeSubprocess] Handling request locally (prefill-on-decode): "
+            "taskId={}, numPromptTokens={}",
+            seq->taskId, seq->getNumPromptTokens());
         tt::test::WorkerResponse(seq->taskId)
             .token(42)
             .finalize()
@@ -197,7 +188,9 @@ void configurePrefillEnv() {
     }
   }
 
-  { std::ofstream(sentinelPath) << "ready"; }
+  {
+    std::ofstream(sentinelPath) << "ready";
+  }
   TT_LOG_INFO("[DecodeSubprocess] Ready, sentinel written to {}", sentinelPath);
 
   static std::atomic<bool> done{false};
@@ -230,7 +223,8 @@ class PrefillTestServer {
 
   ~PrefillTestServer() {
     stopAutoResponder_.store(true);
-    if (memoryAutoResponderThread_.joinable()) memoryAutoResponderThread_.join();
+    if (memoryAutoResponderThread_.joinable())
+      memoryAutoResponderThread_.join();
   }
 
   tt::ipc::boost::TaskQueue& taskQueue() { return *taskQueuePtr_; }
@@ -318,7 +312,7 @@ class PrefillTestServer {
 // ---------------------------------------------------------------------------
 
 bool fileExists(const std::string& path) {
-  struct stat st {};
+  struct stat st{};
   return stat(path.c_str(), &st) == 0;
 }
 
@@ -329,7 +323,8 @@ bool fileExists(const std::string& path) {
 std::string generatePromptWithApproxTokens(size_t targetTokens) {
   std::string msg;
   // Use simple words that are single tokens
-  const std::vector<std::string> words = {"hello", "world", "test", "data", "check"};
+  const std::vector<std::string> words = {"hello", "world", "test", "data",
+                                          "check"};
   msg.reserve(targetTokens * 7);
   for (size_t i = 0; i < targetTokens; ++i) {
     msg += words[i % words.size()] + " ";
@@ -444,20 +439,22 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // Generate a large prompt (~1100 tokens) that should be forwarded to prefill.
   std::string largePrompt = generatePromptWithApproxTokens(1096);
 
-  TT_LOG_INFO("[Test] Sending large prompt to decode server (expecting forward to prefill)");
+  TT_LOG_INFO(
+      "[Test] Sending large prompt to decode server (expecting forward to "
+      "prefill)");
 
   auto responseFuture = std::async(std::launch::async, [&] {
-    return tt::test::sendAndReceive(
-        "127.0.0.1", DECODE_HTTP_PORT,
-        tt::test::ChatRequest()
-            .user(largePrompt)
-            .maxTokens(1)
-            .stream()
-            .toJson(),
-        "your-secret-key", /*idleTimeoutMs=*/10000);
+    return tt::test::sendAndReceive("127.0.0.1", DECODE_HTTP_PORT,
+                                    tt::test::ChatRequest()
+                                        .user(largePrompt)
+                                        .maxTokens(1)
+                                        .stream()
+                                        .toJson(),
+                                    "your-secret-key", /*idleTimeoutMs=*/10000);
   });
 
-  // The prefill server should receive a memory ALLOCATE (decode forwarded the request).
+  // The prefill server should receive a memory ALLOCATE (decode forwarded the
+  // request).
   tt::domain::ManageMemoryTask memReq{};
   {
     auto deadline =
@@ -484,16 +481,18 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
 
   // Read the Sequence from the prefill's task queue.
   auto seq = prefillServer_->taskQueue().receive();
-  ASSERT_NE(seq, nullptr) << "Prefill task queue should have received a Sequence";
+  ASSERT_NE(seq, nullptr)
+      << "Prefill task queue should have received a Sequence";
 
   const size_t numPromptTokens = seq->getNumPromptTokens();
-  TT_LOG_INFO("[Test] Prefill received Sequence: numPromptTokens={}, "
-              "tokenIds.size()={}, isContinuation={}",
-              numPromptTokens, seq->getTokenIds().size(), seq->isContinuation());
+  TT_LOG_INFO(
+      "[Test] Prefill received Sequence: numPromptTokens={}, "
+      "tokenIds.size()={}, isContinuation={}",
+      numPromptTokens, seq->getTokenIds().size(), seq->isContinuation());
 
   // The prompt should be >1000 tokens (the routing threshold).
-  EXPECT_EQ(numPromptTokens, 1100)
-      << "Prefill should have received 1100 tokens (large prompt was forwarded)";
+  EXPECT_EQ(numPromptTokens, 1100) << "Prefill should have received 1100 "
+                                      "tokens (large prompt was forwarded)";
 
   // Mock the prefill worker response.
   tt::test::WorkerResponse(seq->taskId)
@@ -513,8 +512,10 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // The decode server should hit its prefix cache and see that the delta is
   // small (<1000 tokens), so it handles locally (prefill-on-decode) instead
   // of forwarding to prefill.
-  TT_LOG_INFO("[Test] Sending continuation request (expecting prefix cache HIT on decode, "
-              "small delta handled locally, NOT forwarded to prefill)");
+  TT_LOG_INFO(
+      "[Test] Sending continuation request (expecting prefix cache HIT on "
+      "decode, "
+      "small delta handled locally, NOT forwarded to prefill)");
 
   // Add a small follow-up message to the same conversation
   std::string followUpMessage = "What about this?";
@@ -524,8 +525,9 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
         "127.0.0.1", DECODE_HTTP_PORT,
         tt::test::ChatRequest()
             .user(largePrompt)
-            .assistant("Here is my response.")  // Simulated assistant response from turn 1
-            .user(followUpMessage)              // New user message (small delta)
+            .assistant("Here is my response.")  // Simulated assistant response
+                                                // from turn 1
+            .user(followUpMessage)  // New user message (small delta)
             .maxTokens(1)
             .stream()
             .toJson(),
@@ -534,20 +536,25 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
 
   // Wait for the response to complete - it should be handled locally by decode.
   const auto continuationRawResponse = continuationFuture.get();
-  const auto continuationResponse = tt::test::HttpResponse::parse(continuationRawResponse);
+  const auto continuationResponse =
+      tt::test::HttpResponse::parse(continuationRawResponse);
   EXPECT_EQ(continuationResponse.statusCode(), 200);
 
   // Verify prefill did NOT receive anything for the continuation.
   // The decode server should have hit its prefix cache, computed the delta,
   // and handled it locally since delta < 1000 tokens.
   tt::domain::ManageMemoryTask continuationAlloc{};
-  bool gotContinuationAlloc = prefillServer_->memoryRequestQueue().tryPop(continuationAlloc);
+  bool gotContinuationAlloc =
+      prefillServer_->memoryRequestQueue().tryPop(continuationAlloc);
   EXPECT_FALSE(gotContinuationAlloc)
       << "Prefill should NOT have received an ALLOCATE for continuation - "
-         "decode should have hit prefix cache and handled the small delta locally";
+         "decode should have hit prefix cache and handled the small delta "
+         "locally";
 
-  TT_LOG_INFO("[Test] Continuation test completed - decode handled locally (prefix cache HIT, "
-              "small delta)");
+  TT_LOG_INFO(
+      "[Test] Continuation test completed - decode handled locally (prefix "
+      "cache HIT, "
+      "small delta)");
 
   // --- Part 3: Continuation with BIG delta ---
   // Send another follow-up message with a large delta (>1000 tokens).
@@ -560,8 +567,10 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // 3. Prefill calculates its own prefix cache (may differ from decode's)
   // 4. Prefill uses its slot + decode slot for KV operations
   // 5. Prefix cache is updated after prefill completes
-  TT_LOG_INFO("[Test] Sending continuation with BIG delta (expecting prefix cache HIT on decode, "
-              "but delta >1000 tokens so forwarded to prefill)");
+  TT_LOG_INFO(
+      "[Test] Sending continuation with BIG delta (expecting prefix cache HIT "
+      "on decode, "
+      "but delta >1000 tokens so forwarded to prefill)");
 
   // Generate a large follow-up message (~1200 tokens delta)
   std::string bigFollowUp = generatePromptWithApproxTokens(1196);
@@ -571,7 +580,8 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
         "127.0.0.1", DECODE_HTTP_PORT,
         tt::test::ChatRequest()
             .user(largePrompt)
-            .assistant("Here is my response.")  // Simulated assistant response from turn 1
+            .assistant("Here is my response.")  // Simulated assistant response
+                                                // from turn 1
             .user(bigFollowUp)                  // Big delta (~1200 tokens)
             .maxTokens(1)
             .stream()
@@ -579,7 +589,8 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
         "your-secret-key", /*idleTimeoutMs=*/10000);
   });
 
-  // The prefill server should receive a memory ALLOCATE (big delta was forwarded).
+  // The prefill server should receive a memory ALLOCATE (big delta was
+  // forwarded).
   tt::domain::ManageMemoryTask bigDeltaAlloc{};
   {
     auto deadline =
@@ -595,7 +606,8 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
     ASSERT_TRUE(received)
         << "Expected ALLOCATE on prefill's memory queue - decode should have "
            "forwarded the big delta continuation to prefill";
-    EXPECT_EQ(bigDeltaAlloc.action, tt::domain::MemoryManagementAction::ALLOCATE);
+    EXPECT_EQ(bigDeltaAlloc.action,
+              tt::domain::MemoryManagementAction::ALLOCATE);
   }
 
   tt::domain::ManageMemoryResult bigDeltaMemRes{};
@@ -606,7 +618,8 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
 
   // Read the Sequence from the prefill's task queue.
   auto bigDeltaSeq = prefillServer_->taskQueue().receive();
-  ASSERT_NE(bigDeltaSeq, nullptr) << "Prefill task queue should have received a Sequence for big delta";
+  ASSERT_NE(bigDeltaSeq, nullptr)
+      << "Prefill task queue should have received a Sequence for big delta";
 
   const size_t bigDeltaPromptTokens = bigDeltaSeq->getNumPromptTokens();
   const bool bigDeltaIsContinuation = bigDeltaSeq->isContinuation();
@@ -615,12 +628,13 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   const int decodeSkipTokens = bigDeltaSeq->getDecodeSkipTokens();
   const int decodePositionId = bigDeltaSeq->getDecodePositionId();
 
-  TT_LOG_INFO("[Test] Big delta prefill received: numPromptTokens={}, "
-              "tokenIds.size()={}, isContinuation={}, decodeSlotId={}, "
-              "prefillSlotId={}, decodeSkipTokens={}, decodePositionId={}",
-              bigDeltaPromptTokens, bigDeltaSeq->getTokenIds().size(),
-              bigDeltaIsContinuation, decodeSlotId, prefillSlotId,
-              decodeSkipTokens, decodePositionId);
+  TT_LOG_INFO(
+      "[Test] Big delta prefill received: numPromptTokens={}, "
+      "tokenIds.size()={}, isContinuation={}, decodeSlotId={}, "
+      "prefillSlotId={}, decodeSkipTokens={}, decodePositionId={}",
+      bigDeltaPromptTokens, bigDeltaSeq->getTokenIds().size(),
+      bigDeltaIsContinuation, decodeSlotId, prefillSlotId, decodeSkipTokens,
+      decodePositionId);
 
   // --- Verification 1: Decode slot ID is kept ---
   // The decode server should have assigned a slot and propagated it to prefill.
@@ -637,48 +651,59 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   EXPECT_GT(decodeSkipTokens, 0)
       << "decodeSkipTokens should be > 0 (decode had prefix cache hit)";
   EXPECT_GE(decodeSkipTokens, 1024)
-      << "decodeSkipTokens should be >= 1024 (decode matched ~1100 tokens from part 1)";
+      << "decodeSkipTokens should be >= 1024 (decode matched ~1100 tokens from "
+         "part 1)";
   EXPECT_LE(decodeSkipTokens, 1120)
-      << "decodeSkipTokens should be <= 1120 (roughly the original prompt size, block-aligned)";
-  TT_LOG_INFO("[Test] PASS: decodeSkipTokens propagated: {} (decode's prefix cache match)",
-              decodeSkipTokens);
+      << "decodeSkipTokens should be <= 1120 (roughly the original prompt "
+         "size, block-aligned)";
+  TT_LOG_INFO(
+      "[Test] PASS: decodeSkipTokens propagated: {} (decode's prefix cache "
+      "match)",
+      decodeSkipTokens);
 
   // --- Verification 3: decodePositionId is propagated ---
   // decodePositionId is the position in the KV cache where decode will resume.
   // Should be equal to decodeSkipTokens for requests without think tokens.
   EXPECT_EQ(decodePositionId, decodeSkipTokens)
-      << "decodePositionId should equal decodeSkipTokens (no think tokens in this test)";
+      << "decodePositionId should equal decodeSkipTokens (no think tokens in "
+         "this test)";
   TT_LOG_INFO("[Test] PASS: decodePositionId propagated: {}", decodePositionId);
 
   // --- Verification 4: Continuation flag is set ---
-  // The request should be marked as a continuation (decode had prefix cache hit).
+  // The request should be marked as a continuation (decode had prefix cache
+  // hit).
   EXPECT_TRUE(bigDeltaIsContinuation)
-      << "Big delta should be marked as continuation (decode had prefix cache HIT)";
+      << "Big delta should be marked as continuation (decode had prefix cache "
+         "HIT)";
   TT_LOG_INFO("[Test] PASS: Continuation flag set correctly");
 
   // --- Verification 5: Prefill receives delta tokens only ---
-  // The prefill should receive only the delta tokens, not the full conversation.
-  // Original large prompt was ~1100 tokens, assistant response ~4 tokens,
-  // big follow-up is ~1200 tokens. If prefix cache worked, prefill receives
-  // only the delta (~1204 tokens for assistant + big follow-up), not the full
-  // conversation (~2304 tokens).
-  // With block alignment (32 tokens), the delta should be roughly 1200-1250 tokens.
+  // The prefill should receive only the delta tokens, not the full
+  // conversation. Original large prompt was ~1100 tokens, assistant response ~4
+  // tokens, big follow-up is ~1200 tokens. If prefix cache worked, prefill
+  // receives only the delta (~1204 tokens for assistant + big follow-up), not
+  // the full conversation (~2304 tokens). With block alignment (32 tokens), the
+  // delta should be roughly 1200-1250 tokens.
   EXPECT_LT(bigDeltaPromptTokens, 1500)
-      << "Prefill should receive delta tokens only (prefix cache hit), not full conversation";
+      << "Prefill should receive delta tokens only (prefix cache hit), not "
+         "full conversation";
   EXPECT_GT(bigDeltaPromptTokens, 1150)
       << "Delta should include the big follow-up (~1200 tokens)";
-  TT_LOG_INFO("[Test] PASS: Prefill received {} tokens (delta only, not full {}+ token conversation)",
-              bigDeltaPromptTokens, 2300);
+  TT_LOG_INFO(
+      "[Test] PASS: Prefill received {} tokens (delta only, not full {}+ token "
+      "conversation)",
+      bigDeltaPromptTokens, 2300);
 
   // --- Verification 6: Prefill calculates its own prefix cache ---
-  // The prefill server should have resolved its own prefix cache. For this first
-  // big delta request to prefill (after the initial large prompt in Part 1),
-  // prefill should have a cache HIT from Part 1 and trim to just the delta.
+  // The prefill server should have resolved its own prefix cache. For this
+  // first big delta request to prefill (after the initial large prompt in Part
+  // 1), prefill should have a cache HIT from Part 1 and trim to just the delta.
   // This is verified by the numPromptTokens being much smaller than the full
   // conversation (already checked above).
   // The prefillSlotId should be valid if prefill found a matching session.
-  TT_LOG_INFO("[Test] Prefill slot ID: {} (prefill's own prefix cache resolution)",
-              prefillSlotId);
+  TT_LOG_INFO(
+      "[Test] Prefill slot ID: {} (prefill's own prefix cache resolution)",
+      prefillSlotId);
 
   // Mock the prefill worker response.
   tt::test::WorkerResponse(bigDeltaSeq->taskId)
@@ -687,16 +712,20 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
       .sendTo(prefillServer_->resultQueue());
 
   const auto bigDeltaRawResponse = bigDeltaFuture.get();
-  const auto bigDeltaResponse = tt::test::HttpResponse::parse(bigDeltaRawResponse);
+  const auto bigDeltaResponse =
+      tt::test::HttpResponse::parse(bigDeltaRawResponse);
   EXPECT_EQ(bigDeltaResponse.statusCode(), 200);
 
-  TT_LOG_INFO("[Test] Big delta continuation completed - forwarded to prefill with {} delta tokens "
-              "(prefix cache HIT on decode, but delta exceeded threshold)",
-              bigDeltaPromptTokens);
+  TT_LOG_INFO(
+      "[Test] Big delta continuation completed - forwarded to prefill with {} "
+      "delta tokens "
+      "(prefix cache HIT on decode, but delta exceeded threshold)",
+      bigDeltaPromptTokens);
 
   // --- Part 4: Second big delta to verify prefix cache update ---
   // Send another request with the same conversation to verify the prefix cache
-  // was updated after Part 3. Both decode and prefill should have updated caches.
+  // was updated after Part 3. Both decode and prefill should have updated
+  // caches.
   TT_LOG_INFO("[Test] Sending second big delta to verify prefix cache update");
 
   std::string secondBigFollowUp = generatePromptWithApproxTokens(1196);
@@ -729,8 +758,7 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    ASSERT_TRUE(received)
-        << "Expected ALLOCATE for second big delta";
+    ASSERT_TRUE(received) << "Expected ALLOCATE for second big delta";
   }
 
   tt::domain::ManageMemoryResult secondBigDeltaMemRes{};
@@ -745,21 +773,27 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   const int secondDecodeSkipTokens = secondBigDeltaSeq->getDecodeSkipTokens();
   const size_t secondPromptTokens = secondBigDeltaSeq->getNumPromptTokens();
 
-  TT_LOG_INFO("[Test] Second big delta: numPromptTokens={}, decodeSkipTokens={}",
-              secondPromptTokens, secondDecodeSkipTokens);
+  TT_LOG_INFO(
+      "[Test] Second big delta: numPromptTokens={}, decodeSkipTokens={}",
+      secondPromptTokens, secondDecodeSkipTokens);
 
   // --- Verification 7: Prefix cache was updated after Part 3 ---
   // The decodeSkipTokens should now be larger than in Part 3, reflecting that
   // decode's prefix cache was updated to include the big follow-up from Part 3.
   // Part 3 had ~1100 tokens cached. After Part 3 completed, the cache should
-  // include ~1100 (original) + ~1200 (big follow-up) + ~4 (response) = ~2304 tokens.
+  // include ~1100 (original) + ~1200 (big follow-up) + ~4 (response) = ~2304
+  // tokens.
   EXPECT_GT(secondDecodeSkipTokens, decodeSkipTokens)
-      << "Prefix cache should have been updated: second decodeSkipTokens should be "
-         "larger than first (" << secondDecodeSkipTokens << " vs " << decodeSkipTokens << ")";
+      << "Prefix cache should have been updated: second decodeSkipTokens "
+         "should be "
+         "larger than first ("
+      << secondDecodeSkipTokens << " vs " << decodeSkipTokens << ")";
   EXPECT_GE(secondDecodeSkipTokens, 2200)
-      << "Second decodeSkipTokens should be >= 2200 (includes Part 1 + Part 3 content)";
-  TT_LOG_INFO("[Test] PASS: Prefix cache updated - decodeSkipTokens grew from {} to {}",
-              decodeSkipTokens, secondDecodeSkipTokens);
+      << "Second decodeSkipTokens should be >= 2200 (includes Part 1 + Part 3 "
+         "content)";
+  TT_LOG_INFO(
+      "[Test] PASS: Prefix cache updated - decodeSkipTokens grew from {} to {}",
+      decodeSkipTokens, secondDecodeSkipTokens);
 
   // Mock the prefill worker response for second big delta.
   tt::test::WorkerResponse(secondBigDeltaSeq->taskId)
@@ -768,7 +802,8 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
       .sendTo(prefillServer_->resultQueue());
 
   const auto secondBigDeltaRawResponse = secondBigDeltaFuture.get();
-  const auto secondBigDeltaResponse = tt::test::HttpResponse::parse(secondBigDeltaRawResponse);
+  const auto secondBigDeltaResponse =
+      tt::test::HttpResponse::parse(secondBigDeltaRawResponse);
   EXPECT_EQ(secondBigDeltaResponse.statusCode(), 200);
 
   TT_LOG_INFO("[Test] All prefix cache and slot propagation tests passed");
@@ -784,17 +819,18 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_SmallPromptHandledLocally) {
   // Generate a small prompt (~200 tokens) that should be handled locally.
   std::string smallPrompt = generatePromptWithApproxTokens(196);
 
-  TT_LOG_INFO("[Test] Sending small prompt to decode server (expecting local handling)");
+  TT_LOG_INFO(
+      "[Test] Sending small prompt to decode server (expecting local "
+      "handling)");
 
   auto responseFuture = std::async(std::launch::async, [&] {
-    return tt::test::sendAndReceive(
-        "127.0.0.1", DECODE_HTTP_PORT,
-        tt::test::ChatRequest()
-            .user(smallPrompt)
-            .maxTokens(1)
-            .stream()
-            .toJson(),
-        "your-secret-key", /*idleTimeoutMs=*/5000);
+    return tt::test::sendAndReceive("127.0.0.1", DECODE_HTTP_PORT,
+                                    tt::test::ChatRequest()
+                                        .user(smallPrompt)
+                                        .maxTokens(1)
+                                        .stream()
+                                        .toJson(),
+                                    "your-secret-key", /*idleTimeoutMs=*/5000);
   });
 
   // Wait for the response - it should complete without prefill involvement.
