@@ -711,7 +711,9 @@ void BlazeDecodeRunner::handleRequest(
           "runningSlots={}, migrationId={}",
           request->taskId, slotId, isNew, request->isContinuation(),
           request->getNumPromptTokens(), request->getTokenIds().size(),
-          slotManager.activeRunningCount(), request->getMigrationId().has_value() ? *request->getMigrationId() : -1);
+          slotManager.activeRunningCount(),
+          request->getMigrationId().has_value() ? *request->getMigrationId()
+                                                : -1);
       ds::ISRequest req = isNew ? utils::makeSubmitRequest(slotId, *request)
                                 : utils::makeContinueRequest(slotId, *request);
       if (!decodeScheduler->push_request(req)) {
