@@ -263,6 +263,20 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    # ----- Serving-bench suites (--workflow serving_bench) ------------
+    parser.add_argument(
+        "--serving-bench-suites",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated serving-bench suites to run (default: all suites "
+            "under test_module/serving_bench, e.g. agentic_bench, benchmark). "
+            "Suite knobs (DURATION, TARGET_CONCURRENCY, ...) are read from the "
+            "environment; --limit-samples-mode selects a knob preset and each "
+            "suite's defaults.env fills the rest."
+        ),
+    )
+
     args = parser.parse_args()
     if args.repeat < 1:
         parser.error("--repeat must be >= 1")
@@ -276,6 +290,11 @@ def parse_args() -> argparse.Namespace:
     if args.prefix_cache and args.workflow != "benchmarks":
         parser.error(
             "--prefix-cache currently requires --workflow benchmarks "
+            f"(got --workflow {args.workflow})."
+        )
+    if args.serving_bench_suites and args.workflow != "serving_bench":
+        parser.error(
+            "--serving-bench-suites requires --workflow serving_bench "
             f"(got --workflow {args.workflow})."
         )
     if args.output_dir is None:
