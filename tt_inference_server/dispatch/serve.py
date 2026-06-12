@@ -257,7 +257,29 @@ _UNSAFE_NOTICE = (
 )
 
 
+def _ensure_tt_metal_home():
+    """ttnn resolves soc_descriptors / kernels relative to TT_METAL_HOME. When serve is
+    launched outside the activated venv (the bin/ wrapper, a bare `python -m`, or a shell
+    with a stale TT_METAL_HOME), ttnn guesses $HOME/tt-metal and dies with
+    'bad file: .../soc_descriptors/blackhole_*.yaml'. The venv lives at <tt-metal>/python_env,
+    so derive the correct home from sys.prefix and set it whenever the current value doesn't
+    point at a real tt-metal checkout. Must run before ttnn is imported (i.e. before load_model)."""
+    import os
+    from pathlib import Path
+    cur = os.environ.get("TT_METAL_HOME")
+    if cur and (Path(cur) / "tt_metal" / "soc_descriptors").is_dir():
+        return  # already valid — respect a deliberate, correct override
+    candidate = Path(sys.prefix).parent  # <tt-metal>/python_env -> <tt-metal>
+    if (candidate / "tt_metal" / "soc_descriptors").is_dir():
+        os.environ["TT_METAL_HOME"] = str(candidate)
+        if cur and cur != str(candidate):
+            print(f"[serve] corrected stale TT_METAL_HOME ({cur}) -> {candidate}", flush=True)
+        else:
+            print(f"[serve] TT_METAL_HOME -> {candidate}", flush=True)
+
+
 def main(argv=None):
+    _ensure_tt_metal_home()
     parser = argparse.ArgumentParser(prog="tt-inference-server",
                                      description="Dispatch OpenAI-compatible serving prototype")
     sub = parser.add_subparsers(dest="command", required=True)

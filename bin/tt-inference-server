@@ -6,7 +6,18 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_PY="$HOME/dispatch/tt-metal/python_env/bin/python3"
-PY="$([ -x "$VENV_PY" ] && echo "$VENV_PY" || command -v python3)"
+
+if [ -x "$VENV_PY" ]; then
+  PY="$VENV_PY"
+  # tt-metal home is the dir that owns this venv (…/tt-metal/python_env/bin/python3).
+  # Force it so a stale/unset TT_METAL_HOME in the caller's shell can't send ttnn to the
+  # wrong soc_descriptors path (e.g. ~/tt-metal). serve.py also self-heals this.
+  TT_HOME="$(cd "$(dirname "$VENV_PY")/../.." && pwd)"
+  export TT_METAL_HOME="$TT_HOME"
+  [ -d "$TT_HOME/build/lib" ] && export LD_LIBRARY_PATH="$TT_HOME/build/lib:${LD_LIBRARY_PATH:-}"
+else
+  PY="$(command -v python3)"
+fi
 
 export PYTHONPATH="$REPO:${PYTHONPATH:-}"
 exec "$PY" -m tt_inference_server.dispatch.serve "$@"
