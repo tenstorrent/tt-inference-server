@@ -46,9 +46,9 @@ templates:
 - weights:
     - openai/gpt-oss-120b
   impl: gpt_oss
-  version: "0.12.0"
-  tt_metal_commit: 805f43d
-  vllm_commit: a45c614
+  version: "0.16.0"
+  tt_metal_commit: 669d59e
+  vllm_commit: "3334377"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
@@ -765,9 +765,9 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.10.0"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
+  version: "0.16.0"
+  tt_metal_commit: 669d59e
+  vllm_commit: "3334377"
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2

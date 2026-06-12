@@ -196,7 +196,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.12.0-805f43d-a45c614
+              tag: 0.16.0-669d59e-3334377
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -229,7 +229,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.12.0-805f43d-a45c614
+              tag: 0.16.0-669d59e-3334377
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -1520,7 +1520,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-555f240-22be241
+              tag: 0.16.0-669d59e-3334377
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -1713,7 +1713,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-555f240-22be241
+              tag: 0.16.0-669d59e-3334377
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -1939,7 +1939,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-555f240-22be241
+              tag: 0.16.0-669d59e-3334377
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -2132,7 +2132,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-555f240-22be241
+              tag: 0.16.0-669d59e-3334377
             probes:
               liveness:
                 initialDelaySeconds: 3600

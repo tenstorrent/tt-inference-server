@@ -41,13 +41,6 @@
               "devices": [
                 "GALAXY"
               ]
-            },
-            "release": {
-              "devices": [
-                "GALAXY",
-                "P150",
-                "P300X2"
-              ]
             }
           }
         },
@@ -277,11 +270,6 @@
               "devices": [
                 "GALAXY"
               ]
-            },
-            "release": {
-              "devices": [
-                "P300X2"
-              ]
             }
           }
         },
@@ -357,11 +345,6 @@
             "GALAXY",
             "N150"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
-          ]
         }
       }
     },
@@ -402,22 +385,6 @@
             "P150X4",
             "P300X2",
             "T3K"
-          ]
-        }
-      }
-    },
-    "bge-large-en-v1.5": {
-      "inference_engine": "MEDIA",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "GALAXY",
-            "N150"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
           ]
         }
       }
@@ -531,8 +498,7 @@
         },
         "release": {
           "devices": [
-            "GALAXY",
-            "P300X2"
+            "GALAXY"
           ]
         }
       }
@@ -569,28 +535,6 @@
             "P300X2",
             "T3K"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
-          ]
-        }
-      }
-    },
-    "distil-large-v3": {
-      "inference_engine": "MEDIA",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "P150",
-            "P300X2"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P150",
-            "P300X2"
-          ]
         }
       }
     },
@@ -610,25 +554,6 @@
         "nightly": {
           "devices": [
             "N150"
-          ]
-        }
-      }
-    },
-    "speecht5_tts": {
-      "inference_engine": "MEDIA",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150",
-            "N300",
-            "P150",
-            "P300X2"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P150",
-            "P300X2"
           ]
         }
       }
@@ -674,11 +599,6 @@
                   "throttle-perf": "5"
                 }
               }
-            },
-            "release": {
-              "devices": [
-                "GALAXY"
-              ]
             }
           }
         },
@@ -739,12 +659,6 @@
         "weekly": {
           "devices": [
             "GALAXY"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P150",
-            "P300X2"
           ]
         }
       }

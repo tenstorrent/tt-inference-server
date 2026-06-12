@@ -46,9 +46,9 @@ templates:
 - weights:
     - openai/gpt-oss-120b
   impl: gpt_oss
-  version: "0.12.0"
-  tt_metal_commit: 805f43d
-  vllm_commit: a45c614
+  version: "0.16.0"
+  tt_metal_commit: 669d59e
+  vllm_commit: "3334377"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
@@ -668,9 +668,9 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.10.1"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
+  version: "0.16.0"
+  tt_metal_commit: 669d59e
+  vllm_commit: "3334377"
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
@@ -680,7 +680,12 @@ templates:
       tensor_cache_timeout: 5400.0
       override_tt_config:
         trace_region_size: 402653184  # 384 * 1024 * 1024
+      known_issues:
+        - workflow_type: TESTS
+          task_name: test_penalties
+          reason: "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888."
   status: FUNCTIONAL
+  has_builtin_warmup: true
   metadata:
     meta-llama/Llama-3.3-70B-Instruct:
       tool_call_parser_name: llama3_json
