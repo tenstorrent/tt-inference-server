@@ -994,6 +994,44 @@ std::pair<uint32_t, uint32_t> SessionManager::computeMatchedTokens(
   return {matchedTokens, thinkTokens};
 }
 
+void SessionManager::clearSessionBlockThinkTokens(
+    const std::string& sessionId) {
+  uint64_t keyHash = 0;
+  bool found = sessions.modify(
+      sessionId, [&keyHash](domain::Session& s) { keyHash = s.getHash(); });
+
+  if (!found) {
+    TT_LOG_WARN(
+        "[SessionManager] clearSessionBlockThinkTokens: sessionId={} not "
+        "found",
+        sessionId);
+    return;
+  }
+
+  if (keyHash == 0) {
+    return;
+  }
+
+  prefixIndex.modify(
+      keyHash, [&sessionId](std::vector<PrefixIndexEntry>& entries) {
+        for (auto& entry : entries) {
+          bool hasSession =
+              std::find(entry.sessionIds.begin(), entry.sessionIds.end(),
+                        sessionId) != entry.sessionIds.end();
+          if (!hasSession) continue;
+          entry.keyBlockThinkTokens = 0;
+          for (auto& block : entry.remainingBlocks) {
+            block.accumulatedThinkTokens = 0;
+          }
+        }
+      });
+
+  TT_LOG_INFO(
+      "[SessionManager] clearSessionBlockThinkTokens: reset think tokens for "
+      "sessionId={}",
+      sessionId);
+}
+
 void SessionManager::updateSessionCountMetric() {
   tt::metrics::ServerMetrics::instance().setActiveSessionsCount(
       static_cast<double>(getActiveSessionCount()));
