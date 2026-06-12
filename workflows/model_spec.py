@@ -4037,6 +4037,35 @@ cnn_templates = [
     ),
 ]
 
+# =============================================================================
+# training_templates
+# =============================================================================
+training_templates = [
+    ModelSpecTemplate(
+        weights=["google/gemma-1.1-2b-it"],
+        tt_metal_commit="2496be4",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        model_type=ModelType.TRAINING,
+        inference_engine=InferenceEngine.FORGE.value,
+        status=ModelStatusTypes.EXPERIMENTAL,
+        uses_tensor_model_cache=False,
+        env_vars={
+            "MODEL_RUNNER": "training-gemma-lora",
+            "TRAINING_MODEL": "gemma-1.1-2b-it",
+        },
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=1,
+                max_context=1024,
+                default_impl=True,
+            ),
+        ],
+    ),
+]
+
 # make spec_templates from the templates in the correct order
 spec_templates = [
     *llm_templates,
@@ -4046,6 +4075,7 @@ spec_templates = [
     *audio_tts_templates,
     *embedding_templates,
     *cnn_templates,
+    *training_templates,
 ]
 
 
