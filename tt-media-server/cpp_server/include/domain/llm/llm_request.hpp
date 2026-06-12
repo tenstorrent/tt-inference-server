@@ -124,6 +124,10 @@ struct LLMRequest : BaseRequest {
   bool fast_mode = false;
   bool disaggregated = false;  // True if this is a disaggregated request
 
+  // Unique 64-bit migration ID correlating a prefill request with the KV
+  // transfer / result. Generated on the prefill server and echoed back.
+  uint64_t migrationId = 0;
+
   // For disaggregated decode: position in KV Cache of the migrated token (the
   // first token produced by the prefill server) in the per-user KV cache. The
   // decode scheduler uses this as `position_id` so the migrated token lands at

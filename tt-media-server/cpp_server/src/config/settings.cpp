@@ -314,20 +314,6 @@ size_t memoryQueueCapacity() {
   return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
 }
 
-int shmSlots() {
-  return static_cast<int>(envUlong("SHM_SLOTS", defaults::SHM_SLOTS));
-}
-
-int prefillMaxTokenIds() {
-  return static_cast<int>(
-      envUlong("PREFILL_MAX_TOKEN_IDS", defaults::PREFILL_MAX_TOKEN_IDS));
-}
-
-int decodeMaxTokenIds() {
-  return static_cast<int>(
-      envUlong("DECODE_MAX_TOKEN_IDS", defaults::DECODE_MAX_TOKEN_IDS));
-}
-
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;
@@ -335,10 +321,7 @@ LLMConfig llmEngineConfig() {
     cfg.max_in_flight_count = maxInFlightCount();
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
-    if (backend == "prefill") {
-      cfg.runner_type = ModelRunnerType::PREFILL;
-      cfg.max_in_flight_count = 1;
-    } else if (backend == "llama") {
+    if (backend == "llama") {
       cfg.kvcache_block_size = 32;
       cfg.max_num_batched_tokens = 16384;
       cfg.runner_type = ModelRunnerType::LLAMA;
