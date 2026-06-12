@@ -398,6 +398,8 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `resnet-50` | n300 |
 | `segformer` | n150 |
 | `segformer` | n300 |
+| `stable-diffusion-xl-base-1.0` | p150x8 |
+| `stable-diffusion-xl-base-1.0` | p300x2 |
 | `unet` | n150 |
 | `unet` | n300 |
 | `vit` | n150 |
