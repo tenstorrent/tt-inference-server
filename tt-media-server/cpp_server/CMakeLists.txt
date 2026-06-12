@@ -414,7 +414,6 @@ set(LLM_RUNNER_LIB_SOURCES
     src/utils/tokenizers/tokenizer_config_loader.cpp
     src/services/memory_services/memory_manager.cpp
     src/runtime/runners/guided_decoder_manager.cpp
-    src/services/deepseek_tool_call_parser.cpp
     src/services/json_tool_call_parser.cpp
     src/services/service_registry.cpp
     src/runtime/runners/runner_registry.cpp
@@ -660,16 +659,6 @@ target_include_directories(structured_output_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# Tool call parser test
-add_executable(test_tool_call_parser tests/test_tool_call_parser.cpp)
-target_link_libraries(test_tool_call_parser PRIVATE
-    llm_runner_lib
-    ${CMAKE_THREAD_LIBS_INIT}
-)
-target_include_directories(test_tool_call_parser PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
 # Chat template with tools test (supports both DeepSeek and Llama tokenizers)
 add_executable(test_chat_template_tools tests/test_chat_template_tools.cpp)
 target_link_libraries(test_chat_template_tools PRIVATE
@@ -894,32 +883,6 @@ target_include_directories(main_integration_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
-add_executable(tool_calling_integration_test
-    tests/integration/tool_calling_integration_test.cpp
-    ${INTEGRATION_TEST_COMMON_SOURCES}
-)
-target_link_libraries(tool_calling_integration_test PRIVATE
-    llm_runner_lib
-    Drogon::Drogon
-    cereal::cereal
-    prometheus-cpp::core
-    pybind11::embed
-    stb_image_write
-    GTest::gtest_main)
-if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
-    target_link_libraries(tool_calling_integration_test PRIVATE PkgConfig::ZMQ)
-elseif(TARGET libzmq-static)
-    target_link_libraries(tool_calling_integration_test PRIVATE libzmq-static)
-elseif(TARGET libzmq)
-    target_link_libraries(tool_calling_integration_test PRIVATE libzmq)
-endif()
-target_include_directories(tool_calling_integration_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${cppzmq_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests
-    ${prometheus-cpp_SOURCE_DIR}/core/include
-)
-
 add_executable(prefill_integration_test
     tests/integration/prefill_integration_test.cpp
     ${INTEGRATION_TEST_COMMON_SOURCES}
@@ -954,11 +917,10 @@ include(GoogleTest)
 # ctest entry would invoke the binary once per test, paying that boot cost six
 # times AND exposing a racy teardown. Run all six tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
-add_test(NAME ToolCallingIntegrationTest COMMAND tool_calling_integration_test)
 add_test(NAME PrefillIntegrationTest COMMAND prefill_integration_test)
 # Integration tests boot the full server stack and share ports/resources.
 # Prevent parallel execution via RESOURCE_LOCK.
-set_tests_properties(MainIntegrationTest ToolCallingIntegrationTest PrefillIntegrationTest PROPERTIES
+set_tests_properties(MainIntegrationTest PrefillIntegrationTest PROPERTIES
     TIMEOUT 120
     RESOURCE_LOCK integration_server
 )
@@ -987,9 +949,7 @@ gtest_discover_tests(health_controller_test)
 gtest_discover_tests(test_image_generate_request)
 gtest_discover_tests(media_payload_ipc_test)
 
-# Register tool call tests
 add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
-add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
 add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
 
 add_executable(test_apply_delta_prompt tests/test_apply_delta_prompt.cpp)
@@ -1098,7 +1058,6 @@ set(SOURCES
     src/api/info_controller.cpp
     src/api/openapi.cpp
     src/services/llm_service.cpp
-    src/services/deepseek_tool_call_parser.cpp
     src/services/json_tool_call_parser.cpp
     src/services/session_manager.cpp
     src/domain/session.cpp

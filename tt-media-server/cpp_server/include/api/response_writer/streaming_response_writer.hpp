@@ -14,7 +14,6 @@
 
 #include "api/response_writer/response_writer.hpp"
 #include "api/stream_event_formatter.hpp"
-#include "utils/concurrent_queue.hpp"
 
 namespace tt::api {
 
@@ -67,7 +66,6 @@ class StreamingResponseWriter : public ResponseWriter {
 
   void sendSse(const std::string& sse,
                std::function<void()> onDisconnect = nullptr);
-  void flushAccumulated();
   void startHeartbeat();
   void stopHeartbeat();
 
@@ -79,7 +77,6 @@ class StreamingResponseWriter : public ResponseWriter {
       std::make_shared<drogon::ResponseStreamPtr>();
   std::shared_ptr<std::vector<std::string>> earlyBuffer =
       std::make_shared<std::vector<std::string>>();
-  std::shared_ptr<tt::utils::ConcurrentQueue<std::string>> sseBatchQueue;
   trantor::TimerId heartbeatTimerId = trantor::InvalidTimerId;
 
   std::atomic<bool> firstContentChunk{true};

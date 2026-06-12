@@ -29,22 +29,19 @@ LLMService::LLMService() {
   auto tq = qm->taskQueue;
 
   init(std::move(tq), std::make_unique<tt::worker::WorkerManager>(numWorkers),
-       createToolCallParser(tt::config::modelType()), std::move(qm),
-       tt::config::maxQueueSize());
+       std::move(qm), tt::config::maxQueueSize());
 }
 
 LLMService::LLMService(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
                        std::unique_ptr<tt::worker::WorkerManager> workerManager,
-                       std::unique_ptr<IToolCallParser> toolCallParser,
                        std::unique_ptr<tt::ipc::QueueManager> queueManager,
                        size_t maxQueueSize) {
-  init(std::move(taskQueue), std::move(workerManager),
-       std::move(toolCallParser), std::move(queueManager), maxQueueSize);
+  init(std::move(taskQueue), std::move(workerManager), std::move(queueManager),
+       maxQueueSize);
 }
 
 void LLMService::init(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
                       std::unique_ptr<tt::worker::WorkerManager> workerManager,
-                      std::unique_ptr<IToolCallParser> toolCallParser,
                       std::unique_ptr<tt::ipc::QueueManager> queueManager,
                       size_t maxQueueSize) {
   if (!taskQueue) {
@@ -59,7 +56,6 @@ void LLMService::init(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
 
   this->taskQueue = std::move(taskQueue);
   this->workerManager = std::move(workerManager);
-  this->toolCallParser = std::move(toolCallParser);
   this->jsonToolCallParser = createJsonToolCallParser();
   this->queueManager = std::move(queueManager);
   this->maxQueueSize = maxQueueSize;
@@ -325,7 +321,6 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         streamDecoders.erase(taskId);
         toolChoiceMap.take(taskId);
         if (jsonToolCallParser) jsonToolCallParser->finalizeTask(taskId);
-        if (toolCallParser) toolCallParser->finalizeTask(taskId);
         tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId,
                                                                   "abort");
         auto abortChunk = makeAbortChunk(taskId);
@@ -352,8 +347,6 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
             toolChoiceTypeErr == "function" || toolChoiceTypeErr == "required";
         if (useJsonParserErr && jsonToolCallParser) {
           jsonToolCallParser->finalizeTask(taskId);
-        } else if (toolChoiceTypeErr == "auto" && toolCallParser) {
-          toolCallParser->finalizeTask(taskId);
         }
         toolChoiceMap.take(taskId);  // Clean up
         auto errorChunk = makeErrorChunk(taskId,
@@ -403,8 +396,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
                                       isFinal, entry->skip_special_tokens);
       tt::metrics::ServerMetrics::instance().onToken(taskId);
 
-      // Process through tool call parser for OpenAI-style deltas
-      // Parser is only initialized if tools were provided in the request
+      // Process explicit structured tool output for OpenAI-style deltas.
       auto toolChoiceOpt = toolChoiceMap.get(taskId);
       std::string toolChoiceType =
           toolChoiceOpt.has_value() ? toolChoiceOpt.value().type : "";
@@ -428,13 +420,6 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         toolCallResult = jsonToolCallParser->processToken(
             taskId, static_cast<int64_t>(token.token_id), delta);
         inToolCall = jsonToolCallParser->isInToolCall(taskId);
-      }
-      // Handle natural tool calls (tool_choice="auto") via model-specific
-      // parser
-      else if (toolChoiceType == "auto" && toolCallParser) {
-        toolCallResult = toolCallParser->processToken(
-            taskId, static_cast<int64_t>(token.token_id), delta);
-        inToolCall = toolCallParser->isInToolCall(taskId);
       }
 
       // Emit tool call delta, suppress if in tool call, or emit regular content
@@ -490,8 +475,6 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         // Finalize parsers
         if (useJsonParser && jsonToolCallParser) {
           jsonToolCallParser->finalizeTask(taskId);
-        } else if (toolChoiceType == "auto" && toolCallParser) {
-          toolCallParser->finalizeTask(taskId);
         }
 
         TRACY_PLOT("pending_tasks", static_cast<double>(pendingTasks.load()));
@@ -528,7 +511,7 @@ void LLMService::produceStream(
                             request.skip_text_decode};
   streamCallbacks.insert(taskId, std::move(entry));
 
-  // Initialize tool call parser only if tools are provided
+  // Initialize the JSON tool call parser only for explicit structured output.
   bool hasTools = request.tools.has_value() && !request.tools->empty();
   if (hasTools) {
     // Determine effective tool_choice (default to "auto" if not specified)
@@ -539,27 +522,15 @@ void LLMService::produceStream(
       effectiveToolChoice.type = "auto";
     }
 
-    // Store in map so consumer loop and postProcess know tools were provided
-    // (unless tool_choice is "none", which means don't use tools)
-    if (effectiveToolChoice.type != "none") {
-      toolChoiceMap.insert(taskId, effectiveToolChoice);
-    }
-
     if (effectiveToolChoice.type == "function" ||
         effectiveToolChoice.type == "required") {
-      // Structured output: use JsonToolCallParser
+      toolChoiceMap.insert(taskId, effectiveToolChoice);
       if (jsonToolCallParser) {
         std::string functionName =
             effectiveToolChoice.function.value_or("unknown");
         jsonToolCallParser->initializeTask(taskId, functionName);
       }
-    } else if (effectiveToolChoice.type == "auto") {
-      // Natural tool calls: use model-specific parser
-      if (toolCallParser) {
-        toolCallParser->initializeTask(taskId);
-      }
     }
-    // tool_choice="none" means don't use tools, skip parser initialization
   }
 
   auto prompt = std::get<std::vector<int>>(request.prompt);
@@ -609,9 +580,6 @@ void LLMService::abortRequest(uint32_t taskId) {
 
   if (jsonToolCallParser) {
     jsonToolCallParser->finalizeTask(taskId);
-  }
-  if (toolCallParser) {
-    toolCallParser->finalizeTask(taskId);
   }
 
   for (auto& cq : queueManager->cancelQueues) {
