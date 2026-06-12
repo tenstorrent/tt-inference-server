@@ -18,6 +18,8 @@ from workflows.model_spec import get_runtime_model_spec
 from workflows.runtime_config import RuntimeConfig
 from workflows.workflow_types import DeviceTypes
 
+from utils.url_helpers import resolve_deploy_url
+
 from test_module import MediaContext
 
 from .commands import Command, SummaryCommand, WorkflowCommand
@@ -115,19 +117,19 @@ def _build_context(
 
 def _resolve_server_url(
     args: argparse.Namespace, runtime_config: Optional[RuntimeConfig]
-) -> Optional[str]:
+) -> str:
     """Pick the inference-server URL to target an already-running server.
 
-    Prefers the explicit ``--server-url`` CLI flag, then the value v1 stored
-    in ``RuntimeConfig.server_url`` (propagated through the v2 bridge via the
-    runtime model spec JSON). ``None`` keeps the historical localhost default.
+    Prefers the explicit ``--server-url`` CLI flag, then delegates to the
+    shared :func:`resolve_deploy_url` (``RuntimeConfig.server_url`` propagated
+    through the v2 bridge, then the ``DEPLOY_URL`` env var, then the localhost
+    default). This routes v2 through the same single source of truth as every
+    v1 workflow rather than re-deriving the precedence here.
     """
     explicit = getattr(args, "server_url", None)
     if explicit:
         return explicit
-    if runtime_config is not None:
-        return getattr(runtime_config, "server_url", None)
-    return None
+    return resolve_deploy_url(runtime_config)
 
 
 def _resolve_eval_config(model_name: str):
