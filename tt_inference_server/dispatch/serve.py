@@ -268,14 +268,16 @@ def _ensure_tt_metal_home():
     from pathlib import Path
     cur = os.environ.get("TT_METAL_HOME")
     if cur and (Path(cur) / "tt_metal" / "soc_descriptors").is_dir():
+        print(f"[serve] TT_METAL_HOME = {cur} (valid)", flush=True)
         return  # already valid — respect a deliberate, correct override
     candidate = Path(sys.prefix).parent  # <tt-metal>/python_env -> <tt-metal>
     if (candidate / "tt_metal" / "soc_descriptors").is_dir():
         os.environ["TT_METAL_HOME"] = str(candidate)
-        if cur and cur != str(candidate):
-            print(f"[serve] corrected stale TT_METAL_HOME ({cur}) -> {candidate}", flush=True)
-        else:
-            print(f"[serve] TT_METAL_HOME -> {candidate}", flush=True)
+        print(f"[serve] TT_METAL_HOME: {cur!r} -> {candidate} (auto-corrected)", flush=True)
+    else:
+        print(f"[serve] WARNING: could not resolve TT_METAL_HOME (current={cur!r}, "
+              f"candidate {candidate} has no tt_metal/soc_descriptors) — ttnn will likely fail",
+              flush=True)
 
 
 def main(argv=None):
