@@ -164,6 +164,25 @@ templates:
       default_impl: true
   status: COMPLETE
 
+# FLUX.2-dev on WH Galaxy (4, 8). tt_metal_commit points at the flux2 branch
+# until it merges to tt-metal main; update once merged. Status EXPERIMENTAL
+# until validated end-to-end on real WH Galaxy hardware.
+- weights:
+    - black-forest-labs/FLUX.2-dev
+  version: "0.1.0"
+  tt_metal_commit: e56a7ce
+  impl: tt_transformers
+  min_disk_gb: 80
+  min_ram_gb: 64
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+
 - weights:
     - Motif-Technologies/Motif-Image-6B-Preview
   version: "0.9.0"

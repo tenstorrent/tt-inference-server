@@ -19,6 +19,7 @@ MODEL_RUNNER_TO_REQUEST_MAP = {
     ModelRunners.TT_SD3_5.value: BaseImageRequest,
     ModelRunners.TT_FLUX_1_DEV.value: BaseImageRequest,
     ModelRunners.TT_FLUX_1_SCHNELL.value: BaseImageRequest,
+    ModelRunners.TT_FLUX_2_DEV.value: BaseImageRequest,
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: BaseImageRequest,
     ModelRunners.TT_QWEN_IMAGE.value: BaseImageRequest,
     ModelRunners.TT_QWEN_IMAGE_2512.value: BaseImageRequest,
