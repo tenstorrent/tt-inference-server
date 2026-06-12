@@ -332,6 +332,40 @@ attn_backend      = "cpu"
 notes             = "VALIDATED 2026-06-12 (#9 correctness, #27/#29). BLOOM has NO RoPE — it uses per-head ALiBi positional bias, which the shared-mask flash_attn kernel can't express, so attention runs on a CPU softmax+ALiBi path from the K/V history mirrors (attn_backend=cpu). Also: word_embeddings_layernorm applied after embed, sequential LayerNorm (mean-sub+bias), qkv+o-proj+MLP bias, and tanh-approx BloomGelu (activation=gelu_tanh; BLOOM carries no hidden_act and was mis-derived as silu). Verified vs HF fp32: per-layer cos 0.999+ across all 30 layers; 8 exact greedy tokens; 'capital of France' -> coherent factual completion @ 4.55 tok/s, cpu_fallbacks=0. Hardware-native per-head-mask ALiBi (flash_attn kernel extension) is a perf follow-on. NOT fast-path eligible."
 
 # ---------------------------------------------------------------------------
+# Falcon family (TII) — ALiBi (no RoPE), LayerNorm, fused interleaved QKV.
+# Like BLOOM but ALiBi bias is scaled by 1/sqrt(head_dim) (beta=inv_norm_factor).
+# ---------------------------------------------------------------------------
+
+[[model]]
+name              = "tiiuae/falcon-rw-1b"
+arch              = "FalconForCausalLM"
+local_path        = "models/tiiuae-falcon-rw-1b"
+hidden_size       = 2048
+intermediate_size = 8192
+n_layers          = 24
+vocab_size        = 50304
+n_heads           = 32
+n_kv_heads        = 32
+head_dim          = 64
+max_seq           = 2048
+rope_theta        = 10000.0
+swa_window        = -1
+tie_embeddings    = true
+kernels           = ["flash_attn", "layernorm"]
+min_hw            = "bh_p150_1card"
+status            = "validated"
+issue             = 41
+norm_type         = "layernorm"
+activation        = "gelu"
+rotary_pct        = 1.0
+attn_bias         = true
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "cpu"
+notes             = "VALIDATED 2026-06-12 (#41). Falcon-rw-1b has NO RoPE — per-head ALiBi positional bias on a CPU softmax+ALiBi path (attn_backend=cpu), same as BLOOM. Two bugs fixed: (1) activation mis-derived as silu — Falcon carries no hidden_act and uses exact-erf GELU (FalconMLP nn.GELU); deriver special-cases model_type=='falcon'->'gelu'. (2) ALiBi bias magnitude — unlike BLOOM (beta=1.0), Falcon's HF attention uses beta=inv_norm_factor=1/sqrt(head_dim)=0.125, so the per-head slope bias was ~8x too strong and degenerated output; _attention_cpu_alibi now scales by _alibi_beta. Sequential LayerNorm (mean-sub+bias, parallel_attn=false), fused interleaved query_key_value, qkv+o-proj+MLP bias. NO word_embeddings_layernorm (unlike BLOOM). Verified vs HF fp32: 20/25 exact greedy tokens then a benign bf16 near-tie; 80-tok coherent ('The theory of relativity is a theory of the motion of bodies in the universe...') @ 13.1 tok/s, cpu_fallbacks=0. Base (non-instruct) model so greedy phrase-loops — model behavior, HF loops identically. Hardware-native per-head-mask ALiBi = #40. NOT fast-path eligible."
+
+# ---------------------------------------------------------------------------
 # StarCoder2 family (BigCode)
 # ---------------------------------------------------------------------------
 

@@ -1734,7 +1734,8 @@ class TTModelRunner:
         scale  = 1.0 / math.sqrt(hd)
         scores = torch.einsum("hd,hld->hl", q, K) * scale   # (nh, L)
         key_pos = torch.arange(L, dtype=torch.float32)
-        scores = scores + self._alibi_slopes.view(nh, 1) * key_pos.view(1, L)
+        beta = getattr(self, "_alibi_beta", 1.0)
+        scores = scores + beta * self._alibi_slopes.view(nh, 1) * key_pos.view(1, L)
         attn = torch.softmax(scores, dim=-1)                # (nh, L)
         out  = torch.einsum("hl,hld->hd", attn, V)          # (nh, hd)
 
@@ -1921,10 +1922,10 @@ class TTModelRunner:
             rotary_ndims -= 1
         self._rotary_ndims = rotary_ndims   # used in _apply_rope
 
-        # ALiBi models (BLOOM) have NO RoPE — they add a per-head linear positional
-        # bias to the attention scores instead. Detect and disable rope; the per-head
-        # slopes can't fold into the shared-mask flash_attn kernel, so BLOOM runs a CPU
-        # softmax+ALiBi attention path (see _attention_cpu_alibi).
+        # ALiBi models (BLOOM, Falcon) have NO RoPE — they add a per-head linear
+        # positional bias to the attention scores instead. Detect and disable rope; the
+        # per-head slopes can't fold into the shared-mask flash_attn kernel, so these run
+        # a CPU softmax+ALiBi attention path (see _attention_cpu_alibi).
         text_cfg   = getattr(cfg, "text_config", cfg)
         model_type = getattr(text_cfg, "model_type", "")
         archs      = getattr(cfg, "architectures", None) or []
@@ -1935,6 +1936,12 @@ class TTModelRunner:
         if self._uses_alibi:
             self._rotary_ndims = 0
             self._alibi_slopes = self._build_alibi_slopes(self._cfg.num_heads)
+            # ALiBi bias weight (HF attention `beta`) relative to the score scale.
+            # BLOOM adds the bias unscaled (beta=1.0); Falcon scales it by the same
+            # 1/sqrt(head_dim) as the QK scores (beta=inv_norm_factor). Getting this
+            # wrong leaves a recency bias that's ~8x too strong and degenerates output.
+            is_falcon = (model_type == "falcon" or any("Falcon" in a for a in archs))
+            self._alibi_beta = (1.0 / math.sqrt(self._cfg.head_dim)) if is_falcon else 1.0
 
         # Linear RoPE scaling: compress positions by dividing by scale factor.
         # Do NOT change theta -- scale the position indices instead.
