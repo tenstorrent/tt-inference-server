@@ -268,12 +268,17 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               probeId.empty() ? "?" : probeId, sessionMs);
 
           auto svc = pipeline->service();
+          // Copy sessionId now: dispatchGeneration std::move()s the request
+          // into produceStream, which empties req->sessionId's string
+          // (moved-from optional<string> stays engaged but holds ""). Releasing
+          // by the emptied id would no-op and leak the session IN_FLIGHT.
+          const std::optional<std::string> sessionId = req->sessionId;
           const auto tPreStart = SteadyClock::now();
           try {
             svc->preProcess(*req);
           } catch (const std::exception& e) {
             TT_LOG_WARN("[DynamoEndpoint] preProcess failed: {}", e.what());
-            if (req->session) req->session->clearInFlight();
+            pipeline->releaseSession(sessionId);
             TokenChunk err;
             err.finish_reason = "error";
             sendChunk(err);
@@ -290,8 +295,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               probeId.empty() ? "?" : probeId, preProcessMs);
 
           const auto tDispatch = SteadyClock::now();
-          auto cb = [req, svc, sendChunk, signalDone, recvT, firstChunkSeen,
-                     probeId, tDispatch,
+          auto cb = [req, svc, pipeline, sessionId, sendChunk, signalDone,
+                     recvT, firstChunkSeen, probeId, tDispatch,
                      usage](const tt::domain::llm::LLMStreamChunk& chunk,
                             bool isFinal) {
             // Log worker-side TTFT exactly once per request: total since recv
@@ -353,7 +358,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
             // Finalize session state before sending final chunk
             if (isFinal && req->session) {
               req->session->finalizeAndRegisterHashes();
-              req->session->clearInFlight();
+              // Release under the SessionManager lock (not on the raw
+              // Session*) to avoid the eviction use-after-free race.
+              pipeline->releaseSession(sessionId);
             }
 
             TokenChunk out = toTokenChunk(chunk, isFinal);
@@ -399,7 +406,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           } catch (const std::exception& e) {
             TT_LOG_ERROR("[DynamoEndpoint] dispatchGeneration failed: {}",
                          e.what());
-            if (req->session) req->session->clearInFlight();
+            pipeline->releaseSession(sessionId);
             TokenChunk err;
             err.finish_reason = "error";
             sendChunk(err);

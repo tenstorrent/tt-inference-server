@@ -169,6 +169,7 @@ void LLMPipeline::resolveSession(
             acquired->slotId);
         req->slotId = acquired->slotId;
         req->session = sessionManager_->getSession(acquired->sessionId);
+        req->sessionId = acquired->sessionId;  // needed for locked release
         req->continuation = true;
 
         auto [matchedTokens, thinkTokens] =
@@ -241,6 +242,7 @@ void LLMPipeline::resolveSession(
             acquired->numberOfMatchedTokens, acquired->accumulatedThinkTokens);
         req->slotId = acquired->slotId;
         req->session = sessionManager_->getSession(acquired->sessionId);
+        req->sessionId = acquired->sessionId;  // needed for locked release
         req->continuation = true;
         // kv_position_id accounts for both non-thinking tokens (matched) and
         // thinking tokens (accumulated in cache but not in hash)
@@ -444,6 +446,15 @@ void LLMPipeline::abortRequest(uint32_t taskId) const {
   service_->abortRequest(taskId);
   if (disaggregationService_) {
     disaggregationService_->abortRequest(taskId);
+  }
+}
+
+void LLMPipeline::releaseSession(
+    const std::optional<std::string>& sessionId) const {
+  if (sessionManager_ && sessionId.has_value() && !sessionId->empty()) {
+    // clearInFlight() runs inside SessionManager's sessions.modify() lock,
+    // mutually exclusive with evictOldSessions()'s takeIf. Idempotent.
+    sessionManager_->releaseInFlight(*sessionId);
   }
 }
 
