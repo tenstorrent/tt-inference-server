@@ -85,12 +85,3 @@ race:tt::api::SseStreamWriter::handleTokenChunk
 race:tt::api::LLMController::resolveSession
 race:tt::api::LLMController::handleStreaming
 race:drogon::ResponseStream::send
-
-# (removed) Session::clearInFlight ↔ evictOldSessions data race — this was a
-# real use-after-free, not a happens-before false positive: clearInFlight() on a
-# raw Session* (online HTTP/Dynamo paths) flipped state to IDLE outside the map
-# lock while evictOldSessions() could takeIf-free the session mid-clear. Fixed
-# by routing release through SessionManager::releaseInFlight() (clearInFlight
-# under sessions.modify()'s lock) — see LLMPipeline::releaseSession(). If this
-# race reappears here, do NOT re-suppress; the lifetime invariant is broken.
-
