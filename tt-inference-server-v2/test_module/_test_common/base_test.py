@@ -432,9 +432,6 @@ class BaseTest(ABC):
         retry_delay = (
             retry_delay if retry_delay is not None else HEALTH_CHECK_CONFIG.RETRY_DELAY
         )
-        # build_base_url applies the port-wins rule: an explicit port on the
-        # server URL overrides service_port, so targeting --server-url
-        # http://host:9000 health-checks :9000, not the default :8000.
         deploy_url = (
             self.ctx._deploy_url if self.ctx is not None else DEFAULT_DEPLOY_URL
         )
