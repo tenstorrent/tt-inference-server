@@ -19,7 +19,8 @@ CHECKOUT_PATHS="
     mobilenetv2/pytorch
     segformer/pytorch
     unet/pytorch
-    vit/pytorch"
+    vit/pytorch
+    yolox/pytorch"
 GIT_SHA="${1:-$FORGE_MODELS_SHA}"
 
 # Clean up any existing directory

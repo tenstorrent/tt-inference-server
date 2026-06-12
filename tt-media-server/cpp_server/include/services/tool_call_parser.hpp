@@ -5,12 +5,11 @@
 
 #include <json/json.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
-
-#include "config/types.hpp"
 
 namespace tt::services {
 
@@ -92,14 +91,6 @@ class IToolCallParser {
    */
   virtual size_t activeTaskCount() const = 0;
 };
-
-/**
- * Create a model-specific tool call parser for natural tool calls.
- * Handles marker-based formats like DeepSeek's <｜tool▁calls▁begin｜> tags.
- * Used when tool_choice is "auto".
- */
-std::unique_ptr<IToolCallParser> createToolCallParser(
-    tt::config::ModelType modelType);
 
 /**
  * Create a JSON tool call parser for structured output.

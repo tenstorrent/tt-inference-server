@@ -9,6 +9,7 @@
 #include "services/session_manager.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/conversation_hasher.hpp"
+#include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
 
@@ -55,12 +56,12 @@ void DisaggregationService::setupSocketHandlers() {
                 message.task_id);
             const auto reason =
                 tt::sockets::errorReasonFromPrefillResult(message);
-            callback.value()(
-                makeErrorChunk(message.task_id,
-                               isTimeoutError(reason) ? "prefill timeout"
-                                                      : "prefill error",
-                               reason),
-                /*isFinal=*/true);
+            callback.value()(makeErrorChunk(message.task_id,
+                                            reason == LLMErrorReason::TIMEOUT
+                                                ? "prefill timeout"
+                                                : "prefill error",
+                                            reason),
+                             /*isFinal=*/true);
             return;
           }
 
@@ -78,14 +79,9 @@ void DisaggregationService::setupSocketHandlers() {
                                 (!message.remaining_tokens.has_value() ||
                                  message.remaining_tokens.value() > 0);
           if (continueDecode) {
-            if (auto* reasoningParser = llmService->getReasoningParser()) {
-              reasoningParser->initializeTask(message.task_id);
-              reasoningParser->processToken(message.task_id,
-                                            message.token_ids.back(),
-                                            /*decodedText=*/"");
-            }
             auto request = LLMRequest(message.task_id);
             request.disaggregated = true;
+            request.migrationId = message.migration_id;
             request.kv_position_id =
                 static_cast<uint32_t>(message.token_ids.size() - 1);
             request.prompt.emplace<std::vector<int>>(
@@ -159,6 +155,13 @@ void DisaggregationService::setupSocketHandlers() {
           request->decode_position_id = message.decode_position_id;
           request->decode_skip_tokens = message.decode_skip_tokens;
 
+          // Generate a unique migration ID for correlating this prefill with
+          // its result on the decode side.
+          request->migrationId = tt::utils::MigrationIDGenerator::generate();
+          TT_LOG_DEBUG(
+              "[DisaggregationService] Assigned migrationId={} for taskId={}",
+              request->migrationId, message.task_id);
+
           // Resolve prefix cache asynchronously: on HIT sets prefillSlotId
           // and trims prompt, on MISS allocates a new session first.
           resolvePrefillSession(
@@ -192,11 +195,12 @@ void DisaggregationService::setupSocketHandlers() {
                 // async callback fires.
                 const std::string prefillSessionId =
                     request->sessionId.value_or("");
+                const uint64_t migrationId = request->migrationId;
                 llmService->submitStreamingRequest(
                     *request,
                     [this, prefillSessionId, message, maxTokens, slotId,
-                     cachedTokens](const LLMStreamChunk& response,
-                                   bool /*isFinal*/) {
+                     cachedTokens, migrationId](const LLMStreamChunk& response,
+                                                bool /*isFinal*/) {
                       auto prefillResult =
                           tt::sockets::PrefillResultMessage(message.task_id);
                       prefillResult.slot_id = slotId;
@@ -205,6 +209,7 @@ void DisaggregationService::setupSocketHandlers() {
                       prefillResult.top_k = message.top_k;
                       prefillResult.fast_mode = message.fast_mode;
                       prefillResult.cached_tokens = cachedTokens;
+                      prefillResult.migration_id = migrationId;
 
                       const auto finishReason =
                           response.choices.empty()

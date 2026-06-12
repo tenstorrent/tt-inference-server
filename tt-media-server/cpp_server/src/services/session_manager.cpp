@@ -37,17 +37,21 @@ int computeFailureCount(int attemptsRemaining) {
 
 domain::ManageMemoryTask makeAllocTask(
     std::optional<uint32_t> slotIdToCopyFrom = std::nullopt) {
-  domain::ManageMemoryTask task(tt::utils::TaskIDGenerator::generate(),
-                                domain::MemoryManagementAction::ALLOCATE);
-  task.slotIdToCopyFrom = slotIdToCopyFrom;
-  return task;
+  return domain::ManageMemoryTask{
+      .taskId = tt::utils::TaskIDGenerator::generate(),
+      .action = domain::MemoryManagementAction::ALLOCATE,
+      .slotIdToCopyFrom = slotIdToCopyFrom,
+  };
 }
 
 domain::ManageMemoryTask makeDeallocTask(uint32_t slotId) {
-  domain::ManageMemoryTask task(tt::utils::TaskIDGenerator::generate(),
-                                domain::MemoryManagementAction::DEALLOCATE);
-  task.memoryLayout = domain::KvMemoryLayout::PAGED;
-  task.slotId = slotId;
+  domain::ManageMemoryTask task{
+      .taskId = tt::utils::TaskIDGenerator::generate(),
+      .action = domain::MemoryManagementAction::DEALLOCATE,
+      .memoryLayout = domain::KvMemoryLayout::PAGED,
+      .slotId = slotId,
+      .slotIdToCopyFrom = std::nullopt,
+  };
   return task;
 }
 }  // namespace
@@ -988,6 +992,44 @@ std::pair<uint32_t, uint32_t> SessionManager::computeMatchedTokens(
   uint32_t matchedTokens = static_cast<uint32_t>(
       firstBlockTokens + (matchedBlocks - 1) * blockTokens);
   return {matchedTokens, thinkTokens};
+}
+
+void SessionManager::clearSessionBlockThinkTokens(
+    const std::string& sessionId) {
+  uint64_t keyHash = 0;
+  bool found = sessions.modify(
+      sessionId, [&keyHash](domain::Session& s) { keyHash = s.getHash(); });
+
+  if (!found) {
+    TT_LOG_WARN(
+        "[SessionManager] clearSessionBlockThinkTokens: sessionId={} not "
+        "found",
+        sessionId);
+    return;
+  }
+
+  if (keyHash == 0) {
+    return;
+  }
+
+  prefixIndex.modify(
+      keyHash, [&sessionId](std::vector<PrefixIndexEntry>& entries) {
+        for (auto& entry : entries) {
+          bool hasSession =
+              std::find(entry.sessionIds.begin(), entry.sessionIds.end(),
+                        sessionId) != entry.sessionIds.end();
+          if (!hasSession) continue;
+          entry.keyBlockThinkTokens = 0;
+          for (auto& block : entry.remainingBlocks) {
+            block.accumulatedThinkTokens = 0;
+          }
+        }
+      });
+
+  TT_LOG_INFO(
+      "[SessionManager] clearSessionBlockThinkTokens: reset think tokens for "
+      "sessionId={}",
+      sessionId);
 }
 
 void SessionManager::updateSessionCountMetric() {

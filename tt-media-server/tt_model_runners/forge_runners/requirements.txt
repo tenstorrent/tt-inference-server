@@ -17,3 +17,7 @@ transformers
 
 datasets # model training
 peft # model training
+
+# yolox requirements
+thop
+pycocotools>=2.0.2

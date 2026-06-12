@@ -271,11 +271,20 @@ def setup_evals_meta(
     return setup_succeeded
 
 
-# Pinned vLLM tag used both by `requirements/benchmarks-vllm.txt` (where
-# vllm==<VLLM_PIN_VERSION>) and as the source for the structured-output
-# benchmark scripts fetched at venv setup time. Keep these in sync.
+# Pinned vLLM tags for the benchmark client venvs. Each must match the vllm==
+# pin in its requirements file (structured-output scripts are fetched from
+# vllm-project/vllm@v<pin>/benchmarks at setup time):
+#   VLLM_PIN_VERSION       <-> requirements/benchmarks-vllm.txt
+#   FORGE_VLLM_PIN_VERSION <-> requirements/benchmarks-vllm-forge.txt
 VLLM_PIN_VERSION = "0.13.0"
-VLLM_BENCHMARKS_RAW_BASE = f"https://raw.githubusercontent.com/vllm-project/vllm/v{VLLM_PIN_VERSION}/benchmarks"
+FORGE_VLLM_PIN_VERSION = "0.19.1"
+
+
+def _vllm_benchmarks_raw_base(pin_version: str) -> str:
+    return (
+        f"https://raw.githubusercontent.com/vllm-project/vllm/v{pin_version}/benchmarks"
+    )
+
 
 # (relative_path_in_vllm_repo, relative_path_in_work_dir)
 STRUCTURED_OUTPUT_FETCH_FILES = (
@@ -296,23 +305,21 @@ STRUCTURED_OUTPUT_FETCH_FILES = (
 STRUCTURED_OUTPUT_SCRIPT_NAME = "benchmark_serving_structured_output.py"
 
 
-def fetch_structured_output_scripts(
+def _fetch_structured_output_scripts(
     venv_config: "VenvConfig",
-    model_spec: "ModelSpec",
+    pin_version: str,
 ) -> bool:
-    """Hook for BENCHMARKS_VLLM: download structured-output benchmark scripts.
+    """Fetch the structured-output benchmark driver scripts for ``pin_version``.
 
-    Pip-installable deps (vllm/torch/datasets/pandas/xgrammar) come from
-    requirements/benchmarks-vllm.txt. The benchmark driver scripts are not
-    published on PyPI, so they're fetched at venv setup time from the pinned
-    vLLM source tag rather than vendored into this repo.
+    They aren't published on PyPI, so they're pulled from the matching vLLM
+    source tag at venv setup time rather than vendored into this repo.
     """
-    logger.info("running fetch_structured_output_scripts() ...")
     work_dir = venv_config.venv_path / "work_dir"
+    raw_base = _vllm_benchmarks_raw_base(pin_version)
     for src_rel, dst_rel in STRUCTURED_OUTPUT_FETCH_FILES:
         dst = work_dir / dst_rel
         dst.parent.mkdir(parents=True, exist_ok=True)
-        url = f"{VLLM_BENCHMARKS_RAW_BASE}/{src_rel}"
+        url = f"{raw_base}/{src_rel}"
         return_code = run_command(
             f"curl -fSL --retry 3 --retry-delay 5 --retry-connrefused {url} -o {dst}",
             logger=logger,
@@ -320,6 +327,24 @@ def fetch_structured_output_scripts(
         if return_code != 0:
             return False
     return True
+
+
+def fetch_structured_output_scripts(
+    venv_config: "VenvConfig",
+    model_spec: "ModelSpec",
+) -> bool:
+    """Hook for BENCHMARKS_VLLM: fetch scripts pinned to VLLM_PIN_VERSION."""
+    logger.info("running fetch_structured_output_scripts() ...")
+    return _fetch_structured_output_scripts(venv_config, VLLM_PIN_VERSION)
+
+
+def fetch_structured_output_scripts_forge(
+    venv_config: "VenvConfig",
+    model_spec: "ModelSpec",
+) -> bool:
+    """Hook for BENCHMARKS_VLLM_FORGE: fetch scripts pinned to FORGE_VLLM_PIN_VERSION."""
+    logger.info("running fetch_structured_output_scripts_forge() ...")
+    return _fetch_structured_output_scripts(venv_config, FORGE_VLLM_PIN_VERSION)
 
 
 _venv_config_list = [
@@ -415,6 +440,15 @@ _venv_config_list = [
         extra_dirs=("work_dir",),
         python_version="3.11",
         setup_function=fetch_structured_output_scripts,
+    ),
+    # Forge-only benchmark client on newer vllm/transformers so forge tokenizers
+    # load. benchmark_config.py routes forge-engine models here.
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_VLLM_FORGE,
+        requirements_file="benchmarks-vllm-forge.txt",
+        extra_dirs=("work_dir",),
+        python_version="3.11",
+        setup_function=fetch_structured_output_scripts_forge,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,

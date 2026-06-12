@@ -17,6 +17,7 @@ class WorkflowType(IntEnum):
     SPEC_TESTS = auto()
     SPEC_DECODE_BENCH = auto()
     AGENTIC = auto()
+    SERVING_BENCH = auto()
 
     @classmethod
     def from_string(cls, name: str):
@@ -48,6 +49,7 @@ class WorkflowVenvType(IntEnum):
     BENCHMARKS_EMBEDDING = auto()
     BENCHMARKS_VIDEO = auto()
     BENCHMARKS_VLLM = auto()
+    BENCHMARKS_VLLM_FORGE = auto()
     BENCHMARKS_GENAI_PERF = auto()
     BENCHMARKS_AIPERF = auto()
     BENCHMARKS_GUIDELLM = auto()

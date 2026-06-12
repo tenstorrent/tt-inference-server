@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import NamedTuple, Tuple
 
@@ -44,6 +45,7 @@ class SupportedModels(Enum):
     GEMMA_4_31B_IT = "google/gemma-4-31B-it"
     FALCON3_7B_INSTRUCT = "tiiuae/Falcon3-7B-Instruct"
     Z_IMAGE_TURBO = "Tongyi-MAI/Z-Image-Turbo"
+    YOLOX_NANO = "Megvii-BaseDetection/YOLOX-Nano"
 
 
 # MODEL environment variable
@@ -92,6 +94,7 @@ class ModelNames(Enum):
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "gemma-4-31b-it"
     FALCON3_7B_INSTRUCT = "Falcon3-7B-Instruct"
+    YOLOX_NANO = "yolox_nano"
     Z_IMAGE_TURBO = "Z-Image-Turbo"
 
 
@@ -129,6 +132,7 @@ class ModelRunners(Enum):
     TT_XLA_SEGFORMER = "tt-xla-segformer"
     TT_XLA_UNET = "tt-xla-unet"
     TT_XLA_VIT = "tt-xla-vit"
+    TT_XLA_YOLOX_NANO = "tt-xla-yolox-nano"
     TRAINING_LORA = "training-lora"
     TRAINING_GEMMA_LORA = "training-gemma-lora"
     LORA_SINGLE_CHIP = "lora-single-chip"
@@ -190,6 +194,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_UNET,
         ModelRunners.TT_XLA_VIT,
         ModelRunners.TT_YOLOV4,
+        ModelRunners.TT_XLA_YOLOX_NANO,
     },
     ModelServices.AUDIO: {
         ModelRunners.TT_WHISPER,
@@ -248,6 +253,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_SEGFORMER: {ModelNames.SEGFORMER},
     ModelRunners.TT_XLA_UNET: {ModelNames.UNET},
     ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
+    ModelRunners.TT_XLA_YOLOX_NANO: {ModelNames.YOLOX_NANO},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
     ModelRunners.VLLMForge_LLAMA_70B: {ModelNames.LLAMA_3_1_70B},
     ModelRunners.VLLMForge_GEMMA4_31B: {ModelNames.GEMMA_4_31B_IT},
@@ -1369,6 +1375,22 @@ for runner in [
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
     }
 
+for runner in [
+    ModelRunners.TT_XLA_YOLOX_NANO,
+]:
+    ModelConfigs[(runner, DeviceTypes.N150)] = {
+        "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "download_weights_from_service": False,
+    }
+    ModelConfigs[(runner, DeviceTypes.P150)] = {
+        "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "download_weights_from_service": False,
+    }
+
 
 # Per-model overrides applied after device config (keyed by ModelNames enum value)
 MODEL_NAME_OVERRIDES = {
@@ -1401,3 +1423,25 @@ _DEFAULT_SAMPLING_PARAMS = {
 
 # Sentinel object for worker shutdown signaling
 SHUTDOWN_SIGNAL = {"__shutdown__": True}
+
+
+# Reserved task_ids for canary-monitor probes (see health_monitoring/).
+# Must not contain "_chunk_", must be <= 36 bytes, and must not collide with UUID4 task_ids.
+CANARY_TASK_ID = "__canary__"  # shallow: bare host-collective probe
+CANARY_DEEP_TASK_ID = (
+    "__canary_deep__"  # deep: replays compiled warmup forward to certify silicon
+)
+CANARY_TASK_IDS = frozenset({CANARY_TASK_ID, CANARY_DEEP_TASK_ID})
+
+
+@dataclass(frozen=True)
+class CanaryProbeRequest:
+    """Sentinel put on the scheduler task_queue by the canary monitor.
+
+    Workers route it to ``runner.health_check()`` instead of ``runner.run()``.
+    Frozen dataclass so it pickles cleanly across the multiprocessing queue.
+    """
+
+    _task_id: str = field(default=CANARY_TASK_ID)
+    stream: bool = field(default=False)
+    deep: bool = field(default=False)

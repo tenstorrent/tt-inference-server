@@ -1,6 +1,6 @@
 {
   "schema_version": "0.1.0",
-  "release_version": "0.15.0",
+  "release_version": "0.16.0",
   "model_specs": {
     "openai/gpt-oss-20b": {
       "T3K": {
@@ -862,19 +862,19 @@
                     "functional": {
                       "ttft_ms": 510.0,
                       "tput_user": 2.1,
-                      "tput": 65.2,
+                      "tput": 2.1,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 102.0,
                       "tput_user": 10.5,
-                      "tput": 326.0,
+                      "tput": 10.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 51.0,
                       "tput_user": 21.0,
-                      "tput": 652.0,
+                      "tput": 21.0,
                       "tolerance": 0.0
                     }
                   },
@@ -984,19 +984,19 @@
                     "functional": {
                       "ttft_ms": 420.0,
                       "tput_user": 4.1000000000000005,
-                      "tput": 130.3,
+                      "tput": 4.1000000000000005,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 84.0,
                       "tput_user": 20.5,
-                      "tput": 651.5,
+                      "tput": 20.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 42.0,
                       "tput_user": 41.0,
-                      "tput": 1303.0,
+                      "tput": 41.0,
                       "tolerance": 0.0
                     }
                   },
@@ -1108,19 +1108,19 @@
                     "functional": {
                       "ttft_ms": 220.0,
                       "tput_user": 8.1,
-                      "tput": 521.2,
+                      "tput": 8.1,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 44.0,
                       "tput_user": 40.5,
-                      "tput": 2606.0,
+                      "tput": 40.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 22.0,
                       "tput_user": 81.0,
-                      "tput": 5212.0,
+                      "tput": 81.0,
                       "tolerance": 0.0
                     }
                   },
@@ -1315,19 +1315,19 @@
                     "functional": {
                       "ttft_ms": 120.0,
                       "tput_user": 60.0,
-                      "tput": 2084.8,
+                      "tput": 60.0,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 24.0,
                       "tput_user": 300.0,
-                      "tput": 10424.0,
+                      "tput": 300.0,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 12.0,
                       "tput_user": 600.0,
-                      "tput": 20848.0,
+                      "tput": 600.0,
                       "tolerance": 0.0
                     }
                   },
@@ -4615,7 +4615,7 @@
             "model_name": "Llama-3.3-70B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
+            "tt_metal_commit": "669d59e",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 32,
@@ -4683,7 +4683,13 @@
               },
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
-              "known_issues": [],
+              "known_issues": [
+                {
+                  "workflow_type": "TESTS",
+                  "reason": "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888.",
+                  "task_name": "test_penalties"
+                }
+              ],
               "eval_max_retries": null
             },
             "system_requirements": {
@@ -4704,17 +4710,17 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "vllm_commit": "22be241",
+            "vllm_commit": "3334377",
             "hf_weights_repo": "meta-llama/Llama-3.3-70B-Instruct",
             "param_count": 70,
             "min_disk_gb": 160,
             "min_ram_gb": 175.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241",
+            "version": "0.16.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.16.0-669d59e-3334377",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/669d59e/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 402653184
             },
@@ -4723,7 +4729,7 @@
             ],
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
-            "has_builtin_warmup": false,
+            "has_builtin_warmup": true,
             "metadata": {
               "tool_call_parser_name": "llama3_json"
             },
@@ -5399,7 +5405,7 @@
             "model_name": "Llama-3.1-70B",
             "inference_engine": "vLLM",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
+            "tt_metal_commit": "669d59e",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 32,
@@ -5467,7 +5473,13 @@
               },
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
-              "known_issues": [],
+              "known_issues": [
+                {
+                  "workflow_type": "TESTS",
+                  "reason": "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888.",
+                  "task_name": "test_penalties"
+                }
+              ],
               "eval_max_retries": null
             },
             "system_requirements": {
@@ -5488,17 +5500,17 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "vllm_commit": "22be241",
+            "vllm_commit": "3334377",
             "hf_weights_repo": "meta-llama/Llama-3.1-70B",
             "param_count": 70,
             "min_disk_gb": 160,
             "min_ram_gb": 175.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241",
+            "version": "0.16.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.16.0-669d59e-3334377",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/669d59e/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 402653184
             },
@@ -5507,7 +5519,7 @@
             ],
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
-            "has_builtin_warmup": false,
+            "has_builtin_warmup": true,
             "metadata": {
               "tool_call_parser_name": "llama3_json"
             },
@@ -6183,7 +6195,7 @@
             "model_name": "Llama-3.1-70B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
+            "tt_metal_commit": "669d59e",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 32,
@@ -6251,7 +6263,13 @@
               },
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
-              "known_issues": [],
+              "known_issues": [
+                {
+                  "workflow_type": "TESTS",
+                  "reason": "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888.",
+                  "task_name": "test_penalties"
+                }
+              ],
               "eval_max_retries": null
             },
             "system_requirements": {
@@ -6272,17 +6290,17 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "vllm_commit": "22be241",
+            "vllm_commit": "3334377",
             "hf_weights_repo": "meta-llama/Llama-3.1-70B-Instruct",
             "param_count": 70,
             "min_disk_gb": 160,
             "min_ram_gb": 175.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241",
+            "version": "0.16.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.16.0-669d59e-3334377",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/669d59e/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 402653184
             },
@@ -6291,7 +6309,7 @@
             ],
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
-            "has_builtin_warmup": false,
+            "has_builtin_warmup": true,
             "metadata": {
               "tool_call_parser_name": "llama3_json"
             },
@@ -6971,7 +6989,7 @@
             "model_name": "DeepSeek-R1-Distill-Llama-70B",
             "inference_engine": "vLLM",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
+            "tt_metal_commit": "669d59e",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 32,
@@ -7039,7 +7057,13 @@
               },
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
-              "known_issues": [],
+              "known_issues": [
+                {
+                  "workflow_type": "TESTS",
+                  "reason": "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888.",
+                  "task_name": "test_penalties"
+                }
+              ],
               "eval_max_retries": null
             },
             "system_requirements": {
@@ -7060,17 +7084,17 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "vllm_commit": "22be241",
+            "vllm_commit": "3334377",
             "hf_weights_repo": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
             "param_count": 70,
             "min_disk_gb": 160,
             "min_ram_gb": 175.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241",
+            "version": "0.16.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.16.0-669d59e-3334377",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/669d59e/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 402653184
             },
@@ -7079,7 +7103,7 @@
             ],
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
-            "has_builtin_warmup": false,
+            "has_builtin_warmup": true,
             "metadata": {
               "reasoning_parser_name": "deepseek_r1",
               "tool_call_parser_name": "deepseek_v3"
@@ -22981,19 +23005,19 @@
                     "functional": {
                       "ttft_ms": 270.0,
                       "tput_user": 4.2,
-                      "tput": 129.3,
+                      "tput": 4.2,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 54.0,
                       "tput_user": 21.0,
-                      "tput": 646.5,
+                      "tput": 21.0,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 27.0,
                       "tput_user": 42.0,
-                      "tput": 1293.0,
+                      "tput": 42.0,
                       "tolerance": 0.0
                     }
                   },
@@ -23098,19 +23122,19 @@
                     "functional": {
                       "ttft_ms": 260.0,
                       "tput_user": 8.200000000000001,
-                      "tput": 258.6,
+                      "tput": 8.200000000000001,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 52.0,
                       "tput_user": 41.0,
-                      "tput": 1293.0,
+                      "tput": 41.0,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 26.0,
                       "tput_user": 82.0,
-                      "tput": 2586.0,
+                      "tput": 82.0,
                       "tolerance": 0.0
                     }
                   },

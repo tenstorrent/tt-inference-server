@@ -80,11 +80,6 @@ TEST(LLMResponseTest, ErrorReasonMapsToFinishReason) {
 }
 
 TEST(LLMResponseTest, TimeoutTokenFlagMapsToTimeoutErrorReason) {
-  TokenResult result(/*taskId=*/123, /*tokenId=*/0, std::nullopt,
-                     /*isError=*/true, /*isTimeoutError=*/true);
-  EXPECT_TRUE(result.isError);
-  EXPECT_TRUE(result.isTimeoutError);
-
   tt::ipc::SharedToken token;
   token.flags = tt::ipc::SharedToken::FLAG_FINAL |
                 tt::ipc::SharedToken::FLAG_ERROR |

@@ -14,6 +14,8 @@ templates:
   min_ram_gb: 32
   model_type: VIDEO
   inference_engine: MEDIA
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
   device_model_specs:
     - device: T3K
       max_concurrency: 1
@@ -56,6 +58,8 @@ templates:
   min_ram_gb: 32
   model_type: VIDEO
   inference_engine: MEDIA
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
   device_model_specs:
     - device: T3K
       max_concurrency: 1
@@ -98,6 +102,8 @@ templates:
   min_ram_gb: 32
   model_type: VIDEO
   inference_engine: MEDIA
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
   device_model_specs:
     - device: T3K
       max_concurrency: 1

@@ -74,10 +74,7 @@ std::string tokenizerConfigPath(ModelType model);
  */
 std::string visibleDevicesForWorker(size_t workerIndex);
 
-/** Model type derived from LLM_DEVICE_BACKEND:
- * "llama" -> LLAMA_3_1_8B_INSTRUCT,
- * "kimi" -> KIMI_K2_6,
- * otherwise -> DEEPSEEK_R1_0528. */
+/** Model type derived from MODEL. */
 ModelType modelType();
 
 /** LLM mode from LLM_MODE. Default: defaults::LLM_MODE ("regular"). */
@@ -114,14 +111,6 @@ std::string logInstanceTag(int workerIndex = -1);
 
 /** Capacity hint for the gateway, 0 = unlimited. From PREFILL_MAX_IN_FLIGHT. */
 uint32_t prefillMaxInFlight();
-
-/** Enable accumulated streaming from ENABLE_ACCUMULATED_STREAMING. Default:
- * defaults::ENABLE_ACCUMULATED_STREAMING. */
-bool enableAccumulatedStreaming();
-
-/** Max accumulated tokens from MAX_ACCUMULATED_TOKENS. Default:
- * defaults::MAX_ACCUMULATED_TOKENS. */
-size_t maxAccumulatedTokens();
 
 /** Max in-flight requests before 429. From MAX_QUEUE_SIZE. Default:
  * defaults::MAX_QUEUE_SIZE. */
@@ -201,10 +190,6 @@ std::string kafkaGroupId();
  * defaults::SESSION_ALLOCATION_MAX_RETRIES. */
 unsigned sessionAllocationMaxRetries();
 
-/** Prefill timeout in milliseconds from PREFILL_TIMEOUT_MS. Default:
- * defaults::PREFILL_TIMEOUT_MS. */
-unsigned prefillTimeoutMs();
-
 /** Blaze socket descriptor prefix from BLAZE_SOCKET_DESCRIPTOR_PREFIX. Default:
  * defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX. */
 std::string blazeSocketDescriptorPrefix();
@@ -282,18 +267,6 @@ size_t cancelQueueCapacity();
 /** Memory queue capacity from MEMORY_QUEUE_CAPACITY. Default:
  * defaults::MEMORY_QUEUE_CAPACITY. */
 size_t memoryQueueCapacity();
-
-// Shared memory slot buffer constants
-/** SHM slots from SHM_SLOTS. Default: defaults::SHM_SLOTS. */
-int shmSlots();
-
-/** Prefill max token IDs from PREFILL_MAX_TOKEN_IDS. Default:
- * defaults::PREFILL_MAX_TOKEN_IDS. */
-int prefillMaxTokenIds();
-
-/** Decode max token IDs from DECODE_MAX_TOKEN_IDS. Default:
- * defaults::DECODE_MAX_TOKEN_IDS. */
-int decodeMaxTokenIds();
 
 // ---------------------------------------------------------------------------
 // Dynamo TCP backend (NVIDIA Dynamo frontend integration)

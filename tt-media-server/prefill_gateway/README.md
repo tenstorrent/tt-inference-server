@@ -170,13 +170,9 @@ TT_LOG_LEVEL=info \
 
 ```bash
 cd tt-media-server/cpp_server
-TT_IPC_SHM_C2P=tt_ipc_c2p_8002 \
-TT_IPC_SHM_P2C=tt_ipc_p2c_8002 \
-PREFILL_TIMEOUT_MS=15000 \
 TT_LOG_LEVEL=info \
 LLM_MODE=prefill \
-LLM_DEVICE_BACKEND=mock \
-MOCK_PREFILL_SLEEP_MS=10000 \
+LLM_DEVICE_BACKEND=mock_pipeline \
 SOCKET_TRANSPORT=tcp \
 USE_PREFILL_GATEWAY=1 \
 SOCKET_HOST=0.0.0.0 \
@@ -189,12 +185,9 @@ PREFILL_SERVER_ID=prefill-0 \
 
 ```bash
 cd tt-media-server/cpp_server
-TT_IPC_SHM_C2P=tt_ipc_c2p_8003 \
-TT_IPC_SHM_P2C=tt_ipc_p2c_8003 \
-PREFILL_TIMEOUT_MS=15000 \
 TT_LOG_LEVEL=info \
 LLM_MODE=prefill \
-LLM_DEVICE_BACKEND=mock \
+LLM_DEVICE_BACKEND=mock_pipeline \
 SOCKET_TRANSPORT=tcp \
 USE_PREFILL_GATEWAY=1 \
 SOCKET_HOST=0.0.0.0 \
@@ -241,13 +234,9 @@ TT_LOG_LEVEL=info \
 
 ```bash
 cd tt-media-server/cpp_server
-TT_IPC_SHM_C2P=tt_ipc_c2p_8002 \
-TT_IPC_SHM_P2C=tt_ipc_p2c_8002 \
-PREFILL_TIMEOUT_MS=15000 \
 TT_LOG_LEVEL=info \
 LLM_MODE=prefill \
-LLM_DEVICE_BACKEND=mock \
-MOCK_PREFILL_SLEEP_MS=10000 \
+LLM_DEVICE_BACKEND=mock_pipeline \
 SOCKET_TRANSPORT=zmq \
 USE_PREFILL_GATEWAY=1 \
 SOCKET_HOST=127.0.0.1 \
@@ -260,12 +249,9 @@ PREFILL_SERVER_ID=prefill-0 \
 
 ```bash
 cd tt-media-server/cpp_server
-TT_IPC_SHM_C2P=tt_ipc_c2p_8003 \
-TT_IPC_SHM_P2C=tt_ipc_p2c_8003 \
-PREFILL_TIMEOUT_MS=15000 \
 TT_LOG_LEVEL=info \
 LLM_MODE=prefill \
-LLM_DEVICE_BACKEND=mock \
+LLM_DEVICE_BACKEND=mock_pipeline \
 SOCKET_TRANSPORT=zmq \
 USE_PREFILL_GATEWAY=1 \
 SOCKET_HOST=127.0.0.1 \

@@ -12,9 +12,24 @@ from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import (
     BenchmarkTaskType,
     DeviceTypes,
+    InferenceEngine,
     ModelType,
     WorkflowVenvType,
 )
+
+
+# Forge models need a newer vllm client that can load their tokenizers; other
+# engines use the shared client.
+_VLLM_BENCHMARK_VENV_BY_ENGINE = {
+    InferenceEngine.FORGE.value: WorkflowVenvType.BENCHMARKS_VLLM_FORGE,
+}
+
+
+def select_vllm_benchmark_venv(model_spec) -> WorkflowVenvType:
+    """Pick the vllm benchmark client venv for ``model_spec``."""
+    return _VLLM_BENCHMARK_VENV_BY_ENGINE.get(
+        model_spec.inference_engine, WorkflowVenvType.BENCHMARKS_VLLM
+    )
 
 
 @dataclass(frozen=True)
@@ -580,6 +595,8 @@ for model_id, model_spec in MODEL_SPECS.items():
     max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
     perf_reference = model_spec.device_model_spec.perf_reference
 
+    vllm_benchmark_venv = select_vllm_benchmark_venv(model_spec)
+
     # Apply capping to each perf reference entry (including vision tokens for VLM models)
     capped_perf_reference = [
         cap_benchmark_params(
@@ -597,7 +614,8 @@ for model_id, model_spec in MODEL_SPECS.items():
         perf_ref_task = BenchmarkTaskCNN(param_map={device: capped_perf_reference})
     elif model_spec.model_type == ModelType.EMBEDDING:
         perf_ref_task = BenchmarkTaskEmbedding(
-            param_map={device: capped_perf_reference}
+            param_map={device: capped_perf_reference},
+            workflow_venv_type=vllm_benchmark_venv,
         )
     elif model_spec.model_type == ModelType.VIDEO:
         perf_ref_task = BenchmarkTaskVideo(param_map={device: capped_perf_reference})
@@ -608,7 +626,10 @@ for model_id, model_spec in MODEL_SPECS.items():
     elif model_spec.model_type == ModelType.AUDIO:
         perf_ref_task = BenchmarkTaskAudio(param_map={device: capped_perf_reference})
     else:
-        perf_ref_task = BenchmarkTask(param_map={device: capped_perf_reference})
+        perf_ref_task = BenchmarkTask(
+            param_map={device: capped_perf_reference},
+            workflow_venv_type=vllm_benchmark_venv,
+        )
 
     tasks = [perf_ref_task]
     # optionally skip the benchmark sweeps and only run the perf reference targets
@@ -624,7 +645,8 @@ for model_id, model_spec in MODEL_SPECS.items():
             )
         elif model_spec.model_type == ModelType.EMBEDDING:
             benchmark_task_runs = BenchmarkTaskEmbedding(
-                param_map={device: [BenchmarkTaskParams()]}
+                param_map={device: [BenchmarkTaskParams()]},
+                workflow_venv_type=vllm_benchmark_venv,
             )
         elif model_spec.model_type == ModelType.VIDEO:
             benchmark_task_runs = BenchmarkTaskVideo(
@@ -685,7 +707,8 @@ for model_id, model_spec in MODEL_SPECS.items():
                         if "image" in model_spec.supported_modalities
                         else []
                     )
-                }
+                },
+                workflow_venv_type=vllm_benchmark_venv,
             )
 
         tasks.append(benchmark_task_runs)
@@ -707,7 +730,8 @@ for model_id, model_spec in MODEL_SPECS.items():
                         )
                         for dataset, ratio in STRUCTURED_OUTPUT_PAIRS
                     ]
-                }
+                },
+                workflow_venv_type=vllm_benchmark_venv,
             )
         )
 

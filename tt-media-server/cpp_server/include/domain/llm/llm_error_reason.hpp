@@ -34,8 +34,4 @@ inline LLMErrorReason errorReasonFromFinishReason(
                                                      : LLMErrorReason::GENERIC;
 }
 
-inline bool isTimeoutError(LLMErrorReason reason) {
-  return reason == LLMErrorReason::TIMEOUT;
-}
-
 }  // namespace tt::domain::llm

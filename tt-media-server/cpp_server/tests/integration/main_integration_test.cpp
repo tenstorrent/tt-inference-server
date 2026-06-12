@@ -654,6 +654,20 @@ TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
   future.get();
 }
 
+TEST_F(MainIntegrationTest, MigrationId_IsZeroInRegularMode) {
+  // In regular (non-disaggregated) mode, no migration ID is generated.
+  // Verify the field survives IPC serialization as 0 (not garbage).
+  auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
+
+  auto seq = server->taskQueue().receive();
+  ASSERT_NE(seq, nullptr);
+  EXPECT_EQ(seq->getMigrationId(), 0u)
+      << "migrationId must be 0 in regular mode (only prefill generates it)";
+
+  mockWorkerResponse(seq->taskId);
+  future.get();
+}
+
 TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
   // Two identical first-turn requests. Same content, same registration hash
   // — but when all candidate sessions are in-flight, both fall through to

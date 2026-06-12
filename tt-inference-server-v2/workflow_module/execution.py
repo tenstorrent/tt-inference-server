@@ -93,6 +93,14 @@ class SpecDecodeOptions:
     preset: str = "full"
     warmup_requests: int = 4
     auth_token: str = ""
+class ServingBenchOptions:
+    """Serving-bench suite selection forwarded to ``ServingBenchWorkflow``.
+
+    ``suites`` is the comma-separated suite list from ``--serving-bench-suites``;
+    ``None`` runs every suite under ``test_module/serving_bench``.
+    """
+
+    suites: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -108,6 +116,7 @@ class OrchestratorMetadata:
     runtime_model_spec_json: Optional[str] = None
     prefix_cache: Optional[PrefixCacheOptions] = None
     spec_decode: Optional[SpecDecodeOptions] = None
+    serving_bench: Optional[ServingBenchOptions] = None
 
 
 class WorkflowExecution(ABC):
@@ -282,6 +291,7 @@ class WorkflowExecution(ABC):
 
 
 __all__ = [
+    "ServingBenchOptions",
     "OrchestratorMetadata",
     "PrefixCacheOptions",
     "SpecDecodeOptions",
