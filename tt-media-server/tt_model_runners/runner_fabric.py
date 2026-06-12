@@ -117,6 +117,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_XLA_VIT: lambda wid: __import__(
         "tt_model_runners.forge_runners.runners", fromlist=["ForgeVitRunner"]
     ).ForgeVitRunner(wid),
+    ModelRunners.TT_XLA_YOLOX_NANO: lambda wid: __import__(
+        "tt_model_runners.forge_runners.runners", fromlist=["ForgeYoloxNanoRunner"]
+    ).ForgeYoloxNanoRunner(wid),
     ModelRunners.TRAINING_GEMMA_LORA: lambda wid: __import__(
         "tt_model_runners.forge_training_runners.training_gemma_lora_runner",
         fromlist=["TrainingGemmaLoraRunner"],
