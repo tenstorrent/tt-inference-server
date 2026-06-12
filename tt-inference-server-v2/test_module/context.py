@@ -17,6 +17,12 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from utils.url_helpers import (
+    DEFAULT_DEPLOY_URL,
+    build_base_url,
+    resolve_host_port,
+)
+
 from ._test_common import HardwareRequirement
 from .health_tests import run_device_liveness
 
@@ -40,31 +46,26 @@ class MediaContext:
     server_url: Optional[str] = None
 
     @property
+    def _deploy_url(self) -> str:
+        """Resolved deploy URL, delegating the default to url_helpers."""
+        return self.server_url or DEFAULT_DEPLOY_URL
+
+    @property
     def base_url(self) -> str:
-        if self.server_url:
-            normalized = self.server_url.rstrip("/")
-            if urlparse(normalized).port is not None:
-                return normalized
-            return f"{normalized}:{self.service_port}"
-        return f"http://localhost:{self.service_port}"
+        return build_base_url(self._deploy_url, self.service_port)
 
     @property
     def server_host(self) -> str:
         """Scheme + host with no port, for split host/port consumers."""
-        if self.server_url:
-            parsed = urlparse(self.server_url.rstrip("/"))
-            scheme = parsed.scheme or "http"
-            return f"{scheme}://{parsed.hostname}"
-        return "http://localhost"
+        host, _ = resolve_host_port(self._deploy_url, self.service_port)
+        scheme = urlparse(self._deploy_url).scheme or "http"
+        return f"{scheme}://{host}"
 
     @property
     def server_port(self) -> int:
         """Explicit port from ``server_url`` when present, else service_port."""
-        if self.server_url:
-            port = urlparse(self.server_url.rstrip("/")).port
-            if port is not None:
-                return port
-        return int(self.service_port)
+        _, port = resolve_host_port(self._deploy_url, self.service_port)
+        return int(port)
 
     @property
     def test_payloads_path(self) -> str:
