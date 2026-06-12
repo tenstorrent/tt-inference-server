@@ -370,7 +370,6 @@ inline void BlazePrefillRunner::handleAllocateRequest(
 
 inline void BlazePrefillRunner::handleMemoryResponse(
     const ps::SchedulerResponse& response) {
-  utils::logSchedRxAck("prefill", response);
   auto taskId = response.request_id;
   auto slotId = response.slot_id;
   auto action = response.request_type;

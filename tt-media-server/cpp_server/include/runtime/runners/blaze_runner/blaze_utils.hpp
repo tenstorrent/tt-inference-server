@@ -143,15 +143,6 @@ inline void logSchedTx(const char* role, const sch::ISRequest& req) {
       req.gen.stop_tokens.size());
 }
 
-// Scheduler -> runner. Ack for an ALLOCATE / SUBMIT / EVICT / STOP.
-inline void logSchedRxAck(const char* role,
-                          const sch::SchedulerResponse& resp) {
-  TT_LOG_INFO(
-      "[BORDER] {}<<sched ACK {} req={} slot={} err={} status={} startPos={}",
-      role, requestTypeName(resp.request_type), resp.request_id, resp.slot_id,
-      resp.error_code, static_cast<int>(resp.status), resp.start_position);
-}
-
 // Scheduler -> runner. A generated/prefill OutputMessage. `level` lets the
 // per-token decode path drop to DEBUG while low-volume callers stay at INFO.
 inline void logSchedRxOutput(const char* role, const sch::OutputMessage& out,

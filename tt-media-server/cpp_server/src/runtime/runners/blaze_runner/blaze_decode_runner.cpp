@@ -372,7 +372,6 @@ inline void BlazeDecodeRunner::handleAllocateRequest(
 
 inline void BlazeDecodeRunner::handleMemoryResponse(
     const ds::SchedulerResponse& response) {
-  utils::logSchedRxAck("decode", response);
   auto taskId = response.request_id;
   auto slotId = response.slot_id;
   auto action = response.request_type;
