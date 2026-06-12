@@ -18,11 +18,11 @@ templates:
   device_model_specs:
     - device: P150
       max_concurrency: 32
-      max_context: 65536  # 64 * 1024
+      max_context: 40960  # Qwen3 native max_position_embeddings
       default_impl: true
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "65536"
+        MAX_MODEL_LENGTH: "40960"
         MAX_NUM_SEQS: "32"
         GPU_MEMORY_UTILIZATION: "0.15"
         TT_KV_POOL_GB: "32"
@@ -100,11 +100,11 @@ templates:
   device_model_specs:
     - device: P150
       max_concurrency: 32
-      max_context: 65536  # 64 * 1024
+      max_context: 40960  # Qwen3 native max_position_embeddings
       default_impl: false
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "65536"
+        MAX_MODEL_LENGTH: "40960"
         MAX_NUM_SEQS: "32"
         GPU_MEMORY_UTILIZATION: "0.15"
         TT_KV_POOL_GB: "32"
@@ -127,11 +127,11 @@ templates:
   device_model_specs:
     - device: P150
       max_concurrency: 32
-      max_context: 65536  # 64 * 1024
+      max_context: 32768  # Falcon3 native max_position_embeddings
       default_impl: true
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "65536"
+        MAX_MODEL_LENGTH: "32768"
         MAX_NUM_SEQS: "32"
         GPU_MEMORY_UTILIZATION: "0.15"
         TT_KV_POOL_GB: "32"

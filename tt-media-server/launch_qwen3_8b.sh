@@ -16,7 +16,7 @@ export IS_GALAXY=${IS_GALAXY:-False}
 # Forge single-chip P150 LLM spec (mirrors workflows/model_specs/dev/cnn.yaml,
 # commit 838eb7711: b32 / 64K / opt=1 / on-device sampling). Manual launches do
 # not read the workflow YAML, so these must be set here.
-export MAX_MODEL_LENGTH=${MAX_MODEL_LENGTH:-65536}
+export MAX_MODEL_LENGTH=${MAX_MODEL_LENGTH:-40960}  # Qwen3 native max_position_embeddings (no 64K)
 export MAX_NUM_SEQS=${MAX_NUM_SEQS:-32}
 export GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.15}
 export TT_KV_POOL_GB=${TT_KV_POOL_GB:-32}
