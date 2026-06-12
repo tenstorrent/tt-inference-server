@@ -22,12 +22,19 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 
 # AIPerf benchmarking tool (https://github.com/ai-dynamo/aiperf).
-# Our CPU-only torch is pinned to 2.4 so transformers is capped at <5 to
-# avoid `ModuleNotFoundError: torch.distributed.tensor.device_mesh` on
-# import of `AutoTokenizer`. aiperf itself only requires transformers>=4.56.
-torch==2.4.0+cpu
+# transformers>=5 is required to load newer tokenizers (e.g. Gemma 4, whose
+# tokenizer_config.json stores `extra_special_tokens` as a list that only
+# transformers 5.x parses; 4.x raises `AttributeError: 'list' object has no
+# attribute 'keys'`). transformers 5.x imports `torch.distributed.tensor.
+# device_mesh` on `AutoTokenizer`, which only exists in torch>=2.5, so the
+# CPU torch pin is bumped to 2.5.1. aiperf itself only requires transformers>=4.56.
+torch==2.5.1+cpu
 aiperf
-transformers>=4.56,<5
+transformers>=5.10.2,<6
+# Gemma (and other SentencePiece) tokenizers need protobuf; sentencepiece is
+# its usual companion for the slow-tokenizer conversion path.
+protobuf
+sentencepiece
 pyjwt
 requests
 datasets
