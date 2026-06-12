@@ -94,7 +94,7 @@ class SessionManager {
   // Thread-safe: holds the ConcurrentMap lock during the state transition.
   void releaseInFlight(const std::string& sessionId);
 
-  domain::Session* getSession(const std::string& sessionId);
+  std::shared_ptr<domain::Session> getSession(const std::string& sessionId);
   size_t getActiveSessionCount() const;
 
   // Lock/unlock a slot to prevent eviction.
@@ -211,6 +211,8 @@ class SessionManager {
   void sendDeallocRequest(const std::string& sessionId, uint32_t slotId);
   void finalizeSessionClose(const std::string& sessionId,
                             const domain::Session& session);
+  // Wrap a Session into the map's shared_ptr value and inject its release hook.
+  void insertSession(const domain::Session& session);
   void readerLoop();
   void retryFailedAllocations();
   void retryFailedDeallocs();
@@ -227,7 +229,8 @@ class SessionManager {
   void removeFromResponseIdIndex(const std::string& sessionId,
                                  const std::string& responseId);
 
-  mutable utils::ConcurrentMap<std::string, domain::Session> sessions;
+  mutable utils::ConcurrentMap<std::string, std::shared_ptr<domain::Session>>
+      sessions;
 
   // An entry in the prefix index: a group of sessions sharing the same prefix
   // path, together with the remaining block info that follows (used for deeper

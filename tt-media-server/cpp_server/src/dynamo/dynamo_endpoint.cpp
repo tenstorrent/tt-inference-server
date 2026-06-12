@@ -268,17 +268,17 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               probeId.empty() ? "?" : probeId, sessionMs);
 
           auto svc = pipeline->service();
-          // Copy sessionId now: dispatchGeneration std::move()s the request
-          // into produceStream, which empties req->sessionId's string
-          // (moved-from optional<string> stays engaged but holds ""). Releasing
-          // by the emptied id would no-op and leak the session IN_FLIGHT.
-          const std::optional<std::string> sessionId = req->sessionId;
+          // Pre-dispatch shared_ptr copy: dispatchGeneration std::move()s the
+          // request into produceStream, emptying req->session. The callback and
+          // error paths use this copy to release (and it keeps the session
+          // alive for token accumulation).
+          auto sessionPtr = req->session;
           const auto tPreStart = SteadyClock::now();
           try {
             svc->preProcess(*req);
           } catch (const std::exception& e) {
             TT_LOG_WARN("[DynamoEndpoint] preProcess failed: {}", e.what());
-            pipeline->releaseSession(sessionId);
+            if (sessionPtr) sessionPtr->release();
             TokenChunk err;
             err.finish_reason = "error";
             sendChunk(err);
@@ -295,8 +295,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               probeId.empty() ? "?" : probeId, preProcessMs);
 
           const auto tDispatch = SteadyClock::now();
-          auto cb = [req, svc, pipeline, sessionId, sendChunk, signalDone,
-                     recvT, firstChunkSeen, probeId, tDispatch,
+          auto cb = [req, svc, sessionPtr, sendChunk, signalDone, recvT,
+                     firstChunkSeen, probeId, tDispatch,
                      usage](const tt::domain::llm::LLMStreamChunk& chunk,
                             bool isFinal) {
             // Log worker-side TTFT exactly once per request: total since recv
@@ -334,10 +334,12 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               usage->cachedTokens = *chunk.cached_prompt_tokens;
             }
 
-            // Track token for prefix cache hash accumulation
-            if (req->session && !chunk.choices.empty() &&
+            // Track token for prefix cache hash accumulation. Use the captured
+            // sessionPtr, not req->session: the request was std::move()'d into
+            // produceStream by dispatchGeneration, emptying req->session.
+            if (sessionPtr && !chunk.choices.empty() &&
                 chunk.choices[0].token_id) {
-              req->session->addGeneratedToken(
+              sessionPtr->addGeneratedToken(
                   static_cast<int>(*chunk.choices[0].token_id));
             }
 
@@ -356,11 +358,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
             }
 
             // Finalize session state before sending final chunk
-            if (isFinal && req->session) {
-              req->session->finalizeAndRegisterHashes();
-              // Release under the SessionManager lock (not on the raw
-              // Session*) to avoid the eviction use-after-free race.
-              pipeline->releaseSession(sessionId);
+            if (isFinal && sessionPtr) {
+              sessionPtr->finalizeAndRegisterHashes();
+              sessionPtr->release();
             }
 
             TokenChunk out = toTokenChunk(chunk, isFinal);
@@ -406,7 +406,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           } catch (const std::exception& e) {
             TT_LOG_ERROR("[DynamoEndpoint] dispatchGeneration failed: {}",
                          e.what());
-            pipeline->releaseSession(sessionId);
+            if (sessionPtr) sessionPtr->release();
             TokenChunk err;
             err.finish_reason = "error";
             sendChunk(err);

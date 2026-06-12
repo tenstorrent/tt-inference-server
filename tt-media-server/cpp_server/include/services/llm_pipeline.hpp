@@ -99,16 +99,6 @@ class LLMPipeline {
 
   void abortRequest(uint32_t taskId) const;
 
-  /**
-   * Release a session's in-flight hold (IN_FLIGHT -> IDLE) under the
-   * SessionManager's per-entry lock, so the transition is mutually exclusive
-   * with evictOldSessions()'s takeIf. Transports MUST use this instead of
-   * calling Session::clearInFlight() on a raw Session* — the latter races with
-   * eviction and can free the session mid-clear (use-after-free). No-op if
-   * sessionId is empty or unknown.
-   */
-  void releaseSession(const std::optional<std::string>& sessionId) const;
-
   std::shared_ptr<LLMService> service() const { return service_; }
   std::shared_ptr<SessionManager> sessionManager() const {
     return sessionManager_;

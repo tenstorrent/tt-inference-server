@@ -93,6 +93,16 @@ class Session {
     return std::exchange(cancelFn_, nullptr);
   }
 
+  // Release this session's in-flight hold (IN_FLIGHT -> IDLE) via an injected
+  // callback. SessionManager sets this to run clearInFlight() under the
+  // ConcurrentMap lock, so the transition can't race evictOldSessions(); kept
+  // as a std::function so the domain layer doesn't depend on SessionManager.
+  // No-op if unset (e.g. a session not owned by a SessionManager).
+  void setReleaser(std::function<void()> r) { releaser_ = std::move(r); }
+  void release() {
+    if (releaser_) releaser_();
+  }
+
   std::chrono::system_clock::time_point getLastActivityTime() const {
     return last_activity_time_;
   }
@@ -149,6 +159,8 @@ class Session {
   SessionState state_{SessionState::IDLE};
   std::chrono::system_clock::time_point last_activity_time_;
   std::function<void()> cancelFn_;
+  std::function<void()>
+      releaser_;  // injected by SessionManager (see release())
 
   // Streaming token accumulator (initialized per-request)
   std::vector<int> deltaTokens_;
