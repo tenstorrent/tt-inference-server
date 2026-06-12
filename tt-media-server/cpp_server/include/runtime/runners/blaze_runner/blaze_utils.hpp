@@ -68,7 +68,9 @@ inline sch::GenerationParams makeGenerationParams(
       .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
       .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
       .disaggregated_decode = seq.isDisaggregated(),
-      .stop_tokens = seq.getSamplingParams().stop_token_ids};
+      .stop_tokens = seq.getSamplingParams().stop_token_ids,
+      .migration_uuid = seq.getMigrationId()
+    };
 }
 
 inline void fillSequenceFields(sch::ISRequest& req,

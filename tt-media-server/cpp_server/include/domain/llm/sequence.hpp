@@ -116,7 +116,7 @@ class Sequence {
   int getDecodeSkipTokens() const { return decodeSkipTokens; }
   void setDecodeSkipTokens(int n) { decodeSkipTokens = n; }
 
-  uint64_t getMigrationId() const { return migrationId; }
+  std::optional<uint64_t> getMigrationId() const { return migrationId; }
   void setMigrationId(uint64_t id) { migrationId = id; }
 
  private:
@@ -138,7 +138,7 @@ class Sequence {
   // decode server. Stored only; not yet consumed by the runner.
   int decodeSkipTokens = 0;
   // Unique 64-bit ID correlating this sequence with a prefill migration.
-  uint64_t migrationId = 0;
+  std::optional<uint64_t> migrationId = std::nullopt;
 };
 
 }  // namespace tt::domain::llm
