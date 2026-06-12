@@ -53,6 +53,31 @@ class VLLMForgeRunner(BaseDeviceRunner):
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "true").lower() == "true"
         enable_trace = os.getenv("ENABLE_TRACE", "false").lower() == "true"
+        # KV-cache quantization, independent of experimental_weight_dtype. The
+        # tt-xla plugin reads experimental_kv_cache_dtype: "bfp_bf8" → BFP8 KV
+        # (halves KV-cache footprint vs bf16, lets larger contexts fit),
+        # "bfp_bf4" → BFP4, "" / unset → bf16 default. Env-driven so it can be
+        # set per-model via spec env_vars the same way as MAX_MODEL_LENGTH.
+        kv_cache_dtype = os.getenv("KV_CACHE_DTYPE", "")
+        # On-device chunked-SDPA prefill chunk size (tt-xla plugin reads
+        # additional_config["prefill_chunk_size"]). Without it, prefill for a
+        # long prompt allocates one contiguous SDPA buffer for the full context
+        # and OOMs the DRAM banks at 32K/64K; chunking runs the op in slices
+        # (e.g. 2048) so it fits. Independent of vLLM's scheduler-level
+        # enable_chunked_prefill. Env-driven; only passed when set so existing
+        # short-context models keep the default (whole-prompt) path.
+        prefill_chunk_size = os.getenv("PREFILL_CHUNK_SIZE")
+        additional_config = {
+            "enable_const_eval": True,
+            "min_context_len": self.settings.vllm.min_context_length,
+            "experimental_weight_dtype": "bfp_bf8",
+            "experimental_kv_cache_dtype": kv_cache_dtype,
+            "cpu_sampling": cpu_sampling,
+            "optimization_level": optimization_level,
+            "enable_trace": enable_trace,
+        }
+        if prefill_chunk_size:
+            additional_config["prefill_chunk_size"] = int(prefill_chunk_size)
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
@@ -60,14 +85,7 @@ class VLLMForgeRunner(BaseDeviceRunner):
             max_num_seqs=self.settings.vllm.max_num_seqs,
             enable_chunked_prefill=False,
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
-            additional_config={
-                "enable_const_eval": True,
-                "min_context_len": self.settings.vllm.min_context_length,
-                "experimental_weight_dtype": "bfp_bf8",
-                "cpu_sampling": cpu_sampling,
-                "optimization_level": optimization_level,
-                "enable_trace": enable_trace,
-            },
+            additional_config=additional_config,
         )
         self.logger.info(
             f"Device {self.device_id}: additional_config={engine_args.additional_config}"
