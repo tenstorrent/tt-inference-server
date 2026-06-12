@@ -558,6 +558,16 @@
         }
       }
     },
+    "yolox_nano": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P150"
+          ]
+        }
+      }
+    },
     "mochi-1-preview": {
       "inference_engine": "MEDIA",
       "ci": {
