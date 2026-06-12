@@ -125,6 +125,10 @@ struct LLMRequest : BaseRequest {
   bool fast_mode = false;
   bool disaggregated = false;  // True if this is a disaggregated request
 
+  // Unique 64-bit migration ID correlating a prefill request with the KV
+  // transfer / result. Generated on the prefill server and echoed back.
+  uint64_t migrationId = 0;
+
   // For disaggregated decode: position in KV Cache of the migrated token (the
   // first token produced by the prefill server) in the per-user KV cache. The
   // decode scheduler uses this as `position_id` so the migrated token lands at
@@ -156,16 +160,12 @@ struct LLMRequest : BaseRequest {
   // Structured output constraint
   std::optional<ResponseFormat> response_format;
 
-  // When false, reasoning tokens are suppressed from the response.
-  bool enable_reasoning = true;
-
   // When true, skip adding <bos><user> and <assistant> tags in chat template.
   bool skip_apply_chat_template = false;
 
   // When true, the consumer emits chunks carrying only `token_id` and
-  // skips decode / reasoning / tool-call parsing. Used by transports
-  // that forward raw token_ids and handle detokenization downstream
-  // (e.g. Dynamo).
+  // skips decode / tool-call parsing. Used by transports that forward raw
+  // token_ids and handle detokenization downstream (e.g. Dynamo).
   bool skip_text_decode = false;
 
   // Session management (internal use only, not parsed from JSON)

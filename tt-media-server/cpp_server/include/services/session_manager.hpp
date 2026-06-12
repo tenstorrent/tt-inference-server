@@ -190,6 +190,13 @@ class SessionManager {
       const std::string& sessionId,
       const std::vector<utils::BlockHashInfo>& blockInfos);
 
+  /**
+   * Reset accumulatedThinkTokens to 0 on all prefix index entries that contain
+   * the given session. Called when prefill-on-decode overrides thinking tokens
+   * so that future lookups report zero cached think tokens for this session.
+   */
+  void clearSessionBlockThinkTokens(const std::string& sessionId);
+
  private:
   struct PendingAllocation {
     tt::domain::Session session;

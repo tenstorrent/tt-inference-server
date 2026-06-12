@@ -77,6 +77,7 @@ class RuntimeConfig:
     prefix_cache_scenarios_json: Optional[str] = None
     prefix_cache_trace: Optional[str] = None
     jwt_secret: Optional[str] = None
+    serving_bench_suites: Optional[str] = None
 
     # Device configuration
     device_id: Optional[List[int]] = None
@@ -89,6 +90,10 @@ class RuntimeConfig:
 
     # Validation
     skip_system_sw_validation: bool = False
+
+    # CI mode (set from --ci-mode): triggers CI-friendly behavior such as
+    # persisting tt-triage logs to the mounted cache_root volume.
+    ci_mode: bool = False
 
     # Misc
     tt_metal_python_venv_dir: Optional[str] = None
@@ -153,12 +158,14 @@ class RuntimeConfig:
             ),
             prefix_cache_trace=getattr(args, "prefix_cache_trace", None),
             jwt_secret=getattr(args, "jwt_secret", None),
+            serving_bench_suites=getattr(args, "serving_bench_suites", None),
             device_id=args.device_id,
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,
             host_weights_dir=args.host_weights_dir,
             image_user=args.image_user,
             skip_system_sw_validation=args.skip_system_sw_validation,
+            ci_mode=args.ci_mode,
             tt_metal_python_venv_dir=args.tt_metal_python_venv_dir,
             tt_metal_home=args.tt_metal_home,
             vllm_dir=args.vllm_dir,

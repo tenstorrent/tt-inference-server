@@ -45,22 +45,6 @@ def mock_audio_performance_targets():
     "model_name,device_str,model_type,expected_targets_dict",
     [
         (
-            "stable-diffusion-xl-base-1.0",
-            "n150",
-            "IMAGE",
-            {
-                "ttft_ms": 12500,
-                "ttft_streaming_ms": None,
-                "tput_user": 0.08,
-                "tput": None,
-                "rtr": None,
-                "tolerance": 0.05,
-                "max_concurrency": 1,
-                "num_eval_runs": 100,
-                "task_type": "image",
-            },
-        ),
-        (
             "distil-large-v3",
             "n150",
             "AUDIO",

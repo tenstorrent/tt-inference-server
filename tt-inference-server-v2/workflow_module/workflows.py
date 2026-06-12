@@ -50,21 +50,72 @@ class AgenticWorkflow(WorkflowExecution):
             blocks = run_llm_agentic_eval(self.ctx)
         except Exception as e:
             elapsed = time.time() - started
-            self.logger.exception("✘ agentic raised after %.1fs: %s", elapsed, e)
+            self.logger.exception("❌ agentic raised after %.1fs: %s", elapsed, e)
             return [TaskOutcome("evaluation", 1, elapsed, None)]
 
         elapsed = time.time() - started
         if not blocks:
-            self.logger.error("✘ agentic produced no blocks (%.1fs)", elapsed)
+            self.logger.error("❌ agentic produced no blocks (%.1fs)", elapsed)
             return [TaskOutcome("evaluation", 1, elapsed, None)]
 
         self.logger.info(
-            "✓ agentic blocks=%d kind=%s (%.1fs)",
+            "✅ agentic blocks=%d kind=%s (%.1fs)",
             len(blocks),
             blocks[0].kind,
             elapsed,
         )
         return [TaskOutcome("evaluation", 0, elapsed, blocks[0].kind)]
+
+
+class ServingBenchWorkflow(WorkflowExecution):
+    """Serving benchmark suites (agentic_bench, benchmark).
+
+    Bypasses the media-task dispatcher: each suite under
+    ``test_module/serving_bench`` is a self-contained shell harness driven
+    by ``run_test.sh``, which manages its own per-suite uv venv. Emits one
+    Block(kind="serving_bench") per suite.
+    """
+
+    name = "serving_bench"
+    task_types = ()
+
+    def run_tasks(self) -> List[TaskOutcome]:
+        from test_module.serving_bench.runner import run_serving_bench
+
+        opts = self.orchestrator_metadata.serving_bench
+        suites = opts.suites if opts is not None else None
+        self.logger.info("→ task=serving_bench suites=%s", suites or "all")
+        started = time.time()
+        try:
+            results = run_serving_bench(self.ctx, suites=suites)
+        except Exception as e:
+            elapsed = time.time() - started
+            self.logger.exception("❌ serving_bench raised after %.1fs: %s", elapsed, e)
+            return [TaskOutcome("serving_bench", 1, elapsed, None)]
+
+        if not results:
+            elapsed = time.time() - started
+            self.logger.error("❌ serving_bench ran no suites (%.1fs)", elapsed)
+            return [TaskOutcome("serving_bench", 1, elapsed, None)]
+
+        for r in results:
+            mark = "✅" if r.return_code == 0 else "❌"
+            self.logger.info(
+                "%s serving_bench:%s rc=%d (%.1fs)",
+                mark,
+                r.suite,
+                r.return_code,
+                r.elapsed_seconds,
+            )
+        return [
+            TaskOutcome(
+                f"serving_bench:{r.suite}",
+                r.return_code,
+                r.elapsed_seconds,
+                "serving_bench",
+            )
+            for r in results
+        ]
 
 
 class BenchmarksWorkflow(WorkflowExecution):
@@ -109,7 +160,7 @@ class BenchmarksWorkflow(WorkflowExecution):
         except Exception as e:
             elapsed = time.time() - started
             self.logger.exception(
-                "✘ task=%s raised after %.1fs: %s",
+                "❌ task=%s raised after %.1fs: %s",
                 _PREFIX_CACHE_TASK_LABEL,
                 elapsed,
                 e,
@@ -119,7 +170,7 @@ class BenchmarksWorkflow(WorkflowExecution):
         elapsed = time.time() - started
         if not blocks:
             self.logger.error(
-                "✘ task=%s produced no blocks (%.1fs)",
+                "❌ task=%s produced no blocks (%.1fs)",
                 _PREFIX_CACHE_TASK_LABEL,
                 elapsed,
             )
@@ -127,7 +178,7 @@ class BenchmarksWorkflow(WorkflowExecution):
 
         block_kind = blocks[0].kind
         self.logger.info(
-            "✓ task=%s blocks=%d kind=%s (%.1fs)",
+            "✅ task=%s blocks=%d kind=%s (%.1fs)",
             _PREFIX_CACHE_TASK_LABEL,
             len(blocks),
             block_kind,
@@ -161,6 +212,7 @@ WORKFLOW_REGISTRY: Dict[str, Type[WorkflowExecution]] = {
     EvalsWorkflow.name: EvalsWorkflow,
     AgenticWorkflow.name: AgenticWorkflow,
     BenchmarksWorkflow.name: BenchmarksWorkflow,
+    ServingBenchWorkflow.name: ServingBenchWorkflow,
     SpecTestsWorkflow.name: SpecTestsWorkflow,
     ReleaseWorkflow.name: ReleaseWorkflow,
 }
@@ -178,6 +230,7 @@ __all__ = [
     "AgenticWorkflow",
     "BenchmarksWorkflow",
     "EvalsWorkflow",
+    "ServingBenchWorkflow",
     "ReleaseWorkflow",
     "SpecTestsWorkflow",
     "WORKFLOW_REGISTRY",

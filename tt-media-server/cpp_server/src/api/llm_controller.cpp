@@ -198,13 +198,6 @@ void LLMController::responses(
       textPart["text"] = choice.text;
       content.append(std::move(textPart));
 
-      if (choice.reasoning.has_value()) {
-        Json::Value reasoningPart;
-        reasoningPart["type"] = "reasoning";
-        reasoningPart["text"] = *choice.reasoning;
-        content.append(std::move(reasoningPart));
-      }
-
       item["content"] = std::move(content);
       output.append(std::move(item));
     }
@@ -291,11 +284,10 @@ LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
     // usage even if that chunk carries no displayable text.
     writer->observeCachedTokens(chunk);
 
-    // Only forward chunks with content to the writer; suppressed tokens (e.g.,
-    // think markers with empty text) are tracked above but not sent to client.
+    // Only forward chunks with content to the writer; empty decoded tokens are
+    // tracked above but not sent to the client.
     if (!chunk.choices.empty() &&
         (!chunk.choices[0].text.empty() ||
-         !chunk.choices[0].reasoning.value_or("").empty() ||
          chunk.choices[0].tool_calls.has_value() ||
          chunk.choices[0].finish_reason.has_value())) {
       writer->handleTokenChunk(chunk);

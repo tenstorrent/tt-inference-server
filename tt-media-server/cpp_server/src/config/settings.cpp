@@ -43,6 +43,21 @@ std::string envString(const char* name, const std::string& defaultValue) {
   return v ? std::string(v) : defaultValue;
 }
 
+std::string resolveBlazeSocketDescriptorPrefix() {
+  switch (modelType()) {
+    case ModelType::DEEPSEEK_R1_0528:
+      return "deepseek";
+    case ModelType::LLAMA_3_1_8B_INSTRUCT:
+      return "llama";
+    case ModelType::KIMI_K2_6:
+      return "kimi";
+    case ModelType::GPT_OSS_120B:
+      return "gpt-oss";
+    case ModelType::MINIMAX_M2_7:
+      return "minimax";
+  }
+}
+
 /** Read env string and convert to lowercase for case-insensitive parsing. */
 std::string envStringLower(const char* name, const std::string& defaultValue) {
   return toLower(envString(name, defaultValue));
@@ -213,9 +228,8 @@ std::string visibleDevicesForWorker(size_t workerIndex) {
 }
 
 std::string blazeSocketDescriptorPrefix() {
-  static const std::string cached =
-      envString("BLAZE_SOCKET_DESCRIPTOR_PREFIX",
-                defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX);
+  static const std::string cached = envString(
+      "BLAZE_SOCKET_DESCRIPTOR_PREFIX", resolveBlazeSocketDescriptorPrefix());
   return cached;
 }
 
@@ -300,20 +314,6 @@ size_t memoryQueueCapacity() {
   return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
 }
 
-int shmSlots() {
-  return static_cast<int>(envUlong("SHM_SLOTS", defaults::SHM_SLOTS));
-}
-
-int prefillMaxTokenIds() {
-  return static_cast<int>(
-      envUlong("PREFILL_MAX_TOKEN_IDS", defaults::PREFILL_MAX_TOKEN_IDS));
-}
-
-int decodeMaxTokenIds() {
-  return static_cast<int>(
-      envUlong("DECODE_MAX_TOKEN_IDS", defaults::DECODE_MAX_TOKEN_IDS));
-}
-
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;
@@ -321,10 +321,7 @@ LLMConfig llmEngineConfig() {
     cfg.max_in_flight_count = maxInFlightCount();
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
-    if (backend == "prefill") {
-      cfg.runner_type = ModelRunnerType::PREFILL;
-      cfg.max_in_flight_count = 1;
-    } else if (backend == "llama") {
+    if (backend == "llama") {
       cfg.kvcache_block_size = 32;
       cfg.max_num_batched_tokens = 16384;
       cfg.runner_type = ModelRunnerType::LLAMA;
@@ -468,6 +465,8 @@ ModelType modelType() {
     if (m == "moonshotai/Kimi-K2.6") return ModelType::KIMI_K2_6;
     if (m == "meta-llama/Llama-3.1-8B-Instruct")
       return ModelType::LLAMA_3_1_8B_INSTRUCT;
+    if (m == "openai/gpt-oss-120b") return ModelType::GPT_OSS_120B;
+    if (m == "MiniMaxAI/MiniMax-M2.7") return ModelType::MINIMAX_M2_7;
     return ModelType::DEEPSEEK_R1_0528;
   }();
   return cached;
@@ -501,16 +500,6 @@ std::string socketHost() {
   static const std::string cached =
       envString("SOCKET_HOST", defaults::SOCKET_HOST);
   return cached;
-}
-
-bool enableAccumulatedStreaming() {
-  return envUlong("ENABLE_ACCUMULATED_STREAMING",
-                  defaults::ENABLE_ACCUMULATED_STREAMING);
-}
-
-size_t maxAccumulatedTokens() {
-  return static_cast<size_t>(
-      envUlong("MAX_ACCUMULATED_TOKENS", defaults::MAX_ACCUMULATED_TOKENS));
 }
 
 uint16_t socketPort() {
