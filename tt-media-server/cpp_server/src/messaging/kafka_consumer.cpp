@@ -35,7 +35,7 @@ KafkaConsumer::KafkaConsumer(KafkaConsumerConfig config)
   if (!kafka_utils::setConfigOrLog(conf, "bootstrap.servers",
                                    config.brokers.c_str()) ||
       !kafka_utils::setConfigOrLog(conf, "group.id", config.group_id.c_str()) ||
-      !kafka_utils::setConfigOrLog(conf, "auto.offset.reset", "latest") ||
+      !kafka_utils::setConfigOrLog(conf, "auto.offset.reset", "earliest") ||
       !kafka_utils::setConfigOrLog(conf, "enable.partition.eof", "false") ||
       !kafka_utils::setConfigOrLog(conf, "fetch.wait.max.ms", "1") ||
       !kafka_utils::setConfigOrLog(conf, "fetch.min.bytes", "1") ||
