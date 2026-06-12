@@ -25,6 +25,28 @@ from urllib.parse import urlparse
 DEFAULT_DEPLOY_URL = "http://127.0.0.1"
 
 
+def normalize_server_url(value: str) -> str:
+    """Normalize a user-supplied ``--server-url`` value.
+
+    Strips surrounding whitespace and a trailing slash, prepends ``http://``
+    when no scheme is given, and validates that a hostname is present. Shared
+    by v1 and v2 ``run.py`` so both apply the same rule.
+
+    Raises ``ValueError`` (with a CLI-friendly message) when no hostname can be
+    derived; callers should surface it via ``parser.error``.
+    """
+    server_url = value.strip().rstrip("/")
+    parsed = urlparse(server_url)
+    if not parsed.scheme:
+        server_url = f"http://{server_url}"
+        parsed = urlparse(server_url)
+    if not parsed.hostname:
+        raise ValueError(
+            "--server-url must include a hostname (e.g. 'http://127.0.0.1')."
+        )
+    return server_url
+
+
 def resolve_deploy_url(runtime_config=None) -> str:
     """Resolve the deploy URL using the standard precedence.
 
