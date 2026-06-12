@@ -116,7 +116,7 @@ After changes in production catalogue have been added and committed, re-generate
 python3 scripts/release/update_model_spec.py --output-only --output-json release_model_spec.json
 ```
 
-`update_model_spec.py` will retrieve entries from the "dev" or "prod" catalogue???
+`update_model_spec.py` will retrieve entries from the  "prod" catalogue.
 
 Verify that this script will not produce changes in models which are not in the scope of this release. In case it did, revert all changes that happenned in `release_model_spec.json`  for models out of scope. All modifications should be tracked using the `git diff` command.
 
@@ -124,7 +124,16 @@ Afterwards, `git add/commit/push` the changes for the `release_model_spec.json` 
 
 Additionally, `git add/commit/push` only untracked/modified docs files in `docs/model_support/`, but also only for models in the current scope.
 
+Alternatively, the new script can be invoked:
+# Generate everything (docs + README + release_model_spec.json) from the prod catalogue
+`python3 scripts/release/export_model_spec.py`
 
+# Use the dev catalogue instead
+`python3 scripts/release/export_model_spec.py --env dev`
+
+# Only one of the two outputs
+`python3 scripts/release/export_model_spec.py --docs-only   # docs + README, no JSON`
+`python3 scripts/release/export_model_spec.py --json-only   # release_model_spec.json only`
 
 #### outputs
 
