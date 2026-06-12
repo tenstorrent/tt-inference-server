@@ -34,7 +34,6 @@ class LLMService : public BaseStreamingService<LLMRequest, LLMStreamChunk> {
 
   LLMService(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
              std::unique_ptr<tt::worker::WorkerManager> workerManager,
-             std::unique_ptr<IToolCallParser> toolCallParser,
              std::unique_ptr<tt::ipc::QueueManager> queueManager,
              size_t maxQueueSize = std::numeric_limits<size_t>::max());
 
@@ -86,7 +85,6 @@ class LLMService : public BaseStreamingService<LLMRequest, LLMStreamChunk> {
 
   void init(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
             std::unique_ptr<tt::worker::WorkerManager> workerManager,
-            std::unique_ptr<IToolCallParser> toolCallParser,
             std::unique_ptr<tt::ipc::QueueManager> queueManager,
             size_t maxQueueSize);
 
@@ -103,7 +101,6 @@ class LLMService : public BaseStreamingService<LLMRequest, LLMStreamChunk> {
   std::unique_ptr<tt::worker::WorkerManager> workerManager;
   std::unique_ptr<tt::ipc::QueueManager> queueManager;
   std::unordered_set<int64_t> stopTokenSet;
-  std::unique_ptr<IToolCallParser> toolCallParser;
   std::unique_ptr<IToolCallParser> jsonToolCallParser;
 };
 
