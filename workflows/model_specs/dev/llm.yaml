@@ -765,8 +765,8 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.10.0"
-  tt_metal_commit: 555f240
+  version: "0.16.0"
+  tt_metal_commit: "1234567"
   vllm_commit: 22be241
   inference_engine: VLLM
   device_model_specs:

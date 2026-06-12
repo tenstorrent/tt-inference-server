@@ -309,6 +309,7 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `Wan2.2-T2V-A14B-Diffusers` | p150x8 |
 | `Wan2.2-T2V-A14B-Diffusers` | p300x2 |
 | `Wan2.2-T2V-A14B-Diffusers` | t3k |
+| `Z-Image-Turbo` | p300x2 |
 | `bge-large-en-v1.5` | galaxy |
 | `bge-large-en-v1.5` | n150 |
 | `bge-large-en-v1.5` | n300 |
@@ -398,6 +399,8 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `resnet-50` | n300 |
 | `segformer` | n150 |
 | `segformer` | n300 |
+| `stable-diffusion-xl-base-1.0` | p150x8 |
+| `stable-diffusion-xl-base-1.0` | p300x2 |
 | `unet` | n150 |
 | `unet` | n300 |
 | `vit` | n150 |
