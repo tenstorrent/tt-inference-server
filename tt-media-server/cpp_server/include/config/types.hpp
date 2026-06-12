@@ -40,8 +40,7 @@ inline ModelService modelServiceFromString(const std::string& v) {
   return ModelService::LLM;
 }
 
-/** Model type: drives tokenizer strategy + model-specific config. Derived from
- * LLM_DEVICE_BACKEND env var. */
+/** Model type: drives tokenizer strategy + model-specific config. */
 enum class ModelType {
   DEEPSEEK_R1_0528,
   LLAMA_3_1_8B_INSTRUCT,
@@ -49,24 +48,6 @@ enum class ModelType {
   GPT_OSS_120B,
   MINIMAX_M2_7,
 };
-
-/** Map lowercase `LLM_DEVICE_BACKEND` values to `ModelType`:
- * "llama" -> `LLAMA_3_1_8B_INSTRUCT`,
- * "kimi" -> `KIMI_K2_6`,
- * "gpt-oss" -> `GPT_OSS_120B`,
- * "minimax" -> `MINIMAX_M2_7`,
- * otherwise -> `DEEPSEEK_R1_0528`. */
-inline ModelType modelTypeFromDeviceBackend(const std::string& v) {
-  if (v == "llama")
-    return ModelType::LLAMA_3_1_8B_INSTRUCT;
-  else if (v == "kimi")
-    return ModelType::KIMI_K2_6;
-  else if (v == "gpt-oss")
-    return ModelType::GPT_OSS_120B;
-  else if (v == "minimax")
-    return ModelType::MINIMAX_M2_7;
-  return ModelType::DEEPSEEK_R1_0528;
-}
 
 enum class LLMMode {
   REGULAR,
@@ -99,7 +80,6 @@ enum class ModelRunnerType {
   LLAMA,
   MOCK_PIPELINE,
   PIPELINE_MANAGER,
-  PREFILL,
   TT_SDXL_GENERATE,
   TT_SDXL_IMAGE_TO_IMAGE,
   TT_SDXL_EDIT,
@@ -143,8 +123,6 @@ inline std::string toString(ModelRunnerType m) {
       return "mock_pipeline";
     case ModelRunnerType::PIPELINE_MANAGER:
       return "pipeline_manager";
-    case ModelRunnerType::PREFILL:
-      return "prefill";
     case ModelRunnerType::TT_SDXL_GENERATE:
       return "tt_sdxl_generate";
     case ModelRunnerType::TT_SDXL_IMAGE_TO_IMAGE:
@@ -168,7 +146,6 @@ inline std::string toClientRunnerName(ModelRunnerType m) {
     case ModelRunnerType::LLAMA:
     case ModelRunnerType::MOCK_PIPELINE:
     case ModelRunnerType::PIPELINE_MANAGER:
-    case ModelRunnerType::PREFILL:
       return "";
   }
   return "";
