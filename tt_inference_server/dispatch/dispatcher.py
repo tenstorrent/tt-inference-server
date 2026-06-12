@@ -302,11 +302,19 @@ class KernelDispatcher:
             )
 
     def release(self) -> None:
-        """Release the device lock."""
-        if self._lock_fh is not None:
-            fcntl.flock(self._lock_fh, fcntl.LOCK_UN)
-            self._lock_fh.close()
-            self._lock_fh = None
+        """Release the device lock. Best-effort and shutdown-safe: __del__ can run during
+        interpreter finalization, when module globals (fcntl) may already be None — so
+        re-import locally and swallow any error rather than raise from a destructor."""
+        fh = self._lock_fh
+        if fh is None:
+            return
+        self._lock_fh = None
+        try:
+            import fcntl as _fcntl
+            _fcntl.flock(fh, _fcntl.LOCK_UN)
+            fh.close()
+        except Exception:
+            pass
 
     def __del__(self):
         self.release()
