@@ -682,10 +682,10 @@ void BlazePrefillRunner::handleRequest(
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] handleRequest: taskId={}, slotId={}, "
           "isContinuation={}, numPromptTokens={}, totalTokens={}, "
-          "runningSlots={}",
+          "runningSlots={}, migrationId={}",
           request->taskId, slotId, request->isContinuation(),
           request->getNumPromptTokens(), request->getTokenIds().size(),
-          slotManager.activeRunningCount());
+          slotManager.activeRunningCount(), request->getMigrationId().has_value() ? *request->getMigrationId() : -1);
       ps::ISRequest req = utils::makeSubmitRequest(
           slotId, *request, std::make_optional(request->getKVCacheSlot()));
       if (!prefillScheduler->push_request(req)) {

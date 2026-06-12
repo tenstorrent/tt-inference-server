@@ -708,10 +708,10 @@ void BlazeDecodeRunner::handleRequest(
       TT_LOG_DEBUG(
           "[BlazeDecodeRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
           "isContinuation={}, numPromptTokens={}, totalTokens={}, "
-          "runningSlots={}",
+          "runningSlots={}, migrationId={}",
           request->taskId, slotId, isNew, request->isContinuation(),
           request->getNumPromptTokens(), request->getTokenIds().size(),
-          slotManager.activeRunningCount());
+          slotManager.activeRunningCount(), request->getMigrationId().has_value() ? *request->getMigrationId() : -1);
       ds::ISRequest req = isNew ? utils::makeSubmitRequest(slotId, *request)
                                 : utils::makeContinueRequest(slotId, *request);
       if (!decodeScheduler->push_request(req)) {
