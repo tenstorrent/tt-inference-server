@@ -502,16 +502,6 @@ std::string socketHost() {
   return cached;
 }
 
-bool enableAccumulatedStreaming() {
-  return envUlong("ENABLE_ACCUMULATED_STREAMING",
-                  defaults::ENABLE_ACCUMULATED_STREAMING);
-}
-
-size_t maxAccumulatedTokens() {
-  return static_cast<size_t>(
-      envUlong("MAX_ACCUMULATED_TOKENS", defaults::MAX_ACCUMULATED_TOKENS));
-}
-
 uint16_t socketPort() {
   static const uint16_t cached =
       static_cast<uint16_t>(envUlong("SOCKET_PORT", defaults::SOCKET_PORT));

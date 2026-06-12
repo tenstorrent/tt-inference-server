@@ -23,7 +23,7 @@ Solution approach:
 
 ### 2. Minimize KV cache recomputations
 
-Computed KV cache is preserved and reused as long as possible. 
+Computed KV cache is preserved and reused as long as possible.
 
 Solution approach:
 - Prefix caching - the same prefix is reused for the same user and across users.

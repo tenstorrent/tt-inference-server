@@ -35,8 +35,6 @@ constexpr const char* SCHEDULING_POLICY =
     "prefill_first";  // "prefill_first" or "max_occupancy"
 constexpr const char* LLM_DEVICE_BACKEND =
     "mock_pipeline";  // "mock", "mock_pipeline", "pipeline_manager", "llama"
-constexpr const bool ENABLE_ACCUMULATED_STREAMING = false;
-constexpr size_t MAX_ACCUMULATED_TOKENS = 5;
 constexpr size_t MAX_IN_FLIGHT_COUNT = 32;
 constexpr size_t MAX_SESSIONS_COUNT = 128;
 constexpr unsigned SESSION_EVICTION_RATE = 90;
