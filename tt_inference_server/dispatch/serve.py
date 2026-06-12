@@ -257,31 +257,45 @@ _UNSAFE_NOTICE = (
 )
 
 
-def _ensure_tt_metal_home():
-    """ttnn resolves soc_descriptors / kernels relative to TT_METAL_HOME. When serve is
-    launched outside the activated venv (the bin/ wrapper, a bare `python -m`, or a shell
-    with a stale TT_METAL_HOME), ttnn guesses $HOME/tt-metal and dies with
-    'bad file: .../soc_descriptors/blackhole_*.yaml'. The venv lives at <tt-metal>/python_env,
-    so derive the correct home from sys.prefix and set it whenever the current value doesn't
-    point at a real tt-metal checkout. Must run before ttnn is imported (i.e. before load_model)."""
+def _ensure_tt_metal_root():
+    """Point tt-metal at the correct source tree before ttnn is imported.
+
+    tt-metal/ttnn locate their data (soc_descriptors, kernels, fabric mesh-graph descriptors,
+    …) via a family of env vars — TT_METAL_RUNTIME_ROOT for the root, plus per-asset overrides
+    like TT_MESH_GRAPH_DESC_PATH and TT_METAL_KERNEL_PATH. (Note: it does NOT read
+    TT_METAL_HOME.) A shell carrying stale values from a previous checkout (e.g. ~/tt-metal)
+    makes ttnn die with 'bad file: …' or 'mesh graph descriptor not found: …'.
+
+    This venv lives at <tt-metal>/python_env, so sys.prefix.parent is the authoritative root.
+    We (1) scrub every TT_* env var whose value is an absolute path that doesn't exist (the
+    stale overrides — once unset, tt-metal recomputes the right default from the root), and
+    (2) force TT_METAL_RUNTIME_ROOT (+ TT_METAL_HOME for other tooling) to the real root.
+    Must run before ttnn is imported (i.e. before load_model)."""
     import os
     from pathlib import Path
-    cur = os.environ.get("TT_METAL_HOME")
-    if cur and (Path(cur) / "tt_metal" / "soc_descriptors").is_dir():
-        print(f"[serve] TT_METAL_HOME = {cur} (valid)", flush=True)
-        return  # already valid — respect a deliberate, correct override
     candidate = Path(sys.prefix).parent  # <tt-metal>/python_env -> <tt-metal>
-    if (candidate / "tt_metal" / "soc_descriptors").is_dir():
-        os.environ["TT_METAL_HOME"] = str(candidate)
-        print(f"[serve] TT_METAL_HOME: {cur!r} -> {candidate} (auto-corrected)", flush=True)
-    else:
-        print(f"[serve] WARNING: could not resolve TT_METAL_HOME (current={cur!r}, "
-              f"candidate {candidate} has no tt_metal/soc_descriptors) — ttnn will likely fail",
-              flush=True)
+    if not (candidate / "tt_metal" / "soc_descriptors").is_dir():
+        cur = os.environ.get("TT_METAL_RUNTIME_ROOT") or os.environ.get("TT_METAL_HOME")
+        print(f"[serve] WARNING: {candidate} has no tt_metal/soc_descriptors; relying on "
+              f"current root ({cur!r}) — ttnn may fail", flush=True)
+        return
+    # (1) Scrub stale TT_* path overrides (absolute paths that no longer exist).
+    scrubbed = []
+    for k, v in list(os.environ.items()):
+        if k.startswith("TT_") and v.startswith("/") and not Path(v).exists():
+            del os.environ[k]
+            scrubbed.append(f"{k}={v}")
+    # (2) Force the authoritative root.
+    for var in ("TT_METAL_RUNTIME_ROOT", "TT_METAL_HOME"):
+        os.environ[var] = str(candidate)
+    if scrubbed:
+        print(f"[serve] scrubbed {len(scrubbed)} stale TT_* path var(s): "
+              + "; ".join(scrubbed), flush=True)
+    print(f"[serve] tt-metal root = {candidate}", flush=True)
 
 
 def main(argv=None):
-    _ensure_tt_metal_home()
+    _ensure_tt_metal_root()
     parser = argparse.ArgumentParser(prog="tt-inference-server",
                                      description="Dispatch OpenAI-compatible serving prototype")
     sub = parser.add_subparsers(dest="command", required=True)
