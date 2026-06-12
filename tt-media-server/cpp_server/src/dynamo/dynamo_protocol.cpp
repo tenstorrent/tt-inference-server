@@ -33,9 +33,6 @@ namespace {
 bool txTraceEnabled() {
   static const bool kEnabled = [] {
     const char* v = std::getenv("DYN_TX_TRACE");
-    if (v == nullptr) {
-      v = "";
-    }
     if (v == nullptr) return false;
     std::string s(v);
     if (s.empty() || s == "0" || s == "false" || s == "FALSE" || s == "False" ||
