@@ -226,6 +226,14 @@ std::string migrationTableQueueName();
  * defaults::MIGRATION_RESP_QUEUE_NAME. */
 std::string migrationRespQueueName();
 
+/** Migration prefill endpoint id from MIGRATION_PREFILL_ENDPOINT_ID. Default:
+ * defaults::MIGRATION_PREFILL_ENDPOINT_ID. */
+uint32_t migrationPrefillEndpointId();
+
+/** Migration decode endpoint id from MIGRATION_DECODE_ENDPOINT_ID. Default:
+ * defaults::MIGRATION_DECODE_ENDPOINT_ID. */
+uint32_t migrationDecodeEndpointId();
+
 /** Prefill ack channel name from PREFILL_ACK_CHANNEL_NAME. Default:
  * defaults::PREFILL_ACK_CHANNEL_NAME. */
 std::string prefillAckChannelName();

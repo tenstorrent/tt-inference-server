@@ -43,6 +43,7 @@ BlazeDecodeRunner::BlazeDecodeRunner(
   managerParams.think_close_token_id =
       static_cast<uint32_t>(thinkTokenIds.second);
   managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
+  managerParams.self_endpoint_id = tt::config::migrationDecodeEndpointId();
   decodeScheduler = std::make_unique<ds::DecodeScheduler>(
       pipelineConfig, managerParams, std::move(migrationClientInterface));
   TT_LOG_INFO(

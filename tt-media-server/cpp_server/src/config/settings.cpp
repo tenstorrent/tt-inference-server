@@ -680,6 +680,17 @@ std::string kafkaOffloadTopicName() {
                    defaults::KAFKA_OFFLOAD_TOPIC_NAME);
 }
 
+uint32_t migrationPrefillEndpointId() {
+  return static_cast<uint32_t>(
+      envUlong("MIGRATION_PREFILL_ENDPOINT_ID",
+               defaults::MIGRATION_PREFILL_ENDPOINT_ID));
+}
+
+uint32_t migrationDecodeEndpointId() {
+  return static_cast<uint32_t>(envUlong(
+      "MIGRATION_DECODE_ENDPOINT_ID", defaults::MIGRATION_DECODE_ENDPOINT_ID));
+}
+
 std::string kafkaGroupId() {
   return envString("KAFKA_GROUP_ID", defaults::KAFKA_GROUP_ID);
 }
