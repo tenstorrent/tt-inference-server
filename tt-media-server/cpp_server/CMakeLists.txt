@@ -458,6 +458,32 @@ if(ENABLE_BLAZE)
         message(STATUS "Linking llm_runner_lib against TtLlmEngine::Core")
     endif()
     target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE)
+    # Header-only MigrationClientInterface implementations (MigrationLayerClientAdapter,
+    # MockMigrationClient) live under the engine's src tree rather than its public
+    # include tree; blaze_utils.hpp instantiates them, so expose that path.
+    target_include_directories(llm_runner_lib PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/src)
+
+    # MigrationLayerClientAdapter forwards to migration_worker::MigrationLayerClient,
+    # whose implementation lives in the disaggregation/migration project. That
+    # project is a standalone CMake project() (own CPM cache + find_package(MPI)),
+    # so it can't be add_subdirectory'd here. Its client is lightweight though
+    # (just POSIX shmem queues), so we compile the two needed translation units
+    # directly into a small static lib and link it in. There is a single concrete
+    # implementation (no mock/real .so swap), so static linking is sufficient for
+    # both Core and LD_PRELOAD'd Full runs.
+    set(_MIG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration)
+    add_library(migration_client STATIC
+        ${_MIG_DIR}/src/migration_client.cpp
+        ${_MIG_DIR}/src/file_lock_guard.cpp)
+    set_target_properties(migration_client PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_include_directories(migration_client PUBLIC
+        ${_MIG_DIR}/include
+        ${_MIG_DIR}/src/worker
+        ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/src/common
+        ${TT_METAL_INCLUDE_DIRS})
+    target_link_libraries(migration_client PUBLIC spdlog::spdlog PRIVATE rt)
+    target_link_libraries(llm_runner_lib PUBLIC migration_client)
 else()
     message(STATUS "Skipping tt-llm-engine linking (ENABLE_BLAZE=OFF)")
 endif()
