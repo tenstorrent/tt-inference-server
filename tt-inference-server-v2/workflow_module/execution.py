@@ -83,6 +83,17 @@ class PrefixCacheOptions:
 
 
 @dataclass(frozen=True)
+class ServingBenchOptions:
+    """Serving-bench suite selection forwarded to ``ServingBenchWorkflow``.
+
+    ``suites`` is the comma-separated suite list from ``--serving-bench-suites``;
+    ``None`` runs every suite under ``test_module/serving_bench``.
+    """
+
+    suites: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class OrchestratorMetadata:
     """Top-level metadata the per-task runners can't see themselves.
 
@@ -94,6 +105,7 @@ class OrchestratorMetadata:
     run_command: Optional[str] = None
     runtime_model_spec_json: Optional[str] = None
     prefix_cache: Optional[PrefixCacheOptions] = None
+    serving_bench: Optional[ServingBenchOptions] = None
 
 
 class WorkflowExecution(ABC):
@@ -268,6 +280,7 @@ class WorkflowExecution(ABC):
 
 
 __all__ = [
+    "ServingBenchOptions",
     "OrchestratorMetadata",
     "PrefixCacheOptions",
     "TaskOutcome",
