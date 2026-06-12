@@ -51,6 +51,10 @@ std::string resolveBlazeSocketDescriptorPrefix() {
       return "llama";
     case ModelType::KIMI_K2_6:
       return "kimi";
+    case ModelType::GPT_OSS_120B:
+      return "gpt-oss";
+    case ModelType::MINIMAX_M2_7:
+      return "minimax";
   }
 }
 
