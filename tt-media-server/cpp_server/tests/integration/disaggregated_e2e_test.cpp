@@ -222,20 +222,19 @@ class PrefillTestServer {
   }
 
   ~PrefillTestServer() {
-    stopAutoResponder_.store(true);
-    if (memoryAutoResponderThread_.joinable())
-      memoryAutoResponderThread_.join();
+    stopAutoResponder.store(true);
+    if (memoryAutoResponderThread.joinable()) memoryAutoResponderThread.join();
   }
 
-  tt::ipc::boost::TaskQueue& taskQueue() { return *taskQueuePtr_; }
-  tt::ipc::boost::ResultQueue& resultQueue() { return *resultQueuePtr_; }
+  tt::ipc::boost::TaskQueue& taskQueue() { return *taskQueuePtr; }
+  tt::ipc::boost::ResultQueue& resultQueue() { return *resultQueuePtr; }
   tt::ipc::boost::MemoryRequestQueue& memoryRequestQueue() {
-    return *memoryRequestQueuePtr_;
+    return *memoryRequestQueuePtr;
   }
   tt::ipc::boost::MemoryResultQueue& memoryResultQueue() {
-    return *memoryResultQueuePtr_;
+    return *memoryResultQueuePtr;
   }
-  void setMemoryAutoRespond(bool on) { autoRespond_.store(on); }
+  void setMemoryAutoRespond(bool on) { autoRespond.store(on); }
 
  private:
   static constexpr int STARTUP_TIMEOUT_S = 30;
@@ -269,21 +268,21 @@ class PrefillTestServer {
   }
 
   void openIpcQueues() {
-    taskQueuePtr_ = std::make_unique<tt::ipc::boost::TaskQueue>(
+    taskQueuePtr = std::make_unique<tt::ipc::boost::TaskQueue>(
         tt::config::ttTaskQueueName());
-    resultQueuePtr_ = std::make_unique<tt::ipc::boost::ResultQueue>(
+    resultQueuePtr = std::make_unique<tt::ipc::boost::ResultQueue>(
         std::string(tt::config::ttResultQueueName()) + "0");
-    memoryRequestQueuePtr_ = tt::ipc::boost::MemoryRequestQueue::openExisting(
+    memoryRequestQueuePtr = tt::ipc::boost::MemoryRequestQueue::openExisting(
         tt::config::ttMemoryRequestQueueName());
-    memoryResultQueuePtr_ = tt::ipc::boost::MemoryResultQueue::openExisting(
+    memoryResultQueuePtr = tt::ipc::boost::MemoryResultQueue::openExisting(
         tt::config::ttMemoryResultQueueName());
   }
 
   void startMemoryAutoResponder() {
-    memoryAutoResponderThread_ = std::thread([this] {
+    memoryAutoResponderThread = std::thread([this] {
       tt::domain::ManageMemoryTask req{};
-      while (!stopAutoResponder_.load()) {
-        if (!autoRespond_.load() || !memoryRequestQueuePtr_->tryPop(req)) {
+      while (!stopAutoResponder.load()) {
+        if (!autoRespond.load() || !memoryRequestQueuePtr->tryPop(req)) {
           std::this_thread::sleep_for(std::chrono::milliseconds(10));
           continue;
         }
@@ -292,19 +291,19 @@ class PrefillTestServer {
           res.taskId = req.taskId;
           res.status = tt::domain::ManageMemoryStatus::SUCCESS;
           res.slotId = 0;
-          memoryResultQueuePtr_->push(res);
+          memoryResultQueuePtr->push(res);
         }
       }
     });
   }
 
-  std::unique_ptr<tt::ipc::boost::TaskQueue> taskQueuePtr_;
-  std::unique_ptr<tt::ipc::boost::ResultQueue> resultQueuePtr_;
-  std::unique_ptr<tt::ipc::boost::MemoryRequestQueue> memoryRequestQueuePtr_;
-  std::unique_ptr<tt::ipc::boost::MemoryResultQueue> memoryResultQueuePtr_;
-  std::thread memoryAutoResponderThread_;
-  std::atomic<bool> autoRespond_{true};
-  std::atomic<bool> stopAutoResponder_{false};
+  std::unique_ptr<tt::ipc::boost::TaskQueue> taskQueuePtr;
+  std::unique_ptr<tt::ipc::boost::ResultQueue> resultQueuePtr;
+  std::unique_ptr<tt::ipc::boost::MemoryRequestQueue> memoryRequestQueuePtr;
+  std::unique_ptr<tt::ipc::boost::MemoryResultQueue> memoryResultQueuePtr;
+  std::thread memoryAutoResponderThread;
+  std::atomic<bool> autoRespond{true};
+  std::atomic<bool> stopAutoResponder{false};
 };
 
 // ---------------------------------------------------------------------------
@@ -343,32 +342,32 @@ class DisaggregatedE2ETest : public ::testing::Test {
   static void SetUpTestSuite() {
     tt::utils::ZeroOverheadLogger::initialize();
 
-    sentinelPath_ = "/tmp/e2e_decode_ready_" + std::to_string(getpid());
+    sentinelPath = "/tmp/e2e_decode_ready_" + std::to_string(getpid());
     startDecodeSubprocess();
     waitForDecodeReady();
 
     configurePrefillEnv();
-    prefillServer_ = PrefillTestServer::start();
+    prefillServer = PrefillTestServer::start();
 
     waitForSocketConnection();
     std::this_thread::sleep_for(std::chrono::seconds(2));
   }
 
   static void TearDownTestSuite() {
-    prefillServer_.reset();
+    prefillServer.reset();
 
-    if (decodePid_ > 0) {
-      kill(decodePid_, SIGTERM);
+    if (decodePid > 0) {
+      kill(decodePid, SIGTERM);
       int status = 0;
-      waitpid(decodePid_, &status, 0);
+      waitpid(decodePid, &status, 0);
     }
 
-    unlink(sentinelPath_.c_str());
+    unlink(sentinelPath.c_str());
   }
 
-  static std::unique_ptr<PrefillTestServer> prefillServer_;
-  static pid_t decodePid_;
-  static std::string sentinelPath_;
+  static std::unique_ptr<PrefillTestServer> prefillServer;
+  static pid_t decodePid;
+  static std::string sentinelPath;
 
  private:
   static void startDecodeSubprocess() {
@@ -377,16 +376,16 @@ class DisaggregatedE2ETest : public ::testing::Test {
     if (n <= 0) throw std::runtime_error("readlink /proc/self/exe failed");
     exePath[n] = '\0';
 
-    decodePid_ = fork();
-    if (decodePid_ == 0) {
+    decodePid = fork();
+    if (decodePid == 0) {
       prctl(PR_SET_PDEATHSIG, SIGTERM);
       char* args[] = {exePath, const_cast<char*>("--decode-server"),
-                      const_cast<char*>(sentinelPath_.c_str()), nullptr};
+                      const_cast<char*>(sentinelPath.c_str()), nullptr};
       execv(exePath, args);
       perror("execv");
       _exit(1);
     }
-    if (decodePid_ < 0) {
+    if (decodePid < 0) {
       throw std::runtime_error("fork() failed");
     }
   }
@@ -394,11 +393,11 @@ class DisaggregatedE2ETest : public ::testing::Test {
   static void waitForDecodeReady() {
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
     while (std::chrono::steady_clock::now() < deadline) {
-      if (fileExists(sentinelPath_)) return;
+      if (fileExists(sentinelPath)) return;
 
       int status = 0;
-      pid_t w = waitpid(decodePid_, &status, WNOHANG);
-      if (w == decodePid_) {
+      pid_t w = waitpid(decodePid, &status, WNOHANG);
+      if (w == decodePid) {
         throw std::runtime_error(
             "Decode server subprocess exited prematurely with status " +
             std::to_string(WEXITSTATUS(status)));
@@ -425,16 +424,16 @@ class DisaggregatedE2ETest : public ::testing::Test {
   }
 };
 
-std::unique_ptr<PrefillTestServer> DisaggregatedE2ETest::prefillServer_;
-pid_t DisaggregatedE2ETest::decodePid_ = -1;
-std::string DisaggregatedE2ETest::sentinelPath_;
+std::unique_ptr<PrefillTestServer> DisaggregatedE2ETest::prefillServer;
+pid_t DisaggregatedE2ETest::decodePid = -1;
+std::string DisaggregatedE2ETest::sentinelPath;
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
-  prefillServer_->setMemoryAutoRespond(false);
+  prefillServer->setMemoryAutoRespond(false);
 
   // Generate a large prompt (~1100 tokens) that should be forwarded to prefill.
   std::string largePrompt = generatePromptWithApproxTokens(1096);
@@ -461,7 +460,7 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
         std::chrono::steady_clock::now() + std::chrono::milliseconds(10000);
     bool received = false;
     while (std::chrono::steady_clock::now() < deadline) {
-      if (prefillServer_->memoryRequestQueue().tryPop(memReq)) {
+      if (prefillServer->memoryRequestQueue().tryPop(memReq)) {
         received = true;
         break;
       }
@@ -477,10 +476,10 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   memRes.taskId = memReq.taskId;
   memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
   memRes.slotId = 0;
-  prefillServer_->memoryResultQueue().push(memRes);
+  prefillServer->memoryResultQueue().push(memRes);
 
   // Read the Sequence from the prefill's task queue.
-  auto seq = prefillServer_->taskQueue().receive();
+  auto seq = prefillServer->taskQueue().receive();
   ASSERT_NE(seq, nullptr)
       << "Prefill task queue should have received a Sequence";
 
@@ -498,7 +497,7 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   tt::test::WorkerResponse(seq->taskId)
       .token(42)
       .finalize()
-      .sendTo(prefillServer_->resultQueue());
+      .sendTo(prefillServer->resultQueue());
 
   const auto rawResponse = responseFuture.get();
   const auto response = tt::test::HttpResponse::parse(rawResponse);
@@ -545,7 +544,7 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // and handled it locally since delta < 1000 tokens.
   tt::domain::ManageMemoryTask continuationAlloc{};
   bool gotContinuationAlloc =
-      prefillServer_->memoryRequestQueue().tryPop(continuationAlloc);
+      prefillServer->memoryRequestQueue().tryPop(continuationAlloc);
   EXPECT_FALSE(gotContinuationAlloc)
       << "Prefill should NOT have received an ALLOCATE for continuation - "
          "decode should have hit prefix cache and handled the small delta "
@@ -603,12 +602,12 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
     auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(10000);
     while (std::chrono::steady_clock::now() < deadline) {
-      if (prefillServer_->memoryRequestQueue().tryPop(bigDeltaAlloc)) {
+      if (prefillServer->memoryRequestQueue().tryPop(bigDeltaAlloc)) {
         gotAllocate = true;
         break;
       }
       // Also check if task already appeared (cache HIT path)
-      bigDeltaSeq = prefillServer_->taskQueue().tryPop();
+      bigDeltaSeq = prefillServer->taskQueue().tryPop();
       if (bigDeltaSeq) {
         break;
       }
@@ -624,9 +623,9 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
     bigDeltaMemRes.taskId = bigDeltaAlloc.taskId;
     bigDeltaMemRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
     bigDeltaMemRes.slotId = 0;
-    prefillServer_->memoryResultQueue().push(bigDeltaMemRes);
+    prefillServer->memoryResultQueue().push(bigDeltaMemRes);
     TT_LOG_INFO("[Test] Part 3: Prefill had cache MISS, responded to ALLOCATE");
-    bigDeltaSeq = prefillServer_->taskQueue().receive();
+    bigDeltaSeq = prefillServer->taskQueue().receive();
   } else if (!bigDeltaSeq) {
     // Neither ALLOCATE nor task received - request was handled locally
     bigDeltaFuture.wait();
@@ -722,7 +721,7 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   tt::test::WorkerResponse(bigDeltaSeq->taskId)
       .token(43)
       .finalize()
-      .sendTo(prefillServer_->resultQueue());
+      .sendTo(prefillServer->resultQueue());
 
   const auto bigDeltaRawResponse = bigDeltaFuture.get();
   const auto bigDeltaResponse =
@@ -767,11 +766,11 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
     auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(10000);
     while (std::chrono::steady_clock::now() < deadline) {
-      if (prefillServer_->memoryRequestQueue().tryPop(secondBigDeltaAlloc)) {
+      if (prefillServer->memoryRequestQueue().tryPop(secondBigDeltaAlloc)) {
         secondGotAllocate = true;
         break;
       }
-      secondBigDeltaSeq = prefillServer_->taskQueue().tryPop();
+      secondBigDeltaSeq = prefillServer->taskQueue().tryPop();
       if (secondBigDeltaSeq) {
         break;
       }
@@ -786,9 +785,9 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
     secondBigDeltaMemRes.taskId = secondBigDeltaAlloc.taskId;
     secondBigDeltaMemRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
     secondBigDeltaMemRes.slotId = 0;
-    prefillServer_->memoryResultQueue().push(secondBigDeltaMemRes);
+    prefillServer->memoryResultQueue().push(secondBigDeltaMemRes);
     TT_LOG_INFO("[Test] Part 4: Prefill had cache MISS, responded to ALLOCATE");
-    secondBigDeltaSeq = prefillServer_->taskQueue().receive();
+    secondBigDeltaSeq = prefillServer->taskQueue().receive();
   } else if (!secondBigDeltaSeq) {
     secondBigDeltaFuture.wait();
     FAIL() << "Part 4: Expected request to go to prefill, but it was handled "
@@ -826,7 +825,7 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   tt::test::WorkerResponse(secondBigDeltaSeq->taskId)
       .token(44)
       .finalize()
-      .sendTo(prefillServer_->resultQueue());
+      .sendTo(prefillServer->resultQueue());
 
   const auto secondBigDeltaRawResponse = secondBigDeltaFuture.get();
   const auto secondBigDeltaResponse =
@@ -835,13 +834,13 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
 
   TT_LOG_INFO("[Test] All prefix cache and slot propagation tests passed");
 
-  prefillServer_->setMemoryAutoRespond(true);
+  prefillServer->setMemoryAutoRespond(true);
 }
 
 // Tests that a small prompt (<1000 tokens) is handled locally by decode
 // and NOT forwarded to prefill.
 TEST_F(DisaggregatedE2ETest, RoutingDecision_SmallPromptHandledLocally) {
-  prefillServer_->setMemoryAutoRespond(true);
+  prefillServer->setMemoryAutoRespond(true);
 
   // Generate a small prompt (~200 tokens) that should be handled locally.
   std::string smallPrompt = generatePromptWithApproxTokens(196);
@@ -867,7 +866,7 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_SmallPromptHandledLocally) {
 
   // Verify prefill did NOT receive anything.
   tt::domain::ManageMemoryTask spuriousAlloc{};
-  bool gotAlloc = prefillServer_->memoryRequestQueue().tryPop(spuriousAlloc);
+  bool gotAlloc = prefillServer->memoryRequestQueue().tryPop(spuriousAlloc);
   EXPECT_FALSE(gotAlloc)
       << "Prefill should NOT have received an ALLOCATE - small prompt should "
          "be handled locally by decode (prefill-on-decode)";
