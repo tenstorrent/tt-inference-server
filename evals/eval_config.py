@@ -146,48 +146,48 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="moonshotai/Kimi-K2.6",
         tasks=[
-            EvalTask(
-                task_name="r1_gpqa_diamond",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=16,
-                # The remote Tenstorrent console only exposes /v1/chat/completions
-                # (text /v1/completions returns 404), so use the chat API.
-                use_chat_api=True,
-                score=EvalTaskScore(
-                    published_score=90.5,
-                    published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
-                    gpu_reference_score=90.91,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_length": 120 * 1024,
-                    # Per-request HTTP timeout (lm-eval default 1800s). Long
-                    # reasoning generations on the shared console can exceed
-                    # 30min under load, so allow up to 2h before giving up.
-                    "timeout": 7200,
-                },
-                gen_kwargs={
+            # EvalTask(
+            #     task_name="r1_gpqa_diamond",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+            #     max_concurrent=16,
+            #     # The remote Tenstorrent console only exposes /v1/chat/completions
+            #     # (text /v1/completions returns 404), so use the chat API.
+            #     use_chat_api=True,
+            #     score=EvalTaskScore(
+            #         published_score=90.5,
+            #         published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
+            #         gpu_reference_score=90.91,
+            #         gpu_reference_score_ref="TBD",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "exact_match,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     model_kwargs={
+            #         "max_length": 120 * 1024,
+            #         # Per-request HTTP timeout (lm-eval default 1800s). Long
+            #         # reasoning generations on the shared console can exceed
+            #         # 30min under load, so allow up to 2h before giving up.
+            #         "timeout": 7200,
+            #     },
+            #     gen_kwargs={
 
-                    "max_gen_toks": 120 * 1024,
-                    "until": ["[EOS]"],
-                    "do_sample": "true",
-                    "temperature": 1.0,
-                    # "top_k": 20,
-                    "top_p": 1.0,
-                    # "stream": "true",
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            #         "max_gen_toks": 120 * 1024,
+            #         "until": ["[EOS]"],
+            #         "do_sample": "true",
+            #         "temperature": 1.0,
+            #         # "top_k": 20,
+            #         "top_p": 1.0,
+            #         # "stream": "true",
+            #     },
+            #     limit_samples_map={
+            #         EvalLimitMode.CI_NIGHTLY: 0.2,
+            #         EvalLimitMode.SMOKE_TEST: 0.01,
+            #     },
+            # ),
             EvalTask(
                 task_name="terminal_bench_2",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
@@ -205,7 +205,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
-                    n_concurrent_trials=8,
+                    n_concurrent_trials=16,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=16,
@@ -247,52 +247,52 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
-            EvalTask(
-                task_name="swe_bench_verified",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                score=EvalTaskScore(
-                    published_score=80.2,
-                    published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
-                    gpu_reference_score=66.2,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["accuracy"],
-                        "unit": "percent",
-                    },
-                ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
-                    n_concurrent_trials=8,
-                    max_workers=24,
-                    n_tasks=None,
-                    temperature=1.0,
-                    top_p=1.0,
-                    max_input_tokens=48 * 1024,
-                    max_output_tokens=32 * 1024,
-                    mini_last_n_observations=15,
-                    # completion_kwargs={
-                    #     "extra_body": {
-                    #         "top_k": 20,
-                    #     },
-                    # },
-                    instance_ids_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-12143",
-                            "pytest-dev__pytest-5262",
-                            "django__django-14672",
-                            "sympy__sympy-13551",
-                            "sphinx-doc__sphinx-9281"
-                        ],
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
-                },
-            ),
+            # EvalTask(
+            #     task_name="swe_bench_verified",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+            #     score=EvalTaskScore(
+            #         published_score=80.2,
+            #         published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
+            #         gpu_reference_score=66.2,
+            #         gpu_reference_score_ref="TBD",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": ["accuracy"],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     swebench_eval_config=SWEbenchEvalConfig(
+            #         dataset_name="SWE-bench/SWE-bench_Verified",
+            #         sweagent_subset="verified",
+            #         dataset_split="test",
+            #         agent_backend="mini-swe-agent",
+            #         n_concurrent_trials=8,
+            #         max_workers=24,
+            #         n_tasks=None,
+            #         temperature=1.0,
+            #         top_p=1.0,
+            #         max_input_tokens=48 * 1024,
+            #         max_output_tokens=32 * 1024,
+            #         mini_last_n_observations=15,
+            #         # completion_kwargs={
+            #         #     "extra_body": {
+            #         #         "top_k": 20,
+            #         #     },
+            #         # },
+            #         instance_ids_map={
+            #             EvalLimitMode.CI_NIGHTLY: [
+            #                 "django__django-12143",
+            #                 "pytest-dev__pytest-5262",
+            #                 "django__django-14672",
+            #                 "sympy__sympy-13551",
+            #                 "sphinx-doc__sphinx-9281"
+            #             ],
+            #         },
+            #     ),
+            #     limit_samples_map={
+            #         EvalLimitMode.SMOKE_TEST: 5,
+            #     },
+            # ),
         ],
     ),
     EvalConfig(
