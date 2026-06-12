@@ -50,16 +50,16 @@ class AgenticWorkflow(WorkflowExecution):
             blocks = run_llm_agentic_eval(self.ctx)
         except Exception as e:
             elapsed = time.time() - started
-            self.logger.exception("✘ agentic raised after %.1fs: %s", elapsed, e)
+            self.logger.exception("❌ agentic raised after %.1fs: %s", elapsed, e)
             return [TaskOutcome("evaluation", 1, elapsed, None)]
 
         elapsed = time.time() - started
         if not blocks:
-            self.logger.error("✘ agentic produced no blocks (%.1fs)", elapsed)
+            self.logger.error("❌ agentic produced no blocks (%.1fs)", elapsed)
             return [TaskOutcome("evaluation", 1, elapsed, None)]
 
         self.logger.info(
-            "✓ agentic blocks=%d kind=%s (%.1fs)",
+            "✅ agentic blocks=%d kind=%s (%.1fs)",
             len(blocks),
             blocks[0].kind,
             elapsed,
@@ -90,16 +90,16 @@ class ServingBenchWorkflow(WorkflowExecution):
             results = run_serving_bench(self.ctx, suites=suites)
         except Exception as e:
             elapsed = time.time() - started
-            self.logger.exception("✘ serving_bench raised after %.1fs: %s", elapsed, e)
+            self.logger.exception("❌ serving_bench raised after %.1fs: %s", elapsed, e)
             return [TaskOutcome("serving_bench", 1, elapsed, None)]
 
         if not results:
             elapsed = time.time() - started
-            self.logger.error("✘ serving_bench ran no suites (%.1fs)", elapsed)
+            self.logger.error("❌ serving_bench ran no suites (%.1fs)", elapsed)
             return [TaskOutcome("serving_bench", 1, elapsed, None)]
 
         for r in results:
-            mark = "✓" if r.return_code == 0 else "✘"
+            mark = "✅" if r.return_code == 0 else "❌"
             self.logger.info(
                 "%s serving_bench:%s rc=%d (%.1fs)",
                 mark,
@@ -160,7 +160,7 @@ class BenchmarksWorkflow(WorkflowExecution):
         except Exception as e:
             elapsed = time.time() - started
             self.logger.exception(
-                "✘ task=%s raised after %.1fs: %s",
+                "❌ task=%s raised after %.1fs: %s",
                 _PREFIX_CACHE_TASK_LABEL,
                 elapsed,
                 e,
@@ -170,7 +170,7 @@ class BenchmarksWorkflow(WorkflowExecution):
         elapsed = time.time() - started
         if not blocks:
             self.logger.error(
-                "✘ task=%s produced no blocks (%.1fs)",
+                "❌ task=%s produced no blocks (%.1fs)",
                 _PREFIX_CACHE_TASK_LABEL,
                 elapsed,
             )
@@ -178,7 +178,7 @@ class BenchmarksWorkflow(WorkflowExecution):
 
         block_kind = blocks[0].kind
         self.logger.info(
-            "✓ task=%s blocks=%d kind=%s (%.1fs)",
+            "✅ task=%s blocks=%d kind=%s (%.1fs)",
             _PREFIX_CACHE_TASK_LABEL,
             len(blocks),
             block_kind,

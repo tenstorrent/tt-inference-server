@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
 #
 # agentic_bench.sh - single-shot agentic-shape multi-turn Poisson soak
 #                    against an OpenAI-compatible endpoint, driven by GuideLLM.
