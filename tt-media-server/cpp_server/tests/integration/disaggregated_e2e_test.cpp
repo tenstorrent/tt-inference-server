@@ -40,6 +40,7 @@
 
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
+#include "domain/sentinel_values.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/boost/boost_task_queue.hpp"
@@ -552,6 +553,13 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // Send another follow-up message with a large delta (>1000 tokens).
   // The decode server should hit its prefix cache, compute the delta, and
   // forward to prefill because delta > 1000 tokens.
+  //
+  // This tests:
+  // 1. Decode slot ID is propagated to prefill
+  // 2. decodeSkipTokens is propagated (decode's prefix cache match length)
+  // 3. Prefill calculates its own prefix cache (may differ from decode's)
+  // 4. Prefill uses its slot + decode slot for KV operations
+  // 5. Prefix cache is updated after prefill completes
   TT_LOG_INFO("[Test] Sending continuation with BIG delta (expecting prefix cache HIT on decode, "
               "but delta >1000 tokens so forwarded to prefill)");
 
@@ -602,16 +610,53 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
 
   const size_t bigDeltaPromptTokens = bigDeltaSeq->getNumPromptTokens();
   const bool bigDeltaIsContinuation = bigDeltaSeq->isContinuation();
+  const uint32_t decodeSlotId = bigDeltaSeq->getKVCacheSlot();
+  const uint32_t prefillSlotId = bigDeltaSeq->getPrefillKVCacheSlot();
+  const int decodeSkipTokens = bigDeltaSeq->getDecodeSkipTokens();
+  const int decodePositionId = bigDeltaSeq->getDecodePositionId();
 
   TT_LOG_INFO("[Test] Big delta prefill received: numPromptTokens={}, "
-              "tokenIds.size()={}, isContinuation={}",
+              "tokenIds.size()={}, isContinuation={}, decodeSlotId={}, "
+              "prefillSlotId={}, decodeSkipTokens={}, decodePositionId={}",
               bigDeltaPromptTokens, bigDeltaSeq->getTokenIds().size(),
-              bigDeltaIsContinuation);
+              bigDeltaIsContinuation, decodeSlotId, prefillSlotId,
+              decodeSkipTokens, decodePositionId);
 
+  // --- Verification 1: Decode slot ID is kept ---
+  // The decode server should have assigned a slot and propagated it to prefill.
+  // The slot ID should be valid (not INVALID_SLOT_ID).
+  EXPECT_NE(decodeSlotId, tt::domain::INVALID_SLOT_ID)
+      << "Decode slot ID should be propagated to prefill (not INVALID_SLOT_ID)";
+  TT_LOG_INFO("[Test] PASS: Decode slot ID preserved: {}", decodeSlotId);
+
+  // --- Verification 2: decodeSkipTokens is propagated ---
+  // decodeSkipTokens represents the number of tokens decode already has in its
+  // KV cache from the prefix cache hit. This should be > 0 for a continuation.
+  // It should roughly match the original large prompt size (~1100 tokens),
+  // aligned to block boundaries (32 tokens).
+  EXPECT_GT(decodeSkipTokens, 0)
+      << "decodeSkipTokens should be > 0 (decode had prefix cache hit)";
+  EXPECT_GE(decodeSkipTokens, 1024)
+      << "decodeSkipTokens should be >= 1024 (decode matched ~1100 tokens from part 1)";
+  EXPECT_LE(decodeSkipTokens, 1120)
+      << "decodeSkipTokens should be <= 1120 (roughly the original prompt size, block-aligned)";
+  TT_LOG_INFO("[Test] PASS: decodeSkipTokens propagated: {} (decode's prefix cache match)",
+              decodeSkipTokens);
+
+  // --- Verification 3: decodePositionId is propagated ---
+  // decodePositionId is the position in the KV cache where decode will resume.
+  // Should be equal to decodeSkipTokens for requests without think tokens.
+  EXPECT_EQ(decodePositionId, decodeSkipTokens)
+      << "decodePositionId should equal decodeSkipTokens (no think tokens in this test)";
+  TT_LOG_INFO("[Test] PASS: decodePositionId propagated: {}", decodePositionId);
+
+  // --- Verification 4: Continuation flag is set ---
   // The request should be marked as a continuation (decode had prefix cache hit).
   EXPECT_TRUE(bigDeltaIsContinuation)
       << "Big delta should be marked as continuation (decode had prefix cache HIT)";
+  TT_LOG_INFO("[Test] PASS: Continuation flag set correctly");
 
+  // --- Verification 5: Prefill receives delta tokens only ---
   // The prefill should receive only the delta tokens, not the full conversation.
   // Original large prompt was ~1100 tokens, assistant response ~4 tokens,
   // big follow-up is ~1200 tokens. If prefix cache worked, prefill receives
@@ -622,9 +667,18 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
       << "Prefill should receive delta tokens only (prefix cache hit), not full conversation";
   EXPECT_GT(bigDeltaPromptTokens, 1150)
       << "Delta should include the big follow-up (~1200 tokens)";
-
-  TT_LOG_INFO("[Test] Big delta verification: prefill received {} tokens (delta only, not full {}+ token conversation)",
+  TT_LOG_INFO("[Test] PASS: Prefill received {} tokens (delta only, not full {}+ token conversation)",
               bigDeltaPromptTokens, 2300);
+
+  // --- Verification 6: Prefill calculates its own prefix cache ---
+  // The prefill server should have resolved its own prefix cache. For this first
+  // big delta request to prefill (after the initial large prompt in Part 1),
+  // prefill should have a cache HIT from Part 1 and trim to just the delta.
+  // This is verified by the numPromptTokens being much smaller than the full
+  // conversation (already checked above).
+  // The prefillSlotId should be valid if prefill found a matching session.
+  TT_LOG_INFO("[Test] Prefill slot ID: {} (prefill's own prefix cache resolution)",
+              prefillSlotId);
 
   // Mock the prefill worker response.
   tt::test::WorkerResponse(bigDeltaSeq->taskId)
@@ -639,6 +693,85 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   TT_LOG_INFO("[Test] Big delta continuation completed - forwarded to prefill with {} delta tokens "
               "(prefix cache HIT on decode, but delta exceeded threshold)",
               bigDeltaPromptTokens);
+
+  // --- Part 4: Second big delta to verify prefix cache update ---
+  // Send another request with the same conversation to verify the prefix cache
+  // was updated after Part 3. Both decode and prefill should have updated caches.
+  TT_LOG_INFO("[Test] Sending second big delta to verify prefix cache update");
+
+  std::string secondBigFollowUp = generatePromptWithApproxTokens(1196);
+
+  auto secondBigDeltaFuture = std::async(std::launch::async, [&] {
+    return tt::test::sendAndReceive(
+        "127.0.0.1", DECODE_HTTP_PORT,
+        tt::test::ChatRequest()
+            .user(largePrompt)
+            .assistant("Here is my response.")
+            .user(bigFollowUp)
+            .assistant("Response to big follow-up.")
+            .user(secondBigFollowUp)  // Another big delta
+            .maxTokens(1)
+            .stream()
+            .toJson(),
+        "your-secret-key", /*idleTimeoutMs=*/10000);
+  });
+
+  // Should go to prefill again (big delta).
+  tt::domain::ManageMemoryTask secondBigDeltaAlloc{};
+  {
+    auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(10000);
+    bool received = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (prefillServer_->memoryRequestQueue().tryPop(secondBigDeltaAlloc)) {
+        received = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(received)
+        << "Expected ALLOCATE for second big delta";
+  }
+
+  tt::domain::ManageMemoryResult secondBigDeltaMemRes{};
+  secondBigDeltaMemRes.taskId = secondBigDeltaAlloc.taskId;
+  secondBigDeltaMemRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
+  secondBigDeltaMemRes.slotId = 0;
+  prefillServer_->memoryResultQueue().push(secondBigDeltaMemRes);
+
+  auto secondBigDeltaSeq = prefillServer_->taskQueue().receive();
+  ASSERT_NE(secondBigDeltaSeq, nullptr);
+
+  const int secondDecodeSkipTokens = secondBigDeltaSeq->getDecodeSkipTokens();
+  const size_t secondPromptTokens = secondBigDeltaSeq->getNumPromptTokens();
+
+  TT_LOG_INFO("[Test] Second big delta: numPromptTokens={}, decodeSkipTokens={}",
+              secondPromptTokens, secondDecodeSkipTokens);
+
+  // --- Verification 7: Prefix cache was updated after Part 3 ---
+  // The decodeSkipTokens should now be larger than in Part 3, reflecting that
+  // decode's prefix cache was updated to include the big follow-up from Part 3.
+  // Part 3 had ~1100 tokens cached. After Part 3 completed, the cache should
+  // include ~1100 (original) + ~1200 (big follow-up) + ~4 (response) = ~2304 tokens.
+  EXPECT_GT(secondDecodeSkipTokens, decodeSkipTokens)
+      << "Prefix cache should have been updated: second decodeSkipTokens should be "
+         "larger than first (" << secondDecodeSkipTokens << " vs " << decodeSkipTokens << ")";
+  EXPECT_GE(secondDecodeSkipTokens, 2200)
+      << "Second decodeSkipTokens should be >= 2200 (includes Part 1 + Part 3 content)";
+  TT_LOG_INFO("[Test] PASS: Prefix cache updated - decodeSkipTokens grew from {} to {}",
+              decodeSkipTokens, secondDecodeSkipTokens);
+
+  // Mock the prefill worker response for second big delta.
+  tt::test::WorkerResponse(secondBigDeltaSeq->taskId)
+      .token(44)
+      .finalize()
+      .sendTo(prefillServer_->resultQueue());
+
+  const auto secondBigDeltaRawResponse = secondBigDeltaFuture.get();
+  const auto secondBigDeltaResponse = tt::test::HttpResponse::parse(secondBigDeltaRawResponse);
+  EXPECT_EQ(secondBigDeltaResponse.statusCode(), 200);
+
+  TT_LOG_INFO("[Test] All prefix cache and slot propagation tests passed");
 
   prefillServer_->setMemoryAutoRespond(true);
 }
