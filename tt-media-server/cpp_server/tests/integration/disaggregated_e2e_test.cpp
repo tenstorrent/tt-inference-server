@@ -592,43 +592,51 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
         "your-secret-key", /*idleTimeoutMs=*/10000);
   });
 
-  // The prefill server should receive a memory ALLOCATE (big delta was
-  // forwarded).
+  // The prefill server should receive the request. On a prefix cache MISS,
+  // it first sends an ALLOCATE to the memory queue. On a HIT, it reuses the
+  // existing session and goes directly to the task queue.
+  // Part 3 will HIT on prefill (matches Part 1's session), so we check both.
   tt::domain::ManageMemoryTask bigDeltaAlloc{};
-  bool bigDeltaReceived = false;
+  bool gotAllocate = false;
+  std::unique_ptr<tt::domain::llm::Sequence> bigDeltaSeq;
   {
     auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(10000);
     while (std::chrono::steady_clock::now() < deadline) {
       if (prefillServer_->memoryRequestQueue().tryPop(bigDeltaAlloc)) {
-        bigDeltaReceived = true;
+        gotAllocate = true;
+        break;
+      }
+      // Also check if task already appeared (cache HIT path)
+      bigDeltaSeq = prefillServer_->taskQueue().tryPop();
+      if (bigDeltaSeq) {
         break;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   }
 
-  // If we didn't receive the ALLOCATE, the request was handled locally by
-  // decode. We need to wait for the future to complete before asserting to
-  // avoid hanging.
-  if (!bigDeltaReceived) {
-    // Wait for the HTTP response (it should complete since decode handled it)
+  // If we got an ALLOCATE (cache MISS), respond to it and then get the task
+  if (gotAllocate) {
+    EXPECT_EQ(bigDeltaAlloc.action,
+              tt::domain::MemoryManagementAction::ALLOCATE);
+    tt::domain::ManageMemoryResult bigDeltaMemRes{};
+    bigDeltaMemRes.taskId = bigDeltaAlloc.taskId;
+    bigDeltaMemRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
+    bigDeltaMemRes.slotId = 0;
+    prefillServer_->memoryResultQueue().push(bigDeltaMemRes);
+    TT_LOG_INFO("[Test] Part 3: Prefill had cache MISS, responded to ALLOCATE");
+    bigDeltaSeq = prefillServer_->taskQueue().receive();
+  } else if (!bigDeltaSeq) {
+    // Neither ALLOCATE nor task received - request was handled locally
     bigDeltaFuture.wait();
-    FAIL()
-        << "Expected ALLOCATE on prefill's memory queue - decode should have "
-           "forwarded the big delta continuation to prefill, but it was "
-           "handled locally";
+    FAIL() << "Part 3: Expected request to go to prefill, but it was handled "
+              "locally by decode";
+  } else {
+    TT_LOG_INFO("[Test] Part 3: Prefill had cache HIT, no ALLOCATE needed");
   }
-  EXPECT_EQ(bigDeltaAlloc.action, tt::domain::MemoryManagementAction::ALLOCATE);
 
-  tt::domain::ManageMemoryResult bigDeltaMemRes{};
-  bigDeltaMemRes.taskId = bigDeltaAlloc.taskId;
-  bigDeltaMemRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
-  bigDeltaMemRes.slotId = 0;
-  prefillServer_->memoryResultQueue().push(bigDeltaMemRes);
-
-  // Read the Sequence from the prefill's task queue.
-  auto bigDeltaSeq = prefillServer_->taskQueue().receive();
+  // Verify we have a sequence from prefill's task queue.
   ASSERT_NE(bigDeltaSeq, nullptr)
       << "Prefill task queue should have received a Sequence for big delta";
 
@@ -750,34 +758,45 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
         "your-secret-key", /*idleTimeoutMs=*/10000);
   });
 
-  // Should go to prefill again (big delta).
+  // Should go to prefill again (big delta). Same logic as Part 3 - check both
+  // memory queue (cache MISS) and task queue (cache HIT).
   tt::domain::ManageMemoryTask secondBigDeltaAlloc{};
-  bool secondBigDeltaReceived = false;
+  bool secondGotAllocate = false;
+  std::unique_ptr<tt::domain::llm::Sequence> secondBigDeltaSeq;
   {
     auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(10000);
     while (std::chrono::steady_clock::now() < deadline) {
       if (prefillServer_->memoryRequestQueue().tryPop(secondBigDeltaAlloc)) {
-        secondBigDeltaReceived = true;
+        secondGotAllocate = true;
+        break;
+      }
+      secondBigDeltaSeq = prefillServer_->taskQueue().tryPop();
+      if (secondBigDeltaSeq) {
         break;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   }
 
-  if (!secondBigDeltaReceived) {
+  if (secondGotAllocate) {
+    EXPECT_EQ(secondBigDeltaAlloc.action,
+              tt::domain::MemoryManagementAction::ALLOCATE);
+    tt::domain::ManageMemoryResult secondBigDeltaMemRes{};
+    secondBigDeltaMemRes.taskId = secondBigDeltaAlloc.taskId;
+    secondBigDeltaMemRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
+    secondBigDeltaMemRes.slotId = 0;
+    prefillServer_->memoryResultQueue().push(secondBigDeltaMemRes);
+    TT_LOG_INFO("[Test] Part 4: Prefill had cache MISS, responded to ALLOCATE");
+    secondBigDeltaSeq = prefillServer_->taskQueue().receive();
+  } else if (!secondBigDeltaSeq) {
     secondBigDeltaFuture.wait();
-    FAIL()
-        << "Expected ALLOCATE for second big delta, but it was handled locally";
+    FAIL() << "Part 4: Expected request to go to prefill, but it was handled "
+              "locally by decode";
+  } else {
+    TT_LOG_INFO("[Test] Part 4: Prefill had cache HIT, no ALLOCATE needed");
   }
 
-  tt::domain::ManageMemoryResult secondBigDeltaMemRes{};
-  secondBigDeltaMemRes.taskId = secondBigDeltaAlloc.taskId;
-  secondBigDeltaMemRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
-  secondBigDeltaMemRes.slotId = 0;
-  prefillServer_->memoryResultQueue().push(secondBigDeltaMemRes);
-
-  auto secondBigDeltaSeq = prefillServer_->taskQueue().receive();
   ASSERT_NE(secondBigDeltaSeq, nullptr);
 
   const int secondDecodeSkipTokens = secondBigDeltaSeq->getDecodeSkipTokens();
