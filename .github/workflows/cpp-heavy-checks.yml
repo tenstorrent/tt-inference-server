@@ -315,27 +315,9 @@ jobs:
       - name: "[TCP] Start Prefill server (direct split)"
         run: |
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "TCP direct split prefill"
-          cd cpp_server
-          NS=tcp_prefill
-          rm -f /dev/shm/tt_ipc_c2p_$NS /dev/shm/tt_ipc_c2p_${NS}_state /dev/shm/tt_ipc_p2c_$NS /dev/shm/tt_ipc_p2c_${NS}_state 2>/dev/null || true
-          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
-          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
-          LLM_DEVICE_BACKEND=ttrun \
-            python src/runtime/runners/mock_prefill_runner.py \
-            > ../tcp_mock_prefill_runner.log 2>&1 &
-          echo $! > ../tcp_mock_prefill_runner.pid
-          cd ..
-          sleep 2
-          if ! kill -0 "$(cat tcp_mock_prefill_runner.pid)" 2>/dev/null; then
-            echo "ERROR: TCP mock_prefill_runner exited during startup"
-            cat tcp_mock_prefill_runner.log || true
-            exit 1
-          fi
           cd cpp_server/build
           NS=tcp_prefill
           SOCKET_TRANSPORT=tcp LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
-          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
-          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -373,8 +355,6 @@ jobs:
         run: |
           [ -f tcp_decode.pid ]  && kill $(cat tcp_decode.pid)  2>/dev/null || true
           [ -f tcp_prefill.pid ] && kill $(cat tcp_prefill.pid) 2>/dev/null || true
-          [ -f tcp_mock_prefill_runner.pid ] && kill $(cat tcp_mock_prefill_runner.pid) 2>/dev/null || true
-          rm -f /dev/shm/tt_ipc_c2p_tcp_prefill /dev/shm/tt_ipc_c2p_tcp_prefill_state /dev/shm/tt_ipc_p2c_tcp_prefill /dev/shm/tt_ipc_p2c_tcp_prefill_state 2>/dev/null || true
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 8002 --port 9000 --label "TCP direct split"
 
       # ── Round 1b: ZMQ Decode + Prefill split ─────────────────────────
@@ -399,27 +379,9 @@ jobs:
       - name: "[ZMQ] Start Prefill server (direct split)"
         run: |
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "ZMQ direct split prefill"
-          cd cpp_server
-          NS=zmq_prefill
-          rm -f /dev/shm/tt_ipc_c2p_$NS /dev/shm/tt_ipc_c2p_${NS}_state /dev/shm/tt_ipc_p2c_$NS /dev/shm/tt_ipc_p2c_${NS}_state 2>/dev/null || true
-          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
-          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
-          LLM_DEVICE_BACKEND=ttrun \
-            python src/runtime/runners/mock_prefill_runner.py \
-            > ../zmq_mock_prefill_runner.log 2>&1 &
-          echo $! > ../zmq_mock_prefill_runner.pid
-          cd ..
-          sleep 2
-          if ! kill -0 "$(cat zmq_mock_prefill_runner.pid)" 2>/dev/null; then
-            echo "ERROR: ZMQ mock_prefill_runner exited during startup"
-            cat zmq_mock_prefill_runner.log || true
-            exit 1
-          fi
           cd cpp_server/build
           NS=zmq_prefill
           SOCKET_TRANSPORT=zmq LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
-          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
-          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -457,38 +419,15 @@ jobs:
         run: |
           [ -f zmq_decode.pid ]  && kill $(cat zmq_decode.pid)  2>/dev/null || true
           [ -f zmq_prefill.pid ] && kill $(cat zmq_prefill.pid) 2>/dev/null || true
-          [ -f zmq_mock_prefill_runner.pid ] && kill $(cat zmq_mock_prefill_runner.pid) 2>/dev/null || true
-          rm -f /dev/shm/tt_ipc_c2p_zmq_prefill /dev/shm/tt_ipc_c2p_zmq_prefill_state /dev/shm/tt_ipc_p2c_zmq_prefill /dev/shm/tt_ipc_p2c_zmq_prefill_state 2>/dev/null || true
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 8002 --port 9000 --label "ZMQ direct split"
 
-      # ── Round 2: mock_prefill_runner + Prefill + Decode split ────────
-      - name: Clean shared memory segments
+      # ── Round 2: Prefill + Mock Decode split ─────────────────────────
+      - name: Start Prefill server (mock decode split)
         run: |
-          rm -f /dev/shm/tt_ipc_p2c /dev/shm/tt_ipc_c2p 2>/dev/null || true
-
-      - name: Start mock_prefill_runner (rank 0 coordinator)
-        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "mock decode split prefill"
           cd cpp_server
-          TT_IPC_SHM_P2C=tt_ipc_p2c \
-          TT_IPC_SHM_C2P=tt_ipc_c2p \
-          LLM_DEVICE_BACKEND=ttrun \
-            python src/runtime/runners/mock_prefill_runner.py \
-            > ../mock_prefill_runner.log 2>&1 &
-          echo $! > ../mock_prefill_runner.pid
-          cd ..
-          sleep 2
-          if ! kill -0 "$(cat mock_prefill_runner.pid)" 2>/dev/null; then
-            echo "ERROR: mock_prefill_runner exited during startup"
-            cat mock_prefill_runner.log || true
-            exit 1
-          fi
-
-      - name: Start Prefill server (mock_prefill_runner round)
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "mock_prefill_runner prefill"
-          cd cpp_server
-          NS=r2_prefill
-          TT_IPC_SHM_C2P=tt_ipc_c2p TT_IPC_SHM_P2C=tt_ipc_p2c \
+          NS=mock_decode_prefill
+          SOCKET_TRANSPORT=zmq \
           TT_LOG_LEVEL=debug \
           LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
@@ -500,16 +439,17 @@ jobs:
           TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
           TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
             ./build/tt_media_server_cpp -p 8001 -t 4 \
-            > ../prefill_server_runner.log 2>&1 &
-          echo $! > ../prefill_server_runner.pid
+            > ../mock_decode_prefill.log 2>&1 &
+          echo $! > ../mock_decode_prefill.pid
           cd ..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8001 --pid-file prefill_server_runner.pid --label "mock_prefill_runner prefill server"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8001 --pid-file mock_decode_prefill.pid --label "mock decode split prefill server"
 
-      - name: Start Decode server (mock_prefill_runner round)
+      - name: Start Decode server (mock decode split)
         run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 9000 --label "mock_prefill_runner decode"
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 9000 --label "mock decode split decode"
           cd cpp_server
-          NS=r2_decode
+          NS=mock_decode
+          SOCKET_TRANSPORT=zmq \
           LLM_DEVICE_BACKEND=mock LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
           TT_LOG_LEVEL=debug \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
@@ -520,23 +460,23 @@ jobs:
           TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
           TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
             ./build/tt_media_server_cpp -p 8000 -t 4 \
-            > ../decode_server_runner.log 2>&1 &
-          echo $! > ../decode_server_runner.pid
+            > ../mock_decode.log 2>&1 &
+          echo $! > ../mock_decode.pid
           cd ..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8000 --pid-file decode_server_runner.pid --label "mock_prefill_runner decode server"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8000 --pid-file mock_decode.pid --label "mock decode split decode server"
 
-      - name: Verify prefill/decode socket connection
+      - name: Verify mock decode split socket connection
         run: |
           bash cpp_server/scripts/ci/wait_for_liveness.sh \
             --port 8001 \
             --expect '"socket_status":"client:connected"' \
-            --pid-file prefill_server_runner.pid \
-            --label "mock_prefill_runner prefill socket"
+            --pid-file mock_decode_prefill.pid \
+            --label "mock decode split prefill socket"
           bash cpp_server/scripts/ci/wait_for_liveness.sh \
             --port 8000 \
             --expect '"socket_status":"server:connected' \
-            --pid-file decode_server_runner.pid \
-            --label "mock_prefill_runner decode socket"
+            --pid-file mock_decode.pid \
+            --label "mock decode split decode socket"
           PREFILL_LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
           DECODE_LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
           echo "Prefill liveness: $PREFILL_LIVENESS"
@@ -555,14 +495,14 @@ jobs:
             FAIL=1
           fi
           if ! echo "$DECODE_LIVENESS" | grep -q '"socket_status":"server:connected'; then
-            echo "ERROR: Decode server socket_status does not start with 'server:connected'"
+            echo "ERROR: Decode socket_status does not start with 'server:connected'"
             FAIL=1
           fi
           if [ "$FAIL" -ne 0 ]; then
             exit 1
           fi
 
-      - name: Run vLLM bench serve against mock_prefill_runner split
+      - name: Run vLLM bench serve against mock decode split
         env:
           OPENAI_API_KEY: 'your-secret-key'
         run: |
@@ -578,17 +518,15 @@ jobs:
             --num-prompts 1000 \
             --max-concurrency 64 \
             --save-result \
-            --result-filename "vllm-bench-split-runner-result.json" \
-            2>&1 | tee bench_split_runner_output.txt
+            --result-filename "vllm-bench-split-mock-decode-result.json" \
+            2>&1 | tee bench_split_mock_decode_output.txt
 
-      - name: Stop split servers (round 2)
+      - name: Stop mock decode split servers
         if: always()
         run: |
-          [ -f decode_server_runner.pid ] && kill $(cat decode_server_runner.pid) 2>/dev/null || true
-          [ -f prefill_server_runner.pid ] && kill $(cat prefill_server_runner.pid) 2>/dev/null || true
-          [ -f mock_prefill_runner.pid ] && kill $(cat mock_prefill_runner.pid) 2>/dev/null || true
-          rm -f /dev/shm/tt_ipc_p2c /dev/shm/tt_ipc_c2p 2>/dev/null || true
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 8001 --port 9000 --label "mock_prefill_runner split"
+          [ -f mock_decode.pid ] && kill $(cat mock_decode.pid) 2>/dev/null || true
+          [ -f mock_decode_prefill.pid ] && kill $(cat mock_decode_prefill.pid) 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 8001 --port 9000 --label "mock decode split"
 
       - name: Check benchmark thresholds
         run: |
@@ -617,7 +555,7 @@ jobs:
 
           check_threshold prefill_decode_split_tcp vllm-bench-split-tcp-result.json
           check_threshold prefill_decode_split_zmq vllm-bench-split-zmq-result.json
-          check_threshold prefill_decode_split_runner vllm-bench-split-runner-result.json
+          check_threshold prefill_decode_split_mock_decode vllm-bench-split-mock-decode-result.json
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
           echo "BENCH_THRESHOLD_LOG=$THRESHOLD_LOG" >> "$GITHUB_ENV"
 
@@ -638,13 +576,6 @@ jobs:
             echo "No tcp_prefill.log file found"
           fi
           echo ""
-          echo "=== mock_prefill_runner Logs (TCP round) ==="
-          if [ -f tcp_mock_prefill_runner.log ]; then
-            cat tcp_mock_prefill_runner.log
-          else
-            echo "No tcp_mock_prefill_runner.log file found"
-          fi
-          echo ""
           echo "=== Decode Server Logs (ZMQ round) ==="
           if [ -f zmq_decode.log ]; then
             cat zmq_decode.log
@@ -659,32 +590,18 @@ jobs:
             echo "No zmq_prefill.log file found"
           fi
           echo ""
-          echo "=== mock_prefill_runner Logs (ZMQ round) ==="
-          if [ -f zmq_mock_prefill_runner.log ]; then
-            cat zmq_mock_prefill_runner.log
+          echo "=== Prefill Server Logs (mock decode round) ==="
+          if [ -f mock_decode_prefill.log ]; then
+            cat mock_decode_prefill.log
           else
-            echo "No zmq_mock_prefill_runner.log file found"
+            echo "No mock_decode_prefill.log file found"
           fi
           echo ""
-          echo "=== mock_prefill_runner Logs (round 2) ==="
-          if [ -f mock_prefill_runner.log ]; then
-            cat mock_prefill_runner.log
+          echo "=== Decode Server Logs (mock decode round) ==="
+          if [ -f mock_decode.log ]; then
+            cat mock_decode.log
           else
-            echo "No mock_prefill_runner.log file found"
-          fi
-          echo ""
-          echo "=== Prefill Server Logs (round 2) ==="
-          if [ -f prefill_server_runner.log ]; then
-            cat prefill_server_runner.log
-          else
-            echo "No prefill_server_runner.log file found"
-          fi
-          echo ""
-          echo "=== Decode Server Logs (round 2) ==="
-          if [ -f decode_server_runner.log ]; then
-            cat decode_server_runner.log
-          else
-            echo "No decode_server_runner.log file found"
+            echo "No mock_decode.log file found"
           fi
 
       - name: Upload benchmark result
@@ -695,7 +612,7 @@ jobs:
           path: |
             tt-media-server/vllm-bench-split-tcp-result.json
             tt-media-server/vllm-bench-split-zmq-result.json
-            tt-media-server/vllm-bench-split-runner-result.json
+            tt-media-server/vllm-bench-split-mock-decode-result.json
           retention-days: 1
           if-no-files-found: warn
 
@@ -707,13 +624,10 @@ jobs:
           path: |
             tt-media-server/tcp_decode.log
             tt-media-server/tcp_prefill.log
-            tt-media-server/tcp_mock_prefill_runner.log
             tt-media-server/zmq_decode.log
             tt-media-server/zmq_prefill.log
-            tt-media-server/zmq_mock_prefill_runner.log
-            tt-media-server/mock_prefill_runner.log
-            tt-media-server/prefill_server_runner.log
-            tt-media-server/decode_server_runner.log
+            tt-media-server/mock_decode.log
+            tt-media-server/mock_decode_prefill.log
           retention-days: 1
           if-no-files-found: warn
 
@@ -798,27 +712,9 @@ jobs:
       - name: "[TCP] Start Prefill server 1 (gateway mode)"
         run: |
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8201 --port 9201 --label "TCP gateway prefill-1"
-          cd cpp_server
-          NS=gw_prefill1
-          rm -f /dev/shm/tt_ipc_c2p_$NS /dev/shm/tt_ipc_c2p_${NS}_state /dev/shm/tt_ipc_p2c_$NS /dev/shm/tt_ipc_p2c_${NS}_state 2>/dev/null || true
-          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
-          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
-          LLM_DEVICE_BACKEND=ttrun \
-            python src/runtime/runners/mock_prefill_runner.py \
-            > ../gw_mock_prefill1.log 2>&1 &
-          echo $! > ../gw_mock_prefill1.pid
-          cd ..
-          sleep 2
-          if ! kill -0 "$(cat gw_mock_prefill1.pid)" 2>/dev/null; then
-            echo "ERROR: TCP gateway mock_prefill_runner 1 exited during startup"
-            cat gw_mock_prefill1.log || true
-            exit 1
-          fi
           cd cpp_server/build
           NS=gw_prefill1
           SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline SOCKET_PORT=9201 \
-          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
-          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
           PREFILL_SERVER_ID=prefill-1 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
@@ -835,27 +731,9 @@ jobs:
       - name: "[TCP] Start Prefill server 2 (gateway mode)"
         run: |
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8202 --port 9202 --label "TCP gateway prefill-2"
-          cd cpp_server
-          NS=gw_prefill2
-          rm -f /dev/shm/tt_ipc_c2p_$NS /dev/shm/tt_ipc_c2p_${NS}_state /dev/shm/tt_ipc_p2c_$NS /dev/shm/tt_ipc_p2c_${NS}_state 2>/dev/null || true
-          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
-          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
-          LLM_DEVICE_BACKEND=ttrun \
-            python src/runtime/runners/mock_prefill_runner.py \
-            > ../gw_mock_prefill2.log 2>&1 &
-          echo $! > ../gw_mock_prefill2.pid
-          cd ..
-          sleep 2
-          if ! kill -0 "$(cat gw_mock_prefill2.pid)" 2>/dev/null; then
-            echo "ERROR: TCP gateway mock_prefill_runner 2 exited during startup"
-            cat gw_mock_prefill2.log || true
-            exit 1
-          fi
           cd cpp_server/build
           NS=gw_prefill2
           SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline SOCKET_PORT=9202 \
-          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
-          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
           PREFILL_SERVER_ID=prefill-2 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
@@ -959,38 +837,16 @@ jobs:
           [ -f gw.pid ]          && kill $(cat gw.pid)           2>/dev/null || true
           [ -f gw_prefill1.pid ] && kill $(cat gw_prefill1.pid) 2>/dev/null || true
           [ -f gw_prefill2.pid ] && kill $(cat gw_prefill2.pid) 2>/dev/null || true
-          [ -f gw_mock_prefill1.pid ] && kill $(cat gw_mock_prefill1.pid) 2>/dev/null || true
-          [ -f gw_mock_prefill2.pid ] && kill $(cat gw_mock_prefill2.pid) 2>/dev/null || true
-          rm -f /dev/shm/tt_ipc_c2p_gw_prefill1 /dev/shm/tt_ipc_c2p_gw_prefill1_state /dev/shm/tt_ipc_p2c_gw_prefill1 /dev/shm/tt_ipc_p2c_gw_prefill1_state 2>/dev/null || true
-          rm -f /dev/shm/tt_ipc_c2p_gw_prefill2 /dev/shm/tt_ipc_c2p_gw_prefill2_state /dev/shm/tt_ipc_p2c_gw_prefill2 /dev/shm/tt_ipc_p2c_gw_prefill2_state 2>/dev/null || true
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9091 --port 8200 --port 8201 --port 8202 --port 9200 --port 9201 --port 9202 --label "TCP gateway split"
 
       # ── Round 2: ZMQ transport ────────────────────────────────────────────
       - name: "[ZMQ] Start Prefill server 1 (gateway mode)"
         run: |
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8201 --label "ZMQ gateway prefill-1"
-          cd cpp_server
-          NS=gw_zmq_prefill1
-          rm -f /dev/shm/tt_ipc_c2p_$NS /dev/shm/tt_ipc_c2p_${NS}_state /dev/shm/tt_ipc_p2c_$NS /dev/shm/tt_ipc_p2c_${NS}_state 2>/dev/null || true
-          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
-          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
-          LLM_DEVICE_BACKEND=ttrun \
-            python src/runtime/runners/mock_prefill_runner.py \
-            > ../gw_zmq_mock_prefill1.log 2>&1 &
-          echo $! > ../gw_zmq_mock_prefill1.pid
-          cd ..
-          sleep 2
-          if ! kill -0 "$(cat gw_zmq_mock_prefill1.pid)" 2>/dev/null; then
-            echo "ERROR: ZMQ gateway mock_prefill_runner 1 exited during startup"
-            cat gw_zmq_mock_prefill1.log || true
-            exit 1
-          fi
           cd cpp_server/build
           NS=gw_zmq_prefill1
           SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9201 \
-          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
-          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
           PREFILL_SERVER_ID=prefill-1 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
@@ -1007,28 +863,10 @@ jobs:
       - name: "[ZMQ] Start Prefill server 2 (gateway mode)"
         run: |
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8202 --label "ZMQ gateway prefill-2"
-          cd cpp_server
-          NS=gw_zmq_prefill2
-          rm -f /dev/shm/tt_ipc_c2p_$NS /dev/shm/tt_ipc_c2p_${NS}_state /dev/shm/tt_ipc_p2c_$NS /dev/shm/tt_ipc_p2c_${NS}_state 2>/dev/null || true
-          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
-          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
-          LLM_DEVICE_BACKEND=ttrun \
-            python src/runtime/runners/mock_prefill_runner.py \
-            > ../gw_zmq_mock_prefill2.log 2>&1 &
-          echo $! > ../gw_zmq_mock_prefill2.pid
-          cd ..
-          sleep 2
-          if ! kill -0 "$(cat gw_zmq_mock_prefill2.pid)" 2>/dev/null; then
-            echo "ERROR: ZMQ gateway mock_prefill_runner 2 exited during startup"
-            cat gw_zmq_mock_prefill2.log || true
-            exit 1
-          fi
           cd cpp_server/build
           NS=gw_zmq_prefill2
           SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9201 \
-          TT_IPC_SHM_C2P=tt_ipc_c2p_$NS \
-          TT_IPC_SHM_P2C=tt_ipc_p2c_$NS \
           PREFILL_SERVER_ID=prefill-2 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
@@ -1131,10 +969,6 @@ jobs:
           [ -f gw_zmq.pid ]          && kill $(cat gw_zmq.pid)           2>/dev/null || true
           [ -f gw_zmq_prefill1.pid ] && kill $(cat gw_zmq_prefill1.pid) 2>/dev/null || true
           [ -f gw_zmq_prefill2.pid ] && kill $(cat gw_zmq_prefill2.pid) 2>/dev/null || true
-          [ -f gw_zmq_mock_prefill1.pid ] && kill $(cat gw_zmq_mock_prefill1.pid) 2>/dev/null || true
-          [ -f gw_zmq_mock_prefill2.pid ] && kill $(cat gw_zmq_mock_prefill2.pid) 2>/dev/null || true
-          rm -f /dev/shm/tt_ipc_c2p_gw_zmq_prefill1 /dev/shm/tt_ipc_c2p_gw_zmq_prefill1_state /dev/shm/tt_ipc_p2c_gw_zmq_prefill1 /dev/shm/tt_ipc_p2c_gw_zmq_prefill1_state 2>/dev/null || true
-          rm -f /dev/shm/tt_ipc_c2p_gw_zmq_prefill2 /dev/shm/tt_ipc_c2p_gw_zmq_prefill2_state /dev/shm/tt_ipc_p2c_gw_zmq_prefill2 /dev/shm/tt_ipc_p2c_gw_zmq_prefill2_state 2>/dev/null || true
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9092 --port 8200 --port 8201 --port 8202 --port 9200 --port 9201 --label "ZMQ gateway split"
 
       - name: Check benchmark thresholds
@@ -1171,9 +1005,7 @@ jobs:
         if: always()
         run: |
           for LOG in gw.log gw_prefill1.log gw_prefill2.log gw_decode.log \
-                     gw_mock_prefill1.log gw_mock_prefill2.log \
-                     gw_zmq.log gw_zmq_prefill1.log gw_zmq_prefill2.log gw_zmq_decode.log \
-                     gw_zmq_mock_prefill1.log gw_zmq_mock_prefill2.log; do
+                     gw_zmq.log gw_zmq_prefill1.log gw_zmq_prefill2.log gw_zmq_decode.log; do
             echo "=== $LOG ==="
             [ -f "$LOG" ] && cat "$LOG" || echo "(not found)"
             echo ""
@@ -1200,14 +1032,10 @@ jobs:
             tt-media-server/gw_prefill1.log
             tt-media-server/gw_prefill2.log
             tt-media-server/gw_decode.log
-            tt-media-server/gw_mock_prefill1.log
-            tt-media-server/gw_mock_prefill2.log
             tt-media-server/gw_zmq.log
             tt-media-server/gw_zmq_prefill1.log
             tt-media-server/gw_zmq_prefill2.log
             tt-media-server/gw_zmq_decode.log
-            tt-media-server/gw_zmq_mock_prefill1.log
-            tt-media-server/gw_zmq_mock_prefill2.log
           retention-days: 1
           if-no-files-found: warn
 
