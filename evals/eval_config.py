@@ -3335,6 +3335,83 @@ _eval_config_list = [
             ),
         ],
     ),
+    # dots.ocr (tt_symbiote S0 OCR adapter). Two lmms-eval (EVALS_VISION venv)
+    # vision-language tasks, mirroring the proven VLM eval pattern (Qwen*-VL
+    # docvqa_val above): openai_compatible chat API, apply_chat_template=False.
+    #   * textvqa_val  -> metric exact_match (lmms_eval/tasks/textvqa/textvqa_val.yaml)
+    #   * infovqa_val  -> metric anls         (lmms_eval/tasks/infovqa/infovqa_val.yaml)
+    # GPU reference scores are intentionally left None/"TBD" until we run the
+    # GPU baseline; published_score is also None (dots.ocr's card reports OCR
+    # edit-distance/F1, not the TextVQA/InfoVQA accuracy these tasks measure).
+    EvalConfig(
+        hf_model_repo="rednote-hilab/dots.ocr",
+        tasks=[
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="ocrbench_v2",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "ocrbench_v2_accuracy,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "timeout": "9999",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.15,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="docvqa_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "anls,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "timeout": "9999",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.15,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
 ]
 
 

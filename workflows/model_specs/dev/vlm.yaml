@@ -342,12 +342,17 @@ templates:
       # batch is same-prompt replication, not vLLM request batching). See
       # tt_inference_server_integration.md §9.2/§9.6.
       max_concurrency: 1
-      # Capped at 4096 so warmup trace capture stays at/below 2048-token prefill.
-      # tt_symbiote's dots.ocr prefill is not chunked, so >=4096-token prefill
-      # overflows L1 (TT_THROW program.cpp:934 circular-buffer/L1 clash). Prefill
-      # is validated working through 2048 on the T3K (8,1) DP mesh. Raising this
-      # requires prefill chunking in the tt_symbiote dots.ocr pipeline.
-      max_context: 4096        # 4 * 1024 (warmup sweeps PADDED_SEQ_LENS <= max_context-osl)
+      # tt_symbiote's dots.ocr PREFILL is not chunked, so a single prefill of
+      # >=4096 tokens overflows L1 (TT_THROW program.cpp:934 circular-buffer/L1
+      # clash). max_context drives BOTH max_model_len and max_num_batched_tokens
+      # (workflows/model_spec.py), but the prefill length is set by the request,
+      # not by max_context: the validated 1848x1176 grid is (84,132)=11088 patches
+      # -> 2772 image tokens, well under 4096. Raising max_context only enlarges
+      # the DECODE budget (KV growth, 1 token/step) so a full multi-table page can
+      # be transcribed in one response; it does NOT enlarge our prefill. Caveat:
+      # this re-exposes the prefill-L1 limit for any request whose prefill exceeds
+      # ~4096 tokens (larger images / long text); the real fix is prefill chunking.
+      max_context: 12288       # 12 * 1024 (decode headroom for full-page OCR; prefill stays ~2772)
       default_impl: true
       env_vars:
         # tt_symbiote's dots.ocr is laid out data-parallel on T3K and its

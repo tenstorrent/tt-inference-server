@@ -3,8 +3,10 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent USA, Inc.
 
 import os
+import base64
 import logging
 import json
+import mimetypes
 import time
 import requests
 from pprint import pprint
@@ -44,19 +46,34 @@ def get_api_url():
     return api_url
 
 
+def build_image_url():
+    # If VISION_IMAGE_PATH is set, send that local file as a base64 data URI.
+    # Otherwise fall back to the default remote demo image.
+    image_path = os.getenv("VISION_IMAGE_PATH")
+    if image_path:
+        mime = mimetypes.guess_type(image_path)[0] or "image/png"
+        with open(image_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        return f"data:{mime};base64,{b64}"
+    return (
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/"
+        "Gfp-wisconsin-madison-the-nature-boardwalk.jpg/"
+        "2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+    )
+
+
 def main():
     # message using openai api format
     # see: https://platform.openai.com/docs/api-reference/chat
+    prompt = os.getenv("VISION_PROMPT", "What's in this image?")
     messages = [
         {
             "role": "user",
             "content": [
-                {"type": "text", "text": "What'''s in this image?"},
+                {"type": "text", "text": prompt},
                 {
                     "type": "image_url",
-                    "image_url": {
-                        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
-                    },
+                    "image_url": {"url": build_image_url()},
                 },
             ],
         },
@@ -64,16 +81,16 @@ def main():
 
     headers = {"Authorization": f"Bearer {get_authorization()}"}
     api_url = get_api_url()
-    stream = True
+    stream = os.getenv("VISION_STREAM", "1") != "0"
     logging.info(f"API_URL: {api_url}")
     # set API prompt and optional parameters
     json_data = {
         "model": os.environ.get("HF_MODEL_REPO_ID"),
         "messages": messages,
-        "temperature": 1,
+        "temperature": float(os.getenv("VISION_TEMPERATURE", "1")),
         "top_k": 20,
         "top_p": 0.9,
-        "max_tokens": 512,
+        "max_tokens": int(os.getenv("VISION_MAX_TOKENS", "512")),
         "stream": stream,
     }
     req_time = time.perf_counter()
@@ -116,10 +133,18 @@ def main():
             raise ValueError("Response is not chunked")
 
     else:
-        full_text = response.text
-        # TODO: get tokens from tokenizer
+        # Non-streaming: parse the OpenAI chat-completion JSON and extract text.
+        try:
+            data = response.json()
+            full_text = data["choices"][0]["message"]["content"]
+            num_tokens = data.get("usage", {}).get("completion_tokens", 2)
+            finish_reason = data["choices"][0].get("finish_reason")
+            logger.info(f"finish_reason={finish_reason}")
+        except (json.JSONDecodeError, KeyError, IndexError):
+            logger.error(f"Unexpected non-stream response: {response.text[:500]}")
+            full_text = response.text
+            num_tokens = 2
         ttft = 0
-        num_tokens = 2
     end_time = time.perf_counter()
     num_tokens = max(num_tokens, 2)
     throughput_time = max(end_time - first_token_time, 0.0001)
