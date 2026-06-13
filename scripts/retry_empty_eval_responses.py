@@ -625,6 +625,11 @@ def parse_args() -> argparse.Namespace:
         help="Only retry specific doc_id(s); repeatable (includes inference errors, not just empty resps)",
     )
     parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Retry every sample in the file, not just empty resps (ignored if --doc-id is given)",
+    )
+    parser.add_argument(
         "--append",
         action="store_true",
         help="Append to existing .retries.jsonl instead of overwriting it",
@@ -802,6 +807,8 @@ def main() -> int:
         missing = wanted - {sample.get("doc_id") for sample in samples}
         if missing:
             log_print(f"WARNING: doc_id(s) not found in samples: {sorted(missing)}")
+    elif args.all:
+        samples = load_all_samples(jsonl_path)
     else:
         samples = load_empty_samples(jsonl_path)
 
