@@ -18,7 +18,7 @@ export IS_GALAXY=${IS_GALAXY:-False}
 # not read the workflow YAML, so these must be set here.
 export MAX_MODEL_LENGTH=${MAX_MODEL_LENGTH:-40960}  # Qwen3 native max_position_embeddings (no 64K)
 export MAX_NUM_SEQS=${MAX_NUM_SEQS:-32}
-export GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.15}
+export GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.35}
 export TT_KV_POOL_GB=${TT_KV_POOL_GB:-32}
 export OPTIMIZATION_LEVEL=${OPTIMIZATION_LEVEL:-1}
 export CPU_SAMPLING=${CPU_SAMPLING:-false}

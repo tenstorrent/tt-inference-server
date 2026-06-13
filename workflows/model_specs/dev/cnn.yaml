@@ -24,7 +24,7 @@ templates:
       env_vars:
         MAX_MODEL_LENGTH: "40960"
         MAX_NUM_SEQS: "32"
-        GPU_MEMORY_UTILIZATION: "0.15"
+        GPU_MEMORY_UTILIZATION: "0.35"
         TT_KV_POOL_GB: "32"
         OPTIMIZATION_LEVEL: "1"
         CPU_SAMPLING: "false"
@@ -52,7 +52,7 @@ templates:
       env_vars:
         MAX_MODEL_LENGTH: "65536"
         MAX_NUM_SEQS: "32"
-        GPU_MEMORY_UTILIZATION: "0.15"
+        GPU_MEMORY_UTILIZATION: "0.35"
         TT_KV_POOL_GB: "32"
         OPTIMIZATION_LEVEL: "1"
         CPU_SAMPLING: "false"
@@ -79,7 +79,7 @@ templates:
       env_vars:
         MAX_MODEL_LENGTH: "65536"
         MAX_NUM_SEQS: "32"
-        GPU_MEMORY_UTILIZATION: "0.15"
+        GPU_MEMORY_UTILIZATION: "0.35"
         TT_KV_POOL_GB: "32"
         OPTIMIZATION_LEVEL: "1"
         CPU_SAMPLING: "false"
@@ -106,7 +106,7 @@ templates:
       env_vars:
         MAX_MODEL_LENGTH: "40960"
         MAX_NUM_SEQS: "32"
-        GPU_MEMORY_UTILIZATION: "0.15"
+        GPU_MEMORY_UTILIZATION: "0.35"
         TT_KV_POOL_GB: "32"
         OPTIMIZATION_LEVEL: "1"
         CPU_SAMPLING: "false"
@@ -133,7 +133,7 @@ templates:
       env_vars:
         MAX_MODEL_LENGTH: "32768"
         MAX_NUM_SEQS: "32"
-        GPU_MEMORY_UTILIZATION: "0.15"
+        GPU_MEMORY_UTILIZATION: "0.35"
         TT_KV_POOL_GB: "32"
         OPTIMIZATION_LEVEL: "1"
         CPU_SAMPLING: "false"
