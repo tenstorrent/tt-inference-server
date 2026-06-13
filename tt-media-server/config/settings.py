@@ -208,6 +208,20 @@ class Settings(BaseSettings):
                     if supported_model:
                         self.model_weights_path = supported_model.value
 
+        # Honor a pre-mounted weights dir (e.g. --host-hf-cache / --host-weights-dir
+        # bind mount), the same way the vLLM server does, so the media runner loads
+        # weights locally instead of re-downloading by repo id. (#4107)
+        model_weights_dir = os.environ.get("MODEL_WEIGHTS_DIR")
+        if (
+            model_weights_dir
+            and os.path.isdir(model_weights_dir)
+            and any(os.scandir(model_weights_dir))
+        ):
+            self.model_weights_path = model_weights_dir
+            logger.info(
+                f"Using pre-mounted weights from MODEL_WEIGHTS_DIR: {model_weights_dir}"
+            )
+
         # use throttling overrides until we confirm is no-throttling a stable approach
         self._set_throttling_overrides()
         self._set_device_pairs_overrides()
