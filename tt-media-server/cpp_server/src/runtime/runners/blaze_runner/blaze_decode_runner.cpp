@@ -687,21 +687,19 @@ void BlazeDecodeRunner::handleRequest(
     case SlotState::IDLE: {
       ds::ISRequest req = isNew ? utils::makeSubmitRequest(slotId, *request)
                                 : utils::makeContinueRequest(slotId, *request);
-      // kvPositionId is what came in on the Sequence; schedPositionId is what
-      // we hand the scheduler (CONTINUE overrides it from the Sequence's KV
-      // position, SUBMIT leaves it unset).
+      // kvPositionId is the KV-cache offset that came in on the Sequence. On
+      // CONTINUE it is forwarded verbatim as the scheduler's position_id; on a
+      // fresh SUBMIT it is absent ("none") and the scheduler starts from 0.
       TT_LOG_DEBUG(
           "[BlazeDecodeRunner] handleRequest: {} taskId={}, slotId={}, "
           "isNew={}, isContinuation={}, numPromptTokens={}, totalTokens={}, "
-          "runningSlots={}, kvPositionId={}, schedPositionId={}",
+          "runningSlots={}, kvPositionId={}",
           isNew ? "SUBMIT" : "CONTINUE", request->taskId, slotId, isNew,
           request->isContinuation(), request->getNumPromptTokens(),
           request->getTokenIds().size(), slotManager.activeRunningCount(),
           request->getKVPositionId().has_value()
               ? std::to_string(*request->getKVPositionId())
-              : "none",
-          req.position_id.has_value() ? std::to_string(*req.position_id)
-                                      : "none");
+              : "none");
       if (!decodeScheduler->push_request(req)) {
         TT_LOG_DEBUG(
             "[BlazeDecodeRunner] handleRequest: failed to push request, "
