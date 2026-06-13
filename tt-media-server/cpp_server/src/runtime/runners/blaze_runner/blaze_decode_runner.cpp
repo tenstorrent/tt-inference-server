@@ -687,9 +687,6 @@ void BlazeDecodeRunner::handleRequest(
     case SlotState::IDLE: {
       ds::ISRequest req = isNew ? utils::makeSubmitRequest(slotId, *request)
                                 : utils::makeContinueRequest(slotId, *request);
-      // kvPositionId is the KV-cache offset that came in on the Sequence. On
-      // CONTINUE it is forwarded verbatim as the scheduler's position_id; on a
-      // fresh SUBMIT it is absent ("none") and the scheduler starts from 0.
       TT_LOG_DEBUG(
           "[BlazeDecodeRunner] handleRequest: {} taskId={}, slotId={}, "
           "isNew={}, isContinuation={}, numPromptTokens={}, totalTokens={}, "

@@ -656,10 +656,6 @@ void BlazePrefillRunner::handleRequest(
     case SlotState::IDLE: {
       ps::ISRequest req = utils::makeSubmitRequest(
           slotId, *request, std::make_optional(request->getKVCacheSlot()));
-      // destSlot is the decode KV slot we tell the scheduler to copy the
-      // prefilled KV into. Positions received (decodePositionId/
-      // decodeSkipTokens) are logged one line up; prefill never sends a
-      // position_id to the scheduler — only decode CONTINUE does.
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] handleRequest: SUBMIT taskId={}, slotId={}, "
           "isContinuation={}, numPromptTokens={}, totalTokens={}, "
