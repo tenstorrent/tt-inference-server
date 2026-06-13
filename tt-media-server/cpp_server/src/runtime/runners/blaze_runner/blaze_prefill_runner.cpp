@@ -35,6 +35,7 @@ BlazePrefillRunner::BlazePrefillRunner(
       "BlazePrefillRunner: Constructing PrefillScheduler with SocketConfig...");
   auto pipelineConfig = utils::makePrefillPipelineConfig(config);
   ps::SchedulerParams managerParams{};
+  managerParams.dest_endpoint_id = tt::config::migrationDecodeEndpointId();
   managerParams.layers_per_chunk =
       static_cast<uint32_t>(std::stoi(tt::config::prefillNumLayers()));
   managerParams.chunk_size =
