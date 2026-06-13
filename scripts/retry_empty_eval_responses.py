@@ -421,6 +421,8 @@ def curl_chat_completion(
     try:
         cmd = [
             "curl",
+            "--keepalive-time",
+            "15",
             "-sS",
             "-X",
             "POST",
@@ -456,13 +458,19 @@ def curl_chat_completion(
 
             stderr = proc.stderr.read() if proc.stderr is not None else ""
             return_code = proc.wait()
-            if return_code != 0:
-                return return_code, stderr.strip() or "curl failed", None
-            if status_code != 200:
-                return status_code, accumulator.primary_content() or stderr.strip(), None
-
+            # Keep whatever was streamed before the connection dropped so partial
+            # reasoning/content is preserved on aborted streams (e.g. curl 18).
             parsed = accumulator.to_response()
-            if not extract_content(parsed) and not extract_reasoning_content(parsed):
+            has_partial = bool(
+                extract_content(parsed) or extract_reasoning_content(parsed)
+            )
+            if return_code != 0:
+                error_text = stderr.strip() or "curl failed"
+                return return_code, error_text, parsed if has_partial else None
+            if status_code != 200:
+                error_text = accumulator.primary_content() or stderr.strip()
+                return status_code, error_text, parsed if has_partial else None
+            if not has_partial:
                 return status_code, "empty SSE stream (no chunks parsed)", None
             return status_code, "", parsed
 
@@ -621,8 +629,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--doc-id",
         type=int,
-        action="append",
-        help="Only retry specific doc_id(s); repeatable (includes inference errors, not just empty resps)",
+        nargs="+",
+        action="extend",
+        help="Only retry specific doc_id(s); space-separated and/or repeatable "
+        "(includes inference errors, not just empty resps)",
     )
     parser.add_argument(
         "--all",
@@ -728,12 +738,16 @@ def retry_one_sample(
         log_print("computing estimated token count...")
         estimated_tokens = estimate_token_count(content, tokenizer_model or model)
 
+    # An error/non-200 with text still streamed before the drop = partial result.
+    partial = bool(error_text) and bool(content or reasoning_content)
+
     request_params = summarize_payload_for_print(payload)
     record = {
         "doc_id": doc_id,
         "request_params": request_params,
         "status_code": status_code,
         "error": error_text or None,
+        "partial": partial,
         "content": content,
         "content_length": content_length,
         "reasoning_content": reasoning_content,
@@ -762,6 +776,11 @@ def retry_one_sample(
         finish_reason=finish_reason,
         max_tokens=max_tokens,
     )
+    if partial:
+        log_print(
+            f"PARTIAL doc_id={doc_id}: saved {content_length} content / "
+            f"{reasoning_length} reasoning chars before error: {error_text}"
+        )
     if status_code != 200 or (not content and not reasoning_content):
         log_print(error_text or json.dumps(response, indent=2)[:500])
     return record
