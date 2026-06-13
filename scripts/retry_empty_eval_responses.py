@@ -58,7 +58,7 @@ def resolve_max_tokens(sample: dict, cli_max_tokens: Optional[int]) -> int:
     """Map lm-eval sample limits to the OpenAI API ``max_tokens`` field.
 
     lm-eval logs ``max_gen_toks`` in sample arguments; the chat completions API
-  expects ``max_tokens``. This helper reads the sample limit but the curl payload
+    expects ``max_tokens``. This helper reads the sample limit but the curl payload
     must only ever send ``max_tokens``.
     """
     if cli_max_tokens is not None:
@@ -405,13 +405,16 @@ def _print_request_end_summary(
 
 def curl_chat_completion(
     base_url: str,
-    api_key: str,
+    api_key: Optional[str],
     payload: dict,
     timeout_sec: int,
 ) -> tuple[int, str, Optional[dict]]:
     url = base_url.rstrip("/")
     if not url.endswith("/chat/completions"):
-        url = f"{url}/v1/chat/completions"
+        if url.endswith("/v1"):
+            url = f"{url}/chat/completions"
+        else:
+            url = f"{url}/v1/chat/completions"
 
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as payload_file:
         json.dump(payload, payload_file)
@@ -426,14 +429,18 @@ def curl_chat_completion(
             "POST",
             url,
             "-H",
-            f"Authorization: Bearer {api_key}",
-            "-H",
             "Content-Type: application/json",
             "--max-time",
             str(timeout_sec),
             "-d",
             f"@{payload_path}",
         ]
+        
+        # Only inject the Authorization header if an API Key is explicitly provided
+        if api_key:
+            cmd.insert(5, "-H")
+            cmd.insert(6, f"Authorization: Bearer {api_key}")
+
         if stream:
             # Flush chunks as they arrive; status code is emitted after the body.
             cmd.extend(["-N", "-w", "\nHTTP_STATUS:%{http_code}"])
@@ -583,8 +590,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--base-url",
-        default="https://console.tenstorrent.com",
-        help="API base URL (default: https://console.tenstorrent.com)",
+        default="http://localhost:8080",
+        help="API base URL (default: http://localhost:8080)",
     )
     parser.add_argument(
         "--model",
@@ -594,7 +601,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--api-key",
         default=os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY"),
-        help="Bearer token (default: API_KEY or OPENAI_API_KEY env var)",
+        help="Bearer token (Optional for localhost, defaults to API_KEY or OPENAI_API_KEY env var)",
     )
     parser.add_argument(
         "--output",
@@ -678,7 +685,7 @@ def retry_one_sample(
     sample: dict,
     *,
     base_url: str,
-    api_key: str,
+    api_key: Optional[str],
     model: str,
     stream: bool,
     max_tokens_override: Optional[int],
@@ -788,9 +795,7 @@ def main() -> int:
         write_regrade_report(summary, regrade_output)
         return 0
 
-    if not args.dry_run and not args.api_key:
-        log_print("ERROR: set API_KEY or pass --api-key", file=sys.stderr)
-        return 1
+    # Removed strict API key dependency check to facilitate seamless local deployment out-of-the-box
 
     if args.doc_id:
         wanted = set(args.doc_id)
