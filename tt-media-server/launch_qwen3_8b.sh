@@ -18,7 +18,7 @@ export IS_GALAXY=${IS_GALAXY:-False}
 # not read the workflow YAML, so these must be set here.
 export MAX_MODEL_LENGTH=${MAX_MODEL_LENGTH:-40960}  # Qwen3 native max_position_embeddings (no 64K)
 export MAX_NUM_SEQS=${MAX_NUM_SEQS:-32}
-export GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.35}
+export GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.30}
 export TT_KV_POOL_GB=${TT_KV_POOL_GB:-32}
 export OPTIMIZATION_LEVEL=${OPTIMIZATION_LEVEL:-1}
 export CPU_SAMPLING=${CPU_SAMPLING:-false}
@@ -28,11 +28,20 @@ export KV_CACHE_DTYPE=${KV_CACHE_DTYPE:-bfp_bf8}
 # On-device chunked-SDPA prefill chunk size; required to fit 64K context
 # (without it the full-context prefill SDPA buffer OOMs the DRAM banks).
 export PREFILL_CHUNK_SIZE=${PREFILL_CHUNK_SIZE:-2048}
+# bf16 matmul dest accumulation (smaller buffers) to fit gmu 0.35; matches
+# the tt-xla chunked-prefill sweep. "true" => fp32 dest accumulation.
+export FP32_DEST_ACC_EN=${FP32_DEST_ACC_EN:-false}
 # Pin this server to a single physical chip so all four can run concurrently.
 export TT_VISIBLE_DEVICES=${TT_VISIBLE_DEVICES:-3}
 [ -n "$DEVICE_IDS" ] && export DEVICE_IDS
+# INFO logging so the resolved vLLM/plugin config is captured: look for the
+# "[TT] Chunked prefill: capping max_num_batched_tokens N -> 2048" line and the
+# engine-config line (enable_chunked_prefill, max_num_batched_tokens). Override
+# LOG_LEVEL=warning to quiet it for normal runs.
+export VLLM_LOGGING_LEVEL=${VLLM_LOGGING_LEVEL:-INFO}
+LOG_LEVEL=${LOG_LEVEL:-info}
 
 echo "Starting server: MODEL=$MODEL DEVICE=$DEVICE TT_VISIBLE_DEVICES=$TT_VISIBLE_DEVICES DEVICE_IDS=${DEVICE_IDS:-auto}"
 cd "$(dirname "$0")"
 PORT=${PORT:-8004}
-uvicorn main:app --lifespan on --host 0.0.0.0 --port $PORT --log-level warning
+uvicorn main:app --lifespan on --host 0.0.0.0 --port $PORT --log-level "$LOG_LEVEL"

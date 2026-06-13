@@ -28,6 +28,9 @@ export KV_CACHE_DTYPE=${KV_CACHE_DTYPE:-bfp_bf8}
 # On-device chunked-SDPA prefill chunk size; required to fit 64K context
 # (without it the full-context prefill SDPA buffer OOMs the DRAM banks).
 export PREFILL_CHUNK_SIZE=${PREFILL_CHUNK_SIZE:-2048}
+# bf16 matmul dest accumulation (smaller buffers) to fit gmu 0.35; matches
+# the tt-xla chunked-prefill sweep. "true" => fp32 dest accumulation.
+export FP32_DEST_ACC_EN=${FP32_DEST_ACC_EN:-false}
 # Pin this server to a single physical chip so all four can run concurrently.
 export TT_VISIBLE_DEVICES=${TT_VISIBLE_DEVICES:-0}
 [ -n "$DEVICE_IDS" ] && export DEVICE_IDS

@@ -67,6 +67,13 @@ class VLLMForgeRunner(BaseDeviceRunner):
         # enable_chunked_prefill. Env-driven; only passed when set so existing
         # short-context models keep the default (whole-prompt) path.
         prefill_chunk_size = os.getenv("PREFILL_CHUNK_SIZE")
+        # Matmul dest-accumulation dtype. fp32_dest_acc_en=false uses bf16 dest
+        # accumulation (smaller matmul dest buffers, less DRAM) vs the fp32
+        # default; required to fit alongside a higher gpu_memory_utilization
+        # (the tt-xla chunked-prefill sweep sets this false at gmu 0.35).
+        # Env-driven; only passed when set so other models keep the plugin
+        # default. "true"/"false".
+        fp32_dest_acc_en = os.getenv("FP32_DEST_ACC_EN")
         additional_config = {
             "enable_const_eval": True,
             "min_context_len": self.settings.vllm.min_context_length,
@@ -78,6 +85,8 @@ class VLLMForgeRunner(BaseDeviceRunner):
         }
         if prefill_chunk_size:
             additional_config["prefill_chunk_size"] = int(prefill_chunk_size)
+        if fp32_dest_acc_en is not None:
+            additional_config["fp32_dest_acc_en"] = fp32_dest_acc_en.lower() == "true"
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
