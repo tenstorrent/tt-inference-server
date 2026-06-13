@@ -16,16 +16,20 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 _tokenizer_cache: Dict[str, Any] = {}
+_log_lock = threading.Lock()
 
 
 def log_print(*args, **kwargs) -> None:
     """Print with flush so output appears when stdout is piped (e.g. to tee)."""
     kwargs.setdefault("flush", True)
-    print(*args, **kwargs)
+    with _log_lock:
+        print(*args, **kwargs)
 
 
 # Line-buffer stdout when piped; otherwise Python may hold output for a long time.
@@ -128,11 +132,24 @@ def summarize_payload_for_print(payload: dict) -> dict:
     return summary
 
 
-def append_result_record(output_path: Path, record: dict) -> None:
+def append_result_record(
+    output_path: Path,
+    record: dict,
+    *,
+    write_lock: Optional[threading.Lock] = None,
+) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record) + "\n")
-        handle.flush()
+
+    def _write() -> None:
+        with output_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record) + "\n")
+            handle.flush()
+
+    if write_lock is None:
+        _write()
+    else:
+        with write_lock:
+            _write()
 
 
 def extract_content(response: dict) -> str:
@@ -648,7 +665,101 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip local tokenizer-based completion token estimates",
     )
+    parser.add_argument(
+        "--parallel",
+        type=int,
+        default=16,
+        help="Number of concurrent curl retries (default: 16)",
+    )
     return parser.parse_args()
+
+
+def retry_one_sample(
+    sample: dict,
+    *,
+    base_url: str,
+    api_key: str,
+    model: str,
+    stream: bool,
+    max_tokens_override: Optional[int],
+    timeout_sec: int,
+    tokenizer_model: Optional[str],
+    no_estimate_tokens: bool,
+    output_path: Path,
+    write_lock: threading.Lock,
+) -> dict:
+    doc_id = sample.get("doc_id")
+    max_tokens = resolve_max_tokens(sample, max_tokens_override)
+    payload = build_payload(
+        sample,
+        model,
+        stream=stream,
+        max_tokens=max_tokens,
+    )
+    log_print(f"\n=== doc_id={doc_id} (max_tokens={max_tokens}) ===")
+    _print_request_params(payload)
+    log_print("waiting for API response...")
+
+    status_code, error_text, response = curl_chat_completion(
+        base_url,
+        api_key,
+        payload,
+        timeout_sec=timeout_sec,
+    )
+
+    content = extract_content(response) if response else ""
+    reasoning_content = extract_reasoning_content(response) if response else ""
+    content_length = len(content)
+    reasoning_length = len(reasoning_content)
+    usage = extract_usage(response)
+    finish_reason = extract_finish_reason(response)
+    truncated = is_likely_truncated(
+        max_tokens=max_tokens,
+        usage=usage,
+        finish_reason=finish_reason,
+    )
+    estimated_tokens = None
+    if not no_estimate_tokens and content:
+        log_print("computing estimated token count...")
+        estimated_tokens = estimate_token_count(content, tokenizer_model or model)
+
+    request_params = summarize_payload_for_print(payload)
+    record = {
+        "doc_id": doc_id,
+        "request_params": request_params,
+        "status_code": status_code,
+        "error": error_text or None,
+        "content": content,
+        "content_length": content_length,
+        "reasoning_content": reasoning_content,
+        "reasoning_length": reasoning_length,
+        "max_tokens": max_tokens,
+        "finish_reason": finish_reason,
+        "truncated": truncated,
+        "usage": usage,
+        "completion_tokens": usage.get("completion_tokens") if usage else None,
+        "prompt_tokens": usage.get("prompt_tokens") if usage else None,
+        "total_tokens": usage.get("total_tokens") if usage else None,
+        "estimated_completion_tokens": estimated_tokens,
+        "raw_response": response,
+    }
+    append_result_record(output_path, record, write_lock=write_lock)
+    log_print(f"saved doc_id={doc_id} -> {output_path}")
+    _print_request_end_summary(
+        doc_id=doc_id,
+        content=content,
+        reasoning_length=reasoning_length,
+        stream=stream,
+        usage=usage,
+        estimated_tokens=estimated_tokens,
+        status_code=status_code,
+        truncated=truncated,
+        finish_reason=finish_reason,
+        max_tokens=max_tokens,
+    )
+    if status_code != 200 or (not content and not reasoning_content):
+        log_print(error_text or json.dumps(response, indent=2)[:500])
+    return record
 
 
 def main() -> int:
@@ -699,88 +810,66 @@ def main() -> int:
         return 0
 
     output_path = args.output or jsonl_path.with_suffix(jsonl_path.suffix + ".retries.jsonl")
-    log_print(f"Retrying {len(samples)} sample(s) -> {output_path}")
+    parallel = max(1, args.parallel)
+    log_print(
+        f"Retrying {len(samples)} sample(s) -> {output_path} "
+        f"(parallel={parallel})"
+    )
     if not args.dry_run and not args.append:
         output_path.write_text("", encoding="utf-8")
 
-    results = []
-    for sample in samples:
-        doc_id = sample.get("doc_id")
-        max_tokens = resolve_max_tokens(sample, args.max_tokens)
-        payload = build_payload(
-            sample,
-            args.model,
-            stream=args.stream,
-            max_tokens=max_tokens,
-        )
-        log_print(f"\n=== doc_id={doc_id} (max_tokens={max_tokens}) ===")
-        _print_request_params(payload)
-        if args.dry_run:
-            continue
-
-        log_print("waiting for API response...")
+    results: List[dict] = []
+    if args.dry_run:
+        for sample in samples:
+            doc_id = sample.get("doc_id")
+            max_tokens = resolve_max_tokens(sample, args.max_tokens)
+            payload = build_payload(
+                sample,
+                args.model,
+                stream=args.stream,
+                max_tokens=max_tokens,
+            )
+            log_print(f"\n=== doc_id={doc_id} (max_tokens={max_tokens}) ===")
+            _print_request_params(payload)
+    else:
+        write_lock = threading.Lock()
         tokenizer_model = args.tokenizer_model or args.model
-
-        status_code, error_text, response = curl_chat_completion(
-            args.base_url,
-            args.api_key,
-            payload,
-            timeout_sec=args.timeout_sec,
-        )
-
-        content = extract_content(response) if response else ""
-        reasoning_content = extract_reasoning_content(response) if response else ""
-        content_length = len(content)
-        reasoning_length = len(reasoning_content)
-        usage = extract_usage(response)
-        finish_reason = extract_finish_reason(response)
-        truncated = is_likely_truncated(
-            max_tokens=max_tokens,
-            usage=usage,
-            finish_reason=finish_reason,
-        )
-        estimated_tokens = None
-        if not args.no_estimate_tokens and content:
-            log_print("computing estimated token count...")
-            estimated_tokens = estimate_token_count(content, tokenizer_model)
-
-        request_params = summarize_payload_for_print(payload)
-        record = {
-            "doc_id": doc_id,
-            "request_params": request_params,
-            "status_code": status_code,
-            "error": error_text or None,
-            "content": content,
-            "content_length": content_length,
-            "reasoning_content": reasoning_content,
-            "reasoning_length": reasoning_length,
-            "max_tokens": max_tokens,
-            "finish_reason": finish_reason,
-            "truncated": truncated,
-            "usage": usage,
-            "completion_tokens": usage.get("completion_tokens") if usage else None,
-            "prompt_tokens": usage.get("prompt_tokens") if usage else None,
-            "total_tokens": usage.get("total_tokens") if usage else None,
-            "estimated_completion_tokens": estimated_tokens,
-            "raw_response": response,
-        }
-        results.append(record)
-        append_result_record(output_path, record)
-        log_print(f"saved doc_id={doc_id} -> {output_path}")
-        _print_request_end_summary(
-            doc_id=doc_id,
-            content=content,
-            reasoning_length=reasoning_length,
-            stream=args.stream,
-            usage=usage,
-            estimated_tokens=estimated_tokens,
-            status_code=status_code,
-            truncated=truncated,
-            finish_reason=finish_reason,
-            max_tokens=max_tokens,
-        )
-        if status_code != 200 or (not content and not reasoning_content):
-            log_print(error_text or json.dumps(response, indent=2)[:500])
+        with ThreadPoolExecutor(max_workers=parallel) as executor:
+            futures = {
+                executor.submit(
+                    retry_one_sample,
+                    sample,
+                    base_url=args.base_url,
+                    api_key=args.api_key,
+                    model=args.model,
+                    stream=args.stream,
+                    max_tokens_override=args.max_tokens,
+                    timeout_sec=args.timeout_sec,
+                    tokenizer_model=tokenizer_model,
+                    no_estimate_tokens=args.no_estimate_tokens,
+                    output_path=output_path,
+                    write_lock=write_lock,
+                ): sample
+                for sample in samples
+            }
+            for future in as_completed(futures):
+                sample = futures[future]
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    doc_id = sample.get("doc_id")
+                    log_print(
+                        f"ERROR: doc_id={doc_id} raised {type(exc).__name__}: {exc}",
+                        file=sys.stderr,
+                    )
+                    results.append(
+                        {
+                            "doc_id": doc_id,
+                            "status_code": 0,
+                            "error": str(exc),
+                            "content": "",
+                        }
+                    )
 
     if args.dry_run:
         return 0
