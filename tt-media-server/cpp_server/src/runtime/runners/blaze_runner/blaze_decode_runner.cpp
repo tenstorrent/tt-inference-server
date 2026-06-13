@@ -215,7 +215,6 @@ std::unique_ptr<tt::domain::llm::Sequence> BlazeDecodeRunner::getRequest() {
   }
   auto req = taskQueue->tryPop();
   if (!req) return nullptr;
-  utils::logTaskQueueRx("decode", *req, req->getKVCacheSlot());
   return req;
 }
 
@@ -265,7 +264,6 @@ inline void BlazeDecodeRunner::handleEvictRequest(
         pendingRequests.pendingMemoryTask = request;
         return;
       }
-      utils::logSchedTx("decode", evictRequest);
       if (pendingRequests.pendingTask &&
           pendingRequests.pendingTask->getKVCacheSlot() == request.slotId) {
         auto droppedTaskId = pendingRequests.pendingTask->taskId;
@@ -274,9 +272,6 @@ inline void BlazeDecodeRunner::handleEvictRequest(
             "[BlazeDecodeRunner] handleEvictRequest: dropping pending task for "
             "taskId={} on slotId={} (EVICT wins)",
             droppedTaskId, request.slotId);
-        utils::logResultTx(
-            "decode", droppedTaskId, 0,
-            ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT);
         ipc::helpers::pushToken(
             *resultQueue, droppedTaskId, 0,
             ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
@@ -313,9 +308,6 @@ inline void BlazeDecodeRunner::handleEvictRequest(
             "for "
             "taskId={} on slotId={} (DEALLOCATE wins)",
             droppedTaskId, request.slotId);
-        utils::logResultTx(
-            "decode", droppedTaskId, 0,
-            ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT);
         ipc::helpers::pushToken(
             *resultQueue, droppedTaskId, 0,
             ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
@@ -364,7 +356,6 @@ inline void BlazeDecodeRunner::handleAllocateRequest(
     pendingRequests.pendingMemoryTask = request;
     return;
   }
-  utils::logSchedTx("decode", allocateRequest);
   TT_LOG_DEBUG(
       "[BlazeDecodeRunner] handleAllocateRequest: pushed ALLOCATE taskId={}",
       request.taskId);
@@ -372,7 +363,6 @@ inline void BlazeDecodeRunner::handleAllocateRequest(
 
 inline void BlazeDecodeRunner::handleMemoryResponse(
     const ds::SchedulerResponse& response) {
-  utils::logSchedRxAck("decode", response);
   auto taskId = response.request_id;
   auto slotId = response.slot_id;
   auto action = response.request_type;
@@ -479,9 +469,6 @@ inline void BlazeDecodeRunner::handleDeferred(SlotContext& slot) {
           "slotId={} (deferredEvict wins)",
           droppedTaskId, slot.slotId);
       // FINAL|ERROR (not ABORT) — see handleEvictRequest's comment.
-      utils::logResultTx(
-          "decode", droppedTaskId, 0,
-          ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT);
       ipc::helpers::pushToken(
           *resultQueue, droppedTaskId, 0,
           ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
@@ -514,11 +501,7 @@ BlazeDecodeRunner::getMemoryRequest() {
     pendingRequests.pendingMemoryTask = std::nullopt;
     return task;
   }
-  auto task = memoryManager->getRequest();
-  if (task.has_value()) {
-    utils::logMemQueueRx("decode", *task);
-  }
-  return task;
+  return memoryManager->getRequest();
 }
 
 void BlazeDecodeRunner::drainAndHandleStopRequests() {
@@ -570,8 +553,8 @@ inline void BlazeDecodeRunner::handleStopRequest(uint32_t taskId) {
         taskId, slot->slotId, toString(slot->state));
     return;
   }
-  auto stopRequest = utils::makeStopRequest(taskId, slot->slotId);
-  if (!decodeScheduler->push_request(stopRequest)) {
+  if (!decodeScheduler->push_request(
+          utils::makeStopRequest(taskId, slot->slotId))) {
     TT_LOG_WARN(
         "[BlazeDecodeRunner] handleCancelRequest: scheduler queue full, "
         "deferring "
@@ -580,7 +563,6 @@ inline void BlazeDecodeRunner::handleStopRequest(uint32_t taskId) {
     pendingRequests.pendingCancelTaskId = taskId;
     return;
   }
-  utils::logSchedTx("decode", stopRequest);
   TT_LOG_DEBUG(
       "[BlazeDecodeRunner] handleCancelRequest: pushed STOP taskId={}, "
       "slotId={}",
@@ -588,7 +570,6 @@ inline void BlazeDecodeRunner::handleStopRequest(uint32_t taskId) {
   slot->pendingAckRequestId = taskId;
   slotManager.setSlotState(slot->slotId, SlotState::AWAITING_STOP_ACK);
   slotManager.unbindTaskFromSlot(taskId);
-  utils::logResultTx("decode", taskId, 0, ipc::SharedToken::FLAG_ABORT);
   ipc::helpers::pushToken(*resultQueue, taskId, 0, ipc::SharedToken::FLAG_ABORT,
                           0, 0);
   tt::worker::SingleProcessWorkerMetrics::instance().decrementActiveRequests();
@@ -597,9 +578,6 @@ inline void BlazeDecodeRunner::handleStopRequest(uint32_t taskId) {
 }
 
 void BlazeDecodeRunner::handleOutput(const ds::OutputMessage& output) {
-  // Per-token border: DEBUG so a busy decode loop doesn't flood INFO.
-  utils::logSchedRxOutput("decode", output,
-                          tt::utils::ZeroOverheadLogger::DEBUG);
   auto& metrics = tt::worker::SingleProcessWorkerMetrics::instance();
   metrics.updateOutputHeartbeat();
   auto& slotContext = slotManager.getSlotContext(output.slot_id);
@@ -642,9 +620,6 @@ void BlazeDecodeRunner::handleOutput(const ds::OutputMessage& output) {
     metrics.decrementActiveRequests();
   }
   uint32_t flag = finished ? ipc::SharedToken::FLAG_FINAL : 0;
-  // Per-token border: DEBUG so a busy decode loop doesn't flood INFO.
-  utils::logResultTx("decode", taskId, output.token_id, flag,
-                     tt::utils::ZeroOverheadLogger::DEBUG);
   ipc::helpers::pushToken(*resultQueue, taskId, output.token_id, flag,
                           spec.accepts, spec.rejects);
 }
@@ -710,15 +685,23 @@ void BlazeDecodeRunner::handleRequest(
   auto& slotContext = slotManager.getSlotContext(slotId);
   switch (slotContext.state) {
     case SlotState::IDLE: {
-      TT_LOG_DEBUG(
-          "[BlazeDecodeRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
-          "isContinuation={}, numPromptTokens={}, totalTokens={}, "
-          "runningSlots={}",
-          request->taskId, slotId, isNew, request->isContinuation(),
-          request->getNumPromptTokens(), request->getTokenIds().size(),
-          slotManager.activeRunningCount());
       ds::ISRequest req = isNew ? utils::makeSubmitRequest(slotId, *request)
                                 : utils::makeContinueRequest(slotId, *request);
+      // kvPositionId is what came in on the Sequence; schedPositionId is what
+      // we hand the scheduler (CONTINUE overrides it from the Sequence's KV
+      // position, SUBMIT leaves it unset).
+      TT_LOG_DEBUG(
+          "[BlazeDecodeRunner] handleRequest: {} taskId={}, slotId={}, "
+          "isNew={}, isContinuation={}, numPromptTokens={}, totalTokens={}, "
+          "runningSlots={}, kvPositionId={}, schedPositionId={}",
+          isNew ? "SUBMIT" : "CONTINUE", request->taskId, slotId, isNew,
+          request->isContinuation(), request->getNumPromptTokens(),
+          request->getTokenIds().size(), slotManager.activeRunningCount(),
+          request->getKVPositionId().has_value()
+              ? std::to_string(*request->getKVPositionId())
+              : "none",
+          req.position_id.has_value() ? std::to_string(*req.position_id)
+                                      : "none");
       if (!decodeScheduler->push_request(req)) {
         TT_LOG_DEBUG(
             "[BlazeDecodeRunner] handleRequest: failed to push request, "
@@ -728,7 +711,6 @@ void BlazeDecodeRunner::handleRequest(
         pendingRequests.pendingTask = std::move(request);
         return;
       }
-      utils::logSchedTx("decode", req);
       utils::initSlotForRun(slotContext, *request, *decodeScheduler);
       slotManager.bindTaskToSlot(request->taskId, slotId);
       slotManager.setSlotState(slotId, SlotState::RUNNING);
@@ -766,9 +748,6 @@ void BlazeDecodeRunner::handleRequest(
           "[BlazeDecodeRunner] handleRequest: dropping SUBMIT for taskId={} on "
           "slotId={} (slot is AWAITING_EVICT_ACK)",
           request->taskId, slotId);
-      utils::logResultTx(
-          "decode", request->taskId, 0,
-          ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT);
       ipc::helpers::pushToken(
           *resultQueue, request->taskId, 0,
           ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
