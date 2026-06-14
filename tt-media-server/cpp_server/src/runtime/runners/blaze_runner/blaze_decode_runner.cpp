@@ -33,7 +33,8 @@ BlazeDecodeRunner::BlazeDecodeRunner(
   TT_LOG_INFO(
       "BlazeDecodeRunner: Constructing DecodeScheduler with SocketConfig...");
   auto pipelineConfig = utils::makeDecodePipelineConfig(config);
-  auto migrationClientInterface = utils::makeDecodeMigrationClientInterface(config);
+  auto migrationClientInterface =
+      utils::makeDecodeMigrationClientInterface(config);
   auto thinkTokenIds = tt::utils::tokenizers::thinkTokenIds();
   auto eosTokenId = tt::utils::tokenizers::staticInfo().eosTokenId;
   ds::SchedulerParams managerParams{};

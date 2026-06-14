@@ -44,7 +44,8 @@ BlazePrefillRunner::BlazePrefillRunner(
   auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
   auto migrationClientInterface = utils::makeMigrationClientInterface(config);
   prefillScheduler = std::make_unique<ps::PrefillScheduler>(
-      pipelineConfig, ackChannelConfig, managerParams, std::move(migrationClientInterface));
+      pipelineConfig, ackChannelConfig, managerParams,
+      std::move(migrationClientInterface));
   TT_LOG_INFO(
       "BlazePrefillRunner: PrefillScheduler constructed, calling start()...");
   prefillScheduler->start();
