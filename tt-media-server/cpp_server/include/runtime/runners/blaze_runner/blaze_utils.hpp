@@ -12,13 +12,15 @@
 #include "domain/manage_memory.hpp"
 #include "ipc/interface/result_queue.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
+#include "scheduler/migration_layer_client_adapter.hpp"
 #include "scheduler/decode/migration_layer_client_adapter.hpp"
 #include "scheduler/decode/mock_migration_client.hpp"
+#include "scheduler/mock_migration_client.hpp"
 #include "tt_llm_engine/pipeline/channel_configs.hpp"
-#include "tt_llm_engine/pipeline/layer_migration_config.hpp"
 #include "tt_llm_engine/pipeline/prefill_pipeline_config.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
+#include "tt_llm_engine/scheduler/migration_client_interface.hpp"
 #include "tt_llm_engine/scheduler/decode/migration_client_interface.hpp"
 #include "tt_llm_engine/scheduler/prefill/prefill_types.hpp"
 #include "utils/logger.hpp"
@@ -344,53 +346,27 @@ inline pl::CounterChannelConfig makePrefillAckChannelConfig(
   }
 }
 
-inline pl::MigrationCmdChannelConfig makeMigrationCmdChannelConfig(
-    const tt::config::LLMConfig& config) {
+inline std::unique_ptr<sch::MigrationClientInterface>
+makeMigrationClientInterface(const tt::config::LLMConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
-      return pl::InterProcessMigrationCmdChannelConfig{
-          .shm_name = tt::config::migrationCmdQueueName(),
-          .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
-      };
+      return std::make_unique<sch::MigrationLayerClientAdapter>(
+          tt::config::migrationCmdQueueName(),
+          tt::config::migrationTableQueueName(),
+          tt::config::migrationRespQueueName());
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       if (tt::config::enableMigration()) {
-        return pl::SingleProcessMigrationCmdChannelConfig{
-            .capacity = 1024  // magic number, idgaf
-        };
+        return std::make_unique<sch::MockMigrationClient>();
+      } else {
+        return nullptr;
       }
     default:
       throw std::runtime_error("Invalid blaze decode runner type");
   }
 }
 
-inline pl::MigrationRespChannelConfig makeMigrationRespChannelConfig(
-    const tt::config::LLMConfig& config) {
-  switch (config.runner_type) {
-    case tt::config::ModelRunnerType::PIPELINE_MANAGER:
-      return pl::InterProcessCounterChannelConfig{
-          .shm_name = tt::config::migrationRespQueueName(),
-          .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
-      };
-    case tt::config::ModelRunnerType::MOCK_PIPELINE:
-      return pl::SingleProcessCounterChannelConfig{};
-    default:
-      throw std::runtime_error("Invalid blaze prefill runner type");
-  }
-}
-inline std::optional<pl::LayerMigrationConfig> makeLayerMigrationConfig(
-    const tt::config::LLMConfig& config) {
-  if (tt::config::enableMigration()) {
-    return pl::LayerMigrationConfig{
-        .cmd_channel = makeMigrationCmdChannelConfig(config),
-        .resp_channel = makeMigrationRespChannelConfig(config),
-    };
-  } else {
-    return std::nullopt;
-  }
-}
-
 inline std::unique_ptr<ds::MigrationClientInterface>
-makeMigrationClientInterface(const tt::config::LLMConfig& config) {
+makeDecodeMigrationClientInterface(const tt::config::LLMConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
       return std::make_unique<ds::MigrationLayerClientAdapter>(

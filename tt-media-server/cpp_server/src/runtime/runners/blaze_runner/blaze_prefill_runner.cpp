@@ -42,9 +42,9 @@ BlazePrefillRunner::BlazePrefillRunner(
       static_cast<uint32_t>(std::stoi(tt::config::prefillChunkSize()));
   managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
   auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
-  auto layerMigrationConfig = utils::makeLayerMigrationConfig(config);
+  auto migrationClientInterface = utils::makeMigrationClientInterface(config);
   prefillScheduler = std::make_unique<ps::PrefillScheduler>(
-      pipelineConfig, ackChannelConfig, managerParams, layerMigrationConfig);
+      pipelineConfig, ackChannelConfig, managerParams, std::move(migrationClientInterface));
   TT_LOG_INFO(
       "BlazePrefillRunner: PrefillScheduler constructed, calling start()...");
   prefillScheduler->start();
