@@ -219,7 +219,6 @@ std::unique_ptr<tt::domain::llm::Sequence> BlazePrefillRunner::getRequest() {
   }
   auto req = taskQueue->tryPop();
   if (!req) return nullptr;
-  utils::logTaskQueueRx("prefill", *req, req->getPrefillKVCacheSlot());
   return req;
 }
 
@@ -269,7 +268,6 @@ inline void BlazePrefillRunner::handleEvictRequest(
         pendingRequests.pendingMemoryTask = request;
         return;
       }
-      utils::logSchedTx("prefill", evictRequest);
       if (pendingRequests.pendingTask &&
           pendingRequests.pendingTask->getPrefillKVCacheSlot() ==
               request.slotId) {
@@ -280,9 +278,6 @@ inline void BlazePrefillRunner::handleEvictRequest(
             "for "
             "taskId={} on slotId={} (EVICT wins)",
             droppedTaskId, request.slotId);
-        utils::logResultTx(
-            "prefill", droppedTaskId, 0,
-            ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT);
         ipc::helpers::pushToken(
             *resultQueue, droppedTaskId, 0,
             ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
@@ -319,9 +314,6 @@ inline void BlazePrefillRunner::handleEvictRequest(
             "for "
             "taskId={} on slotId={} (DEALLOCATE wins)",
             droppedTaskId, request.slotId);
-        utils::logResultTx(
-            "prefill", droppedTaskId, 0,
-            ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT);
         ipc::helpers::pushToken(
             *resultQueue, droppedTaskId, 0,
             ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
@@ -364,7 +356,6 @@ inline void BlazePrefillRunner::handleAllocateRequest(
     pendingRequests.pendingMemoryTask = request;
     return;
   }
-  utils::logSchedTx("prefill", allocateRequest);
   TT_LOG_DEBUG(
       "[BlazePrefillRunner] handleAllocateRequest: pushed ALLOCATE taskId={}",
       request.taskId);
@@ -372,7 +363,6 @@ inline void BlazePrefillRunner::handleAllocateRequest(
 
 inline void BlazePrefillRunner::handleMemoryResponse(
     const ps::SchedulerResponse& response) {
-  utils::logSchedRxAck("prefill", response);
   auto taskId = response.request_id;
   auto slotId = response.slot_id;
   auto action = response.request_type;
@@ -481,9 +471,6 @@ inline void BlazePrefillRunner::handleDeferred(SlotContext& slot) {
           "slotId={} (deferredEvict wins)",
           droppedTaskId, slot.slotId);
       // FINAL|ERROR (not ABORT) — see handleEvictRequest's comment.
-      utils::logResultTx(
-          "prefill", droppedTaskId, 0,
-          ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT);
       ipc::helpers::pushToken(
           *resultQueue, droppedTaskId, 0,
           ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
@@ -509,11 +496,7 @@ BlazePrefillRunner::getMemoryRequest() {
     pendingRequests.pendingMemoryTask = std::nullopt;
     return task;
   }
-  auto task = memoryManager->getRequest();
-  if (task.has_value()) {
-    utils::logMemQueueRx("prefill", *task);
-  }
-  return task;
+  return memoryManager->getRequest();
 }
 
 void BlazePrefillRunner::drainAndHandleStopRequests() {
@@ -565,8 +548,8 @@ inline void BlazePrefillRunner::handleStopRequest(uint32_t taskId) {
         taskId, slot->slotId, toString(slot->state));
     return;
   }
-  auto stopRequest = utils::makeStopRequest(taskId, slot->slotId);
-  if (!prefillScheduler->push_request(stopRequest)) {
+  if (!prefillScheduler->push_request(
+          utils::makeStopRequest(taskId, slot->slotId))) {
     TT_LOG_WARN(
         "[BlazePrefillRunner] handleCancelRequest: scheduler queue full, "
         "deferring "
@@ -575,7 +558,6 @@ inline void BlazePrefillRunner::handleStopRequest(uint32_t taskId) {
     pendingRequests.pendingCancelTaskId = taskId;
     return;
   }
-  utils::logSchedTx("prefill", stopRequest);
   TT_LOG_DEBUG(
       "[BlazePrefillRunner] handleCancelRequest: pushed STOP taskId={}, "
       "slotId={}",
@@ -583,14 +565,12 @@ inline void BlazePrefillRunner::handleStopRequest(uint32_t taskId) {
   slot->pendingAckRequestId = taskId;
   slotManager.setSlotState(slot->slotId, SlotState::AWAITING_STOP_ACK);
   slotManager.unbindTaskFromSlot(taskId);
-  utils::logResultTx("prefill", taskId, 0, ipc::SharedToken::FLAG_ABORT);
   ipc::helpers::pushToken(*resultQueue, taskId, 0, ipc::SharedToken::FLAG_ABORT,
                           0, 0);
   tt::worker::SingleProcessWorkerMetrics::instance().decrementActiveRequests();
 }
 
 void BlazePrefillRunner::handleOutput(const ps::OutputMessage& output) {
-  utils::logSchedRxOutput("prefill", output);
   tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
   lastOutputTime = std::chrono::steady_clock::now();
   auto& slotContext = slotManager.getSlotContext(output.slot_id);
@@ -623,9 +603,6 @@ void BlazePrefillRunner::handleOutput(const ps::OutputMessage& output) {
     slotManager.setSlotAsIdle(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
-    utils::logResultTx(
-        "prefill", taskId, output.token_id,
-        ipc::SharedToken::FLAG_ERROR | ipc::SharedToken::FLAG_FINAL);
     ipc::helpers::pushToken(
         *resultQueue, taskId, output.token_id,
         ipc::SharedToken::FLAG_ERROR | ipc::SharedToken::FLAG_FINAL, 0, 0);
@@ -640,7 +617,6 @@ void BlazePrefillRunner::handleOutput(const ps::OutputMessage& output) {
         .decrementActiveRequests();
   }
   uint32_t flag = finished ? ipc::SharedToken::FLAG_FINAL : 0;
-  utils::logResultTx("prefill", taskId, output.token_id, flag);
   ipc::helpers::pushToken(*resultQueue, taskId, output.token_id, flag, 0, 0);
 }
 
@@ -691,6 +667,15 @@ void BlazePrefillRunner::handleRequest(
                                                 : -1);
       ps::ISRequest req = utils::makeSubmitRequest(
           slotId, *request, std::make_optional(request->getKVCacheSlot()));
+      TT_LOG_DEBUG(
+          "[BlazePrefillRunner] handleRequest: SUBMIT taskId={}, slotId={}, "
+          "isContinuation={}, numPromptTokens={}, totalTokens={}, "
+          "runningSlots={}, destSlot={}",
+          request->taskId, slotId, request->isContinuation(),
+          request->getNumPromptTokens(), request->getTokenIds().size(),
+          slotManager.activeRunningCount(),
+          req.dest_slot_id.has_value() ? std::to_string(*req.dest_slot_id)
+                                       : "none");
       if (!prefillScheduler->push_request(req)) {
         TT_LOG_DEBUG(
             "[BlazePrefillRunner] handleRequest: failed to push request, "
@@ -700,7 +685,6 @@ void BlazePrefillRunner::handleRequest(
         pendingRequests.pendingTask = std::move(request);
         return;
       }
-      utils::logSchedTx("prefill", req);
       if (slotManager.activeRunningCount() == 0) {
         lastOutputTime = std::chrono::steady_clock::now();
       }
@@ -735,9 +719,6 @@ void BlazePrefillRunner::handleRequest(
           "on "
           "slotId={} (slot is AWAITING_EVICT_ACK)",
           request->taskId, slotId);
-      utils::logResultTx(
-          "prefill", request->taskId, 0,
-          ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT);
       ipc::helpers::pushToken(
           *resultQueue, request->taskId, 0,
           ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
