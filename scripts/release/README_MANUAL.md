@@ -107,7 +107,7 @@ Script will take into account only models which are planned for the current rele
 
 Once the script is executed we need to verify which changes are being introduced into the production catalogue.
 
-## update_model_spec.py
+## update_model_spec.py / export_model_spec.py
 
 
 After changes in production catalogue have been added and committed, re-generate the Model Support docs and `README.md` table and `release_model_spec.json` file by running:
@@ -116,7 +116,14 @@ After changes in production catalogue have been added and committed, re-generate
 python3 scripts/release/update_model_spec.py --output-only --output-json release_model_spec.json
 ```
 
+```bash
+python3 scripts/release/export_model_spec.py
+```
+
 `update_model_spec.py` will retrieve entries from the  "prod" catalogue.
+
+`export_model_spec.py` will retrieve entries from the  "prod" catalogue.
+
 
 Verify that this script will not produce changes in models which are not in the scope of this release. In case it did, revert all changes that happenned in `release_model_spec.json`  for models out of scope. All modifications should be tracked using the `git diff` command.
 
