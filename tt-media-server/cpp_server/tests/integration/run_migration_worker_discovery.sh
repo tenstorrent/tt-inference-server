@@ -8,9 +8,12 @@
 # engines to find each other by a PREDEFINED LOGICAL NAME, with the actual
 # transfer port left dynamic (OS-assigned). Host RAM only, no device memory.
 #
-# Requires a Mooncake-enabled build (./build.sh --mooncake), which produces
-# build/migration_worker_discovery, and a running metadata service
-# (tests/integration/run_mooncake_metadata_server.sh).
+# Requires a Mooncake-enabled build WITH the HTTP metadata plugin
+# (USE_HTTP=ON + libcurl) producing build/migration_worker_discovery, and a
+# running metadata service (tests/integration/run_mooncake_metadata_server.sh).
+# See src/transport/README.md (#4209 section) for the build requirements: the
+# default tt-llm-engine build forces USE_HTTP=OFF, so http:// discovery is
+# unavailable until it is re-enabled.
 #
 # ── Two-host run (the real PoC) ────────────────────────────────────────────
 #   # On the metadata host (reachable by both):
@@ -49,37 +52,58 @@ SEND_NAME="${SEND_NAME:-kv-sender-0}"
 HTTP_PORT="${HTTP_PORT:-8080}"
 
 if [[ ! -x "${BIN}" ]]; then
-  echo "ERROR: ${BIN} not found/executable. Build with: ./build.sh --mooncake" >&2
+  echo "ERROR: ${BIN} not found/executable." >&2
+  echo "Build the discovery target (needs Mooncake + USE_HTTP + libcurl):" >&2
+  echo "  cmake --build build --target migration_worker_discovery" >&2
+  echo "See src/transport/README.md (#4209) for the full build requirements." >&2
   exit 2
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-master_pid=""
-cleanup() { [[ -n "${master_pid}" ]] && kill "${master_pid}" 2>/dev/null; }
+META_LOG="${META_LOG:-/tmp/tt_mc_metadata.log}"
+meta_pid=""
+cleanup() { [[ -n "${meta_pid}" ]] && kill "${meta_pid}" 2>/dev/null; }
 trap cleanup EXIT
+
+# Probe the metadata endpoint with a real PUT (the C++ client's contract), using
+# stdlib urllib so we don't depend on a curl executable being installed.
+probe_metadata() {
+  local uri="$1"
+  python3 - "$uri" <<'PY' 2>/dev/null
+import sys, urllib.request as u
+try:
+    r = u.urlopen(u.Request(sys.argv[1] + "?key=__probe__", data=b"{}",
+                            method="PUT"), timeout=2)
+    sys.exit(0 if r.status == 200 else 1)
+except Exception:
+    sys.exit(1)
+PY
+}
 
 # Use an existing metadata service, or auto-start one for the smoke test.
 if [[ -n "${METADATA:-}" ]]; then
   META_URI="${METADATA}"
   echo "Using existing metadata service: ${META_URI}"
 else
-  if ! command -v mooncake_master >/dev/null 2>&1; then
-    echo "ERROR: mooncake_master not on PATH and METADATA not set." >&2
-    echo "Either set METADATA=http://host:port/metadata or install mooncake_master" >&2
-    echo "(pip install mooncake-transfer-engine==0.3.6.post1)." >&2
-    exit 2
-  fi
-  echo "Auto-starting metadata service on 127.0.0.1:${HTTP_PORT}..."
+  echo "Auto-starting HTTP metadata service on 127.0.0.1:${HTTP_PORT}..."
   HTTP_PORT="${HTTP_PORT}" BIND_HOST=127.0.0.1 \
-    "${SCRIPT_DIR}/run_mooncake_metadata_server.sh" >/tmp/tt_mc_master.log 2>&1 &
-  master_pid=$!
+    "${SCRIPT_DIR}/run_mooncake_metadata_server.sh" >"${META_LOG}" 2>&1 &
+  meta_pid=$!
   META_URI="http://127.0.0.1:${HTTP_PORT}/metadata"
-  sleep 2  # give the master time to bind its HTTP port
-  if ! kill -0 "${master_pid}" 2>/dev/null; then
-    echo "ERROR: metadata service failed to start; see /tmp/tt_mc_master.log" >&2
-    cat /tmp/tt_mc_master.log >&2 || true
+  # Wait until it actually answers a PUT (binding can fail, e.g. port in use).
+  ready=0
+  for _ in $(seq 1 20); do
+    if probe_metadata "${META_URI}"; then ready=1; break; fi
+    sleep 0.5
+  done
+  if [[ "${ready}" -ne 1 ]]; then
+    echo "ERROR: metadata service did not become ready at ${META_URI}" >&2
+    echo "  (is port ${HTTP_PORT} already in use? try HTTP_PORT=18080)" >&2
+    echo "  log: ${META_LOG}" >&2
+    cat "${META_LOG}" >&2 || true
     exit 1
   fi
+  echo "Metadata service ready at ${META_URI}"
 fi
 
 base=(--metadata "${META_URI}" --bytes "${BYTES}" --timeout-sec "${TIMEOUT_SEC}")

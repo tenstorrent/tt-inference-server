@@ -140,8 +140,8 @@ the sender through a **rendezvous file** on a shared path. That does not work ac
 two independent hosts.
 
 #4209 removes that hack by validating the **Mooncake Metadata Service** as the
-discovery mechanism. With a real metadata service (mooncake_master's HTTP metadata
-server, etcd, or redis), the receiver advertises under a **predefined logical name**;
+discovery mechanism. With a real metadata service (the HTTP metadata server, etcd, or
+redis), the receiver advertises under a **predefined logical name**;
 Mooncake's "new RPC mapping" path
 ([`transfer_engine_impl.cpp`](../../tt-llm-engine/third_party/mooncake/mooncake-transfer-engine/src/transfer_engine_impl.cpp))
 registers `<name> → {auto-detected IP, OS-assigned dynamic port}` in that service.
@@ -164,21 +164,34 @@ then run a receiver and a sender:
 tests/integration/run_migration_worker_discovery.sh
 
 # Two-host run (the real PoC):
-#  metadata host:
-tests/integration/run_mooncake_metadata_server.sh
-#  receiver host:
-build/migration_worker_discovery --role receiver \
-  --metadata http://META_HOST:8080/metadata --name kv-receiver-0 --bytes 1048576
+#  metadata host (META_HOST):
+tests/integration/run_mooncake_metadata_server.sh           # serves http://0.0.0.0:18080/metadata
+#  receiver host (advertise this host's own LAN IP on multi-NIC boxes):
+MC_TCP_BIND_ADDRESS=<receiver-ip> build/migration_worker_discovery --role receiver \
+  --metadata http://META_HOST:18080/metadata --name kv-receiver-0 --bytes 1048576
 #  sender host:
 build/migration_worker_discovery --role sender \
-  --metadata http://META_HOST:8080/metadata --name kv-sender-0 \
+  --metadata http://META_HOST:18080/metadata --name kv-sender-0 \
   --peer kv-receiver-0 --bytes 1048576
 ```
 
-`mooncake_master` ships in the `mooncake-transfer-engine` wheel (see
-[`mooncake/poc1`](../../../../mooncake/poc1)). On multi-NIC hosts, set
-`MC_TCP_BIND_ADDRESS` to the IP the peer should connect to if auto-detection picks the
-wrong interface.
+### Build + runtime requirements (learned the hard way)
+
+- **HTTP metadata plugin must be compiled in.** `tt-llm-engine/cmake/mooncake.cmake`
+  forces `USE_HTTP OFF` by default; flip it to `ON` (and have `libcurl` headers/libs on
+  the include/library path) or the C++ client aborts with
+  `Unable to find metadata storage plugin http`.
+- **Use the wheel's `http_metadata_server.py`, not `mooncake_master`.** The
+  `mooncake_master` binary's embedded HTTP server answers a different route than the
+  vendored C++ client expects (you get `http=404 metadata not found` on every PUT/GET).
+  `run_mooncake_metadata_server.sh` launches the Python server, which serves the
+  `GET/PUT/DELETE /metadata?key=...` API the client actually calls.
+- **Multi-NIC hosts:** set `MC_TCP_BIND_ADDRESS=<this host's IP>` so the engine
+  advertises the interface the peer can reach (auto-detection may pick `docker0`/
+  `flannel.1`). Each host advertises *its own* IP.
+
+The `http=404 ... metadata not found` lines you see at startup are **expected** — that's
+the engine probing for a pre-existing descriptor for its own name before it registers.
 
 ## Validation status
 
@@ -188,7 +201,7 @@ wrong interface.
 | Device-DRAM backend single-galaxy round-trip (UMD, `--blaze`) | impl |
 | Mooncake transport loopback TCP (host backend, `--mooncake`) | impl |
 | Two-galaxy acceptance, both backends enabled | pending a two-process HW run |
-| Metadata-service worker discovery, two hosts, host RAM (#4209, `migration_worker_discovery`) | impl |
+| Metadata-service worker discovery, two hosts, host RAM (#4209, `migration_worker_discovery`) | **validated** (two hosts, 1 MiB tensor, byte-verified MATCH) |
 
 ## Future work — wiring into the tt-llm-engine migration worker
 
