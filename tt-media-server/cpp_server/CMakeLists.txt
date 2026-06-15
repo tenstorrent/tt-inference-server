@@ -565,10 +565,10 @@ target_compile_options(transport_lib PRIVATE -Wall -Wextra -Wpedantic)
 # galaxies" validation in mooncake/poc-transfer-engine/adr-mooncake-backend.md). It is a manual
 # sender/receiver driver, not a ctest case, and is only built when Mooncake is
 # in the build (the engine is otherwise a no-op). Run it via
-# tests/integration/run_transport_migration_e2e.sh.
+# tests/e2e/scripts/run_transport_migration_e2e.sh.
 if(TARGET transfer_engine)
     add_executable(transport_migration_e2e
-        tests/integration/server/transport_migration_e2e.cpp)
+        tests/e2e/transport_migration_e2e.cpp)
     target_link_libraries(transport_migration_e2e PRIVATE transport_lib)
     target_include_directories(transport_migration_e2e PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -995,7 +995,7 @@ add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
 
 # Cancellation E2E test (starts mock server, runs Python tests, stops server)
 add_test(NAME CancellationE2E
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/run_e2e_with_server.sh
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_e2e_with_server.sh
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 120)
