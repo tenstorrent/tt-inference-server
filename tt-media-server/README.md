@@ -2,20 +2,17 @@
 
 This server is built to serve non-LLM models. Currently supported models:
 
-1. SDXL-trace
-2. SDXL-image-to-image
-3. SDXL-edit
-4. SD3.5
-5. Flux1
-6. Mochi1
-7. Wan2.2
-8. Motif-Image-6B-Preview
-9. Qwen-Image
-10. Whisper
-11. Microsoft Resnet (Forge)
-12. VLLM with TT Plugin
-13. bge-large-en-v1.5
-14. Qwen3-Embedding-8B
+1. SD3.5
+2. Flux1
+3. Mochi1
+4. Wan2.2
+5. Motif-Image-6B-Preview
+6. Qwen-Image
+7. Whisper
+8. Microsoft Resnet (Forge)
+9. VLLM with TT Plugin
+10. bge-large-en-v1.5
+11. Qwen3-Embedding-8B
 
 # Repo structure
 
@@ -39,8 +36,6 @@ All API endpoints use the `/v1` prefix to match the OpenAI API standard. Legacy 
 | Primary (use this)                                          | Legacy (deprecated)                                  | Method | Description                                |
 |-------------------------------------------------------------|------------------------------------------------------|--------|--------------------------------------------|
 | `/v1/images/generations`                                    | `/image/generations`                                 | POST   | Text-to-image generation                   |
-| `/v1/images/image-to-image`                                 | `/image/image-to-image`                              | POST   | Image-to-image (SDXL img2img)              |
-| `/v1/images/edits`                                          | `/image/edits`                                       | POST   | Image editing (SDXL edit)                  |
 | `/v1/audio/transcriptions`                                  | `/audio/transcriptions`                              | POST   | Speech-to-text                             |
 | `/v1/audio/translations`                                    | `/audio/translations`                                | POST   | Speech-to-English (translation)            |
 | `/v1/audio/speech`                                          | `/audio/speech`                                      | POST   | Text-to-speech                             |
@@ -132,28 +127,6 @@ For development running:
 3. Clone tt-inference-server repo and switch to dev branch
 4. ```sudo apt update && sudo apt install -y ffmpeg && uv pip install -r requirements.txt``` from tt-media-server
 5. ```uvicorn main:app --lifespan on --port 8000``` (lifespan methods are needed to init device and close the devices)
-
-## SDXL setup
-
-### Standard SDXL Setup
-1. ```export MODEL_RUNNER=tt-sdxl-trace```
-2. Run the server ```uvicorn main:app --lifespan on --port 8000```
-
-### SDXL with Tensor Parallelism (TP2)
-1. ```export TP2=true```
-2. ```export MODEL_RUNNER=tt-sdxl-trace```
-3. Run the server ```source run_uvicorn.sh```
-
-**Note:** TP2 configuration requires exactly 2 TT devices and is only supported for SDXL models.
-
-### SDXL Image To Image Setup
-1. ```export MODEL_RUNNER=tt-sdxl-image-to-image```
-2. Run the server ```uvicorn main:app --lifespan on --port 8000```
-
-### SDXL Edit Setup
-1. ```export MODEL_RUNNER=tt-sdxl-edit```
-2. Run the server ```uvicorn main:app --lifespan on --port 8000```
-
 
 ## SD-3.5 setup
 
@@ -371,13 +344,7 @@ curl -X POST 'http://127.0.0.1:8000/v1/detokenize' \
 
 # Image API
 
-The image router exposes one of three endpoints depending on `MODEL_RUNNER`:
-
-| `MODEL_RUNNER`             | Active endpoint                     |
-|----------------------------|-------------------------------------|
-| `tt-sdxl-image-to-image`   | `POST /v1/images/image-to-image`    |
-| `tt-sdxl-edit`             | `POST /v1/images/edits`             |
-| any other image runner     | `POST /v1/images/generations`       |
+The image router exposes `POST /v1/images/generations`.
 
 ## Image generation test call
 
@@ -399,42 +366,6 @@ curl -X 'POST' \
 ```
 
 The response includes the list of base64-encoded images and total `generation_time` in seconds.
-
-## Image-to-image test call
-
-Available when `MODEL_RUNNER=tt-sdxl-image-to-image`.
-
-```bash
-curl -X 'POST' \
-  'http://127.0.0.1:8000/v1/images/image-to-image' \
-  -H 'Authorization: Bearer your-secret-key' \
-  -H 'Content-Type: application/json' \
-  -d '{
-  "prompt": "Make it look like a watercolor painting",
-  "image": "[base64 encoded image]",
-  "num_inference_steps": 20,
-  "guidance_scale": 7.0,
-  "strength": 0.7
-}'
-```
-
-## Image edit test call
-
-Available when `MODEL_RUNNER=tt-sdxl-edit`.
-
-```bash
-curl -X 'POST' \
-  'http://127.0.0.1:8000/v1/images/edits' \
-  -H 'Authorization: Bearer your-secret-key' \
-  -H 'Content-Type: application/json' \
-  -d '{
-  "prompt": "Replace the masked area with a sunset",
-  "image": "[base64 encoded image]",
-  "mask": "[base64 encoded mask]",
-  "num_inference_steps": 20,
-  "guidance_scale": 7.0
-}'
-```
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
@@ -927,13 +858,12 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
-| `MODEL_RUNNER` | [`ModelRunners.TT_SDXL_TRACE.value`](config/constants.py ) | Specifies which model runner implementation to use for inference |
+| `MODEL_RUNNER` | [`ModelRunners.TT_SD3_5.value`](config/constants.py ) | Specifies which model runner implementation to use for inference |
 | `MODEL_SERVICE` | `None` | Specifies which model service implementation to use for inference. If not set, the default service for the selected model runner will be used |
 | `MODEL_WEIGHTS_PATH` | `""` | Path to the main model weights. Used if `HF_HOME` is not set. |
 | `PREPROCESSING_MODEL_WEIGHTS_PATH` | `""` | Path to preprocessing model weights (e.g., for audio preprocessing). Used if `HF_HOME` is not set. |
 | `TRAINING_MODEL` | `None` | HuggingFace model ID used by the fine-tuning catalog when `MODEL_SERVICE=training` |
 | `CHAT_TEMPLATE_KWARGS` | `{}` | Extra kwargs passed to `tokenizer.apply_chat_template` for chat completions (e.g. Qwen3 thinking mode flags) |
-| `SDXL_IMAGE_RESOLUTION` | `(1024, 1024)` | Output resolution for SDXL text-to-image. Must be one of the values in `SDXL_VALID_IMAGE_RESOLUTIONS` |
 | `TRACE_REGION_SIZE` | `34541598` | Memory size allocated for model tracing operations (in bytes) |
 | `DOWNLOAD_WEIGHTS_FROM_SERVICE` | `True` | Boolean flag to enable downloading weights when initializing service. When enabled, ensures that weights are downloaded once per instance of the server |
 
@@ -1131,9 +1061,9 @@ Quick start: see [`monitoring/README.md`](./monitoring/README.md).
 ### Labels Description
 
 Labels are part of the metrics. Example:
-tt_media_server_device_warmup_duration_seconds_sum{device_id="2",model_type="tt-sdxl-trace"} 505.4703781604767
+tt_media_server_device_warmup_duration_seconds_sum{device_id="2",model_type="tt-sd3.5"} 505.4703781604767
 
-- **`model_type`**: The type of model being used (e.g., `SDXL`, `TT_SDXL_IMAGE_TO_IMAGE`)
+- **`model_type`**: The type of model being used (e.g., `tt-sd3.5`, `tt-flux.1-dev`)
 - **`device_id`**: Logical index of the Tenstorrent device for that worker (devices are ordered by PCI bus address; on Galaxy this stays the same across reset). Not the same as the number in `/dev/tenstorrent/N`.
 - **`status`**: Operation status (`success` or `failure`)
 - **`preprocessing_enabled`**: Whether preprocessing is enabled (`true` or `false`)
@@ -1151,20 +1081,9 @@ The server supports special environment variables for configuring device mesh sh
 |---------------------|-------------------|-------------|
 | `SD_3_5_FAST` | `None` | Configures device mesh for SD-3.5 in fast configuration (4x8 mesh = 32 devices total) when set to `"true"` (case-insensitive) |
 | `SD_3_5_BASE` | `None` | Configures device mesh for SD-3.5 in base configuration (2x4 mesh = 8 devices total) when set to `"true"` (case-insensitive) |
-| `TP2` | `None` | Enables tensor parallelism across 2 devices (2x1 mesh) when set to `"true"` (case-insensitive). **Compatible with SDXL models only** |
 | `SP_MESH_4X32` | `None` | Configures device mesh as 4x32 (sequence-parallel mesh) when set to `"true"` (case-insensitive). Used for very large mesh deployments |
 
 ### Usage Examples
-
-#### Running SDXL with Tensor Parallelism (TP2)
-```bash
-# Enable TP2 for SDXL (requires 2 devices)
-export TP2=true
-export MODEL_RUNNER=tt-sdxl-trace
-source run_uvicorn.sh
-```
-
-**Note:** TP2 configuration is currently supported only for SDXL models and requires exactly 2 TT devices.
 
 #### Running Stable Diffusion 3.5 Base Configuration
 ```bash
@@ -1282,7 +1201,7 @@ Alternatively, you can use an environment variable:
 Docker build sample:
 
 ```bash
-docker build -t sdxl-inf-server --platform=linux/amd64 -f tt-media-server/Dockerfile .
+docker build -t tt-media-server --platform=linux/amd64 -f tt-media-server/Dockerfile .
 ```
 
 Docker image link:
@@ -1307,11 +1226,12 @@ docker run \
 
 ## Galaxy running settings
 
-Running SDXL on Galaxy:
+Running SD-3.5 on Galaxy:
 
 ```bash
 sudo docker run -d -it \
-  -e MODEL_RUNNER=tt-sdxl-trace \
+  -e MODEL=stable-diffusion-3.5-large \
+  -e DEVICE=galaxy \
   -e DEVICE_IDS="(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23)" \
   --cap-add=sys_nice \
   --security-opt seccomp=unconfined \

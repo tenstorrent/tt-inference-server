@@ -22,6 +22,7 @@ torch==2.7.1+cpu
 torchaudio==2.7.1+cpu
 requests
 num2words
+peft
 
 
 --extra-index-url https://download.pytorch.org/whl/cpu
