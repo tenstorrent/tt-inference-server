@@ -185,11 +185,13 @@ TEST_F(DispatcherTest, ResultIsForwardedToDecode) {
   tt::sockets::PrefillResultMessage ok(5);
   ok.finished = true;
   ok.generated_text = "hello";
+  ok.migration_id = 123456789ULL;
   dispatcher->onPrefillResult(chosen, ok);
 
   ASSERT_EQ(results.size(), 1u);
   EXPECT_EQ(results[0].task_id, 5u);
   EXPECT_EQ(results[0].generated_text, "hello");
+  EXPECT_EQ(results[0].migration_id, 123456789ULL);
   EXPECT_FALSE(results[0].error);
 }
 
