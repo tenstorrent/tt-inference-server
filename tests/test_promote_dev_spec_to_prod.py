@@ -5,6 +5,8 @@
 import json
 import textwrap
 
+import pytest
+
 from scripts.release.promote_dev_spec_to_prod import (
     DEFAULT_CI_CONFIG,
     DEFAULT_DEV_DIR,
@@ -22,6 +24,19 @@ from scripts.release.promote_dev_spec_to_prod import (
     upsert_block,
 )
 from workflows.workflow_types import DeviceTypes, InferenceEngine
+
+# Release pins injected by promotion. version="0.2.0" lets the existing
+# "version bumped from dev" assertions keep working now that the source is the
+# CLI flag rather than the dev template.
+PINS = {"tt_metal_commit": "abc1234", "version": "0.2.0", "vllm_commit": "def5678"}
+PIN_ARGS = [
+    "--tt-metal-commit",
+    "abc1234",
+    "--version",
+    "0.2.0",
+    "--vllm-commit",
+    "def5678",
+]
 
 
 def test_model_name_from_weight_strips_org_prefix():
@@ -339,7 +354,6 @@ def _build_tree(tmp_path):
             - meta-llama/Llama-3.1-8B-Instruct
           impl: tt_transformers
           inference_engine: VLLM
-          version: "0.2.0"
           device_model_specs:
             - device: GALAXY
               max_context: 16384  # 16 * 1024
@@ -381,7 +395,7 @@ def _build_tree(tmp_path):
 
 def test_promote_updates_prod_preserving_comment_and_whole_template(tmp_path):
     ci, dev, prod = _build_tree(tmp_path)
-    report = promote(ci, dev, prod, dry_run=False)
+    report = promote(ci, dev, prod, **PINS)
 
     text = (prod / "llm.yaml").read_text()
     assert "0.2.0" in text  # version bumped from dev
@@ -390,6 +404,150 @@ def test_promote_updates_prod_preserving_comment_and_whole_template(tmp_path):
     assert "device: N150" in text  # whole template copied (non-release device)
     assert report["unmatched"] == set()
     assert "llm.yaml" in report["changed_files"]
+
+
+def test_promote_injects_pins_and_result_passes_prod_enforcement(tmp_path):
+    """A stripped dev block is promoted with the pins injected, and the resulting
+    prod file loads under the prod required-fields enforcement."""
+    from workflows.model_spec import load_templates_from_yaml
+
+    dev = tmp_path / "dev"
+    prod = tmp_path / "prod"  # parent dir name "prod" => enforcement is active
+    _write(
+        dev / "llm.yaml",
+        """
+        templates:
+        - weights:
+            - meta-llama/Llama-3.1-8B-Instruct
+          impl: tt_transformers
+          inference_engine: VLLM
+          device_model_specs:
+            - device: GALAXY
+              max_concurrency: 32
+              max_context: 4096
+              default_impl: true
+        """,
+    )
+    # prod already has this template pinned at an older release (update path).
+    _write(
+        prod / "llm.yaml",
+        """
+        templates:
+        - weights:
+            - meta-llama/Llama-3.1-8B-Instruct
+          impl: tt_transformers
+          inference_engine: VLLM
+          version: "0.0.1"
+          tt_metal_commit: "old"
+          vllm_commit: "old"
+          device_model_specs:
+            - device: GALAXY
+              max_concurrency: 32
+              max_context: 4096
+              default_impl: true
+        """,
+    )
+    ci = tmp_path / "ci.json"
+    ci.write_text(
+        json.dumps(
+            {
+                "models": {
+                    "Llama-3.1-8B-Instruct": {
+                        "inference_engine": "vLLM",
+                        "ci": {"release": {"devices": ["GALAXY"]}},
+                    }
+                }
+            }
+        )
+    )
+
+    promote(
+        ci,
+        dev,
+        prod,
+        tt_metal_commit="deadbeef",
+        version="1.2.3",
+        vllm_commit="cafef00d",
+    )
+
+    text = (prod / "llm.yaml").read_text()
+    assert 'version: "1.2.3"' in text
+    assert 'tt_metal_commit: "deadbeef"' in text
+    assert 'vllm_commit: "cafef00d"' in text
+
+    templates = load_templates_from_yaml(prod / "llm.yaml")
+    assert templates[0].version == "1.2.3"
+    assert templates[0].tt_metal_commit == "deadbeef"
+    assert templates[0].vllm_commit == "cafef00d"
+
+
+def test_promote_requires_vllm_commit_for_vllm_template(tmp_path):
+    """Omitting vllm_commit raises when a promoted template is VLLM-engine."""
+    ci, dev, prod = _build_tree(tmp_path)  # _build_tree uses inference_engine VLLM
+    with pytest.raises(ValueError, match="vllm-commit"):
+        promote(ci, dev, prod, tt_metal_commit="abc1234", version="1.0.0")
+
+
+def test_promote_non_vllm_template_omits_vllm_commit(tmp_path):
+    """FORGE/MEDIA templates need no vllm_commit and get none injected."""
+    dev = tmp_path / "dev"
+    prod = tmp_path / "prod"
+    _write(
+        dev / "cnn.yaml",
+        """
+        templates:
+        - weights:
+            - resnet-50
+          impl: tt_transformers
+          inference_engine: FORGE
+          device_model_specs:
+            - device: N150
+              max_concurrency: 1
+              max_context: 4096
+              default_impl: true
+        """,
+    )
+    ci = tmp_path / "ci.json"
+    ci.write_text(
+        json.dumps(
+            {
+                "models": {
+                    "resnet-50": {
+                        "inference_engine": "FORGE",
+                        "ci": {"release": {"devices": ["N150"]}},
+                    }
+                }
+            }
+        )
+    )
+    # No vllm_commit passed, and none required.
+    report = promote(ci, dev, prod, tt_metal_commit="abc1234", version="1.0.0")
+    text = (prod / "cnn.yaml").read_text()
+    assert 'version: "1.0.0"' in text
+    assert 'tt_metal_commit: "abc1234"' in text
+    assert "vllm_commit" not in text
+    assert report["unmatched"] == set()
+
+
+def test_main_errors_when_vllm_commit_missing(tmp_path):
+    """main() exits non-zero (argparse error) when vllm_commit is needed but absent."""
+    ci, dev, prod = _build_tree(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "--ci-config",
+                str(ci),
+                "--dev-dir",
+                str(dev),
+                "--prod-dir",
+                str(prod),
+                "--tt-metal-commit",
+                "abc1234",
+                "--version",
+                "1.0.0",
+            ]
+        )
+    assert exc.value.code == 2  # argparse usage error
 
 
 def test_promote_appends_new_release_template_and_stays_valid_yaml(tmp_path):
@@ -438,7 +596,7 @@ def test_promote_appends_new_release_template_and_stays_valid_yaml(tmp_path):
         )
     )
 
-    report = promote(ci, dev, prod, dry_run=False)
+    report = promote(ci, dev, prod, **PINS)
 
     assert report["actions"]["llm.yaml"] == [
         (
@@ -463,20 +621,11 @@ def test_promote_appends_new_release_template_and_stays_valid_yaml(tmp_path):
     assert ("meta-llama/Llama-3.1-8B-Instruct",) in weights
 
 
-def test_promote_dry_run_writes_nothing(tmp_path):
-    ci, dev, prod = _build_tree(tmp_path)
-    before = (prod / "llm.yaml").read_text()
-    report = promote(ci, dev, prod, dry_run=True)
-    # Disk is untouched, but the intended change is still reported.
-    assert (prod / "llm.yaml").read_text() == before
-    assert "llm.yaml" in report["changed_files"]
-
-
 def test_promote_is_idempotent(tmp_path):
     ci, dev, prod = _build_tree(tmp_path)
-    promote(ci, dev, prod, dry_run=False)
+    promote(ci, dev, prod, **PINS)
     after_first = (prod / "llm.yaml").read_text()
-    report = promote(ci, dev, prod, dry_run=False)
+    report = promote(ci, dev, prod, **PINS)
     assert (prod / "llm.yaml").read_text() == after_first
     assert report["changed_files"] == []
 
@@ -495,7 +644,7 @@ def test_promote_reports_unmatched_combo(tmp_path):
             }
         )
     )
-    report = promote(ci, dev, prod, dry_run=False)
+    report = promote(ci, dev, prod, **PINS)
     assert (
         ReleaseCombo("ghost-model", InferenceEngine.VLLM, DeviceTypes.GALAXY)
         in report["unmatched"]
@@ -504,14 +653,6 @@ def test_promote_reports_unmatched_combo(tmp_path):
 
 def test_main_returns_zero_and_writes(tmp_path, capsys):
     ci, dev, prod = _build_tree(tmp_path)
-    rc = main(["--ci-config", str(ci), "--dev-dir", str(dev), "--prod-dir", str(prod)])
-    assert rc == 0
-    assert "0.2.0" in (prod / "llm.yaml").read_text()
-
-
-def test_main_dry_run_writes_nothing(tmp_path):
-    ci, dev, prod = _build_tree(tmp_path)
-    before = (prod / "llm.yaml").read_text()
     rc = main(
         [
             "--ci-config",
@@ -520,11 +661,11 @@ def test_main_dry_run_writes_nothing(tmp_path):
             str(dev),
             "--prod-dir",
             str(prod),
-            "--dry-run",
+            *PIN_ARGS,
         ]
     )
     assert rc == 0
-    assert (prod / "llm.yaml").read_text() == before
+    assert "0.2.0" in (prod / "llm.yaml").read_text()
 
 
 def test_main_returns_nonzero_on_unmatched(tmp_path, capsys):
@@ -541,7 +682,17 @@ def test_main_returns_nonzero_on_unmatched(tmp_path, capsys):
             }
         )
     )
-    rc = main(["--ci-config", str(ci), "--dev-dir", str(dev), "--prod-dir", str(prod)])
+    rc = main(
+        [
+            "--ci-config",
+            str(ci),
+            "--dev-dir",
+            str(dev),
+            "--prod-dir",
+            str(prod),
+            *PIN_ARGS,
+        ]
+    )
     assert rc == 1
     assert "ghost-model" in capsys.readouterr().out
 
@@ -555,9 +706,16 @@ def test_real_repo_release_combos_all_match_dev():
     assert unmatched == set(), f"release combos missing from dev: {unmatched}"
 
 
-def test_real_repo_dry_run_against_prod_succeeds(tmp_path):
-    """Dry-run against the real catalogues runs cleanly and writes nothing to repo."""
-    report = promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, DEFAULT_PROD_DIR, dry_run=True)
+def test_real_repo_promote_against_prod_succeeds(tmp_path):
+    """Promoting against the real catalogues runs cleanly with no unmatched combos.
+
+    Writes to a temp copy so the repo's prod/ is never touched.
+    """
+    import shutil
+
+    prod_copy = tmp_path / "prod"
+    shutil.copytree(DEFAULT_PROD_DIR, prod_copy)
+    report = promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, prod_copy, **PINS)
     assert report["unmatched"] == set()
 
 
@@ -576,7 +734,7 @@ def test_real_repo_promote_only_touches_release_blocks(tmp_path):
     shutil.copytree(DEFAULT_PROD_DIR, prod_copy)
     combos = collect_release_combos(json.loads(DEFAULT_CI_CONFIG.read_text()))
     matches_by_file, _ = find_matches(DEFAULT_DEV_DIR, combos)
-    report = promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, prod_copy, dry_run=False)
+    report = promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, prod_copy, **PINS)
 
     def blocks(text):
         return {
@@ -605,8 +763,8 @@ def test_real_repo_promote_is_idempotent(tmp_path):
 
     prod_copy = tmp_path / "prod"
     shutil.copytree(DEFAULT_PROD_DIR, prod_copy)
-    promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, prod_copy, dry_run=False)
+    promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, prod_copy, **PINS)
     snapshot = {p.name: p.read_text() for p in prod_copy.glob("*.yaml")}
-    report = promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, prod_copy, dry_run=False)
+    report = promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, prod_copy, **PINS)
     assert report["changed_files"] == []
     assert {p.name: p.read_text() for p in prod_copy.glob("*.yaml")} == snapshot
