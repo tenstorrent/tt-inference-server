@@ -64,7 +64,9 @@ def test_embedding_status_minimal_fields():
 
 
 def test_cnn_status_matches_image_shape():
-    d = CnnGenerationTestStatus(status=True, elapsed=1.0, num_inference_steps=3).to_dict()
+    d = CnnGenerationTestStatus(
+        status=True, elapsed=1.0, num_inference_steps=3
+    ).to_dict()
     assert set(d) == {
         "status",
         "elapsed",
@@ -79,8 +81,13 @@ def test_cnn_status_matches_image_shape():
 
 def test_tts_status_to_dict():
     d = TtsTestStatus(
-        status=True, elapsed=1.0, ttft_ms=12.0, rtr=0.3,
-        text="hi", audio_duration=2.0, reference_text="ref",
+        status=True,
+        elapsed=1.0,
+        ttft_ms=12.0,
+        rtr=0.3,
+        text="hi",
+        audio_duration=2.0,
+        reference_text="ref",
     ).to_dict()
     assert d["ttft_ms"] == 12.0
     assert d["reference_text"] == "ref"

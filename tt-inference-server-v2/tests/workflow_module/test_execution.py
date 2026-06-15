@@ -17,13 +17,18 @@ from workflow_module.execution import (
 
 class TestTaskOutcome:
     def test_succeeded_when_exit_zero(self):
-        o = TaskOutcome(task_type="benchmark", exit_code=0, elapsed_seconds=1.0,
-                        block_kind="benchmarks")
+        o = TaskOutcome(
+            task_type="benchmark",
+            exit_code=0,
+            elapsed_seconds=1.0,
+            block_kind="benchmarks",
+        )
         assert o.succeeded is True
 
     def test_not_succeeded_on_nonzero_exit(self):
-        o = TaskOutcome(task_type="benchmark", exit_code=2, elapsed_seconds=1.0,
-                        block_kind=None)
+        o = TaskOutcome(
+            task_type="benchmark", exit_code=2, elapsed_seconds=1.0, block_kind=None
+        )
         assert o.succeeded is False
 
 

@@ -61,7 +61,9 @@ class TestCollapseSameHeadingBlocks:
 class TestGenerate:
     def test_writes_markdown_and_json(self, tmp_path: Path):
         result = generate_report(
-            _schema(Block(kind="benchmarks", title="B", data={"records": [{"ttft": 1.0}]})),
+            _schema(
+                Block(kind="benchmarks", title="B", data={"records": [{"ttft": 1.0}]})
+            ),
             tmp_path,
         )
         assert result.markdown_path.exists()
@@ -91,7 +93,9 @@ class TestGenerate:
         assert "acceptance_summary_markdown" not in payload
         assert "acceptance_criteria" not in payload
 
-    def test_renderer_exception_does_not_abort_report(self, tmp_path: Path, monkeypatch):
+    def test_renderer_exception_does_not_abort_report(
+        self, tmp_path: Path, monkeypatch
+    ):
         from report_module import renderers
 
         def _boom(block, metadata):

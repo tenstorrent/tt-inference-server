@@ -16,7 +16,9 @@ class TestBlock:
         assert Block(kind="benchmarks", data={}).slug == "benchmarks"
 
     def test_slug_with_id_joins_kind_and_id(self):
-        assert Block(kind="benchmarks", data={}, id="m_n300").slug == "benchmarks__m_n300"
+        assert (
+            Block(kind="benchmarks", data={}, id="m_n300").slug == "benchmarks__m_n300"
+        )
 
     def test_from_dict_requires_kind(self):
         with pytest.raises(ValueError, match="kind"):
@@ -47,7 +49,10 @@ class TestBlock:
 class TestReportSchemaFromDict:
     def test_parses_metadata_and_sections(self):
         schema = ReportSchema.from_dict(
-            {"metadata": {"report_id": "r1"}, "sections": [{"kind": "evals", "data": {}}]}
+            {
+                "metadata": {"report_id": "r1"},
+                "sections": [{"kind": "evals", "data": {}}],
+            }
         )
         assert schema.report_id == "r1"
         assert [b.kind for b in schema.sections] == ["evals"]
@@ -85,8 +90,14 @@ class TestReportSchemaFromRecords:
 
     def test_metadata_synthesised_from_first_record(self):
         schema = ReportSchema.from_records(
-            [{"kind": "benchmarks", "model": "m", "device": "n300",
-              "timestamp": "2026-04-11 01:50:50"}]
+            [
+                {
+                    "kind": "benchmarks",
+                    "model": "m",
+                    "device": "n300",
+                    "timestamp": "2026-04-11 01:50:50",
+                }
+            ]
         )
         assert schema.model_name == "m"
         assert schema.device == "n300"

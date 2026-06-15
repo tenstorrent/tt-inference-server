@@ -83,9 +83,7 @@ def _ok(raw=None) -> DriverResult:
 
 
 def _runner(driver, controller=None) -> LLMPerformanceRunner:
-    return LLMPerformanceRunner(
-        driver, controller, inter_run_sleep_s=0.0
-    )
+    return LLMPerformanceRunner(driver, controller, inter_run_sleep_s=0.0)
 
 
 def test_zero_configs_returns_empty_without_touching_server():
@@ -178,9 +176,7 @@ def test_mid_sweep_unhealthy_status_aborts():
 
 def test_health_check_request_exception_aborts():
     driver = FakeDriver([_ok()])
-    controller = FakeController(
-        health_exc=requests.exceptions.ConnectionError("down")
-    )
+    controller = FakeController(health_exc=requests.exceptions.ConnectionError("down"))
     result = _runner(driver, controller).run([_cfg()], _SERVER, _CTX)
     assert driver.run_calls == []
     assert result.return_codes == [1]

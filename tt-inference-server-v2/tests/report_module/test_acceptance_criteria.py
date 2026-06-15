@@ -58,18 +58,24 @@ def _bench(target_checks) -> Block:
 
 
 def test_benchmarks_absent_is_na():
-    cat = _categories_by_name(_schema(Block(kind="evals", data={})))[CATEGORY_BENCHMARKS]
+    cat = _categories_by_name(_schema(Block(kind="evals", data={})))[
+        CATEGORY_BENCHMARKS
+    ]
     assert cat.status == STATUS_NA and cat.total == 0
 
 
 def test_benchmark_passing_tier_accepts():
-    schema = _schema(_bench({"target": {"ttft_check": 2, "ttft": 100, "ttft_ratio": 0.8}}))
+    schema = _schema(
+        _bench({"target": {"ttft_check": 2, "ttft": 100, "ttft_ratio": 0.8}})
+    )
     accepted, blockers, _ = acceptance_criteria_check(schema)
     assert accepted is True and blockers == {}
 
 
 def test_benchmark_failing_check_blocks():
-    schema = _schema(_bench({"target": {"ttft_check": 3, "ttft": 100, "ttft_ratio": 1.2}}))
+    schema = _schema(
+        _bench({"target": {"ttft_check": 3, "ttft": 100, "ttft_ratio": 1.2}})
+    )
     accepted, blockers, _ = acceptance_criteria_check(schema)
     assert accepted is False
     assert "benchmarks:B.target.ttft_check" in blockers
@@ -110,7 +116,9 @@ def test_eval_missing_accuracy_check_blocks():
 
 
 def test_eval_accuracy_check_pass():
-    accepted, blockers, _ = acceptance_criteria_check(_schema(_eval({"accuracy_check": 2})))
+    accepted, blockers, _ = acceptance_criteria_check(
+        _schema(_eval({"accuracy_check": 2}))
+    )
     assert accepted is True and blockers == {}
 
 
@@ -140,8 +148,12 @@ def test_spec_tests_infra_task_types_excluded():
 
 def test_spec_tests_success_false_blocks():
     schema = _schema(
-        Block(kind="spec_tests", title="T", task_type="functional",
-              data={"success": False, "attempts": 3})
+        Block(
+            kind="spec_tests",
+            title="T",
+            task_type="functional",
+            data={"success": False, "attempts": 3},
+        )
     )
     accepted, blockers, _ = acceptance_criteria_check(schema)
     assert accepted is False

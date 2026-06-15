@@ -42,7 +42,9 @@ class TestServerConnection:
         assert conn.url_with_port == "http://host:8000"
 
     def test_host_strips_scheme_and_embedded_port(self):
-        conn = ServerConnection(base_url="http://host:1234", service_port=8000, model="m")
+        conn = ServerConnection(
+            base_url="http://host:1234", service_port=8000, model="m"
+        )
         assert conn.host == "host"
 
     def test_host_from_bare_hostname(self):

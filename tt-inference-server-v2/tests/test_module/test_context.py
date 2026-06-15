@@ -23,8 +23,15 @@ from test_module.context import (
 )
 
 
-def _ctx(server_url=None, service_port=8000, *, model="m", device="N300",
-         max_concurrency=4, all_params=None) -> MediaContext:
+def _ctx(
+    server_url=None,
+    service_port=8000,
+    *,
+    model="m",
+    device="N300",
+    max_concurrency=4,
+    all_params=None,
+) -> MediaContext:
     return MediaContext(
         all_params=all_params if all_params is not None else [],
         model_spec=SimpleNamespace(
@@ -63,7 +70,9 @@ class TestMediaContextUrls:
 class TestCountTokens:
     def test_blank_text_is_zero(self, monkeypatch):
         # Returns before consulting any tokenizer.
-        monkeypatch.setattr(ctx_mod, "get_tokenizer", lambda repo: pytest.fail("unused"))
+        monkeypatch.setattr(
+            ctx_mod, "get_tokenizer", lambda repo: pytest.fail("unused")
+        )
         assert count_tokens("any/repo", "   ") == 0
 
     def test_word_count_fallback_when_no_tokenizer(self, monkeypatch):
@@ -71,7 +80,9 @@ class TestCountTokens:
         assert count_tokens("any/repo", "one two three") == 3
 
     def test_uses_tokenizer_when_available(self, monkeypatch):
-        fake = SimpleNamespace(encode=lambda text, add_special_tokens=False: [1, 2, 3, 4])
+        fake = SimpleNamespace(
+            encode=lambda text, add_special_tokens=False: [1, 2, 3, 4]
+        )
         monkeypatch.setattr(ctx_mod, "get_tokenizer", lambda repo: fake)
         assert count_tokens("any/repo", "whatever") == 4
 
@@ -87,7 +98,9 @@ class TestCountTokens:
 
 class TestMetadataHelpers:
     def test_common_report_metadata(self):
-        meta = common_report_metadata(_ctx(model="my-model", device="N300"), "benchmark")
+        meta = common_report_metadata(
+            _ctx(model="my-model", device="N300"), "benchmark"
+        )
         assert meta["model"] == "my-model"
         assert meta["device"] == "N300"
         assert meta["task_type"] == "benchmark"
@@ -95,9 +108,13 @@ class TestMetadataHelpers:
 
     def test_common_eval_metadata_lowercases_device_and_pulls_task(self):
         params = SimpleNamespace(
-            tasks=[SimpleNamespace(task_name="mmlu", score=SimpleNamespace(tolerance=0.05))]
+            tasks=[
+                SimpleNamespace(task_name="mmlu", score=SimpleNamespace(tolerance=0.05))
+            ]
         )
-        meta = common_eval_metadata(_ctx(device="N300", all_params=params), "evaluation")
+        meta = common_eval_metadata(
+            _ctx(device="N300", all_params=params), "evaluation"
+        )
         assert meta["device"] == "n300"
         assert meta["task_name"] == "mmlu"
         assert meta["tolerance"] == 0.05
@@ -134,7 +151,8 @@ class TestHealth:
 
     def test_get_health_failure_returns_false(self, monkeypatch):
         monkeypatch.setattr(
-            ctx_mod, "run_device_liveness",
+            ctx_mod,
+            "run_device_liveness",
             lambda ctx, n: self._liveness_block(success=False),
         )
         assert get_health(_ctx()) == (False, None)
@@ -148,14 +166,16 @@ class TestHealth:
 
     def test_require_health_returns_runner_on_success(self, monkeypatch):
         monkeypatch.setattr(
-            ctx_mod, "run_device_liveness",
+            ctx_mod,
+            "run_device_liveness",
             lambda ctx, n: self._liveness_block(success=True, runner_in_use="tt-metal"),
         )
         assert require_health(_ctx()) == "tt-metal"
 
     def test_require_health_raises_on_failure(self, monkeypatch):
         monkeypatch.setattr(
-            ctx_mod, "run_device_liveness",
+            ctx_mod,
+            "run_device_liveness",
             lambda ctx, n: self._liveness_block(success=False),
         )
         with pytest.raises(RuntimeError, match="Health check failed"):

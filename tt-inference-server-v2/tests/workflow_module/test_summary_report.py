@@ -20,7 +20,9 @@ from workflow_module.summary_report import (
 )
 
 
-def _run_schema(model="m", device="n300", ttft=10.0, *, generated_at="2026-05-05 12:00:00"):
+def _run_schema(
+    model="m", device="n300", ttft=10.0, *, generated_at="2026-05-05 12:00:00"
+):
     return ReportSchema(
         metadata={
             "report_id": "r",
@@ -29,8 +31,12 @@ def _run_schema(model="m", device="n300", ttft=10.0, *, generated_at="2026-05-05
             "generated_at": generated_at,
         },
         sections=[
-            Block(kind="benchmarks", title="Bench", task_type="image",
-                  data={"ttft": ttft, "inference_steps_per_second": 16.0})
+            Block(
+                kind="benchmarks",
+                title="Bench",
+                task_type="image",
+                data={"ttft": ttft, "inference_steps_per_second": 16.0},
+            )
         ],
     )
 

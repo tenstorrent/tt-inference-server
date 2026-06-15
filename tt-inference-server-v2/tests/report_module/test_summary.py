@@ -79,7 +79,8 @@ class TestAggregateBenchmarkRuns:
 
     def test_check_and_target_check_fields_excluded_from_metrics(self):
         schema = _bench_schema(
-            "m", "n300",
+            "m",
+            "n300",
             {"ttft": 10.0, "ttft_check": 2, "target_checks": {"target": {"x": 1}}},
         )
         agg = aggregate_benchmark_runs([schema])[0]

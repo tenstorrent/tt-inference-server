@@ -29,7 +29,9 @@ def test_empty_input_returns_empty_string():
 
 
 def test_basic_table_has_header_separator_and_rows():
-    table = build_markdown_table([{"Name": "a", "Val": "1"}, {"Name": "bb", "Val": "2"}])
+    table = build_markdown_table(
+        [{"Name": "a", "Val": "1"}, {"Name": "bb", "Val": "2"}]
+    )
     lines = table.splitlines()
     assert len(lines) == 4  # header, separator, two rows
     assert lines[0].startswith("|") and lines[0].endswith("|")
