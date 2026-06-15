@@ -35,14 +35,17 @@ BlazePrefillRunner::BlazePrefillRunner(
       "BlazePrefillRunner: Constructing PrefillScheduler with SocketConfig...");
   auto pipelineConfig = utils::makePrefillPipelineConfig(config);
   ps::SchedulerParams managerParams{};
+  managerParams.dest_endpoint_id = tt::config::migrationDecodeEndpointId();
   managerParams.layers_per_chunk =
       static_cast<uint32_t>(std::stoi(tt::config::prefillNumLayers()));
   managerParams.chunk_size =
       static_cast<uint32_t>(std::stoi(tt::config::prefillChunkSize()));
   managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
   auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
+  auto migrationClientInterface = utils::makeMigrationClientInterface(config);
   prefillScheduler = std::make_unique<ps::PrefillScheduler>(
-      pipelineConfig, ackChannelConfig, managerParams);
+      pipelineConfig, ackChannelConfig, managerParams,
+      std::move(migrationClientInterface));
   TT_LOG_INFO(
       "BlazePrefillRunner: PrefillScheduler constructed, calling start()...");
   prefillScheduler->start();
@@ -654,6 +657,15 @@ void BlazePrefillRunner::handleRequest(
   auto& slotContext = slotManager.getSlotContext(slotId);
   switch (slotContext.state) {
     case SlotState::IDLE: {
+      TT_LOG_DEBUG(
+          "[BlazePrefillRunner] handleRequest: taskId={}, slotId={}, "
+          "isContinuation={}, numPromptTokens={}, totalTokens={}, "
+          "runningSlots={}, migrationId={}",
+          request->taskId, slotId, request->isContinuation(),
+          request->getNumPromptTokens(), request->getTokenIds().size(),
+          slotManager.activeRunningCount(),
+          request->getMigrationId().has_value() ? *request->getMigrationId()
+                                                : -1);
       ps::ISRequest req = utils::makeSubmitRequest(
           slotId, *request, std::make_optional(request->getKVCacheSlot()));
       TT_LOG_DEBUG(

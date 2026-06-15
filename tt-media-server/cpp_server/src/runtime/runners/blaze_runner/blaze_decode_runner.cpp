@@ -33,6 +33,8 @@ BlazeDecodeRunner::BlazeDecodeRunner(
   TT_LOG_INFO(
       "BlazeDecodeRunner: Constructing DecodeScheduler with SocketConfig...");
   auto pipelineConfig = utils::makeDecodePipelineConfig(config);
+  auto migrationClientInterface =
+      utils::makeDecodeMigrationClientInterface(config);
   auto thinkTokenIds = tt::utils::tokenizers::thinkTokenIds();
   auto eosTokenId = tt::utils::tokenizers::staticInfo().eosTokenId;
   ds::SchedulerParams managerParams{};
@@ -42,8 +44,9 @@ BlazeDecodeRunner::BlazeDecodeRunner(
   managerParams.think_close_token_id =
       static_cast<uint32_t>(thinkTokenIds.second);
   managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
-  decodeScheduler =
-      std::make_unique<ds::DecodeScheduler>(pipelineConfig, managerParams);
+  managerParams.self_endpoint_id = tt::config::migrationDecodeEndpointId();
+  decodeScheduler = std::make_unique<ds::DecodeScheduler>(
+      pipelineConfig, managerParams, std::move(migrationClientInterface));
   TT_LOG_INFO(
       "BlazeDecodeRunner: DecodeScheduler constructed, calling start()...");
   decodeScheduler->start();
@@ -222,13 +225,6 @@ inline void BlazeDecodeRunner::handleMemoryRequest(
     const tt::domain::ManageMemoryTask& request) {
   switch (request.action) {
     case tt::domain::MemoryManagementAction::ALLOCATE: {
-      auto slotIdToCopyFrom = request.slotIdToCopyFrom;
-      if (slotIdToCopyFrom.has_value()) {
-        TT_LOG_DEBUG(
-            "[BlazeDecodeRunner] handleMemoryRequest: allocating slotId={} "
-            "to copy from slotId={}",
-            request.slotId, *slotIdToCopyFrom);
-      }
       handleAllocateRequest(request);
       break;
     }
@@ -346,7 +342,8 @@ inline void BlazeDecodeRunner::handleEvictRequest(
 
 inline void BlazeDecodeRunner::handleAllocateRequest(
     const tt::domain::ManageMemoryTask& request) {
-  auto allocateRequest = utils::makeAllocateRequest(request.taskId);
+  auto allocateRequest =
+      utils::makeAllocateRequest(request.taskId, request.slotIdToCopyFrom);
   if (!decodeScheduler->push_request(allocateRequest)) {
     TT_LOG_WARN(
         "[BlazeDecodeRunner] handleAllocateRequest: scheduler queue full, "
@@ -685,6 +682,15 @@ void BlazeDecodeRunner::handleRequest(
   auto& slotContext = slotManager.getSlotContext(slotId);
   switch (slotContext.state) {
     case SlotState::IDLE: {
+      TT_LOG_DEBUG(
+          "[BlazeDecodeRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
+          "isContinuation={}, numPromptTokens={}, totalTokens={}, "
+          "runningSlots={}, migrationId={}",
+          request->taskId, slotId, isNew, request->isContinuation(),
+          request->getNumPromptTokens(), request->getTokenIds().size(),
+          slotManager.activeRunningCount(),
+          request->getMigrationId().has_value() ? *request->getMigrationId()
+                                                : -1);
       ds::ISRequest req = isNew ? utils::makeSubmitRequest(slotId, *request)
                                 : utils::makeContinueRequest(slotId, *request);
       TT_LOG_DEBUG(

@@ -4,14 +4,22 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
+#include <string>
 
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
+#include "scheduler/decode/migration_layer_client_adapter.hpp"
+#include "scheduler/decode/mock_migration_client.hpp"
+#include "scheduler/migration_layer_client_adapter.hpp"
+#include "scheduler/mock_migration_client.hpp"
 #include "tt_llm_engine/pipeline/channel_configs.hpp"
 #include "tt_llm_engine/pipeline/prefill_pipeline_config.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
+#include "tt_llm_engine/scheduler/decode/migration_client_interface.hpp"
+#include "tt_llm_engine/scheduler/migration_client_interface.hpp"
 #include "tt_llm_engine/scheduler/prefill/prefill_types.hpp"
 #include "utils/logger.hpp"
 
@@ -21,13 +29,19 @@ namespace sch = tt_llm_engine::scheduler;
 namespace ds = sch::decode;
 namespace ps = sch::prefill;
 
-inline sch::ISRequest makeAllocateRequest(uint32_t requestId) {
-  return {.type = ds::RequestType::ALLOCATE,
-          .request_id = requestId,
-          .tokens = {},
-          .gen = {},
-          .position_id = std::nullopt,
-          .dest_slot_id = std::nullopt};
+inline sch::ISRequest makeAllocateRequest(
+    uint32_t requestId,
+    std::optional<uint32_t> migrateFromSlot = std::nullopt) {
+  auto req = sch::ISRequest{
+      .type = ds::RequestType::ALLOCATE,
+      .request_id = requestId,
+      .tokens = {},
+      .gen = {},
+  };
+  if (migrateFromSlot.has_value()) {
+    req.gen.migrate_from_slot = *migrateFromSlot;
+  }
+  return req;
 }
 
 inline sch::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {
@@ -62,7 +76,8 @@ inline sch::GenerationParams makeGenerationParams(
       .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
       .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
       .disaggregated_decode = seq.isDisaggregated(),
-      .stop_tokens = seq.getSamplingParams().stop_token_ids};
+      .stop_tokens = seq.getSamplingParams().stop_token_ids,
+      .migration_uuid = seq.getMigrationId()};
 }
 
 inline void fillSequenceFields(sch::ISRequest& req,
@@ -211,14 +226,51 @@ inline pl::CounterChannelConfig makePrefillAckChannelConfig(
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
       return pl::InterProcessCounterChannelConfig{
-          .shm_name = "/tt_prefill_layer_acks_" +
-                      tt::config::blazeSocketDescriptorPrefix(),
-          .connect_timeout_ms = 60000,
+          .shm_name = tt::config::prefillAckChannelName(),
+          .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       };
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return pl::SingleProcessCounterChannelConfig{};
     default:
       throw std::runtime_error("Invalid blaze prefill runner type");
+  }
+}
+
+inline std::unique_ptr<sch::MigrationClientInterface>
+makeMigrationClientInterface(const tt::config::LLMConfig& config) {
+  switch (config.runner_type) {
+    case tt::config::ModelRunnerType::PIPELINE_MANAGER:
+      return std::make_unique<sch::MigrationLayerClientAdapter>(
+          tt::config::migrationCmdQueueName(),
+          tt::config::migrationTableQueueName(),
+          tt::config::migrationRespQueueName());
+    case tt::config::ModelRunnerType::MOCK_PIPELINE:
+      if (tt::config::enableMigration()) {
+        return std::make_unique<sch::MockMigrationClient>();
+      } else {
+        return nullptr;
+      }
+    default:
+      throw std::runtime_error("Invalid blaze decode runner type");
+  }
+}
+
+inline std::unique_ptr<ds::MigrationClientInterface>
+makeDecodeMigrationClientInterface(const tt::config::LLMConfig& config) {
+  switch (config.runner_type) {
+    case tt::config::ModelRunnerType::PIPELINE_MANAGER:
+      return std::make_unique<ds::MigrationLayerClientAdapter>(
+          tt::config::migrationCmdQueueName(),
+          tt::config::migrationTableQueueName(),
+          tt::config::migrationRespQueueName());
+    case tt::config::ModelRunnerType::MOCK_PIPELINE:
+      if (tt::config::enableMigration()) {
+        return std::make_unique<ds::MockMigrationClient>();
+      } else {
+        return nullptr;
+      }
+    default:
+      throw std::runtime_error("Invalid blaze decode runner type");
   }
 }
 
