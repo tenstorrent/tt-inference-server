@@ -181,6 +181,7 @@ void LLMPipeline::resolveSession(
             acquired->slotId);
         req->slotId = acquired->slotId;
         req->session = sessionManager_->getSession(acquired->sessionId);
+        req->sessionId = acquired->sessionId;
         req->continuation = true;
 
         auto [matchedTokens, thinkTokens] =
@@ -256,6 +257,7 @@ void LLMPipeline::resolveSession(
             acquired->numberOfMatchedTokens, acquired->accumulatedThinkTokens);
         req->slotId = acquired->slotId;
         req->session = sessionManager_->getSession(acquired->sessionId);
+        req->sessionId = acquired->sessionId;
         req->continuation = true;
         // kv_position_id accounts for both non-thinking tokens (matched) and
         // thinking tokens (accumulated in cache but not in hash)
