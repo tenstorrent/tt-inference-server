@@ -376,6 +376,28 @@ templates:
         # (8, 1) DP layout the model expects. tt-metal/vLLM accept MESH_DEVICE as
         # a literal shape tuple (same convention the TG specs use for "(4, 8)").
         MESH_DEVICE: "(8, 1)"
+        # tt_symbiote binds its run implementation from TT_SYMBIOTE_RUN_MODE at
+        # import (core/run_config.py: default is "NORMAL" = NormalRun, per-module
+        # EAGER dispatch with NO device-trace capture/replay). The standalone e2e
+        # (examples/e2e/dots_ocr/run_dots_ocr.py:48) sets "TRACED" so the pipeline
+        # runs warmup -> capture -> replay; that traced decode is the ~10x faster
+        # production path. Without this the server defaulted to NORMAL, which is the
+        # eager, op-by-op decode behind the ~35s/image latency. run_vllm_api_server
+        # applies these env_vars (set_runtime_env_vars) before launching vLLM, so
+        # the EngineCore subprocess inherits TRACED at tt_symbiote import time.
+        TT_SYMBIOTE_RUN_MODE: "TRACED"
+        # NOTE: the e2e demo ALSO sets DOTS_OCR_PARALLELISM=DP, but that is
+        # deliberately omitted here. The (8, 1) MESH_DEVICE above already selects
+        # the DP *layout* (_linear.py: num_tp=mesh_shape[-1]=1, num_dp=8 -> weights
+        # replicated, data-parallel across 8 chips). DOTS_OCR_PARALLELISM only
+        # drives the pipeline BATCH SIZE (recipe.py::_pipeline_batch_size: DP ->
+        # batch=num_devices=8 streams). The e2e demo needs that to OCR 8 different
+        # images concurrently. Our S0 bridge serves ONE request at a time and feeds
+        # pipeline.prefill/decode_step a single (batch=1) stream WITHOUT the
+        # generate-shim's replication (tt_symbiote_generators._prefill_s0). Setting
+        # DP would build an 8-stream pipeline the bridge can't feed (shape mismatch)
+        # AND gives no single-request latency benefit. Enabling true DP serving
+        # would require replicating the prompt across streams in the S0 adapter.
       vllm_args:
         # dots.ocr ships custom modeling code on the HF Hub, so vLLM's
         # ModelConfig requires trust_remote_code to load it.
