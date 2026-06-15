@@ -16,8 +16,6 @@
 #include "domain/llm/chat_message.hpp"
 #include "domain/response_format.hpp"
 #include "domain/session.hpp"
-#include "domain/tool_calls/tool.hpp"
-#include "domain/tool_calls/tool_choice.hpp"
 
 namespace tt::domain::llm {
 
@@ -151,11 +149,6 @@ struct LLMRequest : BaseRequest {
 
   std::optional<bool> disaggregation_override;
 
-  bool parallel_tool_calls = true;
-
-  std::optional<std::vector<tool_calls::Tool>> tools;
-  std::optional<tool_calls::ToolChoice> tool_choice;
-
   // Structured output constraint
   std::optional<ResponseFormat> response_format;
 
@@ -163,7 +156,7 @@ struct LLMRequest : BaseRequest {
   bool skip_apply_chat_template = false;
 
   // When true, the consumer emits chunks carrying only `token_id` and
-  // skips decode / tool-call parsing. Used by transports that forward raw
+  // skips decode. Used by transports that forward raw
   // token_ids and handle detokenization downstream (e.g. Dynamo).
   bool skip_text_decode = false;
 
