@@ -815,6 +815,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/embedding_service.cpp
     src/services/model_service_registration.cpp
     src/services/session_manager.cpp
+    src/services/session_resolution.cpp
     src/services/memory_services/memory_manager.cpp
     src/domain/session.cpp
     src/runtime/worker/worker_manager.cpp
@@ -1088,6 +1089,7 @@ set(SOURCES
     src/services/llm_service.cpp
     src/services/json_tool_call_parser.cpp
     src/services/session_manager.cpp
+    src/services/session_resolution.cpp
     src/domain/session.cpp
     src/runtime/worker/single_process_worker.cpp
     src/runtime/worker/worker_manager.cpp

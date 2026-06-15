@@ -7,6 +7,7 @@
 #include "runtime/worker/worker_manager.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
+#include "services/session_resolution.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/conversation_hasher.hpp"
 #include "utils/id_generator.hpp"
@@ -293,36 +294,6 @@ void DisaggregationService::start() {
 
 void DisaggregationService::stop() { socketService->stop(); }
 
-void DisaggregationService::applyDeltaPrompt(LLMRequest& req,
-                                             uint32_t matchedTokens) {
-  auto& tokens = std::get<std::vector<int>>(req.prompt);
-  if (matchedTokens == 0 || matchedTokens >= tokens.size()) {
-    return;
-  }
-
-  // `matchedTokens` is always a multiple of 32 because prefix-cache blocks are
-  // 32 tokens wide, so trimming exactly `matchedTokens` leaves the resumed
-  // prefill starting on a tile boundary — it never writes into an existing
-  // partial tile. We send the whole remaining suffix as-is; any *trailing*
-  // partial tile is fine for prefill (only writing into a partial tile at the
-  // start would corrupt previously-written KV, which the tile alignment of
-  // `matchedTokens` guarantees against). No 32-rounding / pull-back of matched
-  // tokens is needed.
-  TT_LOG_DEBUG(
-      "[DisaggregationService] applyDeltaPrompt: matchedTokens={} "
-      "remainder={}",
-      matchedTokens, static_cast<uint32_t>(tokens.size()) - matchedTokens);
-
-  // Remove the first `matchedTokens` tokens — they are already in KV cache.
-  tokens.erase(tokens.begin(),
-               tokens.begin() + static_cast<ptrdiff_t>(matchedTokens));
-  req.prompt_tokens_count = static_cast<int>(tokens.size());
-
-  // kv_position_id points to the last valid KV cache position (0-indexed),
-  // which is one less than the number of tokens we're reusing.
-  req.kv_position_id = matchedTokens - 1;
-}
-
 void DisaggregationService::resolvePrefillSession(
     std::shared_ptr<LLMRequest> request,
     const std::vector<uint64_t>& routingHashes,
@@ -354,36 +325,22 @@ void DisaggregationService::resolvePrefillSession(
     // in-flight hold (see clearInFlight below).
     request->sessionId = acquired->sessionId;
     request->continuation = true;
-    applyDeltaPrompt(*request, acquired->numberOfMatchedTokens);
+    session_resolution::applyDeltaPrompt(
+        *request, acquired->numberOfMatchedTokens,
+        {.skipUnlessRegularMode = false,
+         .setKvPositionId = true,
+         .logPrefix = "[DisaggregationService]"});
     sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
     onResolved();
   } else {
     // Check if there's a candidate slot worth copying from.
-    std::optional<uint32_t> slotToCopyFrom;
-    uint32_t copyMatchedTokens = 0;
-    if (acquired.has_value() && !acquired->candidatesList.empty()) {
-      auto copyCandidate =
-          sessionManager->findASlotToCopyFrom(acquired->candidatesList);
-      if (copyCandidate.has_value()) {
-        uint32_t sourceSlot =
-            sessionManager->getSlotIdBySessionId(copyCandidate->sessionId);
-        if (sourceSlot != tt::domain::INVALID_SLOT_ID) {
-          sessionManager->lockSlot(sourceSlot);
-          slotToCopyFrom = sourceSlot;
-          const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
-          const size_t blockSize = tt::config::kvCacheBlockSize();
-          copyMatchedTokens = static_cast<uint32_t>(
-              firstBlockSize +
-              (copyCandidate->matchedBlocks > 1
-                   ? (copyCandidate->matchedBlocks - 1) * blockSize
-                   : 0));
-          TT_LOG_INFO(
-              "[DisaggregationService] Found slot to copy from: slotId={} "
-              "matchedTokens={} for taskId={}",
-              sourceSlot, copyMatchedTokens, request->task_id);
-        }
-      }
-    }
+    auto copyPlan = acquired.has_value()
+                        ? session_resolution::prepareSlotCopy(
+                              *sessionManager, acquired->candidatesList,
+                              request->task_id, "[DisaggregationService]")
+                        : session_resolution::SlotCopyPlan{};
+    std::optional<uint32_t> slotToCopyFrom = copyPlan.slotToCopyFrom;
+    uint32_t copyMatchedTokens = copyPlan.matchedTokens;
 
     TT_LOG_INFO(
         "[DisaggregationService] Prefill prefix cache MISS taskId={} "
@@ -410,7 +367,11 @@ void DisaggregationService::resolvePrefillSession(
           if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
             request->continuation = true;
             request->kv_position_id = copyMatchedTokens - 1;
-            applyDeltaPrompt(*request, copyMatchedTokens);
+            session_resolution::applyDeltaPrompt(
+                *request, copyMatchedTokens,
+                {.skipUnlessRegularMode = false,
+                 .setKvPositionId = true,
+                 .logPrefix = "[DisaggregationService]"});
           }
           onResolved();
         },
