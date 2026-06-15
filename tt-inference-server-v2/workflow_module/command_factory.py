@@ -23,7 +23,12 @@ from utils.url_helpers import resolve_deploy_url
 from test_module import MediaContext
 
 from .commands import Command, SummaryCommand, WorkflowCommand
-from .execution import OrchestratorMetadata, PrefixCacheOptions, ServingBenchOptions, SpecDecodeOptions
+from .execution import (
+    OrchestratorMetadata,
+    PrefixCacheOptions,
+    ServingBenchOptions,
+    SpecDecodeOptions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,12 +92,7 @@ def _build_repeated_commands(
 def _build_context(
     args: argparse.Namespace, output_path: Optional[Path] = None
 ) -> MediaContext:
-    model_spec, _, _ = get_runtime_model_spec(
-        model=args.model,
-        device=args.device,
-        engine=getattr(args, "engine", None),
-        impl=getattr(args, "impl", None),
-    )
+    model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
     model_spec.cli_args["device"] = args.device
     if args.num_prompts is not None:
         model_spec.cli_args["sdxl_num_prompts"] = max(2, args.num_prompts)

@@ -93,6 +93,8 @@ class SpecDecodeOptions:
     preset: str = "full"
     warmup_requests: int = 4
     auth_token: str = ""
+
+
 class ServingBenchOptions:
     """Serving-bench suite selection forwarded to ``ServingBenchWorkflow``.
 

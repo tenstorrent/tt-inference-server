@@ -289,11 +289,12 @@ re-execs `run.py` inside it:
 ```bash
 python tt-inference-server-v2/run_spec_decode.py \
     --model Llama-3.1-8B-Instruct \
+    --runtime-model-spec-json [spec_decode_runtime_spec.json] \
     --workflow benchmarks \
     --device gpu \
     --service-port 8000 \
     --spec-decode \
-    --jwt-secret "$JWT_SECRET"
+    --spec-decode-preset [ci | full]
 ```
 
 Each AIPerf run emits a `Block(kind="aiperf_spec_decode")`, which the report
