@@ -226,6 +226,12 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
         // future already satisfied (e.g. multiple final chunks); ignore.
       }
     };
+    auto sendErrorAndDone = [sendChunk, signalDone]() {
+      TokenChunk err;
+      err.finish_reason = "error";
+      sendChunk(err);
+      signalDone();
+    };
 
     // Reject requests whose prompt exceeds the maximum input sequence length.
     const size_t maxInputSeqLen = tt::config::maxISL();
@@ -275,37 +281,25 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       *dispatchStart = SteadyClock::now();
     };
     handlers.onPreProcessError =
-        [sendChunk, signalDone](
-            const std::exception& e,
-            std::shared_ptr<tt::domain::Session> sessionPtr) {
+        [sendErrorAndDone](const std::exception& e,
+                           std::shared_ptr<tt::domain::Session> sessionPtr) {
           TT_LOG_WARN("[DynamoEndpoint] preProcess failed: {}", e.what());
           if (sessionPtr) sessionPtr->release();
-          TokenChunk err;
-          err.finish_reason = "error";
-          sendChunk(err);
-          signalDone();
+          sendErrorAndDone();
         };
     handlers.onDispatchError =
-        [sendChunk, signalDone](
-            const std::exception& e,
-            std::shared_ptr<tt::domain::Session> sessionPtr) {
+        [sendErrorAndDone](const std::exception& e,
+                           std::shared_ptr<tt::domain::Session> sessionPtr) {
           TT_LOG_ERROR("[DynamoEndpoint] dispatchGeneration failed: {}",
                        e.what());
           if (sessionPtr) sessionPtr->release();
-          TokenChunk err;
-          err.finish_reason = "error";
-          sendChunk(err);
-          signalDone();
+          sendErrorAndDone();
         };
     handlers.onSessionError =
-        [sendChunk,
-         signalDone](const services::LLMPipeline::SessionError& err) {
+        [sendErrorAndDone](const services::LLMPipeline::SessionError& err) {
           TT_LOG_WARN("[DynamoEndpoint] Session resolution failed: {}",
                       err.message);
-          TokenChunk e;
-          e.finish_reason = "error";
-          sendChunk(e);
-          signalDone();
+          sendErrorAndDone();
         };
 
     pipeline->runStreamingRequest(
