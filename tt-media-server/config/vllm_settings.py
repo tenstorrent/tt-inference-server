@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 class VLLMSettings(BaseModel):
     model: str = SupportedModels.QWEN_3_4B.value
-    min_context_length: int = 32
+    min_context_length: int = 128
     max_model_length: int = int(os.environ.get("MAX_MODEL_LENGTH", 4096))
     max_num_seqs: int = int(os.environ.get("MAX_NUM_SEQS", 1))
     # When chunked prefill is engaged (PREFILL_CHUNK_SIZE set, e.g. forge LLMs),
