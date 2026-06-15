@@ -1,0 +1,21 @@
+{{- include "tt-inference-server.validateValues" . }}
+{{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
+{{- $engine := include "tt-inference-server.resolvedEngine" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tt-inference-server.configmapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tt-inference-server.labels" . | nindent 4 }}
+data:
+  {{- if or (eq $engine "media") (eq $engine "forge") }}
+  MODEL: {{ .Values.model | quote }}
+  DEVICE: {{ .Values.device | quote }}
+  CACHE_ROOT: "/home/container_app_user/cache_root"
+  {{- end }}
+  {{- range $cfg.extraEnv }}
+  {{- if .value }}
+  {{ .name }}: {{ .value | quote }}
+  {{- end }}
+  {{- end }}

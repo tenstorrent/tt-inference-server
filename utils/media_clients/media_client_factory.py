@@ -6,11 +6,9 @@ import logging
 from enum import Enum
 from typing import Dict, Type
 
-from .audio_client import AudioClientStrategy
 from .base_strategy_interface import BaseMediaStrategy
 from .cnn_client import CnnClientStrategy
 from .embedding_client import EmbeddingClientStrategy
-from .image_client import ImageClientStrategy
 from .tts_client import TtsClientStrategy
 from .video_client import VideoClientStrategy
 
@@ -18,8 +16,6 @@ logger = logging.getLogger(__name__)
 
 STRATEGY_MAP: Dict[str, Type[BaseMediaStrategy]] = {
     "CNN": CnnClientStrategy,
-    "IMAGE": ImageClientStrategy,
-    "AUDIO": AudioClientStrategy,
     "EMBEDDING": EmbeddingClientStrategy,
     "TEXT_TO_SPEECH": TtsClientStrategy,
     "VIDEO": VideoClientStrategy,
@@ -38,7 +34,7 @@ class MediaClientFactory:
 
     @staticmethod
     def _create_strategy(
-        model_spec, all_params, device, output_path, service_port
+        model_spec, all_params, device, output_path, service_port, deploy_url=None
     ) -> BaseMediaStrategy:
         """
         Create appropriate strategy based on model type.
@@ -49,6 +45,8 @@ class MediaClientFactory:
             device: Device information
             output_path: Output path for results
             service_port: Service port number
+            deploy_url: Optional base URL of the inference server. When omitted,
+                strategies default to ``http://localhost``.
 
         Returns:
             BaseMediaStrategy: Appropriate strategy instance
@@ -62,7 +60,14 @@ class MediaClientFactory:
         strategy = STRATEGY_MAP.get(model_spec.model_type.name)
         if strategy:
             logger.info(f"Using strategy: {strategy.__name__} for client.")
-            return strategy(all_params, model_spec, device, output_path, service_port)
+            return strategy(
+                all_params,
+                model_spec,
+                device,
+                output_path,
+                service_port,
+                deploy_url=deploy_url,
+            )
 
         raise ValueError(
             f"Unsupported model type: {model_spec.model_type.name}. Supported types: {', '.join(STRATEGY_MAP.keys())}"
@@ -76,6 +81,7 @@ class MediaClientFactory:
         output_path,
         service_port,
         task_type: MediaTaskType,
+        deploy_url=None,
     ) -> int:
         """
         Generic function to run media tasks (evaluation or benchmarking).
@@ -87,6 +93,8 @@ class MediaClientFactory:
             output_path: Output path for results
             service_port: Service port number
             task_type: MediaTaskType enum value (EVALUATION or BENCHMARK)
+            deploy_url: Optional base URL of the inference server. When omitted,
+                strategies default to ``http://localhost``.
 
         Returns:
             int: Return code (0 for success, 1 for failure)
@@ -99,7 +107,12 @@ class MediaClientFactory:
         try:
             # Create appropriate test case
             test_case = MediaClientFactory._create_strategy(
-                model_spec, all_params, device, output_path, service_port
+                model_spec,
+                all_params,
+                device,
+                output_path,
+                service_port,
+                deploy_url=deploy_url,
             )
 
             # Run the specified task using test_case

@@ -37,7 +37,7 @@ class SpeechT5TTSTest(BaseTest):
 
     async def _test_basic_tts(self):
         """Test basic text-to-speech generation"""
-        url = f"http://localhost:{self.service_port}/v1/audio/speech"
+        url = f"{self.base_url}/v1/audio/speech"
 
         # The TTS endpoint returns raw `audio/wav` bytes by default; the
         # JSON envelope (with `audio` base64, `duration`, `sample_rate`,

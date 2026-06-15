@@ -53,13 +53,13 @@ class ForgeRunner(BaseDeviceRunner):
             # Use cpu
             # self.dtype = None # Use same dtype on CPU and device
             self.device = torch.device("cpu")
-            self.model = self.loader.load_model(self.dtype)
+            self.model = self.loader.load_model(dtype_override=self.dtype)
             self.compiled_model = self.model.to(self.device)
         else:
             # Use TT device
             xr.set_device_type("TT")
             self.device = xm.xla_device()
-            self.model = self.loader.load_model(self.dtype)
+            self.model = self.loader.load_model(dtype_override=self.dtype)
             self.logger.info("## Compiling model ##")
             torch_xla.set_custom_compile_options(
                 {

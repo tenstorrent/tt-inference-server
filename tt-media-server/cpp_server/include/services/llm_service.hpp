@@ -18,19 +18,15 @@
 #include "ipc/interface/task_queue.hpp"
 #include "ipc/queue_manager.hpp"
 #include "runtime/worker/worker_manager.hpp"
-#include "services/base_service.hpp"
-#include "services/reasoning_parser.hpp"
-#include "services/streamable.hpp"
+#include "services/request_pipeline.hpp"
 #include "services/tool_call_parser.hpp"
 #include "utils/concurrent_map.hpp"
-#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::services {
 
 using namespace tt::domain::llm;
 
-class LLMService : public BaseService<LLMRequest, LLMResponse>,
-                   public Streamable<LLMRequest, LLMStreamChunk> {
+class LLMService : public BaseStreamingService<LLMRequest, LLMStreamChunk> {
  public:
   using StreamCallback = std::function<void(const LLMStreamChunk&, bool)>;
 
@@ -38,8 +34,6 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
 
   LLMService(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
              std::unique_ptr<tt::worker::WorkerManager> workerManager,
-             std::unique_ptr<ReasoningParser> reasoningParser,
-             std::unique_ptr<IToolCallParser> toolCallParser,
              std::unique_ptr<tt::ipc::QueueManager> queueManager,
              size_t maxQueueSize = std::numeric_limits<size_t>::max());
 
@@ -55,15 +49,11 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
 
   void preProcess(LLMRequest& request) const override;
 
-  void postProcess(LLMResponse& response) const override;
+  /** Cleanup after a non-streaming response is assembled (not part of the
+   *  streaming base contract). */
+  void postProcess(LLMResponse& response) const;
 
-  void processStreamingRequest(
-      LLMRequest request,
-      std::function<void(LLMStreamChunk&, bool isFinal)> callback) override;
-
-  void abortRequest(uint32_t taskId);
-
-  ReasoningParser* getReasoningParser() const { return reasoningParser.get(); }
+  void abortRequest(uint32_t taskId) override;
 
   tt::worker::WorkerManager* getWorkerManager() const {
     return workerManager.get();
@@ -71,19 +61,19 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
 
  protected:
   size_t currentQueueSize() const override;
-  LLMResponse processRequest(LLMRequest request) override;
 
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
-  void streamingPostProcess(LLMStreamChunk&) const override {}
+  void produceStream(
+      LLMRequest request,
+      std::function<void(LLMStreamChunk&, bool isFinal)> callback) override;
 
  private:
   struct StreamCallbackEntry {
     std::function<void(LLMStreamChunk&, bool)> callback;
     bool skip_special_tokens = true;
     // Mirror of LLMRequest::skip_text_decode; lets the consumer loop
-    // skip decode / reasoning / tool-call parsing for token-id-only
-    // transports.
+    // skip decode / tool-call parsing for token-id-only transports.
     bool skip_text_decode = false;
   };
 
@@ -95,8 +85,6 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
 
   void init(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
             std::unique_ptr<tt::worker::WorkerManager> workerManager,
-            std::unique_ptr<ReasoningParser> reasoningParser,
-            std::unique_ptr<IToolCallParser> toolCallParser,
             std::unique_ptr<tt::ipc::QueueManager> queueManager,
             size_t maxQueueSize);
 
@@ -105,7 +93,6 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
   utils::ConcurrentMap<uint32_t, StreamCallbackEntry> streamCallbacks;
   mutable utils::ConcurrentMap<uint32_t, tt::domain::tool_calls::ToolChoice>
       toolChoiceMap;
-  utils::ConcurrentMap<uint32_t, bool> reasoningSuppressedMap;
 
   std::atomic<size_t> pendingTasks{0};
   std::atomic<bool> running{false};
@@ -114,8 +101,6 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
   std::unique_ptr<tt::worker::WorkerManager> workerManager;
   std::unique_ptr<tt::ipc::QueueManager> queueManager;
   std::unordered_set<int64_t> stopTokenSet;
-  std::unique_ptr<ReasoningParser> reasoningParser;
-  std::unique_ptr<IToolCallParser> toolCallParser;
   std::unique_ptr<IToolCallParser> jsonToolCallParser;
 };
 

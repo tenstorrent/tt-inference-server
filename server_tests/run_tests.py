@@ -18,6 +18,7 @@ if project_root not in sys.path:
 
 from server_tests.test_config import TEST_CONFIGS, TestTask
 from utils.prompt_configs import EnvironmentConfig
+from utils.url_helpers import build_base_url, resolve_deploy_url
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
 from workflows.runtime_config import RuntimeConfig
@@ -37,6 +38,7 @@ def build_test_command(
     device,
     output_dir_path,
     service_port,
+    deploy_url: str = "http://127.0.0.1",
 ) -> list[str]:
     """
     Build the command for tests by templating command-line arguments using properties
@@ -51,10 +53,9 @@ def build_test_command(
     test_kwargs_list = [f"-{arg}" for arg in task.test_args]
 
     if task.task_name == "vllm_responses":
-        # vLLM responses test needs the service port to connect to the server
-        test_kwargs_list.extend(
-            ["--endpoint-url", f"http://127.0.0.1:{service_port}/v1/responses"]
-        )
+        # vLLM responses test needs the service port to connect to the server.
+        base = build_base_url(deploy_url, service_port)
+        test_kwargs_list.extend(["--endpoint-url", f"{base}/v1/responses"])
     cmd = [
         str(test_exec),
         task.test_path,
@@ -136,6 +137,14 @@ def main():
     # runtime config loaded from JSON
     device_str = runtime_config.device
     service_port = runtime_config.service_port
+    deploy_url = resolve_deploy_url(runtime_config)
+    # Propagate to subprocesses (pytest, etc.) that read DEPLOY_URL /
+    # SERVICE_PORT (conftest --endpoint-url default, BaseTest). Without
+    # exporting SERVICE_PORT, a non-default --service-port wouldn't reach
+    # pytest and tests would target :8000. setdefault so an explicit
+    # SERVICE_PORT already in the env still wins.
+    os.environ["DEPLOY_URL"] = deploy_url
+    os.environ.setdefault("SERVICE_PORT", str(service_port))
 
     workflow_config = WORKFLOW_TESTS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
@@ -169,6 +178,7 @@ def main():
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = runtime_config.service_port
     env_config.vllm_model = model_spec.hf_model_repo
+    env_config.deploy_url = deploy_url
 
     # Create a single shared output directory for all tasks in this run
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -195,6 +205,7 @@ def main():
             device_str,
             str(output_dir_path),
             runtime_config.service_port,
+            deploy_url=deploy_url,
         )
         return_code = run_command(command=cmd, logger=logger, env=env_vars)
         return_codes.append(return_code)

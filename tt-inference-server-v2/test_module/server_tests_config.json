@@ -312,6 +312,15 @@
                 "p300x2"
             ]
         },
+        "z_image_turbo": {
+            "weights": [
+                "Z-Image-Turbo"
+            ],
+            "category": "IMAGE",
+            "compatible_devices": [
+                "p300x2"
+            ]
+        },
         "bge": {
             "weights": [
                 "bge-large-en-v1.5"

@@ -34,19 +34,19 @@ class TestImageMatrixExpansionSDXL:
         assert not missing, f"SDXL suites missing from v2 image.json: {missing}"
 
     def test_sdxl_full_lora_suites(self):
-        """n150, t3k, galaxy should have 7 test cases including LoRA tests."""
+        """n150, t3k, galaxy should have 6 test cases including LoRA tests."""
         suites = load_suite_files_by_category("image")
         suite_map = {s["id"]: s for s in suites}
 
         for suite_id in ["sdxl-n150", "sdxl-t3k", "sdxl-galaxy"]:
             suite = suite_map[suite_id]
-            assert len(suite["test_cases"]) == 7, f"{suite_id}: expected 7 test cases"
+            assert len(suite["test_cases"]) == 6, f"{suite_id}: expected 6 test cases"
             templates = [tc["template"] for tc in suite["test_cases"]]
             assert "ImageGenerationEvalsTest" in templates
             assert "ImageGenerationLoraLoadTest" in templates
 
     def test_sdxl_galaxy_timing_differs(self):
-        """Galaxy should have different LoadTest timing (11/15/25 vs 10/14/23)."""
+        """Galaxy should have different LoadTest timing (20/28/45 vs 10/14/23)."""
         suites = load_suite_files_by_category("image")
         suite_map = {s["id"]: s for s in suites}
 
@@ -57,7 +57,7 @@ class TestImageMatrixExpansionSDXL:
             if tc["template"] == "ImageGenerationLoadTest"
         ]
         times = [lt["targets"]["image_generation_time"] for lt in load_tests]
-        assert times == [11, 15, 25]
+        assert times == [20, 28, 45]
 
         n150 = suite_map["sdxl-n150"]
         load_tests = [

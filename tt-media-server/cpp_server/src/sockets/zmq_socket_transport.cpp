@@ -26,8 +26,7 @@ std::string makeMonitorEndpoint(const void* self) {
 }  // namespace
 
 ZmqSocketTransport::ZmqSocketTransport()
-    : SocketTransportState(/*reconnectInitialDelayMs=*/1000,
-                           /*reconnectMaxDelayMs=*/5000),
+    : SocketTransportState(std::chrono::seconds(1), std::chrono::seconds(5)),
       context_(
           std::make_unique<zmq::context_t>(zmq_options::CONTEXT_IO_THREADS)) {}
 
@@ -52,17 +51,21 @@ bool ZmqSocketTransport::startIoThread() {
 
   std::promise<bool> initialized;
   auto fut = initialized.get_future();
-  ioThread_ =
-      std::thread(&ZmqSocketTransport::ioLoop, this, std::move(initialized));
+  ioThread_ = std::jthread([this, initialized = std::move(initialized)](
+                               std::stop_token stopToken) mutable {
+    ioLoop(stopToken, std::move(initialized));
+  });
 
   bool initializedOk = fut.get();
   if (!initializedOk && ioThread_.joinable()) {
+    ioThread_.request_stop();
     ioThread_.join();
   }
   return initializedOk;
 }
 
-void ZmqSocketTransport::ioLoop(std::promise<bool> initialized) {
+void ZmqSocketTransport::ioLoop(std::stop_token stopToken,
+                                std::promise<bool> initialized) {
   if (!initializeSocket()) {
     initialized.set_value(false);
     return;
@@ -70,7 +73,7 @@ void ZmqSocketTransport::ioLoop(std::promise<bool> initialized) {
 
   initialized.set_value(true);
 
-  while (ioActive_) {
+  while (ioActive_ && !stopToken.stop_requested()) {
     const bool sent = processPendingSends();
     const bool received = receiveAvailableMessages();
 
@@ -94,9 +97,9 @@ bool ZmqSocketTransport::initializeSocket() {
     zmq_options::applyCommonOptions(*socket_);
     if (mode_ == Mode::CLIENT) {
       socket_->set(zmq::sockopt::reconnect_ivl,
-                   static_cast<int>(reconnectInitialDelayMs_));
+                   static_cast<int>(reconnectInitialDelay_.count()));
       socket_->set(zmq::sockopt::reconnect_ivl_max,
-                   static_cast<int>(reconnectMaxDelayMs_));
+                   static_cast<int>(reconnectMaxDelay_.count()));
     }
     setupMonitor();
     if (mode_ == Mode::SERVER) {
@@ -114,6 +117,7 @@ bool ZmqSocketTransport::initializeSocket() {
     ioActive_ = false;
     monitorActive_ = false;
     if (monitorThread_.joinable()) {
+      monitorThread_.request_stop();
       monitorThread_.join();
     }
     return false;
@@ -137,8 +141,10 @@ void ZmqSocketTransport::setupMonitor() {
   monitorActive_ = true;
   std::promise<void> ready;
   auto fut = ready.get_future();
-  monitorThread_ =
-      std::thread(&ZmqSocketTransport::monitorLoop, this, std::move(ready));
+  monitorThread_ = std::jthread(
+      [this, ready = std::move(ready)](std::stop_token stopToken) mutable {
+        monitorLoop(stopToken, std::move(ready));
+      });
   fut.wait();
 }
 
@@ -158,13 +164,15 @@ void ZmqSocketTransport::stop() {
   ioActive_ = false;
   monitorActive_ = false;
   connected_ = false;
-  sendCv_.notify_all();
+  sendQueue.notifyStopped();
 
   if (ioThread_.joinable()) {
+    ioThread_.request_stop();
     ioThread_.join();
   }
 
   if (monitorThread_.joinable()) {
+    monitorThread_.request_stop();
     monitorThread_.join();
   }
 
@@ -175,7 +183,8 @@ void ZmqSocketTransport::stop() {
   TT_LOG_INFO("[ZmqSocketTransport] Stopped");
 }
 
-void ZmqSocketTransport::monitorLoop(std::promise<void> ready) {
+void ZmqSocketTransport::monitorLoop(std::stop_token stopToken,
+                                     std::promise<void> ready) {
   zmq::socket_t monitorSocket(*context_, zmq::socket_type::pair);
   try {
     monitorSocket.set(zmq::sockopt::linger, 0);
@@ -188,7 +197,7 @@ void ZmqSocketTransport::monitorLoop(std::promise<void> ready) {
   }
   ready.set_value();
 
-  while (monitorActive_) {
+  while (monitorActive_ && !stopToken.stop_requested()) {
     try {
       zmq::message_t eventMsg;
       auto eventResult = monitorSocket.recv(eventMsg, zmq::recv_flags::none);
@@ -229,19 +238,18 @@ bool ZmqSocketTransport::isConnected() const { return isConnectedState(); }
 
 std::string ZmqSocketTransport::getStatus() const { return getStatusString(); }
 
-bool ZmqSocketTransport::sendRawData(const std::vector<uint8_t>& data) {
+bool ZmqSocketTransport::sendRawData(std::span<const uint8_t> data) {
   if (!running_ || !ioActive_) return false;
 
   auto request = std::make_shared<SendRequest>();
-  request->data = data;
+  request->data.assign(data.begin(), data.end());
   auto result = request->result.get_future();
 
-  {
-    std::lock_guard<std::mutex> lock(sendMutex_);
-    if (!running_ || !ioActive_) return false;
-    pendingSends_.push_back(std::move(request));
+  if (!sendQueue.pushIf(std::move(request), [this] {
+        return running_.load() && ioActive_.load();
+      })) {
+    return false;
   }
-  sendCv_.notify_one();
 
   try {
     return result.get();
@@ -256,11 +264,8 @@ bool ZmqSocketTransport::processPendingSends() {
 
   while (true) {
     std::shared_ptr<SendRequest> request;
-    {
-      std::lock_guard<std::mutex> lock(sendMutex_);
-      if (pendingSends_.empty()) return processed;
-      request = std::move(pendingSends_.front());
-      pendingSends_.pop_front();
+    if (!sendQueue.tryPop(request)) {
+      return processed;
     }
 
     bool ok = false;
@@ -293,19 +298,14 @@ bool ZmqSocketTransport::receiveAvailableMessages() {
 }
 
 void ZmqSocketTransport::waitForIoWork() {
-  std::unique_lock<std::mutex> lock(sendMutex_);
-  sendCv_.wait_for(lock, IO_IDLE_WAIT,
-                   [this] { return !pendingSends_.empty() || !ioActive_; });
+  sendQueue.waitForWork(IO_IDLE_WAIT, [this] { return !ioActive_.load(); });
 }
 
 void ZmqSocketTransport::failPendingSends() {
   while (true) {
     std::shared_ptr<SendRequest> request;
-    {
-      std::lock_guard<std::mutex> lock(sendMutex_);
-      if (pendingSends_.empty()) return;
-      request = std::move(pendingSends_.front());
-      pendingSends_.pop_front();
+    if (!sendQueue.tryPop(request)) {
+      return;
     }
     request->result.set_value(false);
   }
@@ -387,9 +387,10 @@ void ZmqSocketTransport::setConnectionEstablishedCallback(
   setConnectionEstablishedCallbackCommon(std::move(callback));
 }
 
-void ZmqSocketTransport::setReconnectBackoff(uint32_t initialDelayMs,
-                                             uint32_t maxDelayMs) {
-  setReconnectBackoffCommon(initialDelayMs, maxDelayMs);
+void ZmqSocketTransport::setReconnectBackoff(
+    std::chrono::milliseconds initialDelay,
+    std::chrono::milliseconds maxDelay) {
+  setReconnectBackoffCommon(initialDelay, maxDelay);
 }
 
 }  // namespace tt::sockets

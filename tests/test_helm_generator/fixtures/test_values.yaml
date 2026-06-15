@@ -1,0 +1,90 @@
+# ---------------------------------------------------------------------------
+# Required at install time:
+#   helm install my-model ./charts/tt-inference-server \
+#     --set model=Llama-3.1-8B-Instruct \
+#     --set device=galaxy \
+#     --set hfToken=hf_xxx
+# ---------------------------------------------------------------------------
+
+model: ""
+device: ""
+engine: ""
+impl: ""
+hfToken: ""
+
+nameOverride: ""
+fullnameOverride: ""
+
+cache:
+  hostPath: ""
+
+hfCacheDir: ""
+
+# ---------------------------------------------------------------------------
+# Defaults — merged with (and overridden by) per-impl config below.
+# ---------------------------------------------------------------------------
+defaults:
+  replicaCount: 1
+  progressDeadlineSeconds: 3600
+  image:
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+  service:
+    type: ClusterIP
+    port: 8000
+    targetPort: 8000
+    annotations: {}
+  resources:
+    limits:
+      cpu: "8"
+      memory: 128Gi
+      hugepages-1Gi: 32Gi
+    requests:
+      cpu: "6"
+      memory: 64Gi
+      hugepages-1Gi: 32Gi
+  probes:
+    liveness:
+      enabled: true
+      path: /v1/models
+      initialDelaySeconds: 2400
+    readiness:
+      enabled: true
+      path: /health
+      initialDelaySeconds: 2400
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+
+# ---------------------------------------------------------------------------
+# Per-model configuration. Real values.yaml is populated by
+# `python -m workflows.helm_generator`. This fixture keeps a single canonical
+# entry that exercises every nested level the tests touch (defaultEngine,
+# engine block, device block, defaultImpl, impl block).
+# ---------------------------------------------------------------------------
+models:
+  Llama-3.1-8B-Instruct:
+    defaultEngine: vllm
+    vllm:
+      galaxy:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.12.0-bac8b34-7c6685a
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 20Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MESH_DEVICE
+                value: TG

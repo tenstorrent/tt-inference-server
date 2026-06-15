@@ -20,6 +20,7 @@ import jwt
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from utils.url_helpers import resolve_deploy_url, resolve_host_port
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
 from workflows.runtime_config import RuntimeConfig
@@ -89,6 +90,7 @@ def run_genai_benchmarks(
     jwt_secret: str,
     service_port: str = "8000",
     debug: bool = False,
+    deploy_url: str = "http://127.0.0.1",
 ) -> int:
     """
     Run genai-perf benchmarks using Docker container.
@@ -99,11 +101,17 @@ def run_genai_benchmarks(
         jwt_secret: JWT secret for authentication
         service_port: Service port for the inference server
         debug: If True, run in debug mode with verbose logging
+        deploy_url: Base URL of the inference server (scheme + host, optionally port).
+            Used to override the default localhost target when --server-url is set.
 
     Returns:
         Return code (0 for success, non-zero for failure)
     """
     logger.info("Starting genai-perf benchmarks...")
+
+    # genai-perf consumes URL as host[:port] without the scheme, so strip it.
+    genai_host, genai_port = resolve_host_port(deploy_url, service_port)
+    genai_url = f"{genai_host}:{genai_port}"
 
     # Get venv config for artifacts directory
     venv_config = VENV_CONFIGS[WorkflowVenvType.BENCHMARKS_GENAI_PERF]
@@ -156,7 +164,7 @@ def run_genai_benchmarks(
         "model_name": hf_model_repo,
         "model_id": model_spec.model_id,
         "tokenizer": "hf-internal-testing/llama-tokenizer",
-        "url": f"localhost:{service_port}",
+        "url": genai_url,
         "max_context": max_context,
         "model_max_concurrency": max_concurrency,
         "auth_token": auth_token,
@@ -182,7 +190,7 @@ def run_genai_benchmarks(
         "-v", f"{host_hf_cache}:/workspace/.cache/huggingface",  # Mount host HF cache (reuse system cache)
         "-e", f"AUTH_TOKEN={auth_token}",
         "-e", f"MODEL_NAME={hf_model_repo}",
-        "-e", f"URL=localhost:{service_port}",
+        "-e", f"URL={genai_url}",
         "-e", f"MAX_CONTEXT={max_context}",
         "-e", f"MODEL_MAX_CONCURRENCY={max_concurrency}",
         "-e", "BENCHMARKS_OUTPUT_DIR=/workspace/benchmarks_output",
@@ -228,6 +236,7 @@ def main():
 
     # runtime config loaded from JSON
     service_port = runtime_config.service_port
+    deploy_url = resolve_deploy_url(runtime_config)
 
     logger.info(f"Model: {model_spec.model_name}")
     logger.info(f"Device: {model_spec.device_type}")
@@ -240,6 +249,7 @@ def main():
         jwt_secret=args.jwt_secret,
         service_port=service_port,
         debug=args.debug,
+        deploy_url=deploy_url,
     )
 
     if return_code == 0:

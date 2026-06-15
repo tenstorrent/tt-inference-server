@@ -44,6 +44,7 @@ class RuntimeConfig:
     interactive: bool = False
     service_port: str = "8000"
     bind_host: str = "0.0.0.0"
+    server_url: Optional[str] = None
 
     # Dev / override
     dev_mode: bool = False
@@ -67,6 +68,17 @@ class RuntimeConfig:
     eval_samples: Optional[str] = None
     sdxl_num_prompts: str = "100"
 
+    # Prefix-cache benchmark
+    prefix_cache: bool = False
+    prefix_cache_preset: str = "full"
+    prefix_cache_scenarios: Optional[str] = None
+    prefix_cache_arrival: Optional[str] = None
+    prefix_cache_request_rate: Optional[float] = None
+    prefix_cache_scenarios_json: Optional[str] = None
+    prefix_cache_trace: Optional[str] = None
+    jwt_secret: Optional[str] = None
+    serving_bench_suites: Optional[str] = None
+
     # Device configuration
     device_id: Optional[List[int]] = None
 
@@ -78,6 +90,10 @@ class RuntimeConfig:
 
     # Validation
     skip_system_sw_validation: bool = False
+
+    # CI mode (set from --ci-mode): triggers CI-friendly behavior such as
+    # persisting tt-triage logs to the mounted cache_root volume.
+    ci_mode: bool = False
 
     # Misc
     tt_metal_python_venv_dir: Optional[str] = None
@@ -113,6 +129,7 @@ class RuntimeConfig:
             interactive=args.interactive,
             service_port=args.service_port,
             bind_host=args.bind_host,
+            server_url=args.server_url,
             dev_mode=args.dev_mode,
             no_auth=args.no_auth,
             print_docker_cmd=args.print_docker_cmd,
@@ -131,12 +148,24 @@ class RuntimeConfig:
             limit_samples_mode=args.limit_samples_mode,
             eval_samples=args.eval_samples,
             sdxl_num_prompts=args.sdxl_num_prompts,
+            prefix_cache=getattr(args, "prefix_cache", False),
+            prefix_cache_preset=getattr(args, "prefix_cache_preset", "full"),
+            prefix_cache_scenarios=getattr(args, "prefix_cache_scenarios", None),
+            prefix_cache_arrival=getattr(args, "prefix_cache_arrival", None),
+            prefix_cache_request_rate=getattr(args, "prefix_cache_request_rate", None),
+            prefix_cache_scenarios_json=getattr(
+                args, "prefix_cache_scenarios_json", None
+            ),
+            prefix_cache_trace=getattr(args, "prefix_cache_trace", None),
+            jwt_secret=getattr(args, "jwt_secret", None),
+            serving_bench_suites=getattr(args, "serving_bench_suites", None),
             device_id=args.device_id,
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,
             host_weights_dir=args.host_weights_dir,
             image_user=args.image_user,
             skip_system_sw_validation=args.skip_system_sw_validation,
+            ci_mode=args.ci_mode,
             tt_metal_python_venv_dir=args.tt_metal_python_venv_dir,
             tt_metal_home=args.tt_metal_home,
             vllm_dir=args.vllm_dir,

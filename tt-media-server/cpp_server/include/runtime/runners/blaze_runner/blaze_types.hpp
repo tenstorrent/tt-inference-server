@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cassert>
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -51,6 +52,8 @@ struct SlotContext {
   std::optional<uint32_t> pendingAckRequestId = std::nullopt;
   std::optional<ds::ISRequest> deferredEvict = std::nullopt;
   std::unique_ptr<tt::domain::llm::Sequence> deferredContinue = nullptr;
+  uint32_t currentPosition = 0;
+  std::chrono::steady_clock::time_point lastProgressTime;
 
   void setState(SlotState newState) {
     if (newState == state) return;

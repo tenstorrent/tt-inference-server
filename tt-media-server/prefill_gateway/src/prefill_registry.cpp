@@ -45,6 +45,14 @@ void PrefillRegistry::markDown(const std::string& serverId) {
   if (wasKnown && downCb) downCb(serverId);
 }
 
+void PrefillRegistry::setAcceptingTasks(const std::string& serverId,
+                                        bool acceptingTasks) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = prefills_.find(serverId);
+  if (it == prefills_.end()) return;
+  it->second.accepting_tasks = acceptingTasks;
+}
+
 void PrefillRegistry::incrementInflight(const std::string& serverId) {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = prefills_.find(serverId);
@@ -85,8 +93,11 @@ std::vector<PrefillSnapshot> PrefillRegistry::snapshot() const {
     PrefillSnapshot snap;
     snap.server_id = peer.server_id;
     snap.healthy = peer.healthy;
+    snap.accepting_tasks = peer.accepting_tasks;
     snap.in_flight = peer.in_flight;
     snap.max_in_flight = peer.max_in_flight;
+    snap.cached_blocks = peer.cached_blocks.size();
+    snap.last_heartbeat = peer.last_heartbeat;
     out.push_back(std::move(snap));
   }
   return out;

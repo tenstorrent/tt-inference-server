@@ -9,7 +9,8 @@
             "stable-diffusion-3.5-large",
             "FLUX.1-dev",
             "FLUX.1-schnell",
-            "Motif-Image-6B-Preview"
+            "Motif-Image-6B-Preview",
+            "Z-Image-Turbo"
         ],
         "AUDIO": [
             "distil-large-v3",
@@ -81,6 +82,7 @@
             "flux_dev": "FLUX.1-dev model tests",
             "flux_schnell": "FLUX.1-schnell model tests",
             "motif": "Motif image generation model tests",
+            "tt-z-image-turbo": "Z-Image-Turbo distilled text-to-image model tests",
             "bge": "BGE embedding model tests",
             "qwen3_emb": "Qwen3 embedding model tests",
             "speecht5": "SpeechT5 TTS model tests",
@@ -312,6 +314,15 @@
                 "p300x2"
             ]
         },
+        "tt-z-image-turbo": {
+            "weights": [
+                "Z-Image-Turbo"
+            ],
+            "category": "IMAGE",
+            "compatible_devices": [
+                "p300x2"
+            ]
+        },
         "bge": {
             "weights": [
                 "bge-large-en-v1.5"
@@ -499,68 +510,6 @@
         },
         "ImageGenerationLoraLoadTest": {
             "module": "server_tests.test_cases.image_generation_lora_load_test",
-            "markers": [
-                "load",
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "AudioTranscriptionLoadTest": {
-            "module": "server_tests.test_cases.audio_transcription_load_test",
-            "markers": [
-                "load",
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "AudioTranscriptionParamTest": {
-            "module": "server_tests.test_cases.audio_transcription_param_test",
-            "markers": [
-                "param",
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "AudioTranscriptionLoadDp2Chunk5Test": {
-            "module": "server_tests.test_cases.audio_transcription_load_dp2_chunk5_test",
-            "markers": [
-                "load",
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "AudioTranscriptionLoadDp2Chunk30Test": {
-            "module": "server_tests.test_cases.audio_transcription_load_dp2_chunk30_test",
             "markers": [
                 "load",
                 "e2e",

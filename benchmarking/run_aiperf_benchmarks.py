@@ -35,6 +35,7 @@ sys.path.insert(0, str(project_root))
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
+from utils.url_helpers import build_base_url, resolve_deploy_url, resolve_host_port
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
 from workflows.runtime_config import RuntimeConfig
@@ -471,8 +472,12 @@ def send_warmup_requests(
         try:
             logger.info(f"Sending warm-up request {i + 1}/{num_requests}...")
 
-            # Use the prompt client's URL and auth
-            url = f"http://localhost:{prompt_client.env_config.service_port}/v1/chat/completions"
+            # Use the prompt client's URL and auth.
+            _base = build_base_url(
+                prompt_client.env_config.deploy_url,
+                prompt_client.env_config.service_port,
+            )
+            url = f"{_base}/v1/chat/completions"
             headers = {"Content-Type": "application/json"}
 
             # Add auth if available
@@ -561,6 +566,9 @@ def main():
     # runtime config loaded from JSON
     device_str = runtime_config.device
     service_port = runtime_config.service_port
+    deploy_url = resolve_deploy_url(runtime_config)
+    aiperf_host, aiperf_port = resolve_host_port(deploy_url, service_port)
+    aiperf_url = f"{aiperf_host}:{aiperf_port}"
 
     device = DeviceTypes.from_string(device_str)
     logger.info(f"model_spec=: {model_spec}")
@@ -640,6 +648,7 @@ def main():
     env_config.jwt_secret = jwt_secret
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
+    env_config.deploy_url = deploy_url
 
     prompt_client = PromptClient(
         env_config,
@@ -703,7 +712,7 @@ def main():
             model_name=model_spec.hf_model_repo,
             model_id=model_spec.model_id,
             tokenizer=model_spec.hf_model_repo,
-            url=f"localhost:{service_port}",
+            url=aiperf_url,
             auth_token=auth_token,
             artifact_base=str(artifact_base),
             output_dir=args.output_path,

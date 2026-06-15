@@ -198,13 +198,6 @@ void LLMController::responses(
       textPart["text"] = choice.text;
       content.append(std::move(textPart));
 
-      if (choice.reasoning.has_value()) {
-        Json::Value reasoningPart;
-        reasoningPart["type"] = "reasoning";
-        reasoningPart["text"] = *choice.reasoning;
-        content.append(std::move(reasoningPart));
-      }
-
       item["content"] = std::move(content);
       output.append(std::move(item));
     }
@@ -267,10 +260,33 @@ LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
                                      domain::Session* session) {
   return [writer = std::move(writer), session](const LLMStreamChunk& chunk,
                                                bool isFinal) {
+    // Accumulate token for prefix index (always, even if connection closed)
+    if (session && !chunk.choices.empty() && chunk.choices[0].token_id) {
+      session->addGeneratedToken(static_cast<int>(*chunk.choices[0].token_id));
+    }
+
+    // Finalize session before isDone check (register partial progress on abort)
+    if (isFinal && session) {
+      session->finalizeAndRegisterHashes();
+      session->clearInFlight();
+    }
+
     if (writer->isDone()) return;
-    if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
+
+    // Disaggregation: capture the prefill server's cached-token count (stamped
+    // on the first chunk) before the content filter below, so it surfaces in
+    // usage even if that chunk carries no displayable text.
+    writer->observeCachedTokens(chunk);
+
+    // Only forward chunks with content to the writer; empty decoded tokens are
+    // tracked above but not sent to the client.
+    if (!chunk.choices.empty() &&
+        (!chunk.choices[0].text.empty() ||
+         chunk.choices[0].tool_calls.has_value() ||
+         chunk.choices[0].finish_reason.has_value())) {
+      writer->handleTokenChunk(chunk);
+    }
     if (isFinal) {
-      if (session) session->clearInFlight();
       writer->finalize();
     }
   };

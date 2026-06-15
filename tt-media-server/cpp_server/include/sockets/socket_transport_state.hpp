@@ -4,7 +4,7 @@
 #pragma once
 
 #include <atomic>
-#include <cstdint>
+#include <chrono>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -19,10 +19,12 @@ class SocketTransportState {
  protected:
   enum class Mode { SERVER, CLIENT };
 
-  SocketTransportState(uint32_t reconnectInitialDelayMs = 100,
-                       uint32_t reconnectMaxDelayMs = 5000)
-      : reconnectInitialDelayMs_(reconnectInitialDelayMs),
-        reconnectMaxDelayMs_(reconnectMaxDelayMs) {}
+  SocketTransportState(std::chrono::milliseconds reconnectInitialDelay =
+                           std::chrono::milliseconds(100),
+                       std::chrono::milliseconds reconnectMaxDelay =
+                           std::chrono::milliseconds(5000))
+      : reconnectInitialDelay_(reconnectInitialDelay),
+        reconnectMaxDelay_(reconnectMaxDelay) {}
 
   bool isConnectedState() const { return connected_; }
 
@@ -74,16 +76,17 @@ class SocketTransportState {
     }
   }
 
-  void setReconnectBackoffCommon(uint32_t initialDelayMs, uint32_t maxDelayMs) {
-    reconnectInitialDelayMs_ = initialDelayMs;
-    reconnectMaxDelayMs_ = maxDelayMs;
+  void setReconnectBackoffCommon(std::chrono::milliseconds initialDelay,
+                                 std::chrono::milliseconds maxDelay) {
+    reconnectInitialDelay_ = initialDelay;
+    reconnectMaxDelay_ = maxDelay;
   }
 
   Mode mode_{Mode::CLIENT};
   std::atomic<bool> running_{false};
   std::atomic<bool> connected_{false};
-  uint32_t reconnectInitialDelayMs_;
-  uint32_t reconnectMaxDelayMs_;
+  std::chrono::milliseconds reconnectInitialDelay_;
+  std::chrono::milliseconds reconnectMaxDelay_;
 
  private:
   mutable std::mutex callbackMutex_;

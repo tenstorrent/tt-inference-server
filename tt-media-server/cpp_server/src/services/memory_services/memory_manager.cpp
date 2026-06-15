@@ -6,7 +6,7 @@
 #include <utility>
 
 #include "config/settings.hpp"
-#include "domain/slot_types.hpp"
+#include "domain/sentinel_values.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "utils/logger.hpp"
 

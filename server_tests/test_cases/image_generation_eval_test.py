@@ -261,7 +261,7 @@ class ImageGenerationEvalsTest(BaseTest):
             raise RuntimeError("Server health check failed")
 
         ctx = ImageGenContext(
-            base_url=request.server_url or f"http://localhost:{self.service_port}",
+            base_url=request.server_url or f"{self.base_url}",
             headers=self._build_headers(),
             num_inference_steps=request.num_inference_steps,
             request_timeout_sec=timeout_sec,

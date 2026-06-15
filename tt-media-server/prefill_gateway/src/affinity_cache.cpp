@@ -24,4 +24,9 @@ void AffinityCache::evictPrefill(const std::string& serverId) {
                 [&](const auto& kv) { return kv.second == serverId; });
 }
 
+size_t AffinityCache::size() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return hash_to_server_.size();
+}
+
 }  // namespace tt::gateway

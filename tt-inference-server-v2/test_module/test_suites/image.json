@@ -23,7 +23,8 @@
                     },
                     "model_targets": {
                         "sdxl+galaxy": {
-                            "image_generation_time": 11
+                            "image_generation_time": 20,
+                            "num_concurrent_requests": 32
                         }
                     }
                 },
@@ -37,7 +38,8 @@
                     },
                     "model_targets": {
                         "sdxl+galaxy": {
-                            "image_generation_time": 15
+                            "image_generation_time": 28,
+                            "num_concurrent_requests": 32
                         }
                     }
                 },
@@ -51,14 +53,18 @@
                     },
                     "model_targets": {
                         "sdxl+galaxy": {
-                            "image_generation_time": 25
+                            "image_generation_time": 45,
+                            "num_concurrent_requests": 32
                         }
                     }
                 },
                 {
                     "template": "ImageGenerationParamTest",
                     "enabled": true,
-                    "description": "Param validation"
+                    "description": "Param validation",
+                    "targets": {
+                        "same_seed_min_ssim": 0.94
+                    }
                 },
                 {
                     "template": "ImageGenerationEvalsTest",
@@ -187,7 +193,10 @@
                 {
                     "template": "ImageGenerationParamTest",
                     "enabled": true,
-                    "description": "Param validation"
+                    "description": "Param validation",
+                    "targets": {
+                        "same_seed_min_ssim": 0.94
+                    }
                 }
             ]
         },
@@ -294,6 +303,26 @@
                     }
                 }
             ]
+        },
+        {
+            "models": [
+                "z_image_turbo"
+            ],
+            "devices": [
+                "p300x2"
+            ],
+            "num_of_devices": 1,
+            "test_cases": [
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "9 iterations (Z-Image-Turbo)",
+                    "targets": {
+                        "num_inference_steps": 9,
+                        "image_generation_time": 15
+                    }
+                }
+            ]
         }
     ],
     "test_suites": [
@@ -336,7 +365,10 @@
                 {
                     "template": "ImageGenerationParamTest",
                     "enabled": true,
-                    "description": "Param validation"
+                    "description": "Param validation",
+                    "targets": {
+                        "same_seed_min_ssim": 0.94
+                    }
                 }
             ]
         },
@@ -379,7 +411,10 @@
                 {
                     "template": "ImageGenerationParamTest",
                     "enabled": true,
-                    "description": "Param validation"
+                    "description": "Param validation",
+                    "targets": {
+                        "same_seed_min_ssim": 0.94
+                    }
                 }
             ]
         },
@@ -422,7 +457,10 @@
                 {
                     "template": "ImageGenerationParamTest",
                     "enabled": true,
-                    "description": "Param validation"
+                    "description": "Param validation",
+                    "targets": {
+                        "same_seed_min_ssim": 0.94
+                    }
                 }
             ]
         }

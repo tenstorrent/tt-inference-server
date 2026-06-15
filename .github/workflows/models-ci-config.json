@@ -15,8 +15,7 @@
       "ci": {
         "nightly": {
           "devices": [
-            "N150",
-            "N300"
+            "P150"
           ]
         }
       }
@@ -32,6 +31,7 @@
                 "N150",
                 "N300",
                 "P100",
+                "P150",
                 "P150X4",
                 "P300X2",
                 "T3K"
@@ -41,12 +41,6 @@
               "devices": [
                 "GALAXY"
               ]
-            },
-            "release": {
-              "devices": [
-                "GALAXY",
-                "P300X2"
-              ]
             }
           }
         },
@@ -55,8 +49,7 @@
           "ci": {
             "nightly": {
               "devices": [
-                "N150",
-                "N300"
+                "P150"
               ]
             }
           }
@@ -105,8 +98,7 @@
           "ci": {
             "nightly": {
               "devices": [
-                "N150",
-                "N300"
+                "P150"
               ]
             }
           }
@@ -129,7 +121,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "P150X4",
             "P300X2",
             "T3K"
@@ -262,22 +254,36 @@
       }
     },
     "Qwen3-32B": {
-      "inference_engine": "vLLM",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "GALAXY",
-            "GALAXY_BH",
-            "P300X2",
-            "T3K"
-          ]
+      "implementations": [
+        {
+          "inference_engine": "vLLM",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "GALAXY",
+                "BH_GALAXY",
+                "P300X2",
+                "T3K"
+              ]
+            },
+            "weekly": {
+              "devices": [
+                "GALAXY"
+              ]
+            }
+          }
         },
-        "weekly": {
-          "devices": [
-            "GALAXY"
-          ]
+        {
+          "inference_engine": "FORGE",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ]
+            }
+          }
         }
-      }
+      ]
     },
     "Qwen3-8B": {
       "implementations": [
@@ -304,8 +310,7 @@
           "ci": {
             "nightly": {
               "devices": [
-                "N150",
-                "N300"
+                "P150"
               ]
             }
           }
@@ -317,7 +322,7 @@
       "ci": {
         "nightly": {
           "devices": [
-            "N150"
+            "P150"
           ]
         }
       }
@@ -339,11 +344,6 @@
           "devices": [
             "GALAXY",
             "N150"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
           ]
         }
       }
@@ -367,7 +367,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "P150X4",
             "P300X2",
             "T3K"
@@ -381,26 +381,10 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "P150X4",
             "P300X2",
             "T3K"
-          ]
-        }
-      }
-    },
-    "bge-large-en-v1.5": {
-      "inference_engine": "MEDIA",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "GALAXY",
-            "N150"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
           ]
         }
       }
@@ -468,7 +452,8 @@
       "ci": {
         "nightly": {
           "devices": [
-            "T3K"
+            "T3K",
+            "P300X2"
           ]
         },
         "weekly": {
@@ -483,8 +468,20 @@
       "ci": {
         "nightly": {
           "devices": [
+            "N150",
             "N300",
-            "N150"
+            "T3K",
+            "P150"
+          ]
+        }
+      }
+    },
+    "gemma-4-31b-it": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P300X2"
           ]
         }
       }
@@ -495,12 +492,8 @@
         "nightly": {
           "devices": [
             "GALAXY",
+            "P300X2",
             "T3K"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
           ]
         }
       }
@@ -526,38 +519,26 @@
         }
       }
     },
+    "yolox_nano": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P150"
+          ]
+        }
+      }
+    },
     "mochi-1-preview": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "P150X4",
             "P300X2",
             "T3K"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
-          ]
-        }
-      }
-    },
-    "distil-large-v3": {
-      "inference_engine": "MEDIA",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "P150",
-            "P300X2"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P150",
-            "P300X2"
           ]
         }
       }
@@ -582,25 +563,6 @@
         }
       }
     },
-    "speecht5_tts": {
-      "inference_engine": "MEDIA",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150",
-            "N300",
-            "P150",
-            "P300X2"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P150",
-            "P300X2"
-          ]
-        }
-      }
-    },
     "stable-diffusion-3.5-large": {
       "inference_engine": "MEDIA",
       "ci": {
@@ -618,35 +580,44 @@
       }
     },
     "stable-diffusion-xl-base-1.0": {
-      "inference_engine": "MEDIA",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "GALAXY",
-            "GALAXY_BH",
-            "N150",
-            "N300",
-            "P300X2"
-          ]
-        },
-        "weekly": {
-          "devices": [
-            "GALAXY",
-            "T3K"
-          ],
-          "device-args": {
-            "T3K": {
-              "additional-args": "--sdxl_num_prompts 5000",
-              "throttle-perf": "5"
+      "implementations": [
+        {
+          "inference_engine": "MEDIA",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "GALAXY",
+                "BH_GALAXY",
+                "N150",
+                "N300",
+                "P300X2"
+              ]
+            },
+            "weekly": {
+              "devices": [
+                "GALAXY",
+                "T3K"
+              ],
+              "device-args": {
+                "T3K": {
+                  "additional-args": "--sdxl_num_prompts 5000",
+                  "throttle-perf": "5"
+                }
+              }
             }
           }
         },
-        "release": {
-          "devices": [
-            "GALAXY"
-          ]
+        {
+          "inference_engine": "FORGE",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "N150"
+              ]
+            }
+          }
         }
-      }
+      ]
     },
     "unet": {
       "inference_engine": "FORGE",
@@ -684,7 +655,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "N150",
             "P150",
             "P300X2"
@@ -694,10 +665,14 @@
           "devices": [
             "GALAXY"
           ]
-        },
-        "release": {
+        }
+      }
+    },
+    "Z-Image-Turbo": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "nightly": {
           "devices": [
-            "P150",
             "P300X2"
           ]
         }

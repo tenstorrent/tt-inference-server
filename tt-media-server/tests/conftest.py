@@ -565,6 +565,9 @@ runner_mocks = {
         "TTWan22Runner": create_mock_runner_class("TTWan22Runner"),
         "TTWan22I2VRunner": create_mock_runner_class("TTWan22I2VRunner"),
     },
+    "tt_model_runners.z_image_turbo_runner": {
+        "ZImageTurboRunner": create_mock_runner_class("ZImageTurboRunner"),
+    },
     "tt_model_runners.whisper_runner": {
         "TTWhisperRunner": create_mock_runner_class("TTWhisperRunner")
     },

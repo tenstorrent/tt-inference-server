@@ -7,3 +7,4 @@ requests
 imageio
 imageio-ffmpeg
 jsonschema
+ruamel.yaml==0.18.6

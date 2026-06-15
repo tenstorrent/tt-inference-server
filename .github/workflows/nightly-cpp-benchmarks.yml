@@ -26,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
@@ -133,14 +133,14 @@ jobs:
         if: always()
         env:
           JOB_ID: ${{ job.check_run_id }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: vllm-bench-report_${{ env.JOB_ID }}
           path: tt-media-server/cpp_server/bench_results/
 
       - name: Upload server logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: nightly-benchmark-server-logs
           path: tt-media-server/cpp_server.log

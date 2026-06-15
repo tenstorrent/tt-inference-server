@@ -19,8 +19,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from .image_generation_eval_test import ImageGenerationEvalsTest
 from report_module.schema import Block
+
 from server_tests.test_classes import TestConfig as ServerTestConfig
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     calculate_accuracy_check,
@@ -30,13 +30,15 @@ from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
 from workflows.utils import is_sdxl_num_prompts_enabled
 
 from .._test_common import block_id
-from ..context import MediaContext, require_health
+from ..context import HardwareRequirement, MediaContext, require_health
 from ..test_status import ImageGenerationTestStatus
+from .image_generation_eval_test import ImageGenerationEvalsTest
 
 logger = logging.getLogger(__name__)
 
 
 SDXL_SD35_INFERENCE_STEPS = 20
+Z_IMAGE_TURBO_INFERENCE_STEPS = 9
 IMAGE_FORMAT_FOR_EVALS = "PNG"
 IMAGE_QUALITY_FOR_EVALS = 100
 SDXL_INPAINTING_INFERENCE_STEPS = 20
@@ -387,6 +389,8 @@ async def _run_image_generation_eval_test(
         inference_steps = FLUX_1_SCHNELL_INFERENCE_STEPS
     elif runner in ("tt-sdxl-trace", "tt-sd3.5"):
         inference_steps = SDXL_SD35_INFERENCE_STEPS
+    elif runner == "tt-z-image-turbo":
+        inference_steps = Z_IMAGE_TURBO_INFERENCE_STEPS
     else:
         inference_steps = FLUX_MOTIF_INFERENCE_STEPS
     logger.info(
@@ -401,6 +405,8 @@ async def _run_image_generation_eval_test(
         "num_inference_steps": inference_steps,
         "server_url": ctx.base_url,
     }
+    if runner == "tt-z-image-turbo":
+        request_dict["image_resolution"] = (512, 512)
     eval_test = ImageGenerationEvalsTest(test_config, {"request": request_dict})
     eval_test.service_port = ctx.service_port
 
@@ -435,16 +441,17 @@ IMAGE_EVAL_DISPATCH: dict[str, ImageEvalFn] = {
     "tt-flux.1-dev": _run_image_generation_eval_test,
     "tt-flux.1-schnell": _run_image_generation_eval_test,
     "tt-motif-image-6b-preview": _run_image_generation_eval_test,
+    "tt-z-image-turbo": _run_image_generation_eval_test,
 }
 
 
 def run_image_eval(ctx: MediaContext) -> Block:
-    """Run evaluations for an image model (SDXL, SD3.5, Flux, Motif)."""
+    """Run evaluations for an image model (SDXL, SD3.5, Flux, Motif, Z-Image-Turbo)."""
     logger.info(
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
 
-    runner_in_use = require_health(ctx)
+    runner_in_use = require_health(ctx, HardwareRequirement.ANY_CHIP)
 
     eval_method = IMAGE_EVAL_DISPATCH.get(runner_in_use, _run_image_generation_eval)
     try:
@@ -464,11 +471,22 @@ def run_image_eval(ctx: MediaContext) -> Block:
 
     if isinstance(eval_result, dict):
         eval_results = eval_result.get("eval_results", {})
-        data["fid_score"] = eval_results.get("fid_score")
-        data["average_clip"] = eval_results.get("average_clip")
-        data["deviation_clip_score"] = eval_results.get("deviation_clip_score")
         data["accuracy_check"] = eval_results.get("accuracy_check")
         data["score"] = None
+        # Only surface metric fields the sub-eval actually reports — keeps
+        # the report honest (e.g. Z-Image-Turbo doesn't compute FID/CLIP, so
+        # those columns won't appear at all instead of showing as null).
+        for key in (
+            "fid_score",
+            "average_clip",
+            "deviation_clip_score",
+            "pcc_results",
+            "pcc_min",
+            "pcc_mean",
+            "pcc_tolerance",
+        ):
+            if key in eval_results:
+                data[key] = eval_results[key]
     else:
         status_list, total_time = eval_result
 

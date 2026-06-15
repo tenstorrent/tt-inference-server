@@ -2,13 +2,27 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import json
+import os
+from datetime import datetime
 from pathlib import Path
+
 import pytest
 import requests
-import json
-from datetime import datetime
+
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
+from utils.url_helpers import DEFAULT_DEPLOY_URL, build_base_url
+
+
+def _default_endpoint_url() -> str:
+    """Resolve the default --endpoint-url from DEPLOY_URL / SERVICE_PORT env
+    vars (set by the workflow runner from --server-url), falling back to the
+    localhost dev default for direct pytest invocations.
+    """
+    deploy_url = os.environ.get("DEPLOY_URL", DEFAULT_DEPLOY_URL)
+    service_port = os.environ.get("SERVICE_PORT", "8000")
+    return f"{build_base_url(deploy_url, service_port)}/v1/chat/completions"
 
 
 # 1. Add command-line options for endpoint and metadata
@@ -22,7 +36,7 @@ def pytest_addoption(parser):
     parser.addoption(
         "--endpoint-url",
         action="store",
-        default="http://127.0.0.1:8000/v1/chat/completions",
+        default=_default_endpoint_url(),
         help="The URL of the API endpoint to test",
     )
     parser.addoption(

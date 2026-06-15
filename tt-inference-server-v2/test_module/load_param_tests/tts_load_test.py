@@ -8,12 +8,12 @@ import logging
 import shutil
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import aiohttp
-
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig
-from typing import TYPE_CHECKING
+
+from .._test_common import BaseTest, HardwareRequirement, TestConfig
 
 if TYPE_CHECKING:
     from ..context import MediaContext
@@ -33,6 +33,7 @@ headers = {
 class TTSLoadTest(BaseTest):
     KIND = "tts_load"
     TASK_TYPE = "text_to_speech"
+    HARDWARE_REQUIREMENT = HardwareRequirement.FULL_BOARD
 
     """Load test for Text-to-Speech (SpeechT5) functionality.
 
@@ -70,7 +71,7 @@ class TTSLoadTest(BaseTest):
 
     async def _run_specific_test_async(self):
         test_start_time = time.time()
-        self.url = f"http://localhost:{self.service_port}/v1/audio/speech"
+        self.url = f"{self.base_url}/v1/audio/speech"
 
         num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         tts_target_time = self.targets.get("tts_generation_time", 10)

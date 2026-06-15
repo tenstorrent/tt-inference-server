@@ -7,8 +7,10 @@
 
 #include <sstream>
 
-#include "config/runner_config.hpp"
+#include "domain/llm/llm_response.hpp"
 #include "domain/llm/sampling_params.hpp"
+#include "ipc/interface/result_queue.hpp"
+#include "sockets/socket_messages.hpp"
 #include "utils/id_generator.hpp"
 
 namespace tt::runners::llm_engine {
@@ -51,6 +53,56 @@ TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {
   EXPECT_EQ(restored->prompt_logprobs, orig.prompt_logprobs);
   EXPECT_EQ(restored->truncate_prompt_tokens, orig.truncate_prompt_tokens);
   EXPECT_EQ(restored->fast_mode, orig.fast_mode);
+}
+
+TEST(LLMResponseTest, MakeTimeoutErrorChunkUsesTimeoutFinishReason) {
+  auto chunk = makeTimeoutErrorChunk(/*taskId=*/123);
+
+  ASSERT_EQ(chunk.task_id, 123u);
+  ASSERT_EQ(chunk.choices.size(), 1u);
+  ASSERT_TRUE(chunk.choices[0].finish_reason.has_value());
+  EXPECT_EQ(chunk.choices[0].finish_reason.value(), "timeout_error");
+  ASSERT_TRUE(chunk.error.has_value());
+  EXPECT_EQ(chunk.error.value(), "timeout");
+}
+
+TEST(LLMResponseTest, ErrorReasonMapsToFinishReason) {
+  EXPECT_EQ(finishReasonForError(LLMErrorReason::GENERIC),
+            std::string(GENERIC_ERROR_FINISH_REASON));
+  EXPECT_EQ(finishReasonForError(LLMErrorReason::TIMEOUT),
+            std::string(TIMEOUT_ERROR_FINISH_REASON));
+  EXPECT_TRUE(isErrorFinishReason(std::string(GENERIC_ERROR_FINISH_REASON)));
+  EXPECT_TRUE(isErrorFinishReason(std::string(TIMEOUT_ERROR_FINISH_REASON)));
+  EXPECT_FALSE(isErrorFinishReason(std::string("stop")));
+  EXPECT_EQ(
+      errorReasonFromFinishReason(std::string(TIMEOUT_ERROR_FINISH_REASON)),
+      LLMErrorReason::TIMEOUT);
+}
+
+TEST(LLMResponseTest, TimeoutTokenFlagMapsToTimeoutErrorReason) {
+  tt::ipc::SharedToken token;
+  token.flags = tt::ipc::SharedToken::FLAG_FINAL |
+                tt::ipc::SharedToken::FLAG_ERROR |
+                tt::ipc::SharedToken::FLAG_TIMEOUT;
+  EXPECT_TRUE(token.isFinal());
+  EXPECT_TRUE(token.isError());
+  EXPECT_TRUE(token.isTimeout());
+  EXPECT_EQ(tt::ipc::errorReasonFromToken(token), LLMErrorReason::TIMEOUT);
+}
+
+TEST(LLMResponseTest, PrefillTimeoutTextMapsToTimeoutErrorReason) {
+  tt::sockets::PrefillResultMessage result(/*taskId=*/123);
+  result.error = true;
+  result.generated_text = std::string(tt::sockets::PREFILL_TIMEOUT_ERROR_TEXT);
+
+  EXPECT_EQ(tt::sockets::errorReasonFromPrefillResult(result),
+            LLMErrorReason::TIMEOUT);
+  EXPECT_EQ(tt::sockets::prefillErrorTextForReason(LLMErrorReason::TIMEOUT,
+                                                   "ignored"),
+            std::string(tt::sockets::PREFILL_TIMEOUT_ERROR_TEXT));
+  EXPECT_EQ(tt::sockets::prefillErrorTextForReason(LLMErrorReason::GENERIC,
+                                                   "prefill_down"),
+            "prefill_down");
 }
 
 TEST(SamplingParamsTest, SerializeDeserialize_AllOptionalFieldsSet) {
@@ -126,12 +178,18 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   params.stop_token_ids = {10, 20};
   params.allowed_token_ids = {1, 2, 3};
 
-  Sequence orig(tt::utils::TaskIDGenerator::generate(), 256, {1, 2, 3, 4, 5},
+  Sequence orig(tt::utils::TaskIDGenerator::generate(), 128, {1, 2, 3, 4, 5},
                 params);
-  orig.setNumCachedTokens(256);
+  orig.setNumCachedTokens(128);
   orig.getMutableBlockTable() = {0, 1};
   orig.setStatus(SequenceStatus::IN_FLIGHT);
   orig.setLastToken(5);
+  orig.setKVCacheSlot(42);
+  orig.setContinuation(true);
+  orig.setDisaggregated(true);
+  orig.setKVPositionId(17);
+  orig.setDecodePositionId(18);
+  orig.setDecodeSkipTokens(11);
 
   std::ostringstream os;
   orig.serialize(os);
@@ -146,6 +204,14 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   EXPECT_EQ(restored.getTokenIds(), orig.getTokenIds());
   EXPECT_EQ(restored.getBlockTable(), orig.getBlockTable());
   EXPECT_EQ(restored.getStatus(), orig.getStatus());
+  EXPECT_EQ(restored.getKVCacheSlot(), orig.getKVCacheSlot());
+  EXPECT_EQ(restored.isContinuation(), orig.isContinuation());
+  EXPECT_EQ(restored.isDisaggregated(), orig.isDisaggregated());
+  ASSERT_TRUE(restored.getKVPositionId().has_value());
+  EXPECT_EQ(*restored.getKVPositionId(), *orig.getKVPositionId());
+  EXPECT_EQ(restored.getDecodePositionId(), orig.getDecodePositionId());
+  EXPECT_EQ(restored.getDecodeSkipTokens(), orig.getDecodeSkipTokens());
+  EXPECT_EQ(restored.numCachedBlocks(), orig.numCachedBlocks());
 
   const auto& sp = restored.getSamplingParams();
   const auto& spOrig = orig.getSamplingParams();
@@ -175,6 +241,7 @@ TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
   EXPECT_TRUE(restored.getTokenIds().empty());
   EXPECT_EQ(restored.getNumPromptTokens(), 0u);
   EXPECT_EQ(restored.getLastToken(), 0);
+  EXPECT_FALSE(restored.getKVPositionId().has_value());
 }
 
 TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {

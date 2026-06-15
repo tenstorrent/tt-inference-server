@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
+//
+// SPDX-License-Identifier: Apache-2.0
 // Debug-mode instrumentation helper (session 680f96). Temporary; remove after
 // profiling.
 #pragma once

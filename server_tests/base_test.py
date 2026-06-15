@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional
 import requests
 
 from server_tests.test_classes import TestConfig
+from utils.url_helpers import DEFAULT_DEPLOY_URL, build_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,10 @@ class BaseTest(ABC):
         self.targets = targets
         self.description = description
         self.service_port = os.getenv("SERVICE_PORT", "8000")
+        # DEPLOY_URL is set by the workflow runner from --server-url.
+        self.deploy_url = os.getenv("DEPLOY_URL", DEFAULT_DEPLOY_URL)
+        # Pre-computed base URL (scheme://host[:port]) for test_cases.
+        self.base_url = build_base_url(self.deploy_url, self.service_port)
         self.timeout = config.get("timeout")
         self.retry_attempts = config.get("retry_attempts")
         self.break_on_failure = config.get("break_on_failure")
@@ -204,7 +209,7 @@ class BaseTest(ABC):
         retry_delay = (
             retry_delay if retry_delay is not None else HEALTH_CHECK_CONFIG.RETRY_DELAY
         )
-        health_url = f"http://localhost:{service_port}/tt-liveness"
+        health_url = f"{build_base_url(self.deploy_url, service_port)}/tt-liveness"
         logger.info("Waiting for server at %s ...", health_url)
 
         for attempt in range(1, max_attempts + 1):

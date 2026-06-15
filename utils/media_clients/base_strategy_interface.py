@@ -7,6 +7,7 @@ import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence
+from urllib.parse import urlparse
 
 from server_tests.test_cases.device_liveness_test import DeviceLivenessTest
 from server_tests.test_classes import TestConfig
@@ -53,13 +54,24 @@ class PerfCheck:
 class BaseMediaStrategy(ABC):
     """Interface for media strategies."""
 
-    def __init__(self, all_params, model_spec, device, output_path, service_port):
+    def __init__(
+        self, all_params, model_spec, device, output_path, service_port, deploy_url=None
+    ):
         self.all_params = all_params
         self.model_spec = model_spec
         self.device = device
         self.output_path = output_path
         self.service_port = service_port
-        self.base_url = f"http://localhost:{service_port}"
+        if deploy_url:
+            normalized = deploy_url.rstrip("/")
+            parsed = urlparse(normalized)
+            self.base_url = (
+                normalized
+                if parsed.port is not None
+                else f"{normalized}:{service_port}"
+            )
+        else:
+            self.base_url = f"http://localhost:{service_port}"
         self.test_payloads_path = "utils/test_payloads"
 
     @abstractmethod
