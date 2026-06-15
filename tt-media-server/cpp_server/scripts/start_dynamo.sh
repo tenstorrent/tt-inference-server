@@ -43,7 +43,7 @@ export ETCD_ENDPOINTS="${ETCD_ENDPOINTS:-http://localhost:2379}"
 export DYNAMO_ENDPOINT_ENABLED=1
 # Mirror the Dynamo-side env into cpp_server's namespace so the C++ accessors
 # (which key off DYNAMO_*) see the same values without duplicating exports.
-export DYNAMO_DISCOVERY_BACKEND="${DYN_DISCOVERY_BACKEND}"
+export DYNAMO_DISCOVERY_BACKEND="${DYN_DISCOVERY_BACKEND:-etcd}"
 export DYNAMO_DISCOVERY_PATH="${DYNAMO_DISCOVERY_PATH:-${DYN_FILE_STORE}}"
 export DYNAMO_ETCD_ENDPOINTS="${DYNAMO_ETCD_ENDPOINTS:-${ETCD_ENDPOINTS}}"
 export DYNAMO_NAMESPACE="${DYNAMO_NAMESPACE:-default}"

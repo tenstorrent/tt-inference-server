@@ -1520,7 +1520,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-555f240-22be241
+              tag: 0.16.0-669d59e-3334377
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -1713,7 +1713,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-555f240-22be241
+              tag: 0.16.0-669d59e-3334377
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -1939,7 +1939,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-555f240-22be241
+              tag: 0.16.0-669d59e-3334377
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -2132,7 +2132,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-555f240-22be241
+              tag: 0.16.0-669d59e-3334377
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -7250,6 +7250,53 @@ models:
                 value: N300
               - name: WH_ARCH_YAML
                 value: wormhole_b0_80_arch_eth_dispatch.yaml
+    defaultEngine: forge
+  yolox_nano:
+    forge:
+      n150:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.13.0-079a2c2
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MESH_DEVICE
+                value: N150
+      p150:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.13.0-079a2c2
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: P150
     defaultEngine: forge
   unet:
     forge:

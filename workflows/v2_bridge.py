@@ -34,6 +34,7 @@ _V2_WORKFLOW_NAMES = {
     WorkflowType.SPEC_TESTS: "spec_tests",
     WorkflowType.RELEASE: "release",
     WorkflowType.AGENTIC: "agentic",
+    WorkflowType.SERVING_BENCH: "serving_bench",
 }
 
 _V2_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
@@ -49,6 +50,10 @@ _V2_ROUTED_MODELS = frozenset(
         "stable-diffusion-xl-base-1.0",
         "stable-diffusion-xl-base-1.0-img-2-img",
         "stable-diffusion-xl-1.0-inpainting-0.1",
+        "stable-diffusion-3.5-large",
+        "FLUX.1-dev",
+        "FLUX.1-schnell",
+        "Motif-Image-6B-Preview",
         "whisper-large-v3",
         "distil-large-v3",
         "Z-Image-Turbo",
@@ -68,10 +73,12 @@ def _is_prefix_cache_run(wf, runtime_config) -> bool:
 
 def can_route_to_v2(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
-    # Agentic evals and the prefix-cache benchmark are v2-only features with no
-    # v1 driver. They route to v2 for ANY model (not just the image/audio set in
-    # _V2_ROUTED_MODELS), launched through their dedicated venv launchers.
-    if wf == WorkflowType.AGENTIC or _is_prefix_cache_run(wf, runtime_config):
+    # Agentic evals, serving-bench benchmark suites, and the prefix-cache
+    # benchmark are v2-only features with no v1 driver. They route to v2 for ANY
+    # model (not just the image/audio set in _V2_ROUTED_MODELS).
+    if wf in (WorkflowType.AGENTIC, WorkflowType.SERVING_BENCH) or _is_prefix_cache_run(
+        wf, runtime_config
+    ):
         return True
     if not is_v2_routed_model(model_spec):
         return False
@@ -136,9 +143,14 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
         ]
         if runtime_config.docker_server:
             cmd.append("--docker-server")
-        sdxl_n = getattr(runtime_config, "sdxl_num_prompts", None)
-        if sdxl_n not in (None, "", "0"):
-            cmd.extend(["--num-prompts", str(sdxl_n)])
+        if wf == WorkflowType.SERVING_BENCH:
+            _extend_if_set(
+                cmd, "--serving-bench-suites", runtime_config.serving_bench_suites
+            )
+        else:
+            sdxl_n = getattr(runtime_config, "sdxl_num_prompts", None)
+            if sdxl_n not in (None, "", "0"):
+                cmd.extend(["--num-prompts", str(sdxl_n)])
         _warn_on_unsupported_args(runtime_config)
         delegate_desc = "run.py"
 
@@ -184,6 +196,7 @@ def _base_v2_cmd(
     sdxl_n = getattr(runtime_config, "sdxl_num_prompts", None)
     if sdxl_n not in (None, "", "0"):
         cmd.extend(["--num-prompts", str(sdxl_n)])
+    return cmd
 
 
 def _build_agentic_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):

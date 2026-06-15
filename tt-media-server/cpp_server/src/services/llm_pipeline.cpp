@@ -470,6 +470,16 @@ void LLMPipeline::dispatchGeneration(
           "[LLMPipeline] Using disaggregated prefill for request with "
           "sessionId: {}",
           request.sessionId.value_or("none"));
+      // WARNING - TEMP CHANGE - PREFILL WILL OVERRIDE THINKING TOKENS
+      uint32_t matchedTokens =
+          *request.kv_position_id -
+          static_cast<uint32_t>(request.accumulated_think_tokens);
+      *request.kv_position_id = matchedTokens;
+      if (sessionManager_ && request.session) {
+        sessionManager_->clearSessionBlockThinkTokens(
+            request.session->getSessionId());
+      }
+      // WARNING - TEMP CHANGE
       disaggregationService_->handleStreamingRequest(
           request, sessionInfo.registrationHashes, cb);
     }

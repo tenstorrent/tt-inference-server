@@ -942,6 +942,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install -r tt_model_runners/forge_runners/requirements.txt
+          python -m pip install --no-deps --no-build-isolation -r tt_model_runners/forge_runners/requirements-no-build-isolation.txt
           python -m pip install pytest pytest-asyncio
 
       - name: Run CPU-only tests

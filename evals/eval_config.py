@@ -3189,6 +3189,23 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="yolox_nano",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=25.8,
+                    published_score_ref="https://arxiv.org/abs/2107.08430",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="microsoft/speecht5_tts",
         tasks=[
             EvalTask(

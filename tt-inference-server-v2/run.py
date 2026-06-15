@@ -263,25 +263,38 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    # ----- Serving-bench suites (--workflow serving_bench) ------------
+    parser.add_argument(
+        "--serving-bench-suites",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated serving-bench suites to run (default: all suites "
+            "under test_module/serving_bench, e.g. agentic_bench, benchmark). "
+            "Suite knobs (DURATION, TARGET_CONCURRENCY, ...) are read from the "
+            "environment; --limit-samples-mode selects a knob preset and each "
+            "suite's defaults.env fills the rest."
+        ),
+    )
+
     args = parser.parse_args()
     if args.repeat < 1:
         parser.error("--repeat must be >= 1")
     if args.server_url:
-        from urllib.parse import urlparse
+        from utils.url_helpers import normalize_server_url
 
-        server_url = args.server_url.strip().rstrip("/")
-        parsed = urlparse(server_url)
-        if not parsed.scheme:
-            server_url = f"http://{server_url}"
-            parsed = urlparse(server_url)
-        if not parsed.hostname:
-            parser.error(
-                "--server-url must include a hostname (e.g. 'http://127.0.0.1')."
-            )
-        args.server_url = server_url
+        try:
+            args.server_url = normalize_server_url(args.server_url)
+        except ValueError as e:
+            parser.error(str(e))
     if args.prefix_cache and args.workflow != "benchmarks":
         parser.error(
             "--prefix-cache currently requires --workflow benchmarks "
+            f"(got --workflow {args.workflow})."
+        )
+    if args.serving_bench_suites and args.workflow != "serving_bench":
+        parser.error(
+            "--serving-bench-suites requires --workflow serving_bench "
             f"(got --workflow {args.workflow})."
         )
     if args.output_dir is None:
