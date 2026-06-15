@@ -311,8 +311,6 @@ def _build_aiperf_cmd(
             f"max_completion_tokens:{run.max_completion_tokens}",
         ]
     cmd += [
-        "--extra-inputs",
-        "temperature:0",
         "--artifact-dir",
         artifact_dir,
     ]
