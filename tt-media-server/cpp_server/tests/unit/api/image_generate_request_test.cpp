@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+#include "domain/image_generate_request.hpp"
+
 #include <gtest/gtest.h>
 #include <json/json.h>
 
 #include <stdexcept>
 #include <string>
-
-#include "domain/image_generate_request.hpp"
 
 using tt::domain::ImageGenerateRequest;
 
