@@ -67,7 +67,7 @@ cd build && ctest --output-on-failure
 ```
 
 **Canonical integration test:**
-[`tests/main_integration_test.cpp`](tests/main_integration_test.cpp) — gray-box round-trip
+[`tests/integration/server/main_integration_test.cpp`](tests/integration/server/main_integration_test.cpp) — gray-box round-trip
 of the controller against a mocked worker. Start with
 `HappyPath_RequestToMemoryToTaskToResponse` to understand the suite.
 

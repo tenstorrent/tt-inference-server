@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+#include "utils/tokenizers/tokenizer.hpp"
+
 #include <gtest/gtest.h>
 
 #include <map>
@@ -10,7 +12,6 @@
 
 #include "config/settings.hpp"
 #include "domain/llm/chat_message.hpp"
-#include "utils/tokenizers/tokenizer.hpp"
 
 using namespace tt::utils::tokenizers;
 using namespace tt::domain;
