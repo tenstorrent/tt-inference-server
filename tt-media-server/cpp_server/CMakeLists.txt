@@ -414,7 +414,6 @@ set(LLM_RUNNER_LIB_SOURCES
     src/utils/tokenizers/tokenizer_config_loader.cpp
     src/services/memory_services/memory_manager.cpp
     src/runtime/runners/guided_decoder_manager.cpp
-    src/services/json_tool_call_parser.cpp
     src/services/service_registry.cpp
     src/runtime/runners/runner_registry.cpp
     src/api/route_registry.cpp
@@ -655,29 +654,6 @@ target_include_directories(cancellation_test PRIVATE
 add_executable(structured_output_test tests/unit/api/structured_output_test.cpp)
 target_link_libraries(structured_output_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(structured_output_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-add_executable(chat_template_tools_test tests/unit/api/chat_template_tools_test.cpp)
-target_link_libraries(chat_template_tools_test PRIVATE
-    llm_runner_lib
-    GTest::gtest_main
-    ${CMAKE_THREAD_LIBS_INIT}
-)
-target_include_directories(chat_template_tools_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-target_compile_definitions(chat_template_tools_test PRIVATE
-    TOKENIZER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tokenizers"
-)
-
-add_executable(chat_completion_request_test tests/unit/api/chat_completion_request_test.cpp)
-target_link_libraries(chat_completion_request_test PRIVATE
-    llm_runner_lib
-    GTest::gtest_main
-    ${CMAKE_THREAD_LIBS_INIT}
-)
-target_include_directories(chat_completion_request_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -976,8 +952,11 @@ gtest_discover_tests(health_controller_test)
 gtest_discover_tests(image_generate_request_test)
 gtest_discover_tests(media_payload_ipc_test)
 
+<<<<<<< HEAD
 add_test(NAME ChatCompletionRequest COMMAND chat_completion_request_test)
 add_test(NAME ChatTemplateTools COMMAND chat_template_tools_test)
+=======
+>>>>>>> origin/main
 
 add_executable(apply_delta_prompt_test tests/unit/model/apply_delta_prompt_test.cpp)
 target_link_libraries(apply_delta_prompt_test PRIVATE GTest::gtest_main llm_runner_lib)
@@ -1085,7 +1064,6 @@ set(SOURCES
     src/api/info_controller.cpp
     src/api/openapi.cpp
     src/services/llm_service.cpp
-    src/services/json_tool_call_parser.cpp
     src/services/session_manager.cpp
     src/services/session_resolution.cpp
     src/domain/session.cpp
