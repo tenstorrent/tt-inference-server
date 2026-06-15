@@ -661,6 +661,7 @@ target_include_directories(structured_output_test PRIVATE
 add_executable(chat_template_tools_test tests/unit/api/chat_template_tools_test.cpp)
 target_link_libraries(chat_template_tools_test PRIVATE
     llm_runner_lib
+    GTest::gtest_main
     ${CMAKE_THREAD_LIBS_INIT}
 )
 target_include_directories(chat_template_tools_test PRIVATE
@@ -673,6 +674,7 @@ target_compile_definitions(chat_template_tools_test PRIVATE
 add_executable(chat_completion_request_test tests/unit/api/chat_completion_request_test.cpp)
 target_link_libraries(chat_completion_request_test PRIVATE
     llm_runner_lib
+    GTest::gtest_main
     ${CMAKE_THREAD_LIBS_INIT}
 )
 target_include_directories(chat_completion_request_test PRIVATE
@@ -982,6 +984,14 @@ target_include_directories(apply_delta_prompt_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 add_test(NAME ApplyDeltaPrompt COMMAND apply_delta_prompt_test)
+
+# IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
+add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
+target_link_libraries(ipc_scheduler_smoke_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(ipc_scheduler_smoke_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
 
 # Cancellation E2E test (starts mock server, runs Python tests, stops server)
 add_test(NAME CancellationE2E

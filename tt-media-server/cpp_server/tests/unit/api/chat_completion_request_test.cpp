@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "domain/llm/chat_completion_request.hpp"
+#include <gtest/gtest.h>
 
+#include "domain/llm/chat_completion_request.hpp"
 #include <json/json.h>
 
-#include <cassert>
-#include <iostream>
 #include <stdexcept>
+#include <string>
 
 using namespace tt::domain;
 using namespace tt::domain::llm;
+
+namespace {
 
 // Helper to create a basic valid request JSON
 Json::Value createBasicRequestJson() {
@@ -83,31 +85,24 @@ Json::Value createToolMessage(const std::string& toolCallId,
   return msg;
 }
 
-// ==================== Tool Parsing Tests ====================
+// Tool Parsing Tests
 
-void testParseRequestWithTools() {
-  std::cout << "\n=== Testing Parse Request With Tools ===\n";
-
+TEST(ChatCompletionRequestTest, ParseRequestWithTools) {
   Json::Value json = createBasicRequestJson();
   json["tools"].append(createToolJson("get_weather", "Get weather info"));
   json["tools"].append(createToolJson("get_time", "Get current time"));
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
-  assert(request.tools.has_value());
-  assert(request.tools->size() == 2);
-  assert(request.tools->at(0).functionDefinition.name == "get_weather");
-  assert(request.tools->at(1).functionDefinition.name == "get_time");
-
-  std::cout << "✓ Request with multiple tools parsed correctly\n";
-  std::cout << "✅ Test passed!\n";
+  ASSERT_TRUE(request.tools.has_value());
+  ASSERT_EQ(request.tools->size(), 2);
+  EXPECT_EQ(request.tools->at(0).functionDefinition.name, "get_weather");
+  EXPECT_EQ(request.tools->at(1).functionDefinition.name, "get_time");
 }
 
-// ==================== tool_choice Tests ====================
+// tool_choice Tests
 
-void testToolChoiceNone() {
-  std::cout << "\n=== Testing tool_choice=none ===\n";
-
+TEST(ChatCompletionRequestTest, ToolChoiceNone) {
   Json::Value json = createBasicRequestJson();
   json["tools"].append(createToolJson("get_weather", "Get weather"));
   json["tool_choice"] = "none";
@@ -115,118 +110,70 @@ void testToolChoiceNone() {
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
   // When tool_choice is "none", tools should still be parsed
-  assert(request.tools.has_value());
-  assert(!request.tools->empty() &&
-         "Tools should be kept when tool_choice is 'none'");
+  ASSERT_TRUE(request.tools.has_value());
+  EXPECT_FALSE(request.tools->empty())
+      << "Tools should be kept when tool_choice is 'none'";
 
-  assert(request.tool_choice.has_value());
-  assert(request.tool_choice->type == "none");
+  ASSERT_TRUE(request.tool_choice.has_value());
+  EXPECT_EQ(request.tool_choice->type, "none");
 
   // Verify tool_choice is copied to LLMRequest
   auto llmRequest = request.toLLMRequest();
-  assert(llmRequest.tool_choice.has_value());
-  assert(llmRequest.tool_choice->type == "none");
-
-  std::cout << "✓ tool_choice=none parsed correctly\n";
-  std::cout << "✓ Tools retained even with tool_choice=none\n";
-  std::cout << "✓ tool_choice propagated to LLMRequest\n";
-  std::cout << "✅ Test passed!\n";
+  ASSERT_TRUE(llmRequest.tool_choice.has_value());
+  EXPECT_EQ(llmRequest.tool_choice->type, "none");
 }
 
-void testToolChoiceAuto() {
-  std::cout << "\n=== Testing tool_choice=auto ===\n";
-
+TEST(ChatCompletionRequestTest, ToolChoiceAuto) {
   Json::Value json = createBasicRequestJson();
   json["tools"].append(createToolJson("get_weather", "Get weather"));
   json["tool_choice"] = "auto";
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
-  assert(request.tools.has_value());
-  assert(!request.tools->empty());
-  assert(request.tool_choice.has_value());
-  assert(request.tool_choice->type == "auto");
-
-  std::cout << "✓ tool_choice=auto parsed correctly\n";
-  std::cout << "✅ Test passed!\n";
+  ASSERT_TRUE(request.tools.has_value());
+  EXPECT_FALSE(request.tools->empty());
+  ASSERT_TRUE(request.tool_choice.has_value());
+  EXPECT_EQ(request.tool_choice->type, "auto");
 }
 
-void testToolChoiceNoneWithoutTools() {
-  std::cout << "\n=== Testing tool_choice=none Without Tools ===\n";
-
+TEST(ChatCompletionRequestTest, ToolChoiceNoneWithoutTools) {
   Json::Value json = createBasicRequestJson();
   json["tool_choice"] = "none";
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
-  assert(request.tool_choice.has_value());
-  assert(request.tool_choice->type == "none");
-
-  std::cout << "✓ tool_choice=none without tools accepted\n";
-  std::cout << "✅ Test passed!\n";
+  ASSERT_TRUE(request.tool_choice.has_value());
+  EXPECT_EQ(request.tool_choice->type, "none");
 }
 
-void testToolChoiceNoneWithEmptyToolsArray() {
-  std::cout << "\n=== Testing tool_choice=none With Empty Tools Array ===\n";
-
+TEST(ChatCompletionRequestTest, ToolChoiceNoneWithEmptyToolsArray) {
   Json::Value json = createBasicRequestJson();
   json["tools"] = Json::arrayValue;
   json["tool_choice"] = "none";
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
-  assert(request.tool_choice.has_value());
-  assert(request.tool_choice->type == "none");
-
-  std::cout << "✓ tool_choice=none with empty tools array accepted\n";
-  std::cout << "✅ Test passed!\n";
+  ASSERT_TRUE(request.tool_choice.has_value());
+  EXPECT_EQ(request.tool_choice->type, "none");
 }
 
-void testToolChoiceAutoWithoutToolsRejected() {
-  std::cout << "\n=== Testing tool_choice=auto Without Tools (Should Reject) "
-               "===\n";
-
+TEST(ChatCompletionRequestTest, ToolChoiceAutoWithoutToolsRejected) {
   Json::Value json = createBasicRequestJson();
   json["tool_choice"] = "auto";
 
-  bool exceptionThrown = false;
-  try {
-    ChatCompletionRequest::fromJson(json, 1);
-  } catch (const std::invalid_argument&) {
-    exceptionThrown = true;
-  }
-
-  assert(exceptionThrown &&
-         "Should throw invalid_argument for tool_choice=auto without tools");
-
-  std::cout << "✓ tool_choice=auto without tools correctly rejected\n";
-  std::cout << "✅ Test passed!\n";
+  EXPECT_THROW(ChatCompletionRequest::fromJson(json, 1), std::invalid_argument)
+      << "Should throw invalid_argument for tool_choice=auto without tools";
 }
 
-void testToolChoiceUnknownStringRejected() {
-  std::cout << "\n=== Testing tool_choice With Unknown Value (Should Reject) "
-               "===\n";
-
+TEST(ChatCompletionRequestTest, ToolChoiceUnknownStringRejected) {
   Json::Value json = createBasicRequestJson();
   json["tools"].append(createToolJson("get_weather", "Get weather"));
   json["tool_choice"] = "bogus";
 
-  bool exceptionThrown = false;
-  try {
-    ChatCompletionRequest::fromJson(json, 1);
-  } catch (const std::invalid_argument&) {
-    exceptionThrown = true;
-  }
-
-  assert(exceptionThrown &&
-         "Should throw invalid_argument for unknown tool_choice value");
-
-  std::cout << "✓ Unknown tool_choice value correctly rejected\n";
-  std::cout << "✅ Test passed!\n";
+  EXPECT_THROW(ChatCompletionRequest::fromJson(json, 1), std::invalid_argument)
+      << "Should throw invalid_argument for unknown tool_choice value";
 }
 
-void testToolChoiceFunction() {
-  std::cout << "\n=== Testing tool_choice With Function Object ===\n";
-
+TEST(ChatCompletionRequestTest, ToolChoiceFunction) {
   Json::Value json = createBasicRequestJson();
   json["tools"].append(createToolJson("get_weather", "Get weather"));
   json["tools"].append(createToolJson("get_time", "Get time"));
@@ -238,25 +185,18 @@ void testToolChoiceFunction() {
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
-  assert(request.tool_choice.has_value());
-  assert(request.tool_choice->type == "function");
-  assert(request.tool_choice->function.has_value());
-  assert(request.tool_choice->function.value() == "get_weather");
+  ASSERT_TRUE(request.tool_choice.has_value());
+  EXPECT_EQ(request.tool_choice->type, "function");
+  ASSERT_TRUE(request.tool_choice->function.has_value());
+  EXPECT_EQ(request.tool_choice->function.value(), "get_weather");
 
   auto llmRequest = request.toLLMRequest();
-  assert(llmRequest.tool_choice.has_value());
-  assert(llmRequest.tool_choice->type == "function");
-  assert(llmRequest.tool_choice->function.value() == "get_weather");
-
-  std::cout << "✓ tool_choice with function object parsed correctly\n";
-  std::cout << "✓ tool_choice propagated to LLMRequest\n";
-  std::cout << "✅ Test passed!\n";
+  ASSERT_TRUE(llmRequest.tool_choice.has_value());
+  EXPECT_EQ(llmRequest.tool_choice->type, "function");
+  EXPECT_EQ(llmRequest.tool_choice->function.value(), "get_weather");
 }
 
-void testToolChoiceFunctionMissingNameRejected() {
-  std::cout << "\n=== Testing tool_choice=function Without function.name "
-               "(Should Reject) ===\n";
-
+TEST(ChatCompletionRequestTest, ToolChoiceFunctionMissingNameRejected) {
   Json::Value json = createBasicRequestJson();
   json["tools"].append(createToolJson("get_weather", "Get weather"));
 
@@ -265,27 +205,22 @@ void testToolChoiceFunctionMissingNameRejected() {
   // No "function" field
   json["tool_choice"] = toolChoice;
 
-  bool exceptionThrown = false;
-  try {
-    ChatCompletionRequest::fromJson(json, 1);
-  } catch (const std::invalid_argument& e) {
-    exceptionThrown = true;
-    std::string errorMsg = e.what();
-    assert(errorMsg.find("tool_choice.function.name is required") !=
-           std::string::npos);
-  }
-
-  assert(exceptionThrown &&
-         "Should throw when tool_choice=function has no function.name");
-
-  std::cout << "✓ tool_choice=function without name correctly rejected\n";
-  std::cout << "✅ Test passed!\n";
+  EXPECT_THROW(
+      {
+        try {
+          ChatCompletionRequest::fromJson(json, 1);
+        } catch (const std::invalid_argument& e) {
+          EXPECT_NE(std::string(e.what()).find(
+                        "tool_choice.function.name is required"),
+                    std::string::npos);
+          throw;
+        }
+      },
+      std::invalid_argument)
+      << "Should throw when tool_choice=function has no function.name";
 }
 
-void testToolChoiceFunctionUnknownNameRejected() {
-  std::cout << "\n=== Testing tool_choice=function With Unknown function.name "
-               "(Should Reject) ===\n";
-
+TEST(ChatCompletionRequestTest, ToolChoiceFunctionUnknownNameRejected) {
   Json::Value json = createBasicRequestJson();
   json["tools"].append(createToolJson("get_weather", "Get weather"));
 
@@ -294,26 +229,22 @@ void testToolChoiceFunctionUnknownNameRejected() {
   toolChoice["function"]["name"] = "missing_tool";
   json["tool_choice"] = toolChoice;
 
-  bool exceptionThrown = false;
-  try {
-    ChatCompletionRequest::fromJson(json, 1);
-  } catch (const std::invalid_argument& e) {
-    exceptionThrown = true;
-    std::string errorMsg = e.what();
-    assert(errorMsg.find("not found in tools") != std::string::npos);
-    assert(errorMsg.find("missing_tool") != std::string::npos);
-  }
-
-  assert(exceptionThrown &&
-         "Should throw when tool_choice.function.name not in tools");
-
-  std::cout << "✓ tool_choice=function with unknown name correctly rejected\n";
-  std::cout << "✅ Test passed!\n";
+  EXPECT_THROW(
+      {
+        try {
+          ChatCompletionRequest::fromJson(json, 1);
+        } catch (const std::invalid_argument& e) {
+          std::string errorMsg = e.what();
+          EXPECT_NE(errorMsg.find("not found in tools"), std::string::npos);
+          EXPECT_NE(errorMsg.find("missing_tool"), std::string::npos);
+          throw;
+        }
+      },
+      std::invalid_argument)
+      << "Should throw when tool_choice.function.name not in tools";
 }
 
-void testToolChoiceRequired() {
-  std::cout << "\n=== Testing tool_choice=required ===\n";
-
+TEST(ChatCompletionRequestTest, ToolChoiceRequired) {
   Json::Value json = createBasicRequestJson();
   json["tools"].append(createToolJson("get_weather", "Get weather"));
   json["tools"].append(createToolJson("get_time", "Get time"));
@@ -321,26 +252,20 @@ void testToolChoiceRequired() {
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
-  assert(request.tools.has_value());
-  assert(request.tools->size() == 2);
-  assert(request.tool_choice.has_value());
-  assert(request.tool_choice->type == "required");
-  assert(!request.tool_choice->function.has_value());
+  ASSERT_TRUE(request.tools.has_value());
+  ASSERT_EQ(request.tools->size(), 2);
+  ASSERT_TRUE(request.tool_choice.has_value());
+  EXPECT_EQ(request.tool_choice->type, "required");
+  EXPECT_FALSE(request.tool_choice->function.has_value());
 
   auto llmRequest = request.toLLMRequest();
-  assert(llmRequest.tool_choice.has_value());
-  assert(llmRequest.tool_choice->type == "required");
-
-  std::cout << "✓ tool_choice=required parsed correctly\n";
-  std::cout << "✓ tool_choice propagated to LLMRequest\n";
-  std::cout << "✅ Test passed!\n";
+  ASSERT_TRUE(llmRequest.tool_choice.has_value());
+  EXPECT_EQ(llmRequest.tool_choice->type, "required");
 }
 
-// ==================== validateToolMessages Tests ====================
+// validateToolMessages Tests
 
-void testValidToolMessageSequence() {
-  std::cout << "\n=== Testing Valid Tool Message Sequence ===\n";
-
+TEST(ChatCompletionRequestTest, ValidToolMessageSequence) {
   Json::Value json = createBasicRequestJson();
   json["messages"].clear();
 
@@ -351,20 +276,14 @@ void testValidToolMessageSequence() {
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
-  assert(request.messages.size() == 3);
-  assert(request.messages[1].tool_calls.has_value());
-  assert(request.messages[1].tool_calls->at(0).id == "call_abc123");
-  assert(request.messages[2].role == "tool");
-  assert(request.messages[2].tool_call_id.value() == "call_abc123");
-
-  std::cout << "✓ Valid tool message sequence accepted\n";
-  std::cout << "✅ Test passed!\n";
+  ASSERT_EQ(request.messages.size(), 3);
+  ASSERT_TRUE(request.messages[1].tool_calls.has_value());
+  EXPECT_EQ(request.messages[1].tool_calls->at(0).id, "call_abc123");
+  EXPECT_EQ(request.messages[2].role, "tool");
+  EXPECT_EQ(request.messages[2].tool_call_id.value(), "call_abc123");
 }
 
-void testToolMessageMissingAfterToolCalls() {
-  std::cout << "\n=== Testing Missing Tool Message After tool_calls (Should "
-               "Reject) ===\n";
-
+TEST(ChatCompletionRequestTest, ToolMessageMissingAfterToolCalls) {
   Json::Value json = createBasicRequestJson();
   json["messages"].clear();
 
@@ -373,30 +292,24 @@ void testToolMessageMissingAfterToolCalls() {
       createAssistantWithToolCall("call_abc123", "get_weather", "{}"));
   json["messages"].append(createUserMessage("Never mind"));
 
-  bool exceptionThrown = false;
-  try {
-    ChatCompletionRequest::fromJson(json, 1);
-  } catch (const std::invalid_argument& e) {
-    exceptionThrown = true;
-    std::string errorMsg = e.what();
-    assert(errorMsg.find("Incomplete tool call conversation") !=
-               std::string::npos ||
-           errorMsg.find("Expected message with role='tool'") !=
-               std::string::npos);
-  }
-
-  assert(exceptionThrown &&
-         "Should throw when tool message is missing after tool_calls");
-
-  std::cout << "✓ Missing tool message correctly rejected\n";
-  std::cout << "✅ Test passed!\n";
+  EXPECT_THROW(
+      {
+        try {
+          ChatCompletionRequest::fromJson(json, 1);
+        } catch (const std::invalid_argument& e) {
+          std::string errorMsg = e.what();
+          EXPECT_TRUE(errorMsg.find("Incomplete tool call conversation") !=
+                          std::string::npos ||
+                      errorMsg.find("Expected message with role='tool'") !=
+                          std::string::npos);
+          throw;
+        }
+      },
+      std::invalid_argument)
+      << "Should throw when tool message is missing after tool_calls";
 }
 
-void testToolMessageMissingToolCallId() {
-  std::cout
-      << "\n=== Testing Tool Message Missing tool_call_id (Should Reject) "
-         "===\n";
-
+TEST(ChatCompletionRequestTest, ToolMessageMissingToolCallId) {
   Json::Value json = createBasicRequestJson();
   json["messages"].clear();
 
@@ -411,28 +324,22 @@ void testToolMessageMissingToolCallId() {
   // Missing tool_call_id
   json["messages"].append(toolMsg);
 
-  bool exceptionThrown = false;
-  try {
-    ChatCompletionRequest::fromJson(json, 1);
-  } catch (const std::invalid_argument& e) {
-    exceptionThrown = true;
-    std::string errorMsg = e.what();
-    assert(errorMsg.find("must include 'tool_call_id' field") !=
-           std::string::npos);
-  }
-
-  assert(exceptionThrown &&
-         "Should throw when tool message is missing tool_call_id");
-
-  std::cout << "✓ Missing tool_call_id correctly rejected\n";
-  std::cout << "✅ Test passed!\n";
+  EXPECT_THROW(
+      {
+        try {
+          ChatCompletionRequest::fromJson(json, 1);
+        } catch (const std::invalid_argument& e) {
+          EXPECT_NE(
+              std::string(e.what()).find("must include 'tool_call_id' field"),
+              std::string::npos);
+          throw;
+        }
+      },
+      std::invalid_argument)
+      << "Should throw when tool message is missing tool_call_id";
 }
 
-void testToolMessageMismatchedCallId() {
-  std::cout
-      << "\n=== Testing Tool Message With Mismatched tool_call_id (Should "
-         "Reject) ===\n";
-
+TEST(ChatCompletionRequestTest, ToolMessageMismatchedCallId) {
   Json::Value json = createBasicRequestJson();
   json["messages"].clear();
 
@@ -442,27 +349,24 @@ void testToolMessageMismatchedCallId() {
   json["messages"].append(
       createToolMessage("call_xyz789", "Sunny"));  // Wrong ID
 
-  bool exceptionThrown = false;
-  try {
-    ChatCompletionRequest::fromJson(json, 1);
-  } catch (const std::invalid_argument& e) {
-    exceptionThrown = true;
-    std::string errorMsg = e.what();
-    assert(errorMsg.find("Missing tool response") != std::string::npos ||
-           errorMsg.find("Unknown tool_call_id") != std::string::npos ||
-           errorMsg.find("does not match") != std::string::npos);
-  }
-
-  assert(exceptionThrown && "Should throw when tool_call_id doesn't match");
-
-  std::cout << "✓ Mismatched tool_call_id correctly rejected\n";
-  std::cout << "✅ Test passed!\n";
+  EXPECT_THROW(
+      {
+        try {
+          ChatCompletionRequest::fromJson(json, 1);
+        } catch (const std::invalid_argument& e) {
+          std::string errorMsg = e.what();
+          EXPECT_TRUE(
+              errorMsg.find("Missing tool response") != std::string::npos ||
+              errorMsg.find("Unknown tool_call_id") != std::string::npos ||
+              errorMsg.find("does not match") != std::string::npos);
+          throw;
+        }
+      },
+      std::invalid_argument)
+      << "Should throw when tool_call_id doesn't match";
 }
 
-void testToolCallFewerOutputsThanExpected() {
-  std::cout << "\n=== Testing Scenario 1: Fewer Outputs Than Tool Calls "
-               "(Should Reject) ===\n";
-
+TEST(ChatCompletionRequestTest, FewerOutputsThanToolCalls) {
   Json::Value json = createBasicRequestJson();
   json["messages"].clear();
 
@@ -498,29 +402,24 @@ void testToolCallFewerOutputsThanExpected() {
   json["messages"].append(createToolMessage("call_abc123", "Sunny, 72°F"));
   json["messages"].append(createToolMessage("call_def456", "3:45 PM"));
 
-  bool exceptionThrown = false;
-  try {
-    ChatCompletionRequest::fromJson(json, 1);
-  } catch (const std::invalid_argument& e) {
-    exceptionThrown = true;
-    std::string errorMsg = e.what();
-    assert(errorMsg.find("Incomplete tool call conversation") !=
-               std::string::npos ||
-           errorMsg.find("requested 3") != std::string::npos);
-    assert(errorMsg.find("call_ghi789") != std::string::npos);
-    std::cout << "  Error message: " << errorMsg << "\n";
-  }
-
-  assert(exceptionThrown && "Should throw when fewer outputs than tool calls");
-
-  std::cout << "✓ Fewer outputs correctly rejected\n";
-  std::cout << "✅ Test passed!\n";
+  EXPECT_THROW(
+      {
+        try {
+          ChatCompletionRequest::fromJson(json, 1);
+        } catch (const std::invalid_argument& e) {
+          std::string errorMsg = e.what();
+          EXPECT_TRUE(errorMsg.find("Incomplete tool call conversation") !=
+                          std::string::npos ||
+                      errorMsg.find("requested 3") != std::string::npos);
+          EXPECT_NE(errorMsg.find("call_ghi789"), std::string::npos);
+          throw;
+        }
+      },
+      std::invalid_argument)
+      << "Should throw when fewer outputs than tool calls";
 }
 
-void testToolCallMoreOutputsThanExpected() {
-  std::cout << "\n=== Testing Scenario 2: More Outputs Than Tool Calls (Should "
-               "Reject) ===\n";
-
+TEST(ChatCompletionRequestTest, MoreOutputsThanToolCalls) {
   Json::Value json = createBasicRequestJson();
   json["messages"].clear();
 
@@ -552,28 +451,24 @@ void testToolCallMoreOutputsThanExpected() {
   json["messages"].append(
       createToolMessage("call_ghi789", "Extra output"));  // Extra!
 
-  bool exceptionThrown = false;
-  try {
-    ChatCompletionRequest::fromJson(json, 1);
-  } catch (const std::invalid_argument& e) {
-    exceptionThrown = true;
-    std::string errorMsg = e.what();
-    assert(errorMsg.find("Too many tool call responses") != std::string::npos ||
-           errorMsg.find("requested 2") != std::string::npos);
-    assert(errorMsg.find("call_ghi789") != std::string::npos);
-    std::cout << "  Error message: " << errorMsg << "\n";
-  }
-
-  assert(exceptionThrown && "Should throw when more outputs than tool calls");
-
-  std::cout << "✓ Extra outputs correctly rejected\n";
-  std::cout << "✅ Test passed!\n";
+  EXPECT_THROW(
+      {
+        try {
+          ChatCompletionRequest::fromJson(json, 1);
+        } catch (const std::invalid_argument& e) {
+          std::string errorMsg = e.what();
+          EXPECT_TRUE(errorMsg.find("Too many tool call responses") !=
+                          std::string::npos ||
+                      errorMsg.find("requested 2") != std::string::npos);
+          EXPECT_NE(errorMsg.find("call_ghi789"), std::string::npos);
+          throw;
+        }
+      },
+      std::invalid_argument)
+      << "Should throw when more outputs than tool calls";
 }
 
-void testToolCallOneRequestMultipleOutputs() {
-  std::cout << "\n=== Testing Scenario 3: 1 Tool Call → Multiple Outputs "
-               "(Should Reject) ===\n";
-
+TEST(ChatCompletionRequestTest, OneToolCallMultipleOutputs) {
   Json::Value json = createBasicRequestJson();
   json["messages"].clear();
 
@@ -585,28 +480,21 @@ void testToolCallOneRequestMultipleOutputs() {
   json["messages"].append(createToolMessage("call_abc123", "Sunny, 72°F"));
   json["messages"].append(createToolMessage("call_def456", "Extra output"));
 
-  bool exceptionThrown = false;
-  try {
-    ChatCompletionRequest::fromJson(json, 1);
-  } catch (const std::invalid_argument& e) {
-    exceptionThrown = true;
-    std::string errorMsg = e.what();
-    assert(errorMsg.find("Too many tool call responses") != std::string::npos);
-    std::cout << "  Error message: " << errorMsg << "\n";
-  }
-
-  assert(exceptionThrown &&
-         "Should throw when multiple outputs for single tool call");
-
-  std::cout << "✓ Multiple outputs for single tool call correctly rejected\n";
-  std::cout << "✅ Test passed!\n";
+  EXPECT_THROW(
+      {
+        try {
+          ChatCompletionRequest::fromJson(json, 1);
+        } catch (const std::invalid_argument& e) {
+          EXPECT_NE(std::string(e.what()).find("Too many tool call responses"),
+                    std::string::npos);
+          throw;
+        }
+      },
+      std::invalid_argument)
+      << "Should throw when multiple outputs for single tool call";
 }
 
-void testToolCallZeroOutputs() {
-  std::cout
-      << "\n=== Testing Scenario 4: Tool Calls → 0 Outputs (Should Reject) "
-         "===\n";
-
+TEST(ChatCompletionRequestTest, ZeroToolCallOutputs) {
   Json::Value json = createBasicRequestJson();
   json["messages"].clear();
 
@@ -615,27 +503,22 @@ void testToolCallZeroOutputs() {
       createAssistantWithToolCall("call_abc123", "get_weather", "{}"));
   // No tool message follows
 
-  bool exceptionThrown = false;
-  try {
-    ChatCompletionRequest::fromJson(json, 1);
-  } catch (const std::invalid_argument& e) {
-    exceptionThrown = true;
-    std::string errorMsg = e.what();
-    assert(errorMsg.find("Expected message with role='tool'") !=
-           std::string::npos);
-    std::cout << "  Error message: " << errorMsg << "\n";
-  }
-
-  assert(exceptionThrown && "Should throw when no outputs after tool calls");
-
-  std::cout << "✓ Zero outputs correctly rejected\n";
-  std::cout << "✅ Test passed!\n";
+  EXPECT_THROW(
+      {
+        try {
+          ChatCompletionRequest::fromJson(json, 1);
+        } catch (const std::invalid_argument& e) {
+          EXPECT_NE(
+              std::string(e.what()).find("Expected message with role='tool'"),
+              std::string::npos);
+          throw;
+        }
+      },
+      std::invalid_argument)
+      << "Should throw when no outputs after tool calls";
 }
 
-void testToolCallDuplicateToolCallIds() {
-  std::cout << "\n=== Testing Duplicate tool_call_id in Responses (Should "
-               "Reject) ===\n";
-
+TEST(ChatCompletionRequestTest, DuplicateToolCallIds) {
   Json::Value json = createBasicRequestJson();
   json["messages"].clear();
 
@@ -666,26 +549,23 @@ void testToolCallDuplicateToolCallIds() {
   json["messages"].append(
       createToolMessage("call_abc123", "Duplicate!"));  // Duplicate!
 
-  bool exceptionThrown = false;
-  try {
-    ChatCompletionRequest::fromJson(json, 1);
-  } catch (const std::invalid_argument& e) {
-    exceptionThrown = true;
-    std::string errorMsg = e.what();
-    assert(errorMsg.find("Duplicate tool response") != std::string::npos ||
-           errorMsg.find("call_abc123") != std::string::npos);
-    std::cout << "  Error message: " << errorMsg << "\n";
-  }
-
-  assert(exceptionThrown && "Should throw when duplicate tool_call_ids exist");
-
-  std::cout << "✓ Duplicate tool_call_ids correctly rejected\n";
-  std::cout << "✅ Test passed!\n";
+  EXPECT_THROW(
+      {
+        try {
+          ChatCompletionRequest::fromJson(json, 1);
+        } catch (const std::invalid_argument& e) {
+          std::string errorMsg = e.what();
+          EXPECT_TRUE(errorMsg.find("Duplicate tool response") !=
+                          std::string::npos ||
+                      errorMsg.find("call_abc123") != std::string::npos);
+          throw;
+        }
+      },
+      std::invalid_argument)
+      << "Should throw when duplicate tool_call_ids exist";
 }
 
-void testToolCallMultipleValidSequence() {
-  std::cout << "\n=== Testing Multiple Valid Tool Calls Sequence ===\n";
-
+TEST(ChatCompletionRequestTest, MultipleValidToolCallSequence) {
   Json::Value json = createBasicRequestJson();
   json["messages"].clear();
 
@@ -724,17 +604,12 @@ void testToolCallMultipleValidSequence() {
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
-  assert(request.messages.size() == 5);
-  assert(request.messages[1].tool_calls.has_value());
-  assert(request.messages[1].tool_calls->size() == 3);
-
-  std::cout << "✓ Multiple valid tool calls sequence accepted\n";
-  std::cout << "✅ Test passed!\n";
+  ASSERT_EQ(request.messages.size(), 5);
+  ASSERT_TRUE(request.messages[1].tool_calls.has_value());
+  EXPECT_EQ(request.messages[1].tool_calls->size(), 3);
 }
 
-void testToolCallValidSequenceWithSubsequentMessage() {
-  std::cout << "\n=== Testing Valid Tool Calls Followed by User Message ===\n";
-
+TEST(ChatCompletionRequestTest, ValidToolCallsFollowedByUserMessage) {
   Json::Value json = createBasicRequestJson();
   json["messages"].clear();
 
@@ -767,61 +642,9 @@ void testToolCallValidSequenceWithSubsequentMessage() {
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
-  assert(request.messages.size() == 5);
-  assert(request.messages[1].tool_calls->size() == 2);
-  assert(request.messages[4].role == "user");
-
-  std::cout << "✓ Tool calls followed by user message correctly accepted\n";
-  std::cout << "✅ Test passed!\n";
+  ASSERT_EQ(request.messages.size(), 5);
+  ASSERT_EQ(request.messages[1].tool_calls->size(), 2);
+  EXPECT_EQ(request.messages[4].role, "user");
 }
 
-// Main function for running tests
-int main() {
-  std::cout << "\n";
-  std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-  std::cout << "║      Chat Completion Request Tool Test Suite            ║\n";
-  std::cout << "╚══════════════════════════════════════════════════════════╝\n";
-
-  try {
-    testParseRequestWithTools();
-    testToolChoiceNone();
-    testToolChoiceAuto();
-    testToolChoiceFunction();
-    testToolChoiceFunctionMissingNameRejected();
-    testToolChoiceFunctionUnknownNameRejected();
-    testToolChoiceRequired();
-    testToolChoiceNoneWithoutTools();
-    testToolChoiceNoneWithEmptyToolsArray();
-    testToolChoiceAutoWithoutToolsRejected();
-    testToolChoiceUnknownStringRejected();
-
-    // validateToolMessages tests
-    testValidToolMessageSequence();
-    testToolMessageMissingAfterToolCalls();
-    testToolMessageMissingToolCallId();
-    testToolMessageMismatchedCallId();
-
-    // New tool call ID validation tests (OpenAI compatibility)
-    testToolCallFewerOutputsThanExpected();
-    testToolCallMoreOutputsThanExpected();
-    testToolCallOneRequestMultipleOutputs();
-    testToolCallZeroOutputs();
-    testToolCallDuplicateToolCallIds();
-    testToolCallMultipleValidSequence();
-    testToolCallValidSequenceWithSubsequentMessage();
-
-    std::cout << "\n";
-    std::cout
-        << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout
-        << "║              🎉 ALL TESTS PASSED! 🎉                    ║\n";
-    std::cout
-        << "╚══════════════════════════════════════════════════════════╝\n";
-    std::cout << "\n";
-
-    return 0;
-  } catch (const std::exception& e) {
-    std::cerr << "\n❌ TEST FAILED: " << e.what() << "\n";
-    return 1;
-  }
-}
+}  // namespace
