@@ -518,6 +518,7 @@ target_include_directories(structured_output_test PRIVATE
 add_executable(test_tool_call_parser tests/test_tool_call_parser.cpp)
 target_link_libraries(test_tool_call_parser PRIVATE
     llm_runner_lib
+    GTest::gtest_main
     ${CMAKE_THREAD_LIBS_INIT}
 )
 target_include_directories(test_tool_call_parser PRIVATE
@@ -528,6 +529,7 @@ target_include_directories(test_tool_call_parser PRIVATE
 add_executable(test_chat_template_tools tests/test_chat_template_tools.cpp)
 target_link_libraries(test_chat_template_tools PRIVATE
     llm_runner_lib
+    GTest::gtest_main
     ${CMAKE_THREAD_LIBS_INIT}
 )
 target_include_directories(test_chat_template_tools PRIVATE
@@ -541,6 +543,7 @@ target_compile_definitions(test_chat_template_tools PRIVATE
 add_executable(test_chat_completion_request tests/test_chat_completion_request.cpp)
 target_link_libraries(test_chat_completion_request PRIVATE
     llm_runner_lib
+    GTest::gtest_main
     ${CMAKE_THREAD_LIBS_INIT}
 )
 target_include_directories(test_chat_completion_request PRIVATE
@@ -570,6 +573,7 @@ add_executable(test_reasoning_parser
 )
 target_link_libraries(test_reasoning_parser PRIVATE
     llm_runner_lib
+    GTest::gtest_main
     ${CMAKE_THREAD_LIBS_INIT}
 )
 target_include_directories(test_reasoning_parser PRIVATE
@@ -850,7 +854,7 @@ add_test(NAME ReasoningParser COMMAND test_reasoning_parser)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
-target_link_libraries(ipc_scheduler_smoke_test PRIVATE llm_runner_lib)
+target_link_libraries(ipc_scheduler_smoke_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(ipc_scheduler_smoke_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )

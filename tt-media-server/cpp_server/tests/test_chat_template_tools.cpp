@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include <cassert>
+#include <gtest/gtest.h>
+
 #include <filesystem>
 #include <functional>
-#include <iostream>
+#include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -18,6 +20,8 @@ using namespace tt::domain;
 using namespace tt::domain::llm;
 using namespace tt::domain::tool_calls;
 using namespace tt::utils::tokenizers;
+
+namespace {
 
 // Base class for tokenizer-specific template configuration
 struct TokenizerTemplateConfig {
@@ -147,10 +151,6 @@ const TokenizerTemplateConfig* getDeepSeekConfig() {
   return &config;
 }
 
-// ============================================================================
-// Llama Template Configuration
-// ============================================================================
-
 struct LlamaTemplateConfig : public TokenizerTemplateConfig {
   const char* bos() const override { return "<|begin_of_text|>"; }
   const char* userTag() const override {
@@ -173,12 +173,9 @@ struct LlamaTemplateConfig : public TokenizerTemplateConfig {
   const char* endOfSentence() const override { return "<|eot_id|>"; }
   const char* name() const override { return "Llama"; }
 
-  // For Llama, this returns system message + user message with tool definitions
-  // (everything between BOS and the first user message content)
   std::string buildToolSection(const std::vector<Tool>& tools) const override {
     std::ostringstream out;
 
-    // System header + environment + preamble + content + EOT
     out << "<|start_header_id|>system<|end_header_id|>\n\n";
     out << "Environment: ipython\n";
     out << "Cutting Knowledge Date: December 2023\n";
@@ -190,7 +187,6 @@ struct LlamaTemplateConfig : public TokenizerTemplateConfig {
     out << "output to format an answer to the original user question.";
     out << endOfSentence();
 
-    // User header + tool instructions + tool definitions
     out << "<|start_header_id|>user<|end_header_id|>\n\n";
     out << "Given the following functions, please respond with a JSON for a "
            "function call ";
@@ -212,12 +208,10 @@ struct LlamaTemplateConfig : public TokenizerTemplateConfig {
 
     out << "<|start_header_id|>assistant<|end_header_id|>\n\n";
 
-    // Llama uses JSON format for tool calls
     if (message.tool_calls.has_value() && !message.tool_calls->empty()) {
       const auto& toolCall = (*message.tool_calls)[0];
       out << "{\"name\": \"" << toolCall.functionCall.name << "\", ";
       out << "\"parameters\": ";
-
       out << toolCall.functionCall.arguments;
       out << "}";
     }
@@ -252,10 +246,6 @@ const TokenizerTemplateConfig* getLlamaConfig() {
   static LlamaTemplateConfig config;
   return &config;
 }
-
-// ============================================================================
-// Common Test Fixtures
-// ============================================================================
 
 // Create a standard weather tool definition
 Tool createWeatherTool() {
@@ -332,15 +322,31 @@ ChatMessage createToolOutputMessage(const std::string& toolCallId,
   return msg;
 }
 
-// ============================================================================
-// Tests
-// ============================================================================
+// Parameterized test fixture for different tokenizers
+struct TokenizerTestParam {
+  std::string path;
+  std::function<std::unique_ptr<Tokenizer>(const std::string&)> factory;
+  const TokenizerTemplateConfig* config;
+  std::string name;
+};
 
-void testChatTemplateWithoutTools(const Tokenizer& tokenizer,
-                                  const TokenizerTemplateConfig* config) {
-  std::cout << "\n=== Testing Chat Template Without Tools (" << config->name()
-            << ") ===\n";
+class ChatTemplateToolsTest
+    : public ::testing::TestWithParam<TokenizerTestParam> {
+ protected:
+  void SetUp() override {
+    const auto& param = GetParam();
+    if (!std::filesystem::exists(param.path)) {
+      GTEST_SKIP() << "Tokenizer not found: " << param.path;
+    }
+    tokenizer_ = param.factory(param.path);
+    config_ = param.config;
+  }
 
+  std::unique_ptr<Tokenizer> tokenizer_;
+  const TokenizerTemplateConfig* config_;
+};
+
+TEST_P(ChatTemplateToolsTest, ChatTemplateWithoutTools) {
   std::vector<ChatMessage> messages;
   ChatMessage msg;
   msg.role = "user";
@@ -348,130 +354,64 @@ void testChatTemplateWithoutTools(const Tokenizer& tokenizer,
   messages.push_back(msg);
 
   std::string result =
-      tokenizer.applyChatTemplate(messages, true, std::nullopt);
+      tokenizer_->applyChatTemplate(messages, true, std::nullopt);
 
   // Should not contain tool-related markers when no tools provided
-  assert(result.find("tools") == std::string::npos ||
-         result.find(config->toolCallsBegin()) == std::string::npos);
+  EXPECT_TRUE(result.find("tools") == std::string::npos ||
+              result.find(config_->toolCallsBegin()) == std::string::npos);
 
   // Should contain the user message
-  assert(result.find(msg.content) != std::string::npos);
-
-  std::cout << "✓ Chat template without tools applied correctly\n";
-  std::cout << "✅ Test passed!\n";
+  EXPECT_NE(result.find(msg.content), std::string::npos);
 }
 
-void testChatTemplateWithSingleTool(const Tokenizer& tokenizer,
-                                    const TokenizerTemplateConfig* config) {
-  std::cout << "\n=== Testing Single Tool Template (" << config->name()
-            << ") ===\n";
-
+TEST_P(ChatTemplateToolsTest, SingleToolTemplate) {
   std::vector<ChatMessage> messages = {createUserMessage("Get weather for SF")};
 
   std::vector<Tool> tools = {createWeatherTool()};
 
-  std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
+  std::string actual = tokenizer_->applyChatTemplate(messages, true, tools);
 
   std::ostringstream expected;
-  expected << config->bos();
+  expected << config_->bos();
 
-  if (std::string(config->name()) == "Llama") {
-    // For Llama, buildToolSection includes the user header,
-    // so we just append the content + eot + assistant tag
-    expected << config->buildToolSection(tools);
-    expected << "Get weather for SF" << config->endOfSentence();
-    expected << config->assistantTag();
+  if (std::string(config_->name()) == "Llama") {
+    expected << config_->buildToolSection(tools);
+    expected << "Get weather for SF" << config_->endOfSentence();
+    expected << config_->assistantTag();
   } else {
-    // For other tokenizers, build normally
-    expected << config->buildToolSection(tools);
-    expected << config->userTag() << "Get weather for SF";
-    expected << config->assistantTag();
+    expected << config_->buildToolSection(tools);
+    expected << config_->userTag() << "Get weather for SF";
+    expected << config_->assistantTag();
   }
 
-  // Exact match
-  if (actual != expected.str()) {
-    std::cout << "❌ Mismatch detected!\n";
-    std::cout << "\n=== EXPECTED ===\n" << expected.str() << "\n";
-    std::cout << "\n=== ACTUAL ===\n" << actual << "\n";
-    std::cout << "\nExpected length: " << expected.str().length() << "\n";
-    std::cout << "Actual length: " << actual.length() << "\n";
-
-    // Find first difference
-    for (size_t i = 0; i < std::min(expected.str().length(), actual.length());
-         ++i) {
-      if (expected.str()[i] != actual[i]) {
-        std::cout << "First difference at position " << i << ":\n";
-        std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << int(expected.str()[i]) << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
-                  << ")\n";
-        break;
-      }
-    }
-    throw std::runtime_error(std::string(config->name()) +
-                             " template exact match failed");
-  }
-  std::cout << "✅ Test passed!\n";
+  EXPECT_EQ(actual, expected.str());
 }
 
-void testChatTemplateWithMultipleTools(const Tokenizer& tokenizer,
-                                       const TokenizerTemplateConfig* config) {
-  std::cout << "\n=== Testing Multiple Tools Template (" << config->name()
-            << ") ===\n";
-
+TEST_P(ChatTemplateToolsTest, MultipleToolsTemplate) {
   std::vector<ChatMessage> messages = {
       createUserMessage("Check weather and time")};
 
   std::vector<Tool> tools = {createWeatherTool(), createTimeTool()};
 
-  std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
+  std::string actual = tokenizer_->applyChatTemplate(messages, true, tools);
 
   std::ostringstream expected;
-  expected << config->bos();
+  expected << config_->bos();
 
-  if (std::string(config->name()) == "Llama") {
-    // For Llama, buildToolSection includes the user header,
-    // so we just append the content + eot + assistant tag
-    expected << config->buildToolSection(tools);
-    expected << "Check weather and time" << config->endOfSentence();
-    expected << config->assistantTag();
+  if (std::string(config_->name()) == "Llama") {
+    expected << config_->buildToolSection(tools);
+    expected << "Check weather and time" << config_->endOfSentence();
+    expected << config_->assistantTag();
   } else {
-    // For other tokenizers, build normally
-    expected << config->buildToolSection(tools);
-    expected << config->userTag() << "Check weather and time";
-    expected << config->assistantTag();
+    expected << config_->buildToolSection(tools);
+    expected << config_->userTag() << "Check weather and time";
+    expected << config_->assistantTag();
   }
 
-  // Exact match
-  if (actual != expected.str()) {
-    std::cout << "❌ Mismatch detected!\n";
-    std::cout << "\n=== EXPECTED ===\n" << expected.str() << "\n";
-    std::cout << "\n=== ACTUAL ===\n" << actual << "\n";
-    std::cout << "\nExpected length: " << expected.str().length() << "\n";
-    std::cout << "Actual length: " << actual.length() << "\n";
-
-    // Find first difference
-    for (size_t i = 0; i < std::min(expected.str().length(), actual.length());
-         ++i) {
-      if (expected.str()[i] != actual[i]) {
-        std::cout << "First difference at position " << i << ":\n";
-        std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << int(expected.str()[i]) << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
-                  << ")\n";
-        break;
-      }
-    }
-    throw std::runtime_error(std::string(config->name()) +
-                             " multiple tools template exact match failed");
-  }
-  std::cout << "✅ Test passed!\n";
+  EXPECT_EQ(actual, expected.str());
 }
-void testChatTemplateWithConversationHistory(
-    const Tokenizer& tokenizer, const TokenizerTemplateConfig* config) {
-  std::cout << "\n=== Testing Conversation History Template (" << config->name()
-            << ") ===\n";
 
+TEST_P(ChatTemplateToolsTest, ConversationHistoryTemplate) {
   std::vector<ChatMessage> messages = {
       createUserMessage("Check SF weather"),
       createAssistantMessage("I'll check for you."),
@@ -479,61 +419,29 @@ void testChatTemplateWithConversationHistory(
 
   std::vector<Tool> tools = {createWeatherTool()};
 
-  // Get actual result
-  std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
+  std::string actual = tokenizer_->applyChatTemplate(messages, true, tools);
 
   std::ostringstream expected;
-  expected << config->bos();
+  expected << config_->bos();
 
-  if (std::string(config->name()) == "Llama") {
-    // For Llama, buildToolSection includes the first user header,
-    // so we just append the content + eot, then remaining messages
-    expected << config->buildToolSection(tools);
-    expected << "Check SF weather" << config->endOfSentence();
-    expected << config->buildAssistantMessage("I'll check for you.");
-    expected << config->buildUserMessage("Also check LA");
-    expected << config->assistantTag();
+  if (std::string(config_->name()) == "Llama") {
+    expected << config_->buildToolSection(tools);
+    expected << "Check SF weather" << config_->endOfSentence();
+    expected << config_->buildAssistantMessage("I'll check for you.");
+    expected << config_->buildUserMessage("Also check LA");
+    expected << config_->assistantTag();
   } else {
-    // For other tokenizers, build normally
-    expected << config->buildToolSection(tools);
-    expected << config->buildUserMessage("Check SF weather");
-    expected << config->buildAssistantMessage("I'll check for you.");
-    expected << config->buildUserMessage("Also check LA");
-    expected << config->assistantTag();
+    expected << config_->buildToolSection(tools);
+    expected << config_->buildUserMessage("Check SF weather");
+    expected << config_->buildAssistantMessage("I'll check for you.");
+    expected << config_->buildUserMessage("Also check LA");
+    expected << config_->assistantTag();
   }
 
-  // Exact match
-  if (actual != expected.str()) {
-    std::cout << "❌ Mismatch detected!\n";
-    std::cout << "\n=== EXPECTED ===\n" << expected.str() << "\n";
-    std::cout << "\n=== ACTUAL ===\n" << actual << "\n";
-    std::cout << "\nExpected length: " << expected.str().length() << "\n";
-    std::cout << "Actual length: " << actual.length() << "\n";
-
-    // Find first difference
-    for (size_t i = 0; i < std::min(expected.str().length(), actual.length());
-         ++i) {
-      if (expected.str()[i] != actual[i]) {
-        std::cout << "First difference at position " << i << ":\n";
-        std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << int(expected.str()[i]) << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
-                  << ")\n";
-        break;
-      }
-    }
-    throw std::runtime_error(
-        std::string(config->name()) +
-        " conversation history template exact match failed");
-  }
-  std::cout << "✅ Test passed!\n";
+  EXPECT_EQ(actual, expected.str());
 }
 
-void testChatTemplateEmptyTools(const Tokenizer& tokenizer,
-                                const TokenizerTemplateConfig* config) {
-  std::cout << "\n=== Testing Chat Template With Empty Tools Vector ("
-            << config->name() << ") ===\n";
-
+TEST_P(ChatTemplateToolsTest, EmptyToolsVector) {
   std::vector<ChatMessage> messages;
   ChatMessage msg;
   msg.role = "user";
@@ -541,58 +449,13 @@ void testChatTemplateEmptyTools(const Tokenizer& tokenizer,
   messages.push_back(msg);
 
   std::vector<Tool> emptyTools;
-  std::string result = tokenizer.applyChatTemplate(messages, true, emptyTools);
+  std::string result =
+      tokenizer_->applyChatTemplate(messages, true, emptyTools);
 
-  assert(!result.empty());
-  std::cout << "✓ Chat template with empty tools vector handled\n";
-
-  std::cout << "✅ Test passed!\n";
+  EXPECT_FALSE(result.empty());
 }
 
-void testToolStructureValidation() {
-  std::cout << "\n=== Testing Tool Structure Validation ===\n";
-
-  Tool tool;
-  tool.type = "function";
-  tool.functionDefinition.name = "test_function";
-  tool.functionDefinition.description = "A test function";
-
-  Json::Value params;
-  params["type"] = "object";
-  params["properties"]["arg1"]["type"] = "string";
-  params["properties"]["arg1"]["description"] = "First argument";
-  params["required"].append("arg1");
-  tool.functionDefinition.parameters = params;
-
-  Json::Value toolJson = tool.toJson();
-
-  assert(toolJson.isMember("type"));
-  assert(toolJson["type"].asString() == "function");
-  assert(toolJson.isMember("function"));
-  assert(toolJson["function"].isMember("name"));
-  assert(toolJson["function"].isMember("description"));
-  assert(toolJson["function"].isMember("parameters"));
-
-  auto& funcParams = toolJson["function"]["parameters"];
-  assert(funcParams.isMember("type"));
-  assert(funcParams.isMember("properties"));
-  assert(funcParams.isMember("required"));
-
-  std::cout << "✓ Tool structure matches OpenAI specification\n";
-  std::cout << "  - type field present\n";
-  std::cout << "  - function.name present\n";
-  std::cout << "  - function.description present\n";
-  std::cout << "  - function.parameters.properties present\n";
-  std::cout << "  - function.parameters.required present\n";
-
-  std::cout << "✅ Test passed!\n";
-}
-
-void testChatTemplateWithToolOutputs(const Tokenizer& tokenizer,
-                                     const TokenizerTemplateConfig* config) {
-  std::cout << "\n=== Testing Chat Template With Tool Outputs ("
-            << config->name() << ") ===\n";
-
+TEST_P(ChatTemplateToolsTest, ToolOutputs) {
   ChatMessage assistantMsg = createAssistantWithToolCall(
       "", "call_123", "get_weather", "{\"location\":\"San Francisco\"}");
   ChatMessage toolMsg = createToolOutputMessage(
@@ -603,67 +466,36 @@ void testChatTemplateWithToolOutputs(const Tokenizer& tokenizer,
 
   std::vector<Tool> tools = {createWeatherTool()};
 
-  // Get actual result
-  std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
+  std::string actual = tokenizer_->applyChatTemplate(messages, true, tools);
 
-  // Build expected output using config - EXACT MATCH FOR ALL TOKENIZERS
   std::ostringstream expected;
-  expected << config->bos();
+  expected << config_->bos();
 
-  if (std::string(config->name()) == "Llama") {
-    // For Llama, buildToolSection includes the first user header,
-    // so we just append the content + eot
-    expected << config->buildToolSection(tools);
-    expected << "What's the weather in SF?" << config->endOfSentence();
-    expected << config->buildAssistantWithToolCall(assistantMsg);
-    expected << config->toolOutputsBegin();
-    expected << config->buildToolOutput(toolMsg);
-    expected << config->toolOutputsEnd();
-    expected << config->assistantTag();
+  if (std::string(config_->name()) == "Llama") {
+    expected << config_->buildToolSection(tools);
+    expected << "What's the weather in SF?" << config_->endOfSentence();
+    expected << config_->buildAssistantWithToolCall(assistantMsg);
+    expected << config_->toolOutputsBegin();
+    expected << config_->buildToolOutput(toolMsg);
+    expected << config_->toolOutputsEnd();
+    expected << config_->assistantTag();
   } else {
-    // For other tokenizers, build normally
-    expected << config->buildToolSection(tools);
-    expected << config->userTag() << "What's the weather in SF?";
-    expected << config->buildAssistantWithToolCall(assistantMsg);
-    expected << config->toolOutputsBegin();
-    expected << config->buildToolOutput(toolMsg);
-    expected << config->toolOutputsEnd();
-    expected << config->assistantTag();
+    expected << config_->buildToolSection(tools);
+    expected << config_->userTag() << "What's the weather in SF?";
+    expected << config_->buildAssistantWithToolCall(assistantMsg);
+    expected << config_->toolOutputsBegin();
+    expected << config_->buildToolOutput(toolMsg);
+    expected << config_->toolOutputsEnd();
+    expected << config_->assistantTag();
   }
 
-  if (actual != expected.str()) {
-    std::cout << "❌ Mismatch detected!\n";
-    std::cout << "\n=== EXPECTED ===\n" << expected.str() << "\n";
-    std::cout << "\n=== ACTUAL ===\n" << actual << "\n";
-    std::cout << "\nExpected length: " << expected.str().length() << "\n";
-    std::cout << "Actual length: " << actual.length() << "\n";
-
-    for (size_t i = 0; i < std::min(expected.str().length(), actual.length());
-         ++i) {
-      if (expected.str()[i] != actual[i]) {
-        std::cout << "First difference at position " << i << ":\n";
-        std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << int(expected.str()[i]) << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
-                  << ")\n";
-        break;
-      }
-    }
-    throw std::runtime_error(std::string(config->name()) +
-                             " tool outputs template exact match failed");
-  }
-  std::cout << "✅ Test passed!\n";
+  EXPECT_EQ(actual, expected.str());
 }
 
-void testChatTemplateWithMultipleToolOutputs(
-    const Tokenizer& tokenizer, const TokenizerTemplateConfig* config) {
-  std::cout << "\n=== Testing Chat Template With Multiple Tool Outputs ("
-            << config->name() << ") ===\n";
-
+TEST_P(ChatTemplateToolsTest, MultipleToolOutputs) {
   // Llama only supports single tool calls, so skip this test
-  if (std::string(config->name()) == "Llama") {
-    std::cout << "⊘ Skipped (Llama only supports single tool-calls)\n";
-    return;
+  if (std::string(config_->name()) == "Llama") {
+    GTEST_SKIP() << "Llama only supports single tool-calls";
   }
 
   ChatMessage assistantMsg1 = createAssistantWithToolCall(
@@ -679,77 +511,63 @@ void testChatTemplateWithMultipleToolOutputs(
 
   std::vector<Tool> tools = {createWeatherTool()};
 
-  std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
+  std::string actual = tokenizer_->applyChatTemplate(messages, true, tools);
 
   // Verify key components
-  assert(actual.find("Get weather for SF and LA") != std::string::npos);
-  assert(actual.find("get_weather") != std::string::npos);
-  assert(actual.find("\"temp\":72") != std::string::npos);
-  assert(actual.find("\"temp\":85") != std::string::npos);
-
-  std::cout << "✅ Test passed!\n";
+  EXPECT_NE(actual.find("Get weather for SF and LA"), std::string::npos);
+  EXPECT_NE(actual.find("get_weather"), std::string::npos);
+  EXPECT_NE(actual.find("\"temp\":72"), std::string::npos);
+  EXPECT_NE(actual.find("\"temp\":85"), std::string::npos);
 }
 
-void runTestSuite(const Tokenizer& tokenizer,
-                  const TokenizerTemplateConfig* config) {
-  testChatTemplateWithoutTools(tokenizer, config);
-  testChatTemplateWithSingleTool(tokenizer, config);
-  testChatTemplateWithMultipleTools(tokenizer, config);
-  testChatTemplateWithConversationHistory(tokenizer, config);
-  testChatTemplateEmptyTools(tokenizer, config);
-  testToolStructureValidation();
-  testChatTemplateWithToolOutputs(tokenizer, config);
-  testChatTemplateWithMultipleToolOutputs(tokenizer, config);
+// Standalone test for tool structure validation (not tokenizer-dependent)
+TEST(ToolStructureValidationTest, MatchesOpenAISpecification) {
+  Tool tool;
+  tool.type = "function";
+  tool.functionDefinition.name = "test_function";
+  tool.functionDefinition.description = "A test function";
+
+  Json::Value params;
+  params["type"] = "object";
+  params["properties"]["arg1"]["type"] = "string";
+  params["properties"]["arg1"]["description"] = "First argument";
+  params["required"].append("arg1");
+  tool.functionDefinition.parameters = params;
+
+  Json::Value toolJson = tool.toJson();
+
+  EXPECT_TRUE(toolJson.isMember("type"));
+  EXPECT_EQ(toolJson["type"].asString(), "function");
+  EXPECT_TRUE(toolJson.isMember("function"));
+  EXPECT_TRUE(toolJson["function"].isMember("name"));
+  EXPECT_TRUE(toolJson["function"].isMember("description"));
+  EXPECT_TRUE(toolJson["function"].isMember("parameters"));
+
+  auto& funcParams = toolJson["function"]["parameters"];
+  EXPECT_TRUE(funcParams.isMember("type"));
+  EXPECT_TRUE(funcParams.isMember("properties"));
+  EXPECT_TRUE(funcParams.isMember("required"));
 }
 
-struct TokenizerEntry {
-  std::string path;
-  std::function<std::unique_ptr<Tokenizer>(const std::string&)> factory;
-  const TokenizerTemplateConfig* config;
-};
+// Instantiate tests for available tokenizers
+INSTANTIATE_TEST_SUITE_P(
+    Tokenizers, ChatTemplateToolsTest,
+    ::testing::Values(
+        TokenizerTestParam{std::string(TOKENIZER_DIR) +
+                               "/deepseek-ai/DeepSeek-R1-0528/tokenizer.json",
+                           [](const std::string& p) {
+                             return std::make_unique<DeepseekTokenizer>(p);
+                           },
+                           getDeepSeekConfig(), "DeepSeek"},
+        TokenizerTestParam{
+            std::string(TOKENIZER_DIR) +
+                "/meta-llama/Llama-3.1-8B-Instruct/tokenizer.json",
+            [](const std::string& p) {
+              return std::make_unique<LlamaTokenizer>(p);
+            },
+            getLlamaConfig(), "Llama"}),
+    [](const ::testing::TestParamInfo<TokenizerTestParam>& info) {
+      return info.param.name;
+    });
 
-int main() {
-  std::cout << "\n";
-  std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-  std::cout << "║      Chat Template with Tools Test Suite                ║\n";
-  std::cout << "╚══════════════════════════════════════════════════════════╝\n";
-
-  try {
-    const std::string deepseekPath =
-        std::string(TOKENIZER_DIR) +
-        "/deepseek-ai/DeepSeek-R1-0528/tokenizer.json";
-    const std::string llamaPath =
-        std::string(TOKENIZER_DIR) +
-        "/meta-llama/Llama-3.1-8B-Instruct/tokenizer.json";
-
-    std::vector<TokenizerEntry> tokenizers = {
-        {deepseekPath,
-         [](auto p) { return std::make_unique<DeepseekTokenizer>(p); },
-         getDeepSeekConfig()},
-        {llamaPath, [](auto p) { return std::make_unique<LlamaTokenizer>(p); },
-         getLlamaConfig()},
-    };
-
-    for (const auto& entry : tokenizers) {
-      if (!std::filesystem::exists(entry.path)) {
-        continue;
-      }
-      auto tok = entry.factory(entry.path);
-      runTestSuite(*tok, entry.config);
-    }
-
-    std::cout << "\n";
-    std::cout
-        << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout
-        << "║              🎉 ALL TESTS PASSED! 🎉                    ║\n";
-    std::cout
-        << "╚══════════════════════════════════════════════════════════╝\n";
-    std::cout << "\n";
-
-    return 0;
-  } catch (const std::exception& e) {
-    std::cerr << "\n❌ TEST FAILED: " << e.what() << "\n";
-    return 1;
-  }
-}
+}  // namespace
