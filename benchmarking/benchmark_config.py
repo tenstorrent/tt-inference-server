@@ -6,7 +6,6 @@ import os
 from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Tuple
 
-from benchmarking.spec_decode_common import SpecDecodeRunSpec
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import (
@@ -116,47 +115,6 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (65536, 128),
 ]
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
-
-#   1. ``speed_bench_<category>`` — nvidia Speed Bench Qualitative split for speed bench. ~80 prompts per category.
-#     11 categories: coding, humanities, math, multilingual, qa, rag, reasoning, roleplay, stem, summarization, writing.
-#   2. ``speed_bench_throughput_{1k,2k,8k,16k,32k}`` — SPEED-Bench Throughput + manually selected isl/osl sweeps
-
-SPEED_BENCH_QUALITATIVE_CATEGORIES = ("coding",)
-
-SPEED_BENCH_THROUGHPUT_ISLS = ("32k",)
-
-THROUGHPUT_CONCURRENCY_SWEEP = (1, 16, 64)
-
-# Every SPEED-Bench qualitative category holds exactly 80 prompts. aiperf does
-# max(10, concurrency*2) == 10 for conc=1, so the count must be passed
-# explicitly to consume the whole category. The default SHUFFLE sampler draws
-# without replacement, so a count equal to the category size sends each prompt
-# exactly once.
-SPEED_BENCH_QUALITATIVE_NUM_PROMPTS = 80
-
-# Cap output tokens on the throughput sweep so a handful of long-decoding
-# prompts can't blow up the runtime. Injected as
-# ``--extra-inputs max_completion_tokens:<N>`` (a ceiling, not a hard fixed length).
-SPEC_DECODE_MAX_COMPLETION_TOKENS = 8192
-
-SPEC_DECODE_SWEEP: List[SpecDecodeRunSpec] = [
-    SpecDecodeRunSpec(
-        public_dataset=f"speed_bench_{category}",
-        max_concurrency=1,
-        num_prompts=SPEED_BENCH_QUALITATIVE_NUM_PROMPTS,  # whole category
-        max_completion_tokens=SPEC_DECODE_MAX_COMPLETION_TOKENS,
-    )
-    for category in SPEED_BENCH_QUALITATIVE_CATEGORIES
-] + [
-    SpecDecodeRunSpec(
-        public_dataset=f"speed_bench_throughput_{isl}",
-        max_concurrency=concurrency,
-        num_prompts=max(32, 4 * concurrency),
-        max_completion_tokens=SPEC_DECODE_MAX_COMPLETION_TOKENS,
-    )
-    for isl in SPEED_BENCH_THROUGHPUT_ISLS
-    for concurrency in THROUGHPUT_CONCURRENCY_SWEEP
-]
 
 
 # Image resolution pairs for multimodal benchmarks

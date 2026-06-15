@@ -459,7 +459,6 @@ class TestInstallRequirementsReturnBool:
             "benchmarks-run-script.txt",
             "benchmarks-vllm.txt",
             "benchmarks-aiperf.txt",
-            "benchmarks-spec-decode.txt",
             "benchmarks-guidellm.txt",
             "reports-run-script.txt",
             "hf-setup.txt",

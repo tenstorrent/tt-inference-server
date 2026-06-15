@@ -13,7 +13,6 @@ from workflows.utils import ensure_readwriteable_dir, run_command
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_AIPERF_CONFIG,
     WORKFLOW_BENCHMARKS_GUIDELLM_CONFIG,
-    WORKFLOW_BENCHMARKS_SPEC_DECODE_CONFIG,
     WORKFLOW_CONFIGS,
     WorkflowType,
     get_default_workflow_root_log_dir,
@@ -41,8 +40,6 @@ class WorkflowSetup:
             self.workflow_config = WORKFLOW_BENCHMARKS_AIPERF_CONFIG
         elif _workflow_type == WorkflowType.BENCHMARKS and tools == "guidellm":
             self.workflow_config = WORKFLOW_BENCHMARKS_GUIDELLM_CONFIG
-        elif _workflow_type == WorkflowType.BENCHMARKS and tools == "spec_decode":
-            self.workflow_config = WORKFLOW_BENCHMARKS_SPEC_DECODE_CONFIG
         else:
             self.workflow_config = WORKFLOW_CONFIGS[_workflow_type]
 

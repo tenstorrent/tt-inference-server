@@ -457,12 +457,6 @@ _venv_config_list = [
         python_version="3.11",
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.BENCHMARKS_SPEC_DECODE,
-        requirements_file="benchmarks-spec-decode.txt",
-        extra_dirs=("artifacts",),
-        python_version="3.11",
-    ),
-    VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_GUIDELLM,
         requirements_file="benchmarks-guidellm.txt",
         python_version="3.11",
