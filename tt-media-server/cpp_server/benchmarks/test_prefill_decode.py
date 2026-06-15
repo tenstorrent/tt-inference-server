@@ -317,9 +317,7 @@ def _ensure_server(timeout_s=30):
         except Exception as e:
             last = repr(e)
         time.sleep(1)
-    raise AssertionError(
-        "server not healthy within %ds (%s)" % (timeout_s, last)
-    )
+    raise AssertionError("server not healthy within %ds (%s)" % (timeout_s, last))
 
 
 def _ensure_disaggregated():
