@@ -26,9 +26,8 @@ from __future__ import annotations
 
 import argparse
 import math
-import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional
 
 import torch
@@ -512,7 +511,6 @@ class TTModelRunner:
         lm_head_on_device: bool = False,
         unsafe: bool = False,
     ):
-        import ttnn
         from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
         from tt_inference_server.dispatch.registry import detect_model_family
         from tt_inference_server.dispatch.dispatcher import (
@@ -946,8 +944,6 @@ class TTModelRunner:
         import ttnn
         cfg  = self._cfg
         hd   = cfg.head_dim
-        hd_p = _tile_align(hd)
-        nkv  = cfg.num_kv_heads
 
         self._k_in_cpu.zero_()
         self._v_in_cpu.zero_()
@@ -1141,7 +1137,8 @@ class TTModelRunner:
         supported (nh==32 so the decode SDPA's pad-to-32 is a no-op and grouping stays
         nh/nkv); other shapes fall back to the existing path.
         """
-        import os, ttnn
+        import os
+        import ttnn
         self._paged_attn = False
         self._traced = False
         want = os.environ.get("DISPATCH_PAGED_ATTN", "0") == "1" or os.environ.get("DISPATCH_TRACE", "0") == "1"
@@ -1364,7 +1361,8 @@ class TTModelRunner:
         on card (probe_ondevice_lmhead.py): bf16 matmul + fp32-acc gives logit cos-sim ~1.0
         vs CPU fp32; greedy picks differ only on genuine near-ties.
         """
-        import os, ttnn
+        import os
+        import ttnn
         self._ondevice_lmhead = False
         self._lmhead_pad_mask = None
         if os.environ.get("DISPATCH_ONDEVICE_LMHEAD", "0") != "1":
@@ -1428,7 +1426,8 @@ class TTModelRunner:
         two picks — a tiny gap means a benign bf16 near-tie, a large gap means a real
         ranking bug. Diagnostic only (the readback defeats the host-free goal).
         """
-        import os, ttnn
+        import os
+        import ttnn
         out_tt = self._lm_head_graph(hidden_tt)
         dev_idx = int(ttnn.to_torch(out_tt).flatten()[0])
         if os.environ.get("DISPATCH_LMHEAD_DEBUG", "0") == "1":
@@ -1875,7 +1874,7 @@ class TTModelRunner:
         Also probes whether ttnn.matmul / ttnn.add accept output_tensor= so the
         hot-path matmuls can write directly into pre-allocated device buffers.
         """
-        import ttnn, inspect
+        import ttnn
         cfg  = self._cfg
         hid_p    = _tile_align(cfg.hidden_size)
         hd_p     = _tile_align(cfg.head_dim)
@@ -2105,7 +2104,8 @@ def main():
                         help="Allow community/unlisted (unverified) models without warning (#25)")
     args = parser.parse_args()
 
-    import ttnn, os
+    import ttnn
+    import os
     # Reserve a trace region when the trace-replay decode path (#30) is enabled.
     _tr = 134217728 if os.environ.get("DISPATCH_TRACE", "0") == "1" else 0
     device = ttnn.open_device(device_id=0, trace_region_size=_tr)

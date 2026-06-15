@@ -4,7 +4,6 @@
 """Shape constants for the Qwen 2.5 model family."""
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass

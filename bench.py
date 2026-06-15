@@ -127,22 +127,20 @@ class _TelemetryPoller:
 # ------------------------------------------------------------------
 
 def _validate_output(prompt: str, output: str) -> bool:
-    """Return True if output looks like a plausible model continuation."""
+    """Return True if output looks like a plausible model continuation.
+
+    Delegates garbage detection to the shared validator (issue #46) so this harness
+    and tests/_run_model.py agree, while keeping the prompt!=output guard that's unique
+    to this entry point. No token ids are available here, so the validator runs in
+    text-only mode (length/token-repetition checks skipped — the bench fixes n_tokens)."""
     if not output or not output.strip():
         return False
-    # Must differ from the prompt itself
+    # Must differ from the prompt itself (unique to this harness)
     if output.strip().lower() == prompt.strip().lower():
         return False
-    # Must have some real word characters
-    if not re.search(r"[a-zA-Z]{2,}", output):
-        return False
-    # Reject obvious garbage: all same char, or >80% non-ASCII
-    if len(set(output.replace(" ", ""))) < 3:
-        return False
-    non_ascii = sum(1 for c in output if ord(c) > 127)
-    if len(output) > 0 and non_ascii / len(output) > 0.8:
-        return False
-    return True
+    from tt_inference_server.dispatch.output_validator import validate_output
+    ok, _reason = validate_output(output, None)
+    return ok
 
 
 # ------------------------------------------------------------------

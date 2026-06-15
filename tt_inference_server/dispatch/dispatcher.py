@@ -32,7 +32,6 @@ from .compat import (
     resolve_attn_config,
     resolve_norm_config,
     resolve_swiglu_config,
-    ShapeNotSupportedError,
     to_tiles,
 )
 

@@ -4,7 +4,6 @@
 """Shape constants for Mistral and Mixtral model families."""
 
 from dataclasses import dataclass
-from typing import Optional
 
 try:
     from .config_qwen2_5 import ModelConfig

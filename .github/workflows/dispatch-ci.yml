@@ -1,0 +1,52 @@
+name: Dispatch CI (no-device)
+
+# Lint + unit-test the dispatch layer with NO Tenstorrent card (issue #46).
+# The dispatch package imports ttnn function-locally, so the matrix/schema, capability
+# formula, Granite multipliers, output validator, and import smoke can all be checked on
+# a stock GitHub runner. Installs only ruff + pytest + torch (CPU) — no ttnn, no tt-metal,
+# no model weights.
+
+on:
+  workflow_dispatch:
+  workflow_call:
+  push:
+    branches:
+      - dispatch-dev
+  pull_request:
+    branches:
+      - dispatch-dev
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+concurrency:
+  group: dispatch-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5.0.0
+        with:
+          # 3.11+ required for the stdlib tomllib used by the matrix loader.
+          python-version: "3.11"
+
+      - name: Install no-device deps (ruff + pytest + torch CPU only)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ruff pytest
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Ruff lint (dispatch package)
+        run: |
+          ruff check tt_inference_server/dispatch/
+
+      - name: Pytest (no-device dispatch tests only)
+        run: |
+          python -m pytest tests/dispatch/ -v
