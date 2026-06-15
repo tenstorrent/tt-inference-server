@@ -77,55 +77,67 @@ class Qwen3_5Config(PretrainedConfig):
             self.architectures = ["Qwen3_5ForConditionalGeneration"]
 
 
-class Qwen3_6VLConfig(Qwen3_5Config):
-    """Multimodal (image+video) variant of the Qwen3.6-27B served config.
+def _make_qwen3_6_vl_config_class():
+    """Build `Qwen3_6VLConfig` as a SUBCLASS of the real transformers
+    `Qwen3VLConfig` so it passes vLLM's `ctx.get_hf_config(Qwen3VLConfig)`
+    isinstance check (the native Qwen3VL processor asserts this). Done in a
+    factory so the module stays importable when transformers lacks qwen3_vl
+    (off-device tooling) — in that case we fall back to a flat PretrainedConfig.
 
-    Identical to `Qwen3_5Config` for the text tower (it reuses the same
-    `_promote_text_fields` promotion logic), but it KEEPS `vision_config` so
-    that vLLM treats the model as multimodal: its native Qwen3VL processor
-    expands image/video placeholder tokens, and `is_multimodal` stays on.
-
-    A distinct `model_type` ("qwen3_5_vl") registers this under its own key in
-    transformers' CONFIG_MAPPING, leaving the text-only `qwen3_5` resolution
-    100% untouched. A distinct architecture name lets the plugin's platform
-    resolver map this to the VL generator class instead of the text-only one.
-
-    `text_config` is still dropped for the same reason as the text-only config:
-    if it stayed set, PretrainedConfig.get_text_config() would return that raw
-    dict and vLLM (patch_rope_parameters, etc.) would fail trying to set
-    attributes on a dict. With it removed, get_text_config() returns this
-    top-level config (which carries the promoted text fields). Note this is a
-    Qwen3VL-style "flat" multimodal config: vLLM reads the text params from the
-    top level (not via a nested text_config sub-config), and the vision tower
-    params from the kept vision_config.
+    The Qwen3.6-27B vision tower IS Qwen3VL-architecture, and the text tower is
+    Qwen3-family, so the stock Qwen3VLConfig sub-config parsing (text_config ->
+    Qwen3VLTextConfig, vision_config -> Qwen3VLVisionConfig) lines up. We keep
+    BOTH sub-configs (do not pop) and set a distinct model_type + arch name.
     """
+    try:
+        from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLConfig as _BaseVL
+    except Exception:
+        _BaseVL = PretrainedConfig
 
-    model_type = "qwen3_5_vl"
+    class Qwen3_6VLConfig(_BaseVL):
+        """Multimodal (image+video) Qwen3.6-27B served config.
 
-    def __init__(self, **kwargs):
-        # Promote text-tower fields up to the top level (shared logic).
-        _promote_text_fields(kwargs)
+        Subclasses transformers' Qwen3VLConfig so vLLM's native Qwen3VL
+        processor (which does ``isinstance(config, Qwen3VLConfig)``) accepts it,
+        while a distinct ``model_type`` ("qwen3_5_vl") keeps the text-only
+        ``qwen3_5`` AutoConfig resolution 100% untouched and a distinct
+        architecture name routes the plugin to the VL generator class.
+        """
 
-        # Drop ONLY the raw text_config dict (so get_text_config() resolves to
-        # this top-level config, not a dict). Crucially, do NOT pop
-        # vision_config — keeping it is what makes the model multimodal.
-        kwargs.pop("text_config", None)
+        model_type = "qwen3_5_vl"
 
-        # Drop the incoming model_type so the class attribute ("qwen3_5_vl")
-        # governs. PretrainedConfig.__init__ would otherwise store the
-        # checkpoint's literal "qwen3_5" into __dict__, shadowing the class
-        # attr and making instances built from the checkpoint mis-report their
-        # type (routing to the text-only class on AutoConfig resolution).
-        kwargs.pop("model_type", None)
+        def __init__(self, **kwargs):
+            # Also promote the text-tower fields to the TOP level so any flat
+            # attribute reads (kept for safety) resolve; Qwen3VLConfig still
+            # parses text_config/vision_config into proper sub-config objects.
+            _promote_text_fields(kwargs)
 
-        # Bypass Qwen3_5Config.__init__ (which would pop vision_config); go
-        # straight to PretrainedConfig with vision_config intact.
-        PretrainedConfig.__init__(self, **kwargs)
+            # Drop the checkpoint's literal model_type ("qwen3_5") so the class
+            # attribute ("qwen3_5_vl") governs AutoConfig round-trips.
+            kwargs.pop("model_type", None)
 
-        # Distinct VL arch name so platform.py resolves the VL generator class.
-        # Override even when the checkpoint carries the text-only arch name
-        # (the Qwen3.6-27B checkpoint ships "Qwen3_5ForConditionalGeneration").
-        self.architectures = ["Qwen3_6VLForConditionalGeneration"]
+            if _BaseVL is PretrainedConfig:
+                # transformers without qwen3_vl: keep a flat config with
+                # vision_config wrapped to an attribute-accessible object.
+                from types import SimpleNamespace
+
+                vc = kwargs.get("vision_config")
+                if isinstance(vc, dict):
+                    kwargs["vision_config"] = SimpleNamespace(**vc)
+                kwargs.pop("text_config", None)
+                PretrainedConfig.__init__(self, **kwargs)
+            else:
+                # Real Qwen3VLConfig: it parses text_config + vision_config
+                # dicts into Qwen3VLTextConfig / Qwen3VLVisionConfig objects.
+                _BaseVL.__init__(self, **kwargs)
+
+            # Distinct VL arch name so platform.py resolves the VL generator.
+            self.architectures = ["Qwen3_6VLForConditionalGeneration"]
+
+    return Qwen3_6VLConfig
+
+
+Qwen3_6VLConfig = _make_qwen3_6_vl_config_class()
 
 
 def register_qwen3_5_config():

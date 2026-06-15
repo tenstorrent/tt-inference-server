@@ -6,9 +6,13 @@
 # checkpoints.  Must run before register_models() (which needs vllm) so that
 # off-device import tests can verify config registration without vllm present.
 try:
-    from tt_vllm_plugin.qwen3_5_config import register_qwen3_5_config
+    from tt_vllm_plugin.qwen3_5_config import register_qwen3_5_config, register_qwen3_6_vl_config
 
     register_qwen3_5_config()
+    # qwen3_5_vl: the multimodal (image+video) variant config that KEEPS
+    # vision_config (text-only qwen3_5 drops it). Required so the VL server
+    # resolves a vision-keeping config -> is_multimodal stays on.
+    register_qwen3_6_vl_config()
 except ImportError as _e:
     import logging as _logging
 
@@ -33,14 +37,15 @@ def register_models():
     # (qwen3_5 is not in public transformers). Also called at import time above
     # so tests work without vllm; the registration is idempotent.
     try:
-        from tt_vllm_plugin.qwen3_5_config import register_qwen3_5_config
+        from tt_vllm_plugin.qwen3_5_config import register_qwen3_5_config, register_qwen3_6_vl_config
 
         register_qwen3_5_config()
-        print("Registered qwen3_5 config")
+        register_qwen3_6_vl_config()
+        print("Registered qwen3_5 + qwen3_5_vl config")
     except Exception as e:
         import logging
 
-        logging.warning(f"Failed to register qwen3_5 config: {e}")
+        logging.warning(f"Failed to register qwen3_5/qwen3_5_vl config: {e}")
 
     # Register TT Qwen3.6-27B (galaxy v2, text-only)
     try:
@@ -53,6 +58,22 @@ def register_models():
         import logging
 
         logging.warning(f"Failed to register TTQwen3_5ForConditionalGeneration: {e}")
+
+    # Register TT Qwen3.6-27B VL (galaxy v2, image+video). The VL spec sets
+    # hf_overrides architectures to the native Qwen3VLForConditionalGeneration so
+    # vLLM's capability check sees a native multimodal generative class; the
+    # platform prepends TT -> TTQwen3VLForConditionalGeneration, mapped here to
+    # our VL TT class (which carries the native Qwen3VL processor decorator).
+    try:
+        ModelRegistry.register_model(
+            "TTQwen3VLForConditionalGeneration",
+            "models.demos.qwen3_6_galaxy_v2.tt.generator_vllm:Qwen3_6VLForConditionalGeneration",
+        )
+        print("Registered TT Qwen3.6-27B VL")
+    except Exception as e:
+        import logging
+
+        logging.warning(f"Failed to register TTQwen3VLForConditionalGeneration (Qwen3.6 VL): {e}")
 
     # Register TT Llama model
     ModelRegistry.register_model(

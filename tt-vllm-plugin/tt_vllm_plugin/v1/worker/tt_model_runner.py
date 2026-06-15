@@ -323,14 +323,40 @@ class TTModelRunner:
         if removed_req_indices:
             self.input_batch.condense(removed_req_indices)
 
-    def _validate_mm_input(self, mm_input: MultiModalKwargs) -> None:
-        """Validate multi-modal input supports only single images."""
-        if list(mm_input.modalities) != ["image"]:
-            raise NotImplementedError("Only images are supported for now")
-        assert mm_input.get_item_count("image") == 1, (
-            "Request can contain multiple inputs, \
-            but each input can contain only one image!"
-        )
+    # Multi-modal field keys forwarded from the processor output to the model's
+    # prefill_forward. "pixel_values"/"image_grid_thw" are emitted per image and
+    # the "*_videos"/"video_grid_thw" variants per video by HF VL processors
+    # (e.g. Qwen3VL). Models that only consume pixel_values ignore the rest.
+    _MM_FIELD_KEYS = (
+        "pixel_values",
+        "image_grid_thw",
+        "pixel_values_videos",
+        "video_grid_thw",
+    )
+
+    def _validate_mm_input(self, mm_input) -> None:
+        """Validate a single multi-modal item is an image or a video.
+
+        Handles both a per-item ``MultiModalKwargsItem`` (newer vLLM mm_features
+        path, exposes singular ``.modality``) and the older ``MultiModalKwargs``
+        container (exposes ``.modalities`` + ``.get_item_count``)."""
+        modality = getattr(mm_input, "modality", None)
+        if modality is not None:
+            if modality not in ("image", "video"):
+                raise NotImplementedError(
+                    f"Only image or video inputs are supported, got modality {modality!r}"
+                )
+            return
+        mods = list(getattr(mm_input, "modalities", []))
+        if mods not in (["image"], ["video"]):
+            raise NotImplementedError(
+                f"Only single image or single video inputs are supported, got modalities {mods}"
+            )
+        for mod in mods:
+            assert mm_input.get_item_count(mod) == 1, (
+                "Request can contain multiple inputs, "
+                f"but each input can contain only one {mod}!"
+            )
 
     def _gather_multi_modal_inputs(self, scheduler_output) -> dict:
         """
@@ -346,22 +372,45 @@ class TTModelRunner:
         ]
         """
 
-        multi_modal_kwargs: MultiModalKwargs = {"pixel_values": []}
+        # One per-request list per forwarded field. "pixel_values" is always
+        # present (the existing image-only contract); the grid_thw / video
+        # variants are surfaced too so VL models (Qwen3VL/Qwen3.6-VL) get their
+        # image_grid_thw etc. Image-only models simply ignore the extra keys.
+        multi_modal_kwargs: MultiModalKwargs = {k: [] for k in self._MM_FIELD_KEYS}
 
         for new_req_data in scheduler_output.scheduled_new_reqs:
             req_id = new_req_data.req_id
             req_state = self.requests[req_id]
 
-            if not req_state.mm_inputs:
-                multi_modal_kwargs["pixel_values"].append(None)
+            # vLLM replaced CachedRequestState.mm_inputs (a list of
+            # MultiModalKwargsItem) with mm_features (a list of
+            # MultiModalFeatureSpec, each carrying `.data` = MultiModalKwargsItem
+            # + `.modality`). Support both; each yields a list of mm "items".
+            mm_features = getattr(req_state, "mm_features", None)
+            if mm_features is not None:
+                mm_items = [f.data for f in mm_features if getattr(f, "data", None) is not None]
+            else:
+                mm_items = getattr(req_state, "mm_inputs", None) or []
+
+            if not mm_items:
+                for k in self._MM_FIELD_KEYS:
+                    multi_modal_kwargs[k].append(None)
                 continue
 
-            pv_array = []
-            for mm_input in req_state.mm_inputs:
-                self._validate_mm_input(mm_input)
-                pv_array.append(mm_input["pixel_values"])
-
-            multi_modal_kwargs["pixel_values"].append(pv_array)
+            per_field = {k: [] for k in self._MM_FIELD_KEYS}
+            for mm_item in mm_items:
+                self._validate_mm_input(mm_item)
+                # mm_item is a MultiModalKwargsItem; mm_item[key] returns a
+                # MultiModalFieldElem (wrapper), not the raw tensor. get_data()
+                # unwraps to {key: tensor}. Fall back to the mapping for the old
+                # pixel_values-only path.
+                item_data = mm_item.get_data() if hasattr(mm_item, "get_data") else dict(mm_item)
+                item_keys = set(item_data.keys())
+                for k in self._MM_FIELD_KEYS:
+                    if k in item_keys:
+                        per_field[k].append(item_data[k])
+            for k in self._MM_FIELD_KEYS:
+                multi_modal_kwargs[k].append(per_field[k] if per_field[k] else None)
 
         return multi_modal_kwargs
 
@@ -547,18 +596,22 @@ class TTModelRunner:
             if is_mixed:
                 # For mixed batches, create multimodal kwargs for all requests
                 # Prefill requests get their mm inputs, decode requests get None
-                multi_modal_kwargs: MultiModalKwargs = {"pixel_values": []}
+                multi_modal_kwargs: MultiModalKwargs = {
+                    k: [] for k in prefill_mm_kwargs.keys()
+                }
                 prefill_mm_idx = 0
                 for req_idx in range(num_reqs):
                     if is_prefill_list[req_idx]:
-                        # Prefill request: use gathered mm input
-                        multi_modal_kwargs["pixel_values"].append(
-                            prefill_mm_kwargs["pixel_values"][prefill_mm_idx]
-                        )
+                        # Prefill request: use gathered mm input (all fields)
+                        for k in prefill_mm_kwargs.keys():
+                            multi_modal_kwargs[k].append(
+                                prefill_mm_kwargs[k][prefill_mm_idx]
+                            )
                         prefill_mm_idx += 1
                     else:
                         # Decode request: no mm input
-                        multi_modal_kwargs["pixel_values"].append(None)
+                        for k in prefill_mm_kwargs.keys():
+                            multi_modal_kwargs[k].append(None)
             else:
                 # Pure prefill batch: use gathered mm kwargs directly
                 multi_modal_kwargs = prefill_mm_kwargs
@@ -895,16 +948,20 @@ class TTModelRunner:
                 "prompt_lens": prefill_prompt_lens,
             }
 
-            # Add multimodal kwargs for prefill (filter to only prefill requests)
+            # Add multimodal kwargs for prefill (filter to only prefill requests,
+            # forwarding every gathered field: pixel_values + grid_thw + video).
             if (
                 model_input.multi_modal_kwargs
                 and "pixel_values" in model_input.multi_modal_kwargs
             ):
-                prefill_mm_kwargs = {"pixel_values": []}
+                prefill_mm_kwargs = {
+                    k: [] for k in model_input.multi_modal_kwargs.keys()
+                }
                 for idx in prefill_indices:
-                    prefill_mm_kwargs["pixel_values"].append(
-                        model_input.multi_modal_kwargs["pixel_values"][idx]
-                    )
+                    for k in model_input.multi_modal_kwargs.keys():
+                        prefill_mm_kwargs[k].append(
+                            model_input.multi_modal_kwargs[k][idx]
+                        )
                 prefill_kwargs.update(prefill_mm_kwargs)
 
             # Handle empty_slots for DP if needed

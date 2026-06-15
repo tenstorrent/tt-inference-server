@@ -235,6 +235,12 @@ qwen3_6_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/qwen3_6_galaxy_v2",
 )
+qwen3_6_galaxy_vl_impl = ImplSpec(
+    impl_id="qwen3_6_galaxy_vl",
+    impl_name="qwen3-6-galaxy-vl",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/qwen3_6_galaxy_v2",
+)
 gpt_oss_impl = ImplSpec(
     impl_id="gpt_oss",
     impl_name="gpt-oss",
@@ -277,6 +283,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "qwen3_6_galaxy": qwen3_6_galaxy_impl,
+    "qwen3_6_galaxy_vl": qwen3_6_galaxy_vl_impl,
     "gpt_oss": gpt_oss_impl,
     "deepseek_r1_galaxy": deepseek_r1_galaxy_impl,
     "whisper": whisper_impl,

@@ -1188,3 +1188,80 @@ templates:
     Qwen/Qwen3.6-27B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: hermes
+
+# ---------------------------------------------------------------------------
+# Qwen3.6-27B VL (image + video) — multimodal serving variant.
+#
+# A SEPARATE entry from the text-only Qwen3.6-27B above (distinct model_name
+# "Qwen3.6-27B-VL" + impl "qwen3_6_galaxy_vl" -> distinct persistent volume) so
+# the text server stays 100% intact. It reuses the SAME weights (hf_weights_repo
+# Qwen/Qwen3.6-27B) and ALL the correctness-critical decode/prefill config from
+# the text entry; the only differences are the multimodal wiring:
+#   - model_type VLM + supported_modalities image/video (run.py / catalog).
+#   - hf_overrides architectures -> native Qwen3VLForConditionalGeneration so
+#     vLLM's capability check sees a native MULTIMODAL generative class (the
+#     native Qwen3VL HF processor expands image/video placeholders + sets
+#     multimodal_config). platform.py prepends TT ->
+#     TTQwen3VLForConditionalGeneration, mapped by the plugin to the VL TT class.
+#   - The served config.json must resolve model_type=qwen3_5_vl (KEEPS
+#     vision_config). The VL weights dir ships a patched config.json with
+#     model_type "qwen3_5_vl" (the plugin registers Qwen3_6VLConfig for it); the
+#     text weights dir is untouched (still qwen3_5).
+#   - vllm_args: limit-mm-per-prompt (1 image, 1 video) + mm-processor-cache-gb 0.
+- weights:
+    - Qwen/Qwen3.6-27B-VL
+  hf_weights_repo: Qwen/Qwen3.6-27B
+  impl: qwen3_6_galaxy_vl
+  version: "0.11.1"  # must be >= run.py floor v0.11.0
+  tt_metal_commit: fa021238662
+  vllm_commit: 8f36910
+  inference_engine: VLLM
+  model_type: VLM
+  supported_modalities:
+    - text
+    - image
+    - video
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 262144  # 256 * 1024
+      default_impl: true
+      vllm_args:
+        trust_remote_code: true
+        mm-processor-cache-gb: 0
+        limit-mm-per-prompt: '{"image": 1, "video": 1}'
+        # Point vLLM at the LOCAL VL weights dir (config.json patched to
+        # model_type qwen3_5_vl -> keeps vision_config). The default vllm "model"
+        # arg is hf_model_repo (Qwen/Qwen3.6-27B-VL) which is NOT a real HF repo,
+        # so vLLM's config fetch 404s; this override makes it read the local
+        # checkpoint instead. MODEL_WEIGHTS_DIR points here too.
+        model: /home/tt-admin/ssinghal/qwen36/new/tt-metal/tt-inference-server/persistent_volume/volume_id_qwen3_6_galaxy_vl-Qwen3.6-27B-VL-v0.11.1/weights/Qwen3.6-27B-VL
+        # Keep the clean OpenAI-API model id (requests use this name).
+        served-model-name: Qwen/Qwen3.6-27B-VL
+        # Present the NATIVE vLLM multimodal arch so the capability/processor
+        # machinery engages; platform.py then prepends TT and the plugin maps
+        # TTQwen3VLForConditionalGeneration -> the qwen3.6 VL TT class.
+        hf_overrides: '{"architectures": ["Qwen3VLForConditionalGeneration"]}'
+      override_tt_config:
+        trace_mode: true
+        sample_on_device_mode: decode_only
+        fabric_config: FABRIC_1D_RING
+        l1_small_size: 0
+        dispatch_core_axis: col
+      env_vars:
+        VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+        QWEN36_SEQ_CORES_PER_HEAD: "4"
+        QWEN36_DECODE_L1_RESIDUAL: "1"
+        QWEN36_FORCE_SWITCH_DECODE: "1"
+        QWEN36_RESIDUAL_BUF_BF16: "1"
+        QWEN36_LM_HEAD_PLAIN_DECODE: "1"
+        QWEN36_FULLATTN_WO_TUNED: "1"
+        QWEN36_DELTA_OP_TUNED: "1"
+        QWEN36_CCL_NUM_LINKS_DELTA: "2"
+        QWEN36_PREFILL_CHUNK: "4096"
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.6-27B-VL:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes
