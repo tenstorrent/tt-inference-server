@@ -5,6 +5,7 @@
 
 #include <json/json.h>
 
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -164,8 +165,10 @@ struct LLMRequest : BaseRequest {
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;
   std::optional<uint32_t> prefillSlotId;
-  tt::domain::Session* session =
-      nullptr;  // Pointer to session in SessionManager
+  // Shared ownership of the session: SessionManager's map holds one ref;
+  // requests/callbacks hold their own, so a session can't be freed mid-use
+  // even if eviction drops the map entry.
+  std::shared_ptr<tt::domain::Session> session;
   bool continuation =
       false;  // True if this request continues an existing session
 
