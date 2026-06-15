@@ -17,10 +17,9 @@
 namespace tt::gateway {
 
 class PrefillRegistry;
-class AffinityCache;
 
 /**
- * @brief Glues prefills + selector + affinity cache into the request lifecycle.
+ * @brief Glues prefills + selector into the request lifecycle.
  *
  * Sockets are injected as Senders (function objects) so unit tests can run
  * without real sockets.
@@ -50,10 +49,8 @@ class Dispatcher {
     uint32_t timeout_threshold;
   };
 
-  Dispatcher(PrefillRegistry& registry, AffinityCache& affinity_cache,
-             Senders senders);
-  Dispatcher(PrefillRegistry& registry, AffinityCache& affinity_cache,
-             Senders senders, Options options);
+  Dispatcher(PrefillRegistry& registry, Senders senders);
+  Dispatcher(PrefillRegistry& registry, Senders senders, Options options);
 
   Dispatcher(const Dispatcher&) = delete;
   Dispatcher& operator=(const Dispatcher&) = delete;
@@ -79,7 +76,6 @@ class Dispatcher {
  private:
   struct InFlightEntry {
     std::string prefill_id;
-    uint64_t affinity_key = 0;
     Clock::time_point started_at;
   };
 
@@ -87,7 +83,6 @@ class Dispatcher {
                         const InFlightEntry* entry = nullptr);
 
   PrefillRegistry& registry_;
-  AffinityCache& affinity_cache_;
   Senders senders_;
   Options options_;
 

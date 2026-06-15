@@ -18,6 +18,20 @@ namespace tt::services {
 
 using namespace tt::domain::llm;
 
+namespace {
+
+std::vector<uint64_t> blockHashes(
+    const std::vector<tt::utils::BlockHashInfo>& blockInfos) {
+  std::vector<uint64_t> hashes;
+  hashes.reserve(blockInfos.size());
+  for (const auto& block : blockInfos) {
+    hashes.push_back(block.hash);
+  }
+  return hashes;
+}
+
+}  // namespace
+
 DisaggregationService::DisaggregationService(
     tt::config::LLMMode mode, std::shared_ptr<LLMService> llmService,
     std::shared_ptr<sockets::InterServerService> socketService,
@@ -331,6 +345,7 @@ void DisaggregationService::resolvePrefillSession(
          .setKvPositionId = true,
          .logPrefix = "[DisaggregationService]"});
     sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
+    socketService->sendPrefillCacheBlocksAdded(blockHashes(blockInfos));
     onResolved();
   } else {
     // Check if there's a candidate slot worth copying from.
@@ -362,6 +377,7 @@ void DisaggregationService::resolvePrefillSession(
               "sessionId={} slotId={}",
               request->task_id, session.getSessionId(), session.getSlotId());
           sm->registerPrefixHash(session.getSessionId(), infos);
+          socketService->sendPrefillCacheBlocksAdded(blockHashes(infos));
           request->sessionId = session.getSessionId();
           request->prefillSlotId =
               sm->acquireInFlight(session.getSessionId(), nullptr);
