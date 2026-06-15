@@ -88,13 +88,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(prometheus-cpp)
 
-# Gateway core library: selector + registry + affinity cache + dispatcher.
+# Gateway core library: selector + registry + dispatcher.
 # All pure C++; no socket I/O is performed inside the library. The dispatcher
 # receives Senders (std::function objects) which production main() wires to
 # real SocketManager instances and tests wire to capture-only lambdas.
 set(GATEWAY_CORE_SOURCES
     src/prefill_selector.cpp
-    src/affinity_cache.cpp
     src/prefill_registry.cpp
     src/dispatcher.cpp
     src/gateway_metrics.cpp
@@ -240,7 +239,6 @@ function(_gateway_add_e2e_test name)
 endfunction()
 
 _gateway_add_unit_test(prefill_selector_test)
-_gateway_add_unit_test(affinity_cache_test)
 _gateway_add_unit_test(prefill_registry_test)
 _gateway_add_unit_test(dispatcher_test)
 _gateway_add_unit_test(gateway_metrics_test)
