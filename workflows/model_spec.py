@@ -36,8 +36,18 @@ MODEL_SPECS_SCHEMA_VERSION = "0.1.0"
 
 
 def generate_docker_tag(
-    version: str, tt_metal_commit: str, vllm_commit: Optional[str]
+    version: Optional[str],
+    tt_metal_commit: Optional[str],
+    vllm_commit: Optional[str],
 ) -> str:
+    # version and tt_metal_commit are required to build a tag. They are
+    # optional on the spec (dev catalog omits them), so guard here: callers
+    # that synthesize an image from a dev spec are a bug, fail loudly rather
+    # than emit a "None-None" tag.
+    if version is None:
+        raise ValueError("Cannot generate docker tag: version is None")
+    if tt_metal_commit is None:
+        raise ValueError("Cannot generate docker tag: tt_metal_commit is None")
     max_tag_len = 12
     if vllm_commit:
         return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
@@ -45,9 +55,20 @@ def generate_docker_tag(
         return f"{version}-{tt_metal_commit[:max_tag_len]}"
 
 
+def generate_code_link(
+    repo_url: str, tt_metal_commit: Optional[str], code_path: str
+) -> str:
+    # tt_metal_commit is required to pin the source tree. Optional on the spec
+    # (dev catalog omits it), so fail loudly if a caller tries to build a link
+    # without it rather than produce a `/tree/None/` URL.
+    if tt_metal_commit is None:
+        raise ValueError("Cannot generate code link: tt_metal_commit is None")
+    return f"{repo_url}/tree/{tt_metal_commit}/{code_path}"
+
+
 def generate_default_docker_link(
-    version: str,
-    tt_metal_commit: str,
+    version: Optional[str],
+    tt_metal_commit: Optional[str],
     vllm_commit: Optional[str],
     inference_engine: str = "",
     multihost: bool = False,
@@ -423,12 +444,14 @@ class ModelSpec:
     model_name: str
     inference_engine: InferenceEngine
     device_type: DeviceTypes  # Single device, not a set
-    tt_metal_commit: str
     device_model_spec: DeviceModelSpec
 
     # Optional specification fields (WITH DEFAULTS)
     system_requirements: Optional[SystemRequirements] = None
     env_vars: Dict[str, str] = field(default_factory=dict)
+    # tt_metal_commit/version are required for prod specs (enforced when loading
+    # the prod catalog) but omitted by dev specs, so they are optional here.
+    tt_metal_commit: Optional[str] = None
     vllm_commit: Optional[str] = None
     hf_weights_repo: Optional[str] = (
         None  # HF repo to download weights from (defaults to hf_model_repo)
@@ -438,7 +461,7 @@ class ModelSpec:
     min_ram_gb: Optional[int] = None
     model_type: Optional[ModelType] = ModelType.LLM
     repacked: int = 0
-    version: str = VERSION
+    version: Optional[str] = None
     docker_image: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
     code_link: Optional[str] = None
@@ -530,8 +553,14 @@ class ModelSpec:
             # assume fp16 equivalent weights, add 0.5x overhead buffer
             object.__setattr__(self, "min_ram_gb", self.param_count * 2.5)
 
-        # Generate default docker image if not provided
-        if not self.docker_image:
+        # Generate default docker image if not provided. Synthesis needs
+        # version + tt_metal_commit; dev specs omit both, so skip and leave
+        # docker_image=None (dev images are pinned at runtime, not synthesized).
+        if (
+            not self.docker_image
+            and self.version is not None
+            and self.tt_metal_commit is not None
+        ):
             # TODO: Use ubuntu version to interpolate this string
             _default_docker_link = generate_default_docker_link(
                 self.version,
@@ -542,12 +571,14 @@ class ModelSpec:
             )
             object.__setattr__(self, "docker_image", _default_docker_link)
 
-        # Generate code link
-        if not self.code_link:
+        # Generate code link. Needs tt_metal_commit; skip when absent (dev specs).
+        if not self.code_link and self.tt_metal_commit is not None:
             object.__setattr__(
                 self,
                 "code_link",
-                f"{self.impl.repo_url}/tree/{self.tt_metal_commit}/{self.impl.code_path}",
+                generate_code_link(
+                    self.impl.repo_url, self.tt_metal_commit, self.impl.code_path
+                ),
             )
 
         data_parallel = self.device_model_spec.vllm_args.get("data_parallel_size")
@@ -879,26 +910,29 @@ class ModelSpecTemplate:
     # Required fields (NO DEFAULTS) - must come first
     weights: List[str]  # List of HF model repos to create specs for
     impl: ImplSpec
-    tt_metal_commit: str
     inference_engine: InferenceEngine
     device_model_specs: List[DeviceModelSpec]
 
     # Optional template fields (WITH DEFAULTS) - must come after required fields
     system_requirements: Optional[SystemRequirements] = None
+    # tt_metal_commit/version/vllm_commit are required for prod templates and
+    # forbidden for dev templates; both rules are enforced in
+    # load_templates_from_yaml based on the catalog directory (prod/ vs dev/).
+    tt_metal_commit: Optional[str] = None
     vllm_commit: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
     env_vars: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
     repacked: int = 0
-    version: str = VERSION
+    version: Optional[str] = None
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
     # True when the catalog explicitly pinned the image via `version` or
-    # `docker_image`. When neither is set, the docker tag is synthesized from the
-    # repo-wide VERSION + commits rather than a real published image, so these
-    # specs are excluded from IMAGE_PINNED_MODEL_SPECS (the list the helm chart
-    # generator consumes). Set by _build_template from YAML key presence;
-    # defaults True for directly constructed templates so they are never dropped.
+    # `docker_image`. When neither is set (e.g. dev specs), no docker tag is
+    # synthesized at all, so these specs are excluded from
+    # IMAGE_PINNED_MODEL_SPECS (the list the helm chart generator consumes).
+    # Set by _build_template from YAML key presence; defaults True for directly
+    # constructed templates so they are never dropped.
     image_pinned: bool = True
     model_type: Optional[ModelType] = ModelType.LLM
     min_disk_gb: Optional[int] = None
@@ -1084,11 +1118,45 @@ def _build_template(data: Dict) -> "ModelSpecTemplate":
     return ModelSpecTemplate(**kwargs)
 
 
+# prod templates must pin these; dev templates must omit all of _DEV_FORBIDDEN.
+# Enforced per-catalog-directory in load_templates_from_yaml. vllm_commit is not
+# prod-required (CNN/FORGE specs legitimately have none) but is dev-forbidden.
+_PROD_REQUIRED_FIELDS = ("tt_metal_commit", "version")
+_DEV_FORBIDDEN_FIELDS = ("tt_metal_commit", "vllm_commit", "version", "docker_image")
+
+
+def _validate_template_env_fields(template: Dict, env: str, path: Path) -> None:
+    """Enforce the prod/dev field contract on a raw template dict.
+
+    prod templates must define every field in _PROD_REQUIRED_FIELDS; dev
+    templates must define none of _DEV_FORBIDDEN_FIELDS (dev images are pinned
+    at runtime via --override-docker-image, never synthesized from the catalog).
+    Checked on the raw YAML dict so absence is distinguishable from a default.
+    """
+    weights = template.get("weights", ["<unknown>"])
+    if env == "prod":
+        missing = [f for f in _PROD_REQUIRED_FIELDS if template.get(f) is None]
+        if missing:
+            raise ValueError(f"{path}: prod template {weights} must define {missing}")
+    elif env == "dev":
+        present = [f for f in _DEV_FORBIDDEN_FIELDS if f in template]
+        if present:
+            raise ValueError(
+                f"{path}: dev template {weights} must not define {present} "
+                "(dev specs are pinned at runtime, not from the catalog)"
+            )
+
+
 def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if not data or "templates" not in data:
         raise ValueError(f"YAML file {path} is empty or missing 'templates' key")
+    # The catalog environment is the parent directory name (prod/ or dev/).
+    # Other callers (tests, ad-hoc paths) get no field enforcement.
+    env = path.parent.name
+    for template in data["templates"]:
+        _validate_template_env_fields(template, env, path)
     return [_build_template(t) for t in data["templates"]]
 
 
