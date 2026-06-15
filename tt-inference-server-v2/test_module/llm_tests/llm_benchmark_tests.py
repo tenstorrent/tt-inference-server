@@ -22,7 +22,6 @@ from llm_module import (
     AIPerfDriver,
     GenAIPerfDriver,
     GuideLLMDriver,
-    InferenceMaxDriver,
     LLMDriver,
     VLLMBenchDriver,
 )
@@ -33,17 +32,12 @@ from .llm_performance_tests import run_llm_performance
 
 logger = logging.getLogger(__name__)
 
-# Aliases match v1's --tools values; "genai" maps to the genai-perf driver.
-_VLLM_CLI_TOOLS = {"vllm", "inferencemax"}
-
 
 def _make_driver(tools: str, venv_python: Optional[Path]) -> LLMDriver:
     """Instantiate the driver for ``tools``, wiring its interpreter/binary."""
     py = Path(venv_python) if venv_python else Path(sys.executable)
     if tools == "vllm":
         return VLLMBenchDriver(vllm_binary=str(py.parent / "vllm"))
-    if tools == "inferencemax":
-        return InferenceMaxDriver(vllm_binary=str(py.parent / "vllm"))
     if tools == "aiperf":
         return AIPerfDriver(venv_python=py)
     if tools == "guidellm":
@@ -57,7 +51,7 @@ def _make_driver(tools: str, venv_python: Optional[Path]) -> LLMDriver:
         return GenAIPerfDriver()
     raise ValueError(
         f"Unknown LLM benchmark tool {tools!r}. Expected one of: "
-        "vllm, aiperf, genai, guidellm, inferencemax."
+        "vllm, aiperf, genai, guidellm."
     )
 
 

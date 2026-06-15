@@ -16,7 +16,6 @@ from test_module.llm_tests import llm_benchmark_tests as lbt
     "tools,expected_kind",
     [
         ("vllm", "vllm"),
-        ("inferencemax", "inferencex"),
         ("aiperf", "aiperf"),
         ("guidellm", "guidellm"),
         ("genai", "genai_perf"),

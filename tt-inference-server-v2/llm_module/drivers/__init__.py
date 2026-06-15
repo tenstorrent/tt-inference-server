@@ -13,7 +13,6 @@ from .agentic import (
 from .base import DriverResult, LLMDriver
 from .genai_perf import GenAIPerfDriver
 from .guidellm import GuideLLMDriver
-from .inferencex import InferenceMaxDriver
 from .vllm import VLLMBenchDriver
 
 __all__ = [
@@ -25,7 +24,6 @@ __all__ = [
     "PrefixCacheDriverResult",
     "GenAIPerfDriver",
     "GuideLLMDriver",
-    "InferenceMaxDriver",
     "SWEbenchAgenticDriver",
     "TerminalBenchAgenticDriver",
     "VLLMBenchDriver",

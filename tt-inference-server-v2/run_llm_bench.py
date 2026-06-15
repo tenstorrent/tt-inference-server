@@ -41,7 +41,6 @@ def _venv_type_for_tool(tools: str):
         "aiperf": WorkflowVenvType.V2_PREFIX_CACHE,  # already ships aiperf + v2 base
         "guidellm": WorkflowVenvType.V2_LLM_GUIDELLM,
         "vllm": WorkflowVenvType.V2_LLM_VLLM,
-        "inferencemax": WorkflowVenvType.V2_LLM_VLLM,
         "genai": WorkflowVenvType.V2_RUN_SCRIPT,  # genai-perf runs via Docker
         "genai_perf": WorkflowVenvType.V2_RUN_SCRIPT,
     }.get(tools, WorkflowVenvType.V2_LLM_VLLM)

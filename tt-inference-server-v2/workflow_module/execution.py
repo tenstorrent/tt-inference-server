@@ -98,7 +98,7 @@ class LLMBenchOptions:
     """LLM performance-benchmark knobs forwarded to ``BenchmarksWorkflow``.
 
     ``tools`` value selecting the perf-tool driver
-    (``vllm`` / ``aiperf`` / ``genai`` / ``guidellm`` / ``inferencemax``).
+    (``vllm`` / ``aiperf`` / ``genai`` / ``guidellm``).
     ``auth_token`` is the bearer token (minted JWT) sent to the server.
     Threaded through ``OrchestratorMetadata`` so ``run.py`` stays decoupled
     from ``llm_module``.
