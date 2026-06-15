@@ -333,9 +333,15 @@ templates:
   # == tt_symbiote RUNTIME_PINS["DotsOCRForCausalLM"]["tt_metal_commit"] ==
   tt_metal_commit: c09f09c35a1a59a428f0e1b5cdaa8fe59fb1b195
   # Tenstorrent vLLM fork commit compatible with the tt-metal commit above.
-  # TODO(validate): confirm against a built image; set to the vllm fork commit
-  # paired with tt-metal c09f09c3 in tt-metal's install-vllm-tt.sh era.
-  vllm_commit: 7678b70
+  # Pinned to the commit that adds tt_symbiote model registration to the
+  # `register_tt_models` vllm.general_plugins hook (branch
+  # adam/tt_symbiote-integration). That hook runs in EVERY process the `tt`
+  # platform loads — including the vLLM v1 engine-core subprocess — so the
+  # tt_symbiote multimodal class (with `_processor_factory`) is registered there,
+  # not just in the API-server parent. Without this commit the engine worker hits
+  # a MULTIMODAL_REGISTRY assertion on startup. Parent of this commit is 7678b70
+  # (origin/stable); the only delta is the registration block.
+  vllm_commit: cdb395febdc9caaeba6d82e283329366ac9c2d89
   device_model_specs:
     - device: T3K
       # S0 greedy-engine bridge serves one request at a time (the pipeline's DP

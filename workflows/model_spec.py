@@ -51,13 +51,24 @@ def generate_default_docker_link(
     vllm_commit: Optional[str],
     inference_engine: str = "",
     multihost: bool = False,
+    impl_id: str = "",
 ) -> str:
     _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit)
     if vllm_commit is not None:
-        if multihost:
-            _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-multihost-ubuntu-22.04-amd64"
-        else:
-            _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
+        # tt_symbiote-impl models are published to a dedicated image namespace
+        # (vllm-tt-metal-tt-symbiote-src-*), matching build_docker_images.py's
+        # get_image_tags. tt_transformers and other vLLM impls keep the shared
+        # vllm-tt-metal-src-* namespace.
+        _src_class = (
+            "vllm-tt-metal-tt-symbiote-src"
+            if impl_id == "tt_symbiote"
+            else "vllm-tt-metal-src"
+        )
+        _variant = "multihost" if multihost else "release"
+        _default_docker_repo = (
+            "ghcr.io/tenstorrent/tt-inference-server/"
+            f"{_src_class}-{_variant}-ubuntu-22.04-amd64"
+        )
     elif inference_engine == "forge":
         _default_docker_repo = "ghcr.io/tenstorrent/tt-media-inference-server-forge"
     else:
@@ -552,6 +563,7 @@ class ModelSpec:
                 self.vllm_commit,
                 inference_engine=self.inference_engine,
                 multihost=self.device_type.is_multihost(),
+                impl_id=self.impl.impl_id,
             )
             object.__setattr__(self, "docker_image", _default_docker_link)
 

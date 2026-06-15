@@ -586,6 +586,7 @@ def generate_model_page_group_page(
                         target_template.vllm_commit,
                         inference_engine=target_template.inference_engine,
                         multihost=is_multihost,
+                        impl_id=target_template.impl.impl_id,
                     )
                 )
                 lines.append("**docker run command**")
@@ -633,6 +634,7 @@ def generate_model_page_group_page(
                 target_template.vllm_commit,
                 inference_engine=target_template.inference_engine,
                 multihost=device.is_multihost(),
+                impl_id=target_template.impl.impl_id,
             )
 
         # Model Parameters table

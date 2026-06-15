@@ -2,6 +2,16 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+# tt_symbiote build variant of vllm.tt-metal.src.dev.Dockerfile.
+#
+# This image is dedicated to tt_symbiote-impl models. It is identical to the
+# tt_transformers (default) image EXCEPT that it ALWAYS installs the tt_symbiote
+# library (HuggingFace-shaped TTNN models) into the tt-metal venv. The default
+# dev Dockerfile is tt_transformers-only and must NOT install tt_symbiote.
+#
+# Selection between the two Dockerfiles is driven by build_docker_images.py based
+# on whether a tt_symbiote model maps to the (tt_metal, vllm) commit pair.
+
 # Optimized multi-stage build for significantly smaller runtime images
 ARG TT_METAL_DOCKERFILE_URL
 
@@ -18,6 +28,12 @@ ARG CONTAINER_APP_UID=1000
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
+# Clang version used to build the tt-metal Python venv. Must match a clang
+# toolchain present in the tt-metal base image (TT_METAL_DOCKERFILE_URL), which
+# varies by tt-metal commit: pre-bake bases (e.g. c09f09c3) ship clang-20, while
+# newer bake bases ship clang-17. Default 20 for the current dots.ocr pin;
+# override with --build-arg TT_METAL_CLANG_VERSION=<n> for other commits.
+ARG TT_METAL_CLANG_VERSION=20
 
 # Environment variables for build
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
@@ -82,7 +98,7 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && bash ./build_metal.sh \
-    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
+    && CXX=clang++-${TT_METAL_CLANG_VERSION} CC=clang-${TT_METAL_CLANG_VERSION} bash ./create_venv.sh \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
     && rm -rf ${TT_METAL_HOME}/.git"
@@ -125,6 +141,17 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 ARG APP_DIR="${HOME_DIR}/app"
+# tt_symbiote release installed --no-deps so it uses the source-built ttnn (from
+# TT_METAL_COMMIT_SHA_OR_TAG) instead of its PyPI ttnn pin. REQUIRED for this
+# tt_symbiote image (the build fails below if unset).
+ARG TT_SYMBIOTE_VERSION=""
+# Package index tt_symbiote is pulled from. Defaults to the production PyPI
+# index (tt_symbiote 0.1.4+ is published there). To install a pre-release from
+# TestPyPI for validation, override the build-arg:
+#     --build-arg TT_SYMBIOTE_INDEX_URL=https://test.pypi.org/simple/
+# Safe with --no-deps below: ONLY the tt_symbiote wheel is resolved from this
+# index; torch / transformers / ttnn come from the tt-metal venv, not here.
+ARG TT_SYMBIOTE_INDEX_URL="https://pypi.org/simple/"
 
 # IDENTICAL environment variables as builder stage
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
@@ -204,6 +231,60 @@ RUN cd ${PYTHON_ENV_DIR}/bin \
     && ln -s python3 python \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --no-cache-dir -r ${APP_DIR}/requirements.txt \
+    && uv cache clean" \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
+
+# Install tt_symbiote (HuggingFace-shaped TTNN model library) --no-deps so it
+# does NOT pull its pinned PyPI ttnn and instead uses the ttnn already built
+# from source at TT_METAL_COMMIT_SHA_OR_TAG.
+#
+# This is the tt_symbiote-only image, so TT_SYMBIOTE_VERSION is REQUIRED and the
+# build fails fast if it is unset. Pulled from TT_SYMBIOTE_INDEX_URL (defaults to
+# the production PyPI index; override to TestPyPI to validate a pre-release).
+# --no-deps guarantees only the tt_symbiote wheel is fetched from this index.
+RUN if [ -z "${TT_SYMBIOTE_VERSION}" ]; then \
+    echo "ERROR: TT_SYMBIOTE_VERSION build-arg is required for the tt_symbiote image" >&2; \
+    exit 1; \
+    fi \
+    && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && uv pip install --no-cache-dir --no-deps --index-url \"${TT_SYMBIOTE_INDEX_URL}\" tt_symbiote==${TT_SYMBIOTE_VERSION} \
+    && uv cache clean" \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
+
+# Install tt_symbiote's declared runtime dependencies, EXCLUDING ttnn. We install
+# tt_symbiote --no-deps above to protect the source-built ttnn (pinned to
+# TT_METAL_COMMIT_SHA_OR_TAG); without this step the tt-metal venv keeps its own
+# transformers (e.g. 4.57.x), but tt_symbiote requires a newer pin
+# (transformers 5.x exposes AutoModelForTextRecognition, used by dots.ocr).
+# Resolving deps from tt_symbiote's own metadata (instead of hardcoding pins)
+# keeps this version-agnostic across tt_symbiote releases. We skip:
+#   - ttnn        : keep the source build; never let PyPI ttnn clobber it.
+#   - extra-gated : deps behind `; extra == "..."` markers (dev/test tooling
+#                   like pytest/black/ruff) are not needed at runtime.
+# Single `python -c` (no heredoc) to avoid Dockerfile RUN heredoc parsing issues.
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && python -c 'import re; from importlib.metadata import requires; \
+reqs = requires(\"tt_symbiote\") or []; \
+keep = [p[0].strip() for p in (r.split(\";\", 1) for r in reqs) \
+        if (\"extra\" not in (p[1] if len(p) > 1 else \"\")) \
+        and re.split(r\"[<>=!~ (\\[]\", p[0].strip(), 1)[0].strip().lower() != \"ttnn\"]; \
+open(\"/tmp/ttsym_reqs.txt\", \"w\").write(\"\\n\".join(keep) + \"\\n\")' \
+    && uv pip install --no-cache-dir -r /tmp/ttsym_reqs.txt \
+    && rm -f /tmp/ttsym_reqs.txt \
+    && uv cache clean" \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
+
+# Cap the FastAPI/Starlette web stack to a version compatible with vLLM's
+# prometheus-fastapi-instrumentator. vLLM only sets a LOWER bound
+# (fastapi[standard]>=0.115.0), so a fresh build floats up to FastAPI 0.137 /
+# Starlette 1.x, whose `_IncludedRouter` route objects break the instrumentator
+# (AttributeError: '_IncludedRouter' object has no attribute 'path'), which 500s
+# every API request — including /health. Capping to the 0.115 line pulls
+# Starlette 0.46.x, which the instrumentator handles. NOTE: this is vLLM web-stack
+# drift, not tt_symbiote-specific; the tt_transformers (default) image has the
+# same latent issue and likely needs the same cap (tracked as follow-up).
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && uv pip install --no-cache-dir 'fastapi>=0.115,<0.116' \
     && uv cache clean" \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
 
