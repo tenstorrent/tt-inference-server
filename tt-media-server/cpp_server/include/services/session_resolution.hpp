@@ -62,7 +62,8 @@ struct SlotCopyPlan {
 };
 
 // Pick and lock a source slot for KV-copy allocation, if a candidate is worth
-// copying. The caller owns unlocking slotToCopyFrom after createSession returns.
+// copying. The caller owns unlocking slotToCopyFrom after createSession
+// returns.
 std::optional<SlotCopyPlan> prepareSlotCopy(
     SessionManager& sessionManager,
     const std::vector<SessionManager::Candidate>& candidates, uint32_t taskId,
