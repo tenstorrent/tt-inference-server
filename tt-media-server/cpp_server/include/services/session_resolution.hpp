@@ -54,7 +54,8 @@ inline uint32_t applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
     req.kv_position_id = matchedTokens - 1;
   }
 
-  tt::utils::tokenizers::refreshStartsInThinking(req, /*initial_in_thinking=*/false);
+  tt::utils::tokenizers::refreshStartsInThinking(req,
+                                                 /*initial_in_thinking=*/false);
 
   return matchedTokens;
 }

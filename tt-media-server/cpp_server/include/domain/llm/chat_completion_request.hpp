@@ -18,8 +18,8 @@
 #include "domain/llm/llm_request.hpp"
 #include "domain/response_format.hpp"
 #include "utils/logger.hpp"
-#include "utils/tokenizers/tokenizer.hpp"
 #include "utils/tokenizers/thinking_phase.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::domain::llm {
 

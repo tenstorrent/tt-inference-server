@@ -43,11 +43,9 @@ inline bool computeThinkingPhaseFromTokens(bool initial_in_thinking,
 inline bool computeStartsInThinkingForDecodePrompt(
     std::span<const int> tokens, bool initial_in_thinking = false) {
   const auto [think_open, think_end] = thinkTokenIds();
-  const size_t clamped =
-      std::min(tokens.size(), tt::config::maxISL());
-  return computeThinkingPhaseFromTokens(initial_in_thinking,
-                                        tokens.subspan(0, clamped), think_open,
-                                        think_end);
+  const size_t clamped = std::min(tokens.size(), tt::config::maxISL());
+  return computeThinkingPhaseFromTokens(
+      initial_in_thinking, tokens.subspan(0, clamped), think_open, think_end);
 }
 
 // Recompute LLMRequest::starts_in_thinking from the current prompt token
@@ -57,7 +55,7 @@ inline void refreshStartsInThinking(tt::domain::llm::LLMRequest& req,
   if (auto* tokens = std::get_if<std::vector<int>>(&req.prompt)) {
     req.starts_in_thinking = computeStartsInThinkingForDecodePrompt(
         std::span<const int>(*tokens), initial_in_thinking);
-        return;
+    return;
   }
   req.starts_in_thinking = false;
 }

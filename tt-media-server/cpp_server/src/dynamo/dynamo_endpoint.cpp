@@ -30,8 +30,8 @@
 #include "services/llm_service.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
-#include "utils/tokenizers/tokenizer.hpp"
 #include "utils/tokenizers/thinking_phase.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::dynamo {
 

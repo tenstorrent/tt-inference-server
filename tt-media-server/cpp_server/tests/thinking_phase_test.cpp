@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+#include "utils/tokenizers/thinking_phase.hpp"
+
 #include <gtest/gtest.h>
 
 #include <span>
 #include <vector>
 
 #include "domain/llm/llm_request.hpp"
-#include "utils/tokenizers/thinking_phase.hpp"
 
 namespace tt::utils::tokenizers {
 namespace {
@@ -30,8 +31,8 @@ TEST(ThinkingPhaseTest, ClosedBlockEndsNonThinking) {
 
 TEST(ThinkingPhaseTest, ResumeInsideBlockPreservedWhenNoMarker) {
   const std::vector<int> delta = {5, 6, 7};
-  EXPECT_TRUE(computeThinkingPhaseFromTokens(
-      true, std::span<const int>(delta), kThinkOpen, kThinkClose));
+  EXPECT_TRUE(computeThinkingPhaseFromTokens(true, std::span<const int>(delta),
+                                             kThinkOpen, kThinkClose));
 }
 
 TEST(ThinkingPhaseTest, RefreshStartsInThinkingOnLLMRequest) {
