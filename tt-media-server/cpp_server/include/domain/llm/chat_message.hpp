@@ -8,7 +8,6 @@
 #include <optional>
 #include <string>
 
-
 namespace tt::domain::llm {
 
 /** OpenAI chat message: role + content (content may be string or array of

@@ -299,16 +299,15 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
             }
           };
 
-        // Regular content.
-        // Always emit chunks with token_id for Session hash tracking, even if
-        // decoded text is empty. The controller callback uses token_id to
-        // accumulate hashes; skipping here breaks prefix cache.
-        auto response = buildStreamChunk(token, delta, stopTokenSet);
-        entry->callback(response, isFinal);
-        if (isFinal) {
-          captureFinalFinishReason(response);
-        }
-      
+      // Regular content.
+      // Always emit chunks with token_id for Session hash tracking, even if
+      // decoded text is empty. The controller callback uses token_id to
+      // accumulate hashes; skipping here breaks prefix cache.
+      auto response = buildStreamChunk(token, delta, stopTokenSet);
+      entry->callback(response, isFinal);
+      if (isFinal) {
+        captureFinalFinishReason(response);
+      }
 
       // Cleanup at finalization
       if (isFinal) {

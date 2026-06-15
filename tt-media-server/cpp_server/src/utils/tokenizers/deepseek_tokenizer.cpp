@@ -17,8 +17,8 @@ static const char* dsAssistantTag =
 
 std::string DeepseekTokenizer::applyChatTemplate(
     const std::vector<tt::domain::llm::ChatMessage>& messages,
-    bool addGenerationPrompt,
-    bool enableReasoning, bool skipApplyChatTemplate) const {
+    bool addGenerationPrompt, bool enableReasoning,
+    bool skipApplyChatTemplate) const {
   std::ostringstream out;
 
   if (skipApplyChatTemplate) {
@@ -34,21 +34,16 @@ std::string DeepseekTokenizer::applyChatTemplate(
     if (m.role == "system") out << m.content;
   }
 
-  
-
   for (const auto& m : messages) {
     if (m.role == "system") continue;
     if (m.role == "user") {
       out << dsUserTag << m.content;
     } else if (m.role == "assistant") {
-   
-      
-        out << dsAssistantTag << m.content;
-        if (cfg_.add_eos_token) out << cfg_.eos_token;
-      
+      out << dsAssistantTag << m.content;
+      if (cfg_.add_eos_token) out << cfg_.eos_token;
     }
   }
- 
+
   if (addGenerationPrompt) {
     out << dsAssistantTag;
     if (!enableReasoning) {

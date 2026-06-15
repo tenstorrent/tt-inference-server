@@ -17,8 +17,8 @@ static const char* llamaSystemPreamble =
 
 std::string LlamaTokenizer::applyChatTemplate(
     const std::vector<tt::domain::llm::ChatMessage>& messages,
-    bool addGenerationPrompt,
-    [[maybe_unused]] bool enableReasoning, bool skipApplyChatTemplate) const {
+    bool addGenerationPrompt, [[maybe_unused]] bool enableReasoning,
+    bool skipApplyChatTemplate) const {
   std::ostringstream out;
 
   if (skipApplyChatTemplate) {
@@ -45,13 +45,12 @@ std::string LlamaTokenizer::applyChatTemplate(
 
   out << llamaSystemPreamble << systemContent << llamaEot;
 
-
   // Process remaining messages
   for (const auto& m : filteredMessages) {
-      // Regular user/assistant message
-      std::string role = m.role.empty() ? "user" : m.role;
-      out << llamaHeaderStart << role << llamaHeaderEnd << "\n\n";
-      out << m.content << llamaEot;
+    // Regular user/assistant message
+    std::string role = m.role.empty() ? "user" : m.role;
+    out << llamaHeaderStart << role << llamaHeaderEnd << "\n\n";
+    out << m.content << llamaEot;
   }
 
   // Add generation prompt

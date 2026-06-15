@@ -128,8 +128,7 @@ class Tokenizer {
    */
   virtual std::string applyChatTemplate(
       const std::vector<tt::domain::llm::ChatMessage>& messages,
-      bool addGenerationPrompt = true,
-      bool enableReasoning = true,
+      bool addGenerationPrompt = true, bool enableReasoning = true,
       bool skipApplyChatTemplate = false) const = 0;
 
   /**

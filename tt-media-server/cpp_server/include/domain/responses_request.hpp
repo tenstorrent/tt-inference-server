@@ -121,7 +121,6 @@ struct ResponsesRequest : BaseRequest {
       }
     }
 
-
     if (json.isMember("previous_response_id") &&
         !json["previous_response_id"].isNull())
       req.previous_response_id =
@@ -360,8 +359,8 @@ struct ResponsesRequest : BaseRequest {
     LLMRequest out(task_id);
     out.model = model;
     const auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
-    auto promptStr = tokenizer.applyChatTemplate(toMessages(), true,
-                                                 true, false);
+    auto promptStr =
+        tokenizer.applyChatTemplate(toMessages(), true, true, false);
     auto promptTokens = tokenizer.encode(promptStr);
     out.full_prompt_tokens_count = static_cast<int>(promptTokens.size());
     out.prompt_tokens_count = out.full_prompt_tokens_count;

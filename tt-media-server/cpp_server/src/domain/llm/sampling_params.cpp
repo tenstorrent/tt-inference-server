@@ -124,7 +124,6 @@ void SamplingParams::serialize(std::ostream& os) const {
     writeScalar(os, len);
     os.write(json_schema_str->data(), static_cast<std::streamsize>(len));
   }
-
 }
 
 std::unique_ptr<SamplingParams> SamplingParams::deserialize(std::istream& is) {

@@ -59,7 +59,6 @@ class NonStreamResponseWriter : public ResponseWriter {
   NonStreamResponseWriter(ResponseWriterParams params,
                           HttpCallback httpCallback, ResponseBuilder builder);
 
-
   HttpCallback httpCallback;
   ResponseBuilder builder;
 

@@ -9,7 +9,6 @@
 #include <stdexcept>
 #include <unordered_map>
 
-
 namespace tt::runners {
 
 using SamplingParams = tt::domain::llm::SamplingParams;
