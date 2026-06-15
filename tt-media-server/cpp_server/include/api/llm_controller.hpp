@@ -21,7 +21,7 @@
 namespace tt::api {
 
 /**
- * LLM API Controller - OpenAI-compatible chat completions, responses, and
+ * LLM API Controller - OpenAI-compatible chat completions and
  * session-management endpoints. Similar to Python's open_ai_api/llm.py router.
  */
 class LLMController : public drogon::HttpController<LLMController> {
@@ -29,7 +29,6 @@ class LLMController : public drogon::HttpController<LLMController> {
   METHOD_LIST_BEGIN
   ADD_METHOD_TO(LLMController::chatCompletions, "/v1/chat/completions",
                 drogon::Post);
-  ADD_METHOD_TO(LLMController::responses, "/v1/responses", drogon::Post);
   ADD_METHOD_TO(LLMController::models, "/v1/models", drogon::Get);
   METHOD_LIST_END
 
@@ -52,14 +51,6 @@ class LLMController : public drogon::HttpController<LLMController> {
       const drogon::HttpRequestPtr& req,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
-  /**
-   * POST /v1/responses
-   * OpenAI-compatible responses endpoint.
-   */
-  void responses(
-      const drogon::HttpRequestPtr& req,
-      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
-
  private:
   std::shared_ptr<services::LLMService> service;
   std::shared_ptr<services::LLMPipeline> pipeline;
@@ -77,9 +68,7 @@ class LLMController : public drogon::HttpController<LLMController> {
   /**
    * Handle non-streaming responses. Drives the same streaming producer as
    * handleStreaming and accumulates chunks into a single JSON body, so
-   * disaggregated and prefill-on-decode routing is honored identically. The
-   * `builder` converts the accumulated LLMResponse into the wire format
-   * (chat-completion JSON by default; Responses API JSON for /v1/responses).
+   * disaggregated and prefill-on-decode routing is honored identically.
    */
   void handleNonStreaming(
       std::shared_ptr<LLMRequest> reqPtr,
