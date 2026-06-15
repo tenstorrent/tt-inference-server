@@ -77,6 +77,14 @@ std::string visibleDevicesForWorker(size_t workerIndex);
 /** Model type derived from MODEL. */
 ModelType modelType();
 
+/**
+ * Whether the current model should sample only while in the reasoning/thinking
+ * phase and fall back to greedy (argmax) decoding outside it. DeepSeek behaves
+ * this way; most models sample in both phases. Consumed by the blaze runner
+ * when building per-request sampling params.
+ */
+bool sampleOnlyInReasoning();
+
 /** LLM mode from LLM_MODE. Default: defaults::LLM_MODE ("regular"). */
 LLMMode llmMode();
 
