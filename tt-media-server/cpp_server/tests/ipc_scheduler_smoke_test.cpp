@@ -45,7 +45,7 @@ class IpcSchedulerSmokeTest : public ::testing::Test {
   void SetUp() override {
     // Generate unique queue name for this test run
     queueName = "tt_ipc_scheduler_smoke_test_" + std::to_string(::getpid()) +
-                 "_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+                "_" + std::to_string(reinterpret_cast<uintptr_t>(this));
     // Clean up any leftover queue from a previous failed run
     ipc::message_queue::remove(queueName.c_str());
   }
@@ -60,8 +60,8 @@ TEST_F(IpcSchedulerSmokeTest, TwoProcessesCommmunicateThroughTaskQueue) {
   using Config = tt::config::LLMConfig;
 
   // Create the IPC queue (simulates the main server)
-  ipc::message_queue rawQueue(ipc::create_only, queueName.c_str(),
-                              MAX_NUM_MSGS, MAX_MSG_SIZE);
+  ipc::message_queue rawQueue(ipc::create_only, queueName.c_str(), MAX_NUM_MSGS,
+                              MAX_MSG_SIZE);
 
   // Build two sequences with known values
   uint32_t seq1Id = tt::utils::TaskIDGenerator::generate();

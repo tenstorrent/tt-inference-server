@@ -449,8 +449,7 @@ TEST_P(ChatTemplateToolsTest, EmptyToolsVector) {
   messages.push_back(msg);
 
   std::vector<Tool> emptyTools;
-  std::string result =
-      tokenizer->applyChatTemplate(messages, true, emptyTools);
+  std::string result = tokenizer->applyChatTemplate(messages, true, emptyTools);
 
   EXPECT_FALSE(result.empty());
 }
