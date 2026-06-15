@@ -661,6 +661,27 @@ def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
     # runpy uses sys.argv, rebuild it with the merged vLLM args.
     vllm_argv = [sys.argv[0]]
     remaining_default_vllm_args = dict(default_vllm_args)
+
+    # Local-server path remap: the model spec's `vllm_args.model` is a container
+    # bind-mount path (e.g. /home/container_app_user/cache_root/weights/<model>)
+    # that only exists inside the docker image. When running the LOCAL server,
+    # the weights resolver sets MODEL_WEIGHTS_DIR to the real host path; if the
+    # spec's `model` path does not exist locally, remap it to MODEL_WEIGHTS_DIR
+    # so vLLM can find config.json + weights. `--served-model-name` is unaffected.
+    spec_model = remaining_default_vllm_args.get("model")
+    model_weights_dir = os.getenv("MODEL_WEIGHTS_DIR")
+    if (
+        spec_model is not None
+        and model_weights_dir
+        and not Path(str(spec_model)).exists()
+        and Path(model_weights_dir).exists()
+    ):
+        logger.info(
+            f"Remapping vLLM --model from non-existent container path '{spec_model}' "
+            f"to local MODEL_WEIGHTS_DIR '{model_weights_dir}'"
+        )
+        remaining_default_vllm_args["model"] = model_weights_dir
+
     default_arg_name_by_normalized_name = {
         _normalize_vllm_arg_name(arg_name): arg_name
         for arg_name in remaining_default_vllm_args
