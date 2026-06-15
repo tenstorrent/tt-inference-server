@@ -9,7 +9,6 @@
 #include <memory>
 #include <sstream>
 #include <string>
-#include <vector>
 
 #include "api/response_writer/response_writer.hpp"
 
@@ -60,18 +59,10 @@ class NonStreamResponseWriter : public ResponseWriter {
   NonStreamResponseWriter(ResponseWriterParams params,
                           HttpCallback httpCallback, ResponseBuilder builder);
 
-  // Accumulated tool call data from streaming deltas
-  struct AccumulatedToolCall {
-    std::string id;
-    std::string name;
-    std::ostringstream arguments;
-  };
-
   HttpCallback httpCallback;
   ResponseBuilder builder;
 
   std::ostringstream accumulatedAnswer;
-  std::vector<AccumulatedToolCall> accumulatedToolCalls;
   std::string finishReason = "stop";
 };
 

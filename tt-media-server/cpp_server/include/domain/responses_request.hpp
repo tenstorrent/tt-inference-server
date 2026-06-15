@@ -32,12 +32,10 @@ struct ResponsesRequest : BaseRequest {
 
   std::optional<std::string> instructions;
   std::optional<int> max_output_tokens;
-  std::optional<int> max_tool_calls;
   Json::Value metadata = Json::Value(Json::objectValue);
 
   std::optional<std::string> model;
   std::map<std::string, double> logit_bias;
-  std::optional<bool> parallel_tool_calls;
 
   std::optional<std::string> previous_response_id;
   Json::Value prompt;
@@ -49,8 +47,6 @@ struct ResponsesRequest : BaseRequest {
 
   std::optional<float> temperature;
   Json::Value text;
-  Json::Value tool_choice;
-  Json::Value tools = Json::Value(Json::arrayValue);
 
   std::optional<int> top_logprobs;
   std::optional<float> top_p;
@@ -108,8 +104,6 @@ struct ResponsesRequest : BaseRequest {
         !json["max_output_tokens"].isNull())
       req.max_output_tokens =
           getInt(json["max_output_tokens"], "max_output_tokens");
-    if (json.isMember("max_tool_calls") && !json["max_tool_calls"].isNull())
-      req.max_tool_calls = getInt(json["max_tool_calls"], "max_tool_calls");
 
     if (json.isMember("metadata") && json["metadata"].isObject())
       req.metadata = json["metadata"];
@@ -126,11 +120,6 @@ struct ResponsesRequest : BaseRequest {
         req.logit_bias[name] = v.asDouble();
       }
     }
-
-    if (json.isMember("parallel_tool_calls") &&
-        !json["parallel_tool_calls"].isNull())
-      req.parallel_tool_calls =
-          getBool(json["parallel_tool_calls"], "parallel_tool_calls");
 
     if (json.isMember("previous_response_id") &&
         !json["previous_response_id"].isNull())
@@ -153,10 +142,6 @@ struct ResponsesRequest : BaseRequest {
       req.temperature = getFloat(json["temperature"], "temperature");
     if (json.isMember("text") && !json["text"].isNull())
       req.text = json["text"];
-    if (json.isMember("tool_choice") && !json["tool_choice"].isNull())
-      req.tool_choice = json["tool_choice"];
-    if (json.isMember("tools")) req.tools = json["tools"];
-
     if (json.isMember("top_logprobs") && !json["top_logprobs"].isNull())
       req.top_logprobs = getInt(json["top_logprobs"], "top_logprobs");
     if (json.isMember("top_p") && !json["top_p"].isNull())
@@ -264,7 +249,6 @@ struct ResponsesRequest : BaseRequest {
     if (instructions.has_value()) j["instructions"] = *instructions;
     if (max_output_tokens.has_value())
       j["max_output_tokens"] = *max_output_tokens;
-    if (max_tool_calls.has_value()) j["max_tool_calls"] = *max_tool_calls;
     if (!metadata.isNull() && !metadata.empty()) j["metadata"] = metadata;
 
     if (model.has_value()) j["model"] = *model;
@@ -273,9 +257,6 @@ struct ResponsesRequest : BaseRequest {
       for (const auto& [k, v] : logit_bias) lb[k] = v;
       j["logit_bias"] = std::move(lb);
     }
-
-    if (parallel_tool_calls.has_value())
-      j["parallel_tool_calls"] = *parallel_tool_calls;
     if (previous_response_id.has_value())
       j["previous_response_id"] = *previous_response_id;
     if (!prompt.isNull()) j["prompt"] = prompt;
@@ -287,8 +268,6 @@ struct ResponsesRequest : BaseRequest {
 
     if (temperature.has_value()) j["temperature"] = *temperature;
     if (!text.isNull()) j["text"] = text;
-    if (!tool_choice.isNull()) j["tool_choice"] = tool_choice;
-    j["tools"] = tools;
 
     if (top_logprobs.has_value()) j["top_logprobs"] = *top_logprobs;
     if (top_p.has_value()) j["top_p"] = *top_p;
@@ -380,8 +359,8 @@ struct ResponsesRequest : BaseRequest {
     LLMRequest out(task_id);
     out.model = model;
     const auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
-    auto promptStr = tokenizer.applyChatTemplate(toMessages(), true,
-                                                 std::nullopt, true, false);
+    auto promptStr =
+        tokenizer.applyChatTemplate(toMessages(), true, true, false);
     auto promptTokens = tokenizer.encode(promptStr);
     out.full_prompt_tokens_count = static_cast<int>(promptTokens.size());
     out.prompt_tokens_count = out.full_prompt_tokens_count;
