@@ -16,6 +16,7 @@
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
+#include "services/session_resolution.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/conversation_hasher.hpp"
 #include "utils/logger.hpp"
@@ -90,25 +91,6 @@ tt::utils::PrefixCachingInfo computeRoutingInfo(
     return info;
   }
   return {};
-}
-
-/**
- * Trim the first `matchedTokens` from the prompt token vector so the worker
- * only prefills the uncached suffix. Expects prompt to already be a
- * vector<int> at this point. No-op if matchedTokens >= prompt size.
- */
-void applyDeltaPrompt(tt::domain::llm::LLMRequest& req, uint32_t matchedTokens,
-                      bool force = false) {
-  if (!force && tt::config::llmMode() != tt::config::LLMMode::REGULAR) {
-    return;
-  }
-  auto& tokens = std::get<std::vector<int>>(req.prompt);
-  const size_t skip = static_cast<size_t>(matchedTokens);
-  if (skip >= tokens.size()) {
-    return;
-  }
-  tokens.erase(tokens.begin(), tokens.begin() + static_cast<ptrdiff_t>(skip));
-  req.prompt_tokens_count = static_cast<int>(tokens.size());
 }
 
 /**
@@ -205,7 +187,10 @@ void LLMPipeline::resolveSession(
             sessionManager_->computeMatchedTokens(acquired->sessionId,
                                                   routingInfo.blocks);
         req->kv_position_id = matchedTokens - 1 + thinkTokens;
-        applyDeltaPrompt(*req, matchedTokens);
+        session_resolution::applyDeltaPrompt(*req, matchedTokens,
+                                             {.skipUnlessRegularMode = true,
+                                              .setKvPositionId = false,
+                                              .logPrefix = {}});
         TT_LOG_INFO(
             "[LLMPipeline] Response-id delta taskId={} matchedTokens={} "
             "thinkTokens={} deltaTokens={}",
@@ -274,8 +259,12 @@ void LLMPipeline::resolveSession(
         req->continuation = true;
         // kv_position_id accounts for both non-thinking tokens (matched) and
         // thinking tokens (accumulated in cache but not in hash)
-        req->kv_position_id = --acquired->numberOfMatchedTokens +
-                              acquired->accumulatedThinkTokens;
+        const uint32_t deltaMatchedTokens =
+            acquired->numberOfMatchedTokens > 0
+                ? acquired->numberOfMatchedTokens - 1
+                : 0;
+        req->kv_position_id =
+            deltaMatchedTokens + acquired->accumulatedThinkTokens;
         req->accumulated_think_tokens =
             static_cast<int>(acquired->accumulatedThinkTokens);
 
@@ -283,7 +272,10 @@ void LLMPipeline::resolveSession(
         if (auto* p = std::get_if<std::vector<int>>(&req->prompt)) {
           fullPrompt = *p;
         }
-        applyDeltaPrompt(*req, acquired->numberOfMatchedTokens);
+        session_resolution::applyDeltaPrompt(*req, deltaMatchedTokens,
+                                             {.skipUnlessRegularMode = true,
+                                              .setKvPositionId = false,
+                                              .logPrefix = {}});
 
         if (!fullPrompt.empty()) {
           req->session->initTokenAccumulator(
@@ -323,31 +315,16 @@ void LLMPipeline::resolveSession(
 
   // Layer 2: Allocate a new session. Async — onCompletion runs on `loop`.
   // Before allocating, check if there's a candidate slot worth copying from.
-  std::optional<uint32_t> slotToCopyFrom;
-  uint32_t copyMatchedTokens = 0;
-  if (acquired.has_value() && !acquired->candidatesList.empty()) {
-    auto copyCandidate =
-        sessionManager_->findASlotToCopyFrom(acquired->candidatesList);
-    if (copyCandidate.has_value()) {
-      uint32_t sourceSlot =
-          sessionManager_->getSlotIdBySessionId(copyCandidate->sessionId);
-      if (sourceSlot != tt::domain::INVALID_SLOT_ID) {
-        sessionManager_->lockSlot(sourceSlot);
-        slotToCopyFrom = sourceSlot;
-        const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
-        const size_t blockSize = tt::config::kvCacheBlockSize();
-        copyMatchedTokens = static_cast<uint32_t>(
-            firstBlockSize +
-            (copyCandidate->matchedBlocks > 1
-                 ? (copyCandidate->matchedBlocks - 1) * blockSize
-                 : 0));
-        TT_LOG_INFO(
-            "[LLMPipeline] Found slot to copy from: slotId={} "
-            "matchedTokens={} for taskId={}",
-            sourceSlot, copyMatchedTokens, req->task_id);
-      }
-    }
-  }
+  auto copyPlan = acquired.has_value()
+                      ? session_resolution::prepareSlotCopy(
+                            *sessionManager_, acquired->candidatesList,
+                            req->task_id, "[LLMPipeline]")
+                      : std::nullopt;
+  std::optional<uint32_t> slotToCopyFrom =
+      copyPlan.has_value() ? std::make_optional(copyPlan->slotToCopyFrom)
+                           : std::nullopt;
+  uint32_t copyMatchedTokens =
+      copyPlan.has_value() ? copyPlan->matchedTokens : 0;
 
   // Capture `tCreateStart` so the onCompletion callback can report end-to-end
   // createSession latency (submit → completion). Under contention this gap
@@ -394,11 +371,16 @@ void LLMPipeline::resolveSession(
         if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
           req->continuation = true;
           req->kv_position_id = copyMatchedTokens - 1;
-          applyDeltaPrompt(*req, copyMatchedTokens);
+          session_resolution::applyDeltaPrompt(*req, copyMatchedTokens,
+                                               {.skipUnlessRegularMode = true,
+                                                .setKvPositionId = false,
+                                                .logPrefix = {}});
         } else {
           req->continuation = false;
         }
 
+        // slotToCopyFrom requests the KV copy; this registers the new session
+        // under the full request prefix so future lookups can find it.
         mgr->registerPrefixHash(session.getSessionId(), routingInfo.blocks);
         if (!fullPrompt.empty()) {
           req->session->initTokenAccumulator(
@@ -455,7 +437,7 @@ void LLMPipeline::dispatchGeneration(
             static_cast<uint32_t>(request.accumulated_think_tokens);
         const auto fullPromptTokens =
             std::get<std::vector<int>>(request.prompt).size();
-        applyDeltaPrompt(request, matchedTokens, /*force=*/true);
+        session_resolution::applyDeltaPrompt(request, matchedTokens);
         reusedPrefixTokens =
             static_cast<int>(fullPromptTokens -
                              std::get<std::vector<int>>(request.prompt).size());

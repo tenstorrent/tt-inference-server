@@ -14,7 +14,6 @@
 #include <thread>
 #include <vector>
 
-#include "gateway/affinity_cache.hpp"
 #include "gateway/dispatcher.hpp"
 #include "gateway/gateway_health.hpp"
 #include "gateway/gateway_health_server.hpp"
@@ -319,7 +318,6 @@ int main(int argc, char** argv) {
   tt::gateway::GatewayHealthServer healthServer;
 
   tt::gateway::PrefillRegistry registry;
-  tt::gateway::AffinityCache affinity;
 
   // Decode-facing: gateway listens, decode dials in (only 1 decode connection).
   tt::sockets::SocketManager decodeSm;
@@ -426,7 +424,7 @@ int main(int argc, char** argv) {
       cfg.requestTimeout, cfg.timeoutWindow, cfg.timeoutCooldown,
       cfg.timeoutThreshold};
   dispatcherPtr = std::make_unique<tt::gateway::Dispatcher>(
-      registry, affinity, std::move(senders), dispatcherOptions);
+      registry, std::move(senders), dispatcherOptions);
 
   registry.setOnPrefillDown([&dispatcherPtr](const std::string& id) {
     dispatcherPtr->onPrefillDown(id);
@@ -517,10 +515,15 @@ int main(int argc, char** argv) {
   }
 
   std::jthread metricsSnapshotThread(
-      [&registry, &affinity, &metrics](std::stop_token stopToken) {
+      [&registry, &metrics](std::stop_token stopToken) {
         while (!stopToken.stop_requested()) {
-          metrics.setPrefillSnapshots(buildPrefillMetrics(registry));
-          metrics.setRoutingTableSize(affinity.size());
+          const auto snapshots = buildPrefillMetrics(registry);
+          size_t cachedBlocks = 0;
+          for (const auto& snapshot : snapshots) {
+            cachedBlocks += snapshot.cached_blocks;
+          }
+          metrics.setPrefillSnapshots(snapshots);
+          metrics.setRoutingTableSize(cachedBlocks);
           std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
       });
