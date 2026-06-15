@@ -92,7 +92,6 @@ class GenAIPerfDriver(LLMDriver):
             "--tokenizer", server.tokenizer,
             "--endpoint-type", "chat",
             "--streaming",
-            "--service-kind", "openai",
             "--url", url,
             "--concurrency", str(config.max_concurrency),
             "--num-prompts", str(config.num_prompts),

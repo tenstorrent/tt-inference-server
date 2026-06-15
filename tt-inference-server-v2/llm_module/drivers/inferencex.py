@@ -2,14 +2,21 @@
 #
 # SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
-"""InferenceMax driver."""
+"""InferenceMax driver.
+
+Runs the vLLM serve benchmark via the ``vllm bench serve`` CLI(``benchmark_script = venv/bin/vllm`` in
+``benchmarking/run_benchmarks.py``). The standalone ``benchmark_serving.py``
+is just the un-packaged form of this subcommand and emits the identical flat
+JSON the :class:`InferenceMaxParser` reads. Kept distinct from the ``vllm``
+driver only by its ``inferencex`` kind and ``inferencex_*.json`` filename.
+"""
 
 from __future__ import annotations
 
+import json
 import logging
-import sys
+import shutil
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from ..config import DriverContext, LLMRunConfig, ServerConnection
@@ -24,13 +31,8 @@ class InferenceMaxDriver(LLMDriver):
     name = "inferencex"
     _parser = InferenceMaxParser()
 
-    def __init__(
-        self,
-        benchmark_script: Path,
-        venv_python: Optional[Path] = None,
-    ) -> None:
-        self.benchmark_script = Path(benchmark_script)
-        self.venv_python = Path(venv_python) if venv_python else Path(sys.executable)
+    def __init__(self, vllm_binary: Optional[str] = None) -> None:
+        self.vllm_binary = vllm_binary or shutil.which("vllm") or "vllm"
 
     def run(
         self,
@@ -47,12 +49,20 @@ class InferenceMaxDriver(LLMDriver):
         )
 
         cmd = [
-            str(self.venv_python),
-            str(self.benchmark_script),
+            str(self.vllm_binary),
+            "bench",
+            "serve",
             "--backend",
             "openai-chat",
             "--endpoint",
             "/v1/chat/completions",
+            "--extra-body",
+            json.dumps(
+                {
+                    "truncate_prompt_tokens": str(config.isl),
+                    "max_tokens": int(config.osl),
+                }
+            ),
             "--model",
             server.model,
             "--host",

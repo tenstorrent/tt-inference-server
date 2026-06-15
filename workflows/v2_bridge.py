@@ -71,6 +71,18 @@ def _is_prefix_cache_run(wf, runtime_config) -> bool:
     )
 
 
+def _is_llm_benchmark_run(wf, model_spec, runtime_config) -> bool:
+    """Any LLM model + ``--workflow benchmarks`` routes to v2's ``llm_module``;
+    the ``--tools`` value selects the driver. The prefix-cache variant has
+    its own dispatch and is handled separately.
+    """
+    return (
+        wf == WorkflowType.BENCHMARKS
+        and model_spec.model_type == ModelType.LLM
+        and not _is_prefix_cache_run(wf, runtime_config)
+    )
+
+
 def can_route_to_v2(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
     # Agentic evals, serving-bench benchmark suites, and the prefix-cache
@@ -79,6 +91,8 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
     if wf in (WorkflowType.AGENTIC, WorkflowType.SERVING_BENCH) or _is_prefix_cache_run(
         wf, runtime_config
     ):
+        return True
+    if _is_llm_benchmark_run(wf, model_spec, runtime_config):
         return True
     if not is_v2_routed_model(model_spec):
         return False
@@ -115,6 +129,11 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
             v2_dir, model_spec, runtime_config, json_fpath, output_dir
         )
         delegate_desc = "prefix-cache (run_prefix_cache.py)"
+    elif _is_llm_benchmark_run(wf, model_spec, runtime_config):
+        cmd = _build_llm_bench_cmd(
+            v2_dir, model_spec, runtime_config, json_fpath, output_dir
+        )
+        delegate_desc = "llm-bench (run_llm_bench.py)"
     else:
         v2_run_py = v2_dir / "run.py"
         if not v2_run_py.is_file():
@@ -230,6 +249,18 @@ def _build_prefix_cache_cmd(v2_dir, model_spec, runtime_config, json_fpath, outp
     _extend_if_set(cmd, "--prefix-cache-trace", runtime_config.prefix_cache_trace)
     # run.py reads $JWT_SECRET when --jwt-secret is omitted; only forward an
     # explicit value so the env fallback still works.
+    _extend_if_set(cmd, "--jwt-secret", runtime_config.jwt_secret)
+    return cmd
+
+
+def _build_llm_bench_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):
+    launcher = v2_dir / "run_llm_bench.py"
+    if not launcher.is_file():
+        raise FileNotFoundError(f"v2 llm-bench launcher not found at {launcher}.")
+    cmd = _base_v2_cmd(
+        launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"
+    )
+    _extend_if_set(cmd, "--tools", runtime_config.tools)
     _extend_if_set(cmd, "--jwt-secret", runtime_config.jwt_secret)
     return cmd
 

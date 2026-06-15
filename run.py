@@ -289,11 +289,12 @@ def parse_arguments():
     parser.add_argument(
         "--tools",
         type=str,
-        choices=["vllm", "genai", "aiperf", "guidellm"],
+        choices=["vllm", "genai", "aiperf", "guidellm", "inferencemax"],
         default="vllm",
         help="Benchmarking tool to use: 'vllm' for vLLM benchmark_serving.py (default), "
         "'genai' for genai-perf (Triton SDK), 'aiperf' for AIPerf (https://github.com/ai-dynamo/aiperf), "
-        "'guidellm' for GuideLLM (https://github.com/vllm-project/guidellm).",
+        "'guidellm' for GuideLLM (https://github.com/vllm-project/guidellm), "
+        "'inferencemax' for the InferenceMax vLLM serve benchmark. ",
     )
     parser.add_argument(
         "--no-auth",

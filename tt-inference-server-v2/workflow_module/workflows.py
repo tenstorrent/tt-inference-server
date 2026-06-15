@@ -15,13 +15,20 @@ import time
 from typing import ClassVar, Dict, List, Sequence, Type
 
 from test_module.task_types import MediaTaskType
+from workflows.workflow_types import ModelType
 
-from .execution import PrefixCacheOptions, TaskOutcome, WorkflowExecution
+from .execution import (
+    LLMBenchOptions,
+    PrefixCacheOptions,
+    TaskOutcome,
+    WorkflowExecution,
+)
 
 # Synthetic task label used for the prefix-cache run in TaskOutcome /
 # acceptance summary tables. Not a member of MediaTaskType because the
 # sweep bypasses the media-task dispatcher.
 _PREFIX_CACHE_TASK_LABEL = "prefix_cache"
+_LLM_BENCH_TASK_LABEL = "llm_benchmark"
 
 
 class EvalsWorkflow(WorkflowExecution):
@@ -123,10 +130,62 @@ class BenchmarksWorkflow(WorkflowExecution):
     task_types = (MediaTaskType.BENCHMARK,)
 
     def run_tasks(self) -> List[TaskOutcome]:
-        opts = self.orchestrator_metadata.prefix_cache
-        if opts is None:
-            return super().run_tasks()
-        return [self._run_prefix_cache_task(opts)]
+        prefix_cache_opts = self.orchestrator_metadata.prefix_cache
+        if prefix_cache_opts is not None:
+            return [self._run_prefix_cache_task(prefix_cache_opts)]
+        if self.ctx.model_spec.model_type == ModelType.LLM:
+            opts = self.orchestrator_metadata.llm_bench or LLMBenchOptions()
+            return [self._run_llm_bench_task(opts)]
+        return super().run_tasks()
+
+    def _run_llm_bench_task(self, opts: LLMBenchOptions) -> TaskOutcome:
+        """Drive the LLM performance sweep in place of media benchmarks.
+
+        Delegates to :func:`test_module.llm_tests.llm_benchmark_tests.run_llm_bench`,
+        which selects the perf-tool driver from ``opts.tools``, builds the
+        ``BENCHMARK_CONFIGS`` sweep, runs it, and forwards the resulting
+        Blocks to the accumulator. We only translate its ``list[Block]``
+        return into a single :class:`TaskOutcome`. Imported from the leaf
+        submodule so the media runner imports stay untouched.
+        """
+        from test_module.llm_tests.llm_benchmark_tests import run_llm_bench
+
+        self.logger.info("→ task=%s tools=%s", _LLM_BENCH_TASK_LABEL, opts.tools)
+        started = time.time()
+        try:
+            blocks = run_llm_bench(
+                self.ctx,
+                tools=opts.tools,
+                auth_token=opts.auth_token,
+            )
+        except Exception as e:
+            elapsed = time.time() - started
+            self.logger.exception(
+                "❌ task=%s raised after %.1fs: %s",
+                _LLM_BENCH_TASK_LABEL,
+                elapsed,
+                e,
+            )
+            return TaskOutcome(_LLM_BENCH_TASK_LABEL, 1, elapsed, None)
+
+        elapsed = time.time() - started
+        if not blocks:
+            self.logger.error(
+                "❌ task=%s produced no blocks (%.1fs)",
+                _LLM_BENCH_TASK_LABEL,
+                elapsed,
+            )
+            return TaskOutcome(_LLM_BENCH_TASK_LABEL, 1, elapsed, None)
+
+        block_kind = blocks[0].kind
+        self.logger.info(
+            "✅ task=%s blocks=%d kind=%s (%.1fs)",
+            _LLM_BENCH_TASK_LABEL,
+            len(blocks),
+            block_kind,
+            elapsed,
+        )
+        return TaskOutcome(_LLM_BENCH_TASK_LABEL, 0, elapsed, block_kind)
 
     def _run_prefix_cache_task(self, opts: PrefixCacheOptions) -> TaskOutcome:
         """Drive the AIPerf prefix-cache sweep in place of media benchmarks.

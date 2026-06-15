@@ -23,7 +23,12 @@ from utils.url_helpers import resolve_deploy_url
 from test_module import MediaContext
 
 from .commands import Command, SummaryCommand, WorkflowCommand
-from .execution import OrchestratorMetadata, PrefixCacheOptions, ServingBenchOptions
+from .execution import (
+    LLMBenchOptions,
+    OrchestratorMetadata,
+    PrefixCacheOptions,
+    ServingBenchOptions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +160,19 @@ def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetada
         runtime_model_spec_json=args.runtime_model_spec_json,
         prefix_cache=_build_prefix_cache_options(args),
         serving_bench=_build_serving_bench_options(args),
+        llm_bench=_build_llm_bench_options(args),
+    )
+
+
+def _build_llm_bench_options(args: argparse.Namespace) -> Optional[LLMBenchOptions]:
+    """Translate ``--tools`` into ``LLMBenchOptions`` for LLM benchmarks."""
+    if getattr(args, "workflow", None) != "benchmarks":
+        return None
+    if getattr(args, "prefix_cache", False):
+        return None
+    return LLMBenchOptions(
+        tools=getattr(args, "tools", None) or "vllm",
+        auth_token=_mint_jwt_if_secret(getattr(args, "jwt_secret", None)),
     )
 
 

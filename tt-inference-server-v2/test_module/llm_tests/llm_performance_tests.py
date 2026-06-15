@@ -46,6 +46,7 @@ def run_llm_performance(
     configs: Sequence[LLMRunConfig],
     server_controller: Optional[ServerController] = None,
     output_subdir: str = "llm",
+    auth_token: str = "",
 ) -> List[Block]:
     """Run an LLM perf sweep and forward the Blocks to workflow_module.
 
@@ -53,11 +54,15 @@ def run_llm_performance(
     is also handed to ``workflow_module.accept_blocks`` so the
     downstream workflow can act on it. Callers can ignore the return
     if they don't need the in-memory copy.
+
+    ``auth_token`` is sent to the inference server (e.g. a minted JWT
+    exported as the bearer token); empty string disables auth.
     """
     server = ServerConnection(
         base_url=ctx.server_host,
         service_port=ctx.server_port,
         model=ctx.model_spec.hf_model_repo,
+        auth_token=auth_token,
     )
     output_dir = Path(ctx.output_path) / output_subdir
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)

@@ -406,6 +406,18 @@ _venv_config_list = [
         python_version="3.11",
     ),
     VenvConfig(
+        venv_type=WorkflowVenvType.V2_LLM_VLLM,
+        requirements_file="v2-llm-vllm.txt",
+        extra_dirs=("artifacts",),
+        python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.V2_LLM_GUIDELLM,
+        requirements_file="v2-llm-guidellm.txt",
+        extra_dirs=("artifacts",),
+        python_version="3.11",
+    ),
+    VenvConfig(
         venv_type=WorkflowVenvType.HF_SETUP,
         requirements_file="hf-setup.txt",
     ),
