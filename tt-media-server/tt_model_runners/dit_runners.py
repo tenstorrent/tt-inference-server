@@ -23,6 +23,11 @@ from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerateRequest
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
+
+# WH Galaxy-optimized Flux2 pipeline (Ring topology, FSDP, prompt sharding,
+# swept matmul configs). The plain pipelines.flux2.pipeline_flux2 is the
+# functional/reference variant and is intentionally NOT used here.
+from models.tt_dit.pipelines.flux2.pipeline_flux2_opt_hybrid import Flux2Pipeline
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
 from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
 from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
@@ -47,6 +52,7 @@ dit_runner_log_map = {
     ModelRunners.TT_SD3_5.value: "SD35",
     ModelRunners.TT_FLUX_1_DEV.value: "FLUX.1-dev",
     ModelRunners.TT_FLUX_1_SCHNELL.value: "FLUX.1-schnell",
+    ModelRunners.TT_FLUX_2_DEV.value: "FLUX.2-dev",
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
@@ -240,6 +246,91 @@ class TTFlux1Runner(TTDiTRunner):
 
     def get_pipeline_device_params(self):
         return {"l1_small_size": 32768, "trace_region_size": 50000000}
+
+
+# Flux2 (FLUX.2-dev) trace region for the full traced image pipeline on a
+# Galaxy (4, 8) mesh. The transformer reference uses 31MB; the full pipeline
+# (encoder + transformer + VAE) needs headroom. Validate / tune on real WH
+# Galaxy hardware if warmup OOMs or rejects the trace binary.
+FLUX2_TRACE_REGION_SIZE = 90_000_000
+
+
+# Runner for FLUX.2-dev on WH Galaxy, using the WH-optimized hybrid pipeline.
+# Config mirrors tt-metal's perf test id "wh_glx_ring_sp0tp1_fsdp": Ring
+# topology over FABRIC_1D_RING, 4 links, FSDP, prompt sharding, with the VAE
+# tensor-parallel on the row (sp) axis. Inference is via __call__ returning a
+# list of PIL images (not run_single_prompt), so create_pipeline and run are
+# both overridden.
+class TTFlux2Runner(TTDiTRunner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+
+    def _parallel_params(self) -> dict:
+        """Resolve Flux2 parallel config for the active mesh + arch.
+
+        Mirrors tt-metal's flux2 perf test (id ``wh_glx_ring_sp0tp1_fsdp``):
+        sp on axis 0, tp on axis 1, encoder TP on the column axis, VAE TP on
+        the row axis. WH Galaxy uses 4 links; BH Galaxy uses 2.
+        """
+        num_links = 2 if is_blackhole() else 4
+        return {
+            "sp_axis": 0,
+            "tp_axis": 1,
+            "encoder_tp_axis": 1,
+            "vae_tp_axis": 0,
+            "vae_h_axis": 1,
+            "vae_w_axis": None,
+            "num_links": num_links,
+            "is_fsdp": True,
+            "shard_prompt": True,
+        }
+
+    def create_pipeline(self):
+        try:
+            return Flux2Pipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                checkpoint_name=self.settings.model_weights_path,
+                topology=ttnn.Topology.Ring,
+                width=1024,
+                height=1024,
+                trace_warmup=True,
+                **self._parallel_params(),
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Flux2 pipeline creation failed",
+                e,
+            )
+            raise
+
+    @log_execution_time(
+        f"{dit_runner_log_map.get(get_settings().model_runner, 'FLUX.2-dev')} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[ImageGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running inference")
+        request = requests[0]
+        images = self.pipeline(
+            prompts=[request.prompt],
+            num_inference_steps=request.num_inference_steps,
+            seed=int(request.seed or 0),
+            traced=True,
+        )
+        self.logger.debug(f"Device {self.device_id}: Inference completed")
+        return images[0]
+
+    def get_pipeline_device_params(self):
+        # WH Galaxy ring config validated with ring_params_flux2:
+        # FABRIC_1D_RING + l1_small_size 32768 (no 8k router config needed at
+        # 4 links on WH).
+        return {
+            "l1_small_size": 32768,
+            "trace_region_size": FLUX2_TRACE_REGION_SIZE,
+            "fabric_config": ttnn.FabricConfig.FABRIC_1D_RING,
+        }
 
 
 class TTMotifImage6BPreviewRunner(TTDiTRunner):
