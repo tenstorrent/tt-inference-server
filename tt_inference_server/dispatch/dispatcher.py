@@ -582,18 +582,25 @@ def _install_kernel_patch_overlay() -> None:
     behavior (this is a pure no-op then).
 
     How it works: tt-lang generates each kernel's C++ via ttkernel_to_cpp_by_name() and
-    writes it through ttl.ttl_api._write_kernel_to_tmp(name, source) before tt-metal
-    JIT-compiles that file. We wrap that writer: if <patch_dir>/<name>.cpp exists, its
-    contents REPLACE the generated source for kernel `name`. The file is then content-
-    hashed and compiled exactly as usual — so a no-op patch (a verbatim copy of the
-    generated .cpp) reproduces the baseline bit-for-bit, and an edited patch triggers a
-    fresh compile of the variant. The .riscv pre-compiled artifact system (#1/#26) stays
-    the release path; this is the iterate-fast dev path that feeds kernel-variant A/B arms
-    (tests/experiments/matrix.toml).
+    writes it through ttl.ttl_api._write_kernel_to_tmp(name, source) to
+    /tmp/$USER/ttlang_kernel_<name>_<md5(source)[:8]>.cpp before tt-metal JIT-compiles it.
+    Crucially, `name` is GENERIC ("compute"/"dm_read"/"dm_write") — every compute kernel
+    shares name="compute", so a kernel variant is identified by the CONTENT HASH, not the
+    name. We therefore wrap the writer and match a patch file named exactly like the
+    baseline file tt-lang would write — `ttlang_kernel_<name>_<hash>.cpp`, where <hash> is
+    md5 of the freshly GENERATED (baseline) source. If that patch file exists, its contents
+    REPLACE the generated source; the substituted source is then re-hashed and compiled as
+    usual. So:
+      - a no-op patch (a verbatim copy of the /tmp file) reproduces baseline bit-for-bit;
+      - an edited patch keeps the SAME filename (baseline hash, so it still matches) but
+        new contents -> a fresh compile of the variant, targeting only that one kernel.
+    The .riscv pre-compiled artifact system (#1/#26) stays the release path; this is the
+    iterate-fast dev path that feeds kernel-variant A/B arms (tests/experiments/matrix.toml).
 
-    Dump a kernel's current source to copy into a patch dir: tt-lang already prints each
-    generated kernel and writes it to /tmp/$USER/ttlang_kernel_<name>_<hash>.cpp.
+    To create a patch: run a model once, copy the /tmp/$USER/ttlang_kernel_<name>_<hash>.cpp
+    for the kernel you want into <patch_dir>/ (same basename), then edit it.
     """
+    import hashlib
     patch_dir = os.environ.get(_KERNEL_PATCH_ENV)
     if not patch_dir:
         return
@@ -616,15 +623,17 @@ def _install_kernel_patch_overlay() -> None:
     _orig_write = ttl_api._write_kernel_to_tmp
 
     def _patched_write(name, source):
-        cand = patch_path / f"{name}.cpp"
+        # Identify the baseline kernel by the same hash tt-lang uses for its filename.
+        h = hashlib.md5(source.encode()).hexdigest()[:8]
+        cand = patch_path / f"ttlang_kernel_{name}_{h}.cpp"
         if cand.is_file():
-            print(f"  [kernel-patch] overlaying '{name}' <- {cand}")
+            print(f"  [kernel-patch] overlaying {cand.name} ({cand.stat().st_size} B)")
             return _orig_write(name, cand.read_text())
         return _orig_write(name, source)
 
     ttl_api._write_kernel_to_tmp = _patched_write
     ttl_api._dispatch_patch_installed = True
-    available = sorted(p.stem for p in patch_path.glob("*.cpp"))
+    available = sorted(p.name for p in patch_path.glob("ttlang_kernel_*.cpp"))
     print(f"  Kernel-patch overlay ACTIVE ({_KERNEL_PATCH_ENV}={patch_path}); "
           f"patches: {available or '(none found)'}")
 
