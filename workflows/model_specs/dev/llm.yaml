@@ -1229,7 +1229,7 @@ templates:
       vllm_args:
         trust_remote_code: true
         mm-processor-cache-gb: 0
-        limit-mm-per-prompt: '{"image": 1, "video": 1}'
+        limit-mm-per-prompt: '{"image": 4, "video": 1}'
         # Point vLLM at the LOCAL VL weights dir (config.json patched to
         # model_type qwen3_5_vl -> keeps vision_config). The default vllm "model"
         # arg is hf_model_repo (Qwen/Qwen3.6-27B-VL) which is NOT a real HF repo,
