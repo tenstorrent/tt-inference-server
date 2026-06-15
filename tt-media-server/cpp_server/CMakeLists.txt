@@ -1242,6 +1242,7 @@ if(KAFKA_ENABLED)
         llm_runner_lib
         migration_worker
         messaging
+        transport_lib
     )
     if(USE_EXTERNAL_FMT)
         target_link_libraries(tt_consumer PRIVATE spdlog::spdlog fmt::fmt)
@@ -1249,6 +1250,50 @@ if(KAFKA_ENABLED)
         target_link_libraries(tt_consumer PRIVATE spdlog::spdlog)
     endif()
     target_compile_options(tt_consumer PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    # Dummy migration producer (publishes fake offload requests to Kafka)
+    add_executable(migration_producer_dummy
+        src/migration_producer_dummy.cpp
+    )
+    target_include_directories(migration_producer_dummy PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(migration_producer_dummy PRIVATE
+        llm_runner_lib
+        messaging
+    )
+    if(USE_EXTERNAL_FMT)
+        target_link_libraries(migration_producer_dummy PRIVATE spdlog::spdlog fmt::fmt)
+    else()
+        target_link_libraries(migration_producer_dummy PRIVATE spdlog::spdlog)
+    endif()
+    target_compile_options(migration_producer_dummy PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    # Dummy migration source (registers a Mooncake segment for E2E pull tests)
+    add_executable(migration_source_dummy
+        src/migration_source_dummy.cpp
+    )
+    target_include_directories(migration_source_dummy PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(migration_source_dummy PRIVATE
+        llm_runner_lib
+        transport_lib
+    )
+    if(USE_EXTERNAL_FMT)
+        target_link_libraries(migration_source_dummy PRIVATE spdlog::spdlog fmt::fmt)
+    else()
+        target_link_libraries(migration_source_dummy PRIVATE spdlog::spdlog)
+    endif()
+    target_compile_options(migration_source_dummy PRIVATE
         -Wall
         -Wextra
         -Wpedantic
