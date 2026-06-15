@@ -1,19 +1,19 @@
-# Qwen3-32B Tenstorrent Support on BH QuietBox 2
+# Qwen3-32B Tenstorrent Support on BH Galaxy
 
 #### Useful links
 
-- [BH QuietBox 2 details](https://tenstorrent.com/hardware/tt-quietbox)
+- [BH Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
 `Qwen3-32B` is also supported on hardware:
 
 - [WH Galaxy](Qwen3-32B_galaxy.md)
-- [BH Galaxy](Qwen3-32B_blackhole_galaxy.md)
 - [BH LoudBox](Qwen3-32B_p150x8.md)
+- [BH QuietBox 2](Qwen3-32B_p300x2.md)
 - [WH LoudBox/QuietBox](Qwen3-32B_t3k.md)
 
-## Quickstart - Deploy Qwen3-32B Inference Server on BH QuietBox 2
+## Quickstart - Deploy Qwen3-32B Inference Server on BH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
@@ -29,15 +29,15 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Qwen3-32B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.14.0-80180b9-7678b70 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a \
   --model Qwen3-32B \
-  --tt-device p300x2
+  --tt-device blackhole_galaxy
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model Qwen3-32B --device p300x2 --workflow server --docker-server
+python3 run.py --model Qwen3-32B --device blackhole_galaxy --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -46,10 +46,10 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Parameter | Value |
 |-----------|-------|
 | Weights | [Qwen/Qwen3-32B](https://huggingface.co/Qwen/Qwen3-32B) |
-| Model Status | 🟡 Functional |
+| Model Status | 🟢 Complete |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/80180b9/models/tt_transformers) |
-| tt-metal Commit | `80180b9` |
-| vLLM Commit | `7678b70` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.14.0-80180b9-7678b70` |
+| Implementation Code | [qwen3-32b-galaxy](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/llama3_70b_galaxy) |
+| tt-metal Commit | `bac8b34` |
+| vLLM Commit | `7c6685a` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a` |

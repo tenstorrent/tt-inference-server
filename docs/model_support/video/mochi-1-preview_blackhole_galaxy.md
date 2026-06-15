@@ -1,20 +1,20 @@
-# mochi-1-preview Tenstorrent Support on WH LoudBox/QuietBox
+# mochi-1-preview Tenstorrent Support on BH Galaxy
 
 #### Useful links
 
-- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [BH Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other video models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
 `mochi-1-preview` is also supported on hardware:
 
 - [WH Galaxy](mochi-1-preview_galaxy.md)
-- [BH Galaxy](mochi-1-preview_blackhole_galaxy.md)
 - [BH LoudBox](mochi-1-preview_p150x8.md)
 - [BH 4xP150](mochi-1-preview_p150x4.md)
 - [BH QuietBox 2](mochi-1-preview_p300x2.md)
+- [WH LoudBox/QuietBox](mochi-1-preview_t3k.md)
 
-## Quickstart - Deploy mochi-1-preview Inference Server on WH LoudBox/QuietBox
+## Quickstart - Deploy mochi-1-preview Inference Server on BH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
@@ -23,7 +23,7 @@ This model is supported by [tt-media-server](../../../tt-media-server/README.md)
 **via run.py command**
 
 ```bash
-python3 run.py --model mochi-1-preview --device t3k --workflow server --docker-server
+python3 run.py --model mochi-1-preview --device blackhole_galaxy --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
