@@ -393,16 +393,12 @@ struct ResponsesResponse : BaseResponse {
     r.object = "response";
     r.output = std::move(output);
 
-    r.parallel_tool_calls = request.parallel_tool_calls.value_or(true);
     r.temperature = samplingParams.temperature;
-    r.tool_choice = request.tool_choice;
-    r.tools = request.tools;
     r.top_p = samplingParams.top_p.value_or(1.0f);
     r.background = request.background.value_or(false);
     r.max_output_tokens = samplingParams.max_tokens.value_or(0);
     if (samplingParams.prompt_logprobs.has_value())
       r.top_logprobs = *samplingParams.prompt_logprobs;
-    r.max_tool_calls = request.max_tool_calls;
     r.previous_response_id = request.previous_response_id;
     r.prompt = request.prompt;
     r.reasoning = request.reasoning;

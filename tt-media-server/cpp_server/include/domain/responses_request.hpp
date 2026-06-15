@@ -361,7 +361,7 @@ struct ResponsesRequest : BaseRequest {
     out.model = model;
     const auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
     auto promptStr = tokenizer.applyChatTemplate(toMessages(), true,
-                                                 std::nullopt, true, false);
+                                                 true, false);
     auto promptTokens = tokenizer.encode(promptStr);
     out.full_prompt_tokens_count = static_cast<int>(promptTokens.size());
     out.prompt_tokens_count = out.full_prompt_tokens_count;
