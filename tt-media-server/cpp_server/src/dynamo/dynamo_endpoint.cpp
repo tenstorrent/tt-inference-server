@@ -440,8 +440,8 @@ void DynamoEndpoint::start() {
 
   ServerConfig sc;
   sc.bind_host = options_.bind_host;
-  sc.bind_port = 0;  // OS-assigned: the discovery file advertises the
-                     // resolved port.
+  sc.bind_port = options_.bind_port;  // 0 = OS-assigned; discovery
+                                      // advertises the resolved port.
   sc.namespace_name = options_.namespace_name;
   sc.component = options_.component;
   sc.endpoint = options_.endpoint;
