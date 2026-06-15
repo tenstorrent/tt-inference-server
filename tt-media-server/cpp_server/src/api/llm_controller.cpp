@@ -30,6 +30,18 @@
 
 namespace tt::api {
 
+namespace {
+
+bool isQueueFull(const std::exception& e) {
+  return dynamic_cast<const services::QueueFullException*>(&e) != nullptr;
+}
+
+void releaseSession(std::shared_ptr<domain::Session> session) {
+  if (session) session->release();
+}
+
+}  // namespace
+
 LLMController::LLMController() {
   if (!tt::config::isLlmService()) {
     TT_LOG_INFO(
@@ -320,59 +332,52 @@ void LLMController::handleStreaming(
   auto cb =
       std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
           std::move(callback));
+  auto writer = std::make_shared<std::shared_ptr<StreamingResponseWriter>>();
 
-  auto cancelFn = [pipeline = pipeline, taskId = reqPtr->task_id]() {
-    pipeline->abortRequest(taskId);
+  services::LLMPipeline::GenerationHandlers handlers;
+  handlers.onPreProcessError =
+      [cb](const std::exception& e,
+           std::shared_ptr<domain::Session> sessionPtr) {
+        releaseSession(std::move(sessionPtr));
+        if (isQueueFull(e)) {
+          (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
+                              "rate_limit_exceeded"));
+          return;
+        }
+        (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
+                            "invalid_request_error"));
+      };
+  handlers.onDispatchError = [cb](const std::exception& e,
+                                  std::shared_ptr<domain::Session> sessionPtr) {
+    releaseSession(std::move(sessionPtr));
+    if (isQueueFull(e)) {
+      (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
+                          "rate_limit_exceeded"));
+      return;
+    }
+    (*cb)(errorResponse(drogon::k500InternalServerError, e.what(),
+                        "internal_error"));
   };
-
-  pipeline->resolveSession(
-      reqPtr, loop,
-      [this, reqPtr, cb, loop, formatter = std::move(formatter),
-       includeUsage](services::LLMPipeline::SessionInfo sessionInfo) {
-        // Pre-dispatch shared_ptr copy: dispatchGeneration std::move()s the
-        // request (emptying reqPtr->session), so error-path releases use this.
-        auto sessionPtr = reqPtr->session;
-        try {
-          service->preProcess(*reqPtr);
-        } catch (const services::QueueFullException& e) {
-          if (sessionPtr) sessionPtr->release();
-          (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
-                              "rate_limit_exceeded"));
-          return;
-        } catch (const std::exception& e) {
-          if (sessionPtr) sessionPtr->release();
-          (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
-                              "invalid_request_error"));
-          return;
-        }
-
-        auto writer = StreamingResponseWriter::create(
-            loop, makeWriterParams(*reqPtr), includeUsage, formatter);
-
-        try {
-          pipeline->dispatchGeneration(
-              *reqPtr, sessionInfo,
-              makeStreamingCallback(writer, reqPtr->session));
-        } catch (const services::QueueFullException& e) {
-          if (sessionPtr) sessionPtr->release();
-          (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
-                              "rate_limit_exceeded"));
-          return;
-        } catch (const std::exception& e) {
-          if (sessionPtr) sessionPtr->release();
-          (*cb)(errorResponse(drogon::k500InternalServerError, e.what(),
-                              "internal_error"));
-          return;
-        }
-
-        (*cb)(writer->buildResponse());
-      },
+  handlers.onDispatchSucceeded = [cb, writer]() {
+    (*cb)((*writer)->buildResponse());
+  };
+  handlers.onSessionError =
       [cb](const services::LLMPipeline::SessionError& err) {
         TT_LOG_ERROR("[LLMController] Session resolution failed: {}",
                      err.message);
         (*cb)(makeSessionErrorResponse(err));
+      };
+
+  pipeline->runStreamingRequest(
+      reqPtr, loop,
+      [this, reqPtr, loop, formatter = std::move(formatter), includeUsage,
+       writer](services::LLMPipeline::SessionInfo,
+               std::shared_ptr<domain::Session> sessionPtr) {
+        *writer = StreamingResponseWriter::create(
+            loop, makeWriterParams(*reqPtr), includeUsage, formatter);
+        return makeStreamingCallback(*writer, std::move(sessionPtr));
       },
-      std::move(cancelFn));
+      std::move(handlers));
 }
 
 void LLMController::handleNonStreaming(
@@ -385,57 +390,49 @@ void LLMController::handleNonStreaming(
   auto cb =
       std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
           std::move(callback));
+  auto writer = std::make_shared<std::shared_ptr<NonStreamResponseWriter>>();
 
-  auto cancelFn = [pipeline = pipeline, taskId = reqPtr->task_id]() {
-    pipeline->abortRequest(taskId);
-  };
-
-  pipeline->resolveSession(
-      reqPtr, loop,
-      [this, reqPtr, cb, builder = std::move(builder)](
-          services::LLMPipeline::SessionInfo sessionInfo) mutable {
-        // Pre-dispatch shared_ptr copy: dispatchGeneration std::move()s the
-        // request (emptying reqPtr->session), so error-path releases use this.
-        auto sessionPtr = reqPtr->session;
-        try {
-          service->preProcess(*reqPtr);
-        } catch (const services::QueueFullException& e) {
-          if (sessionPtr) sessionPtr->release();
+  services::LLMPipeline::GenerationHandlers handlers;
+  handlers.onPreProcessError =
+      [cb](const std::exception& e,
+           std::shared_ptr<domain::Session> sessionPtr) {
+        releaseSession(std::move(sessionPtr));
+        if (isQueueFull(e)) {
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                               "rate_limit_exceeded"));
           return;
-        } catch (const std::exception& e) {
-          if (sessionPtr) sessionPtr->release();
-          (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
-                              "invalid_request_error"));
-          return;
         }
-
-        // Move the http callback into the writer; from here on out every
-        // success/error path goes through writer->finalize / sendError so
-        // the response is delivered exactly once and the session in-flight
-        // slot is always released.
-        auto writer = NonStreamResponseWriter::create(
-            makeWriterParams(*reqPtr), std::move(*cb), std::move(builder));
-
-        try {
-          pipeline->dispatchGeneration(
-              *reqPtr, sessionInfo,
-              makeStreamingCallback(writer, reqPtr->session));
-        } catch (const services::QueueFullException& e) {
-          writer->sendError(drogon::k429TooManyRequests, e.what(),
-                            "rate_limit_exceeded");
-        } catch (const std::exception& e) {
-          writer->sendError(drogon::k500InternalServerError, e.what(),
-                            "internal_error");
-        }
-      },
+        (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
+                            "invalid_request_error"));
+      };
+  handlers.onDispatchError = [writer](const std::exception& e,
+                                      std::shared_ptr<domain::Session>) {
+    if (isQueueFull(e)) {
+      (*writer)->sendError(drogon::k429TooManyRequests, e.what(),
+                           "rate_limit_exceeded");
+      return;
+    }
+    (*writer)->sendError(drogon::k500InternalServerError, e.what(),
+                         "internal_error");
+  };
+  handlers.onSessionError =
       [cb](const services::LLMPipeline::SessionError& err) {
         TT_LOG_ERROR("[LLMController] Session resolution failed: {}",
                      err.message);
         (*cb)(makeSessionErrorResponse(err));
+      };
+
+  pipeline->runStreamingRequest(
+      reqPtr, loop,
+      [this, reqPtr, cb, builder = std::move(builder), writer](
+          services::LLMPipeline::SessionInfo,
+          std::shared_ptr<domain::Session> sessionPtr) mutable {
+        // The writer owns the HTTP callback from this point on.
+        *writer = NonStreamResponseWriter::create(
+            makeWriterParams(*reqPtr), std::move(*cb), std::move(builder));
+        return makeStreamingCallback(*writer, std::move(sessionPtr));
       },
-      std::move(cancelFn));
+      std::move(handlers));
 }
 
 }  // namespace tt::api
