@@ -67,7 +67,7 @@ fi
 
 # Run E2E tests
 echo "Running cancellation E2E tests..."
-python3 "$SCRIPT_DIR/cancellation_e2e_test.py" --host 127.0.0.1 --port "$PORT"
+python3 "$SCRIPT_DIR/../cancellation_e2e_test.py" --host 127.0.0.1 --port "$PORT"
 EXIT_CODE=$?
 
 echo "Done (exit code: $EXIT_CODE)"
