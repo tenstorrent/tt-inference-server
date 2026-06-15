@@ -15,7 +15,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import List, Optional
 
-import pytest
 import requests
 
 from llm_module import DriverResult, LLMPerformanceRunner, RunnerResult
