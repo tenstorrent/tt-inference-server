@@ -294,8 +294,7 @@ def parse_arguments():
         help="Benchmarking tool to use: 'vllm' for vLLM benchmark_serving.py (default), "
         "'genai' for genai-perf (Triton SDK), 'aiperf' for AIPerf (https://github.com/ai-dynamo/aiperf), "
         "'guidellm' for GuideLLM (https://github.com/vllm-project/guidellm), "
-        "'spec_decode' for the speculative-decoding benchmark "
-        "(`vllm bench serve` driving Spec-Bench / Speed-Bench with paired baseline runs).",
+        "'spec_decode' for the speculative-decoding benchmark."
     )
     parser.add_argument(
         "--no-auth",
