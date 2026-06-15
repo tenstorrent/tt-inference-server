@@ -64,10 +64,14 @@ def _pad_to_tiles(t: torch.Tensor) -> torch.Tensor:
     return t
 
 
-def _to_tt(t: torch.Tensor, device):
+def _to_tt(t: torch.Tensor, device, dtype=None):
     import ttnn
+    # dtype defaults to bf16; weight call sites may pass ttnn.bfloat8_b (block-float8,
+    # tile-only) to halve DRAM footprint/bandwidth. Activations/masks/KV keep bf16.
+    if dtype is None:
+        dtype = ttnn.bfloat16
     t = _pad_to_tiles(t.bfloat16().contiguous())
-    return ttnn.from_torch(t, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT,
+    return ttnn.from_torch(t, dtype=dtype, layout=ttnn.TILE_LAYOUT,
                            device=device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
 
 
@@ -579,6 +583,15 @@ class TTModelRunner:
                   f"unverified). fast_path={self._caps.fast_path}, "
                   f"lm_head_ondevice={self._caps.lm_head_ondevice}. "
                   "Output validity unverified on this hardware.")
+
+        # bf8 weights (perf spike): upload the large linear weights (qkv/o/gate/up/down/
+        # lm_head) as block-float8 to halve their DRAM footprint + per-token read bandwidth.
+        # Reversible A/B arm — default OFF keeps the bf16 path byte-identical. Embedding
+        # (ROW_MAJOR lookup), norms, biases, KV and activations stay bf16.
+        import os as _os
+        self._bf8_weights = _os.environ.get("DISPATCH_BF8_WEIGHTS", "0") == "1"
+        if self._bf8_weights:
+            print("  Weight dtype: bfloat8_b (DISPATCH_BF8_WEIGHTS=1) — linear weights only")
 
         print("  Uploading to device ...")
         try:
@@ -1669,7 +1682,7 @@ class TTModelRunner:
                 norm1_sc = self._make_scaler_tt(cfg.hidden_size),
                 norm2_w  = self._upload_norm_w(getattr(n2, "weight", None), gemma_norm),
                 norm2_sc = self._make_scaler_tt(cfg.hidden_size),
-                qkv_w = _to_tt(qkv_cat, self._device),
+                qkv_w = _to_tt(qkv_cat, self._device, dtype=self._weight_dtype()),
                 qkv_b = qkv_b_cpu,
                 q_end = q_out_p,
                 k_end = q_out_p + k_out_p,
@@ -1727,9 +1740,15 @@ class TTModelRunner:
         w_2d = w_1d.unsqueeze(0).expand(TILE, -1).contiguous()
         return _to_tt(w_2d, self._device)
 
+    def _weight_dtype(self):
+        """ttnn dtype for large linear weights: bfloat8_b when the bf8 spike is on, else bf16."""
+        import ttnn
+        return ttnn.bfloat8_b if self._bf8_weights else ttnn.bfloat16
+
     def _upload_linear_w(self, w: torch.Tensor):
         """Upload weight (out, in) transposed to (in_p, out_p) on device."""
-        return _to_tt(w.detach().bfloat16().T.contiguous(), self._device)
+        return _to_tt(w.detach().bfloat16().T.contiguous(), self._device,
+                      dtype=self._weight_dtype())
 
     def _upload_bias(self, b: Optional[torch.Tensor], out_dim: int):
         """Upload bias as (TILE, out_p), or None when the module has no bias.
