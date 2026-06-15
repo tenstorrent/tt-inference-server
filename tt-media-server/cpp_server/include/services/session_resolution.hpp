@@ -13,6 +13,7 @@
 #include "domain/llm/llm_request.hpp"
 #include "services/session_manager.hpp"
 #include "utils/logger.hpp"
+#include "utils/tokenizers/thinking_phase.hpp"
 
 namespace tt::services::session_resolution {
 
@@ -52,6 +53,8 @@ inline uint32_t applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
   if (options.setKvPositionId && matchedTokens > 0) {
     req.kv_position_id = matchedTokens - 1;
   }
+
+  tt::utils::tokenizers::refreshStartsInThinking(req, /*initial_in_thinking=*/false);
 
   return matchedTokens;
 }

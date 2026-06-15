@@ -981,6 +981,13 @@ target_include_directories(apply_delta_prompt_test PRIVATE
 )
 add_test(NAME ApplyDeltaPrompt COMMAND apply_delta_prompt_test)
 
+add_executable(thinking_phase_test tests/thinking_phase_test.cpp)
+target_link_libraries(thinking_phase_test PRIVATE GTest::gtest_main llm_runner_lib)
+target_include_directories(thinking_phase_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+add_test(NAME ThinkingPhase COMMAND thinking_phase_test)
+
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
 target_link_libraries(ipc_scheduler_smoke_test PRIVATE llm_runner_lib GTest::gtest_main)

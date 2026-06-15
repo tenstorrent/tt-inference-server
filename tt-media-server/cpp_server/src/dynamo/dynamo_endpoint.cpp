@@ -31,6 +31,7 @@
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
+#include "utils/tokenizers/thinking_phase.hpp"
 
 namespace tt::dynamo {
 
@@ -78,6 +79,8 @@ std::shared_ptr<tt::domain::llm::LLMRequest> buildLLMRequest(
   std::string currentId = dyn.raw.get("id", "").asString();
   if (currentId.empty()) currentId = dyn.raw.get("request_id", "").asString();
   if (!currentId.empty()) req->responseId = currentId;
+
+  tt::utils::tokenizers::refreshStartsInThinking(*req);
 
   return req;
 }

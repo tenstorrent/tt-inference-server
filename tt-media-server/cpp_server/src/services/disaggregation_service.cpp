@@ -13,6 +13,7 @@
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
+#include "utils/tokenizers/thinking_phase.hpp"
 
 namespace tt::services {
 
@@ -93,6 +94,7 @@ void DisaggregationService::setupSocketHandlers() {
                 static_cast<uint32_t>(message.tokenIds.size() - 1);
             request.prompt.emplace<std::vector<int>>(message.tokenIds.end() - 1,
                                                      message.tokenIds.end());
+            tt::utils::tokenizers::refreshStartsInThinking(request);
             request.max_tokens = message.remainingTokens;
             request.slotId = message.slotId;
             // Restore the sampling subset echoed back from the prefill server.
@@ -157,6 +159,7 @@ void DisaggregationService::setupSocketHandlers() {
 
           request->prompt.emplace<std::vector<int>>(message.tokenIds.begin(),
                                                     message.tokenIds.end());
+          tt::utils::tokenizers::refreshStartsInThinking(*request);
           auto slotId = message.slotId;
           request->slotId = slotId;
           request->decode_position_id = message.decodePositionId;
