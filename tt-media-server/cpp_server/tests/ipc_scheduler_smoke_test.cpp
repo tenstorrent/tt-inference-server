@@ -44,15 +44,15 @@ class IpcSchedulerSmokeTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // Generate unique queue name for this test run
-    queueName_ = "tt_ipc_scheduler_smoke_test_" + std::to_string(::getpid()) +
+    queueName = "tt_ipc_scheduler_smoke_test_" + std::to_string(::getpid()) +
                  "_" + std::to_string(reinterpret_cast<uintptr_t>(this));
     // Clean up any leftover queue from a previous failed run
-    ipc::message_queue::remove(queueName_.c_str());
+    ipc::message_queue::remove(queueName.c_str());
   }
 
-  void TearDown() override { ipc::message_queue::remove(queueName_.c_str()); }
+  void TearDown() override { ipc::message_queue::remove(queueName.c_str()); }
 
-  std::string queueName_;
+  std::string queueName;
 };
 
 TEST_F(IpcSchedulerSmokeTest, TwoProcessesCommmunicateThroughTaskQueue) {
@@ -60,7 +60,7 @@ TEST_F(IpcSchedulerSmokeTest, TwoProcessesCommmunicateThroughTaskQueue) {
   using Config = tt::config::LLMConfig;
 
   // Create the IPC queue (simulates the main server)
-  ipc::message_queue rawQueue(ipc::create_only, queueName_.c_str(),
+  ipc::message_queue rawQueue(ipc::create_only, queueName.c_str(),
                               MAX_NUM_MSGS, MAX_MSG_SIZE);
 
   // Build two sequences with known values
@@ -72,7 +72,7 @@ TEST_F(IpcSchedulerSmokeTest, TwoProcessesCommmunicateThroughTaskQueue) {
 
   // Push via boost TaskQueue (opens the existing shared-memory queue)
   {
-    tt::ipc::boost::TaskQueue producer(queueName_);
+    tt::ipc::boost::TaskQueue producer(queueName);
     producer.push(seq1);
     producer.push(seq2);
   }
@@ -94,7 +94,7 @@ TEST_F(IpcSchedulerSmokeTest, TwoProcessesCommmunicateThroughTaskQueue) {
     config.max_num_batched_tokens = 256;
     config.eos = 0;
 
-    auto queue = std::make_unique<tt::ipc::boost::TaskQueue>(queueName_);
+    auto queue = std::make_unique<tt::ipc::boost::TaskQueue>(queueName);
     PrefillFirstScheduler sched(config, queue.get(), 1);
 
     auto [batch, is_prefill] = sched.schedule();

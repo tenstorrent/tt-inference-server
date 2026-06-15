@@ -338,12 +338,12 @@ class ChatTemplateToolsTest
     if (!std::filesystem::exists(param.path)) {
       GTEST_SKIP() << "Tokenizer not found: " << param.path;
     }
-    tokenizer_ = param.factory(param.path);
-    config_ = param.config;
+    tokenizer = param.factory(param.path);
+    config = param.config;
   }
 
-  std::unique_ptr<Tokenizer> tokenizer_;
-  const TokenizerTemplateConfig* config_;
+  std::unique_ptr<Tokenizer> tokenizer;
+  const TokenizerTemplateConfig* config;
 };
 
 TEST_P(ChatTemplateToolsTest, ChatTemplateWithoutTools) {
@@ -354,11 +354,11 @@ TEST_P(ChatTemplateToolsTest, ChatTemplateWithoutTools) {
   messages.push_back(msg);
 
   std::string result =
-      tokenizer_->applyChatTemplate(messages, true, std::nullopt);
+      tokenizer->applyChatTemplate(messages, true, std::nullopt);
 
   // Should not contain tool-related markers when no tools provided
   EXPECT_TRUE(result.find("tools") == std::string::npos ||
-              result.find(config_->toolCallsBegin()) == std::string::npos);
+              result.find(config->toolCallsBegin()) == std::string::npos);
 
   // Should contain the user message
   EXPECT_NE(result.find(msg.content), std::string::npos);
@@ -369,19 +369,19 @@ TEST_P(ChatTemplateToolsTest, SingleToolTemplate) {
 
   std::vector<Tool> tools = {createWeatherTool()};
 
-  std::string actual = tokenizer_->applyChatTemplate(messages, true, tools);
+  std::string actual = tokenizer->applyChatTemplate(messages, true, tools);
 
   std::ostringstream expected;
-  expected << config_->bos();
+  expected << config->bos();
 
-  if (std::string(config_->name()) == "Llama") {
-    expected << config_->buildToolSection(tools);
-    expected << "Get weather for SF" << config_->endOfSentence();
-    expected << config_->assistantTag();
+  if (std::string(config->name()) == "Llama") {
+    expected << config->buildToolSection(tools);
+    expected << "Get weather for SF" << config->endOfSentence();
+    expected << config->assistantTag();
   } else {
-    expected << config_->buildToolSection(tools);
-    expected << config_->userTag() << "Get weather for SF";
-    expected << config_->assistantTag();
+    expected << config->buildToolSection(tools);
+    expected << config->userTag() << "Get weather for SF";
+    expected << config->assistantTag();
   }
 
   EXPECT_EQ(actual, expected.str());
@@ -393,19 +393,19 @@ TEST_P(ChatTemplateToolsTest, MultipleToolsTemplate) {
 
   std::vector<Tool> tools = {createWeatherTool(), createTimeTool()};
 
-  std::string actual = tokenizer_->applyChatTemplate(messages, true, tools);
+  std::string actual = tokenizer->applyChatTemplate(messages, true, tools);
 
   std::ostringstream expected;
-  expected << config_->bos();
+  expected << config->bos();
 
-  if (std::string(config_->name()) == "Llama") {
-    expected << config_->buildToolSection(tools);
-    expected << "Check weather and time" << config_->endOfSentence();
-    expected << config_->assistantTag();
+  if (std::string(config->name()) == "Llama") {
+    expected << config->buildToolSection(tools);
+    expected << "Check weather and time" << config->endOfSentence();
+    expected << config->assistantTag();
   } else {
-    expected << config_->buildToolSection(tools);
-    expected << config_->userTag() << "Check weather and time";
-    expected << config_->assistantTag();
+    expected << config->buildToolSection(tools);
+    expected << config->userTag() << "Check weather and time";
+    expected << config->assistantTag();
   }
 
   EXPECT_EQ(actual, expected.str());
@@ -419,23 +419,23 @@ TEST_P(ChatTemplateToolsTest, ConversationHistoryTemplate) {
 
   std::vector<Tool> tools = {createWeatherTool()};
 
-  std::string actual = tokenizer_->applyChatTemplate(messages, true, tools);
+  std::string actual = tokenizer->applyChatTemplate(messages, true, tools);
 
   std::ostringstream expected;
-  expected << config_->bos();
+  expected << config->bos();
 
-  if (std::string(config_->name()) == "Llama") {
-    expected << config_->buildToolSection(tools);
-    expected << "Check SF weather" << config_->endOfSentence();
-    expected << config_->buildAssistantMessage("I'll check for you.");
-    expected << config_->buildUserMessage("Also check LA");
-    expected << config_->assistantTag();
+  if (std::string(config->name()) == "Llama") {
+    expected << config->buildToolSection(tools);
+    expected << "Check SF weather" << config->endOfSentence();
+    expected << config->buildAssistantMessage("I'll check for you.");
+    expected << config->buildUserMessage("Also check LA");
+    expected << config->assistantTag();
   } else {
-    expected << config_->buildToolSection(tools);
-    expected << config_->buildUserMessage("Check SF weather");
-    expected << config_->buildAssistantMessage("I'll check for you.");
-    expected << config_->buildUserMessage("Also check LA");
-    expected << config_->assistantTag();
+    expected << config->buildToolSection(tools);
+    expected << config->buildUserMessage("Check SF weather");
+    expected << config->buildAssistantMessage("I'll check for you.");
+    expected << config->buildUserMessage("Also check LA");
+    expected << config->assistantTag();
   }
 
   EXPECT_EQ(actual, expected.str());
@@ -450,7 +450,7 @@ TEST_P(ChatTemplateToolsTest, EmptyToolsVector) {
 
   std::vector<Tool> emptyTools;
   std::string result =
-      tokenizer_->applyChatTemplate(messages, true, emptyTools);
+      tokenizer->applyChatTemplate(messages, true, emptyTools);
 
   EXPECT_FALSE(result.empty());
 }
@@ -466,27 +466,27 @@ TEST_P(ChatTemplateToolsTest, ToolOutputs) {
 
   std::vector<Tool> tools = {createWeatherTool()};
 
-  std::string actual = tokenizer_->applyChatTemplate(messages, true, tools);
+  std::string actual = tokenizer->applyChatTemplate(messages, true, tools);
 
   std::ostringstream expected;
-  expected << config_->bos();
+  expected << config->bos();
 
-  if (std::string(config_->name()) == "Llama") {
-    expected << config_->buildToolSection(tools);
-    expected << "What's the weather in SF?" << config_->endOfSentence();
-    expected << config_->buildAssistantWithToolCall(assistantMsg);
-    expected << config_->toolOutputsBegin();
-    expected << config_->buildToolOutput(toolMsg);
-    expected << config_->toolOutputsEnd();
-    expected << config_->assistantTag();
+  if (std::string(config->name()) == "Llama") {
+    expected << config->buildToolSection(tools);
+    expected << "What's the weather in SF?" << config->endOfSentence();
+    expected << config->buildAssistantWithToolCall(assistantMsg);
+    expected << config->toolOutputsBegin();
+    expected << config->buildToolOutput(toolMsg);
+    expected << config->toolOutputsEnd();
+    expected << config->assistantTag();
   } else {
-    expected << config_->buildToolSection(tools);
-    expected << config_->userTag() << "What's the weather in SF?";
-    expected << config_->buildAssistantWithToolCall(assistantMsg);
-    expected << config_->toolOutputsBegin();
-    expected << config_->buildToolOutput(toolMsg);
-    expected << config_->toolOutputsEnd();
-    expected << config_->assistantTag();
+    expected << config->buildToolSection(tools);
+    expected << config->userTag() << "What's the weather in SF?";
+    expected << config->buildAssistantWithToolCall(assistantMsg);
+    expected << config->toolOutputsBegin();
+    expected << config->buildToolOutput(toolMsg);
+    expected << config->toolOutputsEnd();
+    expected << config->assistantTag();
   }
 
   EXPECT_EQ(actual, expected.str());
@@ -494,7 +494,7 @@ TEST_P(ChatTemplateToolsTest, ToolOutputs) {
 
 TEST_P(ChatTemplateToolsTest, MultipleToolOutputs) {
   // Llama only supports single tool calls, so skip this test
-  if (std::string(config_->name()) == "Llama") {
+  if (std::string(config->name()) == "Llama") {
     GTEST_SKIP() << "Llama only supports single tool-calls";
   }
 
@@ -511,7 +511,7 @@ TEST_P(ChatTemplateToolsTest, MultipleToolOutputs) {
 
   std::vector<Tool> tools = {createWeatherTool()};
 
-  std::string actual = tokenizer_->applyChatTemplate(messages, true, tools);
+  std::string actual = tokenizer->applyChatTemplate(messages, true, tools);
 
   // Verify key components
   EXPECT_NE(actual.find("Get weather for SF and LA"), std::string::npos);
