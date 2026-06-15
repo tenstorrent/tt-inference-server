@@ -1,9 +1,12 @@
 # Deploying Dynamo Frontend + cpp_server Worker
 
-`deploy.sh` brings up a three-container, etcd-backed stack on the `dynamo-net`
-Docker network — **etcd** (discovery), **cpp_server** (worker), and
-**dynamo-frontend** (HTTP gateway) — then tails the worker's logs. Ctrl+C tears
-all three down.
+`deploy.sh` brings up an etcd-backed Dynamo stack on the `dynamo-net` Docker
+network — **etcd** (discovery), **cpp_server** (worker), and
+**dynamo-frontend** (HTTP gateway) — plus **Prometheus** and **Grafana** from
+`tt-media-server/monitoring/`. With `--prefill-gateway`, it also starts a
+C++ **PrefillGateway**, a managed prefill cpp_server worker, and configures the
+Dynamo-registered cpp_server as decode so requests go through the gateway. It
+then tails the decode worker's logs. Ctrl+C tears the managed containers down.
 
 ## Quick start
 
@@ -21,11 +24,15 @@ build made without `TT_METAL_HOME` runs the mock backend):
 
 ```bash
 cd ../tt-media-server/cpp_server && ./build.sh        # produces build/tt_media_server_cpp
-cd ../../dynamo_frontend && ./deploy.sh --deepseek --local-build
+cd ../../dynamo_frontend
+PROMETHEUS_HOST_PORT=9091 GRAFANA_HOST_PORT=3001 \
+  ./deploy.sh --deepseek --local-build --llm-device-backend mock_pipeline
 ```
 
 `--local-build` bind-mounts `<repo>/tt-media-server/cpp_server/build` over the
 worker image and runs that binary — no `--cpp-server-dir` and no image rebuild.
+`mock_pipeline` avoids the Blaze socket descriptor files that
+`pipeline_manager` expects from a live Blaze runtime.
 
 ## Options
 
@@ -39,15 +46,38 @@ worker image and runs that binary — no `--cpp-server-dir` and no image rebuild
 | `--worker-image <img>`   | `…/tt-media-inference-server-blaze:<tag>` | cpp_server image                                                                |
 | `--frontend-image <img>` | `…/tt-dynamo-frontend:<tag>`              | Dynamo frontend image                                                           |
 | `--device-ids <ids>`     | `10,11,14,15,18,19,22,23`                 | `DEVICE_IDS` env on the worker                                                  |
+| `--llm-device-backend <name>` | `pipeline_manager`                   | `LLM_DEVICE_BACKEND` env on the worker                                          |
+| `--prefill-gateway`      | off                                       | Start PrefillGateway and route decode prefill requests through it               |
+| `--prefill-gateway-image <img>` | `tt-prefill-gateway:dev`          | PrefillGateway image; the default local image is built automatically if missing |
+| `--prefill-gateway-prefill <host:port>` | none                       | External TCP prefill endpoint; repeatable and implies TCP transport             |
+| `--prefill-gateway-prefill-bind <host:port>` | `0.0.0.0:7200`        | ZMQ prefill ROUTER bind endpoint                                                |
+| `--no-monitoring`        | off                                       | Skip Prometheus + Grafana                                                       |
 
 
 Fixed (not flags): network `dynamo-net`, container names `etcd` / `tt-cpp-worker`
-/ `dynamo-frontend`, frontend host port `8080`, `LLM_DEVICE_BACKEND=pipeline_manager`,
-`MODEL_NAME=tt-cpp-server`.
+/ `dynamo-frontend`, monitoring container names `dynamo-prometheus` /
+`dynamo-grafana` / `dynamo-process-exporter`, optional gateway container name
+`prefill-gateway`, optional managed prefill worker container name
+`tt-cpp-prefill-worker`, frontend host port `8080`,
+`LLM_DEVICE_BACKEND=pipeline_manager`, `MODEL_NAME=tt-cpp-server`.
 
-`HF_TOKEN` (for gated models) and perf knobs (`DYN_TOKENIZER`, `RAYON_NUM_THREADS`,
-`DYN_RUNTIME_*`, `RUST_LOG`, `DYN_TX_TRACE`, `DYN_ENABLE_ANTHROPIC_API`) are read
-from the calling shell's environment if set.
+`HF_TOKEN` (for gated models) and perf knobs (`ROUTER_MODE`, `DYN_TOKENIZER`,
+`RAYON_NUM_THREADS`, `DYN_RUNTIME_*`, `RUST_LOG`, `DYN_TX_TRACE`,
+`DYN_ENABLE_ANTHROPIC_API`) are read from the calling shell's environment if
+set. `ROUTER_MODE` defaults to `kv` in this deployment so Dynamo frontend
+timing metrics are emitted; override it if you need a different router.
+`LLM_DEVICE_BACKEND` is also read from the environment and can be overridden
+with `--llm-device-backend`.
+
+Monitoring uses `tt-media-server/monitoring/docker-compose.yml`, attached to
+`dynamo-net` via `TT_NET=dynamo-net`. By default Prometheus scrapes
+`dynamo-frontend:8000` so Dynamo frontend metrics are available immediately.
+Override `SERVER_TARGET`, `SERVER_SERVICE`, `GATEWAY_TARGET`, or
+`GF_HOME_DASHBOARD` in the calling shell if you want a different scrape target
+or dashboard. If another monitoring stack already uses the default ports, set
+`PROMETHEUS_HOST_PORT` or `GRAFANA_HOST_PORT` before running `deploy.sh`.
+When `--prefill-gateway` is enabled and `GATEWAY_TARGET` is not set,
+Prometheus scrapes `prefill-gateway:9091`.
 
 ## What it does, step by step
 
@@ -65,9 +95,20 @@ from the calling shell's environment if set.
   `MODEL_PATH` points at the tokenizer tree **baked into the frontend image**
    (same `fetch_tokenizers.sh` the worker uses), so no tokenizer bind-mount is
    needed.
-5. **Logs** — `docker logs -f tt-cpp-worker`, blocking until you Ctrl+C.
-6. **Teardown** — `trap cleanup EXIT INT TERM` removes the three containers
-  (the `dynamo-net` network is left in place).
+5. **PrefillGateway (optional)** — with `--prefill-gateway`, starts the
+   gateway on `dynamo-net`. The default ZMQ mode binds `0.0.0.0:7200` for
+   prefills and exposes metrics on container port `9091`; the script also
+   starts one managed `LLM_MODE=prefill` cpp_server worker that connects to
+   that bind endpoint. The Dynamo-registered worker runs as `LLM_MODE=decode`
+   with `USE_PREFILL_GATEWAY=1` and
+   `MAX_TOKENS_TO_PREFILL_ON_DECODE=0`, so decode requests route prefill work
+   through the gateway.
+6. **Monitoring** — starts Prometheus + Grafana, with Prometheus attached to
+   `dynamo-net` and scraping the frontend's `/metrics`.
+7. **Logs** — `docker logs -f tt-cpp-worker`, blocking until you Ctrl+C.
+8. **Teardown** — `trap cleanup EXIT INT TERM` stops the monitoring compose
+   stack and removes the Dynamo containers plus the optional PrefillGateway and
+   managed prefill worker (the `dynamo-net` network is left in place).
 
 ## Verify (from a second shell)
 
@@ -77,6 +118,14 @@ curl -s http://localhost:8080/v1/models | jq          # owned_by: "TT Inc"
 curl -sS http://localhost:8080/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"deepseek-ai/DeepSeek-R1-0528","messages":[{"role":"user","content":"Hello"}],"max_tokens":16}' | jq
+```
+
+Open Prometheus at `http://localhost:${PROMETHEUS_HOST_PORT:-9090}` and Grafana
+at `http://localhost:${GRAFANA_HOST_PORT:-3000}` (`admin` / `admin`).
+Prometheus target health is also available directly:
+
+```bash
+curl -s "http://localhost:${PROMETHEUS_HOST_PORT:-9090}/api/v1/targets" | jq
 ```
 
 Use the `id` returned by `/v1/models` as the `model` (it's the HF id, e.g.
@@ -91,11 +140,33 @@ docker exec etcd etcdctl get --prefix --keys-only v1/
 # v1/mdc/default/backend/generate/<hex>
 ```
 
+If you enabled `--prefill-gateway`, verify that Prometheus sees it:
+
+```bash
+docker exec dynamo-prometheus wget -qO- http://prefill-gateway:9091/metrics | head
+docker exec dynamo-prometheus wget -qO- http://127.0.0.1:9090/api/v1/targets
+```
+
+You can also inspect the gateway health endpoint inside the Docker network:
+
+```bash
+docker exec dynamo-prometheus wget -qO- http://prefill-gateway:9092/health
+```
+
 ## Troubleshooting
 
 - **Worker never registers** — usually a device or model-env problem; the worker
 log dump on timeout shows the cause. On a box without the card, use
-`--local-build` with a mock build to exercise the discovery + frontend wiring.
+`--local-build --llm-device-backend mock_pipeline` with a mock build to
+exercise the discovery + frontend wiring.
+- **Prometheus/Grafana port already allocated** — keep the existing monitoring
+stack running and publish this deployment on alternate ports:
+`PROMETHEUS_HOST_PORT=9091 GRAFANA_HOST_PORT=3001 ./deploy.sh --deepseek`.
+- **PrefillGateway is up but unhealthy** — inspect
+`docker logs prefill-gateway`, `docker logs tt-cpp-prefill-worker`, and
+`docker exec dynamo-prometheus wget -qO- http://prefill-gateway:9092/health`.
+Healthy gateway routing requires one decode connection and at least one
+registered prefill worker.
 - `**/v1/models` is empty** — frontend and worker aren't talking to the same etcd.
 Check `docker exec dynamo-frontend curl -s http://etcd:2379/version` and that
 both use namespace `default` / component `backend` / endpoint `generate`.
