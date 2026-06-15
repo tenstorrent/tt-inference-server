@@ -72,6 +72,10 @@ cd build && ctest --output-on-failure        # runs transport_test in any config
 tests/integration/run_transport_migration_e2e.sh                  # transport-only loopback, no HW
 STORAGE=device SRC_DEVICE_ID=0 DST_DEVICE_ID=1 \
   tests/integration/run_transport_migration_e2e.sh                # real device DRAM, two boards
+
+# #4209 worker discovery via the Mooncake Metadata Service (host RAM only, two hosts):
+tests/integration/run_mooncake_metadata_server.sh                 # start the metadata service
+tests/integration/run_migration_worker_discovery.sh               # single-host smoke (auto-starts service)
 ```
 
 Build guards: `USE_METAL_CPP_LIB` (real UMD I/O, via `--blaze`) and
@@ -87,6 +91,7 @@ in **every** configuration. RDMA: `--mooncake-rdma`.
 | Device-DRAM backend single-galaxy round-trip (UMD, `--blaze`) | impl |
 | Mooncake transport loopback TCP (host backend, `--mooncake`) | impl |
 | Two-galaxy acceptance, both backends enabled | pending a two-process HW run |
+| Metadata-service worker discovery, two hosts, host RAM (#4209) | impl |
 
 ## Contents of this folder
 

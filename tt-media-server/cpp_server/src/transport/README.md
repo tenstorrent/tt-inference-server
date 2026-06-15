@@ -131,6 +131,55 @@ The harness exchanges the receiver's *actual* segment name via a rendezvous file
 `tests/integration/transport_migration_e2e.cpp` for all env overrides
 (`STORAGE`, `BYTES`, `SRC_ADDR`/`DST_ADDR`, `TIMEOUT_SEC`, …).
 
+## Worker discovery via the Mooncake Metadata Service (issue [#4209](https://github.com/tenstorrent/tt-inference-server/issues/4209))
+
+The `transport_migration_e2e` harness above uses `metadata_uri = "P2PHANDSHAKE"`,
+where each engine binds a **random OS-assigned port** and there is no shared
+registry — so the receiver's *actual* `host:randomPort` name has to be smuggled to
+the sender through a **rendezvous file** on a shared path. That does not work across
+two independent hosts.
+
+#4209 removes that hack by validating the **Mooncake Metadata Service** as the
+discovery mechanism. With a real metadata service (mooncake_master's HTTP metadata
+server, etcd, or redis), the receiver advertises under a **predefined logical name**;
+Mooncake's "new RPC mapping" path
+([`transfer_engine_impl.cpp`](../../tt-llm-engine/third_party/mooncake/mooncake-transfer-engine/src/transfer_engine_impl.cpp))
+registers `<name> → {auto-detected IP, OS-assigned dynamic port}` in that service.
+The sender opens the predefined name and the service resolves the dynamic address —
+no rendezvous file, no predefined port. **Host RAM only** (no device memory).
+
+```
+   receiver: init(metadata, name="kv-receiver-0") + registerLocalMemory
+                 └─► metadata service: kv-receiver-0 → {IP, dynamic port}
+   sender:   openSegment("kv-receiver-0")  ──► service resolves the dynamic port
+                 └─► submitTransfer (TCP, one tensor) across hosts
+```
+
+Driver: `migration_worker_discovery` (built next to `transport_migration_e2e`,
+`--mooncake` only). Start the metadata service once on a host both peers can reach,
+then run a receiver and a sender:
+
+```bash
+# Single-host smoke test (auto-starts the metadata service, runs both workers):
+tests/integration/run_migration_worker_discovery.sh
+
+# Two-host run (the real PoC):
+#  metadata host:
+tests/integration/run_mooncake_metadata_server.sh
+#  receiver host:
+build/migration_worker_discovery --role receiver \
+  --metadata http://META_HOST:8080/metadata --name kv-receiver-0 --bytes 1048576
+#  sender host:
+build/migration_worker_discovery --role sender \
+  --metadata http://META_HOST:8080/metadata --name kv-sender-0 \
+  --peer kv-receiver-0 --bytes 1048576
+```
+
+`mooncake_master` ships in the `mooncake-transfer-engine` wheel (see
+[`mooncake/poc1`](../../../../mooncake/poc1)). On multi-NIC hosts, set
+`MC_TCP_BIND_ADDRESS` to the IP the peer should connect to if auto-detection picks the
+wrong interface.
+
 ## Validation status
 
 | Step | Status |
@@ -139,6 +188,7 @@ The harness exchanges the receiver's *actual* segment name via a rendezvous file
 | Device-DRAM backend single-galaxy round-trip (UMD, `--blaze`) | impl |
 | Mooncake transport loopback TCP (host backend, `--mooncake`) | impl |
 | Two-galaxy acceptance, both backends enabled | pending a two-process HW run |
+| Metadata-service worker discovery, two hosts, host RAM (#4209, `migration_worker_discovery`) | impl |
 
 ## Future work — wiring into the tt-llm-engine migration worker
 

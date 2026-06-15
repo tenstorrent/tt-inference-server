@@ -573,6 +573,17 @@ if(TARGET transfer_engine)
     target_include_directories(transport_migration_e2e PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
     message(STATUS "transport_migration_e2e: ENABLED (Mooncake acceptance harness)")
+
+    # #4209 migration-worker discovery PoC: two hosts find each other by a
+    # predefined logical name through the Mooncake Metadata Service (dynamic
+    # OS-assigned ports, host RAM only). Manual sender/receiver driver, run via
+    # tests/integration/run_migration_worker_discovery.sh.
+    add_executable(migration_worker_discovery
+        tests/integration/migration_worker_discovery.cpp)
+    target_link_libraries(migration_worker_discovery PRIVATE transport_lib)
+    target_include_directories(migration_worker_discovery PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    message(STATUS "migration_worker_discovery: ENABLED (#4209 discovery PoC)")
 endif()
 
 # Unit tests (link llm_runner_lib)
