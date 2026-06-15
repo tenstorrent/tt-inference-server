@@ -298,8 +298,9 @@ for _kind in GENERIC_KINDS:
     register(_kind)(render_generic_table)
 
 
-# Side-effect import: register the AIPerf prefix-cache renderer so any
-# report_module consumer picks it up without needing to import the
-# submodule explicitly. Placed after GENERIC_KINDS so all decorators
-# from this file run first.
+# Side-effect imports: register the AIPerf prefix-cache and spec-decode
+# renderers so any report_module consumer picks them up without needing
+# to import the submodules explicitly. Placed after GENERIC_KINDS so all
+# decorators from this file run first.
 from report_module import prefix_cache_renderer as _prefix_cache_renderer  # noqa: E402,F401
+from report_module import spec_decode_renderer as _spec_decode_renderer  # noqa: E402,F401

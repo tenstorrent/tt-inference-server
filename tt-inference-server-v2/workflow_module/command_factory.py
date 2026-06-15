@@ -23,7 +23,7 @@ from utils.url_helpers import resolve_deploy_url
 from test_module import MediaContext
 
 from .commands import Command, SummaryCommand, WorkflowCommand
-from .execution import OrchestratorMetadata, PrefixCacheOptions, ServingBenchOptions
+from .execution import OrchestratorMetadata, PrefixCacheOptions, ServingBenchOptions, SpecDecodeOptions
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,12 @@ def _build_repeated_commands(
 def _build_context(
     args: argparse.Namespace, output_path: Optional[Path] = None
 ) -> MediaContext:
-    model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+    model_spec, _, _ = get_runtime_model_spec(
+        model=args.model,
+        device=args.device,
+        engine=getattr(args, "engine", None),
+        impl=getattr(args, "impl", None),
+    )
     model_spec.cli_args["device"] = args.device
     if args.num_prompts is not None:
         model_spec.cli_args["sdxl_num_prompts"] = max(2, args.num_prompts)
@@ -154,6 +159,7 @@ def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetada
         run_command=_capture_run_command(),
         runtime_model_spec_json=args.runtime_model_spec_json,
         prefix_cache=_build_prefix_cache_options(args),
+        spec_decode=_build_spec_decode_options(args),
         serving_bench=_build_serving_bench_options(args),
     )
 
@@ -185,6 +191,25 @@ def _build_prefix_cache_options(
         request_rate=args.prefix_cache_request_rate,
         scenarios_json=args.prefix_cache_scenarios_json,
         trace_path=args.prefix_cache_trace,
+        auth_token=_mint_jwt_if_secret(args.jwt_secret),
+    )
+
+
+def _build_spec_decode_options(
+    args: argparse.Namespace,
+) -> Optional[SpecDecodeOptions]:
+    """Translate the ``--spec-decode*`` CLI flags into ``SpecDecodeOptions``.
+
+    Returns ``None`` (the default) for every non-spec-decode run, leaving
+    ``BenchmarksWorkflow`` on its normal media-task dispatch. The flags are
+    only present when ``run.py`` registered them, so ``getattr`` guards keep
+    this safe for the image-model entry path that never adds them.
+    """
+    if not getattr(args, "spec_decode", False):
+        return None
+    return SpecDecodeOptions(
+        preset=args.spec_decode_preset,
+        warmup_requests=args.spec_decode_warmup_requests,
         auth_token=_mint_jwt_if_secret(args.jwt_secret),
     )
 

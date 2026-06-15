@@ -15,6 +15,7 @@ class WorkflowType(IntEnum):
     SERVER = auto()
     RELEASE = auto()
     SPEC_TESTS = auto()
+    SPEC_DECODE_BENCH = auto()
     AGENTIC = auto()
     SERVING_BENCH = auto()
 
@@ -36,6 +37,7 @@ class WorkflowVenvType(IntEnum):
     REPORTS_RUN_SCRIPT = auto()
     V2_RUN_SCRIPT = auto()
     V2_PREFIX_CACHE = auto()
+    V2_SPEC_DECODE = auto()
     EVALS_COMMON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()
@@ -55,6 +57,7 @@ class WorkflowVenvType(IntEnum):
     SERVER = auto()
     TT_SMI = auto()
     TT_TOPOLOGY = auto()
+    BENCHMARKS_SPEC_DECODE = auto()
 
 
 class BenchmarkTaskType(IntEnum):

@@ -406,6 +406,12 @@ _venv_config_list = [
         python_version="3.11",
     ),
     VenvConfig(
+        venv_type=WorkflowVenvType.V2_SPEC_DECODE,
+        requirements_file="v2-spec-decode.txt",
+        extra_dirs=("artifacts",),
+        python_version="3.11",
+    ),
+    VenvConfig(
         venv_type=WorkflowVenvType.HF_SETUP,
         requirements_file="hf-setup.txt",
     ),
@@ -447,6 +453,12 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
         requirements_file="benchmarks-aiperf.txt",
+        extra_dirs=("artifacts",),
+        python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_SPEC_DECODE,
+        requirements_file="benchmarks-spec-decode.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),

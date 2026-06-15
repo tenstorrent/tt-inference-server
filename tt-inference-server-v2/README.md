@@ -206,11 +206,12 @@ Renderer-agnostic schema and a registry-based renderer.
 ### `llm_module/`
 
 Work in progress — do not use yet, except for the **prefix-caching benchmark**
-which is end-to-end on v2 today (see "Prefix-caching benchmark" below). The
-directory also holds early scaffolding for a driver/parser abstraction over the
-other LLM perf tools (GuideLLM, GenAIPerf, InferenceMax, vllm-bench); those
-aren't wired up yet and LLM benchmarking still happens through v1 for
-everything except prefix caching.
+and the **speculative-decoding benchmark** which are end-to-end on v2 today
+(see the matching sections below). The directory also holds early scaffolding
+for a driver/parser abstraction over the other LLM perf tools (GuideLLM,
+GenAIPerf, InferenceMax, vllm-bench); those aren't wired up yet and LLM
+benchmarking still happens through v1 for everything except prefix caching and
+spec decode.
 
 ## Prefix-caching benchmark
 
@@ -261,6 +262,46 @@ scrapes into `server_metrics_export.jsonl`; on Tenstorrent hardware the
 `tt-vllm-plugin` currently disables prefix caching, so the hit-rate column
 renders as `null` until that's lifted (validation work was done against a
 reference GPU vLLM).
+
+## Speculative-decoding benchmark
+
+Run the AIPerf SPEED-Bench spec-decode sweep directly against an already-up
+vLLM-compatible server (no v1 entry point involved). The workflow is
+`benchmarks`; the spec-decode flag swaps the default media-task dispatch for
+the sweep defined in [`llm_module/spec_decode/runs.py`](llm_module/spec_decode/runs.py):
+all 11 SPEED-Bench qualitative categories at concurrency 1 plus a 1k–32k ISL
+throughput sweep at concurrency 1/16/64.
+
+Server-side speculative config is out of scope — it belongs to whoever
+launched the server, before the benchmark starts. Each run scrapes the vLLM
+`vllm:spec_decode_*` Prometheus counters before/after every AIPerf invocation,
+so acceptance rate and mean accepted length are per-run deltas. Note the TT
+backend (`tt-vllm-plugin`) does not support speculative decoding yet, so a
+spec-enabled target currently requires a reference GPU vLLM.
+
+`run.py` must run inside the dedicated `V2_SPEC_DECODE` venv (aiperf >= 0.8 for
+the SPEED-Bench dataset plugins — its pillow requirement conflicts with the
+shared `constraints.txt` pin, hence the separate venv). Use the thin launcher
+`run_spec_decode.py`, which selects/creates that venv (requirements in
+[`requirements/v2-spec-decode.txt`](../requirements/v2-spec-decode.txt)) and
+re-execs `run.py` inside it:
+
+```bash
+python tt-inference-server-v2/run_spec_decode.py \
+    --model Llama-3.1-8B-Instruct \
+    --workflow benchmarks \
+    --device gpu \
+    --service-port 8000 \
+    --spec-decode \
+    --jwt-secret "$JWT_SECRET"
+```
+
+Each AIPerf run emits a `Block(kind="aiperf_spec_decode")`, which the report
+generator collapses into a per-run Markdown table (latency percentiles,
+throughput, acceptance metrics) via the renderer registered in
+[`report_module/spec_decode_renderer.py`](report_module/spec_decode_renderer.py).
+An acceptance rate of `0.000` means the target server is not actually running
+with speculative decoding enabled.
 
 ## Agentic evals
 

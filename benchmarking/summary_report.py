@@ -298,6 +298,44 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         }
         return params
 
+    # Try speculative-decoding benchmark pattern. Filename shape (no isl):
+    # benchmark_spec_decode_<model>_<device>_<timestamp>_
+    #   <public_dataset>[_osl-X]_maxcon-Y[_n-N].json
+    # ``<public_dataset>`` is the aiperf ``--public-dataset`` slug, always
+    # starting with ``spec_bench`` or ``speed_bench``. ``osl-X`` is present
+    # only when the run forced a fixed output length (otherwise natural EOS).
+    # ``n-N`` is present only when the run capped the prompt count (otherwise
+    # aiperf consumed the full dataset). Example with both omitted:
+    #   benchmark_spec_decode_id_x_gpu_2026-05-20_10-00-00_speed_bench_coding_maxcon-1.json
+    spec_decode_pattern = r"""
+        ^benchmark_spec_decode_
+        (?P<model>.+?)
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy|gpu|cpu|GPU|CPU))?
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
+        _(?P<public_dataset>(?:spec_bench|speed_bench)(?:_[a-zA-Z0-9]+)*)
+        (?:_osl-(?P<osl>\d+))?
+        _maxcon-(?P<maxcon>\d+)
+        (?:_n-(?P<n>\d+))?
+        \.json$
+    """
+    match = re.search(spec_decode_pattern, filename, re.VERBOSE)
+    if match:
+        logger.info(f"Found spec-decode benchmark pattern in filename: {filename}")
+        osl_match = match.group("osl")
+        n_match = match.group("n")
+        return {
+            "model_name": match.group("model"),
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "output_sequence_length": (
+                int(osl_match) if osl_match is not None else None
+            ),
+            "max_con": int(match.group("maxcon")),
+            "num_requests": int(n_match) if n_match is not None else None,
+            "public_dataset": match.group("public_dataset"),
+            "task_type": "spec_decode",
+        }
+
     # Try structured-output benchmark pattern (no isl in filename; dataset+ratio instead)
     # Dataset is non-greedy so names that contain underscores (e.g.
     # "xgrammar_bench") are captured up to the so-/no-so anchor that follows.
@@ -654,10 +692,12 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         }
         return format_metrics(metrics)
 
-    if params.get("task_type") == "structured_output":
-        logger.info(f"Processing STRUCTURED OUTPUT benchmark file: {filename}")
-        # Filename omits isl for structured-output runs; derive mean ISL from
-        # the upstream payload so the default path below can use it.
+    if params.get("task_type") in ("structured_output", "spec_decode"):
+        logger.info(
+            f"Processing {params['task_type'].upper()} benchmark file: {filename}"
+        )
+        # Filename omits isl for these runs; derive mean ISL from the upstream
+        # payload so the default vLLM-bench path below can use it.
         total_input_tokens = data.get("total_input_tokens") or 0
         num_prompts = data.get("num_prompts") or params["num_requests"]
         params["input_sequence_length"] = (
@@ -732,6 +772,30 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "dataset": params["dataset"],
                 "structured_output_ratio": params["structured_output_ratio"],
                 "correct_rate_pct": data.get("correct_rate(%)"),
+            }
+        )
+
+    if params["task_type"] == "spec_decode":
+        # Lift spec_decode_metrics (annotated by merge_acceptance_rate at
+        # benchmark time) into top-level fields so display/CSV pick them up.
+        # Also carry forward the percentile + throughput fields raw.
+        spec_meta = data.get("spec_decode_metrics") or {}
+        metrics.update(
+            {
+                "public_dataset": spec_meta.get("public_dataset")
+                or params["public_dataset"],
+                "acceptance_rate": spec_meta.get("acceptance_rate"),
+                "mean_accepted_length": spec_meta.get("mean_accepted_length"),
+                "accepted_tokens": spec_meta.get("accepted_tokens"),
+                "draft_tokens": spec_meta.get("draft_tokens"),
+                "num_drafts": spec_meta.get("num_drafts"),
+                "p50_e2el_ms": data.get("p50_e2el_ms"),
+                "p95_e2el_ms": data.get("p95_e2el_ms"),
+                "p99_e2el_ms": data.get("p99_e2el_ms"),
+                "p50_tpot_ms": data.get("p50_tpot_ms"),
+                "p95_tpot_ms": data.get("p95_tpot_ms"),
+                "p99_tpot_ms": data.get("p99_tpot_ms"),
+                "output_throughput": data.get("output_throughput"),
             }
         )
 
@@ -1031,6 +1095,29 @@ def create_video_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     return display_dict
 
 
+def create_spec_decode_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
+    """Per-run display dict for spec-decode result JSONs."""
+    display_cols: List[Tuple[str, str]] = [
+        ("public_dataset", "Dataset"),
+        ("output_sequence_length", "OSL"),
+        ("max_con", "Concurrency"),
+        ("num_requests", "N Req"),
+        ("acceptance_rate", "Accept Rate"),
+        ("mean_accepted_length", "Mean Acc Len"),
+        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_tpot_ms", "TPOT (ms)"),
+        ("mean_e2el_ms", "E2EL (ms)"),
+        ("total_token_throughput", "Total Token Tput"),
+    ]
+    display_dict: Dict[str, str] = {}
+    for col_name, display_header in display_cols:
+        value = result.get(col_name)
+        if value is None:
+            value = NOT_MEASURED_STR
+        display_dict[display_header] = str(value)
+    return display_dict
+
+
 def sanitize_cell(text: str) -> str:
     text = str(text).replace("|", "\\|").replace("\n", " ")
     return text.strip()
@@ -1239,6 +1326,36 @@ def render_structured_output_sections(
     return [f"{title}\n\n{table_md}"]
 
 
+def render_spec_decode_sections(
+    spec_decode_results: List[Dict[str, Any]],
+    model_name: str,
+    device: str,
+) -> List[str]:
+    """Render the per-run markdown section for speculative-decoding results."""
+    sections: List[str] = []
+
+    if spec_decode_results:
+
+        def sort_key(r):
+            return (
+                r.get("public_dataset", ""),
+                r.get("output_sequence_length") or 0,
+                r.get("max_con", 0),
+            )
+
+        rows = [
+            create_spec_decode_display_dict(r)
+            for r in sorted(spec_decode_results, key=sort_key)
+        ]
+        title = (
+            f"#### Speculative Decoding Per-Run Benchmark Sweeps "
+            f"for {model_name} on {device}"
+        )
+        sections.append(f"{title}\n\n{get_markdown_table(rows)}")
+
+    return sections
+
+
 def save_markdown_table(
     markdown_str: str, filepath: str, add_title: str = None, add_notes: List[str] = None
 ) -> None:
@@ -1324,6 +1441,7 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     structured_results = [
         r for r in results if r.get("task_type") == "structured_output"
     ]
+    spec_decode_results = [r for r in results if r.get("task_type") == "spec_decode"]
 
     markdown_sections = []
 
@@ -1339,6 +1457,16 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         markdown_sections.extend(
             render_structured_output_sections(
                 structured_results, model_name, device, source_label=""
+            )
+        )
+
+    # Generate speculative-decoding sections (per-run + in-memory speedup pair)
+    if spec_decode_results:
+        markdown_sections.extend(
+            render_spec_decode_sections(
+                spec_decode_results,
+                model_name,
+                device,
             )
         )
 
