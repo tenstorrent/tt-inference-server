@@ -88,9 +88,9 @@ DEFAULT_REPO = "tenstorrent/tt-shield"
 DEFAULT_VERSION = "v0.15.0"
 DEFAULT_RUN_ID = "26592936143"
 DEFAULT_MODELS: dict[str, list[str]] = {
-    "speecht5_tts":     ["p150", "p300x2"],
+    "speecht5_tts": ["p150", "p300x2"],
     "whisper-large-v3": ["p150", "p300x2"],
-    "distil-large-v3":  ["p150", "p300x2"],
+    "distil-large-v3": ["p150", "p300x2"],
 }
 
 
@@ -138,7 +138,7 @@ def runner_of(artifact_name: str, model: str) -> str:
     exactly, so models that share a prefix (foo vs foo-turbo) are unambiguous
     because of the underscore boundary after the model name.
     """
-    rest = artifact_name[len(ARTIFACT_PREFIX) + len(model) + 1:]  # "<runner>_<suffix>"
+    rest = artifact_name[len(ARTIFACT_PREFIX) + len(model) + 1 :]  # "<runner>_<suffix>"
     return rest.rsplit("_", 1)[0]
 
 
@@ -150,7 +150,7 @@ def device_from_jobs(jobs: list[dict], model: str, runner: str) -> str | None:
         leaf = job.get("name", "").split("/")[-1].strip()
         idx = leaf.find(marker)
         if idx != -1:
-            tail = leaf[idx + len(marker):].strip()
+            tail = leaf[idx + len(marker) :].strip()
             if tail:
                 return tail.split()[0]  # device token has no spaces
     return None
@@ -166,14 +166,18 @@ def token_in_names(names: list[str], device: str) -> bool:
 # ---------------------------------------------------------------------------
 # download + verification
 # ---------------------------------------------------------------------------
-def download_artifact(repo: str, artifact: dict, dest_dir: Path, cache: dict[int, Path]) -> Path:
+def download_artifact(
+    repo: str, artifact: dict, dest_dir: Path, cache: dict[int, Path]
+) -> Path:
     """Download an artifact as its raw .zip (not extracted). Verifies the
     on-disk size against the API-reported size and the zip's integrity."""
     aid = artifact["id"]
     if aid in cache:
         return cache[aid]
     if artifact.get("expired"):
-        sys.exit(f"ERROR: artifact '{artifact['name']}' (id {aid}) has expired and cannot be downloaded.")
+        sys.exit(
+            f"ERROR: artifact '{artifact['name']}' (id {aid}) has expired and cannot be downloaded."
+        )
     data = run_gh(["api", f"repos/{repo}/actions/artifacts/{aid}/zip"], binary=True)
     path = dest_dir / f"{aid}.zip"
     path.write_bytes(data)
@@ -181,7 +185,9 @@ def download_artifact(repo: str, artifact: dict, dest_dir: Path, cache: dict[int
     expected = artifact.get("size_in_bytes")
     actual = path.stat().st_size
     if expected and actual != expected:
-        sys.exit(f"ERROR: size mismatch for '{artifact['name']}': downloaded {actual} bytes, expected {expected}.")
+        sys.exit(
+            f"ERROR: size mismatch for '{artifact['name']}': downloaded {actual} bytes, expected {expected}."
+        )
     try:
         with zipfile.ZipFile(path) as zf:
             bad = zf.testzip()
@@ -204,7 +210,9 @@ def resolve_model(
     cache: dict[int, Path],
 ) -> dict[str, dict]:
     """Return {device: artifact} for the requested devices of one model."""
-    candidates = [a for a in artifacts if a["name"].startswith(f"{ARTIFACT_PREFIX}{model}_")]
+    candidates = [
+        a for a in artifacts if a["name"].startswith(f"{ARTIFACT_PREFIX}{model}_")
+    ]
     if not candidates:
         sys.exit(
             f"ERROR: no '{ARTIFACT_PREFIX}{model}_*' artifacts found for model '{model}'.\n"
@@ -278,7 +286,9 @@ def validate_structure(zip_path: Path, reference: Path | None) -> None:
         infos = zf.infolist()
     top_dirs = {i.filename.split("/")[0] for i in infos}
     if len(top_dirs) != 1:
-        sys.exit(f"ERROR: expected exactly one top-level folder, found: {sorted(top_dirs)}")
+        sys.exit(
+            f"ERROR: expected exactly one top-level folder, found: {sorted(top_dirs)}"
+        )
     inner = [i for i in infos if not i.filename.endswith("/")]
     for i in inner:
         if not i.filename.endswith(".zip"):
@@ -293,8 +303,10 @@ def validate_structure(zip_path: Path, reference: Path | None) -> None:
         ours_ok = all(pat.match(i.filename) for i in inner)
         ref_ok = all(pat.match(n) for n in ref_inner)
         status = "matches" if (ours_ok and ref_ok) else "DIFFERS FROM"
-        print(f"  Layout vs reference '{reference.name}': inner-zip naming {status} "
-              f"the 'workflow_logs_release_<model>_<device>.zip' pattern.")
+        print(
+            f"  Layout vs reference '{reference.name}': inner-zip naming {status} "
+            f"the 'workflow_logs_release_<model>_<device>.zip' pattern."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -305,12 +317,16 @@ def parse_model_specs(specs: list[str]) -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}
     for spec in specs:
         if "=" not in spec:
-            sys.exit(f"ERROR: bad --model spec '{spec}'. Use MODEL=device1,device2 (e.g. speecht5_tts=p150,p300x2).")
+            sys.exit(
+                f"ERROR: bad --model spec '{spec}'. Use MODEL=device1,device2 (e.g. speecht5_tts=p150,p300x2)."
+            )
         model, devs = spec.split("=", 1)
         model = model.strip()
         devices = [d.strip() for d in devs.split(",") if d.strip()]
         if not model or not devices:
-            sys.exit(f"ERROR: bad --model spec '{spec}'. Need a model and at least one device.")
+            sys.exit(
+                f"ERROR: bad --model spec '{spec}'. Need a model and at least one device."
+            )
         out.setdefault(model, [])
         for d in devices:
             if d not in out[model]:
@@ -323,25 +339,50 @@ def main() -> None:
         description="Build <version>-release_artifacts.zip from a tt-shield Release Actions run.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    ap.add_argument("--repo", default=DEFAULT_REPO, help=f"GitHub repo (default: {DEFAULT_REPO})")
-    ap.add_argument("--run-id", default=DEFAULT_RUN_ID, help="Actions run ID")
-    ap.add_argument("--version", default=DEFAULT_VERSION, help="Release version, e.g. v0.15.0")
     ap.add_argument(
-        "--model", action="append", default=[], metavar="MODEL=dev1,dev2",
+        "--repo", default=DEFAULT_REPO, help=f"GitHub repo (default: {DEFAULT_REPO})"
+    )
+    ap.add_argument("--run-id", default=DEFAULT_RUN_ID, help="Actions run ID")
+    ap.add_argument(
+        "--version", default=DEFAULT_VERSION, help="Release version, e.g. v0.15.0"
+    )
+    ap.add_argument(
+        "--model",
+        action="append",
+        default=[],
+        metavar="MODEL=dev1,dev2",
         help="Model and its devices. Repeatable. If omitted, the embedded DEFAULT_MODELS is used.",
     )
-    ap.add_argument("--output-dir", "--destination", default=".", dest="output_dir",
-                    help="Where to write the final zip. Accepts absolute path, relative path, or '.' for cwd (default: cwd)")
-    ap.add_argument("--reference-zip", default=None, help="Optional previous release zip to sanity-check layout against")
-    ap.add_argument("--keep-temp", action="store_true", help="Keep the temp download dir for inspection")
-    ap.add_argument("--strict", action="store_true",
-                    help="Treat a missing internal device token as a hard error (default: warn)")
+    ap.add_argument(
+        "--output-dir",
+        "--destination",
+        default=".",
+        dest="output_dir",
+        help="Where to write the final zip. Accepts absolute path, relative path, or '.' for cwd (default: cwd)",
+    )
+    ap.add_argument(
+        "--reference-zip",
+        default=None,
+        help="Optional previous release zip to sanity-check layout against",
+    )
+    ap.add_argument(
+        "--keep-temp",
+        action="store_true",
+        help="Keep the temp download dir for inspection",
+    )
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="Treat a missing internal device token as a hard error (default: warn)",
+    )
     args = ap.parse_args()
 
     models = parse_model_specs(args.model) if args.model else dict(DEFAULT_MODELS)
     out_dir = Path(args.output_dir).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    reference = Path(args.reference_zip).expanduser().resolve() if args.reference_zip else None
+    reference = (
+        Path(args.reference_zip).expanduser().resolve() if args.reference_zip else None
+    )
 
     print(f"Repo:    {args.repo}")
     print(f"Run:     {args.run_id}")
@@ -362,7 +403,9 @@ def main() -> None:
 
     try:
         for model, devices in models.items():
-            chosen = resolve_model(model, devices, artifacts, jobs, args.repo, tmp_dir, cache)
+            chosen = resolve_model(
+                model, devices, artifacts, jobs, args.repo, tmp_dir, cache
+            )
             for device in devices:
                 artifact = chosen[device]
                 src = download_artifact(args.repo, artifact, tmp_dir, cache)
@@ -371,9 +414,11 @@ def main() -> None:
                 with zipfile.ZipFile(src) as zf:
                     names = zf.namelist()
                 if not token_in_names(names, device):
-                    msg = (f"device token '{device}' not found inside bundle "
-                           f"'{artifact['name']}' (resolved from runner "
-                           f"'{runner_of(artifact['name'], model)}').")
+                    msg = (
+                        f"device token '{device}' not found inside bundle "
+                        f"'{artifact['name']}' (resolved from runner "
+                        f"'{runner_of(artifact['name'], model)}')."
+                    )
                     if args.strict:
                         sys.exit(f"ERROR: {msg}")
                     print(f"  WARNING: {msg}")
@@ -382,8 +427,10 @@ def main() -> None:
                 staged_path = tmp_dir / inner_name
                 staged_path.write_bytes(src.read_bytes())
                 staged[inner_name] = staged_path
-                print(f"  + {inner_name:55s}  <- {artifact['name']}  "
-                      f"({artifact.get('size_in_bytes', '?')} bytes)")
+                print(
+                    f"  + {inner_name:55s}  <- {artifact['name']}  "
+                    f"({artifact.get('size_in_bytes', '?')} bytes)"
+                )
 
         print(f"\nPackaging {len(staged)} bundles ...")
         out_path = package(args.version, staged, out_dir)
@@ -394,6 +441,7 @@ def main() -> None:
             print(f"\n(temp dir kept: {tmp_dir})")
         else:
             import shutil
+
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
