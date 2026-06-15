@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 //
 // Smoke test: two processes communicate through a Boost IPC task queue.
@@ -8,8 +7,8 @@
 //              then forks.
 //   Child   -- opens the queue via boost TaskQueue, creates a Scheduler,
 //              calls schedule(), and verifies the deserialized batch.
-//
-// Exit code 0 = PASS.
+
+#include <gtest/gtest.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -17,9 +16,10 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
-#include <cassert>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
+#include <string>
 
 #include "config/runner_config.hpp"
 #include "domain/llm/sampling_params.hpp"
@@ -27,6 +27,7 @@
 #include "ipc/boost/boost_task_queue.hpp"
 #include "runtime/runners/schedulers/prefill_first_scheduler.hpp"
 #include "runtime/runners/schedulers/scheduler.hpp"
+#include "utils/id_generator.hpp"
 
 using Sequence = tt::domain::llm::Sequence;
 using SamplingParams = tt::domain::llm::SamplingParams;
@@ -34,29 +35,42 @@ namespace ipc = boost::interprocess;
 
 using namespace tt::domain::llm;
 
-static const char* queueName = "tt_ipc_scheduler_smoke_test";
-static constexpr size_t MAX_NUM_MSGS = 64;
-static constexpr size_t MAX_MSG_SIZE = 4096;
+namespace {
 
-int main() {
+constexpr size_t MAX_NUM_MSGS = 64;
+constexpr size_t MAX_MSG_SIZE = 4096;
+
+class IpcSchedulerSmokeTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // Generate unique queue name for this test run
+    queueName = "tt_ipc_scheduler_smoke_test_" + std::to_string(::getpid()) +
+                "_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+    // Clean up any leftover queue from a previous failed run
+    ipc::message_queue::remove(queueName.c_str());
+  }
+
+  void TearDown() override { ipc::message_queue::remove(queueName.c_str()); }
+
+  std::string queueName;
+};
+
+TEST_F(IpcSchedulerSmokeTest, TwoProcessesCommmunicateThroughTaskQueue) {
   using namespace tt::runners::schedulers;
   using Config = tt::config::LLMConfig;
 
-  // Clean up any leftover queue from a previous failed run.
-  ipc::message_queue::remove(queueName);
-
-  // --- Create the IPC queue (simulates the main server). ---
-  ipc::message_queue rawQueue(ipc::create_only, queueName, MAX_NUM_MSGS,
+  // Create the IPC queue (simulates the main server)
+  ipc::message_queue rawQueue(ipc::create_only, queueName.c_str(), MAX_NUM_MSGS,
                               MAX_MSG_SIZE);
 
-  // Build two sequences with known values.
+  // Build two sequences with known values
   uint32_t seq1Id = tt::utils::TaskIDGenerator::generate();
   uint32_t seq2Id = tt::utils::TaskIDGenerator::generate();
   Sequence seq1(seq1Id, 256, {1, 2, 3, 4}, SamplingParams{.max_tokens = 10});
   Sequence seq2(seq2Id, 256, {10, 20, 30},
                 SamplingParams{.temperature = 0.7f, .max_tokens = 5});
 
-  // Push via boost TaskQueue (opens the existing shared-memory queue).
+  // Push via boost TaskQueue (opens the existing shared-memory queue)
   {
     tt::ipc::boost::TaskQueue producer(queueName);
     producer.push(seq1);
@@ -68,16 +82,12 @@ int main() {
   std::cout << "[parent] pushed task_id=" << seq2Id
             << " tokens=[10,20,30] max_tokens=5 temperature=0.7\n";
 
-  // --- Fork ---
+  // Fork
   pid_t pid = fork();
-  if (pid < 0) {
-    perror("fork");
-    ipc::message_queue::remove(queueName);
-    return 1;
-  }
+  ASSERT_GE(pid, 0) << "fork() failed";
 
   if (pid == 0) {
-    // ---- Child process: read from the queue via Scheduler ----
+    // Child process: read from the queue via Scheduler
     Config config;
     config.num_kvcache_blocks = 32;
     config.kvcache_block_size = 8;
@@ -108,7 +118,7 @@ int main() {
       std::cout << "]\n";
     }
 
-    // --- Verify (batch size is 1 with current max_in_flight_count setting) ---
+    // Verify (batch size is 1 with current max_in_flight_count setting)
     bool ok = true;
     auto fail = [&](const char* msg) {
       std::cerr << "[child]  FAIL: " << msg << "\n";
@@ -134,16 +144,14 @@ int main() {
     _exit(ok ? 0 : 1);
   }
 
-  // --- Parent: wait for child, clean up. ---
+  // Parent: wait for child, clean up
   int status = 0;
   waitpid(pid, &status, 0);
-  ipc::message_queue::remove(queueName);
 
-  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-    std::cout << "[parent] PASS: IPC scheduler smoke test\n";
-    return 0;
-  }
-  std::cerr << "[parent] FAIL: child exited with status " << WEXITSTATUS(status)
-            << "\n";
-  return 1;
+  ASSERT_TRUE(WIFEXITED(status)) << "Child did not exit normally";
+  EXPECT_EQ(WEXITSTATUS(status), 0) << "Child process verification failed";
+
+  std::cout << "[parent] PASS: IPC scheduler smoke test\n";
 }
+
+}  // namespace

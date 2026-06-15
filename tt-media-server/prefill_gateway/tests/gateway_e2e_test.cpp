@@ -50,6 +50,48 @@ bool waitFor(Pred pred, std::chrono::milliseconds timeout = 2s) {
   return pred();
 }
 
+uint64_t fakeMigrationId(uint32_t taskId) { return 1000ULL + taskId; }
+
+std::vector<int64_t> fakeTokenIds(uint32_t taskId) {
+  return {static_cast<int64_t>(taskId * 10 + 1),
+          static_cast<int64_t>(taskId * 10 + 2)};
+}
+
+void populateFakePrefillResult(tt::sockets::PrefillResultMessage& result,
+                               const std::string& serverId) {
+  result.error = false;
+  result.finished = true;
+  result.generated_text = "ok-from-" + serverId;
+  result.tokens_generated = 2;
+  result.processing_time_ms = 12.5;
+  result.token_ids = fakeTokenIds(result.task_id);
+  result.remaining_tokens = 3;
+  result.slot_id = 42u;
+  result.temperature = 0.7f;
+  result.top_p = 0.9f;
+  result.top_k = 11;
+  result.fast_mode = true;
+  result.cached_tokens = 5;
+  result.migration_id = fakeMigrationId(result.task_id);
+}
+
+void expectFakePrefillResultPayload(
+    const tt::sockets::PrefillResultMessage& result) {
+  EXPECT_FALSE(result.error);
+  EXPECT_TRUE(result.finished);
+  EXPECT_EQ(result.tokens_generated, 2);
+  EXPECT_DOUBLE_EQ(result.processing_time_ms, 12.5);
+  EXPECT_EQ(result.token_ids, fakeTokenIds(result.task_id));
+  EXPECT_EQ(result.remaining_tokens, 3);
+  EXPECT_EQ(result.slot_id, 42u);
+  EXPECT_EQ(result.temperature, 0.7f);
+  EXPECT_EQ(result.top_p, 0.9f);
+  EXPECT_EQ(result.top_k, 11);
+  EXPECT_TRUE(result.fast_mode);
+  EXPECT_EQ(result.cached_tokens, 5);
+  EXPECT_EQ(result.migration_id, fakeMigrationId(result.task_id));
+}
+
 uint16_t ephemeralPort() {
   int s = socket(AF_INET, SOCK_STREAM, 0);
   EXPECT_GE(s, 0);
@@ -141,9 +183,7 @@ class FakePrefill {
           }
           if (!autoReply_) return;
           tt::sockets::PrefillResultMessage res(req.task_id);
-          res.error = false;
-          res.finished = true;
-          res.generated_text = "ok-from-" + serverId_;
+          populateFakePrefillResult(res, serverId_);
           sm_.sendObject("prefill_result", res);
         });
 
@@ -236,6 +276,10 @@ class FakeDecode {
   void sendRequest(uint32_t taskId, std::vector<uint64_t> registrationHashes) {
     tt::sockets::PrefillRequestMessage req(taskId);
     req.registration_hashes = std::move(registrationHashes);
+    sm_.sendObject("prefill_request", req);
+  }
+
+  void sendRequest(tt::sockets::PrefillRequestMessage req) {
     sm_.sendObject("prefill_request", req);
   }
 
@@ -470,8 +514,7 @@ class FakeZmqPrefill {
           continue;
         }
         tt::sockets::PrefillResultMessage result(request.task_id);
-        result.finished = true;
-        result.generated_text = "ok-from-" + serverId_;
+        populateFakePrefillResult(result, serverId_);
         sm_.sendRawData(
             tt::sockets::wire::serializeMessage("prefill_result", result));
       }
@@ -668,8 +711,8 @@ TEST_F(GatewayE2ETest, RequestIsRoutedAndResultFlowsBack) {
   auto results = decode_->results();
   ASSERT_EQ(results.size(), 1u);
   EXPECT_EQ(results[0].task_id, 1u);
-  EXPECT_FALSE(results[0].error);
   EXPECT_TRUE(results[0].generated_text.rfind("ok-from-", 0) == 0);
+  expectFakePrefillResultPayload(results[0]);
 
   auto assignments = decode_->assignments();
   ASSERT_EQ(assignments.size(), 1u);
@@ -693,9 +736,20 @@ TEST_F(GatewayE2ETest, HealthProbeReportsReadyPrefills) {
   EXPECT_TRUE(statuses[0].ready);
 }
 
-TEST_F(GatewayE2ETest, RequestForwardsAllRegistrationHashesToPrefill) {
-  const std::vector<uint64_t> hashes = {11, 22, 33};
-  decode_->sendRequest(/*taskId=*/2, hashes);
+TEST_F(GatewayE2ETest, RequestForwardsPrefillPayloadToPrefill) {
+  tt::sockets::PrefillRequestMessage sent(2);
+  sent.registration_hashes = {11, 22, 33};
+  sent.token_ids = {101, 102, 103};
+  sent.max_tokens = 7;
+  sent.slot_id = 42u;
+  sent.temperature = 0.7f;
+  sent.top_p = 0.9f;
+  sent.top_k = 11;
+  sent.fast_mode = true;
+  sent.decode_position_id = 12;
+  sent.decode_skip_tokens = 10;
+
+  decode_->sendRequest(sent);
 
   ASSERT_TRUE(waitFor([&] { return decode_->assignmentCount() >= 1; }));
   auto assignments = decode_->assignments();
@@ -711,8 +765,17 @@ TEST_F(GatewayE2ETest, RequestForwardsAllRegistrationHashesToPrefill) {
 
   auto request = assignedPrefill->takeLastRequest();
   ASSERT_TRUE(request.has_value());
-  EXPECT_EQ(request->task_id, 2u);
-  EXPECT_EQ(request->registration_hashes, hashes);
+  EXPECT_EQ(request->task_id, sent.task_id);
+  EXPECT_EQ(request->registration_hashes, sent.registration_hashes);
+  EXPECT_EQ(request->token_ids, sent.token_ids);
+  EXPECT_EQ(request->max_tokens, sent.max_tokens);
+  EXPECT_EQ(request->slot_id, sent.slot_id);
+  EXPECT_EQ(request->temperature, sent.temperature);
+  EXPECT_EQ(request->top_p, sent.top_p);
+  EXPECT_EQ(request->top_k, sent.top_k);
+  EXPECT_EQ(request->fast_mode, sent.fast_mode);
+  EXPECT_EQ(request->decode_position_id, sent.decode_position_id);
+  EXPECT_EQ(request->decode_skip_tokens, sent.decode_skip_tokens);
 }
 
 TEST_F(GatewayE2ETest, CancelIsForwardedToAssignedPrefill) {
@@ -835,6 +898,12 @@ TEST(ZmqRouterGatewayE2ETest, PrefillsCanStartBeforeGateway) {
 
   ASSERT_TRUE(waitFor([&] { return decode.resultCount() >= 2; }))
       << "No results received through ZMQ prefill ROUTER";
+
+  auto results = decode.results();
+  ASSERT_EQ(results.size(), 2u);
+  for (const auto& result : results) {
+    expectFakePrefillResultPayload(result);
+  }
 
   auto assignments = decode.assignments();
   ASSERT_EQ(assignments.size(), 2u);

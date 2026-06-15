@@ -16,7 +16,6 @@
 #include "ipc/in_memory/in_memory_task_queue.hpp"
 #include "ipc/queue_manager.hpp"
 #include "runtime/worker/worker_manager.hpp"
-#include "services/tool_call_parser.hpp"
 
 namespace {
 
@@ -28,7 +27,6 @@ std::shared_ptr<tt::services::LLMService> makeService(
     std::shared_ptr<tt::ipc::ITaskQueue> taskQueue) {
   return std::make_shared<tt::services::LLMService>(
       std::move(taskQueue), std::make_unique<tt::worker::WorkerManager>(1),
-      tt::services::createToolCallParser(tt::config::modelType()),
       std::make_unique<tt::ipc::QueueManager>(1));
 }
 

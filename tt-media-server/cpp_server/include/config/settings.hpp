@@ -112,14 +112,6 @@ std::string logInstanceTag(int workerIndex = -1);
 /** Capacity hint for the gateway, 0 = unlimited. From PREFILL_MAX_IN_FLIGHT. */
 uint32_t prefillMaxInFlight();
 
-/** Enable accumulated streaming from ENABLE_ACCUMULATED_STREAMING. Default:
- * defaults::ENABLE_ACCUMULATED_STREAMING. */
-bool enableAccumulatedStreaming();
-
-/** Max accumulated tokens from MAX_ACCUMULATED_TOKENS. Default:
- * defaults::MAX_ACCUMULATED_TOKENS. */
-size_t maxAccumulatedTokens();
-
 /** Max in-flight requests before 429. From MAX_QUEUE_SIZE. Default:
  * defaults::MAX_QUEUE_SIZE. */
 size_t maxQueueSize();

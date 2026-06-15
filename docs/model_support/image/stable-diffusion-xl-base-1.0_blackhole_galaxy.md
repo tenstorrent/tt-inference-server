@@ -1,4 +1,4 @@
-# stable-diffusion-xl-base-1.0 Tenstorrent Support on WH LoudBox/QuietBox
+# stable-diffusion-xl-base-1.0 Tenstorrent Support on BH Galaxy
 
 Supported weights variants for this model implementation are:
 
@@ -9,18 +9,18 @@ To use non-default weights, replace `stable-diffusion-xl-base-1.0` in commands b
 
 #### Useful links
 
-- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [BH Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other image models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
 `stable-diffusion-xl-base-1.0` is also supported on hardware:
 
 - [WH Galaxy](stable-diffusion-xl-base-1.0_galaxy.md)
-- [BH Galaxy](stable-diffusion-xl-base-1.0_blackhole_galaxy.md)
+- [WH LoudBox/QuietBox](stable-diffusion-xl-base-1.0_t3k.md)
 - [N150](stable-diffusion-xl-base-1.0_n150.md)
 - [N300](stable-diffusion-xl-base-1.0_n300.md)
 
-## Quickstart - Deploy stable-diffusion-xl-base-1.0 Inference Server on WH LoudBox/QuietBox
+## Quickstart - Deploy stable-diffusion-xl-base-1.0 Inference Server on BH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
@@ -29,7 +29,7 @@ This model is supported by [tt-media-server](../../../tt-media-server/README.md)
 **via run.py command**
 
 ```bash
-python3 run.py --model stable-diffusion-xl-base-1.0 --device t3k --workflow server --docker-server
+python3 run.py --model stable-diffusion-xl-base-1.0 --device blackhole_galaxy --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -39,7 +39,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 |-----------|-------|
 | Weights | [stabilityai/stable-diffusion-xl-base-1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0), [stabilityai/stable-diffusion-xl-base-1.0-img-2-img](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0-img-2-img) |
 | Model Status | 🟢 Complete |
-| Max Batch Size | 4 |
+| Max Batch Size | 32 |
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/tt_transformers) |
 | tt-metal Commit | `bac8b34` |
 | Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34` |
