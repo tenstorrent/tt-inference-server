@@ -952,12 +952,6 @@ gtest_discover_tests(health_controller_test)
 gtest_discover_tests(image_generate_request_test)
 gtest_discover_tests(media_payload_ipc_test)
 
-<<<<<<< HEAD
-add_test(NAME ChatCompletionRequest COMMAND chat_completion_request_test)
-add_test(NAME ChatTemplateTools COMMAND chat_template_tools_test)
-=======
->>>>>>> origin/main
-
 add_executable(apply_delta_prompt_test tests/unit/model/apply_delta_prompt_test.cpp)
 target_link_libraries(apply_delta_prompt_test PRIVATE GTest::gtest_main llm_runner_lib)
 target_include_directories(apply_delta_prompt_test PRIVATE
