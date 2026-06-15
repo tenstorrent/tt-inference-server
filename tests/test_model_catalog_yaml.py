@@ -152,6 +152,67 @@ templates:
 
 import pytest
 
+
+def _write_catalog(tmp_path, env, extra_fields):
+    """Write a one-template catalog under tmp_path/<env>/x.yaml.
+
+    extra_fields is rendered as additional 4-space-indented template keys.
+    """
+    d = tmp_path / env
+    d.mkdir(parents=True)
+    p = d / "x.yaml"
+    lines = "".join(f"    {k}: {v}\n" for k, v in extra_fields.items())
+    p.write_text(
+        "templates:\n"
+        "  - weights: [Qwen/Qwen3-8B]\n"
+        "    impl: tt_transformers\n"
+        "    inference_engine: VLLM\n"
+        f"{lines}"
+        "    device_model_specs:\n"
+        "      - {device: N150, max_concurrency: 1, max_context: 1024, default_impl: true}\n"
+    )
+    return p
+
+
+def test_prod_catalog_requires_tt_metal_commit_and_version(tmp_path):
+    # Missing both -> raises listing both.
+    p = _write_catalog(tmp_path, "prod", {})
+    with pytest.raises(ValueError, match=r"must define.*tt_metal_commit.*version"):
+        load_templates_from_yaml(p)
+    # Both present -> loads.
+    p2 = _write_catalog(
+        tmp_path / "ok", "prod", {"tt_metal_commit": "abc1234", "version": '"0.10.0"'}
+    )
+    assert len(load_templates_from_yaml(p2)) == 1
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("tt_metal_commit", "abc1234"),
+        ("vllm_commit", "def5678"),
+        ("version", '"0.10.0"'),
+        ("docker_image", '"ghcr.io/x/y:1.0"'),
+    ],
+)
+def test_dev_catalog_forbids_pinning_fields(tmp_path, field, value):
+    p = _write_catalog(tmp_path, "dev", {field: value})
+    with pytest.raises(ValueError, match=rf"must not define.*{field}"):
+        load_templates_from_yaml(p)
+
+
+def test_dev_catalog_without_pinning_fields_loads(tmp_path):
+    p = _write_catalog(tmp_path, "dev", {})
+    templates = load_templates_from_yaml(p)
+    assert len(templates) == 1
+    assert templates[0].tt_metal_commit is None
+    assert templates[0].version is None
+    # dev specs skip docker/code-link synthesis instead of raising.
+    spec = templates[0].expand_to_specs()[0]
+    assert spec.docker_image is None
+    assert spec.code_link is None
+
+
 MODEL_SPECS_DIR = Path(__file__).resolve().parent.parent / "workflows" / "model_specs"
 EXPECTED_CATALOG_ENVS = ("prod", "dev")
 EXPECTED_CATALOG_FILES = (
