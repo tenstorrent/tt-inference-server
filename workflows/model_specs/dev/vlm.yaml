@@ -351,14 +351,22 @@ templates:
       # tt_symbiote's dots.ocr PREFILL is not chunked, so a single prefill of
       # >=4096 tokens overflows L1 (TT_THROW program.cpp:934 circular-buffer/L1
       # clash). max_context drives BOTH max_model_len and max_num_batched_tokens
-      # (workflows/model_spec.py), but the prefill length is set by the request,
-      # not by max_context: the validated 1848x1176 grid is (84,132)=11088 patches
-      # -> 2772 image tokens, well under 4096. Raising max_context only enlarges
-      # the DECODE budget (KV growth, 1 token/step) so a full multi-table page can
-      # be transcribed in one response; it does NOT enlarge our prefill. Caveat:
-      # this re-exposes the prefill-L1 limit for any request whose prefill exceeds
-      # ~4096 tokens (larger images / long text); the real fix is prefill chunking.
-      max_context: 12288       # 12 * 1024 (decode headroom for full-page OCR; prefill stays ~2772)
+      # (workflows/model_spec.py). The prefill length is set by the request, not
+      # by max_context: the validated 1848x1176 grid is (84,132)=11088 patches
+      # -> 2772 image tokens, well under 4096.
+      #
+      # max_num_batched_tokens ALSO sizes the vision tower's activation buffers.
+      # Every sample_doc is 1848x1176 -> 11088 patches, padded to 11264 (=1408 x 8
+      # mesh rows) on T3K. Setting max_context to that exact padded vision sequence
+      # makes max_num_batched_tokens match the input geometry, so the vision
+      # matmuls shard 1408 rows/core instead of over-allocating to 1536 (=12288/8).
+      # That removes the per-op "Mismatch between computed/provided MemoryConfig
+      # ... Using computed config" warnings and the extra padded vision compute.
+      # Decode budget is still 11264 - 2772 ~= 8.5k tokens, far above the demo
+      # client's 512-token cap. Caveat: a request whose prefill exceeds ~4096
+      # tokens (larger images / long text) re-exposes the prefill-L1 limit; the
+      # real fix is prefill chunking.
+      max_context: 11264       # 1408 x 8: matches the sample_docs padded vision seq
       default_impl: true
       env_vars:
         # tt_symbiote's dots.ocr is laid out data-parallel on T3K and its
@@ -379,6 +387,12 @@ templates:
         # dots.ocr captures large prefill+decode traces; matches the e2e demo's
         # ttnn.open_mesh_device(trace_region_size=200_000_000).
         trace_region_size: 200000000
+        # Keep token sampling on-device during decode (no per-token logits
+        # device->host->device round-trip). The tt_transformers VLM specs above
+        # use the same flag; for the S0 tt_symbiote bridge this must be VALIDATED
+        # (tt_symbiote runs its own greedy decode loop, so the flag may be a
+        # no-op) — confirm output parity after enabling.
+        sample_on_device_mode: decode_only
   status: EXPERIMENTAL
   # Skip tt-inference-server's generic background trace-capture sweep. That sweep
   # (utils/prompt_client.py::DEFAULT_IMAGE_RESOLUTIONS = [(512,512),(512,1024),
