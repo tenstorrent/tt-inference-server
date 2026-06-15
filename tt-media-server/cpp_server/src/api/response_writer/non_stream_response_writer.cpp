@@ -71,6 +71,9 @@ void NonStreamResponseWriter::finalize() {
   LLMChoice choice;
   choice.index = 0;
 
+  choice.text = accumulatedAnswer.str();
+  choice.finish_reason = finishReason;
+
   llmResponse.choices.push_back(std::move(choice));
   llmResponse.usage = buildUsage();
 
