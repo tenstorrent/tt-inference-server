@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+#include "domain/llm/chat_completion_request.hpp"
+
 #include <json/json.h>
 
 #include <cassert>
 #include <iostream>
 #include <stdexcept>
-
-#include "domain/llm/chat_completion_request.hpp"
 
 using namespace tt::domain;
 using namespace tt::domain::llm;
