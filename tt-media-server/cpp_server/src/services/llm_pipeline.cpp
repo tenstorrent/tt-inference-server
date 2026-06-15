@@ -319,9 +319,12 @@ void LLMPipeline::resolveSession(
                       ? session_resolution::prepareSlotCopy(
                             *sessionManager_, acquired->candidatesList,
                             req->task_id, "[LLMPipeline]")
-                      : session_resolution::SlotCopyPlan{};
-  std::optional<uint32_t> slotToCopyFrom = copyPlan.slotToCopyFrom;
-  uint32_t copyMatchedTokens = copyPlan.matchedTokens;
+                      : std::nullopt;
+  std::optional<uint32_t> slotToCopyFrom =
+      copyPlan.has_value() ? std::make_optional(copyPlan->slotToCopyFrom)
+                           : std::nullopt;
+  uint32_t copyMatchedTokens =
+      copyPlan.has_value() ? copyPlan->matchedTokens : 0;
 
   // Capture `tCreateStart` so the onCompletion callback can report end-to-end
   // createSession latency (submit → completion). Under contention this gap
@@ -376,6 +379,8 @@ void LLMPipeline::resolveSession(
           req->continuation = false;
         }
 
+        // slotToCopyFrom requests the KV copy; this registers the new session
+        // under the full request prefix so future lookups can find it.
         mgr->registerPrefixHash(session.getSessionId(), routingInfo.blocks);
         if (!fullPrompt.empty()) {
           req->session->initTokenAccumulator(

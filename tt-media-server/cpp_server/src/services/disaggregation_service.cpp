@@ -338,9 +338,12 @@ void DisaggregationService::resolvePrefillSession(
                         ? session_resolution::prepareSlotCopy(
                               *sessionManager, acquired->candidatesList,
                               request->task_id, "[DisaggregationService]")
-                        : session_resolution::SlotCopyPlan{};
-    std::optional<uint32_t> slotToCopyFrom = copyPlan.slotToCopyFrom;
-    uint32_t copyMatchedTokens = copyPlan.matchedTokens;
+                        : std::nullopt;
+    std::optional<uint32_t> slotToCopyFrom =
+        copyPlan.has_value() ? std::make_optional(copyPlan->slotToCopyFrom)
+                             : std::nullopt;
+    uint32_t copyMatchedTokens =
+        copyPlan.has_value() ? copyPlan->matchedTokens : 0;
 
     TT_LOG_INFO(
         "[DisaggregationService] Prefill prefix cache MISS taskId={} "
