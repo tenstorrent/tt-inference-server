@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 //
 // End-to-end integration test for PrefillGateway over real loopback sockets.
-// Validates registration handshake, routing (round-robin + sticky-by-hash),
+// Validates registration handshake, routing (round-robin + prefix match),
 // result/assignment delivery, and prefill-down failover.
 
 #include <arpa/inet.h>
@@ -21,7 +21,6 @@
 #include <vector>
 #include <zmq.hpp>
 
-#include "gateway/affinity_cache.hpp"
 #include "gateway/dispatcher.hpp"
 #include "gateway/gateway_health.hpp"
 #include "gateway/gateway_health_server.hpp"
@@ -200,6 +199,12 @@ class FakePrefill {
   void start() { sm_.start(); }
   void stop() { sm_.stop(); }
   void setAutoReply(bool v) { autoReply_ = v; }
+  void sendCacheBlocksAdded(std::vector<uint64_t> blockHashes) {
+    tt::sockets::PrefillCacheBlocksAddedMessage msg;
+    msg.server_id = serverId_;
+    msg.block_hashes = std::move(blockHashes);
+    sm_.sendObject(tt::sockets::tags::PREFILL_CACHE_BLOCKS_ADDED, msg);
+  }
   uint32_t receivedTaskCount() const { return receivedTaskIds_.load(); }
   const std::string& serverId() const { return serverId_; }
   size_t cancelCount() {
@@ -366,8 +371,7 @@ class GatewayHarness {
       return decodeSm_.sendObject("prefill_result", m);
     };
 
-    dispatcher_ =
-        std::make_unique<Dispatcher>(registry_, affinity_, std::move(senders));
+    dispatcher_ = std::make_unique<Dispatcher>(registry_, std::move(senders));
 
     registry_.setOnPrefillDown(
         [this](const std::string& id) { dispatcher_->onPrefillDown(id); });
@@ -389,6 +393,18 @@ class GatewayHarness {
           "prefill_result",
           [this, state](const tt::sockets::PrefillResultMessage& msg) {
             dispatcher_->onPrefillResult(state->getServerId(), msg);
+          });
+
+      sm->registerHandler<tt::sockets::PrefillCacheBlocksAddedMessage>(
+          tt::sockets::tags::PREFILL_CACHE_BLOCKS_ADDED,
+          [this](const tt::sockets::PrefillCacheBlocksAddedMessage& msg) {
+            dispatcher_->onCacheBlocksAdded(msg);
+          });
+
+      sm->registerHandler<tt::sockets::PrefillCacheBlocksEvictedMessage>(
+          tt::sockets::tags::PREFILL_CACHE_BLOCKS_EVICTED,
+          [this](const tt::sockets::PrefillCacheBlocksEvictedMessage& msg) {
+            dispatcher_->onCacheBlocksEvicted(msg);
           });
 
       sm->setConnectionLostCallback([this, state] {
@@ -442,13 +458,11 @@ class GatewayHarness {
   }
 
   PrefillRegistry& registry() { return registry_; }
-  AffinityCache& affinity() { return affinity_; }
   Dispatcher& dispatcher() { return *dispatcher_; }
 
  private:
   uint16_t decodePort_;
   PrefillRegistry registry_;
-  AffinityCache affinity_;
   tt::sockets::SocketManager decodeSm_;
   std::vector<std::unique_ptr<tt::sockets::SocketManager>> prefillSms_;
   std::unique_ptr<Dispatcher> dispatcher_;
@@ -585,8 +599,7 @@ class ZmqRouterGatewayHarness {
       return decodeSm_.sendObject("prefill_result", msg);
     };
 
-    dispatcher_ =
-        std::make_unique<Dispatcher>(registry_, affinity_, std::move(senders));
+    dispatcher_ = std::make_unique<Dispatcher>(registry_, std::move(senders));
 
     registry_.setOnPrefillDown(
         [this](const std::string& id) { dispatcher_->onPrefillDown(id); });
@@ -643,13 +656,11 @@ class ZmqRouterGatewayHarness {
   }
 
   PrefillRegistry& registry() { return registry_; }
-  AffinityCache& affinity() { return affinity_; }
 
  private:
   uint16_t decodePort_;
   uint16_t prefillRouterPort_;
   PrefillRegistry registry_;
-  AffinityCache affinity_;
   tt::sockets::SocketManager decodeSm_;
   ZmqPrefillRouter prefillRouter_;
   std::unique_ptr<Dispatcher> dispatcher_;
@@ -782,7 +793,7 @@ TEST_F(GatewayE2ETest, CancelIsForwardedToAssignedPrefill) {
   prefillA_->setAutoReply(false);
   prefillB_->setAutoReply(false);
 
-  gateway_->affinity().record(/*hash=*/77, "prefill-A");
+  gateway_->registry().addCachedBlocks("prefill-A", {77});
   decode_->sendRequest(/*task_id=*/88, /*hash=*/77);
 
   ASSERT_TRUE(waitFor([&] { return prefillA_->receivedTaskCount() >= 1; }));
@@ -803,7 +814,7 @@ TEST_F(GatewayE2ETest, RequestTimeoutFailsTaskToDecode) {
   prefillA_->setAutoReply(false);
   prefillB_->setAutoReply(false);
 
-  gateway_->affinity().record(/*hash=*/77, "prefill-A");
+  gateway_->registry().addCachedBlocks("prefill-A", {77});
   decode_->sendRequest(/*task_id=*/89, /*hash=*/77);
 
   ASSERT_TRUE(waitFor([&] { return prefillA_->receivedTaskCount() >= 1; }));
@@ -827,28 +838,48 @@ TEST_F(GatewayE2ETest, RequestTimeoutFailsTaskToDecode) {
   EXPECT_EQ(cancelled[0], 89u);
 }
 
-TEST_F(GatewayE2ETest, StickyRoutingByRegistrationHash) {
-  decode_->sendRequest(/*task_id=*/1, /*hash=*/42);
-  ASSERT_TRUE(waitFor([&] { return decode_->resultCount() >= 1; }));
-  auto firstAssignments = decode_->assignments();
-  ASSERT_EQ(firstAssignments.size(), 1u);
-  const std::string firstServer = firstAssignments[0].server_id;
+TEST_F(GatewayE2ETest, PrefixRoutingByRegistrationHash) {
+  gateway_->registry().addCachedBlocks("prefill-A", {42});
 
   decode_->sendRequest(/*task_id=*/2, /*hash=*/42);
-  ASSERT_TRUE(waitFor([&] { return decode_->resultCount() >= 2; }));
+  ASSERT_TRUE(waitFor([&] { return decode_->resultCount() >= 1; }));
   auto allAssignments = decode_->assignments();
-  ASSERT_EQ(allAssignments.size(), 2u);
-  EXPECT_EQ(allAssignments[1].server_id, firstServer)
-      << "Sticky routing should reuse the previous prefill";
-  EXPECT_EQ(allAssignments[1].task_id, 2u);
+  ASSERT_EQ(allAssignments.size(), 1u);
+  EXPECT_EQ(allAssignments[0].server_id, "prefill-A")
+      << "Prefix routing should choose the prefill with the cached block";
+  EXPECT_EQ(allAssignments[0].task_id, 2u);
+}
+
+TEST_F(GatewayE2ETest, CacheNotificationDrivesPrefixRouting) {
+  const std::vector<uint64_t> cachedBlocks = {42, 43, 44};
+  prefillB_->sendCacheBlocksAdded(cachedBlocks);
+
+  ASSERT_TRUE(waitFor([&] {
+    for (const auto& snapshot : gateway_->registry().snapshot()) {
+      if (snapshot.server_id == prefillB_->serverId()) {
+        return snapshot.cached_blocks == cachedBlocks.size();
+      }
+    }
+    return false;
+  })) << "Gateway should learn prefill-B cache blocks from socket notification";
+
+  decode_->sendRequest(/*taskId=*/3, {42, 43, 44, 99});
+
+  ASSERT_TRUE(waitFor([&] { return decode_->resultCount() >= 1; }));
+  const auto assignments = decode_->assignments();
+  ASSERT_EQ(assignments.size(), 1u);
+  EXPECT_EQ(assignments[0].server_id, prefillB_->serverId());
+  EXPECT_EQ(assignments[0].task_id, 3u);
+  EXPECT_EQ(prefillB_->receivedTaskCount(), 1u);
+  EXPECT_EQ(prefillA_->receivedTaskCount(), 0u);
 }
 
 TEST_F(GatewayE2ETest, PrefillDownFailsInFlightTaskToDecode) {
   prefillA_->setAutoReply(false);
   prefillB_->setAutoReply(false);
 
-  // Seed affinity so we know which prefill will take the request.
-  gateway_->affinity().record(/*hash=*/77, "prefill-A");
+  // Seed the cache view so we know which prefill will take the request.
+  gateway_->registry().addCachedBlocks("prefill-A", {77});
   decode_->sendRequest(/*task_id=*/55, /*hash=*/77);
 
   ASSERT_TRUE(waitFor([&] { return prefillA_->receivedTaskCount() >= 1; }));
@@ -866,7 +897,6 @@ TEST_F(GatewayE2ETest, PrefillDownFailsInFlightTaskToDecode) {
   EXPECT_EQ(results[0].task_id, 55u);
   EXPECT_TRUE(results[0].error);
   EXPECT_EQ(results[0].generated_text, "prefill_down");
-  EXPECT_FALSE(gateway_->affinity().lookup(77).has_value());
 }
 
 TEST(ZmqRouterGatewayE2ETest, PrefillsCanStartBeforeGateway) {
@@ -940,7 +970,7 @@ TEST(ZmqRouterGatewayE2ETest, CancelIsForwardedToAssignedPrefill) {
     return healthy == 2 && decode.isConnected();
   })) << "Timed out waiting for ZMQ gateway cluster";
 
-  gateway.affinity().record(/*hash=*/77, "prefill-A");
+  gateway.registry().addCachedBlocks("prefill-A", {77});
   decode.sendRequest(/*task_id=*/303, /*hash=*/77);
 
   ASSERT_TRUE(waitFor([&] { return prefillA.receivedTaskCount() >= 1; }));
