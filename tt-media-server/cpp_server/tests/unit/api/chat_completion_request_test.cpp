@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include <gtest/gtest.h>
-
 #include "domain/llm/chat_completion_request.hpp"
+
+#include <gtest/gtest.h>
 #include <json/json.h>
 
 #include <stdexcept>
