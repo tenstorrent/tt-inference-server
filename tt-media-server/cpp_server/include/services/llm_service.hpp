@@ -14,12 +14,10 @@
 
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
-#include "domain/tool_calls/tool_choice.hpp"
 #include "ipc/interface/task_queue.hpp"
 #include "ipc/queue_manager.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/request_pipeline.hpp"
-#include "services/tool_call_parser.hpp"
 #include "utils/concurrent_map.hpp"
 
 namespace tt::services {
@@ -48,10 +46,6 @@ class LLMService : public BaseStreamingService<LLMRequest, LLMStreamChunk> {
   bool isModelReady() const override;
 
   void preProcess(LLMRequest& request) const override;
-
-  /** Cleanup after a non-streaming response is assembled (not part of the
-   *  streaming base contract). */
-  void postProcess(LLMResponse& response) const;
 
   void abortRequest(uint32_t taskId) override;
 
@@ -101,7 +95,6 @@ class LLMService : public BaseStreamingService<LLMRequest, LLMStreamChunk> {
   std::unique_ptr<tt::worker::WorkerManager> workerManager;
   std::unique_ptr<tt::ipc::QueueManager> queueManager;
   std::unordered_set<int64_t> stopTokenSet;
-  std::unique_ptr<IToolCallParser> jsonToolCallParser;
 };
 
 }  // namespace tt::services
