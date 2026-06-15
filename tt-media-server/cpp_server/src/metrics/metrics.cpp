@@ -242,9 +242,7 @@ void ServerMetrics::setActiveSessionsCount(double n) {
 void ServerMetrics::setSlotBlocks(uint32_t slotId, double blocks) {
   // Called at turn-end prefix registration — session-lifecycle frequency.
   // Family::Add is idempotent for identical labels, so this reuses the
-  // existing gauge for the slot. Locked against removeSlot: the Gauge& from
-  // Add() must not be Set() while another thread is Remove()-ing (destroying)
-  // it — that is a use-after-free.
+  // existing gauge for the slot.
   std::lock_guard<std::mutex> lock(slot_blocks_mutex_);
   slot_blocks_family_
       ->Add({{"model_name", model_name_}, {"slot_id", std::to_string(slotId)}})
