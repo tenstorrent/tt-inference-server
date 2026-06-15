@@ -32,12 +32,64 @@ namespace tt::api {
 
 namespace {
 
+using HttpCallbackPtr =
+    std::shared_ptr<std::function<void(const drogon::HttpResponsePtr&)>>;
+using SessionPtr = std::shared_ptr<domain::Session>;
+using PipelineErrorHandler =
+    std::function<void(const std::exception&, SessionPtr)>;
+
 bool isQueueFull(const std::exception& e) {
   return dynamic_cast<const services::QueueFullException*>(&e) != nullptr;
 }
 
-void releaseSession(std::shared_ptr<domain::Session> session) {
+void releaseSession(SessionPtr session) {
   if (session) session->release();
+}
+
+drogon::HttpResponsePtr makeSessionErrorResponse(
+    const services::LLMPipeline::SessionError& err) {
+  if (err.type == services::LLMPipeline::SessionErrorType::RATE_LIMIT) {
+    return errorResponse(drogon::k429TooManyRequests, err.message,
+                         "rate_limit_exceeded");
+  }
+  return errorResponse(
+      drogon::k503ServiceUnavailable,
+      std::string("Failed to allocate memory resources: ") + err.message,
+      "service_unavailable");
+}
+
+PipelineErrorHandler makePreProcessErrorHandler(HttpCallbackPtr cb) {
+  return [cb](const std::exception& e, SessionPtr sessionPtr) {
+    releaseSession(std::move(sessionPtr));
+    if (isQueueFull(e)) {
+      (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
+                          "rate_limit_exceeded"));
+      return;
+    }
+    (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
+                        "invalid_request_error"));
+  };
+}
+
+PipelineErrorHandler makeStreamingDispatchErrorHandler(HttpCallbackPtr cb) {
+  return [cb](const std::exception& e, SessionPtr sessionPtr) {
+    releaseSession(std::move(sessionPtr));
+    if (isQueueFull(e)) {
+      (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
+                          "rate_limit_exceeded"));
+      return;
+    }
+    (*cb)(errorResponse(drogon::k500InternalServerError, e.what(),
+                        "internal_error"));
+  };
+}
+
+std::function<void(const services::LLMPipeline::SessionError&)>
+makeSessionErrorHandler(HttpCallbackPtr cb) {
+  return [cb](const services::LLMPipeline::SessionError& err) {
+    TT_LOG_ERROR("[LLMController] Session resolution failed: {}", err.message);
+    (*cb)(makeSessionErrorResponse(err));
+  };
 }
 
 }  // namespace
@@ -310,18 +362,6 @@ LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
   };
 }
 
-drogon::HttpResponsePtr LLMController::makeSessionErrorResponse(
-    const services::LLMPipeline::SessionError& err) {
-  if (err.type == services::LLMPipeline::SessionErrorType::RATE_LIMIT) {
-    return errorResponse(drogon::k429TooManyRequests, err.message,
-                         "rate_limit_exceeded");
-  }
-  return errorResponse(
-      drogon::k503ServiceUnavailable,
-      std::string("Failed to allocate memory resources: ") + err.message,
-      "service_unavailable");
-}
-
 void LLMController::handleStreaming(
     std::shared_ptr<LLMRequest> reqPtr,
     std::shared_ptr<StreamEventFormatter> formatter, bool includeUsage,
@@ -335,38 +375,12 @@ void LLMController::handleStreaming(
   auto writer = std::make_shared<std::shared_ptr<StreamingResponseWriter>>();
 
   services::LLMPipeline::GenerationHandlers handlers;
-  handlers.onPreProcessError =
-      [cb](const std::exception& e,
-           std::shared_ptr<domain::Session> sessionPtr) {
-        releaseSession(std::move(sessionPtr));
-        if (isQueueFull(e)) {
-          (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
-                              "rate_limit_exceeded"));
-          return;
-        }
-        (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
-                            "invalid_request_error"));
-      };
-  handlers.onDispatchError = [cb](const std::exception& e,
-                                  std::shared_ptr<domain::Session> sessionPtr) {
-    releaseSession(std::move(sessionPtr));
-    if (isQueueFull(e)) {
-      (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
-                          "rate_limit_exceeded"));
-      return;
-    }
-    (*cb)(errorResponse(drogon::k500InternalServerError, e.what(),
-                        "internal_error"));
-  };
+  handlers.onPreProcessError = makePreProcessErrorHandler(cb);
+  handlers.onDispatchError = makeStreamingDispatchErrorHandler(cb);
   handlers.onDispatchSucceeded = [cb, writer]() {
     (*cb)((*writer)->buildResponse());
   };
-  handlers.onSessionError =
-      [cb](const services::LLMPipeline::SessionError& err) {
-        TT_LOG_ERROR("[LLMController] Session resolution failed: {}",
-                     err.message);
-        (*cb)(makeSessionErrorResponse(err));
-      };
+  handlers.onSessionError = makeSessionErrorHandler(cb);
 
   pipeline->runStreamingRequest(
       reqPtr, loop,
@@ -393,18 +407,7 @@ void LLMController::handleNonStreaming(
   auto writer = std::make_shared<std::shared_ptr<NonStreamResponseWriter>>();
 
   services::LLMPipeline::GenerationHandlers handlers;
-  handlers.onPreProcessError =
-      [cb](const std::exception& e,
-           std::shared_ptr<domain::Session> sessionPtr) {
-        releaseSession(std::move(sessionPtr));
-        if (isQueueFull(e)) {
-          (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
-                              "rate_limit_exceeded"));
-          return;
-        }
-        (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
-                            "invalid_request_error"));
-      };
+  handlers.onPreProcessError = makePreProcessErrorHandler(cb);
   handlers.onDispatchError = [writer](const std::exception& e,
                                       std::shared_ptr<domain::Session>) {
     if (isQueueFull(e)) {
@@ -415,12 +418,7 @@ void LLMController::handleNonStreaming(
     (*writer)->sendError(drogon::k500InternalServerError, e.what(),
                          "internal_error");
   };
-  handlers.onSessionError =
-      [cb](const services::LLMPipeline::SessionError& err) {
-        TT_LOG_ERROR("[LLMController] Session resolution failed: {}",
-                     err.message);
-        (*cb)(makeSessionErrorResponse(err));
-      };
+  handlers.onSessionError = makeSessionErrorHandler(cb);
 
   pipeline->runStreamingRequest(
       reqPtr, loop,

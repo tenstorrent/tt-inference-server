@@ -87,12 +87,6 @@ class LLMController : public drogon::HttpController<LLMController> {
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   /**
-   * Translate a pipeline session error into a drogon HTTP error response.
-   */
-  static drogon::HttpResponsePtr makeSessionErrorResponse(
-      const services::LLMPipeline::SessionError& err);
-
-  /**
    * Build the ResponseWriterParams shared by both streaming and non-streaming
    * writers.
    */
