@@ -163,8 +163,6 @@ class TestModelSpecTemplateSystem:
             weights=["test/model"],
         )
         assert template.repacked == 0
-        # version is no longer defaulted to VERSION; it is None unless the spec
-        # (prod catalog) pins it explicitly.
         assert template.version is None
         assert template.status == ModelStatusTypes.EXPERIMENTAL
         assert template.docker_image is None
@@ -432,7 +430,6 @@ class TestModelSpecSystem:
         assert spec.device_type == DeviceTypes.N150
         assert spec.model_name == "TestModel-7B"
         assert spec.param_count == 7  # Inferred from model name
-        # version + tt_metal_commit are set, so docker_image is synthesized.
         assert spec.docker_image is not None
 
     def test_model_spec_validation(self, sample_impl, sample_device_model_spec):

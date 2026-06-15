@@ -40,14 +40,10 @@ def generate_docker_tag(
     tt_metal_commit: Optional[str],
     vllm_commit: Optional[str],
 ) -> str:
-    # version and tt_metal_commit are required to build a tag. They are
-    # optional on the spec (dev catalog omits them), so guard here: callers
-    # that synthesize an image from a dev spec are a bug, fail loudly rather
-    # than emit a "None-None" tag.
-    if version is None:
-        raise ValueError("Cannot generate docker tag: version is None")
-    if tt_metal_commit is None:
-        raise ValueError("Cannot generate docker tag: tt_metal_commit is None")
+    if version is None or tt_metal_commit is None:
+        raise ValueError(
+            "Cannot generate docker tag: version and tt_metal_commit are required"
+        )
     max_tag_len = 12
     if vllm_commit:
         return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
@@ -58,9 +54,6 @@ def generate_docker_tag(
 def generate_code_link(
     repo_url: str, tt_metal_commit: Optional[str], code_path: str
 ) -> str:
-    # tt_metal_commit is required to pin the source tree. Optional on the spec
-    # (dev catalog omits it), so fail loudly if a caller tries to build a link
-    # without it rather than produce a `/tree/None/` URL.
     if tt_metal_commit is None:
         raise ValueError("Cannot generate code link: tt_metal_commit is None")
     return f"{repo_url}/tree/{tt_metal_commit}/{code_path}"
@@ -449,8 +442,6 @@ class ModelSpec:
     # Optional specification fields (WITH DEFAULTS)
     system_requirements: Optional[SystemRequirements] = None
     env_vars: Dict[str, str] = field(default_factory=dict)
-    # tt_metal_commit/version are required for prod specs (enforced when loading
-    # the prod catalog) but omitted by dev specs, so they are optional here.
     tt_metal_commit: Optional[str] = None
     vllm_commit: Optional[str] = None
     hf_weights_repo: Optional[str] = (
@@ -554,8 +545,7 @@ class ModelSpec:
             object.__setattr__(self, "min_ram_gb", self.param_count * 2.5)
 
         # Generate default docker image if not provided. Synthesis needs
-        # version + tt_metal_commit; dev specs omit both, so skip and leave
-        # docker_image=None (dev images are pinned at runtime, not synthesized).
+        # version + tt_metal_commit; dev specs omit both, so skip and leave docker_image=None
         if (
             not self.docker_image
             and self.version is not None
@@ -915,9 +905,6 @@ class ModelSpecTemplate:
 
     # Optional template fields (WITH DEFAULTS) - must come after required fields
     system_requirements: Optional[SystemRequirements] = None
-    # tt_metal_commit/version/vllm_commit are required for prod templates and
-    # forbidden for dev templates; both rules are enforced in
-    # load_templates_from_yaml based on the catalog directory (prod/ vs dev/).
     tt_metal_commit: Optional[str] = None
     vllm_commit: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
@@ -1152,8 +1139,6 @@ def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
         data = yaml.safe_load(f)
     if not data or "templates" not in data:
         raise ValueError(f"YAML file {path} is empty or missing 'templates' key")
-    # The catalog environment is the parent directory name (prod/ or dev/).
-    # Other callers (tests, ad-hoc paths) get no field enforcement.
     env = path.parent.name
     for template in data["templates"]:
         _validate_template_env_fields(template, env, path)
