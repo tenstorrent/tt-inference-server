@@ -42,6 +42,7 @@ def load_model(
     max_seq: int = 2048,
     unsafe: bool = False,
     trace_region_size: int = 134217728,
+    force_novel: bool = False,
 ) -> ModelHandle:
     """Load a model and return a ModelHandle ready for inference.
 
@@ -55,6 +56,9 @@ def load_model(
             Required for any model not listed as 'validated' in model_matrix.toml.
         trace_region_size: Trace region reserved on the device so the traced fast-path
             decode (#30) is available when the model is fast-path eligible. Set 0 to skip.
+        force_novel: Skip the model_matrix.toml lookup and resolve via the HF-config
+            auto-derive path even for a listed model (#47). For the regression gate that
+            proves the novel path stays byte-identical to the matrix path; not for normal use.
     """
     import ttnn
     from tt_inference_server.dispatch.runner import TTModelRunner
@@ -64,7 +68,8 @@ def load_model(
         ids = device_ids or [0]
         device = ttnn.open_device(device_id=ids[0], trace_region_size=trace_region_size)
 
-    runner = TTModelRunner(model_path, device, max_seq=max_seq, unsafe=unsafe)
+    runner = TTModelRunner(model_path, device, max_seq=max_seq, unsafe=unsafe,
+                           force_novel=force_novel)
     handle = ModelHandle(
         _runner=runner,
         model_path=model_path,

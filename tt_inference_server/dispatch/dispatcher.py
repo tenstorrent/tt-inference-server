@@ -285,6 +285,7 @@ class KernelDispatcher:
 
         self._acquire_device_lock()
         _warm_kernel_cache(device)
+        _install_kernel_patch_overlay()
 
         matrix_path = matrix_path or _DEFAULT_MATRIX_PATH
         self._matrix, self._index = _load_and_validate_matrix(matrix_path)
@@ -564,6 +565,68 @@ def _warm_kernel_cache(device) -> None:
             "Run `make release-kernels` in tt-lang to build the binaries.",
             UserWarning,
         )
+
+
+# ------------------------------------------------------------------
+# JIT kernel-patch overlay (#50)
+# ------------------------------------------------------------------
+
+_KERNEL_PATCH_ENV = "DISPATCH_KERNEL_PATCH_DIR"
+
+
+def _install_kernel_patch_overlay() -> None:
+    """A/B kernel-variant dev loop without a tt-metal/tt-lang rebuild (issue #50).
+
+    When DISPATCH_KERNEL_PATCH_DIR is set, overlay patched kernel .cpp files over the
+    tt-lang-generated source at the JIT boundary. Unset => no monkeypatch, exact current
+    behavior (this is a pure no-op then).
+
+    How it works: tt-lang generates each kernel's C++ via ttkernel_to_cpp_by_name() and
+    writes it through ttl.ttl_api._write_kernel_to_tmp(name, source) before tt-metal
+    JIT-compiles that file. We wrap that writer: if <patch_dir>/<name>.cpp exists, its
+    contents REPLACE the generated source for kernel `name`. The file is then content-
+    hashed and compiled exactly as usual — so a no-op patch (a verbatim copy of the
+    generated .cpp) reproduces the baseline bit-for-bit, and an edited patch triggers a
+    fresh compile of the variant. The .riscv pre-compiled artifact system (#1/#26) stays
+    the release path; this is the iterate-fast dev path that feeds kernel-variant A/B arms
+    (tests/experiments/matrix.toml).
+
+    Dump a kernel's current source to copy into a patch dir: tt-lang already prints each
+    generated kernel and writes it to /tmp/$USER/ttlang_kernel_<name>_<hash>.cpp.
+    """
+    patch_dir = os.environ.get(_KERNEL_PATCH_ENV)
+    if not patch_dir:
+        return
+    patch_path = pathlib.Path(patch_dir).expanduser().resolve()
+    if not patch_path.is_dir():
+        warnings.warn(
+            f"{_KERNEL_PATCH_ENV}={patch_dir} is not a directory; no kernel patches applied.",
+            UserWarning)
+        return
+    try:
+        from ttl import ttl_api
+    except Exception as exc:  # ttl not importable (e.g. no-device CI) — nothing to patch
+        warnings.warn(
+            f"Could not import ttl.ttl_api for kernel patching ({exc}); no patches applied.",
+            UserWarning)
+        return
+    if getattr(ttl_api, "_dispatch_patch_installed", False):
+        return  # idempotent — only wrap once per process
+
+    _orig_write = ttl_api._write_kernel_to_tmp
+
+    def _patched_write(name, source):
+        cand = patch_path / f"{name}.cpp"
+        if cand.is_file():
+            print(f"  [kernel-patch] overlaying '{name}' <- {cand}")
+            return _orig_write(name, cand.read_text())
+        return _orig_write(name, source)
+
+    ttl_api._write_kernel_to_tmp = _patched_write
+    ttl_api._dispatch_patch_installed = True
+    available = sorted(p.stem for p in patch_path.glob("*.cpp"))
+    print(f"  Kernel-patch overlay ACTIVE ({_KERNEL_PATCH_ENV}={patch_path}); "
+          f"patches: {available or '(none found)'}")
 
 
 # ------------------------------------------------------------------

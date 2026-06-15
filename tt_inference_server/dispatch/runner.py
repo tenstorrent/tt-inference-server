@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import time
 from dataclasses import dataclass
 from typing import List, Optional
@@ -510,6 +511,7 @@ class TTModelRunner:
         max_seq: int = 2048,
         lm_head_on_device: bool = False,
         unsafe: bool = False,
+        force_novel: bool = False,
     ):
         from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
         from tt_inference_server.dispatch.registry import detect_model_family
@@ -520,6 +522,13 @@ class TTModelRunner:
         self._max_seq = max_seq
         self._lm_head_on_device = lm_head_on_device
         self._unsafe = unsafe
+        self._force_novel = force_novel
+        # Per-layer HF ladder capture sink (#49). None in production (one branch in the
+        # hot path, same pattern as DISPATCH_LMHEAD_DEBUG); a dict only when DISPATCH_LADDER=1.
+        # EAGER decode only — the traced path never calls _ladder_capture (readbacks would
+        # corrupt the trace). DISPATCH_LADDER_SUBOP=1 adds the intra-layer post_attn rung.
+        self._ladder = {} if os.environ.get("DISPATCH_LADDER") == "1" else None
+        self._ladder_subop = os.environ.get("DISPATCH_LADDER_SUBOP") == "1"
 
         print(f"Loading {model_path} ...")
         hf_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
@@ -542,8 +551,15 @@ class TTModelRunner:
         # to HF-config auto-derivation for novel/unlisted ones (the universal floor). The
         # resolved entry + capabilities are wired here; the inline gates that consume them
         # are migrated one at a time in Phase C, so behavior is unchanged at this step.
-        self._entry = self._dispatcher.lookup(model_path)
+        # force_novel (#47): skip the matrix lookup so a listed, validated model is
+        # resolved exactly as a truly-unlisted one would be — derive_capabilities() +
+        # detect_model_family() dims + the introspect_eligible recompute. Exercises the
+        # real lookup-miss branch (not a temp matrix / env var), so the regression gate
+        # proves the novel path reproduces the matrix path token-for-token.
+        self._entry = None if force_novel else self._dispatcher.lookup(model_path)
         self._listed = self._entry is not None
+        if force_novel:
+            print("  force_novel=True: matrix lookup SKIPPED -> auto-derive path (#47).")
         if self._entry is not None:
             # Matrix is authoritative for dims for listed models (#3 Phase D); novel
             # models keep detect_model_family()'s HF-config introspection above.
@@ -749,9 +765,26 @@ class TTModelRunner:
         hidden_tt = self._embed(token_id)
         if self._embed_ln_w_cpu is not None:        # BLOOM word_embeddings_layernorm
             hidden_tt = self._apply_embed_ln(hidden_tt)
+        self._ladder_capture("post_embed", hidden_tt)
         for i in range(len(self._layers)):
             hidden_tt = self._layer_forward(hidden_tt, i, kv_pos)
+            self._ladder_capture(f"layer{i}", hidden_tt)
+        self._ladder_capture("final_hidden", hidden_tt)
         return self._lm_head(hidden_tt)
+
+    def _ladder_capture(self, tag: str, hidden_tt) -> None:
+        """Record a hidden-state rung for the HF ladder diagnostic (#49).
+
+        No-op unless DISPATCH_LADDER=1 (the first line is the production branch). Stores a
+        CPU fp32 (hidden,) vector keyed by `tag`, overwritten each decode step so after a
+        prompt-prefill loop the dict holds the rungs for the LAST position (the step that
+        predicts the next token) — which is what diff_hf_ladder.py aligns against HF.
+        Called from the EAGER path only; the traced decode never reaches here."""
+        if self._ladder is None:
+            return
+        import ttnn
+        hidden = self._cfg.hidden_size
+        self._ladder[tag] = ttnn.to_torch(hidden_tt)[0, :hidden].float().clone()
 
     def _apply_embed_ln(self, hidden_tt):
         """Apply the embedding LayerNorm (BLOOM) on CPU, returning (TILE, hidden_p)."""
@@ -928,6 +961,8 @@ class TTModelRunner:
             normed1_tt = seq_norm(hidden_tt, lw.norm1_w, lw.norm1_sc, lw.norm1_w_cpu, lw.norm1_b)
             attn_out_tt = self._attention(normed1_tt, layer_idx, kv_pos)
             hidden_tt = add_resid(hidden_tt, attn_out_tt)
+            if self._ladder_subop:                  # intra-layer rung (#49, DISPATCH_LADDER_SUBOP=1)
+                self._ladder_capture(f"layer{layer_idx}.post_attn", hidden_tt)
 
             normed2_tt = seq_norm(hidden_tt, lw.norm2_w, lw.norm2_sc, lw.norm2_w_cpu, lw.norm2_b)
             mlp_out_tt = self._mlp(normed2_tt, layer_idx)
@@ -1475,6 +1510,8 @@ class TTModelRunner:
         logits_scaling = self._scaling_factor("logits_scaling", 1.0)
         if logits_scaling != 1.0:
             logits = logits / logits_scaling
+        if self._ladder is not None:                # logits rung for the HF ladder (#49)
+            self._ladder["logits"] = logits.detach().float().clone()
         return int(logits.argmax())
 
     # ------------------------------------------------------------------
