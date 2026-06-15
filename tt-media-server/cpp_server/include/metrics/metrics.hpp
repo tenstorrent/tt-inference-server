@@ -204,6 +204,12 @@ class ServerMetrics {
   prometheus::Gauge* decoding_requests_{nullptr};
   prometheus::Gauge* active_sessions_{nullptr};
   prometheus::Family<prometheus::Gauge>* slot_blocks_family_{nullptr};
+  // Serializes Add()/Set()/Remove() on slot_blocks_family_. prometheus-cpp's
+  // Family::Add returns a Gauge& that Family::Remove invalidates (destroys), so
+  // a concurrent setSlotBlocks (Add+Set) and removeSlot (Add+Remove) on the
+  // same slot id is a use-after-free on the Gauge. Mock assigns every session
+  // slotId=0 -> one shared gauge -> this races constantly under load.
+  std::mutex slot_blocks_mutex_;
 
   // --- latency summaries (exact quantiles via CKMS, 60 s sliding window) ---
   prometheus::Summary* e2e_latency_seconds_{nullptr};
