@@ -414,7 +414,6 @@ set(LLM_RUNNER_LIB_SOURCES
     src/utils/tokenizers/tokenizer_config_loader.cpp
     src/services/memory_services/memory_manager.cpp
     src/runtime/runners/guided_decoder_manager.cpp
-    src/services/json_tool_call_parser.cpp
     src/services/service_registry.cpp
     src/runtime/runners/runner_registry.cpp
     src/api/route_registry.cpp
@@ -659,30 +658,6 @@ target_include_directories(structured_output_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# Chat template with tools test (supports both DeepSeek and Llama tokenizers)
-add_executable(test_chat_template_tools tests/test_chat_template_tools.cpp)
-target_link_libraries(test_chat_template_tools PRIVATE
-    llm_runner_lib
-    GTest::gtest_main
-    ${CMAKE_THREAD_LIBS_INIT}
-)
-target_include_directories(test_chat_template_tools PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-target_compile_definitions(test_chat_template_tools PRIVATE
-    TOKENIZER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tokenizers"
-)
-
-# Chat completion request test
-add_executable(test_chat_completion_request tests/test_chat_completion_request.cpp)
-target_link_libraries(test_chat_completion_request PRIVATE
-    llm_runner_lib
-    GTest::gtest_main
-    ${CMAKE_THREAD_LIBS_INIT}
-)
-target_include_directories(test_chat_completion_request PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
 
 # Image generate request parsing test
 add_executable(test_image_generate_request tests/test_image_generate_request.cpp)
@@ -979,8 +954,6 @@ gtest_discover_tests(health_controller_test)
 gtest_discover_tests(test_image_generate_request)
 gtest_discover_tests(media_payload_ipc_test)
 
-add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
-add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
 
 add_executable(test_apply_delta_prompt tests/test_apply_delta_prompt.cpp)
 target_link_libraries(test_apply_delta_prompt PRIVATE GTest::gtest_main llm_runner_lib)
@@ -1088,7 +1061,6 @@ set(SOURCES
     src/api/info_controller.cpp
     src/api/openapi.cpp
     src/services/llm_service.cpp
-    src/services/json_tool_call_parser.cpp
     src/services/session_manager.cpp
     src/domain/session.cpp
     src/runtime/worker/single_process_worker.cpp

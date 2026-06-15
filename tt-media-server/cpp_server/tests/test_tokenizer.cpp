@@ -262,7 +262,7 @@ TEST_F(DeepseekTokenizerTest,
       "<think>\n</think>\n";
 
   std::string actual =
-      tokenizer().applyChatTemplate(messages, true, std::nullopt, false);
+      tokenizer().applyChatTemplate(messages, true,false);
 
   EXPECT_EQ(actual, expected)
       << "enable_reasoning=false should inject a closed <think> block after "
@@ -277,7 +277,7 @@ TEST_F(DeepseekTokenizerTest, ApplyChatTemplateReasoningEnabledNoThinkBlock) {
   };
 
   std::string actual =
-      tokenizer().applyChatTemplate(messages, true, std::nullopt, true);
+      tokenizer().applyChatTemplate(messages, true, true);
 
   EXPECT_EQ(actual.find("<think>"), std::string::npos)
       << "enable_reasoning=true should not inject a <think> block";

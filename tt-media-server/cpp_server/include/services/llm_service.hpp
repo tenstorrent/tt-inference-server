@@ -67,7 +67,7 @@ class LLMService : public BaseStreamingService<LLMRequest, LLMStreamChunk> {
     std::function<void(LLMStreamChunk&, bool)> callback;
     bool skip_special_tokens = true;
     // Mirror of LLMRequest::skip_text_decode; lets the consumer loop
-    // skip decode / tool-call parsing for token-id-only transports.
+    // skip decode for token-id-only transports.
     bool skip_text_decode = false;
   };
 
@@ -85,8 +85,6 @@ class LLMService : public BaseStreamingService<LLMRequest, LLMStreamChunk> {
   std::vector<std::thread> consumerThreads;
 
   utils::ConcurrentMap<uint32_t, StreamCallbackEntry> streamCallbacks;
-  mutable utils::ConcurrentMap<uint32_t, tt::domain::tool_calls::ToolChoice>
-      toolChoiceMap;
 
   std::atomic<size_t> pendingTasks{0};
   std::atomic<bool> running{false};

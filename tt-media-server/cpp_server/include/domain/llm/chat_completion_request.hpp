@@ -17,8 +17,6 @@
 #include "domain/llm/chat_message.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "domain/response_format.hpp"
-#include "domain/tool_calls/tool.hpp"
-#include "domain/tool_calls/tool_choice.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
@@ -197,22 +195,6 @@ struct ChatCompletionRequest : BaseRequest {
     if (json.isMember("session_id") && !json["session_id"].isNull())
       req.sessionId = getString(json["session_id"], "session_id");
 
-    if (json.isMember("tool_choice") && !json["tool_choice"].isNull()) {
-      req.tool_choice = tool_calls::ToolChoice::fromJson(json["tool_choice"]);
-    }
-
-    if (json.isMember("tools") && json["tools"].isArray()) {
-      std::vector<tool_calls::Tool> toolList;
-      for (const auto& tool : json["tools"]) {
-        toolList.push_back(tool_calls::Tool::fromJson(tool));
-      }
-      req.tools = toolList;
-    }
-    if (json.isMember("parallel_tool_calls") &&
-        !json["parallel_tool_calls"].isNull())
-      req.parallel_tool_calls =
-          getBool(json["parallel_tool_calls"], "parallel_tool_calls");
-
     if (json.isMember("enable_reasoning") && !json["enable_reasoning"].isNull())
       req.enable_reasoning =
           getBool(json["enable_reasoning"], "enable_reasoning");
@@ -225,9 +207,6 @@ struct ChatCompletionRequest : BaseRequest {
     if (json.isMember("disaggregation") && !json["disaggregation"].isNull())
       req.disaggregation_override =
           getBool(json["disaggregation"], "disaggregation");
-
-    validateToolFields(req);
-    validateToolMessages(req);
     return req;
   }
 
@@ -268,7 +247,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.skip_apply_chat_template = skip_apply_chat_template;
     const auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
     auto promptStr = tokenizer.applyChatTemplate(
-        messages, true, tools, enable_reasoning, skip_apply_chat_template);
+        messages, true, enable_reasoning, skip_apply_chat_template);
     TT_LOG_INFO("Prompt: {}",
                 detail::truncate(promptStr, detail::MAX_PROMPT_LOG_LENGTH));
     auto promptTokens = tokenizer.encode(promptStr);
