@@ -61,8 +61,6 @@ void populateFakePrefillResult(tt::sockets::PrefillResultMessage& result,
   result.error = false;
   result.finished = true;
   result.generated_text = "ok-from-" + serverId;
-  result.tokens_generated = 2;
-  result.processing_time_ms = 12.5;
   result.token_ids = fakeTokenIds(result.task_id);
   result.remaining_tokens = 3;
   result.slot_id = 42u;
@@ -78,8 +76,6 @@ void expectFakePrefillResultPayload(
     const tt::sockets::PrefillResultMessage& result) {
   EXPECT_FALSE(result.error);
   EXPECT_TRUE(result.finished);
-  EXPECT_EQ(result.tokens_generated, 2);
-  EXPECT_DOUBLE_EQ(result.processing_time_ms, 12.5);
   EXPECT_EQ(result.token_ids, fakeTokenIds(result.task_id));
   EXPECT_EQ(result.remaining_tokens, 3);
   EXPECT_EQ(result.slot_id, 42u);

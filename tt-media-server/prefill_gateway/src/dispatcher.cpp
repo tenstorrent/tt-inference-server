@@ -34,11 +34,6 @@ void Dispatcher::onPrefillRequest(
   auto selection = selectPrefill(prefills, round_robin_cursor_);
   GatewayMetrics::instance().recordRoutingDecision(
       routingReasonName(selection.reason));
-  size_t cachedBlocks = 0;
-  for (const auto& prefill : prefills) {
-    cachedBlocks += prefill.cached_blocks;
-  }
-  GatewayMetrics::instance().setRoutingTableSize(cachedBlocks);
   if (!selection.server_id.has_value()) {
     const auto summary = summarizePrefillEligibility(prefills);
     TT_LOG_WARN(

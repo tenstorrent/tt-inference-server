@@ -141,7 +141,8 @@ class InterServerService {
  private:
   void setupMessageHandlers();
 
-  // Send PrefillRegistrationMessage to the peer (gateway or decode).
+  // Prefill-side, gateway-mode only: send PrefillRegistrationMessage to the
+  // gateway.
   void sendRegistration();
 
   // Prefill-side, gateway-mode only: send PrefillRegistrationMessage in

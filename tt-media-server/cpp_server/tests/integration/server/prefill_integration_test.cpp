@@ -473,7 +473,7 @@ TEST_F(PrefillIntegrationTest, MultiTurn_SubsequentRequestsAreContinuations) {
 
     auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
         tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
-    ASSERT_TRUE(result.has_value()) << "Turn 0: no PrefillResult";
+    ASSERT_TRUE(result.has_value()) << "Turn 0: no PrefillResultMessage";
     EXPECT_FALSE(result->error);
   }
 
@@ -523,7 +523,8 @@ TEST_F(PrefillIntegrationTest, MultiTurn_SubsequentRequestsAreContinuations) {
 
     auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
         tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
-    ASSERT_TRUE(result.has_value()) << "Turn " << turn << ": no PrefillResult";
+    ASSERT_TRUE(result.has_value())
+        << "Turn " << turn << ": no PrefillResultMessage";
     EXPECT_FALSE(result->error);
   }
 
@@ -612,7 +613,7 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
 
     auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
         tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
-    ASSERT_TRUE(result.has_value()) << "Request A: no PrefillResult";
+    ASSERT_TRUE(result.has_value()) << "Request A: no PrefillResultMessage";
     EXPECT_FALSE(result->error);
   }
 
@@ -716,7 +717,7 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
 
     auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
         tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
-    ASSERT_TRUE(result.has_value()) << "Request C: no PrefillResult";
+    ASSERT_TRUE(result.has_value()) << "Request C: no PrefillResultMessage";
     EXPECT_FALSE(result->error);
   }
 
@@ -768,7 +769,7 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
 
     auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
         tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
-    ASSERT_TRUE(result.has_value()) << "Request D: no PrefillResult";
+    ASSERT_TRUE(result.has_value()) << "Request D: no PrefillResultMessage";
     EXPECT_FALSE(result->error);
   }
 
@@ -787,10 +788,11 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
         .tokenWithFlags(50, tt::ipc::SharedToken::FLAG_FINAL)
         .sendTo(server->resultQueue());
 
-    // Drain the PrefillResult for B.
+    // Drain the PrefillResultMessage for B.
     auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
         tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
-    ASSERT_TRUE(result.has_value()) << "Request B cleanup: no PrefillResult";
+    ASSERT_TRUE(result.has_value())
+        << "Request B cleanup: no PrefillResultMessage";
   }
 
   server->setMemoryAutoRespond(true);
