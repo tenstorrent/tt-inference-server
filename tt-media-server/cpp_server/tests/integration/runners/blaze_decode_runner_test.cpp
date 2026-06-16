@@ -10,9 +10,9 @@
 #include <cstdint>
 #include <vector>
 
+#include "../integration_test_helpers.hpp"
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
-#include "../integration_test_helpers.hpp"
 
 namespace tt::runners::blaze {
 

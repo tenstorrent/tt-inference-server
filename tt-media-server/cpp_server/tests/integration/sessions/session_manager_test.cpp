@@ -11,8 +11,8 @@
 #include <thread>
 #include <vector>
 
-#include "domain/session.hpp"
 #include "../integration_test_helpers.hpp"
+#include "domain/session.hpp"
 #include "utils/conversation_hasher.hpp"
 
 namespace {
