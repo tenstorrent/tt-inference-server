@@ -33,8 +33,9 @@
 #include "ipc/in_memory/in_memory_task_queue.hpp"
 #include "ipc/interface/result_queue.hpp"
 #include "services/memory_services/memory_manager.hpp"
+#include "services/session_manager.hpp"
 #include "utils/conversation_hasher.hpp"
-#include "utils/task_id_generator.hpp"
+#include "utils/id_generator.hpp"
 
 namespace tt::test {
 
@@ -81,9 +82,9 @@ inline config::LLMConfig makeLLMConfig(
         config::ModelRunnerType::MOCK_PIPELINE) {
   config::LLMConfig cfg{};
   cfg.runner_type = runnerType;
-  cfg.num_blocks = numBlocks;
-  cfg.block_size = blockSize;
-  cfg.eos_token_id = eos;
+  cfg.num_kvcache_blocks = numBlocks;
+  cfg.kvcache_block_size = blockSize;
+  cfg.eos = eos;
   cfg.stop_token_ids = std::move(stopTokenIds);
   return cfg;
 }
@@ -234,7 +235,7 @@ template <typename RunnerType>
 class RunnerTestHarness {
  public:
   explicit RunnerTestHarness(config::LLMConfig config = {}) : config_(config) {
-    if (config_.runner_type == config::ModelRunnerType::UNDEFINED) {
+    if (config_.runner_type == config::ModelRunnerType::MOCK) {
       config_.runner_type = config::ModelRunnerType::MOCK_PIPELINE;
     }
     init();

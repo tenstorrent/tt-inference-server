@@ -33,8 +33,8 @@
 #include "ipc/boost/boost_task_queue.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
-#include "support/http_client.hpp"
-#include "support/worker_response.hpp"
+#include "../../support/http_client.hpp"
+#include "../../support/worker_response.hpp"
 #include "utils/service_factory.hpp"
 
 namespace tt::test {

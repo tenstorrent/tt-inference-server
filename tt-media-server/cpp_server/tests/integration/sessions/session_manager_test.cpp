@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "domain/session.hpp"
-#include "integration/integration_test_helpers.hpp"
+#include "../integration_test_helpers.hpp"
 #include "utils/conversation_hasher.hpp"
 
 namespace {

@@ -21,7 +21,7 @@
 #include "config/settings.hpp"
 #include "domain/llm/chat_message.hpp"
 #include "services/iservice.hpp"
-#include "utils/task_id_generator.hpp"
+#include "utils/id_generator.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::test {

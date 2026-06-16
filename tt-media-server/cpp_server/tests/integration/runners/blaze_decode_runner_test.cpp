@@ -12,7 +12,7 @@
 
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
-#include "integration/integration_test_helpers.hpp"
+#include "../integration_test_helpers.hpp"
 
 namespace tt::runners::blaze {
 

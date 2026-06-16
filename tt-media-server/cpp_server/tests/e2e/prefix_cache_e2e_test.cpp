@@ -25,7 +25,7 @@
 #include <vector>
 
 #include "config/defaults.hpp"
-#include "e2e/e2e_test_helpers.hpp"
+#include "e2e_test_helpers.hpp"
 
 namespace {
 
