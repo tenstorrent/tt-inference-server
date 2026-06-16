@@ -111,7 +111,7 @@ TcpSocketTransport::~TcpSocketTransport() { stop(); }
 
 bool TcpSocketTransport::initializeAsServer(uint16_t port) {
   mode = Mode::SERVER;
-  port = port;
+  this->port = port;
 
   serverSocket = createTcpSocket();
   if (!serverSocket) {
@@ -155,8 +155,8 @@ bool TcpSocketTransport::initializeAsServer(uint16_t port) {
 bool TcpSocketTransport::initializeAsClient(const std::string& host,
                                             uint16_t port) {
   mode = Mode::CLIENT;
-  host = host;
-  port = port;
+  this->host = host;
+  this->port = port;
 
   TT_LOG_INFO("[TcpSocketTransport] Client initialized to connect to {}:{}",
               host, port);
