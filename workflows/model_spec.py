@@ -905,18 +905,14 @@ class ModelSpecTemplate:
 
     # Optional template fields (WITH DEFAULTS) - must come after required fields
     system_requirements: Optional[SystemRequirements] = None
-    tt_metal_commit: Optional[str] = None
-    vllm_commit: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
     env_vars: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
     repacked: int = 0
-    version: Optional[str] = None
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
-    docker_image: Optional[str] = None
     # True when the catalog explicitly pinned the image via `version` or
-    # `docker_image`. When neither is set (e.g. dev specs), no docker tag is
-    # synthesized at all, so these specs are excluded from
+    # `docker_image` (prod templates always do; dev never does). When neither is
+    # set, no docker tag is synthesized, so these specs are excluded from
     # IMAGE_PINNED_MODEL_SPECS (the list the helm chart generator consumes).
     # Set by _build_template from YAML key presence; defaults True for directly
     # constructed templates so they are never dropped.
@@ -1017,14 +1013,16 @@ class ModelSpecTemplate:
                     system_requirements=device_model_spec.system_requirements
                     if device_model_spec.system_requirements
                     else self.system_requirements,
-                    tt_metal_commit=self.tt_metal_commit,
-                    vllm_commit=self.vllm_commit,
+                    # Release pins live only on ProdModelSpecTemplate; dev (base)
+                    # templates omit them, so read via getattr (None for dev).
+                    tt_metal_commit=getattr(self, "tt_metal_commit", None),
+                    vllm_commit=getattr(self, "vllm_commit", None),
                     hf_weights_repo=self.hf_weights_repo,
                     # Template fields
                     env_vars=self.env_vars,
                     repacked=self.repacked,
-                    version=self.version,
-                    docker_image=self.docker_image,
+                    version=getattr(self, "version", None),
+                    docker_image=getattr(self, "docker_image", None),
                     status=self.status,
                     override_tt_config=device_model_spec.override_tt_config,
                     supported_modalities=self.supported_modalities,
@@ -1038,6 +1036,22 @@ class ModelSpecTemplate:
 
                 specs.append(spec)
         return specs
+
+
+@dataclass(frozen=True, kw_only=True)
+class ProdModelSpecTemplate(ModelSpecTemplate):
+    """Prod catalog template: carries the release pins the dev base omits.
+
+    ``version`` and ``tt_metal_commit`` are required (a prod YAML missing either
+    fails to construct); ``vllm_commit`` and ``docker_image`` are optional
+    (FORGE/MEDIA specs have no vllm_commit; most specs synthesize their image).
+    Construction enforces the prod contract directly — no separate field check.
+    """
+
+    tt_metal_commit: str
+    version: str
+    vllm_commit: Optional[str] = None
+    docker_image: Optional[str] = None
 
 
 # Catalog data lives in workflows/model_specs/catalog.yaml.
@@ -1076,7 +1090,15 @@ def _build_device_model_spec(data: Dict) -> "DeviceModelSpec":
     return DeviceModelSpec(**kwargs)
 
 
-def _build_template(data: Dict) -> "ModelSpecTemplate":
+def _build_template(data: Dict, env: str = "prod") -> "ModelSpecTemplate":
+    """Build a template from a raw catalog dict.
+
+    ``env`` selects the dataclass and thus the field contract: "prod" builds a
+    ProdModelSpecTemplate (version + tt_metal_commit required), anything else
+    builds the dev base ModelSpecTemplate (which has no pin fields, so a dev
+    entry that sets one fails to construct). Construction errors are re-raised
+    with the offending weights for a readable, catalog-scoped message.
+    """
     kwargs = dict(data)
     impl_id = kwargs["impl"]
     if impl_id not in _IMPL_REGISTRY:
@@ -1102,36 +1124,12 @@ def _build_template(data: Dict) -> "ModelSpecTemplate":
     kwargs["image_pinned"] = (
         data.get("version") is not None or data.get("docker_image") is not None
     )
-    return ModelSpecTemplate(**kwargs)
-
-
-# prod templates must pin these; dev templates must omit all of _DEV_FORBIDDEN.
-# Enforced per-catalog-directory in load_templates_from_yaml. vllm_commit is not
-# prod-required (CNN/FORGE specs legitimately have none) but is dev-forbidden.
-_PROD_REQUIRED_FIELDS = ("tt_metal_commit", "version")
-_DEV_FORBIDDEN_FIELDS = ("tt_metal_commit", "vllm_commit", "version", "docker_image")
-
-
-def _validate_template_env_fields(template: Dict, env: str, path: Path) -> None:
-    """Enforce the prod/dev field contract on a raw template dict.
-
-    prod templates must define every field in _PROD_REQUIRED_FIELDS; dev
-    templates must define none of _DEV_FORBIDDEN_FIELDS (dev images are pinned
-    at runtime via --override-docker-image, never synthesized from the catalog).
-    Checked on the raw YAML dict so absence is distinguishable from a default.
-    """
-    weights = template.get("weights", ["<unknown>"])
-    if env == "prod":
-        missing = [f for f in _PROD_REQUIRED_FIELDS if template.get(f) is None]
-        if missing:
-            raise ValueError(f"{path}: prod template {weights} must define {missing}")
-    elif env == "dev":
-        present = [f for f in _DEV_FORBIDDEN_FIELDS if f in template]
-        if present:
-            raise ValueError(
-                f"{path}: dev template {weights} must not define {present} "
-                "(dev specs are pinned at runtime, not from the catalog)"
-            )
+    cls = ProdModelSpecTemplate if env == "prod" else ModelSpecTemplate
+    try:
+        return cls(**kwargs)
+    except TypeError as exc:
+        weights = data.get("weights", ["<unknown>"])
+        raise ValueError(f"{env} template {weights}: {exc}") from exc
 
 
 def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
@@ -1140,9 +1138,7 @@ def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
     if not data or "templates" not in data:
         raise ValueError(f"YAML file {path} is empty or missing 'templates' key")
     env = path.parent.name
-    for template in data["templates"]:
-        _validate_template_env_fields(template, env, path)
-    return [_build_template(t) for t in data["templates"]]
+    return [_build_template(t, env) for t in data["templates"]]
 
 
 _MODEL_SPECS_DIR = get_repo_root_path() / "workflows" / "model_specs"

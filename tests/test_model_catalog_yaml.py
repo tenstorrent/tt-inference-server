@@ -126,7 +126,10 @@ def test_build_template_resolves_all_enum_and_impl_references():
 
 
 def test_load_templates_from_yaml_roundtrip(tmp_path):
-    yaml_path = tmp_path / "tiny.yaml"
+    # prod/ dir so the pins below are accepted (env selects ProdModelSpecTemplate)
+    prod_dir = tmp_path / "prod"
+    prod_dir.mkdir()
+    yaml_path = prod_dir / "tiny.yaml"
     yaml_path.write_text(
         """
 templates:
@@ -175,9 +178,9 @@ def _write_catalog(tmp_path, env, extra_fields):
 
 
 def test_prod_catalog_requires_tt_metal_commit_and_version(tmp_path):
-    # Missing both -> raises listing both.
+    # Missing both -> ProdModelSpecTemplate construction fails for both.
     p = _write_catalog(tmp_path, "prod", {})
-    with pytest.raises(ValueError, match=r"must define.*tt_metal_commit.*version"):
+    with pytest.raises(ValueError, match=r"tt_metal_commit.*version"):
         load_templates_from_yaml(p)
     # Both present -> loads.
     p2 = _write_catalog(
@@ -196,8 +199,9 @@ def test_prod_catalog_requires_tt_metal_commit_and_version(tmp_path):
     ],
 )
 def test_dev_catalog_forbids_pinning_fields(tmp_path, field, value):
+    # The dev base template has no pin fields, so setting one is an unexpected kwarg.
     p = _write_catalog(tmp_path, "dev", {field: value})
-    with pytest.raises(ValueError, match=rf"must not define.*{field}"):
+    with pytest.raises(ValueError, match=rf"unexpected keyword argument '{field}'"):
         load_templates_from_yaml(p)
 
 
@@ -205,10 +209,13 @@ def test_dev_catalog_without_pinning_fields_loads(tmp_path):
     p = _write_catalog(tmp_path, "dev", {})
     templates = load_templates_from_yaml(p)
     assert len(templates) == 1
-    assert templates[0].tt_metal_commit is None
-    assert templates[0].version is None
-    # dev specs skip docker/code-link synthesis instead of raising.
+    # dev (base) template carries no pin fields at all.
+    assert not hasattr(templates[0], "tt_metal_commit")
+    assert not hasattr(templates[0], "version")
+    # expanded spec has them as None and skips docker/code-link synthesis.
     spec = templates[0].expand_to_specs()[0]
+    assert spec.tt_metal_commit is None
+    assert spec.version is None
     assert spec.docker_image is None
     assert spec.code_link is None
 
