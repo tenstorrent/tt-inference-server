@@ -74,6 +74,11 @@ class VLLMForgeRunner(BaseDeviceRunner):
         # Env-driven; only passed when set so other models keep the plugin
         # default. "true"/"false".
         fp32_dest_acc_en = os.getenv("FP32_DEST_ACC_EN")
+        # Debug/iteration knob: override the model's transformer depth (the tt-xla
+        # plugin reads additional_config["num_hidden_layers"] and rewrites the HF
+        # config + filters weights at load, so only N layers compile/run). Slashes
+        # compile time for pipecleaning. 0/unset = full model. e.g. NUM_HIDDEN_LAYERS=1.
+        num_hidden_layers = os.getenv("NUM_HIDDEN_LAYERS")
         additional_config = {
             "enable_const_eval": True,
             "min_context_len": self.settings.vllm.min_context_length,
@@ -87,6 +92,8 @@ class VLLMForgeRunner(BaseDeviceRunner):
             additional_config["prefill_chunk_size"] = int(prefill_chunk_size)
         if fp32_dest_acc_en is not None:
             additional_config["fp32_dest_acc_en"] = fp32_dest_acc_en.lower() == "true"
+        if num_hidden_layers:
+            additional_config["num_hidden_layers"] = int(num_hidden_layers)
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
