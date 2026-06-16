@@ -438,7 +438,9 @@ TcpSocketTransport::ReceiveResult TcpSocketTransport::receiveExact(
 
 bool TcpSocketTransport::isConnected() const { return isConnectedState(); }
 
-std::string TcpSocketTransport::getStatus() const { return getStatusString(); }
+std::string TcpSocketTransport::getStatus() const {
+  return getStatusString(isConnectedState());
+}
 
 void TcpSocketTransport::setConnectionLostCallback(
     std::function<void()> callback) {
