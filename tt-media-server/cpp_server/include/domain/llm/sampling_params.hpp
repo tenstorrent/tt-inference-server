@@ -10,8 +10,6 @@
 #include <vector>
 
 #include "config/types.hpp"
-#include "domain/tool_calls/tool.hpp"
-#include "domain/tool_calls/tool_choice.hpp"
 
 namespace tt::domain::llm {
 
@@ -52,21 +50,9 @@ struct SamplingParams {
   ResponseFormatType response_format_type = ResponseFormatType::TEXT;
   std::optional<std::string> json_schema_str;
 
-  std::optional<std::vector<tool_calls::Tool>> tools;
-  std::optional<tool_calls::ToolChoice> tool_choice;
-
   bool hasGuidedDecoding() const {
     if (response_format_type != ResponseFormatType::TEXT) {
       return true;
-    }
-    if (tool_choice.has_value() && tools.has_value()) {
-      if (tool_choice->type == "function" &&
-          tool_choice->function.has_value()) {
-        return true;
-      }
-      if (tool_choice->type == "required") {
-        return true;
-      }
     }
     return false;
   }

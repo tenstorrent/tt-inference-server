@@ -16,15 +16,24 @@ namespace {
 //   IN_FLIGHT -> IDLE       (clearInFlight)
 // ---------------------------------------------------------------------------
 
+// Test seam: the state transitions are protected (owned by SessionManager in
+// production). A subclass re-exposes them so the state machine can be unit
+// tested directly, without coupling the domain header to gtest test names.
+struct TestableSession : tt::domain::Session {
+  using tt::domain::Session::clearInFlight;
+  using tt::domain::Session::markInFlight;
+  using tt::domain::Session::markPrepared;
+};
+
 TEST(SessionState, InitialStateIsIdle) {
-  tt::domain::Session s;
+  TestableSession s;
   EXPECT_TRUE(s.isIdle());
   EXPECT_FALSE(s.isPrepared());
   EXPECT_FALSE(s.isInFlight());
 }
 
 TEST(SessionState, MarkPreparedFromIdle) {
-  tt::domain::Session s;
+  TestableSession s;
   EXPECT_TRUE(s.markPrepared());
   EXPECT_TRUE(s.isPrepared());
   EXPECT_FALSE(s.isIdle());
@@ -32,14 +41,14 @@ TEST(SessionState, MarkPreparedFromIdle) {
 }
 
 TEST(SessionState, MarkPreparedFromPreparedReturnsFalseAndPreservesState) {
-  tt::domain::Session s;
+  TestableSession s;
   ASSERT_TRUE(s.markPrepared());
   EXPECT_FALSE(s.markPrepared());  // already PREPARED
   EXPECT_TRUE(s.isPrepared());
 }
 
 TEST(SessionState, MarkPreparedFromInFlightReturnsFalseAndPreservesState) {
-  tt::domain::Session s;
+  TestableSession s;
   ASSERT_TRUE(s.markPrepared());
   ASSERT_TRUE(s.markInFlight());
   EXPECT_FALSE(s.markPrepared());  // already IN_FLIGHT
@@ -47,7 +56,7 @@ TEST(SessionState, MarkPreparedFromInFlightReturnsFalseAndPreservesState) {
 }
 
 TEST(SessionState, MarkInFlightFromPrepared) {
-  tt::domain::Session s;
+  TestableSession s;
   ASSERT_TRUE(s.markPrepared());
   EXPECT_TRUE(s.markInFlight());
   EXPECT_TRUE(s.isInFlight());
@@ -56,7 +65,7 @@ TEST(SessionState, MarkInFlightFromPrepared) {
 }
 
 TEST(SessionState, MarkInFlightFromIdle) {
-  tt::domain::Session s;
+  TestableSession s;
   EXPECT_TRUE(s.markInFlight());  // IDLE -> IN_FLIGHT is allowed (fast path)
   EXPECT_TRUE(s.isInFlight());
   EXPECT_FALSE(s.isIdle());
@@ -64,7 +73,7 @@ TEST(SessionState, MarkInFlightFromIdle) {
 }
 
 TEST(SessionState, MarkInFlightFromInFlightReturnsFalseAndPreservesState) {
-  tt::domain::Session s;
+  TestableSession s;
   ASSERT_TRUE(s.markPrepared());
   ASSERT_TRUE(s.markInFlight());
   EXPECT_FALSE(s.markInFlight());  // already IN_FLIGHT
@@ -72,7 +81,7 @@ TEST(SessionState, MarkInFlightFromInFlightReturnsFalseAndPreservesState) {
 }
 
 TEST(SessionState, ClearInFlightFromInFlightTransitionsToIdle) {
-  tt::domain::Session s;
+  TestableSession s;
   ASSERT_TRUE(s.markPrepared());
   ASSERT_TRUE(s.markInFlight());
   EXPECT_TRUE(s.clearInFlight());
@@ -82,13 +91,13 @@ TEST(SessionState, ClearInFlightFromInFlightTransitionsToIdle) {
 }
 
 TEST(SessionState, ClearInFlightFromIdleReturnsFalse) {
-  tt::domain::Session s;
+  TestableSession s;
   EXPECT_FALSE(s.clearInFlight());
   EXPECT_TRUE(s.isIdle());  // state unchanged
 }
 
 TEST(SessionState, ClearInFlightFromPreparedReturnsFalseAndPreservesState) {
-  tt::domain::Session s;
+  TestableSession s;
   ASSERT_TRUE(s.markPrepared());
   EXPECT_FALSE(
       s.clearInFlight());  // PREPARED -> IDLE not allowed via clearInFlight

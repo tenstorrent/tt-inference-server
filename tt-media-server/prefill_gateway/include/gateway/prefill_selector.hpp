@@ -20,12 +20,19 @@ struct PrefillSnapshot {
   uint32_t in_flight = 0;
   uint32_t max_in_flight = 0;  // 0 = unlimited
   size_t cached_blocks = 0;
+  size_t prefix_match_depth = 0;
   std::chrono::steady_clock::time_point last_heartbeat{};
+
+  bool isEligible() const {
+    if (!healthy) return false;
+    if (!accepting_tasks) return false;
+    if (max_in_flight > 0 && in_flight >= max_in_flight) return false;
+    return true;
+  }
 };
 
 enum class PrefillRoutingReason {
   PrefixMatch,
-  StickyFallback,
   LeastInflight,
   RoundRobin,
   NoEligiblePrefill,
@@ -34,6 +41,7 @@ enum class PrefillRoutingReason {
 struct PrefillSelection {
   std::optional<std::string> server_id;
   PrefillRoutingReason reason = PrefillRoutingReason::NoEligiblePrefill;
+  size_t prefix_match_depth = 0;
 };
 
 struct PrefillEligibilitySummary {
@@ -49,8 +57,6 @@ PrefillEligibilitySummary summarizePrefillEligibility(
 std::string_view routingReasonName(PrefillRoutingReason reason);
 
 PrefillSelection selectPrefill(const std::vector<PrefillSnapshot>& prefills,
-                               size_t registration_hash,
-                               const std::optional<std::string>& sticky_target,
-                               size_t& round_robin_cursor);
+                               size_t& roundRobinCursor);
 
 }  // namespace tt::gateway

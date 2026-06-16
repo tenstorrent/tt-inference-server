@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+#include "utils/tokenizers/tokenizer.hpp"
+
 #include <gtest/gtest.h>
 
 #include <map>
@@ -10,7 +12,6 @@
 
 #include "config/settings.hpp"
 #include "domain/llm/chat_message.hpp"
-#include "utils/tokenizers/tokenizer.hpp"
 
 using namespace tt::utils::tokenizers;
 using namespace tt::domain;
@@ -261,8 +262,7 @@ TEST_F(DeepseekTokenizerTest,
       "<｜begin▁of▁sentence｜><｜User｜>Hello<｜Assistant｜>"
       "<think>\n</think>\n";
 
-  std::string actual =
-      tokenizer().applyChatTemplate(messages, true, std::nullopt, false);
+  std::string actual = tokenizer().applyChatTemplate(messages, true, false);
 
   EXPECT_EQ(actual, expected)
       << "enable_reasoning=false should inject a closed <think> block after "
@@ -276,8 +276,7 @@ TEST_F(DeepseekTokenizerTest, ApplyChatTemplateReasoningEnabledNoThinkBlock) {
       {"user", "Hello"},
   };
 
-  std::string actual =
-      tokenizer().applyChatTemplate(messages, true, std::nullopt, true);
+  std::string actual = tokenizer().applyChatTemplate(messages, true, true);
 
   EXPECT_EQ(actual.find("<think>"), std::string::npos)
       << "enable_reasoning=true should not inject a <think> block";

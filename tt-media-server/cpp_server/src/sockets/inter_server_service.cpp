@@ -184,6 +184,18 @@ bool InterServerService::sendPrefillCancel(uint32_t taskId) {
   return socket_manager_.sendObject(tags::CANCEL_PREFILL, message);
 }
 
+bool InterServerService::sendPrefillCacheBlocksAdded(
+    const std::vector<uint64_t>& blockHashes) {
+  if (!enabled_ || !gateway_mode_ || blockHashes.empty()) {
+    return false;
+  }
+
+  PrefillCacheBlocksAddedMessage message;
+  message.server_id = tt::config::prefillServerId();
+  message.block_hashes = blockHashes;
+  return socket_manager_.sendObject(tags::PREFILL_CACHE_BLOCKS_ADDED, message);
+}
+
 bool InterServerService::sendHealthCheck(const std::string& serverId,
                                          double cpuUsage, double memoryUsage,
                                          int activeTasks) {

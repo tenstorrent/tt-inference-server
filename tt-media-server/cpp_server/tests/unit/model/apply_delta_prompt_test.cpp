@@ -7,11 +7,12 @@
 #include <vector>
 
 #include "domain/llm/llm_request.hpp"
+#include "services/session_resolution.hpp"
 
 using namespace tt::domain::llm;
 
-// Reimplementation of DisaggregationService::applyDeltaPrompt for unit testing.
-// Must be kept in sync with the production implementation.
+// Exercise the production helper used by both DisaggregationService and
+// LLMPipeline session resolution.
 //
 // `matchedTokens` is always a multiple of 32 (prefix-cache blocks are 32 tokens
 // wide), so we trim exactly `matchedTokens` and the resumed prefill starts on a
@@ -20,15 +21,11 @@ using namespace tt::domain::llm;
 namespace {
 
 void applyDeltaPrompt(LLMRequest& req, uint32_t matchedTokens) {
-  auto& tokens = std::get<std::vector<int>>(req.prompt);
-  if (matchedTokens == 0 || matchedTokens >= tokens.size()) {
-    return;
-  }
-
-  tokens.erase(tokens.begin(),
-               tokens.begin() + static_cast<ptrdiff_t>(matchedTokens));
-  req.prompt_tokens_count = static_cast<int>(tokens.size());
-  req.kv_position_id = matchedTokens - 1;
+  tt::services::session_resolution::applyDeltaPrompt(
+      req, matchedTokens,
+      {.skipUnlessRegularMode = false,
+       .setKvPositionId = true,
+       .logPrefix = {}});
 }
 
 // Helper to create a request with N sequential tokens [0, 1, 2, ..., N-1].
