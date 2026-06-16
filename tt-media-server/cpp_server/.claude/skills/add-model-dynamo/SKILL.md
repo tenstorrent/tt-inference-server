@@ -1,79 +1,94 @@
 ---
 name: add-model-dynamo
-description: Checklist for adding a new LLM to the cpp_server inference backend so it serves through Dynamo — tokenizer fetch, ModelType config, reasoning/chat-template handling, and the deploy flag. Use whenever a new model is being onboarded to cpp_server, a HuggingFace model is being wired into the Dynamo deploy, or a model "loads but generates wrong / isn't selectable via --<model>".
+description: Checklist for onboarding a new LLM to the cpp_server inference backend so it serves through Dynamo — registering the model type, fetching tokenizer files, tokenizer static data (eos/stop/think tokens), and Dynamo discovery (reasoning + tool-call parsers, generation_config publishing). Use whenever a new model is being onboarded to cpp_server, a HuggingFace model is being wired into the Dynamo deploy, or a model "loads but generates wrong / isn't discoverable / isn't selectable".
 ---
 
-# Adding a model to cpp_server (Dynamo)
+# Onboarding a model to cpp_server (Dynamo)
 
 ## Touchpoints at a glance
 
 | # | Where | What to add |
 |---|-------|-------------|
-| 1 | `scripts/fetch_tokenizers.sh` | HF id + download → `tokenizers/<org>/<model>/` |
-| 2 | `include/config/settings.hpp`, `src/config/settings.cpp` | `ModelType` enum value, HF-id→enum resolver (`~:465`), descriptor prefix (`~:48`), sampling/reasoning config (`~:483`) |
-| 3 | `include/utils/tokenizers/tokenizer.hpp` | `thinkTokenIdsFor()` → reasoning span tokens (or "no token") |
-| 4 | `dynamo_frontend/deploy.sh` (`~:265`) | worker env: `BLAZE_SOCKET_DESCRIPTOR_PREFIX`, `USE_DEEPSEEK_MD_FORMAT` |
-| 5 | `dynamo_frontend/deploy.sh` (`:39`, `:133`, `:102`) | `<MODEL>_MODEL_ID`, `--<model>` flag, usage text |
+| 0 | **ask the user** | the model's **full HuggingFace id** (e.g. `openai/gpt-oss-120b`, `MiniMaxAI/MiniMax-M2.7`) — required, do not guess owner/casing |
+| 1 | `include/config/types.hpp` | `ModelType` + `Model` enum values, `MODEL_MAPPINGS` (`Model`→HF id), `modelTypeFromDeviceBackend` short-name branch |
+| 2 | `src/config/settings.cpp` | `modelType()` resolver: HF id → `ModelType` (else silently falls back to DeepSeek) |
+| 3 | `scripts/fetch_tokenizers.sh` | download **all** needed files into `tokenizers/<hf-id>/` |
+| 4 | `src/utils/tokenizers/tokenizer.cpp` | `tokenizerDirForModel`, `createTokenizer` (defaults to `DeepseekTokenizer`), `staticInfoFor` + a `StaticTokenizerInfo` (eos/stop/think token ids) |
+| 5 | `src/dynamo/discovery.cpp` | `runtimeParsersForModelType` (reasoning + tool-call parser ids), `buildMdcJson` (publishes `generation_config.json`) |
+| 6 | deploy + verify | bring the stack up with `MODEL=<hf-id>`, confirm loads / registers / answers |
+
+Reference: [tenstorrent/tt-inference-server#4143](https://github.com/tenstorrent/tt-inference-server/pull/4143) (and the GPT-OSS/MiniMax onboarding commits).
 
 ## How the pieces connect
 
-The cpp_server worker resolves its behavior from `MODEL` (HF id) → `ModelType`
-(`config/settings.cpp`), which drives the tokenizer, the reasoning-span token ids,
-and sampling. The Dynamo frontend routes by the same model name (registered in
-etcd) and the deploy injects per-model worker env. The model catalog (tokenizer
-tree) is **baked into both** the worker and frontend images and fetched by the
-shared `scripts/fetch_tokenizers.sh`.
+The worker resolves behavior from `MODEL` (HF id) → `ModelType`
+(`settings.cpp::modelType`), which selects the tokenizer dir, the tokenizer impl
+(default `DeepseekTokenizer`), and the **static token info** (eos/stop/think ids).
+The Dynamo frontend, separately, reads the **MDC** the worker publishes in
+`discovery.cpp` to learn the tokenizer files, the `generation_config.json`, and
+which **reasoning/tool-call parsers** to apply. Both halves must agree.
 
-The recurring failure mode: the model loads but a registry table wasn't updated —
-wrong/empty reasoning tokens (no `reasoning_tokens` in usage), wrong chat-template
-(`USE_DEEPSEEK_MD_FORMAT`), or `--<model>` not selectable because the deploy flag
-is missing.
-
-## Read first
-
-`tt-media-server/cpp_server/scripts/fetch_tokenizers.sh` (the model list) and an
-existing model as the template: DeepSeek-R1 or Kimi-K2.6 for reasoning models,
-Llama-3.1-8B-Instruct for a plain instruct model. `build.sh:175-181` shows how the
-tokenizer fetch is wired into the build.
+The recurring failure mode: the model loads but a table wasn't updated — falls
+back to DeepSeek (missing `modelType()` entry), wrong/no reasoning + tool output
+(missing `runtimeParsersForModelType` branch), or the frontend hard-fails to load
+the model because `eos_token_id` is absent (model carries it only in
+`generation_config.json`, which `buildMdcJson` must publish).
 
 ## Checklist
 
-1. **Tokenizer files** → add the HF id + download logic to
-   `scripts/fetch_tokenizers.sh` so `tokenizers/<org>/<model>/` gets
-   `tokenizer.json`, `tokenizer_config.json`, `config.json`,
-   `generation_config.json`. The frontend image bakes the same tree.
-2. **`ModelType`** → in `include/config/settings.hpp` add the enum value; in
-   `src/config/settings.cpp` map the HF id in the resolver (`~:465`,
-   `if (m == "<org>/<Model>") return ModelType::<NEW>;`), add the descriptor-prefix
-   string in `toString` (`~:48`), and add the sampling/reasoning branch (`~:483`).
-   Without the resolver entry the worker silently falls back to `DEEPSEEK_R1_0528`.
-3. **Reasoning span** → `thinkTokenIdsFor(ModelType)` in
-   `include/utils/tokenizers/tokenizer.hpp`: return the `<think>`/`</think>` (or
-   equivalent) token id pair for reasoning models, the "no token" sentinel
-   otherwise. Drives `reasoning_tokens` accounting on the Dynamo path.
-4. **Chat template / MD format** → add a branch to the `case "$HF_MODEL_ID"` block
-   in `dynamo_frontend/deploy.sh:~265` with the right
-   `BLAZE_SOCKET_DESCRIPTOR_PREFIX` and (if applicable) `USE_DEEPSEEK_MD_FORMAT=1`.
-5. **Deploy flag** → in `dynamo_frontend/deploy.sh` add `<MODEL>_MODEL_ID="<org>/<Model>"`
-   (`:39`), a `--<model>` arg setting `HF_MODEL_ID` (`:133`), and a usage line (`:102`).
+1. **Get the full HF id from the user.** Everything keys off it; don't assume.
 
-## Verify end-to-end
+2. **Register the model** in `include/config/types.hpp`: add the value to both
+   `enum class ModelType` and `enum class Model`, add `{Model::X, "<hf-id>"}` to
+   `MODEL_MAPPINGS`, and add the `LLM_DEVICE_BACKEND` short-name branch to
+   `modelTypeFromDeviceBackend` (e.g. `"gpt-oss" -> GPT_OSS_120B`). Then map the HF
+   id in `src/config/settings.cpp` `modelType()`
+   (`if (m == "<hf-id>") return ModelType::X;`) — without it the worker silently
+   serves as DeepSeek.
 
-Always exercise it through the deploy, not a bare worker:
+3. **Fetch tokenizer files** in `scripts/fetch_tokenizers.sh` so
+   `tokenizers/<hf-id>/` has **tokenizer.json, tokenizer_config.json, config.json,
+   generation_config.json, chat_template.jinja**. Steps 4–5 read eos ids out of
+   `config.json` / `generation_config.json` and discovery publishes
+   `generation_config.json`, so all must be present.
+
+4. **Tokenizer** in `src/utils/tokenizers/tokenizer.cpp`:
+   - `tokenizerDirForModel` → the HF dir (default falls back to DeepSeek).
+   - `createTokenizer` → reuse `DeepseekTokenizer` for chat-template/tool-call
+     behavior unless the model needs a dedicated impl (the **default-to-deepseek** rule).
+   - Add a `StaticTokenizerInfo` (e.g. `gptOss120bInfo()`) and wire it into
+     `staticInfoFor`. Set, **verifying ids against the fetched tokenizer**:
+     - `eosTokenId` = `eos_token_id` from **config.json** (the single primary id),
+     - `stopTokenIds` = the remaining ids from **generation_config.json** `eos_token_id`
+       (often a list — e.g. gpt-oss `[200002, 199999, 200012]` → eos `200002`, stops `{199999, 200012}`),
+     - for reasoning models, `thinkStartTokenId`/`thinkEndTokenId` (`<think>`/`</think>`);
+       Harmony-style models (gpt-oss) have no think tokens.
+
+5. **Dynamo discovery** in `src/dynamo/discovery.cpp`:
+   - `runtimeParsersForModelType` → return `{reasoning_parser, tool_call_parser}`
+     id strings for the model — these tell the frontend which parsers to apply
+     (e.g. `gpt_oss → {"gpt_oss","harmony"}`, `minimax_m2 → {"minimax_append_think","minimax_m2"}`;
+     DeepSeek default `{"deepseek_r1", nullptr}`).
+   - `buildMdcJson` already publishes `generation_config.json` when present (so
+     models like MiniMax that omit `eos_token_id` from `config.json` still load).
+     Nothing to change unless the model needs extra MDC fields — just confirm the
+     file is fetched (step 3).
+
+6. **Deploy & verify** (see `run-dynamo-server`). The branch did **not** touch
+   `deploy.sh` — deploy by setting `MODEL=<hf-id>` (deploy.sh's `--deepseek`/`--kimi`
+   are convenience flags; add a `--<model>` flag only if you want one). Then:
 
 ```bash
-./build.sh                       # re-fetches tokenizers, recompiles
-cd ../../dynamo_frontend
-LLM_DEVICE_BACKEND=mock ./deploy.sh --<model> --local-build --no-monitoring
 FE=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' dynamo-frontend)
 curl -s "http://${FE}:8000/v1/models"
 curl -s "http://${FE}:8000/v1/chat/completions" -H 'Content-Type: application/json' \
-  -d '{"model":"<org>/<Model>","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'
+  -d '{"model":"<hf-id>","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'
 ```
 
-- `docker logs tt-cpp-worker` must show the new tokenizer loaded (`[TokenizerUtil] Loaded tokenizer from: .../<model>/tokenizer.json`) and the worker registered with etcd.
-- A reasoning model should report `reasoning_tokens` in the final-chunk usage; if it's 0/absent, step 3 is wrong.
-- If `--<model>` errors as unknown, step 5 is missing.
+Confirm: `docker logs tt-cpp-worker` shows the new tokenizer loaded and the worker
+registered with etcd; a reasoning model reports `reasoning_tokens` in the final-chunk
+usage; tool-call output parses (the `runtimeParsersForModelType` ids are correct);
+and the frontend didn't reject the model for a missing `eos_token_id`.
 
 ## Related skills
 
