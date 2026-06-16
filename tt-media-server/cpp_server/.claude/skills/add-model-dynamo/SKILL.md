@@ -9,13 +9,13 @@ description: Checklist for onboarding a new LLM to the cpp_server inference back
 
 | # | Where | What to add |
 |---|-------|-------------|
-| 0 | **ask the user** | the model's **full HuggingFace id** (e.g. `openai/gpt-oss-120b`, `MiniMaxAI/MiniMax-M2.7`) — required, do not guess owner/casing |
+| 0 | **ask the user** | the model's **full HuggingFace id** (e.g. `openai/gpt-oss-120b`, `MiniMaxAI/MiniMax-M2.7`) — required, do not guess |
 | 1 | `include/config/types.hpp` | `ModelType` + `Model` enum values, `MODEL_MAPPINGS` (`Model`→HF id), `modelTypeFromDeviceBackend` short-name branch |
 | 2 | `src/config/settings.cpp` | `modelType()` resolver: HF id → `ModelType` (else silently falls back to DeepSeek) |
 | 3 | `scripts/fetch_tokenizers.sh` | download **all** needed files into `tokenizers/<hf-id>/` |
 | 4 | `src/utils/tokenizers/tokenizer.cpp` | `tokenizerDirForModel`, `createTokenizer` (defaults to `DeepseekTokenizer`), `staticInfoFor` + a `StaticTokenizerInfo` (eos/stop/think token ids) |
 | 5 | `src/dynamo/discovery.cpp` | `runtimeParsersForModelType` (reasoning + tool-call parser ids), `buildMdcJson` (publishes `generation_config.json`) |
-| 6 | deploy + verify | bring the stack up with `MODEL=<hf-id>`, confirm loads / registers / answers |
+| 6 | deploy + verify | `deploy.sh --hf-model-id <hf-id>`, confirm loads / registers / answers |
 
 Reference: [tenstorrent/tt-inference-server#4143](https://github.com/tenstorrent/tt-inference-server/pull/4143) (and the GPT-OSS/MiniMax onboarding commits).
 
@@ -48,7 +48,7 @@ the model because `eos_token_id` is absent (model carries it only in
 
 3. **Fetch tokenizer files** in `scripts/fetch_tokenizers.sh` so
    `tokenizers/<hf-id>/` has **tokenizer.json, tokenizer_config.json, config.json,
-   generation_config.json, chat_template.jinja**. Steps 4–5 read eos ids out of
+   generation_config.json, chat_template.jinja** if jinja files exist. Steps 4–5 read eos ids out of
    `config.json` / `generation_config.json` and discovery publishes
    `generation_config.json`, so all must be present.
 
@@ -74,14 +74,12 @@ the model because `eos_token_id` is absent (model carries it only in
      Nothing to change unless the model needs extra MDC fields — just confirm the
      file is fetched (step 3).
 
-6. **Deploy & verify** (see `run-dynamo-server`). The branch did **not** touch
-   `deploy.sh` — deploy by setting `MODEL=<hf-id>` (deploy.sh's `--deepseek`/`--kimi`
-   are convenience flags; add a `--<model>` flag only if you want one). Then:
+6. **Deploy & verify** (see `run-dynamo-server`). `deploy.sh` serves any model via
+   `--hf-model-id <hf-id>` — no script change needed. Then:
 
 ```bash
-FE=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' dynamo-frontend)
-curl -s "http://${FE}:8000/v1/models"
-curl -s "http://${FE}:8000/v1/chat/completions" -H 'Content-Type: application/json' \
+curl -s "http://dynamo-frontend:8000/v1/models"
+curl -s "http://dynamo-frontend:8000/v1/chat/completions" -H 'Content-Type: application/json' \
   -d '{"model":"<hf-id>","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'
 ```
 
@@ -89,7 +87,3 @@ Confirm: `docker logs tt-cpp-worker` shows the new tokenizer loaded and the work
 registered with etcd; a reasoning model reports `reasoning_tokens` in the final-chunk
 usage; tool-call output parses (the `runtimeParsersForModelType` ids are correct);
 and the frontend didn't reject the model for a missing `eos_token_id`.
-
-## Related skills
-
-`run-dynamo-server` (launch the stack) · `benchmark-dynamo` (load-test it).
