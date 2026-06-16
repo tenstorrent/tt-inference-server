@@ -8,136 +8,27 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
-#include <exception>
-#include <memory>
-#include <thread>
-#include <utility>
 #include <vector>
 
-#include "config/runner_config.hpp"
 #include "config/settings.hpp"
-#include "domain/llm/sampling_params.hpp"
-#include "domain/llm/sequence.hpp"
 #include "domain/manage_memory.hpp"
-#include "ipc/in_memory/in_memory_cancel_queue.hpp"
-#include "ipc/in_memory/in_memory_memory_queue.hpp"
-#include "ipc/in_memory/in_memory_result_queue.hpp"
-#include "ipc/in_memory/in_memory_task_queue.hpp"
-#include "services/memory_services/memory_manager.hpp"
+#include "integration/integration_test_helpers.hpp"
 
 namespace tt::runners::blaze {
 
 namespace {
 
-constexpr auto DEADLINE = std::chrono::seconds(10);
-constexpr auto POLL_INTERVAL = std::chrono::milliseconds(50);
 constexpr uint64_t MOCK_PIPELINE_TOKEN_ID = 12345u;
-constexpr int DEFAULT_BLOCK_SIZE = 1;
 const std::vector<int64_t> DEFAULT_STOP_TOKEN_IDS = {987654321};
 
-class BlazeDecodeRunnerHarness {
+// Specialized harness for decode runner that uses setKVCacheSlot (default).
+class BlazeDecodeRunnerHarness
+    : public test::RunnerTestHarness<BlazeDecodeRunner> {
  public:
   explicit BlazeDecodeRunnerHarness(
-      std::vector<int64_t> stopTokenIds = DEFAULT_STOP_TOKEN_IDS) {
-    memoryRequestQueue =
-        std::make_shared<tt::ipc::in_memory::MemoryRequestQueue>();
-    memoryResultQueue =
-        std::make_shared<tt::ipc::in_memory::MemoryResultQueue>();
-    auto memoryManager = std::make_unique<tt::services::MemoryManager>(
-        memoryRequestQueue, memoryResultQueue);
-    config.runner_type = tt::config::ModelRunnerType::MOCK_PIPELINE;
-    config.stop_token_ids = std::move(stopTokenIds);
-    runner = std::make_unique<BlazeDecodeRunner>(config, &resultQueue,
-                                                 &taskQueue, &cancelQueue,
-                                                 std::move(memoryManager));
-
-    runnerThread = std::thread([this]() {
-      try {
-        runner->start();
-      } catch (...) {
-        runnerError = std::current_exception();
-      }
-    });
-  }
-
-  ~BlazeDecodeRunnerHarness() { shutdown(); }
-
-  tt::domain::ManageMemoryResult allocate(uint32_t taskId) {
-    tt::domain::ManageMemoryTask request{};
-    request.taskId = taskId;
-    request.action = tt::domain::MemoryManagementAction::ALLOCATE;
-    memoryRequestQueue->push(request);
-
-    tt::domain::ManageMemoryResult response{};
-    memoryResultQueue->waitPop(response);
-    return response;
-  }
-
-  void submitSequence(uint32_t taskId, uint32_t slotId,
-                      const std::vector<int64_t>& promptTokens,
-                      const tt::domain::llm::SamplingParams& samplingParams) {
-    tt::domain::llm::Sequence seq(taskId, DEFAULT_BLOCK_SIZE, promptTokens,
-                                  samplingParams);
-    seq.setKVCacheSlot(slotId);
-    taskQueue.push(seq);
-  }
-
-  bool waitPopFor(tt::ipc::SharedToken& token) {
-    return resultQueue.waitPopFor(token, POLL_INTERVAL);
-  }
-
-  std::vector<tt::ipc::SharedToken> collectTaskTokensUntilFinal(
-      uint32_t taskId) {
-    std::vector<tt::ipc::SharedToken> tokens;
-    const auto deadline = std::chrono::steady_clock::now() + DEADLINE;
-    while (std::chrono::steady_clock::now() < deadline) {
-      tt::ipc::SharedToken token{};
-      if (!waitPopFor(token) || token.task_id != taskId) {
-        continue;
-      }
-      tokens.push_back(token);
-      if (token.isFinal()) {
-        break;
-      }
-    }
-    return tokens;
-  }
-
-  void requestCancel(uint32_t taskId) { cancelQueue.push(taskId); }
-
-  void assertRunnerHealthy() const {
-    if (runnerError) {
-      std::rethrow_exception(runnerError);
-    }
-  }
-
- private:
-  void shutdown() {
-    if (isShutdown) {
-      return;
-    }
-    isShutdown = true;
-    if (runner) {
-      runner->stop();
-    }
-    if (runnerThread.joinable()) {
-      runnerThread.join();
-    }
-    resultQueue.shutdown();
-    memoryRequestQueue.reset();
-    memoryResultQueue.reset();
-  }
-
-  std::shared_ptr<tt::ipc::in_memory::MemoryRequestQueue> memoryRequestQueue;
-  std::shared_ptr<tt::ipc::in_memory::MemoryResultQueue> memoryResultQueue;
-  tt::ipc::in_memory::ResultQueue resultQueue;
-  tt::ipc::in_memory::TaskQueue taskQueue;
-  tt::ipc::in_memory::CancelQueue cancelQueue;
-  tt::config::LLMConfig config{};
-  std::unique_ptr<BlazeDecodeRunner> runner;
-  std::thread runnerThread;
-  std::exception_ptr runnerError;
-  bool isShutdown = false;
+      std::vector<int64_t> stopTokenIds = DEFAULT_STOP_TOKEN_IDS)
+      : test::RunnerTestHarness<BlazeDecodeRunner>(
+            test::makeLLMConfig(128, 8, 0, std::move(stopTokenIds))) {}
 };
 
 }  // namespace
@@ -149,10 +40,10 @@ TEST(BlazeDecodeRunnerIntegrationTest,
   const uint32_t taskId = 4242;
   const auto allocateResponse = harness.allocate(taskId);
   ASSERT_EQ(allocateResponse.taskId, taskId);
-  ASSERT_EQ(allocateResponse.status, tt::domain::ManageMemoryStatus::SUCCESS);
-  ASSERT_NE(allocateResponse.slotId, tt::domain::INVALID_SLOT_ID);
+  ASSERT_EQ(allocateResponse.status, domain::ManageMemoryStatus::SUCCESS);
+  ASSERT_NE(allocateResponse.slotId, domain::INVALID_SLOT_ID);
 
-  tt::domain::llm::SamplingParams samplingParams;
+  domain::llm::SamplingParams samplingParams;
   samplingParams.max_tokens = 3;
   samplingParams.ignore_eos = false;
 
@@ -180,10 +71,10 @@ TEST(BlazeDecodeRunnerIntegrationTest, CancelFlowEmitsAbortToken) {
   const uint32_t taskId = 5252;
   const auto allocateResponse = harness.allocate(taskId);
   ASSERT_EQ(allocateResponse.taskId, taskId);
-  ASSERT_EQ(allocateResponse.status, tt::domain::ManageMemoryStatus::SUCCESS);
-  ASSERT_NE(allocateResponse.slotId, tt::domain::INVALID_SLOT_ID);
+  ASSERT_EQ(allocateResponse.status, domain::ManageMemoryStatus::SUCCESS);
+  ASSERT_NE(allocateResponse.slotId, domain::INVALID_SLOT_ID);
 
-  tt::domain::llm::SamplingParams samplingParams;
+  domain::llm::SamplingParams samplingParams;
   samplingParams.max_tokens = 1000;
   samplingParams.ignore_eos = true;
 
@@ -191,9 +82,10 @@ TEST(BlazeDecodeRunnerIntegrationTest, CancelFlowEmitsAbortToken) {
                          samplingParams);
 
   bool sawInitialToken = false;
-  const auto tokenDeadline = std::chrono::steady_clock::now() + DEADLINE;
+  const auto tokenDeadline =
+      std::chrono::steady_clock::now() + test::kTestDeadline;
   while (std::chrono::steady_clock::now() < tokenDeadline) {
-    tt::ipc::SharedToken token{};
+    ipc::SharedToken token{};
     if (!harness.waitPopFor(token)) {
       continue;
     }
@@ -211,10 +103,11 @@ TEST(BlazeDecodeRunnerIntegrationTest, CancelFlowEmitsAbortToken) {
   harness.requestCancel(taskId);
 
   bool sawAbort = false;
-  tt::ipc::SharedToken abortToken{};
-  const auto abortDeadline = std::chrono::steady_clock::now() + DEADLINE;
+  ipc::SharedToken abortToken{};
+  const auto abortDeadline =
+      std::chrono::steady_clock::now() + test::kTestDeadline;
   while (std::chrono::steady_clock::now() < abortDeadline) {
-    tt::ipc::SharedToken token{};
+    ipc::SharedToken token{};
     if (!harness.waitPopFor(token)) {
       continue;
     }
@@ -242,10 +135,10 @@ TEST(BlazeDecodeRunnerIntegrationTest, StopsOnConfiguredStopToken) {
   const uint32_t taskId = 6262;
   const auto allocateResponse = harness.allocate(taskId);
   ASSERT_EQ(allocateResponse.taskId, taskId);
-  ASSERT_EQ(allocateResponse.status, tt::domain::ManageMemoryStatus::SUCCESS);
-  ASSERT_NE(allocateResponse.slotId, tt::domain::INVALID_SLOT_ID);
+  ASSERT_EQ(allocateResponse.status, domain::ManageMemoryStatus::SUCCESS);
+  ASSERT_NE(allocateResponse.slotId, domain::INVALID_SLOT_ID);
 
-  tt::domain::llm::SamplingParams samplingParams;
+  domain::llm::SamplingParams samplingParams;
   samplingParams.max_tokens = 1000;
   samplingParams.ignore_eos = false;
   samplingParams.stop_token_ids = {MOCK_PIPELINE_TOKEN_ID};
@@ -271,14 +164,14 @@ TEST(BlazeDecodeRunnerIntegrationTest, TwoConcurrentTasksStayIsolated) {
   const uint32_t taskA = 7001;
   const uint32_t taskB = 7002;
 
-  uint32_t slotA = tt::domain::INVALID_SLOT_ID;
-  uint32_t slotB = tt::domain::INVALID_SLOT_ID;
+  uint32_t slotA = domain::INVALID_SLOT_ID;
+  uint32_t slotB = domain::INVALID_SLOT_ID;
 
   const auto responseA = harness.allocate(taskA);
   const auto responseB = harness.allocate(taskB);
   for (const auto& response : {responseA, responseB}) {
-    ASSERT_EQ(response.status, tt::domain::ManageMemoryStatus::SUCCESS);
-    ASSERT_NE(response.slotId, tt::domain::INVALID_SLOT_ID);
+    ASSERT_EQ(response.status, domain::ManageMemoryStatus::SUCCESS);
+    ASSERT_NE(response.slotId, domain::INVALID_SLOT_ID);
     if (response.taskId == taskA) {
       slotA = response.slotId;
     } else if (response.taskId == taskB) {
@@ -288,24 +181,25 @@ TEST(BlazeDecodeRunnerIntegrationTest, TwoConcurrentTasksStayIsolated) {
     }
   }
 
-  ASSERT_NE(slotA, tt::domain::INVALID_SLOT_ID);
-  ASSERT_NE(slotB, tt::domain::INVALID_SLOT_ID);
+  ASSERT_NE(slotA, domain::INVALID_SLOT_ID);
+  ASSERT_NE(slotB, domain::INVALID_SLOT_ID);
 
-  tt::domain::llm::SamplingParams samplingParams;
+  domain::llm::SamplingParams samplingParams;
   samplingParams.max_tokens = 3;
   samplingParams.ignore_eos = false;
 
   harness.submitSequence(taskA, slotA, {11, 12}, samplingParams);
   harness.submitSequence(taskB, slotB, {21, 22}, samplingParams);
 
-  std::vector<tt::ipc::SharedToken> tokensA;
-  std::vector<tt::ipc::SharedToken> tokensB;
+  std::vector<ipc::SharedToken> tokensA;
+  std::vector<ipc::SharedToken> tokensB;
   bool sawFinalA = false;
   bool sawFinalB = false;
-  const auto deadline = std::chrono::steady_clock::now() + DEADLINE;
+  const auto deadline =
+      std::chrono::steady_clock::now() + test::kTestDeadline;
   while (std::chrono::steady_clock::now() < deadline &&
          (!sawFinalA || !sawFinalB)) {
-    tt::ipc::SharedToken token{};
+    ipc::SharedToken token{};
     if (!harness.waitPopFor(token)) {
       continue;
     }
@@ -346,7 +240,7 @@ TEST(BlazeDecodeRunnerIntegrationTest,
   constexpr uint32_t kFirstTaskId = 9000;
   constexpr size_t kRequestedUsers = 128;
   constexpr int kMaxTokensPerUser = 4;
-  const size_t userCount = std::min(kRequestedUsers, tt::config::pmMaxUsers());
+  const size_t userCount = std::min(kRequestedUsers, config::pmMaxUsers());
   ASSERT_GE(userCount, 2u)
       << "Need at least two scheduler users for backpressure coverage";
 
@@ -359,8 +253,8 @@ TEST(BlazeDecodeRunnerIntegrationTest,
     const uint32_t taskId = kFirstTaskId + static_cast<uint32_t>(i);
     const auto allocateResponse = harness.allocate(taskId);
     ASSERT_EQ(allocateResponse.taskId, taskId);
-    ASSERT_EQ(allocateResponse.status, tt::domain::ManageMemoryStatus::SUCCESS);
-    ASSERT_NE(allocateResponse.slotId, tt::domain::INVALID_SLOT_ID);
+    ASSERT_EQ(allocateResponse.status, domain::ManageMemoryStatus::SUCCESS);
+    ASSERT_NE(allocateResponse.slotId, domain::INVALID_SLOT_ID);
     taskIds.push_back(taskId);
     slotIds.push_back(allocateResponse.slotId);
   }
@@ -370,7 +264,7 @@ TEST(BlazeDecodeRunnerIntegrationTest,
         << "Expected each concurrent user to get a unique slot";
   }
 
-  tt::domain::llm::SamplingParams samplingParams;
+  domain::llm::SamplingParams samplingParams;
   samplingParams.max_tokens = kMaxTokensPerUser;
   samplingParams.ignore_eos = false;
 
@@ -384,10 +278,11 @@ TEST(BlazeDecodeRunnerIntegrationTest,
   std::vector<size_t> tokenCounts(userCount, 0);
   std::vector<bool> sawFinal(userCount, false);
   size_t finalCount = 0;
-  const auto deadline = std::chrono::steady_clock::now() + DEADLINE;
+  const auto deadline =
+      std::chrono::steady_clock::now() + test::kTestDeadline;
   while (std::chrono::steady_clock::now() < deadline &&
          finalCount < userCount) {
-    tt::ipc::SharedToken token{};
+    ipc::SharedToken token{};
     if (!harness.waitPopFor(token)) {
       continue;
     }

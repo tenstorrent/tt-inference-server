@@ -27,9 +27,9 @@
 #include <string>
 #include <vector>
 
+#include "integration/support/test_server.hpp"
 #include "support/chat_request.hpp"
 #include "support/http_client.hpp"
-#include "support/test_server.hpp"
 #include "support/worker_response.hpp"
 
 namespace tt::test {
