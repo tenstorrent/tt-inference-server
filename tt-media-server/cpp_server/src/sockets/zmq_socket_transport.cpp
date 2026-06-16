@@ -27,39 +27,39 @@ std::string makeMonitorEndpoint(const void* self) {
 
 ZmqSocketTransport::ZmqSocketTransport()
     : SocketTransportState(std::chrono::seconds(1), std::chrono::seconds(5)),
-      context_(
+      context(
           std::make_unique<zmq::context_t>(zmq_options::CONTEXT_IO_THREADS)) {}
 
 ZmqSocketTransport::~ZmqSocketTransport() { stop(); }
 
 bool ZmqSocketTransport::initializeAsServer(uint16_t port) {
-  mode_ = Mode::SERVER;
-  endpoint_ = "tcp://*:" + std::to_string(port);
+  mode = Mode::SERVER;
+  endpoint = "tcp://*:" + std::to_string(port);
   return startIoThread();
 }
 
 bool ZmqSocketTransport::initializeAsClient(const std::string& host,
                                             uint16_t port) {
-  mode_ = Mode::CLIENT;
-  endpoint_ = "tcp://" + host + ":" + std::to_string(port);
+  mode = Mode::CLIENT;
+  endpoint = "tcp://" + host + ":" + std::to_string(port);
   return startIoThread();
 }
 
 bool ZmqSocketTransport::startIoThread() {
-  if (ioActive_) return false;
-  ioActive_ = true;
+  if (ioActive) return false;
+  ioActive = true;
 
   std::promise<bool> initialized;
   auto fut = initialized.get_future();
-  ioThread_ = std::jthread([this, initialized = std::move(initialized)](
+  ioThread = std::jthread([this, initialized = std::move(initialized)](
                                std::stop_token stopToken) mutable {
     ioLoop(stopToken, std::move(initialized));
   });
 
   bool initializedOk = fut.get();
-  if (!initializedOk && ioThread_.joinable()) {
-    ioThread_.request_stop();
-    ioThread_.join();
+  if (!initializedOk && ioThread.joinable()) {
+    ioThread.request_stop();
+    ioThread.join();
   }
   return initializedOk;
 }
@@ -73,7 +73,7 @@ void ZmqSocketTransport::ioLoop(std::stop_token stopToken,
 
   initialized.set_value(true);
 
-  while (ioActive_ && !stopToken.stop_requested()) {
+  while (ioActive && !stopToken.stop_requested()) {
     const bool sent = processPendingSends();
     const bool received = receiveAvailableMessages();
 
@@ -83,42 +83,42 @@ void ZmqSocketTransport::ioLoop(std::stop_token stopToken,
   }
 
   failPendingSends();
-  if (socket_) {
-    socket_->close();
-    socket_.reset();
+  if (socket) {
+    socket->close();
+    socket.reset();
   }
 }
 
 bool ZmqSocketTransport::initializeSocket() {
   try {
-    socket_ = std::make_unique<zmq::socket_t>(
-        *context_, mode_ == Mode::SERVER ? zmq::socket_type::router
-                                         : zmq::socket_type::dealer);
-    zmq_options::applyCommonOptions(*socket_);
-    if (mode_ == Mode::CLIENT) {
-      socket_->set(zmq::sockopt::reconnect_ivl,
-                   static_cast<int>(reconnectInitialDelay_.count()));
-      socket_->set(zmq::sockopt::reconnect_ivl_max,
-                   static_cast<int>(reconnectMaxDelay_.count()));
+    socket = std::make_unique<zmq::socket_t>(
+        *context, mode == Mode::SERVER ? zmq::socket_type::router
+                                        : zmq::socket_type::dealer);
+    zmq_options::applyCommonOptions(*socket);
+    if (mode == Mode::CLIENT) {
+      socket->set(zmq::sockopt::reconnect_ivl,
+                  static_cast<int>(reconnectInitialDelay.count()));
+      socket->set(zmq::sockopt::reconnect_ivl_max,
+                  static_cast<int>(reconnectMaxDelay.count()));
     }
     setupMonitor();
-    if (mode_ == Mode::SERVER) {
-      socket_->bind(endpoint_);
-      TT_LOG_INFO("[ZmqSocketTransport] Server bound to {}", endpoint_);
+    if (mode == Mode::SERVER) {
+      socket->bind(endpoint);
+      TT_LOG_INFO("[ZmqSocketTransport] Server bound to {}", endpoint);
     } else {
-      socket_->connect(endpoint_);
-      TT_LOG_INFO("[ZmqSocketTransport] Client connecting to {}", endpoint_);
+      socket->connect(endpoint);
+      TT_LOG_INFO("[ZmqSocketTransport] Client connecting to {}", endpoint);
     }
     return true;
   } catch (const zmq::error_t& e) {
-    TT_LOG_ERROR("[ZmqSocketTransport] Failed to initialize {}: {}", endpoint_,
+    TT_LOG_ERROR("[ZmqSocketTransport] Failed to initialize {}: {}", endpoint,
                  e.what());
-    socket_.reset();
-    ioActive_ = false;
-    monitorActive_ = false;
-    if (monitorThread_.joinable()) {
-      monitorThread_.request_stop();
-      monitorThread_.join();
+    socket.reset();
+    ioActive = false;
+    monitorActive = false;
+    if (monitorThread.joinable()) {
+      monitorThread.request_stop();
+      monitorThread.join();
     }
     return false;
   }
@@ -128,7 +128,7 @@ void ZmqSocketTransport::setupMonitor() {
   const std::string monitorAddr = makeMonitorEndpoint(this);
   int events =
       ZMQ_EVENT_CONNECTED | ZMQ_EVENT_ACCEPTED | ZMQ_EVENT_DISCONNECTED;
-  if (zmq_socket_monitor(static_cast<void*>(*socket_), monitorAddr.c_str(),
+  if (zmq_socket_monitor(static_cast<void*>(*socket), monitorAddr.c_str(),
                          events) != 0) {
     TT_LOG_WARN(
         "[ZmqSocketTransport] zmq_socket_monitor failed; connection events "
@@ -138,10 +138,10 @@ void ZmqSocketTransport::setupMonitor() {
 
   // libzmq drops events fired before a PAIR has attached to the inproc
   // endpoint, so block here until the monitor thread has connected its PAIR.
-  monitorActive_ = true;
+  monitorActive = true;
   std::promise<void> ready;
   auto fut = ready.get_future();
-  monitorThread_ = std::jthread(
+  monitorThread = std::jthread(
       [this, ready = std::move(ready)](std::stop_token stopToken) mutable {
         monitorLoop(stopToken, std::move(ready));
       });
@@ -149,9 +149,9 @@ void ZmqSocketTransport::setupMonitor() {
 }
 
 void ZmqSocketTransport::start() {
-  if (running_) return;
-  running_ = true;
-  // Do NOT reset `connected_` — the monitor thread (running since
+  if (running) return;
+  running = true;
+  // Do NOT reset `connected` — the monitor thread (running since
   // initializeAsClient/Server) may already have observed and recorded a
   // CONNECTED/ACCEPTED event that fired between connect()/bind() and start().
 
@@ -159,26 +159,26 @@ void ZmqSocketTransport::start() {
 }
 
 void ZmqSocketTransport::stop() {
-  if (!running_ && !ioActive_ && !monitorActive_) return;
-  running_ = false;
-  ioActive_ = false;
-  monitorActive_ = false;
-  connected_ = false;
+  if (!running && !ioActive && !monitorActive) return;
+  running = false;
+  ioActive = false;
+  monitorActive = false;
+  connected = false;
   routerPeerReady = false;
   sendQueue.notifyStopped();
 
-  if (ioThread_.joinable()) {
-    ioThread_.request_stop();
-    ioThread_.join();
+  if (ioThread.joinable()) {
+    ioThread.request_stop();
+    ioThread.join();
   }
 
-  if (monitorThread_.joinable()) {
-    monitorThread_.request_stop();
-    monitorThread_.join();
+  if (monitorThread.joinable()) {
+    monitorThread.request_stop();
+    monitorThread.join();
   }
 
-  if (context_) {
-    context_->close();
+  if (context) {
+    context->close();
   }
 
   TT_LOG_INFO("[ZmqSocketTransport] Stopped");
@@ -186,7 +186,7 @@ void ZmqSocketTransport::stop() {
 
 void ZmqSocketTransport::monitorLoop(std::stop_token stopToken,
                                      std::promise<void> ready) {
-  zmq::socket_t monitorSocket(*context_, zmq::socket_type::pair);
+  zmq::socket_t monitorSocket(*context, zmq::socket_type::pair);
   try {
     monitorSocket.set(zmq::sockopt::linger, 0);
     monitorSocket.set(zmq::sockopt::rcvtimeo, ZMQ_MONITOR_TIMEOUT_MS);
@@ -198,7 +198,7 @@ void ZmqSocketTransport::monitorLoop(std::stop_token stopToken,
   }
   ready.set_value();
 
-  while (monitorActive_ && !stopToken.stop_requested()) {
+  while (monitorActive && !stopToken.stop_requested()) {
     try {
       zmq::message_t eventMsg;
       auto eventResult = monitorSocket.recv(eventMsg, zmq::recv_flags::none);
@@ -215,14 +215,14 @@ void ZmqSocketTransport::monitorLoop(std::stop_token stopToken,
       }
 
       if (eventId == ZMQ_EVENT_CONNECTED || eventId == ZMQ_EVENT_ACCEPTED) {
-        bool wasConnected = connected_.exchange(true);
+        bool wasConnected = connected.exchange(true);
         if (!wasConnected) {
           TT_LOG_DEBUG("[ZmqSocketTransport] Peer connected ({})", modeName());
           notifyConnectionEstablished();
         }
       } else if (eventId == ZMQ_EVENT_DISCONNECTED) {
-        bool wasConnected = connected_.exchange(false);
-        if (mode_ == Mode::SERVER) {
+        bool wasConnected = connected.exchange(false);
+        if (mode == Mode::SERVER) {
           routerPeerReady = false;
         }
         if (wasConnected) {
@@ -233,13 +233,13 @@ void ZmqSocketTransport::monitorLoop(std::stop_token stopToken,
       }
     } catch (const zmq::error_t& e) {
       if (e.num() == ETERM || e.num() == EINTR) break;
-      // Ignore EAGAIN from rcvtimeo; loop back and re-check running_.
+      // Ignore EAGAIN from rcvtimeo; loop back and re-check running.
     }
   }
 }
 
 bool ZmqSocketTransport::isConnected() const {
-  if (mode_ == Mode::SERVER) {
+  if (mode == Mode::SERVER) {
     return isConnectedState() && routerPeerReady.load();
   }
   return isConnectedState();
@@ -250,14 +250,14 @@ std::string ZmqSocketTransport::getStatus() const {
 }
 
 bool ZmqSocketTransport::sendRawData(std::span<const uint8_t> data) {
-  if (!running_ || !ioActive_) return false;
+  if (!running || !ioActive) return false;
 
   auto request = std::make_shared<SendRequest>();
   request->data.assign(data.begin(), data.end());
   auto result = request->result.get_future();
 
   if (!sendQueue.pushIf(std::move(request), [this] {
-        return running_.load() && ioActive_.load();
+        return running.load() && ioActive.load();
       })) {
     return false;
   }
@@ -281,7 +281,7 @@ bool ZmqSocketTransport::processPendingSends() {
 
     bool ok = false;
     try {
-      ok = running_ && (mode_ == Mode::SERVER ? sendAsRouter(request->data)
+      ok = running && (mode == Mode::SERVER ? sendAsRouter(request->data)
                                               : sendAsDealer(request->data));
     } catch (const zmq::error_t& e) {
       TT_LOG_ERROR("[ZmqSocketTransport] Send failed: {}", e.what());
@@ -295,7 +295,7 @@ bool ZmqSocketTransport::receiveAvailableMessages() {
   bool received = false;
   try {
     while (true) {
-      auto data = mode_ == Mode::SERVER ? receiveAsRouter() : receiveAsDealer();
+      auto data = mode == Mode::SERVER ? receiveAsRouter() : receiveAsDealer();
       if (data.empty()) break;
       enqueueReceivedMessage(std::move(data));
       received = true;
@@ -309,7 +309,7 @@ bool ZmqSocketTransport::receiveAvailableMessages() {
 }
 
 void ZmqSocketTransport::waitForIoWork() {
-  sendQueue.waitForWork(IO_IDLE_WAIT, [this] { return !ioActive_.load(); });
+  sendQueue.waitForWork(IO_IDLE_WAIT, [this] { return !ioActive.load(); });
 }
 
 void ZmqSocketTransport::failPendingSends() {
@@ -329,51 +329,51 @@ bool ZmqSocketTransport::sendAsRouter(const std::vector<uint8_t>& data) {
         "[ZmqSocketTransport] Cannot send — no peer identity known yet");
     return false;
   }
-  zmq::message_t idFrame(peerId_.data(), peerId_.size());
-  socket_->send(idFrame, zmq::send_flags::sndmore);
+  zmq::message_t idFrame(peerId.data(), peerId.size());
+  socket->send(idFrame, zmq::send_flags::sndmore);
 
   zmq::message_t msg(data.data(), data.size());
-  auto result = socket_->send(msg, zmq::send_flags::dontwait);
+  auto result = socket->send(msg, zmq::send_flags::dontwait);
   return result.has_value();
 }
 
 bool ZmqSocketTransport::sendAsDealer(const std::vector<uint8_t>& data) {
   zmq::message_t msg(data.data(), data.size());
-  auto result = socket_->send(msg, zmq::send_flags::dontwait);
+  auto result = socket->send(msg, zmq::send_flags::dontwait);
   return result.has_value();
 }
 
 std::vector<uint8_t> ZmqSocketTransport::receiveRawData() {
-  std::lock_guard<std::mutex> lock(receiveMutex_);
-  if (receivedMessages_.empty()) {
+  std::lock_guard<std::mutex> lock(receiveMutex);
+  if (receivedMessages.empty()) {
     return {};
   }
 
-  auto data = std::move(receivedMessages_.front());
-  receivedMessages_.pop_front();
+  auto data = std::move(receivedMessages.front());
+  receivedMessages.pop_front();
   return data;
 }
 
 void ZmqSocketTransport::enqueueReceivedMessage(std::vector<uint8_t> data) {
-  std::lock_guard<std::mutex> lock(receiveMutex_);
-  receivedMessages_.push_back(std::move(data));
+  std::lock_guard<std::mutex> lock(receiveMutex);
+  receivedMessages.push_back(std::move(data));
 }
 
 std::vector<uint8_t> ZmqSocketTransport::receiveAsRouter() {
   // ROUTER: first frame is peer identity — store it for future sends.
   // Connection state itself is tracked by the monitor thread.
   zmq::message_t identity;
-  auto idResult = socket_->recv(identity, zmq::recv_flags::dontwait);
+  auto idResult = socket->recv(identity, zmq::recv_flags::dontwait);
   if (!idResult.has_value()) return {};
 
-  peerId_.assign(static_cast<uint8_t*>(identity.data()),
-                 static_cast<uint8_t*>(identity.data()) + identity.size());
+  peerId.assign(static_cast<uint8_t*>(identity.data()),
+                static_cast<uint8_t*>(identity.data()) + identity.size());
   routerPeerReady = true;
 
   if (!identity.more()) return {};
 
   zmq::message_t msg;
-  auto result = socket_->recv(msg, zmq::recv_flags::dontwait);
+  auto result = socket->recv(msg, zmq::recv_flags::dontwait);
   if (!result.has_value() || msg.size() == 0) return {};
 
   auto* ptr = static_cast<uint8_t*>(msg.data());
@@ -382,7 +382,7 @@ std::vector<uint8_t> ZmqSocketTransport::receiveAsRouter() {
 
 std::vector<uint8_t> ZmqSocketTransport::receiveAsDealer() {
   zmq::message_t msg;
-  auto result = socket_->recv(msg, zmq::recv_flags::dontwait);
+  auto result = socket->recv(msg, zmq::recv_flags::dontwait);
   if (!result.has_value() || msg.size() == 0) return {};
 
   auto* ptr = static_cast<uint8_t*>(msg.data());

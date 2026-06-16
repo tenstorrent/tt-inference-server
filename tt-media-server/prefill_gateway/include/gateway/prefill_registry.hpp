@@ -20,11 +20,11 @@ class SocketManager;  // forward; lifetime owned outside the registry
 
 namespace tt::gateway {
 
-// Thread-safe registry of prefill nodes, keyed by stable `server_id`.
+// Thread-safe registry of prefill nodes, keyed by stable `serverId`.
 class PrefillRegistry {
  public:
   using PrefillStateCallback =
-      std::function<void(const std::string& server_id)>;
+      std::function<void(const std::string& serverId)>;
 
   PrefillRegistry() = default;
   PrefillRegistry(const PrefillRegistry&) = delete;
@@ -32,64 +32,64 @@ class PrefillRegistry {
 
   // Insert a prefill slot (CLIENT-mode socket already created, not yet
   // registered).
-  void preRegister(const std::string& server_id,
+  void preRegister(const std::string& serverId,
                    tt::sockets::SocketManager* manager);
 
   // Mark a prefill ready (PrefillRegistrationMessage received). Returns false
-  // if no slot exists for server_id.
-  bool markRegistered(const std::string& server_id, uint32_t max_in_flight);
+  // if no slot exists for serverId.
+  bool markRegistered(const std::string& serverId, uint32_t maxInFlight);
 
   // Mark a prefill down; caller should re-route in-flight tasks.
-  void markDown(const std::string& server_id);
+  void markDown(const std::string& serverId);
 
-  void setAcceptingTasks(const std::string& server_id, bool accepting_tasks);
+  void setAcceptingTasks(const std::string& serverId, bool acceptingTasks);
 
-  void incrementInflight(const std::string& server_id);
-  void decrementInflight(const std::string& server_id);  // saturates at 0
+  void incrementInflight(const std::string& serverId);
+  void decrementInflight(const std::string& serverId);  // saturates at 0
 
-  void addCachedBlocks(const std::string& server_id,
-                       const std::vector<uint64_t>& block_hashes);
+  void addCachedBlocks(const std::string& serverId,
+                       const std::vector<uint64_t>& blockHashes);
 
   std::vector<PrefillSnapshot> snapshot() const;
   std::vector<PrefillSnapshot> routingSnapshot(
-      const std::vector<uint64_t>& registration_hashes) const;
+      const std::vector<uint64_t>& registrationHashes) const;
 
-  // Non-owning. Valid until the next markDown() for `server_id`.
-  tt::sockets::SocketManager* getSocketManager(const std::string& server_id);
+  // Non-owning. Valid until the next markDown() for `serverId`.
+  tt::sockets::SocketManager* getSocketManager(const std::string& serverId);
 
   void setOnPrefillDown(PrefillStateCallback callback);
 
  private:
-  // Per-prefill runtime state. `socket_manager` is non-owning; tests pass null.
+  // Per-prefill runtime state. `socketManager` is non-owning; tests pass null.
   struct PrefillPeer {
-    std::string server_id;
-    tt::sockets::SocketManager* socket_manager = nullptr;
+    std::string serverId;
+    tt::sockets::SocketManager* socketManager = nullptr;
 
     bool healthy = false;
-    bool accepting_tasks = true;
-    uint32_t in_flight = 0;
-    uint32_t max_in_flight = 0;
+    bool acceptingTasks = true;
+    uint32_t inFlight = 0;
+    uint32_t maxInFlight = 0;
 
-    std::chrono::steady_clock::time_point last_heartbeat{};
-    std::unordered_set<uint64_t> cached_blocks;
+    std::chrono::steady_clock::time_point lastHeartbeat{};
+    std::unordered_set<uint64_t> cachedBlocks;
   };
 
   using ServerIdSet = std::unordered_set<std::string>;
   using CacheBlockIndex = std::unordered_map<uint64_t, ServerIdSet>;
 
-  void addCachedBlock(PrefillPeer& peer, uint64_t block_hash);
+  void addCachedBlock(PrefillPeer& peer, uint64_t blockHash);
   void clearCachedBlocks(PrefillPeer& peer);
-  void removeCachedBlockFromIndex(uint64_t block_hash,
-                                  const std::string& server_id);
+  void removeCachedBlockFromIndex(uint64_t blockHash,
+                                  const std::string& serverId);
   static PrefillSnapshot makeSnapshot(const PrefillPeer& peer,
-                                      size_t prefix_match_depth);
+                                      size_t prefixMatchDepth);
 
-  mutable std::mutex mutex_;
-  std::unordered_map<std::string, PrefillPeer> prefills_;
+  mutable std::mutex mutex;
+  std::unordered_map<std::string, PrefillPeer> prefills;
   // Inverted cache index used for request-time longest-prefix matching.
-  CacheBlockIndex cache_block_index_;
+  CacheBlockIndex cacheBlockIndex;
 
-  PrefillStateCallback on_prefill_down_;
+  PrefillStateCallback onPrefillDown;
 };
 
 }  // namespace tt::gateway

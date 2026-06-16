@@ -59,30 +59,30 @@ std::vector<int64_t> fakeTokenIds(uint32_t taskId) {
 void populateFakePrefillResult(tt::sockets::PrefillResultMessage& result,
                                const std::string& serverId) {
   result.error = false;
-  result.generated_text = "ok-from-" + serverId;
-  result.token_ids = fakeTokenIds(result.task_id);
-  result.remaining_tokens = 3;
-  result.slot_id = 42u;
+  result.generatedText = "ok-from-" + serverId;
+  result.tokenIds = fakeTokenIds(result.taskId);
+  result.remainingTokens = 3;
+  result.slotId = 42u;
   result.temperature = 0.7f;
-  result.top_p = 0.9f;
-  result.top_k = 11;
-  result.fast_mode = true;
-  result.cached_tokens = 5;
-  result.migration_id = fakeMigrationId(result.task_id);
+  result.topP = 0.9f;
+  result.topK = 11;
+  result.fastMode = true;
+  result.cachedTokens = 5;
+  result.migrationId = fakeMigrationId(result.taskId);
 }
 
 void expectFakePrefillResultPayload(
     const tt::sockets::PrefillResultMessage& result) {
   EXPECT_FALSE(result.error);
-  EXPECT_EQ(result.token_ids, fakeTokenIds(result.task_id));
-  EXPECT_EQ(result.remaining_tokens, 3);
-  EXPECT_EQ(result.slot_id, 42u);
+  EXPECT_EQ(result.tokenIds, fakeTokenIds(result.taskId));
+  EXPECT_EQ(result.remainingTokens, 3);
+  EXPECT_EQ(result.slotId, 42u);
   EXPECT_EQ(result.temperature, 0.7f);
-  EXPECT_EQ(result.top_p, 0.9f);
-  EXPECT_EQ(result.top_k, 11);
-  EXPECT_TRUE(result.fast_mode);
-  EXPECT_EQ(result.cached_tokens, 5);
-  EXPECT_EQ(result.migration_id, fakeMigrationId(result.task_id));
+  EXPECT_EQ(result.topP, 0.9f);
+  EXPECT_EQ(result.topK, 11);
+  EXPECT_TRUE(result.fastMode);
+  EXPECT_EQ(result.cachedTokens, 5);
+  EXPECT_EQ(result.migrationId, fakeMigrationId(result.taskId));
 }
 
 uint16_t ephemeralPort() {
@@ -161,8 +161,8 @@ class FakePrefill {
         tt::sockets::tags::REGISTRATION_PROBE,
         [this](const tt::sockets::RegistrationProbeMessage&) {
           tt::sockets::PrefillRegistrationMessage msg;
-          msg.server_id = serverId_;
-          msg.max_in_flight = maxInFlight_;
+          msg.serverId = serverId_;
+          msg.maxInFlight = maxInFlight_;
           sm_.sendObject(tt::sockets::tags::PREFILL_REGISTRATION, msg);
         });
 
@@ -175,7 +175,7 @@ class FakePrefill {
             lastRequest_ = req;
           }
           if (!autoReply_) return;
-          tt::sockets::PrefillResultMessage res(req.task_id);
+          tt::sockets::PrefillResultMessage res(req.taskId);
           populateFakePrefillResult(res, serverId_);
           sm_.sendObject(tt::sockets::tags::PREFILL_RESULT, res);
         });
@@ -184,7 +184,7 @@ class FakePrefill {
         tt::sockets::tags::CANCEL_PREFILL,
         [this](const tt::sockets::CancelPrefillMessage& msg) {
           std::lock_guard<std::mutex> lock(mutex_);
-          cancelledTaskIds_.push_back(msg.task_id);
+          cancelledTaskIds_.push_back(msg.taskId);
         });
   }
 
@@ -195,8 +195,8 @@ class FakePrefill {
   void setAutoReply(bool v) { autoReply_ = v; }
   void sendCacheBlocksAdded(std::vector<uint64_t> blockHashes) {
     tt::sockets::PrefillCacheBlocksAddedMessage msg;
-    msg.server_id = serverId_;
-    msg.block_hashes = std::move(blockHashes);
+    msg.serverId = serverId_;
+    msg.blockHashes = std::move(blockHashes);
     sm_.sendObject(tt::sockets::tags::PREFILL_CACHE_BLOCKS_ADDED, msg);
   }
   uint32_t receivedTaskCount() const { return receivedTaskIds_.load(); }
@@ -262,13 +262,13 @@ class FakeDecode {
   void sendRequest(uint32_t taskId, size_t registrationHash = 0) {
     tt::sockets::PrefillRequestMessage req(taskId);
     if (registrationHash != 0)
-      req.registration_hashes = {static_cast<uint64_t>(registrationHash)};
+      req.registrationHashes = {static_cast<uint64_t>(registrationHash)};
     sm_.sendObject(tt::sockets::tags::PREFILL_REQUEST, req);
   }
 
   void sendRequest(uint32_t taskId, std::vector<uint64_t> registrationHashes) {
     tt::sockets::PrefillRequestMessage req(taskId);
-    req.registration_hashes = std::move(registrationHashes);
+    req.registrationHashes = std::move(registrationHashes);
     sm_.sendObject(tt::sockets::tags::PREFILL_REQUEST, req);
   }
 
@@ -278,7 +278,7 @@ class FakeDecode {
 
   void sendCancel(uint32_t taskId) {
     tt::sockets::CancelPrefillMessage cancel;
-    cancel.task_id = taskId;
+    cancel.taskId = taskId;
     sm_.sendObject(tt::sockets::tags::CANCEL_PREFILL, cancel);
   }
 
@@ -359,9 +359,9 @@ class GatewayHarness {
           tt::sockets::tags::PREFILL_REGISTRATION,
           [this, sm,
            state](const tt::sockets::PrefillRegistrationMessage& msg) {
-            state->setServerId(msg.server_id);
-            registry_.preRegister(msg.server_id, sm);
-            registry_.markRegistered(msg.server_id, msg.max_in_flight);
+            state->setServerId(msg.serverId);
+            registry_.preRegister(msg.serverId, sm);
+            registry_.markRegistered(msg.serverId, msg.maxInFlight);
           });
 
       sm->registerHandler<tt::sockets::PrefillResultMessage>(
@@ -460,8 +460,8 @@ class FakeZmqPrefill {
     registrationThread_ = std::thread([this] {
       while (running_.load()) {
         tt::sockets::PrefillRegistrationMessage msg;
-        msg.server_id = serverId_;
-        msg.max_in_flight = maxInFlight_;
+        msg.serverId = serverId_;
+        msg.maxInFlight = maxInFlight_;
         sm_.sendRawData(tt::sockets::wire::serializeMessage(
             tt::sockets::tags::PREFILL_REGISTRATION, msg));
         std::this_thread::sleep_for(50ms);
@@ -481,7 +481,7 @@ class FakeZmqPrefill {
               tt::sockets::CancelPrefillMessage>(data);
           {
             std::lock_guard<std::mutex> lock(mutex_);
-            cancelledTaskIds_.push_back(cancel.task_id);
+            cancelledTaskIds_.push_back(cancel.taskId);
           }
           continue;
         }
@@ -496,7 +496,7 @@ class FakeZmqPrefill {
         if (!autoReply_.load()) {
           continue;
         }
-        tt::sockets::PrefillResultMessage result(request.task_id);
+        tt::sockets::PrefillResultMessage result(request.taskId);
         populateFakePrefillResult(result, serverId_);
         sm_.sendRawData(tt::sockets::wire::serializeMessage(
             tt::sockets::tags::PREFILL_RESULT, result));
@@ -574,9 +574,9 @@ class ZmqRouterGatewayHarness {
         tt::sockets::tags::PREFILL_REGISTRATION,
         [this](const ZmqPrefillRouter::PeerIdentity& peerId,
                const tt::sockets::PrefillRegistrationMessage& msg) {
-          prefillRouter_.rememberRegistration(msg.server_id, peerId);
-          registry_.preRegister(msg.server_id, nullptr);
-          registry_.markRegistered(msg.server_id, msg.max_in_flight);
+          prefillRouter_.rememberRegistration(msg.serverId, peerId);
+          registry_.preRegister(msg.serverId, nullptr);
+          registry_.markRegistered(msg.serverId, msg.maxInFlight);
         });
 
     prefillRouter_.registerHandler<tt::sockets::PrefillResultMessage>(
@@ -688,8 +688,8 @@ TEST_F(GatewayE2ETest, RequestIsRoutedAndResultFlowsBack) {
 
   auto results = decode_->results();
   ASSERT_EQ(results.size(), 1u);
-  EXPECT_EQ(results[0].task_id, 1u);
-  EXPECT_TRUE(results[0].generated_text.rfind("ok-from-", 0) == 0);
+  EXPECT_EQ(results[0].taskId, 1u);
+  EXPECT_TRUE(results[0].generatedText.rfind("ok-from-", 0) == 0);
   expectFakePrefillResultPayload(results[0]);
 
   // Exactly one of the two prefills handled it.
@@ -710,16 +710,16 @@ TEST_F(GatewayE2ETest, HealthProbeReportsReadyPrefills) {
 
 TEST_F(GatewayE2ETest, RequestForwardsPrefillPayloadToPrefill) {
   tt::sockets::PrefillRequestMessage sent(2);
-  sent.registration_hashes = {11, 22, 33};
-  sent.token_ids = {101, 102, 103};
-  sent.max_tokens = 7;
-  sent.slot_id = 42u;
+  sent.registrationHashes = {11, 22, 33};
+  sent.tokenIds = {101, 102, 103};
+  sent.maxTokens = 7;
+  sent.slotId = 42u;
   sent.temperature = 0.7f;
-  sent.top_p = 0.9f;
-  sent.top_k = 11;
-  sent.fast_mode = true;
-  sent.decode_position_id = 12;
-  sent.decode_skip_tokens = 10;
+  sent.topP = 0.9f;
+  sent.topK = 11;
+  sent.fastMode = true;
+  sent.decodePositionId = 12;
+  sent.decodeSkipTokens = 10;
 
   decode_->sendRequest(sent);
 
@@ -732,17 +732,17 @@ TEST_F(GatewayE2ETest, RequestForwardsPrefillPayloadToPrefill) {
 
   auto request = assignedPrefill->takeLastRequest();
   ASSERT_TRUE(request.has_value());
-  EXPECT_EQ(request->task_id, sent.task_id);
-  EXPECT_EQ(request->registration_hashes, sent.registration_hashes);
-  EXPECT_EQ(request->token_ids, sent.token_ids);
-  EXPECT_EQ(request->max_tokens, sent.max_tokens);
-  EXPECT_EQ(request->slot_id, sent.slot_id);
+  EXPECT_EQ(request->task_id, sent.taskId);
+  EXPECT_EQ(request->registration_hashes, sent.registrationHashes);
+  EXPECT_EQ(request->token_ids, sent.tokenIds);
+  EXPECT_EQ(request->max_tokens, sent.maxTokens);
+  EXPECT_EQ(request->slot_id, sent.slotId);
   EXPECT_EQ(request->temperature, sent.temperature);
-  EXPECT_EQ(request->top_p, sent.top_p);
-  EXPECT_EQ(request->top_k, sent.top_k);
-  EXPECT_EQ(request->fast_mode, sent.fast_mode);
-  EXPECT_EQ(request->decode_position_id, sent.decode_position_id);
-  EXPECT_EQ(request->decode_skip_tokens, sent.decode_skip_tokens);
+  EXPECT_EQ(request->top_p, sent.topP);
+  EXPECT_EQ(request->top_k, sent.topK);
+  EXPECT_EQ(request->fast_mode, sent.fastMode);
+  EXPECT_EQ(request->decode_position_id, sent.decodePositionId);
+  EXPECT_EQ(request->decode_skip_tokens, sent.decodeSkipTokens);
 }
 
 TEST_F(GatewayE2ETest, CancelIsForwardedToAssignedPrefill) {
@@ -782,9 +782,9 @@ TEST_F(GatewayE2ETest, RequestTimeoutFailsTaskToDecode) {
   ASSERT_TRUE(waitFor([&] { return prefillA_->cancelCount() >= 1; }));
   auto results = decode_->results();
   ASSERT_EQ(results.size(), 1u);
-  EXPECT_EQ(results[0].task_id, 89u);
+  EXPECT_EQ(results[0].taskId, 89u);
   EXPECT_TRUE(results[0].error);
-  EXPECT_EQ(results[0].generated_text, "timeout");
+  EXPECT_EQ(results[0].generatedText, "timeout");
 
   auto cancelled = prefillA_->cancelledTaskIds();
   ASSERT_EQ(cancelled.size(), 1u);
@@ -807,8 +807,8 @@ TEST_F(GatewayE2ETest, CacheNotificationDrivesPrefixRouting) {
 
   ASSERT_TRUE(waitFor([&] {
     for (const auto& snapshot : gateway_->registry().snapshot()) {
-      if (snapshot.server_id == prefillB_->serverId()) {
-        return snapshot.cached_blocks == cachedBlocks.size();
+      if (snapshot.serverId == prefillB_->serverId()) {
+        return snapshot.cachedBlocks == cachedBlocks.size();
       }
     }
     return false;
@@ -840,9 +840,9 @@ TEST_F(GatewayE2ETest, PrefillDownFailsInFlightTaskToDecode) {
 
   auto results = decode_->results();
   ASSERT_EQ(results.size(), 1u);
-  EXPECT_EQ(results[0].task_id, 55u);
+  EXPECT_EQ(results[0].taskId, 55u);
   EXPECT_TRUE(results[0].error);
-  EXPECT_EQ(results[0].generated_text, "prefill_down");
+  EXPECT_EQ(results[0].generatedText, "prefill_down");
 }
 
 TEST(ZmqRouterGatewayE2ETest, PrefillsCanStartBeforeGateway) {
@@ -943,7 +943,7 @@ TEST(ZmqPrefillRouterTest, RoutesRequestToRegisteredPrefill) {
       [&router, &mutex, &cv, &registered](
           const ZmqPrefillRouter::PeerIdentity& peerId,
           const tt::sockets::PrefillRegistrationMessage& msg) {
-        router.rememberRegistration(msg.server_id, peerId);
+        router.rememberRegistration(msg.serverId, peerId);
         {
           std::lock_guard<std::mutex> lock(mutex);
           registered = true;
@@ -956,7 +956,7 @@ TEST(ZmqPrefillRouterTest, RoutesRequestToRegisteredPrefill) {
       [&mutex, &cv, &resultReceived](
           const ZmqPrefillRouter::PeerIdentity&,
           const tt::sockets::PrefillResultMessage& msg) {
-        EXPECT_EQ(msg.task_id, 7u);
+        EXPECT_EQ(msg.taskId, 7u);
         std::lock_guard<std::mutex> lock(mutex);
         resultReceived = true;
         cv.notify_all();
@@ -984,23 +984,23 @@ TEST(ZmqPrefillRouterTest, RoutesRequestToRegisteredPrefill) {
 
       auto request = tt::sockets::wire::deserializePayload<
           tt::sockets::PrefillRequestMessage>(data);
-      EXPECT_EQ(request.task_id, 7u);
+      EXPECT_EQ(request.taskId, 7u);
       {
         std::lock_guard<std::mutex> lock(mutex);
         requestReceived = true;
       }
       cv.notify_all();
 
-      tt::sockets::PrefillResultMessage result(request.task_id);
-      result.generated_text = "ok";
+      tt::sockets::PrefillResultMessage result(request.taskId);
+      result.generatedText = "ok";
       client.sendRawData(tt::sockets::wire::serializeMessage(
           tt::sockets::tags::PREFILL_RESULT, result));
     }
   });
 
   tt::sockets::PrefillRegistrationMessage registration;
-  registration.server_id = "prefill-A";
-  registration.max_in_flight = 4;
+  registration.serverId = "prefill-A";
+  registration.maxInFlight = 4;
   ASSERT_TRUE(client.sendRawData(tt::sockets::wire::serializeMessage(
       tt::sockets::tags::PREFILL_REGISTRATION, registration)));
   ASSERT_TRUE(waitFor([&] {
@@ -1062,8 +1062,8 @@ TEST(ZmqSocketTransportTest, ServerIsConnectedOnlyAfterPeerIdentityIsKnown) {
   EXPECT_FALSE(server.isConnected());
 
   tt::sockets::PrefillRegistrationMessage registration;
-  registration.server_id = "prefill-A";
-  registration.max_in_flight = 4;
+  registration.serverId = "prefill-A";
+  registration.maxInFlight = 4;
   ASSERT_TRUE(client.sendRawData(tt::sockets::wire::serializeMessage(
       tt::sockets::tags::PREFILL_REGISTRATION, registration)));
 
@@ -1086,7 +1086,7 @@ TEST(ZmqPrefillRouterTest, SendFailsWhenRegisteredPeerIsNoLongerRoutable) {
       [&router, &mutex, &registered](
           const ZmqPrefillRouter::PeerIdentity& peerId,
           const tt::sockets::PrefillRegistrationMessage& msg) {
-        router.rememberRegistration(msg.server_id, peerId);
+        router.rememberRegistration(msg.serverId, peerId);
         std::lock_guard<std::mutex> lock(mutex);
         registered = true;
       });
@@ -1098,8 +1098,8 @@ TEST(ZmqPrefillRouterTest, SendFailsWhenRegisteredPeerIsNoLongerRoutable) {
   client.start();
 
   tt::sockets::PrefillRegistrationMessage registration;
-  registration.server_id = "prefill-A";
-  registration.max_in_flight = 4;
+  registration.serverId = "prefill-A";
+  registration.maxInFlight = 4;
   ASSERT_TRUE(client.sendRawData(tt::sockets::wire::serializeMessage(
       tt::sockets::tags::PREFILL_REGISTRATION, registration)));
   ASSERT_TRUE(waitFor([&] {

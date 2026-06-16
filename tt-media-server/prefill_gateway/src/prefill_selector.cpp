@@ -11,18 +11,18 @@ namespace {
 
 struct Candidate {
   const PrefillSnapshot* prefill = nullptr;
-  size_t prefix_match_depth = 0;
+  size_t prefixMatchDepth = 0;
 
   bool isBetterThan(const Candidate& other) const {
-    if (prefix_match_depth != other.prefix_match_depth) {
-      return prefix_match_depth > other.prefix_match_depth;
+    if (prefixMatchDepth != other.prefixMatchDepth) {
+      return prefixMatchDepth > other.prefixMatchDepth;
     }
-    return prefill->in_flight < other.prefill->in_flight;
+    return prefill->inFlight < other.prefill->inFlight;
   }
 
   bool isTiedWith(const Candidate& other) const {
-    return prefix_match_depth == other.prefix_match_depth &&
-           prefill->in_flight == other.prefill->in_flight;
+    return prefixMatchDepth == other.prefixMatchDepth &&
+           prefill->inFlight == other.prefill->inFlight;
   }
 };
 
@@ -32,19 +32,19 @@ PrefillEligibilitySummary summarizePrefillEligibility(
     const std::vector<PrefillSnapshot>& prefills) {
   auto healthy = [](const PrefillSnapshot& prefill) { return prefill.healthy; };
   auto accepting = [](const PrefillSnapshot& prefill) {
-    return prefill.healthy && prefill.accepting_tasks;
+    return prefill.healthy && prefill.acceptingTasks;
   };
   auto capacityAvailable = [](const PrefillSnapshot& prefill) {
-    return prefill.healthy && prefill.accepting_tasks &&
-           (prefill.max_in_flight == 0 ||
-            prefill.in_flight < prefill.max_in_flight);
+    return prefill.healthy && prefill.acceptingTasks &&
+           (prefill.maxInFlight == 0 ||
+            prefill.inFlight < prefill.maxInFlight);
   };
 
   PrefillEligibilitySummary summary;
   summary.total = prefills.size();
   summary.healthy = std::ranges::count_if(prefills, healthy);
   summary.accepting = std::ranges::count_if(prefills, accepting);
-  summary.capacity_available =
+  summary.capacityAvailable =
       std::ranges::count_if(prefills, capacityAvailable);
   return summary;
 }
@@ -73,7 +73,7 @@ PrefillSelection selectPrefill(const std::vector<PrefillSnapshot>& prefills,
       continue;
     }
 
-    Candidate candidate{&p, p.prefix_match_depth};
+    Candidate candidate{&p, p.prefixMatchDepth};
     if (bestCandidates.empty() ||
         candidate.isBetterThan(bestCandidates.front())) {
       bestCandidates = {candidate};
@@ -88,22 +88,22 @@ PrefillSelection selectPrefill(const std::vector<PrefillSnapshot>& prefills,
     return {std::nullopt, PrefillRoutingReason::NoEligiblePrefill};
   }
 
-  const bool hasPrefixMatch = bestCandidates.front().prefix_match_depth > 0;
+  const bool hasPrefixMatch = bestCandidates.front().prefixMatchDepth > 0;
   if (bestCandidates.size() == 1) {
     const auto& selected = bestCandidates.front();
-    return {selected.prefill->server_id,
+    return {selected.prefill->serverId,
             hasPrefixMatch ? PrefillRoutingReason::PrefixMatch
                            : PrefillRoutingReason::LeastInflight,
-            selected.prefix_match_depth};
+            selected.prefixMatchDepth};
   }
 
   const size_t pickIndex = roundRobinCursor % bestCandidates.size();
   ++roundRobinCursor;
   const auto& selected = bestCandidates[pickIndex];
-  return {selected.prefill->server_id,
+  return {selected.prefill->serverId,
           hasPrefixMatch ? PrefillRoutingReason::PrefixMatch
                          : PrefillRoutingReason::RoundRobin,
-          selected.prefix_match_depth};
+          selected.prefixMatchDepth};
 }
 
 }  // namespace tt::gateway

@@ -11,23 +11,23 @@ namespace {
 PrefillSnapshot prefill(std::string id, bool healthy = true,
                         uint32_t inFlight = 0, uint32_t maxInFlight = 0) {
   PrefillSnapshot p;
-  p.server_id = std::move(id);
+  p.serverId = std::move(id);
   p.healthy = healthy;
-  p.in_flight = inFlight;
-  p.max_in_flight = maxInFlight;
+  p.inFlight = inFlight;
+  p.maxInFlight = maxInFlight;
   return p;
 }
 
 PrefillSnapshot prefixMatchedPrefill(std::string id, size_t prefixMatchDepth,
                                      uint32_t inFlight = 0) {
   auto p = prefill(std::move(id), true, inFlight);
-  p.prefix_match_depth = prefixMatchDepth;
+  p.prefixMatchDepth = prefixMatchDepth;
   return p;
 }
 
 std::optional<std::string> selectedServer(
     const std::vector<PrefillSnapshot>& prefills, size_t& roundRobinCursor) {
-  return selectPrefill(prefills, roundRobinCursor).server_id;
+  return selectPrefill(prefills, roundRobinCursor).serverId;
 }
 
 TEST(PrefillSelectorTest, NoPeersAvailableWhenAllDown) {
@@ -49,7 +49,7 @@ TEST(PrefillSelectorTest, NoPeersAvailableWhenAllAtMaxInFlight) {
 
 TEST(PrefillSelectorTest, NoPeersAvailableWhenNotAcceptingTasks) {
   auto disabled = prefill("A", true);
-  disabled.accepting_tasks = false;
+  disabled.acceptingTasks = false;
   std::vector<PrefillSnapshot> prefills = {disabled};
   size_t cursor = 0;
 
@@ -60,7 +60,7 @@ TEST(PrefillSelectorTest, NoPeersAvailableWhenNotAcceptingTasks) {
 
 TEST(PrefillSelectorTest, SummarizesEligibilityReasons) {
   auto disabled = prefill("B", true);
-  disabled.accepting_tasks = false;
+  disabled.acceptingTasks = false;
   std::vector<PrefillSnapshot> prefills = {
       prefill("A", /*healthy=*/false),
       disabled,
@@ -73,7 +73,7 @@ TEST(PrefillSelectorTest, SummarizesEligibilityReasons) {
   EXPECT_EQ(summary.total, 4u);
   EXPECT_EQ(summary.healthy, 3u);
   EXPECT_EQ(summary.accepting, 2u);
-  EXPECT_EQ(summary.capacity_available, 1u);
+  EXPECT_EQ(summary.capacityAvailable, 1u);
 }
 
 TEST(PrefillSelectorTest, LongestPrefixMatchWinsOverLowerLoad) {
@@ -90,7 +90,7 @@ TEST(PrefillSelectorTest, LongestPrefixMatchWinsOverLowerLoad) {
 
 TEST(PrefillSelectorTest, PrefixMatchIgnoresIneligiblePrefills) {
   auto disabled = prefixMatchedPrefill("A", /*prefixMatchDepth=*/3);
-  disabled.accepting_tasks = false;
+  disabled.acceptingTasks = false;
   std::vector<PrefillSnapshot> prefills = {
       disabled, prefixMatchedPrefill("B", /*prefixMatchDepth=*/1)};
   size_t cursor = 0;

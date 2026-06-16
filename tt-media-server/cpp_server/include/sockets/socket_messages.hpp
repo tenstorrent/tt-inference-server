@@ -37,33 +37,33 @@ struct SerializableMessage {
  * @brief Prefill request message - sent from decode server to prefill server
  */
 struct PrefillRequestMessage {
-  uint32_t task_id;
-  std::vector<uint64_t> registration_hashes;
-  std::vector<int64_t> token_ids;
-  std::optional<int> max_tokens;
-  std::optional<uint32_t> slot_id;
+  uint32_t taskId;
+  std::vector<uint64_t> registrationHashes;
+  std::vector<int64_t> tokenIds;
+  std::optional<int> maxTokens;
+  std::optional<uint32_t> slotId;
   std::optional<float> temperature;
-  std::optional<float> top_p;
-  std::optional<int> top_k;
-  bool fast_mode = false;
-  int decode_position_id = 0;
-  int decode_skip_tokens = 0;
+  std::optional<float> topP;
+  std::optional<int> topK;
+  bool fastMode = false;
+  int decodePositionId = 0;
+  int decodeSkipTokens = 0;
 
-  explicit PrefillRequestMessage(uint32_t taskId) : task_id(taskId) {}
+  explicit PrefillRequestMessage(uint32_t taskId) : taskId(taskId) {}
 
   template <class Archive>
   void write(Archive& ar) const {
-    int mt = max_tokens.has_value() ? max_tokens.value() : -1;
-    uint32_t sid = slot_id.value_or(tt::domain::INVALID_SLOT_ID);
+    int mt = maxTokens.has_value() ? maxTokens.value() : -1;
+    uint32_t sid = slotId.value_or(tt::domain::INVALID_SLOT_ID);
     bool hasTemp = temperature.has_value();
     float tempVal = temperature.value_or(0.0f);
-    bool hasTopP = top_p.has_value();
-    float topPVal = top_p.value_or(0.0f);
-    bool hasTopK = top_k.has_value();
-    int topKVal = top_k.value_or(0);
-    ar(task_id, registration_hashes, token_ids, mt, sid, hasTemp, tempVal,
-       hasTopP, topPVal, hasTopK, topKVal, fast_mode, decode_position_id,
-       decode_skip_tokens);
+    bool hasTopP = topP.has_value();
+    float topPVal = topP.value_or(0.0f);
+    bool hasTopK = topK.has_value();
+    int topKVal = topK.value_or(0);
+    ar(taskId, registrationHashes, tokenIds, mt, sid, hasTemp, tempVal,
+       hasTopP, topPVal, hasTopK, topKVal, fastMode, decodePositionId,
+       decodeSkipTokens);
   }
 
   template <class Archive>
@@ -85,18 +85,18 @@ struct PrefillRequestMessage {
     ar(tid, hashes, tids, mt, sid, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
        topKVal, fastMode, decodePositionId, decodeSkipTokens);
     PrefillRequestMessage msg(tid);
-    msg.registration_hashes = std::move(hashes);
-    msg.token_ids = std::move(tids);
-    msg.max_tokens = (mt == -1) ? std::nullopt : std::optional<int>(mt);
-    msg.slot_id = (sid == tt::domain::INVALID_SLOT_ID)
+    msg.registrationHashes = std::move(hashes);
+    msg.tokenIds = std::move(tids);
+    msg.maxTokens = (mt == -1) ? std::nullopt : std::optional<int>(mt);
+    msg.slotId = (sid == tt::domain::INVALID_SLOT_ID)
                       ? std::nullopt
                       : std::optional<uint32_t>(sid);
     if (hasTemp) msg.temperature = tempVal;
-    if (hasTopP) msg.top_p = topPVal;
-    if (hasTopK) msg.top_k = topKVal;
-    msg.fast_mode = fastMode;
-    msg.decode_position_id = decodePositionId;
-    msg.decode_skip_tokens = decodeSkipTokens;
+    if (hasTopP) msg.topP = topPVal;
+    if (hasTopK) msg.topK = topKVal;
+    msg.fastMode = fastMode;
+    msg.decodePositionId = decodePositionId;
+    msg.decodeSkipTokens = decodeSkipTokens;
     return msg;
   }
 };
@@ -109,39 +109,39 @@ struct PrefillRequestMessage {
  * generation.
  */
 struct PrefillResultMessage {
-  uint32_t task_id;
-  std::string generated_text;
+  uint32_t taskId;
+  std::string generatedText;
   bool error = false;
-  std::vector<int64_t> token_ids;
-  std::optional<int> remaining_tokens;
-  std::optional<uint32_t> slot_id;
+  std::vector<int64_t> tokenIds;
+  std::optional<int> remainingTokens;
+  std::optional<uint32_t> slotId;
   std::optional<float> temperature;
-  std::optional<float> top_p;
-  std::optional<int> top_k;
-  bool fast_mode = false;
+  std::optional<float> topP;
+  std::optional<int> topK;
+  bool fastMode = false;
   // Number of prompt tokens the prefill server served from its KV cache
   // (prefix-cache reuse). The decode server surfaces this as
   // usage.prompt_tokens_details.cached_tokens.
-  int cached_tokens = 0;
+  int cachedTokens = 0;
   // Unique 64-bit ID correlating this prefill result with the migration
   // (KV transfer) that produced it. Generated on the prefill server.
-  uint64_t migration_id = 0;
+  uint64_t migrationId = 0;
 
-  explicit PrefillResultMessage(uint32_t taskId) : task_id(taskId) {}
+  explicit PrefillResultMessage(uint32_t taskId) : taskId(taskId) {}
 
   template <class Archive>
   void write(Archive& ar) const {
-    int rt = remaining_tokens.has_value() ? remaining_tokens.value() : -1;
-    uint32_t sid = slot_id.value_or(tt::domain::INVALID_SLOT_ID);
+    int rt = remainingTokens.has_value() ? remainingTokens.value() : -1;
+    uint32_t sid = slotId.value_or(tt::domain::INVALID_SLOT_ID);
     bool hasTemp = temperature.has_value();
     float tempVal = temperature.value_or(0.0f);
-    bool hasTopP = top_p.has_value();
-    float topPVal = top_p.value_or(0.0f);
-    bool hasTopK = top_k.has_value();
-    int topKVal = top_k.value_or(0);
-    ar(task_id, generated_text, token_ids, rt, sid, error, hasTemp, tempVal,
-       hasTopP, topPVal, hasTopK, topKVal, fast_mode, cached_tokens,
-       migration_id);
+    bool hasTopP = topP.has_value();
+    float topPVal = topP.value_or(0.0f);
+    bool hasTopK = topK.has_value();
+    int topKVal = topK.value_or(0);
+    ar(taskId, generatedText, tokenIds, rt, sid, error, hasTemp, tempVal,
+       hasTopP, topPVal, hasTopK, topKVal, fastMode, cachedTokens,
+       migrationId);
   }
 
   template <class Archive>
@@ -164,19 +164,19 @@ struct PrefillResultMessage {
     ar(tid, genText, tids, rt, sid, err, hasTemp, tempVal, hasTopP, topPVal,
        hasTopK, topKVal, fastMode, cachedTokens, migrationId);
     PrefillResultMessage msg(tid);
-    msg.generated_text = std::move(genText);
-    msg.token_ids = std::move(tids);
-    msg.remaining_tokens = (rt == -1) ? std::nullopt : std::optional<int>(rt);
-    msg.slot_id = (sid == tt::domain::INVALID_SLOT_ID)
+    msg.generatedText = std::move(genText);
+    msg.tokenIds = std::move(tids);
+    msg.remainingTokens = (rt == -1) ? std::nullopt : std::optional<int>(rt);
+    msg.slotId = (sid == tt::domain::INVALID_SLOT_ID)
                       ? std::nullopt
                       : std::optional<uint32_t>(sid);
     msg.error = err;
     if (hasTemp) msg.temperature = tempVal;
-    if (hasTopP) msg.top_p = topPVal;
-    if (hasTopK) msg.top_k = topKVal;
-    msg.fast_mode = fastMode;
-    msg.cached_tokens = cachedTokens;
-    msg.migration_id = migrationId;
+    if (hasTopP) msg.topP = topPVal;
+    if (hasTopK) msg.topK = topKVal;
+    msg.fastMode = fastMode;
+    msg.cachedTokens = cachedTokens;
+    msg.migrationId = migrationId;
     return msg;
   }
 };
@@ -185,7 +185,7 @@ inline constexpr std::string_view PREFILL_TIMEOUT_ERROR_TEXT = "timeout";
 
 inline tt::domain::llm::LLMErrorReason errorReasonFromPrefillResult(
     const PrefillResultMessage& message) {
-  return message.error && message.generated_text == PREFILL_TIMEOUT_ERROR_TEXT
+  return message.error && message.generatedText == PREFILL_TIMEOUT_ERROR_TEXT
              ? tt::domain::llm::LLMErrorReason::TIMEOUT
              : tt::domain::llm::LLMErrorReason::GENERIC;
 }
@@ -222,34 +222,34 @@ struct PrefillHealthStatusMessage
   }
 };
 
-// Prefill -> gateway, sent on connect. `server_id` is stable across reconnects.
+// Prefill -> gateway, sent on connect. `serverId` is stable across reconnects.
 struct PrefillRegistrationMessage
     : SerializableMessage<PrefillRegistrationMessage> {
-  std::string server_id;
-  uint32_t max_in_flight = 0;
+  std::string serverId;
+  uint32_t maxInFlight = 0;
 
   template <class F>
   void fields(F&& f) {
-    f(server_id, max_in_flight);
+    f(serverId, maxInFlight);
   }
   template <class F>
   void fields(F&& f) const {
-    f(server_id, max_in_flight);
+    f(serverId, maxInFlight);
   }
 };
 
 // Decode -> gateway/prefill. Best-effort cancellation for an in-flight prefill
 // task.
 struct CancelPrefillMessage : SerializableMessage<CancelPrefillMessage> {
-  uint32_t task_id = 0;
+  uint32_t taskId = 0;
 
   template <class F>
   void fields(F&& f) {
-    f(task_id);
+    f(taskId);
   }
   template <class F>
   void fields(F&& f) const {
-    f(task_id);
+    f(taskId);
   }
 };
 
@@ -270,16 +270,16 @@ struct RegistrationProbeMessage {
 // used by longest-prefix-match routing.
 struct PrefillCacheBlocksAddedMessage
     : SerializableMessage<PrefillCacheBlocksAddedMessage> {
-  std::string server_id;
-  std::vector<uint64_t> block_hashes;
+  std::string serverId;
+  std::vector<uint64_t> blockHashes;
 
   template <class F>
   void fields(F&& f) {
-    f(server_id, block_hashes);
+    f(serverId, blockHashes);
   }
   template <class F>
   void fields(F&& f) const {
-    f(server_id, block_hashes);
+    f(serverId, blockHashes);
   }
 };
 
