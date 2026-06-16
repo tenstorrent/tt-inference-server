@@ -181,8 +181,7 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
 
   std::cout << "\n=== Test: Cache replay scenario ===" << std::endl;
 
-  std::string uniqueSuffix =
-      " [" + generateUniqueTestId("replay-test") + "]";
+  std::string uniqueSuffix = " [" + generateUniqueTestId("replay-test") + "]";
 
   // Request 1: Fresh prompt (coding assistant theme)
   std::vector<Json::Value> r1Messages = {
