@@ -732,17 +732,17 @@ TEST_F(GatewayE2ETest, RequestForwardsPrefillPayloadToPrefill) {
 
   auto request = assignedPrefill->takeLastRequest();
   ASSERT_TRUE(request.has_value());
-  EXPECT_EQ(request->task_id, sent.taskId);
-  EXPECT_EQ(request->registration_hashes, sent.registrationHashes);
-  EXPECT_EQ(request->token_ids, sent.tokenIds);
-  EXPECT_EQ(request->max_tokens, sent.maxTokens);
-  EXPECT_EQ(request->slot_id, sent.slotId);
+  EXPECT_EQ(request->taskId, sent.taskId);
+  EXPECT_EQ(request->registrationHashes, sent.registrationHashes);
+  EXPECT_EQ(request->tokenIds, sent.tokenIds);
+  EXPECT_EQ(request->maxTokens, sent.maxTokens);
+  EXPECT_EQ(request->slotId, sent.slotId);
   EXPECT_EQ(request->temperature, sent.temperature);
-  EXPECT_EQ(request->top_p, sent.topP);
-  EXPECT_EQ(request->top_k, sent.topK);
-  EXPECT_EQ(request->fast_mode, sent.fastMode);
-  EXPECT_EQ(request->decode_position_id, sent.decodePositionId);
-  EXPECT_EQ(request->decode_skip_tokens, sent.decodeSkipTokens);
+  EXPECT_EQ(request->topP, sent.topP);
+  EXPECT_EQ(request->topK, sent.topK);
+  EXPECT_EQ(request->fastMode, sent.fastMode);
+  EXPECT_EQ(request->decodePositionId, sent.decodePositionId);
+  EXPECT_EQ(request->decodeSkipTokens, sent.decodeSkipTokens);
 }
 
 TEST_F(GatewayE2ETest, CancelIsForwardedToAssignedPrefill) {
