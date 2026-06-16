@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <thread>
@@ -68,19 +69,35 @@ MockContentTokens mockContentTokensFor(tt::config::ModelType model) {
   }
 }
 
-std::chrono::milliseconds mockPrefillDelay() {
-  const char* value = std::getenv("MOCK_PREFILL_SLEEP_MS");
-  if (!value) return std::chrono::milliseconds(0);
-
+long long mockEnvLL(const char* name) {
+  const char* value = std::getenv(name);
+  if (!value) return 0;
   char* end = nullptr;
-  const long long milliseconds = std::strtoll(value, &end, 10);
-  if (end == value || *end != '\0' || milliseconds <= 0) {
-    TT_LOG_WARN("[model_runner:mock] Ignoring invalid MOCK_PREFILL_SLEEP_MS={}",
-                value);
-    return std::chrono::milliseconds(0);
+  const long long parsed = std::strtoll(value, &end, 10);
+  if (end == value || *end != '\0' || parsed <= 0) {
+    TT_LOG_WARN("[model_runner:mock] Ignoring invalid {}={}", name, value);
+    return 0;
   }
+  return parsed;
+}
 
-  return std::chrono::milliseconds(milliseconds);
+// Mock prefill latency a flat base (MOCK_PREFILL_SLEEP_MS)
+// plus a per-token cost (MOCK_PREFILL_SLEEP_US_PER_TOKEN) charged only on the tokens
+// actually prefilled.
+std::chrono::milliseconds mockPrefillDelay(size_t prefillTokens) {
+  const long long baseMs = mockEnvLL("MOCK_PREFILL_SLEEP_MS");
+  const long long usPerToken = mockEnvLL("MOCK_PREFILL_SLEEP_US_PER_TOKEN");
+  const long long totalMs =
+      baseMs + (usPerToken * static_cast<long long>(prefillTokens)) / 1000;
+  return std::chrono::milliseconds(totalMs);
+}
+
+// Mock per-step decode latency: each decode forward pass emits one token per active
+// sequence and takes MOCK_DECODE_SLEEP_US, modeling inter-token latency so the
+// decode tokens-per-second (TPS ≈ 1e6 / MOCK_DECODE_SLEEP_US) is measurable on the
+// mock. Default 0 (tokens emitted as fast as the loop runs).
+std::chrono::microseconds mockDecodeDelay() {
+  return std::chrono::microseconds(mockEnvLL("MOCK_DECODE_SLEEP_US"));
 }
 
 // Token IDs for structural JSON characters and mock string content, resolved
@@ -141,10 +158,19 @@ class MockModelRunner : public IModelRunner {
                  isPrefill ? "prefill" : "decode", seqs.size());
     if (isPrefill) {
       ZoneScopedN("MockModelRunner::prefill");
-      const auto delay = mockPrefillDelay();
+      size_t prefillTokens = 0;
+      for (Sequence* seq : seqs) {
+        const size_t prompt = seq->getNumPromptTokens();
+        const size_t cached = seq->getNumCachedTokens();
+        const size_t uncached = prompt > cached ? prompt - cached : 0;
+        prefillTokens = std::max(prefillTokens, uncached);
+      }
+      const auto delay = mockPrefillDelay(prefillTokens);
       if (delay.count() > 0) {
-        TT_LOG_INFO("[model_runner:mock] Sleeping {}ms during mock prefill",
-                    delay.count());
+        TT_LOG_INFO(
+            "[model_runner:mock] Sleeping {}ms during mock prefill "
+            "(uncached_tokens={})",
+            delay.count(), prefillTokens);
         std::this_thread::sleep_for(delay);
       }
       for (Sequence* seq : seqs) {
@@ -159,6 +185,8 @@ class MockModelRunner : public IModelRunner {
       }
     } else {
       ZoneScopedN("MockModelRunner::decode");
+      const auto delay = mockDecodeDelay();
+      if (delay.count() > 0) std::this_thread::sleep_for(delay);
       for (Sequence* seq : seqs) {
         uint64_t token = pickThinkingToken(seq);
         decodeCallback(TokenResult(seq->taskId, pickToken(seq, token)));

@@ -17,6 +17,9 @@ RUN_STACK="${SCRIPT_DIR}/run_stack.sh"
 PYTEST="${PYTEST:-pytest}"
 export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.43}"
 export RESULT_LOG="${RESULT_LOG:-/tmp/tt_test_results.log}"
+export MOCK_PREFILL_SLEEP_US_PER_TOKEN="${MOCK_PREFILL_SLEEP_US_PER_TOKEN:-300}"
+export MOCK_DECODE_SLEEP_US="${MOCK_DECODE_SLEEP_US:-5000}"
+export MAX_ISL="${MAX_ISL:-64000}"
 
 log() { printf '[run_tests] %s\n' "$*"; }
 

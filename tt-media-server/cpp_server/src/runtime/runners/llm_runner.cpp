@@ -30,7 +30,16 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     : config(config), resultQueue(resultQueue), cancelQueue(cancelQueue) {
   scheduler = makeScheduler(config, taskQueue, tt::config::maxInFlightCount());
 
-  if (tt::config::llmMode() != config::LLMMode::PREFILL_ONLY) {
+  // The mock memoryLoop grants every allocation trivially (slotId=0, no device).
+  // Run it whenever this worker services its own allocations: always outside
+  // PREFILL_ONLY, and ALSO in PREFILL_ONLY on a mock backend — otherwise an
+  // offloaded (disaggregated) prefill request hangs forever on an unserviced
+  // allocation queue. Real prefill backends manage KV memory elsewhere, so this
+  // stays scoped to the mock runner.
+  const bool isMockBackend =
+      config.runner_type == config::ModelRunnerType::MOCK ||
+      config.runner_type == config::ModelRunnerType::MOCK_PIPELINE;
+  if (tt::config::llmMode() != config::LLMMode::PREFILL_ONLY || isMockBackend) {
     memoryManager = std::make_unique<services::MemoryManager>();
     memoryThread = std::thread([this] { memoryLoop(); });
   }
