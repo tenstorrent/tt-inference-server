@@ -11669,7 +11669,7 @@
               },
               "override_tt_config": {
                 "sample_on_device_mode": "decode_only",
-                "trace_region_size": 155000000
+                "trace_region_size": 160000000
               },
               "env_vars": {
                 "MESH_DEVICE": "P300x2",
@@ -11711,7 +11711,7 @@
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
             "override_tt_config": {
               "sample_on_device_mode": "decode_only",
-              "trace_region_size": 155000000
+              "trace_region_size": 160000000
             },
             "supported_modalities": [
               "text"
