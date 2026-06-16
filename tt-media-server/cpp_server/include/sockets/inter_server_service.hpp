@@ -141,8 +141,8 @@ class InterServerService {
  private:
   void setupMessageHandlers();
 
-  // Prefill-side, gateway-mode only: send PrefillRegistrationMessage to the
-  // gateway.
+  // Prefill-side: send PrefillRegistrationMessage to the gateway, or to decode
+  // in direct ZMQ mode so the ROUTER socket learns this DEALER identity.
   void sendRegistration();
 
   // Prefill-side, gateway-mode only: send PrefillRegistrationMessage in

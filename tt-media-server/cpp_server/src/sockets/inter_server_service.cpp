@@ -78,7 +78,8 @@ bool InterServerService::initializeFromConfig() {
           "[InterServerService] Prefill (direct mode): connecting to {}:{}",
           host, port);
       success = socket_manager_.initializeAsClient(host, port);
-      periodic_registration_mode_ = false;
+      // Direct ZMQ needs one initial frame so decode can route back to prefill.
+      periodic_registration_mode_ = success && zmqTransport;
     }
   }
 
@@ -101,8 +102,9 @@ void InterServerService::start() {
   }
 
   if (periodic_registration_mode_) {
-    // Register once on connect (and again on any reconnect). The registration
-    // thread below keeps the gateway's registry fresh after the initial send.
+    // Register once on connect (and again on any reconnect). Gateway mode uses
+    // this to keep the registry fresh; direct ZMQ mode uses it to expose the
+    // DEALER identity to decode's ROUTER socket.
     socket_manager_.setConnectionEstablishedCallback(
         [this] { sendRegistration(); });
   }
@@ -273,6 +275,9 @@ void InterServerService::setupMessageHandlers() {
       [this](const PrefillHealthStatusMessage& message) {
         recordPrefillHealthStatus(message);
       });
+
+  socket_manager_.registerHandler<PrefillRegistrationMessage>(
+      tags::PREFILL_REGISTRATION, [](const PrefillRegistrationMessage&) {});
 
   // Handle incoming prefill results
   socket_manager_.registerHandler<PrefillResultMessage>(
