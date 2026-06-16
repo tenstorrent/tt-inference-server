@@ -27,10 +27,10 @@ PORT=${PORT:-8004}
 MODEL=${MODEL:-Qwen/Qwen3-8B}
 API_KEY=${API_KEY:-your-secret-key}
 WARMUP=${WARMUP:-0}
-VLLM=${VLLM:-.workflow_venvs/.venv_benchmarks_vllm/bin/vllm}
+VLLM=${VLLM:-$(command -v vllm)}
 export OPENAI_API_KEY="$API_KEY"
 
-[ -x "$VLLM" ] || { echo "ERROR: vllm not found at $VLLM (run a benchmark via run.py once to create the venv, or set VLLM=)"; exit 1; }
+[ -n "$VLLM" ] && command -v "$VLLM" >/dev/null 2>&1 || { echo "ERROR: vllm not found on \$PATH (activate the benchmark venv, or set VLLM=/path/to/vllm)"; exit 1; }
 
 # readiness check (real completion)
 echo ">>> checking server $HOST:$PORT ..."
