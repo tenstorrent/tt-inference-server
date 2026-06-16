@@ -30,7 +30,8 @@ void Block::reset() {
 BlockManager::BlockManager(size_t numBlocks, size_t blockSize)
     : blockSize(blockSize) {
   if (numBlocks == 0) {
-    throw std::invalid_argument("BlockManager: num_blocks must be positive number");
+    throw std::invalid_argument(
+        "BlockManager: num_blocks must be positive number");
   }
   blocks.reserve(numBlocks);
   for (size_t i = 0; i < numBlocks; ++i) {
