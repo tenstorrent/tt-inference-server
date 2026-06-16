@@ -3,8 +3,8 @@
 
 // Migration-worker discovery harness: the receiver advertises a
 // predefined logical name in the Mooncake Metadata Service; the sender resolves
-// that name to the receiver's OS-assigned dynamic port and transfers one tensor.
-// Host RAM only; built only with Mooncake (--mooncake).
+// that name to the receiver's OS-assigned dynamic port and transfers one
+// tensor. Host RAM only; built only with Mooncake (--mooncake).
 
 #include <chrono>
 #include <cstdint>
@@ -32,10 +32,10 @@ constexpr std::uint8_t K_DONE_FLAG = 0xAB;
 constexpr int K_DISCOVERY_POLL_MS = 100;
 
 struct Options {
-  std::string role;           // "sender" | "receiver"
-  std::string metadata;       // discovery service URI
-  std::string name;           // this engine's advertised logical name
-  std::string peer;           // sender only: receiver's name
+  std::string role;      // "sender" | "receiver"
+  std::string metadata;  // discovery service URI
+  std::string name;      // this engine's advertised logical name
+  std::string peer;      // sender only: receiver's name
   std::size_t bytes = 65536;
   int timeout_sec = 30;
 };
@@ -114,9 +114,8 @@ std::vector<std::uint8_t> makePattern(std::size_t n) {
 }
 
 std::shared_ptr<MooncakeTransferEngine> makeEngine(const Options& o) {
-  auto engine =
-      std::make_shared<MooncakeTransferEngine>(
-          std::make_shared<HostDramStorageBackend>());
+  auto engine = std::make_shared<MooncakeTransferEngine>(
+      std::make_shared<HostDramStorageBackend>());
   EngineConfig cfg;
   cfg.metadata_uri = o.metadata;
   cfg.local_server_name = o.name;
