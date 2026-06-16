@@ -81,7 +81,7 @@ struct ChatCompletionRequest : BaseRequest {
   std::optional<ResponseFormat> response_format;
 
   // Session management
-  std::optional<std::string> sessionId;
+  std::optional<std::string> slotId;
 
   // When false, reasoning models skip chain-of-thought (e.g. DeepSeek-R1).
   bool enable_reasoning = true;
@@ -192,8 +192,8 @@ struct ChatCompletionRequest : BaseRequest {
       req.response_format = ResponseFormat::fromJson(json["response_format"]);
     }
 
-    if (json.isMember("session_id") && !json["session_id"].isNull())
-      req.sessionId = getString(json["session_id"], "session_id");
+    if (json.isMember("slot_id") && !json["slot_id"].isNull())
+      req.slotId = getString(json["slot_id"], "slot_id");
 
     if (json.isMember("enable_reasoning") && !json["enable_reasoning"].isNull())
       req.enable_reasoning =
@@ -207,6 +207,7 @@ struct ChatCompletionRequest : BaseRequest {
     if (json.isMember("disaggregation") && !json["disaggregation"].isNull())
       req.disaggregation_override =
           getBool(json["disaggregation"], "disaggregation");
+
     return req;
   }
 
@@ -283,8 +284,10 @@ struct ChatCompletionRequest : BaseRequest {
     out.prompt_logprobs = prompt_logprobs;
     out.truncate_prompt_tokens = truncate_prompt_tokens;
     out.fast_mode = fast_mode;
+    if (slotId.has_value() && !slotId->empty()) {
+      out.slotId = static_cast<uint32_t>(std::stoul(*slotId));
+    }
     out.response_format = response_format;
-    out.sessionId = sessionId;
     out.disaggregation_override = disaggregation_override;
     return out;
   }

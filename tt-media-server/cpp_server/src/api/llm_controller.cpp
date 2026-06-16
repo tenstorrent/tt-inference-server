@@ -242,7 +242,7 @@ ResponseWriterParams LLMController::makeWriterParams(
       request.continuation
           ? request.full_prompt_tokens_count - request.prompt_tokens_count
           : 0;
-  params.sessionId = request.sessionId;
+  params.sessionId = std::to_string(request.session->getSlotId());
   params.taskId = request.task_id;
   params.onAbortRequest = [pipeline = pipeline](uint32_t taskId) {
     pipeline->abortRequest(taskId);

@@ -21,12 +21,7 @@ std::optional<SlotCopyPlan> prepareSlotCopy(
     return std::nullopt;
   }
 
-  uint32_t sourceSlot =
-      sessionManager.getSlotIdBySessionId(copyCandidate->sessionId);
-  if (sourceSlot == tt::domain::INVALID_SLOT_ID) {
-    return std::nullopt;
-  }
-
+  uint32_t sourceSlot = copyCandidate->slotId;
   sessionManager.lockSlot(sourceSlot);
 
   const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
