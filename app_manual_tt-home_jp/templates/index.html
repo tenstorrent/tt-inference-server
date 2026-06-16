@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TT-Home</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a24;
+            --border-color: #2a2a3a;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0b0;
+            --text-muted: #606070;
+            --accent-purple: #8b5cf6;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-blue: #3b82f6;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            background-image:
+                radial-gradient(ellipse 90% 60% at 15% 0%, rgba(248, 82, 47, 0.25) 0%, transparent 55%),
+                radial-gradient(ellipse 70% 50% at 90% 5%, rgba(139, 92, 246, 0.20) 0%, transparent 50%),
+                radial-gradient(ellipse 60% 45% at 50% 100%, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 50% 50%, rgba(20, 20, 30, 1) 0%, rgba(10, 10, 15, 1) 100%);
+            background-attachment: fixed;
+            min-height: 100vh;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .auth-container {
+            background: rgba(18, 18, 26, 0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: clamp(28px, 3vw, 52px);
+            max-width: clamp(520px, 55vw, 960px);
+            width: 92%;
+            text-align: center;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.03);
+        }
+
+        .logo-icon {
+            width: clamp(48px, 5vw, 72px);
+            height: auto;
+            margin-bottom: 12px;
+            filter: drop-shadow(0 4px 12px rgba(248, 82, 47, 0.3));
+        }
+
+        .logo {
+            font-size: clamp(2rem, 3vw, 3rem);
+            font-weight: 800;
+            margin-bottom: 6px;
+            letter-spacing: -0.03em;
+            background: linear-gradient(135deg, #ffffff 0%, #c4b5fd 50%, var(--accent-purple) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: clamp(0.9rem, 1.2vw, 1.15rem);
+            margin-bottom: 24px;
+        }
+
+        .camera-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16/10;
+            margin-bottom: 20px;
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .camera-preview {
+            width: 100%;
+            height: 100%;
+            background: var(--bg-primary);
+            border-radius: 16px;
+            overflow: hidden;
+            border: 2px solid var(--border-color);
+            transition: border-color 0.3s;
+        }
+
+        .camera-preview.scanning {
+            border-color: var(--accent-purple);
+            animation: pulse-border 2s ease-in-out infinite;
+        }
+
+        .camera-preview.face-found {
+            border-color: var(--accent-blue);
+            animation: none;
+        }
+
+        .camera-preview.recognized {
+            border-color: var(--accent-green);
+            animation: none;
+        }
+
+        @keyframes pulse-border {
+            0%, 100% { border-color: var(--accent-purple); box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
+            50% { border-color: #a78bfa; box-shadow: 0 0 20px 2px rgba(139, 92, 246, 0.2); }
+        }
+
+        .camera-preview video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        .scan-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            border-radius: 16px;
+        }
+
+        .scan-line {
+            position: absolute;
+            left: 10%;
+            right: 10%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent-purple), transparent);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .scanning .scan-line {
+            opacity: 0.6;
+            animation: scan-sweep 2.5s ease-in-out infinite;
+        }
+
+        @keyframes scan-sweep {
+            0% { top: 15%; }
+            50% { top: 75%; }
+            100% { top: 15%; }
+        }
+
+        .face-indicator {
+            position: absolute;
+            border: 2px solid var(--accent-green);
+            border-radius: 8px;
+            opacity: 0;
+            transition: all 0.3s ease;
+            pointer-events: none;
+        }
+
+        .face-indicator.visible {
+            opacity: 1;
+        }
+
+        .status {
+            padding: clamp(12px, 1.5vw, 18px);
+            margin-bottom: 20px;
+            border-radius: 8px;
+            font-size: clamp(0.9rem, 1.1vw, 1.1rem);
+            transition: all 0.3s;
+        }
+
+        .status.info {
+            background: rgba(139, 92, 246, 0.1);
+            color: var(--accent-purple);
+        }
+
+        .status.scanning-status {
+            background: rgba(139, 92, 246, 0.1);
+            color: var(--accent-purple);
+        }
+
+        .status.success {
+            background: rgba(34, 197, 94, 0.1);
+            color: var(--accent-green);
+        }
+
+        .status.error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--accent-red);
+        }
+
+        .scan-dots {
+            display: inline-block;
+        }
+
+        .scan-dots::after {
+            content: '';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+
+        @keyframes dots {
+            0% { content: ''; }
+            25% { content: '.'; }
+            50% { content: '..'; }
+            75% { content: '...'; }
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: clamp(12px, 1.5vw, 18px) clamp(16px, 2vw, 28px);
+            border-radius: 10px;
+            border: none;
+            font-size: clamp(1rem, 1.2vw, 1.2rem);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-purple), #7c3aed);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border-color);
+        }
+
+        .register-form {
+            display: none;
+            margin-bottom: 16px;
+        }
+
+        .register-form.show {
+            display: block;
+        }
+
+        .register-form input {
+            width: 100%;
+            padding: clamp(12px, 1.5vw, 18px);
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: clamp(1rem, 1.2vw, 1.2rem);
+            margin-bottom: 12px;
+        }
+
+        .register-form input:focus {
+            outline: none;
+            border-color: var(--accent-purple);
+        }
+
+        .fallback-actions {
+            opacity: 0;
+            max-height: 0;
+            overflow: hidden;
+            transition: all 0.5s ease;
+        }
+
+        .fallback-actions.show {
+            opacity: 1;
+            max-height: 300px;
+        }
+
+        .skip-link {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .skip-link:hover {
+            color: var(--text-secondary);
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .welcome-name {
+            font-size: clamp(1.3rem, 1.8vw, 1.8rem);
+            font-weight: 700;
+            color: var(--accent-green);
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <svg class="logo-icon" viewBox="0 0 64 65" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path fill="#8b5cf6" d="M31.8143 46.0272L15.9531 36.7666V55.1949L31.8143 64.3627L47.7682 55.1949V36.7666L31.8143 46.0272Z"/>
+            <path fill="#a78bfa" d="M15.9559 0.000976562L0.00195312 9.16874V27.5971L15.9559 36.7648V18.4293L31.8171 27.5971L47.771 18.4293L15.9559 0.000976562Z"/>
+            <path fill="#7c3aed" d="M47.7825 0.000976562V36.7648L63.6436 27.5971V9.16874L47.7825 0.000976562Z"/>
+        </svg>
+        <h1 class="logo">TT-Home</h1>
+        <p class="subtitle">Powered by Tenstorrent</p>
+        
+        <div class="camera-wrapper">
+            <div class="camera-preview" id="cameraPreview">
+                <video id="camera" autoplay playsinline></video>
+            </div>
+            <div class="scan-overlay" id="scanOverlay">
+                <div class="scan-line"></div>
+                <div class="face-indicator" id="faceBox"></div>
+            </div>
+        </div>
+        
+        <div class="status scanning-status" id="status">
+            Looking for you<span class="scan-dots"></span>
+        </div>
+        
+        <div class="fallback-actions" id="fallbackActions">
+            <div class="register-form" id="registerForm">
+                <input type="text" id="registerName" placeholder="Enter your name">
+            </div>
+            
+            <div class="btn-group">
+                <button class="btn btn-primary" id="authBtn" onclick="manualAuthenticate()">
+                    Authenticate
+                </button>
+                <button class="btn btn-secondary" id="registerBtn" onclick="toggleRegister()">
+                    Register
+                </button>
+            </div>
+            
+            <a href="/chat?user=Guest" class="skip-link">Skip &rarr; Continue as Guest</a>
+        </div>
+    </div>
+
+    <canvas id="captureCanvas" style="display:none"></canvas>
+
+    <script>
+        let cameraStream = null;
+        let isRegistering = false;
+        let scanInterval = null;
+        let faceDetector = null;
+        let hasFaceDetectorAPI = false;
+        let isProcessing = false;
+        let recognized = false;
+        let failedAttempts = 0;
+        const MAX_ATTEMPTS_BEFORE_FALLBACK = 4;
+        const SCAN_INTERVAL_MS = 1500;
+        const FALLBACK_TIMEOUT_MS = 12000;
+
+        document.addEventListener('DOMContentLoaded', init);
+
+        async function init() {
+            await startCamera();
+            initFaceDetector();
+            startAutoScan();
+            setTimeout(showFallbackIfNeeded, FALLBACK_TIMEOUT_MS);
+        }
+
+        async function startCamera() {
+            try {
+                cameraStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'user', width: 640, height: 480 } 
+                });
+                document.getElementById('camera').srcObject = cameraStream;
+                document.getElementById('cameraPreview').classList.add('scanning');
+                document.getElementById('scanOverlay').classList.add('scanning');
+            } catch (e) {
+                setStatus('Camera not available: ' + e.message, 'error');
+                showFallback();
+            }
+        }
+
+        function initFaceDetector() {
+            if ('FaceDetector' in window) {
+                try {
+                    faceDetector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+                    hasFaceDetectorAPI = true;
+                } catch (e) {
+                    hasFaceDetectorAPI = false;
+                }
+            }
+        }
+
+        function startAutoScan() {
+            if (scanInterval) clearInterval(scanInterval);
+            scanInterval = setInterval(autoScanTick, SCAN_INTERVAL_MS);
+        }
+
+        function stopAutoScan() {
+            if (scanInterval) {
+                clearInterval(scanInterval);
+                scanInterval = null;
+            }
+        }
+
+        async function autoScanTick() {
+            if (isProcessing || recognized) return;
+
+            const video = document.getElementById('camera');
+            if (!video || video.videoWidth === 0) return;
+
+            if (hasFaceDetectorAPI) {
+                try {
+                    const faces = await faceDetector.detect(video);
+                    if (faces.length === 0) {
+                        hideFaceBox();
+                        return;
+                    }
+                    showFaceBox(faces[0].boundingBox, video);
+                } catch (e) {
+                    // FaceDetector failed, send frame anyway
+                }
+            }
+
+            // Face detected (or no client-side detector) - send to server
+            await sendForRecognition(video);
+        }
+
+        function showFaceBox(bbox, video) {
+            const box = document.getElementById('faceBox');
+            const wrapper = document.querySelector('.camera-wrapper');
+            const wrapperRect = wrapper.getBoundingClientRect();
+            const scaleX = wrapperRect.width / video.videoWidth;
+            const scaleY = wrapperRect.height / video.videoHeight;
+
+            // Mirror the X coordinate (video is flipped)
+            const mirroredX = video.videoWidth - bbox.x - bbox.width;
+
+            box.style.left = (mirroredX * scaleX) + 'px';
+            box.style.top = (bbox.y * scaleY) + 'px';
+            box.style.width = (bbox.width * scaleX) + 'px';
+            box.style.height = (bbox.height * scaleY) + 'px';
+            box.classList.add('visible');
+
+            document.getElementById('cameraPreview').classList.remove('scanning');
+            document.getElementById('cameraPreview').classList.add('face-found');
+        }
+
+        function hideFaceBox() {
+            document.getElementById('faceBox').classList.remove('visible');
+            if (!recognized) {
+                document.getElementById('cameraPreview').classList.remove('face-found');
+                document.getElementById('cameraPreview').classList.add('scanning');
+            }
+        }
+
+        async function sendForRecognition(video) {
+            isProcessing = true;
+            setStatus('Checking<span class="scan-dots"></span>', 'scanning-status');
+
+            try {
+                const canvas = document.getElementById('captureCanvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                canvas.getContext('2d').drawImage(video, 0, 0);
+
+                const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.85));
+                const formData = new FormData();
+                formData.append('image', blob, 'face.jpg');
+
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 5000);
+
+                const response = await fetch('/api/face-auth', {
+                    method: 'POST',
+                    body: formData,
+                    signal: controller.signal
+                });
+                clearTimeout(timeout);
+
+                const result = await response.json();
+                const userName = result.user_id || 'Guest';
+
+                if (userName !== 'Guest' && userName !== 'Unknown') {
+                    onRecognized(userName);
+                } else {
+                    failedAttempts++;
+                    setStatus('Looking for you<span class="scan-dots"></span>', 'scanning-status');
+                    hideFaceBox();
+                    if (failedAttempts >= MAX_ATTEMPTS_BEFORE_FALLBACK) {
+                        showFallback();
+                    }
+                }
+            } catch (e) {
+                failedAttempts++;
+                setStatus('Looking for you<span class="scan-dots"></span>', 'scanning-status');
+                if (failedAttempts >= MAX_ATTEMPTS_BEFORE_FALLBACK) {
+                    showFallback();
+                }
+            }
+
+            isProcessing = false;
+        }
+
+        function onRecognized(userName) {
+            recognized = true;
+            stopAutoScan();
+
+            document.getElementById('cameraPreview').classList.remove('scanning', 'face-found');
+            document.getElementById('cameraPreview').classList.add('recognized');
+            document.getElementById('scanOverlay').classList.remove('scanning');
+
+            document.getElementById('status').innerHTML = 
+                '&#10003; Welcome back!' +
+                '<div class="welcome-name">' + userName + '</div>';
+            document.getElementById('status').className = 'status success';
+
+            if (cameraStream) {
+                setTimeout(() => cameraStream.getTracks().forEach(t => t.stop()), 1000);
+            }
+
+            setTimeout(() => {
+                window.location.href = '/chat?user=' + encodeURIComponent(userName);
+            }, 1500);
+        }
+
+        function showFallbackIfNeeded() {
+            if (!recognized) showFallback();
+        }
+
+        function showFallback() {
+            document.getElementById('fallbackActions').classList.add('show');
+            if (!recognized) {
+                setStatus('Auto-scan active. Or use the buttons below.', 'info');
+            }
+        }
+
+        function setStatus(msg, type = 'info') {
+            const status = document.getElementById('status');
+            status.innerHTML = msg;
+            status.className = 'status ' + type;
+        }
+
+        function toggleRegister() {
+            const form = document.getElementById('registerForm');
+            const authBtn = document.getElementById('authBtn');
+            const regBtn = document.getElementById('registerBtn');
+            
+            isRegistering = !isRegistering;
+            
+            if (isRegistering) {
+                stopAutoScan();
+                form.classList.add('show');
+                authBtn.textContent = 'Capture & Save';
+                regBtn.textContent = 'Cancel';
+                setStatus('Enter your name and click "Capture & Save"', 'info');
+                document.getElementById('registerName').focus();
+            } else {
+                startAutoScan();
+                form.classList.remove('show');
+                authBtn.textContent = 'Authenticate';
+                regBtn.textContent = 'Register';
+                setStatus('Looking for you<span class="scan-dots"></span>', 'scanning-status');
+            }
+        }
+
+        async function manualAuthenticate() {
+            const video = document.getElementById('camera');
+            const authBtn = document.getElementById('authBtn');
+            
+            if (video.videoWidth === 0) {
+                setStatus('Camera not ready', 'error');
+                return;
+            }
+
+            const canvas = document.getElementById('captureCanvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            
+            authBtn.disabled = true;
+            
+            if (isRegistering) {
+                const name = document.getElementById('registerName').value.trim();
+                if (!name) {
+                    setStatus('Please enter your name', 'error');
+                    authBtn.disabled = false;
+                    return;
+                }
+                
+                authBtn.innerHTML = '<span class="loading"></span>Registering...';
+                setStatus('Capturing and registering...', 'info');
+                
+                try {
+                    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9));
+                    const formData = new FormData();
+                    formData.append('image', blob, 'face.jpg');
+                    
+                    const response = await fetch('/api/register-face?name=' + encodeURIComponent(name), {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        onRecognized(name);
+                    } else {
+                        const result = await response.json();
+                        setStatus('Registration failed: ' + (result.detail || 'Unknown error'), 'error');
+                        authBtn.disabled = false;
+                        authBtn.textContent = 'Capture & Save';
+                    }
+                } catch (e) {
+                    setStatus('Registration failed: ' + e.message, 'error');
+                    authBtn.disabled = false;
+                    authBtn.textContent = 'Capture & Save';
+                }
+            } else {
+                stopAutoScan();
+                authBtn.innerHTML = '<span class="loading"></span>Verifying...';
+                setStatus('Verifying identity...', 'info');
+                
+                try {
+                    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9));
+                    const formData = new FormData();
+                    formData.append('image', blob, 'face.jpg');
+                    
+                    const response = await fetch('/api/face-auth', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const result = await response.json();
+                    const userName = result.user_id || 'Guest';
+                    
+                    if (userName !== 'Guest' && userName !== 'Unknown') {
+                        onRecognized(userName);
+                    } else {
+                        setStatus('Face not recognized. Try Register or continue as Guest.', 'info');
+                        authBtn.disabled = false;
+                        authBtn.textContent = 'Authenticate';
+                        startAutoScan();
+                    }
+                } catch (e) {
+                    setStatus('Authentication failed: ' + e.message, 'error');
+                    authBtn.disabled = false;
+                    authBtn.textContent = 'Authenticate';
+                    startAutoScan();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
