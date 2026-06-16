@@ -770,11 +770,10 @@ void SessionManager::registerPrefixHash(
     std::lock_guard<std::mutex> lock(prefixIndexMutex_);
 
     // Find existing entry by sessionId, or add new one
-    auto it = std::find_if(
-        sessionSequences_.begin(), sessionSequences_.end(),
-        [&sessionId](const SessionBlockSequence& s) {
-          return s.sessionId == sessionId;
-        });
+    auto it = std::find_if(sessionSequences_.begin(), sessionSequences_.end(),
+                           [&sessionId](const SessionBlockSequence& s) {
+                             return s.sessionId == sessionId;
+                           });
 
     if (it != sessionSequences_.end()) {
       *it = std::move(newSeq);  // Replace in-place
@@ -943,11 +942,10 @@ std::pair<uint32_t, uint32_t> SessionManager::computeMatchedTokens(
   {
     std::lock_guard<std::mutex> lock(prefixIndexMutex_);
 
-    auto it = std::find_if(
-        sessionSequences_.begin(), sessionSequences_.end(),
-        [&sessionId](const SessionBlockSequence& s) {
-          return s.sessionId == sessionId;
-        });
+    auto it = std::find_if(sessionSequences_.begin(), sessionSequences_.end(),
+                           [&sessionId](const SessionBlockSequence& s) {
+                             return s.sessionId == sessionId;
+                           });
 
     if (it != sessionSequences_.end()) {
       // Count matching blocks with early break
@@ -984,11 +982,10 @@ void SessionManager::clearSessionBlockThinkTokens(
   {
     std::lock_guard<std::mutex> lock(prefixIndexMutex_);
 
-    auto it = std::find_if(
-        sessionSequences_.begin(), sessionSequences_.end(),
-        [&sessionId](const SessionBlockSequence& s) {
-          return s.sessionId == sessionId;
-        });
+    auto it = std::find_if(sessionSequences_.begin(), sessionSequences_.end(),
+                           [&sessionId](const SessionBlockSequence& s) {
+                             return s.sessionId == sessionId;
+                           });
 
     if (it == sessionSequences_.end()) {
       TT_LOG_WARN(
@@ -1018,11 +1015,10 @@ void SessionManager::removeFromPrefixIndex(const std::string& sessionId,
                                            uint64_t /* prefixHash */) {
   std::lock_guard<std::mutex> lock(prefixIndexMutex_);
 
-  auto it = std::find_if(
-      sessionSequences_.begin(), sessionSequences_.end(),
-      [&sessionId](const SessionBlockSequence& s) {
-        return s.sessionId == sessionId;
-      });
+  auto it = std::find_if(sessionSequences_.begin(), sessionSequences_.end(),
+                         [&sessionId](const SessionBlockSequence& s) {
+                           return s.sessionId == sessionId;
+                         });
 
   if (it != sessionSequences_.end()) {
     // Swap-and-pop for O(1) removal from vector

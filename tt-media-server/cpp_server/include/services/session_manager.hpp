@@ -242,9 +242,10 @@ class SessionManager {
   // contiguously for cache-friendly linear scanning.
   struct SessionBlockSequence {
     std::string sessionId;
-    std::vector<uint64_t> blockHashes;             // all blocks, contiguous
-    std::vector<uint32_t> accumulatedThinkTokens;  // parallel array, same length
-    uint32_t keyBlockThinkTokens = 0;              // think tokens at first block
+    std::vector<uint64_t> blockHashes;  // all blocks, contiguous
+    std::vector<uint32_t>
+        accumulatedThinkTokens;        // parallel array, same length
+    uint32_t keyBlockThinkTokens = 0;  // think tokens at first block
   };
 
   // Flat array of all session block sequences. Linear scan with early-break
