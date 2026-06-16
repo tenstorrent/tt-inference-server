@@ -1825,7 +1825,7 @@ _eval_config_list = [
                     "temperature": 1.0,
                     # "top_k": 20,
                     "top_p": 1.0,
-                    # "stream": "true",
+                    "stream": "true",
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
