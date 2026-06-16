@@ -111,10 +111,7 @@ struct PrefillRequestMessage {
 struct PrefillResultMessage {
   uint32_t task_id;
   std::string generated_text;
-  bool finished = false;
   bool error = false;
-  int tokens_generated = 0;
-  double processing_time_ms = 0.0;
   std::vector<int64_t> token_ids;
   std::optional<int> remaining_tokens;
   std::optional<uint32_t> slot_id;
@@ -142,18 +139,15 @@ struct PrefillResultMessage {
     float topPVal = top_p.value_or(0.0f);
     bool hasTopK = top_k.has_value();
     int topKVal = top_k.value_or(0);
-    ar(task_id, generated_text, finished, tokens_generated, processing_time_ms,
-       token_ids, rt, sid, error, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
-       topKVal, fast_mode, cached_tokens, migration_id);
+    ar(task_id, generated_text, token_ids, rt, sid, error, hasTemp, tempVal,
+       hasTopP, topPVal, hasTopK, topKVal, fast_mode, cached_tokens,
+       migration_id);
   }
 
   template <class Archive>
   static PrefillResultMessage read(Archive& ar) {
     uint32_t tid;
     std::string genText;
-    bool fin;
-    int tg;
-    double pt;
     std::vector<int64_t> tids;
     int rt;
     uint32_t sid;
@@ -167,13 +161,10 @@ struct PrefillResultMessage {
     bool fastMode;
     int cachedTokens;
     uint64_t migrationId;
-    ar(tid, genText, fin, tg, pt, tids, rt, sid, err, hasTemp, tempVal, hasTopP,
-       topPVal, hasTopK, topKVal, fastMode, cachedTokens, migrationId);
+    ar(tid, genText, tids, rt, sid, err, hasTemp, tempVal, hasTopP, topPVal,
+       hasTopK, topKVal, fastMode, cachedTokens, migrationId);
     PrefillResultMessage msg(tid);
     msg.generated_text = std::move(genText);
-    msg.finished = fin;
-    msg.tokens_generated = tg;
-    msg.processing_time_ms = pt;
     msg.token_ids = std::move(tids);
     msg.remaining_tokens = (rt == -1) ? std::nullopt : std::optional<int>(rt);
     msg.slot_id = (sid == tt::domain::INVALID_SLOT_ID)
@@ -207,17 +198,13 @@ inline std::string prefillErrorTextForReason(
   return genericError.empty() ? "error" : std::move(genericError);
 }
 
-struct PrefillHealthRequestMessage
-    : SerializableMessage<PrefillHealthRequestMessage> {
-  uint32_t nonce = 0;
+struct PrefillHealthRequestMessage {
+  template <class Archive>
+  void write(Archive&) const {}
 
-  template <class F>
-  void fields(F&& f) {
-    f(nonce);
-  }
-  template <class F>
-  void fields(F&& f) const {
-    f(nonce);
+  template <class Archive>
+  static PrefillHealthRequestMessage read(Archive&) {
+    return {};
   }
 };
 
@@ -269,17 +256,13 @@ struct CancelPrefillMessage : SerializableMessage<CancelPrefillMessage> {
 // Gateway -> prefill. Periodically retried until the gateway gets a
 // PrefillRegistrationMessage back. Triggers (re-)registration regardless of
 // transport semantics
-struct RegistrationProbeMessage
-    : SerializableMessage<RegistrationProbeMessage> {
-  uint32_t nonce = 0;
+struct RegistrationProbeMessage {
+  template <class Archive>
+  void write(Archive&) const {}
 
-  template <class F>
-  void fields(F&& f) {
-    f(nonce);
-  }
-  template <class F>
-  void fields(F&& f) const {
-    f(nonce);
+  template <class Archive>
+  static RegistrationProbeMessage read(Archive&) {
+    return {};
   }
 };
 

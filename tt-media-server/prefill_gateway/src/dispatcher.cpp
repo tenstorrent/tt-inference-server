@@ -116,8 +116,8 @@ void Dispatcher::onPrefillResult(const std::string& fromServerId,
     GatewayMetrics::instance().recordRequestCompleted(fromServerId, "error",
                                                       latency);
   } else {
-    TT_LOG_INFO("[Dispatcher] taskId={} result ok from prefill='{}' tokens={}",
-                msg.task_id, fromServerId, msg.tokens_generated);
+    TT_LOG_INFO("[Dispatcher] taskId={} result ok from prefill='{}'",
+                msg.task_id, fromServerId);
     GatewayMetrics::instance().recordRequestCompleted(fromServerId, "success",
                                                       latency);
   }
@@ -282,7 +282,6 @@ void Dispatcher::failTaskToDecode(uint32_t taskId, const std::string& reason,
 
   tt::sockets::PrefillResultMessage err(taskId);
   err.error = true;
-  err.finished = true;
   err.generated_text = reason;
 
   if (senders_.sendResultToDecode) {

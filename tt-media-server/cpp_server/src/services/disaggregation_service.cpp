@@ -231,7 +231,6 @@ void DisaggregationService::setupSocketHandlers() {
                             "{}, propagating to decode server",
                             message.task_id);
                         prefillResult.error = true;
-                        prefillResult.finished = true;
                         const auto reason =
                             errorReasonFromFinishReason(finishReason.value());
                         prefillResult.generated_text =
@@ -275,7 +274,6 @@ void DisaggregationService::setupSocketHandlers() {
                     tt::sockets::PrefillResultMessage(message.task_id);
                 prefillResult.slot_id = slotId;
                 prefillResult.error = true;
-                prefillResult.finished = true;
                 prefillResult.generated_text =
                     tt::sockets::prefillErrorTextForReason(
                         LLMErrorReason::GENERIC, std::string(error));

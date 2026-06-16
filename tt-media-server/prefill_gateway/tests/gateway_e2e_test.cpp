@@ -59,7 +59,6 @@ std::vector<int64_t> fakeTokenIds(uint32_t taskId) {
 void populateFakePrefillResult(tt::sockets::PrefillResultMessage& result,
                                const std::string& serverId) {
   result.error = false;
-  result.finished = true;
   result.generated_text = "ok-from-" + serverId;
   result.token_ids = fakeTokenIds(result.task_id);
   result.remaining_tokens = 3;
@@ -75,7 +74,6 @@ void populateFakePrefillResult(tt::sockets::PrefillResultMessage& result,
 void expectFakePrefillResultPayload(
     const tt::sockets::PrefillResultMessage& result) {
   EXPECT_FALSE(result.error);
-  EXPECT_TRUE(result.finished);
   EXPECT_EQ(result.token_ids, fakeTokenIds(result.task_id));
   EXPECT_EQ(result.remaining_tokens, 3);
   EXPECT_EQ(result.slot_id, 42u);
@@ -786,7 +784,6 @@ TEST_F(GatewayE2ETest, RequestTimeoutFailsTaskToDecode) {
   ASSERT_EQ(results.size(), 1u);
   EXPECT_EQ(results[0].task_id, 89u);
   EXPECT_TRUE(results[0].error);
-  EXPECT_TRUE(results[0].finished);
   EXPECT_EQ(results[0].generated_text, "timeout");
 
   auto cancelled = prefillA_->cancelledTaskIds();
@@ -995,7 +992,6 @@ TEST(ZmqPrefillRouterTest, RoutesRequestToRegisteredPrefill) {
       cv.notify_all();
 
       tt::sockets::PrefillResultMessage result(request.task_id);
-      result.finished = true;
       result.generated_text = "ok";
       client.sendRawData(tt::sockets::wire::serializeMessage(
           tt::sockets::tags::PREFILL_RESULT, result));

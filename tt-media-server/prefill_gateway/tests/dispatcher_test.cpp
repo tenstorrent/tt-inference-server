@@ -95,7 +95,6 @@ TEST_F(DispatcherTest, NoHealthyPrefillsFailsTaskToDecode) {
   ASSERT_EQ(results.size(), 1u);
   EXPECT_EQ(results[0].task_id, 42u);
   EXPECT_TRUE(results[0].error);
-  EXPECT_TRUE(results[0].finished);
   EXPECT_EQ(results[0].generated_text, "no_prefill_available");
 }
 
@@ -137,7 +136,6 @@ TEST_F(DispatcherTest, ResultIsForwardedToDecode) {
   results.clear();
 
   tt::sockets::PrefillResultMessage ok(5);
-  ok.finished = true;
   ok.generated_text = "hello";
   ok.migration_id = 123456789ULL;
   dispatcher->onPrefillResult(chosen, ok);
@@ -164,7 +162,6 @@ TEST_F(DispatcherTest, InflightDecrementsBackToZeroAfterResult) {
 
   for (uint32_t taskId : {1u, 2u, 3u}) {
     tt::sockets::PrefillResultMessage ok(taskId);
-    ok.finished = true;
     dispatcher->onPrefillResult(requests[taskId - 1].prefillServerId, ok);
   }
   EXPECT_EQ(countInflightTotal(), 0u);
@@ -186,7 +183,6 @@ TEST_F(DispatcherTest, RequestTimeoutFailsTaskAndDecrementsInflight) {
   ASSERT_EQ(results.size(), 1u);
   EXPECT_EQ(results[0].task_id, 77u);
   EXPECT_TRUE(results[0].error);
-  EXPECT_TRUE(results[0].finished);
   EXPECT_EQ(results[0].generated_text, "timeout");
 
   uint32_t sum = 0;
@@ -234,7 +230,6 @@ TEST_F(DispatcherTest, LateResultAfterTimeoutIsDropped) {
   results.clear();
 
   tt::sockets::PrefillResultMessage late(78);
-  late.finished = true;
   dispatcher->onPrefillResult(chosen, late);
 
   EXPECT_TRUE(results.empty());
@@ -317,7 +312,6 @@ TEST_F(DispatcherTest, LateResultAfterCancelIsDropped) {
   dispatcher->onPrefillCancel(cancel);
 
   tt::sockets::PrefillResultMessage late(21);
-  late.finished = true;
   late.generated_text = "late";
   dispatcher->onPrefillResult(chosen, late);
 
@@ -370,7 +364,6 @@ TEST_F(DispatcherTest, RecordsRoutingAndOutcomeMetrics) {
 
   tt::sockets::PrefillResultMessage result(42);
   result.error = false;
-  result.finished = true;
   dispatcher->onPrefillResult(requests[0].prefillServerId, result);
 
   const std::string text = GatewayMetrics::instance().renderText();
