@@ -18,6 +18,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CPP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_DIR="$(cd "${CPP_DIR}/../.." && pwd)"
 BIN="${CPP_DIR}/build/tt_media_server_cpp"
+
+LOG_PREFIX="run_stack"
+source "${REPO_DIR}/scripts/lib_dynamo_stack.sh"
 DYN_VENV="${DYN_VENV:-${REPO_DIR}/dynamo-mock-backend/.venv}"
 
 export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.43}"
@@ -35,9 +38,6 @@ PIDFILE="/tmp/tt_stack.pids"
 FRONTEND_LOG="/tmp/tt_frontend.log"
 DECODE_LOG="/tmp/tt_decode.log"
 PREFILL_LOG="/tmp/tt_prefill.log"
-
-log() { printf '[run_stack] %s\n' "$*"; }
-die() { printf '[run_stack] %s\n' "$*" >&2; exit 1; }
 
 teardown() {
     log "tearing down"
@@ -79,28 +79,13 @@ ensure_etcd() {
     if ! docker ps --format '{{.Names}}' | grep -qx "${ETCD_NAME}"; then
         log "starting etcd"
         docker rm -f "${ETCD_NAME}" >/dev/null 2>&1 || true
-        docker run -d --name "${ETCD_NAME}" -p 2379:2379 quay.io/coreos/etcd:v3.5.13 \
-            /usr/local/bin/etcd --name dyn-etcd \
-                --advertise-client-urls http://0.0.0.0:2379 \
-                --listen-client-urls http://0.0.0.0:2379 >/dev/null
-        sleep 3
+        start_etcd "${ETCD_NAME}"
     fi
+    wait_etcd_healthy "${ETCD_NAME}"
     ETCD_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${ETCD_NAME}")
     [[ -n "${ETCD_IP}" ]] || die "could not resolve etcd container IP"
-    docker exec "${ETCD_NAME}" etcdctl endpoint health >/dev/null 2>&1 || die "etcd unhealthy"
     ETCD_ENDPOINTS="http://${ETCD_IP}:2379"
     log "etcd at ${ETCD_ENDPOINTS}"
-}
-
-# dynamo registration env shared by the regular/decode worker (the one the
-# frontend discovers). The prefill worker does NOT register.
-worker_dynamo_env() {
-    echo "DYNAMO_ENDPOINT_ENABLED=1"
-    echo "DYNAMO_DISCOVERY_BACKEND=etcd"
-    echo "DYNAMO_ETCD_ENDPOINTS=${ETCD_ENDPOINTS}"
-    echo "DYNAMO_NAMESPACE=default"
-    echo "DYNAMO_COMPONENT=backend"
-    echo "DYNAMO_ENDPOINT_NAME=generate"
 }
 
 start_frontend() {
@@ -145,8 +130,9 @@ up() {
     ensure_etcd
 
     log "decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
+    # The decode worker registers with the frontend; the prefill worker does NOT.
     start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
-        $(worker_dynamo_env) \
+        $(dynamo_worker_env "${ETCD_ENDPOINTS}") \
         LLM_MODE=decode LLM_DEVICE_BACKEND=mock \
         SOCKET_TRANSPORT=tcp SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
         MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE}"
