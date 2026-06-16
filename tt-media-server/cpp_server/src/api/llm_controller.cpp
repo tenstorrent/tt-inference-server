@@ -19,14 +19,11 @@
 #include "api/stream_event_formatter.hpp"
 #include "domain/llm/chat_completion_request.hpp"
 #include "domain/llm/llm_response.hpp"
-#include "domain/responses_request.hpp"
-#include "domain/responses_response.hpp"
 #include "profiling/tracy.hpp"
 #include "services/llm_pipeline.hpp"
 #include "services/service_container.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
-#include "utils/mapper.hpp"
 
 namespace tt::api {
 
@@ -192,102 +189,6 @@ void LLMController::chatCompletions(
   } else {
     handleNonStreaming(reqPtr, /*builder=*/nullptr, std::move(callback));
   }
-}
-
-void LLMController::responses(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
-  ZoneScopedN("API::responses");
-
-  auto json = req->getJsonObject();
-  if (!json) {
-    callback(errorResponse(drogon::k400BadRequest, "Invalid JSON body",
-                           "invalid_request_error"));
-    return;
-  }
-
-  std::optional<domain::ResponsesRequest> respReqOpt;
-  try {
-    uint32_t taskId = tt::utils::TaskIDGenerator::generate();
-    respReqOpt = domain::ResponsesRequest::fromJson(*json, std::move(taskId));
-  } catch (const std::exception& e) {
-    callback(errorResponse(drogon::k400BadRequest,
-                           std::string("Failed to parse request: ") + e.what(),
-                           "invalid_request_error"));
-    return;
-  }
-
-  auto respReqPtr =
-      std::make_shared<domain::ResponsesRequest>(std::move(*respReqOpt));
-  const domain::ResponsesRequest& respReq = *respReqPtr;
-
-  TT_LOG_INFO("[LLMController] /v1/responses task_id={} model={}",
-              respReq.task_id, respReq.model.value_or("default"));
-
-  if (!service->isModelReady()) {
-    callback(errorResponse(drogon::k503ServiceUnavailable, "Model is not ready",
-                           "service_unavailable"));
-    return;
-  }
-
-  auto reqPtr = std::make_shared<LLMRequest>(respReq.toLLMRequest());
-  auto samplingParams = tt::utils::mapper::mapSamplingParams(*reqPtr);
-
-  if (reqPtr->stream) {
-    auto formatter =
-        std::make_shared<ResponsesEventFormatter>(respReqPtr, samplingParams);
-    handleStreaming(reqPtr, std::move(formatter),
-                    /*includeUsage=*/true, std::move(callback));
-    return;
-  }
-
-  auto builder = [respReqPtr, samplingParams](
-                     const LLMResponse& completion) -> std::string {
-    int64_t createdAt = static_cast<int64_t>(
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count());
-
-    Json::Value output(Json::arrayValue);
-    for (const auto& choice : completion.choices) {
-      Json::Value item;
-      item["type"] = "message";
-      item["id"] = "msg_" + std::to_string(choice.index);
-      item["status"] = "completed";
-      item["role"] = "assistant";
-
-      Json::Value content(Json::arrayValue);
-      Json::Value textPart;
-      textPart["type"] = "output_text";
-      textPart["text"] = choice.text;
-      content.append(std::move(textPart));
-
-      item["content"] = std::move(content);
-      output.append(std::move(item));
-    }
-
-    domain::ResponseUsage usage;
-    usage.input_tokens = completion.usage.prompt_tokens;
-    usage.output_tokens = completion.usage.completion_tokens;
-    usage.total_tokens = completion.usage.total_tokens;
-
-    std::string status =
-        (!completion.choices.empty() &&
-         completion.choices[0].finish_reason.value_or("stop") == "length")
-            ? "incomplete"
-            : "completed";
-
-    auto resp = domain::ResponsesResponse::fromRequest(
-        completion.task_id, *respReqPtr, samplingParams, completion.model,
-        createdAt, std::move(output), std::move(status), std::move(usage));
-
-    Json::StreamWriterBuilder writer;
-    writer["indentation"] = "";
-    writer["emitUTF8"] = true;
-    return Json::writeString(writer, resp.toOpenaiJson());
-  };
-
-  handleNonStreaming(reqPtr, std::move(builder), std::move(callback));
 }
 
 ResponseWriterParams LLMController::makeWriterParams(
