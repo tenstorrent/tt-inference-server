@@ -82,7 +82,7 @@ TEST(SessionManagerLifecycle, AcquireInFlight_AlreadyInFlight_Throws) {
                tt::services::SessionInFlightException);
   auto session = manager.getSession(slotId);
   ASSERT_TRUE(session);
-  session->clearInFlight();
+  session->release();
 }
 
 TEST(SessionManagerLifecycle, CloseWhileInFlight_RemovesSessionImmediately) {
@@ -125,12 +125,12 @@ TEST(SessionManagerLifecycle, AcquireAfterRelease_Succeeds) {
   acquireInFlight(manager, slotId);
   auto session = manager.getSession(slotId);
   ASSERT_TRUE(session);
-  session->clearInFlight();
+  session->release();
 
   EXPECT_NO_THROW(acquireInFlight(manager, slotId));
   session = manager.getSession(slotId);
   ASSERT_TRUE(session);
-  session->clearInFlight();
+  session->release();
 }
 
 TEST(SessionManagerLifecycle, GetSession_ReturnsCorrectData) {
@@ -231,14 +231,14 @@ TEST(SessionManagerClose, ReleaseInFlight_NormalCompletion_SessionStaysIdle) {
   acquireInFlight(manager, slotId);
   auto session = manager.getSession(slotId);
   ASSERT_TRUE(session);
-  session->clearInFlight();
+  session->release();
 
   // Session still present and acquirable again.
   EXPECT_TRUE(manager.getSession(slotId));
   EXPECT_NO_THROW(acquireInFlight(manager, slotId));
   session = manager.getSession(slotId);
   ASSERT_TRUE(session);
-  session->clearInFlight();
+  session->release();
 }
 
 // ---------------------------------------------------------------------------
@@ -305,7 +305,7 @@ TEST(SessionManagerConcurrency, ConcurrentAcquire_OnlyOneSucceeds) {
     EXPECT_EQ(acquireCount.load(), 1) << "iteration " << i;
     auto session = manager.getSession(slotId);
     if (session) {
-      session->clearInFlight();
+      session->release();
     }
   }
 }
@@ -331,7 +331,7 @@ TEST(SessionManagerConcurrency,
                                 [&cancelCount] { cancelCount.fetch_add(1); });
         auto session = manager.getSession(slotId);
         if (session) {
-          session->clearInFlight();
+          session->release();
         }
       } catch (const tt::services::SessionRateLimitException&) {
       }
@@ -375,7 +375,7 @@ TEST(SessionManagerResponseId, RegisterThenAcquire_ReturnsSessionAndSlot) {
 
   auto session = manager.getSession(slotId);
   ASSERT_TRUE(session);
-  session->clearInFlight();
+  session->release();
 }
 
 TEST(SessionManagerResponseId, AcquireUnknownId_ReturnsNullopt) {

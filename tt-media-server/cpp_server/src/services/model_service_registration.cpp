@@ -90,8 +90,6 @@ void registerLLM() {
                        "OpenAI-compatible chat completions");
   routes.registerRoute(config::ModelService::LLM, "POST", "/v1/responses",
                        "OpenAI-compatible Responses API");
-  routes.registerRoute(config::ModelService::LLM, "GET", "/v1/models",
-                       "List models");
 }
 
 void registerEmbedding() {

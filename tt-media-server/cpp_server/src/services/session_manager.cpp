@@ -184,6 +184,7 @@ domain::Session* SessionManager::getSession(uint32_t slotId) {
 void SessionManager::releaseInFlight(uint32_t slotId) {
   sessions.modify(slotKey(slotId),
                   [](domain::Session& s) { s.clearInFlight(); });
+
 }
 
 size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }

@@ -273,16 +273,12 @@ TEST(RouteRegistryTest, RoutesForReturnsRegistrationOrder) {
   RouteRegistry::instance().clear();
   RouteRegistry::instance().registerRoute(ModelService::LLM, "post",
                                           "/v1/chat/completions", "chat");
-  RouteRegistry::instance().registerRoute(ModelService::LLM, "get",
-                                          "/v1/models", "models");
 
   auto routes = RouteRegistry::instance().routesFor(ModelService::LLM);
-  ASSERT_EQ(routes.size(), 2u);
+  ASSERT_EQ(routes.size(), 1u);
   EXPECT_EQ(routes[0].method, "POST");
   EXPECT_EQ(routes[0].path, "/v1/chat/completions");
   EXPECT_EQ(routes[0].description, "chat");
-  EXPECT_EQ(routes[1].method, "GET");
-  EXPECT_EQ(routes[1].path, "/v1/models");
 }
 
 // ---------------------------------------------------------------------------

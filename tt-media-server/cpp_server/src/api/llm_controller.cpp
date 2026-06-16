@@ -250,16 +250,22 @@ ResponseWriterParams LLMController::makeWriterParams(
   params.enableDisconnectHeartbeat =
       tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY;
   if (request.session) {
-    params.onSessionRelease = [s = request.session]() { s->clearInFlight(); };
+    // Release via the session's own injected hook (runs clearInFlight() under
+    // the SessionManager lock, race-safe vs eviction). The callback co-owns the
+    // shared_ptr, so it's valid even after the request is moved / the map entry
+    // is evicted.
+    params.onSessionRelease = [session = request.session]() {
+      session->release();
+    };
   }
   return params;
 }
 
 std::function<void(const LLMStreamChunk&, bool)>
 LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
-                                     domain::Session* session) {
-  return [writer = std::move(writer), session](const LLMStreamChunk& chunk,
-                                               bool isFinal) {
+                                     std::shared_ptr<domain::Session> session) {
+  return [writer = std::move(writer), session = std::move(session)](
+             const LLMStreamChunk& chunk, bool isFinal) {
     // Accumulate token for prefix index (always, even if connection closed)
     if (session && !chunk.choices.empty() && chunk.choices[0].token_id) {
       session->addGeneratedToken(static_cast<int>(*chunk.choices[0].token_id));
@@ -268,7 +274,7 @@ LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
     // Finalize session before isDone check (register partial progress on abort)
     if (isFinal && session) {
       session->finalizeAndRegisterHashes();
-      session->clearInFlight();
+      session->release();
     }
 
     if (writer->isDone()) return;
@@ -323,15 +329,18 @@ void LLMController::handleStreaming(
       reqPtr, loop,
       [this, reqPtr, cb, loop, formatter = std::move(formatter),
        includeUsage](services::LLMPipeline::SessionInfo sessionInfo) {
+        // Pre-dispatch shared_ptr copy: dispatchGeneration std::move()s the
+        // request (emptying reqPtr->session), so error-path releases use this.
+        auto sessionPtr = reqPtr->session;
         try {
           service->preProcess(*reqPtr);
         } catch (const services::QueueFullException& e) {
-          if (reqPtr->session) reqPtr->session->clearInFlight();
+          if (sessionPtr) sessionPtr->release();
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                               "rate_limit_exceeded"));
           return;
         } catch (const std::exception& e) {
-          if (reqPtr->session) reqPtr->session->clearInFlight();
+          if (sessionPtr) sessionPtr->release();
           (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
                               "invalid_request_error"));
           return;
@@ -345,12 +354,12 @@ void LLMController::handleStreaming(
               *reqPtr, sessionInfo,
               makeStreamingCallback(writer, reqPtr->session));
         } catch (const services::QueueFullException& e) {
-          if (reqPtr->session) reqPtr->session->clearInFlight();
+          if (sessionPtr) sessionPtr->release();
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                               "rate_limit_exceeded"));
           return;
         } catch (const std::exception& e) {
-          if (reqPtr->session) reqPtr->session->clearInFlight();
+          if (sessionPtr) sessionPtr->release();
           (*cb)(errorResponse(drogon::k500InternalServerError, e.what(),
                               "internal_error"));
           return;
@@ -385,15 +394,18 @@ void LLMController::handleNonStreaming(
       reqPtr, loop,
       [this, reqPtr, cb, builder = std::move(builder)](
           services::LLMPipeline::SessionInfo sessionInfo) mutable {
+        // Pre-dispatch shared_ptr copy: dispatchGeneration std::move()s the
+        // request (emptying reqPtr->session), so error-path releases use this.
+        auto sessionPtr = reqPtr->session;
         try {
           service->preProcess(*reqPtr);
         } catch (const services::QueueFullException& e) {
-          if (reqPtr->session) reqPtr->session->clearInFlight();
+          if (sessionPtr) sessionPtr->release();
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                               "rate_limit_exceeded"));
           return;
         } catch (const std::exception& e) {
-          if (reqPtr->session) reqPtr->session->clearInFlight();
+          if (sessionPtr) sessionPtr->release();
           (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
                               "invalid_request_error"));
           return;
