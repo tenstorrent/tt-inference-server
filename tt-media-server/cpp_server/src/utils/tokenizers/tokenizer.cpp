@@ -206,6 +206,8 @@ std::string tokenizerDirForModel(config::ModelType model) {
       return "openai/gpt-oss-120b";
     case config::ModelType::MINIMAX_M2_7:
       return "MiniMaxAI/MiniMax-M2.7";
+    case config::ModelType::GLM_5_1:
+      return "zai-org/GLM-5.1";
     case config::ModelType::DEEPSEEK_R1_0528:
     default:
       return "deepseek-ai/DeepSeek-R1-0528";
@@ -224,6 +226,7 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
       return std::make_unique<DeepseekTokenizer>(path);
     case config::ModelType::GPT_OSS_120B:
     case config::ModelType::MINIMAX_M2_7:
+    case config::ModelType::GLM_5_1:
       // These load their own model-specific files but currently reuse the
       // DeepSeek chat-template/tool-call behavior until a dedicated tokenizer
       // implementation is added.
@@ -313,6 +316,23 @@ const StaticTokenizerInfo& minimaxM27Info() {
   return kInfo;
 }
 
+// IDs verified against the fetched zai-org/GLM-5.1 tokenizer. config.json and
+// generation_config.json both list eos_token_id [154820, 154827, 154829] =
+// <|endoftext|> (primary eos / pad), <|user|>, <|observation|> (chat stops).
+// Reasoning uses <think>/</think>. assistantHeaderSequence left empty (the
+// Dynamo frontend applies the chat template); it is worker-side log-only.
+const StaticTokenizerInfo& glm51Info() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"zai-org/GLM-5.1",
+      /*stopTokenIds=*/{154827, 154829},  // <|user|>, <|observation|>
+      /*eosTokenId=*/154820,              // <|endoftext|>
+      /*assistantHeaderSequence=*/{},
+      /*thinkStartTokenId=*/154841,  // <think>
+      /*thinkEndTokenId=*/154842,    // </think>
+  };
+  return kInfo;
+}
+
 }  // namespace
 
 const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
@@ -327,6 +347,8 @@ const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
       return gptOss120bInfo();
     case config::ModelType::MINIMAX_M2_7:
       return minimaxM27Info();
+    case config::ModelType::GLM_5_1:
+      return glm51Info();
   }
   throw std::invalid_argument(
       "tokenizers::staticInfoFor: no static info registered for ModelType " +

@@ -227,4 +227,17 @@ download_tokenizer \
     "json" \
     "true"
 
+# GLM-5.1 (public, no auth). Ships a separate chat_template.jinja (no inline
+# template in tokenizer_config.json), so needs_chat_template=true. config.json
+# and generation_config.json both carry eos_token_id [154820, 154827, 154829]
+# (<|endoftext|>, <|user|>, <|observation|>) — eos 154820, stops on the other
+# two. tokenizer.json is an LFS file, so use /resolve/main.
+download_tokenizer \
+    "zai-org/GLM-5.1" \
+    "https://huggingface.co/zai-org/GLM-5.1/resolve/main" \
+    "false" \
+    '{"model_type":"glm_moe_dsa","architectures":["GlmMoeDsaForCausalLM"]}' \
+    "json" \
+    "true"
+
 echo ""
