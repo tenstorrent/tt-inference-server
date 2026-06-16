@@ -36,8 +36,6 @@ class Dispatcher {
     std::function<bool(const std::string& prefill_server_id,
                        const tt::sockets::CancelPrefillMessage&)>
         sendCancelToPrefill;
-    std::function<bool(const tt::sockets::PrefillAssignmentMessage&)>
-        sendAssignmentToDecode;
     std::function<bool(const tt::sockets::PrefillResultMessage&)>
         sendResultToDecode;
   };
@@ -64,8 +62,6 @@ class Dispatcher {
 
   void onCacheBlocksAdded(
       const tt::sockets::PrefillCacheBlocksAddedMessage& msg);
-  void onCacheBlocksEvicted(
-      const tt::sockets::PrefillCacheBlocksEvictedMessage& msg);
 
   // Fails all in-flight tasks assigned to `server_id`.
   void onPrefillDown(const std::string& server_id);

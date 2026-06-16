@@ -22,10 +22,10 @@
 namespace tt::sockets {
 
 /**
- * @brief Singleton socket manager for inter-server communication
+ * @brief Socket manager for inter-server communication
  *
- * Supports both server (listening) and client (connecting) modes.
- * Can serialize and send objects using Cereal library.
+ * Supports both server (listening) and client (connecting) modes. Each
+ * instance owns one transport connection and serializes messages with Cereal.
  */
 class SocketManager {
  public:

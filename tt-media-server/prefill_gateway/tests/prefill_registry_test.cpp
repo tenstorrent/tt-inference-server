@@ -110,23 +110,21 @@ TEST(PrefillRegistryTest, GetSocketManagerReturnsNullptrForUnknown) {
   EXPECT_EQ(reg.getSocketManager("UNKNOWN"), nullptr);
 }
 
-TEST(PrefillRegistryTest, CacheBlockDeltasAreTrackedPerPrefill) {
+TEST(PrefillRegistryTest, CacheBlocksAreTrackedPerPrefill) {
   PrefillRegistry reg;
   reg.preRegister("A", nullptr);
   reg.preRegister("B", nullptr);
 
   reg.addCachedBlocks("A", {1, 2, 3});
   reg.addCachedBlocks("B", {1, 4});
-  reg.evictCachedBlocks("A", {2});
 
   reg.addCachedBlocks("UNKNOWN", {7});
-  reg.evictCachedBlocks("UNKNOWN", {7});
 
   auto snaps = reg.snapshot();
   ASSERT_EQ(snaps.size(), 2u);
   for (const auto& snap : snaps) {
     if (snap.server_id == "A") {
-      EXPECT_EQ(snap.cached_blocks, 2u);
+      EXPECT_EQ(snap.cached_blocks, 3u);
     } else if (snap.server_id == "B") {
       EXPECT_EQ(snap.cached_blocks, 2u);
     } else {
@@ -158,7 +156,7 @@ TEST(PrefillRegistryTest, RoutingSnapshotComputesContiguousPrefixDepth) {
   }
 }
 
-TEST(PrefillRegistryTest, RoutingSnapshotReflectsEvictionsAndMarkDown) {
+TEST(PrefillRegistryTest, MarkDownClearsRoutingCacheView) {
   PrefillRegistry reg;
   reg.preRegister("A", nullptr);
   reg.markRegistered("A", 4);
@@ -167,11 +165,6 @@ TEST(PrefillRegistryTest, RoutingSnapshotReflectsEvictionsAndMarkDown) {
   auto snaps = reg.routingSnapshot({10, 20});
   ASSERT_EQ(snaps.size(), 1u);
   EXPECT_EQ(snaps[0].prefix_match_depth, 2u);
-
-  reg.evictCachedBlocks("A", {20});
-  snaps = reg.routingSnapshot({10, 20});
-  ASSERT_EQ(snaps.size(), 1u);
-  EXPECT_EQ(snaps[0].prefix_match_depth, 1u);
 
   reg.markDown("A");
   snaps = reg.routingSnapshot({10});

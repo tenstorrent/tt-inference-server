@@ -48,11 +48,6 @@ class DispatcherTest : public ::testing::Test {
           cancels.push_back({serverId, m.task_id});
           return prefillCancelSucceeds;
         };
-    senders.sendAssignmentToDecode =
-        [this](const tt::sockets::PrefillAssignmentMessage& m) {
-          assignments.push_back(m);
-          return true;
-        };
     senders.sendResultToDecode =
         [this](const tt::sockets::PrefillResultMessage& m) {
           results.push_back(m);
@@ -87,7 +82,6 @@ class DispatcherTest : public ::testing::Test {
 
   std::vector<CapturedRequest> requests;
   std::vector<CapturedCancel> cancels;
-  std::vector<tt::sockets::PrefillAssignmentMessage> assignments;
   std::vector<tt::sockets::PrefillResultMessage> results;
   bool prefillSendSucceeds = true;
   bool prefillCancelSucceeds = true;
@@ -98,23 +92,19 @@ TEST_F(DispatcherTest, NoHealthyPrefillsFailsTaskToDecode) {
   dispatcher->onPrefillRequest(makeRequest(42));
 
   EXPECT_TRUE(requests.empty());
-  EXPECT_TRUE(assignments.empty());
   ASSERT_EQ(results.size(), 1u);
   EXPECT_EQ(results[0].task_id, 42u);
   EXPECT_TRUE(results[0].error);
-  EXPECT_TRUE(results[0].finished);
   EXPECT_EQ(results[0].generated_text, "no_prefill_available");
 }
 
-TEST_F(DispatcherTest, HealthyPrefillReceivesRequestAndDecodeGetsAssignment) {
+TEST_F(DispatcherTest, HealthyPrefillReceivesRequest) {
   markAllHealthy();
   dispatcher->onPrefillRequest(makeRequest(42, /*hash=*/0));
 
   ASSERT_EQ(requests.size(), 1u);
-  ASSERT_EQ(assignments.size(), 1u);
   EXPECT_TRUE(results.empty());
-  EXPECT_EQ(assignments[0].task_id, 42u);
-  EXPECT_EQ(assignments[0].server_id, requests[0].prefillServerId);
+  EXPECT_EQ(requests[0].taskId, 42u);
 }
 
 TEST_F(DispatcherTest, ForwardsAllRegistrationHashesToPrefill) {
@@ -136,8 +126,6 @@ TEST_F(DispatcherTest, CachedBlockHitDrivesPrefixRouting) {
 
   ASSERT_EQ(requests.size(), 1u);
   EXPECT_EQ(requests[0].prefillServerId, "B");
-  ASSERT_EQ(assignments.size(), 1u);
-  EXPECT_EQ(assignments[0].server_id, "B");
 }
 
 TEST_F(DispatcherTest, ResultIsForwardedToDecode) {
@@ -148,7 +136,6 @@ TEST_F(DispatcherTest, ResultIsForwardedToDecode) {
   results.clear();
 
   tt::sockets::PrefillResultMessage ok(5);
-  ok.finished = true;
   ok.generated_text = "hello";
   ok.migration_id = 123456789ULL;
   dispatcher->onPrefillResult(chosen, ok);
@@ -175,7 +162,6 @@ TEST_F(DispatcherTest, InflightDecrementsBackToZeroAfterResult) {
 
   for (uint32_t taskId : {1u, 2u, 3u}) {
     tt::sockets::PrefillResultMessage ok(taskId);
-    ok.finished = true;
     dispatcher->onPrefillResult(requests[taskId - 1].prefillServerId, ok);
   }
   EXPECT_EQ(countInflightTotal(), 0u);
@@ -197,7 +183,6 @@ TEST_F(DispatcherTest, RequestTimeoutFailsTaskAndDecrementsInflight) {
   ASSERT_EQ(results.size(), 1u);
   EXPECT_EQ(results[0].task_id, 77u);
   EXPECT_TRUE(results[0].error);
-  EXPECT_TRUE(results[0].finished);
   EXPECT_EQ(results[0].generated_text, "timeout");
 
   uint32_t sum = 0;
@@ -245,7 +230,6 @@ TEST_F(DispatcherTest, LateResultAfterTimeoutIsDropped) {
   results.clear();
 
   tt::sockets::PrefillResultMessage late(78);
-  late.finished = true;
   dispatcher->onPrefillResult(chosen, late);
 
   EXPECT_TRUE(results.empty());
@@ -328,7 +312,6 @@ TEST_F(DispatcherTest, LateResultAfterCancelIsDropped) {
   dispatcher->onPrefillCancel(cancel);
 
   tt::sockets::PrefillResultMessage late(21);
-  late.finished = true;
   late.generated_text = "late";
   dispatcher->onPrefillResult(chosen, late);
 
@@ -341,8 +324,6 @@ TEST_F(DispatcherTest, SendFailureToPrefillRollsBackAndFailsTask) {
 
   dispatcher->onPrefillRequest(makeRequest(99, /*hash=*/0));
 
-  // Assignment still fired (we tell decode before sending to prefill).
-  ASSERT_EQ(assignments.size(), 1u);
   // Send attempt happened.
   ASSERT_EQ(requests.size(), 1u);
   // And then we fail the task to decode.
@@ -357,24 +338,19 @@ TEST_F(DispatcherTest, SendFailureToPrefillRollsBackAndFailsTask) {
   EXPECT_EQ(sum, 0u);
 }
 
-TEST_F(DispatcherTest, CacheBlocksAddedAndEvictedAreNoThrow) {
+TEST_F(DispatcherTest, CacheBlocksAddedDrivesRoutingView) {
   markAllHealthy();
   tt::sockets::PrefillCacheBlocksAddedMessage added;
   added.server_id = "A";
   added.block_hashes = {1, 2, 3};
   dispatcher->onCacheBlocksAdded(added);
 
-  tt::sockets::PrefillCacheBlocksEvictedMessage evicted;
-  evicted.server_id = "A";
-  evicted.block_hashes = {2};
-  dispatcher->onCacheBlocksEvicted(evicted);
-
   const auto snaps = registry.routingSnapshot({1, 2, 3});
   ASSERT_EQ(snaps.size(), 3u);
   for (const auto& snap : snaps) {
     if (snap.server_id == "A") {
-      EXPECT_EQ(snap.prefix_match_depth, 1u);
-      EXPECT_EQ(snap.cached_blocks, 2u);
+      EXPECT_EQ(snap.prefix_match_depth, 3u);
+      EXPECT_EQ(snap.cached_blocks, 3u);
     }
   }
 }
@@ -388,7 +364,6 @@ TEST_F(DispatcherTest, RecordsRoutingAndOutcomeMetrics) {
 
   tt::sockets::PrefillResultMessage result(42);
   result.error = false;
-  result.finished = true;
   dispatcher->onPrefillResult(requests[0].prefillServerId, result);
 
   const std::string text = GatewayMetrics::instance().renderText();

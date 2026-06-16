@@ -107,7 +107,7 @@ void registerTcpPrefillHandlers(PrefillSocketManagers& prefillSms,
         });
 
     sm->registerHandler<tt::sockets::PrefillResultMessage>(
-        "prefill_result",
+        tt::sockets::tags::PREFILL_RESULT,
         [&dispatcher, state](const tt::sockets::PrefillResultMessage& msg) {
           dispatcher.onPrefillResult(state->getServerId(), msg);
         });
@@ -116,13 +116,6 @@ void registerTcpPrefillHandlers(PrefillSocketManagers& prefillSms,
         tt::sockets::tags::PREFILL_CACHE_BLOCKS_ADDED,
         [&dispatcher](const tt::sockets::PrefillCacheBlocksAddedMessage& msg) {
           dispatcher.onCacheBlocksAdded(msg);
-        });
-
-    sm->registerHandler<tt::sockets::PrefillCacheBlocksEvictedMessage>(
-        tt::sockets::tags::PREFILL_CACHE_BLOCKS_EVICTED,
-        [&dispatcher](
-            const tt::sockets::PrefillCacheBlocksEvictedMessage& msg) {
-          dispatcher.onCacheBlocksEvicted(msg);
         });
 
     sm->setConnectionLostCallback([&registry, state]() {
@@ -156,9 +149,10 @@ void registerZmqPrefillHandlers(ZmqPrefillRouter& zmqPrefillRouter,
       });
 
   zmqPrefillRouter.registerHandler<tt::sockets::PrefillResultMessage>(
-      "prefill_result", [&dispatcher, &zmqPrefillRouter](
-                            const ZmqPrefillRouter::PeerIdentity& peerId,
-                            const tt::sockets::PrefillResultMessage& msg) {
+      tt::sockets::tags::PREFILL_RESULT,
+      [&dispatcher, &zmqPrefillRouter](
+          const ZmqPrefillRouter::PeerIdentity& peerId,
+          const tt::sockets::PrefillResultMessage& msg) {
         auto serverId = zmqPrefillRouter.serverIdForPeer(peerId);
         if (!serverId.has_value()) {
           TT_LOG_WARN("[Gateway] Ignoring result from unregistered prefill");
@@ -173,15 +167,6 @@ void registerZmqPrefillHandlers(ZmqPrefillRouter& zmqPrefillRouter,
                     const tt::sockets::PrefillCacheBlocksAddedMessage& msg) {
         dispatcher.onCacheBlocksAdded(msg);
       });
-
-  zmqPrefillRouter
-      .registerHandler<tt::sockets::PrefillCacheBlocksEvictedMessage>(
-          tt::sockets::tags::PREFILL_CACHE_BLOCKS_EVICTED,
-          [&dispatcher](
-              const ZmqPrefillRouter::PeerIdentity&,
-              const tt::sockets::PrefillCacheBlocksEvictedMessage& msg) {
-            dispatcher.onCacheBlocksEvicted(msg);
-          });
 }
 
 }  // namespace tt::gateway
