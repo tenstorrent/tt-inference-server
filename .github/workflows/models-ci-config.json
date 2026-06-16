@@ -44,7 +44,6 @@
             },
             "release": {
               "devices": [
-                "GALAXY",
                 "P150",
                 "P300X2"
               ]
@@ -583,7 +582,12 @@
         "nightly": {
           "devices": [
             "P150",
-            "P300X2"
+            "GALAXY"
+          ]
+        },
+        "release": {
+          "devices": [
+            "GALAXY"
           ]
         }
       }
@@ -715,8 +719,12 @@
             "GALAXY",
             "BH_GALAXY",
             "N150",
-            "P150",
-            "P300X2"
+            "P150"
+          ]
+        },
+        "release": {
+          "devices": [
+            "GALAXY"
           ]
         },
         "weekly": {
