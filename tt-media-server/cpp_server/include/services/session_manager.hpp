@@ -238,24 +238,19 @@ class SessionManager {
   mutable utils::ConcurrentMap<std::string, std::shared_ptr<domain::Session>>
       sessions;
 
-  // An entry in the prefix index: a group of sessions sharing the same prefix
-  // path, together with the remaining block info that follows (used for deeper
-  // prefix matching / numberOfMatchedTokens calculation).
-  struct RemainingBlockInfo {
-    uint64_t hash;
-    uint32_t accumulatedThinkTokens;
+  // A session's block sequence for prefix matching. All blocks stored
+  // contiguously for cache-friendly linear scanning.
+  struct SessionBlockSequence {
+    std::string sessionId;
+    std::vector<uint64_t> blockHashes;             // all blocks, contiguous
+    std::vector<uint32_t> accumulatedThinkTokens;  // parallel array, same length
+    uint32_t keyBlockThinkTokens = 0;              // think tokens at first block
   };
 
-  struct PrefixIndexEntry {
-    std::list<std::string> sessionIds;              // sessions registered here
-    std::list<RemainingBlockInfo> remainingBlocks;  // subsequent block info
-    uint32_t keyBlockThinkTokens = 0;  // think tokens at key hash block
-  };
-
-  // Secondary index: block hash -> entries (each with different remaining
-  // hashes pointing to different sessions/slots).
-  // Used by tryAcquireByPrefixHash / registerPrefixHash for prefix caching.
-  utils::ConcurrentMap<uint64_t, std::vector<PrefixIndexEntry>> prefixIndex;
+  // Flat array of all session block sequences. Linear scan with early-break
+  // is faster than hash lookup for ≤128 sessions due to cache locality.
+  mutable std::mutex prefixIndexMutex_;
+  std::vector<SessionBlockSequence> sessionSequences_;
 
   // Secondary index: previous_response_id -> the session registered under it.
   // Unlike prefixIndex (where many sessions can share a content hash), response

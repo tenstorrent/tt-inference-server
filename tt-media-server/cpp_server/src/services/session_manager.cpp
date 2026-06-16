@@ -572,42 +572,36 @@ SessionManager::tryAcquireByPrefixHash(
   const size_t firstBlockTokens = tt::config::kvCacheFirstBlockSize();
   const size_t blockTokens = tt::config::kvCacheBlockSize();
 
-  // Build the caller's remaining block info for comparison (blockInfos[1:]).
-  std::list<RemainingBlockInfo> callerRemaining;
-  for (size_t i = 1; i < blockInfos.size(); ++i) {
-    callerRemaining.push_back(
-        {blockInfos[i].hash, blockInfos[i].accumulatedThinkTokens});
-  }
-
-  // Snapshot candidates: for each entry under keyHash, count how many
-  // consecutive remaining hashes match the caller's remaining hashes.
-  // Pick the entry with the longest match.
+  // Snapshot candidates via linear scan with early-break on mismatch.
   std::vector<Candidate> candidates;
 
-  prefixIndex.modify(keyHash, [&](std::vector<PrefixIndexEntry>& entries) {
-    for (const auto& entry : entries) {
-      // Count consecutive matching remaining hashes.
-      size_t matched = 0;
-      uint32_t lastMatchedThinkCount = entry.keyBlockThinkTokens;
-      auto callerIt = callerRemaining.begin();
-      auto entryIt = entry.remainingBlocks.begin();
-      while (callerIt != callerRemaining.end() &&
-             entryIt != entry.remainingBlocks.end() &&
-             callerIt->hash == entryIt->hash) {
-        lastMatchedThinkCount = entryIt->accumulatedThinkTokens;
+  {
+    std::lock_guard<std::mutex> lock(prefixIndexMutex_);
+
+    for (const auto& seq : sessionSequences_) {
+      // Early exit if first block doesn't match
+      if (seq.blockHashes.empty() || seq.blockHashes[0] != keyHash) {
+        continue;
+      }
+
+      // Count consecutive matching blocks with early break
+      size_t matched = 1;  // key block matched
+      uint32_t lastMatchedThinkCount = seq.keyBlockThinkTokens;
+
+      const size_t maxCompare =
+          std::min(seq.blockHashes.size(), blockInfos.size());
+      for (size_t i = 1; i < maxCompare; ++i) {
+        if (seq.blockHashes[i] != blockInfos[i].hash) {
+          break;  // Early exit on mismatch
+        }
+        lastMatchedThinkCount = seq.accumulatedThinkTokens[i];
         ++matched;
-        ++callerIt;
-        ++entryIt;
       }
-      // key hash itself counts as 1 block match.
-      size_t totalMatched = 1 + matched;
-      size_t sessionTotal = 1 + entry.remainingBlocks.size();
-      for (const auto& sid : entry.sessionIds) {
-        candidates.push_back(
-            {sid, totalMatched, sessionTotal, lastMatchedThinkCount});
-      }
+
+      candidates.push_back({seq.sessionId, matched, seq.blockHashes.size(),
+                            lastMatchedThinkCount});
     }
-  });
+  }
 
   if (candidates.empty()) {
     TT_LOG_DEBUG("[SessionManager] tryAcquireByPrefixHash: keyHash={} miss",
@@ -747,12 +741,9 @@ void SessionManager::registerPrefixHash(
       sessionId, keyHash, blockInfos.size(), keyThinkCount);
 
   // Update session's hash field (stores the key for staleness checks).
-  uint64_t oldHash = 0;
   uint32_t slotId = tt::domain::INVALID_SLOT_ID;
   bool sessionFound = sessions.modify(
-      sessionId,
-      [&oldHash, &slotId, keyHash](std::shared_ptr<domain::Session>& s) {
-        oldHash = s->getHash();
+      sessionId, [&slotId, keyHash](std::shared_ptr<domain::Session>& s) {
         slotId = s->getSlotId();
         s->setHash(keyHash);
       });
@@ -763,66 +754,39 @@ void SessionManager::registerPrefixHash(
     return;
   }
 
-  if (oldHash != 0 && oldHash != keyHash) {
-    removeFromPrefixIndex(sessionId, oldHash);
+  // Build the new sequence
+  SessionBlockSequence newSeq;
+  newSeq.sessionId = sessionId;
+  newSeq.keyBlockThinkTokens = keyThinkCount;
+  newSeq.blockHashes.reserve(blockInfos.size());
+  newSeq.accumulatedThinkTokens.reserve(blockInfos.size());
+
+  for (const auto& info : blockInfos) {
+    newSeq.blockHashes.push_back(info.hash);
+    newSeq.accumulatedThinkTokens.push_back(info.accumulatedThinkTokens);
   }
 
-  // Build remaining blocks (blockInfos[1:]).
-  std::list<RemainingBlockInfo> remaining;
-  for (size_t i = 1; i < blockInfos.size(); ++i) {
-    remaining.push_back(
-        {blockInfos[i].hash, blockInfos[i].accumulatedThinkTokens});
-  }
+  {
+    std::lock_guard<std::mutex> lock(prefixIndexMutex_);
 
-  // Helper to compare remaining block lists by hash only (for dedup).
-  auto remainingHashesMatch = [](const std::list<RemainingBlockInfo>& a,
-                                 const std::list<RemainingBlockInfo>& b) {
-    if (a.size() != b.size()) return false;
-    auto itA = a.begin();
-    auto itB = b.begin();
-    while (itA != a.end()) {
-      if (itA->hash != itB->hash) return false;
-      ++itA;
-      ++itB;
+    // Find existing entry by sessionId, or add new one
+    auto it = std::find_if(
+        sessionSequences_.begin(), sessionSequences_.end(),
+        [&sessionId](const SessionBlockSequence& s) {
+          return s.sessionId == sessionId;
+        });
+
+    if (it != sessionSequences_.end()) {
+      *it = std::move(newSeq);  // Replace in-place
+    } else {
+      sessionSequences_.push_back(std::move(newSeq));
     }
-    return true;
-  };
-
-  // Insert into prefixIndex: key=keyHash, entry has remaining + sessionId.
-  // First, remove sessionId from any existing entry under this key (a session
-  // should only appear once — always at its latest registration).
-  bool exists = prefixIndex.modify(
-      keyHash, [&sessionId, &remaining, &remainingHashesMatch,
-                keyThinkCount](std::vector<PrefixIndexEntry>& entries) {
-        // Remove sessionId from all entries (it may be in a stale one).
-        for (auto it = entries.begin(); it != entries.end();) {
-          it->sessionIds.remove(sessionId);
-          if (it->sessionIds.empty()) {
-            it = entries.erase(it);
-          } else {
-            ++it;
-          }
-        }
-        // Now add to the matching entry or create a new one.
-        for (auto& entry : entries) {
-          if (remainingHashesMatch(entry.remainingBlocks, remaining)) {
-            entry.sessionIds.push_back(sessionId);
-            return;
-          }
-        }
-        entries.push_back(
-            PrefixIndexEntry{{sessionId}, remaining, keyThinkCount});
-      });
-  if (!exists) {
-    std::vector<PrefixIndexEntry> entries;
-    entries.push_back(PrefixIndexEntry{{sessionId}, remaining, keyThinkCount});
-    prefixIndex.insert(keyHash, std::move(entries));
   }
 
   TT_LOG_INFO(
       "[SessionManager] registerPrefixHash: registered sessionId={} under "
       "keyHash={} with {} remaining blocks",
-      sessionId, keyHash, remaining.size());
+      sessionId, keyHash, blockInfos.size() - 1);
 
   // Publish the slot's committed block count (1 key block + remaining).
   if (slotId != tt::domain::INVALID_SLOT_ID) {
@@ -970,45 +934,42 @@ std::pair<uint32_t, uint32_t> SessionManager::computeMatchedTokens(
     return {0, 0};
   }
 
-  const uint64_t keyHash = blockInfos.front().hash;
   const size_t firstBlockTokens = tt::config::kvCacheFirstBlockSize();
   const size_t blockTokens = tt::config::kvCacheBlockSize();
-
-  std::list<RemainingBlockInfo> callerRemaining;
-  for (size_t i = 1; i < blockInfos.size(); ++i) {
-    callerRemaining.push_back(
-        {blockInfos[i].hash, blockInfos[i].accumulatedThinkTokens});
-  }
 
   size_t matchedBlocks = 0;
   uint32_t thinkTokens = 0;
 
-  prefixIndex.modify(keyHash, [&](std::vector<PrefixIndexEntry>& entries) {
-    for (const auto& entry : entries) {
-      bool hasSession =
-          std::find(entry.sessionIds.begin(), entry.sessionIds.end(),
-                    sessionId) != entry.sessionIds.end();
-      if (!hasSession) continue;
+  {
+    std::lock_guard<std::mutex> lock(prefixIndexMutex_);
 
-      size_t matched = 0;
-      uint32_t lastThink = entry.keyBlockThinkTokens;
-      auto callerIt = callerRemaining.begin();
-      auto entryIt = entry.remainingBlocks.begin();
-      while (callerIt != callerRemaining.end() &&
-             entryIt != entry.remainingBlocks.end() &&
-             callerIt->hash == entryIt->hash) {
-        lastThink = entryIt->accumulatedThinkTokens;
-        ++matched;
-        ++callerIt;
-        ++entryIt;
+    auto it = std::find_if(
+        sessionSequences_.begin(), sessionSequences_.end(),
+        [&sessionId](const SessionBlockSequence& s) {
+          return s.sessionId == sessionId;
+        });
+
+    if (it != sessionSequences_.end()) {
+      // Count matching blocks with early break
+      uint32_t lastThink = it->keyBlockThinkTokens;
+      const size_t maxCompare =
+          std::min(it->blockHashes.size(), blockInfos.size());
+
+      for (size_t i = 0; i < maxCompare; ++i) {
+        if (it->blockHashes[i] != blockInfos[i].hash) {
+          break;
+        }
+        if (i > 0) {
+          lastThink = it->accumulatedThinkTokens[i];
+        }
+        ++matchedBlocks;
       }
-      size_t total = 1 + matched;
-      if (total > matchedBlocks) {
-        matchedBlocks = total;
+
+      if (matchedBlocks > 0) {
         thinkTokens = lastThink;
       }
     }
-  });
+  }
 
   if (matchedBlocks == 0) {
     return {0, 0};
@@ -1020,37 +981,27 @@ std::pair<uint32_t, uint32_t> SessionManager::computeMatchedTokens(
 
 void SessionManager::clearSessionBlockThinkTokens(
     const std::string& sessionId) {
-  uint64_t keyHash = 0;
-  bool found = sessions.modify(sessionId,
-                               [&keyHash](std::shared_ptr<domain::Session>& s) {
-                                 keyHash = s->getHash();
-                               });
+  {
+    std::lock_guard<std::mutex> lock(prefixIndexMutex_);
 
-  if (!found) {
-    TT_LOG_WARN(
-        "[SessionManager] clearSessionBlockThinkTokens: sessionId={} not "
-        "found",
-        sessionId);
-    return;
+    auto it = std::find_if(
+        sessionSequences_.begin(), sessionSequences_.end(),
+        [&sessionId](const SessionBlockSequence& s) {
+          return s.sessionId == sessionId;
+        });
+
+    if (it == sessionSequences_.end()) {
+      TT_LOG_WARN(
+          "[SessionManager] clearSessionBlockThinkTokens: sessionId={} not "
+          "found in prefix index",
+          sessionId);
+      return;
+    }
+
+    it->keyBlockThinkTokens = 0;
+    std::fill(it->accumulatedThinkTokens.begin(),
+              it->accumulatedThinkTokens.end(), 0);
   }
-
-  if (keyHash == 0) {
-    return;
-  }
-
-  prefixIndex.modify(
-      keyHash, [&sessionId](std::vector<PrefixIndexEntry>& entries) {
-        for (auto& entry : entries) {
-          bool hasSession =
-              std::find(entry.sessionIds.begin(), entry.sessionIds.end(),
-                        sessionId) != entry.sessionIds.end();
-          if (!hasSession) continue;
-          entry.keyBlockThinkTokens = 0;
-          for (auto& block : entry.remainingBlocks) {
-            block.accumulatedThinkTokens = 0;
-          }
-        }
-      });
 
   TT_LOG_INFO(
       "[SessionManager] clearSessionBlockThinkTokens: reset think tokens for "
@@ -1064,25 +1015,19 @@ void SessionManager::updateSessionCountMetric() {
 }
 
 void SessionManager::removeFromPrefixIndex(const std::string& sessionId,
-                                           uint64_t prefixHash) {
-  if (prefixHash == 0) return;
-  bool becameEmpty = false;
-  prefixIndex.modify(prefixHash, [&sessionId, &becameEmpty](
-                                     std::vector<PrefixIndexEntry>& entries) {
-    for (auto& entry : entries) {
-      auto& ids = entry.sessionIds;
-      ids.erase(std::remove(ids.begin(), ids.end(), sessionId), ids.end());
-    }
-    // Remove entries with no sessions left
-    entries.erase(std::remove_if(entries.begin(), entries.end(),
-                                 [](const PrefixIndexEntry& e) {
-                                   return e.sessionIds.empty();
-                                 }),
-                  entries.end());
-    becameEmpty = entries.empty();
-  });
-  if (becameEmpty) {
-    prefixIndex.erase(prefixHash);
+                                           uint64_t /* prefixHash */) {
+  std::lock_guard<std::mutex> lock(prefixIndexMutex_);
+
+  auto it = std::find_if(
+      sessionSequences_.begin(), sessionSequences_.end(),
+      [&sessionId](const SessionBlockSequence& s) {
+        return s.sessionId == sessionId;
+      });
+
+  if (it != sessionSequences_.end()) {
+    // Swap-and-pop for O(1) removal from vector
+    *it = std::move(sessionSequences_.back());
+    sessionSequences_.pop_back();
   }
 }
 
