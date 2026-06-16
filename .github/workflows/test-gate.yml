@@ -568,20 +568,31 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Blaze Build Smoke
-    # Standalone `./build.sh --blaze` gate, decoupled from cpp-build's much
-    # slower test+bench job. Catches fresh-compile regressions (typically a
-    # missing #include surfaced when an upstream header drops a transitive
-    # one — e.g. the missing <sstream> in blaze_slot_manager.hpp that broke
-    # the 2026-06-16 cpp-heavy-checks run) on every PR commit instead of
-    # waiting for the next scheduled heavy-checks build to expose them on
-    # main.
+    # Standalone, fully-cold `./build.sh --blaze` gate, decoupled from
+    # cpp-build's much slower test+bench job. Every TU is recompiled from
+    # scratch on every commit; that's the whole point of "smoke" here. Cold
+    # builds take ~10-15 min on ubuntu-latest, which is still well under
+    # cpp-build's wall-clock and runs in parallel with it. Justification for
+    # the cold build: the 2026-06-16 cpp-heavy-checks regression (missing
+    # <sstream> in blaze_slot_manager.hpp, surfaced when an upstream header
+    # dropped its transitive include) is exactly the class of latent bug
+    # whose first symptom is a fresh-compile failure on main. We don't want
+    # PR-level CI to ever rely on a warm ccache to mask such a regression
+    # from review.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
     env:
-      CI_CCACHE: "1"
-      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
+      # Belt-and-suspenders for the cold-build invariant: even though
+      # setup-cpp-ci is invoked with cache-ccache=false (no restore, no
+      # save) and CI_CCACHE is intentionally unset (build.sh skips the
+      # CMAKE_*_COMPILER_LAUNCHER=ccache wiring when CI_CCACHE is empty),
+      # CCACHE_DISABLE=1 also short-circuits ccache to a pass-through if a
+      # stray ccache binary on PATH ever ends up invoked. This keeps the
+      # smoke build provably cold regardless of upstream changes to
+      # build.sh's launcher detection.
+      CCACHE_DISABLE: "1"
     defaults:
       run:
         working-directory: tt-media-server
@@ -596,16 +607,21 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
-          # Isolated ccache namespace — must NOT share with cpp-build's
-          # `server` suffix, otherwise this gate inherits the same warm cache
-          # whose stale .o files we are trying to bypass.
+          # Skip ccache restore/save entirely — this is a cold-build smoke
+          # gate, so reserving a slot in the repo's actions/cache budget for
+          # an inert tarball would just be waste. ccache-key-suffix is still
+          # required by the action; the value is irrelevant when
+          # cache-ccache=false because no key is computed.
+          cache-ccache: "false"
           ccache-key-suffix: blaze-smoke
 
       # Reuse the shared tokenizer bundle: build.sh's pre-fetch hits HF and
       # the GitHub egress IPs frequently get 429-rate-limited. The shared
       # `cpp-server-tokenizers-*` cache is populated by cpp-build /
       # cpp-format-check / heavy-checks builds, so this prefix restore makes
-      # the smoke job skip the network entirely on a cache hit.
+      # the smoke job skip the network entirely on a cache hit. The
+      # tokenizer bundle is build *input*, not build *output*, so caching it
+      # doesn't violate the cold-compile invariant.
       - name: Restore cached tokenizer files
         uses: actions/cache@v5
         with:
@@ -614,13 +630,7 @@ jobs:
           restore-keys: |
             cpp-server-tokenizers-
 
-      - name: Smoke build (./build.sh --blaze --fresh)
-        # --fresh wipes CMakeCache.txt before reconfiguring, so the build
-        # never reuses a config left behind by an unrelated prior run. ccache
-        # still serves object files keyed on preprocessed-source hash, so a
-        # rebuild that touches no .cpp/.hpp completes in seconds; a header
-        # change (incl. a missing-#include break) flips the hash and forces
-        # a real recompile.
+      - name: Smoke build (./build.sh --blaze, cold)
         run: |
           cd cpp_server
           ./build.sh --blaze --fresh

@@ -20,6 +20,16 @@ inputs:
       exists" and was discarded, leaving every build cold.
     required: false
     default: shared
+  cache-ccache:
+    description: >-
+      Whether to restore/save the ccache directory. Set to "false" for cold-
+      build smoke jobs (e.g. cpp-blaze-smoke) where ccache is disabled at
+      runtime via CCACHE_DISABLE=1; skipping the actions/cache step there
+      saves ~5-10s of restore/upload and avoids reserving a slot in the
+      repo's 10 GB cache budget for an inert tarball. Default "true" matches
+      the historical behavior every other caller relies on.
+    required: false
+    default: "true"
 
 runs:
   using: composite
@@ -51,7 +61,9 @@ runs:
     # each run saves a fresh, fuller cache; the prefix restore-key warms the
     # next run. Replaces the old single cpp-deps-* key whose immutable-key save
     # race let the smallest job persist a near-empty ccache -> cold builds.
+    # Skipped when cache-ccache=false (cold-build smoke jobs).
     - name: Restore ccache
+      if: ${{ inputs.cache-ccache == 'true' }}
       uses: actions/cache@v5
       with:
         path: tt-media-server/.cache/ccache
