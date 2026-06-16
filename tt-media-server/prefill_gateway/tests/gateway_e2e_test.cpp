@@ -551,8 +551,8 @@ class ZmqRouterGatewayHarness {
     senders.sendRequestToPrefill =
         [this](const std::string& serverId,
                const tt::sockets::PrefillRequestMessage& msg) -> bool {
-      return prefillRouter_.sendObject(
-          serverId, tt::sockets::tags::PREFILL_REQUEST, msg);
+      return prefillRouter_.sendObject(serverId,
+                                       tt::sockets::tags::PREFILL_REQUEST, msg);
     };
     senders.sendCancelToPrefill =
         [this](const std::string& serverId,
@@ -1009,8 +1009,8 @@ TEST(ZmqPrefillRouterTest, RoutesRequestToRegisteredPrefill) {
   }));
 
   tt::sockets::PrefillRequestMessage request(7);
-  ASSERT_TRUE(router.sendObject("prefill-A",
-                                tt::sockets::tags::PREFILL_REQUEST, request));
+  ASSERT_TRUE(router.sendObject("prefill-A", tt::sockets::tags::PREFILL_REQUEST,
+                                request));
   ASSERT_TRUE(waitFor([&] {
     std::lock_guard<std::mutex> lock(mutex);
     return requestReceived && resultReceived;

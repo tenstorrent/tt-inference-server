@@ -472,8 +472,8 @@ int main(int argc, char** argv) {
   constexpr auto probeIntervalMs = std::chrono::milliseconds(1000);
   std::jthread proberThread;
   if (!useZmqPrefillRouter) {
-    proberThread = std::jthread(
-        [&prefillSms, probeIntervalMs](std::stop_token stopToken) {
+    proberThread =
+        std::jthread([&prefillSms, probeIntervalMs](std::stop_token stopToken) {
           while (!stopToken.stop_requested()) {
             for (auto& sm : prefillSms) {
               sm->sendObject(tt::sockets::tags::REGISTRATION_PROBE,
