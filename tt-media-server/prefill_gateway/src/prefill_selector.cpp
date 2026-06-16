@@ -36,8 +36,7 @@ PrefillEligibilitySummary summarizePrefillEligibility(
   };
   auto capacityAvailable = [](const PrefillSnapshot& prefill) {
     return prefill.healthy && prefill.acceptingTasks &&
-           (prefill.maxInFlight == 0 ||
-            prefill.inFlight < prefill.maxInFlight);
+           (prefill.maxInFlight == 0 || prefill.inFlight < prefill.maxInFlight);
   };
 
   PrefillEligibilitySummary summary;

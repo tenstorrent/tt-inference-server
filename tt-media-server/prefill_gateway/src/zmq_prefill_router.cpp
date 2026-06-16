@@ -130,7 +130,7 @@ bool ZmqPrefillRouter::startIoThread() {
   std::promise<bool> initialized;
   auto fut = initialized.get_future();
   ioThread = std::jthread([this, initialized = std::move(initialized)](
-                                std::stop_token stopToken) mutable {
+                              std::stop_token stopToken) mutable {
     ioLoop(stopToken, std::move(initialized));
   });
   bool initializedOk = fut.get();
@@ -260,8 +260,7 @@ void ZmqPrefillRouter::handleIncomingMessage(const PeerIdentity& peerId,
       std::lock_guard<std::mutex> lock(peerMutex);
       auto serverIt = peerToServer.find(key);
       if (serverIt != peerToServer.end()) {
-        lastSeenByServer[serverIt->second] =
-            std::chrono::steady_clock::now();
+        lastSeenByServer[serverIt->second] = std::chrono::steady_clock::now();
       }
     }
 

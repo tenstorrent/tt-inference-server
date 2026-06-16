@@ -274,9 +274,9 @@ std::vector<tt::gateway::GatewayPrefillMetricSnapshot> buildPrefillMetrics(
       heartbeatAgeSeconds =
           std::chrono::duration<double>(now - snapshot.lastHeartbeat).count();
     }
-    out.push_back({snapshot.serverId, snapshot.healthy,
-                   snapshot.acceptingTasks, snapshot.inFlight,
-                   snapshot.cachedBlocks, heartbeatAgeSeconds});
+    out.push_back({snapshot.serverId, snapshot.healthy, snapshot.acceptingTasks,
+                   snapshot.inFlight, snapshot.cachedBlocks,
+                   heartbeatAgeSeconds});
   }
   return out;
 }

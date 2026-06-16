@@ -65,9 +65,9 @@ class GatewayMetrics::Impl {
              .Help("Gateway request failures labelled by reason.")
              .Register(*registry);
     cancelsFamily = &prometheus::BuildCounter()
-                           .Name("tt_gateway_cancels_total")
-                           .Help("Gateway prefill cancel attempts.")
-                           .Register(*registry);
+                         .Name("tt_gateway_cancels_total")
+                         .Help("Gateway prefill cancel attempts.")
+                         .Register(*registry);
     timeoutsFamily =
         &prometheus::BuildCounter()
              .Name("tt_gateway_prefill_timeouts_total")
@@ -195,8 +195,7 @@ class GatewayMetrics::Impl {
   void recordCancel(bool sent) {
     const std::string result = sent ? "sent" : "failed";
     std::lock_guard<std::mutex> lock(mutex);
-    counterFor(*cancelsFamily, cancelsByResult, {{"result", result}},
-               result)
+    counterFor(*cancelsFamily, cancelsByResult, {{"result", result}}, result)
         .Increment();
   }
 

@@ -23,8 +23,7 @@ namespace tt::gateway {
 // Thread-safe registry of prefill nodes, keyed by stable `serverId`.
 class PrefillRegistry {
  public:
-  using PrefillStateCallback =
-      std::function<void(const std::string& serverId)>;
+  using PrefillStateCallback = std::function<void(const std::string& serverId)>;
 
   PrefillRegistry() = default;
   PrefillRegistry(const PrefillRegistry&) = delete;
