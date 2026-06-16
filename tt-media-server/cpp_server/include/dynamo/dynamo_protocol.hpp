@@ -32,6 +32,7 @@
 namespace trantor {
 class EventLoop;
 class TcpServer;
+class TcpClient;
 class TcpConnection;
 class MsgBuffer;
 }  // namespace trantor
@@ -218,13 +219,66 @@ GenerateRequest parse_generate_request(const std::vector<uint8_t>& body_bytes);
 // ---------------------------------------------------------------------------
 
 /**
- * Generate handler: invoked once per inbound request. Push tokens via
- * `send_chunk`; the server framework calls the call-home response stream and
- * the trailing sentinels for you.
+ * Generate handler: invoked once per inbound request on the io loop. The
+ * handler owns the call-home response stream (a DynamoStreamWriter) for the
+ * supplied connection info and returns without blocking.
  */
-using GenerateHandler =
-    std::function<void(const GenerateRequest& request,
-                       std::function<bool(const TokenChunk&)> send_chunk)>;
+using GenerateHandler = std::function<void(
+    const GenerateRequest& request, const TcpStreamConnectionInfo& conn_info)>;
+
+/**
+ * Owns the outbound call-home connection for a single request and streams
+ * framed response chunks to the frontend without blocking the caller.
+ *
+ * Mirrors the HTTP StreamingResponseWriter: token callbacks (on the LLMService
+ * consumer thread) only `queueInLoop` onto the loop that owns the connection;
+ * every socket write happens on that loop. A self-reference taken once the
+ * connection is established keeps the writer (and its buffered sentinels) alive
+ * until the peer closes, so a graceful shutdown is never truncated by the
+ * TcpClient's abortive destructor.
+ */
+class DynamoStreamWriter
+    : public std::enable_shared_from_this<DynamoStreamWriter> {
+ public:
+  static std::shared_ptr<DynamoStreamWriter> create(
+      trantor::EventLoop* loop, TcpStreamConnectionInfo conn_info,
+      std::string request_id, std::function<void()> on_disconnect);
+
+  /// Dial the frontend's call-home address. Non-blocking.
+  void connect();
+
+  /// Queue a chunk for delivery. Returns false once the stream is terminal
+  /// (error frame sent or peer gone), signalling the caller to stop.
+  bool sendChunk(const TokenChunk& chunk);
+
+  /// Queue the trailing sentinels and close. No-op once terminal.
+  void finalize();
+
+ private:
+  DynamoStreamWriter(trantor::EventLoop* loop,
+                     TcpStreamConnectionInfo conn_info, std::string request_id,
+                     std::function<void()> on_disconnect);
+
+  void onConnState(const std::shared_ptr<trantor::TcpConnection>& conn);
+  void ensurePrologue();
+  void writeOrBuffer(std::string bytes);
+  void closeStream();
+
+  trantor::EventLoop* loop_;
+  TcpStreamConnectionInfo conn_info_;
+  std::string request_id_;
+  std::function<void()> on_disconnect_;
+
+  std::shared_ptr<trantor::TcpClient> client_;
+  // The members below are touched only on `loop_`.
+  std::shared_ptr<trantor::TcpConnection> conn_;
+  std::shared_ptr<DynamoStreamWriter> self_guard_;
+  std::vector<std::string> early_buffer_;
+  bool connected_ = false;
+  bool prologue_sent_ = false;
+  bool closed_ = false;
+  std::atomic<bool> done_{false};
+};
 
 struct ServerConfig {
   std::string bind_host = "0.0.0.0";
@@ -272,9 +326,6 @@ class DynamoServer {
                  trantor::MsgBuffer* buf);
   void process_request(const std::shared_ptr<trantor::TcpConnection>& conn,
                        const TcpRequestMessage& msg);
-  void stream_response(const TcpStreamConnectionInfo& conn_info,
-                       const std::string& request_id,
-                       const GenerateRequest& gen_req);
 };
 
 }  // namespace tt::dynamo

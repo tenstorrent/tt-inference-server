@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <trantor/net/EventLoop.h>
 #include <trantor/net/InetAddress.h>
+#include <trantor/net/TcpClient.h>
 #include <trantor/net/TcpConnection.h>
 #include <trantor/net/TcpServer.h>
 #include <trantor/utils/MsgBuffer.h>
@@ -27,34 +28,6 @@
 namespace tt::dynamo {
 
 namespace {
-
-/// Enables verbose per-chunk send tracing. Set DYN_TX_TRACE=1 (or any
-/// non-zero/non-"false" value) to log a [DynamoTx] line for every
-/// TokenChunk written to the call-home socket. Useful for verifying
-/// whether inter-token latency is incurred on the wire (here) or in the
-/// frontend's SSE delivery path.
-///
-/// Read once on first call; result is cached for the lifetime of the
-/// process so we don't pay getenv() per token.
-bool txTraceEnabled() {
-  static const bool kEnabled = [] {
-    const char* v = std::getenv("DYN_TX_TRACE");
-    if (v == nullptr) return false;
-    std::string s(v);
-    if (s.empty() || s == "0" || s == "false" || s == "FALSE" || s == "False" ||
-        s == "off" || s == "OFF") {
-      return false;
-    }
-    return true;
-  }();
-  return kEnabled;
-}
-
-using SteadyClock = std::chrono::steady_clock;
-
-int64_t microsBetween(SteadyClock::time_point a, SteadyClock::time_point b) {
-  return std::chrono::duration_cast<std::chrono::microseconds>(b - a).count();
-}
 
 /// Parse JSON bytes into a Json::Value. Returns an empty value on parse error
 /// (callers treat that as "skip").
@@ -80,18 +53,9 @@ std::string dumpJsonCompact(const Json::Value& v) {
   return Json::writeString(writer, v);
 }
 
-bool writeAll(int fd, const uint8_t* data, size_t len) {
-  size_t written = 0;
-  while (written < len) {
-    ssize_t w = ::write(fd, data + written, len - written);
-    if (w <= 0) return false;
-    written += static_cast<size_t>(w);
-  }
-  return true;
-}
-
-bool writeAll(int fd, const std::vector<uint8_t>& data) {
-  return writeAll(fd, data.data(), data.size());
+std::string framedString(const TwoPartMessage& tp) {
+  auto framed = encode_two_part(tp);
+  return std::string(framed.begin(), framed.end());
 }
 
 }  // namespace
@@ -407,225 +371,159 @@ void DynamoServer::process_request(const trantor::TcpConnectionPtr& conn,
   auto ack = encode_tcp_response();
   conn->send(reinterpret_cast<const char*>(ack.data()), ack.size());
 
-  // Off-thread the slow path (LLMService dispatch + call-home streaming) so
-  // the io loop can keep reading the next pipelined request. `stream_response`
-  // opens its own outbound socket and never touches the inbound connection.
-  std::thread([this, connInfo = std::move(connInfo), requestId = ctrl.id,
-               genReq = std::move(genReq)]() {
-    stream_response(connInfo, requestId, genReq);
-  }).detach();
+  // The handler creates the async call-home writer and returns without
+  // blocking, so dispatch runs inline on the io loop — no per-request thread.
+  handler_(genReq, connInfo);
 }
 
-void DynamoServer::stream_response(const TcpStreamConnectionInfo& connInfo,
-                                   const std::string& requestId,
-                                   const GenerateRequest& genReq) {
-  auto colonPos = connInfo.address.rfind(':');
-  if (colonPos == std::string::npos) {
-    TT_LOG_ERROR("[DynamoServer] Invalid response address: {}",
-                 connInfo.address);
+// ---------------------------------------------------------------------------
+// DynamoStreamWriter
+// ---------------------------------------------------------------------------
+
+std::shared_ptr<DynamoStreamWriter> DynamoStreamWriter::create(
+    trantor::EventLoop* loop, TcpStreamConnectionInfo conn_info,
+    std::string request_id, std::function<void()> on_disconnect) {
+  return std::shared_ptr<DynamoStreamWriter>(
+      new DynamoStreamWriter(loop, std::move(conn_info), std::move(request_id),
+                             std::move(on_disconnect)));
+}
+
+DynamoStreamWriter::DynamoStreamWriter(trantor::EventLoop* loop,
+                                       TcpStreamConnectionInfo conn_info,
+                                       std::string request_id,
+                                       std::function<void()> on_disconnect)
+    : loop_(loop),
+      conn_info_(std::move(conn_info)),
+      request_id_(std::move(request_id)),
+      on_disconnect_(std::move(on_disconnect)) {}
+
+void DynamoStreamWriter::connect() {
+  const auto colon = conn_info_.address.rfind(':');
+  uint16_t port = 0;
+  bool ok = colon != std::string::npos;
+  std::string host;
+  if (ok) {
+    host = conn_info_.address.substr(0, colon);
+    try {
+      port = static_cast<uint16_t>(
+          std::stoi(conn_info_.address.substr(colon + 1)));
+    } catch (const std::exception&) {
+      ok = false;
+    }
+  }
+  if (!ok) {
+    TT_LOG_ERROR("[DynamoTx] id={} invalid response address: {}", request_id_,
+                 conn_info_.address);
+    if (!done_.exchange(true) && on_disconnect_) on_disconnect_();
     return;
   }
-  std::string host = connInfo.address.substr(0, colonPos);
-  uint16_t port =
-      static_cast<uint16_t>(std::stoi(connInfo.address.substr(colonPos + 1)));
 
-  const bool txTrace = txTraceEnabled();
+  client_ = std::make_shared<trantor::TcpClient>(
+      loop_, trantor::InetAddress(host, port), "DynamoCallHome");
+  std::weak_ptr<DynamoStreamWriter> weak = shared_from_this();
+  client_->setConnectionCallback([weak](const trantor::TcpConnectionPtr& c) {
+    if (auto self = weak.lock()) self->onConnState(c);
+  });
+  client_->setConnectionErrorCallback([weak]() {
+    if (auto self = weak.lock()) {
+      TT_LOG_WARN("[DynamoTx] id={} call-home connect failed",
+                  self->request_id_);
+      if (!self->done_.exchange(true) && self->on_disconnect_)
+        self->on_disconnect_();
+    }
+  });
+  client_->connect();
+}
 
-  // Timing reference for the whole call-home leg. Stage timings are deltas
-  // from this point so we can correlate against the frontend's
-  // worker_recv_to_first_chunk_ms / dispatch_to_first_chunk_ms logs and
-  // against client-side TTFT/ITL measurements.
-  const auto tStart = SteadyClock::now();
+void DynamoStreamWriter::onConnState(const trantor::TcpConnectionPtr& conn) {
+  if (conn->connected()) {
+    conn->setTcpNoDelay(true);
+    conn_ = conn;
+    connected_ = true;
+    // Stay alive until the peer closes so a graceful shutdown is not truncated
+    // by ~TcpClient's forceClose once the pipeline callbacks are released.
+    self_guard_ = shared_from_this();
 
-  int sock = ::socket(AF_INET, SOCK_STREAM, 0);
-  if (sock < 0) {
-    TT_LOG_ERROR("[DynamoServer] Failed to create socket for response stream");
-    return;
-  }
-  int flag = 1;
-  ::setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
-
-  struct sockaddr_in addr{};
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(port);
-  ::inet_pton(AF_INET, host.c_str(), &addr.sin_addr);
-
-  const auto tConnectStart = SteadyClock::now();
-  if (::connect(sock, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) <
-      0) {
-    TT_LOG_ERROR("[DynamoServer] Failed to connect to response stream at {}",
-                 connInfo.address);
-    ::close(sock);
-    return;
-  }
-  const auto tConnected = SteadyClock::now();
-  TT_LOG_INFO("[DynamoTx] id={} stage=connected connect_us={}", requestId,
-              microsBetween(tConnectStart, tConnected));
-
-  // 1. CallHomeHandshake (header-only TwoPartMessage).
-  {
     Json::Value handshake(Json::objectValue);
-    handshake["subject"] = connInfo.subject;
+    handshake["subject"] = conn_info_.subject;
     handshake["stream_type"] = "response";
     std::string hs = dumpJsonCompact(handshake);
-
     TwoPartMessage tp;
     tp.header.assign(hs.begin(), hs.end());
-    const auto tBefore = SteadyClock::now();
-    if (!writeAll(sock, encode_two_part(tp))) {
-      TT_LOG_WARN("[DynamoServer] Failed to send handshake (id={})", requestId);
-      ::close(sock);
-      return;
-    }
-    const auto tAfter = SteadyClock::now();
-    TT_LOG_INFO(
-        "[DynamoTx] id={} stage=handshake_sent write_us={} since_start_us={}",
-        requestId, microsBetween(tBefore, tAfter),
-        microsBetween(tStart, tAfter));
+    conn_->send(framedString(tp));
+
+    for (const auto& b : early_buffer_) conn_->send(b);
+    early_buffer_.clear();
+    if (closed_) conn_->shutdown();
+  } else {
+    connected_ = false;
+    conn_.reset();
+    if (!done_.exchange(true) && on_disconnect_) on_disconnect_();
+    // Release the self-reference on a fresh tick so we never destroy the
+    // TcpClient from inside its own callback.
+    if (self_guard_) loop_->queueInLoop([g = std::move(self_guard_)]() {});
   }
+}
 
-  // 2. ResponseStreamPrologue + streaming.
-  //    The prologue carries either error=null (success) or error="<msg>"
-  //    (pre-stream rejection). We defer sending the prologue until the first
-  //    chunk arrives so the handler can signal an error via TokenChunk::error.
-  size_t chunkSeq = 0;
-  size_t totalTokens = 0;
-  size_t totalBytes = 0;
-  SteadyClock::time_point tFirstChunk{};
-  SteadyClock::time_point tPrevChunk{};
-  bool sawFirstChunk = false;
-  bool prologueSent = false;
-  bool hadError = false;
+void DynamoStreamWriter::ensurePrologue() {
+  if (prologue_sent_) return;
+  prologue_sent_ = true;
+  Json::Value prologue(Json::objectValue);
+  prologue["error"] = Json::Value::null;
+  std::string ps = dumpJsonCompact(prologue);
+  TwoPartMessage tp;
+  tp.header.assign(ps.begin(), ps.end());
+  writeOrBuffer(framedString(tp));
+}
 
-  auto sendPrologue = [&](const Json::Value& errorVal) -> bool {
-    Json::Value prologue(Json::objectValue);
-    prologue["error"] = errorVal;
-    std::string ps = dumpJsonCompact(prologue);
+void DynamoStreamWriter::writeOrBuffer(std::string bytes) {
+  if (connected_ && conn_)
+    conn_->send(bytes);
+  else
+    early_buffer_.push_back(std::move(bytes));
+}
 
-    TwoPartMessage tp;
-    tp.header.assign(ps.begin(), ps.end());
-    const auto tBefore = SteadyClock::now();
-    if (!writeAll(sock, encode_two_part(tp))) {
-      TT_LOG_WARN("[DynamoServer] Failed to send prologue (id={})", requestId);
-      return false;
-    }
-    const auto tAfter = SteadyClock::now();
-    TT_LOG_INFO(
-        "[DynamoTx] id={} stage=prologue_sent write_us={} since_start_us={}",
-        requestId, microsBetween(tBefore, tAfter),
-        microsBetween(tStart, tAfter));
-    prologueSent = true;
-    return true;
-  };
+void DynamoStreamWriter::closeStream() {
+  if (closed_) return;
+  closed_ = true;
+  if (connected_ && conn_) conn_->shutdown();
+}
 
-  handler_(genReq, [&](const TokenChunk& chunk) -> bool {
-    // Always send a success prologue first (even for error chunks).
-    if (!prologueSent) {
-      if (!sendPrologue(Json::Value::null)) {
-        return false;
-      }
-    }
+bool DynamoStreamWriter::sendChunk(const TokenChunk& chunk) {
+  if (done_.load()) return false;
+  const bool isError = chunk.error.has_value();
 
-    // If the chunk carries an error, send it as an Annotated::error frame and
-    // abort. The Dynamo frontend's check_for_backend_error() will intercept
-    // this and map it to an HTTP 4xx/5xx response.
-    if (chunk.error.has_value()) {
-      hadError = true;
-      // Send the error as an Annotated::error frame, then stop.
-      auto chunkBytes = encode_stream_chunk(chunk);
-      TwoPartMessage errTp;
-      errTp.body = std::move(chunkBytes);
-      writeAll(sock, encode_two_part(errTp));
-      return false;
-    }
+  TwoPartMessage tp;
+  auto body = encode_stream_chunk(chunk);
+  tp.body.assign(body.begin(), body.end());
+  std::string bytes = framedString(tp);
 
-    auto chunkBytes = encode_stream_chunk(chunk);
-    const size_t bytesOut = chunkBytes.size() + sizeof(uint64_t) * 3;
-    TwoPartMessage tp;
-    tp.body = std::move(chunkBytes);
-    auto framed = encode_two_part(tp);
-
-    const auto tBefore = SteadyClock::now();
-    const bool ok = writeAll(sock, framed);
-    const auto tAfter = SteadyClock::now();
-
-    if (!ok) {
-      TT_LOG_WARN(
-          "[DynamoTx] id={} stage=chunk_failed seq={} tokens={} bytes={}",
-          requestId, chunkSeq, chunk.token_ids.size(), bytesOut);
-      return false;
-    }
-
-    if (!sawFirstChunk) {
-      tFirstChunk = tBefore;
-      tPrevChunk = tBefore;
-      sawFirstChunk = true;
-    }
-
-    if (txTrace) {
-      // Per-chunk INFO line. High volume (~one per generated token) — only
-      // emitted when DYN_TX_TRACE is set. Format is intentionally compact
-      // and easy to grep/awk for offline analysis.
-      //   seq            — chunk index within this request
-      //   tokens         — token ids packed into this chunk (usually 1)
-      //   bytes          — framed wire bytes (TwoPartMessage envelope incl.)
-      //   write_us       — time spent inside writeAll() (kernel buffer copy)
-      //   since_prev_us  — gap since the previous chunk's write(); this is
-      //                    the per-token inter-arrival the wire sees
-      //   since_first_us — offset from the first chunk; matches client TTFT
-      //                    + cumulative ITL
-      TT_LOG_INFO(
-          "[DynamoTx] id={} stage=chunk seq={} tokens={} bytes={} "
-          "write_us={} since_prev_us={} since_first_us={}",
-          requestId, chunkSeq, chunk.token_ids.size(), bytesOut,
-          microsBetween(tBefore, tAfter), microsBetween(tPrevChunk, tBefore),
-          microsBetween(tFirstChunk, tBefore));
-    }
-
-    tPrevChunk = tBefore;
-    chunkSeq++;
-    totalTokens += chunk.token_ids.size();
-    totalBytes += bytesOut;
-    return true;
+  if (isError) done_.store(true);
+  auto self = shared_from_this();
+  loop_->queueInLoop([self, bytes = std::move(bytes), isError]() mutable {
+    if (self->closed_) return;
+    self->ensurePrologue();
+    self->writeOrBuffer(std::move(bytes));
+    if (isError) self->closeStream();  // error frames carry no sentinels
   });
+  return !isError;
+}
 
-  // If an error was sent in the prologue, skip the stream sentinels.
-  if (hadError) {
-    ::close(sock);
-    return;
-  }
-
-  // Send prologue now if the handler produced no chunks at all.
-  if (!prologueSent) {
-    if (!sendPrologue(Json::Value::null)) {
-      ::close(sock);
-      return;
+void DynamoStreamWriter::finalize() {
+  done_.store(true);
+  auto self = shared_from_this();
+  loop_->queueInLoop([self]() {
+    if (self->closed_) return;
+    self->ensurePrologue();
+    {
+      TwoPartMessage tp;
+      auto f = encode_stream_final();
+      tp.body.assign(f.begin(), f.end());
+      self->writeOrBuffer(framedString(tp));
     }
-  }
-
-  // 3. complete_final sentinel.
-  {
-    auto finalBytes = encode_stream_final();
-    TwoPartMessage tp;
-    tp.body = std::move(finalBytes);
-    const auto tBefore = SteadyClock::now();
-    writeAll(sock, encode_two_part(tp));
-    const auto tAfter = SteadyClock::now();
-    TT_LOG_INFO(
-        "[DynamoTx] id={} stage=complete_final chunks={} tokens={} bytes={} "
-        "stream_us={} write_us={}",
-        requestId, chunkSeq, totalTokens, totalBytes,
-        sawFirstChunk ? microsBetween(tFirstChunk, tBefore) : 0,
-        microsBetween(tBefore, tAfter));
-  }
-
-  // 4. End-of-stream sentinel (empty TwoPartMessage).
-  {
-    TwoPartMessage tp;
-    writeAll(sock, encode_two_part(tp));
-  }
-
-  ::close(sock);
+    self->writeOrBuffer(framedString(TwoPartMessage{}));  // end-of-stream
+    self->closeStream();
+  });
 }
 
 void DynamoServer::start() {
