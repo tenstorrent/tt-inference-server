@@ -49,8 +49,6 @@ class PrefillRegistry {
 
   void addCachedBlocks(const std::string& server_id,
                        const std::vector<uint64_t>& block_hashes);
-  void evictCachedBlocks(const std::string& server_id,
-                         const std::vector<uint64_t>& block_hashes);
 
   std::vector<PrefillSnapshot> snapshot() const;
   std::vector<PrefillSnapshot> routingSnapshot(
@@ -80,7 +78,6 @@ class PrefillRegistry {
   using CacheBlockIndex = std::unordered_map<uint64_t, ServerIdSet>;
 
   void addCachedBlock(PrefillPeer& peer, uint64_t block_hash);
-  void removeCachedBlock(PrefillPeer& peer, uint64_t block_hash);
   void clearCachedBlocks(PrefillPeer& peer);
   void removeCachedBlockFromIndex(uint64_t block_hash,
                                   const std::string& server_id);

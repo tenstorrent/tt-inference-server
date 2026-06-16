@@ -42,7 +42,6 @@ class GatewayMetrics {
   void recordTimeout(std::string_view serverId);
   void recordPrefillDownTasks(size_t count);
   void recordCacheBlocksAdded(size_t count);
-  void recordCacheBlocksEvicted(size_t count);
 
   void setDecodeConnected(bool connected);
   void setPrefillSnapshots(

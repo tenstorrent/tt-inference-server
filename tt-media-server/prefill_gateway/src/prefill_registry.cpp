@@ -13,12 +13,6 @@ void PrefillRegistry::addCachedBlock(PrefillPeer& peer, uint64_t blockHash) {
   }
 }
 
-void PrefillRegistry::removeCachedBlock(PrefillPeer& peer, uint64_t blockHash) {
-  if (peer.cached_blocks.erase(blockHash) > 0) {
-    removeCachedBlockFromIndex(blockHash, peer.server_id);
-  }
-}
-
 void PrefillRegistry::clearCachedBlocks(PrefillPeer& peer) {
   for (const uint64_t blockHash : peer.cached_blocks) {
     removeCachedBlockFromIndex(blockHash, peer.server_id);
@@ -120,16 +114,6 @@ void PrefillRegistry::addCachedBlocks(
   if (it == prefills_.end()) return;
   for (const uint64_t blockHash : blockHashes) {
     addCachedBlock(it->second, blockHash);
-  }
-}
-
-void PrefillRegistry::evictCachedBlocks(
-    const std::string& serverId, const std::vector<uint64_t>& blockHashes) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto it = prefills_.find(serverId);
-  if (it == prefills_.end()) return;
-  for (uint64_t h : blockHashes) {
-    removeCachedBlock(it->second, h);
   }
 }
 

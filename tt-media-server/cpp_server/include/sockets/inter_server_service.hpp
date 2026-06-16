@@ -23,9 +23,9 @@ namespace tt::sockets {
  * @brief Service for managing inter-server communication in prefill/decode
  * split mode
  *
- * Handles prefill requests/results and health checks between prefill and decode
- * server instances. The decode server sends prefill requests to the prefill
- * server, which processes them and returns prefill results.
+ * Handles prefill requests/results between prefill and decode server
+ * instances. The decode server sends prefill requests to the prefill server,
+ * which processes them and returns prefill results.
  */
 class InterServerService {
  public:
@@ -43,12 +43,6 @@ class InterServerService {
 
   using PrefillCancelCallback =
       std::function<void(const CancelPrefillMessage& message)>;
-
-  /**
-   * @brief Health info callback type
-   */
-  using HealthCallback = std::function<void(
-      const std::string& serverId, double cpu, double memory, int activeTasks)>;
 
   InterServerService();
   ~InterServerService();
@@ -112,17 +106,6 @@ class InterServerService {
   bool sendPrefillCacheBlocksAdded(const std::vector<uint64_t>& blockHashes);
 
   /**
-   * @brief Send health check information
-   * @param server_id This server's identifier
-   * @param cpu_usage CPU usage percentage
-   * @param memory_usage Memory usage percentage
-   * @param active_tasks Number of active tasks
-   * @return true if sent successfully
-   */
-  bool sendHealthCheck(const std::string& serverId, double cpuUsage,
-                       double memoryUsage, int activeTasks);
-
-  /**
    * @brief Set callback for when prefill server receives a request
    * @param callback Function to call when prefill request is received
    */
@@ -138,12 +121,6 @@ class InterServerService {
    * @param callback Function to call when prefill is complete
    */
   void onPrefillComplete(PrefillCompleteCallback callback);
-
-  /**
-   * @brief Set callback for received health checks
-   * @param callback Function to call when health info is received
-   */
-  void setHealthCheckCallback(HealthCallback callback);
 
   /**
    * @brief Set callback for connection lost events
@@ -164,7 +141,8 @@ class InterServerService {
  private:
   void setupMessageHandlers();
 
-  // Send PrefillRegistrationMessage to the peer (gateway or decode).
+  // Prefill-side: send PrefillRegistrationMessage to the gateway, or to decode
+  // in direct ZMQ mode so the ROUTER socket learns this DEALER identity.
   void sendRegistration();
 
   // Prefill-side, gateway-mode only: send PrefillRegistrationMessage in
@@ -184,7 +162,6 @@ class InterServerService {
   PrefillRequestedCallback prefill_requested_callback_;
   PrefillCancelCallback prefill_cancel_callback_;
   PrefillCompleteCallback prefill_complete_callback_;
-  HealthCallback health_check_callback_;
   bool enabled_ = false;
   tt::config::LLMMode llmMode = tt::config::LLMMode::REGULAR;
   bool gateway_mode_ = false;

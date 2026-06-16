@@ -34,11 +34,6 @@ void Dispatcher::onPrefillRequest(
   auto selection = selectPrefill(prefills, round_robin_cursor_);
   GatewayMetrics::instance().recordRoutingDecision(
       routingReasonName(selection.reason));
-  size_t cachedBlocks = 0;
-  for (const auto& prefill : prefills) {
-    cachedBlocks += prefill.cached_blocks;
-  }
-  GatewayMetrics::instance().setRoutingTableSize(cachedBlocks);
   if (!selection.server_id.has_value()) {
     const auto summary = summarizePrefillEligibility(prefills);
     TT_LOG_WARN(
@@ -65,14 +60,6 @@ void Dispatcher::onPrefillRequest(
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);
     in_flight_[msg.task_id] = {chosen, Clock::now()};
-  }
-
-  // Send assignment first so decode can prep KV-transfer ahead of the result.
-  tt::sockets::PrefillAssignmentMessage assignment;
-  assignment.task_id = msg.task_id;
-  assignment.server_id = chosen;
-  if (senders_.sendAssignmentToDecode) {
-    senders_.sendAssignmentToDecode(assignment);
   }
 
   bool sent = false;
@@ -129,8 +116,8 @@ void Dispatcher::onPrefillResult(const std::string& fromServerId,
     GatewayMetrics::instance().recordRequestCompleted(fromServerId, "error",
                                                       latency);
   } else {
-    TT_LOG_INFO("[Dispatcher] taskId={} result ok from prefill='{}' tokens={}",
-                msg.task_id, fromServerId, msg.tokens_generated);
+    TT_LOG_INFO("[Dispatcher] taskId={} result ok from prefill='{}'",
+                msg.task_id, fromServerId);
     GatewayMetrics::instance().recordRequestCompleted(fromServerId, "success",
                                                       latency);
   }
@@ -179,12 +166,6 @@ void Dispatcher::onCacheBlocksAdded(
     const tt::sockets::PrefillCacheBlocksAddedMessage& msg) {
   registry_.addCachedBlocks(msg.server_id, msg.block_hashes);
   GatewayMetrics::instance().recordCacheBlocksAdded(msg.block_hashes.size());
-}
-
-void Dispatcher::onCacheBlocksEvicted(
-    const tt::sockets::PrefillCacheBlocksEvictedMessage& msg) {
-  registry_.evictCachedBlocks(msg.server_id, msg.block_hashes);
-  GatewayMetrics::instance().recordCacheBlocksEvicted(msg.block_hashes.size());
 }
 
 void Dispatcher::onPrefillDown(const std::string& serverId) {
@@ -301,7 +282,6 @@ void Dispatcher::failTaskToDecode(uint32_t taskId, const std::string& reason,
 
   tt::sockets::PrefillResultMessage err(taskId);
   err.error = true;
-  err.finished = true;
   err.generated_text = reason;
 
   if (senders_.sendResultToDecode) {

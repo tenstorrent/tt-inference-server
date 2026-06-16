@@ -45,14 +45,6 @@ DisaggregationService::DisaggregationService(
 }
 
 void DisaggregationService::setupSocketHandlers() {
-  socketService->setHealthCheckCallback([](const std::string& serverId,
-                                           double /*cpu*/, double /*memory*/,
-                                           int tasks) {
-    TT_LOG_INFO(
-        "[DisaggregationService] Health check from {} (active_tasks={})",
-        serverId, tasks);
-  });
-
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     socketService->onPrefillComplete(
         [this](const tt::sockets::PrefillResultMessage& message) {
@@ -239,7 +231,6 @@ void DisaggregationService::setupSocketHandlers() {
                             "{}, propagating to decode server",
                             message.task_id);
                         prefillResult.error = true;
-                        prefillResult.finished = true;
                         const auto reason =
                             errorReasonFromFinishReason(finishReason.value());
                         prefillResult.generated_text =
@@ -283,7 +274,6 @@ void DisaggregationService::setupSocketHandlers() {
                     tt::sockets::PrefillResultMessage(message.task_id);
                 prefillResult.slot_id = slotId;
                 prefillResult.error = true;
-                prefillResult.finished = true;
                 prefillResult.generated_text =
                     tt::sockets::prefillErrorTextForReason(
                         LLMErrorReason::GENERIC, std::string(error));
