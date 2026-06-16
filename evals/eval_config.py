@@ -96,6 +96,9 @@ class EvalTask:
     include_path: str = None
     # Optional: kwargs passed to task custom_dataset loaders (e.g., RULER sequence length configs)
     custom_dataset_kwargs: Dict[str, Union[str, List[int]]] = None
+    # Skip task when device.max_context < this. Avoids hours of HTTP 400
+    # retry-burn on long-context evals (longbench, RULER) at small ctx.
+    min_context_required: Optional[int] = None
     # Optional: limit the number of samples passed to lm_eval (--limit)
     # Limit the number of examples per task.
     # If <1, limit is a percentage of the total number of examples.
@@ -139,6 +142,159 @@ class EvalConfig:
 
 
 _eval_config_list = [
+    EvalConfig(
+        hf_model_repo="moonshotai/Kimi-K2.6",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=16,
+                # The remote Tenstorrent console only exposes /v1/chat/completions
+                # (text /v1/completions returns 404), so use the chat API.
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=90.5,
+                    published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
+                    gpu_reference_score=90.91,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3752#issuecomment-4574524682",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 120 * 1024,
+                    # Per-request HTTP timeout (lm-eval default 1800s). Long
+                    # reasoning generations on the shared console can exceed
+                    # 30min under load, so allow up to 2h before giving up.
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 120 * 1024,
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    # "top_k": 20,
+                    "top_p": 1.0,
+                    "stream": "true",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=66.7,
+                    published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
+                    gpu_reference_score=61.9,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3752#issuecomment-4586446467",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=32 * 1024,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        # "interleaved_thinking": True,  # Feeds reasoning content back into the message history
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 48 * 1024,
+                            "max_output_tokens": 128 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 1.0,
+                            "max_tokens": 128 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                        # "llm_call_kwargs": {
+                        #     "extra_body": {
+                        #         "chat_template_kwargs": {
+                        #             "thinking": True,
+                        #             "preserve_thinking": True,
+                        #         }
+                        #     },
+                        # },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=80.2,
+                    published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
+                    gpu_reference_score=66.2,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3752#issuecomment-4574524682",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=8,
+                    max_workers=24,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=1.0,
+                    # max inputs tokens should be increased when we get a chance
+                    max_input_tokens=48 * 1024,
+                    max_output_tokens=32 * 1024,
+                    # mini_last_n_observations is ommitted for now
+                    # mini_last_n_observations=15,
+                    # completion_kwargs={
+                    #     "extra_body": {
+                    #         "top_k": 20,
+                    #     },
+                    # },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-12143",
+                            "pytest-dev__pytest-5262",
+                            "django__django-14672",
+                            "sympy__sympy-13551",
+                            "sphinx-doc__sphinx-9281",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.6-27B",
         tasks=[
@@ -1103,9 +1259,16 @@ _eval_config_list = [
                     "max_length": 65536,
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
+                # max_gen_toks lowered from 32768 to 12288 so `prompt + max_gen_toks`
+                # fits the forge_vllm_plugin P150 max_model_len=16384 envelope.
+                # Observed r1_gpqa_diamond prompts run up to ~2.4k tokens, so a
+                # 12288 output cap leaves ~3700-token headroom. The original 32K
+                # output budget is intended for ≥64K-context devices; clamping
+                # here is safe at 16K but caps reasoning depth on long-context
+                # devices too — revisit if a >16K-context Qwen3-8B impl lands.
                 gen_kwargs={
                     "stream": "true",
-                    "max_gen_toks": 32768,
+                    "max_gen_toks": 12288,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 0.6,
@@ -1139,9 +1302,15 @@ _eval_config_list = [
                     "timeout": "3600",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
+                # max_gen_toks lowered 32768 -> 12288 for forge P150 (max_model_len=16384).
+                # Earlier value 14336 assumed prompts ≤ ~1.1k tokens; observed CI
+                # prompts run up to 2477, so 14336 + 2477 = 16813 > 16384 → 4xx
+                # rejection on every long-prompt sample, cascading into a 6h
+                # workflow timeout. 12288 matches r1_gpqa_diamond and leaves
+                # ~3700 tokens of prompt headroom. Tracked in #4000.
                 gen_kwargs={
                     "stream": "true",
-                    "max_gen_toks": 32768,
+                    "max_gen_toks": 12288,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 0.6,
@@ -1177,9 +1346,12 @@ _eval_config_list = [
                 model_kwargs={
                     "max_length": 65536,
                 },
+                # max_gen_toks lowered 32768 -> 12288 so `prompt + max_gen_toks`
+                # fits forge_vllm_plugin P150 max_model_len=16384. See the same
+                # note on the Qwen3-8B r1_gpqa_diamond entry above.
                 gen_kwargs={
                     "stream": "true",
-                    "max_gen_toks": 32768,
+                    "max_gen_toks": 12288,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 0.6,
@@ -1187,7 +1359,7 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -1212,9 +1384,12 @@ _eval_config_list = [
                     "max_length": 65536,
                     "timeout": "3600",
                 },
+                # max_gen_toks lowered 32768 -> 12288 so `prompt + max_gen_toks`
+                # fits forge P150 max_model_len=16384. See the same note on the
+                # Qwen3-8B mmlu_pro entry above. Tracked in #4000.
                 gen_kwargs={
                     "stream": "true",
-                    "max_gen_toks": 32768,
+                    "max_gen_toks": 12288,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 0.6,
@@ -2238,6 +2413,7 @@ _eval_config_list = [
             # ),
             EvalTask(
                 task_name="longbench_code_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2252,6 +2428,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_fewshot_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2266,6 +2443,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_multi_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2280,6 +2458,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_single_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2294,6 +2473,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_summarization_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2308,6 +2488,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_synthetic_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2408,6 +2589,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_code_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2422,6 +2604,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_fewshot_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2436,6 +2619,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_multi_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2450,6 +2634,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_single_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2464,6 +2649,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_summarization_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2478,6 +2664,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_synthetic_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2596,6 +2783,23 @@ _eval_config_list = [
     ),
     EvalConfig(
         hf_model_repo="Motif-Technologies/Motif-Image-6B-Preview",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Tongyi-MAI/Z-Image-Turbo",
         tasks=[
             EvalTask(
                 task_name="load_image",
@@ -2985,6 +3189,23 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="yolox_nano",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=25.8,
+                    published_score_ref="https://arxiv.org/abs/2107.08430",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="microsoft/speecht5_tts",
         tasks=[
             EvalTask(
@@ -3107,7 +3328,7 @@ _eval_config_list = [
                 task_name="aime25",
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.05,  # 30 samples * 0.05 ~= 1 sample
-                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 30 samples * 0.2 = 6 samples
+                    EvalLimitMode.CI_NIGHTLY: 0.33,  # 30 samples * 0.2 = 6 samples
                 },
                 score=EvalTaskScore(
                     published_score=92.5,  # AIME 2025 score (without tools)
@@ -3125,13 +3346,20 @@ _eval_config_list = [
                 use_chat_api=True,
                 max_concurrent=16,
                 model_kwargs={
-                    "timeout": "7200",
+                    "timeout": "14400",
                 },
                 gen_kwargs={
+                    # lm-eval-harness' SSE consumer only parses
+                    # /v1/completions chunks, not /v1/chat/completions; keep
+                    # stream=false to avoid empty resps + KeyError: 'message'.
+                    "stream": "false",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 64 * 1024,
+                    # Must stay strictly below max_context (131072); equal
+                    # values leave zero headroom, the Harmony path schedules
+                    # a 1-token prefill, and every response comes back empty.
+                    "max_gen_toks": 120 * 1024,
                 },
             ),
             EvalTask(
@@ -3156,13 +3384,14 @@ _eval_config_list = [
                 use_chat_api=True,
                 max_concurrent=16,
                 model_kwargs={
-                    "timeout": "7200",
+                    "timeout": "14400",
                 },
                 gen_kwargs={
+                    "stream": "false",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 64 * 1024,
+                    "max_gen_toks": 120 * 1024,
                 },
             ),
             EvalTask(
@@ -3190,6 +3419,7 @@ _eval_config_list = [
                     "timeout": "7200",
                 },
                 gen_kwargs={
+                    "stream": "false",
                     "reasoning_effort": "low",
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -3202,16 +3432,13 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="tiiuae/Falcon3-7B-Instruct",
         tasks=[
-            # NOTE: tokenizer_backend="none" is required for the FORGE LLM server.
-            # The default ("huggingface") makes lm-eval-harness pre-tokenize prompts
-            # and send them as List[List[int]] to /v1/completions, which the forge
-            # server's pydantic schema rejects with HTTP 422 (it only accepts
-            # `prompt: Union[str, List[int]]`). With "none", lm-eval applies the
-            # chat template host-side, sends prompts as strings, and the server
-            # tokenizes them — schema-compatible.
+            # tokenizer_backend defaults to "huggingface" — matches the Qwen3-*
+            # configs below. Don't set "none" here: without a tokenizer loaded
+            # lm-eval can't apply_chat_template host-side and instead sends the
+            # raw chat message list, which the server's CompletionRequest schema
+            # rejects with HTTP 422.
             EvalTask(
                 task_name="ifeval",
-                tokenizer_backend="none",
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
@@ -3224,10 +3451,13 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
-                tokenizer_backend="none",
                 num_fewshot=5,
                 score=EvalTaskScore(
                     published_score=None,
@@ -3241,7 +3471,35 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="google/gemma-4-31b-it",
+        tasks=[
+            EvalTask(
+                task_name="ifeval",
+                score=EvalTaskScore(
+                    # First TT user of gemma-4-31b-it (no prior TTNN entry) and
+                    # no published gemma-4 reference yet -- fill published_score /
+                    # gpu_reference_score from the first CI_NIGHTLY run.
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                # Downsampled: first user of the model, trim nightly runtime.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.1,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),

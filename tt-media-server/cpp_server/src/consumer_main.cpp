@@ -55,7 +55,7 @@ int main(int argc, char* argv[]) {
   }
 
   // Initialize logger
-  tt::utils::ZeroOverheadLogger::initialize();
+  tt::utils::ZeroOverheadLogger::initialize(tt::config::logInstanceTag());
 
   // Setup signal handlers
   std::signal(SIGINT, signalHandler);

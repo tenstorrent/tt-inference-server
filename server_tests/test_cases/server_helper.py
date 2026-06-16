@@ -7,10 +7,16 @@ import os
 import subprocess
 from pathlib import Path
 
+from utils.url_helpers import DEFAULT_DEPLOY_URL, build_base_url
+
 SERVER_STARTUP_TIMEOUT = 5 * 60  # wait up to 5 minutes for server to start
 SERVER_SHUTDOWN_TIMEOUT = 20
+
 # Base URL (host:port only) for building v1 API paths in eval tests
-SERVER_BASE_URL = "http://127.0.0.1:8000"
+SERVER_BASE_URL = build_base_url(
+    os.environ.get("DEPLOY_URL", DEFAULT_DEPLOY_URL),
+    os.environ.get("SERVICE_PORT", "8000"),
+)
 # Full URL to CNN search-image endpoint
 SERVER_DEFAULT_URL = f"{SERVER_BASE_URL}/v1/cnn/search-image"
 DEFAULT_AUTHORIZATION = "your-secret-key"

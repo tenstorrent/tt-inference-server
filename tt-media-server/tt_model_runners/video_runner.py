@@ -54,13 +54,19 @@ from typing import Any, List, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from config.constants import ModelRunners
+from config.constants import (
+    CANARY_DEEP_TASK_ID,
+    CANARY_TASK_ID,
+    CANARY_TASK_IDS,
+    ModelRunners,
+)
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
     ImagePromptEntry,
     VideoI2VGenerateRequest,
 )
 from ipc.video_shm import (
+    SP_WARMUP_TASK_ID,
     VideoRequest,
     VideoResponse,
     VideoShm,
@@ -339,6 +345,22 @@ def _encoder_loop(
             _log.info("Encoder thread: shutdown sentinel received, exiting")
             return
 
+        # Warmup ping and canary probes (shallow + deep): respond SUCCESS with
+        # empty file_path. No ffmpeg, no frames — the round-trip itself is the
+        # signal. (The collective — bare barrier for shallow, replayed warmup
+        # forward for deep — already ran in the inference loop; here rank 0 just
+        # acks.)
+        if job.task_id == SP_WARMUP_TASK_ID or job.task_id in CANARY_TASK_IDS:
+            try:
+                _write_response_to_shm(output_shm, job.task_id, "")
+                _log.info(f"Encoder thread: replied to {job.task_id}")
+            except Exception as write_err:
+                _log.error(
+                    f"Encoder thread: failed to write {job.task_id} response: "
+                    f"{write_err}"
+                )
+            continue
+
         if job.error is not None:
             try:
                 _write_error_to_shm(output_shm, job.task_id, job.error)
@@ -390,9 +412,33 @@ def _run_inference_loop(
         rank0_skip = False
         if rank == 0:
             raw_req = input_shm.read_request()
-            rank0_image_prompts, rank0_skip = _rank0_load_image_prompts(
-                raw_req, encode_queue
-            )
+            # Server-side readiness ping. Reuses the existing ``skip`` lockstep
+            # path so ranks 1..N don't block on a collective with no peer:
+            # rank 0 hands a SUCCESS response to the encoder thread directly
+            # (single-writer invariant preserved) and we broadcast skip=True
+            # so every rank no-ops this iteration. No inference, no MPI
+            # broadcast of the dummy request body — round-trip latency equals
+            # the pipeline's own cold-start time, which is exactly the signal
+            # SPRunner wants.
+            if raw_req is not None and raw_req.task_id == SP_WARMUP_TASK_ID:
+                _log.info("Rank 0: received SP warmup ping, replying READY")
+                encode_queue.put(
+                    _EncodeJob(task_id=SP_WARMUP_TASK_ID, frames=None, error=None)
+                )
+                rank0_skip = True
+            elif raw_req is not None and raw_req.task_id in CANARY_TASK_IDS:
+                # Canary probe (shallow or deep): unlike warmup, do NOT skip. We
+                # broadcast the request (skip=False) so every rank joins the
+                # collective below in lockstep — that is what lets the probe
+                # catch a wedged sub-rank. No image-prompt loading for canaries.
+                _log.info(
+                    f"Rank 0: received canary probe ({raw_req.task_id}), "
+                    f"broadcasting to all ranks"
+                )
+            else:
+                rank0_image_prompts, rank0_skip = _rank0_load_image_prompts(
+                    raw_req, encode_queue
+                )
 
         req, image_prompts, skip = _broadcast_request(
             comm,
@@ -409,8 +455,50 @@ def _run_inference_loop(
             if rank == 0:
                 _log.info(
                     f"Rank 0: skipping inference for task {req.task_id} "
-                    f"(rank 0 already submitted error response)"
+                    f"(rank 0 already submitted response)"
                 )
+            continue
+
+        if req.task_id == CANARY_TASK_ID:
+            # Canary probe: every rank joins one bare MPI collective to prove
+            # the whole job's host loops are responsive, then rank 0 acks. The
+            # broadcast above (skip=False) guarantees all ranks reach this
+            # barrier in lockstep, so a wedged sub-rank stalls the collective
+            # and fails the probe — which the warmup short-circuit cannot do.
+            #
+            # INTENTIONAL TRADE-OFF: a bare collective proves host-side rank liveness, NOT
+            # device responsiveness.
+            comm.barrier()
+            if rank == 0:
+                encode_queue.put(
+                    _EncodeJob(task_id=CANARY_TASK_ID, frames=None, error=None)
+                )
+            continue
+
+        if req.task_id == CANARY_DEEP_TASK_ID:
+            # Deep canary: replay the runner's compiled warmup forward on EVERY
+            # rank (a real collective forward), so the ack proves the device can
+            # still compute — not just that hosts reach a barrier. We reuse the
+            # exact warmup request so the shape is already compiled: a novel
+            # shape would trigger a recompile and evict real-request programs
+            # from the cache, degrading the very thing we monitor. Frames are
+            # discarded; rank 0 just acks (no ffmpeg). An exception on any rank
+            # becomes an ERROR ack → a probe miss, which is the correct signal.
+            try:
+                runner.run([runner._build_warmup_video_request()])
+                if rank == 0:
+                    encode_queue.put(
+                        _EncodeJob(task_id=CANARY_DEEP_TASK_ID, frames=None, error=None)
+                    )
+            except Exception as e:
+                _log.error(
+                    f"Rank {rank}: deep canary forward failed: {e}\n"
+                    f"{traceback.format_exc()}"
+                )
+                if rank == 0:
+                    encode_queue.put(
+                        _EncodeJob(task_id=CANARY_DEEP_TASK_ID, error=str(e))
+                    )
             continue
 
         if rank == 0:

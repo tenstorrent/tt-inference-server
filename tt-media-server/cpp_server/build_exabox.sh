@@ -44,6 +44,7 @@ CLANG_TIDY="OFF"
 TOOLCHAIN_PATH_ARG=""
 CXX_COMPILER_PATH=""
 KAFKA_ENABLED="OFF"
+ENABLE_MOONCAKE="OFF"
 INSTALL_DEPS=0
 
 while [[ $# -gt 0 ]]; do
@@ -56,6 +57,7 @@ while [[ $# -gt 0 ]]; do
         --blaze)         ENABLE_BLAZE="ON"; shift ;;
         --clang-tidy)    CLANG_TIDY="ON"; shift ;;
         --kafka)         KAFKA_ENABLED="ON"; shift ;;
+        --mooncake)      ENABLE_MOONCAKE="ON"; shift ;;
         --toolchain-path)   TOOLCHAIN_PATH_ARG="$2"; shift 2 ;;
         --cxx-compiler-path) CXX_COMPILER_PATH="$2"; shift 2 ;;
         --help|-h)
@@ -72,6 +74,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --blaze              tt-blaze pipeline_manager support"
             echo "  --clang-tidy         Run clang-tidy during build"
             echo "  --kafka              Kafka support (needs librdkafka-dev)"
+            echo "  --mooncake           Build with the Mooncake Transfer Engine transport (third_party/Mooncake; RDMA always on)"
             echo "  --toolchain-path P   CMake toolchain file"
             echo "  --cxx-compiler-path P  C++ compiler path"
             exit 0
@@ -371,6 +374,7 @@ CMAKE_ARGS=(
     -DENABLE_BLAZE="${ENABLE_BLAZE}"
     -DCLANG_TIDY="${CLANG_TIDY}"
     -DKAFKA_ENABLED="${KAFKA_ENABLED}"
+    -DENABLE_MOONCAKE="${ENABLE_MOONCAKE}"
     -DCARGO_EXECUTABLE="${RESOLVED_CARGO}"
 )
 [ -n "${TT_METAL_HOME:-}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")

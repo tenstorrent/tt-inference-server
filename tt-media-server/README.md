@@ -70,7 +70,6 @@ The following endpoints were already on `/v1` and have no legacy path:
 | `/v1/completions`              | POST   | OpenAI-compatible text completions (vLLM)                       |
 | `/v1/chat/completions`         | POST   | OpenAI-compatible chat completions (vLLM)                       |
 | `/v1/embeddings`               | POST   | OpenAI-compatible text embeddings                               |
-| `/v1/models`                   | GET    | OpenAI-compatible model discovery (returns active model + schema) |
 
 ## Deprecation headers
 
@@ -284,14 +283,6 @@ This is required for downloading and using the models during audio preprocessing
 ## Testing instructions
 
 If server is running in development mode (ENVIRONMENT=development), OpenAPI endpoint is available on /docs URL.
-
-# Models discovery
-
-The `/v1/models` endpoint is OpenAI-compatible and returns the active model loaded into the server. For image runners it also returns the JSON schema of the request body. No authentication is required.
-
-```bash
-curl 'http://127.0.0.1:8000/v1/models'
-```
 
 # Chat completions test call
 
@@ -1010,6 +1001,7 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | `VLLM__GPU_MEMORY_UTILIZATION` | `0.1` | Fraction of GPU memory to use for model weights and KV cache. |
 | `MAX_MODEL_LENGTH` | `4096` | Top-level alias used when constructing `VLLMSettings`; if set, takes effect even before nested `VLLM__*` parsing (used as the default for `vllm.max_model_length`) |
 | `MAX_NUM_SEQS` | `1` | Top-level alias used when constructing `VLLMSettings`; if set, takes effect even before nested `VLLM__*` parsing (used as the default for `vllm.max_num_seqs`) |
+| `GPU_MEMORY_UTILIZATION` | `0.1` | Top-level alias used when constructing `VLLMSettings`; if set, takes effect even before nested `VLLM__*` parsing (used as the default for `vllm.gpu_memory_utilization`) |
 
 ## Audio Processing Settings
 

@@ -5,10 +5,13 @@
 
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
+#include <chrono>
 #include <functional>
 #include <map>
 #include <mutex>
+#include <stop_token>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -55,7 +58,7 @@ class SocketManager {
    * @return true if successful
    */
   template <typename T>
-  bool sendObject(const std::string& messageType, const T& obj);
+  bool sendObject(std::string_view messageType, const T& obj);
 
   /**
    * @brief Register handler for incoming messages of specific type
@@ -63,7 +66,7 @@ class SocketManager {
    * @param handler Function to call when message is received
    */
   template <typename T>
-  void registerHandler(const std::string& messageType,
+  void registerHandler(std::string_view messageType,
                        std::function<void(const T&)> handler);
 
   /**
@@ -100,28 +103,30 @@ class SocketManager {
    * @brief Configure client-mode reconnect backoff (defaults: 100ms/5000ms).
    * Must be called before start().
    */
-  void setReconnectBackoff(uint32_t initialDelayMs, uint32_t maxDelayMs);
+  void setReconnectBackoff(std::chrono::milliseconds initialDelay,
+                           std::chrono::milliseconds maxDelay);
 
  private:
-  void messageLoop();
+  void messageLoop(std::stop_token stopToken);
   void handleIncomingMessage(const std::vector<uint8_t>& data);
   std::function<void(const std::vector<uint8_t>&)> getHandler(
-      const std::string& messageType) const;
+      std::string_view messageType) const;
 
   std::unique_ptr<ISocketTransport> transport_;
 
   std::atomic<bool> running_{false};
-  std::thread messageThread_;
+  std::jthread messageThread_;
 
   mutable std::mutex handlersMutex_;
-  std::map<std::string, std::function<void(const std::vector<uint8_t>&)>>
+  std::map<std::string, std::function<void(const std::vector<uint8_t>&)>,
+           std::less<>>
       handlers_;
 
   std::function<void()> pendingConnectionLostCallback_;
   std::function<void()> pendingConnectionEstablishedCallback_;
   bool reconnectBackoffSet_{false};
-  uint32_t reconnectInitialDelayMs_{0};
-  uint32_t reconnectMaxDelayMs_{0};
+  std::chrono::milliseconds reconnectInitialDelay_{0};
+  std::chrono::milliseconds reconnectMaxDelay_{0};
 
   void applyPendingSettings();
 };
@@ -129,7 +134,7 @@ class SocketManager {
 // Template implementations
 
 template <typename T>
-bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
+bool SocketManager::sendObject(std::string_view messageType, const T& obj) {
   if (!transport_) {
     return false;
   }
@@ -144,18 +149,19 @@ bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
 }
 
 template <typename T>
-void SocketManager::registerHandler(const std::string& messageType,
+void SocketManager::registerHandler(std::string_view messageType,
                                     std::function<void(const T&)> handler) {
   std::lock_guard<std::mutex> lock(handlersMutex_);
 
-  handlers_[messageType] = [handler](const std::vector<uint8_t>& data) {
-    try {
-      T payload = wire::deserializePayload<T>(data);
-      handler(payload);
-    } catch (const std::exception& e) {
-      TT_LOG_ERROR("[SocketManager] Deserialization error: {}", e.what());
-    }
-  };
+  handlers_[std::string(messageType)] =
+      [handler](const std::vector<uint8_t>& data) {
+        try {
+          T payload = wire::deserializePayload<T>(data);
+          handler(payload);
+        } catch (const std::exception& e) {
+          TT_LOG_ERROR("[SocketManager] Deserialization error: {}", e.what());
+        }
+      };
 }
 
 }  // namespace tt::sockets

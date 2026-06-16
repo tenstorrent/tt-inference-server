@@ -18,13 +18,16 @@ struct RunnerConfigBase {
   ModelRunnerType runner_type = ModelRunnerType::MOCK;
 };
 
-/** Shared fields for in-process media runners (image, audio, video). Mirrors
- *  the device/weight knobs from tt-media-server's `config/settings.py`. */
+/** Shared fields for media runners (image, audio, video). Mirrors the
+ *  device/weight knobs from tt-media-server's `config/settings.py`. */
 struct MediaRunnerConfigBase : RunnerConfigBase {
+  size_t worker_id = 0;
   size_t max_batch_size = 1;
   // 2-D {rows, cols}. rows > 1 enables tensor parallelism.
   std::vector<size_t> device_mesh_shape{1, 1};
   bool is_galaxy = false;
+  // Device type string (e.g. "galaxy", "bh-galaxy", "n150").
+  std::string device;
   // Empty = use the HF Hub default repo for the active runner.
   std::string model_weights_path;
   unsigned weights_distribution_timeout_seconds = 1800;

@@ -23,6 +23,7 @@
 #include "config/defaults.hpp"
 #include "config/runner_config.hpp"
 #include "config/types.hpp"
+#include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::config {
@@ -40,6 +41,21 @@ std::string toLower(std::string s) {
 std::string envString(const char* name, const std::string& defaultValue) {
   const char* v = std::getenv(name);
   return v ? std::string(v) : defaultValue;
+}
+
+std::string resolveBlazeSocketDescriptorPrefix() {
+  switch (modelType()) {
+    case ModelType::DEEPSEEK_R1_0528:
+      return "deepseek";
+    case ModelType::LLAMA_3_1_8B_INSTRUCT:
+      return "llama";
+    case ModelType::KIMI_K2_6:
+      return "kimi";
+    case ModelType::GPT_OSS_120B:
+      return "gpt-oss";
+    case ModelType::MINIMAX_M2_7:
+      return "minimax";
+  }
 }
 
 /** Read env string and convert to lowercase for case-insensitive parsing. */
@@ -68,6 +84,17 @@ bool envBool(const char* name, bool defaultValue) {
     return false;
   }
   return defaultValue;
+}
+
+/** Read a KV cache block size env var; value must be divisible by 32. */
+size_t kvCacheSizeFromEnv(const char* envName, size_t defaultValue) {
+  size_t value = static_cast<size_t>(envUlong(envName, defaultValue));
+  if (value % 32) {
+    TT_LOG_WARN("[Config] {}={} is not divisible by 32, using default={}",
+                envName, value, defaultValue);
+    return defaultValue;
+  }
+  return value;
 }
 
 /** Parse DEVICE_IDS like Python: "(0,1,2,3),(4,5,6,7)" -> ["0,1,2,3",
@@ -123,6 +150,24 @@ std::string runnerType() { return toString(modelService()); }
 
 size_t numWorkers() { return deviceIdsParsed().size(); }
 
+size_t callbackPoolThreads() {
+  static const size_t cached = [] {
+    // CALLBACK_POOL_THREADS=N picks an explicit size; 0 or unset auto-scales.
+    const size_t fromEnv =
+        static_cast<size_t>(envUlong("CALLBACK_POOL_THREADS", 0));
+    if (fromEnv > 0) {
+      return std::min(fromEnv, defaults::CALLBACK_POOL_THREADS_MAX);
+    }
+    // Auto: at least the legacy floor, never less than the per-deploy worker
+    // count so HTTP dispatch threads never silently cap below DEVICE_IDS
+    // (the root cause of 16-wide serialization on 32-chip Galaxy SDXL).
+    return std::min(
+        std::max<size_t>(numWorkers(), defaults::CALLBACK_POOL_THREADS_MIN),
+        defaults::CALLBACK_POOL_THREADS_MAX);
+  }();
+  return cached;
+}
+
 unsigned batchTimeoutMs() {
   return static_cast<unsigned>(
       envUlong("MAX_BATCH_DELAY_TIME_MS", defaults::MAX_BATCH_DELAY_TIME_MS));
@@ -150,9 +195,13 @@ std::string tokenizerPath(ModelType model) {
   auto base = tokenizersDir();
   if (base.empty()) return "";
   std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
-  std::filesystem::path p = base / modelDir / "tokenizer.json";
-  if (std::filesystem::exists(p)) {
-    return std::filesystem::absolute(p).string();
+  std::filesystem::path jsonPath = base / modelDir / "tokenizer.json";
+  if (std::filesystem::exists(jsonPath)) {
+    return std::filesystem::absolute(jsonPath).string();
+  }
+  std::filesystem::path tiktokenPath = base / modelDir / "tiktoken.model";
+  if (std::filesystem::exists(tiktokenPath)) {
+    return std::filesystem::absolute(tiktokenPath).string();
   }
   return "";
 }
@@ -179,9 +228,8 @@ std::string visibleDevicesForWorker(size_t workerIndex) {
 }
 
 std::string blazeSocketDescriptorPrefix() {
-  static const std::string cached =
-      envString("BLAZE_SOCKET_DESCRIPTOR_PREFIX",
-                defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX);
+  static const std::string cached = envString(
+      "BLAZE_SOCKET_DESCRIPTOR_PREFIX", resolveBlazeSocketDescriptorPrefix());
   return cached;
 }
 
@@ -190,7 +238,7 @@ unsigned pmConnectTimeoutMs() {
       envUlong("PM_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
 }
 
-size_t dsMaxUsers() {
+size_t pmMaxUsers() {
   return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
 }
 
@@ -204,13 +252,12 @@ unsigned outputHangTimeoutMs() {
       envUlong("OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
 }
 
-bool useDeepseekMdFormat() {
-  return static_cast<bool>(
-      envUlong("USE_DEEPSEEK_MD_FORMAT", defaults::USE_DEEPSEEK_MD_FORMAT));
-}
-
 std::string ttTaskQueueName() {
   return envString("TT_TASK_QUEUE", defaults::TT_TASK_QUEUE);
+}
+
+std::string wireFormat() {
+  return envString("WIRE_FORMAT", defaults::WIRE_FORMAT);
 }
 
 std::string ttResultQueueName() {
@@ -221,9 +268,25 @@ std::string ttCancelQueueName() {
   return envString("TT_CANCEL_QUEUE", defaults::TT_CANCEL_QUEUE);
 }
 
+std::string ttMediaTaskQueueName() {
+  return envString("TT_MEDIA_TASK_QUEUE", defaults::TT_MEDIA_TASK_QUEUE);
+}
+
+std::string ttMediaResultQueueName() {
+  return envString("TT_MEDIA_RESULT_QUEUE", defaults::TT_MEDIA_RESULT_QUEUE);
+}
+
 std::string ttWarmupSignalsQueueName() {
   return envString("TT_WARMUP_SIGNALS_QUEUE",
                    defaults::TT_WARMUP_SIGNALS_QUEUE);
+}
+
+std::string prefillNumLayers() {
+  return envString("PREFILL_NUM_LAYERS", defaults::PREFILL_NUM_LAYERS);
+}
+
+std::string prefillChunkSize() {
+  return envString("PREFILL_CHUNK_SIZE", defaults::PREFILL_CHUNK_SIZE);
 }
 
 std::string ttMemoryRequestQueueName() {
@@ -251,20 +314,6 @@ size_t memoryQueueCapacity() {
   return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
 }
 
-int shmSlots() {
-  return static_cast<int>(envUlong("SHM_SLOTS", defaults::SHM_SLOTS));
-}
-
-int prefillMaxTokenIds() {
-  return static_cast<int>(
-      envUlong("PREFILL_MAX_TOKEN_IDS", defaults::PREFILL_MAX_TOKEN_IDS));
-}
-
-int decodeMaxTokenIds() {
-  return static_cast<int>(
-      envUlong("DECODE_MAX_TOKEN_IDS", defaults::DECODE_MAX_TOKEN_IDS));
-}
-
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;
@@ -272,10 +321,7 @@ LLMConfig llmEngineConfig() {
     cfg.max_in_flight_count = maxInFlightCount();
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
-    if (backend == "prefill") {
-      cfg.runner_type = ModelRunnerType::PREFILL;
-      cfg.max_in_flight_count = 1;
-    } else if (backend == "llama") {
+    if (backend == "llama") {
       cfg.kvcache_block_size = 32;
       cfg.max_num_batched_tokens = 16384;
       cfg.runner_type = ModelRunnerType::LLAMA;
@@ -358,6 +404,7 @@ void readMediaRunnerConfig(MediaRunnerConfigBase& cfg) {
   cfg.max_batch_size = static_cast<size_t>(envUlong("MAX_BATCH_SIZE", 1));
   cfg.device_mesh_shape = parseMeshShape(envString("DEVICE_MESH_SHAPE", "1,1"));
   cfg.is_galaxy = envBool("IS_GALAXY", false);
+  cfg.device = envStringLower("DEVICE", "");
   cfg.model_weights_path = envString("MODEL_WEIGHTS_PATH", "");
   cfg.weights_distribution_timeout_seconds = static_cast<unsigned>(
       envUlong("WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS", 1800));
@@ -395,9 +442,33 @@ ImageConfig imageEngineConfig() {
   return cached;
 }
 
+RunnerConfig workerRunnerConfig(size_t workerIndex) {
+  switch (modelService()) {
+    case ModelService::IMAGE: {
+      auto cfg = imageEngineConfig();
+      cfg.worker_id = workerIndex;
+      cfg.visible_devices = visibleDevicesForWorker(workerIndex);
+      return cfg;
+    }
+    case ModelService::EMBEDDING:
+      return EmbeddingConfig{};
+    case ModelService::LLM:
+    default:
+      return llmEngineConfig();
+  }
+}
+
 ModelType modelType() {
-  static const ModelType cached = modelTypeFromDeviceBackend(
-      envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND));
+  static const ModelType cached = [] {
+    // Derive model type from MODEL env var
+    std::string m = envString("MODEL", defaults::MODEL);
+    if (m == "moonshotai/Kimi-K2.6") return ModelType::KIMI_K2_6;
+    if (m == "meta-llama/Llama-3.1-8B-Instruct")
+      return ModelType::LLAMA_3_1_8B_INSTRUCT;
+    if (m == "openai/gpt-oss-120b") return ModelType::GPT_OSS_120B;
+    if (m == "MiniMaxAI/MiniMax-M2.7") return ModelType::MINIMAX_M2_7;
+    return ModelType::DEEPSEEK_R1_0528;
+  }();
   return cached;
 }
 
@@ -405,6 +476,20 @@ Model model() {
   static const Model cached =
       modelFromString(envString("MODEL", defaults::MODEL));
   return cached;
+}
+
+bool sampleOnlyInReasoning() {
+  switch (modelType()) {
+    // DeepSeek samples only inside the reasoning phase; argmax otherwise.
+    case ModelType::DEEPSEEK_R1_0528:
+      return true;
+    case ModelType::LLAMA_3_1_8B_INSTRUCT:
+    case ModelType::KIMI_K2_6:
+    case ModelType::GPT_OSS_120B:
+    case ModelType::MINIMAX_M2_7:
+      return false;
+  }
+  return false;
 }
 
 LLMMode llmMode() {
@@ -429,16 +514,6 @@ std::string socketHost() {
   static const std::string cached =
       envString("SOCKET_HOST", defaults::SOCKET_HOST);
   return cached;
-}
-
-bool enableAccumulatedStreaming() {
-  return envUlong("ENABLE_ACCUMULATED_STREAMING",
-                  defaults::ENABLE_ACCUMULATED_STREAMING);
-}
-
-size_t maxAccumulatedTokens() {
-  return static_cast<size_t>(
-      envUlong("MAX_ACCUMULATED_TOKENS", defaults::MAX_ACCUMULATED_TOKENS));
 }
 
 uint16_t socketPort() {
@@ -476,6 +551,19 @@ std::string prefillServerId() {
     return getHostname() + ":" + std::to_string(socketPort());
   }();
   return cached;
+}
+
+std::string logInstanceTag(int workerIndex) {
+  // Role distinguishes the node: LLM_MODE for the LLM service, else the service
+  // name. Worker subprocesses keep the base role and append their index, so a
+  // merged log still separates "decode" vs "prefill" nodes and their
+  // "decode-worker0" / "prefill-worker0" workers.
+  std::string role = isLlmService() ? std::string(toString(llmMode()))
+                                    : std::string(toString(modelService()));
+  if (workerIndex >= 0) {
+    role += "-worker" + std::to_string(workerIndex);
+  }
+  return role;
 }
 
 uint32_t prefillMaxInFlight() {
@@ -528,6 +616,47 @@ size_t maxContextLength() {
   return cached;
 }
 
+size_t maxISL() {
+  static const size_t cached =
+      static_cast<size_t>(envUlong("MAX_ISL", defaults::MAX_ISL));
+  return cached;
+}
+
+size_t minTokensToCopy() {
+  static const size_t cached = static_cast<size_t>(
+      envUlong("MIN_TOKENS_TO_COPY", defaults::MIN_TOKENS_TO_COPY));
+  return cached;
+}
+
+size_t kvCacheBlockSize() {
+  static const size_t cached = []() {
+    return kvCacheSizeFromEnv("KV_CACHE_BLOCK_SIZE",
+                              defaults::KV_CACHE_BLOCK_SIZE);
+  }();
+  return cached;
+}
+
+size_t kvCacheFirstBlockSize() {
+  static const size_t cached = []() {
+    return kvCacheSizeFromEnv("KV_CACHE_FIRST_BLOCK_SIZE",
+                              defaults::KV_CACHE_FIRST_BLOCK_SIZE);
+  }();
+  return cached;
+}
+
+float prefixCacheHitThreshold() {
+  const unsigned long val = envUlong("PREFIX_CACHE_HIT_THRESHOLD",
+                                     defaults::PREFIX_CACHE_HIT_THRESHOLD);
+  if (val > 100) {
+    TT_LOG_WARN(
+        "[Config] PREFIX_CACHE_HIT_THRESHOLD={} out of range [0,100], "
+        "using {}",
+        val, defaults::PREFIX_CACHE_HIT_THRESHOLD);
+    return static_cast<float>(defaults::PREFIX_CACHE_HIT_THRESHOLD);
+  }
+  return static_cast<float>(val);
+}
+
 bool useFastMode() {
   return envUlong("USE_FAST_MODE", defaults::USE_FAST_MODE);
 }
@@ -548,11 +677,6 @@ unsigned sessionAllocationMaxRetries() {
   return static_cast<unsigned>(
       envUlong("SESSION_ALLOCATION_MAX_RETRIES",
                defaults::SESSION_ALLOCATION_MAX_RETRIES));
-}
-
-unsigned prefillTimeoutMs() {
-  return static_cast<unsigned>(
-      envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
 }
 
 bool dynamoEndpointEnabled() {

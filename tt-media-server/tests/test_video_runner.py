@@ -705,6 +705,61 @@ class TestRunInferenceLoop:
 
         mock_runner.run.assert_not_called()
 
+    def test_rank0_warmup_ping_short_circuits_without_inference(self):
+        """The SP warmup ping (sentinel task_id) must:
+
+        1. Be enqueued for the encoder thread (which writes SUCCESS with
+           empty file_path — the round-trip itself is the readiness signal).
+        2. Skip the inference call on every rank — broadcasting ``skip=True``
+           keeps ranks 1..N in lockstep without blocking on a collective.
+        3. NOT trigger the image-prompts side-file read on rank 0 (the ping
+           carries no real payload).
+        """
+        import queue as _queue
+
+        from ipc.video_shm import SP_WARMUP_TASK_ID
+        import tt_model_runners.video_runner as vr
+
+        vr._shutdown = False
+        ping = _make_request(task_id=SP_WARMUP_TASK_ID)
+
+        mock_comm = MagicMock()
+        mock_comm.Get_rank.return_value = 0
+        # First iteration: ping. Second: shutdown.
+        mock_comm.bcast.side_effect = [
+            (ping, None, True),
+            (None, None, False),
+        ]
+
+        mock_runner = MagicMock()
+        mock_input_shm = MagicMock()
+        # Iteration 1 returns the ping; iteration 2 returns None so the
+        # rank-0 short-circuit doesn't fire a second time before the
+        # broadcast unwraps the shutdown sentinel.
+        mock_input_shm.read_request.side_effect = [ping, None]
+
+        encode_queue: _queue.Queue = _queue.Queue()
+        _run_inference_loop(mock_comm, mock_runner, mock_input_shm, encode_queue)
+
+        # The encoder gets the ping job with frames=None and no error — the
+        # encoder thread itself short-circuits this into a SUCCESS response
+        # (covered separately in test_video_runner_encoder.py).
+        assert encode_queue.qsize() == 1
+        job = encode_queue.get_nowait()
+        assert job.task_id == SP_WARMUP_TASK_ID
+        assert job.frames is None
+        assert job.error is None
+
+        # Inference must not run for a ping — that's the whole point of the
+        # short-circuit; otherwise the pipeline would compile kernels for the
+        # zero-sized ping dimensions and waste minutes per startup.
+        mock_runner.run.assert_not_called()
+
+        # Broadcast was called with skip=True so ranks 1..N no-op in lockstep.
+        first_bcast_call = mock_comm.bcast.call_args_list[0]
+        bcast_payload = first_bcast_call.args[0]
+        assert bcast_payload[2] is True  # skip flag
+
     def test_nonrank0_participates_in_inference(self):
         """Non-rank-0 ranks contribute to distributed inference but never
         touch SHM or the encoder queue."""

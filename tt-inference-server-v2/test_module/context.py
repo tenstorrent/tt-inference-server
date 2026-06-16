@@ -11,11 +11,19 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from utils.url_helpers import (
+    DEFAULT_DEPLOY_URL,
+    build_base_url,
+    resolve_host_port,
+)
+
+from ._test_common import HardwareRequirement
 from .health_tests import run_device_liveness
 
 logger = logging.getLogger(__name__)
@@ -34,25 +42,62 @@ class MediaContext:
     output_path: str
     service_port: int
     spec_tests_num_prompts_cap: Optional[int] = None
+    runtime_config: Optional[Any] = None
+    server_url: Optional[str] = None
+
+    @property
+    def _deploy_url(self) -> str:
+        """Resolved deploy URL, delegating the default to url_helpers."""
+        return self.server_url or DEFAULT_DEPLOY_URL
 
     @property
     def base_url(self) -> str:
-        return f"http://localhost:{self.service_port}"
+        return build_base_url(self._deploy_url, self.service_port)
+
+    @property
+    def server_host(self) -> str:
+        """Scheme + host with no port, for split host/port consumers."""
+        host, _ = resolve_host_port(self._deploy_url, self.service_port)
+        scheme = urlparse(self._deploy_url).scheme or "http"
+        return f"{scheme}://{host}"
+
+    @property
+    def server_port(self) -> int:
+        """Explicit port from ``server_url`` when present, else service_port."""
+        _, port = resolve_host_port(self._deploy_url, self.service_port)
+        return int(port)
 
     @property
     def test_payloads_path(self) -> str:
         return TEST_PAYLOADS_PATH
 
 
-def get_health(ctx: MediaContext) -> tuple[bool, Optional[str]]:
-    """Check server health via DeviceLivenessTest and return (ok, runner_in_use)."""
-    logger.info("Checking server health using DeviceLivenessTest...")
+def get_health(
+    ctx: MediaContext,
+    requirement: HardwareRequirement = HardwareRequirement.FULL_BOARD,
+) -> tuple[bool, Optional[str]]:
+    """Check server health via DeviceLivenessTest and return (ok, runner_in_use).
+
+    ``requirement`` selects the chip-readiness tier:
+
+    - ``HardwareRequirement.FULL_BOARD`` (default) — every declared worker
+      must be ready. Used by benchmarks / throughput tests, where partial
+      board availability would silently invalidate the numbers.
+    - ``HardwareRequirement.ANY_CHIP`` — ≥1 ready worker is enough. Used by
+      evals, param tests, and other correctness checks where the server can
+      still produce a valid result on a degraded board.
+    """
     device_name = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
-    num_devices = ctx.model_spec.device_model_spec.max_concurrency
-    logger.info(f"Detected device: {device_name} with {num_devices} expected worker(s)")
+    full_board = ctx.model_spec.device_model_spec.max_concurrency
+    min_required = full_board if requirement is HardwareRequirement.FULL_BOARD else 1
+    logger.info(
+        "Checking server health using DeviceLivenessTest "
+        f"(device={device_name}, requirement={requirement.value}, "
+        f"board={full_board}, need≥{min_required})"
+    )
 
     try:
-        block = run_device_liveness(ctx)
+        block = run_device_liveness(ctx, min_required)
     except SystemExit as e:
         logger.error(f"Health check failed with SystemExit: {e}")
         return (False, None)
@@ -64,11 +109,16 @@ def get_health(ctx: MediaContext) -> tuple[bool, Optional[str]]:
     if data.get("success"):
         runner_in_use = data.get("runner_in_use")
         logger.info(
-            f"✅ Health check passed after {data.get('attempts', 1)} attempt(s)"
+            f"✅ Health check passed after {data.get('attempts', 1)} attempt(s) "
+            f"({data.get('ready_count')}/{full_board} chips ready, "
+            f"needed ≥{min_required})"
         )
         return (True, runner_in_use)
 
-    logger.error("Health check failed after all retry attempts")
+    logger.error(
+        f"Health check failed after all retry attempts "
+        f"(requirement={requirement.value}, need≥{min_required})"
+    )
     return (False, None)
 
 
@@ -107,11 +157,20 @@ def count_tokens(hf_model_repo: str, text: str) -> int:
     return len(text.split())
 
 
-def require_health(ctx: MediaContext) -> str:
-    """Run the liveness check and raise on failure; return ``runner_in_use``."""
-    health_status, runner_in_use = get_health(ctx)
+def require_health(
+    ctx: MediaContext,
+    requirement: HardwareRequirement = HardwareRequirement.FULL_BOARD,
+) -> str:
+    """Run the liveness check and raise on failure; return ``runner_in_use``.
+
+    Default tier is ``FULL_BOARD`` (the strict one) so benchmark callers that
+    don't pass anything keep the historical behavior. Eval callers must pass
+    ``HardwareRequirement.ANY_CHIP`` so they're allowed to proceed on a
+    partial board.
+    """
+    health_status, runner_in_use = get_health(ctx, requirement)
     if not health_status:
-        logger.error("Health check failed.")
+        logger.error(f"Health check failed (requirement={requirement.value}).")
         raise RuntimeError("Health check failed")
     logger.info(f"Health check passed. Runner in use: {runner_in_use}")
     return runner_in_use
@@ -150,6 +209,7 @@ def common_eval_metadata(ctx: MediaContext, task_type: str) -> dict:
 __all__ = [
     "DEVICE_LIVENESS_TEST_ALIVE",
     "TEST_PAYLOADS_PATH",
+    "HardwareRequirement",
     "MediaContext",
     "common_eval_metadata",
     "common_report_metadata",

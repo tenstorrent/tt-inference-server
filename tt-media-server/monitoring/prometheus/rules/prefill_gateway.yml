@@ -1,0 +1,45 @@
+groups:
+  - name: prefill_gateway
+    rules:
+      - alert: PrefillGatewayMissingHeartbeat
+        expr: tt_prefill_healthy == 1 and tt_prefill_last_heartbeat_age_seconds > 10
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prefill heartbeat is stale"
+          description: "Prefill {{ $labels.server_id }} has not refreshed its gateway heartbeat for {{ $value }} seconds."
+
+      - alert: PrefillGatewayLowPrefixMatchRate
+        expr: |
+          sum(rate(tt_gateway_routing_decisions_total{reason="prefix_match"}[5m]))
+            /
+          clamp_min(sum(rate(tt_gateway_routing_decisions_total[5m])), 1) < 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PrefillGateway prefix match rate is low"
+          description: "Less than 20% of gateway routing decisions used a prefix match over the last 10 minutes."
+
+      - alert: PrefillGatewayHighPrefillLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(tt_prefill_latency_seconds_bucket{outcome="success"}[5m]))
+          ) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PrefillGateway p95 latency is high"
+          description: "Successful prefill p95 latency is above 5 seconds for more than 10 minutes."
+
+      - alert: PrefillGatewayTimeouts
+        expr: sum(rate(tt_gateway_prefill_timeouts_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PrefillGateway is timing out requests"
+          description: "Gateway request timeouts have been observed in the last 5 minutes."

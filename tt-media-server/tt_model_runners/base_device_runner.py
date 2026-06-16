@@ -11,6 +11,13 @@ from utils.runner_utils import setup_runner_environment
 
 
 class BaseDeviceRunner(ABC):
+    # Override to ``False`` in subclasses that don't read weights from disk
+    # (e.g. SHM-proxy runners like ``SPRunner``). When ``False`` the HF cache
+    # check below is skipped — emitting the warning for a runner that never
+    # touches HuggingFace is a false positive and tends to send operators on
+    # wild goose chases.
+    requires_weights: bool = True
+
     def __init__(
         self, device_id: str, cpu_threads: str = None, num_torch_threads: int = None
     ):
@@ -28,8 +35,12 @@ class BaseDeviceRunner(ABC):
                 num_torch_threads = 16 if self.settings.use_dynamic_batcher else 1
             setup_runner_environment(device_id, cpu_threads, num_torch_threads)
 
-        if not os.getenv("HF_TOKEN", None) and not (
-            os.getenv("HF_HOME", None) and any(os.scandir(os.getenv("HF_HOME")))
+        if (
+            self.requires_weights
+            and not os.getenv("HF_TOKEN", None)
+            and not (
+                os.getenv("HF_HOME", None) and any(os.scandir(os.getenv("HF_HOME")))
+            )
         ):
             self.logger.warning(
                 "HF_TOKEN environment variable is not set and no cached models found in HF_HOME. Some models may not load properly."
@@ -52,6 +63,15 @@ class BaseDeviceRunner(ABC):
     @abstractmethod
     def run(self, *args, **kwargs):
         pass
+
+    def health_check(self, deep: bool = False) -> bool:
+        """Liveness probe called by the device worker instead of ``run()`` for canary probes.
+
+        Returning ``True`` here proves the worker process and its dequeue loop are alive.
+        Override in multi-host runners to perform a real IPC round-trip; honour ``deep``
+        to also certify device liveness via a minimal forward pass.
+        """
+        return True
 
     def set_device(self):
         return {}

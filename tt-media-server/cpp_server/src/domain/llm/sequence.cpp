@@ -1,7 +1,11 @@
+// SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
+//
+// SPDX-License-Identifier: Apache-2.0
 #include "domain/llm/sequence.hpp"
 
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <stdexcept>
 
 #include "config/runner_config.hpp"
@@ -27,18 +31,26 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
 
 Sequence::Sequence(uint32_t taskId, int blockSize,
                    std::vector<int64_t> inputTokenIds, size_t numPromptTokens,
-                   std::optional<uint32_t> slotId, bool continuation,
+                   std::optional<uint32_t> slotId,
+                   std::optional<uint32_t> prefillSlotId, bool continuation,
                    bool disaggregated,
-                   std::unique_ptr<SamplingParams> inputSamplingParams)
+                   std::unique_ptr<SamplingParams> inputSamplingParams,
+                   std::optional<uint32_t> kvPositionId, int decodePositionId,
+                   int decodeSkipTokens, uint64_t migrationId)
     : taskId(taskId),
       status(SequenceStatus::WAITING),
       tokenIds(std::move(inputTokenIds)),
+      kvPositionId(std::move(kvPositionId)),
       numPromptTokens(numPromptTokens),
       samplingParams(std::move(inputSamplingParams)),
       blockSize(blockSize),
       kvCacheSlot(slotId.value_or(tt::domain::INVALID_SLOT_ID)),
+      prefillKvCacheSlot(prefillSlotId.value_or(tt::domain::INVALID_SLOT_ID)),
       continuation(continuation),
-      disaggregated(disaggregated) {
+      disaggregated(disaggregated),
+      decodePositionId(decodePositionId),
+      decodeSkipTokens(decodeSkipTokens),
+      migrationId(migrationId) {
   if (!tokenIds.empty()) {
     lastToken = tokenIds.back();
   }
@@ -85,10 +97,28 @@ void Sequence::serialize(std::ostream& os) const {
   os.write(reinterpret_cast<const char*>(&status), sizeof(status));
   os.write(reinterpret_cast<const char*>(&blockSize), sizeof(blockSize));
   os.write(reinterpret_cast<const char*>(&kvCacheSlot), sizeof(kvCacheSlot));
-  os.write(reinterpret_cast<const char*>(&continuation), sizeof(continuation));
-  os.write(reinterpret_cast<const char*>(&disaggregated),
-           sizeof(disaggregated));
+  os.write(reinterpret_cast<const char*>(&prefillKvCacheSlot),
+           sizeof(prefillKvCacheSlot));
+  uint8_t continuationFlag = continuation ? 1 : 0;
+  os.write(reinterpret_cast<const char*>(&continuationFlag),
+           sizeof(continuationFlag));
+  uint8_t disaggregatedFlag = disaggregated ? 1 : 0;
+  os.write(reinterpret_cast<const char*>(&disaggregatedFlag),
+           sizeof(disaggregatedFlag));
   samplingParams->serialize(os);
+  uint8_t hasKvPositionId = kvPositionId.has_value() ? 1 : 0;
+  os.write(reinterpret_cast<const char*>(&hasKvPositionId),
+           sizeof(hasKvPositionId));
+  if (hasKvPositionId) {
+    uint32_t kvPositionIdValue = kvPositionId.value();
+    os.write(reinterpret_cast<const char*>(&kvPositionIdValue),
+             sizeof(uint32_t));
+  }
+  os.write(reinterpret_cast<const char*>(&decodePositionId),
+           sizeof(decodePositionId));
+  os.write(reinterpret_cast<const char*>(&decodeSkipTokens),
+           sizeof(decodeSkipTokens));
+  os.write(reinterpret_cast<const char*>(&migrationId), sizeof(migrationId));
 }
 
 Sequence Sequence::deserialize(std::istream& is) {
@@ -120,10 +150,30 @@ Sequence Sequence::deserialize(std::istream& is) {
   is.read(reinterpret_cast<char*>(&seq.status), sizeof(seq.status));
   is.read(reinterpret_cast<char*>(&seq.blockSize), sizeof(seq.blockSize));
   is.read(reinterpret_cast<char*>(&seq.kvCacheSlot), sizeof(seq.kvCacheSlot));
-  is.read(reinterpret_cast<char*>(&seq.continuation), sizeof(seq.continuation));
-  is.read(reinterpret_cast<char*>(&seq.disaggregated),
-          sizeof(seq.disaggregated));
+  is.read(reinterpret_cast<char*>(&seq.prefillKvCacheSlot),
+          sizeof(seq.prefillKvCacheSlot));
+  uint8_t continuationFlag = 0;
+  is.read(reinterpret_cast<char*>(&continuationFlag), sizeof(continuationFlag));
+  seq.continuation = continuationFlag != 0;
+  uint8_t disaggregatedFlag = 0;
+  is.read(reinterpret_cast<char*>(&disaggregatedFlag),
+          sizeof(disaggregatedFlag));
+  seq.disaggregated = disaggregatedFlag != 0;
   seq.samplingParams = SamplingParams::deserialize(is);
+  uint8_t hasKvCacheOffset = 0;
+  is.read(reinterpret_cast<char*>(&hasKvCacheOffset), sizeof(hasKvCacheOffset));
+  if (hasKvCacheOffset) {
+    seq.kvPositionId = std::make_optional<uint32_t>(0);
+    is.read(reinterpret_cast<char*>(&(*seq.kvPositionId)),
+            sizeof(*seq.kvPositionId));
+  } else {
+    seq.kvPositionId = std::nullopt;
+  }
+  is.read(reinterpret_cast<char*>(&seq.decodePositionId),
+          sizeof(seq.decodePositionId));
+  is.read(reinterpret_cast<char*>(&seq.decodeSkipTokens),
+          sizeof(seq.decodeSkipTokens));
+  is.read(reinterpret_cast<char*>(&seq.migrationId), sizeof(seq.migrationId));
   return seq;
 }
 

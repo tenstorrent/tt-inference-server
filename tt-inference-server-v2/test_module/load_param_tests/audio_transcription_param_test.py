@@ -118,7 +118,7 @@ class AudioTranscriptionParamTest(BaseTest):
     TASK_TYPE = "audio"
 
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/v1/audio/transcriptions"
+        self.url = f"{self.base_url}/v1/audio/transcriptions"
         logger.info(f"Testing audio transcription parameters at {self.url}")
 
         # Create list of payloads to test different parameters
@@ -155,7 +155,7 @@ class AudioTranscriptionParamTest(BaseTest):
         # Check if same requests produce identical results
         base_match = response_data_list[0]["data"] == response_data_list[1]["data"]
         results["same_requests_match"] = base_match
-        logger.info(f"✓ Same requests match: {base_match}")
+        logger.info(f"✅ Same requests match: {base_match}")
 
         # Check if different parameters produce different results
         param_tests = []

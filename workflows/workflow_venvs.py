@@ -5,12 +5,9 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional, Tuple
-
-import yaml
 
 from workflows.bootstrap_uv import UV_EXEC
 from workflows.utils import (
@@ -228,6 +225,10 @@ def setup_evals_meta(
     )
     meta_eval_data_dir = meta_eval_dir / f"work_dir_{model_spec.model_name}"
     if not meta_eval_data_dir.exists():
+        # PyYAML is only needed by this meta-eval setup hook, not by every
+        # caller of ``workflow_venvs``.
+        import yaml
+
         logger.info(f"preparing meta eval datasets for: {meta_eval_data_dir}")
         os.chdir(meta_eval_dir)
         yaml_path = meta_eval_dir / "eval_config.yaml"
@@ -259,21 +260,31 @@ def setup_evals_meta(
             logger.warning(
                 f"Failed to prepare meta eval datasets for: {meta_eval_data_dir}, continuing..."
             )
-    # IFEval (and likely others) hard-code ./work_dir; hot-swap so downstream finds it.
-    work_dir = venv_config.venv_path / "work_dir"
-    logger.info(f"moving {str(meta_eval_data_dir)} to {str(work_dir)}")
-    if os.path.exists(work_dir):
-        shutil.rmtree(work_dir)
-    shutil.copytree(meta_eval_data_dir, work_dir)
+    # The model-specific data lives at meta_eval_data_dir (work_dir_<model_name>/).
+    # IFEval (and likely others) hard-code ./work_dir relative to lm-eval's cwd,
+    # so run_evals.py creates a per-PID staging dir with a 'work_dir' symlink
+    # pointing here at command-build time. We do NOT write to a shared
+    # .venv_evals_meta/work_dir/ here — that previously raced across parallel
+    # model invocations and produced spurious FileNotFoundError for tasks (e.g.
+    # meta_ifeval) when a sibling model's data overwrote the shared dir.
     os.chdir(original_dir)
     return setup_succeeded
 
 
-# Pinned vLLM tag used both by `requirements/benchmarks-vllm.txt` (where
-# vllm==<VLLM_PIN_VERSION>) and as the source for the structured-output
-# benchmark scripts fetched at venv setup time. Keep these in sync.
+# Pinned vLLM tags for the benchmark client venvs. Each must match the vllm==
+# pin in its requirements file (structured-output scripts are fetched from
+# vllm-project/vllm@v<pin>/benchmarks at setup time):
+#   VLLM_PIN_VERSION       <-> requirements/benchmarks-vllm.txt
+#   FORGE_VLLM_PIN_VERSION <-> requirements/benchmarks-vllm-forge.txt
 VLLM_PIN_VERSION = "0.13.0"
-VLLM_BENCHMARKS_RAW_BASE = f"https://raw.githubusercontent.com/vllm-project/vllm/v{VLLM_PIN_VERSION}/benchmarks"
+FORGE_VLLM_PIN_VERSION = "0.19.1"
+
+
+def _vllm_benchmarks_raw_base(pin_version: str) -> str:
+    return (
+        f"https://raw.githubusercontent.com/vllm-project/vllm/v{pin_version}/benchmarks"
+    )
+
 
 # (relative_path_in_vllm_repo, relative_path_in_work_dir)
 STRUCTURED_OUTPUT_FETCH_FILES = (
@@ -294,23 +305,21 @@ STRUCTURED_OUTPUT_FETCH_FILES = (
 STRUCTURED_OUTPUT_SCRIPT_NAME = "benchmark_serving_structured_output.py"
 
 
-def fetch_structured_output_scripts(
+def _fetch_structured_output_scripts(
     venv_config: "VenvConfig",
-    model_spec: "ModelSpec",
+    pin_version: str,
 ) -> bool:
-    """Hook for BENCHMARKS_VLLM: download structured-output benchmark scripts.
+    """Fetch the structured-output benchmark driver scripts for ``pin_version``.
 
-    Pip-installable deps (vllm/torch/datasets/pandas/xgrammar) come from
-    requirements/benchmarks-vllm.txt. The benchmark driver scripts are not
-    published on PyPI, so they're fetched at venv setup time from the pinned
-    vLLM source tag rather than vendored into this repo.
+    They aren't published on PyPI, so they're pulled from the matching vLLM
+    source tag at venv setup time rather than vendored into this repo.
     """
-    logger.info("running fetch_structured_output_scripts() ...")
     work_dir = venv_config.venv_path / "work_dir"
+    raw_base = _vllm_benchmarks_raw_base(pin_version)
     for src_rel, dst_rel in STRUCTURED_OUTPUT_FETCH_FILES:
         dst = work_dir / dst_rel
         dst.parent.mkdir(parents=True, exist_ok=True)
-        url = f"{VLLM_BENCHMARKS_RAW_BASE}/{src_rel}"
+        url = f"{raw_base}/{src_rel}"
         return_code = run_command(
             f"curl -fSL --retry 3 --retry-delay 5 --retry-connrefused {url} -o {dst}",
             logger=logger,
@@ -318,6 +327,24 @@ def fetch_structured_output_scripts(
         if return_code != 0:
             return False
     return True
+
+
+def fetch_structured_output_scripts(
+    venv_config: "VenvConfig",
+    model_spec: "ModelSpec",
+) -> bool:
+    """Hook for BENCHMARKS_VLLM: fetch scripts pinned to VLLM_PIN_VERSION."""
+    logger.info("running fetch_structured_output_scripts() ...")
+    return _fetch_structured_output_scripts(venv_config, VLLM_PIN_VERSION)
+
+
+def fetch_structured_output_scripts_forge(
+    venv_config: "VenvConfig",
+    model_spec: "ModelSpec",
+) -> bool:
+    """Hook for BENCHMARKS_VLLM_FORGE: fetch scripts pinned to FORGE_VLLM_PIN_VERSION."""
+    logger.info("running fetch_structured_output_scripts_forge() ...")
+    return _fetch_structured_output_scripts(venv_config, FORGE_VLLM_PIN_VERSION)
 
 
 _venv_config_list = [
@@ -373,6 +400,12 @@ _venv_config_list = [
         requirements_file="v2-run-script.txt",
     ),
     VenvConfig(
+        venv_type=WorkflowVenvType.V2_PREFIX_CACHE,
+        requirements_file="v2-prefix-cache.txt",
+        extra_dirs=("artifacts",),
+        python_version="3.11",
+    ),
+    VenvConfig(
         venv_type=WorkflowVenvType.HF_SETUP,
         requirements_file="hf-setup.txt",
     ),
@@ -402,6 +435,15 @@ _venv_config_list = [
         python_version="3.11",
         setup_function=fetch_structured_output_scripts,
     ),
+    # Forge-only benchmark client on newer vllm/transformers so forge tokenizers
+    # load. benchmark_config.py routes forge-engine models here.
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_VLLM_FORGE,
+        requirements_file="benchmarks-vllm-forge.txt",
+        extra_dirs=("work_dir",),
+        python_version="3.11",
+        setup_function=fetch_structured_output_scripts_forge,
+    ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
         requirements_file="benchmarks-aiperf.txt",
@@ -423,10 +465,11 @@ _venv_config_list = [
         extra_dirs=("artifacts",),
         setup_function=check_docker_available,
     ),
-    # Custom Python work; pip handled inside the hook (model-type dependent)
+    # Custom Python work; pip handled inside the hook (model-type dependent).
+    # No extra_dirs — `run_evals.py` materializes a per-invocation staging
+    # dir at command-build time (see EVALS_META branch in build_eval_command).
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_META,
-        extra_dirs=("work_dir",),
         setup_function=setup_evals_meta,
     ),
 ]

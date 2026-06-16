@@ -19,6 +19,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
+from utils.url_helpers import resolve_deploy_url, resolve_host_port
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -143,6 +144,7 @@ def build_benchmark_command(
     service_port,
     benchmark_config,
     model_spec,
+    deploy_url: str = "http://127.0.0.1",
 ):
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     isl = params.isl
@@ -167,6 +169,8 @@ def build_benchmark_command(
     dataset_name = "random-mm" if params.task_type == "vlm" else "random"
     backend = "openai-chat"
 
+    host, port = resolve_host_port(deploy_url, service_port)
+
     # fmt: off
     cmd = [
         str(benchmark_script),
@@ -175,7 +179,8 @@ def build_benchmark_command(
         "--backend", backend,
         "--endpoint", "/v1/chat/completions",
         "--model", model_spec.hf_model_repo,
-        "--port", str(service_port),
+        "--host", host,
+        "--port", port,
         "--dataset-name", dataset_name,
         "--max-concurrency", str(max_concurrency),
         "--num-prompts", str(num_prompts),
@@ -190,8 +195,15 @@ def build_benchmark_command(
     # only truncate prompts for text-only tasks; VLMs interleave vision tokens
     # in the prompt and truncation can drop them, causing 400s at the preprocessor
     if params.task_type == "text":
+        # Pin output length via max_tokens in the request body. --random-output-len
+        # isn't always enforced as a hard cap server-side (the forge OpenAI-compat
+        # server ignores it), so requests can run unbounded -- Qwen3-32B then emits
+        # ~1000+ reasoning tokens for osl=128 and blows the 6h CI cap. max_tokens in
+        # the body is honored.
         cmd.extend([
-            "--extra-body", json.dumps({"truncate_prompt_tokens": str(isl)}),
+            "--extra-body", json.dumps(
+                {"truncate_prompt_tokens": str(isl), "max_tokens": int(osl)}
+            ),
         ])
 
     if params.task_type == "vlm":
@@ -212,6 +224,7 @@ def build_structured_output_command(
     output_path,
     service_port,
     model_spec,
+    deploy_url: str = "http://127.0.0.1",
 ):
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     ratio_tag = (
@@ -226,13 +239,15 @@ def build_structured_output_command(
         f"_osl-{params.osl}_maxcon-{params.max_concurrency}_n-{params.num_prompts}.json"
     )
 
+    host, port = resolve_host_port(deploy_url, service_port)
+
     # fmt: off
     cmd = [
         str(venv_python),
         str(structured_output_script),
         "--backend", "vllm",
-        "--host", "localhost",
-        "--port", str(service_port),
+        "--host", host,
+        "--port", port,
         "--model", model_spec.hf_model_repo,
         "--dataset", params.structured_dataset,
         "--max-concurrency", str(params.max_concurrency),
@@ -283,6 +298,9 @@ def main():
     device_str = runtime_config.device
     service_port = runtime_config.service_port
     disable_trace_capture = runtime_config.disable_trace_capture
+    # Resolved once here so the genai-perf branch (which returns before
+    # env_config is constructed) sees the same value used later.
+    deploy_url = resolve_deploy_url(runtime_config)
 
     # Automatically control trace capture based on has_builtin_warmup
     # Only apply automatic logic if user hasn't explicitly set --disable-trace-capture
@@ -328,6 +346,7 @@ def main():
             jwt_secret=jwt_secret,
             service_port=service_port,
             debug=debug_mode,
+            deploy_url=deploy_url,
         )
         return return_code
 
@@ -408,7 +427,12 @@ def main():
 
     if model_spec.model_type in BENCHMARKS_TASK_TYPES:
         return_code = run_benchmarks(
-            all_params, model_spec, device, args.output_path, service_port
+            all_params,
+            model_spec,
+            device,
+            args.output_path,
+            service_port,
+            deploy_url=deploy_url,
         )
         return return_code
 
@@ -439,6 +463,7 @@ def main():
     env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
+    env_config.deploy_url = deploy_url
 
     prompt_client = PromptClient(
         env_config,
@@ -527,6 +552,7 @@ def main():
                             output_path=args.output_path,
                             service_port=service_port,
                             model_spec=model_spec,
+                            deploy_url=deploy_url,
                         )
                     )
                 else:
@@ -538,6 +564,7 @@ def main():
                         service_port=service_port,
                         benchmark_config=benchmark_config,
                         model_spec=model_spec,
+                        deploy_url=deploy_url,
                     )
                 return_code = run_command(command=cmd, logger=logger, env=env_vars)
                 return_codes.append(return_code)
@@ -556,7 +583,9 @@ def main():
     return main_return_code
 
 
-def run_benchmarks(all_params, model_spec, device, output_path, service_port):
+def run_benchmarks(
+    all_params, model_spec, device, output_path, service_port, deploy_url=None
+):
     """
     Run benchmarks for the given model and device. Here we are running IMAGE, CNN, AUDIO, VIDEO benchmarks.
     """
@@ -570,6 +599,7 @@ def run_benchmarks(all_params, model_spec, device, output_path, service_port):
         output_path,
         service_port,
         task_type=MediaTaskType.BENCHMARK,
+        deploy_url=deploy_url,
     )
 
 

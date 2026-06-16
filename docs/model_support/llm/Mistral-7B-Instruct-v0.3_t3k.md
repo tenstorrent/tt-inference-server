@@ -8,7 +8,8 @@
 
 `Mistral-7B-Instruct-v0.3` is also supported on hardware:
 
-- [N150/N300](Mistral-7B-Instruct-v0.3_n150.md)
+- [N150](Mistral-7B-Instruct-v0.3_n150.md)
+- [N300](Mistral-7B-Instruct-v0.3_n300.md)
 
 ## Quickstart - Deploy Mistral-7B-Instruct-v0.3 Inference Server on WH LoudBox/QuietBox
 

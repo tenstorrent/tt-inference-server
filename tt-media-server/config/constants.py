@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import NamedTuple, Tuple
 
@@ -38,11 +39,13 @@ class SupportedModels(Enum):
     LLAMA_3_1_70B = "meta-llama/Llama-3.1-70B"
     QWEN_3_4B = "Qwen/Qwen3-4B"
     QWEN_3_8B = "Qwen/Qwen3-8B"
+    QWEN_3_32B = "Qwen/Qwen3-32B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "google/gemma-4-31B-it"
     FALCON3_7B_INSTRUCT = "tiiuae/Falcon3-7B-Instruct"
     Z_IMAGE_TURBO = "Tongyi-MAI/Z-Image-Turbo"
+    YOLOX_NANO = "Megvii-BaseDetection/YOLOX-Nano"
 
 
 # MODEL environment variable
@@ -86,10 +89,12 @@ class ModelNames(Enum):
     LLAMA_3_1_70B = "Llama-3.1-70B"
     QWEN_3_4B = "Qwen3-4B"
     QWEN_3_8B = "Qwen3-8B"
+    QWEN_3_32B = "Qwen3-32B"
     SPEECHT5_TTS = "speecht5_tts"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "gemma-4-31b-it"
     FALCON3_7B_INSTRUCT = "Falcon3-7B-Instruct"
+    YOLOX_NANO = "yolox_nano"
     Z_IMAGE_TURBO = "Z-Image-Turbo"
 
 
@@ -116,6 +121,7 @@ class ModelRunners(Enum):
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
     VLLMForge_LLAMA_70B = "vllm_forge_llama_70b"
     VLLMForge_GEMMA4_31B = "vllm_forge_gemma4_31b"
+    VLLMForge_QWEN_32B = "vllm_forge_qwen_32b"
     QWEN_EMBEDDING_8B = "qwen_embedding_8b"
     BGELargeEN_V1_5 = "bge_large_en_v1_5"
     BGEM3 = "bge-m3"
@@ -126,6 +132,7 @@ class ModelRunners(Enum):
     TT_XLA_SEGFORMER = "tt-xla-segformer"
     TT_XLA_UNET = "tt-xla-unet"
     TT_XLA_VIT = "tt-xla-vit"
+    TT_XLA_YOLOX_NANO = "tt-xla-yolox-nano"
     TRAINING_LORA = "training-lora"
     TRAINING_GEMMA_LORA = "training-gemma-lora"
     LORA_SINGLE_CHIP = "lora-single-chip"
@@ -167,6 +174,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.VLLMForge,
         ModelRunners.VLLMForge_LLAMA_70B,
         ModelRunners.VLLMForge_GEMMA4_31B,
+        ModelRunners.VLLMForge_QWEN_32B,
         ModelRunners.LLM_TEST,
         ModelRunners.LLAMA_RUNNER,
         ModelRunners.LORA_SINGLE_CHIP,
@@ -186,6 +194,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_UNET,
         ModelRunners.TT_XLA_VIT,
         ModelRunners.TT_YOLOV4,
+        ModelRunners.TT_XLA_YOLOX_NANO,
     },
     ModelServices.AUDIO: {
         ModelRunners.TT_WHISPER,
@@ -244,9 +253,11 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_SEGFORMER: {ModelNames.SEGFORMER},
     ModelRunners.TT_XLA_UNET: {ModelNames.UNET},
     ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
+    ModelRunners.TT_XLA_YOLOX_NANO: {ModelNames.YOLOX_NANO},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
     ModelRunners.VLLMForge_LLAMA_70B: {ModelNames.LLAMA_3_1_70B},
     ModelRunners.VLLMForge_GEMMA4_31B: {ModelNames.GEMMA_4_31B_IT},
+    ModelRunners.VLLMForge_QWEN_32B: {ModelNames.QWEN_3_32B},
     ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
     ModelRunners.BGEM3: {ModelNames.BGE_M3},
@@ -1072,16 +1083,21 @@ ModelConfigs = {
         "device_mesh_shape": (1, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        # Dims are env-driven via dev/cnn.yaml env_vars (mimics the single-chip
+        # forge LLMs): VLLMSettings reads MAX_MODEL_LENGTH / MAX_NUM_SEQS /
+        # GPU_MEMORY_UTILIZATION from env and auto-computes max_num_batched_tokens
+        # = max_model_length * max_num_seqs. model is set from the MODEL env
+        # (settings.py); max_batch_size auto-raises to max_num_seqs. This entry
+        # only carries the TP mesh topology (batch-16/4K lives in cnn.yaml).
         "max_batch_size": 1,
-        "vllm": {
-            "model": SupportedModels.GEMMA_4_31B_IT.value,
-            "max_model_length": 512,
-            # Gemma-4 multimodal requires max_num_batched_tokens >= 2560
-            # (video: _VIDEO_MAX_FRAMES=32 * 78 tokens = 2496).
-            "max_num_batched_tokens": 2560,
-            "min_context_length": 32,
-            "max_num_seqs": 1,
-        },
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
+    },
+    (ModelRunners.VLLMForge_QWEN_32B, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        # Dims env-driven via dev/cnn.yaml env_vars (see gemma entry above).
+        "max_batch_size": 1,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.N150): {
@@ -1304,6 +1320,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        "request_processing_timeout_seconds": 3000,
     },
     (ModelRunners.VLLMForge, DeviceTypes.P300): {
         "device_mesh_shape": (1, 1),
@@ -1329,11 +1346,12 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.TT_Z_IMAGE_TURBO, DeviceTypes.P150X4): {
+    (ModelRunners.TT_Z_IMAGE_TURBO, DeviceTypes.P300X2): {
         "device_mesh_shape": (1, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
+        "request_processing_timeout_seconds": 1500,
     },
     (ModelRunners.TRAINING_GEMMA_LORA, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),
@@ -1361,6 +1379,22 @@ for runner in [
         "is_galaxy": False,
         "device_mesh_shape": (1, 1),
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
+    }
+
+for runner in [
+    ModelRunners.TT_XLA_YOLOX_NANO,
+]:
+    ModelConfigs[(runner, DeviceTypes.N150)] = {
+        "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "download_weights_from_service": False,
+    }
+    ModelConfigs[(runner, DeviceTypes.P150)] = {
+        "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "download_weights_from_service": False,
     }
 
 
@@ -1395,3 +1429,25 @@ _DEFAULT_SAMPLING_PARAMS = {
 
 # Sentinel object for worker shutdown signaling
 SHUTDOWN_SIGNAL = {"__shutdown__": True}
+
+
+# Reserved task_ids for canary-monitor probes (see health_monitoring/).
+# Must not contain "_chunk_", must be <= 36 bytes, and must not collide with UUID4 task_ids.
+CANARY_TASK_ID = "__canary__"  # shallow: bare host-collective probe
+CANARY_DEEP_TASK_ID = (
+    "__canary_deep__"  # deep: replays compiled warmup forward to certify silicon
+)
+CANARY_TASK_IDS = frozenset({CANARY_TASK_ID, CANARY_DEEP_TASK_ID})
+
+
+@dataclass(frozen=True)
+class CanaryProbeRequest:
+    """Sentinel put on the scheduler task_queue by the canary monitor.
+
+    Workers route it to ``runner.health_check()`` instead of ``runner.run()``.
+    Frozen dataclass so it pickles cleanly across the multiprocessing queue.
+    """
+
+    _task_id: str = field(default=CANARY_TASK_ID)
+    stream: bool = field(default=False)
+    deep: bool = field(default=False)

@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <iostream>
 
+#include "domain/llm/llm_error_reason.hpp"
+
 namespace tt::ipc {
 
 struct SharedToken {
@@ -19,10 +21,14 @@ struct SharedToken {
   static constexpr uint32_t FLAG_FINAL = 1;
   static constexpr uint32_t FLAG_ERROR = 2;
   static constexpr uint32_t FLAG_DONE = 4;
+  static constexpr uint32_t FLAG_ABORT = 8;
+  static constexpr uint32_t FLAG_TIMEOUT = 16;
 
   bool isFinal() const { return flags & FLAG_FINAL; }
   bool isError() const { return flags & FLAG_ERROR; }
   bool isDone() const { return flags & FLAG_DONE; }
+  bool isAbort() const { return flags & FLAG_ABORT; }
+  bool isTimeout() const { return flags & FLAG_TIMEOUT; }
 
   void serialize(std::ostream& os) const {
     os.write(reinterpret_cast<const char*>(&token_index), sizeof(token_index));
@@ -49,6 +55,12 @@ struct SharedToken {
     return token;
   }
 };
+
+inline tt::domain::llm::LLMErrorReason errorReasonFromToken(
+    const SharedToken& token) {
+  return token.isTimeout() ? tt::domain::llm::LLMErrorReason::TIMEOUT
+                           : tt::domain::llm::LLMErrorReason::GENERIC;
+}
 
 /**
  * Abstract interface for a token result queue (worker -> main process).

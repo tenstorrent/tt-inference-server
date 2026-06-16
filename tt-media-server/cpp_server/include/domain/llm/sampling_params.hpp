@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
+//
+// SPDX-License-Identifier: Apache-2.0
 #pragma once
 
 #include <iostream>
@@ -7,8 +10,6 @@
 #include <vector>
 
 #include "config/types.hpp"
-#include "domain/tool_calls/tool.hpp"
-#include "domain/tool_calls/tool_choice.hpp"
 
 namespace tt::domain::llm {
 
@@ -34,7 +35,7 @@ struct SamplingParams {
   std::optional<float> repetition_penalty;
   float length_penalty = 1.0f;
 
-  std::vector<int> stop_token_ids;
+  std::vector<uint32_t> stop_token_ids;
   bool include_stop_str_in_output = false;
   int min_tokens = 0;
   bool skip_special_tokens = true;
@@ -49,21 +50,9 @@ struct SamplingParams {
   ResponseFormatType response_format_type = ResponseFormatType::TEXT;
   std::optional<std::string> json_schema_str;
 
-  std::optional<std::vector<tool_calls::Tool>> tools;
-  std::optional<tool_calls::ToolChoice> tool_choice;
-
   bool hasGuidedDecoding() const {
     if (response_format_type != ResponseFormatType::TEXT) {
       return true;
-    }
-    if (tool_choice.has_value() && tools.has_value()) {
-      if (tool_choice->type == "function" &&
-          tool_choice->function.has_value()) {
-        return true;
-      }
-      if (tool_choice->type == "required") {
-        return true;
-      }
     }
     return false;
   }

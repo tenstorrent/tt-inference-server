@@ -18,25 +18,30 @@
 #
 # SERVER_TARGET defaults to 'tt-inference-server:8000'.
 # SERVER_SERVICE defaults to 'python' (kept for backwards compat).
+# GATEWAY_TARGET defaults to 'prefill-gateway:9091'.
 # Open Grafana at http://localhost:3000  (admin / admin)
 
 services:
   prometheus:
     image: prom/prometheus:v2.51.0
-    container_name: tt_prometheus
+    container_name: ${PROMETHEUS_CONTAINER_NAME:-tt_prometheus}
     restart: unless-stopped
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_HOST_PORT:-9090}:9090"
     environment:
       - SERVER_TARGET=${SERVER_TARGET:-tt-inference-server:8000}
       - SERVER_SERVICE=${SERVER_SERVICE:-python}
+      - GATEWAY_TARGET=${GATEWAY_TARGET:-prefill-gateway:9091}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml.tmpl:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
-        sed "s|__SERVER_TARGET__|$$SERVER_TARGET|g; s|__SERVER_SERVICE__|$$SERVER_SERVICE|g"
+        sed "s|__SERVER_TARGET__|$$SERVER_TARGET|g; s|__SERVER_SERVICE__|$$SERVER_SERVICE|g; s|__GATEWAY_TARGET__|$$GATEWAY_TARGET|g"
         /etc/prometheus/prometheus.yml.tmpl > /tmp/prometheus.yml
         && exec /bin/prometheus
         --config.file=/tmp/prometheus.yml
@@ -53,7 +58,7 @@ services:
   # on either server's side.
   process-exporter:
     image: ncabatoff/process-exporter:0.8.7
-    container_name: tt_process_exporter
+    container_name: ${PROCESS_EXPORTER_CONTAINER_NAME:-tt_process_exporter}
     restart: unless-stopped
     pid: host
     privileged: true          # needed to read /proc/<pid> across namespaces
@@ -68,10 +73,10 @@ services:
 
   grafana:
     image: grafana/grafana:10.4.2
-    container_name: tt_grafana
+    container_name: ${GRAFANA_CONTAINER_NAME:-tt_grafana}
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${GRAFANA_HOST_PORT:-3000}:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false

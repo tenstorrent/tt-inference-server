@@ -3,21 +3,23 @@
 
 #include "services/model_service_registration.hpp"
 
+#include <cstdlib>
 #include <memory>
 #include <mutex>
-#include <stdexcept>
 
 #include "api/route_registry.hpp"
 #include "config/runner_config.hpp"
 #include "config/settings.hpp"
 #include "config/types.hpp"
-#include "runtime/runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
+#include "ipc/media_payload_ipc.hpp"
 #include "runtime/runners/embedding_runner.hpp"
+#include "runtime/runners/image_ipc_runner.hpp"
 #include "runtime/runners/llm_runner.hpp"
 #include "runtime/runners/runner_registry.hpp"
 #include "runtime/runners/sdxl/sdxl_edit_runner.hpp"
 #include "runtime/runners/sdxl/sdxl_generate_runner.hpp"
 #include "runtime/runners/sdxl/sdxl_image_to_image_runner.hpp"
+#include "runtime/worker/worker_manager.hpp"
 #include "services/embedding_service.hpp"
 #include "services/image_service.hpp"
 #include "services/llm_service.hpp"
@@ -25,7 +27,8 @@
 #include "utils/logger.hpp"
 
 #ifdef ENABLE_BLAZE
-#include "runtime/runners/blaze_runner/blaze_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_decode_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_prefill_runner.hpp"
 #endif
 
 namespace tt::services {
@@ -58,27 +61,20 @@ void registerLLM() {
                             config::ModelRunnerType::MOCK, llmFactory);
   runners.registerIpcRunner(config::ModelService::LLM,
                             config::ModelRunnerType::LLAMA, llmFactory);
-
-  // Disaggregated prefill is independent of ENABLE_BLAZE.
-  runners.registerIpcRunner(
-      config::ModelService::LLM, config::ModelRunnerType::PREFILL,
-      [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
-         ipc::ITaskQueue* taskQueue, ipc::ICancelQueue* /*cancelQueue*/)
-          -> std::unique_ptr<runners::IRunner> {
-        TT_LOG_INFO("[RunnerRegistry] Creating Blaze Prefill runner");
-        const auto& llm = std::get<config::LLMConfig>(cfg);
-        return std::make_unique<runners::BlazePrefillRunner>(llm, resultQueue,
-                                                             taskQueue);
-      });
-
 #ifdef ENABLE_BLAZE
   auto blazeFactory =
       [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
-         ipc::ITaskQueue* taskQueue, ipc::ICancelQueue* /*cancelQueue*/)
-      -> std::unique_ptr<runners::IRunner> {
+         ipc::ITaskQueue* taskQueue,
+         ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
     TT_LOG_INFO("[RunnerRegistry] Creating Blaze runner (pipeline_manager)");
     const auto& llm = std::get<config::LLMConfig>(cfg);
-    return std::make_unique<runners::BlazeRunner>(llm, resultQueue, taskQueue);
+    if (config::llmMode() != config::LLMMode::PREFILL_ONLY) {
+      return std::make_unique<runners::blaze::BlazeDecodeRunner>(
+          llm, resultQueue, taskQueue, cancelQueue);
+    } else {
+      return std::make_unique<runners::blaze::BlazePrefillRunner>(
+          llm, resultQueue, taskQueue, cancelQueue);
+    }
   };
   runners.registerIpcRunner(config::ModelService::LLM,
                             config::ModelRunnerType::PIPELINE_MANAGER,
@@ -92,10 +88,6 @@ void registerLLM() {
   routes.registerRoute(config::ModelService::LLM, "POST",
                        "/v1/chat/completions",
                        "OpenAI-compatible chat completions");
-  routes.registerRoute(config::ModelService::LLM, "POST", "/v1/responses",
-                       "OpenAI-compatible Responses API");
-  routes.registerRoute(config::ModelService::LLM, "GET", "/v1/models",
-                       "List models");
 }
 
 void registerEmbedding() {
@@ -148,20 +140,44 @@ void registerImage() {
             std::get<config::ImageConfig>(cfg));
       });
 
+  auto imageIpcFactory =
+      [](const config::RunnerConfig& cfg, ipc::IResultQueue* /*resultQueue*/,
+         ipc::ITaskQueue* /*taskQueue*/, ipc::ICancelQueue* /*cancelQueue*/)
+      -> std::unique_ptr<runners::IRunner> {
+    const char* workerIdEnv = std::getenv("TT_WORKER_ID");
+    const int workerId = workerIdEnv ? std::atoi(workerIdEnv) : 0;
+    auto imageCfg = std::get<config::ImageConfig>(cfg);
+    TT_LOG_INFO(
+        "[RunnerRegistry] Creating image IPC runner worker={} "
+        "TT_VISIBLE_DEVICES='{}'",
+        workerId, imageCfg.visible_devices);
+    return std::make_unique<runners::ImageIpcRunner>(imageCfg, workerId);
+  };
+  runners.registerIpcRunner(config::ModelService::IMAGE,
+                            config::ModelRunnerType::TT_SDXL_GENERATE,
+                            imageIpcFactory);
+  runners.registerIpcRunner(config::ModelService::IMAGE,
+                            config::ModelRunnerType::TT_SDXL_IMAGE_TO_IMAGE,
+                            imageIpcFactory);
+  runners.registerIpcRunner(config::ModelService::IMAGE,
+                            config::ModelRunnerType::TT_SDXL_EDIT,
+                            imageIpcFactory);
+
   const auto cfg = config::imageEngineConfig();
 
   ServiceRegistry::instance().registerService(
       config::ModelService::IMAGE, [cfg]() -> std::shared_ptr<IService> {
-        auto runner =
-            utils::RunnerRegistry::instance().createMedia<ImageService::Runner>(
-                config::ModelService::IMAGE, cfg.runner_type,
-                config::RunnerConfig{cfg});
-        if (!runner) {
-          throw std::runtime_error(
-              "[RegisterImage] No image runner registered for runner_type=" +
-              config::toString(cfg.runner_type));
-        }
-        return std::make_shared<ImageService>(cfg, std::move(runner));
+        const size_t configuredWorkers = config::numWorkers();
+        TT_LOG_INFO(
+            "[RegisterImage] Creating worker-backed image service with {} "
+            "worker process(es)",
+            configuredWorkers);
+        auto queueManager =
+            std::make_unique<tt::ipc::media_payload::MediaPayloadQueueSet>(
+                static_cast<int>(configuredWorkers));
+        return std::make_shared<ImageService>(
+            cfg, std::make_unique<tt::worker::WorkerManager>(configuredWorkers),
+            std::move(queueManager));
       });
 
   auto& routes = api::RouteRegistry::instance();

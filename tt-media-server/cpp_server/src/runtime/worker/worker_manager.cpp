@@ -21,7 +21,6 @@
 #include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/boost/boost_task_queue.hpp"
 #include "ipc/boost/boost_warmup_signal_queue.hpp"
-#include "ipc/queue_manager.hpp"
 #include "utils/logger.hpp"
 
 namespace {
@@ -166,16 +165,22 @@ void WorkerManager::restartWorker(size_t workerIdx) {
 
 WorkerConfig WorkerManager::makeWorkerConfig(int workerId) {
   WorkerConfig cfg;
+  cfg.env_vars["TT_WORKER_ID"] = std::to_string(workerId);
   cfg.env_vars["TT_VISIBLE_DEVICES"] =
       tt::config::visibleDevicesForWorker(workerId);
-  cfg.task_queue = std::make_shared<tt::ipc::boost::TaskQueue>(
-      tt::config::ttTaskQueueName());
-  cfg.result_queue = std::make_shared<tt::ipc::boost::ResultQueue>(
-      std::string(tt::config::ttResultQueueName()) + std::to_string(workerId));
-  cfg.cancel_queue = std::make_shared<tt::ipc::boost::CancelQueue>(
-      std::string(tt::config::ttCancelQueueName()) + std::to_string(workerId));
+  if (!tt::config::isImageService()) {
+    cfg.task_queue = std::make_shared<tt::ipc::boost::TaskQueue>(
+        tt::config::ttTaskQueueName());
+    cfg.result_queue = std::make_shared<tt::ipc::boost::ResultQueue>(
+        std::string(tt::config::ttResultQueueName()) +
+        std::to_string(workerId));
+    cfg.cancel_queue = std::make_shared<tt::ipc::boost::CancelQueue>(
+        std::string(tt::config::ttCancelQueueName()) +
+        std::to_string(workerId));
+  }
   cfg.worker_id = workerId;
-  cfg.runner_config = tt::config::llmEngineConfig();
+  cfg.runner_config =
+      tt::config::workerRunnerConfig(static_cast<size_t>(workerId));
   return cfg;
 }
 
@@ -268,16 +273,22 @@ void WorkerManager::stopLivenessChecker() {
 
 WorkerConfig makeWorkerConfigForProcess(int workerId) {
   WorkerConfig cfg;
+  cfg.env_vars["TT_WORKER_ID"] = std::to_string(workerId);
   cfg.env_vars["TT_VISIBLE_DEVICES"] =
       tt::config::visibleDevicesForWorker(workerId);
-  cfg.task_queue = std::make_shared<tt::ipc::boost::TaskQueue>(
-      tt::config::ttTaskQueueName());
-  cfg.result_queue = std::make_shared<tt::ipc::boost::ResultQueue>(
-      std::string(tt::config::ttResultQueueName()) + std::to_string(workerId));
-  cfg.cancel_queue = std::make_shared<tt::ipc::boost::CancelQueue>(
-      std::string(tt::config::ttCancelQueueName()) + std::to_string(workerId));
+  if (!tt::config::isImageService()) {
+    cfg.task_queue = std::make_shared<tt::ipc::boost::TaskQueue>(
+        tt::config::ttTaskQueueName());
+    cfg.result_queue = std::make_shared<tt::ipc::boost::ResultQueue>(
+        std::string(tt::config::ttResultQueueName()) +
+        std::to_string(workerId));
+    cfg.cancel_queue = std::make_shared<tt::ipc::boost::CancelQueue>(
+        std::string(tt::config::ttCancelQueueName()) +
+        std::to_string(workerId));
+  }
   cfg.worker_id = workerId;
-  cfg.runner_config = tt::config::llmEngineConfig();
+  cfg.runner_config =
+      tt::config::workerRunnerConfig(static_cast<size_t>(workerId));
   return cfg;
 }
 

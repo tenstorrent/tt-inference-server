@@ -43,7 +43,7 @@ class EmbeddingParamTest(BaseTest):
     TASK_TYPE = "embedding"
 
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/v1/embeddings"
+        self.url = f"{self.base_url}/v1/embeddings"
         logger.info(f"Testing embedding parameters at {self.url}")
 
         model = self.config.get("model", "test-model")
@@ -72,7 +72,7 @@ class EmbeddingParamTest(BaseTest):
         # Check if same requests produce identical results
         base_match = response_data_list[0]["data"] == response_data_list[1]["data"]
         results["same_requests_match"] = base_match
-        logger.info(f"✓ Same requests match: {base_match}")
+        logger.info(f"✅ Same requests match: {base_match}")
 
         # Check if different parameters produce different results
         param_tests = []

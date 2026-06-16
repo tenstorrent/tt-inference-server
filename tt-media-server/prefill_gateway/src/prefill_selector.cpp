@@ -4,66 +4,106 @@
 #include "gateway/prefill_selector.hpp"
 
 #include <algorithm>
-#include <limits>
 
 namespace tt::gateway {
 
 namespace {
 
-bool isEligible(const PrefillSnapshot& p) {
-  if (!p.healthy) return false;
-  if (p.max_in_flight > 0 && p.in_flight >= p.max_in_flight) return false;
-  return true;
-}
+struct Candidate {
+  const PrefillSnapshot* prefill = nullptr;
+  size_t prefix_match_depth = 0;
 
-const PrefillSnapshot* findById(const std::vector<PrefillSnapshot>& prefills,
-                                const std::string& serverId) {
-  auto it = std::find_if(
-      prefills.begin(), prefills.end(),
-      [&](const PrefillSnapshot& p) { return p.server_id == serverId; });
-  return it == prefills.end() ? nullptr : &*it;
-}
+  bool isBetterThan(const Candidate& other) const {
+    if (prefix_match_depth != other.prefix_match_depth) {
+      return prefix_match_depth > other.prefix_match_depth;
+    }
+    return prefill->in_flight < other.prefill->in_flight;
+  }
+
+  bool isTiedWith(const Candidate& other) const {
+    return prefix_match_depth == other.prefix_match_depth &&
+           prefill->in_flight == other.prefill->in_flight;
+  }
+};
 
 }  // namespace
 
-std::optional<std::string> selectPrefill(
-    const std::vector<PrefillSnapshot>& prefills, size_t registrationHash,
-    const std::optional<std::string>& stickyTarget, size_t& roundRobinCursor) {
-  if (registrationHash != 0 && stickyTarget.has_value()) {
-    const PrefillSnapshot* hit = findById(prefills, *stickyTarget);
-    if (hit && isEligible(*hit)) {
-      return *stickyTarget;
+PrefillEligibilitySummary summarizePrefillEligibility(
+    const std::vector<PrefillSnapshot>& prefills) {
+  auto healthy = [](const PrefillSnapshot& prefill) { return prefill.healthy; };
+  auto accepting = [](const PrefillSnapshot& prefill) {
+    return prefill.healthy && prefill.accepting_tasks;
+  };
+  auto capacityAvailable = [](const PrefillSnapshot& prefill) {
+    return prefill.healthy && prefill.accepting_tasks &&
+           (prefill.max_in_flight == 0 ||
+            prefill.in_flight < prefill.max_in_flight);
+  };
+
+  PrefillEligibilitySummary summary;
+  summary.total = prefills.size();
+  summary.healthy = std::ranges::count_if(prefills, healthy);
+  summary.accepting = std::ranges::count_if(prefills, accepting);
+  summary.capacity_available =
+      std::ranges::count_if(prefills, capacityAvailable);
+  return summary;
+}
+
+std::string_view routingReasonName(PrefillRoutingReason reason) {
+  switch (reason) {
+    case PrefillRoutingReason::PrefixMatch:
+      return "prefix_match";
+    case PrefillRoutingReason::LeastInflight:
+      return "least_inflight";
+    case PrefillRoutingReason::RoundRobin:
+      return "round_robin";
+    case PrefillRoutingReason::NoEligiblePrefill:
+      return "no_eligible_prefill";
+  }
+  return "unknown";
+}
+
+PrefillSelection selectPrefill(const std::vector<PrefillSnapshot>& prefills,
+                               size_t& roundRobinCursor) {
+  std::vector<Candidate> bestCandidates;
+  bestCandidates.reserve(prefills.size());
+
+  for (const auto& p : prefills) {
+    if (!p.isEligible()) {
+      continue;
+    }
+
+    Candidate candidate{&p, p.prefix_match_depth};
+    if (bestCandidates.empty() ||
+        candidate.isBetterThan(bestCandidates.front())) {
+      bestCandidates = {candidate};
+      continue;
+    }
+    if (candidate.isTiedWith(bestCandidates.front())) {
+      bestCandidates.push_back(candidate);
     }
   }
 
-  std::vector<const PrefillSnapshot*> eligible;
-  eligible.reserve(prefills.size());
-  for (const auto& p : prefills) {
-    if (isEligible(p)) eligible.push_back(&p);
+  if (bestCandidates.empty()) {
+    return {std::nullopt, PrefillRoutingReason::NoEligiblePrefill};
   }
 
-  if (eligible.empty()) {
-    return std::nullopt;
+  const bool hasPrefixMatch = bestCandidates.front().prefix_match_depth > 0;
+  if (bestCandidates.size() == 1) {
+    const auto& selected = bestCandidates.front();
+    return {selected.prefill->server_id,
+            hasPrefixMatch ? PrefillRoutingReason::PrefixMatch
+                           : PrefillRoutingReason::LeastInflight,
+            selected.prefix_match_depth};
   }
 
-  uint32_t minInFlight = std::numeric_limits<uint32_t>::max();
-  for (const auto* p : eligible) {
-    minInFlight = std::min(minInFlight, p->in_flight);
-  }
-
-  std::vector<const PrefillSnapshot*> leastLoaded;
-  leastLoaded.reserve(eligible.size());
-  for (const auto* p : eligible) {
-    if (p->in_flight == minInFlight) leastLoaded.push_back(p);
-  }
-
-  if (leastLoaded.size() == 1) {
-    return leastLoaded.front()->server_id;
-  }
-
-  const size_t pickIndex = roundRobinCursor % leastLoaded.size();
+  const size_t pickIndex = roundRobinCursor % bestCandidates.size();
   ++roundRobinCursor;
-  return leastLoaded[pickIndex]->server_id;
+  const auto& selected = bestCandidates[pickIndex];
+  return {selected.prefill->server_id,
+          hasPrefixMatch ? PrefillRoutingReason::PrefixMatch
+                         : PrefillRoutingReason::RoundRobin,
+          selected.prefix_match_depth};
 }
 
 }  // namespace tt::gateway

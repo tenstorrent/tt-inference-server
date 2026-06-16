@@ -10,6 +10,12 @@ import pytest
 from config.constants import SHUTDOWN_SIGNAL
 from domain.completion_response import CompletionOutput, CompletionResult
 
+_orig_config_settings = sys.modules.get("config.settings")
+_orig_telemetry_client = sys.modules.get("telemetry.telemetry_client")
+_orig_torch_utils = sys.modules.get("utils.torch_utils")
+_orig_device_manager = sys.modules.get("utils.device_manager")
+_orig_utils_logger = sys.modules.get("utils.logger")
+
 # Mock all external dependencies before importing
 sys.modules["ttnn"] = Mock()
 sys.modules["models.demos.stable_diffusion_xl_base.tt.tt_unet"] = Mock()
@@ -69,6 +75,18 @@ sys.modules["utils.logger"].TTLogger = Mock(return_value=mock_logger)
 
 # Now import the module under test
 from device_workers.device_worker_dynamic_batch import device_worker
+
+for module_name, original_module in {
+    "config.settings": _orig_config_settings,
+    "telemetry.telemetry_client": _orig_telemetry_client,
+    "utils.torch_utils": _orig_torch_utils,
+    "utils.device_manager": _orig_device_manager,
+    "utils.logger": _orig_utils_logger,
+}.items():
+    if original_module is not None:
+        sys.modules[module_name] = original_module
+    else:
+        sys.modules.pop(module_name, None)
 
 
 # Module level fixtures

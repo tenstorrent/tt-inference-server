@@ -31,6 +31,53 @@ struct PrefillConnectionState {
   std::string serverId;
 };
 
+enum class RegistrationLogReason {
+  NONE,
+  NEW,
+  RECOVERED,
+  CAPACITY_CHANGED,
+};
+
+RegistrationLogReason registrationLogReason(
+    const PrefillRegistry& registry,
+    const tt::sockets::PrefillRegistrationMessage& msg) {
+  for (const auto& prefill : registry.snapshot()) {
+    if (prefill.server_id != msg.server_id) {
+      continue;
+    }
+    if (!prefill.healthy) {
+      return RegistrationLogReason::RECOVERED;
+    }
+    if (prefill.max_in_flight != msg.max_in_flight) {
+      return RegistrationLogReason::CAPACITY_CHANGED;
+    }
+    return RegistrationLogReason::NONE;
+  }
+  return RegistrationLogReason::NEW;
+}
+
+void logPrefillRegistrationIfNeeded(
+    RegistrationLogReason reason,
+    const tt::sockets::PrefillRegistrationMessage& msg) {
+  switch (reason) {
+    case RegistrationLogReason::NEW:
+      TT_LOG_INFO("[Gateway] Prefill registered: id='{}' max_in_flight={}",
+                  msg.server_id, msg.max_in_flight);
+      break;
+    case RegistrationLogReason::RECOVERED:
+      TT_LOG_INFO("[Gateway] Prefill recovered: id='{}' max_in_flight={}",
+                  msg.server_id, msg.max_in_flight);
+      break;
+    case RegistrationLogReason::CAPACITY_CHANGED:
+      TT_LOG_INFO(
+          "[Gateway] Prefill capacity changed: id='{}' max_in_flight={}",
+          msg.server_id, msg.max_in_flight);
+      break;
+    case RegistrationLogReason::NONE:
+      break;
+  }
+}
+
 }  // namespace
 
 void registerTcpPrefillHandlers(PrefillSocketManagers& prefillSms,
@@ -47,14 +94,15 @@ void registerTcpPrefillHandlers(PrefillSocketManagers& prefillSms,
         tt::sockets::tags::PREFILL_REGISTRATION,
         [&registry, sm,
          state](const tt::sockets::PrefillRegistrationMessage& msg) {
-          TT_LOG_DEBUG("[Gateway] Prefill registered: id='{}' max_in_flight={}",
-                       msg.server_id, msg.max_in_flight);
+          const auto logReason = registrationLogReason(registry, msg);
           state->setServerId(msg.server_id);
           registry.preRegister(msg.server_id, sm);
           bool ok = registry.markRegistered(msg.server_id, msg.max_in_flight);
           if (!ok) {
             TT_LOG_ERROR("[Gateway] markRegistered failed for '{}'",
                          msg.server_id);
+          } else {
+            logPrefillRegistrationIfNeeded(logReason, msg);
           }
         });
 
@@ -95,14 +143,15 @@ void registerZmqPrefillHandlers(ZmqPrefillRouter& zmqPrefillRouter,
       [&registry, &zmqPrefillRouter](
           const ZmqPrefillRouter::PeerIdentity& peerId,
           const tt::sockets::PrefillRegistrationMessage& msg) {
-        TT_LOG_DEBUG("[Gateway] Prefill registered: id='{}' max_in_flight={}",
-                     msg.server_id, msg.max_in_flight);
+        const auto logReason = registrationLogReason(registry, msg);
         zmqPrefillRouter.rememberRegistration(msg.server_id, peerId);
         registry.preRegister(msg.server_id, nullptr);
         bool ok = registry.markRegistered(msg.server_id, msg.max_in_flight);
         if (!ok) {
           TT_LOG_ERROR("[Gateway] markRegistered failed for '{}'",
                        msg.server_id);
+        } else {
+          logPrefillRegistrationIfNeeded(logReason, msg);
         }
       });
 

@@ -59,6 +59,22 @@ class VideoStatus(IntEnum):
     ERROR = 1
 
 
+# Sentinel task_id used by SPRunner's startup ping to signal readiness to the
+# pipeline rank 0. The pipeline short-circuits on this value: it writes a
+# SUCCESS VideoResponse (empty file_path) without running inference, so the
+# round-trip latency is exactly the pipeline's cold-start time. Picking a
+# value that cannot collide with the UUID4 task_ids the API emits keeps the
+# wire format unchanged — no slot resizing, no mixed-deploy SHM size mismatch.
+#
+# ── ack-fungibility (multi-worker contract) ──
+# All SPRunner workers — there are N of them when device_ids="(0),(1),...,(N-1)"
+# — write pings carrying THIS same task_id. They share the output ring's
+# reader_index (it lives in SHM state, not per-process), so they don't each
+# get a dedicated response slot. Instead, each worker consumes one SUCCESS
+# response off the ring in arrival order.
+SP_WARMUP_TASK_ID = "__sp_warmup__"
+
+
 @dataclass(frozen=True)
 class VideoRequest:
     task_id: str
@@ -319,27 +335,57 @@ class VideoShm:
         self._buf = self._shm.buf
         self._state_buf = self._state_shm.buf
 
+    # Bounded retry window for the create-vs-attach race. When server and
+    # runner boot concurrently, one wins ``create=True`` and the other falls
+    # through to ``create=False`` — but if the loser sees the segment briefly
+    # then it disappears (e.g. an out-of-band ``bootstrap down`` mid-create,
+    # or the kernel surfacing the dentry before the file is fully published),
+    # ``shm_open`` raises ENOENT. Retrying covers a window of roughly
+    # ``_ATTACH_RETRIES * _ATTACH_RETRY_DELAY_S`` seconds (default ~5 s),
+    # which is orders of magnitude wider than any realistic race.
+    _ATTACH_RETRIES = 50
+    _ATTACH_RETRY_DELAY_S = 0.1
+
     @staticmethod
     def _create_or_attach(name: str, size: int) -> tuple[_shm.SharedMemory, bool]:
         """POSIX O_CREAT-style open: create if absent, else attach.
 
         Returns (segment, created). Always drops the resource_tracker entry so
         this process never unlinks the segment on exit.
-        """
-        try:
-            shm = _shm.SharedMemory(name=name, create=True, size=size)
-            created = True
-        except FileExistsError:
-            shm = _shm.SharedMemory(name=name, create=False)
-            if shm.size < size:
-                raise RuntimeError(
-                    f"Existing SHM {name!r} size {shm.size} < expected {size}. "
-                    "Layout changed — run `python -m ipc.video_shm_bootstrap down` "
-                    "to reset, or unlink manually."
-                ) from None
-            created = False
 
-        # Always chmod (idempotent) so whoever created it, either side can attach.
+        Bounded retry on ENOENT to cover the create-vs-attach race when both
+        sides bring up the rings concurrently (see ``_ATTACH_RETRIES``).
+        """
+        last_err: Exception | None = None
+        for attempt in range(VideoShm._ATTACH_RETRIES):
+            try:
+                shm = _shm.SharedMemory(name=name, create=True, size=size)
+                created = True
+                break
+            except FileExistsError:
+                try:
+                    shm = _shm.SharedMemory(name=name, create=False)
+                except FileNotFoundError as exc:
+                    last_err = exc
+                    time.sleep(VideoShm._ATTACH_RETRY_DELAY_S)
+                    continue
+                if shm.size < size:
+                    raise RuntimeError(
+                        f"Existing SHM {name!r} size {shm.size} < expected {size}. "
+                        "Layout changed — run `python -m ipc.video_shm_bootstrap down` "
+                        "to reset, or unlink manually."
+                    ) from None
+                created = False
+                break
+        else:
+            raise RuntimeError(
+                f"SHM {name!r}: create-vs-attach race did not resolve within "
+                f"{VideoShm._ATTACH_RETRIES * VideoShm._ATTACH_RETRY_DELAY_S:.1f}s "
+                f"(last error: {last_err!r}). Peer process is likely stuck "
+                f"between create and chmod, or the segment is being repeatedly "
+                f"unlinked by another actor."
+            ) from last_err
+
         try:
             os.chmod(f"/dev/shm/{name}", 0o666)
         except (PermissionError, FileNotFoundError):
@@ -511,19 +557,34 @@ class VideoShm:
 
     # ── Input SHM: request read / write ──
 
-    def write_request(self, request: VideoRequest) -> None:
-        """Write a VideoRequest into the next free input slot (spin-waits)."""
+    def write_request(
+        self, request: VideoRequest, timeout_s: float | None = None
+    ) -> bool:
+        """Write a VideoRequest into the next free input slot.
+
+        Spin-waits for the target slot to become EMPTY. Pass ``timeout_s`` to
+        bound the wait — required for the SPRunner warmup ping, which must
+        not deadlock if a previous server session left the input ring full
+        of unconsumed pings while the pipeline was down.
+
+        Returns True on success, False on shutdown or timeout. The legacy
+        ``None`` return is preserved as a falsy value for any existing caller
+        that didn't inspect it.
+        """
         buf = self._buf
         widx = self._get_writer_index()
         off = (widx % self._slots) * self._slot_size
         state_off = off + self._IN_STATE
+        deadline = (time.monotonic() + timeout_s) if timeout_s is not None else None
 
         while not self._is_shutdown():
             if struct.unpack_from("<i", buf, state_off)[0] == self._EMPTY:
                 break
+            if deadline is not None and time.monotonic() >= deadline:
+                return False
             time.sleep(self._POLL_INTERVAL_S)
         else:
-            return
+            return False
 
         self._pack_task_id(buf, off + self._IN_TASK_ID, request.task_id)
         self._pack_string(
@@ -564,6 +625,7 @@ class VideoShm:
 
         struct.pack_into("<i", buf, state_off, self._FILLED)
         self._set_writer_index(widx + 1)
+        return True
 
     def read_request(self, timeout_s: float | None = None) -> VideoRequest | None:
         """Blocking read of a VideoRequest from the next input slot."""

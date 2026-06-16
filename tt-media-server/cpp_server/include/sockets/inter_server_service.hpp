@@ -12,6 +12,7 @@
 #include <thread>
 #include <vector>
 
+#include "config/types.hpp"
 #include "domain/llm/sampling_params.hpp"
 #include "sockets/socket_manager.hpp"
 #include "sockets/socket_messages.hpp"
@@ -76,7 +77,7 @@ class InterServerService {
   /**
    * @brief Send prefill request to the prefill server
    * @param task_id Unique task identifier
-   * @param registrationHash Prefix-cache registration hash for the conversation
+   * @param registrationHashes Prefix-cache block hashes for the conversation
    * @param token_ids Pre-tokenized prompt token IDs
    * @param max_tokens Maximum tokens to generate (nullopt = run until EOS)
    * @param slot_id KV cache slot allocated by decode server's memory manager
@@ -87,11 +88,13 @@ class InterServerService {
    *                 means "use prefill-side defaults".
    * @return true if sent successfully
    */
-  bool sendPrefillRequest(uint32_t taskId, size_t registrationHash,
+  bool sendPrefillRequest(uint32_t taskId,
+                          const std::vector<uint64_t>& registrationHashes,
                           const std::vector<int64_t>& tokenIds,
                           std::optional<int> maxTokens = std::nullopt,
                           std::optional<uint32_t> slotId = std::nullopt,
-                          const tt::domain::llm::SamplingParams& sampling = {});
+                          const tt::domain::llm::SamplingParams& sampling = {},
+                          int decodePositionId = 0, int decodeSkipTokens = 0);
 
   /**
    * @brief Send prefill result back to the decode server
@@ -105,6 +108,8 @@ class InterServerService {
    * @return true if sent successfully
    */
   bool sendPrefillCancel(uint32_t taskId);
+
+  bool sendPrefillCacheBlocksAdded(const std::vector<uint64_t>& blockHashes);
 
   /**
    * @brief Send health check information
@@ -167,6 +172,13 @@ class InterServerService {
   void sendRegistrationIfGatewayModeIsEnabled();
   void startRegistrationThread();
   void stopRegistrationThread();
+  void startHealthProbeThread();
+  void stopHealthProbeThread();
+  void sendPrefillHealthRequest();
+  void sendPrefillHealthStatus();
+  void recordPrefillHealthStatus(const PrefillHealthStatusMessage& message);
+  void markPrefillHealthUnavailable();
+  bool isPrefillHealthReady() const;
 
   SocketManager socket_manager_;
   PrefillRequestedCallback prefill_requested_callback_;
@@ -174,12 +186,17 @@ class InterServerService {
   PrefillCompleteCallback prefill_complete_callback_;
   HealthCallback health_check_callback_;
   bool enabled_ = false;
+  tt::config::LLMMode llmMode = tt::config::LLMMode::REGULAR;
   bool gateway_mode_ = false;
   bool periodic_registration_mode_ = false;
-  bool registration_stop_ = false;
+  bool prefillHealthProbeMode = false;
   std::mutex registration_mutex_;
   std::condition_variable registration_cv_;
-  std::thread registration_thread_;
+  std::jthread registration_thread_;
+  mutable std::mutex prefillHealthMutex;
+  bool prefillHealthReady = false;
+  std::condition_variable prefillHealthCv;
+  std::jthread prefillHealthThread;
 };
 
 }  // namespace tt::sockets

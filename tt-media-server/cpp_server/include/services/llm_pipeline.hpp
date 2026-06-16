@@ -3,10 +3,12 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
@@ -32,7 +34,7 @@ namespace tt::services {
  * management, and dispatch to either the in-process LLMService or the
  * disaggregated prefill path.
  *
- * Both `LLMController` (HTTP /v1/chat/completions, /v1/responses) and
+ * Both `LLMController` (HTTP /v1/chat/completions) and
  * `tt::dynamo::DynamoEndpoint` (TCP `generate`) drive the same pipeline so
  * Dynamo requests benefit from the same session/prefix-cache reuse and
  * disaggregation routing as HTTP traffic.
@@ -54,7 +56,7 @@ class LLMPipeline {
 
   struct SessionInfo {
     bool validSessionFound = false;
-    std::optional<size_t> registrationHash;
+    std::vector<uint64_t> registrationHashes;
   };
 
   LLMPipeline(std::shared_ptr<LLMService> service,
@@ -103,8 +105,8 @@ class LLMPipeline {
   }
 
  private:
-  bool shouldDoPrefillOnDecode(const tt::domain::llm::LLMRequest& request,
-                               bool validSessionFound) const;
+  bool shouldDoPrefillOnDecode(
+      const tt::domain::llm::LLMRequest& request) const;
 
   std::shared_ptr<LLMService> service_;
   std::shared_ptr<SessionManager> sessionManager_;

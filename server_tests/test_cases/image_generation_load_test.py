@@ -31,7 +31,7 @@ headers = {
 
 class ImageGenerationLoadTest(BaseTest):
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/v1/images/generations"
+        self.url = f"{self.base_url}/v1/images/generations"
         logger.info("ImageGenerationLoadTest targets: %s", self.targets)
         num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         image_generation_target_time = self.targets.get(

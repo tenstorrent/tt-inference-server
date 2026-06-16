@@ -90,7 +90,7 @@ class VideoGenerationI2VParamTest(BaseTest):
     """Parameter-sweep happy-path coverage for the I2V endpoint."""
 
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/v1/videos/generations/i2v"
+        self.url = f"{self.base_url}/v1/videos/generations/i2v"
         logger.info(f"Testing I2V parameters at {self.url}")
 
         model_name = self.config.get("model", "test-model")

@@ -23,7 +23,7 @@ from workflows.helm_generator.merge import (
 )
 from workflows.helm_generator.schema import HelmModelSpec
 from workflows.helm_generator.yaml_io import dump_values, dumps_values, load_values
-from workflows.model_spec import MODEL_SPECS, ModelSpec
+from workflows.model_spec import IMAGE_PINNED_MODEL_SPECS, ModelSpec
 
 logger = logging.getLogger("helm_generator")
 
@@ -259,7 +259,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         format="[%(name)s] %(message)s",
     )
     specs = filter_specs(
-        MODEL_SPECS.values(),
+        IMAGE_PINNED_MODEL_SPECS,
         model_names=args.models or None,
         device_names=args.devices or None,
         engines=args.engines or None,

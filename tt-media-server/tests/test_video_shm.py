@@ -1151,5 +1151,159 @@ class TestFileBasedRoundtrip:
         assert resp.error_message == "OOM during inference"
 
 
+# ── Race-safe create-or-attach ──
+
+
+class TestCreateOrAttachRace:
+    """Cover the bounded-retry path in ``_create_or_attach``.
+
+    The race we model: a peer (server or runner) wins ``SharedMemory(create=True)``
+    but, between FileExistsError and our follow-up ``create=False`` attach, the
+    segment briefly disappears (out-of-band unlink, transient publish window).
+    Without retry this surfaces as a fatal ``[Errno 2] No such file or
+    directory`` and bricks the worker — see the ``[Errno 2]`` failure in the
+    original bug report.
+    """
+
+    def test_eventual_attach_after_transient_enoent(self, monkeypatch):
+        from multiprocessing import shared_memory as _shm
+
+        name = _unique_name("race")
+        # First call raises FileExistsError (peer beat us to create), then
+        # next attach attempt(s) raise ENOENT (peer briefly unlinked it),
+        # then the real attach finally succeeds.
+        real_init = _shm.SharedMemory.__init__
+        call_count = {"create_true": 0, "create_false_enoent": 0}
+
+        def flaky_init(self, name=None, create=False, size=0):
+            if create:
+                call_count["create_true"] += 1
+                raise FileExistsError("simulated race: peer already created")
+            if call_count["create_false_enoent"] < 2:
+                call_count["create_false_enoent"] += 1
+                raise FileNotFoundError(f"transient enoent: /{name}")
+            return real_init(self, name=name, create=False, size=size)
+
+        # Pre-create the real segment so the eventual attach succeeds.
+        real = _shm.SharedMemory(
+            name=name, create=True, size=VideoShm.INPUT_SLOT_SIZE * VideoShm.INPUT_SLOTS
+        )
+
+        try:
+            monkeypatch.setattr(_shm.SharedMemory, "__init__", flaky_init)
+            # Shorten the retry interval so the test isn't slow.
+            monkeypatch.setattr(VideoShm, "_ATTACH_RETRY_DELAY_S", 0.001)
+            shm, created = VideoShm._create_or_attach(
+                name, VideoShm.INPUT_SLOT_SIZE * VideoShm.INPUT_SLOTS
+            )
+            assert created is False
+            assert call_count["create_false_enoent"] == 2
+            shm.close()
+        finally:
+            real.close()
+            real.unlink()
+
+    def test_raises_after_exhausting_retries(self, monkeypatch):
+        from multiprocessing import shared_memory as _shm
+
+        name = _unique_name("race_fail")
+
+        # Permanently degenerate: every attempt FileExistsError on create,
+        # ENOENT on attach. After _ATTACH_RETRIES we should raise RuntimeError
+        # with a descriptive message — never spin forever.
+        def always_flaky(self, name=None, create=False, size=0):
+            if create:
+                raise FileExistsError("locked-in race")
+            raise FileNotFoundError(f"persistent enoent: /{name}")
+
+        monkeypatch.setattr(_shm.SharedMemory, "__init__", always_flaky)
+        monkeypatch.setattr(VideoShm, "_ATTACH_RETRIES", 3)
+        monkeypatch.setattr(VideoShm, "_ATTACH_RETRY_DELAY_S", 0.001)
+
+        with pytest.raises(RuntimeError, match="race did not resolve"):
+            VideoShm._create_or_attach(name, 64)
+
+    def test_no_retry_when_create_succeeds(self):
+        """Fast path: when we win ``create=True`` we don't enter the retry loop."""
+        name = _unique_name("race_winner")
+        try:
+            shm, created = VideoShm._create_or_attach(
+                name, VideoShm.INPUT_SLOT_SIZE * VideoShm.INPUT_SLOTS
+            )
+            assert created is True
+            shm.close()
+        finally:
+            _force_cleanup_shm(name)
+
+
+# ── Bounded write_request timeout ──
+
+
+class TestWriteRequestTimeout:
+    """``write_request`` must not spin-block when the ring is full and a
+    timeout is provided. This is what protects the SPRunner warmup ping from
+    deadlocking the worker when the pipeline has been down across many
+    server restarts (input ring backed up with stale pings)."""
+
+    def test_returns_false_when_ring_full_and_timeout_hit(self):
+        name = _unique_name("wr_timeout")
+        shm = VideoShm(name, mode="input")
+        shm.open()
+        try:
+            # Manually fill every slot so the next write has nowhere to go.
+            for i in range(VideoShm.INPUT_SLOTS):
+                off = i * shm._slot_size
+                struct.pack_into("<i", shm._buf, off, VideoShm._FILLED)
+
+            start = time.monotonic()
+            ok = shm.write_request(_make_request(), timeout_s=0.1)
+            elapsed = time.monotonic() - start
+
+            assert ok is False
+            assert elapsed < 1.0  # didn't spin forever
+        finally:
+            shm.close()
+            _force_cleanup_shm(name)
+
+    def test_returns_true_on_normal_write(self, input_pair):
+        writer, _reader = input_pair
+        assert writer.write_request(_make_request(), timeout_s=1.0) is True
+
+    def test_legacy_no_timeout_still_works(self, input_pair):
+        """Existing callers pass no timeout and don't inspect the return value.
+        Verify both still behave as before."""
+        writer, reader = input_pair
+        result = writer.write_request(_make_request())
+        assert result is True  # new contract: bool instead of None
+        got = reader.read_request()
+        assert got is not None
+
+
+# ── Warmup ping sentinel ──
+
+
+class TestWarmupSentinel:
+    """The SP_WARMUP_TASK_ID constant is the wire-format-neutral handshake
+    between SPRunner and video_runner. Both sides import it from
+    ``ipc.video_shm`` to keep the contract in one place."""
+
+    def test_sentinel_exported(self):
+        from ipc.video_shm import SP_WARMUP_TASK_ID
+
+        assert isinstance(SP_WARMUP_TASK_ID, str)
+        assert len(SP_WARMUP_TASK_ID) > 0
+        # Must fit inside the 36-byte task_id slot.
+        assert len(SP_WARMUP_TASK_ID.encode("utf-8")) <= VideoShm.TASK_ID_SIZE
+
+    def test_sentinel_cannot_collide_with_uuid4(self):
+        """UUID4 task_ids are 36 chars of hex+dashes — they can't accidentally
+        match a sentinel that contains underscores/double-underscores."""
+        from ipc.video_shm import SP_WARMUP_TASK_ID
+
+        assert "_" in SP_WARMUP_TASK_ID
+        # Crude but sufficient: no real UUID can contain double-underscores.
+        assert "__" in SP_WARMUP_TASK_ID
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

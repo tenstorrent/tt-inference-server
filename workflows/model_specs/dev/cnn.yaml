@@ -1,0 +1,372 @@
+# Model spec catalog: CNN templates.
+# Edit this file to add or modify a CNN model spec.
+# Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
+templates:
+# =============================================================================
+# CNN templates
+# =============================================================================
+- weights:
+    - Qwen/Qwen3-4B
+  tt_metal_commit: "2496be4"
+  impl: forge_vllm_plugin
+  min_disk_gb: 15
+  min_ram_gb: 8
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349"
+  model_type: LLM
+  inference_engine: FORGE
+  uses_tensor_model_cache: false
+  device_model_specs:
+    - device: P150
+      max_concurrency: 4
+      max_context: 16384
+      default_impl: true
+      eval_max_retries: 1
+      env_vars:
+        MAX_MODEL_LENGTH: "16384"
+        MAX_NUM_SEQS: "4"
+        GPU_MEMORY_UTILIZATION: "0.35"
+        TT_KV_POOL_GB: "32"
+        OPTIMIZATION_LEVEL: "0"
+        ENABLE_TRACE: "true"
+
+- weights:
+    - meta-llama/Llama-3.2-3B
+    - meta-llama/Llama-3.2-3B-Instruct
+  tt_metal_commit: "2496be4"
+  impl: forge_vllm_plugin
+  min_disk_gb: 15
+  min_ram_gb: 8
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349"
+  model_type: LLM
+  inference_engine: FORGE
+  uses_tensor_model_cache: false
+  device_model_specs:
+    - device: P150
+      max_concurrency: 4
+      max_context: 16384
+      default_impl: false
+      eval_max_retries: 1
+      env_vars:
+        MAX_MODEL_LENGTH: "16384"
+        MAX_NUM_SEQS: "4"
+        GPU_MEMORY_UTILIZATION: "0.35"
+        TT_KV_POOL_GB: "32"
+        OPTIMIZATION_LEVEL: "0"
+        ENABLE_TRACE: "true"
+
+- weights:
+    - meta-llama/Llama-3.1-8B-Instruct
+  tt_metal_commit: "2496be4"
+  impl: forge_vllm_plugin
+  min_disk_gb: 20
+  min_ram_gb: 12
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349"
+  model_type: LLM
+  inference_engine: FORGE
+  uses_tensor_model_cache: false
+  device_model_specs:
+    - device: P150
+      max_concurrency: 4
+      max_context: 16384
+      default_impl: false
+      eval_max_retries: 1
+      env_vars:
+        MAX_MODEL_LENGTH: "16384"
+        MAX_NUM_SEQS: "4"
+        GPU_MEMORY_UTILIZATION: "0.30"
+        TT_KV_POOL_GB: "32"
+        OPTIMIZATION_LEVEL: "0"
+        ENABLE_TRACE: "true"
+
+- weights:
+    - Qwen/Qwen3-8B
+  tt_metal_commit: "2496be4"
+  impl: forge_vllm_plugin
+  min_disk_gb: 20
+  min_ram_gb: 12
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349"
+  model_type: LLM
+  inference_engine: FORGE
+  uses_tensor_model_cache: false
+  device_model_specs:
+    - device: P150
+      max_concurrency: 4
+      max_context: 16384
+      default_impl: false
+      eval_max_retries: 1
+      env_vars:
+        MAX_MODEL_LENGTH: "16384"
+        MAX_NUM_SEQS: "4"
+        GPU_MEMORY_UTILIZATION: "0.30"
+        TT_KV_POOL_GB: "32"
+        OPTIMIZATION_LEVEL: "0"
+        ENABLE_TRACE: "true"
+
+- weights:
+    - tiiuae/Falcon3-7B-Instruct
+  tt_metal_commit: "2496be4"
+  impl: forge_vllm_plugin
+  min_disk_gb: 20
+  min_ram_gb: 12
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349"
+  model_type: LLM
+  inference_engine: FORGE
+  uses_tensor_model_cache: false
+  device_model_specs:
+    - device: P150
+      max_concurrency: 4
+      max_context: 16384
+      default_impl: true
+      eval_max_retries: 1
+      env_vars:
+        MAX_MODEL_LENGTH: "16384"
+        MAX_NUM_SEQS: "4"
+        GPU_MEMORY_UTILIZATION: "0.225"
+        TT_KV_POOL_GB: "32"
+        OPTIMIZATION_LEVEL: "0"
+        ENABLE_TRACE: "true"
+
+- weights:
+    # gemma-4-31b-it Forge LLM (tensor-parallel) on p300x2/QB2. Lowercase
+    # basename matches tt-media-server ModelNames.GEMMA_4_31B_IT. batch-16 / 4K
+    # is the best fitting balance (~76 tok/s aggregate). Dims are env-driven here
+    # (constants.py only carries the TP mesh topology), mirroring the single-chip
+    # forge LLMs above.
+    - google/gemma-4-31b-it
+  tt_metal_commit: "e03b231b1de926cd8f9a0e1a2d39dd1df599f7a7"
+  vllm_commit: "46a7c96"
+  impl: forge_vllm_plugin
+  min_disk_gb: 80
+  min_ram_gb: 32
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:aed6177ab424aa93f447118aac5a7b8ab1cafdbc_f752cce_79853177306"
+  model_type: LLM
+  inference_engine: FORGE
+  uses_tensor_model_cache: false
+  status: EXPERIMENTAL
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 16
+      max_context: 4096
+      default_impl: true
+      eval_max_retries: 1
+      env_vars:
+        MAX_MODEL_LENGTH: "4096"
+        MAX_NUM_SEQS: "16"
+        GPU_MEMORY_UTILIZATION: "0.9"
+        OPTIMIZATION_LEVEL: "0"
+        ENABLE_TRACE: "true"
+        CPU_SAMPLING: "false"
+        # 4-chip (1,4) TP mesh: the runner doesn't auto-set this and the image
+        # maps p300x2->p150, so pin the p300_x2 descriptor (else stablehlo
+        # "unknown mesh: @mesh" at compile). -e overrides --env-file here.
+        TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+
+- weights:
+    # Qwen3-32B Forge LLM (tensor-parallel) on p300x2/QB2, mirroring gemma-4-31b.
+    # basename "Qwen3-32B" matches ModelNames.QWEN_3_32B. batch-16 / 4K (same as
+    # gemma; not yet independently swept on Qwen -- local verify is the check).
+    - Qwen/Qwen3-32B
+  tt_metal_commit: "e03b231b1de926cd8f9a0e1a2d39dd1df599f7a7"
+  vllm_commit: "46a7c96"
+  impl: forge_vllm_plugin
+  min_disk_gb: 80
+  min_ram_gb: 32
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:aed6177ab424aa93f447118aac5a7b8ab1cafdbc_f752cce_79853177306"
+  model_type: LLM
+  inference_engine: FORGE
+  uses_tensor_model_cache: false
+  status: EXPERIMENTAL
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 16
+      max_context: 4096
+      default_impl: true
+      eval_max_retries: 1
+      env_vars:
+        MAX_MODEL_LENGTH: "4096"
+        MAX_NUM_SEQS: "16"
+        GPU_MEMORY_UTILIZATION: "0.9"
+        OPTIMIZATION_LEVEL: "0"
+        ENABLE_TRACE: "true"
+        CPU_SAMPLING: "false"
+        TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+
+- weights:
+    - resnet-50
+  version: "0.13.0"
+  tt_metal_commit: "079a2c2"
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: CNN
+  inference_engine: FORGE
+  status: FUNCTIONAL
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: N300
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+
+- weights:
+    - vovnet
+  version: "0.13.0"
+  tt_metal_commit: "079a2c2"
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: CNN
+  inference_engine: FORGE
+  status: COMPLETE
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: N300
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+
+- weights:
+    - mobilenetv2
+  version: "0.13.0"
+  tt_metal_commit: "079a2c2"
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: CNN
+  inference_engine: FORGE
+  status: COMPLETE
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: N300
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+
+- weights:
+    - efficientnet
+  tt_metal_commit: "2496be4"
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673"
+  model_type: CNN
+  inference_engine: FORGE
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: N300
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+
+- weights:
+    - segformer
+  version: "0.13.0"
+  tt_metal_commit: "079a2c2"
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: CNN
+  inference_engine: FORGE
+  status: FUNCTIONAL
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: N300
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+
+- weights:
+    - vit
+  version: "0.13.0"
+  tt_metal_commit: "079a2c2"
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: CNN
+  inference_engine: FORGE
+  status: COMPLETE
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: N300
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+
+- weights:
+    - yolox_nano
+  version: "0.13.0"
+  tt_metal_commit: "079a2c2"
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: CNN
+  inference_engine: FORGE
+  status: COMPLETE
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: P150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+
+- weights:
+    - unet
+  tt_metal_commit: "2496be4"
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673"
+  model_type: CNN
+  inference_engine: FORGE
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: N300
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+
+- weights:
+    - meta-llama/Llama-3.1-70B
+  version: "0.11.1"
+  tt_metal_commit: "2496be4"
+  impl: forge_vllm_plugin
+  min_disk_gb: 150
+  min_ram_gb: 80
+  model_type: LLM
+  inference_engine: MEDIA
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 1
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      env_vars:
+        VLLM__MAX_NUM_BATCHED_TOKENS: "32768"
+        VLLM__MAX_MODEL_LENGTH: "131072"
+        VLLM__MIN_CONTEXT_LENGTH: "1024"

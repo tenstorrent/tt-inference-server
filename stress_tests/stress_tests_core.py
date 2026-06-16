@@ -34,6 +34,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+from utils.url_helpers import resolve_host_port
 from workflows.workflow_types import DeviceTypes
 from .stress_tests_config import StressTestParamSpace, enforce_context_limit
 from .stress_tests_args import StressTestsArgs
@@ -683,6 +684,7 @@ class StressTests:
         env_config.jwt_secret = self.test_args.jwt_secret
         env_config.service_port = self.test_args.service_port
         env_config.vllm_model = model_spec.hf_model_repo
+        env_config.deploy_url = self.test_args.deploy_url
 
         prompt_client = PromptClient(env_config)
         prompt_client.wait_for_healthy(timeout=7200.0)
@@ -714,6 +716,9 @@ class StressTests:
             str(self.test_args.project_root)
             + "/stress_tests/stress_tests_benchmarking_script.py"
         )
+        sub_host, sub_port = resolve_host_port(
+            self.test_args.deploy_url, self.env_config.service_port
+        )
         cmd = [
             str(self.test_args.project_root)
             + "/.workflow_venvs/.venv_stress_tests_run_script/bin/python",
@@ -722,8 +727,10 @@ class StressTests:
             "vllm",
             "--model",
             str(self.env_config.vllm_model),
+            "--host",
+            sub_host,
             "--port",
-            str(self.env_config.service_port),
+            sub_port,
             "--dataset-name",
             "cleaned-random",
             "--max-concurrency",

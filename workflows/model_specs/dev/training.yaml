@@ -1,0 +1,25 @@
+# Model spec catalog: Training templates (dev).
+# Edit this file to add or modify a Training model spec for dev environment.
+# Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
+templates:
+# =============================================================================
+# Training templates
+# =============================================================================
+- weights:
+    - google/gemma-1.1-2b-it
+  tt_metal_commit: "2496be4"
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: TRAINING
+  inference_engine: FORGE
+  status: EXPERIMENTAL
+  uses_tensor_model_cache: false
+  env_vars:
+    MODEL_RUNNER: training-gemma-lora
+    TRAINING_MODEL: gemma-1.1-2b-it
+  device_model_specs:
+    - device: P150
+      max_concurrency: 1
+      max_context: 1024
+      default_impl: true

@@ -131,7 +131,9 @@ class PromptClient:
             include_v1: If True, append /v1 for OpenAI-compatible endpoints.
                        If False, return root URL for vLLM-specific endpoints.
         """
-        base = f"{self.env_config.deploy_url}:{self.env_config.service_port}"
+        from utils.url_helpers import build_base_url
+
+        base = build_base_url(self.env_config.deploy_url, self.env_config.service_port)
         return f"{base}/v1" if include_v1 else base
 
     def _get_api_completions_url(self) -> str:
