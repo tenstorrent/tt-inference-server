@@ -376,3 +376,40 @@ python run.py --model Qwen3-8B --device p150 --impl forge-vllm-plugin \
   same staged comparison; numbers above are Qwen3-8B only.
 - Commit status: chunked-prefill/bfp8 + context caps + max_num_batched_tokens/gmu are committed
   on `kmabee/forge_llm_chunked_prefill`; `fp32_dest_acc_en` + final gmu default pending.
+
+---
+
+## Stage 3 attempt — gmu 0.35 (FAILED, not viable) + large-ISL compile findings
+
+**gmu 0.35 is not usable for the server workload.** It warms up (single-prompt) but **OOM-crashes
+the EngineCore under real b32 eval load**: the lazy batch-32 / ctx-1024 **decode trace capture**
+(~1.5 GiB scratch) hits at runtime with only ~362 MiB/bank free at 0.35 → `TT_FATAL: Out of Memory`
+→ EngineCore dead → whole release run failed in ~16 min. At **gmu 0.30** the same captures fit, so
+the 9h38m Stage-2 run completed. **gmu 0.30 is the ceiling.** `min_context_len` 32→128 (which
+dropped 2 small prefill buckets and let 0.35 *warm up*) did **not** give enough runtime headroom.
+
+Root cause of the OOM is *lazy trace/graph capture*, not a config knob: decode traces are captured
+per `(batch, context-bucket)` on first runtime use; warmup (1 short seq) only captures the
+batch-1/short trace, so the batch-32/large-context captures happen mid-eval and OOM at 0.35.
+
+Confirmed NOT the cause (ruled out by diffing server vs tt-xla standalone, both at gmu 0.35):
+vLLM engine config (byte-identical), `VLLM_ENABLE_V1_MULTIPROCESSING` (both pass), `additional_config`
+(identical), `TT_KV_POOL_GB` (inert on this branch — worker auto-detects DRAM).
+
+**4-row re-bench (gmu0.35/minctx128) showed no short-context gain** — expected: those rows are
+KV-not-limited, and per-user decode (TPOT ~73 ms single-user) is unchanged. gmu/concurrency only
+help long-context fit, not short-context tok/s.
+
+### Large-ISL (16K) recompile + warmup gap (see HANDOFF doc)
+
+A real ISL=16384 request triggers a **runtime recompile** of the chunked-prefill cached-prefix /
+page-table-gather graphs that warmup never precompiled → minutes of compile → client 300 s timeout
+→ abort → `AscendScheduler` `FINISHED_ABORTED` crash (separate bug; gist + tt-xla issue filed).
+Standalone tt-xla runs the *same* ISL in warmup so it's fast (1.1 s prefill TTFT). Fix: precompile
+the chunked path at max ISL (dummy, at production batch). Details + repro in
+`HANDOFF_largeisl_compile_investigation.md`.
+
+### Where the eval-time lever actually is (unchanged conclusion)
+Per-user decode throughput (~8–13 tok/s) + the 12k-token reasoning generations remain the 6h-budget
+bottleneck. gmu is maxed at 0.30. Durable levers: recover per-user decode (tt-xla#5034) and/or cap
+`max_gen_toks` on the reasoning evals.
