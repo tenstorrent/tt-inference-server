@@ -655,6 +655,7 @@
           "ci": {
             "nightly": {
               "devices": [
+                "N150",
                 "P150X8"
               ]
             }
