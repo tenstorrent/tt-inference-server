@@ -56,12 +56,12 @@ templates:
   status: COMPLETE
 
 # Forge full-on-device SDXL (PR #3485) — UNet (+ text encoders/VAE via
-# TTXLA_SDXL_FULL_ON_DEVICE) on Blackhole. Distinct sdxl_forge impl avoids a
-# model_id collision with the media SDXL spec above on shared devices.
-# NOTE: version/tt_metal_commit must point to the tt-media-inference-server-forge
-# image that ships sdxl_forge_runner.py + #3485 (+ Forge LoRA) for this to pass;
-# the values below mirror the current forge image family and should be confirmed
-# at PR time.
+# TTXLA_SDXL_FULL_ON_DEVICE) served through tt-media-server's image service via
+# the sdxl_forge runner. A distinct sdxl_forge impl avoids a model_id collision
+# with the media SDXL spec above on shared devices.
+# Verified end-to-end on Wormhole N150 (single chip, ~16s/image steady-state);
+# also targets Blackhole P150X8/P300X2. on-dispatch builds the forge image from
+# inference-server-git-ref, so the runner ships with whatever branch is tested.
 - weights:
     - stabilityai/stable-diffusion-xl-base-1.0
   impl: sdxl_forge
