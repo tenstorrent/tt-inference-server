@@ -1,34 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-// Migration-worker discovery harness for issue #4209 — validates that the
-// Mooncake Metadata Service can serve as the discovery mechanism between two
-// transfer engines running on two separate hosts.
-//
-// Why this is a distinct PoC from transport_migration_e2e (#3890):
-//
-//   The #3890 harness uses metadata_uri = "P2PHANDSHAKE": each engine binds a
-//   *random OS-assigned port* and there is no shared registry, so the sender
-//   cannot know the receiver's address ahead of time. That harness smuggles the
-//   receiver's actual host:randomPort name through a rendezvous FILE on a shared
-//   path — which does not work across two independent hosts.
-//
-//   #4209 removes that hack. With a real metadata service (mooncake_master's
-//   HTTP metadata server, etcd, or redis), the receiver advertises under a
-//   PREDEFINED LOGICAL NAME; Mooncake's "new RPC mapping" path registers
-//   <name> -> {auto-detected IP, OS-assigned dynamic port} in that service. The
-//   sender opens the predefined name and the service resolves the dynamic
-//   address for it. No rendezvous file, no predefined ports — pure name-based
-//   discovery across hosts.
-//
-//   sender host RAM --readInto--> registered host staging
-//       --submitTransfer(TCP)--> receiver registered host staging
-//       --writeFrom--> receiver host RAM --readInto--> verify
-//
-// Storage is HOST RAM only (#4209 scope: "Use only host RAM, no device
-// memory"). Only built when Mooncake is in the build
-// (TT_TRANSPORT_WITH_MOONCAKE); otherwise the engine is a no-op and init()
-// reports failure.
+// Migration-worker discovery harness: the receiver advertises a
+// predefined logical name in the Mooncake Metadata Service; the sender resolves
+// that name to the receiver's OS-assigned dynamic port and transfers one tensor.
+// Host RAM only; built only with Mooncake (--mooncake).
 
 #include <chrono>
 #include <cstdint>
@@ -49,24 +25,18 @@ namespace {
 
 using namespace tt::transport;
 
-// A "done" sentinel byte is appended after the tensor in the receiver's staging
-// buffer. The sender writes the tensor, waits for that transfer to complete,
-// then writes the flag; the receiver polls the flag. Because submitAndWait
-// blocks until the tensor transfer completes (and TCP delivery is ordered),
-// seeing flag == K_DONE_FLAG guarantees the tensor bytes have already landed.
+// Written last, after the tensor transfer completes. TCP ordering means the
+// receiver seeing this flag guarantees the tensor bytes already landed.
 constexpr std::uint8_t K_DONE_FLAG = 0xAB;
 
-// Poll interval while the sender waits for the receiver to register its segment
-// in the metadata service.
 constexpr int K_DISCOVERY_POLL_MS = 100;
 
 struct Options {
-  std::string role;                  // "sender" | "receiver"
-  std::string metadata;              // discovery service, e.g.
-                                     // "http://HOST:8080/metadata"
-  std::string name;                  // this engine's advertised logical name
-  std::string peer;                  // sender: receiver's predefined name
-  std::size_t bytes = 65536;         // tensor size
+  std::string role;           // "sender" | "receiver"
+  std::string metadata;       // discovery service URI
+  std::string name;           // this engine's advertised logical name
+  std::string peer;           // sender only: receiver's name
+  std::size_t bytes = 65536;
   int timeout_sec = 30;
 };
 
@@ -133,8 +103,8 @@ bool parseArgs(int argc, char** argv, Options& o) {
   return true;
 }
 
-// Deterministic, position-dependent pattern both sides agree on, so the
-// receiver verifies without the payload being communicated out-of-band.
+// Both sides compute this independently, so the receiver can verify content
+// without the payload being communicated out-of-band.
 std::vector<std::uint8_t> makePattern(std::size_t n) {
   std::vector<std::uint8_t> v(n);
   for (std::size_t i = 0; i < n; ++i) {
@@ -164,7 +134,6 @@ int runSender(const Options& o) {
   std::cout << "[sender] '" << o.name << "' up at " << engine->localServerName()
             << " (metadata=" << o.metadata << ")\n";
 
-  // Host RAM standing in as the source "device" memory.
   std::vector<std::uint8_t> srcRegion(o.bytes, 0);
   const auto srcAddr = reinterpret_cast<NocAddr>(srcRegion.data());
   auto storage = engine->storage();
@@ -175,7 +144,7 @@ int runSender(const Options& o) {
     return 1;
   }
 
-  // Stage source -> registered host buffer (tensor + 1 done-flag byte).
+  // Staging buffer is tensor + 1 done-flag byte.
   std::vector<std::uint8_t> staging(o.bytes + 1, 0);
   if (!engine->registerLocalMemory(staging.data(), staging.size())) {
     std::cerr << "[sender] registerLocalMemory failed\n";
@@ -187,9 +156,8 @@ int runSender(const Options& o) {
     return 1;
   }
 
-  // Discovery: open the receiver by its PREDEFINED logical name. Retry until
-  // the receiver has registered in the metadata service. The dynamic port is
-  // resolved by the service — we never learn or pass it.
+  // Retry until the receiver has registered; the service resolves its dynamic
+  // port, which we never learn or pass.
   std::cout << "[sender] discovering peer '" << o.peer
             << "' via metadata service...\n";
   SegmentHandle peer = kInvalidSegment;
@@ -211,7 +179,6 @@ int runSender(const Options& o) {
   }
   std::cout << "[sender] discovered peer '" << o.peer << "'\n";
 
-  // Transfer the tensor into the receiver's segment at offset 0.
   TransferRequest tensorReq;
   tensorReq.op = TransferOp::Write;
   tensorReq.local_addr = staging.data();
@@ -224,7 +191,6 @@ int runSender(const Options& o) {
     return 1;
   }
 
-  // Then the done-flag byte at offset == bytes.
   staging[o.bytes] = K_DONE_FLAG;
   TransferRequest flagReq;
   flagReq.op = TransferOp::Write;
@@ -251,24 +217,19 @@ int runReceiver(const Options& o) {
     return 1;
   }
 
-  // Register the staging buffer the sender writes into (tensor + flag byte).
-  // It is this segment's only buffer, so it resolves to target_offset 0.
+  // Single registered buffer (tensor + flag byte), so it resolves to offset 0.
   std::vector<std::uint8_t> staging(o.bytes + 1, 0);
   if (!engine->registerLocalMemory(staging.data(), staging.size())) {
     std::cerr << "[receiver] registerLocalMemory failed\n";
     return 1;
   }
 
-  // After registration the segment is discoverable in the metadata service
-  // under our predefined --name; the sender needs only that name, not our
-  // dynamic port (logged here for visibility only).
   std::cout << "[receiver] '" << o.name << "' registered, reachable at "
             << engine->localServerName() << " (metadata=" << o.metadata
             << ")\n";
   std::cout << "[receiver] waiting for " << o.bytes
             << " bytes; sender opens us by name '" << o.name << "'\n";
 
-  // Wait for the sender's one-sided writes to land (flag flips last).
   auto* flag = reinterpret_cast<volatile std::uint8_t*>(&staging[o.bytes]);
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(o.timeout_sec);
@@ -281,8 +242,6 @@ int runReceiver(const Options& o) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
-  // Stage host staging -> receiver host RAM (the "device" stand-in), then read
-  // it back and byte-compare via the migration worker.
   std::vector<std::uint8_t> dstRegion(o.bytes, 0);
   const auto dstAddr = reinterpret_cast<NocAddr>(dstRegion.data());
   if (!engine->storage()->writeFrom(dstAddr, staging.data(), o.bytes)) {
