@@ -38,10 +38,6 @@ inline sch::ISRequest makeAllocateRequest(
       .tokens = {},
       .gen = {},
   };
-  // Prefix-caching ALLOCATE: the decode scheduler reads the top-level
-  // ISRequest::migrate_from_slot (not gen.migrate_from_slot, which used
-  // to silently swallow this value before the migration-field
-  // consolidation).
   if (migrateFromSlot.has_value()) {
     req.migrate_from_slot = *migrateFromSlot;
   }
@@ -108,9 +104,6 @@ inline sch::ISRequest makeContinueRequest(
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
   req.dest_slot_id = destSlotId;
-  // Disaggregated CONTINUE awaits an inbound KV migration tagged with
-  // this uuid. The decode scheduler reads ISRequest::migration_uuid
-  // (top-level) at handle_disaggregated_continue.
   req.migration_uuid = seq.getMigrationId();
   fillSequenceFields(req, seq);
   if (seq.getKVPositionId().has_value()) {  // override position id

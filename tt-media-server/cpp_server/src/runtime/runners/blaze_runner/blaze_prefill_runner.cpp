@@ -680,17 +680,11 @@ void BlazePrefillRunner::handleRequest(
           slotManager.activeRunningCount(),
           request->getMigrationId().has_value() ? *request->getMigrationId()
                                                 : -1);
-      
+
       auto migrationUuid = request->getMigrationId();
       auto destSlot = migrationUuid.has_value()
                           ? std::make_optional(request->getKVCacheSlot())
                           : std::nullopt;
-      if (migrationUuid.has_value() != destSlot.has_value()) {
-        TT_LOG_ERROR(
-            "[BlazePrefillRunner] handleRequest: migrationUuid and destSlot must both be set or both be unset");
-        assert(false && "migrationUuid and destSlot must both be set or both be unset");
-        return;
-      }
 
       ps::ISRequest req = utils::makeSubmitRequest(slotId, *request, destSlot);
       TT_LOG_DEBUG(
