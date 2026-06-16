@@ -94,7 +94,7 @@ class InterServerService {
                           std::optional<int> maxTokens = std::nullopt,
                           std::optional<uint32_t> slotId = std::nullopt,
                           const tt::domain::llm::SamplingParams& sampling = {},
-                          int numberOfDecodeSkipTokens = 0);
+                          int decodePositionId = 0, int decodeSkipTokens = 0);
 
   /**
    * @brief Send prefill result back to the decode server
@@ -108,6 +108,8 @@ class InterServerService {
    * @return true if sent successfully
    */
   bool sendPrefillCancel(uint32_t taskId);
+
+  bool sendPrefillCacheBlocksAdded(const std::vector<uint64_t>& blockHashes);
 
   /**
    * @brief Send health check information

@@ -18,10 +18,12 @@ from workflows.model_spec import get_runtime_model_spec
 from workflows.runtime_config import RuntimeConfig
 from workflows.workflow_types import DeviceTypes
 
+from utils.url_helpers import resolve_deploy_url
+
 from test_module import MediaContext
 
 from .commands import Command, SummaryCommand, WorkflowCommand
-from .execution import OrchestratorMetadata, PrefixCacheOptions
+from .execution import OrchestratorMetadata, PrefixCacheOptions, ServingBenchOptions
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +111,25 @@ def _build_context(
         service_port=args.service_port,
         spec_tests_num_prompts_cap=args.num_prompts,
         runtime_config=runtime_config,
+        server_url=_resolve_server_url(args, runtime_config),
     )
+
+
+def _resolve_server_url(
+    args: argparse.Namespace, runtime_config: Optional[RuntimeConfig]
+) -> str:
+    """Pick the inference-server URL to target an already-running server.
+
+    Prefers the explicit ``--server-url`` CLI flag, then delegates to the
+    shared :func:`resolve_deploy_url` (``RuntimeConfig.server_url`` propagated
+    through the v2 bridge, then the ``DEPLOY_URL`` env var, then the localhost
+    default). This routes v2 through the same single source of truth as every
+    v1 workflow rather than re-deriving the precedence here.
+    """
+    explicit = getattr(args, "server_url", None)
+    if explicit:
+        return explicit
+    return resolve_deploy_url(runtime_config)
 
 
 def _resolve_eval_config(model_name: str):
@@ -134,7 +154,16 @@ def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetada
         run_command=_capture_run_command(),
         runtime_model_spec_json=args.runtime_model_spec_json,
         prefix_cache=_build_prefix_cache_options(args),
+        serving_bench=_build_serving_bench_options(args),
     )
+
+
+def _build_serving_bench_options(
+    args: argparse.Namespace,
+) -> Optional[ServingBenchOptions]:
+    if getattr(args, "workflow", None) != "serving_bench":
+        return None
+    return ServingBenchOptions(suites=getattr(args, "serving_bench_suites", None))
 
 
 def _build_prefix_cache_options(

@@ -292,8 +292,6 @@ class TTQwenImageRunner(TTDiTRunner):
 class TTMochi1Runner(TTDiTRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
-        # setup environment for Mochi runner
-        os.environ["TT_DIT_CACHE_DIR"] = "/tmp/TT_DIT_CACHE"
 
     def create_pipeline(self):
         try:
@@ -406,6 +404,7 @@ class TTWan22Runner(TTDiTRunner):
         try:
             return WanPipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
+                checkpoint_name=self.settings.model_weights_path,
                 height=self.resolution.height,
                 width=self.resolution.width,
                 num_frames=WAN22_NUM_FRAMES,
@@ -771,15 +770,13 @@ class TTWan22I2VDistillRunner(TTDiTRunner):
         seed = int(request.seed) if request.seed is not None else 0
         pipeline_args = {
             "prompts": [request.prompt],
-            "num_inference_steps": request.num_inference_steps or 4,
+            "num_inference_steps": 4,
             "guidance_scale": 1.0,
             "guidance_scale_2": 1.0,
             "seed": seed,
             "traced": True,
             "image_prompt": self._build_image_prompt(request),
         }
-        if bool(request.negative_prompt):
-            pipeline_args["negative_prompts"] = [request.negative_prompt]
         frames = self.pipeline(**pipeline_args)
         self.logger.debug(f"Device {self.device_id}: Distill inference completed")
         return frames

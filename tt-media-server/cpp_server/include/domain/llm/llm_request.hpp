@@ -5,6 +5,7 @@
 
 #include <json/json.h>
 
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -16,8 +17,6 @@
 #include "domain/llm/chat_message.hpp"
 #include "domain/response_format.hpp"
 #include "domain/session.hpp"
-#include "domain/tool_calls/tool.hpp"
-#include "domain/tool_calls/tool_choice.hpp"
 
 namespace tt::domain::llm {
 
@@ -124,6 +123,10 @@ struct LLMRequest : BaseRequest {
   bool fast_mode = false;
   bool disaggregated = false;  // True if this is a disaggregated request
 
+  // Unique 64-bit migration ID correlating a prefill request with the KV
+  // transfer / result. Generated on the prefill server and echoed back.
+  uint64_t migrationId = 0;
+
   // For disaggregated decode: position in KV Cache of the migrated token (the
   // first token produced by the prefill server) in the per-user KV cache. The
   // decode scheduler uses this as `position_id` so the migrated token lands at
@@ -133,38 +136,44 @@ struct LLMRequest : BaseRequest {
 
   // Number of tokens already in the decode-side KV cache that the prefill
   // prefill should not send this part of KV.
-  int number_of_decode_skip_tokens = 0;
+  int decode_position_id = 0;
+
+  // Accumulated think (reasoning) tokens in the matched prefix, folded into
+  // kv_position_id during decode-side session resolution. Used to derive
+  // decode_skip_tokens. Set on a prefix-cache hit.
+  int accumulated_think_tokens = 0;
+
+  // Same leading reused prefix as decode_position_id but excluding the
+  // accumulated think tokens. Computed on the decode side and forwarded to the
+  // prefill server, which stores it on the Sequence.
+  int decode_skip_tokens = 0;
 
   std::optional<bool> disaggregation_override;
 
-  bool parallel_tool_calls = true;
-
-  std::optional<std::vector<tool_calls::Tool>> tools;
-  std::optional<tool_calls::ToolChoice> tool_choice;
-
   // Structured output constraint
   std::optional<ResponseFormat> response_format;
-
-  // When false, reasoning tokens are suppressed from the response.
-  bool enable_reasoning = true;
 
   // When true, skip adding <bos><user> and <assistant> tags in chat template.
   bool skip_apply_chat_template = false;
 
   // When true, the consumer emits chunks carrying only `token_id` and
-  // skips decode / reasoning / tool-call parsing. Used by transports
-  // that forward raw token_ids and handle detokenization downstream
-  // (e.g. Dynamo).
+  // skips decode. Used by transports that forward raw
+  // token_ids and handle detokenization downstream (e.g. Dynamo).
   bool skip_text_decode = false;
 
   // Session management (internal use only, not parsed from JSON)
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;
   std::optional<uint32_t> prefillSlotId;
-  tt::domain::Session* session =
-      nullptr;  // Pointer to session in SessionManager
+  // Shared ownership of the session: SessionManager's map holds one ref;
+  // requests/callbacks hold their own, so a session can't be freed mid-use
+  // even if eviction drops the map entry.
+  std::shared_ptr<tt::domain::Session> session;
   bool continuation =
       false;  // True if this request continues an existing session
+
+  std::optional<std::string> previousResponseId;
+  std::optional<std::string> responseId;
 
   std::string toString() const {
     std::string promptInfo;

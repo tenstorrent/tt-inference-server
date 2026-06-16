@@ -54,6 +54,17 @@ class ServerConnection:
             host = f"http://{host}"
         return f"{host}:{self.service_port}"
 
+    @property
+    def host(self) -> str:
+        """Bare hostname (no scheme/port), for drivers that take ``--host``."""
+        from utils.url_helpers import resolve_host_port
+
+        normalized = self.base_url.rstrip("/")
+        if "://" not in normalized:
+            normalized = f"http://{normalized}"
+        host, _ = resolve_host_port(normalized, self.service_port)
+        return host
+
 
 @dataclass(frozen=True)
 class DriverContext:

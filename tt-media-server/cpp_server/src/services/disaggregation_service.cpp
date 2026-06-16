@@ -3,19 +3,34 @@
 
 #include "services/disaggregation_service.hpp"
 
-#include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
+#include "services/session_resolution.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/conversation_hasher.hpp"
+#include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
 
 namespace tt::services {
 
 using namespace tt::domain::llm;
+
+namespace {
+
+std::vector<uint64_t> blockHashes(
+    const std::vector<tt::utils::BlockHashInfo>& blockInfos) {
+  std::vector<uint64_t> hashes;
+  hashes.reserve(blockInfos.size());
+  for (const auto& block : blockInfos) {
+    hashes.push_back(block.hash);
+  }
+  return hashes;
+}
+
+}  // namespace
 
 DisaggregationService::DisaggregationService(
     tt::config::LLMMode mode, std::shared_ptr<LLMService> llmService,
@@ -54,7 +69,13 @@ void DisaggregationService::setupSocketHandlers() {
                 "[DisaggregationService] Prefill error received for task {}, "
                 "propagating error to client",
                 message.task_id);
-            callback.value()(makeErrorChunk(message.task_id, "prefill error"),
+            const auto reason =
+                tt::sockets::errorReasonFromPrefillResult(message);
+            callback.value()(makeErrorChunk(message.task_id,
+                                            reason == LLMErrorReason::TIMEOUT
+                                                ? "prefill timeout"
+                                                : "prefill error",
+                                            reason),
                              /*isFinal=*/true);
             return;
           }
@@ -73,18 +94,11 @@ void DisaggregationService::setupSocketHandlers() {
                                 (!message.remaining_tokens.has_value() ||
                                  message.remaining_tokens.value() > 0);
           if (continueDecode) {
-            if (auto* reasoningParser = llmService->getReasoningParser()) {
-              reasoningParser->initializeTask(message.task_id);
-              reasoningParser->processToken(message.task_id,
-                                            message.token_ids.back(),
-                                            /*decodedText=*/"");
-            }
             auto request = LLMRequest(message.task_id);
             request.disaggregated = true;
-            // -2 because last token doesnt count, and we need current pos in kv
-            // cache.
+            request.migrationId = message.migration_id;
             request.kv_position_id =
-                static_cast<uint32_t>(message.token_ids.size() - 2);
+                static_cast<uint32_t>(message.token_ids.size() - 1);
             request.prompt.emplace<std::vector<int>>(
                 message.token_ids.end() - 1, message.token_ids.end());
             request.max_tokens = message.remaining_tokens;
@@ -153,8 +167,15 @@ void DisaggregationService::setupSocketHandlers() {
                                                     message.token_ids.end());
           auto slotId = message.slot_id;
           request->slotId = slotId;
-          request->number_of_decode_skip_tokens =
-              message.number_of_decode_skip_tokens;
+          request->decode_position_id = message.decode_position_id;
+          request->decode_skip_tokens = message.decode_skip_tokens;
+
+          // Generate a unique migration ID for correlating this prefill with
+          // its result on the decode side.
+          request->migrationId = tt::utils::MigrationIDGenerator::generate();
+          TT_LOG_DEBUG(
+              "[DisaggregationService] Assigned migrationId={} for taskId={}",
+              request->migrationId, message.task_id);
 
           // Resolve prefix cache asynchronously: on HIT sets prefillSlotId
           // and trims prompt, on MISS allocates a new session first.
@@ -167,34 +188,34 @@ void DisaggregationService::setupSocketHandlers() {
                 const size_t fullPromptTokens = message.token_ids.size();
                 const size_t trimmedPromptTokens =
                     std::get<std::vector<int>>(request->prompt).size();
-                // Cached (reused) prompt tokens = the leading prefix that did
-                // NOT need a fresh prefill. Two sources describe that same
-                // prefix; take the larger:
-                //   - decode_skip_tokens: the prefix the decode node already
-                //     holds in its KV from earlier turns. The decode node does
-                //     the multi-turn prefix match and ships the full prompt
-                //     plus this skip count (it does not trim itself); the
-                //     prefill runner honors it. This is the dominant source in
-                //     chat.
-                //   - prefill-side trim (fullPrompt - delta): when the prefill
-                //     server independently hits its own prefix cache.
-                const int prefillTrim = static_cast<int>(
+                // Cached (reused) prompt tokens = the leading prefix this
+                // prefill did NOT recompute = what resolvePrefillSession
+                // trimmed off its own prefix-cache hit (fullPrompt - remaining
+                // delta).
+                //
+                // Only the prefill-side trim counts: the prefill runner trims
+                // and recomputes purely by its own prefix match, so any prefix
+                // the decode node reports (decode_skip_tokens) but that prefill
+                // does not have gets recomputed here — it is not cached.
+                // Folding decode_skip_tokens in (e.g. via max) would
+                // over-report cached_tokens by exactly the tokens prefill
+                // re-prefilled.
+                const int cachedTokens = static_cast<int>(
                     fullPromptTokens >= trimmedPromptTokens
                         ? fullPromptTokens - trimmedPromptTokens
                         : 0);
-                const int cachedTokens =
-                    std::max(prefillTrim, message.number_of_decode_skip_tokens);
                 // Capture the resolved sessionId by value:
                 // submitStreamingRequest hands the request to the pipeline, so
                 // request->sessionId is no longer reliable by the time this
                 // async callback fires.
                 const std::string prefillSessionId =
                     request->sessionId.value_or("");
+                const uint64_t migrationId = request->migrationId;
                 llmService->submitStreamingRequest(
                     *request,
                     [this, prefillSessionId, message, maxTokens, slotId,
-                     cachedTokens](const LLMStreamChunk& response,
-                                   bool /*isFinal*/) {
+                     cachedTokens, migrationId](const LLMStreamChunk& response,
+                                                bool /*isFinal*/) {
                       auto prefillResult =
                           tt::sockets::PrefillResultMessage(message.task_id);
                       prefillResult.slot_id = slotId;
@@ -203,10 +224,15 @@ void DisaggregationService::setupSocketHandlers() {
                       prefillResult.top_k = message.top_k;
                       prefillResult.fast_mode = message.fast_mode;
                       prefillResult.cached_tokens = cachedTokens;
+                      prefillResult.migration_id = migrationId;
 
-                      bool isError =
-                          !response.choices.empty() &&
-                          response.choices.back().finish_reason == "error";
+                      const auto finishReason =
+                          response.choices.empty()
+                              ? std::optional<std::string>{}
+                              : response.choices.back().finish_reason;
+                      const bool isError =
+                          finishReason.has_value() &&
+                          isErrorFinishReason(finishReason.value());
                       if (isError) {
                         TT_LOG_WARN(
                             "[DisaggregationService] Prefill error for task "
@@ -214,6 +240,11 @@ void DisaggregationService::setupSocketHandlers() {
                             message.task_id);
                         prefillResult.error = true;
                         prefillResult.finished = true;
+                        const auto reason =
+                            errorReasonFromFinishReason(finishReason.value());
+                        prefillResult.generated_text =
+                            tt::sockets::prefillErrorTextForReason(
+                                reason, response.error.value_or("error"));
                       } else {
                         prefillResult.remaining_tokens =
                             maxTokens.has_value()
@@ -223,10 +254,6 @@ void DisaggregationService::setupSocketHandlers() {
                         prefillResult.token_ids.insert(
                             prefillResult.token_ids.end(),
                             message.token_ids.begin(), message.token_ids.end());
-                        if (response.choices.back().token_id.has_value()) {
-                          prefillResult.token_ids.push_back(
-                              response.choices.back().token_id.value());
-                        }
                         prefillResult.generated_text =
                             response.choices.back().text;
                       }
@@ -257,6 +284,9 @@ void DisaggregationService::setupSocketHandlers() {
                 prefillResult.slot_id = slotId;
                 prefillResult.error = true;
                 prefillResult.finished = true;
+                prefillResult.generated_text =
+                    tt::sockets::prefillErrorTextForReason(
+                        LLMErrorReason::GENERIC, std::string(error));
                 socketService->sendPrefillResult(prefillResult);
               });
         });
@@ -277,51 +307,6 @@ void DisaggregationService::start() {
 }
 
 void DisaggregationService::stop() { socketService->stop(); }
-
-void DisaggregationService::applyDeltaPrompt(LLMRequest& req,
-                                             uint32_t matchedTokens) {
-  auto& tokens = std::get<std::vector<int>>(req.prompt);
-  if (matchedTokens == 0 || matchedTokens >= tokens.size()) {
-    return;
-  }
-
-  // The remaining (unmatched) prompt tokens that will be prefilled must be
-  // aligned to 32 so the prefill kernel can operate on full tiles.  If the
-  // remainder isn't divisible by 32, we pull back some matched tokens into
-  // the delta to pad the remainder up to the next multiple of 32.
-  constexpr uint32_t kAlignment = 32;
-  const uint32_t totalTokens = static_cast<uint32_t>(tokens.size());
-  const uint32_t remainder = totalTokens - matchedTokens;
-  const uint32_t alignedRemainder =
-      ((remainder + kAlignment - 1) / kAlignment) * kAlignment;
-
-  // How many extra tokens we need to pull back from the matched prefix.
-  const uint32_t pullBack = alignedRemainder - remainder;
-  const uint32_t effectiveSkip =
-      (pullBack <= matchedTokens) ? (matchedTokens - pullBack) : 0;
-
-  if (effectiveSkip == 0) {
-    TT_LOG_DEBUG(
-        "[DisaggregationService] applyDeltaPrompt: matchedTokens={} "
-        "remainder={} — cannot align, full prefill will run",
-        matchedTokens, remainder);
-    return;
-  }
-
-  TT_LOG_DEBUG(
-      "[DisaggregationService] applyDeltaPrompt: matchedTokens={} "
-      "effectiveSkip={} pullBack={} alignedRemainder={}",
-      matchedTokens, effectiveSkip, pullBack, alignedRemainder);
-
-  // Remove the first `effectiveSkip` tokens — they are already in KV cache.
-  tokens.erase(tokens.begin(),
-               tokens.begin() + static_cast<ptrdiff_t>(effectiveSkip));
-  req.prompt_tokens_count = static_cast<int>(tokens.size());
-
-  // kv_position_id points to the last valid KV cache position (0-indexed),
-  // which is one less than the number of tokens we're reusing.
-  req.kv_position_id = effectiveSkip - 1;
-}
 
 void DisaggregationService::resolvePrefillSession(
     std::shared_ptr<LLMRequest> request,
@@ -354,36 +339,26 @@ void DisaggregationService::resolvePrefillSession(
     // in-flight hold (see clearInFlight below).
     request->sessionId = acquired->sessionId;
     request->continuation = true;
-    applyDeltaPrompt(*request, acquired->numberOfMatchedTokens);
+    session_resolution::applyDeltaPrompt(
+        *request, acquired->numberOfMatchedTokens,
+        {.skipUnlessRegularMode = false,
+         .setKvPositionId = true,
+         .logPrefix = "[DisaggregationService]"});
     sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
+    socketService->sendPrefillCacheBlocksAdded(blockHashes(blockInfos));
     onResolved();
   } else {
     // Check if there's a candidate slot worth copying from.
-    std::optional<uint32_t> slotToCopyFrom;
-    uint32_t copyMatchedTokens = 0;
-    if (acquired.has_value() && !acquired->candidatesList.empty()) {
-      auto copyCandidate =
-          sessionManager->findASlotToCopyFrom(acquired->candidatesList);
-      if (copyCandidate.has_value()) {
-        uint32_t sourceSlot =
-            sessionManager->getSlotIdBySessionId(copyCandidate->sessionId);
-        if (sourceSlot != tt::domain::INVALID_SLOT_ID) {
-          sessionManager->lockSlot(sourceSlot);
-          slotToCopyFrom = sourceSlot;
-          const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
-          const size_t blockSize = tt::config::kvCacheBlockSize();
-          copyMatchedTokens = static_cast<uint32_t>(
-              firstBlockSize +
-              (copyCandidate->matchedBlocks > 1
-                   ? (copyCandidate->matchedBlocks - 1) * blockSize
-                   : 0));
-          TT_LOG_INFO(
-              "[DisaggregationService] Found slot to copy from: slotId={} "
-              "matchedTokens={} for taskId={}",
-              sourceSlot, copyMatchedTokens, request->task_id);
-        }
-      }
-    }
+    auto copyPlan = acquired.has_value()
+                        ? session_resolution::prepareSlotCopy(
+                              *sessionManager, acquired->candidatesList,
+                              request->task_id, "[DisaggregationService]")
+                        : std::nullopt;
+    std::optional<uint32_t> slotToCopyFrom =
+        copyPlan.has_value() ? std::make_optional(copyPlan->slotToCopyFrom)
+                             : std::nullopt;
+    uint32_t copyMatchedTokens =
+        copyPlan.has_value() ? copyPlan->matchedTokens : 0;
 
     TT_LOG_INFO(
         "[DisaggregationService] Prefill prefix cache MISS taskId={} "
@@ -402,6 +377,7 @@ void DisaggregationService::resolvePrefillSession(
               "sessionId={} slotId={}",
               request->task_id, session.getSessionId(), session.getSlotId());
           sm->registerPrefixHash(session.getSessionId(), infos);
+          socketService->sendPrefillCacheBlocksAdded(blockHashes(infos));
           request->sessionId = session.getSessionId();
           request->prefillSlotId =
               sm->acquireInFlight(session.getSessionId(), nullptr);
@@ -410,7 +386,11 @@ void DisaggregationService::resolvePrefillSession(
           if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
             request->continuation = true;
             request->kv_position_id = copyMatchedTokens - 1;
-            applyDeltaPrompt(*request, copyMatchedTokens);
+            session_resolution::applyDeltaPrompt(
+                *request, copyMatchedTokens,
+                {.skipUnlessRegularMode = false,
+                 .setKvPositionId = true,
+                 .logPrefix = "[DisaggregationService]"});
           }
           onResolved();
         },
@@ -439,14 +419,18 @@ void DisaggregationService::handleStreamingRequest(
     auto maxTokens = request.max_tokens;
     auto slotId = request.slotId;
     auto tokenIds = std::get<std::vector<int>>(request.prompt);
-    int decodeSkipTokens = request.kv_position_id.has_value()
+    int decodePositionId = request.kv_position_id.has_value()
                                ? static_cast<int>(*request.kv_position_id + 1)
                                : 0;
+    // Same reused prefix as decodePositionId but excluding the accumulated
+    // think tokens that were folded into kv_position_id during session
+    // resolution.
+    int decodeSkipTokens = decodePositionId - request.accumulated_think_tokens;
 
     auto sent = socketService->sendPrefillRequest(
         request.task_id, registrationHashes,
         std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
-        slotId, tt::utils::mapper::mapSamplingParams(request),
+        slotId, tt::utils::mapper::mapSamplingParams(request), decodePositionId,
         decodeSkipTokens);
 
     if (!sent) {

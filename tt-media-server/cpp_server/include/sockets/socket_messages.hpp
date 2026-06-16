@@ -9,8 +9,10 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
+#include "domain/llm/llm_error_reason.hpp"
 #include "domain/sentinel_values.hpp"
 
 namespace tt::sockets {
@@ -44,7 +46,8 @@ struct PrefillRequestMessage {
   std::optional<float> top_p;
   std::optional<int> top_k;
   bool fast_mode = false;
-  int number_of_decode_skip_tokens = 0;
+  int decode_position_id = 0;
+  int decode_skip_tokens = 0;
 
   explicit PrefillRequestMessage(uint32_t taskId) : task_id(taskId) {}
 
@@ -59,8 +62,8 @@ struct PrefillRequestMessage {
     bool hasTopK = top_k.has_value();
     int topKVal = top_k.value_or(0);
     ar(task_id, registration_hashes, token_ids, mt, sid, hasTemp, tempVal,
-       hasTopP, topPVal, hasTopK, topKVal, fast_mode,
-       number_of_decode_skip_tokens);
+       hasTopP, topPVal, hasTopK, topKVal, fast_mode, decode_position_id,
+       decode_skip_tokens);
   }
 
   template <class Archive>
@@ -77,9 +80,10 @@ struct PrefillRequestMessage {
     bool hasTopK;
     int topKVal;
     bool fastMode;
+    int decodePositionId;
     int decodeSkipTokens;
     ar(tid, hashes, tids, mt, sid, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
-       topKVal, fastMode, decodeSkipTokens);
+       topKVal, fastMode, decodePositionId, decodeSkipTokens);
     PrefillRequestMessage msg(tid);
     msg.registration_hashes = std::move(hashes);
     msg.token_ids = std::move(tids);
@@ -91,7 +95,8 @@ struct PrefillRequestMessage {
     if (hasTopP) msg.top_p = topPVal;
     if (hasTopK) msg.top_k = topKVal;
     msg.fast_mode = fastMode;
-    msg.number_of_decode_skip_tokens = decodeSkipTokens;
+    msg.decode_position_id = decodePositionId;
+    msg.decode_skip_tokens = decodeSkipTokens;
     return msg;
   }
 };
@@ -121,6 +126,9 @@ struct PrefillResultMessage {
   // (prefix-cache reuse). The decode server surfaces this as
   // usage.prompt_tokens_details.cached_tokens.
   int cached_tokens = 0;
+  // Unique 64-bit ID correlating this prefill result with the migration
+  // (KV transfer) that produced it. Generated on the prefill server.
+  uint64_t migration_id = 0;
 
   explicit PrefillResultMessage(uint32_t taskId) : task_id(taskId) {}
 
@@ -136,7 +144,7 @@ struct PrefillResultMessage {
     int topKVal = top_k.value_or(0);
     ar(task_id, generated_text, finished, tokens_generated, processing_time_ms,
        token_ids, rt, sid, error, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
-       topKVal, fast_mode, cached_tokens);
+       topKVal, fast_mode, cached_tokens, migration_id);
   }
 
   template <class Archive>
@@ -158,8 +166,9 @@ struct PrefillResultMessage {
     int topKVal;
     bool fastMode;
     int cachedTokens;
+    uint64_t migrationId;
     ar(tid, genText, fin, tg, pt, tids, rt, sid, err, hasTemp, tempVal, hasTopP,
-       topPVal, hasTopK, topKVal, fastMode, cachedTokens);
+       topPVal, hasTopK, topKVal, fastMode, cachedTokens, migrationId);
     PrefillResultMessage msg(tid);
     msg.generated_text = std::move(genText);
     msg.finished = fin;
@@ -176,9 +185,27 @@ struct PrefillResultMessage {
     if (hasTopK) msg.top_k = topKVal;
     msg.fast_mode = fastMode;
     msg.cached_tokens = cachedTokens;
+    msg.migration_id = migrationId;
     return msg;
   }
 };
+
+inline constexpr std::string_view PREFILL_TIMEOUT_ERROR_TEXT = "timeout";
+
+inline tt::domain::llm::LLMErrorReason errorReasonFromPrefillResult(
+    const PrefillResultMessage& message) {
+  return message.error && message.generated_text == PREFILL_TIMEOUT_ERROR_TEXT
+             ? tt::domain::llm::LLMErrorReason::TIMEOUT
+             : tt::domain::llm::LLMErrorReason::GENERIC;
+}
+
+inline std::string prefillErrorTextForReason(
+    tt::domain::llm::LLMErrorReason reason, std::string genericError) {
+  if (reason == tt::domain::llm::LLMErrorReason::TIMEOUT) {
+    return std::string(PREFILL_TIMEOUT_ERROR_TEXT);
+  }
+  return genericError.empty() ? "error" : std::move(genericError);
+}
 
 /**
  * @brief Health check message

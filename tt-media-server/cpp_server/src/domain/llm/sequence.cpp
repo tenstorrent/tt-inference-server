@@ -35,8 +35,8 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
                    std::optional<uint32_t> prefillSlotId, bool continuation,
                    bool disaggregated,
                    std::unique_ptr<SamplingParams> inputSamplingParams,
-                   std::optional<uint32_t> kvPositionId,
-                   int numberOfDecodeSkipTokens)
+                   std::optional<uint32_t> kvPositionId, int decodePositionId,
+                   int decodeSkipTokens, uint64_t migrationId)
     : taskId(taskId),
       status(SequenceStatus::WAITING),
       tokenIds(std::move(inputTokenIds)),
@@ -48,7 +48,9 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
       prefillKvCacheSlot(prefillSlotId.value_or(tt::domain::INVALID_SLOT_ID)),
       continuation(continuation),
       disaggregated(disaggregated),
-      numberOfDecodeSkipTokens(numberOfDecodeSkipTokens) {
+      decodePositionId(decodePositionId),
+      decodeSkipTokens(decodeSkipTokens),
+      migrationId(migrationId) {
   if (!tokenIds.empty()) {
     lastToken = tokenIds.back();
   }
@@ -112,8 +114,11 @@ void Sequence::serialize(std::ostream& os) const {
     os.write(reinterpret_cast<const char*>(&kvPositionIdValue),
              sizeof(uint32_t));
   }
-  os.write(reinterpret_cast<const char*>(&numberOfDecodeSkipTokens),
-           sizeof(numberOfDecodeSkipTokens));
+  os.write(reinterpret_cast<const char*>(&decodePositionId),
+           sizeof(decodePositionId));
+  os.write(reinterpret_cast<const char*>(&decodeSkipTokens),
+           sizeof(decodeSkipTokens));
+  os.write(reinterpret_cast<const char*>(&migrationId), sizeof(migrationId));
 }
 
 Sequence Sequence::deserialize(std::istream& is) {
@@ -164,8 +169,11 @@ Sequence Sequence::deserialize(std::istream& is) {
   } else {
     seq.kvPositionId = std::nullopt;
   }
-  is.read(reinterpret_cast<char*>(&seq.numberOfDecodeSkipTokens),
-          sizeof(seq.numberOfDecodeSkipTokens));
+  is.read(reinterpret_cast<char*>(&seq.decodePositionId),
+          sizeof(seq.decodePositionId));
+  is.read(reinterpret_cast<char*>(&seq.decodeSkipTokens),
+          sizeof(seq.decodeSkipTokens));
+  is.read(reinterpret_cast<char*>(&seq.migrationId), sizeof(seq.migrationId));
   return seq;
 }
 

@@ -75,7 +75,7 @@ void Session::initTokenAccumulator(
 void Session::addGeneratedToken(int tokenId) {
   generatedTokens_.push_back(tokenId);
 
-  // Track thinking state using same state machine as ReasoningParser
+  // Track thinking state using the same marker rules as prefix hashing.
   const bool thinkingEnabled =
       thinkStartTokenId_ != utils::tokenizers::kNoTokenId &&
       thinkEndTokenId_ != utils::tokenizers::kNoTokenId;

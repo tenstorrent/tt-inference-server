@@ -74,11 +74,16 @@ std::string tokenizerConfigPath(ModelType model);
  */
 std::string visibleDevicesForWorker(size_t workerIndex);
 
-/** Model type derived from LLM_DEVICE_BACKEND:
- * "llama" -> LLAMA_3_1_8B_INSTRUCT,
- * "kimi" -> KIMI_K2_6,
- * otherwise -> DEEPSEEK_R1_0528. */
+/** Model type derived from MODEL. */
 ModelType modelType();
+
+/**
+ * Whether the current model should sample only while in the reasoning/thinking
+ * phase and fall back to greedy (argmax) decoding outside it. DeepSeek behaves
+ * this way; most models sample in both phases. Consumed by the blaze runner
+ * when building per-request sampling params.
+ */
+bool sampleOnlyInReasoning();
 
 /** LLM mode from LLM_MODE. Default: defaults::LLM_MODE ("regular"). */
 LLMMode llmMode();
@@ -114,14 +119,6 @@ std::string logInstanceTag(int workerIndex = -1);
 
 /** Capacity hint for the gateway, 0 = unlimited. From PREFILL_MAX_IN_FLIGHT. */
 uint32_t prefillMaxInFlight();
-
-/** Enable accumulated streaming from ENABLE_ACCUMULATED_STREAMING. Default:
- * defaults::ENABLE_ACCUMULATED_STREAMING. */
-bool enableAccumulatedStreaming();
-
-/** Max accumulated tokens from MAX_ACCUMULATED_TOKENS. Default:
- * defaults::MAX_ACCUMULATED_TOKENS. */
-size_t maxAccumulatedTokens();
 
 /** Max in-flight requests before 429. From MAX_QUEUE_SIZE. Default:
  * defaults::MAX_QUEUE_SIZE. */
@@ -201,10 +198,6 @@ std::string kafkaGroupId();
  * defaults::SESSION_ALLOCATION_MAX_RETRIES. */
 unsigned sessionAllocationMaxRetries();
 
-/** Prefill timeout in milliseconds from PREFILL_TIMEOUT_MS. Default:
- * defaults::PREFILL_TIMEOUT_MS. */
-unsigned prefillTimeoutMs();
-
 /** Blaze socket descriptor prefix from BLAZE_SOCKET_DESCRIPTOR_PREFIX. Default:
  * defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX. */
 std::string blazeSocketDescriptorPrefix();
@@ -213,9 +206,17 @@ std::string blazeSocketDescriptorPrefix();
  * defaults::PM_CONNECT_TIMEOUT_MS. */
 unsigned pmConnectTimeoutMs();
 
-/** Decode scheduler max users from DS_MAX_USERS. Default:
- * defaults::DS_MAX_USERS. */
-size_t dsMaxUsers();
+/** Pipeline manager max users from PM_MAX_USERS. Default:
+ * defaults::PM_MAX_USERS. */
+size_t pmMaxUsers();
+
+/** Prefill number of layers from PREFILL_NUM_LAYERS. Default:
+ * defaults::PREFILL_NUM_LAYERS. */
+std::string prefillNumLayers();
+
+/** Prefill chunk size from PREFILL_CHUNK_SIZE. Default:
+ * defaults::PREFILL_CHUNK_SIZE. */
+std::string prefillChunkSize();
 
 /** Warmup timeout (ms) while waiting for the first token during runner warmup.
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
@@ -274,18 +275,6 @@ size_t cancelQueueCapacity();
 /** Memory queue capacity from MEMORY_QUEUE_CAPACITY. Default:
  * defaults::MEMORY_QUEUE_CAPACITY. */
 size_t memoryQueueCapacity();
-
-// Shared memory slot buffer constants
-/** SHM slots from SHM_SLOTS. Default: defaults::SHM_SLOTS. */
-int shmSlots();
-
-/** Prefill max token IDs from PREFILL_MAX_TOKEN_IDS. Default:
- * defaults::PREFILL_MAX_TOKEN_IDS. */
-int prefillMaxTokenIds();
-
-/** Decode max token IDs from DECODE_MAX_TOKEN_IDS. Default:
- * defaults::DECODE_MAX_TOKEN_IDS. */
-int decodeMaxTokenIds();
 
 // ---------------------------------------------------------------------------
 // Dynamo TCP backend (NVIDIA Dynamo frontend integration)

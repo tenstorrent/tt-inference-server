@@ -112,6 +112,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", required=True, choices=valid_devices)
     parser.add_argument("--service-port", type=int, default=8000)
     parser.add_argument(
+        "--server-url",
+        type=str,
+        default=None,
+        help=(
+            "Base URL of an already-running inference server to target "
+            "(e.g. 'http://192.168.1.10'). Overrides the default localhost "
+            "host; combine with --service-port unless the URL carries an "
+            "explicit port. Propagated from v1 run.py --server-url through "
+            "the v2 bridge."
+        ),
+    )
+    parser.add_argument(
         "--num-prompts",
         type=int,
         default=None,
@@ -251,12 +263,38 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    # ----- Serving-bench suites (--workflow serving_bench) ------------
+    parser.add_argument(
+        "--serving-bench-suites",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated serving-bench suites to run (default: all suites "
+            "under test_module/serving_bench, e.g. agentic_bench, benchmark). "
+            "Suite knobs (DURATION, TARGET_CONCURRENCY, ...) are read from the "
+            "environment; --limit-samples-mode selects a knob preset and each "
+            "suite's defaults.env fills the rest."
+        ),
+    )
+
     args = parser.parse_args()
     if args.repeat < 1:
         parser.error("--repeat must be >= 1")
+    if args.server_url:
+        from utils.url_helpers import normalize_server_url
+
+        try:
+            args.server_url = normalize_server_url(args.server_url)
+        except ValueError as e:
+            parser.error(str(e))
     if args.prefix_cache and args.workflow != "benchmarks":
         parser.error(
             "--prefix-cache currently requires --workflow benchmarks "
+            f"(got --workflow {args.workflow})."
+        )
+    if args.serving_bench_suites and args.workflow != "serving_bench":
+        parser.error(
+            "--serving-bench-suites requires --workflow serving_bench "
             f"(got --workflow {args.workflow})."
         )
     if args.output_dir is None:

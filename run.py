@@ -406,6 +406,79 @@ def parse_arguments():
         help="List matching tests without running them (dry-run)",
     )
 
+    # Serving-bench shell benchmark suites
+    serving_bench_group = parser.add_argument_group(
+        "serving_bench workflow (v2)",
+        "Arguments for --workflow serving_bench (shell benchmark suites against a "
+        "running server, routed to v2)",
+    )
+    serving_bench_group.add_argument(
+        "--serving-bench-suites",
+        type=str,
+        default=None,
+        help="Comma-separated serving-bench suites to run (default: all suites under "
+        "tt-inference-server-v2/test_module/serving_bench, e.g. agentic_bench, "
+        "benchmark). Suite knobs (DURATION, TARGET_CONCURRENCY, ...) are read from "
+        "the environment; --limit-samples-mode selects a knob preset.",
+    )
+
+    prefix_cache_group = parser.add_argument_group(
+        "Prefix-cache benchmark (v2)",
+        "Arguments for --workflow benchmarks --prefix-cache (routed to v2)",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache",
+        action="store_true",
+        help="Switch --workflow benchmarks to the v2 AIPerf prefix-caching scenario sweep. "
+        "Routes the run through the v2 engine. Requires --workflow benchmarks.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-preset",
+        type=str,
+        choices=["ci", "full"],
+        default="full",
+        help="Preset for --prefix-cache (default: full). 'ci' is a short regression sweep.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-scenarios",
+        type=str,
+        default=None,
+        help="Comma-separated subset of prefix-cache scenarios (shared_system, prefix_pool, "
+        "multi_turn, baseline, mooncake_trace). When unset, runs every scenario from the preset.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-arrival",
+        type=str,
+        choices=["constant", "poisson", "gamma"],
+        default=None,
+        help="Override the arrival pattern for every prefix-cache run.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-request-rate",
+        type=float,
+        default=None,
+        help="Override the target request rate (req/s) for every prefix-cache run.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-scenarios-json",
+        type=str,
+        default=None,
+        help="Path to a custom prefix-cache scenarios JSON file.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-trace",
+        type=str,
+        default=None,
+        help="Path to a mooncake-format JSONL trace file for mooncake_trace scenarios.",
+    )
+    prefix_cache_group.add_argument(
+        "--jwt-secret",
+        type=str,
+        default=None,
+        help="JWT secret for prefix-cache runs that hit an inference server behind JWT auth. "
+        "Reads $JWT_SECRET when omitted.",
+    )
+
     args = parser.parse_args()
 
     if args.tt_device and args.device and args.tt_device != args.device:
@@ -421,18 +494,12 @@ def parse_arguments():
             "Use --server-url alone to target an already-running inference server."
         )
     if args.server_url:
-        from urllib.parse import urlparse
+        from utils.url_helpers import normalize_server_url
 
-        server_url = args.server_url.strip().rstrip("/")
-        parsed = urlparse(server_url)
-        if not parsed.scheme:
-            server_url = f"http://{server_url}"
-            parsed = urlparse(server_url)
-        if not parsed.hostname:
-            parser.error(
-                "--server-url must include a hostname (e.g. 'http://127.0.0.1')."
-            )
-        args.server_url = server_url
+        try:
+            args.server_url = normalize_server_url(args.server_url)
+        except ValueError as e:
+            parser.error(str(e))
     args.engine = (
         InferenceEngine.from_string(args.engine).value if args.engine else None
     )
@@ -452,6 +519,18 @@ def parse_arguments():
 
     if args.eval_samples and args.limit_samples_mode:
         parser.error("--eval-samples and --limit-samples-mode are mutually exclusive.")
+
+    if args.prefix_cache and args.workflow != "benchmarks":
+        parser.error(
+            "--prefix-cache currently requires --workflow benchmarks "
+            f"(got --workflow {args.workflow})."
+        )
+
+    if args.serving_bench_suites and args.workflow != "serving_bench":
+        parser.error(
+            "--serving-bench-suites requires --workflow serving_bench "
+            f"(got --workflow {args.workflow})."
+        )
 
     return args
 
@@ -476,6 +555,7 @@ def handle_secrets(runtime_config):
         WorkflowType.TESTS,
         WorkflowType.SPEC_TESTS,
         WorkflowType.REPORTS,
+        WorkflowType.SERVING_BENCH,
     }
     # --docker-server requires the HF_TOKEN env var to be available
     huggingface_required = (
