@@ -435,8 +435,7 @@ void LLMPipeline::runStreamingRequest(
           handlers.onSessionResolved(sessionInfo);
         }
 
-        // dispatchGeneration moves the request into the producer, so keep a
-        // stable session pointer for frontend error paths and stream callbacks.
+        // dispatchGeneration moves req->session, so keep a stable copy.
         auto sessionPtr = req->session;
         try {
           service_->preProcess(*req);

@@ -338,8 +338,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                   usage->cachedTokens = *chunk.cached_prompt_tokens;
                 }
 
-                // Use the captured sessionPtr because dispatchGeneration moves
-                // req->session into the producer.
+                // dispatchGeneration moves req->session, so use the stable
+                // copy.
                 if (sessionPtr && !chunk.choices.empty() &&
                     chunk.choices[0].token_id) {
                   sessionPtr->addGeneratedToken(

@@ -108,10 +108,8 @@ class LLMPipeline {
                       std::function<void()> cancelFn = nullptr) const;
 
   /**
-   * Shared frontend orchestration for HTTP and Dynamo generation paths:
-   * resolve a session, preprocess the request, build the caller's stream
-   * callback, and dispatch generation. Frontends keep ownership of wire-format
-   * errors and success responses through `handlers`.
+   * Shared HTTP/Dynamo orchestration: resolve, preprocess, build the frontend
+   * stream callback, and dispatch generation.
    */
   void runStreamingRequest(std::shared_ptr<tt::domain::llm::LLMRequest> req,
                            trantor::EventLoop* loop,
@@ -122,8 +120,8 @@ class LLMPipeline {
   /**
    * Submit `request` to the appropriate streaming producer based on
    * `LLM_MODE` (REGULAR vs DECODE_ONLY) and the prefill-on-decode heuristic.
-   * Prefer `runStreamingRequest` from frontend code; callers that invoke this
-   * directly must preprocess first or arrange an equivalent skip upstream.
+   * Prefer `runStreamingRequest` from frontend code; direct callers must
+   * preprocess first or arrange an equivalent skip upstream.
    * Throws on unsupported mode or queue/dispatch failures.
    */
   void dispatchGeneration(
