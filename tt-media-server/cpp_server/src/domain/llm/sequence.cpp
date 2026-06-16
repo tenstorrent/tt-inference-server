@@ -36,7 +36,7 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
                    bool disaggregated,
                    std::unique_ptr<SamplingParams> inputSamplingParams,
                    std::optional<uint32_t> kvPositionId, int decodePositionId,
-                   int decodeSkipTokens, uint64_t migrationId)
+                   int decodeSkipTokens, std::optional<uint64_t> migrationId)
     : taskId(taskId),
       status(SequenceStatus::WAITING),
       tokenIds(std::move(inputTokenIds)),

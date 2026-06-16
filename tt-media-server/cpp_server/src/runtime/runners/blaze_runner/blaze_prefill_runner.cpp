@@ -43,6 +43,7 @@ BlazePrefillRunner::BlazePrefillRunner(
   managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
   auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
   auto migrationClientInterface = utils::makeMigrationClientInterface(config);
+  migrationClientInterface->connect_to(tt::config::migrationDecodeEndpointId(), "PUBLISHER", "ds_pd");
   prefillScheduler = std::make_unique<ps::PrefillScheduler>(
       pipelineConfig, ackChannelConfig, managerParams,
       std::move(migrationClientInterface));

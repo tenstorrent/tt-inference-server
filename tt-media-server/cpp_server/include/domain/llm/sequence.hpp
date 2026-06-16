@@ -44,7 +44,7 @@ class Sequence {
            bool disaggregated, std::unique_ptr<SamplingParams> samplingParams,
            std::optional<uint32_t> kvPositionId = std::nullopt,
            int decodePositionId = 0, int decodeSkipTokens = 0,
-           uint64_t migrationId = 0);
+           std::optional<uint64_t> migrationId = std::nullopt);
 
   void serialize(std::ostream& os) const;
   static Sequence deserialize(std::istream& is);
