@@ -31,16 +31,16 @@ enum class SessionState {
 class Session {
  public:
   /**
-   * Create a new session with a generated UUID.
-   * @param slotId Optional slot ID (max uint32_t means unassigned)
+   * Create a new session with an assigned slot.
+   * @param slotId The assigned slot ID (required, must be valid)
    * @param initialHash Optional initial content hash (0 if not provided)
    */
-  explicit Session(uint32_t slotId = INVALID_SLOT_ID, size_t initialHash = 0);
+  explicit Session(uint32_t slotId, size_t initialHash = 0);
 
   /**
-   * Get the stable session ID (UUID).
+   * Get the slot ID as a string (used as the session identifier).
    */
-  const std::string& getSessionId() const { return session_id_; }
+  std::string getSlotIdString() const { return std::to_string(slot_id_); }
 
   /**
    * Get the current content hash.
@@ -116,8 +116,7 @@ class Session {
   void initTokenAccumulator(
       std::vector<int> deltaTokens,
       std::vector<utils::BlockHashInfo> initialBlocks,
-      std::function<void(const std::string&,
-                         const std::vector<utils::BlockHashInfo>&)>
+      std::function<void(uint32_t, const std::vector<utils::BlockHashInfo>&)>
           onComplete,
       uint32_t parentThinkCount = 0);
 
@@ -134,13 +133,11 @@ class Session {
 
   Json::Value toJson() const {
     Json::Value json;
-    json["session_id"] = session_id_;
     json["slot_id"] = slot_id_;
     return json;
   }
 
  private:
-  std::string session_id_;   // Stable UUID, never changes
   size_t hash_;              // Current content hash, changes with conversation
   std::string response_id_;  // Current response id (Responses API key), empty
                              // until registered. Kept on the session so
@@ -156,8 +153,7 @@ class Session {
   std::vector<utils::BlockHashInfo> initialBlocks_;
   uint64_t parentHash_ = 0;
   uint32_t parentThinkCount_ = 0;
-  std::function<void(const std::string&,
-                     const std::vector<utils::BlockHashInfo>&)>
+  std::function<void(uint32_t, const std::vector<utils::BlockHashInfo>&)>
       onComplete_;
 
   // Thinking token tracking
@@ -165,8 +161,6 @@ class Session {
   uint32_t accumulatedThinkTokens_ = 0;
   int64_t thinkStartTokenId_ = 0;
   int64_t thinkEndTokenId_ = 0;
-
-  static std::string generateUuid();
 };
 
 }  // namespace tt::domain

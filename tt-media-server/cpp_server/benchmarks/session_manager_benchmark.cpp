@@ -24,51 +24,16 @@
 
 namespace {
 
-// Trantor requires an EventLoop to be both created and run on the same thread.
-struct LoopFixture {
-  std::promise<trantor::EventLoop*> promise_;
-  trantor::EventLoop* loop{nullptr};
-  std::thread loopThread;
-
-  LoopFixture() {
-    auto future = promise_.get_future();
-    loopThread = std::thread([this]() {
-      trantor::EventLoop eventLoop;
-      promise_.set_value(&eventLoop);
-      eventLoop.loop();
-    });
-    loop = future.get();
-  }
-
-  ~LoopFixture() {
-    if (loop) loop->quit();
-    if (loopThread.joinable()) loopThread.join();
-  }
-};
-
-std::string createSessionWithSlot(
-    tt::services::SessionManager& manager, trantor::EventLoop* loop,
-    uint32_t slotId, const std::vector<tt::utils::BlockHashInfo>& blockInfos) {
-  std::promise<std::string> promise;
-  auto future = promise.get_future();
-
-  manager.createSession(
-      [&promise](const tt::domain::Session& s) {
-        promise.set_value(s.getSessionId());
-      },
-      [&promise](std::string_view err) {
-        promise.set_exception(
-            std::make_exception_ptr(std::runtime_error(std::string(err))));
-      },
-      loop, blockInfos, slotId);
-
-  return future.get();
+uint32_t createSessionWithSlot(
+    tt::services::SessionManager& manager, uint32_t slotId,
+    const std::vector<tt::utils::BlockHashInfo>& blockInfos) {
+  manager.createSession(slotId, blockInfos);
+  return slotId;
 }
 
 // Shared state across benchmarks (sessions are expensive to create).
 struct PrefixHashFixture : benchmark::Fixture {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
   // Queries built during setup.
   std::vector<tt::utils::BlockHashInfo> querySingleCandidate;
@@ -89,7 +54,7 @@ struct PrefixHashFixture : benchmark::Fixture {
       for (size_t i = 1; i < numHashes; ++i) {
         blocks.push_back({static_cast<uint64_t>(i + 1000), 0});
       }
-      createSessionWithSlot(manager, lf.loop, 0, blocks);
+      createSessionWithSlot(manager, 0, blocks);
     }
 
     // Sessions 1-4: shared key hash (1), varying match lengths.
@@ -105,8 +70,7 @@ struct PrefixHashFixture : benchmark::Fixture {
         blocks.push_back(
             {static_cast<uint64_t>((s + 1) * 1000000 + i * 10), 0});
       }
-      createSessionWithSlot(manager, lf.loop, static_cast<uint32_t>(s + 1),
-                            blocks);
+      createSessionWithSlot(manager, static_cast<uint32_t>(s + 1), blocks);
     }
 
     // Query A: single candidate (key=9999).
@@ -131,7 +95,7 @@ BENCHMARK_DEFINE_F(PrefixHashFixture, SingleCandidate)
     auto result = manager.tryAcquireByPrefixHash(querySingleCandidate, nullptr);
     benchmark::DoNotOptimize(result);
     if (result.has_value() && result->sessionFound) {
-      manager.releaseInFlight(result->sessionId);
+      manager.releaseInFlight(result->slotId);
     }
   }
   state.counters["target_us"] = 200.0;
@@ -145,7 +109,7 @@ BENCHMARK_DEFINE_F(PrefixHashFixture, MultiCandidate_4Sessions)
     auto result = manager.tryAcquireByPrefixHash(queryMultiCandidate, nullptr);
     benchmark::DoNotOptimize(result);
     if (result.has_value() && result->sessionFound) {
-      manager.releaseInFlight(result->sessionId);
+      manager.releaseInFlight(result->slotId);
     }
   }
   state.counters["target_us"] = 250.0;
@@ -159,31 +123,30 @@ BENCHMARK_REGISTER_F(PrefixHashFixture, MultiCandidate_4Sessions)
 
 struct ResponseIdFixture : benchmark::Fixture {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
   static constexpr size_t NUM_SESSIONS = 100;
-  std::vector<std::string> responseIds;
+  std::vector<uint32_t> slotIds;
   std::string targetResponseId;
 
   void SetUp(const benchmark::State& /*state*/) override {
-    if (!responseIds.empty()) return;
+    if (!slotIds.empty()) return;
 
-    responseIds.reserve(NUM_SESSIONS);
+    slotIds.reserve(NUM_SESSIONS);
     for (size_t i = 0; i < NUM_SESSIONS; ++i) {
       // Create a session with a unique slot and trivial block info.
       std::vector<tt::utils::BlockHashInfo> blocks = {
           {static_cast<uint64_t>(i + 5000), 0}};
-      auto sessionId = createSessionWithSlot(
-          manager, lf.loop, static_cast<uint32_t>(i + 100), blocks);
+      auto slotId =
+          createSessionWithSlot(manager, static_cast<uint32_t>(i + 100), blocks);
 
       // Plant a response ID for each session.
       std::string respId = "resp-" + std::to_string(i);
-      manager.initResponseId(sessionId, respId);
-      responseIds.push_back(respId);
+      manager.initResponseId(slotId, respId);
+      slotIds.push_back(slotId);
     }
 
     // We'll always look up the last response ID (worst case for linear scan).
-    targetResponseId = responseIds.back();
+    targetResponseId = "resp-" + std::to_string(NUM_SESSIONS - 1);
   }
 };
 
@@ -193,7 +156,7 @@ BENCHMARK_DEFINE_F(ResponseIdFixture, Lookup)
     auto result = manager.tryAcquireByResponseId(targetResponseId, nullptr);
     benchmark::DoNotOptimize(result);
     if (result.has_value()) {
-      manager.releaseInFlight(result->sessionId);
+      manager.releaseInFlight(result->slotId);
     }
   }
   state.counters["target_us"] = 10.0;

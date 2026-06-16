@@ -204,16 +204,16 @@ void DisaggregationService::setupSocketHandlers() {
                     fullPromptTokens >= trimmedPromptTokens
                         ? fullPromptTokens - trimmedPromptTokens
                         : 0);
-                // Capture the resolved sessionId by value:
+                // Capture the resolved slotId by value:
                 // submitStreamingRequest hands the request to the pipeline, so
-                // request->sessionId is no longer reliable by the time this
+                // request->prefillSlotId is no longer reliable by the time this
                 // async callback fires.
-                const std::string prefillSessionId =
-                    request->sessionId.value_or("");
+                const uint32_t prefillSlotId =
+                    request->prefillSlotId.value_or(tt::domain::INVALID_SLOT_ID);
                 const uint64_t migrationId = request->migrationId;
                 llmService->submitStreamingRequest(
                     *request,
-                    [this, prefillSessionId, message, maxTokens, slotId,
+                    [this, prefillSlotId, message, maxTokens, slotId,
                      cachedTokens, migrationId](const LLMStreamChunk& response,
                                                 bool /*isFinal*/) {
                       auto prefillResult =
@@ -269,8 +269,9 @@ void DisaggregationService::setupSocketHandlers() {
                       // un-evictable sessions and allocation eventually fails.
                       // Releasing to IDLE-but-cached also lets the next turn's
                       // prefix cache match it. clearInFlight() is idempotent.
-                      if (!prefillSessionId.empty() && sessionManager) {
-                        sessionManager->releaseInFlight(prefillSessionId);
+                      if (prefillSlotId != tt::domain::INVALID_SLOT_ID &&
+                          sessionManager) {
+                        sessionManager->releaseInFlight(prefillSlotId);
                       }
                     });
               },
@@ -331,20 +332,19 @@ void DisaggregationService::resolvePrefillSession(
   if (acquired.has_value() && acquired->sessionFound) {
     TT_LOG_INFO(
         "[DisaggregationService] Prefill prefix cache HIT taskId={} "
-        "sessionId={} slotId={} matchedTokens={}",
-        request->task_id, acquired->sessionId, acquired->slotId,
-        acquired->numberOfMatchedTokens);
+        "slotId={} matchedTokens={}",
+        request->task_id, acquired->slotId, acquired->numberOfMatchedTokens);
     request->prefillSlotId = acquired->slotId;
-    // Record the acquired session so the prefill completion can release its
+    // Record the acquired slot so the prefill completion can release its
     // in-flight hold (see clearInFlight below).
-    request->sessionId = acquired->sessionId;
+    request->prefillSlotId = acquired->slotId;
     request->continuation = true;
     session_resolution::applyDeltaPrompt(
         *request, acquired->numberOfMatchedTokens,
         {.skipUnlessRegularMode = false,
          .setKvPositionId = true,
          .logPrefix = "[DisaggregationService]"});
-    sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
+    sessionManager->registerPrefixHash(acquired->slotId, blockInfos);
     socketService->sendPrefillCacheBlocksAdded(blockHashes(blockInfos));
     onResolved();
   } else {
@@ -365,22 +365,22 @@ void DisaggregationService::resolvePrefillSession(
         "hashes={}, creating new session",
         request->task_id, routingHashes.size());
 
-    sessionManager->createSession(
+    sessionManager->createSessionAsync(
         [this, request, infos = std::move(blockInfos), sm = sessionManager,
          slotToCopyFrom, copyMatchedTokens, onResolved = std::move(onResolved)](
             const tt::domain::Session& session) mutable {
           if (slotToCopyFrom.has_value()) {
             sm->unlockSlot(*slotToCopyFrom);
           }
+          uint32_t slotId = session.getSlotId();
           TT_LOG_INFO(
               "[DisaggregationService] New session allocated taskId={} "
-              "sessionId={} slotId={}",
-              request->task_id, session.getSessionId(), session.getSlotId());
-          sm->registerPrefixHash(session.getSessionId(), infos);
+              "slotId={}",
+              request->task_id, slotId);
+          sm->registerPrefixHash(slotId, infos);
           socketService->sendPrefillCacheBlocksAdded(blockHashes(infos));
-          request->sessionId = session.getSessionId();
-          request->prefillSlotId =
-              sm->acquireInFlight(session.getSessionId(), nullptr);
+          request->prefillSlotId = slotId;
+          sm->acquireInFlight(slotId, nullptr);
 
           // If copying, set continuation and kv_position_id on the request.
           if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
@@ -405,8 +405,7 @@ void DisaggregationService::resolvePrefillSession(
               request->task_id, errorMessage);
           onError(errorMessage);
         },
-        /*eventLoop=*/eventLoopThread.getLoop(), blockInfos,
-        /*slotId=*/std::nullopt, slotToCopyFrom);
+        /*eventLoop=*/eventLoopThread.getLoop(), blockInfos, slotToCopyFrom);
   }
 }
 

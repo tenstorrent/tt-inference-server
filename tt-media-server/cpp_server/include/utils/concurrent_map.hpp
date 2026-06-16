@@ -18,12 +18,12 @@ class ConcurrentMap {
 
   void insert(const Key& key, const Value& value) {
     std::lock_guard lock(mutex);
-    map_[key] = value;
+    map_.insert_or_assign(key, value);
   }
 
   void insert(const Key& key, Value&& value) {
     std::lock_guard lock(mutex);
-    map_[key] = std::move(value);
+    map_.insert_or_assign(key, std::move(value));
   }
 
   std::optional<Value> get(const Key& key) const {

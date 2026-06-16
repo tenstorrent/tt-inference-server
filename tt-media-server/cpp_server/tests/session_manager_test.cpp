@@ -21,69 +21,22 @@ namespace {
 // Test helpers
 // ---------------------------------------------------------------------------
 
-// Trantor requires an EventLoop to be both created and run on the same thread.
-struct LoopFixture {
-  std::promise<trantor::EventLoop*> promise_;
-  trantor::EventLoop* loop{nullptr};
-  std::thread loopThread;
-
-  LoopFixture() {
-    auto future = promise_.get_future();
-    loopThread = std::thread([this]() {
-      trantor::EventLoop eventLoop;
-      promise_.set_value(&eventLoop);
-      eventLoop.loop();
-    });
-    loop = future.get();
-  }
-
-  ~LoopFixture() {
-    if (loop) loop->quit();
-    if (loopThread.joinable()) loopThread.join();
-  }
-};
-
-std::string createSessionWithSlot(tt::services::SessionManager& manager,
-                                  trantor::EventLoop* loop, uint32_t slotId) {
-  std::promise<std::string> promise;
-  auto future = promise.get_future();
-
-  manager.createSession(
-      [&promise](const tt::domain::Session& s) {
-        promise.set_value(s.getSessionId());
-      },
-      [&promise](std::string_view err) {
-        promise.set_exception(
-            std::make_exception_ptr(std::runtime_error(std::string(err))));
-      },
-      loop, {}, slotId);
-
-  return future.get();
+uint32_t createSessionWithSlot(tt::services::SessionManager& manager,
+                               uint32_t slotId) {
+  manager.createSession(slotId);
+  return slotId;
 }
 
-std::string createSessionWithSlot(
-    tt::services::SessionManager& manager, trantor::EventLoop* loop,
-    uint32_t slotId, const std::vector<tt::utils::BlockHashInfo>& blockInfos) {
-  std::promise<std::string> promise;
-  auto future = promise.get_future();
-
-  manager.createSession(
-      [&promise](const tt::domain::Session& s) {
-        promise.set_value(s.getSessionId());
-      },
-      [&promise](std::string_view err) {
-        promise.set_exception(
-            std::make_exception_ptr(std::runtime_error(std::string(err))));
-      },
-      loop, blockInfos, slotId);
-
-  return future.get();
+uint32_t createSessionWithSlot(
+    tt::services::SessionManager& manager, uint32_t slotId,
+    const std::vector<tt::utils::BlockHashInfo>& blockInfos) {
+  manager.createSession(slotId, blockInfos);
+  return slotId;
 }
 
 // Convenience: acquire with no cancel function.
-uint32_t acquireInFlight(tt::services::SessionManager& manager,
-                         const std::string& sessionId) {
-  return manager.acquireInFlight(sessionId, nullptr);
+void acquireInFlight(tt::services::SessionManager& manager, uint32_t slotId) {
+  manager.acquireInFlight(slotId, nullptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -92,47 +45,42 @@ uint32_t acquireInFlight(tt::services::SessionManager& manager,
 
 TEST(SessionManagerLifecycle, CloseIdleSession_ReturnsSuccess) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 10u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 10u);
 
-  EXPECT_EQ(manager.closeSession(sessionId),
+  EXPECT_EQ(manager.closeSession(slotId),
             tt::services::CloseSessionResult::SUCCESS);
-  EXPECT_FALSE(manager.getSession(sessionId));
+  EXPECT_FALSE(manager.getSession(slotId));
 }
 
 TEST(SessionManagerLifecycle, CloseNonExistentSession_ReturnsNotFound) {
   tt::services::SessionManager manager;
 
-  EXPECT_EQ(manager.closeSession("no-such-id"),
+  EXPECT_EQ(manager.closeSession(999u),
             tt::services::CloseSessionResult::NOT_FOUND);
 }
 
-TEST(SessionManagerLifecycle, AcquireInFlight_ReturnsPreAssignedSlotId) {
+TEST(SessionManagerLifecycle, AcquireInFlight_SessionExists) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 7u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 7u);
 
-  EXPECT_EQ(acquireInFlight(manager, sessionId), 7u);
-  auto session = manager.getSession(sessionId);
+  acquireInFlight(manager, slotId);
+  auto session = manager.getSession(slotId);
   ASSERT_TRUE(session);
+  EXPECT_EQ(session->getSlotId(), 7u);
   session->clearInFlight();
 }
 
 TEST(SessionManagerLifecycle, AcquireInFlight_AlreadyInFlight_Throws) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 8u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 8u);
 
-  acquireInFlight(manager, sessionId);
-  EXPECT_THROW(acquireInFlight(manager, sessionId),
+  acquireInFlight(manager, slotId);
+  EXPECT_THROW(acquireInFlight(manager, slotId),
                tt::services::SessionInFlightException);
-  auto session = manager.getSession(sessionId);
+  auto session = manager.getSession(slotId);
   ASSERT_TRUE(session);
   session->clearInFlight();
 }
@@ -143,26 +91,23 @@ TEST(SessionManagerLifecycle, CloseWhileInFlight_RemovesSessionImmediately) {
   // would fail since session is already gone (we don't test that here since
   // we can't get the session pointer after it's closed).
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 9u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 9u);
 
-  acquireInFlight(manager, sessionId);
-  manager.closeSession(sessionId);
-  EXPECT_FALSE(manager.getSession(sessionId));
+  acquireInFlight(manager, slotId);
+  manager.closeSession(slotId);
+  EXPECT_FALSE(manager.getSession(slotId));
 }
 
 TEST(SessionManagerLifecycle, GetActiveSessionCount_ReflectsLifecycle) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
   EXPECT_EQ(manager.getActiveSessionCount(), 0u);
 
-  auto s1 = createSessionWithSlot(manager, lf.loop, 20u);
+  auto s1 = createSessionWithSlot(manager, 20u);
   EXPECT_EQ(manager.getActiveSessionCount(), 1u);
 
-  auto s2 = createSessionWithSlot(manager, lf.loop, 21u);
+  auto s2 = createSessionWithSlot(manager, 21u);
   EXPECT_EQ(manager.getActiveSessionCount(), 2u);
 
   manager.closeSession(s1);
@@ -174,65 +119,28 @@ TEST(SessionManagerLifecycle, GetActiveSessionCount_ReflectsLifecycle) {
 
 TEST(SessionManagerLifecycle, AcquireAfterRelease_Succeeds) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 11u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 11u);
 
-  acquireInFlight(manager, sessionId);
-  auto session = manager.getSession(sessionId);
+  acquireInFlight(manager, slotId);
+  auto session = manager.getSession(slotId);
   ASSERT_TRUE(session);
   session->clearInFlight();
 
-  EXPECT_NO_THROW(acquireInFlight(manager, sessionId));
-  session = manager.getSession(sessionId);
+  EXPECT_NO_THROW(acquireInFlight(manager, slotId));
+  session = manager.getSession(slotId);
   ASSERT_TRUE(session);
   session->clearInFlight();
 }
 
 TEST(SessionManagerLifecycle, GetSession_ReturnsCorrectData) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 12u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 12u);
 
-  auto session = manager.getSession(sessionId);
+  auto session = manager.getSession(slotId);
   ASSERT_TRUE(session);
-  EXPECT_EQ(session->getSessionId(), sessionId);
   EXPECT_EQ(session->getSlotId(), 12u);
-}
-
-TEST(SessionManagerLifecycle, AssignSlotId_UpdatesSession) {
-  tt::services::SessionManager manager;
-  LoopFixture lf;
-
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 30u);
-  ASSERT_FALSE(sessionId.empty());
-
-  EXPECT_TRUE(manager.assignSlotId(sessionId, 99u));
-
-  auto session = manager.getSession(sessionId);
-  ASSERT_TRUE(session);
-  EXPECT_EQ(session->getSlotId(), 99u);
-}
-
-TEST(SessionManagerLifecycle, GetSlotIdBySessionId_ReturnsSlotId) {
-  tt::services::SessionManager manager;
-  LoopFixture lf;
-
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 13u);
-  ASSERT_FALSE(sessionId.empty());
-
-  EXPECT_EQ(manager.getSlotIdBySessionId(sessionId), 13u);
-}
-
-TEST(SessionManagerLifecycle,
-     GetSlotIdBySessionId_NotFound_ReturnsInvalidSlot) {
-  tt::services::SessionManager manager;
-
-  EXPECT_EQ(manager.getSlotIdBySessionId("no-such-id"),
-            tt::domain::INVALID_SLOT_ID);
 }
 
 // ---------------------------------------------------------------------------
@@ -241,50 +149,43 @@ TEST(SessionManagerLifecycle,
 
 TEST(SessionManagerClose, CloseInFlight_RemovesSessionImmediately) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 42u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 42u);
 
-  acquireInFlight(manager, sessionId);
+  acquireInFlight(manager, slotId);
 
-  EXPECT_EQ(manager.closeSession(sessionId),
+  EXPECT_EQ(manager.closeSession(slotId),
             tt::services::CloseSessionResult::SUCCESS);
-  EXPECT_FALSE(manager.getSession(sessionId));
+  EXPECT_FALSE(manager.getSession(slotId));
 }
 
 TEST(SessionManagerClose, CloseInFlight_FiresCancelFn_AtomicWithAcquire) {
   // Cancel and in-flight state are set atomically by acquireInFlight.
   // closeSession must fire the cancel function immediately.
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 45u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 45u);
 
   std::atomic<bool> cancelCalled{false};
-  manager.acquireInFlight(sessionId,
-                          [&cancelCalled]() { cancelCalled = true; });
+  manager.acquireInFlight(slotId, [&cancelCalled]() { cancelCalled = true; });
 
-  manager.closeSession(sessionId);
+  manager.closeSession(slotId);
 
   EXPECT_TRUE(cancelCalled.load());
-  EXPECT_FALSE(manager.getSession(sessionId));
+  EXPECT_FALSE(manager.getSession(slotId));
 }
 
 TEST(SessionManagerClose, CloseIdle_NoCancelFired) {
   // Idle sessions have no in-flight request; closeSession must not fire any
   // cancel (there is none registered).
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 46u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 46u);
 
   // Close without ever calling acquireInFlight — no cancel should be needed.
-  EXPECT_EQ(manager.closeSession(sessionId),
+  EXPECT_EQ(manager.closeSession(slotId),
             tt::services::CloseSessionResult::SUCCESS);
-  EXPECT_FALSE(manager.getSession(sessionId));
+  EXPECT_FALSE(manager.getSession(slotId));
 }
 
 TEST(SessionManagerClose, ReleaseInFlight_AfterClose_IsNoOp) {
@@ -293,16 +194,14 @@ TEST(SessionManagerClose, ReleaseInFlight_AfterClose_IsNoOp) {
   // gone, we can't call clearInFlight on it (it would be a dangling pointer).
   // This test now just verifies that closing an in-flight session removes it.
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 43u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 43u);
 
-  acquireInFlight(manager, sessionId);
-  manager.closeSession(sessionId);
+  acquireInFlight(manager, slotId);
+  manager.closeSession(slotId);
 
   // Session is gone - we can't call clearInFlight on it
-  EXPECT_FALSE(manager.getSession(sessionId));
+  EXPECT_FALSE(manager.getSession(slotId));
   EXPECT_EQ(manager.getActiveSessionCount(), 0u);
 }
 
@@ -310,39 +209,34 @@ TEST(SessionManagerClose, CancelFn_ClearedOnNormalCompletion) {
   // If the request completes normally, session clearInFlight must clear the
   // in-flight state so a subsequent close does not fire stale cancel logic.
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 44u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 44u);
 
   std::atomic<bool> cancelCalled{false};
-  manager.acquireInFlight(sessionId,
-                          [&cancelCalled]() { cancelCalled = true; });
+  manager.acquireInFlight(slotId, [&cancelCalled]() { cancelCalled = true; });
 
-  auto session = manager.getSession(sessionId);
+  auto session = manager.getSession(slotId);
   ASSERT_TRUE(session);
   session->clearInFlight();         // normal completion clears in-flight state
-  manager.closeSession(sessionId);  // should not fire cancel
+  manager.closeSession(slotId);     // should not fire cancel
 
   EXPECT_FALSE(cancelCalled.load());
 }
 
 TEST(SessionManagerClose, ReleaseInFlight_NormalCompletion_SessionStaysIdle) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 47u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 47u);
 
-  acquireInFlight(manager, sessionId);
-  auto session = manager.getSession(sessionId);
+  acquireInFlight(manager, slotId);
+  auto session = manager.getSession(slotId);
   ASSERT_TRUE(session);
   session->clearInFlight();
 
   // Session still present and acquirable again.
-  EXPECT_TRUE(manager.getSession(sessionId));
-  EXPECT_NO_THROW(acquireInFlight(manager, sessionId));
-  session = manager.getSession(sessionId);
+  EXPECT_TRUE(manager.getSession(slotId));
+  EXPECT_NO_THROW(acquireInFlight(manager, slotId));
+  session = manager.getSession(slotId);
   ASSERT_TRUE(session);
   session->clearInFlight();
 }
@@ -376,12 +270,11 @@ TEST(SessionManagerConcurrency, ConcurrentClose_OnlyOneSucceeds) {
   constexpr int iterations = 200;
   for (int i = 0; i < iterations; ++i) {
     tt::services::SessionManager manager;
-    LoopFixture lf;
-    auto sessionId = createSessionWithSlot(manager, lf.loop, 100u);
+    auto slotId = createSessionWithSlot(manager, 100u);
 
     std::atomic<int> successCount{0};
     runConcurrently([&] {
-      auto result = manager.closeSession(sessionId);
+      auto result = manager.closeSession(slotId);
       if (result == tt::services::CloseSessionResult::SUCCESS) {
         successCount.fetch_add(1, std::memory_order_relaxed);
       }
@@ -398,20 +291,19 @@ TEST(SessionManagerConcurrency, ConcurrentAcquire_OnlyOneSucceeds) {
   constexpr int iterations = 200;
   for (int i = 0; i < iterations; ++i) {
     tt::services::SessionManager manager;
-    LoopFixture lf;
-    auto sessionId = createSessionWithSlot(manager, lf.loop, 101u);
+    auto slotId = createSessionWithSlot(manager, 101u);
 
     std::atomic<int> acquireCount{0};
     runConcurrently([&] {
       try {
-        manager.acquireInFlight(sessionId, nullptr);
+        manager.acquireInFlight(slotId, nullptr);
         acquireCount.fetch_add(1, std::memory_order_relaxed);
       } catch (const tt::services::SessionInFlightException&) {
       }
     });
 
     EXPECT_EQ(acquireCount.load(), 1) << "iteration " << i;
-    auto session = manager.getSession(sessionId);
+    auto session = manager.getSession(slotId);
     if (session) {
       session->clearInFlight();
     }
@@ -426,8 +318,7 @@ TEST(SessionManagerConcurrency,
   constexpr int iterations = 200;
   for (int i = 0; i < iterations; ++i) {
     tt::services::SessionManager manager;
-    LoopFixture lf;
-    auto sessionId = createSessionWithSlot(manager, lf.loop, 102u);
+    auto slotId = createSessionWithSlot(manager, 102u);
 
     std::atomic<int> cancelCount{0};
     std::atomic<bool> ready{false};
@@ -436,9 +327,9 @@ TEST(SessionManagerConcurrency,
       while (!ready.load(std::memory_order_acquire)) {
       }
       try {
-        manager.acquireInFlight(sessionId,
+        manager.acquireInFlight(slotId,
                                 [&cancelCount] { cancelCount.fetch_add(1); });
-        auto session = manager.getSession(sessionId);
+        auto session = manager.getSession(slotId);
         if (session) {
           session->clearInFlight();
         }
@@ -449,7 +340,7 @@ TEST(SessionManagerConcurrency,
     std::thread closer([&] {
       while (!ready.load(std::memory_order_acquire)) {
       }
-      manager.closeSession(sessionId);
+      manager.closeSession(slotId);
     });
 
     ready.store(true, std::memory_order_release);
@@ -473,19 +364,16 @@ TEST(SessionManagerConcurrency,
 
 TEST(SessionManagerResponseId, RegisterThenAcquire_ReturnsSessionAndSlot) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 50u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 50u);
 
-  manager.initResponseId(sessionId, "resp-1");
+  manager.initResponseId(slotId, "resp-1");
 
   auto acquired = manager.tryAcquireByResponseId("resp-1", nullptr);
   ASSERT_TRUE(acquired.has_value());
-  EXPECT_EQ(acquired->sessionId, sessionId);
   EXPECT_EQ(acquired->slotId, 50u);
 
-  auto session = manager.getSession(sessionId);
+  auto session = manager.getSession(slotId);
   ASSERT_TRUE(session);
   session->clearInFlight();
 }
@@ -503,26 +391,22 @@ TEST(SessionManagerResponseId, AcquireEmptyId_ReturnsNullopt) {
 
 TEST(SessionManagerResponseId, RegisterEmptyId_IsNoOp) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 51u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 51u);
 
-  manager.initResponseId(sessionId, "");
+  manager.initResponseId(slotId, "");
 
-  auto session = manager.getSession(sessionId);
+  auto session = manager.getSession(slotId);
   ASSERT_TRUE(session);
   EXPECT_TRUE(session->getResponseId().empty());
 }
 
 TEST(SessionManagerResponseId, ReKey_MovesSessionToNewId) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 52u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 52u);
 
-  manager.initResponseId(sessionId, "resp-1");
+  manager.initResponseId(slotId, "resp-1");
   manager.registerResponseId("resp-1", "resp-2");
 
   // The previous turn's id no longer resolves once re-keyed.
@@ -531,19 +415,17 @@ TEST(SessionManagerResponseId, ReKey_MovesSessionToNewId) {
   // The new id resolves.
   auto acquired = manager.tryAcquireByResponseId("resp-2", nullptr);
   ASSERT_TRUE(acquired.has_value());
-  EXPECT_EQ(acquired->sessionId, sessionId);
+  EXPECT_EQ(acquired->slotId, slotId);
 
-  manager.getSession(sessionId)->clearInFlight();
+  manager.getSession(slotId)->clearInFlight();
 }
 
 TEST(SessionManagerResponseId, AcquireMarksInFlight_SecondAcquireThrows) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 53u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 53u);
 
-  manager.initResponseId(sessionId, "resp-1");
+  manager.initResponseId(slotId, "resp-1");
 
   auto acquired = manager.tryAcquireByResponseId("resp-1", nullptr);
   ASSERT_TRUE(acquired.has_value());
@@ -552,37 +434,33 @@ TEST(SessionManagerResponseId, AcquireMarksInFlight_SecondAcquireThrows) {
   EXPECT_THROW(manager.tryAcquireByResponseId("resp-1", nullptr),
                tt::services::SessionInFlightException);
 
-  manager.getSession(sessionId)->clearInFlight();
+  manager.getSession(slotId)->clearInFlight();
 }
 
 TEST(SessionManagerResponseId, AcquireAfterRelease_Succeeds) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 54u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 54u);
 
-  manager.initResponseId(sessionId, "resp-1");
+  manager.initResponseId(slotId, "resp-1");
 
   auto first = manager.tryAcquireByResponseId("resp-1", nullptr);
   ASSERT_TRUE(first.has_value());
-  manager.getSession(sessionId)->clearInFlight();
+  manager.getSession(slotId)->clearInFlight();
 
   auto second = manager.tryAcquireByResponseId("resp-1", nullptr);
   ASSERT_TRUE(second.has_value());
-  EXPECT_EQ(second->sessionId, sessionId);
-  manager.getSession(sessionId)->clearInFlight();
+  EXPECT_EQ(second->slotId, slotId);
+  manager.getSession(slotId)->clearInFlight();
 }
 
 TEST(SessionManagerResponseId, CloseSession_RemovesFromResponseIdIndex) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 56u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 56u);
 
-  manager.initResponseId(sessionId, "resp-1");
-  ASSERT_EQ(manager.closeSession(sessionId),
+  manager.initResponseId(slotId, "resp-1");
+  ASSERT_EQ(manager.closeSession(slotId),
             tt::services::CloseSessionResult::SUCCESS);
 
   // The index entry must be gone after the session is closed.
@@ -591,12 +469,10 @@ TEST(SessionManagerResponseId, CloseSession_RemovesFromResponseIdIndex) {
 
 TEST(SessionManagerResponseId, CloseWhileAcquired_FiresCancelFn) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 57u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 57u);
 
-  manager.initResponseId(sessionId, "resp-1");
+  manager.initResponseId(slotId, "resp-1");
 
   std::atomic<bool> cancelCalled{false};
   auto acquired = manager.tryAcquireByResponseId(
@@ -604,36 +480,34 @@ TEST(SessionManagerResponseId, CloseWhileAcquired_FiresCancelFn) {
   ASSERT_TRUE(acquired.has_value());
 
   // The cancel fn registered atomically with the in-flight mark must fire.
-  manager.closeSession(sessionId);
+  manager.closeSession(slotId);
   EXPECT_TRUE(cancelCalled.load());
-  EXPECT_FALSE(manager.getSession(sessionId));
+  EXPECT_FALSE(manager.getSession(slotId));
 }
 
 TEST(SessionManagerResponseId, TwoTurnContinuation_ReKeysAcrossIds) {
   // Simulates the two-turn response-id flow: turn 1 registers the session
   // under id "r1"; turn 2 acquires by "r1", re-keys under "r2" for turn 3.
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 58u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 58u);
 
-  manager.initResponseId(sessionId, "r1");
+  manager.initResponseId(slotId, "r1");
 
   // Turn 2: arrives with previous_response_id="r1".
   auto t2 = manager.tryAcquireByResponseId("r1", nullptr);
   ASSERT_TRUE(t2.has_value());
-  EXPECT_EQ(t2->sessionId, sessionId);
+  EXPECT_EQ(t2->slotId, slotId);
   // Re-key under turn 2's own id.
   manager.registerResponseId("r1", "r2");
-  manager.getSession(sessionId)->clearInFlight();
+  manager.getSession(slotId)->clearInFlight();
 
   // Turn 3: arrives with previous_response_id="r2".
   auto t3 = manager.tryAcquireByResponseId("r2", nullptr);
   ASSERT_TRUE(t3.has_value());
-  EXPECT_EQ(t3->sessionId, sessionId);
+  EXPECT_EQ(t3->slotId, slotId);
   EXPECT_FALSE(manager.tryAcquireByResponseId("r1", nullptr).has_value());
-  manager.getSession(sessionId)->clearInFlight();
+  manager.getSession(slotId)->clearInFlight();
 }
 
 TEST(SessionManagerResponseId,
@@ -642,7 +516,6 @@ TEST(SessionManagerResponseId,
   // created with block infos, remains queryable after acquisition through the
   // response-id path, and reflects updated blocks after re-registration.
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
   // --- Turn 1: create session with 3 initial blocks ---
   std::vector<tt::utils::BlockHashInfo> turn1Blocks = {
@@ -650,29 +523,27 @@ TEST(SessionManagerResponseId,
       {200, 0},  // remaining block 1
       {300, 0},  // remaining block 2
   };
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 60u, turn1Blocks);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 60u, turn1Blocks);
 
   // Prefix index should reflect all 3 blocks for this session.
   auto [matchedTokens1, thinkTokens1] =
-      manager.computeMatchedTokens(sessionId, turn1Blocks);
+      manager.computeMatchedTokens(slotId, turn1Blocks);
   EXPECT_GT(matchedTokens1, 0u)
       << "prefixCacheIndex should have been populated by createSession";
 
   // Register the session under response id "r1" and prefix hash.
-  manager.initResponseId(sessionId, "r1");
+  manager.initResponseId(slotId, "r1");
 
-  manager.registerPrefixHash(sessionId, turn1Blocks);
+  manager.registerPrefixHash(slotId, turn1Blocks);
   // --- Turn 2: arrive via previous_response_id="r1" ---
   auto t2 = manager.tryAcquireByResponseId("r1", nullptr);
   ASSERT_TRUE(t2.has_value());
-  EXPECT_EQ(t2->sessionId, sessionId);
   EXPECT_EQ(t2->slotId, 60u);
 
   // While acquired through the response-id path, the prefix cache index
   // should still be intact and report the same match.
   auto [matchedTokens2, thinkTokens2] =
-      manager.computeMatchedTokens(sessionId, turn1Blocks);
+      manager.computeMatchedTokens(slotId, turn1Blocks);
   EXPECT_EQ(matchedTokens2, matchedTokens1)
       << "prefixCacheIndex should still be queryable after response-id acquire";
 
@@ -684,34 +555,34 @@ TEST(SessionManagerResponseId,
       {300, 0},  // same remaining block 2
       {400, 0},  // new block from turn 2's output
   };
-  manager.registerPrefixHash(sessionId, turn2Blocks);
+  manager.registerPrefixHash(slotId, turn2Blocks);
   manager.registerResponseId("r1", "r2");
-  manager.getSession(sessionId)->clearInFlight();
+  manager.getSession(slotId)->clearInFlight();
 
   // The prefix index should now match all 4 blocks.
   auto [matchedTokens3, thinkTokens3] =
-      manager.computeMatchedTokens(sessionId, turn2Blocks);
+      manager.computeMatchedTokens(slotId, turn2Blocks);
   EXPECT_GT(matchedTokens3, matchedTokens1)
       << "prefixCacheIndex should reflect the updated (longer) block sequence";
 
   // The original 3-block query should still match its 3 blocks (prefix).
   auto [matchedTokens4, thinkTokens4] =
-      manager.computeMatchedTokens(sessionId, turn1Blocks);
+      manager.computeMatchedTokens(slotId, turn1Blocks);
   EXPECT_EQ(matchedTokens4, matchedTokens1)
       << "shorter prefix query should still match the original blocks";
 
   // --- Turn 3: arrive via previous_response_id="r2" ---
   auto t3 = manager.tryAcquireByResponseId("r2", nullptr);
   ASSERT_TRUE(t3.has_value());
-  EXPECT_EQ(t3->sessionId, sessionId);
+  EXPECT_EQ(t3->slotId, slotId);
 
   // Prefix index should still be consistent after the second response-id hop.
   auto [matchedTokens5, thinkTokens5] =
-      manager.computeMatchedTokens(sessionId, turn2Blocks);
+      manager.computeMatchedTokens(slotId, turn2Blocks);
   EXPECT_EQ(matchedTokens5, matchedTokens3)
       << "prefixCacheIndex should survive re-keying across response ids";
 
-  manager.getSession(sessionId)->clearInFlight();
+  manager.getSession(slotId)->clearInFlight();
 }
 
 // ---------------------------------------------------------------------------
@@ -720,7 +591,6 @@ TEST(SessionManagerResponseId,
 
 TEST(SessionManagerClearThinkTokens, ResetsThinkTokensToZero) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
   // Register a session with blocks that have non-zero think token counts.
   std::vector<tt::utils::BlockHashInfo> blocks = {
@@ -728,24 +598,23 @@ TEST(SessionManagerClearThinkTokens, ResetsThinkTokensToZero) {
       {200, 12},  // remaining block 1 with 12 accumulated think tokens
       {300, 20},  // remaining block 2 with 20 accumulated think tokens
   };
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 70u, blocks);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 70u, blocks);
 
   // Verify think tokens are reported before clearing.
   auto [matchedBefore, thinkBefore] =
-      manager.computeMatchedTokens(sessionId, blocks);
+      manager.computeMatchedTokens(slotId, blocks);
   EXPECT_GT(matchedBefore, 0u);
   EXPECT_EQ(thinkBefore, 20u)
       << "Think tokens should reflect the last matched block's accumulated "
          "count";
 
   // Clear think tokens for this session.
-  manager.clearSessionBlockThinkTokens(sessionId);
+  manager.clearSessionBlockThinkTokens(slotId);
 
   // After clearing, computeMatchedTokens should still match all blocks (hashes
   // are unchanged) but report 0 think tokens.
   auto [matchedAfter, thinkAfter] =
-      manager.computeMatchedTokens(sessionId, blocks);
+      manager.computeMatchedTokens(slotId, blocks);
   EXPECT_EQ(matchedAfter, matchedBefore)
       << "Block matching should be unaffected (hashes unchanged)";
   EXPECT_EQ(thinkAfter, 0u)
@@ -756,19 +625,17 @@ TEST(SessionManagerClearThinkTokens, NoOpForUnknownSession) {
   tt::services::SessionManager manager;
 
   // Should not crash when called with a session that doesn't exist.
-  EXPECT_NO_THROW(manager.clearSessionBlockThinkTokens("nonexistent-session"));
+  EXPECT_NO_THROW(manager.clearSessionBlockThinkTokens(999u));
 }
 
 TEST(SessionManagerClearThinkTokens, NoOpForSessionWithNoBlocks) {
   tt::services::SessionManager manager;
-  LoopFixture lf;
 
   // Create a session without any block infos (hash will be 0).
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 71u);
-  ASSERT_FALSE(sessionId.empty());
+  auto slotId = createSessionWithSlot(manager, 71u);
 
   // Should not crash when the session has no prefix index entry.
-  EXPECT_NO_THROW(manager.clearSessionBlockThinkTokens(sessionId));
+  EXPECT_NO_THROW(manager.clearSessionBlockThinkTokens(slotId));
 }
 
 }  // namespace

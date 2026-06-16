@@ -49,17 +49,16 @@ enum class CloseSessionResult {
 class SessionManager {
  public:
   struct Candidate {
-    std::string sessionId;
+    uint32_t slotId;
     size_t
         matchedBlocks;  // total matched blocks (1 for key + matched remaining)
     size_t sessionBlocks;  // total blocks in the cached session
     uint32_t thinkTokens;  // accumulated think tokens at matched block
   };
 
-  // Result of tryAcquireByPrefixHash: the session's UUID and pre-assigned slot.
+  // Result of tryAcquireByPrefixHash: the session's slot ID.
   struct AcquiredSession {
     bool sessionFound;
-    std::string sessionId;
     uint32_t slotId;
     uint32_t numberOfMatchedTokens = 0;
     uint32_t accumulatedThinkTokens = 0;  // Think tokens at matched block
@@ -72,29 +71,57 @@ class SessionManager {
   SessionManager(const SessionManager&) = delete;
   SessionManager& operator=(const SessionManager&) = delete;
 
-  void createSession(
-      std::function<void(const tt::domain::Session&)> onCompletion,
+  /**
+   * Create a session with a pre-assigned slot (fast path, synchronous).
+   * The session is immediately available after this call returns.
+   */
+  domain::Session createSession(
+      uint32_t slotId,
+      std::vector<utils::BlockHashInfo> initialBlockInfos = {});
+
+  /**
+   * Create a session with slot allocation via IPC (async with callbacks).
+   * @param onCompletion Callback invoked when session is created
+   * @param onError Callback invoked on allocation failure
+   * @param eventLoop Event loop to run callbacks on
+   * @param initialBlockInfos Block hashes for prefix cache registration
+   * @param slotIdToCopyFrom Optional slot to copy KV cache from
+   */
+  void createSessionAsync(
+      std::function<void(const domain::Session&)> onCompletion,
       std::function<void(std::string_view errorMessage)> onError,
       trantor::EventLoop* eventLoop,
       std::vector<utils::BlockHashInfo> initialBlockInfos = {},
-      std::optional<uint32_t> slotId = std::nullopt,
       std::optional<uint32_t> slotIdToCopyFrom = std::nullopt);
 
-  CloseSessionResult closeSession(const std::string& sessionId);
-  bool assignSlotId(const std::string& sessionId, uint32_t slotId);
-  uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
+  /**
+   * Create a session with slot allocation via IPC (blocking).
+   * Blocks until slot is allocated or timeout expires.
+   * @param initialBlockInfos Block hashes for prefix cache registration
+   * @param slotIdToCopyFrom Optional slot to copy KV cache from
+   * @param timeout Maximum time to wait for allocation
+   * @param errorMsg Output parameter for error message on failure
+   * @return The created session, or nullopt on timeout/failure
+   */
+  std::optional<domain::Session> createSessionSync(
+      std::vector<utils::BlockHashInfo> initialBlockInfos = {},
+      std::optional<uint32_t> slotIdToCopyFrom = std::nullopt,
+      std::chrono::milliseconds timeout = std::chrono::seconds(30),
+      std::string* errorMsg = nullptr);
+
+  CloseSessionResult closeSession(uint32_t slotId);
+  CloseSessionResult closeSession(const std::string& slotIdStr);
 
   // Marks the session in-flight and registers the cancel function atomically.
   // The cancel function is invoked if closeSession is called while in-flight.
-  // Returns the assigned slot ID (INVALID_SLOT_ID if not yet allocated).
-  uint32_t acquireInFlight(const std::string& sessionId,
-                           std::function<void()> cancelFn);
+  // Returns true on success, false if session not found.
+  bool acquireInFlight(uint32_t slotId, std::function<void()> cancelFn);
 
   // Atomically transitions the session from IN_FLIGHT back to IDLE.
   // Thread-safe: holds the ConcurrentMap lock during the state transition.
-  void releaseInFlight(const std::string& sessionId);
+  void releaseInFlight(uint32_t slotId);
 
-  domain::Session* getSession(const std::string& sessionId);
+  domain::Session* getSession(uint32_t slotId);
   size_t getActiveSessionCount() const;
 
   // Lock/unlock a slot to prevent eviction.
@@ -147,7 +174,7 @@ class SessionManager {
    * If the session was previously registered under a different key hash, it is
    * removed from that hash's index entry first.
    */
-  void registerPrefixHash(const std::string& sessionId,
+  void registerPrefixHash(uint32_t slotId,
                           const std::vector<utils::BlockHashInfo>& blockInfos);
 
   /**
@@ -170,8 +197,7 @@ class SessionManager {
   /**
    * First-time registration: associate a brand-new session with a response id.
    */
-  void initResponseId(const std::string& sessionId,
-                      const std::string& responseId);
+  void initResponseId(uint32_t slotId, const std::string& responseId);
 
   /**
    * Re-key an existing response-id index entry. Looks up the session currently
@@ -182,42 +208,51 @@ class SessionManager {
                           const std::string& responseId);
 
   /**
-   * Compute how many tokens of `blockInfos` are already cached for `sessionId`
+   * Compute how many tokens of `blockInfos` are already cached for the slot
    * in the prefix index. Used after response-id acquisition to derive the
    * delta. Returns {matchedTokens, accumulatedThinkTokens}.
    */
   std::pair<uint32_t, uint32_t> computeMatchedTokens(
-      const std::string& sessionId,
-      const std::vector<utils::BlockHashInfo>& blockInfos);
+      uint32_t slotId, const std::vector<utils::BlockHashInfo>& blockInfos);
 
   /**
    * Reset accumulatedThinkTokens to 0 on all prefix index entries that contain
    * the given session. Called when prefill-on-decode overrides thinking tokens
    * so that future lookups report zero cached think tokens for this session.
    */
-  void clearSessionBlockThinkTokens(const std::string& sessionId);
+  void clearSessionBlockThinkTokens(uint32_t slotId);
 
  private:
   struct PendingAllocation {
-    tt::domain::Session session;
-    std::function<void(const tt::domain::Session&)> onCompletion;
-    std::function<void(std::string_view errorMessage)> onError;
-    trantor::EventLoop* eventLoop = nullptr;
+    std::vector<utils::BlockHashInfo> initialBlockInfos;
+    std::optional<uint32_t> slotIdToCopyFrom;
     int attemptsRemaining = 0;
     std::chrono::steady_clock::time_point retryAt{};
-    std::optional<uint32_t> slotIdToCopyFrom;
+
+    // For async mode (callback-based)
+    std::function<void(const domain::Session&)> onCompletion;
+    std::function<void(std::string_view errorMessage)> onError;
+    trantor::EventLoop* eventLoop = nullptr;
+
+    // Synchronization for blocking wait (sync mode)
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool completed = false;
+    std::optional<uint32_t> resultSlotId;
+    std::string errorMessage;
+
+    bool isAsync() const { return eventLoop != nullptr; }
   };
 
   struct DeferredDealloc {
-    std::string sessionId;
     uint32_t slotId;
   };
 
-  void sendAsyncAllocationRequest(PendingAllocation& pendingAllocation);
+  void sendAsyncAllocationRequest(uint32_t taskId,
+                                   std::shared_ptr<PendingAllocation> allocation);
   void evictOldSessions();
-  void sendDeallocRequest(const std::string& sessionId, uint32_t slotId);
-  void finalizeSessionClose(const std::string& sessionId,
-                            const domain::Session& session);
+  void sendDeallocRequest(uint32_t slotId);
+  void finalizeSessionClose(uint32_t slotId, const domain::Session& session);
   void readerLoop();
   void retryFailedAllocations();
   void retryFailedDeallocs();
@@ -225,14 +260,16 @@ class SessionManager {
   void updateSessionCountMetric();
 
   // Prefix index helpers: maintain prefixIndex alongside the sessions map.
-  void addToPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
-  void removeFromPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
+  void addToPrefixIndex(uint32_t slotId, uint64_t prefixHash);
+  void removeFromPrefixIndex(uint32_t slotId, uint64_t prefixHash);
 
-  // Drop the responseId -> session mapping when it points at `sessionId`
+  // Drop the responseId -> session mapping when it points at `slotId`
   // (called on close/evict). No-op if the id is empty or has been re-pointed
   // at a different session.
-  void removeFromResponseIdIndex(const std::string& sessionId,
-                                 const std::string& responseId);
+  void removeFromResponseIdIndex(uint32_t slotId, const std::string& responseId);
+
+  // Helper to convert slot ID to map key string
+  static std::string slotKey(uint32_t slotId) { return std::to_string(slotId); }
 
   mutable utils::ConcurrentMap<std::string, domain::Session> sessions;
 
@@ -245,7 +282,7 @@ class SessionManager {
   };
 
   struct PrefixIndexEntry {
-    std::list<std::string> sessionIds;              // sessions registered here
+    std::list<uint32_t> slotIds;                    // slots registered here
     std::list<RemainingBlockInfo> remainingBlocks;  // subsequent block info
     uint32_t keyBlockThinkTokens = 0;  // think tokens at key hash block
   };
@@ -255,18 +292,20 @@ class SessionManager {
   // Used by tryAcquireByPrefixHash / registerPrefixHash for prefix caching.
   utils::ConcurrentMap<uint64_t, std::vector<PrefixIndexEntry>> prefixIndex;
 
-  // Secondary index: previous_response_id -> the session registered under it.
+  // Secondary index: previous_response_id -> the slot registered under it.
   // Unlike prefixIndex (where many sessions can share a content hash), response
-  // ids are unique per turn, so each id maps to exactly one session. The
+  // ids are unique per turn, so each id maps to exactly one slot. The
   // prefix delta is derived from block matching (computeMatchedTokens), not
   // stored here. Used by tryAcquireByResponseId / registerResponseId.
-  utils::ConcurrentMap<std::string, std::string> responseIdIndex;
+  utils::ConcurrentMap<std::string, uint32_t> responseIdIndex;
 
   std::unique_ptr<ipc::boost::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::boost::MemoryResultQueue> memoryResultQueue;
 
-  utils::ConcurrentMap<uint32_t, PendingAllocation> pendingAllocationsMap;
-  utils::ConcurrentQueue<PendingAllocation> pendingAllocationsRetryQueue;
+  utils::ConcurrentMap<uint32_t, std::shared_ptr<PendingAllocation>>
+      pendingAllocationsMap;
+  utils::ConcurrentQueue<std::pair<uint32_t, std::shared_ptr<PendingAllocation>>>
+      pendingAllocationsRetryQueue;
   utils::ConcurrentQueue<DeferredDealloc> deferredDeallocQueue;
   std::atomic<bool> stopped{false};
   std::atomic<bool> evictionInProgress{false};
