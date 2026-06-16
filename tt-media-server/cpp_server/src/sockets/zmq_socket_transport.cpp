@@ -246,13 +246,7 @@ bool ZmqSocketTransport::isConnected() const {
 }
 
 std::string ZmqSocketTransport::getStatus() const {
-  if (mode_ == Mode::SERVER) {
-    if (!running_) {
-      return "stopped";
-    }
-    return isConnected() ? "server:connected" : "server:waiting";
-  }
-  return getStatusString();
+  return getStatusString(isConnected());
 }
 
 bool ZmqSocketTransport::sendRawData(std::span<const uint8_t> data) {
