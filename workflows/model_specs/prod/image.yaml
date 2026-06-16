@@ -71,6 +71,10 @@ templates:
   inference_engine: FORGE
   status: EXPERIMENTAL
   env_vars:
+    # stable-diffusion-xl-base-1.0 maps to both TT_SDXL_TRACE and TT_XLA_SDXL;
+    # pin the forge runner explicitly or settings auto-detect falls back to the
+    # (tt-metal-only) trace runner, which isn't in the forge image.
+    MODEL_RUNNER: "tt-xla-sdxl"
     TTXLA_SDXL_FULL_ON_DEVICE: "true"
   hf_weights_repo: stabilityai/stable-diffusion-xl-base-1.0
   device_model_specs:
