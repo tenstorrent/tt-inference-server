@@ -66,6 +66,10 @@ templates:
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: false
+      # Single N150 lacks DRAM for UNet+VAE+text-encoders all on device (OOMs in
+      # warmup). Run UNet-only on device (VAE/CLIP on CPU) — verified ~16s/image.
+      env_vars:
+        TTXLA_SDXL_FULL_ON_DEVICE: "false"
     - device: P150X8
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
