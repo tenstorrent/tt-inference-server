@@ -6,6 +6,7 @@
 import argparse
 import importlib.util
 import json
+import os
 import sys
 import types
 from pathlib import Path
@@ -284,3 +285,38 @@ def test_main_passes_passthrough_port_to_trace_capture(
         disable_trace_capture=False,
         service_port=9001,
     )
+
+
+@pytest.mark.parametrize(
+    "triage_path, metal_path, expected",
+    [
+        # TT_TRIAGE_LOGS_PATH wins even when TT_METAL_LOGS_PATH is also set.
+        ("/cache_root/logs", "/home/container_app_user/logs", "/cache_root/logs"),
+        # Falls back to TT_METAL_LOGS_PATH when no triage override.
+        (None, "/some/metal/logs", "/some/metal/logs"),
+        # Falls back to the image default when neither is set.
+        (None, None, "/home/container_app_user/logs"),
+    ],
+)
+def test_set_metal_timeout_env_vars_triage_log_dir_precedence(
+    monkeypatch, run_vllm_api_server_module, triage_path, metal_path, expected
+):
+    """Triage report dir prefers TT_TRIAGE_LOGS_PATH over TT_METAL_LOGS_PATH so
+    tt-metal's runtime logs aren't redirected onto the host-owned volume. See #4255."""
+    monkeypatch.delenv("DISABLE_METAL_OP_TIMEOUT", raising=False)
+    monkeypatch.delenv("TT_METAL_OPERATION_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE", raising=False)
+    for name, value in (
+        ("TT_TRIAGE_LOGS_PATH", triage_path),
+        ("TT_METAL_LOGS_PATH", metal_path),
+    ):
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+
+    run_vllm_api_server_module.set_metal_timeout_env_vars()
+
+    cmd = os.environ["TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE"]
+    assert f"mkdir -p {expected} && " in cmd
+    assert f"> {expected}/tt-triage-" in cmd

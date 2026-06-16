@@ -8,6 +8,7 @@ Tests the full run.py code path: setup_host() -> SetupConfig -> generate_docker_
 Each test verifies SetupConfig fields, setup_host() completion, and docker command output.
 """
 
+import dataclasses
 import json
 import os
 import re
@@ -580,6 +581,29 @@ class TestSetupHostDockerCommand:
         assert "--volume" in docker_command
         assert _find_env_var(docker_command, "MODEL_WEIGHTS_DIR") is None
         assert _find_env_var(docker_command, "TT_CACHE_PATH") is None
+        # No logs-path override outside CI; image defaults apply.
+        assert _find_env_var(docker_command, "TT_METAL_LOGS_PATH") is None
+        assert _find_env_var(docker_command, "TT_TRIAGE_LOGS_PATH") is None
+
+    def test_ci_mode_persists_triage_logs_without_overriding_metal_logs(
+        self, tiny_model_spec, mock_cli_args, temp_dir
+    ):
+        """CI mode persists triage logs via TT_TRIAGE_LOGS_PATH while leaving
+        TT_METAL_LOGS_PATH unset, so tt-metal's Inspector/watcher logs stay on the
+        writable ephemeral default rather than the host-owned volume. See #4255."""
+        ci_config = dataclasses.replace(mock_cli_args, ci_mode=True)
+        config = SetupConfig(model_spec=tiny_model_spec)
+        json_fpath = self._make_json_fpath(temp_dir)
+
+        docker_command, _ = self._generate_cmd(
+            tiny_model_spec, ci_config, config, json_fpath
+        )
+
+        assert _find_env_var(docker_command, "TT_METAL_LOGS_PATH") is None
+        assert (
+            _find_env_var(docker_command, "TT_TRIAGE_LOGS_PATH")
+            == f"{config.cache_root}/logs"
+        )
 
     def test_host_volume_mode_docker_command(
         self, tiny_model_spec, mock_cli_args, temp_dir
