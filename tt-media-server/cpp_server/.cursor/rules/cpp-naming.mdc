@@ -1,0 +1,19 @@
+---
+description: Prefer camel-style names in C++ code
+globs: **/*.{cpp,hpp,cc,cxx,h,hxx}
+alwaysApply: false
+---
+
+# C++ Naming
+
+For new or edited C++ identifiers, prefer camel-style names such as `taskId`,
+`socketManager`, and `registrationHashes`.
+
+Avoid introducing snake_case or trailing-underscore names for implementation
+variables, members, methods, and local structs unless matching an existing
+external API or third-party type.
+
+Do not rename externally visible strings or schema keys just for style. Keep
+JSON fields, metric labels, protocol tag strings, environment variable names,
+and persisted/wire string values unchanged unless the user explicitly asks for a
+contract change.
