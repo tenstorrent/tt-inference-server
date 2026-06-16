@@ -82,8 +82,8 @@ long long mockEnvLL(const char* name) {
 }
 
 // Mock prefill latency a flat base (MOCK_PREFILL_SLEEP_MS)
-// plus a per-token cost (MOCK_PREFILL_SLEEP_US_PER_TOKEN) charged only on the tokens
-// actually prefilled.
+// plus a per-token cost (MOCK_PREFILL_SLEEP_US_PER_TOKEN) charged only on the
+// tokens actually prefilled.
 std::chrono::milliseconds mockPrefillDelay(size_t prefillTokens) {
   const long long baseMs = mockEnvLL("MOCK_PREFILL_SLEEP_MS");
   const long long usPerToken = mockEnvLL("MOCK_PREFILL_SLEEP_US_PER_TOKEN");
@@ -92,10 +92,10 @@ std::chrono::milliseconds mockPrefillDelay(size_t prefillTokens) {
   return std::chrono::milliseconds(totalMs);
 }
 
-// Mock per-step decode latency: each decode forward pass emits one token per active
-// sequence and takes MOCK_DECODE_SLEEP_US, modeling inter-token latency so the
-// decode tokens-per-second (TPS ≈ 1e6 / MOCK_DECODE_SLEEP_US) is measurable on the
-// mock. Default 0 (tokens emitted as fast as the loop runs).
+// Mock per-step decode latency: each decode forward pass emits one token per
+// active sequence and takes MOCK_DECODE_SLEEP_US, modeling inter-token latency
+// so the decode tokens-per-second (TPS ≈ 1e6 / MOCK_DECODE_SLEEP_US) is
+// measurable on the mock. Default 0 (tokens emitted as fast as the loop runs).
 std::chrono::microseconds mockDecodeDelay() {
   return std::chrono::microseconds(mockEnvLL("MOCK_DECODE_SLEEP_US"));
 }
