@@ -164,6 +164,7 @@ void ZmqSocketTransport::stop() {
   ioActive_ = false;
   monitorActive_ = false;
   connected_ = false;
+  routerPeerReady = false;
   sendQueue.notifyStopped();
 
   if (ioThread_.joinable()) {
@@ -221,6 +222,9 @@ void ZmqSocketTransport::monitorLoop(std::stop_token stopToken,
         }
       } else if (eventId == ZMQ_EVENT_DISCONNECTED) {
         bool wasConnected = connected_.exchange(false);
+        if (mode_ == Mode::SERVER) {
+          routerPeerReady = false;
+        }
         if (wasConnected) {
           TT_LOG_DEBUG("[ZmqSocketTransport] Peer disconnected ({})",
                        modeName());
@@ -234,9 +238,22 @@ void ZmqSocketTransport::monitorLoop(std::stop_token stopToken,
   }
 }
 
-bool ZmqSocketTransport::isConnected() const { return isConnectedState(); }
+bool ZmqSocketTransport::isConnected() const {
+  if (mode_ == Mode::SERVER) {
+    return isConnectedState() && routerPeerReady.load();
+  }
+  return isConnectedState();
+}
 
-std::string ZmqSocketTransport::getStatus() const { return getStatusString(); }
+std::string ZmqSocketTransport::getStatus() const {
+  if (mode_ == Mode::SERVER) {
+    if (!running_) {
+      return "stopped";
+    }
+    return isConnected() ? "server:connected" : "server:waiting";
+  }
+  return getStatusString();
+}
 
 bool ZmqSocketTransport::sendRawData(std::span<const uint8_t> data) {
   if (!running_ || !ioActive_) return false;
@@ -313,8 +330,8 @@ void ZmqSocketTransport::failPendingSends() {
 
 bool ZmqSocketTransport::sendAsRouter(const std::vector<uint8_t>& data) {
   // ROUTER must prefix every outgoing message with the peer's identity.
-  if (peerId_.empty()) {
-    TT_LOG_ERROR(
+  if (!routerPeerReady.load()) {
+    TT_LOG_DEBUG(
         "[ZmqSocketTransport] Cannot send — no peer identity known yet");
     return false;
   }
@@ -357,6 +374,7 @@ std::vector<uint8_t> ZmqSocketTransport::receiveAsRouter() {
 
   peerId_.assign(static_cast<uint8_t*>(identity.data()),
                  static_cast<uint8_t*>(identity.data()) + identity.size());
+  routerPeerReady = true;
 
   if (!identity.more()) return {};
 
