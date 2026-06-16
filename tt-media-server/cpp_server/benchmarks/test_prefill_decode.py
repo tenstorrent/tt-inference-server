@@ -565,15 +565,17 @@ def test_06_streaming_ttft_hit_vs_miss():
         # Warm HIT reprefills only the uncached tail, so TTFT must drop below cold MISS.
         assert warm["ttft"] <= cold["ttft"] * TTFT_HIT_MAX_FRACTION, (
             "warm-HIT TTFT %.3fs not <= %.0f%% of cold-MISS %.3fs — prefix cache did "
-            "not save prefill work" % (warm["ttft"], TTFT_HIT_MAX_FRACTION * 100,
-                                       cold["ttft"]),
-            cold, warm,
+            "not save prefill work"
+            % (warm["ttft"], TTFT_HIT_MAX_FRACTION * 100, cold["ttft"]),
+            cold,
+            warm,
         )
     else:
         # No delay configured: plain mock does no real prefill work, so just sanity-bound.
         assert warm["ttft"] <= cold["ttft"] * 3 + 0.5, (
             "warm-HIT TTFT unexpectedly high vs cold-MISS",
-            cold, warm,
+            cold,
+            warm,
         )
 
 
@@ -589,7 +591,9 @@ def test_07_large_prompt_prefix_cache_ttft():
     _ensure_server()
     _ensure_disaggregated()
     system = (
-        _unique() + "You are a helpful assistant.\n" + _filler(_words_for(SYSTEM_TOKENS))
+        _unique()
+        + "You are a helpful assistant.\n"
+        + _filler(_words_for(SYSTEM_TOKENS))
     )
     user1 = "Please answer question A.\n" + _filler(_words_for(USER_TOKENS), 7)
     user2 = (
@@ -610,7 +614,10 @@ def test_07_large_prompt_prefix_cache_ttft():
     assert cold["ttft"] is not None and warm["ttft"] is not None, (cold, warm)
     assert cold["prompt_tokens"] and cold["prompt_tokens"] >= 0.5 * (
         SYSTEM_TOKENS + USER_TOKENS
-    ), ("prompt tokenized far below the ~%d-tok target" % (SYSTEM_TOKENS + USER_TOKENS), cold)
+    ), (
+        "prompt tokenized far below the ~%d-tok target" % (SYSTEM_TOKENS + USER_TOKENS),
+        cold,
+    )
     # Both requests (>> THRESHOLD) offloaded to the prefill server.
     offloaded = [int(t) for t in _RECEIVED.findall(_since(PREFILL_LOG, p_off))]
     big = [t for t in offloaded if t >= THRESHOLD]
@@ -637,10 +644,13 @@ def test_07_large_prompt_prefix_cache_ttft():
     _log(
         "TTFT cold=%.3fs warm=%.3fs speedup=%.2fx | TPS cold=%s warm=%s (cached cold=%s warm=%s)"
         % (
-            cold["ttft"], warm["ttft"], speedup,
+            cold["ttft"],
+            warm["ttft"],
+            speedup,
             ("%.1f" % cold["tps"]) if cold["tps"] else None,
             ("%.1f" % warm["tps"]) if warm["tps"] else None,
-            cold["cached_tokens"], warm["cached_tokens"],
+            cold["cached_tokens"],
+            warm["cached_tokens"],
         )
     )
     # With a cache-aware delay, the warm HIT (only ~5k new) must drop TTFT below cold.
@@ -648,7 +658,8 @@ def test_07_large_prompt_prefix_cache_ttft():
         assert warm["ttft"] <= cold["ttft"] * TTFT_HIT_MAX_FRACTION, (
             "warm TTFT %.3fs not <= %.0f%% of cold %.3fs — prefix cache did not save "
             "prefill work" % (warm["ttft"], TTFT_HIT_MAX_FRACTION * 100, cold["ttft"]),
-            cold, warm,
+            cold,
+            warm,
         )
 
 
