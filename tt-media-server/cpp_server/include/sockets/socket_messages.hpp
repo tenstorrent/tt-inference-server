@@ -61,9 +61,8 @@ struct PrefillRequestMessage {
     float topPVal = topP.value_or(0.0f);
     bool hasTopK = topK.has_value();
     int topKVal = topK.value_or(0);
-    ar(taskId, registrationHashes, tokenIds, mt, sid, hasTemp, tempVal,
-       hasTopP, topPVal, hasTopK, topKVal, fastMode, decodePositionId,
-       decodeSkipTokens);
+    ar(taskId, registrationHashes, tokenIds, mt, sid, hasTemp, tempVal, hasTopP,
+       topPVal, hasTopK, topKVal, fastMode, decodePositionId, decodeSkipTokens);
   }
 
   template <class Archive>
@@ -89,8 +88,8 @@ struct PrefillRequestMessage {
     msg.tokenIds = std::move(tids);
     msg.maxTokens = (mt == -1) ? std::nullopt : std::optional<int>(mt);
     msg.slotId = (sid == tt::domain::INVALID_SLOT_ID)
-                      ? std::nullopt
-                      : std::optional<uint32_t>(sid);
+                     ? std::nullopt
+                     : std::optional<uint32_t>(sid);
     if (hasTemp) msg.temperature = tempVal;
     if (hasTopP) msg.topP = topPVal;
     if (hasTopK) msg.topK = topKVal;
@@ -140,8 +139,7 @@ struct PrefillResultMessage {
     bool hasTopK = topK.has_value();
     int topKVal = topK.value_or(0);
     ar(taskId, generatedText, tokenIds, rt, sid, error, hasTemp, tempVal,
-       hasTopP, topPVal, hasTopK, topKVal, fastMode, cachedTokens,
-       migrationId);
+       hasTopP, topPVal, hasTopK, topKVal, fastMode, cachedTokens, migrationId);
   }
 
   template <class Archive>
@@ -168,8 +166,8 @@ struct PrefillResultMessage {
     msg.tokenIds = std::move(tids);
     msg.remainingTokens = (rt == -1) ? std::nullopt : std::optional<int>(rt);
     msg.slotId = (sid == tt::domain::INVALID_SLOT_ID)
-                      ? std::nullopt
-                      : std::optional<uint32_t>(sid);
+                     ? std::nullopt
+                     : std::optional<uint32_t>(sid);
     msg.error = err;
     if (hasTemp) msg.temperature = tempVal;
     if (hasTopP) msg.topP = topPVal;

@@ -91,8 +91,8 @@ void DisaggregationService::setupSocketHandlers() {
             request.migrationId = message.migrationId;
             request.kv_position_id =
                 static_cast<uint32_t>(message.tokenIds.size() - 1);
-            request.prompt.emplace<std::vector<int>>(
-                message.tokenIds.end() - 1, message.tokenIds.end());
+            request.prompt.emplace<std::vector<int>>(message.tokenIds.end() - 1,
+                                                     message.tokenIds.end());
             request.max_tokens = message.remainingTokens;
             request.slotId = message.slotId;
             // Restore the sampling subset echoed back from the prefill server.

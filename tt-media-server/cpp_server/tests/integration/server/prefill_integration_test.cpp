@@ -320,9 +320,9 @@ TEST_F(PrefillIntegrationTest, PrefillRequest_TriggersSessionAllocation) {
   const uint32_t taskId = 99001;
   tt::sockets::PrefillRequestMessage prefillReq(taskId);
   prefillReq.tokenIds = {100,  200,  300,  400,  500,  600,  700,  800,
-                          900,  1000, 1100, 1200, 1300, 1400, 1500, 1600,
-                          1700, 1800, 1900, 2000, 2100, 2200, 2300, 2400,
-                          2500, 2600, 2700, 2800, 2900, 3000, 3100, 3200};
+                         900,  1000, 1100, 1200, 1300, 1400, 1500, 1600,
+                         1700, 1800, 1900, 2000, 2100, 2200, 2300, 2400,
+                         2500, 2600, 2700, 2800, 2900, 3000, 3100, 3200};
   prefillReq.maxTokens = 10;
   prefillReq.slotId =
       7;  // decode-side slot — must NOT be overwritten by prefillSlotId

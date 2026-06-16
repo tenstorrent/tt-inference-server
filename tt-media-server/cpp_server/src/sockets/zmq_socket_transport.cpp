@@ -52,7 +52,7 @@ bool ZmqSocketTransport::startIoThread() {
   std::promise<bool> initialized;
   auto fut = initialized.get_future();
   ioThread = std::jthread([this, initialized = std::move(initialized)](
-                               std::stop_token stopToken) mutable {
+                              std::stop_token stopToken) mutable {
     ioLoop(stopToken, std::move(initialized));
   });
 
@@ -93,7 +93,7 @@ bool ZmqSocketTransport::initializeSocket() {
   try {
     socket = std::make_unique<zmq::socket_t>(
         *context, mode == Mode::SERVER ? zmq::socket_type::router
-                                        : zmq::socket_type::dealer);
+                                       : zmq::socket_type::dealer);
     zmq_options::applyCommonOptions(*socket);
     if (mode == Mode::CLIENT) {
       socket->set(zmq::sockopt::reconnect_ivl,
@@ -256,9 +256,8 @@ bool ZmqSocketTransport::sendRawData(std::span<const uint8_t> data) {
   request->data.assign(data.begin(), data.end());
   auto result = request->result.get_future();
 
-  if (!sendQueue.pushIf(std::move(request), [this] {
-        return running.load() && ioActive.load();
-      })) {
+  if (!sendQueue.pushIf(std::move(request),
+                        [this] { return running.load() && ioActive.load(); })) {
     return false;
   }
 
@@ -282,7 +281,7 @@ bool ZmqSocketTransport::processPendingSends() {
     bool ok = false;
     try {
       ok = running && (mode == Mode::SERVER ? sendAsRouter(request->data)
-                                              : sendAsDealer(request->data));
+                                            : sendAsDealer(request->data));
     } catch (const zmq::error_t& e) {
       TT_LOG_ERROR("[ZmqSocketTransport] Send failed: {}", e.what());
     }
