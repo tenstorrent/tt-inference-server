@@ -25,6 +25,7 @@ from typing import List, Optional, Sequence
 
 from llm_module import (
     DriverContext,
+    HttpServerController,
     LLMDriver,
     LLMPerformanceRunner,
     LLMRunConfig,
@@ -67,6 +68,13 @@ def run_llm_performance(
     output_dir = Path(ctx.output_path) / output_subdir
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
     context = DriverContext(output_dir=output_dir, device=device_label)
+
+    if server_controller is None:
+        server_controller = HttpServerController(
+            base_url=ctx.server_host,
+            service_port=ctx.server_port,
+            auth_token=auth_token,
+        )
 
     runner = LLMPerformanceRunner(
         driver=driver,

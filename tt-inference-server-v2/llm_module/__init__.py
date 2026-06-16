@@ -19,7 +19,7 @@ from .drivers import (
 )
 from .prefix_cache import PrefixCacheRun, build_runs as build_prefix_cache_runs
 from .runner import LLMPerformanceRunner, RunnerResult
-from .server_control import ServerController
+from .server_control import HttpServerController, ServerController
 
 __all__ = [
     "LLMRunConfig",
@@ -42,4 +42,5 @@ __all__ = [
     "LLMPerformanceRunner",
     "RunnerResult",
     "ServerController",
+    "HttpServerController",
 ]
