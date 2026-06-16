@@ -470,16 +470,19 @@ int main(int argc, char** argv) {
   decodeSm.start();
 
   constexpr auto probeIntervalMs = std::chrono::milliseconds(1000);
-  std::jthread proberThread(
-      [&prefillSms, probeIntervalMs](std::stop_token stopToken) {
-        while (!stopToken.stop_requested()) {
-          for (auto& sm : prefillSms) {
-            sm->sendObject(tt::sockets::tags::REGISTRATION_PROBE,
-                           tt::sockets::RegistrationProbeMessage{});
+  std::jthread proberThread;
+  if (!useZmqPrefillRouter) {
+    proberThread = std::jthread(
+        [&prefillSms, probeIntervalMs](std::stop_token stopToken) {
+          while (!stopToken.stop_requested()) {
+            for (auto& sm : prefillSms) {
+              sm->sendObject(tt::sockets::tags::REGISTRATION_PROBE,
+                             tt::sockets::RegistrationProbeMessage{});
+            }
+            std::this_thread::sleep_for(probeIntervalMs);
           }
-          std::this_thread::sleep_for(probeIntervalMs);
-        }
-      });
+        });
+  }
 
   const auto prefillStaleTimeout = cfg.prefillStaleTimeout;
   std::jthread watchdogThread;
