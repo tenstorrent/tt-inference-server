@@ -224,7 +224,7 @@ GenerateRequest parse_generate_request(const std::vector<uint8_t>& body_bytes);
  * supplied connection info and returns without blocking.
  */
 using GenerateHandler = std::function<void(
-    const GenerateRequest& request, const TcpStreamConnectionInfo& conn_info)>;
+    const GenerateRequest& request, const TcpStreamConnectionInfo& connInfo)>;
 
 /**
  * Owns the outbound call-home connection for a single request and streams
@@ -241,8 +241,8 @@ class DynamoStreamWriter
     : public std::enable_shared_from_this<DynamoStreamWriter> {
  public:
   static std::shared_ptr<DynamoStreamWriter> create(
-      trantor::EventLoop* loop, TcpStreamConnectionInfo conn_info,
-      std::string request_id, std::function<void()> on_disconnect);
+      trantor::EventLoop* loop, TcpStreamConnectionInfo connInfo,
+      std::string requestId, std::function<void()> onDisconnect);
 
   /// Dial the frontend's call-home address. Non-blocking.
   void connect();
@@ -255,9 +255,8 @@ class DynamoStreamWriter
   void finalize();
 
  private:
-  DynamoStreamWriter(trantor::EventLoop* loop,
-                     TcpStreamConnectionInfo conn_info, std::string request_id,
-                     std::function<void()> on_disconnect);
+  DynamoStreamWriter(trantor::EventLoop* loop, TcpStreamConnectionInfo connInfo,
+                     std::string requestId, std::function<void()> onDisconnect);
 
   void onConnState(const std::shared_ptr<trantor::TcpConnection>& conn);
   void ensurePrologue();
@@ -295,7 +294,7 @@ struct ServerConfig {
 class DynamoServer {
  public:
   DynamoServer(ServerConfig config, GenerateHandler handler,
-               std::vector<trantor::EventLoop*> io_loops);
+               std::vector<trantor::EventLoop*> ioLoops);
   ~DynamoServer();
 
   DynamoServer(const DynamoServer&) = delete;

@@ -293,10 +293,10 @@ std::vector<uint8_t> encode_stream_final() {
 // ---------------------------------------------------------------------------
 
 DynamoServer::DynamoServer(ServerConfig config, GenerateHandler handler,
-                           std::vector<trantor::EventLoop*> io_loops)
+                           std::vector<trantor::EventLoop*> ioLoops)
     : config_(std::move(config)),
       handler_(std::move(handler)),
-      io_loops_(std::move(io_loops)) {
+      io_loops_(std::move(ioLoops)) {
   if (config_.instance_id == 0) {
     std::srand(static_cast<unsigned>(std::time(nullptr) ^ ::getpid()));
     config_.instance_id = (static_cast<uint64_t>(std::rand()) << 32) |
@@ -381,21 +381,21 @@ void DynamoServer::process_request(const trantor::TcpConnectionPtr& conn,
 // ---------------------------------------------------------------------------
 
 std::shared_ptr<DynamoStreamWriter> DynamoStreamWriter::create(
-    trantor::EventLoop* loop, TcpStreamConnectionInfo conn_info,
-    std::string request_id, std::function<void()> on_disconnect) {
+    trantor::EventLoop* loop, TcpStreamConnectionInfo connInfo,
+    std::string requestId, std::function<void()> onDisconnect) {
   return std::shared_ptr<DynamoStreamWriter>(
-      new DynamoStreamWriter(loop, std::move(conn_info), std::move(request_id),
-                             std::move(on_disconnect)));
+      new DynamoStreamWriter(loop, std::move(connInfo), std::move(requestId),
+                             std::move(onDisconnect)));
 }
 
 DynamoStreamWriter::DynamoStreamWriter(trantor::EventLoop* loop,
-                                       TcpStreamConnectionInfo conn_info,
-                                       std::string request_id,
-                                       std::function<void()> on_disconnect)
+                                       TcpStreamConnectionInfo connInfo,
+                                       std::string requestId,
+                                       std::function<void()> onDisconnect)
     : loop_(loop),
-      conn_info_(std::move(conn_info)),
-      request_id_(std::move(request_id)),
-      on_disconnect_(std::move(on_disconnect)) {}
+      conn_info_(std::move(connInfo)),
+      request_id_(std::move(requestId)),
+      on_disconnect_(std::move(onDisconnect)) {}
 
 void DynamoStreamWriter::connect() {
   const auto colon = conn_info_.address.rfind(':');
