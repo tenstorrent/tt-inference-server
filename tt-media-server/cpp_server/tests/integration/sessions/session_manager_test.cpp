@@ -69,7 +69,7 @@ TEST(SessionManagerLifecycle, AcquireInFlight_SessionExists) {
   auto session = manager.getSession(slotId);
   ASSERT_TRUE(session);
   EXPECT_EQ(session->getSlotId(), 7u);
-  session->clearInFlight();
+  manager.releaseInFlight(slotId);
 }
 
 TEST(SessionManagerLifecycle, AcquireInFlight_AlreadyInFlight_Throws) {
@@ -217,8 +217,8 @@ TEST(SessionManagerClose, CancelFn_ClearedOnNormalCompletion) {
 
   auto session = manager.getSession(slotId);
   ASSERT_TRUE(session);
-  session->clearInFlight();      // normal completion clears in-flight state
-  manager.closeSession(slotId);  // should not fire cancel
+  manager.releaseInFlight(slotId);  // normal completion clears in-flight state
+  manager.closeSession(slotId);     // should not fire cancel
 
   EXPECT_FALSE(cancelCalled.load());
 }
@@ -417,7 +417,7 @@ TEST(SessionManagerResponseId, ReKey_MovesSessionToNewId) {
   ASSERT_TRUE(acquired.has_value());
   EXPECT_EQ(acquired->slotId, slotId);
 
-  manager.getSession(slotId)->clearInFlight();
+  manager.releaseInFlight(slotId);
 }
 
 TEST(SessionManagerResponseId, AcquireMarksInFlight_SecondAcquireThrows) {
@@ -434,7 +434,7 @@ TEST(SessionManagerResponseId, AcquireMarksInFlight_SecondAcquireThrows) {
   EXPECT_THROW(manager.tryAcquireByResponseId("resp-1", nullptr),
                tt::services::SessionInFlightException);
 
-  manager.getSession(slotId)->clearInFlight();
+  manager.releaseInFlight(slotId);
 }
 
 TEST(SessionManagerResponseId, AcquireAfterRelease_Succeeds) {
@@ -446,12 +446,12 @@ TEST(SessionManagerResponseId, AcquireAfterRelease_Succeeds) {
 
   auto first = manager.tryAcquireByResponseId("resp-1", nullptr);
   ASSERT_TRUE(first.has_value());
-  manager.getSession(slotId)->clearInFlight();
+  manager.releaseInFlight(slotId);
 
   auto second = manager.tryAcquireByResponseId("resp-1", nullptr);
   ASSERT_TRUE(second.has_value());
   EXPECT_EQ(second->slotId, slotId);
-  manager.getSession(slotId)->clearInFlight();
+  manager.releaseInFlight(slotId);
 }
 
 TEST(SessionManagerResponseId, CloseSession_RemovesFromResponseIdIndex) {
@@ -500,14 +500,14 @@ TEST(SessionManagerResponseId, TwoTurnContinuation_ReKeysAcrossIds) {
   EXPECT_EQ(t2->slotId, slotId);
   // Re-key under turn 2's own id.
   manager.registerResponseId("r1", "r2");
-  manager.getSession(slotId)->clearInFlight();
+  manager.releaseInFlight(slotId);
 
   // Turn 3: arrives with previous_response_id="r2".
   auto t3 = manager.tryAcquireByResponseId("r2", nullptr);
   ASSERT_TRUE(t3.has_value());
   EXPECT_EQ(t3->slotId, slotId);
   EXPECT_FALSE(manager.tryAcquireByResponseId("r1", nullptr).has_value());
-  manager.getSession(slotId)->clearInFlight();
+  manager.releaseInFlight(slotId);
 }
 
 TEST(SessionManagerResponseId,
@@ -557,7 +557,7 @@ TEST(SessionManagerResponseId,
   };
   manager.registerPrefixHash(slotId, turn2Blocks);
   manager.registerResponseId("r1", "r2");
-  manager.getSession(slotId)->clearInFlight();
+  manager.releaseInFlight(slotId);
 
   // The prefix index should now match all 4 blocks.
   auto [matchedTokens3, thinkTokens3] =
@@ -582,7 +582,7 @@ TEST(SessionManagerResponseId,
   EXPECT_EQ(matchedTokens5, matchedTokens3)
       << "prefixCacheIndex should survive re-keying across response ids";
 
-  manager.getSession(slotId)->clearInFlight();
+  manager.releaseInFlight(slotId);
 }
 
 // ---------------------------------------------------------------------------

@@ -121,7 +121,7 @@ class SessionManager {
   // Thread-safe: holds the ConcurrentMap lock during the state transition.
   void releaseInFlight(uint32_t slotId);
 
-  domain::Session* getSession(uint32_t slotId);
+  std::shared_ptr<domain::Session> getSession(uint32_t slotId);
   size_t getActiveSessionCount() const;
 
   // Lock/unlock a slot to prevent eviction.
@@ -272,7 +272,8 @@ class SessionManager {
   // Helper to convert slot ID to map key string
   static std::string slotKey(uint32_t slotId) { return std::to_string(slotId); }
 
-  mutable utils::ConcurrentMap<std::string, domain::Session> sessions;
+  mutable utils::ConcurrentMap<std::string, std::shared_ptr<domain::Session>>
+      sessions;
 
   // An entry in the prefix index: a group of sessions sharing the same prefix
   // path, together with the remaining block info that follows (used for deeper

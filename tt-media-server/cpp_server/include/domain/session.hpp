@@ -21,6 +21,8 @@ namespace tt::services {
 class SessionManager;  // friend: owns the locked state transitions below
 }
 
+class SessionTestHelper;  // friend: allows unit tests to access protected methods
+
 namespace tt::domain {
 
 // Lifecycle state of a Session.  IDLE --(markPrepared)--> PREPARED
@@ -151,6 +153,7 @@ class Session {
   // eviction data race. Each returns false (state unchanged) if its
   // precondition is not met.
   friend class tt::services::SessionManager;
+  friend class SessionTestHelper;
   bool markPrepared();   // IDLE           -> PREPARED
   bool markInFlight();   // IDLE/PREPARED  -> IN_FLIGHT
   bool clearInFlight();  // IN_FLIGHT      -> IDLE, also clears cancelFn

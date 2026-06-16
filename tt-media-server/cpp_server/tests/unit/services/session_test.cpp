@@ -5,6 +5,14 @@
 
 #include <gtest/gtest.h>
 
+// Friend class to access protected Session methods for state machine testing
+class SessionTestHelper {
+ public:
+  static bool markPrepared(tt::domain::Session& s) { return s.markPrepared(); }
+  static bool markInFlight(tt::domain::Session& s) { return s.markInFlight(); }
+  static bool clearInFlight(tt::domain::Session& s) { return s.clearInFlight(); }
+};
+
 namespace {
 
 // ---------------------------------------------------------------------------
@@ -25,7 +33,7 @@ TEST(SessionState, InitialStateIsIdle) {
 
 TEST(SessionState, MarkPreparedFromIdle) {
   tt::domain::Session s(1u);
-  EXPECT_TRUE(s.markPrepared());
+  EXPECT_TRUE(SessionTestHelper::markPrepared(s));
   EXPECT_TRUE(s.isPrepared());
   EXPECT_FALSE(s.isIdle());
   EXPECT_FALSE(s.isInFlight());
@@ -33,23 +41,23 @@ TEST(SessionState, MarkPreparedFromIdle) {
 
 TEST(SessionState, MarkPreparedFromPreparedReturnsFalseAndPreservesState) {
   tt::domain::Session s(1u);
-  ASSERT_TRUE(s.markPrepared());
-  EXPECT_FALSE(s.markPrepared());  // already PREPARED
+  ASSERT_TRUE(SessionTestHelper::markPrepared(s));
+  EXPECT_FALSE(SessionTestHelper::markPrepared(s));  // already PREPARED
   EXPECT_TRUE(s.isPrepared());
 }
 
 TEST(SessionState, MarkPreparedFromInFlightReturnsFalseAndPreservesState) {
   tt::domain::Session s(1u);
-  ASSERT_TRUE(s.markPrepared());
-  ASSERT_TRUE(s.markInFlight());
-  EXPECT_FALSE(s.markPrepared());  // already IN_FLIGHT
+  ASSERT_TRUE(SessionTestHelper::markPrepared(s));
+  ASSERT_TRUE(SessionTestHelper::markInFlight(s));
+  EXPECT_FALSE(SessionTestHelper::markPrepared(s));  // already IN_FLIGHT
   EXPECT_TRUE(s.isInFlight());
 }
 
 TEST(SessionState, MarkInFlightFromPrepared) {
   tt::domain::Session s(1u);
-  ASSERT_TRUE(s.markPrepared());
-  EXPECT_TRUE(s.markInFlight());
+  ASSERT_TRUE(SessionTestHelper::markPrepared(s));
+  EXPECT_TRUE(SessionTestHelper::markInFlight(s));
   EXPECT_TRUE(s.isInFlight());
   EXPECT_FALSE(s.isPrepared());
   EXPECT_FALSE(s.isIdle());
@@ -57,7 +65,7 @@ TEST(SessionState, MarkInFlightFromPrepared) {
 
 TEST(SessionState, MarkInFlightFromIdle) {
   tt::domain::Session s(1u);
-  EXPECT_TRUE(s.markInFlight());  // IDLE -> IN_FLIGHT is allowed (fast path)
+  EXPECT_TRUE(SessionTestHelper::markInFlight(s));  // IDLE -> IN_FLIGHT is allowed (fast path)
   EXPECT_TRUE(s.isInFlight());
   EXPECT_FALSE(s.isIdle());
   EXPECT_FALSE(s.isPrepared());
@@ -65,17 +73,17 @@ TEST(SessionState, MarkInFlightFromIdle) {
 
 TEST(SessionState, MarkInFlightFromInFlightReturnsFalseAndPreservesState) {
   tt::domain::Session s(1u);
-  ASSERT_TRUE(s.markPrepared());
-  ASSERT_TRUE(s.markInFlight());
-  EXPECT_FALSE(s.markInFlight());  // already IN_FLIGHT
+  ASSERT_TRUE(SessionTestHelper::markPrepared(s));
+  ASSERT_TRUE(SessionTestHelper::markInFlight(s));
+  EXPECT_FALSE(SessionTestHelper::markInFlight(s));  // already IN_FLIGHT
   EXPECT_TRUE(s.isInFlight());
 }
 
 TEST(SessionState, ClearInFlightFromInFlightTransitionsToIdle) {
   tt::domain::Session s(1u);
-  ASSERT_TRUE(s.markPrepared());
-  ASSERT_TRUE(s.markInFlight());
-  EXPECT_TRUE(s.clearInFlight());
+  ASSERT_TRUE(SessionTestHelper::markPrepared(s));
+  ASSERT_TRUE(SessionTestHelper::markInFlight(s));
+  EXPECT_TRUE(SessionTestHelper::clearInFlight(s));
   EXPECT_TRUE(s.isIdle());
   EXPECT_FALSE(s.isPrepared());
   EXPECT_FALSE(s.isInFlight());
@@ -83,15 +91,15 @@ TEST(SessionState, ClearInFlightFromInFlightTransitionsToIdle) {
 
 TEST(SessionState, ClearInFlightFromIdleReturnsFalse) {
   tt::domain::Session s(1u);
-  EXPECT_FALSE(s.clearInFlight());
+  EXPECT_FALSE(SessionTestHelper::clearInFlight(s));
   EXPECT_TRUE(s.isIdle());  // state unchanged
 }
 
 TEST(SessionState, ClearInFlightFromPreparedReturnsFalseAndPreservesState) {
   tt::domain::Session s(1u);
-  ASSERT_TRUE(s.markPrepared());
+  ASSERT_TRUE(SessionTestHelper::markPrepared(s));
   EXPECT_FALSE(
-      s.clearInFlight());  // PREPARED -> IDLE not allowed via clearInFlight
+      SessionTestHelper::clearInFlight(s));  // PREPARED -> IDLE not allowed via clearInFlight
   EXPECT_TRUE(s.isPrepared());
 }
 
