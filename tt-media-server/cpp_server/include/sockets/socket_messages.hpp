@@ -207,25 +207,6 @@ inline std::string prefillErrorTextForReason(
   return genericError.empty() ? "error" : std::move(genericError);
 }
 
-/**
- * @brief Health check message
- */
-struct HealthCheckMessage : SerializableMessage<HealthCheckMessage> {
-  std::string server_id;
-  double cpu_usage = 0.0;
-  double memory_usage = 0.0;
-  int active_tasks = 0;
-
-  template <class F>
-  void fields(F&& f) {
-    f(server_id, cpu_usage, memory_usage, active_tasks);
-  }
-  template <class F>
-  void fields(F&& f) const {
-    f(server_id, cpu_usage, memory_usage, active_tasks);
-  }
-};
-
 struct PrefillHealthRequestMessage
     : SerializableMessage<PrefillHealthRequestMessage> {
   uint32_t nonce = 0;
@@ -251,25 +232,6 @@ struct PrefillHealthStatusMessage
   template <class F>
   void fields(F&& f) const {
     f(ready);
-  }
-};
-
-/**
- * @brief Load balancing info message
- */
-struct LoadBalanceMessage : SerializableMessage<LoadBalanceMessage> {
-  std::string server_id;
-  int queue_size = 0;
-  double avg_processing_time = 0.0;
-  bool accepting_tasks = false;
-
-  template <class F>
-  void fields(F&& f) {
-    f(server_id, queue_size, avg_processing_time, accepting_tasks);
-  }
-  template <class F>
-  void fields(F&& f) const {
-    f(server_id, queue_size, avg_processing_time, accepting_tasks);
   }
 };
 

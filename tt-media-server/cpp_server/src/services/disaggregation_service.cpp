@@ -45,14 +45,6 @@ DisaggregationService::DisaggregationService(
 }
 
 void DisaggregationService::setupSocketHandlers() {
-  socketService->setHealthCheckCallback([](const std::string& serverId,
-                                           double /*cpu*/, double /*memory*/,
-                                           int tasks) {
-    TT_LOG_INFO(
-        "[DisaggregationService] Health check from {} (active_tasks={})",
-        serverId, tasks);
-  });
-
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     socketService->onPrefillComplete(
         [this](const tt::sockets::PrefillResultMessage& message) {

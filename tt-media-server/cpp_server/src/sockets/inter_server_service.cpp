@@ -196,22 +196,6 @@ bool InterServerService::sendPrefillCacheBlocksAdded(
   return socket_manager_.sendObject(tags::PREFILL_CACHE_BLOCKS_ADDED, message);
 }
 
-bool InterServerService::sendHealthCheck(const std::string& serverId,
-                                         double cpuUsage, double memoryUsage,
-                                         int activeTasks) {
-  if (!enabled_) {
-    return false;
-  }
-
-  HealthCheckMessage message;
-  message.server_id = serverId;
-  message.cpu_usage = cpuUsage;
-  message.memory_usage = memoryUsage;
-  message.active_tasks = activeTasks;
-
-  return socket_manager_.sendObject("health_check", message);
-}
-
 void InterServerService::onPrefillRequested(PrefillRequestedCallback callback) {
   prefill_requested_callback_ = callback;
 }
@@ -222,10 +206,6 @@ void InterServerService::onPrefillCancelled(PrefillCancelCallback callback) {
 
 void InterServerService::onPrefillComplete(PrefillCompleteCallback callback) {
   prefill_complete_callback_ = callback;
-}
-
-void InterServerService::setHealthCheckCallback(HealthCallback callback) {
-  health_check_callback_ = callback;
 }
 
 void InterServerService::setConnectionLostCallback(
@@ -325,20 +305,6 @@ void InterServerService::setupMessageHandlers() {
         }
         if (prefill_complete_callback_) {
           prefill_complete_callback_(message);
-        }
-      });
-
-  // Handle incoming health checks
-  socket_manager_.registerHandler<HealthCheckMessage>(
-      "health_check", [this](const HealthCheckMessage& message) {
-        TT_LOG_DEBUG(
-            "[InterServerService] Received health check from: {} (CPU: {}%, "
-            "Memory: {}%, Tasks: {})",
-            message.server_id, message.cpu_usage, message.memory_usage,
-            message.active_tasks);
-        if (health_check_callback_) {
-          health_check_callback_(message.server_id, message.cpu_usage,
-                                 message.memory_usage, message.active_tasks);
         }
       });
 }
