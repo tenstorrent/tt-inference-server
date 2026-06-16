@@ -10,9 +10,10 @@ a UMD-backed device-DRAM storage backend.
 > **Where the code lives.** Unlike poc1–poc3 (self-contained Python that runs against
 > a Mooncake master), this PoC is **C++ that builds *inside* the cpp_server build** —
 > it depends on cpp_server's CMake, tt-metal, and the Mooncake `transfer_engine`
-> target vendored in `tt-llm-engine`. So the source stays in
-> [`tt-media-server/cpp_server/`](../../tt-media-server/cpp_server) where it compiles;
-> **this folder is the design hub** (rationale, diagrams, and the map below).
+> target, which is built directly from the vendored Mooncake submodule at
+> [`tt-media-server/cpp_server/third_party/Mooncake`](../../tt-media-server/cpp_server/third_party/Mooncake).
+> The source stays in [`tt-media-server/cpp_server/`](../../tt-media-server/cpp_server) where it
+> compiles; **this folder is the design hub** (rationale, diagrams, and the map below).
 
 ---
 
@@ -53,25 +54,90 @@ surface, and how this attaches to the existing tt-llm-engine migration worker.
 | [`include/transport/`](../../tt-media-server/cpp_server/include/transport) | Interfaces + placeholder types (`IStorageBackend`, `ITransferEngine`, `transfer_types.hpp`, …) |
 | [`src/transport/`](../../tt-media-server/cpp_server/src/transport) | Implementations (host/device DRAM backends, UMD access, Mooncake engine, migration worker) |
 | [`src/transport/README.md`](../../tt-media-server/cpp_server/src/transport/README.md) | Code-level orientation (file-by-file) |
-| [`tests/transport_test.cpp`](../../tt-media-server/cpp_server/tests/transport_test.cpp) | Smoke tests over every interface, all build configs |
-| [`tests/integration/transport_migration_e2e.cpp`](../../tt-media-server/cpp_server/tests/integration/transport_migration_e2e.cpp) + [`run_transport_migration_e2e.sh`](../../tt-media-server/cpp_server/tests/integration/run_transport_migration_e2e.sh) | Two-process acceptance harness (`--mooncake` builds only) |
+| [`tests/unit/transport/transport_test.cpp`](../../tt-media-server/cpp_server/tests/unit/transport/transport_test.cpp) | Smoke tests over every interface, all build configs |
+| [`tests/e2e/transport_migration_e2e.cpp`](../../tt-media-server/cpp_server/tests/e2e/transport_migration_e2e.cpp) + [`run_transport_migration_e2e.sh`](../../tt-media-server/cpp_server/tests/e2e/scripts/run_transport_migration_e2e.sh) | Two-process acceptance harness (`--mooncake` builds only) |
+
+## Dependencies & first-time setup (for `--mooncake` builds)
+
+The Mooncake `transfer_engine` is built **from source** out of the vendored submodule
+(`third_party/Mooncake`), so a fresh clone needs two one-time setup steps before
+`./build.sh --mooncake` will configure. (Plain `./build.sh` / `--blaze` builds don't
+need any of this — Mooncake is only pulled in by `--mooncake`.)
+
+### 1. Check out the Mooncake submodule — recursively
+
+It has its own nested submodules (`extern/yalantinglibs`, `extern/pybind11`) that
+**must** be present, so `--recursive` is required:
+
+```bash
+# from the repo root
+git submodule update --init --recursive \
+  tt-media-server/cpp_server/third_party/Mooncake
+```
+
+> ⚠️ **Common gotcha — do NOT run the init under `sudo`.** The repo is owned by your
+> user; running `git submodule update` (or `dependencies.sh`, which calls it) as root
+> trips git's *"detected dubious ownership"* guard, and the nested submodules silently
+> stay **empty**. The symptom shows up only later as a CMake error:
+> `Could not find a package configuration file provided by "yalantinglibs"`.
+> Always init submodules as your **normal user**.
+
+### 2. Install Mooncake's system dependencies
+
+The standalone Transfer Engine build expects these to already be installed — it uses
+`find_package(... REQUIRED)`, so a missing one is a hard configure error:
+
+`libibverbs-dev`, `libnuma-dev`, `libgoogle-glog-dev`, `libgflags-dev`,
+`libjsoncpp-dev`, `libyaml-cpp-dev`, plus an **installed** `yalantinglibs`
+(resolved via `find_package(yalantinglibs CONFIG)`).
+
+Mooncake ships a helper that installs the apt packages **and** builds + installs
+yalantinglibs from its submodule:
+
+```bash
+# Init submodules (step 1) FIRST, as your user, THEN run this — it needs sudo for apt.
+sudo third_party/Mooncake/dependencies.sh
+```
+
+If `dependencies.sh` ran *before* the submodules were checked out (the sudo gotcha
+above), yalantinglibs was never installed. Install it manually:
+
+```bash
+cd third_party/Mooncake/extern/yalantinglibs
+cmake -S . -B build -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARK=OFF -DBUILD_UNIT_TESTS=OFF
+cmake --build build -j"$(nproc)"
+sudo cmake --install build      # installs yalantinglibsConfig.cmake under /usr/local
+```
+
+> **RDMA is always compiled in.** The standalone Transfer Engine has no library-level
+> toggle to disable RDMA (`libibverbs` / `rdma_transport` are linked unconditionally),
+> so `--mooncake` already includes it — there is no separate `--mooncake-rdma` flag.
+>
+> **Storage is not built.** Only `mooncake-transfer-engine` is compiled (the single
+> target cpp_server links). Mooncake's **store** and its Python/Rust bindings are
+> intentionally left out — they would pull in Python3-dev, xxhash/zstd/liburing and
+> Rust for artifacts cpp_server doesn't use. Enabling the store later is a one-block
+> change in `cpp_server/CMakeLists.txt` (`add_subdirectory(third_party/Mooncake)` with
+> `WITH_STORE=ON`); the `transfer_engine` target name is unchanged, so this PoC's
+> wiring would not need to change.
 
 ## Build & run
 
 All commands run from **`tt-media-server/cpp_server/`** (the e2e harness expects the
-build output under that root):
+build output under that root — **not** from inside `build/`):
 
 ```bash
-./build.sh                  # both guards OFF — transport_lib/transport_test still build (no-op fallbacks)
-./build.sh --blaze          # real UMD device-DRAM backend (USE_METAL_CPP_LIB)
-./build.sh --mooncake       # real Mooncake transport (implies --blaze) → also builds transport_migration_e2e
+./build.sh                    # both guards OFF — transport_lib/transport_test still build (no-op fallbacks)
+./build.sh --blaze            # real UMD device-DRAM backend (USE_METAL_CPP_LIB)
+./build.sh --mooncake         # real Mooncake transport (TCP+RDMA) → also builds transport_migration_e2e
+./build.sh --blaze --mooncake # both real backends — required for the device-DRAM (real HW) e2e path
 
 cd build && ctest --output-on-failure        # runs transport_test in any configuration
 
 # Two-process acceptance harness (stays in cpp_server; needs a --mooncake build):
-tests/integration/run_transport_migration_e2e.sh                  # transport-only loopback, no HW
+tests/e2e/scripts/run_transport_migration_e2e.sh                 # transport-only loopback, no HW
 STORAGE=device SRC_DEVICE_ID=0 DST_DEVICE_ID=1 \
-  tests/integration/run_transport_migration_e2e.sh                # real device DRAM, two boards
+  tests/e2e/scripts/run_transport_migration_e2e.sh               # real device DRAM, two boards (build with --blaze --mooncake)
 
 # #4209 worker discovery via the Mooncake Metadata Service (host RAM only, two hosts):
 tests/integration/run_mooncake_metadata_server.sh                 # start the metadata service
@@ -81,7 +147,7 @@ tests/integration/run_migration_worker_discovery.sh               # single-host 
 Build guards: `USE_METAL_CPP_LIB` (real UMD I/O, via `--blaze`) and
 `TT_TRANSPORT_WITH_MOONCAKE` (real Mooncake transport, via `--mooncake`). Each real
 backend sits behind a guard with a no-op fallback, so the library and unit test build
-in **every** configuration. RDMA: `--mooncake-rdma`.
+in **every** configuration.
 
 ## Status
 

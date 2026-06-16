@@ -14,7 +14,6 @@
 #include "api/response_writer/response_writer.hpp"
 #include "api/stream_event_formatter.hpp"
 #include "config/settings.hpp"
-#include "domain/models_response.hpp"
 #include "services/llm_pipeline.hpp"
 #include "services/llm_service.hpp"
 
@@ -30,19 +29,9 @@ class LLMController : public drogon::HttpController<LLMController> {
   ADD_METHOD_TO(LLMController::chatCompletions, "/v1/chat/completions",
                 drogon::Post);
   ADD_METHOD_TO(LLMController::responses, "/v1/responses", drogon::Post);
-  ADD_METHOD_TO(LLMController::models, "/v1/models", drogon::Get);
   METHOD_LIST_END
 
   LLMController();
-
-  void models(
-      const drogon::HttpRequestPtr&,
-      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
-    domain::ModelsResponse response;
-    response.data.push_back({toString(tt::config::model())});
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(response.toJson());
-    callback(resp);
-  }
 
   /**
    * POST /v1/chat/completions
@@ -103,7 +92,8 @@ class LLMController : public drogon::HttpController<LLMController> {
    * ResponseWriter. Common to both streaming and non-streaming code paths.
    */
   static std::function<void(const LLMStreamChunk&, bool)> makeStreamingCallback(
-      std::shared_ptr<ResponseWriter> writer, domain::Session* session);
+      std::shared_ptr<ResponseWriter> writer,
+      std::shared_ptr<domain::Session> session);
 };
 
 }  // namespace tt::api

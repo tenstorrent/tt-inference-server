@@ -18,19 +18,23 @@ PrefillSnapshot prefill(std::string id, bool healthy = true,
   return p;
 }
 
+PrefillSnapshot prefixMatchedPrefill(std::string id, size_t prefixMatchDepth,
+                                     uint32_t inFlight = 0) {
+  auto p = prefill(std::move(id), true, inFlight);
+  p.prefix_match_depth = prefixMatchDepth;
+  return p;
+}
+
 std::optional<std::string> selectedServer(
-    const std::vector<PrefillSnapshot>& prefills, size_t registrationHash,
-    const std::optional<std::string>& stickyTarget, size_t& roundRobinCursor) {
-  return selectPrefill(prefills, registrationHash, stickyTarget,
-                       roundRobinCursor)
-      .server_id;
+    const std::vector<PrefillSnapshot>& prefills, size_t& roundRobinCursor) {
+  return selectPrefill(prefills, roundRobinCursor).server_id;
 }
 
 TEST(PrefillSelectorTest, NoPeersAvailableWhenAllDown) {
   std::vector<PrefillSnapshot> prefills = {prefill("A", false),
                                            prefill("B", false)};
   size_t cursor = 0;
-  auto chosen = selectedServer(prefills, /*hash=*/0, std::nullopt, cursor);
+  auto chosen = selectedServer(prefills, cursor);
   EXPECT_FALSE(chosen.has_value());
 }
 
@@ -39,7 +43,7 @@ TEST(PrefillSelectorTest, NoPeersAvailableWhenAllAtMaxInFlight) {
       prefill("A", true, /*inFlight=*/4, /*maxInFlight=*/4),
       prefill("B", true, /*inFlight=*/8, /*maxInFlight=*/8)};
   size_t cursor = 0;
-  auto chosen = selectedServer(prefills, 0, std::nullopt, cursor);
+  auto chosen = selectedServer(prefills, cursor);
   EXPECT_FALSE(chosen.has_value());
 }
 
@@ -49,7 +53,7 @@ TEST(PrefillSelectorTest, NoPeersAvailableWhenNotAcceptingTasks) {
   std::vector<PrefillSnapshot> prefills = {disabled};
   size_t cursor = 0;
 
-  auto chosen = selectedServer(prefills, 0, std::nullopt, cursor);
+  auto chosen = selectedServer(prefills, cursor);
 
   EXPECT_FALSE(chosen.has_value());
 }
@@ -72,52 +76,61 @@ TEST(PrefillSelectorTest, SummarizesEligibilityReasons) {
   EXPECT_EQ(summary.capacity_available, 1u);
 }
 
-TEST(PrefillSelectorTest, EqualityMatchPicksStickyTarget) {
-  std::vector<PrefillSnapshot> prefills = {prefill("A", true, /*inFlight=*/5),
-                                           prefill("B", true, /*inFlight=*/0)};
+TEST(PrefillSelectorTest, LongestPrefixMatchWinsOverLowerLoad) {
+  std::vector<PrefillSnapshot> prefills = {
+      prefixMatchedPrefill("A", /*prefixMatchDepth=*/3, /*inFlight=*/5),
+      prefixMatchedPrefill("B", /*prefixMatchDepth=*/2, /*inFlight=*/0)};
   size_t cursor = 0;
-  // Sticky -> A even though B is less loaded.
-  auto chosen = selectedServer(prefills, /*hash=*/42, std::string{"A"}, cursor);
+
+  auto chosen = selectedServer(prefills, cursor);
+
   ASSERT_TRUE(chosen.has_value());
   EXPECT_EQ(*chosen, "A");
 }
 
-TEST(PrefillSelectorTest, StickyFallsBackWhenTargetIsNotAcceptingTasks) {
-  auto disabled = prefill("A", true);
+TEST(PrefillSelectorTest, PrefixMatchIgnoresIneligiblePrefills) {
+  auto disabled = prefixMatchedPrefill("A", /*prefixMatchDepth=*/3);
   disabled.accepting_tasks = false;
-  std::vector<PrefillSnapshot> prefills = {disabled, prefill("B", true)};
-  size_t cursor = 0;
-
-  auto chosen = selectedServer(prefills, 42, std::string{"A"}, cursor);
-
-  ASSERT_TRUE(chosen.has_value());
-  EXPECT_EQ(*chosen, "B");
-}
-
-TEST(PrefillSelectorTest, StickyFallsBackToLeastLoadedWhenTargetUnhealthy) {
-  std::vector<PrefillSnapshot> prefills = {prefill("A", /*healthy=*/false),
-                                           prefill("B", true, 0)};
-  size_t cursor = 0;
-  auto chosen = selectedServer(prefills, 42, std::string{"A"}, cursor);
-  ASSERT_TRUE(chosen.has_value());
-  EXPECT_EQ(*chosen, "B");
-}
-
-TEST(PrefillSelectorTest, StickyFallsBackToLeastLoadedWhenTargetOverloaded) {
   std::vector<PrefillSnapshot> prefills = {
-      prefill("A", true, /*inFlight=*/8, /*maxInFlight=*/8),
-      prefill("B", true, /*inFlight=*/2, /*maxInFlight=*/8)};
+      disabled, prefixMatchedPrefill("B", /*prefixMatchDepth=*/1)};
   size_t cursor = 0;
-  auto chosen = selectedServer(prefills, 42, std::string{"A"}, cursor);
+
+  auto chosen = selectedServer(prefills, cursor);
+
   ASSERT_TRUE(chosen.has_value());
   EXPECT_EQ(*chosen, "B");
+}
+
+TEST(PrefillSelectorTest, PrefixTieBreaksByLeastLoaded) {
+  std::vector<PrefillSnapshot> prefills = {
+      prefixMatchedPrefill("A", /*prefixMatchDepth=*/2, /*inFlight=*/4),
+      prefixMatchedPrefill("B", /*prefixMatchDepth=*/2, /*inFlight=*/1)};
+  size_t cursor = 0;
+
+  auto chosen = selectedServer(prefills, cursor);
+
+  ASSERT_TRUE(chosen.has_value());
+  EXPECT_EQ(*chosen, "B");
+}
+
+TEST(PrefillSelectorTest, PrefixTieBreaksByRoundRobinWhenEquallyLoaded) {
+  std::vector<PrefillSnapshot> prefills = {
+      prefixMatchedPrefill("A", /*prefixMatchDepth=*/2, /*inFlight=*/0),
+      prefixMatchedPrefill("B", /*prefixMatchDepth=*/2, /*inFlight=*/0)};
+  size_t cursor = 0;
+  auto c1 = selectedServer(prefills, cursor);
+  auto c2 = selectedServer(prefills, cursor);
+
+  ASSERT_TRUE(c1 && c2);
+  EXPECT_EQ(*c1, "A");
+  EXPECT_EQ(*c2, "B");
 }
 
 TEST(PrefillSelectorTest, LeastInflightWinsOverLoaded) {
   std::vector<PrefillSnapshot> prefills = {
       prefill("A", true, 3), prefill("B", true, 1), prefill("C", true, 5)};
   size_t cursor = 0;
-  auto chosen = selectedServer(prefills, 0, std::nullopt, cursor);
+  auto chosen = selectedServer(prefills, cursor);
   ASSERT_TRUE(chosen.has_value());
   EXPECT_EQ(*chosen, "B");
 }
@@ -126,10 +139,10 @@ TEST(PrefillSelectorTest, RoundRobinAmongTiedLeastLoaded) {
   std::vector<PrefillSnapshot> prefills = {
       prefill("A", true, 0), prefill("B", true, 0), prefill("C", true, 0)};
   size_t cursor = 0;
-  auto c1 = selectedServer(prefills, 0, std::nullopt, cursor);
-  auto c2 = selectedServer(prefills, 0, std::nullopt, cursor);
-  auto c3 = selectedServer(prefills, 0, std::nullopt, cursor);
-  auto c4 = selectedServer(prefills, 0, std::nullopt, cursor);
+  auto c1 = selectedServer(prefills, cursor);
+  auto c2 = selectedServer(prefills, cursor);
+  auto c3 = selectedServer(prefills, cursor);
+  auto c4 = selectedServer(prefills, cursor);
 
   // Cursor advances each call -> A, B, C, then wraps to A.
   ASSERT_TRUE(c1 && c2 && c3 && c4);
@@ -139,11 +152,11 @@ TEST(PrefillSelectorTest, RoundRobinAmongTiedLeastLoaded) {
   EXPECT_EQ(*c4, "A");
 }
 
-TEST(PrefillSelectorTest, HashOfZeroIgnoresSticky) {
+TEST(PrefillSelectorTest, NoPrefixMatchFallsBackToLeastLoaded) {
   std::vector<PrefillSnapshot> prefills = {prefill("A", true, 5),
                                            prefill("B", true, 0)};
   size_t cursor = 0;
-  auto chosen = selectedServer(prefills, /*hash=*/0, std::string{"A"}, cursor);
+  auto chosen = selectedServer(prefills, cursor);
   ASSERT_TRUE(chosen.has_value());
   EXPECT_EQ(*chosen, "B");
 }

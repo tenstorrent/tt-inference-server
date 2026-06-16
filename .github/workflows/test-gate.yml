@@ -738,7 +738,7 @@ jobs:
       - name: Smoke test mock backend (non-streaming)
         env:
           OPENAI_API_KEY: 'your-secret-key'
-        run: python cpp_server/tests/test_non_streaming_chat.py
+        run: python cpp_server/tests/e2e/non_streaming_chat_e2e_test.py
 
       - name: Stop mock server
         if: always()
