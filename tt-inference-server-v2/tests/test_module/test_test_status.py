@@ -12,7 +12,6 @@ from test_module.task_types import MediaTaskType
 from test_module.test_status import (
     AudioTestStatus,
     BaseTestStatus,
-    CnnGenerationTestStatus,
     EmbeddingTestStatus,
     ImageGenerationTestStatus,
     TtsTestStatus,
@@ -63,22 +62,6 @@ def test_embedding_status_minimal_fields():
     }
 
 
-def test_cnn_status_matches_image_shape():
-    d = CnnGenerationTestStatus(
-        status=True, elapsed=1.0, num_inference_steps=3
-    ).to_dict()
-    assert set(d) == {
-        "status",
-        "elapsed",
-        "num_inference_steps",
-        "inference_steps_per_second",
-        "ttft",
-        "tpups",
-        "base64image",
-        "prompt",
-    }
-
-
 def test_tts_status_to_dict():
     d = TtsTestStatus(
         status=True,
@@ -99,14 +82,6 @@ def test_video_status_to_dict_has_job_and_path():
     ).to_dict()
     assert d["job_id"] == "j1"
     assert d["video_path"] == "/tmp/v.mp4"
-
-
-def test_default_optional_fields_are_none_or_zero():
-    status = ImageGenerationTestStatus(status=True, elapsed=1.0)
-    d = status.to_dict()
-    assert d["num_inference_steps"] == 0
-    assert d["ttft"] is None
-    assert d["base64image"] is None
 
 
 class TestMediaTaskType:

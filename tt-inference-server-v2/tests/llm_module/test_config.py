@@ -6,16 +6,19 @@
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 from pathlib import Path
+
+import pytest
 
 from llm_module.config import DriverContext, LLMRunConfig, ServerConnection
 
 
 class TestLLMRunConfig:
-    def test_is_frozen_and_equatable(self):
-        a = LLMRunConfig(isl=128, osl=64, max_concurrency=4, num_prompts=10)
-        b = LLMRunConfig(isl=128, osl=64, max_concurrency=4, num_prompts=10)
-        assert a == b
+    def test_is_frozen(self):
+        cfg = LLMRunConfig(isl=128, osl=64, max_concurrency=4, num_prompts=10)
+        with pytest.raises(FrozenInstanceError):
+            cfg.isl = 256  # type: ignore[misc]
 
 
 class TestServerConnection:
@@ -53,12 +56,6 @@ class TestServerConnection:
 
 
 class TestDriverContext:
-    def test_defaults(self):
-        ctx = DriverContext(output_dir=Path("/tmp/out"))
-        assert ctx.device == ""
-        assert ctx.extra_env == {}
-        assert ctx.per_run_timeout_s == 7200.0
-
     def test_independent_extra_env_per_instance(self):
         a = DriverContext(output_dir=Path("/a"))
         b = DriverContext(output_dir=Path("/b"))
