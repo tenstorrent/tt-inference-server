@@ -13,26 +13,26 @@
 namespace tt::utils::tokenizers {
 namespace {
 
-constexpr int64_t kThinkOpen = 100;
-constexpr int64_t kThinkClose = 101;
+constexpr int64_t K_THINK_OPEN = 100;
+constexpr int64_t K_THINK_CLOSE = 101;
 
 TEST(ThinkingPhaseTest, TrailingOpenMarker) {
-  const std::vector<int> prompt = {1, 2, 3, static_cast<int>(kThinkOpen)};
+  const std::vector<int> prompt = {1, 2, 3, static_cast<int>(K_THINK_OPEN)};
   EXPECT_TRUE(computeThinkingPhaseFromTokens(
-      false, std::span<const int>(prompt), kThinkOpen, kThinkClose));
+      false, std::span<const int>(prompt), K_THINK_OPEN, K_THINK_CLOSE));
 }
 
 TEST(ThinkingPhaseTest, ClosedBlockEndsNonThinking) {
-  const std::vector<int> prompt = {1, static_cast<int>(kThinkOpen), 7,
-                                   static_cast<int>(kThinkClose), 9};
+  const std::vector<int> prompt = {1, static_cast<int>(K_THINK_OPEN), 7,
+                                   static_cast<int>(K_THINK_CLOSE), 9};
   EXPECT_FALSE(computeThinkingPhaseFromTokens(
-      false, std::span<const int>(prompt), kThinkOpen, kThinkClose));
+      false, std::span<const int>(prompt), K_THINK_OPEN, K_THINK_CLOSE));
 }
 
 TEST(ThinkingPhaseTest, ResumeInsideBlockPreservedWhenNoMarker) {
   const std::vector<int> delta = {5, 6, 7};
   EXPECT_TRUE(computeThinkingPhaseFromTokens(true, std::span<const int>(delta),
-                                             kThinkOpen, kThinkClose));
+                                             K_THINK_OPEN, K_THINK_CLOSE));
 }
 
 TEST(ThinkingPhaseTest, RefreshStartsInThinkingOnLLMRequest) {
@@ -47,9 +47,10 @@ TEST(ThinkingPhaseTest, RefreshStartsInThinkingOnLLMRequest) {
 }
 
 TEST(ThinkingPhaseTest, ClampedScanIgnoresTruncatedMarker) {
-  const std::vector<int> prompt = {1, 2, 3, static_cast<int>(kThinkOpen)};
+  const std::vector<int> prompt = {1, 2, 3, static_cast<int>(K_THINK_OPEN)};
   EXPECT_FALSE(computeThinkingPhaseFromTokens(
-      false, std::span<const int>(prompt).first(3), kThinkOpen, kThinkClose));
+      false, std::span<const int>(prompt).first(3), K_THINK_OPEN,
+      K_THINK_CLOSE));
 }
 
 }  // namespace
