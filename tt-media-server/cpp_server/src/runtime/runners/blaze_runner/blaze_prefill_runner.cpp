@@ -126,8 +126,22 @@ bool BlazePrefillRunner::warmup() {
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   bool receivedToken = false;
   auto output = ps::OutputMessage{};
+  ps::SchedulerResponse submitResponse{};
 
   while (std::chrono::steady_clock::now() < deadline) {
+    if (prefillScheduler->try_pop_response(submitResponse)) {
+      if (submitResponse.request_type == ps::RequestType::SUBMIT &&
+          submitResponse.error_code !=
+              tt_llm_engine::scheduler::request_error::kOk) {
+        TT_LOG_ERROR(
+            "[BlazePrefillRunner] Warmup SUBMIT rejected by scheduler: "
+            "request_id={} error_code={} (slot_id={})",
+            submitResponse.request_id, submitResponse.error_code,
+            submitResponse.slot_id);
+        assert(false && "Warmup SUBMIT rejected by prefill scheduler");
+        return false;
+      }
+    }
     if (prefillScheduler->try_pop_output(output)) {
       if (output.prefill_complete) {
         receivedToken = true;
@@ -666,17 +680,24 @@ void BlazePrefillRunner::handleRequest(
           slotManager.activeRunningCount(),
           request->getMigrationId().has_value() ? *request->getMigrationId()
                                                 : -1);
-      ps::ISRequest req = utils::makeSubmitRequest(
-          slotId, *request, std::make_optional(request->getKVCacheSlot()));
+
+      auto migrationUuid = request->getMigrationId();
+      auto destSlot = migrationUuid.has_value()
+                          ? std::make_optional(request->getKVCacheSlot())
+                          : std::nullopt;
+
+      ps::ISRequest req = utils::makeSubmitRequest(slotId, *request, destSlot);
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] handleRequest: SUBMIT taskId={}, slotId={}, "
           "isContinuation={}, numPromptTokens={}, totalTokens={}, "
-          "runningSlots={}, destSlot={}",
+          "runningSlots={}, destSlot={}, migrationUuid={}",
           request->taskId, slotId, request->isContinuation(),
           request->getNumPromptTokens(), request->getTokenIds().size(),
           slotManager.activeRunningCount(),
           req.dest_slot_id.has_value() ? std::to_string(*req.dest_slot_id)
-                                       : "none");
+                                       : "none",
+          req.migration_uuid.has_value() ? std::to_string(*req.migration_uuid)
+                                         : "none");
       if (!prefillScheduler->push_request(req)) {
         TT_LOG_DEBUG(
             "[BlazePrefillRunner] handleRequest: failed to push request, "
