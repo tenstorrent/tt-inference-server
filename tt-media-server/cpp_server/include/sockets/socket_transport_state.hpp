@@ -28,11 +28,11 @@ class SocketTransportState {
 
   bool isConnectedState() const { return connected_; }
 
-  std::string getStatusString() const {
+  std::string getStatusString(bool connected) const {
     if (!running_) {
       return "stopped";
     }
-    if (connected_) {
+    if (connected) {
       return mode_ == Mode::SERVER ? "server:connected" : "client:connected";
     }
     return mode_ == Mode::SERVER ? "server:waiting" : "client:connecting";

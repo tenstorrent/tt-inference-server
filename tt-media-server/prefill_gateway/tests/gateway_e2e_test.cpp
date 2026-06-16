@@ -1104,6 +1104,33 @@ TEST(ZmqSocketOptionsTest, AppliesHeartbeatsAndMandatoryRouterSends) {
   context.close();
 }
 
+TEST(ZmqSocketTransportTest, ServerIsConnectedOnlyAfterPeerIdentityIsKnown) {
+  const uint16_t port = ephemeralPort();
+
+  tt::sockets::ZmqSocketTransport server;
+  ASSERT_TRUE(server.initializeAsServer(port));
+  server.start();
+
+  tt::sockets::ZmqSocketTransport client;
+  ASSERT_TRUE(client.initializeAsClient("127.0.0.1", port));
+  client.start();
+
+  EXPECT_EQ(server.getStatus(), "server:waiting");
+  EXPECT_FALSE(server.isConnected());
+
+  tt::sockets::PrefillRegistrationMessage registration;
+  registration.server_id = "prefill-A";
+  registration.max_in_flight = 4;
+  ASSERT_TRUE(client.sendRawData(tt::sockets::wire::serializeMessage(
+      tt::sockets::tags::PREFILL_REGISTRATION, registration)));
+
+  ASSERT_TRUE(waitFor([&] { return server.isConnected(); }));
+  EXPECT_EQ(server.getStatus(), "server:connected");
+
+  client.stop();
+  server.stop();
+}
+
 TEST(ZmqPrefillRouterTest, SendFailsWhenRegisteredPeerIsNoLongerRoutable) {
   const uint16_t port = ephemeralPort();
 
