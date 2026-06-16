@@ -3,7 +3,6 @@
 
 #include "domain/session.hpp"
 
-
 #include "utils/conversation_hasher.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 

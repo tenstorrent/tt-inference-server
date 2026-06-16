@@ -217,8 +217,8 @@ TEST(SessionManagerClose, CancelFn_ClearedOnNormalCompletion) {
 
   auto session = manager.getSession(slotId);
   ASSERT_TRUE(session);
-  session->clearInFlight();         // normal completion clears in-flight state
-  manager.closeSession(slotId);     // should not fire cancel
+  session->clearInFlight();      // normal completion clears in-flight state
+  manager.closeSession(slotId);  // should not fire cancel
 
   EXPECT_FALSE(cancelCalled.load());
 }

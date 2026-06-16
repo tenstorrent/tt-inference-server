@@ -438,9 +438,8 @@ void LLMPipeline::dispatchGeneration(
                              std::get<std::vector<int>>(request.prompt).size());
       }
       TT_LOG_DEBUG("[LLMPipeline] Using prefill on decode for slotId: {}",
-                   request.slotId.has_value()
-                       ? std::to_string(*request.slotId)
-                       : "none");
+                   request.slotId.has_value() ? std::to_string(*request.slotId)
+                                              : "none");
       service_->submitStreamingRequest(
           request, stampCachedPromptTokens(cb, reusedPrefixTokens),
           /*skipPreProcess=*/true);

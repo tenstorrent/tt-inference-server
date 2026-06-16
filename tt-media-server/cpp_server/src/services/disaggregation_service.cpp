@@ -208,8 +208,8 @@ void DisaggregationService::setupSocketHandlers() {
                 // submitStreamingRequest hands the request to the pipeline, so
                 // request->prefillSlotId is no longer reliable by the time this
                 // async callback fires.
-                const uint32_t prefillSlotId =
-                    request->prefillSlotId.value_or(tt::domain::INVALID_SLOT_ID);
+                const uint32_t prefillSlotId = request->prefillSlotId.value_or(
+                    tt::domain::INVALID_SLOT_ID);
                 const uint64_t migrationId = request->migrationId;
                 llmService->submitStreamingRequest(
                     *request,

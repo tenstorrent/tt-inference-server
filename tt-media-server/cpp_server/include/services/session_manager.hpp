@@ -248,8 +248,8 @@ class SessionManager {
     uint32_t slotId;
   };
 
-  void sendAsyncAllocationRequest(uint32_t taskId,
-                                   std::shared_ptr<PendingAllocation> allocation);
+  void sendAsyncAllocationRequest(
+      uint32_t taskId, std::shared_ptr<PendingAllocation> allocation);
   void evictOldSessions();
   void sendDeallocRequest(uint32_t slotId);
   void finalizeSessionClose(uint32_t slotId, const domain::Session& session);
@@ -266,7 +266,8 @@ class SessionManager {
   // Drop the responseId -> session mapping when it points at `slotId`
   // (called on close/evict). No-op if the id is empty or has been re-pointed
   // at a different session.
-  void removeFromResponseIdIndex(uint32_t slotId, const std::string& responseId);
+  void removeFromResponseIdIndex(uint32_t slotId,
+                                 const std::string& responseId);
 
   // Helper to convert slot ID to map key string
   static std::string slotKey(uint32_t slotId) { return std::to_string(slotId); }
@@ -304,7 +305,8 @@ class SessionManager {
 
   utils::ConcurrentMap<uint32_t, std::shared_ptr<PendingAllocation>>
       pendingAllocationsMap;
-  utils::ConcurrentQueue<std::pair<uint32_t, std::shared_ptr<PendingAllocation>>>
+  utils::ConcurrentQueue<
+      std::pair<uint32_t, std::shared_ptr<PendingAllocation>>>
       pendingAllocationsRetryQueue;
   utils::ConcurrentQueue<DeferredDealloc> deferredDeallocQueue;
   std::atomic<bool> stopped{false};

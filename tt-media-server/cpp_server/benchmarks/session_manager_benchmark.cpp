@@ -136,8 +136,8 @@ struct ResponseIdFixture : benchmark::Fixture {
       // Create a session with a unique slot and trivial block info.
       std::vector<tt::utils::BlockHashInfo> blocks = {
           {static_cast<uint64_t>(i + 5000), 0}};
-      auto slotId =
-          createSessionWithSlot(manager, static_cast<uint32_t>(i + 100), blocks);
+      auto slotId = createSessionWithSlot(
+          manager, static_cast<uint32_t>(i + 100), blocks);
 
       // Plant a response ID for each session.
       std::string respId = "resp-" + std::to_string(i);
