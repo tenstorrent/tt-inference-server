@@ -10,7 +10,7 @@ templates:
     - stabilityai/stable-diffusion-xl-base-1.0
     - stabilityai/stable-diffusion-xl-base-1.0-img-2-img
   version: "0.11.1"
-  tt_metal_commit: bac8b34
+  tt_metal_commit: 7463e586f3b5
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
