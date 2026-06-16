@@ -77,7 +77,8 @@ inline std::shared_ptr<ipc::ITaskQueue> makeInMemoryTaskQueue() {
 inline config::LLMConfig makeLLMConfig(
     int numBlocks = 128, int blockSize = 8, int eos = 0,
     std::vector<int64_t> stopTokenIds = {},
-    config::ModelRunnerType runnerType = config::ModelRunnerType::MOCK_PIPELINE) {
+    config::ModelRunnerType runnerType =
+        config::ModelRunnerType::MOCK_PIPELINE) {
   config::LLMConfig cfg{};
   cfg.runner_type = runnerType;
   cfg.num_blocks = numBlocks;
@@ -155,7 +156,8 @@ struct TrantorLoopFixture {
 // ---------------------------------------------------------------------------
 
 inline std::string createTestSession(services::SessionManager& manager,
-                                     trantor::EventLoop* loop, uint32_t slotId) {
+                                     trantor::EventLoop* loop,
+                                     uint32_t slotId) {
   std::promise<std::string> promise;
   auto future = promise.get_future();
 
@@ -310,9 +312,9 @@ class RunnerTestHarness {
     auto memoryManager = std::make_unique<services::MemoryManager>(
         memoryRequestQueue_, memoryResultQueue_);
 
-    runner_ = std::make_unique<RunnerType>(config_, &resultQueue_, &taskQueue_,
-                                           &cancelQueue_,
-                                           std::move(memoryManager));
+    runner_ =
+        std::make_unique<RunnerType>(config_, &resultQueue_, &taskQueue_,
+                                     &cancelQueue_, std::move(memoryManager));
 
     runnerThread_ = std::thread([this]() {
       try {

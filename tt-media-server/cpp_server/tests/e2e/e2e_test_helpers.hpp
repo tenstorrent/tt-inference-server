@@ -237,9 +237,9 @@ inline std::string sendHttpRequest(const std::string& host, uint16_t port,
 // JSON request building
 // ---------------------------------------------------------------------------
 
-inline std::string buildChatRequestJson(const std::string& model,
-                                        const std::vector<Json::Value>& messages,
-                                        int maxTokens = 32, bool stream = true) {
+inline std::string buildChatRequestJson(
+    const std::string& model, const std::vector<Json::Value>& messages,
+    int maxTokens = 32, bool stream = true) {
   Json::Value root;
   root["model"] = model;
   root["max_tokens"] = maxTokens;
@@ -359,7 +359,8 @@ inline bool writeRendezvous(const std::string& path, const std::string& data) {
   return f.good();
 }
 
-inline std::string readRendezvous(const std::string& path, int timeoutSec = 60) {
+inline std::string readRendezvous(const std::string& path,
+                                  int timeoutSec = 60) {
   auto deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(timeoutSec);
   while (std::chrono::steady_clock::now() < deadline) {

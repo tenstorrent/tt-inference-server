@@ -195,8 +195,7 @@ TEST(BlazeDecodeRunnerIntegrationTest, TwoConcurrentTasksStayIsolated) {
   std::vector<ipc::SharedToken> tokensB;
   bool sawFinalA = false;
   bool sawFinalB = false;
-  const auto deadline =
-      std::chrono::steady_clock::now() + test::kTestDeadline;
+  const auto deadline = std::chrono::steady_clock::now() + test::kTestDeadline;
   while (std::chrono::steady_clock::now() < deadline &&
          (!sawFinalA || !sawFinalB)) {
     ipc::SharedToken token{};
@@ -278,8 +277,7 @@ TEST(BlazeDecodeRunnerIntegrationTest,
   std::vector<size_t> tokenCounts(userCount, 0);
   std::vector<bool> sawFinal(userCount, false);
   size_t finalCount = 0;
-  const auto deadline =
-      std::chrono::steady_clock::now() + test::kTestDeadline;
+  const auto deadline = std::chrono::steady_clock::now() + test::kTestDeadline;
   while (std::chrono::steady_clock::now() < deadline &&
          finalCount < userCount) {
     ipc::SharedToken token{};
