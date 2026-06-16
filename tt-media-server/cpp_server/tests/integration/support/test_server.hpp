@@ -26,16 +26,16 @@
 #include <string>
 #include <thread>
 
+#include "../../support/http_client.hpp"
+#include "../../support/worker_response.hpp"
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
-#include "http_client.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/boost/boost_task_queue.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
 #include "utils/service_factory.hpp"
-#include "worker_response.hpp"
 
 namespace tt::test {
 
