@@ -59,7 +59,10 @@ class VideoClientStrategy(BaseMediaStrategy):
         )
         try:
             self.require_health()
+            # ``tput_user`` (videos/sec/user) for the report layer.
+            eval_start = time.monotonic()
             eval_result = self._run_video_generation_eval()
+            eval_elapsed_seconds = time.monotonic() - eval_start
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
@@ -77,6 +80,7 @@ class VideoClientStrategy(BaseMediaStrategy):
         benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
 
         # Extract metrics from eval result
+        num_generated_videos = 0
         if eval_result:
             logger.info(
                 "Adding eval results from video generation test to benchmark data"
@@ -96,8 +100,22 @@ class VideoClientStrategy(BaseMediaStrategy):
             benchmark_data["accuracy_check"] = eval_result.get(
                 "accuracy_check", ReportCheckTypes.NA
             )
+            # Successful generations only; failed jobs are dropped from
+            # videos_info before scoring and must not inflate throughput.
+            num_generated_videos = clip_results.get("num_videos", 0)
         else:
             logger.warning("No eval results from video generation test")
+
+        tput_user_value = (
+            num_generated_videos / eval_elapsed_seconds
+            if eval_elapsed_seconds > 0 and num_generated_videos > 0
+            else 0.0
+        )
+        benchmark_data["tput_user"] = tput_user_value
+        logger.info(
+            f"Eval throughput: {num_generated_videos} videos in "
+            f"{eval_elapsed_seconds:.2f}s -> tput_user={tput_user_value:.6f} v/s/user"
+        )
 
         benchmark_data["fvd"] = None
         benchmark_data["fvmd"] = None
@@ -119,7 +137,9 @@ class VideoClientStrategy(BaseMediaStrategy):
             0
         ].score.published_score_ref
 
-        benchmark_data["performance_check"] = self._calculate_performance_check()
+        benchmark_data["performance_check"] = self._calculate_performance_check(
+            tput_user_value=tput_user_value,
+        )
 
         # Make benchmark_data inside list as object
         benchmark_data = [benchmark_data]
@@ -384,8 +404,13 @@ class VideoClientStrategy(BaseMediaStrategy):
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
         latency_value = self._calculate_latency(status_list)
+        # tput_user is videos/sec/user. For max_concurrency=1 this is 1/latency.
+        tput_user_value = (
+            1.0 / latency_value if latency_value and latency_value > 0 else 0.0
+        )
         performance_check = self._calculate_performance_check(
-            latency_value=latency_value
+            latency_value=latency_value,
+            tput_user_value=tput_user_value,
         )
         tail = self._calculate_tail_latencies([s.elapsed for s in status_list])
         throughput_rps = self._calculate_throughput_rps(
@@ -403,6 +428,7 @@ class VideoClientStrategy(BaseMediaStrategy):
                 if status_list
                 else 0,
                 "latency": latency_value,
+                "tput_user": tput_user_value,
                 "inference_steps_per_second": steps_per_second,
                 "throughput_rps": throughput_rps,
                 **tail,
@@ -431,8 +457,15 @@ class VideoClientStrategy(BaseMediaStrategy):
     def _calculate_performance_check(
         self,
         latency_value: Optional[float] = None,
+        tput_user_value: Optional[float] = None,
     ) -> ReportCheckTypes:
-        """Video perf check: compares latency vs configured target."""
+        """Video perf check: compares latency and per-user throughput vs configured targets.
+
+        ``tput_user`` is reported in videos-per-second-per-user. With
+        ``max_concurrency=1`` it is the reciprocal of the mean per-request
+        latency, so we accept it from callers that already know either the
+        latency or the eval-side wall-clock instead of recomputing it here.
+        """
         targets = self.get_performance_targets()
         logger.info(f"Performance targets: {targets}")
         latency_target_s = (
@@ -442,6 +475,12 @@ class VideoClientStrategy(BaseMediaStrategy):
             checks=[
                 PerfCheck(
                     "latency", latency_value, latency_target_s, lower_is_better=True
+                ),
+                PerfCheck(
+                    "tput_user",
+                    tput_user_value,
+                    targets.tput_user,
+                    lower_is_better=False,
                 ),
             ],
             tolerance=targets.tolerance,
