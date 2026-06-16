@@ -52,39 +52,6 @@ std::vector<T> readVector(std::istream& is) {
   is.read(reinterpret_cast<char*>(vec.data()), size * sizeof(T));
   return vec;
 }
-
-void writeString(std::ostream& os, const std::string& str) {
-  size_t len = str.size();
-  writeScalar(os, len);
-  os.write(str.data(), static_cast<std::streamsize>(len));
-}
-
-std::string readString(std::istream& is) {
-  size_t len = readScalar<size_t>(is);
-  std::string str(len, '\0');
-  is.read(str.data(), static_cast<std::streamsize>(len));
-  return str;
-}
-
-void writeJsonValue(std::ostream& os, const Json::Value& value) {
-  Json::StreamWriterBuilder writer;
-  writer["indentation"] = "";
-  std::string jsonStr = Json::writeString(writer, value);
-  writeString(os, jsonStr);
-}
-
-Json::Value readJsonValue(std::istream& is) {
-  std::string jsonStr = readString(is);
-  Json::CharReaderBuilder reader;
-  Json::Value value;
-  std::string errors;
-  std::istringstream iss(jsonStr);
-  if (!Json::parseFromStream(reader, iss, &value, &errors)) {
-    throw std::runtime_error("Failed to parse JSON: " + errors);
-  }
-  return value;
-}
-
 }  // anonymous namespace
 
 void SamplingParams::serialize(std::ostream& os) const {
