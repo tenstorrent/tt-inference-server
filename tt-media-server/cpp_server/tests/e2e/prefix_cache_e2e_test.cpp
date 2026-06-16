@@ -137,38 +137,38 @@ const char* kSystemPromptAstronomy =
 class PrefixCacheE2ETest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
-    cfg_ = PrefixCacheTestConfig::fromEnv();
-    client_ = std::make_unique<DynamoClient>(cfg_.dynamo);
+    cfg = PrefixCacheTestConfig::fromEnv();
+    client = std::make_unique<DynamoClient>(cfg.dynamo);
 
-    std::cout << "Prefix cache E2E test against " << cfg_.dynamo.host << ":"
-              << cfg_.dynamo.port << std::endl;
-    std::cout << "  model=" << cfg_.dynamo.model
-              << "  firstBlockSize=" << cfg_.firstBlockSize
-              << "  blockSize=" << cfg_.blockSize << std::endl;
+    std::cout << "Prefix cache E2E test against " << cfg.dynamo.host << ":"
+              << cfg.dynamo.port << std::endl;
+    std::cout << "  model=" << cfg.dynamo.model
+              << "  firstBlockSize=" << cfg.firstBlockSize
+              << "  blockSize=" << cfg.blockSize << std::endl;
     std::cout << "Waiting for server..." << std::endl;
 
-    ASSERT_TRUE(client_->waitForServer()) << "Server not ready within timeout";
+    ASSERT_TRUE(client->waitForServer()) << "Server not ready within timeout";
     std::cout << "Server ready, warming up..." << std::endl;
 
-    ASSERT_TRUE(client_->warmup())
+    ASSERT_TRUE(client->warmup())
         << "Server warmup failed (Dynamo frontend may not have discovered "
            "backends)";
     std::cout << "Server warmed up." << std::endl;
   }
 
-  static void TearDownTestSuite() { client_.reset(); }
+  static void TearDownTestSuite() { client.reset(); }
 
   ChatResponse sendChat(const std::vector<Json::Value>& messages,
                         int maxTokens = 32) {
-    return client_->sendChat(messages, maxTokens);
+    return client->sendChat(messages, maxTokens);
   }
 
-  static PrefixCacheTestConfig cfg_;
-  static std::unique_ptr<DynamoClient> client_;
+  static PrefixCacheTestConfig cfg;
+  static std::unique_ptr<DynamoClient> client;
 };
 
-PrefixCacheTestConfig PrefixCacheE2ETest::cfg_;
-std::unique_ptr<DynamoClient> PrefixCacheE2ETest::client_;
+PrefixCacheTestConfig PrefixCacheE2ETest::cfg;
+std::unique_ptr<DynamoClient> PrefixCacheE2ETest::client;
 
 TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
   // Test cache behavior across multiple requests including replays.
@@ -217,7 +217,7 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
 
   int r1SessionTokens = r1.usage.promptTokens + r1.usage.completionTokens;
   int r2ExpectedCached = computeExpectedCachedTokens(
-      r1SessionTokens, cfg_.firstBlockSize, cfg_.blockSize);
+      r1SessionTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    Expected cached: " << r2ExpectedCached << std::endl;
 
   EXPECT_GT(r2.usage.cachedTokens, 0)
@@ -255,7 +255,7 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
             << " completion=" << r4.usage.completionTokens << std::endl;
 
   int r4ExpectedCached = computeExpectedCachedTokens(
-      r4.usage.promptTokens, cfg_.firstBlockSize, cfg_.blockSize);
+      r4.usage.promptTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    Expected cached: " << r4ExpectedCached << std::endl;
 
   EXPECT_GT(r4.usage.cachedTokens, 0)
@@ -274,7 +274,7 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
             << " completion=" << r5.usage.completionTokens << std::endl;
 
   int r5ExpectedCached = computeExpectedCachedTokens(
-      r1SessionTokens, cfg_.firstBlockSize, cfg_.blockSize);
+      r1SessionTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    Expected cached: " << r5ExpectedCached << std::endl;
 
   EXPECT_GT(r5.usage.cachedTokens, 0)
@@ -325,7 +325,7 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
 
   int t1SessionTokens = t1Prompt + t1.usage.completionTokens;
   int t2ExpectedCached = computeExpectedCachedTokens(
-      t1SessionTokens, cfg_.firstBlockSize, cfg_.blockSize);
+      t1SessionTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    t1 session tokens: " << t1SessionTokens
             << " (prompt=" << t1Prompt
             << " + completion=" << t1.usage.completionTokens << ")"
@@ -351,7 +351,7 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
 
   int t2SessionTokens = t2.usage.promptTokens + t2.usage.completionTokens;
   int t3ExpectedCached = computeExpectedCachedTokens(
-      t2SessionTokens, cfg_.firstBlockSize, cfg_.blockSize);
+      t2SessionTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    t2 session tokens: " << t2SessionTokens
             << " (prompt=" << t2.usage.promptTokens
             << " + completion=" << t2.usage.completionTokens << ")"
@@ -421,7 +421,7 @@ TEST_F(PrefixCacheE2ETest, SessionEvictionUnderLoad) {
             << " cached=" << f2.usage.cachedTokens << std::endl;
 
   int f2ExpectedCached = computeExpectedCachedTokens(
-      f2.usage.promptTokens, cfg_.firstBlockSize, cfg_.blockSize);
+      f2.usage.promptTokens, cfg.firstBlockSize, cfg.blockSize);
   EXPECT_GT(f2.usage.cachedTokens, 0)
       << "Final R2 should hit cache (system still functional after load)";
   EXPECT_LE(std::abs(f2.usage.cachedTokens - f2ExpectedCached), 1)
