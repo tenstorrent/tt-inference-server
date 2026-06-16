@@ -85,13 +85,6 @@ class GatewayMetrics::Impl {
              .Help("Cache block add notifications observed by the gateway.")
              .Register(*registry_)
              .Add({});
-    cache_blocks_evicted_total_ =
-        &prometheus::BuildCounter()
-             .Name("tt_gateway_cache_blocks_evicted_total")
-             .Help(
-                 "Cache block eviction notifications observed by the gateway.")
-             .Register(*registry_)
-             .Add({});
 
     prefill_inflight_family_ =
         &prometheus::BuildGauge()
@@ -224,11 +217,6 @@ class GatewayMetrics::Impl {
     cache_blocks_added_total_->Increment(static_cast<double>(count));
   }
 
-  void recordCacheBlocksEvicted(size_t count) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    cache_blocks_evicted_total_->Increment(static_cast<double>(count));
-  }
-
   void setDecodeConnected(bool connected) {
     std::lock_guard<std::mutex> lock(mutex_);
     decode_connected_->Set(boolToGauge(connected));
@@ -316,7 +304,6 @@ class GatewayMetrics::Impl {
   prometheus::Family<prometheus::Counter>* timeouts_family_{nullptr};
   prometheus::Counter* prefill_down_tasks_total_{nullptr};
   prometheus::Counter* cache_blocks_added_total_{nullptr};
-  prometheus::Counter* cache_blocks_evicted_total_{nullptr};
 
   prometheus::Family<prometheus::Gauge>* prefill_inflight_family_{nullptr};
   prometheus::Family<prometheus::Gauge>* prefill_healthy_family_{nullptr};
@@ -388,10 +375,6 @@ void GatewayMetrics::recordPrefillDownTasks(size_t count) {
 
 void GatewayMetrics::recordCacheBlocksAdded(size_t count) {
   impl->recordCacheBlocksAdded(count);
-}
-
-void GatewayMetrics::recordCacheBlocksEvicted(size_t count) {
-  impl->recordCacheBlocksEvicted(count);
 }
 
 void GatewayMetrics::setDecodeConnected(bool connected) {

@@ -78,7 +78,7 @@ bool InterServerService::initializeFromConfig() {
           "[InterServerService] Prefill (direct mode): connecting to {}:{}",
           host, port);
       success = socket_manager_.initializeAsClient(host, port);
-      periodic_registration_mode_ = success;
+      periodic_registration_mode_ = false;
     }
   }
 
@@ -162,7 +162,7 @@ bool InterServerService::sendPrefillRequest(
   message.decode_position_id = decodePositionId;
   message.decode_skip_tokens = decodeSkipTokens;
 
-  return socket_manager_.sendObject("prefill_request", message);
+  return socket_manager_.sendObject(tags::PREFILL_REQUEST, message);
 }
 
 bool InterServerService::sendPrefillResult(
@@ -171,7 +171,7 @@ bool InterServerService::sendPrefillResult(
     return false;
   }
 
-  return socket_manager_.sendObject("prefill_result", message);
+  return socket_manager_.sendObject(tags::PREFILL_RESULT, message);
 }
 
 bool InterServerService::sendPrefillCancel(uint32_t taskId) {
@@ -240,7 +240,7 @@ std::string InterServerService::getStatus() const {
 void InterServerService::setupMessageHandlers() {
   // Handle incoming prefill requests
   socket_manager_.registerHandler<PrefillRequestMessage>(
-      "prefill_request", [this](const PrefillRequestMessage& message) {
+      tags::PREFILL_REQUEST, [this](const PrefillRequestMessage& message) {
         TT_LOG_INFO(
             "[InterServerService] Received prefill request: {} (tokens: {})",
             message.task_id, message.token_ids.size());
@@ -256,15 +256,6 @@ void InterServerService::setupMessageHandlers() {
         if (prefill_cancel_callback_) {
           prefill_cancel_callback_(message);
         }
-      });
-
-  // Decode-side no-op handler so the gateway's PrefillAssignment doesn't log
-  // "no handler" warnings. Useful for KV-transfer routing in a follow-up.
-  socket_manager_.registerHandler<PrefillAssignmentMessage>(
-      tags::PREFILL_ASSIGNMENT, [](const PrefillAssignmentMessage& message) {
-        TT_LOG_DEBUG(
-            "[InterServerService] PrefillAssignment for task {} → prefill '{}'",
-            message.task_id, message.server_id);
       });
 
   socket_manager_.registerHandler<RegistrationProbeMessage>(
@@ -283,12 +274,9 @@ void InterServerService::setupMessageHandlers() {
         recordPrefillHealthStatus(message);
       });
 
-  socket_manager_.registerHandler<PrefillRegistrationMessage>(
-      tags::PREFILL_REGISTRATION, [](const PrefillRegistrationMessage&) {});
-
   // Handle incoming prefill results
   socket_manager_.registerHandler<PrefillResultMessage>(
-      "prefill_result", [this](const PrefillResultMessage& message) {
+      tags::PREFILL_RESULT, [this](const PrefillResultMessage& message) {
         if (message.error) {
           TT_LOG_ERROR(
               "[InterServerService] Received prefill error for task: {}",

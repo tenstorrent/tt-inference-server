@@ -283,23 +283,6 @@ struct RegistrationProbeMessage
   }
 };
 
-// Gateway -> decode. Informs decode which prefill handled a task (for KV
-// transfer / logs).
-struct PrefillAssignmentMessage
-    : SerializableMessage<PrefillAssignmentMessage> {
-  uint32_t task_id = 0;
-  std::string server_id;
-
-  template <class F>
-  void fields(F&& f) {
-    f(task_id, server_id);
-  }
-  template <class F>
-  void fields(F&& f) const {
-    f(task_id, server_id);
-  }
-};
-
 // Prefill -> gateway. Updates the gateway's per-prefill block-cache view
 // used by longest-prefix-match routing.
 struct PrefillCacheBlocksAddedMessage
@@ -317,30 +300,11 @@ struct PrefillCacheBlocksAddedMessage
   }
 };
 
-// Prefill -> gateway. Mirror of *Added; removes blocks from the routing view.
-struct PrefillCacheBlocksEvictedMessage
-    : SerializableMessage<PrefillCacheBlocksEvictedMessage> {
-  std::string server_id;
-  std::vector<uint64_t> block_hashes;
-
-  template <class F>
-  void fields(F&& f) {
-    f(server_id, block_hashes);
-  }
-  template <class F>
-  void fields(F&& f) const {
-    f(server_id, block_hashes);
-  }
-};
-
-// Wire-protocol tags for the new gateway messages. Existing tags
-// ("prefill_request", etc.) remain string literals at their call sites.
 namespace tags {
+constexpr std::string_view PREFILL_REQUEST = "prefill_request";
+constexpr std::string_view PREFILL_RESULT = "prefill_result";
 constexpr std::string_view PREFILL_REGISTRATION = "prefill_registration";
-constexpr std::string_view PREFILL_ASSIGNMENT = "prefill_assignment";
 constexpr std::string_view PREFILL_CACHE_BLOCKS_ADDED = "prefill_cache_added";
-constexpr std::string_view PREFILL_CACHE_BLOCKS_EVICTED =
-    "prefill_cache_evicted";
 constexpr std::string_view REGISTRATION_PROBE = "registration_probe";
 constexpr std::string_view CANCEL_PREFILL = "cancel_prefill";
 constexpr std::string_view PREFILL_HEALTH_REQUEST = "prefill_health_request";

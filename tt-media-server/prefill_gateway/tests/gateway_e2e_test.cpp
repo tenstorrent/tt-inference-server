@@ -3,7 +3,7 @@
 //
 // End-to-end integration test for PrefillGateway over real loopback sockets.
 // Validates registration handshake, routing (round-robin + prefix match),
-// result/assignment delivery, and prefill-down failover.
+// result delivery, and prefill-down failover.
 
 #include <arpa/inet.h>
 #include <gtest/gtest.h>
@@ -173,7 +173,7 @@ class FakePrefill {
         });
 
     sm_.registerHandler<tt::sockets::PrefillRequestMessage>(
-        "prefill_request",
+        tt::sockets::tags::PREFILL_REQUEST,
         [this](const tt::sockets::PrefillRequestMessage& req) {
           receivedTaskIds_.fetch_add(1);
           {
@@ -183,7 +183,7 @@ class FakePrefill {
           if (!autoReply_) return;
           tt::sockets::PrefillResultMessage res(req.task_id);
           populateFakePrefillResult(res, serverId_);
-          sm_.sendObject("prefill_result", res);
+          sm_.sendObject(tt::sockets::tags::PREFILL_RESULT, res);
         });
 
     sm_.registerHandler<tt::sockets::CancelPrefillMessage>(
@@ -236,7 +236,7 @@ class FakePrefill {
   std::vector<uint32_t> cancelledTaskIds_;
 };
 
-// Mock decode: CLIENT to gateway, collects results/assignments.
+// Mock decode: CLIENT to gateway, collects results.
 class FakeDecode {
  public:
   FakeDecode(const std::string& gatewayHost, uint16_t gatewayPort) {
@@ -245,16 +245,10 @@ class FakeDecode {
                             std::chrono::milliseconds(500));
 
     sm_.registerHandler<tt::sockets::PrefillResultMessage>(
-        "prefill_result", [this](const tt::sockets::PrefillResultMessage& msg) {
+        tt::sockets::tags::PREFILL_RESULT,
+        [this](const tt::sockets::PrefillResultMessage& msg) {
           std::lock_guard<std::mutex> lock(mutex_);
           results_.push_back(msg);
-          cv_.notify_all();
-        });
-    sm_.registerHandler<tt::sockets::PrefillAssignmentMessage>(
-        tt::sockets::tags::PREFILL_ASSIGNMENT,
-        [this](const tt::sockets::PrefillAssignmentMessage& msg) {
-          std::lock_guard<std::mutex> lock(mutex_);
-          assignments_.push_back(msg);
           cv_.notify_all();
         });
     sm_.registerHandler<tt::sockets::PrefillHealthStatusMessage>(
@@ -275,17 +269,17 @@ class FakeDecode {
     tt::sockets::PrefillRequestMessage req(taskId);
     if (registrationHash != 0)
       req.registration_hashes = {static_cast<uint64_t>(registrationHash)};
-    sm_.sendObject("prefill_request", req);
+    sm_.sendObject(tt::sockets::tags::PREFILL_REQUEST, req);
   }
 
   void sendRequest(uint32_t taskId, std::vector<uint64_t> registrationHashes) {
     tt::sockets::PrefillRequestMessage req(taskId);
     req.registration_hashes = std::move(registrationHashes);
-    sm_.sendObject("prefill_request", req);
+    sm_.sendObject(tt::sockets::tags::PREFILL_REQUEST, req);
   }
 
   void sendRequest(tt::sockets::PrefillRequestMessage req) {
-    sm_.sendObject("prefill_request", req);
+    sm_.sendObject(tt::sockets::tags::PREFILL_REQUEST, req);
   }
 
   void sendCancel(uint32_t taskId) {
@@ -305,17 +299,9 @@ class FakeDecode {
     std::lock_guard<std::mutex> lock(mutex_);
     return results_.size();
   }
-  size_t assignmentCount() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return assignments_.size();
-  }
   std::vector<tt::sockets::PrefillResultMessage> results() {
     std::lock_guard<std::mutex> lock(mutex_);
     return results_;
-  }
-  std::vector<tt::sockets::PrefillAssignmentMessage> assignments() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return assignments_;
   }
   std::vector<tt::sockets::PrefillHealthStatusMessage> healthStatuses() {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -327,7 +313,6 @@ class FakeDecode {
   std::mutex mutex_;
   std::condition_variable cv_;
   std::vector<tt::sockets::PrefillResultMessage> results_;
-  std::vector<tt::sockets::PrefillAssignmentMessage> assignments_;
   std::vector<tt::sockets::PrefillHealthStatusMessage> healthStatuses_;
 };
 
@@ -353,7 +338,7 @@ class GatewayHarness {
                const tt::sockets::PrefillRequestMessage& m) -> bool {
       auto* sm = registry_.getSocketManager(serverId);
       if (!sm) return false;
-      return sm->sendObject("prefill_request", m);
+      return sm->sendObject(tt::sockets::tags::PREFILL_REQUEST, m);
     };
     senders.sendCancelToPrefill =
         [this](const std::string& serverId,
@@ -362,13 +347,9 @@ class GatewayHarness {
       if (!sm) return false;
       return sm->sendObject(tt::sockets::tags::CANCEL_PREFILL, m);
     };
-    senders.sendAssignmentToDecode =
-        [this](const tt::sockets::PrefillAssignmentMessage& m) -> bool {
-      return decodeSm_.sendObject(tt::sockets::tags::PREFILL_ASSIGNMENT, m);
-    };
     senders.sendResultToDecode =
         [this](const tt::sockets::PrefillResultMessage& m) -> bool {
-      return decodeSm_.sendObject("prefill_result", m);
+      return decodeSm_.sendObject(tt::sockets::tags::PREFILL_RESULT, m);
     };
 
     dispatcher_ = std::make_unique<Dispatcher>(registry_, std::move(senders));
@@ -390,7 +371,7 @@ class GatewayHarness {
           });
 
       sm->registerHandler<tt::sockets::PrefillResultMessage>(
-          "prefill_result",
+          tt::sockets::tags::PREFILL_RESULT,
           [this, state](const tt::sockets::PrefillResultMessage& msg) {
             dispatcher_->onPrefillResult(state->getServerId(), msg);
           });
@@ -401,12 +382,6 @@ class GatewayHarness {
             dispatcher_->onCacheBlocksAdded(msg);
           });
 
-      sm->registerHandler<tt::sockets::PrefillCacheBlocksEvictedMessage>(
-          tt::sockets::tags::PREFILL_CACHE_BLOCKS_EVICTED,
-          [this](const tt::sockets::PrefillCacheBlocksEvictedMessage& msg) {
-            dispatcher_->onCacheBlocksEvicted(msg);
-          });
-
       sm->setConnectionLostCallback([this, state] {
         const std::string sid = state->getServerId();
         if (!sid.empty()) registry_.markDown(sid);
@@ -414,7 +389,7 @@ class GatewayHarness {
     }
 
     decodeSm_.registerHandler<tt::sockets::PrefillRequestMessage>(
-        "prefill_request",
+        tt::sockets::tags::PREFILL_REQUEST,
         [this](const tt::sockets::PrefillRequestMessage& msg) {
           dispatcher_->onPrefillRequest(msg);
         });
@@ -517,7 +492,7 @@ class FakeZmqPrefill {
           continue;
         }
 
-        if (messageType != "prefill_request") {
+        if (messageType != tt::sockets::tags::PREFILL_REQUEST) {
           continue;
         }
 
@@ -529,8 +504,8 @@ class FakeZmqPrefill {
         }
         tt::sockets::PrefillResultMessage result(request.task_id);
         populateFakePrefillResult(result, serverId_);
-        sm_.sendRawData(
-            tt::sockets::wire::serializeMessage("prefill_result", result));
+        sm_.sendRawData(tt::sockets::wire::serializeMessage(
+            tt::sockets::tags::PREFILL_RESULT, result));
       }
     });
   }
@@ -582,7 +557,8 @@ class ZmqRouterGatewayHarness {
     senders.sendRequestToPrefill =
         [this](const std::string& serverId,
                const tt::sockets::PrefillRequestMessage& msg) -> bool {
-      return prefillRouter_.sendObject(serverId, "prefill_request", msg);
+      return prefillRouter_.sendObject(
+          serverId, tt::sockets::tags::PREFILL_REQUEST, msg);
     };
     senders.sendCancelToPrefill =
         [this](const std::string& serverId,
@@ -590,13 +566,9 @@ class ZmqRouterGatewayHarness {
       return prefillRouter_.sendObject(serverId,
                                        tt::sockets::tags::CANCEL_PREFILL, msg);
     };
-    senders.sendAssignmentToDecode =
-        [this](const tt::sockets::PrefillAssignmentMessage& msg) -> bool {
-      return decodeSm_.sendObject(tt::sockets::tags::PREFILL_ASSIGNMENT, msg);
-    };
     senders.sendResultToDecode =
         [this](const tt::sockets::PrefillResultMessage& msg) -> bool {
-      return decodeSm_.sendObject("prefill_result", msg);
+      return decodeSm_.sendObject(tt::sockets::tags::PREFILL_RESULT, msg);
     };
 
     dispatcher_ = std::make_unique<Dispatcher>(registry_, std::move(senders));
@@ -614,8 +586,9 @@ class ZmqRouterGatewayHarness {
         });
 
     prefillRouter_.registerHandler<tt::sockets::PrefillResultMessage>(
-        "prefill_result", [this](const ZmqPrefillRouter::PeerIdentity& peerId,
-                                 const tt::sockets::PrefillResultMessage& msg) {
+        tt::sockets::tags::PREFILL_RESULT,
+        [this](const ZmqPrefillRouter::PeerIdentity& peerId,
+               const tt::sockets::PrefillResultMessage& msg) {
           auto serverId = prefillRouter_.serverIdForPeer(peerId);
           if (serverId.has_value()) {
             dispatcher_->onPrefillResult(*serverId, msg);
@@ -623,7 +596,7 @@ class ZmqRouterGatewayHarness {
         });
 
     decodeSm_.registerHandler<tt::sockets::PrefillRequestMessage>(
-        "prefill_request",
+        tt::sockets::tags::PREFILL_REQUEST,
         [this](const tt::sockets::PrefillRequestMessage& msg) {
           dispatcher_->onPrefillRequest(msg);
         });
@@ -725,12 +698,6 @@ TEST_F(GatewayE2ETest, RequestIsRoutedAndResultFlowsBack) {
   EXPECT_TRUE(results[0].generated_text.rfind("ok-from-", 0) == 0);
   expectFakePrefillResultPayload(results[0]);
 
-  auto assignments = decode_->assignments();
-  ASSERT_EQ(assignments.size(), 1u);
-  EXPECT_EQ(assignments[0].task_id, 1u);
-  EXPECT_TRUE(assignments[0].server_id == "prefill-A" ||
-              assignments[0].server_id == "prefill-B");
-
   // Exactly one of the two prefills handled it.
   uint32_t total =
       prefillA_->receivedTaskCount() + prefillB_->receivedTaskCount();
@@ -762,17 +729,12 @@ TEST_F(GatewayE2ETest, RequestForwardsPrefillPayloadToPrefill) {
 
   decode_->sendRequest(sent);
 
-  ASSERT_TRUE(waitFor([&] { return decode_->assignmentCount() >= 1; }));
-  auto assignments = decode_->assignments();
-  ASSERT_EQ(assignments.size(), 1u);
-  ASSERT_TRUE(assignments[0].server_id == prefillA_->serverId() ||
-              assignments[0].server_id == prefillB_->serverId());
+  ASSERT_TRUE(waitFor([&] {
+    return prefillA_->receivedTaskCount() + prefillB_->receivedTaskCount() >= 1;
+  }));
 
   FakePrefill* assignedPrefill =
-      assignments[0].server_id == prefillA_->serverId() ? prefillA_.get()
-                                                        : prefillB_.get();
-  ASSERT_TRUE(
-      waitFor([&] { return assignedPrefill->receivedTaskCount() >= 1; }));
+      prefillA_->receivedTaskCount() > 0 ? prefillA_.get() : prefillB_.get();
 
   auto request = assignedPrefill->takeLastRequest();
   ASSERT_TRUE(request.has_value());
@@ -797,7 +759,6 @@ TEST_F(GatewayE2ETest, CancelIsForwardedToAssignedPrefill) {
   decode_->sendRequest(/*task_id=*/88, /*hash=*/77);
 
   ASSERT_TRUE(waitFor([&] { return prefillA_->receivedTaskCount() >= 1; }));
-  ASSERT_TRUE(waitFor([&] { return decode_->assignmentCount() >= 1; }));
 
   decode_->sendCancel(/*taskId=*/88);
 
@@ -818,7 +779,6 @@ TEST_F(GatewayE2ETest, RequestTimeoutFailsTaskToDecode) {
   decode_->sendRequest(/*task_id=*/89, /*hash=*/77);
 
   ASSERT_TRUE(waitFor([&] { return prefillA_->receivedTaskCount() >= 1; }));
-  ASSERT_TRUE(waitFor([&] { return decode_->assignmentCount() >= 1; }));
   EXPECT_EQ(decode_->resultCount(), 0u);
 
   gateway_->dispatcher().onRequestTimeouts(Dispatcher::Clock::now() +
@@ -843,11 +803,9 @@ TEST_F(GatewayE2ETest, PrefixRoutingByRegistrationHash) {
 
   decode_->sendRequest(/*task_id=*/2, /*hash=*/42);
   ASSERT_TRUE(waitFor([&] { return decode_->resultCount() >= 1; }));
-  auto allAssignments = decode_->assignments();
-  ASSERT_EQ(allAssignments.size(), 1u);
-  EXPECT_EQ(allAssignments[0].server_id, "prefill-A")
+  EXPECT_EQ(prefillA_->receivedTaskCount(), 1u)
       << "Prefix routing should choose the prefill with the cached block";
-  EXPECT_EQ(allAssignments[0].task_id, 2u);
+  EXPECT_EQ(prefillB_->receivedTaskCount(), 0u);
 }
 
 TEST_F(GatewayE2ETest, CacheNotificationDrivesPrefixRouting) {
@@ -866,10 +824,6 @@ TEST_F(GatewayE2ETest, CacheNotificationDrivesPrefixRouting) {
   decode_->sendRequest(/*taskId=*/3, {42, 43, 44, 99});
 
   ASSERT_TRUE(waitFor([&] { return decode_->resultCount() >= 1; }));
-  const auto assignments = decode_->assignments();
-  ASSERT_EQ(assignments.size(), 1u);
-  EXPECT_EQ(assignments[0].server_id, prefillB_->serverId());
-  EXPECT_EQ(assignments[0].task_id, 3u);
   EXPECT_EQ(prefillB_->receivedTaskCount(), 1u);
   EXPECT_EQ(prefillA_->receivedTaskCount(), 0u);
 }
@@ -883,7 +837,6 @@ TEST_F(GatewayE2ETest, PrefillDownFailsInFlightTaskToDecode) {
   decode_->sendRequest(/*task_id=*/55, /*hash=*/77);
 
   ASSERT_TRUE(waitFor([&] { return prefillA_->receivedTaskCount() >= 1; }));
-  ASSERT_TRUE(waitFor([&] { return decode_->assignmentCount() >= 1; }));
   EXPECT_EQ(decode_->resultCount(), 0u);
 
   prefillA_->stop();
@@ -935,10 +888,6 @@ TEST(ZmqRouterGatewayE2ETest, PrefillsCanStartBeforeGateway) {
     expectFakePrefillResultPayload(result);
   }
 
-  auto assignments = decode.assignments();
-  ASSERT_EQ(assignments.size(), 2u);
-  EXPECT_NE(assignments[0].server_id, assignments[1].server_id);
-
   EXPECT_EQ(prefillA.receivedTaskCount() + prefillB.receivedTaskCount(), 2u);
   EXPECT_EQ(prefillA.receivedTaskCount(), 1u);
   EXPECT_EQ(prefillB.receivedTaskCount(), 1u);
@@ -974,7 +923,6 @@ TEST(ZmqRouterGatewayE2ETest, CancelIsForwardedToAssignedPrefill) {
   decode.sendRequest(/*task_id=*/303, /*hash=*/77);
 
   ASSERT_TRUE(waitFor([&] { return prefillA.receivedTaskCount() >= 1; }));
-  ASSERT_TRUE(waitFor([&] { return decode.assignmentCount() >= 1; }));
 
   decode.sendCancel(/*taskId=*/303);
 
@@ -1011,9 +959,10 @@ TEST(ZmqPrefillRouterTest, RoutesRequestToRegisteredPrefill) {
       });
 
   router.registerHandler<tt::sockets::PrefillResultMessage>(
-      "prefill_result", [&mutex, &cv, &resultReceived](
-                            const ZmqPrefillRouter::PeerIdentity&,
-                            const tt::sockets::PrefillResultMessage& msg) {
+      tt::sockets::tags::PREFILL_RESULT,
+      [&mutex, &cv, &resultReceived](
+          const ZmqPrefillRouter::PeerIdentity&,
+          const tt::sockets::PrefillResultMessage& msg) {
         EXPECT_EQ(msg.task_id, 7u);
         std::lock_guard<std::mutex> lock(mutex);
         resultReceived = true;
@@ -1035,7 +984,8 @@ TEST(ZmqPrefillRouterTest, RoutesRequestToRegisteredPrefill) {
         continue;
       }
 
-      if (tt::sockets::wire::readMessageType(data) != "prefill_request") {
+      if (tt::sockets::wire::readMessageType(data) !=
+          tt::sockets::tags::PREFILL_REQUEST) {
         continue;
       }
 
@@ -1051,8 +1001,8 @@ TEST(ZmqPrefillRouterTest, RoutesRequestToRegisteredPrefill) {
       tt::sockets::PrefillResultMessage result(request.task_id);
       result.finished = true;
       result.generated_text = "ok";
-      client.sendRawData(
-          tt::sockets::wire::serializeMessage("prefill_result", result));
+      client.sendRawData(tt::sockets::wire::serializeMessage(
+          tt::sockets::tags::PREFILL_RESULT, result));
     }
   });
 
@@ -1067,7 +1017,8 @@ TEST(ZmqPrefillRouterTest, RoutesRequestToRegisteredPrefill) {
   }));
 
   tt::sockets::PrefillRequestMessage request(7);
-  ASSERT_TRUE(router.sendObject("prefill-A", "prefill_request", request));
+  ASSERT_TRUE(router.sendObject("prefill-A",
+                                tt::sockets::tags::PREFILL_REQUEST, request));
   ASSERT_TRUE(waitFor([&] {
     std::lock_guard<std::mutex> lock(mutex);
     return requestReceived && resultReceived;
@@ -1142,7 +1093,8 @@ TEST(ZmqPrefillRouterTest, SendFailsWhenRegisteredPeerIsNoLongerRoutable) {
   tt::sockets::PrefillRequestMessage request(7);
   ASSERT_TRUE(waitFor(
       [&] {
-        return !router.sendObject("prefill-A", "prefill_request", request);
+        return !router.sendObject("prefill-A",
+                                  tt::sockets::tags::PREFILL_REQUEST, request);
       },
       /*timeout=*/3s))
       << "ROUTER_MANDATORY should make sends to unroutable peers fail";
