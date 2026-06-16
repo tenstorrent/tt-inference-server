@@ -23,10 +23,18 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+namespace trantor {
+class EventLoop;
+class TcpServer;
+class TcpConnection;
+class MsgBuffer;
+}  // namespace trantor
 
 namespace tt::dynamo {
 
@@ -232,21 +240,22 @@ struct ServerConfig {
 
 class DynamoServer {
  public:
-  DynamoServer(ServerConfig config, GenerateHandler handler);
+  DynamoServer(ServerConfig config, GenerateHandler handler,
+               std::vector<trantor::EventLoop*> io_loops);
   ~DynamoServer();
 
   DynamoServer(const DynamoServer&) = delete;
   DynamoServer& operator=(const DynamoServer&) = delete;
 
-  /// Start listening. Blocks the calling thread; intended to run in its own
-  /// thread.
-  void run();
+  /// Bind the listener on the supplied io loops and start serving.
+  /// Non-blocking: the loops are driven by their own threads.
+  void start();
 
-  /// Stop the accept loop and close the listen socket. Safe to call from any
-  /// thread.
+  /// Stop the listener and force-close live connections. Safe to call from
+  /// any thread.
   void shutdown();
 
-  /// Bound port (valid after `run()` has bound, or 0 when not bound yet).
+  /// Bound port (valid after `start()`).
   uint16_t port() const { return actual_port_; }
 
   const ServerConfig& config() const { return config_; }
@@ -254,14 +263,15 @@ class DynamoServer {
  private:
   ServerConfig config_;
   GenerateHandler handler_;
-  int listen_fd_ = -1;
+  std::vector<trantor::EventLoop*> io_loops_;
+  std::unique_ptr<trantor::TcpServer> tcp_server_;
   uint16_t actual_port_ = 0;
   std::atomic<bool> running_{false};
 
-  void handle_connection(int client_fd);
-  bool read_exact(int fd, std::vector<uint8_t>& buf, size_t n);
-  bool read_request(int fd, TcpRequestMessage& msg);
-  void process_request(int fd, const TcpRequestMessage& msg);
+  void onMessage(const std::shared_ptr<trantor::TcpConnection>& conn,
+                 trantor::MsgBuffer* buf);
+  void process_request(const std::shared_ptr<trantor::TcpConnection>& conn,
+                       const TcpRequestMessage& msg);
   void stream_response(const TcpStreamConnectionInfo& conn_info,
                        const std::string& request_id,
                        const GenerateRequest& gen_req);

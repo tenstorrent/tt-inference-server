@@ -455,27 +455,14 @@ void DynamoEndpoint::start() {
   sc.model_name = options_.model_name;
   sc.model_path = options_.model_path;
 
-  server_ = std::make_unique<DynamoServer>(sc, makeGenerateHandler());
-
-  // Spawn the accept loop in its own thread so we can fall through to
-  // discovery registration once the port is bound.
-  server_thread_ = std::thread([this]() {
-    try {
-      server_->run();
-    } catch (const std::exception& e) {
-      TT_LOG_ERROR("[DynamoEndpoint] server thread terminated: {}", e.what());
-    }
-  });
-
-  // Wait for the listener to bind (port becomes non-zero). Bounded poll —
-  // bind is synchronous in run() right after socket creation.
-  for (int i = 0; i < 50 && server_->port() == 0 && running_; ++i) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-  }
+  // start() binds and listens on the pool loops synchronously; the resolved
+  // port is available immediately afterwards.
+  server_ = std::make_unique<DynamoServer>(sc, makeGenerateHandler(),
+                                           loop_pool_->getLoops());
+  server_->start();
   if (server_->port() == 0) {
     running_ = false;
-    throw std::runtime_error(
-        "DynamoEndpoint: server failed to bind within timeout");
+    throw std::runtime_error("DynamoEndpoint: server failed to bind");
   }
 
   DiscoveryConfig dc;
@@ -531,7 +518,6 @@ void DynamoEndpoint::stop() {
   }
 
   if (keepalive_thread_.joinable()) keepalive_thread_.join();
-  if (server_thread_.joinable()) server_thread_.join();
   if (loop_pool_) {
     // EventLoopThreadPool has no explicit stop(); destruction joins all
     // threads.

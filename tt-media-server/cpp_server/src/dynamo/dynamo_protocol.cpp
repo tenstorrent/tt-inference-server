@@ -7,8 +7,14 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <trantor/net/EventLoop.h>
+#include <trantor/net/InetAddress.h>
+#include <trantor/net/TcpConnection.h>
+#include <trantor/net/TcpServer.h>
+#include <trantor/utils/MsgBuffer.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -322,8 +328,11 @@ std::vector<uint8_t> encode_stream_final() {
 // DynamoServer implementation
 // ---------------------------------------------------------------------------
 
-DynamoServer::DynamoServer(ServerConfig config, GenerateHandler handler)
-    : config_(std::move(config)), handler_(std::move(handler)) {
+DynamoServer::DynamoServer(ServerConfig config, GenerateHandler handler,
+                           std::vector<trantor::EventLoop*> io_loops)
+    : config_(std::move(config)),
+      handler_(std::move(handler)),
+      io_loops_(std::move(io_loops)) {
   if (config_.instance_id == 0) {
     std::srand(static_cast<unsigned>(std::time(nullptr) ^ ::getpid()));
     config_.instance_id = (static_cast<uint64_t>(std::rand()) << 32) |
@@ -339,57 +348,51 @@ DynamoServer::DynamoServer(ServerConfig config, GenerateHandler handler)
 DynamoServer::~DynamoServer() { shutdown(); }
 
 void DynamoServer::shutdown() {
-  bool wasRunning = running_.exchange(false);
-  if (listen_fd_ >= 0) {
-    int fd = listen_fd_;
-    listen_fd_ = -1;
-    ::shutdown(fd, SHUT_RDWR);
-    ::close(fd);
-  }
-  (void)wasRunning;
+  running_.store(false);
+  if (tcp_server_) tcp_server_->stop();
 }
 
-bool DynamoServer::read_exact(int fd, std::vector<uint8_t>& buf, size_t n) {
-  buf.resize(n);
-  size_t total = 0;
-  while (total < n) {
-    ssize_t r = ::read(fd, buf.data() + total, n - total);
-    if (r <= 0) return false;
-    total += static_cast<size_t>(r);
-  }
-  return true;
-}
+void DynamoServer::onMessage(const trantor::TcpConnectionPtr& conn,
+                             trantor::MsgBuffer* buf) {
+  // Frame: [path_len:u16][path][headers_len:u16][headers][payload_len:u32]
+  //        [payload]. Extract every complete frame the buffer holds; leave a
+  // partial frame for the next callback.
+  while (running_.load()) {
+    const size_t avail = buf->readableBytes();
+    if (avail < 2) return;
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(buf->peek());
 
-bool DynamoServer::read_request(int fd, TcpRequestMessage& msg) {
-  std::vector<uint8_t> tmp;
-  if (!read_exact(fd, tmp, 2)) return false;
-  uint16_t pathLen = get_u16_be(tmp.data());
+    const uint16_t pathLen = get_u16_be(p);
+    const size_t afterPath = 2u + pathLen + 2u;
+    if (avail < afterPath) return;
 
-  if (!read_exact(fd, tmp, pathLen)) return false;
-  msg.endpoint_path.assign(tmp.begin(), tmp.end());
+    const uint16_t headersLen = get_u16_be(p + 2 + pathLen);
+    const size_t afterHeaders = afterPath + headersLen + 4u;
+    if (avail < afterHeaders) return;
 
-  if (!read_exact(fd, tmp, 2)) return false;
-  uint16_t headersLen = get_u16_be(tmp.data());
+    const uint32_t payloadLen = get_u32_be(p + afterPath + headersLen);
+    const size_t total = afterHeaders + payloadLen;
+    if (avail < total) return;
 
-  if (headersLen > 0) {
-    if (!read_exact(fd, tmp, headersLen)) return false;
-    Json::Value j = parseJsonBytes(tmp.data(), tmp.size());
-    if (j.isObject()) {
-      for (auto it = j.begin(); it != j.end(); ++it) {
-        msg.headers[it.name()] = (*it).asString();
+    TcpRequestMessage msg;
+    msg.endpoint_path.assign(p + 2, p + 2 + pathLen);
+    if (headersLen > 0) {
+      Json::Value j = parseJsonBytes(p + afterPath, headersLen);
+      if (j.isObject()) {
+        for (auto it = j.begin(); it != j.end(); ++it) {
+          msg.headers[it.name()] = (*it).asString();
+        }
       }
     }
+    msg.payload.assign(p + afterHeaders, p + total);
+    buf->retrieve(total);
+
+    process_request(conn, msg);
   }
-
-  if (!read_exact(fd, tmp, 4)) return false;
-  uint32_t payloadLen = get_u32_be(tmp.data());
-
-  if (!read_exact(fd, tmp, payloadLen)) return false;
-  msg.payload = std::move(tmp);
-  return true;
 }
 
-void DynamoServer::process_request(int fd, const TcpRequestMessage& msg) {
+void DynamoServer::process_request(const trantor::TcpConnectionPtr& conn,
+                                   const TcpRequestMessage& msg) {
   TwoPartMessage twoPart = decode_two_part(msg.payload);
   auto ctrl = parse_control_message(twoPart.header);
   auto genReq = parse_generate_request(twoPart.body);
@@ -399,20 +402,14 @@ void DynamoServer::process_request(int fd, const TcpRequestMessage& msg) {
       "[DynamoServer] Request id={} input_tokens={} max_tokens={} address={}",
       ctrl.id, genReq.token_ids.size(), genReq.max_tokens, connInfo.address);
 
-  // ACK on the inbound connection (caller is still in the read loop on
-  // `fd`, so ACKs stay in the same order the frontend pipelined the
-  // requests in — Dynamo's reader task on the frontend matches ACKs to
-  // pending requests in FIFO order on a per-connection basis).
+  // ACK on the inbound connection. onMessage runs on the connection's io
+  // loop, so sends stay in the FIFO order the frontend pipelined requests in.
   auto ack = encode_tcp_response();
-  if (!writeAll(fd, ack)) {
-    TT_LOG_WARN("[DynamoServer] Failed to send ACK for id={}", ctrl.id);
-    return;
-  }
+  conn->send(reinterpret_cast<const char*>(ack.data()), ack.size());
 
-  // Off-thread the slow path (LLMService dispatch + call-home streaming)
-  // so the read loop on `fd` can immediately consume the next pipelined
-  // request. `stream_response` opens its own outbound socket and never
-  // touches `fd`, so concurrent streams don't share state.
+  // Off-thread the slow path (LLMService dispatch + call-home streaming) so
+  // the io loop can keep reading the next pipelined request. `stream_response`
+  // opens its own outbound socket and never touches the inbound connection.
   std::thread([this, connInfo = std::move(connInfo), requestId = ctrl.id,
                genReq = std::move(genReq)]() {
     stream_response(connInfo, requestId, genReq);
@@ -631,60 +628,36 @@ void DynamoServer::stream_response(const TcpStreamConnectionInfo& connInfo,
   ::close(sock);
 }
 
-void DynamoServer::handle_connection(int clientFd) {
-  int flag = 1;
-  ::setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
-
-  while (running_) {
-    TcpRequestMessage msg;
-    if (!read_request(clientFd, msg)) break;
-    process_request(clientFd, msg);
+void DynamoServer::start() {
+  if (io_loops_.empty()) {
+    throw std::runtime_error("DynamoServer: no io loops provided");
   }
 
-  ::close(clientFd);
-}
+  running_.store(true);
+  trantor::InetAddress addr(config_.bind_host, config_.bind_port);
+  tcp_server_ = std::make_unique<trantor::TcpServer>(io_loops_.front(), addr,
+                                                     "DynamoServer");
+  tcp_server_->setIoLoops(io_loops_);
+  // Port 0 is resolved during the acceptor's bind, which happens in the
+  // TcpServer constructor — so the assigned port is available synchronously.
+  actual_port_ = tcp_server_->address().toPort();
 
-void DynamoServer::run() {
-  listen_fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
-  if (listen_fd_ < 0) {
-    throw std::runtime_error("DynamoServer: failed to create listen socket");
-  }
+  tcp_server_->setAfterAcceptSockOptCallback([](int fd) {
+    int one = 1;
+    if (::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) < 0) {
+      TT_LOG_WARN("[DynamoServer] Failed to set TCP_NODELAY: {}",
+                  strerror(errno));
+    }
+  });
+  tcp_server_->setRecvMessageCallback(
+      [this](const trantor::TcpConnectionPtr& conn, trantor::MsgBuffer* buf) {
+        onMessage(conn, buf);
+      });
+  tcp_server_->start();
 
-  int opt = 1;
-  ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-  struct sockaddr_in bindAddr{};
-  bindAddr.sin_family = AF_INET;
-  bindAddr.sin_port = htons(config_.bind_port);
-  ::inet_pton(AF_INET, config_.bind_host.c_str(), &bindAddr.sin_addr);
-
-  if (::bind(listen_fd_, reinterpret_cast<struct sockaddr*>(&bindAddr),
-             sizeof(bindAddr)) < 0) {
-    throw std::runtime_error("DynamoServer: failed to bind");
-  }
-
-  struct sockaddr_in actual{};
-  socklen_t len = sizeof(actual);
-  ::getsockname(listen_fd_, reinterpret_cast<struct sockaddr*>(&actual), &len);
-  actual_port_ = ntohs(actual.sin_port);
-
-  if (::listen(listen_fd_, 128) < 0) {
-    throw std::runtime_error("DynamoServer: failed to listen");
-  }
-
-  running_ = true;
   TT_LOG_INFO("[DynamoServer] Listening on {}:{}  ({}.{}.{}, instance={})",
               config_.bind_host, actual_port_, config_.namespace_name,
               config_.component, config_.endpoint, config_.instance_id_hex);
-
-  while (running_) {
-    int clientFd = ::accept(listen_fd_, nullptr, nullptr);
-    if (clientFd < 0) {
-      if (!running_) break;
-      continue;
-    }
-    std::thread([this, clientFd]() { handle_connection(clientFd); }).detach();
-  }
 }
 
 }  // namespace tt::dynamo
