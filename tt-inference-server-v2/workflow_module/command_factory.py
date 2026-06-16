@@ -9,10 +9,8 @@ import datetime as _dt
 import json
 import logging
 import os
-import shlex
-import sys
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import List, Optional
 
 from workflows.model_spec import get_runtime_model_spec
 from workflows.runtime_config import RuntimeConfig
@@ -149,9 +147,10 @@ def _resolve_eval_config(model_name: str):
 
 def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetadata:
     runtime_config = _load_runtime_config(args.runtime_model_spec_json)
+    server_mode = _resolve_server_mode(args, runtime_config)
     return OrchestratorMetadata(
-        server_mode=_resolve_server_mode(args, runtime_config),
-        run_command=_capture_run_command(),
+        server_mode=server_mode,
+        run_command=_resolve_run_command(args, server_mode),
         runtime_model_spec_json=args.runtime_model_spec_json,
         prefix_cache=_build_prefix_cache_options(args),
         serving_bench=_build_serving_bench_options(args),
@@ -241,9 +240,45 @@ def _resolve_server_mode(
     return "docker" if args.docker_server else "API"
 
 
-def _capture_run_command(argv: Optional[Sequence[str]] = None) -> str:
-    parts = list(sys.argv if argv is None else argv)
-    return "python " + shlex.join(parts)
+_V1_RUN_COMMAND_ENV = "TT_V1_RUN_COMMAND"
+
+
+def _resolve_run_command(args: argparse.Namespace, server_mode: str) -> str:
+    """Resolve the ``run_command`` recorded in the report metadata."""
+    propagated = os.environ.get(_V1_RUN_COMMAND_ENV)
+    if propagated:
+        return propagated
+    return _reconstruct_run_command(args, server_mode)
+
+
+def _reconstruct_run_command(args: argparse.Namespace, server_mode: str) -> str:
+    """Rebuild a minimal, human-reproducible ``run.py`` invocation."""
+    parts = [
+        "python run.py",
+        f"--model {args.model}",
+        f"--tt-device {args.device}",
+        f"--workflow {args.workflow}",
+    ]
+    impl_flag = _impl_flag(args.model, args.device)
+    if impl_flag:
+        parts.append(impl_flag)
+    if server_mode == "docker":
+        parts.append("--docker-server")
+    return " ".join(parts)
+
+
+def _impl_flag(model: str, device: str) -> str:
+    """Return ``--impl <name>`` only when a non-default impl is selected."""
+    try:
+        model_spec, _, _ = get_runtime_model_spec(model=model, device=device)
+    except Exception as e:
+        logger.warning(
+            "Could not resolve model spec for run_command impl flag (%s).", e
+        )
+        return ""
+    if model_spec.device_model_spec.default_impl:
+        return ""
+    return f"--impl {model_spec.impl.impl_name}"
 
 
 __all__ = ["CommandFactory"]
