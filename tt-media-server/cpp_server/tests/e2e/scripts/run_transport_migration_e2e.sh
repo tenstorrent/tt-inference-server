@@ -9,7 +9,7 @@
 # at build time and real hardware.
 #
 # Usage:
-#   tests/integration/run_transport_migration_e2e.sh [path-to-binary]
+#   tests/e2e/scripts/run_transport_migration_e2e.sh [path-to-binary]
 #
 # Env overrides:
 #   STORAGE=host|device   (default host — runs anywhere; use device on real HW)
@@ -28,11 +28,11 @@
 #
 # Examples:
 #   # Transport-only smoke test, no hardware:
-#   tests/integration/run_transport_migration_e2e.sh
+#   tests/e2e/scripts/run_transport_migration_e2e.sh
 #
 #   # Two boards on one host, real device DRAM, different addresses:
 #   STORAGE=device SRC_DEVICE_ID=0 DST_DEVICE_ID=1 BYTES=1048576 \
-#     tests/integration/run_transport_migration_e2e.sh
+#     tests/e2e/scripts/run_transport_migration_e2e.sh
 set -uo pipefail
 
 BIN="${1:-./build/transport_migration_e2e}"
