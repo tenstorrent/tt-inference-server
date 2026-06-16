@@ -91,13 +91,12 @@ inline void fillSequenceFields(sch::ISRequest& req,
 
 inline sch::ISRequest makeSubmitRequest(
     uint32_t slotId, const tt::domain::llm::Sequence& seq,
-    std::optional<uint32_t> destSlotId = std::nullopt,
-    std::optional<uint64_t> migrationUuid = std::nullopt) {
+    std::optional<uint32_t> destSlotId = std::nullopt) {
   sch::ISRequest req{};
   req.type = ds::RequestType::SUBMIT;
   req.slot_id = slotId;
   req.dest_slot_id = destSlotId;
-  req.migration_uuid = migrationUuid;
+  req.migration_uuid = seq.getMigrationId();
   fillSequenceFields(req, seq);
   return req;
 }

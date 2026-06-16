@@ -88,138 +88,59 @@ bool BlazePrefillRunner::warmup() {
   auto warmupSeq = std::make_unique<tt::domain::llm::Sequence>(
       warmupTaskId, 1, warmupTokens, warmupParams);
 
-  // Warmup needs TWO slots: a src for the SUBMIT and a dst that the migration
-  // layer copies to (PrefillScheduler::handle_submit rejects SUBMITs that omit
-  // dest_slot_id whenever a migration client is wired up). Each warmup phase
-  // uses a unique request_id so error responses are unambiguously attributable
-  // when drained from the response queue.
-  constexpr uint32_t warmupSrcAllocateRequestId = 0;
-  constexpr uint32_t warmupDstAllocateRequestId = 1;
-  constexpr uint32_t warmupSubmitRequestId      = 2;
-  constexpr uint32_t warmupSrcEvictRequestId    = 3;
-  constexpr uint32_t warmupDstEvictRequestId    = 4;
-  // Constant uuid is fine — warmup has no concurrent in-flight SUBMITs, and the
-  // migration layer's duplicate-id detection only fires within an active burst.
-  constexpr uint64_t warmupMigrationUuid =
-      static_cast<uint64_t>(0xC0DE1234BEEF5678ULL);
+  constexpr uint32_t warmupAllocateRequestId = 0;
+  constexpr uint32_t warmupEvictRequestId = 1;
 
   const auto timeout = std::chrono::milliseconds(tt::config::warmupTimeoutMs());
   const auto pollInterval = std::chrono::milliseconds(10);
 
-  // Wait for a SchedulerResponse matching `expectedType` + `expectedRequestId`.
-  // Returns the slot_id on success, or INVALID_SLOT on timeout or error_code
-  // != kOk (with a loud TT_LOG_ERROR explaining which validation guard fired
-  // — invaluable when an ISRequest contract regression would otherwise look
-  // like a silent timeout).
-  auto waitForResponse = [&](uint32_t expectedRequestId,
-                             ps::RequestType expectedType,
-                             const char* phase) -> uint32_t {
-    ps::SchedulerResponse resp{};
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
-    while (std::chrono::steady_clock::now() < deadline) {
-      if (prefillScheduler->try_pop_response(resp)) {
-        if (resp.request_type != expectedType ||
-            resp.request_id != expectedRequestId) {
-          TT_LOG_WARN(
-              "[BlazePrefillRunner] warmup ({}): discarding stray response "
-              "request_id={} request_type={} (expected request_id={}, "
-              "request_type={})",
-              phase, resp.request_id, static_cast<int>(resp.request_type),
-              expectedRequestId, static_cast<int>(expectedType));
-          continue;
-        }
-        if (resp.error_code != ps::request_error::kOk) {
-          TT_LOG_ERROR(
-              "[BlazePrefillRunner] warmup ({}): scheduler rejected "
-              "request_id={} with error_code={} (slot_id={}) — likely an "
-              "ISRequest contract violation (see prefill_scheduler.cpp "
-              "request_error::*)",
-              phase, resp.request_id, resp.error_code, resp.slot_id);
-          return ps::INVALID_SLOT;
-        }
-        return resp.slot_id;
-      }
-      std::this_thread::sleep_for(pollInterval);
+  TT_LOG_INFO("BlazePrefillRunner: warmup - pushing ALLOCATE request...");
+  prefillScheduler->push_request(
+      utils::makeAllocateRequest(warmupAllocateRequestId));
+
+  TT_LOG_INFO("BlazePrefillRunner: warmup - waiting for ALLOCATE response...");
+  ps::SchedulerResponse response{};
+  const auto allocateDeadline = std::chrono::steady_clock::now() + timeout;
+  while (!prefillScheduler->try_pop_response(response)) {
+    if (std::chrono::steady_clock::now() >= allocateDeadline) {
+      TT_LOG_ERROR(
+          "[BlazePrefillRunner] Warmup timed out waiting for ALLOCATE response "
+          "after "
+          "{} ms",
+          timeout.count());
+      return false;
     }
-    TT_LOG_ERROR(
-        "[BlazePrefillRunner] warmup ({}): timed out waiting for response "
-        "request_id={} after {} ms",
-        phase, expectedRequestId, timeout.count());
-    return ps::INVALID_SLOT;
-  };
+    std::this_thread::sleep_for(pollInterval);
+  }
 
-  TT_LOG_INFO("BlazePrefillRunner: warmup - pushing src ALLOCATE request...");
-  prefillScheduler->push_request(
-      utils::makeAllocateRequest(warmupSrcAllocateRequestId));
-  const uint32_t srcSlotId =
-      waitForResponse(warmupSrcAllocateRequestId, ps::RequestType::ALLOCATE,
-                      "src ALLOCATE");
-  if (srcSlotId == ps::INVALID_SLOT) {
-    TT_LOG_ERROR("BlazePrefillRunner: Warmup failed at src ALLOCATE");
+  auto slotId = response.slot_id;
+  TT_LOG_INFO("BlazePrefillRunner: warmup - got slot_id={}", slotId);
+  if (slotId == ps::INVALID_SLOT) {
+    TT_LOG_ERROR("BlazePrefillRunner: Warmup failed with error");
     return false;
   }
-  TT_LOG_INFO("BlazePrefillRunner: warmup - got src slot_id={}", srcSlotId);
 
-  TT_LOG_INFO("BlazePrefillRunner: warmup - pushing dst ALLOCATE request...");
-  prefillScheduler->push_request(
-      utils::makeAllocateRequest(warmupDstAllocateRequestId));
-  const uint32_t dstSlotId =
-      waitForResponse(warmupDstAllocateRequestId, ps::RequestType::ALLOCATE,
-                      "dst ALLOCATE");
-  if (dstSlotId == ps::INVALID_SLOT) {
-    TT_LOG_ERROR("BlazePrefillRunner: Warmup failed at dst ALLOCATE");
-    // Best-effort cleanup of the src slot we already allocated so the slot
-    // pool isn't permanently leaked when warmup fails partway through.
-    prefillScheduler->push_request(
-        utils::makeEvictRequest(warmupSrcEvictRequestId, srcSlotId));
-    return false;
-  }
-  TT_LOG_INFO("BlazePrefillRunner: warmup - got dst slot_id={}", dstSlotId);
+  TT_LOG_INFO("BlazePrefillRunner: warmup - pushing SUBMIT request...");
+  prefillScheduler->push_request(utils::makeSubmitRequest(slotId, *warmupSeq));
 
-  TT_LOG_INFO(
-      "BlazePrefillRunner: warmup - pushing SUBMIT request "
-      "(srcSlot={}, dstSlot={}, uuid=0x{:x})...",
-      srcSlotId, dstSlotId, warmupMigrationUuid);
-  auto submitRequest = utils::makeSubmitRequest(
-      srcSlotId, *warmupSeq, std::make_optional(dstSlotId),
-      std::make_optional(warmupMigrationUuid));
-  submitRequest.request_id = warmupSubmitRequestId;
-  prefillScheduler->push_request(submitRequest);
-
-  // Wait for prefill_complete from the output queue, AND simultaneously drain
-  // the response queue. handle_submit's validation guards (kMissingDestSlot /
-  // kMissingMigrationUuid / kMalformedTokenStream) push a SchedulerResponse
-  // with error_code != kOk on the *response* queue rather than emitting an
-  // OutputMessage; without this drain such errors manifest as a silent
-  // warmup-timeout hang (which is what motivated this rework).
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   bool receivedToken = false;
-  ps::OutputMessage output{};
+  auto output = ps::OutputMessage{};
   ps::SchedulerResponse submitResponse{};
+
   while (std::chrono::steady_clock::now() < deadline) {
     if (prefillScheduler->try_pop_response(submitResponse)) {
       if (submitResponse.request_type == ps::RequestType::SUBMIT &&
-          submitResponse.request_id == warmupSubmitRequestId &&
-          submitResponse.error_code != ps::request_error::kOk) {
+          submitResponse.error_code !=
+              tt_llm_engine::scheduler::request_error::kOk) {
         TT_LOG_ERROR(
-            "[BlazePrefillRunner] warmup (SUBMIT): scheduler rejected SUBMIT "
-            "request_id={} with error_code={} (slot_id={}) — check IS-side "
-            "ISRequest population vs. prefill_scheduler.cpp request_error::*",
+            "[BlazePrefillRunner] Warmup SUBMIT rejected by scheduler: "
+            "request_id={} error_code={} (slot_id={})",
             submitResponse.request_id, submitResponse.error_code,
             submitResponse.slot_id);
-        // Cleanup both slots before failing.
-        prefillScheduler->push_request(
-            utils::makeEvictRequest(warmupSrcEvictRequestId, srcSlotId));
-        prefillScheduler->push_request(
-            utils::makeEvictRequest(warmupDstEvictRequestId, dstSlotId));
+        assert(false && "Warmup SUBMIT rejected by prefill scheduler");
         return false;
       }
-      TT_LOG_WARN(
-          "[BlazePrefillRunner] warmup (SUBMIT): discarding stray response "
-          "request_id={} request_type={} error_code={}",
-          submitResponse.request_id,
-          static_cast<int>(submitResponse.request_type),
-          submitResponse.error_code);
     }
     if (prefillScheduler->try_pop_output(output)) {
       if (output.prefill_complete) {
@@ -232,44 +153,30 @@ bool BlazePrefillRunner::warmup() {
 
   if (!receivedToken) {
     TT_LOG_ERROR(
-        "[BlazePrefillRunner] Warmup timed out waiting for token after {} ms "
-        "(srcSlot={}, dstSlot={}) — if a SUBMIT error was already logged "
-        "above this is the IS-side fix; otherwise the chunk reached the "
-        "writer loop but the migration burst never completed (check that "
-        "the decode-side migration endpoint is reachable at warmup time)",
-        timeout.count(), srcSlotId, dstSlotId);
-    // Best-effort cleanup so we don't leak the slot pair.
-    prefillScheduler->push_request(
-        utils::makeEvictRequest(warmupSrcEvictRequestId, srcSlotId));
-    prefillScheduler->push_request(
-        utils::makeEvictRequest(warmupDstEvictRequestId, dstSlotId));
+        "[BlazePrefillRunner] Warmup timed out waiting for token after {} ms",
+        timeout.count());
     return false;
   }
 
   TT_LOG_INFO(
-      "BlazePrefillRunner: warmup - pushing src EVICT request (slotId={})...",
-      srcSlotId);
+      "BlazePrefillRunner: warmup - pushing EVICT request (slotId={})...",
+      slotId);
   prefillScheduler->push_request(
-      utils::makeEvictRequest(warmupSrcEvictRequestId, srcSlotId));
-  if (waitForResponse(warmupSrcEvictRequestId, ps::RequestType::EVICT,
-                      "src EVICT") == ps::INVALID_SLOT) {
-    return false;
+      utils::makeEvictRequest(warmupEvictRequestId, slotId));
+  ps::SchedulerResponse evictResponse{};
+  const auto evictDeadline = std::chrono::steady_clock::now() + timeout;
+  while (!prefillScheduler->try_pop_response(evictResponse)) {
+    if (std::chrono::steady_clock::now() >= evictDeadline) {
+      TT_LOG_ERROR(
+          "[BlazePrefillRunner] Warmup timed out waiting for EVICT ack after "
+          "{} ms "
+          "(slotId={})",
+          timeout.count(), slotId);
+      return false;
+    }
+    std::this_thread::sleep_for(pollInterval);
   }
-  TT_LOG_INFO("BlazePrefillRunner: warmup - got src EVICT ack (slotId={})",
-              srcSlotId);
-
-  TT_LOG_INFO(
-      "BlazePrefillRunner: warmup - pushing dst EVICT request (slotId={})...",
-      dstSlotId);
-  prefillScheduler->push_request(
-      utils::makeEvictRequest(warmupDstEvictRequestId, dstSlotId));
-  if (waitForResponse(warmupDstEvictRequestId, ps::RequestType::EVICT,
-                      "dst EVICT") == ps::INVALID_SLOT) {
-    return false;
-  }
-  TT_LOG_INFO("BlazePrefillRunner: warmup - got dst EVICT ack (slotId={})",
-              dstSlotId);
-
+  TT_LOG_INFO("BlazePrefillRunner: warmup - got EVICT ack (slotId={})", slotId);
   TT_LOG_INFO("BlazePrefillRunner: Warmup successful");
   return true;
 }
@@ -773,18 +680,19 @@ void BlazePrefillRunner::handleRequest(
           slotManager.activeRunningCount(),
           request->getMigrationId().has_value() ? *request->getMigrationId()
                                                 : -1);
-      // Per-SUBMIT migration contract on the prefill scheduler: both
-      // dest_slot_id and migration_uuid must be set (migrate) or both
-      // must be unset (plain prefill). Pair them off getMigrationId(): if
-      // the request has a migration uuid, also send the destination KV
-      // cache slot; if it doesn't, omit both fields and let the scheduler
-      // take the non-migration path.
+      
       auto migrationUuid = request->getMigrationId();
       auto destSlot = migrationUuid.has_value()
                           ? std::make_optional(request->getKVCacheSlot())
                           : std::nullopt;
-      ps::ISRequest req = utils::makeSubmitRequest(
-          slotId, *request, destSlot, migrationUuid);
+      if (migrationUuid.has_value() != destSlot.has_value()) {
+        TT_LOG_ERROR(
+            "[BlazePrefillRunner] handleRequest: migrationUuid and destSlot must both be set or both be unset");
+        assert(false && "migrationUuid and destSlot must both be set or both be unset");
+        return;
+      }
+
+      ps::ISRequest req = utils::makeSubmitRequest(slotId, *request, destSlot);
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] handleRequest: SUBMIT taskId={}, slotId={}, "
           "isContinuation={}, numPromptTokens={}, totalTokens={}, "
