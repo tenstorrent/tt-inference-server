@@ -28,10 +28,21 @@ Endpoint selection:
   --base-url defaults to the resize proxy (http://127.0.0.1:8001/v1) so that
   arbitrary-resolution images are letterboxed to dots.ocr's validated grid and
   never crash the vision tower. Point it at :8000/v1 to hit the server directly.
+
+Authentication:
+  The tt-inference-server vLLM server requires a JWT bearer token whose payload
+  is EXACTLY {"team_id": "tenstorrent", "token_id": "debug-test"} signed with the
+  server's JWT_SECRET (see utils/vllm_run_utils.py::get_encoded_api_key). Rather
+  than hand-minting that token, this demo mints it automatically from $JWT_SECRET
+  when no explicit --api-key/$DEMO_API_KEY is given. Set the same JWT_SECRET you
+  launched the server with, and the demo just works. (If the server was started
+  with --no-auth, no token is needed.)
 """
 
 import argparse
 import base64
+import hashlib
+import hmac
 import json
 import mimetypes
 import os
@@ -47,6 +58,67 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".gif"}
 DEFAULT_PROMPT = (
     "Extract all the text content from this image, preserving the reading order."
 )
+# Placeholder default for --api-key; treated as "not provided" so we fall back to
+# minting a token from $JWT_SECRET.
+PLACEHOLDER_API_KEY = "your-secret-key"
+# The server compares the bearer token against jwt.encode(this_payload, JWT_SECRET)
+# — it must match utils/vllm_run_utils.py::get_encoded_api_key EXACTLY.
+CANONICAL_JWT_PAYLOAD = {"team_id": "tenstorrent", "token_id": "debug-test"}
+
+
+def _b64url(raw: bytes) -> str:
+    """Base64url without padding (JWT segment encoding)."""
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def mint_bearer_from_secret(jwt_secret: str) -> str:
+    """Mint the exact bearer token the server accepts, from its JWT_SECRET.
+
+    The server (utils/vllm_run_utils.py::get_encoded_api_key) hands vLLM a fixed
+    HS256 token string and vLLM authorizes by EXACT STRING MATCH — it does not
+    decode the JWT. So the client token must be byte-identical to the server's.
+
+    We build the JWT by hand (HMAC-SHA256) instead of using PyJWT, because PyJWT
+    versions order the header fields differently ({"alg","typ"} in >=2.5 vs
+    {"typ","alg"} in older releases), which changes the signature and breaks the
+    string match (the cause of spurious 401s when the client's PyJWT differs from
+    the server image's). Hardcoding the modern header order — what the server
+    image emits — makes this work on any host, with or without PyJWT installed.
+    """
+    header_b64 = _b64url(b'{"alg":"HS256","typ":"JWT"}')
+    payload_b64 = _b64url(
+        json.dumps(CANONICAL_JWT_PAYLOAD, separators=(",", ":")).encode("utf-8")
+    )
+    signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
+    signature = hmac.new(
+        jwt_secret.encode("utf-8"), signing_input, hashlib.sha256
+    ).digest()
+    return f"{header_b64}.{payload_b64}.{_b64url(signature)}"
+
+
+def resolve_api_key(cli_api_key: str) -> str | None:
+    """Decide the bearer token to send.
+
+    Precedence: an explicit, non-placeholder --api-key/$DEMO_API_KEY wins. Else,
+    if $JWT_SECRET is set, mint the canonical token from it. Else, send no token
+    (works only if the server runs with --no-auth).
+    """
+    if cli_api_key and cli_api_key != PLACEHOLDER_API_KEY:
+        print("Auth     : using explicitly-provided API key")
+        return cli_api_key
+
+    jwt_secret = os.getenv("JWT_SECRET")
+    if jwt_secret:
+        token = mint_bearer_from_secret(jwt_secret)
+        print("Auth     : minted bearer token from $JWT_SECRET")
+        return token
+
+    print(
+        "Auth     : no --api-key and no $JWT_SECRET set; sending unauthenticated "
+        "requests (only works if the server was started with --no-auth)",
+        file=sys.stderr,
+    )
+    return None
 
 
 def discover_images(image_dir: Path, limit: int) -> list[Path]:
@@ -179,7 +251,7 @@ def main():
     ap.add_argument("--limit", type=int, default=20)
     ap.add_argument("--base-url", default=os.getenv("DEMO_BASE_URL", "http://127.0.0.1:8001/v1"))
     ap.add_argument("--model", default=os.getenv("DEMO_MODEL", "rednote-hilab/dots.ocr"))
-    ap.add_argument("--api-key", default=os.getenv("DEMO_API_KEY", "your-secret-key"))
+    ap.add_argument("--api-key", default=os.getenv("DEMO_API_KEY", PLACEHOLDER_API_KEY))
     ap.add_argument("--prompt", default=os.getenv("DEMO_PROMPT", DEFAULT_PROMPT))
     ap.add_argument("--max-tokens", type=int, default=int(os.getenv("DEMO_MAX_TOKENS", "2048")))
     ap.add_argument("--timeout", type=float, default=600.0)
@@ -198,6 +270,8 @@ def main():
     out = Path(args.out)
     (out / "txt").mkdir(parents=True, exist_ok=True)
 
+    api_key = resolve_api_key(args.api_key)
+
     print(f"Endpoint : {args.base_url}")
     print(f"Model    : {args.model}")
     print(f"Images   : {len(images)} from {image_dir}")
@@ -211,7 +285,7 @@ def main():
     for i, path in enumerate(images, 1):
         try:
             r = ocr_one(
-                session, args.base_url, args.api_key, args.model,
+                session, args.base_url, api_key, args.model,
                 args.prompt, args.max_tokens, path, args.timeout,
             )
             r["ok"] = True
