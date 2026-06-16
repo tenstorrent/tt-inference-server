@@ -175,7 +175,7 @@ void DisaggregationService::setupSocketHandlers() {
           request->migrationId = tt::utils::MigrationIDGenerator::generate();
           TT_LOG_DEBUG(
               "[DisaggregationService] Assigned migrationId={} for taskId={}",
-              request->migrationId, message.task_id);
+              request->migrationId.value_or(0), message.task_id);
 
           // Resolve prefix cache asynchronously: on HIT sets prefillSlotId
           // and trims prompt, on MISS allocates a new session first.
@@ -210,7 +210,7 @@ void DisaggregationService::setupSocketHandlers() {
                 // async callback fires.
                 const std::string prefillSessionId =
                     request->sessionId.value_or("");
-                const uint64_t migrationId = request->migrationId;
+                const uint64_t migrationId = request->migrationId.value_or(0);
                 llmService->submitStreamingRequest(
                     *request,
                     [this, prefillSessionId, message, maxTokens, slotId,
