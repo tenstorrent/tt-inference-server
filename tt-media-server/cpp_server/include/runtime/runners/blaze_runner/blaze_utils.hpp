@@ -38,8 +38,12 @@ inline sch::ISRequest makeAllocateRequest(
       .tokens = {},
       .gen = {},
   };
+  // Prefix-caching ALLOCATE: the decode scheduler reads the top-level
+  // ISRequest::migrate_from_slot (not gen.migrate_from_slot, which used
+  // to silently swallow this value before the migration-field
+  // consolidation).
   if (migrateFromSlot.has_value()) {
-    req.gen.migrate_from_slot = *migrateFromSlot;
+    req.migrate_from_slot = *migrateFromSlot;
   }
   return req;
 }
@@ -76,8 +80,7 @@ inline sch::GenerationParams makeGenerationParams(
       .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
       .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
       .disaggregated_decode = seq.isDisaggregated(),
-      .stop_tokens = seq.getSamplingParams().stop_token_ids,
-      .migration_uuid = seq.getMigrationId()};
+      .stop_tokens = seq.getSamplingParams().stop_token_ids};
 }
 
 inline void fillSequenceFields(sch::ISRequest& req,
@@ -88,11 +91,13 @@ inline void fillSequenceFields(sch::ISRequest& req,
 
 inline sch::ISRequest makeSubmitRequest(
     uint32_t slotId, const tt::domain::llm::Sequence& seq,
-    std::optional<uint32_t> destSlotId = std::nullopt) {
+    std::optional<uint32_t> destSlotId = std::nullopt,
+    std::optional<uint64_t> migrationUuid = std::nullopt) {
   sch::ISRequest req{};
   req.type = ds::RequestType::SUBMIT;
   req.slot_id = slotId;
   req.dest_slot_id = destSlotId;
+  req.migration_uuid = migrationUuid;
   fillSequenceFields(req, seq);
   return req;
 }
@@ -104,6 +109,10 @@ inline sch::ISRequest makeContinueRequest(
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
   req.dest_slot_id = destSlotId;
+  // Disaggregated CONTINUE awaits an inbound KV migration tagged with
+  // this uuid. The decode scheduler reads ISRequest::migration_uuid
+  // (top-level) at handle_disaggregated_continue.
+  req.migration_uuid = seq.getMigrationId();
   fillSequenceFields(req, seq);
   if (seq.getKVPositionId().has_value()) {  // override position id
     req.position_id = *seq.getKVPositionId();
