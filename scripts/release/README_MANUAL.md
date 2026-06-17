@@ -64,12 +64,11 @@ From  the `tt-shield` repository, run the `release.yml` using the default argume
 
 `tt-inference-server ref`: stable
 
-`vllm ref`: dev
+`vllm ref`: stable
 
 `Workflow`: release
 
 Once we are satisfied with release results we will progress with further phases.
-Otherwise, we will repeat release workflow multiple times, until corrections are implemented in the relevant repositories.
 
 Record relevant commit shas from the final release workflow run and its Summary output. Those will be set in the next phase, within the model_specs development catalogue. 
 
@@ -86,14 +85,18 @@ Examples of the commits can be found inside the `Build Results Artifact` section
 
 ## Promote development specification to production
 
-For specific model/device combination update manually relevant commit sha references for tt-metal and vllm commit fields (if applicable) in models_spec dev catalogue. Also the upcoming release version should be set for models/devices that are in the scope to be released.
-
-Changes are being set within the model_specs development catalogue:
+Ensure that all changes (in terms of arguments and properties for a specific model) are being set or cherry-picked from the main branch within the model_specs development catalogue:
 
 `https://github.com/tenstorrent/tt-inference-server/tree/main/workflows/model_specs/dev`
 
-Take into account, that during the release cycle some changes already might happen in development catalogue. We need to pick what is trully relevant.
 Once we have everything set in development catalogue, we need to promote such changes from development to a production catalogue.
+
+We need to promote the following arguments to the script:
+- `--version` : example `0.17.0`
+  
+- `--tt-metal-commit` : example `b4bd581`
+  
+-  `--vllm-commit` example `f52987a` - this argument is mandatory only for llm models
 
 Production catalogue is being maintained at:
 
@@ -101,7 +104,7 @@ Production catalogue is being maintained at:
 
 Script that will execute this promotion autoamtically is:
 
-`python3  scripts/release/promote_dev_spec_to_prod.py`
+`python3  scripts/release/promote_dev_spec_to_prod.py --version 0.17.0  --tt-metal-commit b4bd581 --vllm-commit 1234567`
 
 Script will take into account only models which are planned for the current release (defined `release` job in models-ci-config.json`)
 
@@ -113,14 +116,8 @@ Once the script is executed we need to verify which changes are being introduced
 After changes in production catalogue have been added and committed, re-generate the Model Support docs and `README.md` table and `release_model_spec.json` file by running:
 
 ```bash
-python3 scripts/release/update_model_spec.py --output-only --output-json release_model_spec.json
-```
-
-```bash
 python3 scripts/release/export_model_spec.py
 ```
-
-`update_model_spec.py` will retrieve entries from the  "prod" catalogue.
 
 `export_model_spec.py` will retrieve entries from the  "prod" catalogue.
 
@@ -131,19 +128,8 @@ Afterwards, `git add/commit/push` the changes for the `release_model_spec.json` 
 
 Additionally, `git add/commit/push` only untracked/modified docs files in `docs/model_support/`, but also only for models in the current scope.
 
-Alternatively, the new script can be invoked:
 
- Generate everything (docs + README + release_model_spec.json) from the prod catalogue
- 
-`python3 scripts/release/export_model_spec.py`
-
-
- Use the dev catalogue instead
- 
-`python3 scripts/release/export_model_spec.py --env dev`
-
-
- Only one of the two outputs
+If we want to use only one of the two outputs
  
 `python3 scripts/release/export_model_spec.py --docs-only   # docs + README, no JSON`
 
@@ -213,6 +199,14 @@ crane copy <src> <dst>
 Run `python3 scripts/list_model_images.py` in order to confirm that docker image is trully present within the repository. This is a safeguard which ensures docker images are named properly.
 
 The full script path is: ```https://github.com/tenstorrent/tt-inference-server/blob/main/scripts/list_model_images.py```
+
+## update of Release Zoo
+
+in tt-shield repo we need to run the following script so the page on Models Dashboard is being refreshed.
+
+`models-dashboards/scripts/release_spec_matcher.sh --branch main --s3`
+
+TO BE DONE: implement pipeline on tt-shield side which will trigger this script automatically.
 
 ## Create post-release branch and PR
 
