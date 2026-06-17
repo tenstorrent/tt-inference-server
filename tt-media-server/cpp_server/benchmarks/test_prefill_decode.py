@@ -271,9 +271,7 @@ def _chat_stream(text, max_tokens=16, timeout=120, system=None):
     messages = ([{"role": "system", "content": system}] if system else []) + [
         {"role": "user", "content": text}
     ]
-    return _chat_stream_messages(
-        messages, max_tokens=max_tokens, timeout=timeout
-    )
+    return _chat_stream_messages(messages, max_tokens=max_tokens, timeout=timeout)
 
 
 def _fire(text, max_tokens=4, timeout=10):
@@ -772,7 +770,9 @@ def test_08_real_chat_multiturn_prefix_cache():
             if turns_done >= num_turns:
                 break
             if m["role"] == "user":
-                content = (cache_buster + m["content"]) if turns_done == 0 else m["content"]
+                content = (
+                    (cache_buster + m["content"]) if turns_done == 0 else m["content"]
+                )
                 req_msgs = cumulative + [{"role": "user", "content": content}]
                 # Stream for per-turn TTFT/TPS; max_tokens=16 gives 15 inter-token
                 # deltas, enough for a stable TPS estimate.
