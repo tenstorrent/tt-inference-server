@@ -118,7 +118,14 @@ void Sequence::serialize(std::ostream& os) const {
            sizeof(decodePositionId));
   os.write(reinterpret_cast<const char*>(&decodeSkipTokens),
            sizeof(decodeSkipTokens));
-  os.write(reinterpret_cast<const char*>(&migrationId), sizeof(migrationId));
+  uint8_t hasMigrationId = migrationId.has_value() ? 1 : 0;
+  os.write(reinterpret_cast<const char*>(&hasMigrationId),
+           sizeof(hasMigrationId));
+  if (hasMigrationId) {
+    uint64_t migrationIdValue = migrationId.value();
+    os.write(reinterpret_cast<const char*>(&migrationIdValue),
+             sizeof(migrationIdValue));
+  }
 }
 
 Sequence Sequence::deserialize(std::istream& is) {
@@ -173,7 +180,15 @@ Sequence Sequence::deserialize(std::istream& is) {
           sizeof(seq.decodePositionId));
   is.read(reinterpret_cast<char*>(&seq.decodeSkipTokens),
           sizeof(seq.decodeSkipTokens));
-  is.read(reinterpret_cast<char*>(&seq.migrationId), sizeof(seq.migrationId));
+  uint8_t hasMigrationId = 0;
+  is.read(reinterpret_cast<char*>(&hasMigrationId), sizeof(hasMigrationId));
+  if (hasMigrationId) {
+    seq.migrationId = std::make_optional<uint64_t>(0);
+    is.read(reinterpret_cast<char*>(&(*seq.migrationId)),
+            sizeof(*seq.migrationId));
+  } else {
+    seq.migrationId = std::nullopt;
+  }
   return seq;
 }
 

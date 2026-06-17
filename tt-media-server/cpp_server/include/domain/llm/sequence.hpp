@@ -138,7 +138,7 @@ class Sequence {
   // decode server. Stored only; not yet consumed by the runner.
   int decodeSkipTokens = 0;
   // Unique 64-bit ID correlating this sequence with a prefill migration.
-  std::optional<uint64_t> migrationId = std::nullopt;
+  std::optional<uint64_t> migrationId;
 };
 
 }  // namespace tt::domain::llm
