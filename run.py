@@ -475,8 +475,37 @@ def parse_arguments():
         "--jwt-secret",
         type=str,
         default=None,
-        help="JWT secret for prefix-cache runs that hit an inference server behind JWT auth. "
-        "Reads $JWT_SECRET when omitted.",
+        help="JWT secret for prefix-cache / spec-decode runs that hit an inference server "
+        "behind JWT auth. Reads $JWT_SECRET when omitted.",
+    )
+
+    # Speculative-decoding benchmark
+    spec_decode_group = parser.add_argument_group(
+        "Speculative-decoding benchmark (v2)",
+        "Arguments for --workflow benchmarks --spec-decode (routed to v2)",
+    )
+    spec_decode_group.add_argument(
+        "--spec-decode",
+        action="store_true",
+        help="Switch --workflow benchmarks to the v2 AIPerf speculative-decoding sweep over "
+        "SPEED-Bench. Scrapes the vLLM vllm:spec_decode_* counters per run for acceptance "
+        "rate / mean accepted length. The server's speculative_config is out of scope and "
+        "must be set by whoever launched it. Routes the run through the v2 engine. "
+        "Requires --workflow benchmarks.",
+    )
+    spec_decode_group.add_argument(
+        "--spec-decode-preset",
+        type=str,
+        choices=["ci", "full"],
+        default="full",
+        help="Preset for --spec-decode (default: full). 'ci' is a short regression sweep.",
+    )
+    spec_decode_group.add_argument(
+        "--spec-decode-warmup-requests",
+        type=int,
+        default=None,
+        help="Short chat-completion warmup requests sent before the spec-decode sweep "
+        "(v2 default: 4; 0 disables).",
     )
 
     args = parser.parse_args()
@@ -523,6 +552,12 @@ def parse_arguments():
     if args.prefix_cache and args.workflow != "benchmarks":
         parser.error(
             "--prefix-cache currently requires --workflow benchmarks "
+            f"(got --workflow {args.workflow})."
+        )
+
+    if args.spec_decode and args.workflow != "benchmarks":
+        parser.error(
+            "--spec-decode currently requires --workflow benchmarks "
             f"(got --workflow {args.workflow})."
         )
 
