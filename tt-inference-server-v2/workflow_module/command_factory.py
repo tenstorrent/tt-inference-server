@@ -12,7 +12,7 @@ import os
 import shlex
 import sys
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import List, Optional
 
 from workflows.model_spec import get_runtime_model_spec
 from workflows.runtime_config import RuntimeConfig
@@ -149,9 +149,10 @@ def _resolve_eval_config(model_name: str):
 
 def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetadata:
     runtime_config = _load_runtime_config(args.runtime_model_spec_json)
+    server_mode = _resolve_server_mode(args, runtime_config)
     return OrchestratorMetadata(
-        server_mode=_resolve_server_mode(args, runtime_config),
-        run_command=_capture_run_command(),
+        server_mode=server_mode,
+        run_command=_resolve_run_command(),
         runtime_model_spec_json=args.runtime_model_spec_json,
         prefix_cache=_build_prefix_cache_options(args),
         serving_bench=_build_serving_bench_options(args),
@@ -241,9 +242,15 @@ def _resolve_server_mode(
     return "docker" if args.docker_server else "API"
 
 
-def _capture_run_command(argv: Optional[Sequence[str]] = None) -> str:
-    parts = list(sys.argv if argv is None else argv)
-    return "python " + shlex.join(parts)
+_V1_RUN_COMMAND_ENV = "TT_V1_RUN_COMMAND"
+
+
+def _resolve_run_command() -> str:
+    """Resolve the ``run_command`` recorded in the report metadata."""
+    propagated = os.environ.get(_V1_RUN_COMMAND_ENV)
+    if propagated:
+        return propagated
+    return "python " + shlex.join(sys.argv)
 
 
 __all__ = ["CommandFactory"]

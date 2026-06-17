@@ -42,13 +42,13 @@ RegistrationLogReason registrationLogReason(
     const PrefillRegistry& registry,
     const tt::sockets::PrefillRegistrationMessage& msg) {
   for (const auto& prefill : registry.snapshot()) {
-    if (prefill.server_id != msg.server_id) {
+    if (prefill.serverId != msg.serverId) {
       continue;
     }
     if (!prefill.healthy) {
       return RegistrationLogReason::RECOVERED;
     }
-    if (prefill.max_in_flight != msg.max_in_flight) {
+    if (prefill.maxInFlight != msg.maxInFlight) {
       return RegistrationLogReason::CAPACITY_CHANGED;
     }
     return RegistrationLogReason::NONE;
@@ -62,16 +62,16 @@ void logPrefillRegistrationIfNeeded(
   switch (reason) {
     case RegistrationLogReason::NEW:
       TT_LOG_INFO("[Gateway] Prefill registered: id='{}' max_in_flight={}",
-                  msg.server_id, msg.max_in_flight);
+                  msg.serverId, msg.maxInFlight);
       break;
     case RegistrationLogReason::RECOVERED:
       TT_LOG_INFO("[Gateway] Prefill recovered: id='{}' max_in_flight={}",
-                  msg.server_id, msg.max_in_flight);
+                  msg.serverId, msg.maxInFlight);
       break;
     case RegistrationLogReason::CAPACITY_CHANGED:
       TT_LOG_INFO(
           "[Gateway] Prefill capacity changed: id='{}' max_in_flight={}",
-          msg.server_id, msg.max_in_flight);
+          msg.serverId, msg.maxInFlight);
       break;
     case RegistrationLogReason::NONE:
       break;
@@ -95,19 +95,19 @@ void registerTcpPrefillHandlers(PrefillSocketManagers& prefillSms,
         [&registry, sm,
          state](const tt::sockets::PrefillRegistrationMessage& msg) {
           const auto logReason = registrationLogReason(registry, msg);
-          state->setServerId(msg.server_id);
-          registry.preRegister(msg.server_id, sm);
-          bool ok = registry.markRegistered(msg.server_id, msg.max_in_flight);
+          state->setServerId(msg.serverId);
+          registry.preRegister(msg.serverId, sm);
+          bool ok = registry.markRegistered(msg.serverId, msg.maxInFlight);
           if (!ok) {
             TT_LOG_ERROR("[Gateway] markRegistered failed for '{}'",
-                         msg.server_id);
+                         msg.serverId);
           } else {
             logPrefillRegistrationIfNeeded(logReason, msg);
           }
         });
 
     sm->registerHandler<tt::sockets::PrefillResultMessage>(
-        "prefill_result",
+        tt::sockets::tags::PREFILL_RESULT,
         [&dispatcher, state](const tt::sockets::PrefillResultMessage& msg) {
           dispatcher.onPrefillResult(state->getServerId(), msg);
         });
@@ -116,13 +116,6 @@ void registerTcpPrefillHandlers(PrefillSocketManagers& prefillSms,
         tt::sockets::tags::PREFILL_CACHE_BLOCKS_ADDED,
         [&dispatcher](const tt::sockets::PrefillCacheBlocksAddedMessage& msg) {
           dispatcher.onCacheBlocksAdded(msg);
-        });
-
-    sm->registerHandler<tt::sockets::PrefillCacheBlocksEvictedMessage>(
-        tt::sockets::tags::PREFILL_CACHE_BLOCKS_EVICTED,
-        [&dispatcher](
-            const tt::sockets::PrefillCacheBlocksEvictedMessage& msg) {
-          dispatcher.onCacheBlocksEvicted(msg);
         });
 
     sm->setConnectionLostCallback([&registry, state]() {
@@ -144,21 +137,22 @@ void registerZmqPrefillHandlers(ZmqPrefillRouter& zmqPrefillRouter,
           const ZmqPrefillRouter::PeerIdentity& peerId,
           const tt::sockets::PrefillRegistrationMessage& msg) {
         const auto logReason = registrationLogReason(registry, msg);
-        zmqPrefillRouter.rememberRegistration(msg.server_id, peerId);
-        registry.preRegister(msg.server_id, nullptr);
-        bool ok = registry.markRegistered(msg.server_id, msg.max_in_flight);
+        zmqPrefillRouter.rememberRegistration(msg.serverId, peerId);
+        registry.preRegister(msg.serverId, nullptr);
+        bool ok = registry.markRegistered(msg.serverId, msg.maxInFlight);
         if (!ok) {
           TT_LOG_ERROR("[Gateway] markRegistered failed for '{}'",
-                       msg.server_id);
+                       msg.serverId);
         } else {
           logPrefillRegistrationIfNeeded(logReason, msg);
         }
       });
 
   zmqPrefillRouter.registerHandler<tt::sockets::PrefillResultMessage>(
-      "prefill_result", [&dispatcher, &zmqPrefillRouter](
-                            const ZmqPrefillRouter::PeerIdentity& peerId,
-                            const tt::sockets::PrefillResultMessage& msg) {
+      tt::sockets::tags::PREFILL_RESULT,
+      [&dispatcher, &zmqPrefillRouter](
+          const ZmqPrefillRouter::PeerIdentity& peerId,
+          const tt::sockets::PrefillResultMessage& msg) {
         auto serverId = zmqPrefillRouter.serverIdForPeer(peerId);
         if (!serverId.has_value()) {
           TT_LOG_WARN("[Gateway] Ignoring result from unregistered prefill");
@@ -173,15 +167,6 @@ void registerZmqPrefillHandlers(ZmqPrefillRouter& zmqPrefillRouter,
                     const tt::sockets::PrefillCacheBlocksAddedMessage& msg) {
         dispatcher.onCacheBlocksAdded(msg);
       });
-
-  zmqPrefillRouter
-      .registerHandler<tt::sockets::PrefillCacheBlocksEvictedMessage>(
-          tt::sockets::tags::PREFILL_CACHE_BLOCKS_EVICTED,
-          [&dispatcher](
-              const ZmqPrefillRouter::PeerIdentity&,
-              const tt::sockets::PrefillCacheBlocksEvictedMessage& msg) {
-            dispatcher.onCacheBlocksEvicted(msg);
-          });
 }
 
 }  // namespace tt::gateway
