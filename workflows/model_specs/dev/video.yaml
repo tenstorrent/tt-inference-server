@@ -7,8 +7,6 @@ templates:
 # =============================================================================
 - weights:
     - genmo/mochi-1-preview
-  version: "0.10.0"
-  tt_metal_commit: 555f240
   impl: tt_transformers
   min_disk_gb: 60
   min_ram_gb: 32
@@ -51,8 +49,6 @@ templates:
 
 - weights:
     - Wan-AI/Wan2.2-T2V-A14B-Diffusers
-  version: "0.14.0"
-  tt_metal_commit: 80180b9
   impl: tt_transformers
   min_disk_gb: 60
   min_ram_gb: 32
@@ -95,8 +91,6 @@ templates:
 
 - weights:
     - Wan-AI/Wan2.2-I2V-A14B-Diffusers
-  version: "0.10.0"
-  tt_metal_commit: 555f240
   impl: tt_transformers
   min_disk_gb: 60
   min_ram_gb: 32

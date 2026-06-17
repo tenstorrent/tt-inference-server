@@ -212,9 +212,9 @@ class MockDecodeServer {
 
         auto registration = tt::sockets::wire::deserializePayload<
             tt::sockets::PrefillRegistrationMessage>(rawData);
-        EXPECT_EQ(registration.server_id, EXPECTED_PREFILL_SERVER_ID);
-        EXPECT_FALSE(registration.server_id.empty());
-        EXPECT_EQ(registration.max_in_flight, EXPECTED_PREFILL_MAX_IN_FLIGHT);
+        EXPECT_EQ(registration.serverId, EXPECTED_PREFILL_SERVER_ID);
+        EXPECT_FALSE(registration.serverId.empty());
+        EXPECT_EQ(registration.maxInFlight, EXPECTED_PREFILL_MAX_IN_FLIGHT);
         return peerId;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -319,22 +319,22 @@ TEST_F(PrefillIntegrationTest, PrefillRequest_TriggersSessionAllocation) {
   // Build a PrefillRequestMessage with random tokens
   const uint32_t taskId = 99001;
   tt::sockets::PrefillRequestMessage prefillReq(taskId);
-  prefillReq.token_ids = {100,  200,  300,  400,  500,  600,  700,  800,
-                          900,  1000, 1100, 1200, 1300, 1400, 1500, 1600,
-                          1700, 1800, 1900, 2000, 2100, 2200, 2300, 2400,
-                          2500, 2600, 2700, 2800, 2900, 3000, 3100, 3200};
-  prefillReq.max_tokens = 10;
-  prefillReq.slot_id =
+  prefillReq.tokenIds = {100,  200,  300,  400,  500,  600,  700,  800,
+                         900,  1000, 1100, 1200, 1300, 1400, 1500, 1600,
+                         1700, 1800, 1900, 2000, 2100, 2200, 2300, 2400,
+                         2500, 2600, 2700, 2800, 2900, 3000, 3100, 3200};
+  prefillReq.maxTokens = 10;
+  prefillReq.slotId =
       7;  // decode-side slot — must NOT be overwritten by prefillSlotId
   prefillReq.temperature = 0.7f;
-  prefillReq.top_p = 0.9f;
-  prefillReq.registration_hashes = {111, 222};
-  prefillReq.decode_position_id = 5;
+  prefillReq.topP = 0.9f;
+  prefillReq.registrationHashes = {111, 222};
+  prefillReq.decodePositionId = 5;
   // Distinct from decode_position_id to confirm both propagate independently.
-  prefillReq.decode_skip_tokens = 3;
+  prefillReq.decodeSkipTokens = 3;
 
   // Send the prefill request from mock decode to our prefill server
-  bool sent = mockDecode->send("prefill_request", prefillReq);
+  bool sent = mockDecode->send(tt::sockets::tags::PREFILL_REQUEST, prefillReq);
   ASSERT_TRUE(sent) << "Failed to send PrefillRequestMessage to prefill server";
 
   // The prefill server should call resolvePrefillSession → createSession →
@@ -396,19 +396,19 @@ TEST_F(PrefillIntegrationTest, PrefillRequest_TriggersSessionAllocation) {
 
   // The prefill server should send back a PrefillResultMessage
   auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
-      "prefill_result", std::chrono::milliseconds(5000));
+      tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
   ASSERT_TRUE(result.has_value())
       << "Expected PrefillResultMessage back from prefill server";
-  EXPECT_EQ(result->task_id, taskId);
+  EXPECT_EQ(result->taskId, taskId);
   EXPECT_FALSE(result->error);
 
   // The prefill server must generate a non-zero migration_id and return it.
-  EXPECT_NE(result->migration_id, 0u)
-      << "Expected a non-zero migration_id in PrefillResultMessage";
+  EXPECT_NE(result->migrationId, 0u)
+      << "Expected a non-zero migrationId in PrefillResultMessage";
 
   // The migration_id on the result must match the one on the Sequence.
-  EXPECT_EQ(result->migration_id, seq->getMigrationId())
-      << "PrefillResultMessage.migration_id must match Sequence.migrationId";
+  EXPECT_EQ(result->migrationId, seq->getMigrationId())
+      << "PrefillResultMessage.migrationId must match Sequence.migrationId";
 
   server->setMemoryAutoRespond(true);
 }
@@ -429,14 +429,14 @@ TEST_F(PrefillIntegrationTest, MultiTurn_SubsequentRequestsAreContinuations) {
   {
     const uint32_t taskId = 99100;
     tt::sockets::PrefillRequestMessage req(taskId);
-    req.token_ids = baseTokens;  // 129 tokens = 4 full blocks + 1
-    req.max_tokens = 10;
-    req.slot_id = 0;
+    req.tokenIds = baseTokens;  // 129 tokens = 4 full blocks + 1
+    req.maxTokens = 10;
+    req.slotId = 0;
     req.temperature = 0.7f;
-    req.top_p = 0.9f;
-    req.registration_hashes = {1001, 1002, 1003, 1004};  // 4 block hashes
+    req.topP = 0.9f;
+    req.registrationHashes = {1001, 1002, 1003, 1004};  // 4 block hashes
 
-    bool sent = mockDecode->send("prefill_request", req);
+    bool sent = mockDecode->send(tt::sockets::tags::PREFILL_REQUEST, req);
     ASSERT_TRUE(sent) << "Turn 0: failed to send";
 
     // Expect ALLOCATE (prefix cache MISS on first request).
@@ -472,8 +472,8 @@ TEST_F(PrefillIntegrationTest, MultiTurn_SubsequentRequestsAreContinuations) {
         .sendTo(server->resultQueue());
 
     auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
-        "prefill_result", std::chrono::milliseconds(5000));
-    ASSERT_TRUE(result.has_value()) << "Turn 0: no PrefillResult";
+        tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value()) << "Turn 0: no PrefillResultMessage";
     EXPECT_FALSE(result->error);
   }
 
@@ -490,14 +490,14 @@ TEST_F(PrefillIntegrationTest, MultiTurn_SubsequentRequestsAreContinuations) {
 
     const uint32_t taskId = 99100 + turn;
     tt::sockets::PrefillRequestMessage req(taskId);
-    req.token_ids = baseTokens;
-    req.max_tokens = 10;
-    req.slot_id = 0;
+    req.tokenIds = baseTokens;
+    req.maxTokens = 10;
+    req.slotId = 0;
     req.temperature = 0.7f;
-    req.top_p = 0.9f;
-    req.registration_hashes = hashes;
+    req.topP = 0.9f;
+    req.registrationHashes = hashes;
 
-    bool sent = mockDecode->send("prefill_request", req);
+    bool sent = mockDecode->send(tt::sockets::tags::PREFILL_REQUEST, req);
     ASSERT_TRUE(sent) << "Turn " << turn << ": failed to send";
 
     // Should NOT trigger an ALLOCATE (prefix cache HIT).
@@ -522,8 +522,9 @@ TEST_F(PrefillIntegrationTest, MultiTurn_SubsequentRequestsAreContinuations) {
         .sendTo(server->resultQueue());
 
     auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
-        "prefill_result", std::chrono::milliseconds(5000));
-    ASSERT_TRUE(result.has_value()) << "Turn " << turn << ": no PrefillResult";
+        tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value())
+        << "Turn " << turn << ": no PrefillResultMessage";
     EXPECT_FALSE(result->error);
   }
 
@@ -564,14 +565,14 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
   {
     const uint32_t taskId = 99200;
     tt::sockets::PrefillRequestMessage req(taskId);
-    req.token_ids = baseTokens;  // 96 tokens = 3 blocks
-    req.max_tokens = 10;
-    req.slot_id = 0;
+    req.tokenIds = baseTokens;  // 96 tokens = 3 blocks
+    req.maxTokens = 10;
+    req.slotId = 0;
     req.temperature = 0.7f;
-    req.top_p = 0.9f;
-    req.registration_hashes = seedHashes;
+    req.topP = 0.9f;
+    req.registrationHashes = seedHashes;
 
-    bool sent = mockDecode->send("prefill_request", req);
+    bool sent = mockDecode->send(tt::sockets::tags::PREFILL_REQUEST, req);
     ASSERT_TRUE(sent) << "Request A: failed to send";
 
     // Expect ALLOCATE (prefix cache MISS).
@@ -611,8 +612,8 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
         .sendTo(server->resultQueue());
 
     auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
-        "prefill_result", std::chrono::milliseconds(5000));
-    ASSERT_TRUE(result.has_value()) << "Request A: no PrefillResult";
+        tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value()) << "Request A: no PrefillResultMessage";
     EXPECT_FALSE(result->error);
   }
 
@@ -626,14 +627,14 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
     for (int i = 1; i <= 32; ++i) tokensB.push_back(10000 + i * 100);
 
     tt::sockets::PrefillRequestMessage req(taskIdB);
-    req.token_ids = tokensB;  // 128 tokens = 4 blocks
-    req.max_tokens = 10;
-    req.slot_id = 0;
+    req.tokenIds = tokensB;  // 128 tokens = 4 blocks
+    req.maxTokens = 10;
+    req.slotId = 0;
     req.temperature = 0.7f;
-    req.top_p = 0.9f;
-    req.registration_hashes = {2001, 2002, 2003, 2004};  // 4 block hashes
+    req.topP = 0.9f;
+    req.registrationHashes = {2001, 2002, 2003, 2004};  // 4 block hashes
 
-    bool sent = mockDecode->send("prefill_request", req);
+    bool sent = mockDecode->send(tt::sockets::tags::PREFILL_REQUEST, req);
     ASSERT_TRUE(sent) << "Request B: failed to send";
 
     // B should NOT trigger an ALLOCATE (prefix cache HIT).
@@ -661,15 +662,15 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
     for (int i = 1; i <= 32; ++i) tokensC.push_back(20000 + i * 100);
 
     tt::sockets::PrefillRequestMessage req(taskIdC);
-    req.token_ids = tokensC;  // 128 tokens = 4 blocks
-    req.max_tokens = 10;
-    req.slot_id = 1;
+    req.tokenIds = tokensC;  // 128 tokens = 4 blocks
+    req.maxTokens = 10;
+    req.slotId = 1;
     req.temperature = 0.7f;
-    req.top_p = 0.9f;
+    req.topP = 0.9f;
     // Same seed hashes (3 blocks match A's registered session) + one more.
-    req.registration_hashes = {2001, 2002, 2003, 2005};
+    req.registrationHashes = {2001, 2002, 2003, 2005};
 
-    bool sent = mockDecode->send("prefill_request", req);
+    bool sent = mockDecode->send(tt::sockets::tags::PREFILL_REQUEST, req);
     ASSERT_TRUE(sent) << "Request C: failed to send";
 
     // Session is IN_FLIGHT (B holds it), so C falls through to ALLOCATE.
@@ -715,8 +716,8 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
         .sendTo(server->resultQueue());
 
     auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
-        "prefill_result", std::chrono::milliseconds(5000));
-    ASSERT_TRUE(result.has_value()) << "Request C: no PrefillResult";
+        tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value()) << "Request C: no PrefillResultMessage";
     EXPECT_FALSE(result->error);
   }
 
@@ -732,15 +733,15 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
     for (int i = 1; i <= 32; ++i) tokensD.push_back(30000 + i * 100);
 
     tt::sockets::PrefillRequestMessage req(taskIdD);
-    req.token_ids = tokensD;  // 160 tokens = 5 blocks
-    req.max_tokens = 10;
-    req.slot_id = 1;
+    req.tokenIds = tokensD;  // 160 tokens = 5 blocks
+    req.maxTokens = 10;
+    req.slotId = 1;
     req.temperature = 0.7f;
-    req.top_p = 0.9f;
+    req.topP = 0.9f;
     // Hashes: first 4 match C's registered hashes, plus one new.
-    req.registration_hashes = {2001, 2002, 2003, 2005, 2006};
+    req.registrationHashes = {2001, 2002, 2003, 2005, 2006};
 
-    bool sent = mockDecode->send("prefill_request", req);
+    bool sent = mockDecode->send(tt::sockets::tags::PREFILL_REQUEST, req);
     ASSERT_TRUE(sent) << "Request D: failed to send";
 
     // D should NOT trigger an ALLOCATE (prefix cache HIT on C's session).
@@ -767,8 +768,8 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
         .sendTo(server->resultQueue());
 
     auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
-        "prefill_result", std::chrono::milliseconds(5000));
-    ASSERT_TRUE(result.has_value()) << "Request D: no PrefillResult";
+        tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value()) << "Request D: no PrefillResultMessage";
     EXPECT_FALSE(result->error);
   }
 
@@ -787,10 +788,11 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
         .tokenWithFlags(50, tt::ipc::SharedToken::FLAG_FINAL)
         .sendTo(server->resultQueue());
 
-    // Drain the PrefillResult for B.
+    // Drain the PrefillResultMessage for B.
     auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
-        "prefill_result", std::chrono::milliseconds(5000));
-    ASSERT_TRUE(result.has_value()) << "Request B cleanup: no PrefillResult";
+        tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value())
+        << "Request B cleanup: no PrefillResultMessage";
   }
 
   server->setMemoryAutoRespond(true);
