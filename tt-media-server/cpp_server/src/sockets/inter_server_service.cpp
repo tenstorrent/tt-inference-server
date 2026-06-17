@@ -291,7 +291,8 @@ void InterServerService::setupMessageHandlers() {
                 message.taskId);
           } else {
             TT_LOG_INFO(
-                "[InterServerService] Received prefill result: {} - text: '{}', "
+                "[InterServerService] Received prefill result: {} - text: "
+                "'{}', "
                 "remaining: {}, token_ids: {}",
                 message.taskId, message.generatedText.substr(0, 50),
                 message.remainingTokens.has_value()
