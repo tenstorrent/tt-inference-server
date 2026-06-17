@@ -34,6 +34,12 @@ Config via env:
     PREFILL_LOG  prefill server log         (default /tmp/tt_prefill.log)
     THRESHOLD    MAX_TOKENS_TO_PREFILL_ON_DECODE the decode was started with (default 1000)
     API_KEY      bearer token, if required  (default none)
+
+test_08 needs `pip install datasets`. Config via env:
+    REAL_CHAT_DATASET        HF dataset id (default Crystalcareai/Code-feedback-sharegpt-renamed)
+    REAL_CHAT_NUM            conversations to replay (default 3)
+    REAL_CHAT_TURNS          user turns per conversation (default 6)
+    REAL_CHAT_MAX_MSG_CHARS  per-message char cap, bounds MAX_ISL (default 3000)
 """
 
 import json
@@ -56,9 +62,10 @@ API_KEY = os.environ.get("API_KEY", "")
 
 KV_BLOCK = 32
 FIRST_BLOCK = 128
-# Cold-MISS TTFT >= this floor means a cache-aware mock delay is set (run_tests.sh
-# sets MOCK_PREFILL_SLEEP_US_PER_TOKEN); the warm HIT must then drop to <= FRACTION of it.
-TTFT_MEANINGFUL_S = float(os.environ.get("TTFT_MEANINGFUL_S", "0.15"))
+# Cold-MISS TTFT >= floor means the pipeline simulator produced measurable prefill
+# cost; warm HIT must then drop to <= FRACTION of it. Default sits above jitter
+# and below observed cold TTFTs (~38-94 ms) on the mock_pipeline stack.
+TTFT_MEANINGFUL_S = float(os.environ.get("TTFT_MEANINGFUL_S", "0.030"))
 TTFT_HIT_MAX_FRACTION = float(os.environ.get("TTFT_HIT_MAX_FRACTION", "0.6"))
 LOG_SETTLE_S = 0.6
 
@@ -114,15 +121,12 @@ def _req(method, path, payload=None, timeout=120):
         return resp.status, json.loads(resp.read())
 
 
-def _chat(text, max_tokens=8, timeout=120):
+def _chat_messages(messages, max_tokens=8, timeout=120):
+    """POST /v1/chat/completions with a pre-built messages list."""
     status, body = _req(
         "POST",
         "/v1/chat/completions",
-        {
-            "model": MODEL,
-            "messages": [{"role": "user", "content": text}],
-            "max_tokens": max_tokens,
-        },
+        {"model": MODEL, "messages": messages, "max_tokens": max_tokens},
         timeout=timeout,
     )
     assert status == 200, "HTTP %s: %s" % (status, body)
@@ -153,12 +157,30 @@ def _chat(text, max_tokens=8, timeout=120):
     }
 
 
-def _chat_stream(text, max_tokens=16, timeout=120, system=None):
-    # Stream a chat completion over SSE and time the first content delta (TTFT).
-    # stream_options.include_usage asks the frontend for a trailing usage-only chunk.
-    messages = ([{"role": "system", "content": system}] if system else []) + [
-        {"role": "user", "content": text}
-    ]
+def _chat(text, max_tokens=8, timeout=120):
+    return _chat_messages(
+        [{"role": "user", "content": text}],
+        max_tokens=max_tokens,
+        timeout=timeout,
+    )
+
+
+def _skip(reason):
+    """Log SKIP and raise pytest.Skipped when pytest is loaded. Callers should
+    `return` immediately after — Skipped derives from BaseException and bypasses
+    `except Exception`, so the __main__ runner catches it by classname."""
+    _log("SKIP " + reason)
+    try:
+        import pytest
+
+        pytest.skip(reason)
+    except ImportError:
+        return
+
+
+def _chat_stream_messages(messages, max_tokens=16, timeout=120):
+    """Stream a chat completion over SSE; return TTFT/TPS/usage. include_usage
+    pulls a trailing usage-only chunk so prompt/cached/completion are accurate."""
     payload = {
         "model": MODEL,
         "messages": messages,
@@ -212,8 +234,8 @@ def _chat_stream(text, max_tokens=16, timeout=120, system=None):
     out = "".join(pieces)
     u = usage or {}
     cached = (u.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
-    # Decode TPS: tokens after the first over the first->last delta span.
-    # completion_tokens is authoritative; fall back to chunk count if usage is absent.
+    # TPS: tokens after the first over the first->last delta span. Prefer
+    # completion_tokens; fall back to chunk count if usage is absent.
     gen = u.get("completion_tokens") or chunks
     decode_span = (t_last - t_first) if (t_first and t_last) else 0.0
     tps = ((gen - 1) / decode_span) if (gen and gen > 1 and decode_span > 0) else None
@@ -243,6 +265,15 @@ def _chat_stream(text, max_tokens=16, timeout=120, system=None):
         "completion_tokens": u.get("completion_tokens"),
         "usage": usage,
     }
+
+
+def _chat_stream(text, max_tokens=16, timeout=120, system=None):
+    messages = ([{"role": "system", "content": system}] if system else []) + [
+        {"role": "user", "content": text}
+    ]
+    return _chat_stream_messages(
+        messages, max_tokens=max_tokens, timeout=timeout
+    )
 
 
 def _fire(text, max_tokens=4, timeout=10):
@@ -457,7 +488,7 @@ def test_03_prefix_cache_slow_growth():
     for i, r in enumerate(results):
         if r["tps"] is not None:
             assert r["tps"] > 0, ("turn %d non-positive TPS" % i, r)
-    # With a cache-aware delay, every warm turn must drop TTFT well below turn 0.
+    # If cold TTFT is above the jitter floor, every warm turn must drop below it.
     if ttfts[0] >= TTFT_MEANINGFUL_S:
         for i in range(1, len(ttfts)):
             assert ttfts[i] <= ttfts[0] * TTFT_HIT_MAX_FRACTION, (
@@ -522,9 +553,8 @@ def test_05_large_isl_offloads_to_prefill():
 
 # 6. Streaming TTFT: same sub-threshold prefix streamed cold (MISS) then warm (HIT).
 #    Hard asserts cover streaming correctness (first delta timed, token-by-token,
-#    usage present) and the decode-log cache event. With a cache-aware delay
-#    (MOCK_PREFILL_SLEEP_US_PER_TOKEN, set by run_tests.sh) the warm HIT skips the
-#    shared prefix so TTFT drops sharply — asserted; otherwise a loose upper bound.
+#    usage present) and the decode-log cache event. When cold TTFT is above
+#    TTFT_MEANINGFUL_S, warm TTFT must drop to <= FRACTION of it; else a loose bound.
 def test_06_streaming_ttft_hit_vs_miss():
     _log(
         "--------- Test06 Streaming TTFT: cold MISS then warm HIT on a shared prefix ---------"
@@ -571,7 +601,7 @@ def test_06_streaming_ttft_hit_vs_miss():
             warm,
         )
     else:
-        # No delay configured: plain mock does no real prefill work, so just sanity-bound.
+        # Cold TTFT below floor (small ISL / fast machine): just sanity-bound.
         assert warm["ttft"] <= cold["ttft"] * 3 + 0.5, (
             "warm-HIT TTFT unexpectedly high vs cold-MISS",
             cold,
@@ -653,7 +683,7 @@ def test_07_large_prompt_prefix_cache_ttft():
             warm["cached_tokens"],
         )
     )
-    # With a cache-aware delay, the warm HIT (only ~5k new) must drop TTFT below cold.
+    # If cold TTFT is above the jitter floor, warm (only ~5k new) must drop below it.
     if cold["ttft"] >= TTFT_MEANINGFUL_S:
         assert warm["ttft"] <= cold["ttft"] * TTFT_HIT_MAX_FRACTION, (
             "warm TTFT %.3fs not <= %.0f%% of cold %.3fs — prefix cache did not save "
@@ -663,18 +693,210 @@ def test_07_large_prompt_prefix_cache_ttft():
         )
 
 
+# 8. Multi-turn prefix cache on real ShareGPT conversations. Replays each turn
+#    via /v1/chat/completions; each turn must HIT the cache for ~all of the
+#    prior turn's prompt. Dataset assistant messages are substituted between
+#    turns (the mock emits @@@@, which would corrupt the cached prefix). First
+#    user message is UUID-prefixed so turn 0 is a guaranteed cold MISS.
+#    Skipped if `datasets` or the dataset is unavailable.
+def test_08_real_chat_multiturn_prefix_cache():
+    _log(
+        "--------- Test08 Real chat multi-turn: ShareGPT conversations, prefix "
+        "cache grows across turns ---------"
+    )
+    _ensure_server()
+    _ensure_disaggregated()
+
+    try:
+        from datasets import load_dataset
+    except ImportError:
+        _skip("test_08: 'datasets' library not installed (pip install datasets)")
+        return
+
+    num_conversations = int(os.environ.get("REAL_CHAT_NUM", "3"))
+    num_turns = int(os.environ.get("REAL_CHAT_TURNS", "6"))
+    max_msg_chars = int(os.environ.get("REAL_CHAT_MAX_MSG_CHARS", "3000"))
+    dataset_id = os.environ.get(
+        "REAL_CHAT_DATASET", "Crystalcareai/Code-feedback-sharegpt-renamed"
+    )
+    role_map = {
+        "human": "user",
+        "user": "user",
+        "gpt": "assistant",
+        "assistant": "assistant",
+    }
+
+    try:
+        ds = load_dataset(dataset_id, split="train", streaming=True)
+    except Exception as e:
+        _skip("test_08: dataset %s unavailable: %r" % (dataset_id, e))
+        return
+
+    selected = []
+    for row in ds:
+        raw = row.get("messages") or row.get("conversations") or []
+        msgs = []
+        for m in raw:
+            role = role_map.get(m.get("role") or m.get("from"))
+            content = m.get("value") or m.get("content")
+            if role is None or content is None:
+                msgs = []
+                break
+            msgs.append({"role": role, "content": str(content)[:max_msg_chars]})
+        if sum(1 for m in msgs if m["role"] == "user") < num_turns:
+            continue
+        selected.append(msgs)
+        if len(selected) >= num_conversations:
+            break
+
+    assert len(selected) == num_conversations, (
+        "could not find %d conversations with >= %d user turns; got %d"
+        % (num_conversations, num_turns, len(selected))
+    )
+    _log(
+        "loaded %d conversations from %s (turns_per_conv=%d, max_msg_chars=%d)"
+        % (len(selected), dataset_id, num_turns, max_msg_chars)
+    )
+
+    for ci, conv in enumerate(selected):
+        _log(
+            "--------- Conversation %d/%d (%d messages in source) ---------"
+            % (ci + 1, num_conversations, len(conv))
+        )
+        cumulative = []
+        per_turn = []
+        turns_done = 0
+        # UUID only on turn 0 — afterwards it's part of the cached prefix.
+        cache_buster = _unique()
+        for m in conv:
+            if turns_done >= num_turns:
+                break
+            if m["role"] == "user":
+                content = (cache_buster + m["content"]) if turns_done == 0 else m["content"]
+                req_msgs = cumulative + [{"role": "user", "content": content}]
+                # Stream for per-turn TTFT/TPS; max_tokens=16 gives 15 inter-token
+                # deltas, enough for a stable TPS estimate.
+                r = _chat_stream_messages(req_msgs, max_tokens=16)
+                per_turn.append(r)
+                cumulative = req_msgs
+                turns_done += 1
+            else:
+                cumulative.append(m)
+
+        prompts = [t["prompt_tokens"] for t in per_turn]
+        cached_seq = [t["cached_tokens"] for t in per_turn]
+        ttfts = [t["ttft"] for t in per_turn]
+        tps_seq = [t["tps"] for t in per_turn]
+        uncached_seq = [p - c for p, c in zip(prompts, cached_seq)]
+        _log(
+            "conv %d: prompts=%s cached=%s uncached=%s ttft=%s tps=%s"
+            % (
+                ci + 1,
+                prompts,
+                cached_seq,
+                uncached_seq,
+                ["%.3fs" % t if t is not None else None for t in ttfts],
+                ["%.1f" % t if t is not None else None for t in tps_seq],
+            )
+        )
+
+        assert per_turn[0]["cached_tokens"] == 0, (
+            "conv %d turn 0 (UUID-prefixed) must be cold MISS" % (ci + 1),
+            per_turn[0],
+        )
+        # Cache commits in FIRST_BLOCK-aligned chunks (128 + 32-token tail), so
+        # a turn whose prompt is < FIRST_BLOCK contributes nothing. Once the
+        # previous turn crosses FIRST_BLOCK, this turn must HIT for ~all of it.
+        for i in range(1, len(per_turn)):
+            prev = prompts[i - 1]
+            if prev < FIRST_BLOCK:
+                _log(
+                    "conv %d turn %d: prev_prompt %s < FIRST_BLOCK %s, no HIT expected"
+                    % (ci + 1, i, prev, FIRST_BLOCK)
+                )
+                continue
+            assert cached_seq[i] > 0, (
+                "conv %d turn %d: prev_prompt %s >= FIRST_BLOCK %s but cached=0"
+                % (ci + 1, i, prev, FIRST_BLOCK),
+                per_turn,
+            )
+            # Slack: one first-block for tail alignment, or 5% on large offloaded
+            # prompts where the offload boundary can shift between requests.
+            slack = max(FIRST_BLOCK, int(prev * 0.05))
+            assert cached_seq[i] >= prev - slack, (
+                "conv %d turn %d cached_tokens=%s expected >= prev_prompt %s - "
+                "slack %s" % (ci + 1, i, cached_seq[i], prev, slack),
+                per_turn,
+            )
+        # Each turn carries the previous prompt as its prefix → monotonic.
+        assert all(
+            cached_seq[i] >= cached_seq[i - 1] for i in range(1, len(cached_seq))
+        ), ("cached_tokens not monotonic", cached_seq)
+
+        for i, t in enumerate(ttfts):
+            assert t is not None and t > 0, (
+                "conv %d turn %d: no positive TTFT measured" % (ci + 1, i),
+                per_turn[i],
+            )
+        # Cache-effectiveness signal: without a cache, TTFT spread ≈ prompt
+        # spread (full prefill each turn). With the cache, TTFT depends on the
+        # new uncached content per turn, which stays bounded → spreads decouple.
+        prompt_spread = max(prompts) / max(1, min(prompts))
+        ttft_spread = max(ttfts) / max(1e-6, min(ttfts))
+        _log(
+            "conv %d: prompt_spread=%.2fx ttft_spread=%.2fx"
+            % (ci + 1, prompt_spread, ttft_spread)
+        )
+        # 2x floor avoids tripping on jitter when prompts barely grow.
+        ttft_spread_limit = max(2.0, prompt_spread * 0.5)
+        assert ttft_spread < ttft_spread_limit, (
+            "conv %d: TTFT spread %.2fx tracks prompt spread %.2fx (limit "
+            "%.2fx) — cache likely not amortizing prefill work"
+            % (ci + 1, ttft_spread, prompt_spread, ttft_spread_limit),
+            list(zip(prompts, cached_seq, ttfts)),
+        )
+
+        # Cache should not affect decode throughput (decode runs after prefill
+        # either way), so per-conv TPS must be stable across turns. A regression
+        # that coupled decode to prefill state would show as TPS collapse later.
+        positive_tps = [t for t in tps_seq if t is not None and t > 0]
+        assert len(positive_tps) == len(tps_seq), (
+            "conv %d: some turns produced no TPS measurement" % (ci + 1),
+            tps_seq,
+        )
+        tps_lo, tps_hi = min(positive_tps), max(positive_tps)
+        assert tps_hi <= 2.0 * tps_lo, (
+            "conv %d: decode TPS unstable across turns (min=%.1f max=%.1f, "
+            "spread > 2x) — decode loop may be coupled to prefill state"
+            % (ci + 1, tps_lo, tps_hi),
+            tps_seq,
+        )
+
+
 if __name__ == "__main__":
     import traceback
 
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    skipped = 0
     failed = 0
     for t in tests:
         try:
             t()
             print("PASS  " + t.__name__)
-        except Exception as e:
+        except BaseException as e:
+            # pytest.skip raises Skipped (BaseException); detect by name so we
+            # don't need to import pytest here.
+            if type(e).__name__ == "Skipped":
+                skipped += 1
+                print("SKIP  " + t.__name__ + ": " + str(e))
+                continue
+            if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                raise
             failed += 1
             print("FAIL  " + t.__name__ + ": " + repr(e))
             traceback.print_exc()
-    print("\n%d/%d passed" % (len(tests) - failed, len(tests)))
+    print(
+        "\n%d/%d passed, %d skipped"
+        % (len(tests) - failed - skipped, len(tests), skipped)
+    )
     raise SystemExit(1 if failed else 0)
