@@ -73,24 +73,24 @@ class ZmqPrefillRouter {
   std::optional<PeerIdentity> peerIdForServer(
       const std::string& serverId) const;
 
-  std::string endpoint_;
+  std::string endpoint;
 
   class Impl;
-  std::unique_ptr<Impl> impl_;
+  std::unique_ptr<Impl> impl;
 
-  std::atomic<bool> running_{false};
-  std::jthread io_thread_;
+  std::atomic<bool> running{false};
+  std::jthread ioThread;
 
-  mutable std::mutex peer_mutex_;
-  std::unordered_map<std::string, PeerIdentity> server_to_peer_;
-  std::unordered_map<std::string, std::string> peer_to_server_;
+  mutable std::mutex peerMutex;
+  std::unordered_map<std::string, PeerIdentity> serverToPeer;
+  std::unordered_map<std::string, std::string> peerToServer;
   std::unordered_map<std::string, std::chrono::steady_clock::time_point>
-      last_seen_by_server_;
+      lastSeenByServer;
 
   tt::sockets::ZmqSendQueue<SendRequest> sendQueue;
 
-  mutable std::mutex handlers_mutex_;
-  std::unordered_map<std::string, RawHandler> handlers_;
+  mutable std::mutex handlersMutex;
+  std::unordered_map<std::string, RawHandler> handlers;
 };
 
 template <typename T>
@@ -108,7 +108,7 @@ bool ZmqPrefillRouter::sendObject(const std::string& serverId,
     auto result = request->result.get_future();
 
     if (!sendQueue.pushIf(std::move(request),
-                          [this] { return running_.load(); })) {
+                          [this] { return running.load(); })) {
       return false;
     }
     return result.get();
@@ -121,8 +121,8 @@ template <typename T>
 void ZmqPrefillRouter::registerHandler(
     std::string_view messageType,
     std::function<void(const PeerIdentity&, const T&)> handler) {
-  std::lock_guard<std::mutex> lock(handlers_mutex_);
-  handlers_[std::string(messageType)] =
+  std::lock_guard<std::mutex> lock(handlersMutex);
+  handlers[std::string(messageType)] =
       [handler](const PeerIdentity& peerId, const std::vector<uint8_t>& data) {
         T payload = tt::sockets::wire::deserializePayload<T>(data);
         handler(peerId, payload);

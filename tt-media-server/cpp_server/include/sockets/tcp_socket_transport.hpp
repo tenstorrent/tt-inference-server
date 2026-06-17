@@ -66,16 +66,16 @@ class TcpSocketTransport : public ISocketTransport,
   ReceiveResult receiveExact(int fd, uint8_t* buffer, size_t size,
                              int maxRetries, bool returnIfNoInitialData);
 
-  std::string host_;
-  uint16_t port_;
+  std::string host;
+  uint16_t port;
 
-  tt::utils::ScopedFd serverSocket_;
-  tt::utils::ScopedFd clientSocket_;
-  std::atomic<int> peerSocket_{-1};
+  tt::utils::ScopedFd serverSocket;
+  tt::utils::ScopedFd clientSocket;
+  std::atomic<int> peerSocket{-1};
 
-  std::jthread connectionThread_;
+  std::jthread connectionThread;
 
-  mutable std::mutex socketMutex_;
+  mutable std::mutex socketMutex;
 };
 
 }  // namespace tt::sockets
