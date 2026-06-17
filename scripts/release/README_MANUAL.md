@@ -70,9 +70,7 @@ From  the `tt-shield` repository, run the `release.yml` using the default argume
 
 Once we are satisfied with release results we will progress with further phases.
 
-Record relevant commit shas from the final release workflow run and its Summary output. Those will be set in the next phase, within the model_specs development catalogue. 
-
-For specific run, open the web page ```https://github.com/tenstorrent/tt-shield/actions/runs/<runId>```
+Record relevant commit shas from the final release workflow run and its Summary output. For specific run, open the web page ```https://github.com/tenstorrent/tt-shield/actions/runs/<runId>```
 
 Examples of the commits can be found inside the `Build Results Artifact` section:
 
@@ -89,7 +87,7 @@ Ensure that all changes (in terms of arguments and properties for a specific mod
 
 `https://github.com/tenstorrent/tt-inference-server/tree/main/workflows/model_specs/dev`
 
-Once we have everything set in development catalogue, we need to promote such changes from development to a production catalogue.
+Once we have everything set in development catalogue on the stable branch, we need to promote such changes from development to a production catalogue.
 
 We need to promote the following arguments to the script:
 - `--version` : example `0.17.0`
@@ -102,16 +100,15 @@ Production catalogue is being maintained at:
 
 `https://github.com/tenstorrent/tt-inference-server/tree/main/workflows/model_specs/prod`
 
-Script that will execute this promotion autoamtically is:
+Script that will execute this promotion automatically is:
 
 `python3  scripts/release/promote_dev_spec_to_prod.py --version 0.17.0  --tt-metal-commit b4bd581 --vllm-commit 1234567`
 
-Script will take into account only models which are planned for the current release (defined `release` job in models-ci-config.json`)
+Script will take into account only models which are planned for the current release (have defined `release` job in `models-ci-config.json`)
 
 Once the script is executed we need to verify which changes are being introduced into the production catalogue.
 
 ## export_model_spec.py
-
 
 After changes in production catalogue have been added and committed, re-generate the Model Support docs and `README.md` table and `release_model_spec.json` file by running:
 
@@ -121,15 +118,13 @@ python3 scripts/release/export_model_spec.py
 
 `export_model_spec.py` will retrieve entries from the  "prod" catalogue.
 
-
-Verify that this script will not produce changes in models which are not in the scope of this release. In case it did, revert all changes that happenned in `release_model_spec.json`  for models out of scope. All modifications should be tracked using the `git diff` command.
+Verify that this script will not produce changes in models which are not in the scope of this release. In case it did, revert all changes that happenned in `release_model_spec.json` for models out of scope. All modifications should be tracked using the `git diff` command.
 
 Afterwards, `git add/commit/push` the changes for the `release_model_spec.json` file.
 
 Additionally, `git add/commit/push` only untracked/modified docs files in `docs/model_support/`, but also only for models in the current scope.
 
-
-If we want to use only one of the two outputs
+If we want to use only one of the two outputs we can run the following:
  
 `python3 scripts/release/export_model_spec.py --docs-only   # docs + README, no JSON`
 
