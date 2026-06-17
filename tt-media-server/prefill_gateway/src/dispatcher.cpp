@@ -31,7 +31,8 @@ void Dispatcher::onPrefillRequest(
   const uint64_t firstRegistrationHash =
       msg.registrationHashes.empty() ? 0 : msg.registrationHashes.front();
 
-  auto selection = selectPrefill(prefills, roundRobinCursor);
+  auto selection =
+      selectPrefill(prefills, roundRobinCursor, msg.preferredPrefillId);
   GatewayMetrics::instance().recordRoutingDecision(
       routingReasonName(selection.reason));
   if (!selection.serverId.has_value()) {
@@ -52,9 +53,10 @@ void Dispatcher::onPrefillRequest(
   }
   TT_LOG_INFO(
       "[Dispatcher] taskId={} route prefill='{}' reason={} "
-      "prefix_match_depth={} hash={}",
+      "prefix_match_depth={} hash={} preferred_prefill='{}'",
       msg.taskId, chosen, routingReasonName(selection.reason),
-      selection.prefixMatchDepth, firstRegistrationHash);
+      selection.prefixMatchDepth, firstRegistrationHash,
+      msg.preferredPrefillId.value_or(""));
 
   registry.incrementInflight(chosen);
   {

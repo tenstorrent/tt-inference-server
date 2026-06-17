@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <string>
+#include <utility>
 
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
@@ -147,7 +148,7 @@ bool InterServerService::sendPrefillRequest(
     const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens,
     std::optional<uint32_t> slotId,
     const tt::domain::llm::SamplingParams& sampling, int decodePositionId,
-    int decodeSkipTokens) {
+    int decodeSkipTokens, std::optional<std::string> preferredPrefillId) {
   if (!enabled) {
     return false;
   }
@@ -163,6 +164,7 @@ bool InterServerService::sendPrefillRequest(
   message.fastMode = sampling.fast_mode;
   message.decodePositionId = decodePositionId;
   message.decodeSkipTokens = decodeSkipTokens;
+  message.preferredPrefillId = std::move(preferredPrefillId);
 
   return socketManager.sendObject(tags::PREFILL_REQUEST, message);
 }

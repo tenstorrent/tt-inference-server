@@ -50,6 +50,8 @@ PrefillEligibilitySummary summarizePrefillEligibility(
 
 std::string_view routingReasonName(PrefillRoutingReason reason) {
   switch (reason) {
+    case PrefillRoutingReason::PreferredPrefill:
+      return "preferred_prefill";
     case PrefillRoutingReason::PrefixMatch:
       return "prefix_match";
     case PrefillRoutingReason::LeastInflight:
@@ -63,7 +65,18 @@ std::string_view routingReasonName(PrefillRoutingReason reason) {
 }
 
 PrefillSelection selectPrefill(const std::vector<PrefillSnapshot>& prefills,
-                               size_t& roundRobinCursor) {
+                               size_t& roundRobinCursor,
+                               const std::optional<std::string>&
+                                   preferredPrefillId) {
+  if (preferredPrefillId.has_value() && !preferredPrefillId->empty()) {
+    for (const auto& p : prefills) {
+      if (p.serverId == *preferredPrefillId && p.isEligible()) {
+        return {p.serverId, PrefillRoutingReason::PreferredPrefill,
+                p.prefixMatchDepth};
+      }
+    }
+  }
+
   std::vector<Candidate> bestCandidates;
   bestCandidates.reserve(prefills.size());
 

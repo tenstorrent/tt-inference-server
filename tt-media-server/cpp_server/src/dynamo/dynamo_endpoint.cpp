@@ -79,6 +79,12 @@ std::shared_ptr<tt::domain::llm::LLMRequest> buildLLMRequest(
   if (currentId.empty()) currentId = dyn.raw.get("request_id", "").asString();
   if (!currentId.empty()) req->responseId = currentId;
 
+  const std::string preferredPrefillId =
+      dyn.raw.get("preferred_prefill_id", "").asString();
+  if (!preferredPrefillId.empty()) {
+    req->preferred_prefill_id = preferredPrefillId;
+  }
+
   return req;
 }
 

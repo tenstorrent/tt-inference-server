@@ -149,6 +149,9 @@ struct LLMRequest : BaseRequest {
   int decode_skip_tokens = 0;
 
   std::optional<bool> disaggregation_override;
+  // Optional routing hint for PrefillGateway. The gateway may use this prefill
+  // only if it is healthy and has capacity; otherwise it falls back normally.
+  std::optional<std::string> preferred_prefill_id;
 
   // Structured output constraint
   std::optional<ResponseFormat> response_format;
@@ -198,7 +201,8 @@ struct LLMRequest : BaseRequest {
         << " stop_count=" << stop.size()
         << " sessionId=" << detail::optStr(sessionId)
         << " slotId=" << detail::optStr(slotId) << " disaggregation_override="
-        << detail::optStr(disaggregation_override);
+        << detail::optStr(disaggregation_override)
+        << " preferred_prefill_id=" << detail::optStr(preferred_prefill_id);
     return out.str();
   }
 };

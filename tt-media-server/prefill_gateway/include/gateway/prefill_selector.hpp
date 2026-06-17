@@ -32,6 +32,7 @@ struct PrefillSnapshot {
 };
 
 enum class PrefillRoutingReason {
+  PreferredPrefill,
   PrefixMatch,
   LeastInflight,
   RoundRobin,
@@ -57,6 +58,8 @@ PrefillEligibilitySummary summarizePrefillEligibility(
 std::string_view routingReasonName(PrefillRoutingReason reason);
 
 PrefillSelection selectPrefill(const std::vector<PrefillSnapshot>& prefills,
-                               size_t& roundRobinCursor);
+                               size_t& roundRobinCursor,
+                               const std::optional<std::string>&
+                                   preferredPrefillId = std::nullopt);
 
 }  // namespace tt::gateway

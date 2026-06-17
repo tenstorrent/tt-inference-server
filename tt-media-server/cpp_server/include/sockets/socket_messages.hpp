@@ -48,6 +48,7 @@ struct PrefillRequestMessage {
   bool fastMode = false;
   int decodePositionId = 0;
   int decodeSkipTokens = 0;
+  std::optional<std::string> preferredPrefillId;
 
   explicit PrefillRequestMessage(uint32_t taskId) : taskId(taskId) {}
 
@@ -61,8 +62,11 @@ struct PrefillRequestMessage {
     float topPVal = topP.value_or(0.0f);
     bool hasTopK = topK.has_value();
     int topKVal = topK.value_or(0);
+    bool hasPreferredPrefill = preferredPrefillId.has_value();
+    const std::string preferredPrefillVal = preferredPrefillId.value_or("");
     ar(taskId, registrationHashes, tokenIds, mt, sid, hasTemp, tempVal, hasTopP,
-       topPVal, hasTopK, topKVal, fastMode, decodePositionId, decodeSkipTokens);
+       topPVal, hasTopK, topKVal, fastMode, decodePositionId, decodeSkipTokens,
+       hasPreferredPrefill, preferredPrefillVal);
   }
 
   template <class Archive>
@@ -81,8 +85,11 @@ struct PrefillRequestMessage {
     bool fastMode;
     int decodePositionId;
     int decodeSkipTokens;
+    bool hasPreferredPrefill;
+    std::string preferredPrefillVal;
     ar(tid, hashes, tids, mt, sid, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
-       topKVal, fastMode, decodePositionId, decodeSkipTokens);
+       topKVal, fastMode, decodePositionId, decodeSkipTokens,
+       hasPreferredPrefill, preferredPrefillVal);
     PrefillRequestMessage msg(tid);
     msg.registrationHashes = std::move(hashes);
     msg.tokenIds = std::move(tids);
@@ -96,6 +103,7 @@ struct PrefillRequestMessage {
     msg.fastMode = fastMode;
     msg.decodePositionId = decodePositionId;
     msg.decodeSkipTokens = decodeSkipTokens;
+    if (hasPreferredPrefill) msg.preferredPrefillId = preferredPrefillVal;
     return msg;
   }
 };

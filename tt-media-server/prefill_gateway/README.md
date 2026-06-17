@@ -119,6 +119,20 @@ flip the inter-server socket roles to talk through the gateway:
 
 The default (`USE_PREFILL_GATEWAY=0`) keeps the existing direct 1:1 wiring.
 
+### Preferred prefill hint
+
+Decode can attach an optional `preferredPrefillId` to `PrefillRequestMessage`.
+The gateway treats it as a safe hint, not a hard requirement:
+
+- if the named prefill is registered, healthy, accepting tasks, and under
+  `PREFILL_MAX_IN_FLIGHT`, the gateway routes the request there;
+- otherwise the gateway falls back to the normal policy: longest prefix match,
+  then least in-flight, then round-robin.
+
+The Dynamo request path maps the raw request field `preferred_prefill_id` to
+this hint. This lets experiments prove that an externally selected prefill id
+can travel through decode to the gateway without replacing gateway routing.
+
 ### Topology
 
 ```

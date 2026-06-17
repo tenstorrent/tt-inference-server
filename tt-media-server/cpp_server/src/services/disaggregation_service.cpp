@@ -433,7 +433,7 @@ void DisaggregationService::handleStreamingRequest(
         request.task_id, registrationHashes,
         std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
         slotId, tt::utils::mapper::mapSamplingParams(request), decodePositionId,
-        decodeSkipTokens);
+        decodeSkipTokens, request.preferred_prefill_id);
 
     if (!sent) {
       streamCallbacks.erase(request.task_id);

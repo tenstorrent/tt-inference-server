@@ -128,6 +128,46 @@ TEST_F(DispatcherTest, CachedBlockHitDrivesPrefixRouting) {
   EXPECT_EQ(requests[0].prefillServerId, "B");
 }
 
+TEST_F(DispatcherTest, PreferredPrefillWinsWhenHealthy) {
+  markAllHealthy();
+  registry.addCachedBlocks("A", {99});
+  auto req = makeRequest(7, /*hash=*/99);
+  req.preferredPrefillId = "B";
+
+  dispatcher->onPrefillRequest(req);
+
+  ASSERT_EQ(requests.size(), 1u);
+  EXPECT_EQ(requests[0].prefillServerId, "B");
+}
+
+TEST_F(DispatcherTest, MissingPreferredPrefillFallsBackToRouting) {
+  markAllHealthy();
+  registry.addCachedBlocks("A", {99});
+  auto req = makeRequest(7, /*hash=*/99);
+  req.preferredPrefillId = "missing";
+
+  dispatcher->onPrefillRequest(req);
+
+  ASSERT_EQ(requests.size(), 1u);
+  EXPECT_EQ(requests[0].prefillServerId, "A");
+}
+
+TEST_F(DispatcherTest, FullPreferredPrefillFallsBackToRouting) {
+  markAllHealthy();
+  registry.addCachedBlocks("A", {99});
+  registry.incrementInflight("B");
+  registry.incrementInflight("B");
+  registry.incrementInflight("B");
+  registry.incrementInflight("B");
+  auto req = makeRequest(7, /*hash=*/99);
+  req.preferredPrefillId = "B";
+
+  dispatcher->onPrefillRequest(req);
+
+  ASSERT_EQ(requests.size(), 1u);
+  EXPECT_EQ(requests[0].prefillServerId, "A");
+}
+
 TEST_F(DispatcherTest, ResultIsForwardedToDecode) {
   markAllHealthy();
   dispatcher->onPrefillRequest(makeRequest(5, /*hash=*/0));

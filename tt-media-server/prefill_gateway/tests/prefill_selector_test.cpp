@@ -26,8 +26,9 @@ PrefillSnapshot prefixMatchedPrefill(std::string id, size_t prefixMatchDepth,
 }
 
 std::optional<std::string> selectedServer(
-    const std::vector<PrefillSnapshot>& prefills, size_t& roundRobinCursor) {
-  return selectPrefill(prefills, roundRobinCursor).serverId;
+    const std::vector<PrefillSnapshot>& prefills, size_t& roundRobinCursor,
+    std::optional<std::string> preferredPrefillId = std::nullopt) {
+  return selectPrefill(prefills, roundRobinCursor, preferredPrefillId).serverId;
 }
 
 TEST(PrefillSelectorTest, NoPeersAvailableWhenAllDown) {
@@ -86,6 +87,34 @@ TEST(PrefillSelectorTest, LongestPrefixMatchWinsOverLowerLoad) {
 
   ASSERT_TRUE(chosen.has_value());
   EXPECT_EQ(*chosen, "A");
+}
+
+TEST(PrefillSelectorTest, PreferredPrefillWinsWhenEligible) {
+  std::vector<PrefillSnapshot> prefills = {
+      prefixMatchedPrefill("A", /*prefixMatchDepth=*/3, /*inFlight=*/0),
+      prefixMatchedPrefill("B", /*prefixMatchDepth=*/0, /*inFlight=*/3)};
+  size_t cursor = 0;
+
+  const auto selection = selectPrefill(prefills, cursor, std::string("B"));
+
+  ASSERT_TRUE(selection.serverId.has_value());
+  EXPECT_EQ(*selection.serverId, "B");
+  EXPECT_EQ(selection.reason, PrefillRoutingReason::PreferredPrefill);
+  EXPECT_EQ(selection.prefixMatchDepth, 0u);
+}
+
+TEST(PrefillSelectorTest, IneligiblePreferredPrefillFallsBack) {
+  auto preferred = prefixMatchedPrefill("A", /*prefixMatchDepth=*/3);
+  preferred.acceptingTasks = false;
+  std::vector<PrefillSnapshot> prefills = {
+      preferred, prefixMatchedPrefill("B", /*prefixMatchDepth=*/1)};
+  size_t cursor = 0;
+
+  const auto selection = selectPrefill(prefills, cursor, std::string("A"));
+
+  ASSERT_TRUE(selection.serverId.has_value());
+  EXPECT_EQ(*selection.serverId, "B");
+  EXPECT_EQ(selection.reason, PrefillRoutingReason::PrefixMatch);
 }
 
 TEST(PrefillSelectorTest, PrefixMatchIgnoresIneligiblePrefills) {
