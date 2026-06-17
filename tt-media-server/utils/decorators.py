@@ -100,18 +100,20 @@ def log_execution_time(
                     yield item
 
                 duration = time.time() - start
+                rate = yielded_count / duration if duration > 0 else 0.0
 
                 # Record success telemetry
                 logger.info(
-                    f"[{func.__name__}] async generator completed in {duration:.4f} seconds. Yielded {yielded_count} items. {message or ''}"
+                    f"[{func.__name__}] async generator completed in {duration:.4f} seconds. Yielded {yielded_count} items ({rate:.2f} items/sec). {message or ''}"
                 )
 
             except Exception as e:
                 duration = time.time() - start
+                rate = yielded_count / duration if duration > 0 else 0.0
 
                 # Record failure telemetry
                 logger.error(
-                    f"[{func.__name__}] async generator failed after {duration:.4f} seconds. Yielded {yielded_count} items. Error: {e}"
+                    f"[{func.__name__}] async generator failed after {duration:.4f} seconds. Yielded {yielded_count} items ({rate:.2f} items/sec). Error: {e}"
                 )
 
                 raise

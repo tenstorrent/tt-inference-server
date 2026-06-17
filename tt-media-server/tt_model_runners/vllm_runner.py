@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 import asyncio
 import os
+import time
 import traceback
 
 from domain.completion_request import CompletionRequest
@@ -163,12 +164,17 @@ class VLLMForgeRunner(BaseDeviceRunner):
         strip_eos = TextUtils.strip_eos
         sampling_params = build_sampling_params(request, self.SAMPLING_DEFAULTS)
 
+        start = time.time()
+        num_tokens = 0
         async for request_output in self.llm_engine.generate(
             self._build_vllm_input(request), sampling_params, request._task_id
         ):
             outputs = request_output.outputs
             if not outputs:
                 continue
+
+            # token_ids is cumulative in vLLM, so the last value is the total
+            num_tokens = len(outputs[0].token_ids)
 
             for output in outputs:
                 chunk_text = output.text
@@ -187,7 +193,12 @@ class VLLMForgeRunner(BaseDeviceRunner):
                     data=CompletionResult(text=chunk_text),
                 )
 
-        self.logger.info(f"Device {self.device_id}: Streaming generation completed")
+        duration = time.time() - start
+        rate = num_tokens / duration if duration > 0 else 0.0
+        self.logger.info(
+            f"Device {self.device_id}: Streaming generation completed: "
+            f"{num_tokens} tokens in {duration:.4f} seconds ({rate:.2f} tok/sec)"
+        )
 
         yield CompletionOutput(
             type=FINAL_TYPE,
@@ -201,16 +212,25 @@ class VLLMForgeRunner(BaseDeviceRunner):
 
         sampling_params = build_sampling_params(request, self.SAMPLING_DEFAULTS)
 
+        start = time.time()
         generated_text = []
+        num_tokens = 0
         async for request_output in self.llm_engine.generate(
             self._build_vllm_input(request), sampling_params, request._task_id
         ):
             if request_output.outputs:
                 generated_text.append(request_output.outputs[0].text)
+                # token_ids is cumulative in vLLM, so the last value is the total
+                num_tokens = len(request_output.outputs[0].token_ids)
 
         generated_text = "".join(generated_text)
 
-        self.logger.info(f"Device {self.device_id}: Non-streaming generation completed")
+        duration = time.time() - start
+        rate = num_tokens / duration if duration > 0 else 0.0
+        self.logger.info(
+            f"Device {self.device_id}: Non-streaming generation completed: "
+            f"{num_tokens} tokens in {duration:.4f} seconds ({rate:.2f} tok/sec)"
+        )
 
         return CompletionOutput(
             type=FINAL_TYPE,
