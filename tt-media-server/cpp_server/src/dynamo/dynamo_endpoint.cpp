@@ -15,7 +15,6 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
-#include <future>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -170,7 +169,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
   trantor::EventLoopThreadPool* pool = loop_pool_.get();
 
   return [pipeline, pool](const GenerateRequest& dynReq,
-                          std::function<bool(const TokenChunk&)> sendChunk) {
+                          const TcpStreamConnectionInfo& connInfo) {
     using SteadyClock = std::chrono::steady_clock;
     const auto recvT = SteadyClock::now();
     const std::string probeId = dynReq.raw.get("request_id", "").asString();
@@ -213,19 +212,22 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
     TT_LOG_INFO("[DynamoLatency] id={} stage=dispatched loop_tid={}",
                 probeId.empty() ? "?" : probeId, loopTid);
 
-    // Block the dynamo per-request worker thread until the streaming
-    // callback signals completion. Using a shared_ptr + future lets the
-    // pipeline callbacks (which run on the LLMService consumer thread)
-    // complete the future safely even if this lambda is being torn down.
-    auto done = std::make_shared<std::promise<void>>();
-    auto future = done->get_future();
-    auto signalDone = [done]() {
-      try {
-        done->set_value();
-      } catch (...) {
-        // future already satisfied (e.g. multiple final chunks); ignore.
-      }
+    // The call-home writer owns the outbound connection and streams chunks
+    // asynchronously on the loop — no blocking, no per-request thread. The
+    // pipeline callbacks below are unchanged: sendChunk/signalDone forward to
+    // it.
+    auto cancelFn = [pipeline, taskId = req->task_id]() {
+      pipeline->abortRequest(taskId);
     };
+    auto writer =
+        DynamoStreamWriter::create(loop, connInfo, probeId, cancelFn);
+    writer->connect();
+
+    auto sendChunk = [writer](const TokenChunk& chunk) {
+      return writer->sendChunk(chunk);
+    };
+    auto signalDone = [writer]() { writer->finalize(); };
+
     auto sendErrorAndDone = [sendChunk, signalDone]() {
       TokenChunk err;
       err.finish_reason = "error";
@@ -247,8 +249,6 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                   " tokens): prompt_tokens=" + std::to_string(promptTokens);
       err.error_code = 400;
       sendChunk(err);
-      signalDone();
-      future.wait();
       return;
     }
 
@@ -399,9 +399,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               };
           return cb;
         },
-        std::move(handlers));
-
-    future.wait();
+        std::move(handlers), std::move(cancelFn));
   };
 }
 
@@ -432,27 +430,14 @@ void DynamoEndpoint::start() {
   sc.model_name = options_.model_name;
   sc.model_path = options_.model_path;
 
-  server_ = std::make_unique<DynamoServer>(sc, makeGenerateHandler());
-
-  // Spawn the accept loop in its own thread so we can fall through to
-  // discovery registration once the port is bound.
-  server_thread_ = std::thread([this]() {
-    try {
-      server_->run();
-    } catch (const std::exception& e) {
-      TT_LOG_ERROR("[DynamoEndpoint] server thread terminated: {}", e.what());
-    }
-  });
-
-  // Wait for the listener to bind (port becomes non-zero). Bounded poll —
-  // bind is synchronous in run() right after socket creation.
-  for (int i = 0; i < 50 && server_->port() == 0 && running_; ++i) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-  }
+  // start() binds and listens on the pool loops synchronously; the resolved
+  // port is available immediately afterwards.
+  server_ = std::make_unique<DynamoServer>(sc, makeGenerateHandler(),
+                                           loop_pool_->getLoops());
+  server_->start();
   if (server_->port() == 0) {
     running_ = false;
-    throw std::runtime_error(
-        "DynamoEndpoint: server failed to bind within timeout");
+    throw std::runtime_error("DynamoEndpoint: server failed to bind");
   }
 
   DiscoveryConfig dc;
@@ -508,7 +493,6 @@ void DynamoEndpoint::stop() {
   }
 
   if (keepalive_thread_.joinable()) keepalive_thread_.join();
-  if (server_thread_.joinable()) server_thread_.join();
   if (loop_pool_) {
     // EventLoopThreadPool has no explicit stop(); destruction joins all
     // threads.
