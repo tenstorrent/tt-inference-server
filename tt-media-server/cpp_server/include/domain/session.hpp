@@ -17,6 +17,10 @@
 #include "domain/sentinel_values.hpp"
 #include "utils/conversation_hasher.hpp"
 
+namespace tt::services {
+class SessionManager;  // friend: owns the locked state transitions below
+}
+
 namespace tt::domain {
 
 // Lifecycle state of a Session.  IDLE --(markPrepared)--> PREPARED
@@ -77,20 +81,22 @@ class Session {
 
   bool isIdle() const { return state_ == SessionState::IDLE; }
   bool isInFlight() const { return state_ == SessionState::IN_FLIGHT; }
-
   bool isPrepared() const { return state_ == SessionState::PREPARED; }
-  bool markPrepared();
-
   SessionState getState() const { return state_; }
-
-  // Transition methods return false (without changing state) if the
-  // precondition is not met.
-  bool markInFlight();   // IDLE      -> IN_FLIGHT
-  bool clearInFlight();  // IN_FLIGHT -> IDLE, also clears cancelFn
 
   void setCancelFn(std::function<void()> fn) { cancelFn_ = std::move(fn); }
   std::function<void()> takeCancelFn() {
     return std::exchange(cancelFn_, nullptr);
+  }
+
+  // Release this session's in-flight hold (IN_FLIGHT -> IDLE) via an injected
+  // callback. SessionManager sets this to run clearInFlight() under the
+  // ConcurrentMap lock, so the transition can't race evictOldSessions(); kept
+  // as a std::function so the domain layer doesn't depend on SessionManager.
+  // No-op if unset (e.g. a session not owned by a SessionManager).
+  void setReleaser(std::function<void()> r) { releaser_ = std::move(r); }
+  void release() {
+    if (releaser_) releaser_();
   }
 
   std::chrono::system_clock::time_point getLastActivityTime() const {
@@ -139,6 +145,18 @@ class Session {
     return json;
   }
 
+ protected:
+  // State transitions are owned by SessionManager, which performs them under
+  // the ConcurrentMap lock (serializing them against evictOldSessions()).
+  // Protected + friend so only SessionManager — or a test subclass — can call
+  // them; a direct unlocked call would re-introduce the clearInFlight()-vs-
+  // eviction data race. Each returns false (state unchanged) if its
+  // precondition is not met.
+  friend class tt::services::SessionManager;
+  bool markPrepared();   // IDLE           -> PREPARED
+  bool markInFlight();   // IDLE/PREPARED  -> IN_FLIGHT
+  bool clearInFlight();  // IN_FLIGHT      -> IDLE, also clears cancelFn
+
  private:
   std::string session_id_;   // Stable UUID, never changes
   size_t hash_;              // Current content hash, changes with conversation
@@ -149,6 +167,8 @@ class Session {
   SessionState state_{SessionState::IDLE};
   std::chrono::system_clock::time_point last_activity_time_;
   std::function<void()> cancelFn_;
+  std::function<void()>
+      releaser_;  // injected by SessionManager (see release())
 
   // Streaming token accumulator (initialized per-request)
   std::vector<int> deltaTokens_;

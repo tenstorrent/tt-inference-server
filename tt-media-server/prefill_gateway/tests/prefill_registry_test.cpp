@@ -110,23 +110,66 @@ TEST(PrefillRegistryTest, GetSocketManagerReturnsNullptrForUnknown) {
   EXPECT_EQ(reg.getSocketManager("UNKNOWN"), nullptr);
 }
 
-TEST(PrefillRegistryTest, CacheBlockDeltasAreTrackedPerPrefill) {
-  // We can't observe cached_blocks via snapshot() (snapshots are for the
-  // selector and don't carry the block set), so we verify behavior via
-  // add/evict no-throw + size effects observable through repeated adds.
+TEST(PrefillRegistryTest, CacheBlocksAreTrackedPerPrefill) {
   PrefillRegistry reg;
   reg.preRegister("A", nullptr);
   reg.preRegister("B", nullptr);
 
   reg.addCachedBlocks("A", {1, 2, 3});
   reg.addCachedBlocks("B", {1, 4});
-  reg.evictCachedBlocks("A", {2});
 
-  // No public read API for cached_blocks yet — this test ensures the
-  // mutators don't throw and tolerate unknown ids gracefully.
   reg.addCachedBlocks("UNKNOWN", {7});
-  reg.evictCachedBlocks("UNKNOWN", {7});
-  SUCCEED();
+
+  auto snaps = reg.snapshot();
+  ASSERT_EQ(snaps.size(), 2u);
+  for (const auto& snap : snaps) {
+    if (snap.server_id == "A") {
+      EXPECT_EQ(snap.cached_blocks, 3u);
+    } else if (snap.server_id == "B") {
+      EXPECT_EQ(snap.cached_blocks, 2u);
+    } else {
+      FAIL() << "Unexpected server id " << snap.server_id;
+    }
+  }
+}
+
+TEST(PrefillRegistryTest, RoutingSnapshotComputesContiguousPrefixDepth) {
+  PrefillRegistry reg;
+  reg.preRegister("A", nullptr);
+  reg.preRegister("B", nullptr);
+  reg.markRegistered("A", 4);
+  reg.markRegistered("B", 4);
+  reg.addCachedBlocks("A", {10, 30});
+  reg.addCachedBlocks("B", {10, 20});
+
+  auto snaps = reg.routingSnapshot({10, 20, 30});
+
+  ASSERT_EQ(snaps.size(), 2u);
+  for (const auto& snap : snaps) {
+    if (snap.server_id == "A") {
+      EXPECT_EQ(snap.prefix_match_depth, 1u);
+    } else if (snap.server_id == "B") {
+      EXPECT_EQ(snap.prefix_match_depth, 2u);
+    } else {
+      FAIL() << "Unexpected server id " << snap.server_id;
+    }
+  }
+}
+
+TEST(PrefillRegistryTest, MarkDownClearsRoutingCacheView) {
+  PrefillRegistry reg;
+  reg.preRegister("A", nullptr);
+  reg.markRegistered("A", 4);
+  reg.addCachedBlocks("A", {10, 20});
+
+  auto snaps = reg.routingSnapshot({10, 20});
+  ASSERT_EQ(snaps.size(), 1u);
+  EXPECT_EQ(snaps[0].prefix_match_depth, 2u);
+
+  reg.markDown("A");
+  snaps = reg.routingSnapshot({10});
+  ASSERT_EQ(snaps.size(), 1u);
+  EXPECT_EQ(snaps[0].prefix_match_depth, 0u);
 }
 
 }  // namespace

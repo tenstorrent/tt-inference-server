@@ -9,7 +9,6 @@
 #include <utility>
 #include <vector>
 
-#include "gateway/affinity_cache.hpp"
 #include "gateway/gateway_metrics.hpp"
 #include "gateway/prefill_registry.hpp"
 #include "gateway/prefill_selector.hpp"
@@ -17,32 +16,24 @@
 
 namespace tt::gateway {
 
-Dispatcher::Dispatcher(PrefillRegistry& registry, AffinityCache& affinityCache,
-                       Senders senders)
-    : Dispatcher(registry, affinityCache, std::move(senders),
+Dispatcher::Dispatcher(PrefillRegistry& registry, Senders senders)
+    : Dispatcher(registry, std::move(senders),
                  Options{std::chrono::minutes(5), std::chrono::minutes(1),
                          std::chrono::seconds(30), 3}) {}
 
-Dispatcher::Dispatcher(PrefillRegistry& registry, AffinityCache& affinityCache,
-                       Senders senders, Options options)
-    : registry_(registry),
-      affinity_cache_(affinityCache),
-      senders_(std::move(senders)),
-      options_(options) {}
+Dispatcher::Dispatcher(PrefillRegistry& registry, Senders senders,
+                       Options options)
+    : registry_(registry), senders_(std::move(senders)), options_(options) {}
 
 void Dispatcher::onPrefillRequest(
     const tt::sockets::PrefillRequestMessage& msg) {
-  auto prefills = registry_.snapshot();
-  const uint64_t affinityKey =
+  auto prefills = registry_.routingSnapshot(msg.registration_hashes);
+  const uint64_t firstRegistrationHash =
       msg.registration_hashes.empty() ? 0 : msg.registration_hashes.front();
-  auto sticky =
-      (affinityKey != 0) ? affinity_cache_.lookup(affinityKey) : std::nullopt;
 
-  auto selection =
-      selectPrefill(prefills, affinityKey, sticky, round_robin_cursor_);
+  auto selection = selectPrefill(prefills, round_robin_cursor_);
   GatewayMetrics::instance().recordRoutingDecision(
       routingReasonName(selection.reason));
-  GatewayMetrics::instance().setRoutingTableSize(affinity_cache_.size());
   if (!selection.server_id.has_value()) {
     const auto summary = summarizePrefillEligibility(prefills);
     TT_LOG_WARN(
@@ -55,28 +46,20 @@ void Dispatcher::onPrefillRequest(
   }
 
   const std::string& chosen = *selection.server_id;
-  const bool usedSticky = selection.reason == PrefillRoutingReason::PrefixMatch;
-  if (usedSticky) {
+  if (selection.prefix_match_depth > 0) {
     GatewayMetrics::instance().observePrefixMatchDepth(
-        msg.registration_hashes.size());
+        selection.prefix_match_depth);
   }
   TT_LOG_INFO(
-      "[Dispatcher] taskId={} route prefill='{}' reason={} sticky={} hash={}",
-      msg.task_id, chosen, routingReasonName(selection.reason), usedSticky,
-      affinityKey);
+      "[Dispatcher] taskId={} route prefill='{}' reason={} "
+      "prefix_match_depth={} hash={}",
+      msg.task_id, chosen, routingReasonName(selection.reason),
+      selection.prefix_match_depth, firstRegistrationHash);
 
   registry_.incrementInflight(chosen);
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);
-    in_flight_[msg.task_id] = {chosen, affinityKey, Clock::now()};
-  }
-
-  // Send assignment first so decode can prep KV-transfer ahead of the result.
-  tt::sockets::PrefillAssignmentMessage assignment;
-  assignment.task_id = msg.task_id;
-  assignment.server_id = chosen;
-  if (senders_.sendAssignmentToDecode) {
-    senders_.sendAssignmentToDecode(assignment);
+    in_flight_[msg.task_id] = {chosen, Clock::now()};
   }
 
   bool sent = false;
@@ -126,12 +109,6 @@ void Dispatcher::onPrefillResult(const std::string& fromServerId,
   registry_.decrementInflight(fromServerId);
   const auto latency = Clock::now() - entry->started_at;
 
-  // Don't cache failures — they'd resend to the same broken prefill.
-  if (!msg.error && entry->affinity_key != 0) {
-    affinity_cache_.record(entry->affinity_key, fromServerId);
-    GatewayMetrics::instance().setRoutingTableSize(affinity_cache_.size());
-  }
-
   if (msg.error) {
     TT_LOG_ERROR("[Dispatcher] taskId={} result error from prefill='{}'",
                  msg.task_id, fromServerId);
@@ -139,8 +116,8 @@ void Dispatcher::onPrefillResult(const std::string& fromServerId,
     GatewayMetrics::instance().recordRequestCompleted(fromServerId, "error",
                                                       latency);
   } else {
-    TT_LOG_INFO("[Dispatcher] taskId={} result ok from prefill='{}' tokens={}",
-                msg.task_id, fromServerId, msg.tokens_generated);
+    TT_LOG_INFO("[Dispatcher] taskId={} result ok from prefill='{}'",
+                msg.task_id, fromServerId);
     GatewayMetrics::instance().recordRequestCompleted(fromServerId, "success",
                                                       latency);
   }
@@ -191,15 +168,7 @@ void Dispatcher::onCacheBlocksAdded(
   GatewayMetrics::instance().recordCacheBlocksAdded(msg.block_hashes.size());
 }
 
-void Dispatcher::onCacheBlocksEvicted(
-    const tt::sockets::PrefillCacheBlocksEvictedMessage& msg) {
-  registry_.evictCachedBlocks(msg.server_id, msg.block_hashes);
-  GatewayMetrics::instance().recordCacheBlocksEvicted(msg.block_hashes.size());
-}
-
 void Dispatcher::onPrefillDown(const std::string& serverId) {
-  affinity_cache_.evictPrefill(serverId);
-
   std::vector<std::pair<uint32_t, InFlightEntry>> orphaned;
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);
@@ -313,7 +282,6 @@ void Dispatcher::failTaskToDecode(uint32_t taskId, const std::string& reason,
 
   tt::sockets::PrefillResultMessage err(taskId);
   err.error = true;
-  err.finished = true;
   err.generated_text = reason;
 
   if (senders_.sendResultToDecode) {

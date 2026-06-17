@@ -16,7 +16,6 @@
 
 #include "config/types.hpp"
 #include "domain/llm/chat_message.hpp"
-#include "domain/tool_calls/tool.hpp"
 
 namespace tt::utils::tokenizers {
 
@@ -129,10 +128,7 @@ class Tokenizer {
    */
   virtual std::string applyChatTemplate(
       const std::vector<tt::domain::llm::ChatMessage>& messages,
-      bool addGenerationPrompt = true,
-      const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools =
-          std::nullopt,
-      bool enableReasoning = true,
+      bool addGenerationPrompt = true, bool enableReasoning = true,
       bool skipApplyChatTemplate = false) const = 0;
 
   /**

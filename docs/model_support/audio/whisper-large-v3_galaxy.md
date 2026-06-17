@@ -15,6 +15,7 @@ To use non-default weights, replace `whisper-large-v3` in commands below.
 
 `whisper-large-v3` is also supported on hardware:
 
+- [BH Galaxy](whisper-large-v3_blackhole_galaxy.md)
 - [BH QuietBox 2](whisper-large-v3_p300x2.md)
 - [P150](whisper-large-v3_p150.md)
 - [WH LoudBox/QuietBox](whisper-large-v3_t3k.md)

@@ -478,6 +478,20 @@ Model model() {
   return cached;
 }
 
+bool sampleOnlyInReasoning() {
+  switch (modelType()) {
+    // DeepSeek samples only inside the reasoning phase; argmax otherwise.
+    case ModelType::DEEPSEEK_R1_0528:
+      return true;
+    case ModelType::LLAMA_3_1_8B_INSTRUCT:
+    case ModelType::KIMI_K2_6:
+    case ModelType::GPT_OSS_120B:
+    case ModelType::MINIMAX_M2_7:
+      return false;
+  }
+  return false;
+}
+
 LLMMode llmMode() {
   static const LLMMode cached =
       llmModeFromString(envStringLower("LLM_MODE", defaults::LLM_MODE));

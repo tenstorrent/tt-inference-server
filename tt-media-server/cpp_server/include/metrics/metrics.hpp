@@ -205,6 +205,8 @@ class ServerMetrics {
   prometheus::Gauge* active_sessions_{nullptr};
   prometheus::Family<prometheus::Gauge>* slot_blocks_family_{nullptr};
 
+  std::mutex slot_blocks_mutex_;
+
   // --- latency summaries (exact quantiles via CKMS, 60 s sliding window) ---
   prometheus::Summary* e2e_latency_seconds_{nullptr};
   prometheus::Summary* ttft_seconds_{nullptr};

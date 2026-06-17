@@ -243,6 +243,7 @@ void ServerMetrics::setSlotBlocks(uint32_t slotId, double blocks) {
   // Called at turn-end prefix registration — session-lifecycle frequency.
   // Family::Add is idempotent for identical labels, so this reuses the
   // existing gauge for the slot.
+  std::lock_guard<std::mutex> lock(slot_blocks_mutex_);
   slot_blocks_family_
       ->Add({{"model_name", model_name_}, {"slot_id", std::to_string(slotId)}})
       .Set(blocks);
@@ -251,7 +252,10 @@ void ServerMetrics::setSlotBlocks(uint32_t slotId, double blocks) {
 void ServerMetrics::removeSlot(uint32_t slotId) {
   // Drop the series so Prometheus stops reporting a stale value after the
   // slot is deallocated. Add() returns the existing gauge (or creates one),
-  // which Remove() then deletes from the family.
+  // which Remove() then deletes from the family. Locked against setSlotBlocks
+  // (see above): Remove() destroys the Gauge that a concurrent Add().Set()
+  // could still be writing.
+  std::lock_guard<std::mutex> lock(slot_blocks_mutex_);
   auto& gauge = slot_blocks_family_->Add(
       {{"model_name", model_name_}, {"slot_id", std::to_string(slotId)}});
   slot_blocks_family_->Remove(&gauge);
