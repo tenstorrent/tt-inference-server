@@ -457,12 +457,6 @@ _venv_config_list = [
         setup_function=fetch_structured_output_scripts_forge,
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
-        requirements_file="benchmarks-aiperf.txt",
-        extra_dirs=("artifacts",),
-        python_version="3.11",
-    ),
-    VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_GUIDELLM,
         requirements_file="benchmarks-guidellm.txt",
         python_version="3.11",

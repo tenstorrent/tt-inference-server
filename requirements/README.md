@@ -14,8 +14,8 @@ requirements/
 ```
 
 File names are kebab-case lowercase mirrors of the `WorkflowVenvType` enum
-member: `EVALS_VIDEO` → `evals-video.txt`, `BENCHMARKS_AIPERF` →
-`benchmarks-aiperf.txt`.
+member: `EVALS_VIDEO` → `evals-video.txt`, `BENCHMARKS_GUIDELLM` →
+`benchmarks-guidellm.txt`.
 
 `BENCHMARKS_VIDEO` and `BENCHMARKS_GENAI_PERF` deliberately have no file —
 they don't pip-install anything (the former is a no-op `setup_venv()`, the

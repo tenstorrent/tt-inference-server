@@ -22,6 +22,7 @@ DISPLAY_NAMES: Dict[str, str] = {
     "max_concurrency": "Concurrency",
     "concurrency": "Concurrency",
     "num_requests": "Num Requests",
+    "error_request_count": "Errors",
     "num_runs": "Total Runs",
     "num_prompts": "Num Prompts",
     "num_responses": "Num Responses",

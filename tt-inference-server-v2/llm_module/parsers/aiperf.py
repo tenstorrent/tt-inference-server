@@ -7,56 +7,11 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any, Dict, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, Mapping, Optional
 
 from report_module.schema import Block
 
 from .base import LLMResultParser
-
-LATENCY_METRICS: Tuple[Tuple[str, str], ...] = (
-    ("request_latency", "request_latency"),
-    ("time_to_first_token", "ttft"),
-    ("time_to_second_token", "ttst"),
-    ("inter_token_latency", "itl"),
-    ("inter_chunk_latency", "icl"),
-)
-THROUGHPUT_METRICS: Tuple[Tuple[str, str], ...] = (
-    ("request_throughput", "request_throughput"),
-    ("output_token_throughput", "output_token_throughput"),
-    ("output_token_throughput_per_user", "output_token_throughput_per_user"),
-    ("goodput", "goodput"),
-)
-SEQUENCE_LENGTH_METRICS: Tuple[Tuple[str, str], ...] = (
-    ("input_sequence_length", "input_sequence_length"),
-    ("output_sequence_length", "output_sequence_length"),
-)
-COUNT_METRICS: Tuple[Tuple[str, str], ...] = (
-    ("request_count", "request_count"),
-    ("good_request_count", "good_request_count"),
-    ("error_request_count", "error_request_count"),
-    ("output_token_count", "output_token_count"),
-    ("reasoning_token_count", "reasoning_token_count"),
-    ("benchmark_duration", "benchmark_duration"),
-    ("total_output_tokens", "total_output_tokens"),
-    ("total_reasoning_tokens", "total_reasoning_tokens"),
-    ("total_isl", "total_isl"),
-    ("total_osl", "total_osl"),
-)
-ORDERED_STATS: Tuple[str, ...] = (
-    "avg",
-    "min",
-    "max",
-    "p1",
-    "p5",
-    "p10",
-    "p25",
-    "p50",
-    "p75",
-    "p90",
-    "p95",
-    "p99",
-    "std",
-)
 
 
 class AIPerfParser(LLMResultParser):
@@ -68,46 +23,52 @@ class AIPerfParser(LLMResultParser):
             "model": _model_name(raw),
             "device": device,
             "timestamp": _timestamp(raw),
-            "Run Configuration": _run_configuration(raw),
-            "Latency Statistics": _metric_table(raw, LATENCY_METRICS),
-            "Throughput": _metric_table(raw, THROUGHPUT_METRICS),
-            "Sequence Lengths": _metric_table(raw, SEQUENCE_LENGTH_METRICS),
-            "Counts & Totals": _metric_table(raw, COUNT_METRICS),
-            "Telemetry": _telemetry(raw),
+            "concurrency": _concurrency(raw),
+            "num_requests": _stat_int(raw, "request_count"),
+            "input_sequence_length": _stat_int(raw, "input_sequence_length"),
+            "output_sequence_length": _stat(raw, "output_sequence_length"),
+            "mean_ttft_ms": _stat(raw, "time_to_first_token", "avg"),
+            "p50_ttft": _stat(raw, "time_to_first_token", "p50"),
+            "p99_ttft": _stat(raw, "time_to_first_token", "p99"),
+            "mean_tpot_ms": _stat(raw, "inter_token_latency", "avg"),
+            "mean_e2el_ms": _stat(raw, "request_latency", "avg"),
+            "tput_user": _stat(raw, "output_token_throughput_per_user"),
+            "tps_decode_throughput": _stat(raw, "output_token_throughput"),
+            "request_throughput": _stat(raw, "request_throughput"),
+            "error_request_count": _errors(raw),
         }
         return self._wrap_record(record)
 
 
-def _metric_table(
-    raw: Mapping[str, Any],
-    metrics: Sequence[Tuple[str, str]],
-) -> List[Dict[str, Any]]:
-    columns_present = _detect_present_stats(raw, metrics)
-    rows: List[Dict[str, Any]] = []
-    for source_key, label in metrics:
-        result = raw.get(source_key)
-        if not isinstance(result, Mapping):
-            continue
-        row: Dict[str, Any] = {"metric": label, "unit": result.get("unit", "")}
-        for stat in columns_present:
-            row[stat] = _round(result.get(stat), 4)
-        rows.append(row)
-    return rows
+def _stat(raw: Mapping[str, Any], key: str, stat: str = "avg") -> Optional[float]:
+    metric = raw.get(key)
+    if not isinstance(metric, Mapping):
+        return None
+    return _round(metric.get(stat), 4)
 
 
-def _detect_present_stats(
-    raw: Mapping[str, Any],
-    metrics: Sequence[Tuple[str, str]],
-) -> List[str]:
-    seen: Dict[str, None] = {}
-    for source_key, _label in metrics:
-        result = raw.get(source_key)
-        if not isinstance(result, Mapping):
-            continue
-        for stat in ORDERED_STATS:
-            if result.get(stat) is not None:
-                seen[stat] = None
-    return [s for s in ORDERED_STATS if s in seen]
+def _stat_int(raw: Mapping[str, Any], key: str) -> Optional[int]:
+    value = _stat(raw, key)
+    return int(value) if isinstance(value, (int, float)) else None
+
+
+def _concurrency(raw: Mapping[str, Any]) -> Optional[int]:
+    config = raw.get("input_config")
+    loadgen = config.get("loadgen") if isinstance(config, Mapping) else None
+    if isinstance(loadgen, Mapping):
+        value = loadgen.get("concurrency")
+        if isinstance(value, (int, float)):
+            return int(value)
+    return None
+
+
+def _errors(raw: Mapping[str, Any]) -> Optional[int]:
+    value = raw.get("error_request_count")
+    if isinstance(value, Mapping):
+        value = value.get("avg")
+    if isinstance(value, (int, float)) and value:
+        return int(value)
+    return None
 
 
 def _model_name(raw: Mapping[str, Any]) -> str:
@@ -140,40 +101,6 @@ def _normalize_iso(text: str) -> str:
         return parsed.strftime("%Y-%m-%d %H:%M:%S")
     except ValueError:
         return text
-
-
-def _run_configuration(raw: Mapping[str, Any]) -> Dict[str, Any]:
-    config = raw.get("input_config") or {}
-    if not isinstance(config, Mapping):
-        config = {}
-    out: Dict[str, Any] = {
-        "schema_version": raw.get("schema_version"),
-        "aiperf_version": raw.get("aiperf_version"),
-        "benchmark_id": raw.get("benchmark_id"),
-        "model": _model_name(raw),
-        "start_time": raw.get("start_time"),
-        "end_time": raw.get("end_time"),
-        "was_cancelled": raw.get("was_cancelled"),
-    }
-    endpoint = config.get("endpoint")
-    if isinstance(endpoint, Mapping):
-        out["endpoint_type"] = endpoint.get("type")
-    loadgen = config.get("loadgen")
-    if isinstance(loadgen, Mapping):
-        for key in ("concurrency", "request_rate"):
-            if key in loadgen:
-                out[key] = loadgen[key]
-    return out
-
-
-def _telemetry(raw: Mapping[str, Any]) -> Any:
-    telemetry = raw.get("telemetry_data") or {}
-    if not isinstance(telemetry, Mapping):
-        return {}
-    gpu_metrics = telemetry.get("gpu_metrics")
-    if isinstance(gpu_metrics, Mapping):
-        return {str(name): dict(values) for name, values in gpu_metrics.items()}
-    return {str(k): v for k, v in telemetry.items()}
 
 
 def _round(value: Any, digits: int) -> Any:

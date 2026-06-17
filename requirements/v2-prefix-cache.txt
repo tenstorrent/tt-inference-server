@@ -6,8 +6,8 @@
 # Used by direct invocations of tt-inference-server-v2/run.py when
 # --prefix-cache is set.
 #
-# This is a strict superset of requirements/benchmarks-aiperf.txt: the
-# v2 orchestrator additionally imports aiohttp at module-load time via
+# This ships aiperf plus the v2 base deps: the v2 orchestrator
+# additionally imports aiohttp at module-load time via
 # workflow_module -> test_module.context -> health_tests. Every other
 # v2 test runner (audio / image / video / CNN / TTS / embedding evals
 # and benchmarks, plus run_llm_performance) is lazy-loaded via PEP 562
