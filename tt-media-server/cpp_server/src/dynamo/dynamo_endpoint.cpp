@@ -219,8 +219,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
     auto cancelFn = [pipeline, taskId = req->task_id]() {
       pipeline->abortRequest(taskId);
     };
-    auto writer =
-        DynamoStreamWriter::create(loop, connInfo, probeId, cancelFn);
+    auto writer = DynamoStreamWriter::create(loop, connInfo, probeId, cancelFn);
     writer->connect();
 
     auto sendChunk = [writer](const TokenChunk& chunk) {
