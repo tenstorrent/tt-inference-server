@@ -716,11 +716,26 @@ std::string dynamoNamespace() {
 }
 
 std::string dynamoComponent() {
+  if (const char* v = std::getenv("DYNAMO_COMPONENT"); v && *v) {
+    return v;
+  }
+  if (dynamoWorkerRole() == "prefill") {
+    return "prefill";
+  }
   return envString("DYNAMO_COMPONENT", defaults::DYNAMO_COMPONENT);
 }
 
 std::string dynamoEndpointName() {
   return envString("DYNAMO_ENDPOINT_NAME", defaults::DYNAMO_ENDPOINT_NAME);
+}
+
+std::string dynamoWorkerRole() {
+  std::string role =
+      envString("DYNAMO_WORKER_ROLE", defaults::DYNAMO_WORKER_ROLE);
+  if (role == "prefill" || role == "decode") {
+    return role;
+  }
+  return llmMode() == LLMMode::PREFILL_ONLY ? "prefill" : "decode";
 }
 
 }  // namespace tt::config

@@ -101,6 +101,26 @@ std::string instanceKey(const DiscoveryConfig& c) {
          c.instance_id_hex;
 }
 
+const char* workerRoleName(DiscoveryWorkerRole role) {
+  switch (role) {
+    case DiscoveryWorkerRole::PREFILL:
+      return "prefill";
+    case DiscoveryWorkerRole::DECODE:
+      return "decode";
+  }
+  return "decode";
+}
+
+const char* modelTypeName(DiscoveryWorkerRole role) {
+  switch (role) {
+    case DiscoveryWorkerRole::PREFILL:
+      return "Prefill";
+    case DiscoveryWorkerRole::DECODE:
+      return "Chat";
+  }
+  return "Chat";
+}
+
 /// Build the instance JSON document the frontend dials over (transport.tcp).
 Json::Value buildInstanceJson(const DiscoveryConfig& c) {
   Json::Value instance(Json::objectValue);
@@ -253,8 +273,9 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   card["kv_cache_block_size"] =
       static_cast<int>(tt::config::kvCacheBlockSize());
   card["migration_limit"] = 0;
-  card["model_type"] = "Chat";
+  card["model_type"] = modelTypeName(c.worker_role);
   card["model_input"] = "Tokens";
+  card["worker_type"] = modelTypeName(c.worker_role);
 
   Json::Value runtime(Json::objectValue);
   runtime["total_kv_blocks"] = Json::Value::null;
@@ -268,6 +289,8 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   runtime["data_parallel_size"] = 1;
   runtime["enable_local_indexer"] = true;
   runtime["enable_eagle"] = false;
+  runtime["worker_role"] = workerRoleName(c.worker_role);
+  runtime["stable_routing_id"] = c.instance_id_hex;
   card["runtime_config"] = std::move(runtime);
 
   card["media_decoder"] = Json::Value::null;
@@ -300,8 +323,9 @@ class EtcdDiscoveryRegistration : public DiscoveryRegistration {
     }
     publishKeys();
     TT_LOG_INFO(
-        "[DynamoDiscovery/etcd] Registered key={} model={} endpoints={}",
-        instanceKey(cfg), cfg.model_name, cfg.etcd_endpoints);
+        "[DynamoDiscovery/etcd] Registered key={} model={} role={} endpoints={}",
+        instanceKey(cfg), cfg.model_name, workerRoleName(cfg.worker_role),
+        cfg.etcd_endpoints);
   }
 
   void keepAlive() override {

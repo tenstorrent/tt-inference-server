@@ -309,6 +309,10 @@ std::string dynamoComponent();
  * defaults::DYNAMO_ENDPOINT_NAME. */
 std::string dynamoEndpointName();
 
+/** Dynamo worker role for discovery. From DYNAMO_WORKER_ROLE. Values:
+ * auto, decode, prefill. auto derives from LLM_MODE. */
+std::string dynamoWorkerRole();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();

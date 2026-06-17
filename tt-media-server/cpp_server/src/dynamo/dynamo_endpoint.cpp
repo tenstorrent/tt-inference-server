@@ -170,6 +170,30 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
   auto pipeline = pipeline_;
   trantor::EventLoopThreadPool* pool = loop_pool_.get();
 
+  if (options_.worker_role == DiscoveryWorkerRole::PREFILL) {
+    return [pool](const GenerateRequest& dynReq,
+                  const TcpStreamConnectionInfo& connInfo) {
+      const std::string requestId =
+          dynReq.raw.get("request_id", "").asString();
+      TT_LOG_INFO(
+          "[DynamoEndpoint] Prefill discovery stub received request id={} "
+          "tokens={}",
+          requestId.empty() ? "?" : requestId, dynReq.token_ids.size());
+
+      auto writer = DynamoStreamWriter::create(pool->getNextLoop(), connInfo,
+                                               requestId, []() {});
+      writer->connect();
+
+      TokenChunk err;
+      err.error =
+          "cpp_server Dynamo prefill endpoint is registered for discovery "
+          "only; native prefill execution is not implemented in this spike";
+      err.error_code = 501;
+      writer->sendChunk(err);
+      writer->finalize();
+    };
+  }
+
   return [pipeline, pool](const GenerateRequest& dynReq,
                           const TcpStreamConnectionInfo& connInfo) {
     using SteadyClock = std::chrono::steady_clock;
@@ -467,6 +491,7 @@ void DynamoEndpoint::start() {
   dc.namespace_name = options_.namespace_name;
   dc.component = options_.component;
   dc.endpoint = options_.endpoint;
+  dc.worker_role = options_.worker_role;
   dc.instance_id = server_->config().instance_id;
   dc.instance_id_hex = server_->config().instance_id_hex;
   // Dynamo's TCP dialer parses `IP:port/endpoint_name`: the left half
@@ -483,8 +508,10 @@ void DynamoEndpoint::start() {
 
   TT_LOG_INFO(
       "[DynamoEndpoint] Ready: bind={}:{} advertise={} model={} "
-      "discovery=etcd({})",
+      "role={} discovery=etcd({})",
       options_.bind_host, server_->port(), dc.tcp_address, dc.model_name,
+      options_.worker_role == DiscoveryWorkerRole::PREFILL ? "prefill"
+                                                           : "decode",
       dc.etcd_endpoints);
 
   // Refresh the registration periodically so a frontend that prunes stale

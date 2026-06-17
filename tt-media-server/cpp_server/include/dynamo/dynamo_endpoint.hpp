@@ -43,6 +43,7 @@ class DynamoEndpoint {
     std::string namespace_name = "default";
     std::string component = "backend";
     std::string endpoint = "generate";
+    DiscoveryWorkerRole worker_role = DiscoveryWorkerRole::DECODE;
 
     /// Discovery backend ("file" or "etcd"). Must match the frontend's
     /// DYN_DISCOVERY_BACKEND.

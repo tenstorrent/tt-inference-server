@@ -8,7 +8,14 @@
 # locally-built mock binary. See benchmarks/test_prefill_decode.py.
 #
 #   ./run_stack.sh up                      # disaggregated: decode + prefill split
+#   ./run_stack.sh verify-prefill-discovery # inspect Dynamo prefill etcd keys
 #   ./run_stack.sh down                    # tear everything down
+#
+# Optional discovery spike:
+#   DYNAMO_REGISTER_PREFILL=1 ./run_stack.sh up
+# Registers the prefill worker with Dynamo as default/prefill/generate. The
+# prefill Dynamo endpoint is a discovery stub only; real prefill traffic still
+# uses the cpp_server inter-server socket / PrefillGateway path.
 #
 # Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; frontend -> /tmp/tt_frontend.log.
 
@@ -29,6 +36,7 @@ SERVER_PORT="${SERVER_PORT:-8001}"       # decode/regular REST + dynamo endpoint
 PREFILL_PORT="${PREFILL_PORT:-8002}"     # prefill REST
 SOCKET_PORT="${SOCKET_PORT:-9000}"       # decode<->prefill inter-server socket
 MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
+DYNAMO_REGISTER_PREFILL="${DYNAMO_REGISTER_PREFILL:-0}"
 ETCD_NAME="${ETCD_NAME:-etcd}"
 PIDFILE="/tmp/tt_stack.pids"
 
@@ -93,13 +101,24 @@ ensure_etcd() {
 }
 
 # dynamo registration env shared by the regular/decode worker (the one the
-# frontend discovers). The prefill worker does NOT register.
+# frontend discovers for normal requests).
 worker_dynamo_env() {
     echo "DYNAMO_ENDPOINT_ENABLED=1"
+    echo "DYNAMO_WORKER_ROLE=decode"
     echo "DYNAMO_DISCOVERY_BACKEND=etcd"
     echo "DYNAMO_ETCD_ENDPOINTS=${ETCD_ENDPOINTS}"
     echo "DYNAMO_NAMESPACE=default"
     echo "DYNAMO_COMPONENT=backend"
+    echo "DYNAMO_ENDPOINT_NAME=generate"
+}
+
+prefill_dynamo_env() {
+    echo "DYNAMO_ENDPOINT_ENABLED=1"
+    echo "DYNAMO_WORKER_ROLE=prefill"
+    echo "DYNAMO_DISCOVERY_BACKEND=etcd"
+    echo "DYNAMO_ETCD_ENDPOINTS=${ETCD_ENDPOINTS}"
+    echo "DYNAMO_NAMESPACE=default"
+    echo "DYNAMO_COMPONENT=prefill"
     echo "DYNAMO_ENDPOINT_NAME=generate"
 }
 
@@ -155,7 +174,13 @@ up() {
     # co-located on one host, and these default to fixed names
     # (tt_mem_requests/_results, /tt_worker_metrics) — sharing them makes the
     # prefill worker's KV allocation requests race the decode worker's and hang.
+    local prefill_dynamo_env=()
+    if [[ "${DYNAMO_REGISTER_PREFILL}" == "1" ]]; then
+        log "prefill Dynamo discovery registration enabled"
+        readarray -t prefill_dynamo_env < <(prefill_dynamo_env)
+    fi
     start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
+        "${prefill_dynamo_env[@]}" \
         LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
         SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
         TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
@@ -169,11 +194,29 @@ up() {
     log "pids: $(tr '\n' ' ' < "${PIDFILE}")"
 }
 
-[[ $# -eq 1 ]] || { echo "usage: $0 up | down" >&2; exit 1; }
+verify_prefill_discovery() {
+    docker ps --format '{{.Names}}' | grep -qx "${ETCD_NAME}" || die "${ETCD_NAME} container is not running"
+
+    local prefix="v1/mdc/default/prefill/generate"
+    log "checking etcd prefix ${prefix}"
+    local output
+    output="$(docker exec "${ETCD_NAME}" etcdctl get --prefix "${prefix}")"
+    [[ -n "${output}" ]] || die "no Dynamo prefill MDC keys found under ${prefix}"
+
+    printf '%s\n' "${output}"
+    printf '%s\n' "${output}" | grep -q '"worker_role":"prefill"' ||
+        die "prefill MDC found, but worker_role=prefill was not present"
+    printf '%s\n' "${output}" | grep -q '"model_type":"Prefill"' ||
+        die "prefill MDC found, but model_type=Prefill was not present"
+    log "prefill discovery registration verified"
+}
+
+[[ $# -eq 1 ]] || { echo "usage: $0 up | verify-prefill-discovery | down" >&2; exit 1; }
 CMD="$1"
 
 case "${CMD}" in
-    up)   up ;;
-    down) teardown ;;
+    up)                         up ;;
+    verify-prefill-discovery)   verify_prefill_discovery ;;
+    down)                       teardown ;;
     *)    die "unknown command: ${CMD}" ;;
 esac
