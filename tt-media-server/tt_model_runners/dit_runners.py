@@ -177,6 +177,31 @@ class TTDiTRunner(BaseMetalDeviceRunner):
             num_inference_steps=2,
         )
 
+    def health_check(self, deep: bool = False) -> bool:
+        if not super().health_check():
+            return False
+        if not deep or self.pipeline is None:
+            return True
+        try:
+            if self.settings.model_service == ModelServices.IMAGE.value:
+                self.run(
+                    [
+                        ImageGenerateRequest.model_construct(
+                            prompt="health",
+                            negative_prompt="",
+                            num_inference_steps=2,
+                        )
+                    ]
+                )
+            elif self.settings.model_service == ModelServices.VIDEO.value:
+                self.run([self._build_warmup_video_request()])
+            return True
+        except Exception as e:
+            self.logger.warning(
+                f"Device {self.device_id}: deep health_check failed: {e}"
+            )
+            return False
+
     @log_execution_time(
         f"{dit_runner_log_map[get_settings().model_runner]} inference",
         TelemetryEvent.MODEL_INFERENCE,
