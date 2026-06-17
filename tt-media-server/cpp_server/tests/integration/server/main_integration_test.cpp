@@ -654,15 +654,16 @@ TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
   future.get();
 }
 
-TEST_F(MainIntegrationTest, MigrationId_IsZeroInRegularMode) {
+TEST_F(MainIntegrationTest, MigrationId_IsNulloptInRegularMode) {
   // In regular (non-disaggregated) mode, no migration ID is generated.
-  // Verify the field survives IPC serialization as 0 (not garbage).
+  // Verify the field survives IPC serialization as nullopt (not garbage).
   auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
 
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
-  EXPECT_EQ(seq->getMigrationId(), 0u)
-      << "migrationId must be 0 in regular mode (only prefill generates it)";
+  EXPECT_FALSE(seq->getMigrationId().has_value())
+      << "migrationId must be nullopt in regular mode (only prefill generates "
+         "it)";
 
   mockWorkerResponse(seq->taskId);
   future.get();
