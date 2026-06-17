@@ -159,7 +159,7 @@ async def chat_completions(
         try:
             service.scheduler.check_is_model_ready()
         except Exception:
-            raise HTTPException(status_code=405, detail="Model is not ready")
+            raise HTTPException(status_code=503, detail="Model is not ready")
 
         async def result_stream():
             accumulated_text = ""
