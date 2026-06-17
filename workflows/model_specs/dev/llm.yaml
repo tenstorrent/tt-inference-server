@@ -1041,7 +1041,7 @@ templates:
       default_impl: true
       override_tt_config:
         sample_on_device_mode: decode_only
-        trace_region_size: 155000000
+        trace_region_size: 900000000
     - device: P300
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
