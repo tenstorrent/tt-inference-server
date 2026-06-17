@@ -14,11 +14,11 @@
 namespace tt::gateway {
 
 struct GatewayPrefillMetricSnapshot {
-  std::string server_id;
+  std::string serverId;
   bool healthy = false;
-  bool accepting_tasks = false;
-  uint32_t in_flight = 0;
-  size_t cached_blocks = 0;
+  bool acceptingTasks = false;
+  uint32_t inFlight = 0;
+  size_t cachedBlocks = 0;
   double heartbeat_age_seconds = 0.0;
 };
 

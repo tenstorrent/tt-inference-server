@@ -158,18 +158,18 @@ class InterServerService {
   void markPrefillHealthUnavailable();
   bool isPrefillHealthReady() const;
 
-  SocketManager socket_manager_;
-  PrefillRequestedCallback prefill_requested_callback_;
-  PrefillCancelCallback prefill_cancel_callback_;
-  PrefillCompleteCallback prefill_complete_callback_;
-  bool enabled_ = false;
+  SocketManager socketManager;
+  PrefillRequestedCallback prefillRequestedCallback;
+  PrefillCancelCallback prefillCancelCallback;
+  PrefillCompleteCallback prefillCompleteCallback;
+  bool enabled = false;
   tt::config::LLMMode llmMode = tt::config::LLMMode::REGULAR;
-  bool gateway_mode_ = false;
-  bool periodic_registration_mode_ = false;
+  bool gatewayMode = false;
+  bool periodicRegistrationMode = false;
   bool prefillHealthProbeMode = false;
-  std::mutex registration_mutex_;
-  std::condition_variable registration_cv_;
-  std::jthread registration_thread_;
+  std::mutex registrationMutex;
+  std::condition_variable registrationCv;
+  std::jthread registrationThread;
   mutable std::mutex prefillHealthMutex;
   bool prefillHealthReady = false;
   std::condition_variable prefillHealthCv;

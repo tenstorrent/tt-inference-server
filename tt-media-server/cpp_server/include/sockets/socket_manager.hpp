@@ -112,21 +112,21 @@ class SocketManager {
   std::function<void(const std::vector<uint8_t>&)> getHandler(
       std::string_view messageType) const;
 
-  std::unique_ptr<ISocketTransport> transport_;
+  std::unique_ptr<ISocketTransport> transport;
 
-  std::atomic<bool> running_{false};
-  std::jthread messageThread_;
+  std::atomic<bool> running{false};
+  std::jthread messageThread;
 
-  mutable std::mutex handlersMutex_;
+  mutable std::mutex handlersMutex;
   std::map<std::string, std::function<void(const std::vector<uint8_t>&)>,
            std::less<>>
-      handlers_;
+      handlers;
 
-  std::function<void()> pendingConnectionLostCallback_;
-  std::function<void()> pendingConnectionEstablishedCallback_;
-  bool reconnectBackoffSet_{false};
-  std::chrono::milliseconds reconnectInitialDelay_{0};
-  std::chrono::milliseconds reconnectMaxDelay_{0};
+  std::function<void()> pendingConnectionLostCallback;
+  std::function<void()> pendingConnectionEstablishedCallback;
+  bool reconnectBackoffSet{false};
+  std::chrono::milliseconds reconnectInitialDelay{0};
+  std::chrono::milliseconds reconnectMaxDelay{0};
 
   void applyPendingSettings();
 };
@@ -135,13 +135,13 @@ class SocketManager {
 
 template <typename T>
 bool SocketManager::sendObject(std::string_view messageType, const T& obj) {
-  if (!transport_) {
+  if (!transport) {
     return false;
   }
 
   try {
     std::vector<uint8_t> data = wire::serializeMessage(messageType, obj);
-    return transport_->sendRawData(data);
+    return transport->sendRawData(data);
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[SocketManager] Serialization error: {}", e.what());
     return false;
@@ -151,9 +151,9 @@ bool SocketManager::sendObject(std::string_view messageType, const T& obj) {
 template <typename T>
 void SocketManager::registerHandler(std::string_view messageType,
                                     std::function<void(const T&)> handler) {
-  std::lock_guard<std::mutex> lock(handlersMutex_);
+  std::lock_guard<std::mutex> lock(handlersMutex);
 
-  handlers_[std::string(messageType)] =
+  handlers[std::string(messageType)] =
       [handler](const std::vector<uint8_t>& data) {
         try {
           T payload = wire::deserializePayload<T>(data);
