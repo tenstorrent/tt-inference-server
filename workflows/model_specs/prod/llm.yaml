@@ -175,7 +175,7 @@ templates:
 - weights:
     - google/gemma-4-31b-it
   impl: tt_transformers
-  tt_metal_commit: "9970093"  # arg/gemma4_optimizations
+  tt_metal_commit: "e54e650ccf0"  # main + Gemma4 fixes (shares image with gemma-4-12b-it)
   vllm_commit: "3334377"  # tenstorrent/vllm dev (Harry: hybrid-kvc + Gemma4 plugin)
   inference_engine: VLLM
   device_model_specs:
@@ -201,6 +201,12 @@ templates:
         # unreachable in decode. Enabling on-device sampling for decode performs the
         # cross-shard argmax/sampling on device and returns correct global token ids.
         sample_on_device_mode: decode_only
+        # TEMPORARY (tt-metal main decode-trace regression): same as gemma-4-12b-it —
+        # the on-device DECODE TRACE corrupts Gemma4 on P300X2 (prefill correct, traced
+        # decode is gibberish). trace_mode=none forces fully-eager execution: correct
+        # output but un-accelerated (slow) decode. Remove once tt-metal fixes the Gemma4
+        # decode trace on main (see PR tenstorrent/tt-metal#47172).
+        trace_mode: none
       vllm_args:
         override_generation_config: '{"temperature": 1.0, "top_k": 64, "top_p": 0.95}'
   status: EXPERIMENTAL
