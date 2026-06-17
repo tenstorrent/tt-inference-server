@@ -200,13 +200,9 @@ Run `python3 scripts/list_model_images.py` in order to confirm that docker image
 
 The full script path is: ```https://github.com/tenstorrent/tt-inference-server/blob/main/scripts/list_model_images.py```
 
-## update of Release Zoo
+## Update Release Zoo
 
-in tt-shield repo we need to run the following script so the page on Models Dashboard is being refreshed.
-
-`models-dashboards/scripts/release_spec_matcher.sh --branch main --s3`
-
-TO BE DONE: implement pipeline on tt-shield side which will trigger this script automatically.
+From the `tt-shield` Actions tab we need to run the `"Update Release Zoo"` action so the page on Models Dashboard is being refreshed.
 
 ## Create post-release branch and PR
 
