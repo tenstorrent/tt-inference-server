@@ -37,8 +37,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
   // unserviced allocation queue. Real prefill backends manage KV memory
   // elsewhere, so this stays scoped to the mock runner.
   const bool isMockBackend =
-      config.runner_type == config::ModelRunnerType::MOCK ||
-      config.runner_type == config::ModelRunnerType::MOCK_PIPELINE;
+      config.runner_type == config::ModelRunnerType::MOCK;
   const bool prefillOnly =
       tt::config::llmMode() == config::LLMMode::PREFILL_ONLY;
   if (!prefillOnly) {

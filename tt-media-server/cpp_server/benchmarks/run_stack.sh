@@ -2,10 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
-# run_stack.sh — bring up the Dynamo frontend + cpp_server (mock) for the
-# prefill/decode test suite, without any tt-shield image. Frontend runs from a
-# host ai-dynamo venv; etcd runs as the public quay image; workers run as the
-# locally-built mock binary. See benchmarks/test_prefill_decode.py.
+# run_stack.sh — bring up the Dynamo frontend + cpp_server (mock_pipeline) for
+# the prefill/decode test suite, without any tt-shield image. Frontend runs from
+# a host ai-dynamo venv; etcd runs as the public quay image; workers run as the
+# locally-built Blaze binary with the mock_pipeline backend (real Blaze prefill
+# and decode schedulers, pipeline-simulator latency model). The binary must be
+# built with --blaze; otherwise mock_pipeline silently falls back to LLMRunner's
+# legacy mock path. 
 #
 #   ./run_stack.sh up                      # disaggregated: decode + prefill split
 #   ./run_stack.sh down                    # tear everything down
@@ -124,7 +127,7 @@ wait_ready() {
 }
 
 up() {
-    [[ -x "${BIN}" ]] || { log "no binary; building (mock)"; (cd "${CPP_DIR}" && env -u TT_METAL_HOME ./build.sh); }
+    [[ -x "${BIN}" ]] || { log "no binary; building (blaze)"; (cd "${CPP_DIR}" && env -u TT_METAL_HOME ./build.sh --blaze); }
     teardown
     : > "${PIDFILE}"
     ensure_etcd
@@ -133,7 +136,7 @@ up() {
     # The decode worker registers with the frontend; the prefill worker does NOT.
     start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
         $(dynamo_worker_env "${ETCD_ENDPOINTS}") \
-        LLM_MODE=decode LLM_DEVICE_BACKEND=mock \
+        LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
         SOCKET_TRANSPORT=tcp SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
         MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE}"
     sleep 3
@@ -142,7 +145,7 @@ up() {
     # (tt_mem_requests/_results, /tt_worker_metrics) — sharing them makes the
     # prefill worker's KV allocation requests race the decode worker's and hang.
     start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
-        LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
+        LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
         SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
         TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
         TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
