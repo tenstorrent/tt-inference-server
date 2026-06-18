@@ -36,6 +36,13 @@ def _stream(value: Any) -> str:
     return "stream" if value else "non-stream"
 
 
+_PREFILL_ON = {"decode": "decode node", "prefill": "prefill node"}
+
+
+def _prefill_on(value: Any) -> str:
+    return _PREFILL_ON.get(value, "")
+
+
 def render_prefill_decode(block: Block, metadata: Mapping[str, Any]) -> str:
     data = block.data or {}
     records: List[Dict[str, Any]] = list(data.get("records") or [])
@@ -79,6 +86,7 @@ def render_prefill_decode(block: Block, metadata: Mapping[str, Any]) -> str:
                     "Turn": _fmt(r.get("turn")),
                     "Mode": _stream(r.get("stream")),
                     "ISL (prompt tok)": _fmt(r.get("prompt_tokens")),
+                    "Prefill on": _prefill_on(r.get("prefill_on")),
                     "Cached tok": _fmt(r.get("cached_tokens")),
                     "Cache": _cache(r.get("prompt_tokens"), r.get("cached_tokens")),
                     "Completion tok": _fmt(r.get("completion_tokens")),

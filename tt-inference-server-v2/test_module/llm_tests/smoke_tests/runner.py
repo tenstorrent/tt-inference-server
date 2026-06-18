@@ -69,6 +69,15 @@ def _to_int(value: str) -> Optional[int]:
         return None
 
 
+_THRESHOLD = int(os.environ.get("THRESHOLD", "1000"))
+
+
+def _prefill_on(prompt_tokens: Optional[int]) -> Optional[str]:
+    if prompt_tokens is None:
+        return None
+    return "prefill" if prompt_tokens >= _THRESHOLD else "decode"
+
+
 def _to_ttft(value: str) -> Optional[float]:
     if not value or value == "None":
         return None
@@ -151,15 +160,17 @@ def _parse_requests(path: Path) -> Dict[int, List[Dict]]:
                 continue
             stream, groups, ttft = False, (m.group(1), m.group(2), m.group(3)), None
         turn += 1
+        prompt = _to_int(groups[0])
         out.setdefault(cur, []).append(
             {
                 "stream": stream,
                 "conv": conv,
                 "turn": turn,
                 "ttft_s": ttft,
-                "prompt_tokens": _to_int(groups[0]),
+                "prompt_tokens": prompt,
                 "cached_tokens": _to_int(groups[1]),
                 "completion_tokens": _to_int(groups[2]),
+                "prefill_on": _prefill_on(prompt),
             }
         )
     return out
