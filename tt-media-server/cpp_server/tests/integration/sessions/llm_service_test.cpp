@@ -54,7 +54,8 @@ TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueue) {
   EXPECT_TRUE(taskQueue->empty());
 }
 
-TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueueWithoutThinking) {
+TEST(LLMServiceProcessStreamingRequest,
+     PushesSequenceToInjectedTaskQueueWithoutThinking) {
   auto taskQueue = std::make_shared<tt::ipc::in_memory::TaskQueue>();
   auto llmService = makeService(taskQueue);
   tt::domain::llm::LLMRequest request{/*taskId=*/7};
@@ -73,14 +74,15 @@ TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueueWithout
   EXPECT_FALSE(pushed->getStartsInThinking());
 }
 
-TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueueWithThinking) {
+TEST(LLMServiceProcessStreamingRequest,
+     PushesSequenceToInjectedTaskQueueWithThinking) {
   auto taskQueue = std::make_shared<tt::ipc::in_memory::TaskQueue>();
   auto llmService = makeService(taskQueue);
   tt::domain::llm::LLMRequest request{/*taskId=*/7};
   auto thinkStartKimi26 = 163606;
   request.prompt = std::vector<int>{10, 20, 30, thinkStartKimi26};
   request.skip_special_tokens = true;
-  
+
   llmService->submitStreamingRequest(
       request, [](const tt::domain::llm::LLMStreamChunk&, bool) {},
       /*skipPreProcess=*/true);
@@ -93,15 +95,17 @@ TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueueWithThi
   EXPECT_TRUE(pushed->getStartsInThinking());
 }
 
-TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueueWithDisabledThinking) {
+TEST(LLMServiceProcessStreamingRequest,
+     PushesSequenceToInjectedTaskQueueWithDisabledThinking) {
   auto taskQueue = std::make_shared<tt::ipc::in_memory::TaskQueue>();
   auto llmService = makeService(taskQueue);
   tt::domain::llm::LLMRequest request{/*taskId=*/7};
   auto thinkStartKimi26 = 163606;
   auto thinkEndKimi26 = 163607;
-  request.prompt = std::vector<int>{10, 20, 30, thinkStartKimi26, thinkEndKimi26};
+  request.prompt =
+      std::vector<int>{10, 20, 30, thinkStartKimi26, thinkEndKimi26};
   request.skip_special_tokens = true;
-  
+
   llmService->submitStreamingRequest(
       request, [](const tt::domain::llm::LLMStreamChunk&, bool) {},
       /*skipPreProcess=*/true);

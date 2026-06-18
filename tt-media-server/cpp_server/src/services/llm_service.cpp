@@ -362,7 +362,8 @@ void LLMService::produceStream(
       taskId, static_cast<int>(tokenIds.size()));
 
   bool startsInThinking = false;
-  if (!tokenIds.empty() && tokenIds.back() == tt::utils::tokenizers::thinkTokenIds().first) {
+  if (!tokenIds.empty() &&
+      tokenIds.back() == tt::utils::tokenizers::thinkTokenIds().first) {
     startsInThinking = true;
   }
 
@@ -374,8 +375,7 @@ void LLMService::produceStream(
       std::make_unique<tt::domain::llm::SamplingParams>(
           tt::utils::mapper::mapSamplingParams(request)),
       request.kv_position_id, request.decode_position_id,
-      request.decode_skip_tokens, request.migrationId,
-      startsInThinking);
+      request.decode_skip_tokens, request.migrationId, startsInThinking);
   taskQueue->push(*std::move(sequence));
 }
 
