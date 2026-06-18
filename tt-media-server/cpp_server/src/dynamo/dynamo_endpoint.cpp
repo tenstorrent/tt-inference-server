@@ -79,8 +79,6 @@ std::shared_ptr<tt::domain::llm::LLMRequest> buildLLMRequest(
   if (currentId.empty()) currentId = dyn.raw.get("request_id", "").asString();
   if (!currentId.empty()) req->responseId = currentId;
 
-  tt::utils::tokenizers::refreshStartsInThinking(*req);
-
   return req;
 }
 
@@ -191,7 +189,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
     struct UsageAccum {
       int64_t thinkStart;
       int64_t thinkEnd;
-      bool inReasoning = false;
+      bool inReasoning;
       int completion = 0;
       int reasoning = 0;
       // Prefix-cache reuse reported by the prefill server in disaggregation
@@ -203,6 +201,10 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       const auto think = tt::utils::tokenizers::thinkTokenIds();
       usage->thinkStart = think.first;
       usage->thinkEnd = think.second;
+      const auto kNo = tt::utils::tokenizers::kNoTokenId;
+      usage->inReasoning =
+          usage->thinkStart != kNo && !dynReq.token_ids.empty() &&
+          dynReq.token_ids.back() == static_cast<int>(usage->thinkStart);
     }
 
     // Capture which loop thread is serving this request — combined with the
@@ -262,18 +264,6 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           TT_LOG_INFO(
               "[DynamoLatency] id={} stage=session_ready ms_since_recv={:.3f}",
               probeId.empty() ? "?" : probeId, sessionMs);
-
-          // Seed reasoning accounting from the post-resolution prompt phase.
-          // resolveSession runs applyDeltaPrompt → refreshStartsInThinking,
-          // which scans the (possibly trimmed) prompt and seeds with the
-          // matched session's resumeInThinking_ on CONTINUE. After this point
-          // req->starts_in_thinking is what the engine will use for sampling;
-          // mirroring it here keeps reasoning_tokens consistent with what the
-          // model actually generates, including resumption inside an unclosed
-          // <think> block whose open marker was emitted on a prior turn.
-          usage->inReasoning =
-              usage->thinkStart != tt::utils::tokenizers::kNoTokenId &&
-              req->starts_in_thinking;
 
           auto svc = pipeline->service();
           // Pre-dispatch shared_ptr copy: dispatchGeneration std::move()s the

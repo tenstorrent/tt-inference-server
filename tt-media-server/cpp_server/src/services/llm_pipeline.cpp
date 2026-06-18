@@ -188,12 +188,10 @@ void LLMPipeline::resolveSession(
             sessionManager_->computeMatchedTokens(acquired->sessionId,
                                                   routingInfo.blocks);
         req->kv_position_id = matchedTokens - 1 + thinkTokens;
-        session_resolution::applyDeltaPrompt(
-            *req, matchedTokens,
-            {.skipUnlessRegularMode = true,
-             .setKvPositionId = false,
-             .initialInThinking = req->session->resumeInThinking(),
-             .logPrefix = {}});
+        session_resolution::applyDeltaPrompt(*req, matchedTokens,
+                                             {.skipUnlessRegularMode = true,
+                                              .setKvPositionId = false,
+                                              .logPrefix = {}});
         TT_LOG_INFO(
             "[LLMPipeline] Response-id delta taskId={} matchedTokens={} "
             "thinkTokens={} deltaTokens={}",
@@ -206,9 +204,7 @@ void LLMPipeline::resolveSession(
                   const std::string& sessionId,
                   const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
-              },
-              /*parentThinkCount=*/0,
-              /*initialInThinking=*/req->starts_in_thinking);
+              });
         }
         sessionManager_->registerPrefixHash(acquired->sessionId,
                                             routingInfo.blocks);
@@ -278,12 +274,10 @@ void LLMPipeline::resolveSession(
         if (auto* p = std::get_if<std::vector<int>>(&req->prompt)) {
           fullPrompt = *p;
         }
-        session_resolution::applyDeltaPrompt(
-            *req, deltaMatchedTokens,
-            {.skipUnlessRegularMode = true,
-             .setKvPositionId = false,
-             .initialInThinking = req->session->resumeInThinking(),
-             .logPrefix = {}});
+        session_resolution::applyDeltaPrompt(*req, deltaMatchedTokens,
+                                             {.skipUnlessRegularMode = true,
+                                              .setKvPositionId = false,
+                                              .logPrefix = {}});
 
         if (!fullPrompt.empty()) {
           req->session->initTokenAccumulator(
@@ -293,8 +287,7 @@ void LLMPipeline::resolveSession(
                   const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
               },
-              /*parentThinkCount=*/acquired->accumulatedThinkTokens,
-              /*initialInThinking=*/req->starts_in_thinking);
+              /*parentThinkCount=*/acquired->accumulatedThinkTokens);
         }
         sessionManager_->registerPrefixHash(acquired->sessionId,
                                             routingInfo.blocks);
@@ -380,12 +373,10 @@ void LLMPipeline::resolveSession(
         if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
           req->continuation = true;
           req->kv_position_id = copyMatchedTokens - 1;
-          session_resolution::applyDeltaPrompt(
-              *req, copyMatchedTokens,
-              {.skipUnlessRegularMode = true,
-               .setKvPositionId = false,
-               .initialInThinking = req->session->resumeInThinking(),
-               .logPrefix = {}});
+          session_resolution::applyDeltaPrompt(*req, copyMatchedTokens,
+                                               {.skipUnlessRegularMode = true,
+                                                .setKvPositionId = false,
+                                                .logPrefix = {}});
         } else {
           req->continuation = false;
         }
@@ -399,9 +390,7 @@ void LLMPipeline::resolveSession(
               [mgr](const std::string& sessionId,
                     const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
-              },
-              /*parentThinkCount=*/0,
-              /*initialInThinking=*/req->starts_in_thinking);
+              });
         }
 
         TT_LOG_INFO(
@@ -450,11 +439,7 @@ void LLMPipeline::dispatchGeneration(
             static_cast<uint32_t>(request.accumulated_think_tokens);
         const auto fullPromptTokens =
             std::get<std::vector<int>>(request.prompt).size();
-        session_resolution::applyDeltaPrompt(
-            request, matchedTokens,
-            {.initialInThinking = request.session != nullptr
-                                      ? request.session->resumeInThinking()
-                                      : false});
+        session_resolution::applyDeltaPrompt(request, matchedTokens);
         reusedPrefixTokens =
             static_cast<int>(fullPromptTokens -
                              std::get<std::vector<int>>(request.prompt).size());
@@ -477,7 +462,6 @@ void LLMPipeline::dispatchGeneration(
       if (sessionManager_ && request.session) {
         sessionManager_->clearSessionBlockThinkTokens(
             request.session->getSessionId());
-        request.session->resetResumeInThinking();
       }
       // WARNING - TEMP CHANGE
       disaggregationService_->handleStreamingRequest(

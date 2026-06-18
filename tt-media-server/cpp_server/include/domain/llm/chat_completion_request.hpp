@@ -254,7 +254,6 @@ struct ChatCompletionRequest : BaseRequest {
     out.full_prompt_tokens_count = static_cast<int>(promptTokens.size());
     out.prompt_tokens_count = out.full_prompt_tokens_count;
     out.prompt = std::move(promptTokens);
-    tt::utils::tokenizers::refreshStartsInThinking(out);
     out.echo = echo;
     out.max_tokens = max_tokens;
     out.n = n;

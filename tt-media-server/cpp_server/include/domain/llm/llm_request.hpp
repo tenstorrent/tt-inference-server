@@ -148,11 +148,6 @@ struct LLMRequest : BaseRequest {
   // prefill server, which stores it on the Sequence.
   int decode_skip_tokens = 0;
 
-  // True when the token stream handed to DecodeScheduler begins generation
-  // inside an unclosed <think> block (e.g. Kimi chat template).
-  // Computed once upstream from prompt tokens; SUBMIT consumes this directly.
-  bool starts_in_thinking = false;
-
   std::optional<bool> disaggregation_override;
 
   // Structured output constraint
