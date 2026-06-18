@@ -19,7 +19,7 @@ struct GatewayPrefillMetricSnapshot {
   bool acceptingTasks = false;
   uint32_t inFlight = 0;
   size_t cachedBlocks = 0;
-  double heartbeat_age_seconds = 0.0;
+  double registrationAgeSeconds = 0.0;
 };
 
 class GatewayMetrics {

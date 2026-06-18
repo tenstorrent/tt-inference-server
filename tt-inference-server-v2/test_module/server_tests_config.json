@@ -166,6 +166,7 @@
             "category": "AUDIO",
             "compatible_devices": [
                 "n150",
+                "p150",
                 "t3k",
                 "galaxy"
             ]
