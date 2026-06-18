@@ -204,6 +204,12 @@ GenerateRequest parse_generate_request(const std::vector<uint8_t>& bodyBytes) {
     req.repetition_penalty = getOptFloat("repetition_penalty");
   }
 
+  if (j.isMember("mm_processor_kwargs") && !j["mm_processor_kwargs"].isNull()) {
+    req.mm_processor_kwargs = j["mm_processor_kwargs"];
+    TT_LOG_INFO("[DynamoRx] mm_processor_kwargs received: {}",
+                dumpJsonCompact(req.mm_processor_kwargs));
+  }
+
   return req;
 }
 
@@ -265,6 +271,10 @@ std::vector<uint8_t> encode_stream_chunk(const TokenChunk& chunk) {
       cu["completion_tokens_details"] = std::move(ctd);
     }
     tokenData["completion_usage"] = std::move(cu);
+  }
+
+  if (!chunk.engine_data.isNull()) {
+    tokenData["engine_data"] = chunk.engine_data;
   }
 
   // Annotated<T>: {"data": <token_data>}
