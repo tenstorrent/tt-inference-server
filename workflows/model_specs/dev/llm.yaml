@@ -1263,6 +1263,11 @@ templates:
         QWEN36_DELTA_OP_TUNED: "1"
         QWEN36_CCL_NUM_LINKS_DELTA: "2"
         QWEN36_PREFILL_CHUNK: "4096"
+        # Blocker-#1: QWEN36_MLP_CCL_BF16 holds the gate/up SwiGLU reduce in bf16 (matches
+        # the working TP=4 27B impl) with bf16-safe CCL paths: prefill uses "_BF16" keys
+        # (fresh alloc), decode uses a parallel bf16 reduce_scatter interim pool. Fixes
+        # simple-prompt sampling degeneracy on the server; validating reasoning/decode here.
+        QWEN36_MLP_CCL_BF16: "1"
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
