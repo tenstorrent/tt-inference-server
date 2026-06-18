@@ -22,6 +22,9 @@ struct DeltaPromptOptions {
   // decide whether prefill runs locally or on the prefill server.
   bool skipUnlessRegularMode = false;
   bool setKvPositionId = false;
+  // Prior thinking phase from the matched session (STOP->resume inside an
+  // unclosed <think> block). Ignored for fresh SUBMIT.
+  bool initialInThinking = false;
   std::string_view logPrefix;
 };
 
@@ -55,7 +58,7 @@ inline uint32_t applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
   }
 
   tt::utils::tokenizers::refreshStartsInThinking(req,
-                                                 /*initial_in_thinking=*/false);
+                                                 options.initialInThinking);
 
   return matchedTokens;
 }

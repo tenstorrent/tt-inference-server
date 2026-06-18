@@ -125,6 +125,9 @@ struct PrefillResultMessage {
   // Unique 64-bit ID correlating this prefill result with the migration
   // (KV transfer) that produced it. Generated on the prefill server.
   uint64_t migrationId = 0;
+  // Whether decode should begin in the reasoning phase after this prefill.
+  // Computed on the prefill server from the prompt think-marker scan.
+  bool startsInThinking = false;
 
   explicit PrefillResultMessage(uint32_t taskId) : taskId(taskId) {}
 
@@ -139,7 +142,8 @@ struct PrefillResultMessage {
     bool hasTopK = topK.has_value();
     int topKVal = topK.value_or(0);
     ar(taskId, generatedText, tokenIds, rt, sid, error, hasTemp, tempVal,
-       hasTopP, topPVal, hasTopK, topKVal, fastMode, cachedTokens, migrationId);
+       hasTopP, topPVal, hasTopK, topKVal, fastMode, cachedTokens, migrationId,
+       startsInThinking);
   }
 
   template <class Archive>
@@ -159,8 +163,9 @@ struct PrefillResultMessage {
     bool fastMode;
     int cachedTokens;
     uint64_t migrationId;
+    bool startsInThinking;
     ar(tid, genText, tids, rt, sid, err, hasTemp, tempVal, hasTopP, topPVal,
-       hasTopK, topKVal, fastMode, cachedTokens, migrationId);
+       hasTopK, topKVal, fastMode, cachedTokens, migrationId, startsInThinking);
     PrefillResultMessage msg(tid);
     msg.generatedText = std::move(genText);
     msg.tokenIds = std::move(tids);
@@ -175,6 +180,7 @@ struct PrefillResultMessage {
     msg.fastMode = fastMode;
     msg.cachedTokens = cachedTokens;
     msg.migrationId = migrationId;
+    msg.startsInThinking = startsInThinking;
     return msg;
   }
 };

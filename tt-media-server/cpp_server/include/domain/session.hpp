@@ -138,6 +138,10 @@ class Session {
    */
   void finalizeAndRegisterHashes();
 
+  // Whether the last completed turn ended inside an unclosed think block.
+  // Seeded into the next turn's starts_in_thinking scan on CONTINUE.
+  bool resumeInThinking() const { return resumeInThinking_; }
+
   Json::Value toJson() const {
     Json::Value json;
     json["session_id"] = session_id_;
@@ -182,6 +186,7 @@ class Session {
 
   // Thinking token tracking
   bool inThinkingBlock_ = false;
+  bool resumeInThinking_ = false;
   uint32_t accumulatedThinkTokens_ = 0;
   int64_t thinkStartTokenId_ = 0;
   int64_t thinkEndTokenId_ = 0;

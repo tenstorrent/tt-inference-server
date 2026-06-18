@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "domain/llm/llm_request.hpp"
+#include "services/session_resolution.hpp"
 
 namespace tt::utils::tokenizers {
 namespace {
@@ -33,6 +34,14 @@ TEST(ThinkingPhaseTest, ResumeInsideBlockPreservedWhenNoMarker) {
   const std::vector<int> delta = {5, 6, 7};
   EXPECT_TRUE(computeThinkingPhaseFromTokens(true, std::span<const int>(delta),
                                              K_THINK_OPEN, K_THINK_CLOSE));
+}
+
+TEST(ThinkingPhaseTest, ApplyDeltaPromptPreservesResumeInThinking) {
+  tt::domain::llm::LLMRequest req(1);
+  req.prompt = std::vector<int>{5, 6, 7};
+  tt::services::session_resolution::applyDeltaPrompt(
+      req, 0, {.initialInThinking = true});
+  EXPECT_TRUE(req.starts_in_thinking);
 }
 
 TEST(ThinkingPhaseTest, RefreshStartsInThinkingOnLLMRequest) {

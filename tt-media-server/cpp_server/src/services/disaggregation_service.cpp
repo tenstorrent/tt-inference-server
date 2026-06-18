@@ -94,7 +94,7 @@ void DisaggregationService::setupSocketHandlers() {
                 static_cast<uint32_t>(message.tokenIds.size() - 1);
             request.prompt.emplace<std::vector<int>>(message.tokenIds.end() - 1,
                                                      message.tokenIds.end());
-            tt::utils::tokenizers::refreshStartsInThinking(request);
+            request.starts_in_thinking = message.startsInThinking;
             request.max_tokens = message.remainingTokens;
             request.slotId = message.slotId;
             // Restore the sampling subset echoed back from the prefill server.
@@ -218,11 +218,13 @@ void DisaggregationService::setupSocketHandlers() {
                       std::to_string(message.taskId));
                 }
                 const uint64_t migrationId = request->migrationId.value();
+                const bool startsInThinking = request->starts_in_thinking;
                 llmService->submitStreamingRequest(
                     *request,
                     [this, prefillSessionId, message, maxTokens, slotId,
-                     cachedTokens, migrationId](const LLMStreamChunk& response,
-                                                bool /*isFinal*/) {
+                     cachedTokens, migrationId,
+                     startsInThinking](const LLMStreamChunk& response,
+                                       bool /*isFinal*/) {
                       auto prefillResult =
                           tt::sockets::PrefillResultMessage(message.taskId);
                       prefillResult.slotId = slotId;
@@ -232,6 +234,7 @@ void DisaggregationService::setupSocketHandlers() {
                       prefillResult.fastMode = message.fastMode;
                       prefillResult.cachedTokens = cachedTokens;
                       prefillResult.migrationId = migrationId;
+                      prefillResult.startsInThinking = startsInThinking;
 
                       const auto finishReason =
                           response.choices.empty()
@@ -344,10 +347,13 @@ void DisaggregationService::resolvePrefillSession(
     // in-flight hold (see clearInFlight below).
     request->sessionId = acquired->sessionId;
     request->continuation = true;
+    const bool initialInThinking =
+        sessionManager->getSession(acquired->sessionId)->resumeInThinking();
     session_resolution::applyDeltaPrompt(
         *request, acquired->numberOfMatchedTokens,
         {.skipUnlessRegularMode = false,
          .setKvPositionId = true,
+         .initialInThinking = initialInThinking,
          .logPrefix = "[DisaggregationService]"});
     sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
     socketService->sendPrefillCacheBlocksAdded(blockHashes(blockInfos));
@@ -391,10 +397,14 @@ void DisaggregationService::resolvePrefillSession(
           if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
             request->continuation = true;
             request->kv_position_id = copyMatchedTokens - 1;
+            // Seed the delta scan with the full-prompt result computed
+            // before trimming (line ~162); without this, the trimmed delta
+            // has no markers and defaults to false — losing an open <think>.
             session_resolution::applyDeltaPrompt(
                 *request, copyMatchedTokens,
                 {.skipUnlessRegularMode = false,
                  .setKvPositionId = true,
+                 .initialInThinking = request->starts_in_thinking,
                  .logPrefix = "[DisaggregationService]"});
           }
           onResolved();

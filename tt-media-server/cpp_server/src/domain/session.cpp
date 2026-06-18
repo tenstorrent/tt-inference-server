@@ -41,6 +41,7 @@ bool Session::clearInFlight() {
   parentHash_ = 0;
   parentThinkCount_ = 0;
   onComplete_ = nullptr;
+  resumeInThinking_ = inThinkingBlock_;
   inThinkingBlock_ = false;
   accumulatedThinkTokens_ = 0;
   return true;
