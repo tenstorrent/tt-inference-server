@@ -830,7 +830,7 @@ templates:
     - device: GPU
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
-      default_impl: false
+      default_impl: true
   status: COMPLETE
   metadata:
     meta-llama/Llama-3.1-8B:
