@@ -13,7 +13,6 @@
 #include "domain/llm/llm_request.hpp"
 #include "services/session_manager.hpp"
 #include "utils/logger.hpp"
-#include "utils/tokenizers/thinking_phase.hpp"
 
 namespace tt::services::session_resolution {
 

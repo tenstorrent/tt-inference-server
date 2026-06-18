@@ -13,7 +13,6 @@
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
-#include "utils/tokenizers/thinking_phase.hpp"
 
 namespace tt::services {
 
