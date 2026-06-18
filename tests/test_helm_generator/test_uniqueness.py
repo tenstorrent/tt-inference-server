@@ -23,7 +23,7 @@ def test_assert_single_default_impl_passes_for_single_default(vllm_spec):
 
 
 def test_assert_single_default_impl_raises_on_collision(sample_impl):
-    from workflows.model_spec import DeviceModelSpec, ImplSpec, ModelSpecTemplate
+    from workflows.model_spec import DeviceModelSpec, ImplSpec, ProdModelSpecTemplate
     from workflows.workflow_types import DeviceTypes, InferenceEngine
 
     other_impl = ImplSpec(
@@ -34,9 +34,10 @@ def test_assert_single_default_impl_raises_on_collision(sample_impl):
     )
 
     def make(impl):
-        return ModelSpecTemplate(
+        return ProdModelSpecTemplate(
             weights=["acme/Collide-7B"],
             impl=impl,
+            version="0.12.0",
             tt_metal_commit="aaa",
             vllm_commit="bbb",
             inference_engine=InferenceEngine.VLLM.value,

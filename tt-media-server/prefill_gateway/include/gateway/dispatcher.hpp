@@ -30,23 +30,21 @@ class Dispatcher {
 
   // Outbound hooks; each returns true on successful socket-layer send.
   struct Senders {
-    std::function<bool(const std::string& prefill_server_id,
+    std::function<bool(const std::string& prefillServerId,
                        const tt::sockets::PrefillRequestMessage&)>
         sendRequestToPrefill;
-    std::function<bool(const std::string& prefill_server_id,
+    std::function<bool(const std::string& prefillServerId,
                        const tt::sockets::CancelPrefillMessage&)>
         sendCancelToPrefill;
-    std::function<bool(const tt::sockets::PrefillAssignmentMessage&)>
-        sendAssignmentToDecode;
     std::function<bool(const tt::sockets::PrefillResultMessage&)>
         sendResultToDecode;
   };
 
   struct Options {
-    std::chrono::milliseconds request_timeout;
-    std::chrono::milliseconds timeout_window;
-    std::chrono::milliseconds timeout_cooldown;
-    uint32_t timeout_threshold;
+    std::chrono::milliseconds requestTimeout;
+    std::chrono::milliseconds timeoutWindow;
+    std::chrono::milliseconds timeoutCooldown;
+    uint32_t timeoutThreshold;
   };
 
   Dispatcher(PrefillRegistry& registry, Senders senders);
@@ -58,41 +56,39 @@ class Dispatcher {
   void onPrefillRequest(const tt::sockets::PrefillRequestMessage& msg);
   void onPrefillCancel(const tt::sockets::CancelPrefillMessage& msg);
 
-  // `from_server_id` is the prefill the result arrived on.
-  void onPrefillResult(const std::string& from_server_id,
+  // `fromServerId` is the prefill the result arrived on.
+  void onPrefillResult(const std::string& fromServerId,
                        const tt::sockets::PrefillResultMessage& msg);
 
   void onCacheBlocksAdded(
       const tt::sockets::PrefillCacheBlocksAddedMessage& msg);
-  void onCacheBlocksEvicted(
-      const tt::sockets::PrefillCacheBlocksEvictedMessage& msg);
 
-  // Fails all in-flight tasks assigned to `server_id`.
-  void onPrefillDown(const std::string& server_id);
+  // Fails all in-flight tasks assigned to `serverId`.
+  void onPrefillDown(const std::string& serverId);
 
-  // Fails requests that have been in-flight longer than `request_timeout`.
+  // Fails requests that have been in-flight longer than `requestTimeout`.
   void onRequestTimeouts(Clock::time_point now = Clock::now());
 
  private:
   struct InFlightEntry {
-    std::string prefill_id;
-    Clock::time_point started_at;
+    std::string prefillId;
+    Clock::time_point startedAt;
   };
 
-  void failTaskToDecode(uint32_t task_id, const std::string& reason,
+  void failTaskToDecode(uint32_t taskId, const std::string& reason,
                         const InFlightEntry* entry = nullptr);
 
-  PrefillRegistry& registry_;
-  Senders senders_;
-  Options options_;
+  PrefillRegistry& registry;
+  Senders senders;
+  Options options;
 
-  std::mutex inflight_mutex_;
-  std::unordered_map<uint32_t, InFlightEntry> in_flight_;
-  std::mutex timeout_state_mutex_;
+  std::mutex inflightMutex;
+  std::unordered_map<uint32_t, InFlightEntry> inFlight;
+  std::mutex timeoutStateMutex;
   std::unordered_map<std::string, std::deque<Clock::time_point>>
-      prefill_timeout_history_;
-  std::unordered_map<std::string, Clock::time_point> prefill_blocked_until_;
-  size_t round_robin_cursor_ = 0;
+      prefillTimeoutHistory;
+  std::unordered_map<std::string, Clock::time_point> prefillBlockedUntil;
+  size_t roundRobinCursor = 0;
 };
 
 }  // namespace tt::gateway

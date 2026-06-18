@@ -80,6 +80,11 @@ class RuntimeConfig:
     serving_bench_suites: Optional[str] = None
     served_model: Optional[str] = None
 
+    # Speculative-decoding benchmark
+    spec_decode: bool = False
+    spec_decode_preset: str = "full"
+    spec_decode_warmup_requests: Optional[int] = None
+
     # Device configuration
     device_id: Optional[List[int]] = None
 
@@ -161,6 +166,11 @@ class RuntimeConfig:
             jwt_secret=getattr(args, "jwt_secret", None),
             serving_bench_suites=getattr(args, "serving_bench_suites", None),
             served_model=getattr(args, "served_model", None),
+            spec_decode=getattr(args, "spec_decode", False),
+            spec_decode_preset=getattr(args, "spec_decode_preset", "full"),
+            spec_decode_warmup_requests=getattr(
+                args, "spec_decode_warmup_requests", None
+            ),
             device_id=args.device_id,
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,

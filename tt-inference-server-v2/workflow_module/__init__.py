@@ -8,6 +8,7 @@ _LAZY_FROM_EXECUTION = {
     "ServingBenchOptions",
     "OrchestratorMetadata",
     "PrefixCacheOptions",
+    "SpecDecodeOptions",
     "TaskOutcome",
     "WorkflowExecution",
     "WorkflowResult",
