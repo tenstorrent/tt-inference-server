@@ -303,3 +303,4 @@ for _kind in GENERIC_KINDS:
 # submodule explicitly. Placed after GENERIC_KINDS so all decorators
 # from this file run first.
 from report_module import prefix_cache_renderer as _prefix_cache_renderer  # noqa: E402,F401
+from report_module import prefill_decode_renderer as _prefill_decode_renderer  # noqa: E402,F401

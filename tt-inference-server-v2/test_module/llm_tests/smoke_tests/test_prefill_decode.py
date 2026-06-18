@@ -15,15 +15,15 @@ Offloaded requests complete on this MOCK stack (the prefill worker services its
 own KV allocations). test_05 still uses a short client timeout since it only
 asserts offload routing from the prefill log, not the response.
 
-Bring the stack up first:
+Bring a disaggregated stack up first (local mock loop):
 
-    benchmarks/run_stack.sh up
+    tt-media-server/cpp_server/benchmarks/run_stack.sh up
 
-Then:
+Then run directly:
 
-    pytest -v benchmarks/test_prefill_decode.py
+    pytest -v test_module/llm_tests/smoke_tests/test_prefill_decode.py
     # or, without pytest:
-    python3 benchmarks/test_prefill_decode.py
+    python3 test_module/llm_tests/smoke_tests/test_prefill_decode.py
 
 Config via env:
     TARGET       frontend base URL          (default http://127.0.0.1:8080)

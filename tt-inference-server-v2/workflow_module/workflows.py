@@ -118,6 +118,64 @@ class ServingBenchWorkflow(WorkflowExecution):
         ]
 
 
+class PrefillDecodeWorkflow(WorkflowExecution):
+    """Prefill/decode smoke tests, stack bring-up included.
+
+    Bypasses the media-task dispatcher: the runner shells out to
+    ``run_tests.sh``, which brings up the disaggregated mock stack
+    (etcd + dynamo frontend + decode + prefill workers), runs
+    ``test_prefill_decode.py`` under pytest, then tears it down. So this
+    workflow owns its server — invoke ``run.py`` without
+    ``--docker-server`` / ``--local-server``. Emits one
+    Block(kind="prefill_decode").
+    """
+
+    name = "prefill_decode"
+    task_types = ()
+
+    def apply_acceptance_criteria(self, schema):
+        self.logger.info("Acceptance: N/A (prefill_decode has no acceptance gate)")
+        return True, []
+
+    def run_tasks(self) -> List[TaskOutcome]:
+        from test_module.llm_tests.smoke_tests.runner import run_smoke_tests
+
+        self.logger.info("→ task=prefill_decode")
+        started = time.time()
+        try:
+            results = run_smoke_tests(self.ctx)
+        except Exception as e:
+            elapsed = time.time() - started
+            self.logger.exception(
+                "❌ prefill_decode raised after %.1fs: %s", elapsed, e
+            )
+            return [TaskOutcome("prefill_decode", 1, elapsed, None)]
+
+        if not results:
+            elapsed = time.time() - started
+            self.logger.error("❌ prefill_decode produced no results (%.1fs)", elapsed)
+            return [TaskOutcome("prefill_decode", 1, elapsed, None)]
+
+        for r in results:
+            mark = "✅" if r.return_code == 0 else "❌"
+            self.logger.info(
+                "%s prefill_decode:%s rc=%d (%.1fs)",
+                mark,
+                r.suite,
+                r.return_code,
+                r.elapsed_seconds,
+            )
+        return [
+            TaskOutcome(
+                f"prefill_decode:{r.suite}",
+                r.return_code,
+                r.elapsed_seconds,
+                "prefill_decode",
+            )
+            for r in results
+        ]
+
+
 class BenchmarksWorkflow(WorkflowExecution):
     name = "benchmarks"
     task_types = (MediaTaskType.BENCHMARK,)
@@ -213,6 +271,7 @@ WORKFLOW_REGISTRY: Dict[str, Type[WorkflowExecution]] = {
     AgenticWorkflow.name: AgenticWorkflow,
     BenchmarksWorkflow.name: BenchmarksWorkflow,
     ServingBenchWorkflow.name: ServingBenchWorkflow,
+    PrefillDecodeWorkflow.name: PrefillDecodeWorkflow,
     SpecTestsWorkflow.name: SpecTestsWorkflow,
     ReleaseWorkflow.name: ReleaseWorkflow,
 }
@@ -230,6 +289,7 @@ __all__ = [
     "AgenticWorkflow",
     "BenchmarksWorkflow",
     "EvalsWorkflow",
+    "PrefillDecodeWorkflow",
     "ServingBenchWorkflow",
     "ReleaseWorkflow",
     "SpecTestsWorkflow",

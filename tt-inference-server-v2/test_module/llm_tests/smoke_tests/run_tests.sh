@@ -13,7 +13,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RUN_STACK="${SCRIPT_DIR}/run_stack.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
+BENCH_DIR="${REPO_ROOT}/tt-media-server/cpp_server/benchmarks"
+RUN_STACK="${BENCH_DIR}/run_stack.sh"
+TEST_FILE="${SCRIPT_DIR}/test_prefill_decode.py"
+# Prefer a local .venv (pytest + datasets) if present; else PATH pytest.
+if [[ -z "${PYTEST:-}" && -x "${BENCH_DIR}/.venv/bin/pytest" ]]; then
+    PYTEST="${BENCH_DIR}/.venv/bin/pytest"
+fi
 PYTEST="${PYTEST:-pytest}"
 export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.43}"
 export RESULT_LOG="${RESULT_LOG:-/tmp/tt_test_results.log}"
@@ -38,7 +45,7 @@ guard_etcd
 log "stack up (disaggregated)"
 "$RUN_STACK" up
 set +e
-"$PYTEST" -v -s "${SCRIPT_DIR}/test_prefill_decode.py" "$@"
+"$PYTEST" -v -s "${TEST_FILE}" "$@"
 rc=$?
 set -e
 "$RUN_STACK" down

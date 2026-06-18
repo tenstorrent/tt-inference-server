@@ -78,6 +78,7 @@ class RuntimeConfig:
     prefix_cache_trace: Optional[str] = None
     jwt_secret: Optional[str] = None
     serving_bench_suites: Optional[str] = None
+    served_model: Optional[str] = None
 
     # Device configuration
     device_id: Optional[List[int]] = None
@@ -159,6 +160,7 @@ class RuntimeConfig:
             prefix_cache_trace=getattr(args, "prefix_cache_trace", None),
             jwt_secret=getattr(args, "jwt_secret", None),
             serving_bench_suites=getattr(args, "serving_bench_suites", None),
+            served_model=getattr(args, "served_model", None),
             device_id=args.device_id,
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,

@@ -84,7 +84,8 @@ def validate_runtime_args(model_spec, runtime_config):
             f"model:={runtime_config.model} does not support device:={runtime_config.device}"
         )
 
-    _check_image_version_supported(model_spec)
+    if workflow_type != WorkflowType.PREFILL_DECODE:
+        _check_image_version_supported(model_spec)
 
     assert not (args.docker_server and args.local_server), (
         "Cannot run --docker-server and --local-server"
