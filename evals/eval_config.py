@@ -3360,6 +3360,7 @@ _eval_config_list = [
                     # values leave zero headroom, the Harmony path schedules
                     # a 1-token prefill, and every response comes back empty.
                     "max_gen_toks": 120 * 1024,
+                    "seed": "42",  # Fix non-deterministic outputs: ensure seed propagates to vLLM SamplingParams
                 },
             ),
             EvalTask(
@@ -3392,6 +3393,7 @@ _eval_config_list = [
                     "do_sample": "true",
                     "temperature": 1.0,
                     "max_gen_toks": 120 * 1024,
+                    "seed": "42",  # Fix non-deterministic outputs: ensure seed propagates to vLLM SamplingParams
                 },
             ),
             EvalTask(
