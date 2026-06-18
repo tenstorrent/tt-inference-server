@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+# Qwen3.6-27B **VL** (image + video) serving image.
+#
+# = from-source dev base (compiled tt-metal C++ baked at the base SHA) + the
+#   tt_vllm_plugin layer + a PYTHON-ONLY overlay of the qwen3.6 VL tt-metal code.
+#
+# The base image bakes tt-metal at an older SHA; all the qwen3.6 VL changes since
+# are Python-only (verified: zero C++/build files changed), so they are layered as
+# a file overlay instead of a multi-hour from-source rebuild. The overlay copies,
+# from the committed tt-metal checkout:
+#   - models/demos/qwen3_6_galaxy_v2/        (VL generator, vision encoder, splice, M-RoPE)
+#   - models/tt_transformers/tt/             (qwen36 attention + shared config/model/common)
+#   - models/tt_dit/parallel/manager.py      (CCLManager — vision-CCL ping-pong reset fix)
+# plus the scoped tt_vllm_plugin (Qwen3_6VLConfig + TTQwen3VLForConditionalGeneration registration).
+#
+# Build via scripts/build_qwen36_vl_image.sh (stages a minimal context so the daemon
+# does not tar the multi-GB tt-metal tree).
+ARG BASE=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.15.0-09f1527c21f-8f3691068
+FROM ${BASE}
+
+COPY --chown=container_app_user:container_app_user tt-vllm-plugin /home/container_app_user/tt-vllm-plugin
+# tt-metal Python overlay (staged under ttm-overlay/ mirroring the tt-metal tree layout).
+COPY --chown=container_app_user:container_app_user ttm-overlay/ /home/container_app_user/tt-metal/
+
+RUN /home/container_app_user/tt-metal/python_env/bin/pip install --no-deps -e /home/container_app_user/tt-vllm-plugin \
+ && /home/container_app_user/tt-metal/python_env/bin/python -c "import tt_vllm_plugin; print('tt_vllm_plugin import OK')"
