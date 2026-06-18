@@ -287,9 +287,10 @@ sdxl_forge_impl = ImplSpec(
 # Models ported with the tt_symbiote library (HuggingFace-shaped TTNN model
 # package). The pinned tt_metal_commit is the commit tt_symbiote verified the
 # recipe against (mirrors tt_symbiote RUNTIME_PINS); ttnn is source-built from
-# that commit in the image and tt_symbiote is pip-installed on top with
-# --no-deps so it uses that ttnn rather than its PyPI pin. The vLLM serving
-# adapter lives in tt-inference-server (vllm-tt-metal/src/tt_symbiote_generators.py).
+# that commit in the image and tt_symbiote (0.1.5+, which no longer declares a
+# ttnn dependency) is pip-installed on top, leaving that source ttnn untouched.
+# The vLLM serving adapter lives in tt-inference-server
+# (vllm-tt-metal/src/tt_symbiote_generators.py).
 tt_symbiote_impl = ImplSpec(
     impl_id="tt_symbiote",
     impl_name="tt-symbiote",

@@ -141,16 +141,18 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 ARG APP_DIR="${HOME_DIR}/app"
-# tt_symbiote release installed --no-deps so it uses the source-built ttnn (from
-# TT_METAL_COMMIT_SHA_OR_TAG) instead of its PyPI ttnn pin. REQUIRED for this
-# tt_symbiote image (the build fails below if unset).
+# tt_symbiote release to install. As of tt_symbiote 0.1.5, ttnn is NOT a package
+# dependency, so a normal install can never overwrite the source-built ttnn (from
+# TT_METAL_COMMIT_SHA_OR_TAG). REQUIRED for this tt_symbiote image (the build
+# fails below if unset).
 ARG TT_SYMBIOTE_VERSION=""
-# Package index tt_symbiote is pulled from. Defaults to the production PyPI
-# index (tt_symbiote 0.1.4+ is published there). To install a pre-release from
+# Extra package index tt_symbiote is pulled from. Defaults to the production PyPI
+# index (tt_symbiote 0.1.5+ is published there). To install a pre-release from
 # TestPyPI for validation, override the build-arg:
 #     --build-arg TT_SYMBIOTE_INDEX_URL=https://test.pypi.org/simple/
-# Safe with --no-deps below: ONLY the tt_symbiote wheel is resolved from this
-# index; torch / transformers / ttnn come from the tt-metal venv, not here.
+# Used as an --extra-index-url so tt_symbiote can come from TestPyPI while its
+# real deps (torch / transformers) still resolve from the default PyPI. ttnn is
+# never pulled from any index (source-build-only).
 ARG TT_SYMBIOTE_INDEX_URL="https://pypi.org/simple/"
 
 # IDENTICAL environment variables as builder stage
@@ -234,43 +236,27 @@ RUN cd ${PYTHON_ENV_DIR}/bin \
     && uv cache clean" \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
 
-# Install tt_symbiote (HuggingFace-shaped TTNN model library) --no-deps so it
-# does NOT pull its pinned PyPI ttnn and instead uses the ttnn already built
-# from source at TT_METAL_COMMIT_SHA_OR_TAG.
+# Install tt_symbiote (HuggingFace-shaped TTNN model library) with its real
+# dependencies. As of tt_symbiote 0.1.5, ttnn is NOT a package dependency
+# (source-build-only), so a normal install pulls only torch / transformers 5.x /
+# etc. and can NEVER overwrite the ttnn already built from source at
+# TT_METAL_COMMIT_SHA_OR_TAG. (The previous --no-deps + "install deps except ttnn"
+# dance was only needed for <=0.1.4, which still pinned ttnn==0.68.0.)
 #
 # This is the tt_symbiote-only image, so TT_SYMBIOTE_VERSION is REQUIRED and the
-# build fails fast if it is unset. Pulled from TT_SYMBIOTE_INDEX_URL (defaults to
-# the production PyPI index; override to TestPyPI to validate a pre-release).
-# --no-deps guarantees only the tt_symbiote wheel is fetched from this index.
+# build fails fast if it is unset. By default tt_symbiote and all of its deps
+# resolve from the production PyPI (TT_SYMBIOTE_INDEX_URL=https://pypi.org/simple/),
+# i.e. a plain `pip install tt_symbiote==<version>`. The --extra-index-url +
+# --index-strategy unsafe-best-match flags are no-ops against that default; they
+# only matter when TT_SYMBIOTE_INDEX_URL is overridden to a pre-release index
+# (e.g. TestPyPI), where they let tt_symbiote come from the override index while
+# its pinned deps (e.g. transformers==5.9.0) still resolve from PyPI.
 RUN if [ -z "${TT_SYMBIOTE_VERSION}" ]; then \
     echo "ERROR: TT_SYMBIOTE_VERSION build-arg is required for the tt_symbiote image" >&2; \
     exit 1; \
     fi \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && uv pip install --no-cache-dir --no-deps --index-url \"${TT_SYMBIOTE_INDEX_URL}\" tt_symbiote==${TT_SYMBIOTE_VERSION} \
-    && uv cache clean" \
-    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
-
-# Install tt_symbiote's declared runtime dependencies, EXCLUDING ttnn. We install
-# tt_symbiote --no-deps above to protect the source-built ttnn (pinned to
-# TT_METAL_COMMIT_SHA_OR_TAG); without this step the tt-metal venv keeps its own
-# transformers (e.g. 4.57.x), but tt_symbiote requires a newer pin
-# (transformers 5.x exposes AutoModelForTextRecognition, used by dots.ocr).
-# Resolving deps from tt_symbiote's own metadata (instead of hardcoding pins)
-# keeps this version-agnostic across tt_symbiote releases. We skip:
-#   - ttnn        : keep the source build; never let PyPI ttnn clobber it.
-#   - extra-gated : deps behind `; extra == "..."` markers (dev/test tooling
-#                   like pytest/black/ruff) are not needed at runtime.
-# Single `python -c` (no heredoc) to avoid Dockerfile RUN heredoc parsing issues.
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && python -c 'import re; from importlib.metadata import requires; \
-reqs = requires(\"tt_symbiote\") or []; \
-keep = [p[0].strip() for p in (r.split(\";\", 1) for r in reqs) \
-        if (\"extra\" not in (p[1] if len(p) > 1 else \"\")) \
-        and re.split(r\"[<>=!~ (\\[]\", p[0].strip(), 1)[0].strip().lower() != \"ttnn\"]; \
-open(\"/tmp/ttsym_reqs.txt\", \"w\").write(\"\\n\".join(keep) + \"\\n\")' \
-    && uv pip install --no-cache-dir -r /tmp/ttsym_reqs.txt \
-    && rm -f /tmp/ttsym_reqs.txt \
+    && uv pip install --no-cache-dir --index-strategy unsafe-best-match --extra-index-url \"${TT_SYMBIOTE_INDEX_URL}\" tt_symbiote==${TT_SYMBIOTE_VERSION} \
     && uv cache clean" \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
 

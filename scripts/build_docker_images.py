@@ -1245,8 +1245,9 @@ def build_dev_image(
         ".",
     ]
 
-    # tt_symbiote images install the tt_symbiote release (--no-deps; see the
-    # tt_symbiote Dockerfile). The version comes from the matching model spec's
+    # tt_symbiote images install the tt_symbiote release (0.1.5+ has no ttnn dep,
+    # so it never overwrites the source-built ttnn; see the tt_symbiote
+    # Dockerfile). The version comes from the matching model spec's
     # metadata.tt_symbiote_version. tt_transformers (default) images never
     # install tt_symbiote.
     if is_tt_symbiote:
@@ -1262,7 +1263,8 @@ def build_dev_image(
         # Index tt_symbiote is pulled from. The Dockerfile defaults to the
         # production PyPI index. To validate a pre-release, set
         # TT_SYMBIOTE_INDEX_URL=https://test.pypi.org/simple/ in the build
-        # environment. Only the tt_symbiote wheel is fetched from it (--no-deps).
+        # environment; the Dockerfile passes it as --extra-index-url so deps
+        # still resolve from PyPI.
         tt_symbiote_index_url = os.environ.get("TT_SYMBIOTE_INDEX_URL")
         index_note = (
             f" from {tt_symbiote_index_url}"

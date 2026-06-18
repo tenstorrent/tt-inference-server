@@ -1136,7 +1136,7 @@ templates:
 # by the vLLM Generator adapter in vllm-tt-metal/src/tt_symbiote_generators.py.
 # The pinned tt_metal_commit MUST match tt_symbiote RUNTIME_PINS for the model's
 # HF architecture; ttnn is source-built from that commit and tt_symbiote
-# installed --no-deps on top.
+# (0.1.5+, which has no ttnn dep) installed on top.
 # =============================================================================
 - weights:
     - inclusionAI/Ling-mini-2.0
@@ -1171,4 +1171,4 @@ templates:
     inclusionAI/Ling-mini-2.0:
       # tt_symbiote pip version installed into the image (build_docker_images.py
       # reads this; default index is the production PyPI — see the Dockerfile note).
-      tt_symbiote_version: "0.1.4"
+      tt_symbiote_version: "0.1.5"

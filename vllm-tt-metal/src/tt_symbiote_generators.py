@@ -113,6 +113,29 @@ def get_serving_recipes() -> Dict[str, ServingRecipe]:
         logger.warning(
             "tt_symbiote serving recipes: falling back to local table (%s)", e
         )
+
+    # Opt-in serving-tier override (non-destructive S2 migration switch).
+    # `TT_SYMBIOTE_SERVING_TIER` is a comma list of `Arch=Tier` pairs, e.g.
+    # `DotsOCRForCausalLM=S2_PAGED`. Leaving it unset keeps the model-authoritative
+    # pin (dots.ocr stays S0_GREEDY_ENGINE), so the validated demo is never broken;
+    # set it to evaluate the S2 paged-logits path without editing _runtime_pins.py.
+    override = os.environ.get("TT_SYMBIOTE_SERVING_TIER", "").strip()
+    if override:
+        valid = {S0_GREEDY_ENGINE, S1_LOGITS_UNPAGED, S2_PAGED}
+        for pair in override.split(","):
+            if "=" not in pair:
+                continue
+            arch, tier = (s.strip() for s in pair.split("=", 1))
+            if tier not in valid:
+                logger.warning("ignoring TT_SYMBIOTE_SERVING_TIER %r: unknown tier %r", pair, tier)
+                continue
+            base = recipes.get(arch)
+            recipes[arch] = ServingRecipe(
+                hf_arch=arch,
+                tier=tier,
+                multimodal=base.multimodal if base is not None else False,
+            )
+            logger.info("tt_symbiote serving tier override: %s -> %s", arch, tier)
     return recipes
 
 
@@ -257,6 +280,21 @@ class _TTSymbioteGenerator(Generator):
         """
         if self.SERVING_TIER != S2_PAGED:
             return None
+
+        # Pipeline-backed models (e.g. dots.ocr) own a device paged KV cache built
+        # by their recipe with the model's own DP batch-shard mapper and
+        # vision-sized blocks. Reuse it directly rather than building a fresh
+        # `modules` cache: the S2 forward path drives `pipeline.forward_logits_*`,
+        # which reads/writes `pipeline.paged_cache`. vLLM's block manager still
+        # owns block assignment via `set_vllm_page_table` (installed per request in
+        # _prefill_s2/_decode_s2).
+        if self.pipeline is not None and getattr(self.pipeline, "paged_cache", None) is not None:
+            self._paged_cache = self.pipeline.paged_cache
+            logger.info(
+                "tt_symbiote S2: reusing pipeline paged KV cache (DP-mapper) for %s",
+                type(self.pipeline).__name__,
+            )
+            return self._paged_cache
 
         import torch
         from tt_symbiote.modules.ttnn_attention import (
@@ -437,6 +475,10 @@ class _TTSymbioteGenerator(Generator):
     # pending a registered S2 model (see design §9.2 / M2 follow-up).
     # ------------------------------------------------------------------
     def _resolve_paged_cache(self, kv_cache: Any):
+        # Pipeline-backed models own the cache the logits forward reads/writes.
+        if self.pipeline is not None and getattr(self.pipeline, "paged_cache", None) is not None:
+            return self.pipeline.paged_cache
+
         from tt_symbiote.modules.ttnn_attention import TTNNPagedAttentionKVCache
 
         if isinstance(kv_cache, TTNNPagedAttentionKVCache):
@@ -447,6 +489,43 @@ class _TTSymbioteGenerator(Generator):
             "tt_symbiote S2 adapter: no TTNNPagedAttentionKVCache available; "
             "allocate_kv_cache must run first."
         )
+
+    @staticmethod
+    def _extract_mm_inputs(kwargs: dict) -> tuple:
+        """Flatten vLLM's nested multimodal kwargs into (pixel_values, grid).
+
+        Mirrors the normalization in ``_prefill_s0`` so the S2 prefill path feeds
+        the pipeline the single concatenated pixel tensor + stacked grid it
+        expects.
+        """
+        import torch
+
+        def _flatten(nested: Any) -> list:
+            items: list = []
+            if nested is None:
+                return items
+            if not isinstance(nested, (list, tuple)):
+                return [nested]
+            for per_user in nested:
+                if per_user is None:
+                    continue
+                if isinstance(per_user, (list, tuple)):
+                    items.extend([x for x in per_user if x is not None])
+                else:
+                    items.append(per_user)
+            return items
+
+        pixel_values = kwargs.get("pixel_values")
+        image_grid_thw = kwargs.get("image_grid_thw")
+        if isinstance(pixel_values, (list, tuple)):
+            pv_items = _flatten(pixel_values)
+            pixel_values = torch.concat(pv_items, dim=0) if pv_items else None
+        if isinstance(image_grid_thw, (list, tuple)):
+            grid_items = _flatten(image_grid_thw)
+            image_grid_thw = torch.stack(grid_items, dim=0) if grid_items else None
+        if pixel_values is not None and pixel_values.dtype != torch.bfloat16:
+            pixel_values = pixel_values.to(torch.bfloat16)
+        return pixel_values, image_grid_thw
 
     @staticmethod
     def _install_page_table(cache, page_table: Any) -> None:
@@ -476,8 +555,48 @@ class _TTSymbioteGenerator(Generator):
         input_ids = tokens if torch.is_tensor(tokens) else torch.as_tensor(tokens)
         if input_ids.dim() == 1:
             input_ids = input_ids.unsqueeze(0)
-        cache_position = torch.arange(input_ids.shape[-1])
 
+        # Pipeline-backed (dots.ocr): run the device prefill graph in logits mode.
+        # The pipeline owns embedding/vision/scatter/decoder/lm_head on T3K; we get
+        # last-position logits [B, vocab] back and present them as [B, 1, vocab] so
+        # vLLM's `[:, -1, :]` slice yields the per-request next-token logits.
+        if self.pipeline is not None:
+            pixel_values, image_grid_thw = self._extract_mm_inputs(kwargs)
+            # M1 interim (W4): S2 continuous batching is gated to a single shared
+            # image geometry. dots.ocr's batched vision tower + scatter assume one
+            # common grid per batched prefill; mixed grids in one step are the M2
+            # follow-up (per-request vision + per-request page-table slices). All
+            # sample_docs are letterboxed to 1848x1176, so this holds in practice.
+            if image_grid_thw is not None:
+                grid = image_grid_thw
+                if hasattr(grid, "dim") and grid.dim() > 1 and int(grid.shape[0]) > 1:
+                    import torch
+
+                    if not bool(torch.all(grid == grid[0]).item()):
+                        raise NotImplementedError(
+                            "S2 (M1) requires all images in a batched prefill to share one "
+                            "grid (letterbox to the validated 1848x1176 geometry). Mixed-grid "
+                            "multimodal continuous batching is the M2 follow-up "
+                            "(see docs/dots_ocr_s2_migration_design.md, W4)."
+                        )
+            if not self._warmed_up:
+                # Warm the S2 logits graphs (not the S0 token graphs); they have
+                # distinct trace keys so the served logits forward replays directly.
+                self.pipeline.warmup(
+                    input_ids,
+                    pixel_values=pixel_values,
+                    image_grid_thw=image_grid_thw,
+                    return_logits=True,
+                )
+                self._warmed_up = True
+            logits = self.pipeline.forward_logits_prefill(
+                input_ids, pixel_values=pixel_values, image_grid_thw=image_grid_thw
+            )
+            if not torch.is_tensor(logits):
+                logits = torch.as_tensor(logits)
+            return logits.unsqueeze(1)  # [B, vocab] -> [B, 1, vocab]
+
+        cache_position = torch.arange(input_ids.shape[-1])
         out = self.hf_model(
             input_ids=input_ids,
             past_key_values=cache,
@@ -500,7 +619,54 @@ class _TTSymbioteGenerator(Generator):
         cache = self._resolve_paged_cache(kv_cache)
         self._install_page_table(cache, page_table)
 
-        input_ids = tokens if torch.is_tensor(tokens) else torch.as_tensor(tokens)
+        last = tokens if torch.is_tensor(tokens) else torch.as_tensor(tokens)
+
+        # Pipeline-backed (dots.ocr): one device decode step in logits mode, with
+        # vLLM's per-sequence start_pos threaded through as the decode positions.
+        if self.pipeline is not None:
+            # vLLM's TT model_runner pads the decode batch to ``max_num_reqs``
+            # (token rows -> 0, position rows -> -1) and appends padding AFTER the
+            # ``unpadded_batch_size`` real rows (see model_runner.py:922-929). The
+            # active sequences are therefore the contiguous front rows whose
+            # ``start_pos >= 0``. Feeding the padding rows straight into the
+            # pipeline builds a ``[max_num_reqs, ...]`` decode activation and trips
+            # the sharded-RMSNorm physical-height assert; slice to the active rows.
+            tok_t = last.reshape(-1)
+            pos_t = None
+            if start_pos is not None:
+                pos_t = (start_pos if torch.is_tensor(start_pos) else torch.as_tensor(start_pos)).reshape(-1)
+                n_active = int((pos_t >= 0).sum().item())
+                if n_active <= 0:
+                    n_active = pos_t.numel()
+                tok_t = tok_t[:n_active]
+                pos_t = pos_t[:n_active].to(torch.int32)
+            n_active = int(tok_t.numel())
+
+            # The served single-stream pipeline (DOTS_OCR_PARALLELISM unset ->
+            # batch_size=1) decodes one sequence per step. Real concurrency needs
+            # the DP batch pipeline (batch_size == num_devices) wired to vLLM's
+            # per-rank decode; until that lands, a multi-sequence decode step is
+            # the documented M2 boundary, not a silent wrong answer.
+            pipe_batch = int(getattr(self.pipeline.config, "batch_size", 1))
+            if n_active > pipe_batch:
+                raise NotImplementedError(
+                    f"S2 served decode received {n_active} concurrent sequences but the "
+                    f"pipeline was built for batch_size={pipe_batch}. Enable the DP batch "
+                    f"pipeline (DOTS_OCR_PARALLELISM=DP, batch_size==num_devices) for "
+                    f"multi-sequence continuous batching (design W4/M2)."
+                )
+
+            prev_ids = [int(x) for x in tok_t.tolist()]
+            prev = prev_ids[0] if len(prev_ids) == 1 else prev_ids
+            cache_position = pos_t
+            logits = self.pipeline.forward_logits_decode(prev, cache_position=cache_position)
+            if not torch.is_tensor(logits):
+                logits = torch.as_tensor(logits)
+            # vLLM's host-sampling path indexes tt_out[start:start+sz, -1, :], so
+            # return [B, 1, vocab] (same rank as prefill), not [B, vocab].
+            return logits.unsqueeze(1)
+
+        input_ids = last
         if input_ids.dim() == 1:
             input_ids = input_ids.unsqueeze(-1)  # [B] -> [B, 1]
         if start_pos is not None:

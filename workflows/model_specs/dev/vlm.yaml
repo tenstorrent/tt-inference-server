@@ -319,7 +319,8 @@ templates:
 # package), wrapped by the vLLM Generator adapter in
 # vllm-tt-metal/src/tt_symbiote_generators.py. The pinned tt_metal_commit MUST
 # match tt_symbiote RUNTIME_PINS for the model's HF architecture; ttnn is
-# source-built from that commit and tt_symbiote installed --no-deps on top.
+# source-built from that commit and tt_symbiote (0.1.5+, which has no ttnn dep)
+# installed on top.
 # =============================================================================
 - weights:
     - rednote-hilab/dots.ocr
@@ -404,6 +405,16 @@ templates:
         trust-remote-code: true
         mm-processor-cache-gb: 0
         limit-mm-per-prompt: '{"image": 1}'
+        # S0 default: one vLLM request at a time (greedy-engine bridge). The S2
+        # paged-logits path (continuous batching) is OPT-IN and non-destructive —
+        # it is NOT enabled by editing _runtime_pins.py. To evaluate S2 without
+        # disturbing this validated S0 spec, launch with:
+        #   TT_SYMBIOTE_SERVING_TIER=DotsOCRForCausalLM=S2_PAGED
+        # and raise the seq budget via the run.py override, e.g.
+        #   --override-tt-config '{"max_num_seqs": 8}'  (and max-num-seqs: 8)
+        # so vLLM batches multiple sequences; keep temperature 0 for S0 parity.
+        # See docs/dots_ocr_s2_migration_design.md (M1) and tt_symbiote_generators
+        # get_serving_recipes() for the override wiring.
         max-num-seqs: 1
       override_tt_config:
         # dots.ocr captures large prefill+decode traces; matches the e2e demo's
@@ -438,4 +449,4 @@ templates:
     rednote-hilab/dots.ocr:
       # tt_symbiote pip version installed into the image (build_docker_images.py
       # reads this; default index is the production PyPI — see the Dockerfile note).
-      tt_symbiote_version: "0.1.4"
+      tt_symbiote_version: "0.1.5"
