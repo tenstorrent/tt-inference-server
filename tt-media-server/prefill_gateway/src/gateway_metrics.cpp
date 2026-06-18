@@ -101,11 +101,12 @@ class GatewayMetrics::Impl {
              .Name("tt_prefill_accepting_tasks")
              .Help("Whether the gateway is routing new tasks to a prefill.")
              .Register(*registry);
-    heartbeatAgeFamily =
+    registrationAgeFamily =
         &prometheus::BuildGauge()
-             .Name("tt_prefill_last_heartbeat_age_seconds")
+             .Name("tt_prefill_last_registration_age_seconds")
              .Help(
-                 "Seconds since the gateway last observed a prefill heartbeat.")
+                 "Seconds since the gateway last observed a prefill "
+                 "registration.")
              .Register(*registry);
     cacheBlocksFamily =
         &prometheus::BuildGauge()
@@ -148,7 +149,7 @@ class GatewayMetrics::Impl {
     inflightByPrefill.clear();
     healthyByPrefill.clear();
     acceptingByPrefill.clear();
-    heartbeatByPrefill.clear();
+    registrationAgeByPrefill.clear();
     cacheBlocksByPrefill.clear();
     latencyByLabel.clear();
   }
@@ -236,9 +237,9 @@ class GatewayMetrics::Impl {
       gaugeFor(*prefillAcceptingFamily, acceptingByPrefill, labels,
                snapshot.serverId)
           .Set(boolToGauge(snapshot.acceptingTasks));
-      gaugeFor(*heartbeatAgeFamily, heartbeatByPrefill, labels,
+      gaugeFor(*registrationAgeFamily, registrationAgeByPrefill, labels,
                snapshot.serverId)
-          .Set(snapshot.heartbeat_age_seconds);
+          .Set(snapshot.registrationAgeSeconds);
       gaugeFor(*cacheBlocksFamily, cacheBlocksByPrefill, labels,
                snapshot.serverId)
           .Set(static_cast<double>(snapshot.cachedBlocks));
@@ -307,7 +308,7 @@ class GatewayMetrics::Impl {
   prometheus::Family<prometheus::Gauge>* prefillInflightFamily{nullptr};
   prometheus::Family<prometheus::Gauge>* prefillHealthyFamily{nullptr};
   prometheus::Family<prometheus::Gauge>* prefillAcceptingFamily{nullptr};
-  prometheus::Family<prometheus::Gauge>* heartbeatAgeFamily{nullptr};
+  prometheus::Family<prometheus::Gauge>* registrationAgeFamily{nullptr};
   prometheus::Family<prometheus::Gauge>* cacheBlocksFamily{nullptr};
   prometheus::Gauge* routingTableSize{nullptr};
   prometheus::Gauge* decodeConnected{nullptr};
@@ -324,7 +325,7 @@ class GatewayMetrics::Impl {
   std::unordered_map<std::string, prometheus::Gauge*> inflightByPrefill;
   std::unordered_map<std::string, prometheus::Gauge*> healthyByPrefill;
   std::unordered_map<std::string, prometheus::Gauge*> acceptingByPrefill;
-  std::unordered_map<std::string, prometheus::Gauge*> heartbeatByPrefill;
+  std::unordered_map<std::string, prometheus::Gauge*> registrationAgeByPrefill;
   std::unordered_map<std::string, prometheus::Gauge*> cacheBlocksByPrefill;
   std::unordered_map<std::string, prometheus::Histogram*> latencyByLabel;
 };
