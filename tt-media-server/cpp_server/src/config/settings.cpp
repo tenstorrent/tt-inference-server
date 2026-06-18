@@ -707,8 +707,8 @@ std::string specDecodeMode() {
 
 size_t mtpLevel() {
   auto val = static_cast<size_t>(envUlong("MTP_LEVEL", defaults::MTP_LEVEL));
-  if (val > 8) {
-    throw std::runtime_error("MTP_LEVEL must be <= 8");
+  if (val > 4) {
+    throw std::runtime_error("MTP_LEVEL must be <= 4");
   }
   return val;
 }
