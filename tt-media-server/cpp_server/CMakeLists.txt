@@ -602,6 +602,16 @@ if(TARGET transfer_engine)
     target_include_directories(migration_worker_discovery PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
     message(STATUS "migration_worker_discovery: ENABLED (#4209 discovery PoC)")
+
+    # #4268 prefill<->decode KV-table exchange PoC: each node publishes its own
+    # KvChunkAddressTable by name and pulls the peer's over the Transfer Engine
+    # (data plane), so both sides hold both tables.
+    add_executable(table_exchange
+        tests/integration/table_exchange.cpp)
+    target_link_libraries(table_exchange PRIVATE transport_lib)
+    target_include_directories(table_exchange PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    message(STATUS "table_exchange: ENABLED (#4268 prefill<->decode KV-table exchange)")
 endif()
 
 # Unit tests (link llm_runner_lib)
