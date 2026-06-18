@@ -10,8 +10,11 @@
 # Run from anywhere inside the tt-metal checkout.
 set -euo pipefail
 
-TT_METAL_ROOT=$(git rev-parse --show-toplevel)
-TIS="${TT_METAL_ROOT}/tt-inference-server"
+# Resolve paths from the script location (tt-inference-server is a NESTED git repo, so
+# `git rev-parse --show-toplevel` is unreliable here). scripts/ -> TIS -> tt-metal root.
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+TIS=$(cd "${SCRIPT_DIR}/.." && pwd)
+TT_METAL_ROOT=$(cd "${TIS}/.." && pwd)
 TAG="${1:-ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.15.0-qwen36-vl}"
 
 ctx=$(mktemp -d /tmp/qwen36vl_img.XXXXXX)
