@@ -238,7 +238,8 @@ std::string ttResultQueueName();
  */
 std::string ttCancelQueueName();
 
-/** Spec decode mode from SPEC_DECODE_MODE. Default: defaults::SPEC_DECODE_MODE. */
+/** Spec decode mode from SPEC_DECODE_MODE. Default: defaults::SPEC_DECODE_MODE.
+ */
 std::string specDecodeMode();
 
 /** MTP level from MTP_LEVEL. Default: defaults::MTP_LEVEL. */
