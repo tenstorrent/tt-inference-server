@@ -71,12 +71,24 @@ def run_llm_bench(
     """
     driver = _make_driver(tools, venv_python)
 
-    limit_samples_mode = getattr(ctx.runtime_config, "limit_samples_mode", None)
-    from llm_module.benchmark_configs import get_llm_configs
+    if tools == "guidellm":
+        #  --tools guidellm runs the dataset-driven scenario set
+        # (multi_turn_chat / custom_dataset / omni_modal) Selection + per-scenario knobs ride on --workflow-args.
+        from llm_module import build_guidellm_scenarios
 
-    configs = get_llm_configs(
-        ctx.model_spec, ctx.device, limit_samples_mode=limit_samples_mode
-    )
+        configs = build_guidellm_scenarios(
+            ctx.model_spec,
+            ctx.runtime_config,
+            output_root=Path(ctx.output_path),
+            auth_token=auth_token,
+        )
+    else:
+        limit_samples_mode = getattr(ctx.runtime_config, "limit_samples_mode", None)
+        from llm_module.benchmark_configs import get_llm_configs
+
+        configs = get_llm_configs(
+            ctx.model_spec, ctx.device, limit_samples_mode=limit_samples_mode
+        )
     if not configs:
         logger.error(
             "No LLM benchmark configs for model=%s device=%s; nothing to run.",

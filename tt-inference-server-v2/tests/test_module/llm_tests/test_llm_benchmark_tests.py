@@ -56,5 +56,34 @@ def test_run_llm_bench_short_circuits_on_empty_sweep(monkeypatch):
     assert called["run"] is False
 
 
+def test_guidellm_uses_scenarios_not_sweep(monkeypatch, tmp_path):
+    """--tools guidellm builds the scenario set; the ISL/OSL sweep is bypassed."""
+    monkeypatch.setattr(
+        "llm_module.benchmark_configs.get_llm_configs",
+        lambda *a, **k: pytest.fail("sweep configs must not be built for guidellm"),
+    )
+    sentinel = [object()]
+    monkeypatch.setattr("llm_module.build_guidellm_scenarios", lambda *a, **k: sentinel)
+
+    seen = {}
+
+    def _capture(ctx, *, driver, configs, auth_token=""):
+        seen["configs"] = configs
+        return []
+
+    monkeypatch.setattr(lbt, "run_llm_performance", _capture)
+
+    ctx = SimpleNamespace(
+        model_spec=SimpleNamespace(
+            model_name="Llama-3.1-8B-Instruct", hf_model_repo="org/m"
+        ),
+        device=SimpleNamespace(name="T3K"),
+        runtime_config=SimpleNamespace(workflow_args=None),
+        output_path=str(tmp_path),
+    )
+    lbt.run_llm_bench(ctx, tools="guidellm", venv_python=Path("/tmp/venv/bin/python"))
+    assert seen["configs"] is sentinel
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

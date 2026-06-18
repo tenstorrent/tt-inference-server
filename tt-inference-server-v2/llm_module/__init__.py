@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
 from .config import DriverContext, LLMRunConfig, ServerConnection
+from .guidellm_scenarios import GuideLLMScenario, build_guidellm_scenarios
 from .drivers import (
     AgenticEvalDriver,
     AIPerfDriver,
@@ -23,6 +24,8 @@ from .server_control import HttpServerController, ServerController
 
 __all__ = [
     "LLMRunConfig",
+    "GuideLLMScenario",
+    "build_guidellm_scenarios",
     "ServerConnection",
     "DriverContext",
     "LLMDriver",

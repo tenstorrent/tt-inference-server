@@ -458,7 +458,6 @@ class TestInstallRequirementsReturnBool:
             "stress-tests-run-script.txt",
             "benchmarks-run-script.txt",
             "benchmarks-vllm.txt",
-            "benchmarks-guidellm.txt",
             "reports-run-script.txt",
             "hf-setup.txt",
             "system-software-validation.txt",

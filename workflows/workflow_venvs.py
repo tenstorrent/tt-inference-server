@@ -456,11 +456,6 @@ _venv_config_list = [
         python_version="3.11",
         setup_function=fetch_structured_output_scripts_forge,
     ),
-    VenvConfig(
-        venv_type=WorkflowVenvType.BENCHMARKS_GUIDELLM,
-        requirements_file="benchmarks-guidellm.txt",
-        python_version="3.11",
-    ),
     # No pip; directory and/or runtime check
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_VIDEO,
