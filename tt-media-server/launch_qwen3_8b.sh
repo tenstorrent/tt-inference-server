@@ -32,8 +32,10 @@ export PREFILL_CHUNK_SIZE=${PREFILL_CHUNK_SIZE:-2048}
 # the tt-xla chunked-prefill sweep. "true" => fp32 dest accumulation.
 export FP32_DEST_ACC_EN=${FP32_DEST_ACC_EN:-false}
 # Pin this server to a single physical chip so all four can run concurrently.
-export TT_VISIBLE_DEVICES=${TT_VISIBLE_DEVICES:-3}
-[ -n "$DEVICE_IDS" ] && export DEVICE_IDS
+# Use DEVICE_IDS, NOT TT_VISIBLE_DEVICES: the runner (setup_runner_environment)
+# overwrites TT_VISIBLE_DEVICES with the worker's device_id derived from
+# DEVICE_IDS, so setting TT_VISIBLE_DEVICES here has no effect.
+export DEVICE_IDS=${DEVICE_IDS:-3}
 # INFO logging so the resolved vLLM/plugin config is captured: look for the
 # "[TT] Chunked prefill: capping max_num_batched_tokens N -> 2048" line and the
 # engine-config line (enable_chunked_prefill, max_num_batched_tokens). Override
@@ -41,7 +43,7 @@ export TT_VISIBLE_DEVICES=${TT_VISIBLE_DEVICES:-3}
 export VLLM_LOGGING_LEVEL=${VLLM_LOGGING_LEVEL:-INFO}
 LOG_LEVEL=${LOG_LEVEL:-info}
 
-echo "Starting server: MODEL=$MODEL DEVICE=$DEVICE TT_VISIBLE_DEVICES=$TT_VISIBLE_DEVICES DEVICE_IDS=${DEVICE_IDS:-auto}"
+echo "Starting server: MODEL=$MODEL DEVICE=$DEVICE DEVICE_IDS=${DEVICE_IDS:-auto}"
 cd "$(dirname "$0")"
 PORT=${PORT:-8004}
 uvicorn main:app --lifespan on --host 0.0.0.0 --port $PORT --log-level "$LOG_LEVEL"
