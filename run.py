@@ -532,6 +532,16 @@ def parse_arguments():
             f"(got --workflow {args.workflow})."
         )
 
+    # Dev specs don't pin a docker image (they're built/published out of band),
+    # so dev-mode has no image to run in a container — require an explicit one.
+    if args.dev_mode and args.docker_server and not args.override_docker_image:
+        parser.error(
+            "--dev-mode with --docker-server requires --override-docker-image: "
+            "dev specs do not pin a docker image. Pass the prebuilt image to run "
+            "the dev spec in, e.g. --override-docker-image "
+            "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:<tag>"
+        )
+
     return args
 
 
