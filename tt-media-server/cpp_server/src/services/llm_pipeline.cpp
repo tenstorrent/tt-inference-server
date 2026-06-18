@@ -206,7 +206,9 @@ void LLMPipeline::resolveSession(
                   const std::string& sessionId,
                   const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
-              });
+              },
+              /*parentThinkCount=*/0,
+              /*initialInThinking=*/req->starts_in_thinking);
         }
         sessionManager_->registerPrefixHash(acquired->sessionId,
                                             routingInfo.blocks);
@@ -291,7 +293,8 @@ void LLMPipeline::resolveSession(
                   const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
               },
-              /*parentThinkCount=*/acquired->accumulatedThinkTokens);
+              /*parentThinkCount=*/acquired->accumulatedThinkTokens,
+              /*initialInThinking=*/req->starts_in_thinking);
         }
         sessionManager_->registerPrefixHash(acquired->sessionId,
                                             routingInfo.blocks);
@@ -396,7 +399,9 @@ void LLMPipeline::resolveSession(
               [mgr](const std::string& sessionId,
                     const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
-              });
+              },
+              /*parentThinkCount=*/0,
+              /*initialInThinking=*/req->starts_in_thinking);
         }
 
         TT_LOG_INFO(
@@ -472,6 +477,7 @@ void LLMPipeline::dispatchGeneration(
       if (sessionManager_ && request.session) {
         sessionManager_->clearSessionBlockThinkTokens(
             request.session->getSessionId());
+        request.session->resetResumeInThinking();
       }
       // WARNING - TEMP CHANGE
       disaggregationService_->handleStreamingRequest(

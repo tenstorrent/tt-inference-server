@@ -118,6 +118,13 @@ class Session {
    *        matched KV prefix. Seeded from the matched session's accumulated
    *        count on a prefix-cache HIT so think tokens accumulate across turns;
    *        0 for a fresh session.
+   * @param initialInThinking Whether generation is resuming inside an open
+   *        <think> block (i.e. the prompt scan, with optional resume seeding,
+   *        decided we start in thinking). Seeded from
+   *        `LLMRequest::starts_in_thinking` so the session accumulator stays
+   *        in lockstep with the engine's sampling phase. Without this, a turn
+   *        that resumes inside <think> would under-count reasoning tokens and
+   *        leave a stale `resumeInThinking_` for the next turn.
    */
   void initTokenAccumulator(
       std::vector<int> deltaTokens,
@@ -125,7 +132,8 @@ class Session {
       std::function<void(const std::string&,
                          const std::vector<utils::BlockHashInfo>&)>
           onComplete,
-      uint32_t parentThinkCount = 0);
+      uint32_t parentThinkCount = 0,
+      bool initialInThinking = false);
 
   /**
    * Add a generated token to the accumulator.
@@ -141,6 +149,8 @@ class Session {
   // Whether the last completed turn ended inside an unclosed think block.
   // Seeded into the next turn's starts_in_thinking scan on CONTINUE.
   bool resumeInThinking() const { return resumeInThinking_; }
+
+  void resetResumeInThinking() { resumeInThinking_ = false; }
 
   Json::Value toJson() const {
     Json::Value json;

@@ -53,7 +53,8 @@ void Session::initTokenAccumulator(
     std::function<void(const std::string&,
                        const std::vector<utils::BlockHashInfo>&)>
         onComplete,
-    uint32_t parentThinkCount) {
+    uint32_t parentThinkCount,
+    bool initialInThinking) {
   deltaTokens_ = std::move(deltaTokens);
   initialBlocks_ = std::move(initialBlocks);
   parentHash_ = initialBlocks_.empty() ? 0 : initialBlocks_.back().hash;
@@ -65,11 +66,10 @@ void Session::initTokenAccumulator(
   onComplete_ = std::move(onComplete);
   generatedTokens_.clear();
 
-  // Initialize thinking token tracking
   auto [thinkStart, thinkEnd] = utils::tokenizers::thinkTokenIds();
   thinkStartTokenId_ = thinkStart;
   thinkEndTokenId_ = thinkEnd;
-  inThinkingBlock_ = false;
+  inThinkingBlock_ = initialInThinking;
   accumulatedThinkTokens_ = parentThinkCount_;
 }
 
