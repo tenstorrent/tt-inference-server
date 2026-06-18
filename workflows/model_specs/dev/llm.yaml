@@ -1235,7 +1235,11 @@ templates:
         # arg is hf_model_repo (Qwen/Qwen3.6-27B-VL) which is NOT a real HF repo,
         # so vLLM's config fetch 404s; this override makes it read the local
         # checkpoint instead. MODEL_WEIGHTS_DIR points here too.
-        model: /home/tt-admin/ssinghal/qwen36/new/tt-metal/tt-inference-server/persistent_volume/volume_id_qwen3_6_galaxy_vl-Qwen3.6-27B-VL-v0.11.1/weights/Qwen3.6-27B-VL
+        # docker-server: the VL volume is bind-mounted at /home/container_app_user/cache_root,
+        # so weights live here IN-CONTAINER. The weights dir uses HARDLINKS (not symlinks)
+        # so the safetensors resolve inside the container. (Local-server would need the host
+        # path instead — known local/docker portability gap.)
+        model: /home/container_app_user/cache_root/weights/Qwen3.6-27B-VL
         # Keep the clean OpenAI-API model id (requests use this name).
         served-model-name: Qwen/Qwen3.6-27B-VL
         # Present the NATIVE vLLM multimodal arch so the capability/processor

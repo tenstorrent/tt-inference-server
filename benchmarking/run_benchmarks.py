@@ -206,6 +206,13 @@ def build_benchmark_command(
         "--result-filename", str(result_filename),
     ]
 
+    # Tokenizer override: when the served model id is a local-only name (not a real
+    # HF repo, e.g. Qwen/Qwen3.6-27B-VL), the bench client can't fetch the tokenizer
+    # by --model. Set BENCHMARK_TOKENIZER_OVERRIDE to a local tokenizer dir / real repo.
+    _tok_override = os.environ.get("BENCHMARK_TOKENIZER_OVERRIDE")
+    if _tok_override:
+        cmd.extend(["--tokenizer", _tok_override])
+
     # only truncate prompts for text-only tasks; VLMs interleave vision tokens
     # in the prompt and truncation can drop them, causing 400s at the preprocessor
     if params.task_type == "text":
