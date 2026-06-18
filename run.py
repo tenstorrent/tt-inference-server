@@ -574,7 +574,8 @@ def parse_arguments():
     if args.model is None:
         if args.workflow != "prefill_decode":
             parser.error(
-                "--model is required (optional only for --workflow prefill_decode)."
+                "the following arguments are required: --model "
+                "(optional only for --workflow prefill_decode)."
             )
         if not args.served_model:
             parser.error(
