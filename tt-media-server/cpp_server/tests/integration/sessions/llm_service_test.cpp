@@ -21,6 +21,7 @@ namespace {
 
 void configureEnvForTest() {
   setenv("LLM_DEVICE_BACKEND", "pipeline_manager", 1);
+  setenv("MODEL", "moonshotai/Kimi-K2.6", 1);
 }
 
 std::shared_ptr<tt::services::LLMService> makeService(
@@ -51,6 +52,66 @@ TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueue) {
   EXPECT_EQ(pushed->taskId, 7u);
   EXPECT_EQ(pushed->getNumPromptTokens(), 3u);
   EXPECT_TRUE(taskQueue->empty());
+}
+
+TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueueWithoutThinking) {
+  auto taskQueue = std::make_shared<tt::ipc::in_memory::TaskQueue>();
+  auto llmService = makeService(taskQueue);
+  tt::domain::llm::LLMRequest request{/*taskId=*/7};
+  request.prompt = std::vector<int>{10, 20, 30};
+  request.skip_special_tokens = true;
+
+  llmService->submitStreamingRequest(
+      request, [](const tt::domain::llm::LLMStreamChunk&, bool) {},
+      /*skipPreProcess=*/true);
+
+  ASSERT_FALSE(taskQueue->empty());
+  auto pushed = taskQueue->tryPop();
+  ASSERT_NE(pushed, nullptr);
+  EXPECT_EQ(pushed->taskId, 7u);
+  EXPECT_EQ(pushed->getNumPromptTokens(), 3u);
+  EXPECT_FALSE(pushed->getStartsInThinking());
+}
+
+TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueueWithThinking) {
+  auto taskQueue = std::make_shared<tt::ipc::in_memory::TaskQueue>();
+  auto llmService = makeService(taskQueue);
+  tt::domain::llm::LLMRequest request{/*taskId=*/7};
+  auto thinkStartKimi26 = 163606;
+  request.prompt = std::vector<int>{10, 20, 30, thinkStartKimi26};
+  request.skip_special_tokens = true;
+  
+  llmService->submitStreamingRequest(
+      request, [](const tt::domain::llm::LLMStreamChunk&, bool) {},
+      /*skipPreProcess=*/true);
+
+  ASSERT_FALSE(taskQueue->empty());
+  auto pushed = taskQueue->tryPop();
+  ASSERT_NE(pushed, nullptr);
+  EXPECT_EQ(pushed->taskId, 7u);
+  EXPECT_EQ(pushed->getNumPromptTokens(), 4u);
+  EXPECT_TRUE(pushed->getStartsInThinking());
+}
+
+TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueueWithDisabledThinking) {
+  auto taskQueue = std::make_shared<tt::ipc::in_memory::TaskQueue>();
+  auto llmService = makeService(taskQueue);
+  tt::domain::llm::LLMRequest request{/*taskId=*/7};
+  auto thinkStartKimi26 = 163606;
+  auto thinkEndKimi26 = 163607;
+  request.prompt = std::vector<int>{10, 20, 30, thinkStartKimi26, thinkEndKimi26};
+  request.skip_special_tokens = true;
+  
+  llmService->submitStreamingRequest(
+      request, [](const tt::domain::llm::LLMStreamChunk&, bool) {},
+      /*skipPreProcess=*/true);
+
+  ASSERT_FALSE(taskQueue->empty());
+  auto pushed = taskQueue->tryPop();
+  ASSERT_NE(pushed, nullptr);
+  EXPECT_EQ(pushed->taskId, 7u);
+  EXPECT_EQ(pushed->getNumPromptTokens(), 5u);
+  EXPECT_FALSE(pushed->getStartsInThinking());
 }
 
 int main(int argc, char** argv) {
