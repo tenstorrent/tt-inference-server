@@ -312,7 +312,7 @@ struct EmbeddingRunner::Impl {
 
     Py_DECREF(resultList);
 
-    TT_LOG_DEBUG("[EmbeddingRunner] Processed {} embedding requests",
+    TT_LOG_DEBUG("[EmbeddingRunner] Processed {} embedding request",
                  responses.size());
     return responses;
   }
