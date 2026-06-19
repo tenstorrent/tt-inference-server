@@ -281,12 +281,12 @@ std::string ttWarmupSignalsQueueName() {
                    defaults::TT_WARMUP_SIGNALS_QUEUE);
 }
 
-std::string prefillNumLayers() {
-  return envString("PREFILL_NUM_LAYERS", defaults::PREFILL_NUM_LAYERS);
+uint32_t modelNumLayers() {
+  return envUlong("MODEL_NUM_LAYERS", defaults::MODEL_NUM_LAYERS);
 }
 
-std::string prefillChunkSize() {
-  return envString("PREFILL_CHUNK_SIZE", defaults::PREFILL_CHUNK_SIZE);
+uint32_t prefillChunkSize() {
+  return envUlong("PREFILL_CHUNK_SIZE", defaults::PREFILL_CHUNK_SIZE);
 }
 
 std::string ttMemoryRequestQueueName() {

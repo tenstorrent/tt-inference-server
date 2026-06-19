@@ -38,6 +38,7 @@ BlazeDecodeRunner::BlazeDecodeRunner(
   auto thinkTokenIds = tt::utils::tokenizers::thinkTokenIds();
   auto eosTokenId = tt::utils::tokenizers::staticInfo().eosTokenId;
   ds::SchedulerParams managerParams{};
+  managerParams.num_layers = tt::config::modelNumLayers();
   managerParams.eos_token = static_cast<uint32_t>(eosTokenId);
   managerParams.think_open_token_id =
       static_cast<uint32_t>(thinkTokenIds.first);

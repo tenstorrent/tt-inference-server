@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include "config/runner_config.hpp"
@@ -210,13 +211,13 @@ unsigned pmConnectTimeoutMs();
  * defaults::PM_MAX_USERS. */
 size_t pmMaxUsers();
 
-/** Prefill number of layers from PREFILL_NUM_LAYERS. Default:
- * defaults::PREFILL_NUM_LAYERS. */
-std::string prefillNumLayers();
+/** Model number of layers from MODEL_NUM_LAYERS. Default:
+ * defaults::MODEL_NUM_LAYERS. */
+uint32_t modelNumLayers();
 
 /** Prefill chunk size from PREFILL_CHUNK_SIZE. Default:
  * defaults::PREFILL_CHUNK_SIZE. */
-std::string prefillChunkSize();
+uint32_t prefillChunkSize();
 
 /** Enable migration from ENABLE_MIGRATION. Default:
  * defaults::ENABLE_MIGRATION. */

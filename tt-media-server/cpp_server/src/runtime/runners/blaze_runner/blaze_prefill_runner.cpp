@@ -37,9 +37,9 @@ BlazePrefillRunner::BlazePrefillRunner(
   ps::SchedulerParams managerParams{};
   managerParams.dest_endpoint_id = tt::config::migrationDecodeEndpointId();
   managerParams.layers_per_chunk =
-      static_cast<uint32_t>(std::stoi(tt::config::prefillNumLayers()));
+      tt::config::modelNumLayers();
   managerParams.chunk_size =
-      static_cast<uint32_t>(std::stoi(tt::config::prefillChunkSize()));
+      tt::config::prefillChunkSize();
   managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
   auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
   auto migrationClientInterface = utils::makeMigrationClientInterface(config);
@@ -82,7 +82,7 @@ bool BlazePrefillRunner::warmup() {
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
-  std::vector<int64_t> warmupTokens(std::stoi(tt::config::prefillChunkSize()),
+  std::vector<int64_t> warmupTokens(tt::config::prefillChunkSize(),
                                     12345);
   uint32_t warmupTaskId = 0;
 
