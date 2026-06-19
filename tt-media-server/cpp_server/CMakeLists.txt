@@ -8,6 +8,19 @@ cmake_minimum_required(VERSION 3.24)
 # of failing once BLAKE3's subdirectory pulls them in.
 project(tt_media_server_cpp CXX C ASM)
 
+# Mooncake's limit_jobs.cmake (included only when ENABLE_MOONCAKE=ON, via the
+# add_subdirectory below) declares ninja "compile_pool"/"link_pool" through the
+# JOB_POOLS global property AND sets CMAKE_JOB_POOL_COMPILE/LINK as cached FORCE
+# vars. The cache vars persist across reconfigures but the (non-cached) JOB_POOLS
+# property does not. Reusing a Mooncake-enabled build dir with ENABLE_MOONCAKE=OFF
+# would otherwise leave every target referencing an undeclared pool ->
+# "ninja: unknown pool name 'compile_pool'". Clear the leaked cache vars before any
+# target is created (CMAKE_JOB_POOL_* is captured at target-creation time); when
+# Mooncake is enabled, limit_jobs.cmake re-declares both pool and var in time for
+# the heavy targets, which are all defined after the add_subdirectory.
+unset(CMAKE_JOB_POOL_COMPILE CACHE)
+unset(CMAKE_JOB_POOL_LINK CACHE)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -582,6 +595,21 @@ add_library(transport_lib
     src/transport/mooncake_transfer_engine.cpp
     src/transport/mooncake_migration_worker.cpp
     src/transport/peer_discovery_service.cpp
+    # Real KV-cache addressing: physical mirror layout + sender/receiver views +
+    # multi-device UMD I/O. Dependency-free host code (no tt-metal/Mooncake), so
+    # transport_lib still builds in every configuration.
+    src/transport/kv_cache_layout.cpp
+    src/transport/kv_cache_mirror.cpp
+    src/transport/remote_region.cpp
+    src/transport/multi_device_umd.cpp
+    src/transport/kv_table_adapter.cpp
+    src/transport/kv_chunk_address_table_adapter.cpp
+    src/transport/kv_control_message.cpp
+    src/transport/kv_control_channel.cpp
+    src/transport/mooncake_kv_sender.cpp
+    src/transport/mooncake_kv_receiver.cpp
+    src/transport/kv_migration_orchestrator.cpp
+    src/transport/kv_migration_multi_host_sender.cpp
     src/utils/logger.cpp
 )
 target_include_directories(transport_lib PUBLIC
@@ -591,22 +619,73 @@ target_link_libraries(transport_lib PUBLIC spdlog::spdlog)
 if(USE_EXTERNAL_FMT)
     target_link_libraries(transport_lib PUBLIC fmt::fmt)
 endif()
-# Real UMD device-DRAM backend (umd_device_access.cpp) is compiled against
-# tt-metal when available; otherwise it falls back to a no-op (see the
-# USE_METAL_CPP_LIB guard in that file), keeping transport_lib buildable in
-# every configuration.
+# Real UMD device-DRAM backend (umd_device_access.cpp). Uses the coexistence
+# UmdDevice from tt-llm-engine/disaggregation (raw UMD Cluster, NO start_device
+# / NO CHIP_IN_USE flock / NO dispatch firmware), so the migration worker shares
+# device DRAM with a live inference engine. We compile the two sources it needs
+# directly (device_io.cpp + tt-metal's metal_soc_descriptor.cpp) and link UMD —
+# NOT libtt_metal (which would take exclusive chip ownership and JIT-build
+# dispatch kernels; see the device-mode failures this replaces). Requires a
+# BUILT tt-metal (UMD .so + yaml-cpp); a headers-only / unbuilt tree leaves
+# USE_METAL_CPP_LIB undefined so umd_device_access.cpp uses its no-op fallback
+# and transport_lib still builds in every configuration.
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
-    target_compile_definitions(transport_lib PUBLIC USE_METAL_CPP_LIB)
-    target_include_directories(transport_lib PUBLIC ${TT_METAL_INCLUDE_DIRS})
-    set(_tt_metal_lib_dir "")
-    if(EXISTS "${TT_METAL_HOME}/build_Release/lib/libtt_metal.so")
-        set(_tt_metal_lib_dir "${TT_METAL_HOME}/build_Release/lib")
-    elseif(EXISTS "${TT_METAL_HOME}/build/lib/libtt_metal.so")
-        set(_tt_metal_lib_dir "${TT_METAL_HOME}/build/lib")
+    set(_TTM_BUILD "")
+    if(EXISTS "${TT_METAL_HOME}/build_Release/lib")
+        set(_TTM_BUILD "${TT_METAL_HOME}/build_Release")
+    elseif(EXISTS "${TT_METAL_HOME}/build/lib")
+        set(_TTM_BUILD "${TT_METAL_HOME}/build")
     endif()
-    if(_tt_metal_lib_dir)
-        target_link_directories(transport_lib PUBLIC "${_tt_metal_lib_dir}")
-        target_link_libraries(transport_lib PUBLIC tt_metal tt_stl fmt)
+
+    # UMD + support libs the coexistence device path resolves against (no libtt_metal).
+    find_library(_KV_UMD_LIB   tt-umd   PATHS "${_TTM_BUILD}/lib"                 NO_DEFAULT_PATH)
+    find_library(_KV_TTSTL_LIB tt_stl   PATHS "${_TTM_BUILD}/tt_stl"              NO_DEFAULT_PATH)
+    find_library(_KV_TRACY_LIB tracy    PATHS "${_TTM_BUILD}/lib"                 NO_DEFAULT_PATH)
+    find_library(_KV_YAML_LIB  yaml-cpp PATHS "${_TTM_BUILD}/_deps/yaml-cpp-build" NO_DEFAULT_PATH)
+
+    if(_TTM_BUILD AND _KV_UMD_LIB AND _KV_TTSTL_LIB AND _KV_TRACY_LIB AND _KV_YAML_LIB)
+        target_compile_definitions(transport_lib PUBLIC USE_METAL_CPP_LIB)
+        target_include_directories(transport_lib PUBLIC ${TT_METAL_INCLUDE_DIRS})
+
+        # device_io.cpp (UmdDevice) + metal_soc_descriptor.cpp compiled directly.
+        set(_KV_MIG "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration")
+        target_sources(transport_lib PRIVATE
+            ${_KV_MIG}/src/worker/device_io.cpp
+            ${TT_METAL_HOME}/tt_metal/llrt/metal_soc_descriptor.cpp)
+        # Third-party TUs: silence tt-metal/UMD header warnings (we're not -Werror,
+        # but keep the log clean) without relaxing diagnostics on our own code.
+        set_source_files_properties(
+            ${_KV_MIG}/src/worker/device_io.cpp
+            ${TT_METAL_HOME}/tt_metal/llrt/metal_soc_descriptor.cpp
+            PROPERTIES COMPILE_OPTIONS "-w")
+
+        # device_io.hpp + the tt-metal-internal headers metal_soc_descriptor.cpp
+        # needs (mirrors the migration device target's include set). cpmcache
+        # globs match how tt-metal vendored these deps.
+        file(GLOB _KV_NLOHMANN "${TT_METAL_HOME}/.cpmcache/nlohmann_json/*/include")
+        file(GLOB _KV_REFLECT  "${TT_METAL_HOME}/.cpmcache/reflect/f*")
+        file(GLOB _KV_TASKFLOW "${TT_METAL_HOME}/.cpmcache/taskflow/5*")
+        file(GLOB _KV_YAMLINC  "${TT_METAL_HOME}/.cpmcache/yaml-cpp/*/include")
+        target_include_directories(transport_lib SYSTEM PRIVATE
+            "${_KV_MIG}/include"
+            "${TT_METAL_HOME}/tt_metal/impl"
+            "${TT_METAL_HOME}/tt_metal/impl/debug"
+            "${TT_METAL_HOME}/tt_metal/impl/profiler"
+            "${TT_METAL_HOME}/tt_metal/llrt"
+            "${TT_METAL_HOME}/tt_metal/common"
+            "${TT_METAL_HOME}/tt_metal/third_party/umd/src/firmware/riscv"
+            "${_TTM_BUILD}/tt_metal/impl"
+            ${_KV_NLOHMANN} ${_KV_REFLECT} ${_KV_TASKFLOW} ${_KV_YAMLINC})
+
+        # Full-path .so links propagate rpath to the e2e executables automatically.
+        target_link_libraries(transport_lib PUBLIC
+            ${_KV_UMD_LIB} ${_KV_TTSTL_LIB} ${_KV_TRACY_LIB} ${_KV_YAML_LIB})
+        if(USE_EXTERNAL_FMT)
+            target_link_libraries(transport_lib PUBLIC fmt::fmt)
+        endif()
+        message(STATUS "transport_lib: coexistence UMD device IO enabled (UmdDevice; libtt_metal NOT linked)")
+    else()
+        message(STATUS "transport_lib: tt-metal headers found but built UMD libs missing — device IO falls back to no-op (set TT_METAL_HOME to a BUILT tree)")
     endif()
 endif()
 # Real Mooncake transport (mooncake_transfer_engine.cpp) is compiled against the
@@ -621,6 +700,105 @@ if(TARGET transfer_engine)
     target_link_libraries(transport_lib PUBLIC transfer_engine)
     message(STATUS "transport_lib: building with Mooncake transport")
 endif()
+# Real KvChunkAddressTable adapter (kv_chunk_address_table_adapter.cpp). OFF by
+# default — the file then compiles its no-op fallback and callers use the
+# InMemoryKvTable. When ON, it wraps the real disaggregation table loaded from
+# protobuf.
+#
+# Rather than build tt-llm-engine's standalone `migration` CMake project (its own
+# project()/CPM/find_package(MPI), only buildable via an ExternalProject inside a
+# test-gated block), we mirror the lightweight migration_client pattern used
+# above: compile the exact translation units the adapter needs directly into a
+# small cpp_server-owned static lib. The table impl is the metal-free synthetic
+# stub (same public API as tt-metal's, only read_device_chunk() throws — the
+# adapter never calls it), so this needs NO libtt_metal, NO MPI, NO MPI test
+# harness — only tt-metal headers + protobuf. Requires TT_METAL_HOME (tt-metal
+# headers); see TT_METAL_API_FOUND above.
+option(ENABLE_KV_TABLE "Build the real KvChunkAddressTable adapter (tt-metal + protobuf)" OFF)
+if(ENABLE_KV_TABLE)
+    if(NOT (TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS))
+        message(FATAL_ERROR
+            "ENABLE_KV_TABLE=ON requires tt-metal headers, but TT_METAL_API_FOUND "
+            "is OFF. Set TT_METAL_HOME to a tt-metal checkout/build (e.g. "
+            "tt-llm-engine/tt-metal) so tt_metal/api is on the include path.")
+    endif()
+    # tt-metal's spdlog headers (pulled in transitively by the table headers)
+    # require external fmt; a BUILT tt-metal provides both that fmt and the
+    # protobuf runtime this path links. With external fmt, spdlog::spdlog carries
+    # SPDLOG_FMT_EXTERNAL PUBLIC, so the adapter TU in transport_lib compiles
+    # against the same fmt without any extra per-target define.
+    if(NOT USE_EXTERNAL_FMT)
+        message(FATAL_ERROR
+            "ENABLE_KV_TABLE=ON requires a BUILT tt-metal that provides fmt "
+            "(USE_EXTERNAL_FMT). Build tt-metal so "
+            "${TT_METAL_HOME}/build_Release/lib/cmake/fmt exists.")
+    endif()
+
+    # Protobuf: prefer tt-metal's vendored build (matches the .proto's runtime),
+    # fall back to the system package. protobuf_generate_cpp uses the matching
+    # protoc, so generation + link stay self-consistent either way.
+    find_package(Protobuf QUIET
+        HINTS "${TT_METAL_HOME}/build_Release/_deps/protobuf-build"
+              "${TT_METAL_HOME}/build_Release/_deps/protobuf-build/lib/cmake/protobuf"
+              "${TT_METAL_HOME}/build/_deps/protobuf-build")
+    if(NOT Protobuf_FOUND)
+        find_package(Protobuf REQUIRED)
+        message(STATUS "ENABLE_KV_TABLE: protobuf from system package (${Protobuf_VERSION})")
+    else()
+        message(STATUS "ENABLE_KV_TABLE: protobuf from tt-metal build (${Protobuf_VERSION})")
+    endif()
+
+    set(_KV_MIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration")
+    set(_KV_TTM "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/tt-metal")
+    set(_KV_PROTO_FILE
+        "${_KV_TTM}/tt_metal/impl/experimental/disaggregation/protobuf/kv_chunk_address_table.proto")
+    protobuf_generate_cpp(_KV_PROTO_SRCS _KV_PROTO_HDRS "${_KV_PROTO_FILE}")
+
+    # tt-metal sources #include "protobuf/kv_chunk_address_table.pb.h"; stage the
+    # generated header under a protobuf/ subdir to match that include path.
+    set(_KV_PROTO_INC "${CMAKE_CURRENT_BINARY_DIR}/kv_table_proto_include")
+    file(MAKE_DIRECTORY "${_KV_PROTO_INC}/protobuf")
+    add_custom_command(
+        OUTPUT "${_KV_PROTO_INC}/protobuf/kv_chunk_address_table.pb.h"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_BINARY_DIR}/kv_chunk_address_table.pb.h"
+            "${_KV_PROTO_INC}/protobuf/kv_chunk_address_table.pb.h"
+        DEPENDS ${_KV_PROTO_HDRS}
+        COMMENT "Staging kv_chunk_address_table.pb.h under protobuf/ include alias")
+
+    add_library(kv_table_lib STATIC
+        ${_KV_MIG_DIR}/src/kv_chunk_address_table_synthetic.cpp
+        ${_KV_MIG_DIR}/src/fabric_types_shim.cpp
+        ${_KV_TTM}/tt_metal/impl/experimental/disaggregation/kv_chunk_address_table_protobuf.cpp
+        ${_KV_PROTO_SRCS}
+        "${_KV_PROTO_INC}/protobuf/kv_chunk_address_table.pb.h"
+    )
+    set_target_properties(kv_table_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    # Every source here is generated (protobuf) or tt-metal third-party — none of it
+    # is cpp_server code we lint. Clear the per-target CXX_CLANG_TIDY so --clang-tidy
+    # builds don't flag protobuf's snake_case identifiers as naming violations. This
+    # mirrors the -w below, which only silences the compiler (not clang-tidy).
+    set_target_properties(kv_table_lib PROPERTIES CXX_CLANG_TIDY "")
+    target_include_directories(kv_table_lib PUBLIC
+        ${TT_METAL_INCLUDE_DIRS}
+        "${_KV_TTM}/tt_metal/impl"          # experimental/disaggregation/...protobuf.hpp
+        ${CMAKE_CURRENT_BINARY_DIR}          # generated kv_chunk_address_table.pb.h
+        ${_KV_PROTO_INC}                     # protobuf/ alias
+    )
+    # tt-metal's spdlog headers expect external fmt; PRIVATE so the define stays
+    # on kv_table_lib's own sources and does not leak onto transport_lib's other
+    # TUs (which use cpp_server's spdlog). fmt::fmt provides the symbols.
+    target_compile_definitions(kv_table_lib PRIVATE SPDLOG_FMT_EXTERNAL)
+    target_link_libraries(kv_table_lib PUBLIC protobuf::libprotobuf fmt::fmt)
+    # tt-metal headers trip -Wall/-Wpedantic (deprecated tt::stl, etc.); these are
+    # third-party sources, so silence rather than gate cpp_server's warnings on them.
+    target_compile_options(kv_table_lib PRIVATE -w)
+
+    target_link_libraries(transport_lib PUBLIC kv_table_lib)
+    target_compile_definitions(transport_lib PUBLIC TT_TRANSPORT_WITH_KV_TABLE)
+    message(STATUS "transport_lib: building with real KvChunkAddressTable (ENABLE_KV_TABLE=ON)")
+endif()
+
 target_compile_features(transport_lib PUBLIC cxx_std_20)
 target_compile_options(transport_lib PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -648,6 +826,19 @@ if(TARGET transfer_engine)
     # #4294 production worker entry point is defined later, inside the
     # KAFKA_ENABLED block, because it links kv_migration_worker for the Kafka
     # request loop. See `if(KAFKA_ENABLED)` further down.
+
+    # Real KV-cache migration (table-addressed mirror + orchestration over a
+    # TCP control channel). Self-contained TCP control transport, links only
+    # transport_lib. host mode runs with no hardware; device mode needs --blaze;
+    # real-table (--table <pb>) needs -DENABLE_KV_TABLE=ON.
+    add_executable(transport_kv_migration_e2e
+        tests/e2e/transport_kv_migration_e2e.cpp)
+    # GTest::gtest (not gtest_main): the binary has a custom main() that dispatches
+    # --role sender|receiver workers before falling through to RUN_ALL_TESTS.
+    target_link_libraries(transport_kv_migration_e2e PRIVATE transport_lib GTest::gtest)
+    target_include_directories(transport_kv_migration_e2e PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    message(STATUS "transport_kv_migration_e2e: ENABLED (real KV migration harness)")
 endif()
 
 # Unit tests (link llm_runner_lib)
@@ -670,6 +861,67 @@ target_link_libraries(transport_test PRIVATE transport_lib GTest::gtest_main)
 target_include_directories(transport_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
+# KV-cache addressing unit tests: mirror layout / offset math, sender-receiver
+# offset parity, multi-device UMD dispatch. Host-only, runs in any build config.
+add_executable(kv_cache_addressing_test
+    tests/unit/transport/kv_cache_addressing_test.cpp)
+target_link_libraries(kv_cache_addressing_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(kv_cache_addressing_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Table -> KvChunkLocation adapter (host/slot/position filtering + device-group
+# fan-out). Host-only, runs in any build config.
+add_executable(kv_table_adapter_test
+    tests/unit/transport/kv_table_adapter_test.cpp)
+target_link_libraries(kv_table_adapter_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(kv_table_adapter_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Control-plane message codec + channel (table exchange, request, mirror name,
+# done-marker, ack). Host-only loopback, runs in any build config.
+add_executable(kv_control_channel_test
+    tests/unit/transport/kv_control_channel_test.cpp)
+target_link_libraries(kv_control_channel_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(kv_control_channel_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# End-to-end KV migration data plane (sender -> simulated one-sided wire ->
+# receiver -> device) with in-memory fakes. Host-only, runs in any build config.
+add_executable(mooncake_kv_migration_test
+    tests/unit/transport/mooncake_kv_migration_test.cpp)
+target_link_libraries(mooncake_kv_migration_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(mooncake_kv_migration_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Control-channel orchestration: drives BeginMigration/MirrorReady/DoneMarker/Ack
+# end to end over a blocking loopback channel (receiver on its own thread).
+add_executable(kv_migration_orchestrator_test
+    tests/unit/transport/kv_migration_orchestrator_test.cpp)
+target_link_libraries(kv_migration_orchestrator_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(kv_migration_orchestrator_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Real-table adapter test: loads an actual serialized KvChunkAddressTable (.pb)
+# and checks real NoC addresses resolve. Only built when ENABLE_KV_TABLE=ON
+# (otherwise the adapter is the no-op fallback). Reads KV_TABLE_PB env var, else
+# the default below; SKIPs if neither file is present.
+if(ENABLE_KV_TABLE)
+    add_executable(kv_chunk_address_table_adapter_test
+        tests/unit/transport/kv_chunk_address_table_adapter_test.cpp)
+    target_link_libraries(kv_chunk_address_table_adapter_test PRIVATE transport_lib GTest::gtest_main)
+    target_include_directories(kv_chunk_address_table_adapter_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    # Repo-root tables emitted by the model runner (cpp_server -> tt-media-server -> repo root).
+    target_compile_definitions(kv_chunk_address_table_adapter_test PRIVATE
+        KV_TABLE_PB_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/../../decoder_kv_table.pb")
+endif()
 
 add_executable(dynamo_protocol_test
     tests/unit/dynamo/dynamo_protocol_test.cpp
@@ -1020,6 +1272,11 @@ include(GoogleTest)
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
 add_test(NAME PrefillIntegrationTest COMMAND prefill_integration_test)
 add_test(NAME DisaggregatedE2ETest COMMAND disaggregated_e2e_test)
+# Only built under Mooncake (TARGET transfer_engine); register its host+builtin
+# gtest round trip when present.
+if(TARGET transport_kv_migration_e2e)
+    add_test(NAME TransportKvMigrationE2E COMMAND transport_kv_migration_e2e)
+endif()
 # Integration tests boot the full server stack and share ports/resources.
 # Prevent parallel execution via RESOURCE_LOCK.
 set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2ETest PROPERTIES
@@ -1030,6 +1287,14 @@ gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(transport_test)
 gtest_discover_tests(dynamo_protocol_test)
+gtest_discover_tests(kv_cache_addressing_test)
+gtest_discover_tests(kv_table_adapter_test)
+gtest_discover_tests(kv_control_channel_test)
+gtest_discover_tests(mooncake_kv_migration_test)
+gtest_discover_tests(kv_migration_orchestrator_test)
+if(ENABLE_KV_TABLE)
+    gtest_discover_tests(kv_chunk_address_table_adapter_test)
+endif()
 if(ENABLE_BLAZE)
     gtest_discover_tests(blaze_decode_runner_test)
     gtest_discover_tests(blaze_prefill_runner_test)

@@ -365,43 +365,50 @@ bool TcpSocketTransport::sendAll(int fd, const void* buffer, size_t size) {
 }
 
 std::vector<uint8_t> TcpSocketTransport::receiveRawData() {
+  // Flatten the tri-state to the legacy empty-buffer contract: both NO_DATA and
+  // CLOSED come back empty. Callers that need the distinction (the KV-migration
+  // control channel) use tryReceiveMessage() instead.
+  return std::move(tryReceiveMessage().data);
+}
+
+ReceiveResult TcpSocketTransport::tryReceiveMessage() {
   std::lock_guard<std::mutex> lock(socketMutex);
-  if (!connected) return {};
+  if (!connected) return {ReceiveStatus::CLOSED, {}};
 
   int fd = peerSocket.load(std::memory_order_acquire);
-  if (fd < 0) return {};
+  if (fd < 0) return {ReceiveStatus::CLOSED, {}};
 
   uint32_t netSize = 0;
   auto headerStatus =
       receiveExact(fd, reinterpret_cast<uint8_t*>(&netSize), sizeof(netSize),
                    MAX_HEADER_RETRIES, /*returnIfNoInitialData=*/true);
-  if (headerStatus == ReceiveResult::NO_DATA) {
-    return {};
+  if (headerStatus == ReadResult::NO_DATA) {
+    return {ReceiveStatus::NO_DATA, {}};
   }
-  if (headerStatus == ReceiveResult::DISCONNECTED) {
+  if (headerStatus == ReadResult::DISCONNECTED) {
     markDisconnected();
-    return {};
+    return {ReceiveStatus::CLOSED, {}};
   }
 
   uint32_t size = ntohl(netSize);
   if (size == 0 || size > MAX_MESSAGE_SIZE_BYTES) {
     markDisconnected();
-    return {};
+    return {ReceiveStatus::CLOSED, {}};
   }
 
   std::vector<uint8_t> data(size);
   auto payloadStatus =
       receiveExact(fd, data.data(), data.size(), MAX_PAYLOAD_RETRIES,
                    /*returnIfNoInitialData=*/false);
-  if (payloadStatus != ReceiveResult::COMPLETE) {
+  if (payloadStatus != ReadResult::COMPLETE) {
     markDisconnected();
-    return {};
+    return {ReceiveStatus::CLOSED, {}};
   }
 
-  return data;
+  return {ReceiveStatus::DATA, std::move(data)};
 }
 
-TcpSocketTransport::ReceiveResult TcpSocketTransport::receiveExact(
+TcpSocketTransport::ReadResult TcpSocketTransport::receiveExact(
     int fd, uint8_t* buffer, size_t size, int maxRetries,
     bool returnIfNoInitialData) {
   size_t receivedTotal = 0;
@@ -420,20 +427,20 @@ TcpSocketTransport::ReceiveResult TcpSocketTransport::receiveExact(
     }
 
     if (received == 0 || !wouldBlock()) {
-      return ReceiveResult::DISCONNECTED;
+      return ReadResult::DISCONNECTED;
     }
 
     if (receivedTotal == 0 && returnIfNoInitialData) {
-      return ReceiveResult::NO_DATA;
+      return ReadResult::NO_DATA;
     }
 
     if (++retries > maxRetries) {
-      return ReceiveResult::DISCONNECTED;
+      return ReadResult::DISCONNECTED;
     }
     std::this_thread::sleep_for(RETRY_SLEEP);
   }
 
-  return ReceiveResult::COMPLETE;
+  return ReadResult::COMPLETE;
 }
 
 bool TcpSocketTransport::isConnected() const { return isConnectedState(); }
