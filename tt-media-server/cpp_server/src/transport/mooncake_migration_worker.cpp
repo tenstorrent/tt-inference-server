@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "transport/i_storage_backend.hpp"
+#include "transport/peer_discovery.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::transport {
@@ -13,6 +14,36 @@ namespace tt::transport {
 MooncakeMigrationWorker::MooncakeMigrationWorker(
     MigrationWorkerConfig config, std::shared_ptr<ITransferEngine> engine)
     : config_(std::move(config)), engine_(std::move(engine)) {}
+
+// Bring-up discovery : resolve every configured peer through the
+// metadata service and cache the handles. Blocks until all peers are found or
+// the discovery timeout elapses, acting as the worker's readiness gate.
+bool MooncakeMigrationWorker::connect() {
+  if (!engine_) {
+    TT_LOG_ERROR("[MooncakeMigrationWorker] connect: no engine");
+    return false;
+  }
+  if (config_.peer_segment_names.empty()) {
+    TT_LOG_WARN("[MooncakeMigrationWorker] connect: no peers configured");
+    peers_.clear();
+    return true;
+  }
+
+  PeerDiscovery discovery(
+      PeerDiscoveryConfig{/*poll_interval_ms=*/1000,
+                          /*timeout_sec=*/config_.discovery_timeout_sec});
+  auto resolved = discovery.resolveAll(*engine_, config_.peer_segment_names);
+  if (!resolved) {
+    TT_LOG_ERROR(
+        "[MooncakeMigrationWorker] connect: discovery timed out before all "
+        "peers were reachable");
+    return false;
+  }
+
+  peers_ = std::move(*resolved);
+  TT_LOG_INFO("[MooncakeMigrationWorker] CONNECTED to {} peers", peers_.size());
+  return true;
+}
 
 // Step 1 (sender): write a known tensor into this galaxy's device DRAM, so the
 // data plane has something to migrate. Goes straight through the storage
