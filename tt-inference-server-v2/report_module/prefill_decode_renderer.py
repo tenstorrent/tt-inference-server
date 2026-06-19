@@ -91,6 +91,7 @@ def render_prefill_decode(block: Block, metadata: Mapping[str, Any]) -> str:
                     "Cache": _cache(r.get("prompt_tokens"), r.get("cached_tokens")),
                     "Completion tok": _fmt(r.get("completion_tokens")),
                     "TTFT (s)": _fmt(r.get("ttft_s"), digits=3),
+                    "TPS": _fmt(r.get("tps"), digits=1),
                 }
             )
         parts.append(build_markdown_table(rows))

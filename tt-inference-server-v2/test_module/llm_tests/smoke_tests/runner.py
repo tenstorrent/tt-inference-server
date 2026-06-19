@@ -57,7 +57,7 @@ _USAGE = re.compile(r"usage prompt=(\d+) cached=(\d+) completion=(\d+)")
 # _chat_stream_messages: "stream ttft=0.082s total=.. tps=.. chunks=16 finish=..
 #   prompt=404 cached=0 completion=16" (ttft/prompt/completion may be "None")
 _STREAM = re.compile(
-    r"stream ttft=(\S+) total=\S+ tps=\S+ chunks=\d+ finish=\S+ "
+    r"stream ttft=(\S+) total=\S+ tps=(\S+) chunks=\d+ finish=\S+ "
     r"prompt=(\S+) cached=(\d+) completion=(\S+)"
 )
 
@@ -83,6 +83,15 @@ def _to_ttft(value: str) -> Optional[float]:
         return None
     try:
         return round(float(value.rstrip("s")), 3)
+    except ValueError:
+        return None
+
+
+def _to_tps(value: str) -> Optional[float]:
+    if not value or value == "None":
+        return None
+    try:
+        return round(float(value), 1)
     except ValueError:
         return None
 
@@ -152,13 +161,14 @@ def _parse_requests(path: Path) -> Dict[int, List[Dict]]:
             continue
         m = _STREAM.search(line)
         if m:
-            stream, groups = True, (m.group(2), m.group(3), m.group(4))
-            ttft = _to_ttft(m.group(1))
+            stream, groups = True, (m.group(3), m.group(4), m.group(5))
+            ttft, tps = _to_ttft(m.group(1)), _to_tps(m.group(2))
         else:
             m = _USAGE.search(line)
             if not m:
                 continue
-            stream, groups, ttft = False, (m.group(1), m.group(2), m.group(3)), None
+            stream = False
+            groups, ttft, tps = (m.group(1), m.group(2), m.group(3)), None, None
         turn += 1
         prompt = _to_int(groups[0])
         out.setdefault(cur, []).append(
@@ -167,6 +177,7 @@ def _parse_requests(path: Path) -> Dict[int, List[Dict]]:
                 "conv": conv,
                 "turn": turn,
                 "ttft_s": ttft,
+                "tps": tps,
                 "prompt_tokens": prompt,
                 "cached_tokens": _to_int(groups[1]),
                 "completion_tokens": _to_int(groups[2]),
