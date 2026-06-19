@@ -112,10 +112,24 @@ become a model that *fits* that contract.
 
 ## 6. tt_symbiote-side workstreams (the heavy lift)
 
-### W1 — Paged-logits forward (closes G1)
-Add a serving forward that returns logits, reusing the existing TTNN modules
-(embedding → decoder stack → final norm → lm_head) **without** the terminal
-`_argmax_token_on_device`. Two viable shapes:
+### W1 — Paged-logits forward (closes G1) — **DONE (option a)**
+Implemented as option (a): `pipeline.forward_logits_prefill(input_ids, …) -> [B, vocab]`
+and `pipeline.forward_logits_decode(prev_token_id, cache_position) -> [N, vocab]` in
+`tt_symbiote .../dots_ocr/pipeline.py`. Mechanics:
+- **W1a:** a `_return_logits` flag on `TTNNDotsOCRPrefillGraph`/`TTNNDotsOCRDecodeGraph`
+  short-circuits the terminal `_argmax_token_on_device` and returns raw logits.
+- **W1b:** the factory builds dedicated `graph_prefill_logits`/`graph_decode_logits`
+  instances (distinct `_unique_name`, `_return_logits=True`) so the logits trace never
+  aliases the token-mode trace. `forward_logits_decode` routes vLLM's per-row
+  `cache_position` through the TS-3 per-stream position path (stable buffer updated
+  in place), pads to `config.batch_size`, and slices the result back to active rows.
+- **W1c:** `pipeline.warmup(..., return_logits=True)` warms+captures the logits
+  prefill/decode traces (the S2 adapter calls this).
+
+The native token path (`generate()`, S0, all existing tests) is byte-for-byte
+unchanged: logits mode is a separate opt-in code path on separate graph instances.
+
+Original options considered:
 - (a) A new `forward_logits(...)` on the pipeline that runs the decoder stack and
   lm_head and returns the `[B, S, vocab]` logits tensor (host or on-device), or
 - (b) Wire the TTNN decoder/lm_head into the HF `DotsOCRForCausalLM.forward` so the
@@ -172,12 +186,12 @@ images at different grids**, interleaved with text-only and decode requests. Wor
 
 | # | Change | File |
 |---|---|---|
-| T1 | Flip `serving_tier` → `S2_PAGED` for dots.ocr (adapter auto-routes) | tt_symbiote `models/_runtime_pins.py` (read at `tt_symbiote_generators.py:104-116`) |
+| T1 | **DONE.** `serving_tier` flipped `S0_GREEDY_ENGINE` → `S2_PAGED` for dots.ocr (adapter auto-routes; S0 still reachable via `TT_SYMBIOTE_SERVING_TIER=DotsOCRForCausalLM=S0_GREEDY_ENGINE`) | tt_symbiote `models/_runtime_pins.py` (read at `tt_symbiote_generators.py:104-116`) |
 | T2 | Make `_prefill_s2`/`_decode_s2` call the new `pipeline.forward_logits` when `_tt_pipeline` is present (per W1a) | `tt_symbiote_generators.py:462-520` |
 | T3 | Flow `pixel_values`/`image_grid_thw` through `_prefill_s2` (today only `_prefill_s0` flattens them) | `tt_symbiote_generators.py:384-391, 462-470` |
-| T4 | `allocate_kv_cache`: confirm the 4-tuple `(num_blocks, num_kv_heads, block_size, head_size)` builds dots.ocr's paged cache (per W3) | `tt_symbiote_generators.py:240-296` |
-| T5 | `vlm.yaml`: raise `max_num_seqs` (e.g. 8–32), drop S0 single-stream notes, enable on-device sampling so vLLM reads tokens not 152K logits | `workflows/model_specs/dev/vlm.yaml` |
-| T6 | Remove the standalone A1a `--dp-batched` path once S2 lands (or keep as fallback) | `run.py`, `run_docker_server.py`, `run_dots_ocr_batched_server.py` |
+| T4 | **DONE.** `allocate_kv_cache` reuses `pipeline.paged_cache` and now validates vLLM's 4-tuple `(num_blocks, num_kv_heads, block_size, head_size)` against the pipeline cache geometry — raises on correctness-affecting mismatch (`num_kv_heads`/`head_size`/`block_size`), info-logs differing `num_blocks` (`_validate_pipeline_kv_geometry`) | `tt_symbiote_generators.py` |
+| T5 | **DONE.** `vlm.yaml`: `max_concurrency`+`max-num-seqs` → 8, added `DOTS_OCR_PARALLELISM=DP` (pipeline batch = 8 DP streams), replaced S0 single-stream notes with S2 continuous-batching notes, kept greedy/temperature 0 for token parity. On-device sampling is deferred (M1 S2 returns host logits, vLLM samples greedily on host) — `sample_on_device_mode` left as a no-op annotation | `workflows/model_specs/dev/vlm.yaml` |
+| T6 | **DONE (docs-only).** Retire the standalone A1a `--dp-batched` path now that S2 is the default serving tier. The A1a server / `--dp-batched` plumbing is **not committed to this tree** (only referenced here and in `docs/dots_ocr_dp_batching_design.md`), so there is nothing to delete in code today. If A1a is ever landed before being dropped, remove these files as part of the same change: `run.py` (the `--dp-batched` flag), `run_docker_server.py`, `run_dots_ocr_batched_server.py`. | (no committed code) |
 
 No Docker rebuild is required for tier/config flips beyond shipping the new
 tt_symbiote version that contains W1–W4.
@@ -228,8 +242,10 @@ tt_symbiote version that contains W1–W4.
   concurrency scaling at N=8. This is the bulk of the throughput win.
 - **M2 — true multimodal continuous batching.** Full W4 (multi-grid, interleaved
   MM prefill). Lifts the geometry constraint.
-- **M3 — retire A1a.** Remove the standalone DP=8 server (T6) once S2 meets/exceeds
-  its throughput; keep one serving path.
+- **M3 — retire A1a. DONE (docs-only).** S2_PAGED is now the **single, default**
+  serving path for dots.ocr (T1). The standalone A1a DP=8 server (T6) is not in
+  this tree, so retirement is a documentation action plus the removal checklist in
+  the T6 row above (applied if A1a is ever re-landed).
 
 ---
 

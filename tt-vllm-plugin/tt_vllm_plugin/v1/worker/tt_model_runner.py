@@ -170,6 +170,13 @@ class TTModelRunner:
         # Allocate KV cache tensors.
         self.kv_caches = self.model.allocate_kv_cache(kv_cache_shape, dtype, num_layers)
 
+        # TS-7: surface vLLM's per-step prefill-token budget so pipeline-backed
+        # adapters (dots.ocr) can chunk long prefills internally. Scheduler-level
+        # chunked prefill stays off (asserted above); the adapter loops the eager
+        # chunked SDPA over the paged KV when a prompt exceeds this budget.
+        if hasattr(self.model, "set_prefill_chunk_size"):
+            self.model.set_prefill_chunk_size(max_num_batched_tokens)
+
     def _update_states(self, scheduler_output: "SchedulerOutput") -> None:
         """Update the cached states and the persistent batch with the
         scheduler output.
@@ -388,6 +395,9 @@ class TTModelRunner:
         # Check if batch is mixed
         is_mixed = num_prefill > 0 and num_decode > 0
 
+        # TS-8: per-request cached-prefix length (pure-prefill path fills this in).
+        num_computed_tokens: Optional[list[int]] = None
+
         if is_mixed:
             # Mixed batch: prepare unified tensors for prefill and decode
             prefill_indices = torch.where(is_prefill_tensor)[0]
@@ -447,6 +457,12 @@ class TTModelRunner:
                     :num_reqs, :max_prompt_tokens
                 ]
                 prompt_lens = input_batch.num_prompt_tokens[:num_reqs].tolist()
+                # TS-8: how much of each prompt is already cached (block-aligned).
+                # The full prompt above is still sent; a prefix-cache-aware model
+                # computes only the uncached suffix.
+                num_computed_tokens = (
+                    input_batch.num_computed_tokens_cpu[:num_reqs].tolist()
+                )
             else:
                 input_positions = torch.from_numpy(
                     input_batch.num_tokens[:num_reqs] - 1
@@ -550,6 +566,7 @@ class TTModelRunner:
             sampling_metadata=sampling_metadata,
             multi_modal_kwargs=multi_modal_kwargs,
             cross_block_tables=None,  # Not yet supported in V1
+            num_computed_tokens=num_computed_tokens,
         )
 
     def build_model_input(
@@ -817,6 +834,59 @@ class TTModelRunner:
         output = self.generate_runner_output(sampled_token_ids)
         return output
 
+    def _build_penalty_context(self, sp, sz: int, single_rank: bool):
+        """Build per-row token-id context + penalty params for host sampling (TS-10).
+
+        Returns ``(prompt_token_ids, output_token_ids, sampling_params)`` where the
+        token-id lists are populated only when penalties/min_p are actually
+        requested and the batch maps 1:1 onto ``self.input_batch`` (single vLLM
+        rank). Otherwise returns ``(None, None, sp)`` so behavior is unchanged.
+        """
+        if sp is None or not single_rank:
+            return None, None, sp
+
+        ib = self.input_batch
+        n = min(sz, ib.num_reqs)
+        if n <= 0:
+            return None, None, sp
+
+        s = ib.sampling
+        presence = s.presence_penalty_cpu[:n]
+        frequency = s.frequency_penalty_cpu[:n]
+        repetition = s.repetition_penalty_cpu[:n]
+        min_p = s.min_p_cpu[:n]
+
+        any_penalty = (
+            bool(np.any(presence != 0.0))
+            or bool(np.any(frequency != 0.0))
+            or bool(np.any(repetition != 1.0))
+        )
+        any_min_p = bool(np.any(min_p != 0.0))
+        if not any_penalty and not any_min_p:
+            return None, None, sp
+
+        # Rebuild sampling params with per-row penalty values (temperature/top_k/
+        # top_p stay uniform, matching the existing single-param-per-batch model).
+        sp = TTSamplingParams(
+            temperature=sp.temperature,
+            top_k=sp.top_k,
+            top_p=sp.top_p,
+            presence_penalty=presence.tolist(),
+            frequency_penalty=frequency.tolist(),
+            repetition_penalty=repetition.tolist(),
+            min_p=min_p.tolist(),
+        )
+
+        prompt_ctx = []
+        output_ctx = []
+        for req_idx in range(n):
+            num_prompt = int(ib.num_prompt_tokens[req_idx])
+            num_tok = int(ib.num_tokens[req_idx])
+            row = ib.token_ids_cpu[req_idx]
+            prompt_ctx.append(row[:num_prompt].tolist())
+            output_ctx.append(row[num_prompt:num_tok].tolist())
+        return prompt_ctx, output_ctx, sp
+
     def execute_with_model_input(
         self,
         model_input: TTModelInput,
@@ -1051,6 +1121,10 @@ class TTModelRunner:
 
             if not is_decode:
                 kwargs["prompt_lens"] = model_input.prompt_lens
+                # TS-8: hand the model the per-request cached-prefix lengths so a
+                # prefix-cache-aware adapter can compute only the uncached suffix.
+                if model_input.num_computed_tokens is not None:
+                    kwargs["num_computed_tokens"] = model_input.num_computed_tokens
                 kwargs.update(model_input.multi_modal_kwargs)
                 if len(batch_size_per_dp) > 1:
                     # TODO: the model should only require DP ranks, but passing
@@ -1105,8 +1179,18 @@ class TTModelRunner:
                     self.sample_on_device_mode == "decode_only" and not is_decode
                 ):
                     logits = tt_out[start : start + sz, -1, :]
+                    # TS-10: host-side penalties. Only available for the single
+                    # vLLM-rank case where tt_out rows align 1:1 with
+                    # self.input_batch requests (the dots.ocr S2 mesh-DP layout).
+                    sp = sampling_params_per_dp[dp_rank]
+                    prompt_ctx, output_ctx, sp = self._build_penalty_context(
+                        sp, sz, single_rank=len(batch_size_per_dp) == 1
+                    )
                     next_token_ids = sample_tokens(
-                        logits, sampling_params_per_dp[dp_rank]
+                        logits,
+                        sp,
+                        prompt_token_ids=prompt_ctx,
+                        output_token_ids=output_ctx,
                     )
                 else:
                     next_token_ids = tt_out[start : start + sz]

@@ -345,16 +345,26 @@ templates:
   vllm_commit: cdb395febdc9caaeba6d82e283329366ac9c2d89
   device_model_specs:
     - device: T3K
-      # S0 greedy-engine bridge serves one request at a time (the pipeline's DP
-      # batch is same-prompt replication, not vLLM request batching). See
-      # tt_inference_server_integration.md §9.2/§9.6.
-      max_concurrency: 1
-      # tt_symbiote's dots.ocr PREFILL is not chunked, so a single prefill of
-      # >=4096 tokens overflows L1 (TT_THROW program.cpp:934 circular-buffer/L1
-      # clash). max_context drives BOTH max_model_len and max_num_batched_tokens
-      # (workflows/model_spec.py). The prefill length is set by the request, not
-      # by max_context: the validated 1848x1176 grid is (84,132)=11088 patches
-      # -> 2772 image tokens, well under 4096.
+      # S2_PAGED (default) continuous batching: each of the 8 T3K DP streams
+      # serves one INDEPENDENT vLLM sequence over the paged KV cache, so vLLM can
+      # batch up to 8 in flight (W1 logits forward + TS-1/2/3 page-table hook +
+      # per-DP-stream positions). Start at 8 (= DP streams); the practical ceiling
+      # is KV-budget bound (bf16 KV + large vision prompt, design doc §8.2) so
+      # fewer may fit -- measure during validation and lower if KV OOMs.
+      # The validated S0 single-stream greedy bridge stays reachable without
+      # editing this spec via TT_SYMBIOTE_SERVING_TIER=DotsOCRForCausalLM=S0_GREEDY_ENGINE
+      # (then drop max_concurrency/max-num-seqs back to 1).
+      max_concurrency: 8
+      # TS-7: dots.ocr S2 prefill can now chunk over the paged KV (the adapter
+      # loops the eager chunked SDPA when a prompt exceeds max_num_batched_tokens;
+      # see _prefill_s2). max_context drives BOTH max_model_len and
+      # max_num_batched_tokens (workflows/model_spec.py); the latter is the
+      # adapter's chunk budget (snapped to a 256-multiple). The prefill length is
+      # set by the request, not by max_context: the validated 1848x1176 grid is
+      # (84,132)=11088 patches -> 2772 image tokens, well under the budget, so
+      # typical OCR prefills stay single-shot (traced); only oversized prompts
+      # chunk. (A non-chunked prefill of >=4096 tokens otherwise overflows L1 --
+      # TT_THROW program.cpp:934 circular-buffer/L1 clash.)
       #
       # max_num_batched_tokens ALSO sizes the vision tower's activation buffers.
       # Every sample_doc is 1848x1176 -> 11088 patches, padded to 11264 (=1408 x 8
@@ -364,9 +374,9 @@ templates:
       # That removes the per-op "Mismatch between computed/provided MemoryConfig
       # ... Using computed config" warnings and the extra padded vision compute.
       # Decode budget is still 11264 - 2772 ~= 8.5k tokens, far above the demo
-      # client's 512-token cap. Caveat: a request whose prefill exceeds ~4096
-      # tokens (larger images / long text) re-exposes the prefill-L1 limit; the
-      # real fix is prefill chunking.
+      # client's 512-token cap. A request whose prefill exceeds the chunk budget
+      # (larger images / long text) is now segmented by the TS-7 chunked prefill
+      # path instead of overflowing L1.
       max_context: 11264       # 1408 x 8: matches the sample_docs padded vision seq
       default_impl: true
       env_vars:
@@ -377,6 +387,16 @@ templates:
         # (8, 1) DP layout the model expects. tt-metal/vLLM accept MESH_DEVICE as
         # a literal shape tuple (same convention the TG specs use for "(4, 8)").
         MESH_DEVICE: "(8, 1)"
+        # Prefix caching is DISABLED for dots.ocr. The pipeline's paged cache
+        # resets its (global, per-layer) sequence bookkeeping on every prefill and
+        # broadcasts each request's full KV to all DP streams, so it cannot honor a
+        # vLLM prefix-cache hit (a skipped prefix would be unaccounted for and
+        # corrupt continuous batching). The generator advertises
+        # supports_prefix_caching=False for DotsOCRForCausalLM, which makes the TT
+        # platform turn prefix caching off regardless of this flag; kept at 0 for
+        # clarity. (Re-enabling needs per-stream seq counters + a prefix-aware
+        # broadcast prefill -- a follow-up to the M2 continuous-batching work.)
+        TT_ENABLE_PREFIX_CACHING: "0"
         # tt_symbiote binds its run implementation from TT_SYMBIOTE_RUN_MODE at
         # import (core/run_config.py: default is "NORMAL" = NormalRun, per-module
         # EAGER dispatch with NO device-trace capture/replay). The standalone e2e
@@ -387,45 +407,63 @@ templates:
         # applies these env_vars (set_runtime_env_vars) before launching vLLM, so
         # the EngineCore subprocess inherits TRACED at tt_symbiote import time.
         TT_SYMBIOTE_RUN_MODE: "TRACED"
-        # NOTE: the e2e demo ALSO sets DOTS_OCR_PARALLELISM=DP, but that is
-        # deliberately omitted here. The (8, 1) MESH_DEVICE above already selects
-        # the DP *layout* (_linear.py: num_tp=mesh_shape[-1]=1, num_dp=8 -> weights
-        # replicated, data-parallel across 8 chips). DOTS_OCR_PARALLELISM only
-        # drives the pipeline BATCH SIZE (recipe.py::_pipeline_batch_size: DP ->
-        # batch=num_devices=8 streams). The e2e demo needs that to OCR 8 different
-        # images concurrently. Our S0 bridge serves ONE request at a time and feeds
-        # pipeline.prefill/decode_step a single (batch=1) stream WITHOUT the
-        # generate-shim's replication (tt_symbiote_generators._prefill_s0). Setting
-        # DP would build an 8-stream pipeline the bridge can't feed (shape mismatch)
-        # AND gives no single-request latency benefit. Enabling true DP serving
-        # would require replicating the prompt across streams in the S0 adapter.
+        # S2_PAGED continuous batching REQUIRES the data-parallel pipeline:
+        # DOTS_OCR_PARALLELISM=DP makes recipe.py::_pipeline_batch_size return
+        # batch=num_devices=8, i.e. one INDEPENDENT vLLM sequence per chip. The
+        # S2 adapter drives pipeline.forward_logits_prefill/decode with one row
+        # per DP stream (set_vllm_page_table + per-stream cache positions), so the
+        # pipeline batch MUST equal the 8 DP streams. (The (8, 1) MESH_DEVICE above
+        # only selects the DP weight LAYOUT; this var selects the pipeline BATCH.)
+        # For the S0 single-stream fallback
+        # (TT_SYMBIOTE_SERVING_TIER=DotsOCRForCausalLM=S0_GREEDY_ENGINE), drop this
+        # var so the pipeline builds batch=1 (the S0 bridge feeds one stream).
+        DOTS_OCR_PARALLELISM: "DP"
       vllm_args:
         # dots.ocr ships custom modeling code on the HF Hub, so vLLM's
         # ModelConfig requires trust_remote_code to load it.
         trust-remote-code: true
         mm-processor-cache-gb: 0
         limit-mm-per-prompt: '{"image": 1}'
-        # S0 default: one vLLM request at a time (greedy-engine bridge). The S2
-        # paged-logits path (continuous batching) is OPT-IN and non-destructive —
-        # it is NOT enabled by editing _runtime_pins.py. To evaluate S2 without
-        # disturbing this validated S0 spec, launch with:
-        #   TT_SYMBIOTE_SERVING_TIER=DotsOCRForCausalLM=S2_PAGED
-        # and raise the seq budget via the run.py override, e.g.
-        #   --override-tt-config '{"max_num_seqs": 8}'  (and max-num-seqs: 8)
-        # so vLLM batches multiple sequences; keep temperature 0 for S0 parity.
-        # See docs/dots_ocr_s2_migration_design.md (M1) and tt_symbiote_generators
-        # get_serving_recipes() for the override wiring.
-        max-num-seqs: 1
+        # S2_PAGED default: vLLM continuous batching. max-num-seqs is the in-flight
+        # sequence budget; 8 = the T3K DP-stream count (one sequence per chip).
+        # Keep temperature 0 / greedy for TOKEN PARITY with the validated S0 OCR
+        # output (design doc §8.5): for M1, tt_symbiote S2 returns logits and vLLM
+        # samples them on host at temperature 0 (greedy argmax == S0). To fall back
+        # to the S0 single-stream bridge, set
+        #   TT_SYMBIOTE_SERVING_TIER=DotsOCRForCausalLM=S0_GREEDY_ENGINE
+        # and drop max-num-seqs (and max_concurrency above) back to 1.
+        # See docs/dots_ocr_s2_migration_design.md and tt_symbiote_generators
+        # get_serving_recipes().
+        max-num-seqs: 8
+        # Match the pipeline's paged-cache block size (PagedAttentionConfig
+        # block_size=64). The S2 adapter reuses the pipeline's own device cache and
+        # validates vLLM's KV geometry against it (_validate_pipeline_kv_geometry),
+        # so the vLLM block manager MUST page at 64-token blocks. This also makes
+        # TS-8's num_computed_tokens 64-aligned, satisfying the chunked-SDPA
+        # q_chunk divisibility for the suffix chunk starts.
+        block-size: 64
+        # Prefix caching disabled (see TT_ENABLE_PREFIX_CACHING note above): the
+        # dots.ocr pipeline cannot honor skipped prefixes under its reset-on-prefill
+        # paged cache. The generator's supports_prefix_caching=False capability
+        # forces this off in the TT platform regardless; set false for clarity.
+        enable-prefix-caching: false
       override_tt_config:
         # dots.ocr captures large prefill+decode traces; matches the e2e demo's
         # ttnn.open_mesh_device(trace_region_size=200_000_000).
         trace_region_size: 200000000
-        # Keep token sampling on-device during decode (no per-token logits
-        # device->host->device round-trip). The tt_transformers VLM specs above
-        # use the same flag; for the S0 tt_symbiote bridge this must be VALIDATED
-        # (tt_symbiote runs its own greedy decode loop, so the flag may be a
-        # no-op) — confirm output parity after enabling.
-        sample_on_device_mode: decode_only
+        # NOTE (S2): on-device sampling is NOT wired for the tt_symbiote S2 logits
+        # path. forward_logits_prefill/decode return host logits [B, vocab] and
+        # vLLM samples on host EVERY step (prefill AND decode). The key is left
+        # UNSET (resolves to sample_on_device_mode=None) on purpose: decode_only
+        # would route the decode step to the "model returns pre-sampled tokens"
+        # branch, but dots.ocr decode returns logits, so host sampling must run on
+        # decode too. Host-step sampling is also what enables TS-10 anti-repetition
+        # / penalties (repetition/presence/frequency penalties + min_p applied to
+        # the returned logits before greedy/top-p-top-k; greedy at temperature 0
+        # stays byte-for-byte == S0 parity when no penalties are requested).
+        # Moving argmax/sampling back on-device (skipping the per-token logits d2h)
+        # is the deferred latency optimization (design doc §8).
+        # sample_on_device_mode: <unset -> host sampling every step>
   status: EXPERIMENTAL
   # Skip tt-inference-server's generic background trace-capture sweep. That sweep
   # (utils/prompt_client.py::DEFAULT_IMAGE_RESOLUTIONS = [(512,512),(512,1024),

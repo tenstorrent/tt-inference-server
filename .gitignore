@@ -91,3 +91,5 @@ tt-inference-server-v2/run_inf_server_v2.py
 
 # dots.ocr demo: generated OCR outputs (txt/json/html reports)
 demo/demo_outputs/
+demo/demo_outputs_8/
+tt-vllm-plugin/tests/__pycache__/

@@ -47,12 +47,18 @@ import json
 import mimetypes
 import os
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from html import escape
 from pathlib import Path
 
 import requests
+
+# The S2 decode path batches at most DP-size (8) concurrent sequences before the
+# generator raises NotImplementedError, so cap demo concurrency at the DP batch.
+MAX_CONCURRENCY = 8
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".gif"}
 DEFAULT_PROMPT = (
@@ -134,6 +140,19 @@ def to_data_uri(path: Path) -> str:
     return f"data:{mime};base64,{b64}"
 
 
+# Each worker thread gets its own requests.Session; a Session is not guaranteed
+# thread-safe when shared across concurrent requests, so we key one per thread.
+_thread_local = threading.local()
+
+
+def get_session() -> requests.Session:
+    sess = getattr(_thread_local, "session", None)
+    if sess is None:
+        sess = requests.Session()
+        _thread_local.session = sess
+    return sess
+
+
 def ocr_one(session, base_url, api_key, model, prompt, max_tokens, path, timeout):
     payload = {
         "model": model,
@@ -206,12 +225,18 @@ def write_html(report_path: Path, results, meta, image_dir: Path):
             f'<div class="body"><div class="imgwrap">{img_tag}</div>'
             f'<div class="txtwrap">{text_html}</div></div></div>'
         )
+    conc = meta.get("concurrency", 1)
+    agg = meta.get("aggregate_tps")
+    wall = meta.get("wall_clock_s")
     summary = (
         f'<div class="summary"><b>{meta["model"]}</b> via '
         f'<code>{escape(meta["base_url"])}</code><br>'
         f'{meta["ok"]}/{meta["total"]} succeeded &middot; '
+        f'concurrency {conc} &middot; '
+        f'wall-clock {wall} s &middot; '
         f'avg latency {meta["avg_latency"]} s &middot; '
         f'avg {meta["avg_tps"]} tok/s &middot; '
+        f'aggregate {agg} tok/s &middot; '
         f'generated {datetime.now():%Y-%m-%d %H:%M}</div>'
     )
     html = f"""<!doctype html><html><head><meta charset="utf-8">
@@ -256,6 +281,17 @@ def main():
     ap.add_argument("--max-tokens", type=int, default=int(os.getenv("DEMO_MAX_TOKENS", "2048")))
     ap.add_argument("--timeout", type=float, default=600.0)
     ap.add_argument("--out", default=default_out)
+    ap.add_argument(
+        "--concurrency",
+        type=int,
+        default=int(os.getenv("DEMO_CONCURRENCY", "1")),
+        help=(
+            "Number of requests to send in parallel (default 1 = sequential). "
+            f"Concurrency drives the server's continuous batching; capped at "
+            f"{MAX_CONCURRENCY} (the DP batch size). Higher values raise "
+            "aggregate throughput up to the batch limit."
+        ),
+    )
     args = ap.parse_args()
 
     if not args.image_dir:
@@ -272,46 +308,81 @@ def main():
 
     api_key = resolve_api_key(args.api_key)
 
+    concurrency = max(1, args.concurrency)
+    if concurrency > MAX_CONCURRENCY:
+        print(
+            f"Warning  : --concurrency {concurrency} exceeds the DP batch size; "
+            f"capping at {MAX_CONCURRENCY} (higher would hit the S2 decode "
+            "NotImplementedError on the server).",
+            file=sys.stderr,
+        )
+        concurrency = MAX_CONCURRENCY
+
     print(f"Endpoint : {args.base_url}")
     print(f"Model    : {args.model}")
     print(f"Images   : {len(images)} from {image_dir}")
     print(f"Prompt   : {args.prompt!r}")
+    print(f"Conc.    : {concurrency} ({'sequential' if concurrency == 1 else 'continuous batching'})")
     print(f"Output   : {out}\n")
     print(f"{'#':>3}  {'image':24}  {'status':8}  {'lat(s)':>7}  {'tok':>5}  {'tok/s':>6}  preview")
     print("-" * 100)
 
-    session = requests.Session()
-    results = []
-    for i, path in enumerate(images, 1):
+    results = [None] * len(images)
+    print_lock = threading.Lock()
+
+    def run_one(idx: int, path: Path):
         try:
             r = ocr_one(
-                session, args.base_url, api_key, args.model,
+                get_session(), args.base_url, api_key, args.model,
                 args.prompt, args.max_tokens, path, args.timeout,
             )
             r["ok"] = True
             (out / "txt" / f"{path.stem}.txt").write_text(r["text"], encoding="utf-8")
             preview = " ".join(r["text"].split())[:48]
             status = r["finish_reason"] or "ok"
-            print(f"{i:>3}  {path.name:24}  {status:8}  {r['latency_s']:>7}  "
-                  f"{str(r['completion_tokens']):>5}  {str(r['tokens_per_s']):>6}  {preview}")
+            line = (f"{idx + 1:>3}  {path.name:24}  {status:8}  {r['latency_s']:>7}  "
+                    f"{str(r['completion_tokens']):>5}  {str(r['tokens_per_s']):>6}  {preview}")
         except Exception as e:  # noqa: BLE001 - demo: report and continue
             r = {"image": path.name, "ok": False, "error": str(e)}
-            print(f"{i:>3}  {path.name:24}  {'ERROR':8}  {'-':>7}  {'-':>5}  {'-':>6}  {e}")
-        results.append(r)
+            line = (f"{idx + 1:>3}  {path.name:24}  {'ERROR':8}  {'-':>7}  "
+                    f"{'-':>5}  {'-':>6}  {e}")
+        with print_lock:
+            print(line)
+        results[idx] = r
 
-    ok = [r for r in results if r.get("ok")]
+    wall_t0 = time.perf_counter()
+    if concurrency == 1:
+        for i, path in enumerate(images):
+            run_one(i, path)
+    else:
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = [pool.submit(run_one, i, path) for i, path in enumerate(images)]
+            for f in as_completed(futures):
+                f.result()
+    wall_clock = time.perf_counter() - wall_t0
+
+    ok = [r for r in results if r and r.get("ok")]
     lat = [r["latency_s"] for r in ok if r.get("latency_s")]
     tps = [r["tokens_per_s"] for r in ok if r.get("tokens_per_s")]
     avg_latency = round(sum(lat) / len(lat), 2) if lat else None
     avg_tps = round(sum(tps) / len(tps), 2) if tps else None
+    total_completion = sum(
+        r.get("completion_tokens") or 0 for r in ok
+    )
+    # Aggregate throughput across the whole batch: the metric that rises with
+    # concurrency as the server overlaps requests via continuous batching.
+    aggregate_tps = round(total_completion / wall_clock, 2) if wall_clock else None
     meta = {
         "model": args.model,
         "base_url": args.base_url,
         "prompt": args.prompt,
         "total": len(results),
         "ok": len(ok),
+        "concurrency": concurrency,
+        "wall_clock_s": round(wall_clock, 2),
         "avg_latency": avg_latency,
         "avg_tps": avg_tps,
+        "aggregate_tps": aggregate_tps,
     }
     (out / "results.json").write_text(
         json.dumps({"meta": meta, "results": results}, indent=2), encoding="utf-8"
@@ -319,8 +390,14 @@ def main():
     write_html(out / "report.html", results, meta, image_dir)
 
     print("-" * 100)
-    print(f"\nDone: {len(ok)}/{len(results)} succeeded | "
-          f"avg latency {avg_latency}s | avg {avg_tps} tok/s")
+    print(f"\nDone: {len(ok)}/{len(results)} succeeded | concurrency {concurrency} | "
+          f"wall-clock {round(wall_clock, 2)}s")
+    print(f"  per-request : avg latency {avg_latency}s | avg {avg_tps} tok/s")
+    print(f"  aggregate   : {total_completion} completion tokens in {round(wall_clock, 2)}s "
+          f"= {aggregate_tps} tok/s")
+    if concurrency > 1:
+        print("  (aggregate tok/s should exceed the sequential run as the server "
+              "batches requests; wall-clock should be well below N x sequential.)")
     print(f"  txt     : {out / 'txt'}")
     print(f"  json    : {out / 'results.json'}")
     print(f"  report  : {out / 'report.html'}")

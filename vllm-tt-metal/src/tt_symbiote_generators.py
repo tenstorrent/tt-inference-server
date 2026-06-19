@@ -168,6 +168,11 @@ class _TTSymbioteGenerator(Generator):
         self.data_parallel = 1
         self.mode = None
         self._warmed_up = False
+        # TS-7: prefill-token budget (vLLM's max_num_batched_tokens), installed by
+        # the runner via set_prefill_chunk_size. ``None`` keeps the validated
+        # single-shot (traced) prefill; when a prompt exceeds the budget the S2
+        # path loops the eager chunked prefill over the paged KV.
+        self._prefill_chunk_size: Optional[int] = None
 
     # ------------------------------------------------------------------
     # Construction (vLLM factory entry point, called by TTModelLoader)
@@ -257,9 +262,110 @@ class _TTSymbioteGenerator(Generator):
     def warmup_model_decode(self, *args: Any, **kwargs: Any) -> None:
         return None
 
+    def set_prefill_chunk_size(self, max_num_batched_tokens: Any) -> None:
+        """TS-7: record vLLM's per-step prefill-token budget for chunked prefill.
+
+        vLLM's own chunked-prefill scheduler stays disabled for TT (the plugin
+        asserts ``chunked_prefill_enabled is False`` and feeds whole prompts), so
+        a prompt longer than this budget is chunked *inside* ``_prefill_s2`` via
+        the pipeline's eager chunked path (fill-then-attend over the paged KV).
+        Snap to a tile-friendly, block-aligned multiple of 256 so each
+        ``chunk_start_idx`` keeps a large power-of-two divisor (the chunked-SDPA
+        ``q_chunk_size`` constraint). ``None``/non-positive disables chunking.
+        """
+        try:
+            budget = int(max_num_batched_tokens)
+        except (TypeError, ValueError):
+            self._prefill_chunk_size = None
+            return
+        if budget <= 0:
+            self._prefill_chunk_size = None
+            return
+        self._prefill_chunk_size = max(256, (budget // 256) * 256)
+
     # ------------------------------------------------------------------
     # KV cache
     # ------------------------------------------------------------------
+    def _validate_pipeline_kv_geometry(self, kv_cache_shape: Any) -> None:
+        """T4: check vLLM's proposed KV geometry against the pipeline cache.
+
+        vLLM passes ``kv_cache_shape = (num_blocks, num_kv_heads, block_size,
+        head_size)``. The pipeline owns the real device cache, so we do not build
+        from this tuple, but a mismatch on ``head_size`` / ``block_size`` means
+        the vLLM block manager and the device kernels disagree about KV layout --
+        that corrupts attention. Raise on those. ``num_blocks`` is allowed to
+        differ (the pipeline sizes its own vision-aware block budget), and
+        ``num_kv_heads`` may differ by an integer mesh head-shard factor (the
+        plugin shards heads TP-style while a DP pipeline replicates the full
+        cache per device); both are surfaced as info only.
+        """
+        cache = self._paged_cache
+        cfg = getattr(cache, "config", None)
+        if cfg is None:
+            return
+        pipe_geom = {
+            "num_kv_heads": int(getattr(cache, "num_kv_heads", -1)),
+            "head_size": int(getattr(cache, "head_dim", -1)),
+            "block_size": int(getattr(cfg, "block_size", -1)),
+            "num_blocks": int(getattr(cfg, "max_num_blocks", -1)),
+        }
+        if kv_cache_shape is None or len(kv_cache_shape) != 4:
+            logger.warning(
+                "tt_symbiote S2/T4: vLLM kv_cache_shape=%r is not a 4-tuple; "
+                "skipping geometry validation (pipeline cache geometry=%s)",
+                kv_cache_shape,
+                pipe_geom,
+            )
+            return
+        v_num_blocks, v_num_kv_heads, v_block_size, v_head_size = (int(x) for x in kv_cache_shape)
+        mismatches = []
+        # ``num_kv_heads``: the vLLM plugin shards KV heads across the mesh under a
+        # tensor-parallel assumption (``spec.num_kv_heads // min(num_devices,
+        # num_kv_heads)``). dots.ocr instead runs *data parallel*: the paged cache
+        # is REPLICATED across the mesh, so every device holds the full
+        # ``pipe num_kv_heads``. The vLLM block manager only uses its (sharded)
+        # head count for byte/num_blocks accounting -- which the pipeline overrides
+        # with its own block budget -- and block *indexing* (page table -> physical
+        # block id) is head-count-agnostic. So an integer head-shard factor
+        # (``pipeline % vLLM == 0``) is a benign mesh-accounting artifact, not KV
+        # corruption. Only a non-divisor head count is a genuine layout conflict.
+        pipe_kv_heads = pipe_geom["num_kv_heads"]
+        if v_num_kv_heads != pipe_kv_heads:
+            if v_num_kv_heads >= 1 and pipe_kv_heads % v_num_kv_heads == 0:
+                logger.info(
+                    "tt_symbiote S2/T4: vLLM num_kv_heads=%s differs from pipeline "
+                    "cache num_kv_heads=%s by an integer mesh head-shard factor "
+                    "(%sx); the pipeline owns a replicated (DP) paged cache and "
+                    "block indexing is head-agnostic, so this is expected.",
+                    v_num_kv_heads,
+                    pipe_kv_heads,
+                    pipe_kv_heads // v_num_kv_heads,
+                )
+            else:
+                mismatches.append(
+                    f"num_kv_heads vLLM={v_num_kv_heads} pipeline={pipe_kv_heads} "
+                    "(not an integer mesh head-shard factor)"
+                )
+        if v_head_size != pipe_geom["head_size"]:
+            mismatches.append(f"head_size vLLM={v_head_size} pipeline={pipe_geom['head_size']}")
+        if v_block_size != pipe_geom["block_size"]:
+            mismatches.append(f"block_size vLLM={v_block_size} pipeline={pipe_geom['block_size']}")
+        if mismatches:
+            raise ValueError(
+                "tt_symbiote S2/T4: vLLM KV geometry is incompatible with the pipeline "
+                "paged cache; the block manager and device kernels would disagree on KV "
+                "layout (KV corruption). Mismatches: " + "; ".join(mismatches) + ". "
+                "Align the vLLM model config (num_kv_heads / head_size / block_size) with "
+                f"the pipeline cache geometry {pipe_geom}."
+            )
+        if v_num_blocks != pipe_geom["num_blocks"]:
+            logger.info(
+                "tt_symbiote S2/T4: vLLM num_blocks=%s differs from pipeline cache "
+                "num_blocks=%s; using the pipeline's own (vision-aware) block budget.",
+                v_num_blocks,
+                pipe_geom["num_blocks"],
+            )
+
     def allocate_kv_cache(
         self,
         kv_cache_shape: Any = None,
@@ -290,6 +396,13 @@ class _TTSymbioteGenerator(Generator):
         # _prefill_s2/_decode_s2).
         if self.pipeline is not None and getattr(self.pipeline, "paged_cache", None) is not None:
             self._paged_cache = self.pipeline.paged_cache
+            # T4: the pipeline sizes its own (vision-aware) paged cache, so we
+            # reuse it rather than the geometry vLLM proposes. But a vLLM block
+            # manager configured with a KV geometry the pipeline cache cannot
+            # honor would silently corrupt KV (wrong head/dim/block size) -- so
+            # validate the proposed 4-tuple against the pipeline cache and fail
+            # loudly on any correctness-affecting mismatch.
+            self._validate_pipeline_kv_geometry(kv_cache_shape)
             logger.info(
                 "tt_symbiote S2: reusing pipeline paged KV cache (DP-mapper) for %s",
                 type(self.pipeline).__name__,
@@ -528,7 +641,31 @@ class _TTSymbioteGenerator(Generator):
         return pixel_values, image_grid_thw
 
     @staticmethod
-    def _install_page_table(cache, page_table: Any) -> None:
+    def _install_page_table(cache, page_table: Any, broadcast: bool = False) -> None:
+        """Map vLLM's per-request block table onto the pipeline's DP page table.
+
+        vLLM hands ``block_tables`` shaped ``[num_active_seqs, n_blocks]`` (physical
+        block ids per scheduled sequence). The dots.ocr paged cache requires a full
+        ``[batch_size, blocks_per_sequence]`` table -- one row per DP stream (mesh
+        device): the KV buffer is *replicated* per device and the page table is
+        *sharded* (row ``d`` -> device ``d``), so each stream indexes its own
+        private 512-block buffer with no cross-device collision.
+
+        Two install modes back correct continuous batching:
+
+        * ``broadcast=True`` (single-request prefill): tile the one request's
+          blocks across *every* stream row, so the SIMD prefill writes that
+          request's KV to its blocks on *all* mesh devices. Because every device
+          then holds the request's KV at its true block ids, a later decode step
+          can serve the request from *any* row -- which removes the need for a
+          stable vLLM-slot -> DP-stream mapping (vLLM compacts/reorders the active
+          batch as requests finish).
+        * positional (decode, or a multi-request prefill): active sequence ``i``
+          occupies row ``i`` and reads its own blocks on device ``i`` (which holds
+          its KV from the broadcast prefill). Inactive rows keep the cache's
+          existing (valid) mapping. Column padding past ``n_blocks`` is handled by
+          ``set_vllm_page_table`` (those columns are never read).
+        """
         if page_table is None:
             return
         import torch
@@ -536,7 +673,127 @@ class _TTSymbioteGenerator(Generator):
         pt = page_table if torch.is_tensor(page_table) else torch.as_tensor(page_table)
         if pt.dim() == 1:
             pt = pt.unsqueeze(0)
-        cache.set_vllm_page_table(pt.to(torch.int32))
+        pt = pt.to(torch.int32)
+
+        cfg = getattr(cache, "config", None)
+        bs = int(getattr(cfg, "batch_size", pt.shape[0]))
+        bps = int(getattr(cfg, "blocks_per_sequence", pt.shape[1]))
+
+        if broadcast and int(pt.shape[0]) == 1 and bs > 1:
+            # Replicate the single request's blocks to every DP stream so all mesh
+            # devices write/hold this request's KV (replicated-buffer cache).
+            pt = pt.expand(bs, pt.shape[1]).contiguous()
+
+        if int(pt.shape[0]) == bs and int(pt.shape[1]) <= bps:
+            # Full DP-width (broadcast tiled, or already batch_size rows): install.
+            cache.set_vllm_page_table(pt)
+            return
+
+        # Positional expand [num_active, n_blocks] -> [bs, bps], seeding inactive
+        # rows from the cache's current (valid) table.
+        base = cache.page_table
+        full = (base.clone() if torch.is_tensor(base) else torch.as_tensor(base)).to(torch.int32)
+        rows = min(int(pt.shape[0]), bs)
+        cols = min(int(pt.shape[1]), bps)
+        full[:rows, :cols] = pt[:rows, :cols]
+        cache.set_vllm_page_table(full)
+
+    @staticmethod
+    def _pad_prefill_to_dp_batch(
+        input_ids: Any,
+        pixel_values: Any,
+        image_grid_thw: Any,
+        dp_batch: int,
+    ) -> tuple:
+        """Pad an ``[N, S]`` prefill (N<=dp_batch active seqs) to the DP width.
+
+        The dots.ocr pipeline prefills SIMD-style over exactly ``config.batch_size``
+        (== mesh devices) streams and requires ``input_ids.shape[0] == batch_size``.
+        vLLM, with TT scheduler-level chunked prefill off, prefills a request (or a
+        co-scheduled group) with ``N <= dp_batch`` rows. We replicate the first
+        active stream's prompt (and its image) into the inactive rows so the SIMD
+        batch is full and every row shares the uniform seq_len / image grid the
+        batched-vision path requires. Only the N active rows' logits/KV are used
+        (the caller slices ``[:N]``); padding rows write to their own (per-device,
+        replicated) KV blocks and are discarded.
+        """
+        import torch
+
+        ids = input_ids if torch.is_tensor(input_ids) else torch.as_tensor(input_ids)
+        n = int(ids.shape[0])
+        if n >= dp_batch:
+            return input_ids, pixel_values, image_grid_thw
+        pad = dp_batch - n
+        ids_full = torch.cat([ids, ids[:1].expand(pad, ids.shape[1])], dim=0).contiguous()
+
+        if pixel_values is None or image_grid_thw is None:
+            return ids_full, pixel_values, image_grid_thw
+
+        grids = image_grid_thw if torch.is_tensor(image_grid_thw) else torch.as_tensor(image_grid_thw)
+        if grids.dim() == 1:
+            grids = grids.unsqueeze(0)
+        pv = pixel_values if torch.is_tensor(pixel_values) else torch.as_tensor(pixel_values)
+        # First image's patch block (rows 0..count0) is replicated for padding.
+        count0 = int(grids[0][0]) * int(grids[0][1]) * int(grids[0][2])
+        first_block = pv[:count0]
+        pv_full = torch.cat([pv] + [first_block] * pad, dim=0).contiguous()
+        grids_full = torch.cat(
+            [grids, grids[:1].expand(pad, grids.shape[1])], dim=0
+        ).contiguous()
+        return ids_full, pv_full, grids_full
+
+    @staticmethod
+    def _slice_request_mm(pixel_values: Any, image_grid_thw: Any, r: int) -> tuple:
+        """Extract request ``r``'s image patches from a concatenated MM batch.
+
+        vLLM concatenates every scheduled request's vision patches into a single
+        ``pixel_values`` tensor (rows stacked) with one ``image_grid_thw`` row per
+        request. Per-request broadcast prefill processes one request at a time, so
+        we slice out request ``r``'s patch block ``[offset_r : offset_r + count_r]``
+        (``count_r = t*h*w`` from its grid row) and its single grid row. Returns
+        ``(None, None)`` for a text-only step.
+        """
+        import torch
+
+        if pixel_values is None or image_grid_thw is None:
+            return None, None
+        grids = image_grid_thw if torch.is_tensor(image_grid_thw) else torch.as_tensor(image_grid_thw)
+        if grids.dim() == 1:
+            grids = grids.unsqueeze(0)
+        pv = pixel_values if torch.is_tensor(pixel_values) else torch.as_tensor(pixel_values)
+        # Single image shared by the whole step (already one grid row): no slice.
+        if int(grids.shape[0]) <= 1:
+            return pv, grids
+        counts = [int(grids[i][0]) * int(grids[i][1]) * int(grids[i][2]) for i in range(int(grids.shape[0]))]
+        offset = sum(counts[:r])
+        count_r = counts[r]
+        pv_r = pv[offset:offset + count_r].contiguous()
+        grid_r = grids[r:r + 1].contiguous()
+        return pv_r, grid_r
+
+    @staticmethod
+    def _uniform_prefix_len(num_computed_tokens: Any, batch: int, seq_len: int) -> int:
+        """TS-8: shared cached-prefix length across active streams, else 0.
+
+        vLLM hands a block-aligned cached-prefix length per request. The pipeline
+        skips one *shared* prefix for the whole batch (the M1 shared-system-prompt
+        win), so we only honor a prefix when every active stream agrees on a
+        positive value strictly inside the prompt; mixed per-stream prefixes fall
+        back to a full prefill (correct, just no skip).
+        """
+        if num_computed_tokens is None:
+            return 0
+        try:
+            vals = [int(x) for x in list(num_computed_tokens)[:batch]]
+        except (TypeError, ValueError):
+            return 0
+        if not vals or any(v != vals[0] for v in vals):
+            return 0
+        p = vals[0]
+        # Need a non-empty suffix and a genuinely cached prefix.
+        if p <= 0 or p >= seq_len:
+            return 0
+        return p
 
     def _prefill_s2(
         self,
@@ -545,16 +802,22 @@ class _TTSymbioteGenerator(Generator):
         kv_cache: Any = None,
         prompt_lens: Any = None,
         empty_slots: Any = None,
+        num_computed_tokens: Any = None,
         **kwargs: Any,
     ) -> Any:
         import torch
 
         cache = self._resolve_paged_cache(kv_cache)
-        self._install_page_table(cache, page_table)
 
         input_ids = tokens if torch.is_tensor(tokens) else torch.as_tensor(tokens)
         if input_ids.dim() == 1:
             input_ids = input_ids.unsqueeze(0)
+
+        pt_full = None
+        if page_table is not None:
+            pt_full = page_table if torch.is_tensor(page_table) else torch.as_tensor(page_table)
+            if pt_full.dim() == 1:
+                pt_full = pt_full.unsqueeze(0)
 
         # Pipeline-backed (dots.ocr): run the device prefill graph in logits mode.
         # The pipeline owns embedding/vision/scatter/decoder/lm_head on T3K; we get
@@ -562,38 +825,92 @@ class _TTSymbioteGenerator(Generator):
         # vLLM's `[:, -1, :]` slice yields the per-request next-token logits.
         if self.pipeline is not None:
             pixel_values, image_grid_thw = self._extract_mm_inputs(kwargs)
-            # M1 interim (W4): S2 continuous batching is gated to a single shared
-            # image geometry. dots.ocr's batched vision tower + scatter assume one
-            # common grid per batched prefill; mixed grids in one step are the M2
-            # follow-up (per-request vision + per-request page-table slices). All
-            # sample_docs are letterboxed to 1848x1176, so this holds in practice.
-            if image_grid_thw is not None:
-                grid = image_grid_thw
-                if hasattr(grid, "dim") and grid.dim() > 1 and int(grid.shape[0]) > 1:
-                    import torch
+            seq_len = int(input_ids.shape[-1])
+            batch = int(input_ids.shape[0])
+            dp_batch = int(getattr(self.pipeline.config, "batch_size", 1))
 
-                    if not bool(torch.all(grid == grid[0]).item()):
-                        raise NotImplementedError(
-                            "S2 (M1) requires all images in a batched prefill to share one "
-                            "grid (letterbox to the validated 1848x1176 geometry). Mixed-grid "
-                            "multimodal continuous batching is the M2 follow-up "
-                            "(see docs/dots_ocr_s2_migration_design.md, W4)."
-                        )
-            if not self._warmed_up:
-                # Warm the S2 logits graphs (not the S0 token graphs); they have
-                # distinct trace keys so the served logits forward replays directly.
-                self.pipeline.warmup(
-                    input_ids,
-                    pixel_values=pixel_values,
-                    image_grid_thw=image_grid_thw,
-                    return_logits=True,
+            # CONTINUOUS-BATCHING CORRECTNESS: prefill each request ON ITS OWN,
+            # broadcasting its KV to EVERY DP stream (mesh device). vLLM may admit
+            # requests across multiple prefill waves and then decode them together
+            # in a single DP step; a request's row in that combined decode is not
+            # the row it prefilled on. Because each device owns a *replicated* KV
+            # buffer, broadcasting a request's prefill to all rows writes its KV to
+            # every device, so the later decode can place it on ANY row and still
+            # read the right KV. (Per-request prefill is not DP-parallel across
+            # distinct requests, but OCR is decode-bound and the DP decode step is
+            # still fully batched -- the throughput win is preserved.)
+            logits_rows = []
+            for r in range(batch):
+                ids_r = input_ids[r:r + 1]
+                pv_r, grid_r = self._slice_request_mm(pixel_values, image_grid_thw, r)
+                pt_r = pt_full[r:r + 1] if pt_full is not None else None
+                # Tile this request's blocks across every DP stream so the SIMD
+                # prefill writes its KV to all mesh devices.
+                self._install_page_table(cache, pt_r, broadcast=True)
+
+                seq_len_r = int(ids_r.shape[-1])
+                # TS-8 per-request prefix: skip an already-cached prefix.
+                prefix_len = 0
+                if num_computed_tokens is not None:
+                    try:
+                        p = int(list(num_computed_tokens)[r])
+                        if 0 < p < seq_len_r:
+                            prefix_len = p
+                    except (TypeError, ValueError, IndexError):
+                        prefix_len = 0
+                # TS-7 chunked prefill for long prompts (or to carry a prefix).
+                chunk_size = self._prefill_chunk_size
+                use_chunk = (
+                    chunk_size is not None and chunk_size > 0 and seq_len_r > chunk_size
+                ) or prefix_len > 0
+                if use_chunk and (chunk_size is None or chunk_size <= 0):
+                    chunk_size = 256
+                if use_chunk:
+                    logger.info(
+                        "tt_symbiote S2: chunked prefill req=%d/%d seq_len=%d "
+                        "chunk_size=%d prefix_len=%d (%d suffix chunks)",
+                        r,
+                        batch,
+                        seq_len_r,
+                        chunk_size,
+                        prefix_len,
+                        (seq_len_r - prefix_len + chunk_size - 1) // chunk_size,
+                    )
+
+                # The pipeline prefills exactly ``batch_size`` SIMD streams; pad
+                # the single request up to the DP width (its prompt + image are
+                # replicated into every row, matching the broadcast page table).
+                pf_ids, pf_pv, pf_grid = ids_r, pv_r, grid_r
+                if dp_batch > 1:
+                    pf_ids, pf_pv, pf_grid = self._pad_prefill_to_dp_batch(
+                        ids_r, pv_r, grid_r, dp_batch
+                    )
+
+                if not use_chunk and not self._warmed_up:
+                    # Warm the S2 logits graphs once (chunked path is eager).
+                    self.pipeline.warmup(
+                        pf_ids,
+                        pixel_values=pf_pv,
+                        image_grid_thw=pf_grid,
+                        return_logits=True,
+                    )
+                    self._warmed_up = True
+                forward_kwargs: Dict[str, Any] = {}
+                if use_chunk:
+                    forward_kwargs["chunk_size"] = chunk_size
+                    if prefix_len > 0:
+                        forward_kwargs["prefix_len"] = prefix_len
+                logits_r = self.pipeline.forward_logits_prefill(
+                    pf_ids,
+                    pixel_values=pf_pv,
+                    image_grid_thw=pf_grid,
+                    **forward_kwargs,
                 )
-                self._warmed_up = True
-            logits = self.pipeline.forward_logits_prefill(
-                input_ids, pixel_values=pixel_values, image_grid_thw=image_grid_thw
-            )
-            if not torch.is_tensor(logits):
-                logits = torch.as_tensor(logits)
+                if not torch.is_tensor(logits_r):
+                    logits_r = torch.as_tensor(logits_r)
+                logits_rows.append(logits_r[:1])  # active (broadcast) row
+
+            logits = torch.cat(logits_rows, dim=0)  # [batch, vocab]
             return logits.unsqueeze(1)  # [B, vocab] -> [B, 1, vocab]
 
         cache_position = torch.arange(input_ids.shape[-1])
@@ -617,7 +934,6 @@ class _TTSymbioteGenerator(Generator):
         import torch
 
         cache = self._resolve_paged_cache(kv_cache)
-        self._install_page_table(cache, page_table)
 
         last = tokens if torch.is_tensor(tokens) else torch.as_tensor(tokens)
 
@@ -642,11 +958,6 @@ class _TTSymbioteGenerator(Generator):
                 pos_t = pos_t[:n_active].to(torch.int32)
             n_active = int(tok_t.numel())
 
-            # The served single-stream pipeline (DOTS_OCR_PARALLELISM unset ->
-            # batch_size=1) decodes one sequence per step. Real concurrency needs
-            # the DP batch pipeline (batch_size == num_devices) wired to vLLM's
-            # per-rank decode; until that lands, a multi-sequence decode step is
-            # the documented M2 boundary, not a silent wrong answer.
             pipe_batch = int(getattr(self.pipeline.config, "batch_size", 1))
             if n_active > pipe_batch:
                 raise NotImplementedError(
@@ -656,12 +967,45 @@ class _TTSymbioteGenerator(Generator):
                     f"multi-sequence continuous batching (design W4/M2)."
                 )
 
-            prev_ids = [int(x) for x in tok_t.tolist()]
-            prev = prev_ids[0] if len(prev_ids) == 1 else prev_ids
-            cache_position = pos_t
+            # CONTINUOUS-BATCHING CORRECTNESS: the pipeline decodes SIMD over
+            # exactly ``pipe_batch`` (== mesh devices) rows. When fewer requests
+            # are active, the inactive rows MUST NOT write KV through stale page
+            # table rows (left pointing at other requests' blocks) -- that slowly
+            # corrupts resident KV across request cycles and breaks single-stream
+            # serving after a few requests. Instead we pad by REPLICATING active
+            # row 0 into every inactive row: padding rows re-decode a real request
+            # (same token, position AND blocks), so their KV writes are idempotent
+            # duplicates on those rows' devices (which already hold that request's
+            # KV from the broadcast prefill) and corrupt nothing. The active rows'
+            # logits are sliced back out below.
+            pt_full = None
+            if page_table is not None:
+                pt_full = page_table if torch.is_tensor(page_table) else torch.as_tensor(page_table)
+                if pt_full.dim() == 1:
+                    pt_full = pt_full.unsqueeze(0)
+                pt_full = pt_full.to(torch.int32)[:n_active]
+
+            tok_list = [int(x) for x in tok_t.tolist()]
+            pos_list = [int(x) for x in pos_t.tolist()] if pos_t is not None else None
+            if pipe_batch > 1 and n_active < pipe_batch:
+                pad = pipe_batch - n_active
+                tok_list = tok_list + [tok_list[0]] * pad
+                if pos_list is not None:
+                    pos_list = pos_list + [pos_list[0]] * pad
+                if pt_full is not None:
+                    pt_full = torch.cat([pt_full, pt_full[:1].expand(pad, pt_full.shape[1])], dim=0).contiguous()
+
+            # Install the full-width (replicated) page table so every SIMD row maps
+            # to a real request's blocks (no stale rows).
+            self._install_page_table(cache, pt_full)
+
+            prev = tok_list[0] if len(tok_list) == 1 else tok_list
+            cache_position = torch.as_tensor(pos_list, dtype=torch.int32) if pos_list is not None else None
             logits = self.pipeline.forward_logits_decode(prev, cache_position=cache_position)
             if not torch.is_tensor(logits):
                 logits = torch.as_tensor(logits)
+            if int(logits.shape[0]) > n_active:
+                logits = logits[:n_active]  # drop replicated padding rows
             # vLLM's host-sampling path indexes tt_out[start:start+sz, -1, :], so
             # return [B, 1, vocab] (same rank as prefill), not [B, vocab].
             return logits.unsqueeze(1)
@@ -806,6 +1150,32 @@ def _copy_native_multimodal_registration(arch: str, subclass: type) -> bool:
     return True
 
 
+def _dots_ocr_max_tokens_all_users(
+    model_name: Any = None,
+    num_devices: int = 8,
+    tt_data_parallel: int = 1,
+    **_: Any,
+) -> int:
+    """Token budget sizing get_num_available_blocks_tt to the dots.ocr buffer.
+
+    The pipeline paged cache (see pipeline._create_paged_kv_cache) is built with
+    ``block_size=64``, ``blocks_per_sequence=64`` and
+    ``max_num_blocks = max(256, batch_size*64)`` where ``batch_size==num_devices``
+    under DP. The worker turns the returned token budget into
+    ``num_tt_blocks = ceil(tokens/block_size) + block_size_headroom``; we subtract
+    one DP batch's worth of headroom so the final block count lands at (or just
+    below) ``max_num_blocks`` and every vLLM-assigned block ID stays in range.
+    """
+    block_size = 64
+    blocks_per_sequence = 64
+    batch_size = max(1, int(num_devices))
+    max_num_blocks = max(256, batch_size * blocks_per_sequence)
+    # Reserve a full batch of blocks for the worker's worst-case +block_size*max_batch
+    # headroom; clamp so we never return a non-positive budget.
+    usable_blocks = max(blocks_per_sequence, max_num_blocks - batch_size)
+    return usable_blocks * block_size
+
+
 def _build_registered_classes() -> Dict[str, type]:
     """Resolve, per arch, the concrete class to register under ``TT<Arch>``.
 
@@ -827,6 +1197,27 @@ def _build_registered_classes() -> Dict[str, type]:
         if cls is None:
             cls = type(name, (base,), {"__module__": __name__})
             _copy_native_multimodal_registration(arch, cls)
+            # dots.ocr's paged cache resets its (per-layer, global) sequence
+            # bookkeeping on every prefill, so it cannot honor a vLLM prefix-cache
+            # hit (the skipped prefix would not be accounted for) -- disable prefix
+            # caching for this arch so continuous batching stays correct (every
+            # request gets a full prefill broadcast to all DP streams).
+            if arch == "DotsOCRForCausalLM":
+                cls.model_capabilities = dict(
+                    getattr(base, "model_capabilities", {}),
+                    supports_prefix_caching=False,
+                )
+                # Cap vLLM's KV block budget to the pipeline's paged-cache buffer.
+                # dots.ocr's DP cache is a *replicated* 512-block buffer per mesh
+                # device (max(256, batch_size*64), batch_size==num_devices). With
+                # broadcast prefill every request's blocks live on every device, so
+                # vLLM must allocate block IDs strictly inside [0, 512). Without this
+                # cap, get_num_available_blocks_tt falls back to 131072 tokens (2056
+                # blocks); once vLLM hands out an ID >= 512 (after enough requests or
+                # long generations), the paged kernels index past the buffer and
+                # silently corrupt KV. Sizing the budget to the buffer keeps every
+                # block ID in range.
+                cls.get_max_tokens_all_users = staticmethod(_dots_ocr_max_tokens_all_users)
             globals()[name] = cls
         out[arch] = cls
     return out
