@@ -361,6 +361,12 @@ void LLMService::produceStream(
   tt::metrics::ServerMetrics::instance().onRequestSubmitted(
       taskId, static_cast<int>(tokenIds.size()));
 
+  bool startsInThinking = false;
+  if (!tokenIds.empty() &&
+      tokenIds.back() == tt::utils::tokenizers::thinkTokenIds().first) {
+    startsInThinking = true;
+  }
+
   auto sequence = std::make_unique<tt::domain::llm::Sequence>(
       taskId,
       static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
@@ -369,7 +375,7 @@ void LLMService::produceStream(
       std::make_unique<tt::domain::llm::SamplingParams>(
           tt::utils::mapper::mapSamplingParams(request)),
       request.kv_position_id, request.decode_position_id,
-      request.decode_skip_tokens, request.migrationId);
+      request.decode_skip_tokens, request.migrationId, startsInThinking);
   taskQueue->push(*std::move(sequence));
 }
 
