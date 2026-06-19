@@ -308,7 +308,7 @@ def _chat_stream_messages(messages, max_tokens=16, timeout=120):
     _log(
         "stream ttft=%s total=%.3fs tps=%s chunks=%s finish=%s prompt=%s cached=%s completion=%s"
         % (
-            ("%.3fs" % ttft) if ttft is not None else None,
+            ("%.1fms" % (ttft * 1000)) if ttft is not None else None,
             total_s,
             ("%.1f" % tps) if tps is not None else None,
             chunks,
@@ -543,7 +543,7 @@ def test_03_prefix_cache_slow_growth():
     _log(
         "per-turn TTFT=%s TPS=%s cached=%s"
         % (
-            ["%.3fs" % t for t in ttfts],
+            ["%.1fms" % (t * 1000) for t in ttfts],
             [("%.1f" % r["tps"]) if r["tps"] else None for r in results],
             cached,
         )
@@ -556,8 +556,8 @@ def test_03_prefix_cache_slow_growth():
     if ttfts[0] >= TTFT_MEANINGFUL_S:
         for i in range(1, len(ttfts)):
             assert ttfts[i] <= ttfts[0] * TTFT_HIT_MAX_FRACTION, (
-                "turn %d warm TTFT %.3fs not <= %.0f%% of cold turn-0 %.3fs"
-                % (i, ttfts[i], TTFT_HIT_MAX_FRACTION * 100, ttfts[0]),
+                "turn %d warm TTFT %.1fms not <= %.0f%% of cold turn-0 %.1fms"
+                % (i, ttfts[i] * 1000, TTFT_HIT_MAX_FRACTION * 100, ttfts[0] * 1000),
                 ttfts,
             )
 
@@ -652,15 +652,15 @@ def test_06_streaming_ttft_hit_vs_miss():
         )
     speedup = cold["ttft"] / warm["ttft"] if warm["ttft"] else float("inf")
     _log(
-        "TTFT cold(MISS)=%.3fs warm(HIT)=%.3fs speedup=%.2fx matchedTokens=%s"
-        % (cold["ttft"], warm["ttft"], speedup, matched)
+        "TTFT cold(MISS)=%.1fms warm(HIT)=%.1fms speedup=%.2fx matchedTokens=%s"
+        % (cold["ttft"] * 1000, warm["ttft"] * 1000, speedup, matched)
     )
     if cold["ttft"] >= TTFT_MEANINGFUL_S:
         # Warm HIT reprefills only the uncached tail, so TTFT must drop below cold MISS.
         assert warm["ttft"] <= cold["ttft"] * TTFT_HIT_MAX_FRACTION, (
-            "warm-HIT TTFT %.3fs not <= %.0f%% of cold-MISS %.3fs — prefix cache did "
+            "warm-HIT TTFT %.1fms not <= %.0f%% of cold-MISS %.1fms — prefix cache did "
             "not save prefill work"
-            % (warm["ttft"], TTFT_HIT_MAX_FRACTION * 100, cold["ttft"]),
+            % (warm["ttft"] * 1000, TTFT_HIT_MAX_FRACTION * 100, cold["ttft"] * 1000),
             cold,
             warm,
         )
@@ -745,10 +745,10 @@ def test_07_large_prompt_prefix_cache_ttft():
             assert r["tps"] > 0, ("non-positive decode TPS", r)
     speedup = cold["ttft"] / warm["ttft"] if warm["ttft"] else float("inf")
     _log(
-        "TTFT cold=%.3fs warm=%.3fs speedup=%.2fx | TPS cold=%s warm=%s (cached cold=%s warm=%s)"
+        "TTFT cold=%.1fms warm=%.1fms speedup=%.2fx | TPS cold=%s warm=%s (cached cold=%s warm=%s)"
         % (
-            cold["ttft"],
-            warm["ttft"],
+            cold["ttft"] * 1000,
+            warm["ttft"] * 1000,
             speedup,
             ("%.1f" % cold["tps"]) if cold["tps"] else None,
             ("%.1f" % warm["tps"]) if warm["tps"] else None,
@@ -759,8 +759,9 @@ def test_07_large_prompt_prefix_cache_ttft():
     # If cold TTFT is above the jitter floor, warm (only ~5k new) must drop below it.
     if cold["ttft"] >= TTFT_MEANINGFUL_S:
         assert warm["ttft"] <= cold["ttft"] * TTFT_HIT_MAX_FRACTION, (
-            "warm TTFT %.3fs not <= %.0f%% of cold %.3fs — prefix cache did not save "
-            "prefill work" % (warm["ttft"], TTFT_HIT_MAX_FRACTION * 100, cold["ttft"]),
+            "warm TTFT %.1fms not <= %.0f%% of cold %.1fms — prefix cache did not save "
+            "prefill work"
+            % (warm["ttft"] * 1000, TTFT_HIT_MAX_FRACTION * 100, cold["ttft"] * 1000),
             cold,
             warm,
         )
@@ -870,7 +871,7 @@ def test_08_real_chat_multiturn_prefix_cache():
                 prompts,
                 cached_seq,
                 uncached_seq,
-                ["%.3fs" % t if t is not None else None for t in ttfts],
+                ["%.1fms" % (t * 1000) if t is not None else None for t in ttfts],
                 ["%.1f" % t if t is not None else None for t in tps_seq],
             )
         )
