@@ -269,14 +269,14 @@ std::vector<tt::gateway::GatewayPrefillMetricSnapshot> buildPrefillMetrics(
   const auto now = std::chrono::steady_clock::now();
   std::vector<tt::gateway::GatewayPrefillMetricSnapshot> out;
   for (const auto& snapshot : registry.snapshot()) {
-    double heartbeatAgeSeconds = 0.0;
-    if (snapshot.last_heartbeat != std::chrono::steady_clock::time_point{}) {
-      heartbeatAgeSeconds =
-          std::chrono::duration<double>(now - snapshot.last_heartbeat).count();
+    double registrationAgeSeconds = 0.0;
+    if (snapshot.lastHeartbeat != std::chrono::steady_clock::time_point{}) {
+      registrationAgeSeconds =
+          std::chrono::duration<double>(now - snapshot.lastHeartbeat).count();
     }
-    out.push_back({snapshot.server_id, snapshot.healthy,
-                   snapshot.accepting_tasks, snapshot.in_flight,
-                   snapshot.cached_blocks, heartbeatAgeSeconds});
+    out.push_back({snapshot.serverId, snapshot.healthy, snapshot.acceptingTasks,
+                   snapshot.inFlight, snapshot.cachedBlocks,
+                   registrationAgeSeconds});
   }
   return out;
 }
@@ -519,7 +519,7 @@ int main(int argc, char** argv) {
           const auto snapshots = buildPrefillMetrics(registry);
           size_t cachedBlocks = 0;
           for (const auto& snapshot : snapshots) {
-            cachedBlocks += snapshot.cached_blocks;
+            cachedBlocks += snapshot.cachedBlocks;
           }
           metrics.setPrefillSnapshots(snapshots);
           metrics.setRoutingTableSize(cachedBlocks);

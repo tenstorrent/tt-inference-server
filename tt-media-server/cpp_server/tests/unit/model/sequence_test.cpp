@@ -93,7 +93,7 @@ TEST(LLMResponseTest, TimeoutTokenFlagMapsToTimeoutErrorReason) {
 TEST(LLMResponseTest, PrefillTimeoutTextMapsToTimeoutErrorReason) {
   tt::sockets::PrefillResultMessage result(/*taskId=*/123);
   result.error = true;
-  result.generated_text = std::string(tt::sockets::PREFILL_TIMEOUT_ERROR_TEXT);
+  result.generatedText = std::string(tt::sockets::PREFILL_TIMEOUT_ERROR_TEXT);
 
   EXPECT_EQ(tt::sockets::errorReasonFromPrefillResult(result),
             LLMErrorReason::TIMEOUT);
