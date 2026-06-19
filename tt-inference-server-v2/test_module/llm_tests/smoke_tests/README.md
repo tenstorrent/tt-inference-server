@@ -9,6 +9,11 @@ asserts the expected cache HIT/MISS, `cached_tokens`, and TTFT/TPS. The 8 tests
 cover health, local prefill, prefix-cache growth, shared prefixes, offload
 routing, streaming TTFT, large (~55k) offloaded prompts, and multi-turn chat.
 
+`test_07` (large-prompt prefix-cache TTFT, cold vs warm) is the main test — it
+sends a 50k-token system prompt + 5k-token user prompt (cold), then a second 5k
+user prompt reusing the same system (warm), exercising the full offloaded prefill
++ prefix-cache path. 
+
 There are two ways to run it: against a self-contained **mock** stack that gets
 brought up for you, or against a **real deployed** stack you point it at.
 
@@ -24,11 +29,11 @@ Via `run.py`:
 python run.py --workflow prefill_decode --served-model moonshotai/Kimi-K2.6
 ```
 
-Standalone (lets you pick a single test, e.g. `test_05`):
+Standalone (lets you pick a single test, e.g. `test_07`):
 
 ```bash
 cd tt-inference-server-v2/test_module/llm_tests/smoke_tests
-MODEL=moonshotai/Kimi-K2.6 ./run_tests.sh -v -k 05
+MODEL=moonshotai/Kimi-K2.6 ./run_tests.sh -v -k 07
 ```
 
 Requirements: standalone runs need `pytest` (and `datasets` for `test_08`);

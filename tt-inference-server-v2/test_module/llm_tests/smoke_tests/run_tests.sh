@@ -12,8 +12,8 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel)"
 BENCH_DIR="${REPO_ROOT}/tt-media-server/cpp_server/benchmarks"
 RUN_STACK="${BENCH_DIR}/run_stack.sh"
 TEST_FILE="${SCRIPT_DIR}/test_prefill_decode.py"
