@@ -10,7 +10,6 @@
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
-#include "scheduler/decode/migration_layer_client_adapter.hpp"
 #include "scheduler/decode/mock_migration_client.hpp"
 #include "scheduler/migration_layer_client_adapter.hpp"
 #include "scheduler/mock_migration_client.hpp"
@@ -18,7 +17,6 @@
 #include "tt_llm_engine/pipeline/prefill_pipeline_config.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
-#include "tt_llm_engine/scheduler/decode/migration_client_interface.hpp"
 #include "tt_llm_engine/scheduler/migration_client_interface.hpp"
 #include "tt_llm_engine/scheduler/prefill/prefill_types.hpp"
 #include "utils/logger.hpp"
@@ -256,11 +254,11 @@ makeMigrationClientInterface(const tt::config::LLMConfig& config) {
   }
 }
 
-inline std::unique_ptr<ds::MigrationClientInterface>
+inline std::unique_ptr<sch::MigrationClientInterface>
 makeDecodeMigrationClientInterface(const tt::config::LLMConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
-      return std::make_unique<ds::MigrationLayerClientAdapter>(
+      return std::make_unique<sch::MigrationLayerClientAdapter>(
           tt::config::migrationCmdQueueName(),
           tt::config::migrationTableQueueName(),
           tt::config::migrationRespQueueName());
