@@ -5,7 +5,8 @@
 
 Stateless service that lets a single decode server fan requests out across N
 prefill servers. The gateway manages prefill liveness and routes each request
-using sticky-hash → least-in-flight → round-robin order.
+using longest-prefix-match over cached block hashes, then least-in-flight, then
+round-robin order.
 
 ## Build
 
@@ -18,8 +19,8 @@ cmake --build build -j
 This produces:
 
 - `build/prefill_gateway` — the gateway binary.
-- `build/prefill_selector_test`, `build/affinity_cache_test`,
-  `build/prefill_registry_test`, `build/dispatcher_test` — unit tests
+- `build/prefill_selector_test`, `build/prefill_registry_test`,
+  `build/dispatcher_test` — unit tests
   (no I/O).
 - `build/gateway_e2e_test` — integration test with real
   `SocketManager` instances over loopback (decode + gateway + 2 prefills in
@@ -285,13 +286,13 @@ Expected gateway log lines for a successful request:
 [InterServerService] Sent PrefillRegistration: id='prefill-1' max_in_flight=...
 [Gateway] Running. Send SIGINT/SIGTERM to stop.
 ... PrefillRequest received from decode, dispatched to prefill-X ...
-... PrefillResult forwarded back to decode ...
+... PrefillResultMessage forwarded back to decode ...
 ```
 
 If a prefill goes down mid-request, the gateway emits a
 `PrefillResultMessage` with `error=true` and `generated_text="prefill_down"`
-to the decode for any task that was on that prefill, plus evicts the
-affected affinity entries.
+to the decode for any task that was on that prefill and excludes that prefill
+from future routing until it registers again.
 
 If a prefill accepts a request but does not return a result before
 `--request-timeout-ms`, the gateway emits a `PrefillResultMessage` with
@@ -307,6 +308,10 @@ temporarily make that prefill ineligible for new tasks according to
 
 Without the gateway the decode server is the socket **server** and the prefill
 is the socket **client** that dials into it. Two terminals suffice.
+
+In direct ZMQ mode, prefill still sends `PrefillRegistrationMessage` frames so
+decode's ROUTER socket can learn the prefill DEALER identity and route later
+requests back to it. This registration does not involve `PrefillGateway`.
 
 ### ZMQ
 

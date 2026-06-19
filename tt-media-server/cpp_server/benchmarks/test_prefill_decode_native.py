@@ -69,17 +69,16 @@ def _ensure_server(timeout_s=30):
     last = None
     while time.time() < deadline:
         try:
-            status, body = _req("GET", "/v1/models", timeout=5)
-            ids = [m["id"] for m in body.get("data", [])]
-            if status == 200 and MODEL in ids:
+            status, body = _req("GET", "/health", timeout=5)
+            if status == 200 and body.get("status") == "healthy":
                 return
-            last = "/v1/models=%s" % ids
+            last = "/health=%s" % body
         except Exception as e:
             last = repr(e)
         time.sleep(1)
     raise AssertionError(
-        "decode worker not serving %s natively at %s within %ds (%s)"
-        % (MODEL, DECODE_URL, timeout_s, last)
+        "decode worker not healthy at %s within %ds (%s)"
+        % (DECODE_URL, timeout_s, last)
     )
 
 

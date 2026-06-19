@@ -475,8 +475,37 @@ def parse_arguments():
         "--jwt-secret",
         type=str,
         default=None,
-        help="JWT secret for prefix-cache runs that hit an inference server behind JWT auth. "
-        "Reads $JWT_SECRET when omitted.",
+        help="JWT secret for prefix-cache / spec-decode runs that hit an inference server "
+        "behind JWT auth. Reads $JWT_SECRET when omitted.",
+    )
+
+    # Speculative-decoding benchmark
+    spec_decode_group = parser.add_argument_group(
+        "Speculative-decoding benchmark (v2)",
+        "Arguments for --workflow benchmarks --spec-decode (routed to v2)",
+    )
+    spec_decode_group.add_argument(
+        "--spec-decode",
+        action="store_true",
+        help="Switch --workflow benchmarks to the v2 AIPerf speculative-decoding sweep over "
+        "SPEED-Bench. Scrapes the vLLM vllm:spec_decode_* counters per run for acceptance "
+        "rate / mean accepted length. The server's speculative_config is out of scope and "
+        "must be set by whoever launched it. Routes the run through the v2 engine. "
+        "Requires --workflow benchmarks.",
+    )
+    spec_decode_group.add_argument(
+        "--spec-decode-preset",
+        type=str,
+        choices=["ci", "full"],
+        default="full",
+        help="Preset for --spec-decode (default: full). 'ci' is a short regression sweep.",
+    )
+    spec_decode_group.add_argument(
+        "--spec-decode-warmup-requests",
+        type=int,
+        default=None,
+        help="Short chat-completion warmup requests sent before the spec-decode sweep "
+        "(v2 default: 4; 0 disables).",
     )
 
     args = parser.parse_args()
@@ -526,10 +555,26 @@ def parse_arguments():
             f"(got --workflow {args.workflow})."
         )
 
+    if args.spec_decode and args.workflow != "benchmarks":
+        parser.error(
+            "--spec-decode currently requires --workflow benchmarks "
+            f"(got --workflow {args.workflow})."
+        )
+
     if args.serving_bench_suites and args.workflow != "serving_bench":
         parser.error(
             "--serving-bench-suites requires --workflow serving_bench "
             f"(got --workflow {args.workflow})."
+        )
+
+    # Dev specs don't pin a docker image (they're built/published out of band),
+    # so dev-mode has no image to run in a container — require an explicit one.
+    if args.dev_mode and args.docker_server and not args.override_docker_image:
+        parser.error(
+            "--dev-mode with --docker-server requires --override-docker-image: "
+            "dev specs do not pin a docker image. Pass the prebuilt image to run "
+            "the dev spec in, e.g. --override-docker-image "
+            "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:<tag>"
         )
 
     return args

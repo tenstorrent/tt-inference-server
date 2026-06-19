@@ -38,6 +38,8 @@ TEST(GatewayMetricsTest, RendersGatewayCountersAndGauges) {
   EXPECT_NE(text.find("outcome=\"success\""), std::string::npos);
   EXPECT_NE(text.find("tt_prefill_latency_seconds"), std::string::npos);
   EXPECT_NE(text.find("tt_prefill_inflight"), std::string::npos);
+  EXPECT_NE(text.find("tt_prefill_last_registration_age_seconds"),
+            std::string::npos);
   EXPECT_NE(text.find("tt_gateway_decode_connected"), std::string::npos);
 }
 

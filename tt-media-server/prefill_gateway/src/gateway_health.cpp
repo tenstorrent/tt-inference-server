@@ -40,7 +40,7 @@ GatewayHealthStatus buildGatewayHealthStatus(const PrefillRegistry& registry,
   size_t acceptingPrefills = 0;
   for (const auto& prefill : prefills) {
     if (prefill.healthy) ++healthyPrefills;
-    if (prefill.accepting_tasks) ++acceptingPrefills;
+    if (prefill.acceptingTasks) ++acceptingPrefills;
   }
 
   GatewayHealthStatus result;

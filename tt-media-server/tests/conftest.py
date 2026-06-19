@@ -323,9 +323,15 @@ for submodule, mock in submodules.items():
         sys.modules[submodule] = mock
 
 # Mock open_ai_api modules that use FastAPI decorators with Pydantic models
-# This prevents import errors when test_device_worker.py mocks domain objects
+# This prevents import errors when test_device_worker.py mocks domain objects.
+# The .router must be a REAL (empty) APIRouter, not a MagicMock: open_ai_api
+# registers it via api_router.include_router(image.router), and FastAPI >=0.137
+# asserts `not router._contains_router(self)` during include_router. A MagicMock
+# returns a truthy Mock there, tripping the assert at import time.
+from fastapi import APIRouter as _APIRouter
+
 mock_open_ai_api_image = MagicMock()
-mock_open_ai_api_image.router = MagicMock()
+mock_open_ai_api_image.router = _APIRouter()
 sys.modules["open_ai_api.image"] = mock_open_ai_api_image
 
 # Add tests.ttnn as a proper module mock to avoid pytest import issues

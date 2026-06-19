@@ -61,7 +61,6 @@ class DisaggregationService {
 
  private:
   void setupSocketHandlers();
-  void applyDeltaPrompt(LLMRequest& req, uint32_t matchedTokens);
 
   tt::config::LLMMode mode;
   std::shared_ptr<LLMService> llmService;

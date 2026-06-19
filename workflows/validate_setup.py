@@ -84,7 +84,13 @@ def validate_runtime_args(model_spec, runtime_config):
             f"model:={runtime_config.model} does not support device:={runtime_config.device}"
         )
 
-    _check_image_version_supported(model_spec)
+    # The image-version contract only matters when run.py actually launches the
+    # vLLM docker image. Client-side / external-server runs (no --docker-server)
+    # — including the v2-routed prefix-cache / spec-decode benchmarks that target
+    # an already-running server — never emit a docker command, so the pinned
+    # image version is irrelevant and must not gate them.
+    if args.docker_server:
+        _check_image_version_supported(model_spec)
 
     assert not (args.docker_server and args.local_server), (
         "Cannot run --docker-server and --local-server"
@@ -94,8 +100,10 @@ def validate_runtime_args(model_spec, runtime_config):
         assert model_spec.model_name in EVAL_CONFIGS, (
             f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
         )
-    if workflow_type == WorkflowType.BENCHMARKS and not getattr(
-        args, "prefix_cache", False
+    if (
+        workflow_type == WorkflowType.BENCHMARKS
+        and not getattr(args, "prefix_cache", False)
+        and not getattr(args, "spec_decode", False)
     ):
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")

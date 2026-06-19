@@ -38,6 +38,7 @@ class WorkflowVenvType(IntEnum):
     V2_PREFIX_CACHE = auto()
     V2_LLM_VLLM = auto()
     V2_LLM_GUIDELLM = auto()
+    V2_SPEC_DECODE = auto()
     EVALS_COMMON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()

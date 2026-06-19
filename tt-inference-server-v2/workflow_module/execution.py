@@ -83,6 +83,18 @@ class PrefixCacheOptions:
 
 
 @dataclass(frozen=True)
+class SpecDecodeOptions:
+    """Speculative-decoding benchmark knobs forwarded to ``BenchmarksWorkflow``.
+
+    Threaded through ``OrchestratorMetadata`` so the CLI entry point in
+    ``run.py`` stays decoupled from ``llm_module``.
+    """
+
+    preset: str = "full"
+    warmup_requests: int = 4
+    auth_token: str = ""
+
+
 class ServingBenchOptions:
     """Serving-bench suite selection forwarded to ``ServingBenchWorkflow``.
 
@@ -120,6 +132,7 @@ class OrchestratorMetadata:
     run_command: Optional[str] = None
     runtime_model_spec_json: Optional[str] = None
     prefix_cache: Optional[PrefixCacheOptions] = None
+    spec_decode: Optional[SpecDecodeOptions] = None
     serving_bench: Optional[ServingBenchOptions] = None
     llm_bench: Optional[LLMBenchOptions] = None
 
@@ -300,6 +313,7 @@ __all__ = [
     "LLMBenchOptions",
     "OrchestratorMetadata",
     "PrefixCacheOptions",
+    "SpecDecodeOptions",
     "TaskOutcome",
     "WorkflowExecution",
     "WorkflowResult",

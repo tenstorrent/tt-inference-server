@@ -9,6 +9,7 @@ _LAZY_FROM_EXECUTION = {
     "LLMBenchOptions",
     "OrchestratorMetadata",
     "PrefixCacheOptions",
+    "SpecDecodeOptions",
     "TaskOutcome",
     "WorkflowExecution",
     "WorkflowResult",
