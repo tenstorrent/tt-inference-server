@@ -12,6 +12,8 @@
 // only with Mooncake. Switching TransportProtocol to Rdma later does not change
 // this flow.
 
+#include <glog/logging.h>  // FLAGS_minloglevel: silence Mooncake's glog polling
+
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -22,8 +24,6 @@
 #include <string>
 #include <thread>
 #include <vector>
-
-#include <glog/logging.h>  // FLAGS_minloglevel: silence Mooncake's glog polling
 
 #include "transport/host_dram_storage_backend.hpp"
 #include "transport/mooncake_transfer_engine.hpp"
@@ -167,8 +167,8 @@ bool writeToPeer(MooncakeTransferEngine& engine, SegmentHandle peer,
                  const std::uint8_t* local, std::size_t len,
                  std::uint64_t peer_offset) {
   TransferRequest req;
-  req.op = TransferOp::Write;d
-  req.local_addr = const_cast<std::uint8_t*>(local);
+  req.op = TransferOp::Write;
+  d req.local_addr = const_cast<std::uint8_t*>(local);
   req.target = peer;
   req.target_offset = peer_offset;
   req.length = len;
@@ -234,16 +234,16 @@ int runExchange(const Options& o) {
   // Outbound framing: the table is pushed straight from its own memory, so we
   // only need the tiny header (size + checksum) and the one-byte done flag as
   // separate sources alongside it — no staging copy of the table.
-  TableHeader sendHeader{myTable.size(),
-                         fnv1a(myTable.data(), myTable.size())};
+  TableHeader sendHeader{myTable.size(), fnv1a(myTable.data(), myTable.size())};
   std::uint8_t sendFlag = K_DONE_FLAG;
 
   // Receive buffer: [header][reserved table area][flag]. Registered FIRST so it
   // is segment buffers[0] — the region the peer resolves its Writes against.
   const std::size_t recvFlagOffset = K_HEADER_BYTES + o.max_bytes;
-  std::vector<std::uint8_t> recvBuf(recvFlagOffset + 1, 0); //memory where the peer table will land
+  std::vector<std::uint8_t> recvBuf(
+      recvFlagOffset + 1, 0);  // memory where the peer table will land
 
-  auto engine = makeEngine(o); //classic engine setup
+  auto engine = makeEngine(o);  // classic engine setup
   if (!engine) {
     std::cerr << "[node] engine init failed\n";
     return 1;
@@ -265,16 +265,16 @@ int runExchange(const Options& o) {
     engine->unregisterLocalMemory(recvBuf.data());
   };
   std::cout << "[node] '" << o.name << "' serving " << myTable.size()
-            << " B at " << engine->localServerName()
-            << "; discovering peer '" << o.peer << "'\n";
+            << " B at " << engine->localServerName() << "; discovering peer '"
+            << o.peer << "'\n";
 
   // Logging silencing
   const int prevMinLogLevel = FLAGS_minloglevel;
   FLAGS_minloglevel = 3;  // FATAL only: no per-poll ERROR/WARNING spam
 
+  SegmentHandle peer =
+      openWithRetry(*engine, o.peer, o.timeout_sec);  // DYNAMIC DISCOVERY
 
-  SegmentHandle peer = openWithRetry(*engine, o.peer, o.timeout_sec); //DYNAMIC DISCOVERY
-  
   FLAGS_minloglevel = prevMinLogLevel;
   if (peer == kInvalidSegment) {
     std::cerr << "[node] openSegment(" << o.peer
