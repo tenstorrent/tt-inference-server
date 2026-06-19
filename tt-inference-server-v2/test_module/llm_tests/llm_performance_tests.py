@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Optional, Sequence
 
 from llm_module import (
     DriverContext,
@@ -32,7 +32,7 @@ from llm_module import (
     ServerConnection,
     ServerController,
 )
-from report_module.schema import Block
+from llm_module.runner import RunnerResult
 from workflow_module import accept_blocks
 
 from ..context import MediaContext
@@ -48,13 +48,12 @@ def run_llm_performance(
     server_controller: Optional[ServerController] = None,
     output_subdir: str = "llm",
     auth_token: str = "",
-) -> List[Block]:
+) -> RunnerResult:
     """Run an LLM perf sweep and forward the Blocks to workflow_module.
 
-    Returns the list of Blocks produced by the runner. The same list
-    is also handed to ``workflow_module.accept_blocks`` so the
-    downstream workflow can act on it. Callers can ignore the return
-    if they don't need the in-memory copy.
+    Returns the :class:`RunnerResult` so callers see per-sweep-point exit
+    codes (``return_codes``/``ok``), not just the Blocks — a partial sweep
+    failure must not read as success.
 
     ``auth_token`` is sent to the inference server (e.g. a minted JWT
     exported as the bearer token); empty string disables auth.
@@ -101,7 +100,7 @@ def run_llm_performance(
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         },
     )
-    return result.blocks
+    return result
 
 
 __all__ = ["run_llm_performance"]

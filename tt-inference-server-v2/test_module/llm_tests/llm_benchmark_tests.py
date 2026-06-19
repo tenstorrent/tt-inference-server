@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from llm_module import (
     AIPerfDriver,
@@ -25,7 +25,7 @@ from llm_module import (
     LLMDriver,
     VLLMBenchDriver,
 )
-from report_module.schema import Block
+from llm_module.runner import RunnerResult
 
 from ..context import MediaContext
 from .llm_performance_tests import run_llm_performance
@@ -61,7 +61,7 @@ def run_llm_bench(
     tools: str = "vllm",
     auth_token: str = "",
     venv_python: Optional[Path] = None,
-) -> List[Block]:
+) -> RunnerResult:
     """Run the LLM performance sweep for ``tools`` and emit Blocks.
 
     The launcher (``run_llm_bench.py``) has already put us inside the
@@ -95,7 +95,7 @@ def run_llm_bench(
             ctx.model_spec.model_name,
             getattr(ctx.device, "name", ctx.device),
         )
-        return []
+        return RunnerResult()
 
     logger.info(
         "Running LLM benchmark: tool=%s over %d sweep point(s)",

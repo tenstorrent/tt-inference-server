@@ -51,8 +51,9 @@ def test_run_llm_bench_short_circuits_on_empty_sweep(monkeypatch):
         device=SimpleNamespace(name="T3K"),
         runtime_config=None,
     )
-    blocks = lbt.run_llm_bench(ctx, tools="aiperf")
-    assert blocks == []
+    result = lbt.run_llm_bench(ctx, tools="aiperf")
+    assert result.blocks == []
+    assert result.ok is False
     assert called["run"] is False
 
 
@@ -69,7 +70,9 @@ def test_guidellm_uses_scenarios_not_sweep(monkeypatch, tmp_path):
 
     def _capture(ctx, *, driver, configs, auth_token=""):
         seen["configs"] = configs
-        return []
+        from llm_module.runner import RunnerResult
+
+        return RunnerResult()
 
     monkeypatch.setattr(lbt, "run_llm_performance", _capture)
 

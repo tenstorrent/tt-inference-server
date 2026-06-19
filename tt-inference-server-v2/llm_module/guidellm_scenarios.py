@@ -31,6 +31,37 @@ logger = logging.getLogger(__name__)
 DEFAULT_SCENARIOS = ["multi_turn_chat", "custom_dataset", "omni_modal"]
 DEFAULT_OMNI_MODALITIES = ["text", "image", "video", "audio"]
 
+# Per-modality defaults for the omni-modal scenarios. Each entry is the
+# default value used when ``--workflow-args omni_<modality>_<field>=...`` is
+# not supplied. Fields absent here default to None.
+_OMNI_MODALITY_DEFAULTS: Dict[str, Dict[str, str]] = {
+    "text": {
+        "data": "mbpp",
+        "request_type": "chat_completions",
+        "data_column_mapper": '{"text_column":"text"}',
+    },
+    "image": {
+        "data": "lmms-lab/MMBench_EN",
+        "request_type": "chat_completions",
+        "data_args": '{"split":"test"}',
+        "data_column_mapper": '{"image_column":"image","text_column":"question"}',
+        "data_preprocessors": "encode_media",
+    },
+    "video": {
+        "data": "lmms-lab/Video-MME",
+        "request_type": "chat_completions",
+        "data_args": '{"split":"test"}',
+        "data_column_mapper": '{"video_column":"url","text_column":"question"}',
+        "data_preprocessors": "encode_media",
+    },
+    "audio": {
+        "data": "hf-internal-testing/librispeech_asr_dummy",
+        "request_type": "chat_completions",
+        "data_column_mapper": '{"audio_column":"audio","text_column":"text"}',
+        "data_preprocessors": "encode_media",
+    },
+}
+
 
 @dataclass(frozen=True)
 class GuideLLMScenario(LLMRunConfig):
@@ -68,10 +99,18 @@ def parse_workflow_args(workflow_args: Optional[str]) -> Dict[str, str]:
     return parsed
 
 
-def _parse_int(value: Optional[str], default_value: Optional[int]) -> Optional[int]:
+def _parse_int(
+    value: Optional[str], default_value: Optional[int], *, key: str = ""
+) -> Optional[int]:
     if value is None:
         return default_value
-    return int(value)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        label = f" for {key}" if key else ""
+        raise ValueError(
+            f"--workflow-args value{label}={value!r} must be an integer"
+        ) from None
 
 
 def build_backend_kwargs_json(
@@ -159,17 +198,23 @@ def build_guidellm_scenarios(
                 osl=0,
                 max_concurrency=1,
                 num_prompts=_parse_int(
-                    workflow_params.get("multiturn_max_requests"), 10
+                    workflow_params.get("multiturn_max_requests"),
+                    10,
+                    key="multiturn_max_requests",
                 )
                 or 0,
                 name="multi_turn_chat",
                 data=str(multiturn_dataset_path),
                 profile=workflow_params.get("multiturn_profile", "synchronous"),
                 max_requests=_parse_int(
-                    workflow_params.get("multiturn_max_requests"), 10
+                    workflow_params.get("multiturn_max_requests"),
+                    10,
+                    key="multiturn_max_requests",
                 ),
                 max_seconds=_parse_int(
-                    workflow_params.get("multiturn_max_seconds"), 120
+                    workflow_params.get("multiturn_max_seconds"),
+                    120,
+                    key="multiturn_max_seconds",
                 ),
                 request_type=workflow_params.get(
                     "multiturn_request_type", "chat_completions"
@@ -188,15 +233,25 @@ def build_guidellm_scenarios(
                 isl=0,
                 osl=0,
                 max_concurrency=1,
-                num_prompts=_parse_int(workflow_params.get("custom_max_requests"), 0)
+                num_prompts=_parse_int(
+                    workflow_params.get("custom_max_requests"),
+                    0,
+                    key="custom_max_requests",
+                )
                 or 0,
                 name="custom_dataset",
                 data=workflow_params.get("custom_data", "mbpp"),
                 profile=workflow_params.get("custom_profile", "sweep"),
                 max_requests=_parse_int(
-                    workflow_params.get("custom_max_requests"), None
+                    workflow_params.get("custom_max_requests"),
+                    None,
+                    key="custom_max_requests",
                 ),
-                max_seconds=_parse_int(workflow_params.get("custom_max_seconds"), 60),
+                max_seconds=_parse_int(
+                    workflow_params.get("custom_max_seconds"),
+                    60,
+                    key="custom_max_seconds",
+                ),
                 data_args=workflow_params.get("custom_data_args"),
                 data_column_mapper=workflow_params.get(
                     "custom_data_column_mapper", '{"text_column":"text"}'
@@ -249,127 +304,40 @@ def _build_omni_modal_scenarios(
             )
             continue
 
-        if modality == "text":
-            runs.append(
-                GuideLLMScenario(
-                    isl=0,
-                    osl=0,
-                    max_concurrency=1,
-                    num_prompts=_parse_int(
-                        workflow_params.get("omni_text_max_requests"), 20
-                    )
-                    or 0,
-                    name="omni_modal_text",
-                    data=workflow_params.get("omni_text_data", "mbpp"),
-                    profile=workflow_params.get("omni_text_profile", "synchronous"),
-                    max_requests=_parse_int(
-                        workflow_params.get("omni_text_max_requests"), 20
-                    ),
-                    request_type=workflow_params.get(
-                        "omni_text_request_type", "chat_completions"
-                    ),
-                    data_column_mapper=workflow_params.get(
-                        "omni_text_data_column_mapper", '{"text_column":"text"}'
-                    ),
-                    backend_kwargs=backend_kwargs,
-                )
+        defaults = _OMNI_MODALITY_DEFAULTS.get(modality)
+        if defaults is None:
+            logger.warning("Skipping unknown omni-modal modality: %s", modality)
+            continue
+
+        def _param(field: str, default=None):
+            return workflow_params.get(f"omni_{modality}_{field}", default)
+
+        max_requests = _parse_int(
+            workflow_params.get(f"omni_{modality}_max_requests"),
+            20,
+            key=f"omni_{modality}_max_requests",
+        )
+        runs.append(
+            GuideLLMScenario(
+                isl=0,
+                osl=0,
+                max_concurrency=1,
+                num_prompts=max_requests or 0,
+                name=f"omni_modal_{modality}",
+                data=_param("data", defaults["data"]),
+                profile=_param("profile", "synchronous"),
+                max_requests=max_requests,
+                request_type=_param("request_type", defaults["request_type"]),
+                data_args=_param("data_args", defaults.get("data_args")),
+                data_column_mapper=_param(
+                    "data_column_mapper", defaults["data_column_mapper"]
+                ),
+                data_preprocessors=_param(
+                    "data_preprocessors", defaults.get("data_preprocessors")
+                ),
+                backend_kwargs=backend_kwargs,
             )
-        elif modality == "image":
-            runs.append(
-                GuideLLMScenario(
-                    isl=0,
-                    osl=0,
-                    max_concurrency=1,
-                    num_prompts=_parse_int(
-                        workflow_params.get("omni_image_max_requests"), 20
-                    )
-                    or 0,
-                    name="omni_modal_image",
-                    data=workflow_params.get("omni_image_data", "lmms-lab/MMBench_EN"),
-                    profile=workflow_params.get("omni_image_profile", "synchronous"),
-                    max_requests=_parse_int(
-                        workflow_params.get("omni_image_max_requests"), 20
-                    ),
-                    request_type=workflow_params.get(
-                        "omni_image_request_type", "chat_completions"
-                    ),
-                    data_args=workflow_params.get(
-                        "omni_image_data_args", '{"split":"test"}'
-                    ),
-                    data_column_mapper=workflow_params.get(
-                        "omni_image_data_column_mapper",
-                        '{"image_column":"image","text_column":"question"}',
-                    ),
-                    data_preprocessors=workflow_params.get(
-                        "omni_image_data_preprocessors", "encode_media"
-                    ),
-                    backend_kwargs=backend_kwargs,
-                )
-            )
-        elif modality == "video":
-            runs.append(
-                GuideLLMScenario(
-                    isl=0,
-                    osl=0,
-                    max_concurrency=1,
-                    num_prompts=_parse_int(
-                        workflow_params.get("omni_video_max_requests"), 20
-                    )
-                    or 0,
-                    name="omni_modal_video",
-                    data=workflow_params.get("omni_video_data", "lmms-lab/Video-MME"),
-                    profile=workflow_params.get("omni_video_profile", "synchronous"),
-                    max_requests=_parse_int(
-                        workflow_params.get("omni_video_max_requests"), 20
-                    ),
-                    request_type=workflow_params.get(
-                        "omni_video_request_type", "chat_completions"
-                    ),
-                    data_args=workflow_params.get(
-                        "omni_video_data_args", '{"split":"test"}'
-                    ),
-                    data_column_mapper=workflow_params.get(
-                        "omni_video_data_column_mapper",
-                        '{"video_column":"url","text_column":"question"}',
-                    ),
-                    data_preprocessors=workflow_params.get(
-                        "omni_video_data_preprocessors", "encode_media"
-                    ),
-                    backend_kwargs=backend_kwargs,
-                )
-            )
-        elif modality == "audio":
-            runs.append(
-                GuideLLMScenario(
-                    isl=0,
-                    osl=0,
-                    max_concurrency=1,
-                    num_prompts=_parse_int(
-                        workflow_params.get("omni_audio_max_requests"), 20
-                    )
-                    or 0,
-                    name="omni_modal_audio",
-                    data=workflow_params.get(
-                        "omni_audio_data",
-                        "hf-internal-testing/librispeech_asr_dummy",
-                    ),
-                    profile=workflow_params.get("omni_audio_profile", "synchronous"),
-                    max_requests=_parse_int(
-                        workflow_params.get("omni_audio_max_requests"), 20
-                    ),
-                    request_type=workflow_params.get(
-                        "omni_audio_request_type", "chat_completions"
-                    ),
-                    data_column_mapper=workflow_params.get(
-                        "omni_audio_data_column_mapper",
-                        '{"audio_column":"audio","text_column":"text"}',
-                    ),
-                    data_preprocessors=workflow_params.get(
-                        "omni_audio_data_preprocessors", "encode_media"
-                    ),
-                    backend_kwargs=backend_kwargs,
-                )
-            )
+        )
 
     return runs
 

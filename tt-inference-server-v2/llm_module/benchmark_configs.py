@@ -47,6 +47,16 @@ def get_llm_configs(
     ):
         benchmark_config = select_smoke_test_benchmark_config(benchmark_config, device)
 
+    configured_devices = {
+        dev for task in benchmark_config.tasks for dev in task.param_map
+    }
+    if device not in configured_devices:
+        available = sorted(getattr(dev, "name", str(dev)) for dev in configured_devices)
+        raise ValueError(
+            f"No benchmark params for device={getattr(device, 'name', device)!r} "
+            f"in BENCHMARK_CONFIGS[{model_id!r}]. Configured devices: {available}."
+        )
+
     configs: List[LLMRunConfig] = []
     seen = set()
     for task in benchmark_config.tasks:

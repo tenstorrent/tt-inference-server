@@ -35,6 +35,19 @@ class WorkflowSetup:
 
         self.workflow_config = WORKFLOW_CONFIGS[_workflow_type]
 
+        tools = getattr(self.runtime_config, "tools", "vllm")
+        if _workflow_type == WorkflowType.BENCHMARKS and tools in (
+            "aiperf",
+            "guidellm",
+        ):
+            logger.warning(
+                "--tools %s is ignored on the v1 benchmark path for %s; it is only "
+                "supported for LLM models routed to v2. Running the default "
+                "benchmark tool.",
+                tools,
+                self.model_spec.model_name,
+            )
+
         # only the server workflow does not require a venv
         assert self.workflow_config.workflow_run_script_venv_type is not None
 

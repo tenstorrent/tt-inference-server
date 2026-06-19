@@ -12,6 +12,7 @@ from typing import Any, Dict, Mapping, Optional
 from report_module.schema import Block
 
 from .base import LLMResultParser
+from .base import round_metric as _round
 
 
 class VLLMBenchParser(LLMResultParser):
@@ -89,11 +90,3 @@ def _format_date(date_str: Any) -> str:
         except ValueError:
             continue
     return text
-
-
-def _round(value: Any, digits: int) -> Any:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return round(value, digits)
-    return value

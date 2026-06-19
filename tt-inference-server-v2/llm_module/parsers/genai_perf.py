@@ -12,6 +12,8 @@ from typing import Any, Dict, Mapping, Optional
 from report_module.schema import Block
 
 from .base import LLMResultParser
+from .base import metric_stat as _stat
+from .base import metric_stat_int as _stat_int
 
 
 class GenAIPerfParser(LLMResultParser):
@@ -37,18 +39,6 @@ class GenAIPerfParser(LLMResultParser):
             "request_throughput": _stat(raw, "request_throughput"),
         }
         return self._wrap_record(record)
-
-
-def _stat(raw: Mapping[str, Any], key: str, stat: str = "avg") -> Optional[float]:
-    metric = raw.get(key)
-    if not isinstance(metric, Mapping):
-        return None
-    return _round(metric.get(stat), 4)
-
-
-def _stat_int(raw: Mapping[str, Any], key: str) -> Optional[int]:
-    value = _stat(raw, key)
-    return int(value) if isinstance(value, (int, float)) else None
 
 
 def _concurrency(raw: Mapping[str, Any]) -> Optional[int]:
@@ -78,11 +68,3 @@ def _model_name(raw: Mapping[str, Any]) -> str:
     if isinstance(model, list) and model:
         return str(model[0])
     return str(model) if model else ""
-
-
-def _round(value: Any, digits: int) -> Any:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return round(value, digits)
-    return value
