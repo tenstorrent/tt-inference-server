@@ -35,7 +35,9 @@ Config via env:
     THRESHOLD    MAX_TOKENS_TO_PREFILL_ON_DECODE the decode was started with (default 1000)
     API_KEY      bearer token, if required  (default none)
 
-test_08 needs `pip install datasets`. Config via env:
+test_07 and test_08 use real text from REAL_CHAT_DATASET (`pip install datasets`).
+test_07 falls back to synthetic filler if datasets/the dataset is unavailable;
+test_08 skips. Config via env:
     REAL_CHAT_DATASET        HF dataset id (default Crystalcareai/Code-feedback-sharegpt-renamed)
     REAL_CHAT_NUM            conversations to replay (default 3)
     REAL_CHAT_TURNS          user turns per conversation (default 6)
@@ -69,12 +71,14 @@ TTFT_MEANINGFUL_S = float(os.environ.get("TTFT_MEANINGFUL_S", "0.030"))
 TTFT_HIT_MAX_FRACTION = float(os.environ.get("TTFT_HIT_MAX_FRACTION", "0.6"))
 LOG_SETTLE_S = 0.6
 
-# test_07 large-prompt prefix cache: ~50k system + ~5k user. The ~55k prompt (>>
-# THRESHOLD) offloads; the warm repeat hits the cached system prefix. Needs MAX_ISL
-# raised (run_tests.sh) to accept a 55k prompt.
+# test_07 large-prompt prefix cache: ~50k system + ~5k user, so the cold run is a
+# ~55k prompt (>> THRESHOLD) that offloads; the warm repeat hits the cached system
+# prefix. Stays under MAX_ISL=64000 (run_tests.sh). TOKENS_PER_WORD is calibrated
+# to the real dataset text (~1.49 tok/word observed) so these word budgets land
+# close to the labelled token targets.
 SYSTEM_TOKENS = int(os.environ.get("SYSTEM_TOKENS", "50000"))
 USER_TOKENS = int(os.environ.get("USER_TOKENS", "5000"))
-TOKENS_PER_WORD = float(os.environ.get("TOKENS_PER_WORD", "1.75"))
+TOKENS_PER_WORD = float(os.environ.get("TOKENS_PER_WORD", "1.49"))
 USER_VARIES = os.environ.get("USER_VARIES", "1") not in ("", "0", "false", "no")
 
 _RECEIVED = re.compile(r"Received prefill request: \d+ \(tokens: (\d+)\)")
@@ -104,6 +108,39 @@ def _filler(n, start=0):
 
 def _words_for(tokens):
     return max(1, round(tokens / TOKENS_PER_WORD))
+
+
+_REAL_WORDS = None
+
+
+# Stream REAL_CHAT_DATASET message text into a flat word list of >= min_words,
+# cached. Returns None if `datasets` or the dataset is unavailable (caller falls
+# back to _filler).
+def _real_words(min_words):
+    global _REAL_WORDS
+    if _REAL_WORDS is not None and len(_REAL_WORDS) >= min_words:
+        return _REAL_WORDS
+    try:
+        from datasets import load_dataset
+    except ImportError:
+        return None
+    dataset_id = os.environ.get(
+        "REAL_CHAT_DATASET", "Crystalcareai/Code-feedback-sharegpt-renamed"
+    )
+    try:
+        ds = load_dataset(dataset_id, split="train", streaming=True)
+        words = []
+        for row in ds:
+            for m in row.get("messages") or row.get("conversations") or []:
+                content = m.get("value") or m.get("content")
+                if content:
+                    words.extend(str(content).split())
+            if len(words) >= min_words:
+                break
+    except Exception:
+        return None
+    _REAL_WORDS = words if len(words) >= min_words else None
+    return _REAL_WORDS
 
 
 def _unique():
@@ -608,9 +645,9 @@ def test_06_streaming_ttft_hit_vs_miss():
 
 
 # 7. Large-prompt prefix-cache TTFT (disaggregation): ~50k system + ~5k user. The
-#    ~55k prompt (>> THRESHOLD) offloads; the warm repeat (different user) hits the
-#    cached ~50k system prefix, prefilling only ~5k, so TTFT drops. Completes on the
-#    mock. Needs MAX_ISL raised to accept 55k (run_tests.sh).
+#    ~55k cold prompt (>> THRESHOLD) offloads; the warm repeat (different user) hits
+#    the cached system prefix, prefilling only ~5k, so TTFT drops. Completes on the
+#    mock. Needs MAX_ISL raised to accept the prompt (run_tests.sh, 64000).
 def test_07_large_prompt_prefix_cache_ttft():
     _log(
         "--------- Test07 Large-prompt prefix-cache TTFT: %d-tok system + %d-tok user, "
@@ -618,17 +655,22 @@ def test_07_large_prompt_prefix_cache_ttft():
     )
     _ensure_server()
     _ensure_disaggregated()
-    system = (
-        _unique()
-        + "You are a helpful assistant.\n"
-        + _filler(_words_for(SYSTEM_TOKENS))
-    )
-    user1 = "Please answer question A.\n" + _filler(_words_for(USER_TOKENS), 7)
-    user2 = (
-        ("Please answer question B.\n" + _filler(_words_for(USER_TOKENS), 137))
-        if USER_VARIES
-        else user1
-    )
+    sw, uw = _words_for(SYSTEM_TOKENS), _words_for(USER_TOKENS)
+    # Prefer real dataset text; user1/user2 take disjoint slices so they differ.
+    real = _real_words(sw + 2 * uw)
+    if real:
+        _log("built prompts from dataset (%d words available)" % len(real))
+        sys_body = " ".join(real[:sw])
+        body1 = " ".join(real[sw : sw + uw])
+        body2 = " ".join(real[sw + uw : sw + 2 * uw])
+    else:
+        _log("dataset unavailable — falling back to synthetic filler")
+        sys_body = _filler(sw)
+        body1 = _filler(uw, 7)
+        body2 = _filler(uw, 137)
+    system = _unique() + "You are a helpful assistant.\n" + sys_body
+    user1 = "Please answer question A.\n" + body1
+    user2 = ("Please answer question B.\n" + body2) if USER_VARIES else user1
 
     p_off = _offset(PREFILL_LOG)
     _log("request 1 (cold)")
