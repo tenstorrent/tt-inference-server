@@ -1040,6 +1040,7 @@ if(KAFKA_ENABLED)
     add_library(messaging
         src/messaging/kafka_producer.cpp
         src/messaging/kafka_consumer.cpp
+        src/messaging/migration_message.cpp
     )
     target_include_directories(messaging PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -1049,6 +1050,7 @@ if(KAFKA_ENABLED)
         ${RDKAFKA_LIB}
         ${RDKAFKACPP_LIB}
         spdlog::spdlog
+        JsonCpp::JsonCpp
     )
 
     # Migration worker library (for consumer instances)
@@ -1062,6 +1064,17 @@ if(KAFKA_ENABLED)
         messaging
         spdlog::spdlog
         JsonCpp::JsonCpp
+    )
+    # Unit test for migration_message JSON (de)serialization.
+    add_executable(migration_message_test
+        tests/unit/messaging/migration_message_test.cpp
+    )
+    target_link_libraries(migration_message_test PRIVATE
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(migration_message_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 else()
     message(STATUS "Kafka support disabled (use -DKAFKA_ENABLED=ON to enable)")
