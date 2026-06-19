@@ -7,83 +7,34 @@
 #include <trantor/net/EventLoop.h>
 
 #include <atomic>
-#include <future>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "../integration_test_helpers.hpp"
 #include "domain/session.hpp"
 #include "utils/conversation_hasher.hpp"
 
 namespace {
 
-// ---------------------------------------------------------------------------
-// Test helpers
-// ---------------------------------------------------------------------------
+using tt::test::acquireInFlight;
+using tt::test::createTestSession;
+using tt::test::runConcurrently;
+using tt::test::TrantorLoopFixture;
 
-// Trantor requires an EventLoop to be both created and run on the same thread.
-struct LoopFixture {
-  std::promise<trantor::EventLoop*> promise_;
-  trantor::EventLoop* loop{nullptr};
-  std::thread loopThread;
+// Aliases for backward compatibility with existing tests.
+using LoopFixture = TrantorLoopFixture;
 
-  LoopFixture() {
-    auto future = promise_.get_future();
-    loopThread = std::thread([this]() {
-      trantor::EventLoop eventLoop;
-      promise_.set_value(&eventLoop);
-      eventLoop.loop();
-    });
-    loop = future.get();
-  }
-
-  ~LoopFixture() {
-    if (loop) loop->quit();
-    if (loopThread.joinable()) loopThread.join();
-  }
-};
-
-std::string createSessionWithSlot(tt::services::SessionManager& manager,
-                                  trantor::EventLoop* loop, uint32_t slotId) {
-  std::promise<std::string> promise;
-  auto future = promise.get_future();
-
-  manager.createSession(
-      [&promise](const tt::domain::Session& s) {
-        promise.set_value(s.getSessionId());
-      },
-      [&promise](std::string_view err) {
-        promise.set_exception(
-            std::make_exception_ptr(std::runtime_error(std::string(err))));
-      },
-      loop, {}, slotId);
-
-  return future.get();
+inline std::string createSessionWithSlot(tt::services::SessionManager& manager,
+                                         trantor::EventLoop* loop,
+                                         uint32_t slotId) {
+  return createTestSession(manager, loop, slotId);
 }
 
-std::string createSessionWithSlot(
+inline std::string createSessionWithSlot(
     tt::services::SessionManager& manager, trantor::EventLoop* loop,
     uint32_t slotId, const std::vector<tt::utils::BlockHashInfo>& blockInfos) {
-  std::promise<std::string> promise;
-  auto future = promise.get_future();
-
-  manager.createSession(
-      [&promise](const tt::domain::Session& s) {
-        promise.set_value(s.getSessionId());
-      },
-      [&promise](std::string_view err) {
-        promise.set_exception(
-            std::make_exception_ptr(std::runtime_error(std::string(err))));
-      },
-      loop, blockInfos, slotId);
-
-  return future.get();
-}
-
-// Convenience: acquire with no cancel function.
-uint32_t acquireInFlight(tt::services::SessionManager& manager,
-                         const std::string& sessionId) {
-  return manager.acquireInFlight(sessionId, nullptr);
+  return createTestSession(manager, loop, slotId, blockInfos);
 }
 
 // ---------------------------------------------------------------------------
@@ -350,25 +301,6 @@ TEST(SessionManagerClose, ReleaseInFlight_NormalCompletion_SessionStaysIdle) {
 // ---------------------------------------------------------------------------
 // Concurrency tests
 // ---------------------------------------------------------------------------
-
-// Runs a function from two threads simultaneously using a shared latch.
-template <typename F>
-void runConcurrently(F&& f) {
-  std::atomic<bool> ready{false};
-  auto t1 = std::thread([&] {
-    while (!ready.load(std::memory_order_acquire)) {
-    }
-    f();
-  });
-  auto t2 = std::thread([&] {
-    while (!ready.load(std::memory_order_acquire)) {
-    }
-    f();
-  });
-  ready.store(true, std::memory_order_release);
-  t1.join();
-  t2.join();
-}
 
 TEST(SessionManagerConcurrency, ConcurrentClose_OnlyOneSucceeds) {
   // Two threads race to close the same session. Exactly one must get SUCCESS;

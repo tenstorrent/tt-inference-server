@@ -12,7 +12,7 @@ import os
 import shlex
 import sys
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import List, Optional
 
 from workflows.model_spec import get_runtime_model_spec
 from workflows.runtime_config import RuntimeConfig
@@ -23,7 +23,12 @@ from utils.url_helpers import resolve_deploy_url
 from test_module import MediaContext
 
 from .commands import Command, SummaryCommand, WorkflowCommand
-from .execution import OrchestratorMetadata, PrefixCacheOptions, ServingBenchOptions
+from .execution import (
+    OrchestratorMetadata,
+    PrefixCacheOptions,
+    ServingBenchOptions,
+    SpecDecodeOptions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -149,11 +154,13 @@ def _resolve_eval_config(model_name: str):
 
 def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetadata:
     runtime_config = _load_runtime_config(args.runtime_model_spec_json)
+    server_mode = _resolve_server_mode(args, runtime_config)
     return OrchestratorMetadata(
-        server_mode=_resolve_server_mode(args, runtime_config),
-        run_command=_capture_run_command(),
+        server_mode=server_mode,
+        run_command=_resolve_run_command(),
         runtime_model_spec_json=args.runtime_model_spec_json,
         prefix_cache=_build_prefix_cache_options(args),
+        spec_decode=_build_spec_decode_options(args),
         serving_bench=_build_serving_bench_options(args),
     )
 
@@ -185,6 +192,25 @@ def _build_prefix_cache_options(
         request_rate=args.prefix_cache_request_rate,
         scenarios_json=args.prefix_cache_scenarios_json,
         trace_path=args.prefix_cache_trace,
+        auth_token=_mint_jwt_if_secret(args.jwt_secret),
+    )
+
+
+def _build_spec_decode_options(
+    args: argparse.Namespace,
+) -> Optional[SpecDecodeOptions]:
+    """Translate the ``--spec-decode*`` CLI flags into ``SpecDecodeOptions``.
+
+    Returns ``None`` (the default) for every non-spec-decode run, leaving
+    ``BenchmarksWorkflow`` on its normal media-task dispatch. The flags are
+    only present when ``run.py`` registered them, so ``getattr`` guards keep
+    this safe for the image-model entry path that never adds them.
+    """
+    if not getattr(args, "spec_decode", False):
+        return None
+    return SpecDecodeOptions(
+        preset=args.spec_decode_preset,
+        warmup_requests=args.spec_decode_warmup_requests,
         auth_token=_mint_jwt_if_secret(args.jwt_secret),
     )
 
@@ -241,9 +267,15 @@ def _resolve_server_mode(
     return "docker" if args.docker_server else "API"
 
 
-def _capture_run_command(argv: Optional[Sequence[str]] = None) -> str:
-    parts = list(sys.argv if argv is None else argv)
-    return "python " + shlex.join(parts)
+_V1_RUN_COMMAND_ENV = "TT_V1_RUN_COMMAND"
+
+
+def _resolve_run_command() -> str:
+    """Resolve the ``run_command`` recorded in the report metadata."""
+    propagated = os.environ.get(_V1_RUN_COMMAND_ENV)
+    if propagated:
+        return propagated
+    return "python " + shlex.join(sys.argv)
 
 
 __all__ = ["CommandFactory"]

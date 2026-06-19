@@ -286,7 +286,7 @@ Expected gateway log lines for a successful request:
 [InterServerService] Sent PrefillRegistration: id='prefill-1' max_in_flight=...
 [Gateway] Running. Send SIGINT/SIGTERM to stop.
 ... PrefillRequest received from decode, dispatched to prefill-X ...
-... PrefillResult forwarded back to decode ...
+... PrefillResultMessage forwarded back to decode ...
 ```
 
 If a prefill goes down mid-request, the gateway emits a
@@ -308,6 +308,10 @@ temporarily make that prefill ineligible for new tasks according to
 
 Without the gateway the decode server is the socket **server** and the prefill
 is the socket **client** that dials into it. Two terminals suffice.
+
+In direct ZMQ mode, prefill still sends `PrefillRegistrationMessage` frames so
+decode's ROUTER socket can learn the prefill DEALER identity and route later
+requests back to it. This registration does not involve `PrefillGateway`.
 
 ### ZMQ
 
