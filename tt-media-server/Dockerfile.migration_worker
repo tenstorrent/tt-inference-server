@@ -1,0 +1,343 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# Dockerfile.migration_worker — image for the disaggregated KV-cache
+# migration layer. Ships migration_endpoint and migration_worker (from
+# tt-llm-engine/disaggregation/migration), the launcher scripts, the
+# OpenMPI 5 / ULFM (PRRTE) runtime, and an sshd so each container can act
+# as a "host" the launcher orchestrates over ssh. Issue #4298.
+#
+# Build modes (`--build-arg BUILD_MODE=`):
+#
+#   hybrid (default)
+#       COPY --from=ghcr.io/tenstorrent/tt-llm-engine/blaze:<sha> for the
+#       prebuilt tt-metal tree (libtt_metal.so + headers + python_env), then
+#       fresh-clone tt-llm-engine to get the migration sources (the prebuilt
+#       image strips them) and run build_migration_layer.sh against the
+#       prebuilt tt-metal. Skips the ~50min tt-metal compile.
+#
+#   self
+#       Self-contained: clone tt-llm-engine + tt-metal recursively and build
+#       both from source. Slower but doesn't depend on a published tt-llm-engine
+#       image being current.
+#
+# Build (from repo root):
+#   # hybrid (recommended; pin to your tt-llm-engine submodule sha)
+#   TT_LLM_ENGINE_COMMIT="$(git rev-parse :tt-media-server/cpp_server/tt-llm-engine)"
+#   DOCKER_BUILDKIT=1 docker build \
+#       -f tt-media-server/Dockerfile.migration_worker \
+#       --build-arg BUILD_MODE=hybrid \
+#       --build-arg TT_LLM_ENGINE_COMMIT="${TT_LLM_ENGINE_COMMIT}" \
+#       --secret id=github_token,env=GITHUB_TOKEN \
+#       -t tt-migration-worker:dev .
+#
+#   # self-contained (no external image dep)
+#   docker build \
+#       -f tt-media-server/Dockerfile.migration_worker \
+#       --build-arg BUILD_MODE=self \
+#       --build-arg TT_LLM_ENGINE_COMMIT="${TT_LLM_ENGINE_COMMIT}" \
+#       --secret id=github_token,env=GITHUB_TOKEN \
+#       -t tt-migration-worker:dev .
+
+# ARG before the first FROM so it can parameterize the build-stage selection.
+ARG BUILD_MODE=hybrid
+ARG TT_LLM_ENGINE_COMMIT
+ARG TT_LLM_ENGINE_IMAGE=ghcr.io/tenstorrent/tt-llm-engine/blaze
+ARG TT_LLM_ENGINE_TAG=latest
+
+# ============================================================================
+# (hybrid only) prebuilt-engine source stage — used to COPY tt-metal libs +
+# headers into the builder. Inert in `self` mode (we still FROM it but never
+# COPY from it; Docker only pulls layers we actually consume on each path).
+# Tag is parameterised via TT_LLM_ENGINE_TAG; the default :latest is the same
+# moving alias the build-image.yml workflow publishes — pin via build-arg in
+# CI for reproducibility, mirroring how Dockerfile.blaze pins TT_LLM_ENGINE_COMMIT.
+# ============================================================================
+# hadolint ignore=DL3007
+FROM ${TT_LLM_ENGINE_IMAGE}:${TT_LLM_ENGINE_TAG} AS engine_prebuilt
+
+# ============================================================================
+# BUILDER STAGE
+# ============================================================================
+# hadolint ignore=DL3007
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS builder
+
+LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+
+# Bash with pipefail for every RUN — we use bash builtins (compgen),
+# heredocs, and command pipelines that should fail loudly when any
+# intermediate command fails. Mirrors what we expect on the host shell.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG BUILD_MODE
+ARG TT_LLM_ENGINE_COMMIT
+ARG OPENMPI_VERSION=5.0.7
+ARG MIGRATION_BUILD_TYPE=RelWithDebInfo
+# When BUILD_MODE=hybrid we pull libtt_metal.so + headers from this prefix
+# inside the engine_prebuilt stage. Matches tt-llm-engine/Dockerfile's layout.
+ARG ENGINE_SRC_DIR=/opt/tt-llm-engine-src
+ARG APP_SRC_DIR=/opt/migration-worker-src
+
+ENV BUILD_MODE=${BUILD_MODE} \
+    TT_LLM_ENGINE_COMMIT=${TT_LLM_ENGINE_COMMIT} \
+    OPENMPI_VERSION=${OPENMPI_VERSION} \
+    MPI_HOME=/opt/openmpi-v${OPENMPI_VERSION}-ulfm \
+    DEBIAN_FRONTEND=noninteractive
+
+# Build deps:
+#   * build-essential / pkg-config / cmake fundamentals
+#   * libnuma / hwloc / libevent — PRRTE runtime + OpenMPI BTLs
+#   * protobuf — kv_chunk_address_table.proto codegen + link
+#   * curl / wget / git + ca-certs — clones, downloads
+#   * python3-dev — build-time bindings (_migration_client nanobind module)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential pkg-config \
+        autoconf automake libtool \
+        libnuma-dev libhwloc-dev libevent-dev \
+        libffi-dev libssl-dev \
+        protobuf-compiler libprotobuf-dev \
+        python3 python3-dev python3-pip \
+        curl wget git ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# CMake 3.26 — disaggregation/migration/CMakeLists.txt requires >=3.20, but
+# the rest of tt-llm-engine wants 3.24+ (CMP0169). Pull the same tarball
+# Dockerfile.blaze uses for parity.
+RUN curl -fsSL "https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh" \
+        -o /tmp/cmake.sh \
+ && chmod +x /tmp/cmake.sh \
+ && /tmp/cmake.sh --skip-license --prefix=/usr/local \
+ && rm /tmp/cmake.sh \
+ && /usr/local/bin/cmake --version
+
+# ── OpenMPI 5 / ULFM ────────────────────────────────────────────────────
+# The migration layer hard-codes /opt/openmpi-v<ver>-ulfm in CMake and the
+# launcher; install it at the same prefix the bare-metal hosts use so a
+# binary built here drops onto a host without path patching.
+COPY tt-media-server/scripts/install_openmpi_ulfm.sh /tmp/install_openmpi_ulfm.sh
+RUN chmod +x /tmp/install_openmpi_ulfm.sh \
+ && OPENMPI_VERSION="${OPENMPI_VERSION}" PREFIX="${MPI_HOME}" \
+        /tmp/install_openmpi_ulfm.sh \
+ && rm /tmp/install_openmpi_ulfm.sh
+ENV PATH="${MPI_HOME}/bin:${PATH}" \
+    LD_LIBRARY_PATH="${MPI_HOME}/lib:${LD_LIBRARY_PATH:-}"
+
+# ── Source: tt-llm-engine (always cloned fresh) ─────────────────────────
+# disaggregation/migration/{src,include,tests,scripts} aren't shipped in the
+# prebuilt engine image (its STRIP SOURCE step removes them), so even in
+# `hybrid` mode we always re-clone tt-llm-engine to get the migration
+# sources. Pinned to TT_LLM_ENGINE_COMMIT for reproducibility.
+WORKDIR ${APP_SRC_DIR}
+RUN --mount=type=secret,id=github_token \
+    : "${TT_LLM_ENGINE_COMMIT:?must be set, e.g. --build-arg TT_LLM_ENGINE_COMMIT=\$(git rev-parse :tt-media-server/cpp_server/tt-llm-engine)}" \
+ && GITHUB_TOKEN=$(cat /run/secrets/github_token) \
+ && git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:" \
+ && git clone --depth 1 \
+        "https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-llm-engine.git" \
+        . \
+ && git fetch --depth 1 origin "${TT_LLM_ENGINE_COMMIT}" \
+ && git checkout "${TT_LLM_ENGINE_COMMIT}" \
+ && git config --global --unset url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf
+
+# ── tt-metal: built locally OR copied from the prebuilt engine image ────
+# In hybrid mode we COPY the entire tt-metal tree (build_Release/, headers,
+# .cpmcache) from the prebuilt engine image so build_migration_layer.sh
+# picks up the existing libtt_metal.so. In self mode we let the migration
+# layer's build script build it on demand (its `--no-device-tests` path
+# triggers the slow tt-metal compile).
+RUN if [ "${BUILD_MODE}" = "hybrid" ]; then \
+        echo "BUILD_MODE=hybrid: tt-metal will be COPY'd from engine_prebuilt"; \
+    else \
+        echo "BUILD_MODE=self: initialising tt-metal submodule for in-tree build"; \
+        git submodule update --init --recursive --depth 1 -- tt-metal; \
+    fi
+COPY --from=engine_prebuilt /opt/tt-llm-engine-src/tt-metal /tmp/prebuilt-tt-metal
+RUN if [ "${BUILD_MODE}" = "hybrid" ]; then \
+        rm -rf ${APP_SRC_DIR}/tt-metal && \
+        mv /tmp/prebuilt-tt-metal ${APP_SRC_DIR}/tt-metal; \
+    else \
+        rm -rf /tmp/prebuilt-tt-metal; \
+    fi
+
+# ── Build the migration layer ────────────────────────────────────────────
+# build_migration_layer.sh handles both code paths:
+#   hybrid: libtt_metal.so already present under tt-metal/build_Release/lib;
+#           the script's _find_libtt_metal probe hits and skips the rebuild.
+#   self:   no libtt_metal.so present; the script builds tt-metal first.
+# Outputs:
+#   ${APP_SRC_DIR}/disaggregation/migration/build_${MIGRATION_BUILD_TYPE}/bin/
+#     ├── migration_endpoint
+#     └── migration_worker
+#   ${APP_SRC_DIR}/disaggregation/migration/build_${MIGRATION_BUILD_TYPE}/python/
+#     └── _migration_client.cpython-*.so
+ENV TT_METAL_HOME=${APP_SRC_DIR}/tt-metal
+RUN bash ./build_migration_layer.sh \
+        --build-type "${MIGRATION_BUILD_TYPE}"
+
+# ── Stage shipping artifacts under /opt/migration-worker ────────────────
+# We collect everything the runtime stage needs into a single tree so the
+# cross-stage COPY is one clean step. Keep this list minimal: the runtime
+# image is what production pulls.
+RUN set -eux; \
+    SHIP=/opt/migration-worker; \
+    BUILD=${APP_SRC_DIR}/disaggregation/migration/build_${MIGRATION_BUILD_TYPE}; \
+    mkdir -p ${SHIP}/bin ${SHIP}/python ${SHIP}/scripts; \
+    cp ${BUILD}/bin/migration_endpoint ${SHIP}/bin/; \
+    cp ${BUILD}/bin/migration_worker   ${SHIP}/bin/; \
+    # Use bash nullglob so a missing _migration_client*.so (it's optional —
+    # only built when nanobind dev headers are present) doesn't error out.
+    shopt -s nullglob; \
+    py_clients=( "${BUILD}/python/_migration_client"*.so ); \
+    if (( ${#py_clients[@]} > 0 )); then \
+        cp "${py_clients[@]}" ${SHIP}/python/; \
+    fi; \
+    shopt -u nullglob; \
+    cp ${APP_SRC_DIR}/disaggregation/migration/migration_verify_launcher.sh ${SHIP}/scripts/; \
+    cp ${APP_SRC_DIR}/disaggregation/migration/launch_migration_endpoints.sh ${SHIP}/scripts/; \
+    cp ${APP_SRC_DIR}/disaggregation/migration/_migration_endpoint_driver.py ${SHIP}/scripts/; \
+    chmod +x ${SHIP}/scripts/*.sh ${SHIP}/scripts/*.py; \
+    # Bake build provenance for diagnostics — operators can `cat /opt/migration-worker/SHA`.
+    echo "${TT_LLM_ENGINE_COMMIT}" > ${SHIP}/TT_LLM_ENGINE_COMMIT; \
+    echo "${BUILD_MODE}"           > ${SHIP}/BUILD_MODE; \
+    "${BUILD}/bin/migration_endpoint" --help 2>&1 | head -5 || true; \
+    echo "OK: staged migration artifacts under ${SHIP}"
+
+# ── Stage runtime libraries the binaries dlopen at runtime ──────────────
+# migration_worker (with WORKER_DEVICE_SUPPORT) RPATHs into tt-metal's build
+# tree and dlopens libdevice.so / libtt-umd.so / libtt_metal.so / libfmt.so
+# / libspdlog.so / libtracy.so / libtt_stl.so (see disaggregation/migration/
+# CMakeLists.txt _W_*_LIB block). Copy that minimal set into the SHIP tree
+# under tt-metal/lib/ so the runtime image only carries what we link against.
+RUN set -eux; \
+    SHIP=/opt/migration-worker; \
+    SRC_LIB=${APP_SRC_DIR}/tt-metal/build_Release/lib; \
+    SRC_TT_METAL=${APP_SRC_DIR}/tt-metal/build_Release/tt_metal; \
+    SRC_UMD=${APP_SRC_DIR}/tt-metal/build_Release/tt_metal/third_party/umd/device; \
+    SRC_TT_STL=${APP_SRC_DIR}/tt-metal/build_Release/tt_stl; \
+    SRC_FMT=${APP_SRC_DIR}/tt-metal/build_Release/_deps/fmt-build; \
+    SRC_SPDLOG=${APP_SRC_DIR}/tt-metal/build_Release/_deps/spdlog-build; \
+    mkdir -p ${SHIP}/lib; \
+    for d in "${SRC_LIB}" "${SRC_TT_METAL}" "${SRC_UMD}" "${SRC_TT_STL}" "${SRC_FMT}" "${SRC_SPDLOG}"; do \
+        if [ -d "$d" ]; then \
+            find "$d" -maxdepth 1 -type f \( -name '*.so' -o -name '*.so.*' \) -exec cp -P {} ${SHIP}/lib/ \; ; \
+            find "$d" -maxdepth 1 -type l \( -name '*.so' -o -name '*.so.*' \) -exec cp -P {} ${SHIP}/lib/ \; ; \
+        fi; \
+    done; \
+    echo "OK: staged $(find ${SHIP}/lib -maxdepth 1 -type f -o -type l | wc -l) runtime libs under ${SHIP}/lib"
+
+# ── Strip debug info from the binaries we ship ──────────────────────────
+# Same policy as Dockerfile.blaze: strip first-party binaries to keep the
+# runtime image lean and to avoid shipping debug symbols for our binaries.
+# tt-metal libs are upstream open-source; leave them untouched.
+RUN set -eux; \
+    SHIP=/opt/migration-worker; \
+    strip --strip-all ${SHIP}/bin/migration_endpoint || true; \
+    strip --strip-all ${SHIP}/bin/migration_worker   || true; \
+    find ${SHIP}/python -type f -name '*.so' -exec strip --strip-debug --strip-unneeded {} + 2>/dev/null || true; \
+    echo "OK: stripped first-party migration binaries"
+
+# ============================================================================
+# RUNTIME STAGE
+# ============================================================================
+FROM ubuntu:22.04 AS runtime
+
+LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+
+# Bash with pipefail for the final-stage sanity RUN's pipes (ldd | tee | grep).
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+LABEL org.opencontainers.image.description="Disaggregated KV-cache migration worker (migration_endpoint + migration_worker, OpenMPI 5/ULFM, sshd). Issue #4298."
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG OPENMPI_VERSION=5.0.7
+ARG MIGRATION_BIN_DIR=/opt/migration-worker
+
+# Runtime deps:
+#   * openssh-server / openssh-client — sshd + outbound ssh used by the launcher
+#   * libnuma / libhwloc / libevent — OpenMPI BTL + PRRTE runtime
+#   * libprotobuf-lite — kv_chunk_address_table.pb.cc was linked against full
+#                        libprotobuf, but lite is sufficient at runtime for the
+#                        symbols the worker resolves; keep both for safety.
+#   * libgomp1 — fmt/spdlog static, but tt-metal libs touch OpenMP.
+#   * python3 — _migration_endpoint_driver.py + the readiness driver.
+#   * iputils-ping / netcat-openbsd — diagnostic for cluster bring-up.
+#   * tini — clean PID 1 signal handling.
+#   * gosu — drop privileges if we ever de-escalate (currently we run as root
+#            because sshd needs root; kept for parity with other Tenstorrent
+#            images and future use).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        openssh-server openssh-client \
+        libnuma1 libhwloc15 libevent-2.1-7 libevent-pthreads-2.1-7 \
+        libprotobuf23 libprotobuf-lite23 \
+        libgomp1 \
+        python3 \
+        iputils-ping netcat-openbsd \
+        tini gosu \
+        ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# Migration artifacts + tt-metal runtime libs.
+COPY --from=builder ${MIGRATION_BIN_DIR} ${MIGRATION_BIN_DIR}
+# OpenMPI 5 / ULFM at the same /opt prefix the launcher hard-codes.
+COPY --from=builder /opt/openmpi-v${OPENMPI_VERSION}-ulfm /opt/openmpi-v${OPENMPI_VERSION}-ulfm
+
+ENV MIGRATION_BIN_DIR=${MIGRATION_BIN_DIR} \
+    MPI_HOME=/opt/openmpi-v${OPENMPI_VERSION}-ulfm \
+    MPI_BIN_DIR=/opt/openmpi-v${OPENMPI_VERSION}-ulfm/bin \
+    PATH=/opt/openmpi-v${OPENMPI_VERSION}-ulfm/bin:${MIGRATION_BIN_DIR}/bin:${MIGRATION_BIN_DIR}/scripts:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    LD_LIBRARY_PATH=/opt/openmpi-v${OPENMPI_VERSION}-ulfm/lib:${MIGRATION_BIN_DIR}/lib:/usr/local/lib \
+    PYTHONPATH=${MIGRATION_BIN_DIR}/python
+
+# ── ssh server config ───────────────────────────────────────────────────
+# The migration launcher orchestrates over ssh; in the cluster topology
+# every container is a "host" with inbound sshd. We disable host-key
+# verification for outbound ssh because the worker set is ephemeral and
+# membership churns per deployment (matches the bare-metal exabox config
+# in tt-shield/.github/workflows/workflow_exabox-deploy.yml).
+RUN mkdir -p /var/run/sshd /run/sshd \
+ && chmod 755 /run/sshd \
+ # Disable PasswordAuthentication; everything is key-based.
+ && sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/'                /etc/ssh/sshd_config \
+ && sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/'               /etc/ssh/sshd_config \
+ && sed -i 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config \
+ # Keep alives so PRRTE's long-lived ssh fanout doesn't hit aggressive NAT.
+ && printf '\nClientAliveInterval 60\nClientAliveCountMax 3\n' >> /etc/ssh/sshd_config \
+ # Outbound ssh defaults — match exabox PRTE_MCA_plm_ssh_args.
+ && printf '\nHost *\n    StrictHostKeyChecking no\n    UserKnownHostsFile /dev/null\n    LogLevel ERROR\n    ServerAliveInterval 30\n' >> /etc/ssh/ssh_config
+
+# ── Entrypoint ───────────────────────────────────────────────────────────
+COPY tt-media-server/migration_worker_entrypoint.sh /usr/local/bin/migration_worker_entrypoint.sh
+RUN chmod +x /usr/local/bin/migration_worker_entrypoint.sh
+
+# Default sshd port; override with -e MIGRATION_SSHD_PORT=2222 if 22 conflicts.
+ENV MIGRATION_SSHD_PORT=22 \
+    MIGRATION_START_SSHD=1
+EXPOSE 22
+
+# Quick post-build sanity:
+#   * libmpi.so resolves (and exports MPIX_Comm_revoke = ULFM enabled)
+#   * migration_endpoint links cleanly against everything we shipped
+RUN set -eux; \
+    test -x ${MIGRATION_BIN_DIR}/bin/migration_endpoint; \
+    test -x ${MIGRATION_BIN_DIR}/bin/migration_worker; \
+    ldd ${MIGRATION_BIN_DIR}/bin/migration_endpoint | tee /tmp/ldd.endpoint || true; \
+    ldd ${MIGRATION_BIN_DIR}/bin/migration_worker   | tee /tmp/ldd.worker   || true; \
+    if grep -q "not found" /tmp/ldd.endpoint /tmp/ldd.worker; then \
+        echo "ERROR: unresolved shared libraries in migration binaries (see ldd output above)"; \
+        grep "not found" /tmp/ldd.endpoint /tmp/ldd.worker || true; \
+        exit 1; \
+    fi; \
+    nm --dynamic --defined-only ${MPI_HOME}/lib/libmpi.so | grep -q MPIX_Comm_revoke \
+        || { echo "ERROR: shipped libmpi.so is missing MPIX_Comm_revoke (ULFM not enabled)"; exit 1; }; \
+    echo "OK: migration binaries link cleanly + ULFM verified"
+
+WORKDIR ${MIGRATION_BIN_DIR}
+
+# tini is PID 1 → forwards SIGTERM cleanly to our entrypoint, which forwards
+# to the user command (and reaps sshd).
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/migration_worker_entrypoint.sh"]
+
+# Default CMD: idle as a worker host (sshd is up; launcher ssh's in to spawn
+# migration_endpoint). Override with `docker run ... migration_endpoint ...`
+# to act as the master, or with bash for interactive debugging.
+CMD ["sleep", "infinity"]

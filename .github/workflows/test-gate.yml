@@ -54,6 +54,10 @@ jobs:
               - 'tt-media-server/uv-overrides.txt'
               - 'tt-media-server/fix_dependencies.sh'
               - 'tt-media-server/Dockerfile*'
+              # Migration worker docker stack (issue #4298): Dockerfile.migration_worker
+              # plus its sshd entrypoint and the OpenMPI/ULFM install script.
+              - 'tt-media-server/migration_worker_entrypoint.sh'
+              - 'tt-media-server/scripts/install_openmpi_ulfm.sh'
             charts:
               - 'charts/**'
             helm_inputs:
@@ -167,21 +171,22 @@ jobs:
                 '## Docker build sanity check needed',
                 '',
                 'This PR touches docker-related files (`Dockerfile*`, `requirements.txt`,',
-                '`uv-overrides.txt`, or `fix_dependencies.sh`). The pre-merge',
-                '`Verify Media Server Dep Install` job catches install-resolution',
-                'regressions but does **not** build the actual docker image.',
+                '`uv-overrides.txt`, `fix_dependencies.sh`, or the migration worker',
+                'docker stack). The pre-merge `Verify Media Server Dep Install` job',
+                'catches install-resolution regressions but does **not** build the',
+                'actual docker images.',
                 '',
                 "Before merging, please run [tt-shield's Build Inference Server workflow]",
                 '(https://github.com/tenstorrent/tt-shield/actions/workflows/on-dispatch-build-media-server.yml)',
-                'with these inputs:',
+                'for **every** affected `inference-server-type` (run once per type):',
                 '',
                 '| Input | Value |',
                 '|---|---|',
-                '| `inference-server-type` | `media-inference-server` |',
+                '| `inference-server-type` | `media-inference-server` (and/or `blaze-media-inference-server`, `migration-worker` if those Dockerfiles changed) |',
                 `| \`inference-server-git-ref\` | \`${ref}\` (${refLabel}) |`,
                 '| `tt-metal-git-ref` | leave default (`main`) |',
                 '',
-                'Confirm the run succeeds and post the run link as a comment for reviewers.',
+                'Confirm each run succeeds and post the run link(s) as a comment for reviewers.',
               ].join('\n');
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
