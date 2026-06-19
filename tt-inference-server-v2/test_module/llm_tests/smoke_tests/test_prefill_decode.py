@@ -632,12 +632,12 @@ def test_07_large_prompt_prefix_cache_ttft():
 
     p_off = _offset(PREFILL_LOG)
     _log("request 1 (cold)")
-    cold = _chat_stream(user1, system=system, max_tokens=16, timeout=120)
+    cold = _chat_stream(user1, system=system, max_tokens=500, timeout=120)
     _log(
         "request 2 (warm, %s user message)"
         % ("different" if USER_VARIES else "identical")
     )
-    warm = _chat_stream(user2, system=system, max_tokens=16, timeout=120)
+    warm = _chat_stream(user2, system=system, max_tokens=500, timeout=120)
 
     assert cold["ttft"] is not None and warm["ttft"] is not None, (cold, warm)
     assert cold["prompt_tokens"] and cold["prompt_tokens"] >= 0.5 * (
@@ -774,9 +774,9 @@ def test_08_real_chat_multiturn_prefix_cache():
                     (cache_buster + m["content"]) if turns_done == 0 else m["content"]
                 )
                 req_msgs = cumulative + [{"role": "user", "content": content}]
-                # Stream for per-turn TTFT/TPS; max_tokens=16 gives 15 inter-token
+                # Stream for per-turn TTFT/TPS; max_tokens=500 gives ample inter-token
                 # deltas, enough for a stable TPS estimate.
-                r = _chat_stream_messages(req_msgs, max_tokens=16)
+                r = _chat_stream_messages(req_msgs, max_tokens=500)
                 per_turn.append(r)
                 cumulative = req_msgs
                 turns_done += 1
