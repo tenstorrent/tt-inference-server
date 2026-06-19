@@ -1,14 +1,14 @@
 groups:
   - name: prefill_gateway
     rules:
-      - alert: PrefillGatewayMissingHeartbeat
-        expr: tt_prefill_healthy == 1 and tt_prefill_last_heartbeat_age_seconds > 10
+      - alert: PrefillGatewayStaleRegistration
+        expr: tt_prefill_healthy == 1 and tt_prefill_last_registration_age_seconds > 10
         for: 30s
         labels:
           severity: warning
         annotations:
-          summary: "Prefill heartbeat is stale"
-          description: "Prefill {{ $labels.server_id }} has not refreshed its gateway heartbeat for {{ $value }} seconds."
+          summary: "Prefill registration is stale"
+          description: "Prefill {{ $labels.server_id }} has not refreshed its gateway registration for {{ $value }} seconds."
 
       - alert: PrefillGatewayLowPrefixMatchRate
         expr: |

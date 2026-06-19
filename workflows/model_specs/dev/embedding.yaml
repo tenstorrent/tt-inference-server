@@ -7,11 +7,9 @@ templates:
 # =============================================================================
 - weights:
     - BAAI/bge-large-en-v1.5
-  tt_metal_commit: "65718bb"
   impl: tt_vllm_plugin
   min_disk_gb: 15
   min_ram_gb: 6
-  docker_image: "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756"
   model_type: EMBEDDING
   inference_engine: MEDIA
   device_model_specs:
@@ -65,7 +63,6 @@ templates:
 
 - weights:
     - BAAI/bge-m3
-  tt_metal_commit: "ec28d12"
   impl: tt_vllm_plugin
   min_disk_gb: 15
   min_ram_gb: 6
@@ -121,11 +118,9 @@ templates:
 
 - weights:
     - Qwen/Qwen3-Embedding-8B
-  tt_metal_commit: "555f240"
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
-  docker_image: "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756"
   model_type: EMBEDDING
   inference_engine: MEDIA
   device_model_specs:
@@ -168,11 +163,9 @@ templates:
 
 - weights:
     - Qwen/Qwen3-Embedding-4B
-  tt_metal_commit: "2496be4"
   impl: forge_vllm_plugin
   min_disk_gb: 15
   min_ram_gb: 6
-  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673"
   model_type: EMBEDDING
   inference_engine: FORGE
   device_model_specs:
