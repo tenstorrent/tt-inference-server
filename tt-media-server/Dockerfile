@@ -170,6 +170,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
         uv pip uninstall --yes \${CUDA_PKGS} 2>/dev/null || true; \
     fi \
     && uv pip uninstall --yes \
+        xformers \
         triton \
         cupy-cuda12x \
         cusparselt \
