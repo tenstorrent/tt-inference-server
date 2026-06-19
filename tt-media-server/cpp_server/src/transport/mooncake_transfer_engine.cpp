@@ -146,7 +146,9 @@ SegmentHandle MooncakeTransferEngine::openSegment(
   const mooncake::SegmentID id = impl_->engine->openSegment(segmentName);
   // Mooncake returns a negative SegmentID (cast to a huge unsigned) on failure.
   if (static_cast<int64_t>(id) < 0) {
-    TT_LOG_ERROR("[MooncakeTransferEngine] openSegment({}) failed",
+    // Expected while a peer is not yet discoverable: callers poll openSegment
+    // in a retry loop, so log at debug to avoid flooding during discovery.
+    TT_LOG_DEBUG("[MooncakeTransferEngine] openSegment({}) not yet available",
                  segmentName);
     return kInvalidSegment;
   }
