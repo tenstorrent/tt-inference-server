@@ -168,7 +168,7 @@ bool writeToPeer(MooncakeTransferEngine& engine, SegmentHandle peer,
                  std::uint64_t peer_offset) {
   TransferRequest req;
   req.op = TransferOp::Write;
-  d req.local_addr = const_cast<std::uint8_t*>(local);
+  req.local_addr = const_cast<std::uint8_t*>(local);
   req.target = peer;
   req.target_offset = peer_offset;
   req.length = len;
