@@ -90,7 +90,7 @@ def render_prefill_decode(block: Block, metadata: Mapping[str, Any]) -> str:
                     "Cached tok": _fmt(r.get("cached_tokens")),
                     "Cache": _cache(r.get("prompt_tokens"), r.get("cached_tokens")),
                     "Completion tok": _fmt(r.get("completion_tokens")),
-                    "TTFT (s)": _fmt(r.get("ttft_s"), digits=3),
+                    "TTFT (ms)": _fmt(r.get("ttft_ms"), digits=1),
                     "TPS": _fmt(r.get("tps"), digits=1),
                 }
             )
