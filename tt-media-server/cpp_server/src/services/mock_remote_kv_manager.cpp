@@ -11,8 +11,7 @@ namespace tt::services {
 namespace {
 
 std::time_t nowSeconds() {
-  return std::chrono::system_clock::to_time_t(
-      std::chrono::system_clock::now());
+  return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 }
 
 }  // namespace
@@ -24,9 +23,9 @@ uint64_t MockRemoteKVManager::migrate(const MigrationRequest& request) {
   // If no polling delay was requested we can short-circuit straight to the
   // terminal status — that matches the real worker's "already done by the
   // time we observe it" path and keeps simple tests one-call-and-go.
-  const MigrationStatus initialStatus =
-      initialPollsBeforeResolution == 0 ? defaultTerminalStatus
-                                        : MigrationStatus::IN_PROGRESS;
+  const MigrationStatus initialStatus = initialPollsBeforeResolution == 0
+                                            ? defaultTerminalStatus
+                                            : MigrationStatus::IN_PROGRESS;
 
   Migration migration{
       /*migration_id=*/std::to_string(id),
@@ -77,7 +76,8 @@ void MockRemoteKVManager::setPollsBeforeResolution(size_t polls) {
   initialPollsBeforeResolution = polls;
 }
 
-void MockRemoteKVManager::forceStatus(uint64_t migrationId, MigrationStatus status) {
+void MockRemoteKVManager::forceStatus(uint64_t migrationId,
+                                      MigrationStatus status) {
   std::lock_guard<std::mutex> lock(mtx);
   auto it = entries.find(migrationId);
   if (it == entries.end()) {
@@ -113,7 +113,8 @@ std::optional<MigrationRequest> MockRemoteKVManager::getRequest(
   return it->second.request;
 }
 
-std::optional<Migration> MockRemoteKVManager::getMigration(uint64_t migrationId) const {
+std::optional<Migration> MockRemoteKVManager::getMigration(
+    uint64_t migrationId) const {
   std::lock_guard<std::mutex> lock(mtx);
   auto it = entries.find(migrationId);
   if (it == entries.end()) return std::nullopt;
