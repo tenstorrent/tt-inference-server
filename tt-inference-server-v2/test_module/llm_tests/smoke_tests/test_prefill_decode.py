@@ -73,9 +73,10 @@ LOG_SETTLE_S = 0.6
 
 # test_07 large-prompt prefix cache: ~50k system + ~5k user, so the cold run is a
 # ~55k prompt (>> THRESHOLD) that offloads; the warm repeat hits the cached system
-# prefix. Stays under MAX_ISL=64000 (run_tests.sh). TOKENS_PER_WORD is calibrated
-# to the real dataset text (~1.49 tok/word observed) so these word budgets land
-# close to the labelled token targets.
+# prefix. Stays under MAX_ISL=64000 (run_tests.sh). test_07 sizes its blocks by
+# the server's MEASURED token count (tokenizer-agnostic), so the targets hold
+# across models; TOKENS_PER_WORD is only the initial probe guess and the
+# synthetic-filler fallback ratio.
 SYSTEM_TOKENS = int(os.environ.get("SYSTEM_TOKENS", "50000"))
 USER_TOKENS = int(os.environ.get("USER_TOKENS", "5000"))
 TOKENS_PER_WORD = float(os.environ.get("TOKENS_PER_WORD", "1.49"))
@@ -200,6 +201,34 @@ def _chat(text, max_tokens=8, timeout=120):
         max_tokens=max_tokens,
         timeout=timeout,
     )
+
+
+def _measure_prompt_tokens(text, timeout=120):
+    status, body = _req(
+        "POST",
+        "/v1/chat/completions",
+        {
+            "model": MODEL,
+            "messages": [{"role": "user", "content": text}],
+            "max_tokens": 1,
+        },
+        timeout=timeout,
+    )
+    assert status == 200, "HTTP %s: %s" % (status, body)
+    return body["usage"]["prompt_tokens"]
+
+
+def _slice_for_tokens(pool, start, target, ratio):
+    n = max(1, min(round(target / ratio), len(pool) - start))
+    text, measured = "", 0
+    for _ in range(5):
+        text = " ".join(pool[start : start + n])
+        measured = _measure_prompt_tokens(text)
+        if measured >= target or start + n >= len(pool):
+            break
+        ratio = measured / n
+        n = min(round(target / ratio * 1.02), len(pool) - start)
+    return text, start + n, measured
 
 
 def _skip(reason):
@@ -655,16 +684,20 @@ def test_07_large_prompt_prefix_cache_ttft():
     )
     _ensure_server()
     _ensure_disaggregated()
-    sw, uw = _words_for(SYSTEM_TOKENS), _words_for(USER_TOKENS)
-    # Prefer real dataset text; user1/user2 take disjoint slices so they differ.
-    real = _real_words(sw + 2 * uw)
+    real = _real_words(round((SYSTEM_TOKENS + 2 * USER_TOKENS) / 1.2))
     if real:
-        _log("built prompts from dataset (%d words available)" % len(real))
-        sys_body = " ".join(real[:sw])
-        body1 = " ".join(real[sw : sw + uw])
-        body2 = " ".join(real[sw + uw : sw + 2 * uw])
+        sys_body, i, sys_tok = _slice_for_tokens(
+            real, 0, SYSTEM_TOKENS, TOKENS_PER_WORD
+        )
+        body1, i, u1_tok = _slice_for_tokens(real, i, USER_TOKENS, TOKENS_PER_WORD)
+        body2, i, u2_tok = _slice_for_tokens(real, i, USER_TOKENS, TOKENS_PER_WORD)
+        _log(
+            "built prompts from dataset, measured tokens: system=%d user1=%d user2=%d"
+            % (sys_tok, u1_tok, u2_tok)
+        )
     else:
         _log("dataset unavailable — falling back to synthetic filler")
+        sw, uw = _words_for(SYSTEM_TOKENS), _words_for(USER_TOKENS)
         sys_body = _filler(sw)
         body1 = _filler(uw, 7)
         body2 = _filler(uw, 137)
