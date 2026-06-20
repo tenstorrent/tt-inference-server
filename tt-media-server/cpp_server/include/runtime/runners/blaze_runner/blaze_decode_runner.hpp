@@ -41,25 +41,26 @@ class BlazeDecodeRunner : public IRunner {
  private:
   void step();
 
-  void drainAndHandleMemoryResponses();
-  void drainAndHandleOutputs();
+  void drainAndHandleSchedulerResponses();
+  void drainAndHandleSchedulerOutputs();
   void drainAndHandleStopRequests();
   inline void handleStopRequest(uint32_t taskId);
   inline std::optional<tt::domain::ManageMemoryTask> getMemoryRequest();
   inline void handleMemoryRequest(const tt::domain::ManageMemoryTask& request);
   inline void handleAllocateRequest(
-      const tt::domain::ManageMemoryTask& request);
-  inline void handleEvictRequest(const tt::domain::ManageMemoryTask& request);
-  inline void handleMemoryResponse(const ds::SchedulerResponse& response);
+      const tt::domain::ManageMemoryTask& memoryRequest);
+  inline void handleEvictRequest(const tt::domain::ManageMemoryTask& memoryRequest);
+  inline void handleSchedulerResponse(const ds::SchedulerResponse& response);
   inline void handleAllocateAck(uint32_t taskId, uint32_t slotId);
+  inline void handleSubmitError(uint32_t slotId, int32_t errorCode);
   inline void handleStopAck(uint32_t taskId, uint32_t slotId);
   inline void handleEvictAck(uint32_t taskId, uint32_t slotId);
   inline SlotContext* validateAck(uint32_t taskId, uint32_t slotId,
                                   const char* ackName);
-  inline void handleDeferred(SlotContext& slot);
-  void handleOutput(const ds::OutputMessage& output);
-  std::unique_ptr<tt::domain::llm::Sequence> getRequest();
-  void handleRequest(std::unique_ptr<tt::domain::llm::Sequence> request);
+  inline void handleDeferredAction(SlotContext& slot);
+  void handleSchedulerOutput(const ds::OutputMessage& output);
+  std::unique_ptr<tt::domain::llm::Sequence> getTask();
+  void handleTask(std::unique_ptr<tt::domain::llm::Sequence> task);
   void checkOutputHang();
 
   tt::config::LLMConfig config;

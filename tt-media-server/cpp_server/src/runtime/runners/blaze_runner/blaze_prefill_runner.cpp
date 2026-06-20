@@ -36,6 +36,7 @@ BlazePrefillRunner::BlazePrefillRunner(
   auto pipelineConfig = utils::makePrefillPipelineConfig(config);
   ps::SchedulerParams managerParams{};
   managerParams.dest_endpoint_id = tt::config::migrationDecodeEndpointId();
+  managerParams.self_endpoint_id = tt::config::migrationPrefillEndpointId();
   managerParams.layers_per_chunk =
       tt::config::modelNumLayers();
   managerParams.chunk_size =
@@ -43,7 +44,9 @@ BlazePrefillRunner::BlazePrefillRunner(
   managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
   auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
   auto migrationClientInterface = utils::makeMigrationClientInterface(config);
-  migrationClientInterface->connect_to(tt::config::migrationDecodeEndpointId(), "PUBLISHER", "ds_pd");
+  if (tt::config::enableMigration()) {
+    migrationClientInterface->connect_to(tt::config::migrationDecodeEndpointId(), "PUBLISHER", "ds_pd");
+  }
   prefillScheduler = std::make_unique<ps::PrefillScheduler>(
       pipelineConfig, ackChannelConfig, managerParams,
       std::move(migrationClientInterface));
@@ -187,8 +190,8 @@ void BlazePrefillRunner::stop() {
 }
 
 void BlazePrefillRunner::step() {
-  drainAndHandleMemoryResponses();
-  drainAndHandleOutputs();
+  drainAndHandleSchedulerResponses();
+  drainAndHandleSchedulerOutputs();
   auto memoryRequest = getMemoryRequest();
   if (memoryRequest.has_value()) {
     TT_LOG_DEBUG(
@@ -197,39 +200,39 @@ void BlazePrefillRunner::step() {
     handleMemoryRequest(*memoryRequest);
   }
   drainAndHandleStopRequests();
-  auto request = getRequest();
-  if (request) {
+  auto task = getTask();
+  if (task) {
     TT_LOG_DEBUG(
         "[BlazePrefillRunner] step: got Sequence taskId={}, slotId={}, "
         "numPromptTokens={}, totalTokens={}",
-        request->taskId, request->getPrefillKVCacheSlot(),
-        request->getNumPromptTokens(), request->getTokenIds().size());
-    handleRequest(std::move(request));
+        task->taskId, task->getPrefillKVCacheSlot(),
+        task->getNumPromptTokens(), task->getTokenIds().size());
+    handleTask(std::move(task));
   }
   checkOutputHang();
 }
 
-void BlazePrefillRunner::drainAndHandleMemoryResponses() {
+void BlazePrefillRunner::drainAndHandleSchedulerResponses() {
   ps::SchedulerResponse response;
   size_t drained = 0;
   size_t maxUsers = tt::config::pmMaxUsers();
   while (drained < maxUsers && prefillScheduler->try_pop_response(response)) {
-    handleMemoryResponse(response);
+    handleSchedulerResponse(response);
     drained++;
   }
 }
 
-void BlazePrefillRunner::drainAndHandleOutputs() {
+void BlazePrefillRunner::drainAndHandleSchedulerOutputs() {
   ps::OutputMessage output;
   size_t drained = 0;
   size_t maxUsers = tt::config::pmMaxUsers();
   while (drained < maxUsers && prefillScheduler->try_pop_output(output)) {
-    handleOutput(output);
+    handleSchedulerOutput(output);
     drained++;
   }
 }
 
-std::unique_ptr<tt::domain::llm::Sequence> BlazePrefillRunner::getRequest() {
+std::unique_ptr<tt::domain::llm::Sequence> BlazePrefillRunner::getTask() {
   if (pendingRequests.pendingTask) {
     return std::move(pendingRequests.pendingTask);
   }
@@ -362,7 +365,8 @@ inline void BlazePrefillRunner::handleEvictRequest(
 
 inline void BlazePrefillRunner::handleAllocateRequest(
     const tt::domain::ManageMemoryTask& request) {
-  auto allocateRequest = utils::makeAllocateRequest(request.taskId);
+  auto allocateRequest =
+      utils::makeAllocateRequest(request.taskId, request.slotIdToCopyFrom);
   if (!prefillScheduler->push_request(allocateRequest)) {
     TT_LOG_WARN(
         "[BlazePrefillRunner] handleAllocateRequest: scheduler queue full, "
@@ -377,7 +381,7 @@ inline void BlazePrefillRunner::handleAllocateRequest(
       request.taskId);
 }
 
-inline void BlazePrefillRunner::handleMemoryResponse(
+inline void BlazePrefillRunner::handleSchedulerResponse(
     const ps::SchedulerResponse& response) {
   auto taskId = response.request_id;
   auto slotId = response.slot_id;
@@ -396,9 +400,14 @@ inline void BlazePrefillRunner::handleMemoryResponse(
       handleStopAck(taskId, slotId);
       break;
     }
+    case ps::RequestType::SUBMIT: {
+      // The scheduler only ever pushes a SUBMIT response for a reject
+      handleSubmitError(slotId, response.error_code);
+      break;
+    }
     default: {
       TT_LOG_ERROR(
-          "[BlazePrefillRunner] handleMemoryResponse: unexpected action for "
+          "[BlazePrefillRunner] handleSchedulerResponse: unexpected action for "
           "taskId={}, "
           "action={}",
           taskId, static_cast<int>(action));
@@ -422,6 +431,31 @@ inline void BlazePrefillRunner::handleAllocateAck(uint32_t taskId,
                taskId, slotId);
   slotManager.setSlotState(slotId, SlotState::IDLE);
   memoryManager->replyAllocateSuccess(taskId, slotId);
+}
+
+inline void BlazePrefillRunner::handleSubmitError(uint32_t slotId,
+                                                  int32_t errorCode) {
+  auto& slotContext = slotManager.getSlotContext(slotId);
+  if (slotContext.state != SlotState::RUNNING) {
+    // A STOP/EVICT raced the rejection; that teardown path owns finalizing the
+    // stream, so there is nothing to do here.
+    TT_LOG_WARN(
+        "[BlazePrefillRunner] handleSubmitError: SUBMIT rejected "
+        "(error_code={}) for slotId={} in state={} — STOP/EVICT in flight, "
+        "dropping",
+        errorCode, slotId, toString(slotContext.state));
+    return;
+  }
+  auto taskId = slotContext.taskId.value();
+  TT_LOG_ERROR(
+      "[BlazePrefillRunner] handleSubmitError: SUBMIT rejected by scheduler "
+      "(error_code={}) for taskId={}, slotId={}; failing the request",
+      errorCode, taskId, slotId);
+  slotManager.setSlotAsIdle(slotId);
+  tt::worker::SingleProcessWorkerMetrics::instance().decrementActiveRequests();
+  ipc::helpers::pushToken(
+      *resultQueue, taskId, 0,
+      ipc::SharedToken::FLAG_ERROR | ipc::SharedToken::FLAG_FINAL, 0, 0);
 }
 
 inline SlotContext* BlazePrefillRunner::validateAck(uint32_t taskId,
@@ -464,10 +498,10 @@ inline void BlazePrefillRunner::handleStopAck(uint32_t taskId,
       taskId, slotId, slot->deferredEvict.has_value(),
       static_cast<bool>(slot->deferredContinue));
   slotManager.setSlotAsIdle(slot->slotId);
-  handleDeferred(*slot);
+  handleDeferredAction(*slot);
 }
 
-inline void BlazePrefillRunner::handleDeferred(SlotContext& slot) {
+inline void BlazePrefillRunner::handleDeferredAction(SlotContext& slot) {
   // Called right after a STOP ack drains the slot back to IDLE. Two possible
   // followups were latched during AWAITING_STOP_ACK:
   //   - deferredEvict: EVICT wins (it's destructive); also abort any
@@ -501,7 +535,7 @@ inline void BlazePrefillRunner::handleDeferred(SlotContext& slot) {
     });
   } else if (slot.deferredContinue) {
     // move clears slot.deferredContinue
-    handleRequest(std::move(slot.deferredContinue));
+    handleTask(std::move(slot.deferredContinue));
   }
 }
 
@@ -586,7 +620,7 @@ inline void BlazePrefillRunner::handleStopRequest(uint32_t taskId) {
   tt::worker::SingleProcessWorkerMetrics::instance().decrementActiveRequests();
 }
 
-void BlazePrefillRunner::handleOutput(const ps::OutputMessage& output) {
+void BlazePrefillRunner::handleSchedulerOutput(const ps::OutputMessage& output) {
   tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
   lastOutputTime = std::chrono::steady_clock::now();
   auto& slotContext = slotManager.getSlotContext(output.slot_id);
@@ -656,18 +690,18 @@ void BlazePrefillRunner::checkOutputHang() {
   std::abort();
 }
 
-void BlazePrefillRunner::handleRequest(
-    std::unique_ptr<tt::domain::llm::Sequence> request) {
-  auto slotId = request->getPrefillKVCacheSlot();
+void BlazePrefillRunner::handleTask(
+    std::unique_ptr<tt::domain::llm::Sequence> task) {
+  auto slotId = task->getPrefillKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
   assert(slotId < tt::config::pmMaxUsers());
 
-  auto decodePositionId = request->getDecodePositionId();
-  auto decodeSkipTokens = request->getDecodeSkipTokens();
+  auto decodePositionId = task->getDecodePositionId();
+  auto decodeSkipTokens = task->getDecodeSkipTokens();
   TT_LOG_DEBUG(
       "[BlazePrefillRunner] handleRequest: taskId={}, slotId={}, "
       "decodePositionId={}, decodeSkipTokens={}",
-      request->taskId, slotId, decodePositionId, decodeSkipTokens);
+      task->taskId, slotId, decodePositionId, decodeSkipTokens);
 
   auto& slotContext = slotManager.getSlotContext(slotId);
   switch (slotContext.state) {
@@ -676,24 +710,24 @@ void BlazePrefillRunner::handleRequest(
           "[BlazePrefillRunner] handleRequest: taskId={}, slotId={}, "
           "isContinuation={}, numPromptTokens={}, totalTokens={}, "
           "runningSlots={}, migrationId={}",
-          request->taskId, slotId, request->isContinuation(),
-          request->getNumPromptTokens(), request->getTokenIds().size(),
+          task->taskId, slotId, task->isContinuation(),
+          task->getNumPromptTokens(), task->getTokenIds().size(),
           slotManager.activeRunningCount(),
-          request->getMigrationId().has_value() ? *request->getMigrationId()
+          task->getMigrationId().has_value() ? *task->getMigrationId()
                                                 : -1);
 
-      auto migrationUuid = request->getMigrationId();
+      auto migrationUuid = task->getMigrationId();
       auto destSlot = migrationUuid.has_value()
-                          ? std::make_optional(request->getKVCacheSlot())
+                          ? std::make_optional(task->getKVCacheSlot())
                           : std::nullopt;
 
-      ps::ISRequest req = utils::makeSubmitRequest(slotId, *request, destSlot);
+      ps::ISRequest req = utils::makeSubmitRequest(slotId, *task, destSlot);
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] handleRequest: SUBMIT taskId={}, slotId={}, "
           "isContinuation={}, numPromptTokens={}, totalTokens={}, "
           "runningSlots={}, destSlot={}, migrationUuid={}",
-          request->taskId, slotId, request->isContinuation(),
-          request->getNumPromptTokens(), request->getTokenIds().size(),
+          task->taskId, slotId, task->isContinuation(),
+          task->getNumPromptTokens(), task->getTokenIds().size(),
           slotManager.activeRunningCount(),
           req.dest_slot_id.has_value() ? std::to_string(*req.dest_slot_id)
                                        : "none",
@@ -704,15 +738,15 @@ void BlazePrefillRunner::handleRequest(
             "[BlazePrefillRunner] handleRequest: failed to push request, "
             "taskId={}, "
             "slotId={}",
-            request->taskId, slotId);
-        pendingRequests.pendingTask = std::move(request);
+            task->taskId, slotId);
+        pendingRequests.pendingTask = std::move(task);
         return;
       }
       if (slotManager.activeRunningCount() == 0) {
         lastOutputTime = std::chrono::steady_clock::now();
       }
-      utils::initSlotForRun(slotContext, *request);
-      slotManager.bindTaskToSlot(request->taskId, slotId);
+      utils::initSlotForRun(slotContext, *task);
+      slotManager.bindTaskToSlot(task->taskId, slotId);
       slotManager.setSlotState(slotId, SlotState::RUNNING);
       tt::worker::SingleProcessWorkerMetrics::instance()
           .incrementActiveRequests();
@@ -726,14 +760,14 @@ void BlazePrefillRunner::handleRequest(
             "taskId={} with "
             "taskId={} on slotId={} — the dropped task's stream will not "
             "finalize",
-            slotContext.deferredContinue->taskId, request->taskId, slotId);
+            slotContext.deferredContinue->taskId, task->taskId, slotId);
       }
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] handleRequest: latching deferredSubmit for "
           "taskId={} "
           "on slotId={} (waiting for STOP ack)",
-          request->taskId, slotId);
-      slotContext.deferredContinue = std::move(request);
+          task->taskId, slotId);
+      slotContext.deferredContinue = std::move(task);
       break;
     }
     case SlotState::AWAITING_EVICT_ACK: {
@@ -741,9 +775,9 @@ void BlazePrefillRunner::handleRequest(
           "[BlazePrefillRunner] handleRequest: dropping SUBMIT for taskId={} "
           "on "
           "slotId={} (slot is AWAITING_EVICT_ACK)",
-          request->taskId, slotId);
+          task->taskId, slotId);
       ipc::helpers::pushToken(
-          *resultQueue, request->taskId, 0,
+          *resultQueue, task->taskId, 0,
           ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
       break;
     }
@@ -753,7 +787,7 @@ void BlazePrefillRunner::handleRequest(
           "[BlazePrefillRunner] handleRequest: SUBMIT for taskId={} on "
           "slotId={} in "
           "unexpected state={}",
-          request->taskId, slotId, toString(slotContext.state));
+          task->taskId, slotId, toString(slotContext.state));
       assert(false && "SUBMIT for slot in unexpected state");
       break;
     }
