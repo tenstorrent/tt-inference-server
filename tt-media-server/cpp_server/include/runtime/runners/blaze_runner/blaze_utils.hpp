@@ -81,6 +81,9 @@ inline void fillSequenceFields(sch::ISRequest& req,
                                const tt::domain::llm::Sequence& seq) {
   req.tokens.assign(seq.getTokenIds().begin(), seq.getTokenIds().end());
   req.gen = makeGenerationParams(seq);
+  if (seq.getKVPositionId().has_value()) {  // override position id
+    req.position_id = *seq.getKVPositionId();
+  }
 }
 
 inline sch::ISRequest makeSubmitRequest(
@@ -104,9 +107,6 @@ inline sch::ISRequest makeContinueRequest(
   req.dest_slot_id = destSlotId;
   req.migration_uuid = seq.getMigrationId();
   fillSequenceFields(req, seq);
-  if (seq.getKVPositionId().has_value()) {  // override position id
-    req.position_id = *seq.getKVPositionId();
-  }
   return req;
 }
 
