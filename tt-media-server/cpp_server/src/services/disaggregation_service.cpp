@@ -387,11 +387,11 @@ void DisaggregationService::resolvePrefillSession(
           // If copying, set continuation and kv_position_id on the request.
           if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
             request->continuation = true;
-            request->kv_position_id = copyMatchedTokens - 1;
+            request->kv_position_id = copyMatchedTokens;
             session_resolution::applyDeltaPrompt(
                 *request, copyMatchedTokens,
                 {.skipUnlessRegularMode = false,
-                 .setKvPositionId = true,
+                 .setKvPositionId = false,
                  .logPrefix = "[DisaggregationService]"});
           }
           onResolved();

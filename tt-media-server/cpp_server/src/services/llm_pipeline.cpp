@@ -372,7 +372,7 @@ void LLMPipeline::resolveSession(
         // If we copied from a slot, mark as continuation with kv_position_id.
         if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
           req->continuation = true;
-          req->kv_position_id = copyMatchedTokens - 1;
+          req->kv_position_id = copyMatchedTokens;
           session_resolution::applyDeltaPrompt(*req, copyMatchedTokens,
                                                {.skipUnlessRegularMode = true,
                                                 .setKvPositionId = false,
