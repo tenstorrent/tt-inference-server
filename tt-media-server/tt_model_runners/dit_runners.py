@@ -239,7 +239,10 @@ class TTFlux1Runner(TTDiTRunner):
             raise
 
     def get_pipeline_device_params(self):
-        return {"l1_small_size": 32768, "trace_region_size": self.settings.trace_region_size}
+        return {
+            "l1_small_size": 32768,
+            "trace_region_size": self.settings.trace_region_size,
+        }
 
 
 class TTMotifImage6BPreviewRunner(TTDiTRunner):
