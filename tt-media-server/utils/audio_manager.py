@@ -3,14 +3,16 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import base64
+import json
 import os
 import struct
 import subprocess
-import time
-from typing import List
+import tempfile
+from pathlib import Path
+from typing import List, Optional
 
 import numpy as np
-from config.constants import ModelServices, SupportedModels
+from config.constants import SupportedModels
 from config.settings import settings
 from domain.audio_text_response import AudioTextResponse, AudioTextSegment
 
@@ -18,59 +20,128 @@ from utils.decorators import log_execution_time
 from utils.ffmpeg_utils import decode_to_wav as ffmpeg_decode_to_wav
 from utils.logger import TTLogger
 
+# Path to the audio venv Python interpreter (set by Dockerfile).
+# whisperx + pyannote + silero_vad live there with torch 2.7.x; the main venv
+# runs torch 2.10 for vLLM 0.18.1. See Dockerfile for setup.
+AUDIO_VENV_PYTHON = os.getenv(
+    "AUDIO_VENV_PYTHON", "/home/container_app_user/tt-metal/audio_venv/bin/python"
+)
 
-def _installLegacyTorchLoadDefault(torchModule):
-    """Restore the pre-PyTorch-2.6 `torch.load` default (`weights_only=False`).
+# Path to the diarize.py script invoked inside the audio venv.
+DIARIZE_SCRIPT = Path(__file__).parent / "diarize.py"
 
-    PyTorch 2.6 flipped `torch.load`'s `weights_only` default from `False` to
-    `True`, and `lightning>=2.6` propagated that change into
-    `lightning_fabric.utilities.cloud_io._load`
-    (Lightning-AI/pytorch-lightning#21072). `pyannote-audio<=3.4.0` (pinned
-    transitively by `whisperx==3.4.3`) does not forward `weights_only=False`,
-    so pyannote checkpoints — which legitimately contain non-tensor objects
-    like `torch.torch_version.TorchVersion` and omegaconf containers — fail to
-    unpickle (pyannote/pyannote-audio#1960).
 
-    The audio worker only loads checkpoints from trusted sources (gated HF
-    repos under HF_TOKEN and bundled weights); no user-supplied `.pt` ever
-    reaches `torch.load` in this process, so the strict default offers no real
-    safety here.
+class AudioVenvClient:
+    """Runs `diarize.py` in the separate audio venv as a subprocess.
 
-    The wrapper treats both "kwarg missing" and "kwarg present but None" as
-    "use legacy default" — lightning's `pl_load` explicitly forwards
-    `weights_only=None`, which would otherwise bypass a plain
-    `dict.setdefault()`. Callers that pass `weights_only=True/False`
-    explicitly are respected.
-
-    Returns the installed wrapper so callers (and tests) can invoke it directly.
+    Centralises the boilerplate around writing the audio array to a temp
+    `.npy`, building the CLI argv, executing the subprocess, parsing the
+    JSON response and surfacing errors via a logger. Both diarization and
+    VAD use the same wire protocol so the calling code only differs in the
+    mode and the timeout it allows.
     """
-    originalLoad = torchModule.load
 
-    def _torchLoadLegacyDefault(*args, **kwargs):
-        if kwargs.get("weights_only") is None:
-            kwargs["weights_only"] = False
-        return originalLoad(*args, **kwargs)
+    def __init__(
+        self,
+        logger: TTLogger,
+        python_executable: str = AUDIO_VENV_PYTHON,
+        script_path: Path = DIARIZE_SCRIPT,
+    ):
+        self._logger = logger
+        self._python = python_executable
+        self._script = script_path
 
-    torchModule.load = _torchLoadLegacyDefault
-    return _torchLoadLegacyDefault
+    def is_available(self) -> bool:
+        """Return True if both the audio venv Python and diarize script exist."""
+        return os.path.exists(self._python) and self._script.exists()
 
+    def assert_available(self) -> None:
+        """Raise FileNotFoundError if the audio venv or script is missing."""
+        if not os.path.exists(self._python):
+            raise FileNotFoundError(f"Audio venv Python not found at {self._python}")
+        if not self._script.exists():
+            raise FileNotFoundError(f"Diarize script not found at {self._script}")
 
-if settings.model_service == ModelServices.AUDIO.value:
-    import torch
+    def run(
+        self,
+        mode: str,
+        audio_array: np.ndarray,
+        timeout_seconds: int,
+        model_name: Optional[str] = None,
+        hf_token: Optional[str] = None,
+    ) -> Optional[List[dict]]:
+        """Invoke the audio venv subprocess and return the parsed segments.
 
-    _installLegacyTorchLoadDefault(torch)
+        Returns the list of segment dicts on success, or `None` on failure
+        (subprocess error, timeout, or non-success status payload).
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audio_file = os.path.join(tmpdir, "audio.npy")
+            output_file = os.path.join(tmpdir, "result.json")
 
-    from silero_vad import get_speech_timestamps, load_silero_vad
-    from whisperx.diarize import DiarizationPipeline
+            np.save(audio_file, audio_array)
+
+            cmd = [
+                self._python,
+                str(self._script),
+                "--audio",
+                audio_file,
+                "--output",
+                output_file,
+                "--mode",
+                mode,
+            ]
+            if model_name:
+                cmd.extend(["--model-name", model_name])
+            if hf_token:
+                cmd.extend(["--hf-token", hf_token])
+
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout_seconds,
+                )
+            except subprocess.TimeoutExpired:
+                self._logger.error(f"{mode} subprocess timed out")
+                return None
+            except Exception as e:
+                self._logger.error(f"{mode} subprocess failed to launch: {e}")
+                return None
+
+            if result.returncode != 0:
+                self._logger.error(f"{mode} subprocess failed: {result.stderr}")
+                return None
+
+            try:
+                with open(output_file) as f:
+                    data = json.load(f)
+            except Exception as e:
+                self._logger.error(f"Failed to read {mode} response: {e}")
+                return None
+
+            if data.get("status") != "success":
+                self._logger.error(f"{mode} error: {data.get('error')}")
+                return None
+
+            return data.get("segments", [])
 
 
 class AudioManager:
     _whisperx_device: str = "cpu"
 
+    # Subprocess timeouts (seconds). Diarization is significantly heavier
+    # than VAD because it runs the pyannote pipeline end-to-end.
+    _DIARIZATION_TIMEOUT_SECONDS = 300
+    _VAD_TIMEOUT_SECONDS = 120
+
     def __init__(self):
         self._logger = TTLogger()
         self._diarization_model = None
+        self._diarization_model_name: Optional[str] = None
         self._vad_model = None
+        self._audio_venv_client = AudioVenvClient(self._logger)
 
         if settings.allow_audio_preprocessing:
             self._initialize_diarization_model()
@@ -248,108 +319,103 @@ class AudioManager:
         return chunks
 
     def _initialize_diarization_model(self):
-        """Initialize diarization model."""
+        """Verify the audio venv is usable and remember the diarization model name.
+
+        Diarization runs in a separate venv (audio_venv) to avoid torch version
+        conflicts with vLLM. We don't load the model here; the actual load
+        happens on first use inside the subprocess. This method just makes
+        the manager fail closed when the audio venv is missing.
+        """
         try:
-            self._logger.info("Loading speaker diarization model...")
-            self._diarization_model = DiarizationPipeline(
-                model_name=settings.preprocessing_model_weights_path
-                or SupportedModels.PYANNOTE_SPEAKER_DIARIZATION.value,
-                use_auth_token=os.getenv("HF_TOKEN", None),
-                device=self._whisperx_device,
+            self._logger.info("Checking audio venv for diarization...")
+            self._audio_venv_client.assert_available()
+
+            self._diarization_model_name = (
+                settings.preprocessing_model_weights_path
+                or SupportedModels.PYANNOTE_SPEAKER_DIARIZATION.value
             )
-            self._logger.info("Speaker diarization model loaded successfully")
+            self._diarization_model = True
+            self._logger.info(
+                f"Audio venv ready for diarization with model: {self._diarization_model_name}"
+            )
         except Exception as e:
             self._logger.warning(
-                f"Failed to load diarization model: {e}. Continuing without audio preprocessing"
+                f"Failed to initialize diarization: {e}. Continuing without audio preprocessing"
             )
             self._diarization_model = None
+            self._diarization_model_name = None
 
-            # Provide actionable next steps
             self._logger.info("To enable audio preprocessing:")
             self._logger.info(
-                "1. Ensure HF_TOKEN is set or set HF_HOME to your Hugging Face cache directory. If the required models are already cached there, no HF_TOKEN is needed."
+                "1. Ensure HF_TOKEN is set or set HF_HOME to your Hugging Face cache directory."
             )
             self._logger.info(
                 "2. Accept model terms at: https://hf.co/pyannote/speaker-diarization-3.0 and https://hf.co/pyannote/segmentation-3.0"
             )
 
     def _initialize_vad_model(self):
-        """Initialize VAD model from WhisperX with retry logic."""
-        total_attempts = 5
+        """Verify the audio venv is usable for VAD.
 
-        # due to throttling from HF, we implement retries
-        for attempt in range(total_attempts):
-            try:
-                self._logger.info(
-                    f"Loading VAD model... (attempt {attempt + 1}/{total_attempts})"
-                )
-
-                # VAD requires vad_onset and chunk_size parameters
-                # chunk_size: size of audio chunks to process (typical values: 30, 60, or 160)
-                # vad_onset: threshold for detecting speech onset (typical value: 0.500)
-                self._vad_model = load_silero_vad()
-
-                self._logger.info("VAD model loaded successfully")
-                return  # Success - exit the retry loop
-
-            except Exception as e:
-                if attempt < total_attempts:
-                    self._logger.warning(
-                        f"Failed to load VAD model on attempt {attempt + 1}: {e}. "
-                        f"Retrying... ({total_attempts - attempt} attempts remaining)"
-                    )
-
-                    time.sleep(1.0)  # Wait 1 second before retry
-                else:
-                    # Final attempt failed
-                    self._logger.error(
-                        f"Failed to load VAD model after {total_attempts} attempts: {e}. "
-                        f"Continuing without standalone VAD"
-                    )
-                    self._vad_model = None
-                    break
+        Like diarization, VAD runs in the audio venv. The Silero model only
+        loads on first use inside the subprocess.
+        """
+        try:
+            self._logger.info("Checking audio venv for VAD...")
+            self._audio_venv_client.assert_available()
+            self._vad_model = True
+            self._logger.info("Audio venv ready for VAD")
+        except Exception as e:
+            self._logger.error(f"Failed to initialize VAD: {e}")
+            self._vad_model = None
 
     @log_execution_time("Applying diarization")
     def _apply_diarization(self, audio_array):
-        self._logger.info("Performing speaker diarization...")
-        diarization_result = self._diarization_model(audio_array)
+        """Run diarization via subprocess in the audio venv."""
+        self._logger.info("Performing speaker diarization via audio venv...")
 
-        # Step 3: Combine VAD and diarization results
-        # Extract diarization segments (speech regions) with speaker info
-        diarization_segments = []
-        for _, row in diarization_result.iterrows():
-            diarization_segments.append(
-                {
-                    "start": row.get("start", 0),
-                    "end": row.get("end", 0),
-                    "text": "",  # TT-Metal will fill this
-                    "speaker": row.get("speaker", "SPEAKER_00"),
-                }
-            )
+        segments = self._audio_venv_client.run(
+            mode="diarize",
+            audio_array=audio_array,
+            timeout_seconds=self._DIARIZATION_TIMEOUT_SECONDS,
+            model_name=self._diarization_model_name,
+            hf_token=os.getenv("HF_TOKEN"),
+        )
 
+        if segments is None:
+            return []
+
+        diarization_segments = [
+            {
+                "start": seg.get("start", 0),
+                "end": seg.get("end", 0),
+                "text": "",
+                "speaker": seg.get("speaker", "SPEAKER_00"),
+            }
+            for seg in segments
+        ]
+        self._logger.info(f"Diarization found {len(diarization_segments)} segments")
         return diarization_segments
 
     @log_execution_time("Applying VAD")
     def _apply_vad(self, audio_array):
-        """Apply VAD to detect speech segments before diarization."""
+        """Apply VAD via subprocess in the audio venv."""
         if self._vad_model is None:
             self._logger.warning("VAD model not available, skipping VAD step")
             return None
 
-        self._logger.info("Applying VAD to detect speech segments...")
+        self._logger.info("Applying VAD via audio venv...")
 
-        try:
-            # Silero VAD expects a torch tensor (float32)
-            audio_tensor = torch.from_numpy(audio_array).float()
-            vad_segments = get_speech_timestamps(
-                audio_tensor, self._vad_model, threshold=0.5, return_seconds=True
-            )
-        except Exception as e:
-            self._logger.error(f"Error during VAD processing: {e}")
+        segments = self._audio_venv_client.run(
+            mode="vad",
+            audio_array=audio_array,
+            timeout_seconds=self._VAD_TIMEOUT_SECONDS,
+        )
+
+        if segments is None:
             return None
 
-        self._logger.info(f"VAD detected {len(vad_segments)} speech segments")
-        return vad_segments
+        self._logger.info(f"VAD detected {len(segments)} speech segments")
+        return segments
 
     def _filter_diarization_with_vad(self, diarization_segments, vad_segments):
         """Filter diarization segments to only include those that overlap with VAD-detected speech."""
@@ -360,10 +426,8 @@ class AudioManager:
 
             # Check if this diarization segment overlaps with any VAD segment
             for vad_seg in vad_segments:
-                vad_start, vad_end = (
-                    getattr(vad_seg, "start", 0),
-                    getattr(vad_seg, "end", 0),
-                )
+                vad_start = vad_seg.get("start", 0)
+                vad_end = vad_seg.get("end", 0)
 
                 # Check for overlap
                 overlap_start = max(diar_start, vad_start)
