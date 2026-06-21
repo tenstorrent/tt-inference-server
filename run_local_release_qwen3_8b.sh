@@ -18,6 +18,17 @@ SERVICE_PORT="${SERVICE_PORT:-8004}"
 KEY="${KEY:-your-secret-key}"                 # must match the running server's API_KEY
 LIMIT_MODE="${LIMIT_MODE:-ci-nightly}"        # ci-nightly | ci-long | ci-commit | smoke-test
 export MODEL_SPECS_ENV="${MODEL_SPECS_ENV:-dev}"
+# run.py needs yaml/pydantic/etc. The bare `python` isn't always on PATH in
+# non-login shells, so resolve an interpreter that actually has run.py's deps.
+PYTHON="${PYTHON:-}"
+if [[ -z "$PYTHON" ]]; then
+  for cand in /opt/ttmlir-toolchain/venv/bin/python python3 python; do
+    if command -v "$cand" >/dev/null 2>&1 && "$cand" -c "import yaml" >/dev/null 2>&1; then
+      PYTHON="$cand"; break
+    fi
+  done
+fi
+[[ -z "$PYTHON" ]] && { echo "ERROR: no python with run.py deps found (set PYTHON=/path/to/python)"; exit 1; }
 LOG="local_release_qwen3_8b_p${SERVICE_PORT}_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee "$LOG") 2>&1
 
@@ -42,8 +53,9 @@ fi
 
 echo "=== RELEASE RUN START: $(date -u) | limit-samples-mode=$LIMIT_MODE specs=$MODEL_SPECS_ENV ==="
 SECONDS=0
+echo "Using python: $PYTHON"
 VLLM_API_KEY="$KEY" OPENAI_API_KEY="$KEY" \
-python run.py \
+"$PYTHON" run.py \
   --model "$MODEL" \
   --device p150 \
   --impl forge-vllm-plugin \
