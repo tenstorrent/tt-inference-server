@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+# Qwen3.6-27B serving image = from-source dev base + the one scoped tt_vllm_plugin layer.
+#
+# The tt-metal padfix (pad-all-prefill<=4096->4096 in generator.py, support_seqlens
+# in llama_ccl.py) is now baked FROM SOURCE: the BASE below is built by
+# build_single_docker.sh cloning ssinghal/qwen36_mamba_cache @ 09f1527c21f. So this
+# image only adds tt_vllm_plugin.
+#
+# tt_vllm_plugin is NOT folded into the shared base on purpose: it registers a GLOBAL
+# vLLM platform override (tt_vllm_plugin.platform.TTPlatform via the
+# vllm.platform_plugins entry-point), which would affect every other model built from
+# the shared dev base. Keeping it a thin qwen3.6-scoped layer is the correct scoping.
+#
+# Build via scripts/build_qwen36_image.sh (stages a minimal context = just the plugin dir,
+# so the daemon does not tar the multi-GB tt-metal tree).
+ARG BASE=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.15.0-09f1527c21f-8f3691068
+FROM ${BASE}
+
+COPY --chown=container_app_user:container_app_user tt-vllm-plugin /home/container_app_user/tt-vllm-plugin
+RUN /home/container_app_user/tt-metal/python_env/bin/pip install --no-deps -e /home/container_app_user/tt-vllm-plugin \
+ && /home/container_app_user/tt-metal/python_env/bin/python -c "import tt_vllm_plugin; print('tt_vllm_plugin import OK')"

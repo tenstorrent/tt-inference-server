@@ -1,0 +1,5 @@
+ARG BASE
+FROM ${BASE}
+COPY --chown=container_app_user:container_app_user . /home/container_app_user/tt-vllm-plugin
+RUN /home/container_app_user/tt-metal/python_env/bin/pip install --no-deps -e /home/container_app_user/tt-vllm-plugin \
+ && /home/container_app_user/tt-metal/python_env/bin/python -c "import tt_vllm_plugin; print('tt_vllm_plugin import OK')"

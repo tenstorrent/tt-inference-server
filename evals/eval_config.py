@@ -145,6 +145,27 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.6-27B",
         tasks=[
+            # ssinghal 2026-06-08: ifeval kept as a fast text-coherence check for the
+            # bring-up server (richer than the "Paris" smoke test; use to track decode
+            # coherence as we fix longer-ISL / reasoning generation). Baseline run @
+            # 0.15.0-qwen36: prompt_strict 0.205 / inst_strict 0.331 (depressed by
+            # early-stop on some prompts). Agentic original saved at
+            # ~/ssinghal/qwen36/ifeval_baseline/eval_config.AGENTIC_ORIGINAL.py.
+            EvalTask(
+                task_name="ifeval",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
             EvalTask(
                 task_name="terminal_bench_2",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
