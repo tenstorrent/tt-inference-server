@@ -1088,6 +1088,12 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="r1_gpqa_diamond",
+                # Tier-1 KV fix: gpqa generates long (up to max_gen_toks=12288).
+                # At conc 32 the 32×(prompt+gen) working set oversubscribes the
+                # ~139k-token forge P150 KV pool -> preemption thrash -> >half the
+                # docs miss the 3600s timeout. Cap concurrency at 8 so the active
+                # set fits the pool and docs finish. (mmlu_pro stays at default.)
+                max_concurrent=8,
                 score=EvalTaskScore(
                     published_score=62.0,
                     published_score_ref="https://arxiv.org/pdf/2505.09388",
