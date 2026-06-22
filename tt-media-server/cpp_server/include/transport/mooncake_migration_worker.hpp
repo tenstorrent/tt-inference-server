@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -34,48 +35,58 @@ struct MigrationWorkerConfig {
   NocAddr device_addr = 0;        ///< Device-DRAM location of the tensor.
   std::size_t tensor_bytes = 0;   ///< Tensor size to move/verify.
 
-  /// Peers this worker discovers on bring-up.
-  /// Each entry is a logical segment name resolved through the metadata
+  // --- #4294 production bring-up (driven by bringUp()) ---
+  std::string metadata_uri;  ///< Discovery service the engine connects to.
+  std::string segment_name;  ///< This worker's own advertised logical name.
+  TransportProtocol protocol = TransportProtocol::Tcp;
+  std::size_t host_dram_bytes = 0;  ///< Pool the worker registers/publishes.
+
+  /// Peers this worker discovers on bring-up. Each entry is a logical segment
+  /// name resolved through the metadata service; ports are dynamic.
   std::vector<std::string> peer_segment_names;
-  int discovery_timeout_sec = 30;  ///< connect() gives up after this long.
+  int discovery_timeout_sec = 30;  ///< Discovery gives up after this long.
 };
 
 /**
- * @brief Migration worker for the #3890 spike — the independent C++ process
- *        that proves a tensor can move from one galaxy's device DRAM to
- *        another's through the Transfer Engine with the custom UMD backend.
+ * @brief A migration worker that owns its full lifecycle on a host.
  *
- * Drives the three scope items from issue #3890 directly:
- *   1. writeTensorOnSender()    — "Write tensor on sender galaxy"
- *   2. transferToReceiver()     — "Use transfer engine with custom backend to
- *                                  transfer it to receiver galaxy"
- *   3. verifyTensorOnReceiver() — "Verify tensor is correct on receiver galaxy"
+ * The worker takes an (uninitialised) ITransferEngine by injection and then
+ * owns the ordered bring-up that makes it a live, discoverable participant
+ * (#4294): allocate its host-DRAM pool, init the engine against the metadata
+ * service, register/publish that pool, and discover its peers. The phase
+ * ordering — register *before* connect, so peers can resolve us in return — is
+ * a correctness invariant enforced here, not by the caller. Teardown
+ * (unregister) happens in reverse order, including on destruction.
  *
- * Holds an ITransferEngine (expected to be a MooncakeTransferEngine wrapping a
- * DeviceDramStorageBackend) plus the registered host staging buffer. Staging
- * and verification go through the engine's storage backend; the host->host hop
- * goes through the engine's transport. The full two-galaxy run requires a live
- * peer (the engine must be init()'d and the peer segment advertised); without
- * one, transferToReceiver() reports failure.
+ * It also still drives the original #3890 spike scope (writeTensorOnSender /
+ * transferToReceiver / verifyTensorOnReceiver), which operate once the engine
+ * is up.
  */
 class MooncakeMigrationWorker {
  public:
   MooncakeMigrationWorker(MigrationWorkerConfig config,
                           std::shared_ptr<ITransferEngine> engine);
+  ~MooncakeMigrationWorker();
+
+  MooncakeMigrationWorker(const MooncakeMigrationWorker&) = delete;
+  MooncakeMigrationWorker& operator=(const MooncakeMigrationWorker&) = delete;
 
   /**
-   * @brief Discover every configured peer and cache its segment handle.
-   *
-   * Drives PeerDiscovery over config.peer_segment_names, blocking until all
-   * peers are resolved or discovery_timeout_sec elapses. This is the worker's
-   * readiness gate on bring-up (#4294): the engine must be init()'d and the
-   * local segment registered first so peers can resolve us in return.
-   *
-   * @return true once all peers are connected; false on timeout.
+   * @brief Ordered bring-up: allocate pool → init engine → register/publish →
+   *        discover peers. Fail-fast; on failure unwinds whatever earlier
+   *        phases set up. Returns true once the worker is READY (engine up,
+   *        segment published, all peers connected).
    */
-  bool connect();
+  bool bringUp();
 
-  /// Segment handles for the peers resolved by connect() (name -> handle).
+  /**
+   * @brief Block until @p stopRequested is set (the hold-until-SIGTERM phase),
+   *        then tear down. The stop source (e.g. a signal handler) is owned by
+   *        the caller; the worker only observes it.
+   */
+  void run(const std::atomic<bool>& stopRequested);
+
+  /// Segment handles for the peers resolved during bringUp() (name -> handle).
   const std::map<std::string, SegmentHandle>& peers() const { return peers_; }
 
   /// Step 1 (sender): write a known tensor into this galaxy's device DRAM.
@@ -88,10 +99,17 @@ class MooncakeMigrationWorker {
   bool verifyTensorOnReceiver(const std::vector<uint8_t>& expected);
 
  private:
+  /// Phase 5: discover every configured peer, caching handles in peers_.
+  bool connect();
+  /// Reverse-order teardown; idempotent so run() and ~dtor can both call it.
+  void teardown();
+
   MigrationWorkerConfig config_;
   std::shared_ptr<ITransferEngine> engine_;
-  std::vector<uint8_t> staging_;  ///< Registered host staging buffer.
-  std::map<std::string, SegmentHandle> peers_;  ///< Resolved by connect().
+  std::vector<uint8_t> hostDramPool_;  ///< Registered/published by bringUp().
+  std::vector<uint8_t> staging_;       ///< Spike host staging buffer (#3890).
+  std::map<std::string, SegmentHandle> peers_;  ///< Resolved by bringUp().
+  bool memoryRegistered_ = false;
 };
 
 }  // namespace tt::transport
