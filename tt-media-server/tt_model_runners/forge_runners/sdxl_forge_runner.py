@@ -250,14 +250,20 @@ class SDXLForgeRunner(BaseDeviceRunner):
             (self.tokenizer_2, self.text_encoder_2),
         ]:
             cond_tokens = torch.tensor(
-                tokenizer.batch_encode_plus(
-                    [prompt], padding="max_length", max_length=77
+                tokenizer(
+                    [prompt],
+                    padding="max_length",
+                    max_length=77,
+                    truncation=True,
                 ).input_ids,
                 dtype=torch.long,
             )
             uncond_tokens = torch.tensor(
-                tokenizer.batch_encode_plus(
-                    [negative_prompt or ""], padding="max_length", max_length=77
+                tokenizer(
+                    [negative_prompt or ""],
+                    padding="max_length",
+                    max_length=77,
+                    truncation=True,
                 ).input_ids,
                 dtype=torch.long,
             )
