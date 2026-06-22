@@ -10,16 +10,6 @@
         }
       }
     },
-    "Falcon3-7B-Instruct": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "P150"
-          ]
-        }
-      }
-    },
     "Llama-3.1-8B-Instruct": {
       "implementations": [
         {
@@ -46,16 +36,6 @@
               "devices": [
                 "P150",
                 "P300X2"
-              ]
-            }
-          }
-        },
-        {
-          "inference_engine": "FORGE",
-          "ci": {
-            "nightly": {
-              "devices": [
-                "P150"
               ]
             }
           }
@@ -95,16 +75,6 @@
                 "N150",
                 "N300",
                 "T3K"
-              ]
-            }
-          }
-        },
-        {
-          "inference_engine": "FORGE",
-          "ci": {
-            "nightly": {
-              "devices": [
-                "P150"
               ]
             }
           }
@@ -278,16 +248,6 @@
               ]
             }
           }
-        },
-        {
-          "inference_engine": "FORGE",
-          "ci": {
-            "nightly": {
-              "devices": [
-                "P300X2"
-              ]
-            }
-          }
         }
       ]
     },
@@ -310,38 +270,8 @@
               ]
             }
           }
-        },
-        {
-          "inference_engine": "FORGE",
-          "ci": {
-            "nightly": {
-              "devices": [
-                "P150"
-              ]
-            }
-          }
         }
       ]
-    },
-    "Qwen3-4B": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "P150"
-          ]
-        }
-      }
-    },
-    "Qwen3-Embedding-4B": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150"
-          ]
-        }
-      }
     },
     "Qwen3-Embedding-8B": {
       "inference_engine": "MEDIA",
@@ -406,16 +336,6 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "N150"
-          ]
-        }
-      }
-    },
-    "efficientnet": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
             "N150"
           ]
         }
@@ -503,16 +423,6 @@
         }
       }
     },
-    "gemma-4-31b-it": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "P300X2"
-          ]
-        }
-      }
-    },
     "gpt-oss-120b": {
       "inference_engine": "vLLM",
       "ci": {
@@ -538,26 +448,6 @@
           "devices": [
             "GALAXY",
             "T3K"
-          ]
-        }
-      }
-    },
-    "mobilenetv2": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150"
-          ]
-        }
-      }
-    },
-    "yolox_nano": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "P150"
           ]
         }
       }
@@ -588,26 +478,6 @@
         "release": {
           "devices": [
             "GALAXY"
-          ]
-        }
-      }
-    },
-    "resnet-50": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150"
-          ]
-        }
-      }
-    },
-    "segformer": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150"
           ]
         }
       }
@@ -674,14 +544,10 @@
           "ci": {
             "nightly": {
               "devices": [
-                "N150",
-                "P150X8"
+                "N150"
               ],
               "device-args": {
                 "N150": {
-                  "additional-args": "--impl sdxl-forge"
-                },
-                "P150X8": {
                   "additional-args": "--impl sdxl-forge"
                 }
               }
@@ -689,36 +555,6 @@
           }
         }
       ]
-    },
-    "unet": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150"
-          ]
-        }
-      }
-    },
-    "vit": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150"
-          ]
-        }
-      }
-    },
-    "vovnet": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150"
-          ]
-        }
-      }
     },
     "whisper-large-v3": {
       "inference_engine": "MEDIA",
