@@ -413,3 +413,105 @@ the chunked path at max ISL (dummy, at production batch). Details + repro in
 Per-user decode throughput (~8–13 tok/s) + the 12k-token reasoning generations remain the 6h-budget
 bottleneck. gmu is maxed at 0.30. Durable levers: recover per-user decode (tt-xla#5034) and/or cap
 `max_gen_toks` on the reasoning evals.
+
+> **Update (Stage 4 below):** the decode lever *did* move — the tt-xla #4278 incremental-counts
+> fix (+ `repetition_penalty=1.0` + seed-drop) cut mmlu_pro ~55% and eliminated its timeouts. The
+> remaining eval blocker (gpqa) turned out to be **KV-oversubscription**, not decode rate — fixed
+> by capping concurrency, not by more timeout.
+
+---
+
+## Stage 4 — #4278 incremental-counts fix + rep_penalty=1.0 + seed-drop (decode unblocked)
+
+*Branch `kmabee/forge_llm_chunked_prefill.debug`. Log `local_release_qwen3_8b_p8009_20260620_173102.log`
+(2026-06-20). Server: `launch_qwen3_8b.sh` defaults (gmu 0.30), full Qwen3-8B on P150, port 8009;
+release flow via `--server-url` (no Docker).*
+
+**Config delta vs Stage 2.** Server/memory knobs are unchanged (gmu 0.30, b32, 40960, bfp8-KV,
+chunked prefill, opt1, device sampling, enable_trace). The deltas are all in the *decode/sampling
+path*:
+
+| Knob | Stage 2 → Stage 4 |
+|---|---|
+| tt-xla wheel | rebased uplift → **+ #4278 incremental output-token-count fix** (commit `863947492`): rep-penalty counts folded incrementally (O(Δ)) instead of rescanned per step (O(N²)) → **flat decode** at rep ≥ 1.0 |
+| eval `repetition_penalty` | 1.1 → **1.0** on gpqa + mmlu_pro `gen_kwargs` (runner default later moved to 1.0 too) |
+| per-request seed | honored (seeded slow-path) → **dropped** for Forge (tt-xla#4539): lm-eval's `seed=1234` no longer forces the ~19 MB-CPU-noise/step path |
+| gpqa request timeout | 3600 → **7200** (one-off experiment in this run; since reverted) |
+
+### E2E timing (this run)
+
+| Phase | Wall-clock | start (UTC) | notes |
+|---|---|---|---|
+| **Total release** | **8h09m** | 17:31 | `run.py` exit=1 (acceptance FAIL) |
+| Evals | 4h33m | 17:31 | |
+| — r1_gpqa_diamond | 2h07m | | 24 timeouts, 0.225 — **inflated by the 7200s experiment** |
+| — mmlu_pro | 2h16m | | **0 timeouts**, 0.6316 |
+| Benchmarks | 3h35m | 22:05 | ~13m warmup + 15-run text sweep + 6-run structured |
+| Reports | <1m | 01:40 | |
+
+Trace-capture warmups: ~4m47s (eval-stage server check) + ~13m07s (benchmark-stage).
+
+### Stage 2 → Stage 4 comparison
+
+| | Stage 2 (gmu 0.30, rebased) | **Stage 4 (+#4278, rep=1.0, seed-drop)** | Δ |
+|---|---|---|---|
+| **Total wall-clock** | 9h38m | **8h09m** | **−1h29m (~15%)** |
+| Evals stage | 6h00m | **4h33m** | −1h27m |
+| — r1_gpqa_diamond | ~57m | 2h07m | +1h10m (artifact of 7200s timeout; at 3600s ≈ ~57m) |
+| — mmlu_pro | 5h04m | **2h16m** | **−2h48m (~55%)** |
+| Benchmarks | 3h26m | 3h35m | +9m (~flat) |
+| Streaming timeouts | 51 (both evals) | **24** (all gpqa; mmlu_pro **0**) | mmlu eliminated |
+| gpqa accuracy | 22.5% (r0.35) | 22.5% (r0.35) | flat |
+| mmlu_pro accuracy | 61.68% (r0.93) | **63.16% (r~0.95)** | ↑ |
+
+**The win is mmlu_pro: 5h04m → 2h16m with its timeouts eliminated** — the #4278 flat-decode fix
+(+ rep=1.0 + seed-drop) paying off on sustained long-output decode, exactly the path the O(N²)
+penalty rescans and the seeded-noise transfer used to tax. **gpqa did not improve:** its wall rose
+(7200s experiment) with the *same* 24 timeouts and *same* 0.225 score → gpqa is **not** timeout- or
+decode-rate-bound but **KV-oversubscription bound** at conc 32 (32 × long-generation KV ≫ the
+~139k-token pool → preemption thrash). That points to a concurrency cap, not more timeout.
+
+### Stage 4 benchmark sweep (Qwen3-8B, gmu 0.30)
+
+| cfg | con | ISL | OSL | n | agg tok/s | TTFT ms | vs Stage 2 |
+|----:|----:|------:|-----:|----:|----------:|--------:|---|
+| 1 | 1 | 128 | 128 | 8 | 12.22 | **1,224.8** | TTFT ↑ (was 356) ⚠ |
+| 2 | 32 | 128 | 128 | 256 | 78.18 | 3,410 | ~flat |
+| 3 | 1 | 128 | 1024 | 4 | 12.72 | 1,223 | TTFT ↑ (was 357) ⚠ |
+| 4 | 32 | 128 | 1024 | 128 | **120.68** | 1,744 | **−33% (was 180.68)** ⚠ |
+| 5 | 1 | 1024 | 128 | 4 | 6.79 | 9,071 | ~flat |
+| 6 | 32 | 1024 | 128 | 128 | 12.53 | 106,754 | ~flat |
+| 7 | 1 | 2048 | 128 | 4 | 3.98 | 21,777 | ~flat |
+| 8 | 18 | 2048 | 128 | 72 | 4.56 | 180,009 | ~flat |
+| 9 | 1 | 4096 | 128 | 4 | 2.21 | 43,876 | ~flat |
+| 10 | 9 | 4096 | 128 | 36 | 2.32 | 128,005 | ~flat |
+| 11 | 1 | 8192 | 128 | 2 | 1.63 | 64,495 | ~flat |
+| 12 | 4 | 8192 | 128 | 8 | 1.28 | 208,006 | ~flat |
+| 13 | 1 | 16384 | 128 | 2 | 1.07 | 91,773 | ~flat |
+| 14 | 2 | 16384 | 128 | 4 | 1.21 | 92,551 | ~flat |
+| 15 | 1 | 32768 | 128 | 1 | 36.20 | 1,392 | (outlier — n=1, suspect, as in Stage 2 cfg15) |
+
+**Commentary:**
+- The sweep is **OSL ≈ 128 dominated → prefill-bound**, so it does *not* surface the #4278 decode
+  win (that needs long sustained output, which the evals have and the sweep doesn't). Per-user decode
+  rows (cfg 1/5/7/9/11/13) are ~flat vs Stage 2.
+- **Two regressions vs Stage 2, both flagged by acceptance:**
+  - **cfg1/cfg3 single-stream short-ISL TTFT 356 → ~1224 ms** → fails `ttft_check` (thresholds
+    300/60/30 ms). Consistent across both cfgs; likely the small-ISL trace-capture / chunked-prefill
+    behavior on the WIP `.debug` branch (see `DEBUG_chunked_prefill_batch_budget.md`).
+  - **cfg4 (con32, osl1024) 180.68 → 120.68 tok/s (−33%)** — the Stage-2 headline win partially
+    regressed; also branch / chunked-prefill-WIP suspect. Worth a clean re-measure.
+- Acceptance still **FAIL** (exit=1): gpqa accuracy (0.225 vs ref 0.641) + benchmark ttft/tput
+  checks (ttft 1224.8 ms; tput_user 13.8 vs 18.5/37 thresholds).
+
+### Takeaway / next
+
+1. **#4278 + rep=1.0 + seed-drop is a real, durable decode win** — first lever to move long-output
+   eval wall without trading accuracy (mmlu_pro halved, its timeouts gone).
+2. **gpqa is the remaining eval blocker, and it's KV-bound, not timeout-bound.** Fix = **Tier-1
+   concurrency cap** (gpqa `max_concurrent` 32 → 8 so the working set fits the 139k pool) — applied
+   to `eval_config.py`; expected to drop gpqa timeouts to ~0.
+3. **Benchmark TTFT / cfg4 regressions** want the chunked-prefill batch-budget fix
+   (`DEBUG_chunked_prefill_batch_budget.md`) — improves single-stream TTFT and `ttft_check`.
+4. With gpqa at 3600s + conc 8 and mmlu already fast, a clean re-run should land **well under** the
+   prior 8–9h, making benchmarks (~3.5h) the largest remaining block → candidate for sweep trimming.
