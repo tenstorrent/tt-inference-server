@@ -3,8 +3,12 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <atomic>
 #include <cstdint>
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "transport/device_dram_storage_backend.hpp"
@@ -13,6 +17,7 @@
 #include "transport/i_transfer_engine.hpp"
 #include "transport/mooncake_migration_worker.hpp"
 #include "transport/mooncake_transfer_engine.hpp"
+#include "transport/peer_discovery.hpp"
 #include "transport/transfer_types.hpp"
 #include "transport/umd_device_access.hpp"
 
@@ -190,6 +195,226 @@ TEST(MooncakeMigrationWorker, RoleGuardsAndTransportNeedsLiveEngine) {
   // Receiver cannot run the sender steps.
   EXPECT_FALSE(receiver.writeTensorOnSender(tensor));
   EXPECT_FALSE(receiver.transferToReceiver());
+}
+
+// ---------------------------------------------------------------------------
+// Discovery + bring-up unit tests (#4294)
+//
+// These exercise PeerDiscovery and MooncakeMigrationWorker::bringUp against a
+// programmable fake engine — no Mooncake, no metadata service, no network — so
+// they run in any build/CI. The fake records call order and lets each test
+// dictate exactly when (or whether) a peer resolves.
+// ---------------------------------------------------------------------------
+
+// A scriptable ITransferEngine: init/register results are configurable, and
+// each peer resolves only once openSegment has been called more than
+// `resolveAfterMisses[name]` times (absent => never resolves). Every call is
+// appended to callLog so tests can assert ordering (e.g. register before open).
+class FakeTransferEngine : public ITransferEngine {
+ public:
+  bool initResult = true;
+  bool registerResult = true;
+  std::map<std::string, int> resolveAfterMisses;  ///< name -> misses before hit
+
+  std::vector<std::string> callLog;
+  int registerCount = 0;
+  int unregisterCount = 0;
+  std::map<std::string, int> openAttempts;
+
+  StorageMedium storageMedium() const override {
+    return StorageMedium::HostDram;
+  }
+  std::shared_ptr<IStorageBackend> storage() const override { return nullptr; }
+
+  bool init(const EngineConfig&) override {
+    callLog.emplace_back("init");
+    return initResult;
+  }
+  bool registerLocalMemory(void*, std::size_t) override {
+    callLog.emplace_back("register");
+    ++registerCount;
+    return registerResult;
+  }
+  bool unregisterLocalMemory(void*) override {
+    callLog.emplace_back("unregister");
+    ++unregisterCount;
+    return true;
+  }
+  SegmentHandle openSegment(const std::string& name) override {
+    callLog.emplace_back("open:" + name);
+    const int attempt = ++openAttempts[name];
+    const auto it = resolveAfterMisses.find(name);
+    if (it == resolveAfterMisses.end()) return kInvalidSegment;
+    return attempt > it->second ? static_cast<SegmentHandle>(attempt)
+                                : kInvalidSegment;
+  }
+  TransferStatus submitAndWait(const TransferRequest&) override {
+    return {TransferState::Completed, 0};
+  }
+};
+
+// Fast tunables so the polling path runs in milliseconds, not seconds.
+PeerDiscoveryConfig fastDiscovery(int timeoutSec) {
+  return PeerDiscoveryConfig{/*poll_interval_ms=*/1,
+                             /*timeout_sec=*/timeoutSec};
+}
+
+// All peers already registered: a single sweep resolves every name.
+TEST(PeerDiscovery, ResolvesAllPeersInOneSweep) {
+  FakeTransferEngine engine;
+  engine.resolveAfterMisses = {{"a", 0}, {"b", 0}, {"c", 0}};
+  PeerDiscovery discovery(fastDiscovery(5));
+
+  const auto resolved = discovery.resolveAll(engine, {"a", "b", "c"});
+  ASSERT_TRUE(resolved.has_value());
+  EXPECT_EQ(resolved->size(), 3u);
+  for (const auto& name : {"a", "b", "c"}) {
+    EXPECT_EQ(engine.openAttempts[name], 1);  // resolved first try
+    EXPECT_NE(resolved->at(name), kInvalidSegment);
+  }
+}
+
+// A peer that isn't registered yet is retried; only the unresolved name is
+// re-polled, and discovery succeeds once it appears.
+TEST(PeerDiscovery, RetriesOnlyUnresolvedUntilTheyAppear) {
+  FakeTransferEngine engine;
+  engine.resolveAfterMisses = {{"ready", 0}, {"late", 2}};
+  PeerDiscovery discovery(fastDiscovery(5));
+
+  const auto resolved = discovery.resolveAll(engine, {"ready", "late"});
+  ASSERT_TRUE(resolved.has_value());
+  EXPECT_EQ(resolved->size(), 2u);
+  EXPECT_EQ(engine.openAttempts["ready"], 1);  // resolved once, not re-polled
+  EXPECT_GE(engine.openAttempts["late"], 3);   // 2 misses then a hit
+}
+
+// A peer that never registers makes discovery give up and return nullopt.
+TEST(PeerDiscovery, TimesOutWhenAPeerNeverResolves) {
+  FakeTransferEngine engine;
+  engine.resolveAfterMisses = {{"present", 0}};  // "ghost" absent => never
+  PeerDiscovery discovery(fastDiscovery(1));
+
+  const auto resolved = discovery.resolveAll(engine, {"present", "ghost"});
+  EXPECT_FALSE(resolved.has_value());
+  EXPECT_GE(engine.openAttempts["ghost"], 1);  // it did try
+}
+
+// Bring-up happy path: the worker inits, publishes its pool, then discovers its
+// peer — and crucially registers BEFORE opening any peer segment, so peers can
+// resolve it in return (the #4294 ordering invariant).
+TEST(MooncakeMigrationWorker, BringUpRegistersBeforeConnecting) {
+  auto engine = std::make_shared<FakeTransferEngine>();
+  engine->resolveAfterMisses = {{"peer-0", 0}};
+
+  MigrationWorkerConfig cfg;
+  cfg.metadata_uri = "fake://meta";
+  cfg.segment_name = "self";
+  cfg.host_dram_bytes = 4096;
+  cfg.peer_segment_names = {"peer-0"};
+  cfg.discovery_timeout_sec = 5;
+
+  MooncakeMigrationWorker worker(cfg, engine);
+  ASSERT_TRUE(worker.bringUp());
+  EXPECT_EQ(worker.peers().size(), 1u);
+  EXPECT_EQ(engine->registerCount, 1);
+
+  // register must appear before the first peer open in the recorded order.
+  const auto& log = engine->callLog;
+  const auto reg = std::find(log.begin(), log.end(), "register");
+  const auto open = std::find(log.begin(), log.end(), "open:peer-0");
+  ASSERT_NE(reg, log.end());
+  ASSERT_NE(open, log.end());
+  EXPECT_LT(reg - log.begin(), open - log.begin());
+}
+
+// Guard rails: a null engine and a zero-sized pool both fail before any
+// resource is touched.
+TEST(MooncakeMigrationWorker, BringUpRejectsBadConfig) {
+  MigrationWorkerConfig cfg;
+  cfg.host_dram_bytes = 4096;
+  cfg.peer_segment_names = {"peer-0"};
+
+  MooncakeMigrationWorker noEngine(cfg, nullptr);
+  EXPECT_FALSE(noEngine.bringUp());
+
+  auto engine = std::make_shared<FakeTransferEngine>();
+  MigrationWorkerConfig zeroPool = cfg;
+  zeroPool.host_dram_bytes = 0;
+  MooncakeMigrationWorker worker(zeroPool, engine);
+  EXPECT_FALSE(worker.bringUp());
+  EXPECT_EQ(engine->registerCount, 0);  // nothing allocated/published
+}
+
+// Fail-fast: if engine init fails we never register; if register fails we never
+// try to open a peer segment.
+TEST(MooncakeMigrationWorker, BringUpStopsAtFirstFailedPhase) {
+  MigrationWorkerConfig cfg;
+  cfg.host_dram_bytes = 4096;
+  cfg.peer_segment_names = {"peer-0"};
+  cfg.discovery_timeout_sec = 5;
+
+  auto initFails = std::make_shared<FakeTransferEngine>();
+  initFails->initResult = false;
+  MooncakeMigrationWorker w1(cfg, initFails);
+  EXPECT_FALSE(w1.bringUp());
+  EXPECT_EQ(initFails->registerCount, 0);
+
+  auto regFails = std::make_shared<FakeTransferEngine>();
+  regFails->registerResult = false;
+  MooncakeMigrationWorker w2(cfg, regFails);
+  EXPECT_FALSE(w2.bringUp());
+  EXPECT_EQ(regFails->openAttempts.count("peer-0"), 0u);  // never reached
+}
+
+// If discovery times out, bring-up unwinds: the published pool is unregistered
+// so we don't leave a half-initialised worker advertised to the cluster.
+TEST(MooncakeMigrationWorker, BringUpUnwindsWhenDiscoveryTimesOut) {
+  auto engine = std::make_shared<FakeTransferEngine>();
+  // "ghost" never resolves; timeout 0 makes resolveAll give up immediately.
+  MigrationWorkerConfig cfg;
+  cfg.host_dram_bytes = 4096;
+  cfg.segment_name = "self";
+  cfg.peer_segment_names = {"ghost"};
+  cfg.discovery_timeout_sec = 0;
+
+  MooncakeMigrationWorker worker(cfg, engine);
+  EXPECT_FALSE(worker.bringUp());
+  EXPECT_EQ(engine->registerCount, 1);
+  EXPECT_EQ(engine->unregisterCount, 1);  // teardown unwound the publish
+}
+
+// A worker with no peers configured is immediately ready after publishing.
+TEST(MooncakeMigrationWorker, BringUpWithNoPeersIsReady) {
+  auto engine = std::make_shared<FakeTransferEngine>();
+  MigrationWorkerConfig cfg;
+  cfg.host_dram_bytes = 4096;
+  cfg.segment_name = "self";  // no peer_segment_names
+
+  MooncakeMigrationWorker worker(cfg, engine);
+  EXPECT_TRUE(worker.bringUp());
+  EXPECT_TRUE(worker.peers().empty());
+  EXPECT_EQ(engine->registerCount, 1);
+}
+
+// run() returns once stop is already requested and tears down exactly once
+// (idempotent: the destructor's teardown must not unregister again).
+TEST(MooncakeMigrationWorker, RunStopsAndTearsDownOnce) {
+  auto engine = std::make_shared<FakeTransferEngine>();
+  engine->resolveAfterMisses = {{"peer-0", 0}};
+  MigrationWorkerConfig cfg;
+  cfg.host_dram_bytes = 4096;
+  cfg.segment_name = "self";
+  cfg.peer_segment_names = {"peer-0"};
+  cfg.discovery_timeout_sec = 5;
+
+  {
+    MooncakeMigrationWorker worker(cfg, engine);
+    ASSERT_TRUE(worker.bringUp());
+    std::atomic<bool> stop{true};  // already requested -> returns immediately
+    worker.run(stop);
+    EXPECT_EQ(engine->unregisterCount, 1);
+  }  // destructor runs teardown again; must stay idempotent
+  EXPECT_EQ(engine->unregisterCount, 1);
 }
 
 }  // namespace
