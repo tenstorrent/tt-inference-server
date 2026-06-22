@@ -670,6 +670,16 @@ std::string kafkaOffloadTopicName() {
                    defaults::KAFKA_OFFLOAD_TOPIC_NAME);
 }
 
+std::string kafkaMigrationRequestTopic() {
+  return envString("KAFKA_MIGRATION_REQUEST_TOPIC",
+                   defaults::KAFKA_MIGRATION_REQUEST_TOPIC);
+}
+
+std::string kafkaMigrationAckTopic() {
+  return envString("KAFKA_MIGRATION_ACK_TOPIC",
+                   defaults::KAFKA_MIGRATION_ACK_TOPIC);
+}
+
 std::string kafkaGroupId() {
   return envString("KAFKA_GROUP_ID", defaults::KAFKA_GROUP_ID);
 }

@@ -51,6 +51,8 @@ constexpr bool USE_FAST_MODE = false;
 constexpr const char* KAFKA_BROKERS = "localhost:9092";
 constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";
 constexpr const char* KAFKA_GROUP_ID = "migration-workers";
+constexpr const char* KAFKA_MIGRATION_REQUEST_TOPIC = "kv-migration-requests";
+constexpr const char* KAFKA_MIGRATION_ACK_TOPIC = "kv-migration-acks";
 
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 

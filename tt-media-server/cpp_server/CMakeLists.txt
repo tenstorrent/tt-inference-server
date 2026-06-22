@@ -739,6 +739,15 @@ target_include_directories(session_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(mock_remote_kv_manager_test
+    tests/unit/services/mock_remote_kv_manager_test.cpp
+    src/services/mock_remote_kv_manager.cpp
+)
+target_link_libraries(mock_remote_kv_manager_test PRIVATE GTest::gtest_main)
+target_include_directories(mock_remote_kv_manager_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(session_manager_test
     tests/integration/sessions/session_manager_test.cpp
     src/domain/session.cpp
