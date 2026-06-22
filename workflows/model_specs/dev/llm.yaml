@@ -794,6 +794,13 @@ templates:
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
       default_impl: true  
+    - device: P150X8
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      # 8-chip (2,4) mesh, single replica TP-sharded (NOT data-parallel). This is
+      # the co-located inference target: one coherent mesh so the WeightBridge
+      # receiver writes into a single mesh. Used with the 2x4 dual-split MGD.
     - device: BLACKHOLE_GALAXY
       max_concurrency: 32  
       max_context: 131072  # 128 * 1024

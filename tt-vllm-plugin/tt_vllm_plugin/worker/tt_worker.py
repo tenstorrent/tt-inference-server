@@ -278,9 +278,6 @@ def device_params_from_override_tt_config(
 
 
 def get_mesh_grid(dp_rank=0):
-    if dp_rank == 0:
-        # Only DP rank 0 should get device ids, otherwise device init may hang.
-        num_devices_available = len(ttnn.get_device_ids())
     mesh_grid_dict = {
         "N150": (1, 1),
         "P100": (1, 1),
@@ -291,10 +288,29 @@ def get_mesh_grid(dp_rank=0):
         "N150x4": (1, 4),
         "P150x4": (1, 4),
         "T3K": (1, 8),
-        "P150x8": (1, 8),
+        # P150x8 (BH LoudBox / an 8-chip Galaxy carve) is a 2x4 mesh, matching
+        # DeviceTypes.P150X8 and tt-metal's validated bh_galaxy_dual_2x4 split.
+        # (1,8) is not a valid carve of the 8x4 Blackhole Galaxy.
+        "P150x8": (2, 4),
         "TG": (8, 4),
         "BH-Galaxy": (8, 4),
     }
+
+    # The device count is only needed to (a) derive an implicit grid when
+    # MESH_DEVICE is unset, or (b) upper-bound the requested grid. Querying it
+    # eagerly is fragile under a co-located shared distributed context (custom
+    # MGD): the global ttnn.get_device_ids() touches the control plane before
+    # this rank's submesh is opened and can throw. So query lazily, and skip the
+    # bound check entirely when co-located (open_mesh_device validates the shape
+    # against the bound submesh).
+    _num_devices_cache = {}
+
+    def _num_devices_available():
+        if "n" not in _num_devices_cache:
+            # Only DP rank 0 should get device ids, otherwise device init may hang.
+            _num_devices_cache["n"] = len(ttnn.get_device_ids())
+        return _num_devices_cache["n"]
+
     mesh_device_env = os.environ.get("MESH_DEVICE")
     if mesh_device_env is not None:
         try:
@@ -315,12 +331,13 @@ def get_mesh_grid(dp_rank=0):
         assert dp_rank == 0, (
             "MESH_DEVICE must be set when running with data_parallel_size > 1"
         )
-        mesh_grid = (1, num_devices_available)
+        mesh_grid = (1, _num_devices_available())
 
-    assert dp_rank != 0 or (mesh_grid[0] * mesh_grid[1] <= num_devices_available), (
-        f"Requested mesh grid shape {mesh_grid} is larger than "
-        f"number of available devices {num_devices_available}"
-    )
+    if dp_rank == 0 and os.environ.get("TT_COLOCATED_INFERENCE") != "1":
+        assert mesh_grid[0] * mesh_grid[1] <= _num_devices_available(), (
+            f"Requested mesh grid shape {mesh_grid} is larger than "
+            f"number of available devices {_num_devices_available()}"
+        )
 
     return mesh_grid
 
@@ -370,16 +387,18 @@ def _set_colocated_fabric(override_tt_config) -> None:
 
 def open_mesh_device(override_tt_config, trace_mode, dp_rank=0, model_config=None):
     assert dp_rank == 0, "open_mesh_device must run on DP rank 0"
+
+    # Co-located deployment (RL: trainer + inference under one tt-run): join the
+    # launcher's shared distributed context BEFORE any device enumeration / open
+    # so this rank sees only its bound submesh (and can socket-rendezvous with
+    # the trainer). Must precede get_mesh_grid(), which may enumerate devices.
+    colocated = _maybe_join_shared_distributed_context()
+
     mesh_grid = get_mesh_grid(dp_rank)
 
     device_params = device_params_from_override_tt_config(
         override_tt_config, trace_mode, model_config
     )
-
-    # Co-located deployment (RL: trainer + inference under one tt-run): join the
-    # launcher's shared distributed context BEFORE opening/fabric so this rank
-    # opens only its bound submesh and can socket-rendezvous with the trainer.
-    colocated = _maybe_join_shared_distributed_context()
 
     # Set fabric before opening the device
     num_devices_requested = mesh_grid[0] * mesh_grid[1]
