@@ -25,15 +25,13 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <future>
 #include <memory>
 #include <string>
 
 #include "domain/manage_memory.hpp"
 #include "ipc/interface/result_queue.hpp"
 #include "support/chat_completion_stream.hpp"
-#include "support/chat_request.hpp"
-#include "support/dynamo_client.hpp"
+#include "support/dynamo_test_fixture.hpp"
 #include "support/http_client.hpp"
 #include "support/http_response.hpp"
 #include "support/multiturn_prefix_cache.hpp"
@@ -74,56 +72,21 @@ void configureEnv() {
 
 }  // namespace
 
-class MainIntegrationTest : public ::testing::Test {
+class MainIntegrationTest
+    : public tt::test::DynamoTestFixture<MainIntegrationTest> {
  protected:
   static void SetUpTestSuite() {
     tt::utils::ZeroOverheadLogger::initialize();
 
-    // Check if Dynamo frontend is available before starting the server.
-    dynamoConfig_ = tt::test::DynamoConfig::fromEnv();
-    if (!tt::test::waitForDynamoFrontend(dynamoConfig_, /*timeoutSec=*/5)) {
-      dynamoAvailable_ = false;
-      std::cerr << "[MainIntegrationTest] Dynamo frontend not available at "
-                << dynamoConfig_.host << ":" << dynamoConfig_.port << std::endl;
-      std::cerr << "  Start with: cd dynamo_frontend && ./deploy.sh "
-                   "--local-build"
-                << std::endl;
-      return;
-    }
-    dynamoAvailable_ = true;
+    if (!initDynamo()) return;
 
     // Start cpp_server with DynamoEndpoint (will register with etcd).
     server = tt::test::TestServer::start();
 
-    // Wait for Dynamo frontend to discover our backend and warmup.
-    if (!tt::test::warmupDynamoFrontend(dynamoConfig_)) {
-      std::cerr << "[MainIntegrationTest] Dynamo frontend warmup failed "
-                << "(backend may not have registered with etcd)" << std::endl;
-      dynamoAvailable_ = false;
-      return;
-    }
+    if (!warmupDynamo()) return;
   }
 
   static void TearDownTestSuite() { server.reset(); }
-
-  void SetUp() override {
-    if (!dynamoAvailable_) {
-      GTEST_SKIP() << "Dynamo frontend not available. Start with: "
-                   << "cd dynamo_frontend && ./deploy.sh --local-build";
-    }
-  }
-
-  // Fire request in background via Dynamo frontend. Returns future for the
-  // raw HTTP response.
-  static std::future<std::string> asyncRequest(const std::string& body) {
-    return std::async(std::launch::async, [body] {
-      return tt::test::sendDynamoRequest(dynamoConfig_, body, /*timeoutMs=*/30000);
-    });
-  }
-  static std::future<std::string> asyncRequest(
-      const tt::test::ChatRequest& req) {
-    return asyncRequest(req.toJson());
-  }
 
   // For tests that need to bypass Dynamo and use direct HTTP (if any).
   static std::future<std::string> asyncRequestDirect(const std::string& body) {
@@ -140,19 +103,10 @@ class MainIntegrationTest : public ::testing::Test {
         server->resultQueue());
   }
 
-  // Create a ChatRequest pre-configured with the Dynamo model name.
-  static tt::test::ChatRequest chatRequest() {
-    return tt::test::ChatRequest().model(dynamoConfig_.model);
-  }
-
   static std::unique_ptr<tt::test::TestServer> server;
-  static tt::test::DynamoConfig dynamoConfig_;
-  static bool dynamoAvailable_;
 };
 
 std::unique_ptr<tt::test::TestServer> MainIntegrationTest::server;
-tt::test::DynamoConfig MainIntegrationTest::dynamoConfig_;
-bool MainIntegrationTest::dynamoAvailable_ = false;
 
 using tt::test::ChatRequest;
 
