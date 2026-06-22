@@ -167,7 +167,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "max_length": 120 * 1024,
+                    "max_length": 256 * 1024,
                     # Per-request HTTP timeout (lm-eval default 1800s). Long
                     # reasoning generations on the shared console can exceed
                     # 30min under load, so allow up to 2h before giving up.
@@ -175,7 +175,7 @@ _eval_config_list = [
                 },
                 gen_kwargs={
 
-                    "max_gen_toks": 120 * 1024,
+                    "max_gen_toks": 256 * 1024,
                     "until": ["[EOS]"],
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -216,12 +216,12 @@ _eval_config_list = [
                         # "interleaved_thinking": True,  # Feeds reasoning content back into the message history
                         "temperature": 1.0,
                         "model_info": {
-                            "max_input_tokens": 48 * 1024,
-                            "max_output_tokens": 128 * 1024,
+                            "max_input_tokens": 256 * 1024,
+                            "max_output_tokens": 32 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 1.0,
-                            "max_tokens": 128 * 1024,
+                            "max_tokens": 32 * 1024,
                             "timeout":  60 * 60,
                         },
                         # "llm_call_kwargs": {
@@ -271,7 +271,7 @@ _eval_config_list = [
                     n_tasks=None,
                     temperature=1.0,
                     top_p=1.0,
-                    max_input_tokens=48 * 1024,
+                    max_input_tokens=256 * 1024,
                     max_output_tokens=32 * 1024,
                     mini_last_n_observations=15,
                     # completion_kwargs={
@@ -1793,7 +1793,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=16,
+                max_concurrent=1,
                 # The remote Tenstorrent console only exposes /v1/chat/completions
                 # (text /v1/completions returns 404), so use the chat API.
                 use_chat_api=True,
@@ -1820,7 +1820,8 @@ _eval_config_list = [
                 gen_kwargs={
 
                     "max_gen_toks": 60 * 1024,
-                    "until": ["[EOS]"],
+                    # "until": ["[EOS]"],
+                    "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
                     # "top_k": 20,
