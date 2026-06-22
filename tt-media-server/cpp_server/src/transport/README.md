@@ -177,22 +177,26 @@ Gotchas:
 - The `404 metadata not found` lines at startup are **expected** — the engine probes for
   its own name before registering it.
 
-## Productionized discovery worker (#4294)
+## Mooncake Migration Worker discovery
 
 `bringup_mooncake_worker` is the worker's entry point (one process per worker). `PeerDiscovery`
 holds the resolve-with-retry loop; `MooncakeMigrationWorker` owns the ordered lifecycle —
 allocate host-DRAM pool → init engine → register/publish (makes us discoverable) → discover
 peers → hold until SIGTERM → teardown in reverse. **Register-before-connect** is the invariant.
 Workers are symmetric peers: each takes its own `--name` and its peers as `--peer`; success
-is `CONNECTED to N peers` then `READY`. Run N with a plain bash loop (launcher-agnostic — no
-MPI):
+is `CONNECTED to N peers` then `READY`. Logic is launcher-agnostic — a bash loop, MPI, or an
+orchestrator all just spawn one process per worker.
+
+**MPI integration test** (`tests/integration/run_migration_workers_mpi.sh`, ctest
+`MooncakeMpiDiscovery`): starts the metadata service, then `mpirun -np 20` launches 4 prefill +
+16 decode workers on one host. `migration_worker_rank_launch.sh` maps each rank to a
+disaggregated topology — `prefill-p` peers `decode-(4p..4p+3)`, each `decode-d` peers back to
+`prefill-(d/4)` — and the test passes once all 20 log `CONNECTED` within the timeout.
 
 ```bash
-META=http://127.0.0.1:18080/metadata
-MC_TCP_BIND_ADDRESS=127.0.0.1 build/bringup_mooncake_worker \
-  --metadata $META --name worker-a --peer worker-b --host-dram-bytes 1048576 &
-MC_TCP_BIND_ADDRESS=127.0.0.2 build/bringup_mooncake_worker \
-  --metadata $META --name worker-b --peer worker-a --host-dram-bytes 1048576 &
+# all 20 workers, self-contained (auto-starts metadata service):
+WORKER_BIN=./build/bringup_mooncake_worker \
+  tests/integration/run_migration_workers_mpi.sh
 ```
 
 ## Validation status
@@ -204,7 +208,7 @@ MC_TCP_BIND_ADDRESS=127.0.0.2 build/bringup_mooncake_worker \
 | Mooncake transport loopback TCP (host backend, `--mooncake`) | impl |
 | Two-galaxy acceptance, both backends enabled | pending a two-process HW run |
 | Metadata-service worker discovery, two hosts, host RAM (#4209, `migration_worker_discovery`) | **validated** (two hosts, 1 MiB tensor, byte-verified MATCH) |
-| Productionized discovery worker (#4294, `bringup_mooncake_worker`) | **validated** (single host, 20 workers via bash loop, all `CONNECTED`→`READY`) |
+| Productionized discovery worker (#4294, `bringup_mooncake_worker`) | **validated** (single host, MPI `-np 20` = 4 prefill + 16 decode, all `CONNECTED`→`READY`) |
 
 ## Future work — wiring into the tt-llm-engine migration worker
 
