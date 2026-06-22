@@ -587,10 +587,10 @@ def main():
         if device in task.param_map
         for param in task.param_map[device]
     ]
-    if remote_server:
-        all_params = _adjust_params_for_remote_console(
-            all_params, model_name=model_spec.model_name
-        )
+    # if remote_server:
+    #     all_params = _adjust_params_for_remote_console(
+    #         all_params, model_name=model_spec.model_name
+    #     )
 
     if model_spec.model_type in BENCHMARKS_TASK_TYPES:
         return_code = run_benchmarks(

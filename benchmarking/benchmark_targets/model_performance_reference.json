@@ -1,4 +1,25 @@
 {
+    "MiniMax-M2.7": {
+        "gpu": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1000,
+                        "tput_user": 1.0,
+                        "tput": 10.0
+                    }
+                }
+            }
+        ]
+    },
     "Kimi-K2.6": {
         "gpu": [
             {
