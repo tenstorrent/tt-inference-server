@@ -38,7 +38,7 @@ using namespace tt::test::dynamo;
 // we cannot read this value dynamically. Once Dynamo is patched to pass through
 // completion_tokens_details, this constant can be replaced with
 // usage.reasoningTokens.
-constexpr int kMockReasoningTokens = 12;
+constexpr int K_MOCK_REASONING_TOKENS = 12;
 
 int computeExpectedCachedTokens(int promptTokens, size_t firstBlockSize,
                                 size_t blockSize) {
@@ -225,8 +225,10 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
   // the tokenized assistant text round-trips to the same tokens as R1's
   // completion, so R2 matches R1's full session. The prefix hash excludes
   // thinking tokens, so we use (completion - reasoning) for the hashable part.
-  // Use kMockReasoningTokens since Dynamo doesn't forward reasoning_tokens yet.
-  int r1HashableCompletion = r1.usage.completionTokens - kMockReasoningTokens;
+  // Use K_MOCK_REASONING_TOKENS since Dynamo doesn't forward reasoning_tokens
+  // yet.
+  int r1HashableCompletion =
+      r1.usage.completionTokens - K_MOCK_REASONING_TOKENS;
   int r1SessionTokens = r1.usage.promptTokens + r1HashableCompletion;
   int r2ExpectedCached = computeExpectedCachedTokens(
       r1SessionTokens, cfg.firstBlockSize, cfg.blockSize);
@@ -338,15 +340,17 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
   // Turn 2 should hit cache on turn 1's hashable session state. The prefix
   // hash excludes thinking tokens, so we compute expected cached based on
   // prompt + (completion - reasoning) tokens.
-  // Use kMockReasoningTokens since Dynamo doesn't forward reasoning_tokens yet.
-  int t1HashableCompletion = t1.usage.completionTokens - kMockReasoningTokens;
+  // Use K_MOCK_REASONING_TOKENS since Dynamo doesn't forward reasoning_tokens
+  // yet.
+  int t1HashableCompletion =
+      t1.usage.completionTokens - K_MOCK_REASONING_TOKENS;
   int t1SessionTokens = t1Prompt + t1HashableCompletion;
   int t2ExpectedCached = computeExpectedCachedTokens(
       t1SessionTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    t1 session tokens (hashable): " << t1SessionTokens
             << " (prompt=" << t1Prompt
             << " + completion=" << t1HashableCompletion << " ["
-            << t1.usage.completionTokens << " - " << kMockReasoningTokens
+            << t1.usage.completionTokens << " - " << K_MOCK_REASONING_TOKENS
             << " mock reasoning])" << std::endl;
   std::cout << "    Expected cached: " << t2ExpectedCached << std::endl;
   EXPECT_GT(t2.usage.cachedTokens, 0) << "Turn 2 should hit prefix cache";
@@ -370,15 +374,17 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
   // Turn 3 should hit cache on turn 2's hashable session state. The prefix
   // hash excludes thinking tokens, so we compute expected cached based on
   // prompt + (completion - reasoning) tokens.
-  // Use kMockReasoningTokens since Dynamo doesn't forward reasoning_tokens yet.
-  int t2HashableCompletion = t2.usage.completionTokens - kMockReasoningTokens;
+  // Use K_MOCK_REASONING_TOKENS since Dynamo doesn't forward reasoning_tokens
+  // yet.
+  int t2HashableCompletion =
+      t2.usage.completionTokens - K_MOCK_REASONING_TOKENS;
   int t2SessionTokens = t2.usage.promptTokens + t2HashableCompletion;
   int t3ExpectedCached = computeExpectedCachedTokens(
       t2SessionTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    t2 session tokens (hashable): " << t2SessionTokens
             << " (prompt=" << t2.usage.promptTokens
             << " + completion=" << t2HashableCompletion << " ["
-            << t2.usage.completionTokens << " - " << kMockReasoningTokens
+            << t2.usage.completionTokens << " - " << K_MOCK_REASONING_TOKENS
             << " mock reasoning])" << std::endl;
   std::cout << "    Expected cached: " << t3ExpectedCached << std::endl;
   EXPECT_GT(t3.usage.cachedTokens, 0) << "Turn 3 should hit prefix cache";
