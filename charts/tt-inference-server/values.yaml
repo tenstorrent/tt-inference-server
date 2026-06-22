@@ -5088,6 +5088,8 @@ models:
                 value: blackhole
               - name: MESH_DEVICE
                 value: P150x8
+              - name: MODEL_RUNNER
+                value: tt-xla-sdxl
               - name: TTXLA_SDXL_FULL_ON_DEVICE
                 value: 'true'
       p300x2:
@@ -5112,6 +5114,8 @@ models:
                 value: blackhole
               - name: MESH_DEVICE
                 value: P300x2
+              - name: MODEL_RUNNER
+                value: tt-xla-sdxl
               - name: TTXLA_SDXL_FULL_ON_DEVICE
                 value: 'true'
       n150:
@@ -5136,8 +5140,10 @@ models:
                 value: wormhole_b0
               - name: MESH_DEVICE
                 value: N150
+              - name: MODEL_RUNNER
+                value: tt-xla-sdxl
               - name: TTXLA_SDXL_FULL_ON_DEVICE
-                value: 'true'
+                value: 'false'
   stable-diffusion-xl-base-1.0-img-2-img:
     media:
       n150:
