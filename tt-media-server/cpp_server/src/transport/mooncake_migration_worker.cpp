@@ -3,6 +3,8 @@
 
 #include "transport/mooncake_migration_worker.hpp"
 
+#include <chrono>
+#include <thread>
 #include <utility>
 
 #include "transport/i_storage_backend.hpp"
@@ -11,13 +13,84 @@
 
 namespace tt::transport {
 
+namespace {
+constexpr int K_HOLD_POLL_MS = 200;
+}  // namespace
+
 MooncakeMigrationWorker::MooncakeMigrationWorker(
     MigrationWorkerConfig config, std::shared_ptr<ITransferEngine> engine)
     : config_(std::move(config)), engine_(std::move(engine)) {}
 
-// Bring-up discovery : resolve every configured peer through the
-// metadata service and cache the handles. Blocks until all peers are found or
-// the discovery timeout elapses, acting as the worker's readiness gate.
+MooncakeMigrationWorker::~MooncakeMigrationWorker() { teardown(); }
+
+// Ordered bring-up (#4294). Each phase only proceeds if the previous one
+// succeeded, and a failure unwinds whatever was already set up — so we never
+// leave a half-initialised worker advertised to the cluster.
+bool MooncakeMigrationWorker::bringUp() {
+  if (!engine_) {
+    TT_LOG_ERROR("[MooncakeMigrationWorker] bringUp: no engine");
+    return false;
+  }
+  if (config_.host_dram_bytes == 0) {
+    TT_LOG_ERROR("[MooncakeMigrationWorker] bringUp: host_dram_bytes is 0");
+    return false;
+  }
+
+  // Phase 2: allocate the host-DRAM pool peers will write into.
+  hostDramPool_.assign(config_.host_dram_bytes, 0);
+
+  // Phase 3: init the engine against the metadata service.
+  EngineConfig ecfg;
+  ecfg.metadata_uri = config_.metadata_uri;
+  ecfg.local_server_name = config_.segment_name;
+  ecfg.protocol = config_.protocol;
+  if (!engine_->init(ecfg)) {
+    TT_LOG_ERROR("[MooncakeMigrationWorker] bringUp: engine init failed");
+    return false;
+  }
+
+  // Phase 4: register memory — this publishes our segment to the cluster.
+  if (!engine_->registerLocalMemory(hostDramPool_.data(),
+                                    hostDramPool_.size())) {
+    TT_LOG_ERROR(
+        "[MooncakeMigrationWorker] bringUp: registerLocalMemory failed");
+    return false;
+  }
+  memoryRegistered_ = true;
+  TT_LOG_INFO("[MooncakeMigrationWorker] '{}' published {} bytes",
+              config_.segment_name, hostDramPool_.size());
+
+  // Phase 5: discover peers — the readiness gate.
+  if (!connect()) {
+    teardown();
+    return false;
+  }
+  return true;
+}
+
+// Phase 6: hold until the caller's stop source fires, then tear down.
+void MooncakeMigrationWorker::run(const std::atomic<bool>& stopRequested) {
+  TT_LOG_INFO("[MooncakeMigrationWorker] '{}' READY; holding until stop",
+              config_.segment_name);
+  while (!stopRequested.load()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(K_HOLD_POLL_MS));
+  }
+  TT_LOG_INFO("[MooncakeMigrationWorker] '{}' stopping", config_.segment_name);
+  teardown();
+}
+
+// Reverse-order teardown: stop being discoverable before the engine drops, so
+// no in-flight peer write lands on memory we've freed. Idempotent.
+void MooncakeMigrationWorker::teardown() {
+  if (memoryRegistered_ && engine_) {
+    engine_->unregisterLocalMemory(hostDramPool_.data());
+    memoryRegistered_ = false;
+  }
+}
+
+// Phase 5 detail: resolve every configured peer through the metadata service
+// and cache the handles. Blocks until all peers are found or the discovery
+// timeout elapses.
 bool MooncakeMigrationWorker::connect() {
   if (!engine_) {
     TT_LOG_ERROR("[MooncakeMigrationWorker] connect: no engine");
