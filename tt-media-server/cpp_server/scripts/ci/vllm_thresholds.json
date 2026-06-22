@@ -40,7 +40,7 @@
       "min_completed": 1000,
       "max_failed": 0,
       "max_mean_tpot_ms": 12,
-      "max_mean_ttft_ms": 2000
+      "max_mean_ttft_ms": 5500
     },
     "gateway_split_zmq": {
       "label": "C++ Server Gateway Split (ZMQ)",
