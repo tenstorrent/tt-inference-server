@@ -2,10 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import logging
+
 from config.constants import _DEFAULT_SAMPLING_PARAMS
 from domain.completion_request import CompletionRequest
 from vllm import SamplingParams
 from vllm.sampling_params import RequestOutputKind
+
+logger = logging.getLogger(__name__)
 
 
 def build_sampling_params(
@@ -39,7 +43,23 @@ def build_sampling_params(
     # We check falsey here because that is what we used to do, if user passes 0, he will get 65536(default) tokens back
     max_tokens = request.max_tokens if request.max_tokens else defaults["max_tokens"]
     n = request.n if request.n is not None else defaults["n"]
-    seed = request.seed if request.seed is not None else defaults["seed"]
+    # seed = request.seed if request.seed is not None else defaults["seed"]
+    # Forge device sampler does NOT honor per-request seeds (tt-xla#4539), yet a
+    # non-None seed still forces the slow seeded sampling path (~5x decode: ~19MB
+    # CPU exponential noise + H2D transfer every step). lm-eval always sends
+    # seed=1234, so drop it here. This builder is used only by the VLLMForge*
+    # runners, so dropping the seed is scoped to Forge LLMs. (Re-honor it here if
+    # cpu_sampling=True ever needs seeded determinism — the host Gumbel path uses it.)
+    seed = None
+    if request.seed is not None:
+        # Fires once per seeded request — confirms this patch is live in the
+        # running server and shows the seed value being dropped.
+        logger.warning(
+            "[seed-drop ACTIVE] Forge build_sampling_params: ignoring request "
+            "seed=%s (tt-xla#4539 — device sampler does not honor it; avoids the "
+            "~5x slower seeded sampling path)",
+            request.seed,
+        )
     logprobs = (
         request.logprobs if request.logprobs is not None else defaults["logprobs"]
     )
