@@ -36,7 +36,8 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
                    bool disaggregated,
                    std::unique_ptr<SamplingParams> inputSamplingParams,
                    std::optional<uint32_t> kvPositionId, int decodePositionId,
-                   int decodeSkipTokens, uint64_t migrationId)
+                   int decodeSkipTokens, std::optional<uint64_t> migrationId,
+                   bool startsInThinking)
     : taskId(taskId),
       status(SequenceStatus::WAITING),
       tokenIds(std::move(inputTokenIds)),
@@ -50,7 +51,8 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
       disaggregated(disaggregated),
       decodePositionId(decodePositionId),
       decodeSkipTokens(decodeSkipTokens),
-      migrationId(migrationId) {
+      migrationId(migrationId),
+      startsInThinking_(startsInThinking) {
   if (!tokenIds.empty()) {
     lastToken = tokenIds.back();
   }
@@ -118,7 +120,12 @@ void Sequence::serialize(std::ostream& os) const {
            sizeof(decodePositionId));
   os.write(reinterpret_cast<const char*>(&decodeSkipTokens),
            sizeof(decodeSkipTokens));
-  os.write(reinterpret_cast<const char*>(&migrationId), sizeof(migrationId));
+  uint64_t migrationIdValue = migrationId.value_or(0);
+  os.write(reinterpret_cast<const char*>(&migrationIdValue),
+           sizeof(migrationIdValue));
+  uint8_t startsInThinkingFlag = startsInThinking_ ? 1 : 0;
+  os.write(reinterpret_cast<const char*>(&startsInThinkingFlag),
+           sizeof(startsInThinkingFlag));
 }
 
 Sequence Sequence::deserialize(std::istream& is) {
@@ -173,7 +180,15 @@ Sequence Sequence::deserialize(std::istream& is) {
           sizeof(seq.decodePositionId));
   is.read(reinterpret_cast<char*>(&seq.decodeSkipTokens),
           sizeof(seq.decodeSkipTokens));
-  is.read(reinterpret_cast<char*>(&seq.migrationId), sizeof(seq.migrationId));
+  uint64_t migrationIdValue = 0;
+  is.read(reinterpret_cast<char*>(&migrationIdValue), sizeof(migrationIdValue));
+  if (migrationIdValue != 0) {
+    seq.migrationId = migrationIdValue;
+  }
+  uint8_t startsInThinkingFlag = 0;
+  is.read(reinterpret_cast<char*>(&startsInThinkingFlag),
+          sizeof(startsInThinkingFlag));
+  seq.startsInThinking_ = startsInThinkingFlag != 0;
   return seq;
 }
 

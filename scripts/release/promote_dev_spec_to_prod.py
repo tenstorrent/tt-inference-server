@@ -12,6 +12,12 @@ the matching template in workflows/model_specs/dev/ is copied into the same-name
 file in workflows/model_specs/prod/, upserting by
 (impl, inference_engine, weights, devices) identity.
 
+Dev templates intentionally omit the release pins (``version``,
+``tt_metal_commit`` and ``vllm_commit``); promotion injects them from CLI flags
+into each promoted prod block. ``--version`` and ``--tt-metal-commit`` are
+required; ``--vllm-commit`` is required only when one or more promoted templates
+use the VLLM inference engine and is injected only into those templates.
+
 The catalogue YAML files are hand-authored with inconsistent block-sequence
 indentation (top-level list items at column 0, nested lists indented to column 4),
 which no single ruamel.yaml indent setting can reproduce. Round-tripping a whole
@@ -234,12 +240,49 @@ def _ensure_trailing_newline(lines):
     return lines
 
 
+# Release-pin keys, matched at the template's top-level (2-space) indent.
+_PIN_LINE_RE = re.compile(r"^  (version|tt_metal_commit|vllm_commit):")
+
+
+def inject_pin_fields(lines, *, version, tt_metal_commit, vllm_commit=None):
+    """Return the block's lines with the release pins injected.
+
+    Any pre-existing pin line is dropped first, so the result is deterministic and
+    idempotent. The new lines are inserted right after the ``weights`` block (before
+    the first other top-level key), at the template's 2-space indent. Values are
+    quoted so commit-like strings (e.g. ``1e23``) are never parsed as numbers.
+
+    ``vllm_commit`` is injected only when provided (the caller passes it solely for
+    VLLM templates).
+    """
+    body = [ln for ln in lines if not _PIN_LINE_RE.match(ln)]
+    pins = [
+        f'  version: "{version}"\n',
+        f'  tt_metal_commit: "{tt_metal_commit}"\n',
+    ]
+    if vllm_commit is not None:
+        pins.append(f'  vllm_commit: "{vllm_commit}"\n')
+
+    insert_at = len(body)
+    for idx in range(1, len(body)):
+        if re.match(r"^  \S", body[idx]):
+            insert_at = idx
+            break
+    return body[:insert_at] + pins + body[insert_at:]
+
+
 def _render(segments) -> str:
     return "".join(line for _, seg_lines in segments for line in seg_lines)
 
 
-def promote(ci_config_path, dev_dir, prod_dir, dry_run=False) -> dict:
+def promote(
+    ci_config_path, dev_dir, prod_dir, *, tt_metal_commit, version, vllm_commit=None
+) -> dict:
     """Promote release-marked dev templates into prod.
+
+    ``version`` and ``tt_metal_commit`` are injected into every promoted block.
+    ``vllm_commit`` is injected only into VLLM-engine templates and is required
+    when any promoted template uses the VLLM engine (raises ValueError otherwise).
 
     Returns a report dict:
       - combos: set of all release combos
@@ -252,6 +295,16 @@ def promote(ci_config_path, dev_dir, prod_dir, dry_run=False) -> dict:
     combos = collect_release_combos(ci_config)
     matches_by_file, unmatched = find_matches(Path(dev_dir), combos)
 
+    needs_vllm = any(
+        template_engine(block.template) == InferenceEngine.VLLM
+        for matched in matches_by_file.values()
+        for block in matched
+    )
+    if needs_vllm and vllm_commit is None:
+        raise ValueError(
+            "--vllm-commit is required: one or more promoted templates use the VLLM inference engine."
+        )
+
     actions = {}
     changed_files = []
     for filename, matched in matches_by_file.items():
@@ -261,16 +314,22 @@ def promote(ci_config_path, dev_dir, prod_dir, dry_run=False) -> dict:
 
         file_actions = []
         for block in matched:
-            action = upsert_block(segments, block.identity, block.lines)
+            is_vllm = template_engine(block.template) == InferenceEngine.VLLM
+            lines = inject_pin_fields(
+                block.lines,
+                version=version,
+                tt_metal_commit=tt_metal_commit,
+                vllm_commit=vllm_commit if is_vllm else None,
+            )
+            action = upsert_block(segments, block.identity, lines)
             file_actions.append((block.identity, action))
         actions[filename] = file_actions
 
         new_text = _render(segments)
         if new_text != original:
             changed_files.append(filename)
-            if not dry_run:
-                prod_file.parent.mkdir(parents=True, exist_ok=True)
-                prod_file.write_text(new_text)
+            prod_file.parent.mkdir(parents=True, exist_ok=True)
+            prod_file.write_text(new_text)
 
     return {
         "combos": combos,
@@ -292,26 +351,33 @@ def main(argv=None) -> int:
     parser.add_argument("--ci-config", type=Path, default=DEFAULT_CI_CONFIG)
     parser.add_argument("--dev-dir", type=Path, default=DEFAULT_DEV_DIR)
     parser.add_argument("--prod-dir", type=Path, default=DEFAULT_PROD_DIR)
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Report intended changes without writing any files.",
-    )
+    parser.add_argument("--tt-metal-commit", required=True)
+    parser.add_argument("--version", required=True)
+    parser.add_argument("--vllm-commit", default=None)
     args = parser.parse_args(argv)
 
-    report = promote(args.ci_config, args.dev_dir, args.prod_dir, dry_run=args.dry_run)
+    try:
+        report = promote(
+            args.ci_config,
+            args.dev_dir,
+            args.prod_dir,
+            tt_metal_commit=args.tt_metal_commit,
+            version=args.version,
+            vllm_commit=args.vllm_commit,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
-    prefix = "[dry-run] " if args.dry_run else ""
     for filename, file_actions in sorted(report["actions"].items()):
         for identity, action in file_actions:
             impl, engine, weights, devices = identity
             print(
-                f"{prefix}{action.upper():8} {filename}: "
+                f"{action.upper():8} {filename}: "
                 f"{impl} [{engine.name}] {sorted(weights)} "
                 f"on {sorted(d.name for d in devices)}"
             )
     changed = report["changed_files"]
-    print(f"{prefix}{len(changed)} prod file(s) changed: {sorted(changed)}")
+    print(f"{len(changed)} prod file(s) changed: {sorted(changed)}")
 
     for combo in sorted(
         report["unmatched"],

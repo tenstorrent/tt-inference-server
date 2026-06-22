@@ -9,9 +9,6 @@ templates:
     - google/gemma-3-4b-it
     - google/medgemma-4b-it
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: aecd1d7
-  vllm_commit: 0da90eb
   inference_engine: VLLM
   device_model_specs:
     - device: N150
@@ -66,9 +63,6 @@ templates:
     - google/gemma-3-27b-it
     - google/medgemma-27b-it
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: aecd1d7
-  vllm_commit: 0da90eb
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
@@ -141,9 +135,6 @@ templates:
   impl: tt_transformers
   inference_engine: VLLM
   model_type: VLM
-  version: "0.14.0"
-  tt_metal_commit: 80180b9
-  vllm_commit: 7678b70
   device_model_specs:
     - device: T3K
       max_concurrency: 32
@@ -161,9 +152,6 @@ templates:
 - weights:
     - Qwen/Qwen2.5-VL-3B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: c18569e
-  vllm_commit: b2894d3
   inference_engine: VLLM
   model_type: VLM
   device_model_specs:
@@ -188,9 +176,6 @@ templates:
 - weights:
     - Qwen/Qwen2.5-VL-7B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: c18569e
-  vllm_commit: b2894d3
   inference_engine: VLLM
   model_type: VLM
   device_model_specs:
@@ -215,9 +200,6 @@ templates:
 - weights:
     - Qwen/Qwen2.5-VL-32B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: c18569e
-  vllm_commit: b2894d3
   inference_engine: VLLM
   model_type: VLM
   device_model_specs:
@@ -240,9 +222,6 @@ templates:
 - weights:
     - Qwen/Qwen2.5-VL-72B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: c18569e
-  vllm_commit: b2894d3
   inference_engine: VLLM
   model_type: VLM
   device_model_specs:
@@ -272,9 +251,6 @@ templates:
     - meta-llama/Llama-3.2-11B-Vision
     - meta-llama/Llama-3.2-11B-Vision-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: v0.61.1-rc1
-  vllm_commit: 5cbc982
   inference_engine: VLLM
   device_model_specs:
     - device: N300
@@ -295,9 +271,6 @@ templates:
     - meta-llama/Llama-3.2-90B-Vision
     - meta-llama/Llama-3.2-90B-Vision-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: v0.61.1-rc1
-  vllm_commit: 5cbc982
   inference_engine: VLLM
   device_model_specs:
     - device: T3K

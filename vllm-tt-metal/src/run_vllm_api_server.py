@@ -489,7 +489,12 @@ def set_metal_timeout_env_vars():
 
     tt_metal_home = os.getenv("TT_METAL_HOME", "/home/container_app_user/tt-metal")
     python_env_dir = os.getenv("PYTHON_ENV_DIR", f"{tt_metal_home}/python_env")
-    log_dir = os.getenv("TT_METAL_LOGS_PATH", "/home/container_app_user/logs")
+    # Triage report dir: TT_TRIAGE_LOGS_PATH (the cache_root volume in CI) if set,
+    # else the tt-metal logs dir. Separate from TT_METAL_LOGS_PATH so tt-metal's
+    # high-churn Inspector/watcher logs stay off the host-owned volume. See #4255.
+    log_dir = os.getenv("TT_TRIAGE_LOGS_PATH") or os.getenv(
+        "TT_METAL_LOGS_PATH", "/home/container_app_user/logs"
+    )
 
     triage_new = Path(tt_metal_home) / "tools" / "triage" / "triage.py"
     triage_old = Path(tt_metal_home) / "scripts" / "debugging_scripts" / "triage.py"

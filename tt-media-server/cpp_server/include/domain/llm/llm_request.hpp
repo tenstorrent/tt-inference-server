@@ -125,7 +125,7 @@ struct LLMRequest : BaseRequest {
 
   // Unique 64-bit migration ID correlating a prefill request with the KV
   // transfer / result. Generated on the prefill server and echoed back.
-  uint64_t migrationId = 0;
+  std::optional<uint64_t> migrationId;
 
   // For disaggregated decode: position in KV Cache of the migrated token (the
   // first token produced by the prefill server) in the per-user KV cache. The
