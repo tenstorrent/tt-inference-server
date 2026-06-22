@@ -95,6 +95,7 @@ class SpecDecodeOptions:
     auth_token: str = ""
 
 
+@dataclass(frozen=True)
 class ServingBenchOptions:
     """Serving-bench suite selection forwarded to ``ServingBenchWorkflow``.
 
