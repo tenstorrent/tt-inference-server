@@ -41,7 +41,7 @@ class CategoryResult:
 
     @property
     def passed(self) -> int:
-        return self.total - self.failed + self.na
+        return self.total - self.failed - self.na
 
     def to_dict(self) -> Dict[str, Any]:
         return {
