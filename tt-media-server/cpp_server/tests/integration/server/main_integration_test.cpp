@@ -3,14 +3,20 @@
 //
 // Main integration test: gray-box round-trip verification of LLMController.
 //
-// Each test fires an HTTP request, then inspects what the controller pushed
-// to the IPC task queue (the boundary between cpp_server and the worker).
-// The fixture also mocks the worker by pushing tokens to the result queue,
-// so HTTP responses complete and can be asserted on.
+// Requests are routed through an external Dynamo frontend (HTTP → Dynamo →
+// TCP → DynamoEndpoint → LLMPipeline), then the test inspects what the
+// pipeline pushed to the IPC task queue (the boundary between cpp_server
+// and the worker). The fixture also mocks the worker by pushing tokens to
+// the result queue, so responses complete and can be asserted on.
+//
+// IMPORTANT: This test requires external infrastructure to be running:
+//   cd dynamo_frontend && ./deploy.sh --local-build
+// Tests will skip gracefully if Dynamo frontend is not available.
 //
 // Test infrastructure lives under tests/support/:
 //   - TestServer          : brings the full server stack up in-process
-//   - sendAndReceive      : blocking HTTP POST helper
+//   - DynamoConfig        : config for Dynamo frontend connection
+//   - sendDynamoRequest   : blocking HTTP POST to Dynamo frontend
 //   - ChatRequest         : fluent /v1/chat/completions body builder
 //   - runWorkerSubprocess : --worker re-exec entry point
 
@@ -27,6 +33,7 @@
 #include "ipc/interface/result_queue.hpp"
 #include "support/chat_completion_stream.hpp"
 #include "support/chat_request.hpp"
+#include "support/dynamo_client.hpp"
 #include "support/http_client.hpp"
 #include "support/http_response.hpp"
 #include "support/multiturn_prefix_cache.hpp"
@@ -53,6 +60,16 @@ void configureEnv() {
   // memory auto-responder turned off. PrefixCacheHitThreshold_* opts back into
   // 80% explicitly to exercise the rejection path.
   setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
+
+  // Enable DynamoEndpoint so external Dynamo frontend can route requests here.
+  setenv("DYNAMO_ENDPOINT_ENABLED", "1", 1);
+  setenv("DYNAMO_BIND_HOST", "0.0.0.0", 1);
+  setenv("DYNAMO_NAMESPACE", "default", 1);
+  setenv("DYNAMO_COMPONENT", "backend", 1);
+  setenv("DYNAMO_ENDPOINT_NAME", "generate", 1);
+  // Point to etcd started by deploy.sh (default port 2379).
+  setenv("DYNAMO_ETCD_ENDPOINTS", "http://127.0.0.1:2379", 1);
+  setenv("DYNAMO_ETCD_LEASE_TTL_SECS", "30", 1);
 }
 
 }  // namespace
@@ -61,19 +78,58 @@ class MainIntegrationTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     tt::utils::ZeroOverheadLogger::initialize();
+
+    // Check if Dynamo frontend is available before starting the server.
+    dynamoConfig_ = tt::test::DynamoConfig::fromEnv();
+    if (!tt::test::waitForDynamoFrontend(dynamoConfig_, /*timeoutSec=*/5)) {
+      dynamoAvailable_ = false;
+      std::cerr << "[MainIntegrationTest] Dynamo frontend not available at "
+                << dynamoConfig_.host << ":" << dynamoConfig_.port << std::endl;
+      std::cerr << "  Start with: cd dynamo_frontend && ./deploy.sh "
+                   "--local-build"
+                << std::endl;
+      return;
+    }
+    dynamoAvailable_ = true;
+
+    // Start cpp_server with DynamoEndpoint (will register with etcd).
     server = tt::test::TestServer::start();
+
+    // Wait for Dynamo frontend to discover our backend and warmup.
+    if (!tt::test::warmupDynamoFrontend(dynamoConfig_)) {
+      std::cerr << "[MainIntegrationTest] Dynamo frontend warmup failed "
+                << "(backend may not have registered with etcd)" << std::endl;
+      dynamoAvailable_ = false;
+      return;
+    }
   }
+
   static void TearDownTestSuite() { server.reset(); }
 
-  // Fire request in background. Returns future for the raw HTTP response.
+  void SetUp() override {
+    if (!dynamoAvailable_) {
+      GTEST_SKIP() << "Dynamo frontend not available. Start with: "
+                   << "cd dynamo_frontend && ./deploy.sh --local-build";
+    }
+  }
+
+  // Fire request in background via Dynamo frontend. Returns future for the
+  // raw HTTP response.
   static std::future<std::string> asyncRequest(const std::string& body) {
     return std::async(std::launch::async, [body] {
-      return tt::test::sendAndReceive(server->host(), server->port(), body);
+      return tt::test::sendDynamoRequest(dynamoConfig_, body, /*timeoutMs=*/30000);
     });
   }
   static std::future<std::string> asyncRequest(
       const tt::test::ChatRequest& req) {
     return asyncRequest(req.toJson());
+  }
+
+  // For tests that need to bypass Dynamo and use direct HTTP (if any).
+  static std::future<std::string> asyncRequestDirect(const std::string& body) {
+    return std::async(std::launch::async, [body] {
+      return tt::test::sendAndReceive(server->host(), server->port(), body);
+    });
   }
 
   // Mock the worker producing one output token + a clean final marker.
@@ -84,10 +140,19 @@ class MainIntegrationTest : public ::testing::Test {
         server->resultQueue());
   }
 
+  // Create a ChatRequest pre-configured with the Dynamo model name.
+  static tt::test::ChatRequest chatRequest() {
+    return tt::test::ChatRequest().model(dynamoConfig_.model);
+  }
+
   static std::unique_ptr<tt::test::TestServer> server;
+  static tt::test::DynamoConfig dynamoConfig_;
+  static bool dynamoAvailable_;
 };
 
 std::unique_ptr<tt::test::TestServer> MainIntegrationTest::server;
+tt::test::DynamoConfig MainIntegrationTest::dynamoConfig_;
+bool MainIntegrationTest::dynamoAvailable_ = false;
 
 using tt::test::ChatRequest;
 
@@ -122,7 +187,7 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
       "to produce at least thirty two tokens after tokenization so that the "
       "prefix cache can form a block and the follow-up request can match it";
   auto responseFuture =
-      asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+      asyncRequest(chatRequest().user(opener).maxTokens(1).stream());
 
   // 2. Receive and assert on the ALLOCATE.
   tt::domain::ManageMemoryTask memReq{};
@@ -168,7 +233,7 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   //    (full_prompt - matched_tokens) tokens to prefill.
   const std::string longPriorAssistant =
       "this is the assistant response that was generated for the initial turn";
-  auto followUpFuture = asyncRequest(ChatRequest()
+  auto followUpFuture = asyncRequest(chatRequest()
                                          .user(opener)
                                          .assistant(longPriorAssistant)
                                          .user("y")
@@ -207,7 +272,7 @@ TEST_F(MainIntegrationTest, WorkerResponseBuilder_MultipleTokensThenFinalize) {
   // Push 3 specific tokens via WorkerResponse and assert the SSE stream
   // delivered them as separate content deltas, terminated by [DONE].
   auto responseFuture =
-      asyncRequest(ChatRequest().user("hello").maxTokens(3).stream());
+      asyncRequest(chatRequest().user("hello").maxTokens(3).stream());
 
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
@@ -433,7 +498,7 @@ TEST_F(MainIntegrationTest,
   // bug is masked, so 80% is required to guard it.
   setenv("PREFIX_CACHE_HIT_THRESHOLD", "80", 1);
   tt::test::verifyMultiTurnPrefixGrowth(*server, userMessages, assistantReply,
-                                        /*blockSize=*/32);
+                                        /*blockSize=*/32, &dynamoConfig_);
   setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);  // restore suite default
 }
 
@@ -461,7 +526,7 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
       "multi-block matching behavior with a longer common prefix region";
 
   // --- Request A: seed the session ---
-  auto futureA = asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+  auto futureA = asyncRequest(chatRequest().user(opener).maxTokens(1).stream());
 
   tt::domain::ManageMemoryTask memReqA{};
   server->memoryRequestQueue().receive(memReqA);
@@ -486,7 +551,7 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
   futureA.get();
 
   // --- Request B: continuation that keeps the session in-flight ---
-  auto futureB = asyncRequest(ChatRequest()
+  auto futureB = asyncRequest(chatRequest()
                                   .user(opener)
                                   .assistant("ok")
                                   .user("thirty two tokens after tokenization "
@@ -504,7 +569,7 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
 
   // --- Request C: same prefix, different suffix → triggers slot copy ---
   auto futureC = asyncRequest(
-      ChatRequest()
+      chatRequest()
           .user("slot-copy-test-unique-opener with enough words to produce at "
                 "least more than we expect to have which is thirty two tokens "
                 "after tokenization so that the prefix cache can form a block "
@@ -567,7 +632,7 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
   // pick slot 1 (C's session) as the better fit because D's prompt shares
   // more blocks with C's registered session than with A/B's.
   auto futureD = asyncRequest(
-      ChatRequest()
+      chatRequest()
           .user("slot-copy-test-unique-opener with enough words to produce at "
                 "least more than we expect to have which is thirty two tokens "
                 "after tokenization so that the prefix cache can form a block "
@@ -609,7 +674,7 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
 TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
   // Most tests use streaming; this one verifies the non-streaming code path
   // still returns a single buffered JSON document with the assistant message.
-  auto responseFuture = asyncRequest(ChatRequest().user("hello").maxTokens(1));
+  auto responseFuture = asyncRequest(chatRequest().user("hello").maxTokens(1));
 
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
@@ -629,7 +694,7 @@ TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
 
 TEST_F(MainIntegrationTest, SamplingParams_MaxTokensAndTemperature) {
   auto future = asyncRequest(
-      ChatRequest().user("hello").maxTokens(42).temperature(0.7).stream());
+      chatRequest().user("hello").maxTokens(42).temperature(0.7).stream());
 
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
@@ -644,7 +709,7 @@ TEST_F(MainIntegrationTest, SamplingParams_MaxTokensAndTemperature) {
 
 TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
   // LLM_MODE=regular: every request is served locally, never disaggregated.
-  auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
+  auto future = asyncRequest(chatRequest().user("hello").maxTokens(1).stream());
 
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
@@ -657,7 +722,7 @@ TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
 TEST_F(MainIntegrationTest, MigrationId_IsZeroInRegularMode) {
   // In regular (non-disaggregated) mode, no migration ID is generated.
   // Verify the field survives IPC serialization as 0 (not garbage).
-  auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
+  auto future = asyncRequest(chatRequest().user("hello").maxTokens(1).stream());
 
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
@@ -680,9 +745,9 @@ TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
   server->setMemoryAutoRespond(false);
 
   auto future1 = asyncRequest(
-      ChatRequest().user("two-first-turns-test").maxTokens(1).stream());
+      chatRequest().user("two-first-turns-test").maxTokens(1).stream());
   auto future2 = asyncRequest(
-      ChatRequest().user("two-first-turns-test").maxTokens(1).stream());
+      chatRequest().user("two-first-turns-test").maxTokens(1).stream());
 
   // Drain both ALLOCATEs before responding to either, so the test can prove
   // they ran concurrently rather than serialised behind one another.
@@ -741,7 +806,7 @@ TEST_F(MainIntegrationTest, FirstRequestWithHistory_IsNotAContinuation) {
   // hash is computed from messages[0..n-2] (everything except the trailing
   // [assistant, user] pair), and the rest of the suite uses "hello" — we
   // need a string no other test has registered.
-  auto future = asyncRequest(ChatRequest()
+  auto future = asyncRequest(chatRequest()
                                  .user("history-test-unique-first-turn")
                                  .assistant("hi back")
                                  .user("how are you")
@@ -798,9 +863,9 @@ TEST_F(MainIntegrationTest,
   // --- Seed phase ----------------------------------------------------------
   {
     auto seedF1 =
-        asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+        asyncRequest(chatRequest().user(opener).maxTokens(1).stream());
     auto seedF2 =
-        asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+        asyncRequest(chatRequest().user(opener).maxTokens(1).stream());
 
     tt::domain::ManageMemoryTask seedAlloc1{}, seedAlloc2{};
     server->memoryRequestQueue().receive(seedAlloc1);
@@ -826,13 +891,13 @@ TEST_F(MainIntegrationTest,
   }
 
   // --- Main phase ----------------------------------------------------------
-  auto future1 = asyncRequest(ChatRequest()
+  auto future1 = asyncRequest(chatRequest()
                                   .user(opener)
                                   .assistant("thread A's reply")
                                   .user("thread A's followup")
                                   .maxTokens(1)
                                   .stream());
-  auto future2 = asyncRequest(ChatRequest()
+  auto future2 = asyncRequest(chatRequest()
                                   .user(opener)
                                   .assistant("thread B's reply")
                                   .user("thread B's followup")
@@ -867,7 +932,7 @@ TEST_F(MainIntegrationTest,
 
 TEST_F(MainIntegrationTest, SystemMessage_DoesNotTriggerContinuation) {
   // A system + user message is a first turn even though there are two messages.
-  auto future = asyncRequest(ChatRequest()
+  auto future = asyncRequest(chatRequest()
                                  .system("you are helpful")
                                  .user("hello")
                                  .maxTokens(1)

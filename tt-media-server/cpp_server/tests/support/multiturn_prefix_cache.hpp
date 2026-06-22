@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "support/chat_request.hpp"
+#include "support/dynamo_client.hpp"
 #include "support/http_client.hpp"
 #include "support/test_server.hpp"
 #include "support/worker_response.hpp"
@@ -53,20 +54,31 @@ namespace tt::test {
 // Each user message must be long enough to add at least one full block, and the
 // generated token (42) must differ from the first fed-back assistant token so
 // the seed session and the next prompt diverge right after the prior prompt.
+//
+// If dynamoConfig is provided, requests are routed through the Dynamo frontend;
+// otherwise they go directly to the TestServer's HTTP endpoint.
 inline void verifyMultiTurnPrefixGrowth(
     TestServer& server, const std::vector<std::string>& userMessages,
-    const std::string& assistantReply, uint32_t blockSize) {
+    const std::string& assistantReply, uint32_t blockSize,
+    const DynamoConfig* dynamoConfig = nullptr) {
   ASSERT_GE(userMessages.size(), 2u)
       << "need at least an opener plus one follow-up";
 
+  // Use Dynamo model if routing through Dynamo, otherwise default.
   ChatRequest convo;
+  if (dynamoConfig) {
+    convo.model(dynamoConfig->model);
+  }
   uint32_t prevKvPos = 0;
   bool havePrev = false;
 
   for (size_t turn = 0; turn < userMessages.size(); ++turn) {
     convo.user(userMessages[turn]).maxTokens(1).stream();
     const std::string body = convo.toJson();
-    auto future = std::async(std::launch::async, [&server, body] {
+    auto future = std::async(std::launch::async, [&server, &dynamoConfig, body] {
+      if (dynamoConfig) {
+        return sendDynamoRequest(*dynamoConfig, body, /*timeoutMs=*/30000);
+      }
       return sendAndReceive(server.host(), server.port(), body);
     });
 

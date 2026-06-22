@@ -28,10 +28,12 @@
 
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
+#include "dynamo/dynamo_endpoint.hpp"
 #include "http_client.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/boost/boost_task_queue.hpp"
+#include "services/llm_pipeline.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
 #include "utils/service_factory.hpp"
@@ -54,6 +56,10 @@ class TestServer {
     stopAutoResponder_.store(true);
     if (memoryAutoResponderThread_.joinable())
       memoryAutoResponderThread_.join();
+    if (dynamoEndpoint_) {
+      dynamoEndpoint_->stop();
+      dynamoEndpoint_.reset();
+    }
     drogon::app().quit();
     if (drogonThread_.joinable()) drogonThread_.join();
   }
@@ -85,6 +91,9 @@ class TestServer {
   // about memory. Turn OFF to assert on requests / inject custom responses.
   void setMemoryAutoRespond(bool on) { autoRespond_.store(on); }
 
+  // Returns true if DynamoEndpoint was started (DYNAMO_ENDPOINT_ENABLED=1).
+  bool hasDynamoEndpoint() const { return dynamoEndpoint_ != nullptr; }
+
  private:
   static constexpr std::chrono::seconds kStartupTimeout{30};
   static constexpr std::chrono::milliseconds kPollInterval{100};
@@ -97,7 +106,8 @@ class TestServer {
   //   3. open the IPC queues — test now plays the worker on those queues
   //   4. start the memory auto-responder so most tests don't have to care
   //   5. start HTTP listener and wait for it
-  //   6. drive one synthetic request end-to-end so every thread that
+  //   6. optionally start DynamoEndpoint (if DYNAMO_ENDPOINT_ENABLED=1)
+  //   7. drive one synthetic request end-to-end so every thread that
   //      lazy-inits a thread_local tokenizer pays the cost here, not
   //      during the first real TEST_F
   void init() {
@@ -108,6 +118,9 @@ class TestServer {
     startMemoryAutoResponder();
     startHttpListener();
     waitForListener();
+    if (tt::config::dynamoEndpointEnabled()) {
+      startDynamoEndpoint();
+    }
     warmupTokenizers();
   }
 
@@ -184,6 +197,36 @@ class TestServer {
     throw std::runtime_error("TestServer: HTTP listener never came up");
   }
 
+  // Start the DynamoEndpoint to accept requests from Dynamo frontend. This
+  // creates an LLMPipeline (same as HTTP path) and registers with etcd so the
+  // external Dynamo frontend can discover and route requests to this backend.
+  void startDynamoEndpoint() {
+    auto llmService = std::dynamic_pointer_cast<tt::services::LLMService>(
+        tt::services::ServiceContainer::instance().getService(
+            tt::config::ModelService::LLM));
+    if (!llmService) {
+      throw std::runtime_error(
+          "TestServer: LLMService not registered, cannot start DynamoEndpoint");
+    }
+
+    auto pipeline = std::make_shared<tt::services::LLMPipeline>(
+        llmService, tt::services::ServiceContainer::instance().sessionManager(),
+        tt::services::ServiceContainer::instance().disaggregation(),
+        tt::services::ServiceContainer::instance().socket());
+
+    tt::dynamo::DynamoEndpoint::Options opts;
+    opts.bind_host = tt::config::dynamoBindHost();
+    opts.namespace_name = tt::config::dynamoNamespace();
+    opts.component = tt::config::dynamoComponent();
+    opts.endpoint = tt::config::dynamoEndpointName();
+    opts.etcd_endpoints = tt::config::dynamoEtcdEndpoints();
+    opts.etcd_lease_ttl_secs = tt::config::dynamoEtcdLeaseTtlSecs();
+
+    dynamoEndpoint_ =
+        std::make_unique<tt::dynamo::DynamoEndpoint>(pipeline, opts);
+    dynamoEndpoint_->start();
+  }
+
   // Drive one /v1/chat/completions request through the full pipeline so
   // every thread that lazy-inits a `thread_local` tokenizer (#3179) does
   // it now: the Drogon IO worker (toLLMRequest + preProcess encode) and
@@ -219,6 +262,7 @@ class TestServer {
   std::thread memoryAutoResponderThread_;
   std::atomic<bool> autoRespond_{true};
   std::atomic<bool> stopAutoResponder_{false};
+  std::unique_ptr<tt::dynamo::DynamoEndpoint> dynamoEndpoint_;
 };
 
 }  // namespace tt::test
