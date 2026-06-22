@@ -515,3 +515,39 @@ decode-rate-bound but **KV-oversubscription bound** at conc 32 (32 × long-gener
    (`DEBUG_chunked_prefill_batch_budget.md`) — improves single-stream TTFT and `ttft_check`.
 4. With gpqa at 3600s + conc 8 and mmlu already fast, a clean re-run should land **well under** the
    prior 8–9h, making benchmarks (~3.5h) the largest remaining block → candidate for sweep trimming.
+
+---
+
+## Stage 5 — Tier-1: gpqa concurrency cap 32 → 8 (validated)
+
+*Standalone gpqa re-run, `eval_gpqa_conc8_20260622_154653.log`, against the warm full-model server
+(gmu 0.30, port 8009). lm-eval `--concurrency 8`, limit 0.2 (40 docs), `max_gen_toks=12288`,
+`repetition_penalty=1.0`, timeout 3600s.*
+
+**Root cause (from the KV-pool analysis):** gpqa generates up to 12,288 tokens; at conc 32 the
+`32 × (prompt + gen)` working set vastly exceeds the **~139k-token KV pool** → vLLM
+preempts/recomputes → per-user decode collapses → >half the docs miss the 3600s streaming timeout
+→ truncated output → wrong answers. Capping concurrency so the active set fits removes the thrash.
+
+| metric | conc 32 (Stage 4) | **conc 8 (Tier-1)** |
+|---|---:|---:|
+| streaming timeouts | 24 / 40 | **0** |
+| exact_match | 0.225 | **0.60** (~0.94 of GPU ref 0.641; ≈ published 0.62) |
+| wall (40 docs) | 2h07m (7200s timeout) | **1h20m** (3600s timeout) |
+
+**Three wins from one config line:** timeouts → 0, accuracy **0.225 → 0.60** (acceptance FAIL →
+likely PASS), and wall **−40%** (no thrash + no waiting out long timeouts). The gpqa "accuracy
+failure" in the release flow was a **timeout/truncation artifact, not a model deficiency.** Landed
+as `max_concurrent=8` on the gpqa task in `eval_config.py` (commit on
+`kmabee/forge_llm_chunked_prefill.debug`).
+
+**mmlu_pro deliberately left at conc 32:** at conc 32 it shows **0 timeouts** (Stage 4) — its
+shorter effective generations keep the working set within the KV pool, so it is *not* thrashing.
+Lowering its concurrency would only cost parallelism (308 docs → ~4× more waves at conc 8) and
+**slow it down**. The same KV diagnostic gives **opposite prescriptions**: cap gpqa (oversubscribed),
+leave mmlu_pro (fits). mmlu_pro's lever is per-user decode (tt-xla#5034) / `max_gen_toks`, not
+concurrency.
+
+**Projected e2e with Tier-1:** gpqa ~1h20m + mmlu_pro ~2h16m ≈ **~3.5h evals (0 timeouts)** +
+benchmarks ~3.5h ≈ **~7h**, with benchmarks now the dominant block → Tier-3 (sweep trim) is the
+next wall-clock lever.
