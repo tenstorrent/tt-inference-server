@@ -18104,11 +18104,9 @@
                 "max_num_batched_tokens": "65536",
                 "max-log-len": "32",
                 "seed": "9472",
-                "additional_config": "{\"tt\": {\"trace_region_size\": 51000000}}"
+                "additional_config": "{\"tt\": {}}"
               },
-              "override_tt_config": {
-                "trace_region_size": 51000000
-              },
+              "override_tt_config": {},
               "env_vars": {
                 "MESH_DEVICE": "P300",
                 "ARCH_NAME": "blackhole"
@@ -18134,9 +18132,7 @@
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.10.0-555f240",
             "status": "COMPLETE",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
-            "override_tt_config": {
-              "trace_region_size": 51000000
-            },
+            "override_tt_config": {},
             "supported_modalities": [
               "text"
             ],
@@ -18441,11 +18437,9 @@
                 "max_num_batched_tokens": "65536",
                 "max-log-len": "32",
                 "seed": "9472",
-                "additional_config": "{\"tt\": {\"trace_region_size\": 51000000}}"
+                "additional_config": "{\"tt\": {}}"
               },
-              "override_tt_config": {
-                "trace_region_size": 51000000
-              },
+              "override_tt_config": {},
               "env_vars": {
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
@@ -18471,9 +18465,7 @@
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.14.0-80180b9",
             "status": "COMPLETE",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/80180b9/models/tt_transformers",
-            "override_tt_config": {
-              "trace_region_size": 51000000
-            },
+            "override_tt_config": {},
             "supported_modalities": [
               "text"
             ],
@@ -18782,11 +18774,9 @@
                 "max_num_batched_tokens": "65536",
                 "max-log-len": "32",
                 "seed": "9472",
-                "additional_config": "{\"tt\": {\"trace_region_size\": 51000000}}"
+                "additional_config": "{\"tt\": {}}"
               },
-              "override_tt_config": {
-                "trace_region_size": 51000000
-              },
+              "override_tt_config": {},
               "env_vars": {
                 "MESH_DEVICE": "P300",
                 "ARCH_NAME": "blackhole"
@@ -18812,9 +18802,7 @@
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.10.0-555f240",
             "status": "COMPLETE",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
-            "override_tt_config": {
-              "trace_region_size": 51000000
-            },
+            "override_tt_config": {},
             "supported_modalities": [
               "text"
             ],
@@ -19119,11 +19107,9 @@
                 "max_num_batched_tokens": "65536",
                 "max-log-len": "32",
                 "seed": "9472",
-                "additional_config": "{\"tt\": {\"trace_region_size\": 51000000}}"
+                "additional_config": "{\"tt\": {}}"
               },
-              "override_tt_config": {
-                "trace_region_size": 51000000
-              },
+              "override_tt_config": {},
               "env_vars": {
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
@@ -19149,9 +19135,7 @@
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.10.1-555f240",
             "status": "COMPLETE",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
-            "override_tt_config": {
-              "trace_region_size": 51000000
-            },
+            "override_tt_config": {},
             "supported_modalities": [
               "text"
             ],
