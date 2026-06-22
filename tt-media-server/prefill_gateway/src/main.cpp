@@ -269,14 +269,14 @@ std::vector<tt::gateway::GatewayPrefillMetricSnapshot> buildPrefillMetrics(
   const auto now = std::chrono::steady_clock::now();
   std::vector<tt::gateway::GatewayPrefillMetricSnapshot> out;
   for (const auto& snapshot : registry.snapshot()) {
-    double heartbeatAgeSeconds = 0.0;
+    double registrationAgeSeconds = 0.0;
     if (snapshot.lastHeartbeat != std::chrono::steady_clock::time_point{}) {
-      heartbeatAgeSeconds =
+      registrationAgeSeconds =
           std::chrono::duration<double>(now - snapshot.lastHeartbeat).count();
     }
     out.push_back({snapshot.serverId, snapshot.healthy, snapshot.acceptingTasks,
                    snapshot.inFlight, snapshot.cachedBlocks,
-                   heartbeatAgeSeconds});
+                   registrationAgeSeconds});
   }
   return out;
 }

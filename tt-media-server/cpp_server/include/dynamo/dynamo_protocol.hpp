@@ -175,6 +175,10 @@ struct TokenChunk {
   std::optional<uint16_t> error_code;
   /// Populated on the final chunk only; serialized as `completion_usage`.
   std::optional<DynamoUsage> completion_usage;
+  /// When non-null, serialized as `engine_data`; the frontend surfaces it on
+  /// the response `nvext.engine_data` when the client requests it via
+  /// `nvext.extra_fields: ["engine_data"]`.
+  Json::Value engine_data;
 };
 
 /// Encode a TokenChunk as a NetworkStreamWrapper<Annotated<T>> JSON body.
@@ -208,6 +212,9 @@ struct GenerateRequest {
   std::optional<float> frequency_penalty;
   std::optional<float> presence_penalty;
   std::optional<float> repetition_penalty;
+
+  // Opaque passthrough from the request's top-level `mm_processor_kwargs`.
+  Json::Value mm_processor_kwargs;
 
   Json::Value raw;  // Full parsed JSON body, for any field we don't yet map.
 };

@@ -1,5 +1,5 @@
 # Model spec catalog: CNN templates.
-# Edit this file to add or modify a CNN model spec.
+# Do not edit manually. This file is updated through the automated release process.
 # Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
 templates:
 # =============================================================================

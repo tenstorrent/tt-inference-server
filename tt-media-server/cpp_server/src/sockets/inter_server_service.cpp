@@ -17,7 +17,7 @@ constexpr auto PREFILL_HEALTH_INTERVAL = std::chrono::milliseconds(1000);
 
 }  // namespace
 
-InterServerService::InterServerService() { setupMessageHandlers(); }
+InterServerService::InterServerService() = default;
 
 InterServerService::~InterServerService() { stop(); }
 
@@ -85,6 +85,7 @@ bool InterServerService::initializeFromConfig() {
 
   if (success) {
     enabled = true;
+    setupMessageHandlers();
     TT_LOG_INFO(
         "[InterServerService] Socket communication initialized successfully");
   } else {
@@ -240,66 +241,70 @@ std::string InterServerService::getStatus() const {
 }
 
 void InterServerService::setupMessageHandlers() {
-  // Handle incoming prefill requests
-  socketManager.registerHandler<PrefillRequestMessage>(
-      tags::PREFILL_REQUEST, [this](const PrefillRequestMessage& message) {
-        TT_LOG_INFO(
-            "[InterServerService] Received prefill request: {} (tokens: {})",
-            message.taskId, message.tokenIds.size());
-        if (prefillRequestedCallback) {
-          prefillRequestedCallback(message);
-        }
-      });
-
-  socketManager.registerHandler<CancelPrefillMessage>(
-      tags::CANCEL_PREFILL, [this](const CancelPrefillMessage& message) {
-        TT_LOG_INFO("[InterServerService] Received prefill cancel: {}",
-                    message.taskId);
-        if (prefillCancelCallback) {
-          prefillCancelCallback(message);
-        }
-      });
-
-  socketManager.registerHandler<RegistrationProbeMessage>(
-      tags::REGISTRATION_PROBE, [this](const RegistrationProbeMessage&) {
-        sendRegistrationIfGatewayModeIsEnabled();
-      });
-
-  socketManager.registerHandler<PrefillHealthRequestMessage>(
-      tags::PREFILL_HEALTH_REQUEST, [this](const PrefillHealthRequestMessage&) {
-        sendPrefillHealthStatus();
-      });
-
-  socketManager.registerHandler<PrefillHealthStatusMessage>(
-      tags::PREFILL_HEALTH_STATUS,
-      [this](const PrefillHealthStatusMessage& message) {
-        recordPrefillHealthStatus(message);
-      });
-
-  socketManager.registerHandler<PrefillRegistrationMessage>(
-      tags::PREFILL_REGISTRATION, [](const PrefillRegistrationMessage&) {});
-
-  // Handle incoming prefill results
-  socketManager.registerHandler<PrefillResultMessage>(
-      tags::PREFILL_RESULT, [this](const PrefillResultMessage& message) {
-        if (message.error) {
-          TT_LOG_ERROR(
-              "[InterServerService] Received prefill error for task: {}",
-              message.taskId);
-        } else {
+  if (llmMode == tt::config::LLMMode::PREFILL_ONLY) {
+    socketManager.registerHandler<PrefillRequestMessage>(
+        tags::PREFILL_REQUEST, [this](const PrefillRequestMessage& message) {
           TT_LOG_INFO(
-              "[InterServerService] Received prefill result: {} - text: '{}', "
-              "remaining: {}, token_ids: {}",
-              message.taskId, message.generatedText.substr(0, 50),
-              message.remainingTokens.has_value()
-                  ? std::to_string(message.remainingTokens.value())
-                  : "none",
-              message.tokenIds.size());
-        }
-        if (prefillCompleteCallback) {
-          prefillCompleteCallback(message);
-        }
-      });
+              "[InterServerService] Received prefill request: {} (tokens: {})",
+              message.taskId, message.tokenIds.size());
+          if (prefillRequestedCallback) {
+            prefillRequestedCallback(message);
+          }
+        });
+
+    socketManager.registerHandler<CancelPrefillMessage>(
+        tags::CANCEL_PREFILL, [this](const CancelPrefillMessage& message) {
+          TT_LOG_INFO("[InterServerService] Received prefill cancel: {}",
+                      message.taskId);
+          if (prefillCancelCallback) {
+            prefillCancelCallback(message);
+          }
+        });
+
+    socketManager.registerHandler<RegistrationProbeMessage>(
+        tags::REGISTRATION_PROBE, [this](const RegistrationProbeMessage&) {
+          sendRegistrationIfGatewayModeIsEnabled();
+        });
+
+    socketManager.registerHandler<PrefillHealthRequestMessage>(
+        tags::PREFILL_HEALTH_REQUEST,
+        [this](const PrefillHealthRequestMessage&) {
+          sendPrefillHealthStatus();
+        });
+  }
+
+  if (llmMode == tt::config::LLMMode::DECODE_ONLY) {
+    socketManager.registerHandler<PrefillHealthStatusMessage>(
+        tags::PREFILL_HEALTH_STATUS,
+        [this](const PrefillHealthStatusMessage& message) {
+          recordPrefillHealthStatus(message);
+        });
+
+    socketManager.registerHandler<PrefillRegistrationMessage>(
+        tags::PREFILL_REGISTRATION, [](const PrefillRegistrationMessage&) {});
+
+    socketManager.registerHandler<PrefillResultMessage>(
+        tags::PREFILL_RESULT, [this](const PrefillResultMessage& message) {
+          if (message.error) {
+            TT_LOG_ERROR(
+                "[InterServerService] Received prefill error for task: {}",
+                message.taskId);
+          } else {
+            TT_LOG_INFO(
+                "[InterServerService] Received prefill result: {} - text: "
+                "'{}', "
+                "remaining: {}, token_ids: {}",
+                message.taskId, message.generatedText.substr(0, 50),
+                message.remainingTokens.has_value()
+                    ? std::to_string(message.remainingTokens.value())
+                    : "none",
+                message.tokenIds.size());
+          }
+          if (prefillCompleteCallback) {
+            prefillCompleteCallback(message);
+          }
+        });
+  }
 }
 
 void InterServerService::sendRegistration() {
