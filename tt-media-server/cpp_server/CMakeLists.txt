@@ -540,6 +540,7 @@ add_library(transport_lib
     src/transport/umd_device_access.cpp
     src/transport/mooncake_transfer_engine.cpp
     src/transport/mooncake_migration_worker.cpp
+    src/transport/peer_discovery.cpp
     src/utils/logger.cpp
 )
 target_include_directories(transport_lib PUBLIC
@@ -602,6 +603,15 @@ if(TARGET transfer_engine)
     target_include_directories(migration_worker_discovery PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
     message(STATUS "migration_worker_discovery: ENABLED (#4209 discovery PoC)")
+
+    # #4294 production worker entry point: phased startup that registers a
+    # host-DRAM pool and discovers its peers via MooncakeMigrationWorker.
+    add_executable(bringup_mooncake_worker
+        src/transport/bringup_mooncake_worker.cpp)
+    target_link_libraries(bringup_mooncake_worker PRIVATE transport_lib)
+    target_include_directories(bringup_mooncake_worker PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    message(STATUS "bringup_mooncake_worker: ENABLED (#4294 production worker)")
 endif()
 
 # Unit tests (link llm_runner_lib)
