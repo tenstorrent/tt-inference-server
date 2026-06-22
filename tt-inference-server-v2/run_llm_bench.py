@@ -26,7 +26,7 @@ def _venv_type_for_tool(tools: str):
     from workflows.workflow_types import WorkflowVenvType
 
     return {
-        "aiperf": WorkflowVenvType.V2_PREFIX_CACHE,  # already ships aiperf + v2 base
+        "aiperf": WorkflowVenvType.V2_LLM_AIPERF,
         "guidellm": WorkflowVenvType.V2_LLM_GUIDELLM,
         "vllm": WorkflowVenvType.V2_LLM_VLLM,
         "genai": WorkflowVenvType.V2_RUN_SCRIPT,  # genai-perf runs via Docker

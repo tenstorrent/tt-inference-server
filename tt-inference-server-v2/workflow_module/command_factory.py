@@ -173,6 +173,8 @@ def _build_llm_bench_options(args: argparse.Namespace) -> Optional[LLMBenchOptio
         return None
     if getattr(args, "prefix_cache", False):
         return None
+    if getattr(args, "spec_decode", False):
+        return None
     return LLMBenchOptions(
         tools=getattr(args, "tools", None) or "vllm",
         auth_token=_mint_jwt_if_secret(getattr(args, "jwt_secret", None)),
