@@ -182,7 +182,6 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
         bokeh \
         dash \
         llvmlite \
-        pyarrow \
         opencv-python-headless \
         2>/dev/null || true"
 
