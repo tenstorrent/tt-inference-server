@@ -512,6 +512,39 @@ the 6-run structured sweep. That ~3.5h phase is the figure quoted elsewhere.
 (Note: cfg15's `agg tok/s`/TTFT are an `n=1` outlier — TTFT 4.8 s for a 32,768-token prefill is
 implausibly low, likely a prefix-cache/measurement artifact; treat it as suspect, same as Stage 2.)
 
+### Stage 4 structured-output sweep (6 runs) — the other benchmark block
+
+Runs *after* the 15-row text sweep: 3 datasets × structured-output ratio {1.0, 0.0}, all
+`max_concurrency=4`, `OSL=128`, `n=100`. `struct out` = `structured_output_ratio` (1.0 = every
+request forced to emit schema-valid JSON/grammar; 0.0 = free text on the same prompts).
+
+| # | dataset | struct out | con | OSL | n | agg tok/s | TTFT ms | wall s |
+|--:|---|--:|--:|--:|--:|----------:|--------:|-------:|
+| 1 | json | 1.0 | 4 | 128 | 100 | 46.04 | 2,133 | 278 |
+| 2 | json | 0.0 | 4 | 128 | 100 | 45.68 | 2,133 | 280 |
+| 3 | json-unique | 1.0 | 4 | 128 | 100 | 44.96 | 2,160 | 285 |
+| 4 | json-unique | 0.0 | 4 | 128 | 100 | 45.14 | 2,135 | 284 |
+| 5 | xgrammar_bench | 1.0 | 4 | 128 | 100 | 25.94 | 5,113 | 489 |
+| 6 | xgrammar_bench | 0.0 | 4 | 128 | 100 | 36.20 | 1,392 | 345 |
+
+**Sum ≈ 1,960 s ≈ 32.7m** (wall incl. per-run setup ≈ 34m). The `json`/`json-unique` rows are ~flat
+(~45 tok/s) whether structured output is on or off; **`xgrammar_bench` at ratio 1.0 (run 5) is the
+slow outlier** (489 s, 25.9 tok/s, TTFT 5.1 s) — grammar-constrained decode overhead.
+
+### Benchmark *phase* breakdown (~3h35m total)
+
+Putting the two sweeps + warmup together explains the full benchmark stage:
+
+| sub-phase | wall | note |
+|---|--:|---|
+| warmup + `1/1` warmup-bench | ~27m | benchmark-stage trace-capture + one warmup run |
+| 15-run text sweep | ~2h24m | Σ row durations ~2h12m + per-row overhead |
+| 6-run structured sweep | ~34m | grammar/JSON-constrained, con4/n100/OSL128 |
+| **total benchmark phase** | **~3h35m** | (= 44% of the 8h09m e2e) |
+
+So the ~3.5h "benchmarks" phase is dominated by the **text sweep (~2/3 of it)**; the structured
+sweep is ~16% and warmup ~13%. Trimming the text sweep (Tier-3) is the largest benchmark-time lever.
+
 **Commentary:**
 - The sweep is **OSL ≈ 128 dominated → prefill-bound**, so it does *not* surface the #4278 decode
   win (that needs long sustained output, which the evals have and the sweep doesn't). Per-user decode
