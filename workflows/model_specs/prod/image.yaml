@@ -37,48 +37,6 @@ templates:
       default_impl: true
   status: COMPLETE
 
-# Forge full-on-device SDXL (PR #3485) — UNet (+ text encoders/VAE via
-# TTXLA_SDXL_FULL_ON_DEVICE) served through tt-media-server's image service via
-# the sdxl_forge runner. A distinct sdxl_forge impl avoids a model_id collision
-# with the media SDXL spec above on shared devices.
-# Verified end-to-end on Wormhole N150 (single chip, ~16s/image steady-state);
-# also targets Blackhole P150X8/P300X2. on-dispatch builds the forge image from
-# inference-server-git-ref, so the runner ships with whatever branch is tested.
-- weights:
-    - stabilityai/stable-diffusion-xl-base-1.0
-  version: "0.13.0"
-  tt_metal_commit: 079a2c2
-  impl: sdxl_forge
-  min_disk_gb: 15
-  min_ram_gb: 6
-  model_type: IMAGE
-  inference_engine: FORGE
-  status: EXPERIMENTAL
-  env_vars:
-    # stable-diffusion-xl-base-1.0 maps to both TT_SDXL_TRACE and TT_XLA_SDXL;
-    # pin the forge runner explicitly or settings auto-detect falls back to the
-    # (tt-metal-only) trace runner, which isn't in the forge image.
-    MODEL_RUNNER: "tt-xla-sdxl"
-    TTXLA_SDXL_FULL_ON_DEVICE: "true"
-  hf_weights_repo: stabilityai/stable-diffusion-xl-base-1.0
-  device_model_specs:
-    - device: N150
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: false
-      # Single N150 lacks DRAM for UNet+VAE+text-encoders all on device (OOMs in
-      # warmup). Run UNet-only on device (VAE/CLIP on CPU) — verified ~16s/image.
-      env_vars:
-        TTXLA_SDXL_FULL_ON_DEVICE: "false"
-    - device: P150X8
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: false
-    - device: P300X2
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: false
-
 - weights:
     - stabilityai/stable-diffusion-3.5-large
   version: "0.9.0"
