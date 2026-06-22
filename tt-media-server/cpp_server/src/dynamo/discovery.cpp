@@ -152,7 +152,7 @@ RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
     return {"gpt_oss", "harmony"};
   }
   if (modelType == "minimax_m2") {
-    return {"minimax_append_think", "minimax_m2"};
+    return {"basic", "minimax_m2"};
   }
   // deepseek_v3 and unknown types default to DeepSeek R1 reasoning.
   return {"deepseek_r1", nullptr};

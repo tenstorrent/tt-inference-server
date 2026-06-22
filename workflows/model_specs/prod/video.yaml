@@ -1,5 +1,5 @@
 # Model spec catalog: Video templates.
-# Edit this file to add or modify a Video model spec.
+# Do not edit manually. This file is updated through the automated release process.
 # Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
 templates:
 # =============================================================================

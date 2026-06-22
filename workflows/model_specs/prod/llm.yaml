@@ -1,5 +1,5 @@
 # Model spec catalog: LLM templates.
-# Edit this file to add or modify a LLM model spec.
+# Do not edit manually. This file is updated through the automated release process.
 # Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
 templates:
 # =============================================================================
@@ -830,7 +830,7 @@ templates:
     - device: GPU
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
-      default_impl: false
+      default_impl: true
   status: COMPLETE
   metadata:
     meta-llama/Llama-3.1-8B:
