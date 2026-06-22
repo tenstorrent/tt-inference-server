@@ -14,6 +14,7 @@ at every ``import test_module.llm_tests``.
 _LAZY_FROM_AGENTIC_EVAL_TESTS = {"run_llm_agentic_eval"}
 _LAZY_FROM_LLM_PERFORMANCE_TESTS = {"run_llm_performance"}
 _LAZY_FROM_PREFIX_CACHE_TESTS = {"run_prefix_cache"}
+_LAZY_FROM_SPEC_DECODE_TESTS = {"run_spec_decode"}
 
 
 def __getattr__(name):
@@ -29,6 +30,10 @@ def __getattr__(name):
         from . import prefix_cache_tests
 
         return getattr(prefix_cache_tests, name)
+    if name in _LAZY_FROM_SPEC_DECODE_TESTS:
+        from . import spec_decode_tests
+
+        return getattr(spec_decode_tests, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -36,4 +41,5 @@ __all__ = [
     *sorted(_LAZY_FROM_AGENTIC_EVAL_TESTS),
     *sorted(_LAZY_FROM_LLM_PERFORMANCE_TESTS),
     *sorted(_LAZY_FROM_PREFIX_CACHE_TESTS),
+    *sorted(_LAZY_FROM_SPEC_DECODE_TESTS),
 ]

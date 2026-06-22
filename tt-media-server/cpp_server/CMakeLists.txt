@@ -231,34 +231,12 @@ FetchContent_MakeAvailable(cppzmq)
 # Option to enable tt-llm-engine (formerly tt-blaze pipeline_manager)
 option(ENABLE_BLAZE "Enable tt-llm-engine support" OFF)
 
-# Mooncake transport lives inside tt-llm-engine (third_party/mooncake) and is
-# built there via its DS_ENABLE_MOONCAKE / DS_MOONCAKE_WITH_RDMA options.
-option(ENABLE_MOONCAKE "Build tt-llm-engine with Mooncake transport (requires ENABLE_BLAZE)" OFF)
-option(ENABLE_MOONCAKE_RDMA "Include Mooncake's RDMA transport (implies ENABLE_MOONCAKE)" OFF)
-if(ENABLE_MOONCAKE_RDMA)
-    set(ENABLE_MOONCAKE ON)
-endif()
-if(ENABLE_MOONCAKE AND NOT ENABLE_BLAZE)
-    message(FATAL_ERROR
-        "ENABLE_MOONCAKE requires ENABLE_BLAZE=ON (Mooncake is built inside tt-llm-engine).")
-endif()
-
 if(ENABLE_BLAZE)
     # tt-llm-engine (Core-only at compile time when TT::Metalium is not in scope;
     # the Full target adds SocketPipeline support when Metalium is available).
     set(DS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    # Propagate Mooncake selection into the tt-llm-engine sub-build before
-    # add_subdirectory so its option() calls pick up these values.
-    if(ENABLE_MOONCAKE)
-        set(DS_ENABLE_MOONCAKE ON CACHE BOOL "" FORCE)
-        set(DS_MOONCAKE_WITH_RDMA ${ENABLE_MOONCAKE_RDMA} CACHE BOOL "" FORCE)
-        message(STATUS "Mooncake transport: ENABLED (RDMA=${ENABLE_MOONCAKE_RDMA})")
-    else()
-        message(STATUS "Mooncake transport: DISABLED (use -DENABLE_MOONCAKE=ON to enable)")
-    endif()
-    # Mooncake's source has C++11 braced-init narrowing (e.g. int -> uint16_t in
-    # tcp_transport.cpp) that GCC (its usual compiler) only warns on, but the
-    # tt-metal clang-20 toolchain rejects as a hard error. Downgrade it to a
+    # tt-llm-engine has C++11 braced-init narrowing that GCC only warns on, but
+    # the tt-metal clang-20 toolchain rejects as a hard error. Downgrade it to a
     # warning for the sub-build only; restore our stricter flags afterwards.
     set(_tt_saved_cxx_flags "${CMAKE_CXX_FLAGS}")
     string(APPEND CMAKE_CXX_FLAGS " -Wno-c++11-narrowing")
@@ -267,6 +245,50 @@ if(ENABLE_BLAZE)
     message(STATUS "tt-llm-engine: ENABLED")
 else()
     message(STATUS "tt-llm-engine: DISABLED (use -DENABLE_BLAZE=ON to enable)")
+endif()
+
+# Mooncake Transfer Engine (TCP + RDMA) is vendored as a top-level git submodule
+# at third_party/Mooncake (pinned to release v0.3.11.post1) and built directly
+# here via its standalone mooncake-transfer-engine project. It is independent of
+# tt-llm-engine. RDMA (libibverbs) is always compiled in -- the standalone build
+# has no library-level toggle to disable it.
+#
+# System dependencies are assumed to already be installed (provision them once
+# with third_party/Mooncake/dependencies.sh): libibverbs-dev, libnuma-dev,
+# libgoogle-glog-dev, libgflags-dev, libjsoncpp-dev, libyaml-cpp-dev, and an
+# installed yalantinglibs (resolved via find_package(yalantinglibs CONFIG)).
+option(ENABLE_MOONCAKE "Build the Mooncake Transfer Engine transport (third_party/Mooncake)" OFF)
+if(ENABLE_MOONCAKE)
+    set(_mooncake_root "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Mooncake")
+    if(NOT EXISTS "${_mooncake_root}/mooncake-transfer-engine/CMakeLists.txt")
+        message(FATAL_ERROR
+            "ENABLE_MOONCAKE=ON but third_party/Mooncake is not checked out. Run: "
+            "git submodule update --init --recursive "
+            "tt-media-server/cpp_server/third_party/Mooncake")
+    endif()
+    # Build only the Transfer Engine -- not the store, Python/Rust bindings,
+    # examples, benchmarks or Mooncake's own unit tests. Use the HTTP metadata
+    # server (no etcd/redis).
+    set(USE_TCP           ON  CACHE BOOL "" FORCE)
+    set(USE_HTTP          ON  CACHE BOOL "" FORCE)
+    set(USE_ETCD          OFF CACHE BOOL "" FORCE)
+    set(USE_REDIS         OFF CACHE BOOL "" FORCE)
+    set(WITH_RUST_EXAMPLE OFF CACHE BOOL "" FORCE)
+    set(BUILD_UNIT_TESTS  OFF CACHE BOOL "" FORCE)
+    set(BUILD_EXAMPLES    OFF CACHE BOOL "" FORCE)
+    set(BUILD_BENCHMARK   OFF CACHE BOOL "" FORCE)
+    # Mooncake's source has C++11 braced-init narrowing (e.g. int -> uint16_t in
+    # tcp_transport.cpp) that GCC (its usual compiler) only warns on, but the
+    # tt-metal clang-20 toolchain rejects as a hard error. Downgrade it to a
+    # warning for the sub-build only; restore our stricter flags afterwards.
+    set(_tt_saved_cxx_flags "${CMAKE_CXX_FLAGS}")
+    string(APPEND CMAKE_CXX_FLAGS " -Wno-c++11-narrowing")
+    add_subdirectory("${_mooncake_root}/mooncake-transfer-engine"
+                     "${CMAKE_CURRENT_BINARY_DIR}/mooncake-transfer-engine")
+    set(CMAKE_CXX_FLAGS "${_tt_saved_cxx_flags}")
+    message(STATUS "Mooncake transport: ENABLED (third_party/Mooncake, RDMA always on)")
+else()
+    message(STATUS "Mooncake transport: DISABLED (use -DENABLE_MOONCAKE=ON to enable)")
 endif()
 
 # Option for Tracy support
@@ -547,13 +569,13 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
 endif()
 # Real Mooncake transport (mooncake_transfer_engine.cpp) is compiled against the
 # Mooncake Transfer Engine when it is part of the build (ENABLE_MOONCAKE builds
-# the `transfer_engine` target inside tt-llm-engine); otherwise it falls back to
-# a no-op (see the TT_TRANSPORT_WITH_MOONCAKE guard in that file).
+# the `transfer_engine` target from third_party/Mooncake); otherwise it falls
+# back to a no-op (see the TT_TRANSPORT_WITH_MOONCAKE guard in that file).
 if(TARGET transfer_engine)
     target_compile_definitions(transport_lib PUBLIC TT_TRANSPORT_WITH_MOONCAKE)
     target_include_directories(transport_lib PUBLIC
-        "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/third_party/mooncake/mooncake-transfer-engine/include"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/third_party/mooncake/mooncake-common/include")
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Mooncake/mooncake-transfer-engine/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Mooncake/mooncake-common/include")
     target_link_libraries(transport_lib PUBLIC transfer_engine)
     message(STATUS "transport_lib: building with Mooncake transport")
 endif()
@@ -572,6 +594,14 @@ if(TARGET transfer_engine)
     target_include_directories(transport_migration_e2e PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
     message(STATUS "transport_migration_e2e: ENABLED (Mooncake acceptance harness)")
+
+    # #4209 migration-worker discovery PoC (see src/transport/README.md).
+    add_executable(migration_worker_discovery
+        tests/integration/migration_worker_discovery.cpp)
+    target_link_libraries(migration_worker_discovery PRIVATE transport_lib)
+    target_include_directories(migration_worker_discovery PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    message(STATUS "migration_worker_discovery: ENABLED (#4209 discovery PoC)")
 endif()
 
 # Unit tests (link llm_runner_lib)

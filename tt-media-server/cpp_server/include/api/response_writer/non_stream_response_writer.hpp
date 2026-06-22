@@ -25,9 +25,8 @@ namespace tt::api {
  * hands it to a caller-supplied builder for JSON encoding, releases the
  * session in-flight slot, and invokes the http callback exactly once.
  *
- * The default builder produces an OpenAI chat-completion JSON body. The
- * Responses API endpoint passes a builder that produces a `ResponsesResponse`
- * body instead, so both endpoints can reuse the same accumulator.
+ * The default builder produces an OpenAI chat-completion JSON body. A custom
+ * builder can be passed to produce alternative wire formats.
  */
 class NonStreamResponseWriter : public ResponseWriter {
  public:
