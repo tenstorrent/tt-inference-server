@@ -1050,6 +1050,7 @@ if(KAFKA_ENABLED)
         src/messaging/kafka_producer.cpp
         src/messaging/kafka_consumer.cpp
         src/messaging/migration_message.cpp
+        src/services/remote_kv_manager_impl.cpp
     )
     target_include_directories(messaging PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -1083,6 +1084,18 @@ if(KAFKA_ENABLED)
         GTest::gtest_main
     )
     target_include_directories(migration_message_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    # Unit test for RemoteKVManagerImpl (uses in-process fake producer/consumer).
+    add_executable(remote_kv_manager_impl_test
+        tests/unit/services/remote_kv_manager_impl_test.cpp
+    )
+    target_link_libraries(remote_kv_manager_impl_test PRIVATE
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(remote_kv_manager_impl_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 else()
