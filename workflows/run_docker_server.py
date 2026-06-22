@@ -84,25 +84,15 @@ def _vllm_tt_metal_dev_mounts(
         return []
 
     mounts: List[str] = []
-    gemma4_generator = (
-        repo_root_path
-        / "vllm-tt-metal/patches/gemma4_generator_vllm_9970093.py"
-    )
+    # As of the tt-metal main bump (3f727969e22) we use main's native
+    # generator_vllm.py and no longer bind-mount gemma4_generator_vllm_9970093.py
+    # (which was pinned to the 9970093 API and force-disabled prefill tracing).
+    # Only the vLLM-side patches (platform + reasoning parser, pinned to vLLM
+    # 3334377) are still mounted.
     gemma4_platform = (
         repo_root_path
         / "vllm-tt-metal/patches/gemma4_platform_vllm_3334377.py"
     )
-    if not gemma4_generator.is_file():
-        return mounts
-
-    container_path = f"{user_home_path}/tt-metal/models/demos/gemma4/tt/generator_vllm.py"
-    mounts.extend(
-        [
-            "--mount",
-            f"type=bind,src={gemma4_generator},dst={container_path}",
-        ]
-    )
-    logger.info(f"Dev mode: mounting Gemma4 vLLM bridge patch from {gemma4_generator}")
 
     if gemma4_platform.is_file():
         platform_container_path = (

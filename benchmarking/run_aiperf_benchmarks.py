@@ -612,6 +612,30 @@ def main():
         message = f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
         raise ValueError(message)
 
+    # Optional ISL cap (opt-in via BENCHMARK_MAX_ISL). The default sweep
+    # (BENCHMARK_ISL_OSL_PAIRS) runs ISLs up to 65536, which is impractically slow
+    # under eager decode. Setting e.g. BENCHMARK_MAX_ISL=4096 keeps only text params at
+    # or below that ISL so the same command works as a scoped eager baseline now and an
+    # unscoped (or higher-cap) run once accelerated decode is restored. The cap also
+    # drops params without an isl (e.g. structured_output/cnn/audio), because the flag
+    # expresses an ISL/OSL sweep; those task types are not part of it and some crash the
+    # token-count math (isl=None) on this path.
+    max_isl_env = os.getenv("BENCHMARK_MAX_ISL")
+    if max_isl_env:
+        max_isl = int(max_isl_env)
+        original_count = len(all_params)
+        all_params = [
+            p for p in all_params if p.isl is not None and p.isl <= max_isl
+        ]
+        logger.info(
+            f"BENCHMARK_MAX_ISL={max_isl}: kept {len(all_params)}/{original_count} "
+            "benchmark params (isl set and <= cap)"
+        )
+        if not all_params:
+            raise ValueError(
+                f"BENCHMARK_MAX_ISL={max_isl} filtered out all benchmark params"
+            )
+
     # Check for limit_samples_mode (smoke-test, ci-commit) to enable debug mode
     limit_samples_mode_str = runtime_config.limit_samples_mode
     if limit_samples_mode_str:
@@ -629,7 +653,12 @@ def main():
                 f"Reduced from {original_count} to {len(all_params)} benchmarks"
             )
 
-    # Log benchmark parameters
+    # Log benchmark parameters. Some task types (e.g. CNN/audio/embedding) leave
+    # isl/osl/num_prompts as None, so format defensively to avoid a
+    # `TypeError: unsupported format string passed to NoneType.__format__`.
+    def _fmt(value, width):
+        return f"{('-' if value is None else value)!s:<{width}}"
+
     log_str = "Running AIPerf benchmarks for:\n"
     log_str += f"  {'#':<3} {'Type':<8} {'isl':<6} {'osl':<6} {'Concur':<8} {'N':<6} {'Images':<8}\n"
     log_str += f"  {'-' * 3:<3} {'-' * 8:<8} {'-' * 6:<6} {'-' * 6:<6} {'-' * 8:<8} {'-' * 6:<6} {'-' * 8:<8}\n"
@@ -639,7 +668,11 @@ def main():
             img_str = (
                 f"{param.images_per_prompt}@{param.image_width}x{param.image_height}"
             )
-        log_str += f"  {i:<3} {param.task_type:<8} {param.isl:<6} {param.osl:<6} {param.max_concurrency:<8} {param.num_prompts:<6} {img_str:<8}\n"
+        log_str += (
+            f"  {_fmt(i, 3)} {_fmt(param.task_type, 8)} {_fmt(param.isl, 6)} "
+            f"{_fmt(param.osl, 6)} {_fmt(param.max_concurrency, 8)} "
+            f"{_fmt(param.num_prompts, 6)} {_fmt(img_str, 8)}\n"
+        )
     logger.info(log_str)
 
     # Wait for server to be ready

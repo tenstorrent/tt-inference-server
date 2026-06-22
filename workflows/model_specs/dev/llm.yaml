@@ -155,7 +155,7 @@ templates:
 - weights:
     - google/gemma-4-31b-it
   impl: tt_transformers
-  tt_metal_commit: "e54e650ccf0"  # main + Gemma4 fixes (shares image with gemma-4-12b-it)
+  tt_metal_commit: "a4967d5f39d"  # tt-metal PR #47556 — hybrid KV + prefill trace fix (shared image)
   vllm_commit: "3334377"  # tenstorrent/vllm dev (Harry: hybrid-kvc + Gemma4 plugin)
   inference_engine: VLLM
   device_model_specs:
@@ -166,27 +166,12 @@ templates:
       env_vars:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # The bounded-sliding-KV path in the gemma4 vLLM bridge corrupts attention on the
-        # P300x2 4-chip mesh (garbage output). Disable it to match the 12B config and the
-        # standalone text_demo_v2 (bounded_sliding=False), which produces coherent output.
-        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 500000000
-        # The gemma4 model's lm_head skips the TP vocab all-gather in decode whenever
-        # its on-device sampling module exists (model.py:_apply_lm_head), expecting
-        # the sampler to consume the TP-sharded logits. Without this set, the plugin
-        # falls back to HOST sampling, which then only sees device 0's vocab shard
-        # (ids 0..65535) — so any token id >= 65536 (notably ALL digits, ~236xxx) is
-        # unreachable in decode. Enabling on-device sampling for decode performs the
-        # cross-shard argmax/sampling on device and returns correct global token ids.
+        trace_region_size: 200000000
+        # On-device decode sampling is required on the P300X2 TP mesh so token ids
+        # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
-        # TEMPORARY (tt-metal main decode-trace regression): same as gemma-4-12b-it —
-        # the on-device DECODE TRACE corrupts Gemma4 on P300X2 (prefill correct, traced
-        # decode is gibberish). trace_mode=none forces fully-eager execution: correct
-        # output but un-accelerated (slow) decode. Remove once tt-metal fixes the Gemma4
-        # decode trace on main (see PR tenstorrent/tt-metal#47172).
-        trace_mode: none
       vllm_args:
         override_generation_config: '{"temperature": 1.0, "top_k": 64, "top_p": 0.95}'
   status: EXPERIMENTAL
@@ -200,7 +185,7 @@ templates:
 - weights:
     - google/gemma-4-12b-it
   impl: tt_transformers
-  tt_metal_commit: "e54e650ccf0"  # main + Gemma4 fixes: valid_seq_len + use_full_prompt_len (origin/fix/gemma4-greedy-only-warmup)
+  tt_metal_commit: "a4967d5f39d"  # tt-metal PR #47556 — hybrid KV + prefill trace fix (shared image)
   vllm_commit: "3334377"  # tenstorrent/vllm dev (Harry: hybrid-kvc + Gemma4 plugin)
   inference_engine: VLLM
   device_model_specs:
@@ -211,29 +196,10 @@ templates:
       env_vars:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # The bounded-sliding-KV path in the gemma4 vLLM bridge corrupts attention on the
-        # P300x2 4-chip mesh (garbage output). The standalone text_demo_v2 runs with
-        # bounded_sliding=False and produces coherent output, so disable it here to match.
-        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 402653184  # 384 * 1024 * 1024
-        # The gemma4 model's lm_head skips the TP vocab all-gather in decode whenever
-        # its on-device sampling module exists (model.py:_apply_lm_head), expecting
-        # the sampler to consume the TP-sharded logits. Without this set, the plugin
-        # falls back to HOST sampling, which then only sees device 0's vocab shard
-        # (ids 0..65535) — so any token id >= 65536 (notably ALL digits, ~236xxx) is
-        # unreachable in decode. Enabling on-device sampling for decode performs the
-        # cross-shard argmax/sampling on device and returns correct global token ids.
+        trace_region_size: 100000000  # match vLLM nightly QB2 Gemma4-12B entry
         sample_on_device_mode: decode_only
-        # TEMPORARY (tt-metal main decode-trace regression): on this tt-metal commit the
-        # ON-DEVICE DECODE TRACE corrupts Gemma4-12B on P300X2 — prefill is correct (first
-        # token is right, lp~0) but every traced decode step is gibberish. Verified by
-        # sweeping trace_mode: all/decode_only (both garbage, decode traced) vs none
-        # (coherent, decode eager); prefill tracing made no difference. trace_mode=none
-        # forces fully-eager execution: correct output but un-accelerated (slow) decode.
-        # Remove this once tt-metal fixes the Gemma4 decode trace on main.
-        trace_mode: none
       vllm_args:
         override_generation_config: '{"temperature": 1.0, "top_k": 64, "top_p": 0.95}'
   status: EXPERIMENTAL

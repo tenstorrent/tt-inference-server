@@ -204,32 +204,36 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
 
-# Bake Gemma 4 tt-metal/vLLM patches into the image so it runs correctly WITHOUT
+# Bake Gemma 4 vLLM-side patches into the image so it runs correctly WITHOUT
 # --dev-mode (which otherwise bind-mounts these from the host repo, see
 # workflows/run_docker_server.py::_vllm_tt_metal_dev_mounts). Gated on
 # INSTALL_GEMMA4_REQUIREMENTS so non-Gemma images built from this Dockerfile are
-# untouched. The patch filenames are pinned to the Gemma 4 tt-metal (9970093) and
-# vLLM (3334377) commits; build with those commits (build_docker_images.py sets the
-# flag automatically for Gemma 4 model combos).
+# untouched. These three patches are pinned to the vLLM commit (3334377): the
+# unified platform registration plus the gemma4 reasoning parser.
+#
+# NOTE: As of the tt-metal main bump (3f727969e22) we NO LONGER override
+# models/demos/gemma4/tt/generator_vllm.py. Our old gemma4_generator_vllm_9970093.py
+# patch was pinned to the 9970093 API (and force-disabled prefill tracing); main
+# ships a native vLLM bridge (generator_vllm.py + generator_trace.py) that we now
+# use as-is. The legacy patch file is kept in vllm-tt-metal/patches/ for reference
+# only and is intentionally not applied.
 ARG INSTALL_GEMMA4_REQUIREMENTS=0
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "vllm-tt-metal/patches" "${APP_DIR}/patches"
 RUN /bin/bash -c "if [ \"${INSTALL_GEMMA4_REQUIREMENTS}\" = \"1\" ]; then \
     set -e; \
     p='${APP_DIR}/patches'; \
-    gen='${TT_METAL_HOME}/models/demos/gemma4/tt/generator_vllm.py'; \
     plat='${vllm_dir}/plugins/vllm-tt-plugin/src/vllm_tt_plugin/platform.py'; \
     rparser='${vllm_dir}/vllm/reasoning/gemma4_reasoning_parser.py'; \
     rinit='${vllm_dir}/vllm/reasoning/__init__.py'; \
-    for f in gemma4_generator_vllm_9970093.py gemma4_platform_vllm_3334377.py gemma4_reasoning_parser_vllm_3334377.py gemma4_reasoning_init_vllm_3334377.py; do \
+    for f in gemma4_platform_vllm_3334377.py gemma4_reasoning_parser_vllm_3334377.py gemma4_reasoning_init_vllm_3334377.py; do \
         if [ ! -f \"\${p}/\${f}\" ]; then echo \"Missing Gemma4 patch: \${p}/\${f}\" >&2; exit 1; fi; \
     done; \
-    cp \"\${p}/gemma4_generator_vllm_9970093.py\" \"\${gen}\"; \
     cp \"\${p}/gemma4_platform_vllm_3334377.py\" \"\${plat}\"; \
     cp \"\${p}/gemma4_reasoning_parser_vllm_3334377.py\" \"\${rparser}\"; \
     cp \"\${p}/gemma4_reasoning_init_vllm_3334377.py\" \"\${rinit}\"; \
-    chown ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \"\${gen}\" \"\${plat}\" \"\${rparser}\" \"\${rinit}\"; \
-    echo '✅ Baked Gemma4 patches into image'; \
+    chown ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \"\${plat}\" \"\${rparser}\" \"\${rinit}\"; \
+    echo '✅ Baked Gemma4 vLLM-side patches into image (native tt-metal generator_vllm.py)'; \
     else echo 'Skipping Gemma4 patch bake (INSTALL_GEMMA4_REQUIREMENTS != 1)'; fi"
 
 # Fix venv symlinks after copy and install additional app requirements
