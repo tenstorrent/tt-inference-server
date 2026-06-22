@@ -34,6 +34,8 @@ bool Session::markPrepared() {
 bool Session::clearInFlight() {
   if (state_ != SessionState::IN_FLIGHT) return false;
   state_ = SessionState::IDLE;
+  // The request finished, so its prefill ran and the prefix KV is now resident.
+  kv_committed_ = true;
   cancelFn_ = nullptr;
   deltaTokens_.clear();
   generatedTokens_.clear();

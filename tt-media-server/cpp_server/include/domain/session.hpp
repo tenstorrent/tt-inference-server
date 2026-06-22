@@ -84,6 +84,12 @@ class Session {
   bool isPrepared() const { return state_ == SessionState::PREPARED; }
   SessionState getState() const { return state_; }
 
+  // True once this session has completed a request, so the KV for its
+  // registered prefix is resident and safe to copy from. A brand-new session
+  // whose first prefill is still running is registered in the prefix index but
+  // has no computed KV yet, so it must not be used as a slot-copy source.
+  bool isKvCommitted() const { return kv_committed_; }
+
   void setCancelFn(std::function<void()> fn) { cancelFn_ = std::move(fn); }
   std::function<void()> takeCancelFn() {
     return std::exchange(cancelFn_, nullptr);
@@ -165,6 +171,8 @@ class Session {
                              // close/evict can remove the matching index entry.
   uint32_t slot_id_;
   SessionState state_{SessionState::IDLE};
+  bool kv_committed_{
+      false};  // set true on first completion (see isKvCommitted)
   std::chrono::system_clock::time_point last_activity_time_;
   std::function<void()> cancelFn_;
   std::function<void()>

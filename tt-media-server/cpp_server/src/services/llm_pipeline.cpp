@@ -325,6 +325,25 @@ void LLMPipeline::resolveSession(
                             *sessionManager_, acquired->candidatesList,
                             req->task_id, "[LLMPipeline]")
                       : std::nullopt;
+
+  // The decode-side copy only pays off when the delta is prefilled locally. If
+  // the uncached delta is large enough to route to the prefill server, drop the
+  // copy and let the prefill server reuse its own prefix cache instead.
+  if (copyPlan.has_value() &&
+      tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY) {
+    const size_t deltaTokens = promptTokens > copyPlan->matchedTokens
+                                   ? promptTokens - copyPlan->matchedTokens
+                                   : 0;
+    if (!willPrefillOnDecode(*req, deltaTokens)) {
+      TT_LOG_INFO(
+          "[LLMPipeline] taskId={} delta={} exceeds prefill-on-decode limit; "
+          "routing to prefill server, skipping slot copy from slotId={}",
+          req->task_id, deltaTokens, copyPlan->slotToCopyFrom);
+      sessionManager_->unlockSlot(copyPlan->slotToCopyFrom);
+      copyPlan.reset();
+    }
+  }
+
   std::optional<uint32_t> slotToCopyFrom =
       copyPlan.has_value() ? std::make_optional(copyPlan->slotToCopyFrom)
                            : std::nullopt;
@@ -542,8 +561,8 @@ void LLMPipeline::abortRequest(uint32_t taskId) const {
   }
 }
 
-bool LLMPipeline::shouldDoPrefillOnDecode(
-    const tt::domain::llm::LLMRequest& request) const {
+bool LLMPipeline::willPrefillOnDecode(
+    const tt::domain::llm::LLMRequest& request, size_t deltaTokens) const {
   const bool socketReady = socketService_ && socketService_->isConnected();
   if (!socketReady) {
     TT_LOG_WARN(
@@ -561,7 +580,11 @@ bool LLMPipeline::shouldDoPrefillOnDecode(
     return !forceDisagg;
   }
 
-  const size_t maxTokens = tt::config::maxTokensToPrefillOnDecode();
+  return deltaTokens < tt::config::maxTokensToPrefillOnDecode();
+}
+
+bool LLMPipeline::shouldDoPrefillOnDecode(
+    const tt::domain::llm::LLMRequest& request) const {
   size_t promptTokens = static_cast<size_t>(request.prompt_tokens_count);
 
   // If we have a prefix-cache hit, the matched tokens are already in the KV
@@ -575,7 +598,7 @@ bool LLMPipeline::shouldDoPrefillOnDecode(
     promptTokens = (promptTokens > cached) ? promptTokens - cached : 0;
   }
 
-  return promptTokens < maxTokens;
+  return willPrefillOnDecode(request, promptTokens);
 }
 
 }  // namespace tt::services

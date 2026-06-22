@@ -798,6 +798,127 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
   server->setMemoryAutoRespond(true);
 }
 
+// Validates that a slot copy is NOT triggered when the only matching session is
+// in-flight on its very first request, i.e. its KV has not been computed yet.
+// This is the "two requests arrive together" race: the first registers its
+// prefix before its prefill completes, and the second must not copy uncomputed
+// KV — it falls through to a plain ALLOCATE instead.
+TEST_F(PrefillIntegrationTest, SlotCopy_SkippedWhenSourceKvNotCommitted) {
+  server->setMemoryAutoRespond(false);
+
+  const std::vector<int64_t> baseTokens = [] {
+    std::vector<int64_t> t;
+    for (int i = 1; i <= 96; ++i) t.push_back(i * 100);
+    return t;
+  }();
+  const std::vector<uint64_t> seedHashes = {4001, 4002, 4003};
+
+  // --- Request A: seed a session but DO NOT complete it (stays in-flight,
+  // uncommitted). Its prefix is registered eagerly on allocation. ---
+  uint32_t seqATaskId = 0;
+  {
+    const uint32_t taskId = 99300;
+    tt::sockets::PrefillRequestMessage req(taskId);
+    req.tokenIds = baseTokens;
+    req.maxTokens = 10;
+    req.slotId = 2;
+    req.temperature = 0.7f;
+    req.topP = 0.9f;
+    req.registrationHashes = seedHashes;
+
+    ASSERT_TRUE(mockDecode->send(tt::sockets::tags::PREFILL_REQUEST, req));
+
+    tt::domain::ManageMemoryTask memReq{};
+    auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
+    bool received = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (server->memoryRequestQueue().tryPop(memReq)) {
+        received = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(received) << "Request A: expected ALLOCATE";
+    EXPECT_FALSE(memReq.slotIdToCopyFrom.has_value());
+
+    tt::domain::ManageMemoryResult memRes{};
+    memRes.taskId = memReq.taskId;
+    memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
+    memRes.slotId = 2;
+    server->memoryResultQueue().push(memRes);
+
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr) << "Request A: no Sequence";
+    seqATaskId = seq->taskId;
+    // Intentionally NOT sending FINAL: A is registered but never computes KV.
+  }
+
+  // --- Request C: same prefix, A is in-flight AND uncommitted → no copy. ---
+  const uint32_t taskIdC = 99301;
+  {
+    std::vector<int64_t> tokensC = baseTokens;
+    for (int i = 1; i <= 32; ++i) tokensC.push_back(20000 + i * 100);
+
+    tt::sockets::PrefillRequestMessage req(taskIdC);
+    req.tokenIds = tokensC;
+    req.maxTokens = 10;
+    req.slotId = 3;
+    req.temperature = 0.7f;
+    req.topP = 0.9f;
+    req.registrationHashes = {4001, 4002, 4003, 4005};
+
+    ASSERT_TRUE(mockDecode->send(tt::sockets::tags::PREFILL_REQUEST, req));
+
+    tt::domain::ManageMemoryTask memReq{};
+    auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
+    bool received = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (server->memoryRequestQueue().tryPop(memReq)) {
+        received = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(received) << "Request C: expected ALLOCATE";
+    EXPECT_EQ(memReq.action, tt::domain::MemoryManagementAction::ALLOCATE);
+    EXPECT_FALSE(memReq.slotIdToCopyFrom.has_value())
+        << "Request C: must NOT copy from A — A's KV is not yet committed";
+
+    tt::domain::ManageMemoryResult memRes{};
+    memRes.taskId = memReq.taskId;
+    memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
+    memRes.slotId = 3;
+    server->memoryResultQueue().push(memRes);
+
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr) << "Request C: no Sequence";
+    EXPECT_FALSE(seq->isContinuation())
+        << "Request C: must be a fresh prefill, not a slot-copy continuation";
+
+    tt::test::WorkerResponse(seq->taskId)
+        .tokenWithFlags(77, tt::ipc::SharedToken::FLAG_FINAL)
+        .sendTo(server->resultQueue());
+    auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
+        tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value()) << "Request C: no PrefillResultMessage";
+    EXPECT_FALSE(result->error);
+  }
+
+  // --- Cleanup: complete A so the suite can proceed. ---
+  {
+    tt::test::WorkerResponse(seqATaskId)
+        .tokenWithFlags(50, tt::ipc::SharedToken::FLAG_FINAL)
+        .sendTo(server->resultQueue());
+    auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
+        tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value()) << "Request A cleanup: no PrefillResult";
+  }
+
+  server->setMemoryAutoRespond(true);
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------

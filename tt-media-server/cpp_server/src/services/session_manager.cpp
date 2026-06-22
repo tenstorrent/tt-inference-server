@@ -718,6 +718,22 @@ std::optional<SessionManager::Candidate> SessionManager::findASlotToCopyFrom(
                               : 0);
 
     if (matchedTokens >= minTokens) {
+      // Skip sources whose KV is not yet resident. When two requests with a
+      // shared prefix arrive together, the first registers its prefix before
+      // its prefill completes; copying from it here would copy uncomputed KV.
+      bool committed = false;
+      sessions.modify(candidate.sessionId,
+                      [&committed](std::shared_ptr<domain::Session>& s) {
+                        committed = s->isKvCommitted();
+                      });
+      if (!committed) {
+        TT_LOG_DEBUG(
+            "[SessionManager] findASlotToCopyFrom: candidate sessionId={} KV "
+            "not yet committed, skipping",
+            candidate.sessionId);
+        continue;
+      }
+
       TT_LOG_DEBUG(
           "[SessionManager] findASlotToCopyFrom: candidate sessionId={} "
           "matchedBlocks={} matchedTokens={} >= minTokensToCopy={}",
