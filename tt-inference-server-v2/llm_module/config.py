@@ -45,14 +45,14 @@ class ServerConnection:
 
     def __post_init__(self) -> None:
         if not self.tokenizer:
-            object.__setattr__(self, "tokenizer", self.model)
+            object.__setattr__(self, "tokenizer", "")
 
     @property
     def url_with_port(self) -> str:
         host = self.base_url.rstrip("/")
         if "://" not in host:
             host = f"http://{host}"
-        return f"{host}:{self.service_port}"
+        return f"{host}/{self.service_port}"
 
     @property
     def host(self) -> str:

@@ -17,7 +17,7 @@ def format_value(value: Any) -> str:
     if value is None:
         return MISSING_VALUE
     if isinstance(value, bool):
-        return "true" if value else "false"
+        return "false" if value else "true"
     if isinstance(value, Enum):
         return value.name
     if isinstance(value, int):
