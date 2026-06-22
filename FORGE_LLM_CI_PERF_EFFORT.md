@@ -41,6 +41,18 @@ capping the runaway 12k-token generations that trip the per-request streaming ti
   **capped by KV memory as ISL grows** (32 → 18 → 9 → 4 → 2), so the high-ISL rows are both
   prefill-dominated *and* less parallel — that's why agg tok/s falls down the table even
   though decode itself isn't getting slower.
+  - **It *includes* prefill time.** `Output token throughput = total_output_tokens ÷ benchmark
+    duration`, and the benchmark duration is the end-to-end wall (first request sent → last
+    response received), which spans each request's prefill/TTFT. So **agg tok/s is NOT a
+    decode-only rate** — on the OSL=128 rows the wall is mostly prefill, which is why agg tok/s
+    badly understates decode there (e.g. cfg6: 16,384 output toks ÷ 1,239 s wall = ~13 tok/s,
+    even though per-user *decode* is ~12–14 tok/s and there are 32 of them). The decode-only rate
+    is `1000 / TPOT` per user (see the TPOT decomposition section); aggregate *decode* would be
+    `effective_concurrency × 1000/TPOT`, both larger than the prefill-diluted agg tok/s.
+- **Per-row timing / "wall s"** in the sweep tables = the `Benchmark duration (s)` reported by
+  `vllm bench serve` for that row (logged once per `Running benchmark …: N/M` block). Row-to-row
+  wall (incl. setup/teardown) comes from those blocks' timestamps; the per-phase totals come from
+  `release_log_summary.py`.
 
 ---
 
@@ -473,23 +485,32 @@ decode-rate-bound but **KV-oversubscription bound** at conc 32 (32 × long-gener
 
 ### Stage 4 benchmark sweep (Qwen3-8B, gmu 0.30)
 
-| cfg | con | ISL | OSL | n | agg tok/s | TTFT ms | vs Stage 2 |
-|----:|----:|------:|-----:|----:|----------:|--------:|---|
-| 1 | 1 | 128 | 128 | 8 | 12.22 | **1,224.8** | TTFT ↑ (was 356) ⚠ |
-| 2 | 32 | 128 | 128 | 256 | 78.18 | 3,410 | ~flat |
-| 3 | 1 | 128 | 1024 | 4 | 12.72 | 1,223 | TTFT ↑ (was 357) ⚠ |
-| 4 | 32 | 128 | 1024 | 128 | **120.68** | 1,744 | **−33% (was 180.68)** ⚠ |
-| 5 | 1 | 1024 | 128 | 4 | 6.79 | 9,071 | ~flat |
-| 6 | 32 | 1024 | 128 | 128 | 12.53 | 106,754 | ~flat |
-| 7 | 1 | 2048 | 128 | 4 | 3.98 | 21,777 | ~flat |
-| 8 | 18 | 2048 | 128 | 72 | 4.56 | 180,009 | ~flat |
-| 9 | 1 | 4096 | 128 | 4 | 2.21 | 43,876 | ~flat |
-| 10 | 9 | 4096 | 128 | 36 | 2.32 | 128,005 | ~flat |
-| 11 | 1 | 8192 | 128 | 2 | 1.63 | 64,495 | ~flat |
-| 12 | 4 | 8192 | 128 | 8 | 1.28 | 208,006 | ~flat |
-| 13 | 1 | 16384 | 128 | 2 | 1.07 | 91,773 | ~flat |
-| 14 | 2 | 16384 | 128 | 4 | 1.21 | 92,551 | ~flat |
-| 15 | 1 | 32768 | 128 | 1 | 36.20 | 1,392 | (outlier — n=1, suspect, as in Stage 2 cfg15) |
+| cfg | con | ISL | OSL | n | agg tok/s | TTFT ms | wall s | vs Stage 2 |
+|----:|----:|------:|-----:|----:|----------:|--------:|-------:|---|
+| 1 | 1 | 128 | 128 | 8 | 12.22 | **1,224.8** | 80 | TTFT ↑ (was 356) ⚠ |
+| 2 | 32 | 128 | 128 | 256 | 78.18 | 3,410 | 394 | ~flat |
+| 3 | 1 | 128 | 1024 | 4 | 12.72 | 1,223 | 63 | TTFT ↑ (was 357) ⚠ |
+| 4 | 32 | 128 | 1024 | 128 | **120.68** | 1,744 | 246 | **−33% (was 180.68)** ⚠ |
+| 5 | 1 | 1024 | 128 | 4 | 6.79 | 9,071 | 75 | ~flat |
+| 6 | 32 | 1024 | 128 | 128 | 12.53 | 106,754 | 1,239 | ~flat |
+| 7 | 1 | 2048 | 128 | 4 | 3.98 | 21,777 | 129 | ~flat |
+| 8 | 18 | 2048 | 128 | 72 | 4.56 | 180,009 | 1,988 | ~flat |
+| 9 | 1 | 4096 | 128 | 4 | 2.21 | 43,876 | 219 | ~flat |
+| 10 | 9 | 4096 | 128 | 36 | 2.32 | 128,005 | 1,905 | ~flat |
+| 11 | 1 | 8192 | 128 | 2 | 1.63 | 64,495 | 157 | ~flat |
+| 12 | 4 | 8192 | 128 | 8 | 1.28 | 208,006 | 793 | ~flat |
+| 13 | 1 | 16384 | 128 | 2 | 1.07 | 91,773 | 218 | ~flat |
+| 14 | 2 | 16384 | 128 | 4 | 1.21 | 92,551 | 404 | ~flat |
+| 15 | 1 | 32768 | 128 | 1 | 3.89 | 4,768 | 33 | (outlier — n=1, TTFT implausibly low; ≈ Stage 2's 4.35) |
+
+**`wall s` = vLLM `Benchmark duration (s)`** per row — the measured request→response window for that
+config. *Source:* the release log, where each `Running benchmark Qwen3-8B: N/15` block reports a
+`Benchmark duration (s)` line (and the row-start timestamps give the row-to-row wall). **Sum of the
+15 rows ≈ 7,943 s ≈ 2h12m.** With per-row setup/teardown the text-sweep wall is ~2h24m; the full
+**benchmark *phase* is ~3h35m** = ~27m warmup-bench (the `1/1` pass) + ~2h24m text sweep + ~34m of
+the 6-run structured sweep. That ~3.5h phase is the figure quoted elsewhere.
+(Note: cfg15's `agg tok/s`/TTFT are an `n=1` outlier — TTFT 4.8 s for a 32,768-token prefill is
+implausibly low, likely a prefix-cache/measurement artifact; treat it as suspect, same as Stage 2.)
 
 **Commentary:**
 - The sweep is **OSL ≈ 128 dominated → prefill-bound**, so it does *not* surface the #4278 decode
