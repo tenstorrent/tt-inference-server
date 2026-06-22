@@ -30,10 +30,17 @@ class TestResolveServerMode:
         assert cf._resolve_server_mode(Namespace(docker_server=False), rc) == "docker"
 
 
-class TestCaptureRunCommand:
-    def test_prefixes_python_and_quotes(self):
-        out = cf._capture_run_command(["run.py", "--model", "my model"])
+class TestResolveRunCommand:
+    def test_prefixes_python_and_quotes_from_argv(self, monkeypatch):
+        monkeypatch.delenv(cf._V1_RUN_COMMAND_ENV, raising=False)
+        monkeypatch.setattr(cf.sys, "argv", ["run.py", "--model", "my model"])
+        out = cf._resolve_run_command()
         assert out == "python run.py --model 'my model'"
+
+    def test_env_override_takes_precedence(self, monkeypatch):
+        monkeypatch.setenv(cf._V1_RUN_COMMAND_ENV, "python run.py --from env")
+        monkeypatch.setattr(cf.sys, "argv", ["ignored.py"])
+        assert cf._resolve_run_command() == "python run.py --from env"
 
 
 class TestLoadRuntimeConfig:
