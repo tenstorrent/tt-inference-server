@@ -81,6 +81,7 @@ struct UsageInfo {
   int completionTokens = 0;
   int totalTokens = 0;
   int cachedTokens = 0;
+  int reasoningTokens = 0;  // Thinking tokens excluded from prefix hash
 };
 
 struct ChatResponse {
@@ -220,6 +221,10 @@ ChatResponse parseStreamingResponse(const std::string& rawResponse) {
       if (usage.isMember("prompt_tokens_details")) {
         const auto& ptd = usage["prompt_tokens_details"];
         result.usage.cachedTokens = ptd.get("cached_tokens", 0).asInt();
+      }
+      if (usage.isMember("completion_tokens_details")) {
+        const auto& ctd = usage["completion_tokens_details"];
+        result.usage.reasoningTokens = ctd.get("reasoning_tokens", 0).asInt();
       }
     }
   }
@@ -483,8 +488,11 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
 
   // R2's prompt includes the assistant response as text. With mock_pipeline,
   // the tokenized assistant text round-trips to the same tokens as R1's
-  // completion, so R2 matches R1's full session (prompt + completion).
-  int r1SessionTokens = r1.usage.promptTokens + r1.usage.completionTokens;
+  // completion, so R2 matches R1's full session. The prefix hash excludes
+  // thinking tokens, so we use (completion - reasoning) for the hashable part.
+  int r1HashableCompletion =
+      r1.usage.completionTokens - r1.usage.reasoningTokens;
+  int r1SessionTokens = r1.usage.promptTokens + r1HashableCompletion;
   int r2ExpectedCached = computeExpectedCachedTokens(
       r1SessionTokens, cfg.firstBlockSize, cfg.blockSize);
   std::cout << "    Expected cached: " << r2ExpectedCached << std::endl;
@@ -614,16 +622,19 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
   std::cout << "    prompt=" << t2.usage.promptTokens
             << " cached=" << t2.usage.cachedTokens << std::endl;
 
-  // Turn 2 should hit cache on turn 1's session state, which includes both
-  // the original prompt AND completion tokens (including thinking tokens).
-  // The cached amount is block-aligned(prompt + completion) from Turn 1.
-  int t1SessionTokens = t1Prompt + t1.usage.completionTokens;
+  // Turn 2 should hit cache on turn 1's hashable session state. The prefix
+  // hash excludes thinking tokens, so we compute expected cached based on
+  // prompt + (completion - reasoning) tokens.
+  int t1HashableCompletion =
+      t1.usage.completionTokens - t1.usage.reasoningTokens;
+  int t1SessionTokens = t1Prompt + t1HashableCompletion;
   int t2ExpectedCached = computeExpectedCachedTokens(
       t1SessionTokens, cfg.firstBlockSize, cfg.blockSize);
-  std::cout << "    t1 session tokens: " << t1SessionTokens
+  std::cout << "    t1 session tokens (hashable): " << t1SessionTokens
             << " (prompt=" << t1Prompt
-            << " + completion=" << t1.usage.completionTokens << ")"
-            << std::endl;
+            << " + completion=" << t1HashableCompletion << " ["
+            << t1.usage.completionTokens << " - " << t1.usage.reasoningTokens
+            << " reasoning])" << std::endl;
   std::cout << "    Expected cached: " << t2ExpectedCached << std::endl;
   EXPECT_GT(t2.usage.cachedTokens, 0) << "Turn 2 should hit prefix cache";
   EXPECT_LE(std::abs(t2.usage.cachedTokens - t2ExpectedCached), 1)
@@ -642,14 +653,19 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
   std::cout << "    prompt=" << t3.usage.promptTokens
             << " cached=" << t3.usage.cachedTokens << std::endl;
 
-  // Turn 3 should hit cache on turn 2's session state (prompt + completion).
-  int t2SessionTokens = t2.usage.promptTokens + t2.usage.completionTokens;
+  // Turn 3 should hit cache on turn 2's hashable session state. The prefix
+  // hash excludes thinking tokens, so we compute expected cached based on
+  // prompt + (completion - reasoning) tokens.
+  int t2HashableCompletion =
+      t2.usage.completionTokens - t2.usage.reasoningTokens;
+  int t2SessionTokens = t2.usage.promptTokens + t2HashableCompletion;
   int t3ExpectedCached = computeExpectedCachedTokens(
       t2SessionTokens, cfg.firstBlockSize, cfg.blockSize);
-  std::cout << "    t2 session tokens: " << t2SessionTokens
+  std::cout << "    t2 session tokens (hashable): " << t2SessionTokens
             << " (prompt=" << t2.usage.promptTokens
-            << " + completion=" << t2.usage.completionTokens << ")"
-            << std::endl;
+            << " + completion=" << t2HashableCompletion << " ["
+            << t2.usage.completionTokens << " - " << t2.usage.reasoningTokens
+            << " reasoning])" << std::endl;
   std::cout << "    Expected cached: " << t3ExpectedCached << std::endl;
   EXPECT_GT(t3.usage.cachedTokens, 0) << "Turn 3 should hit prefix cache";
   EXPECT_LE(std::abs(t3.usage.cachedTokens - t3ExpectedCached), 1)
