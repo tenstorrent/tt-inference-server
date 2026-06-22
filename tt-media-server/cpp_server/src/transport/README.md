@@ -177,6 +177,24 @@ Gotchas:
 - The `404 metadata not found` lines at startup are **expected** — the engine probes for
   its own name before registering it.
 
+## Productionized discovery worker (#4294)
+
+`bringup_mooncake_worker` is the worker's entry point (one process per worker). `PeerDiscovery`
+holds the resolve-with-retry loop; `MooncakeMigrationWorker` owns the ordered lifecycle —
+allocate host-DRAM pool → init engine → register/publish (makes us discoverable) → discover
+peers → hold until SIGTERM → teardown in reverse. **Register-before-connect** is the invariant.
+Workers are symmetric peers: each takes its own `--name` and its peers as `--peer`; success
+is `CONNECTED to N peers` then `READY`. Run N with a plain bash loop (launcher-agnostic — no
+MPI):
+
+```bash
+META=http://127.0.0.1:18080/metadata
+MC_TCP_BIND_ADDRESS=127.0.0.1 build/bringup_mooncake_worker \
+  --metadata $META --name worker-a --peer worker-b --host-dram-bytes 1048576 &
+MC_TCP_BIND_ADDRESS=127.0.0.2 build/bringup_mooncake_worker \
+  --metadata $META --name worker-b --peer worker-a --host-dram-bytes 1048576 &
+```
+
 ## Validation status
 
 | Step | Status |
@@ -186,6 +204,7 @@ Gotchas:
 | Mooncake transport loopback TCP (host backend, `--mooncake`) | impl |
 | Two-galaxy acceptance, both backends enabled | pending a two-process HW run |
 | Metadata-service worker discovery, two hosts, host RAM (#4209, `migration_worker_discovery`) | **validated** (two hosts, 1 MiB tensor, byte-verified MATCH) |
+| Productionized discovery worker (#4294, `bringup_mooncake_worker`) | **validated** (single host, 20 workers via bash loop, all `CONNECTED`→`READY`) |
 
 ## Future work — wiring into the tt-llm-engine migration worker
 
