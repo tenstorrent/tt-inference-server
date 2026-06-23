@@ -207,9 +207,13 @@ def _base_v2_cmd(
         cmd.append("--docker-server")
     if getattr(runtime_config, "server_url", None):
         cmd.extend(["--server-url", runtime_config.server_url])
-    sdxl_n = getattr(runtime_config, "sdxl_num_prompts", None)
-    if sdxl_n not in (None, "", "0"):
-        cmd.extend(["--num-prompts", str(sdxl_n)])
+    # --num-prompts is an SDXL/image-benchmark concept; forwarding it triggers
+    # _apply_num_prompts_override() which imports image-benchmark code (PIL).
+    # Agentic evals don't use it and run in a venv without those deps.
+    if v2_workflow != "agentic":
+        sdxl_n = getattr(runtime_config, "sdxl_num_prompts", None)
+        if sdxl_n not in (None, "", "0"):
+            cmd.extend(["--num-prompts", str(sdxl_n)])
     return cmd
 
 

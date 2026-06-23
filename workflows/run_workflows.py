@@ -17,6 +17,7 @@ from workflows.workflow_config import (
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
+from workflows.workflow_types import WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
@@ -133,6 +134,21 @@ def has_spec_tests_configured(model_name, device):
     )
 
 
+def has_agentic_tasks_configured(model_name):
+    """True if the model's EvalConfig has any EVALS_AGENTIC task.
+
+    Agentic tasks are run by the dedicated ``agentic`` workflow (v2 bridge), not
+    the v1 evals workflow.
+    """
+    eval_config = EVAL_CONFIGS.get(model_name)
+    if not eval_config:
+        return False
+    return any(
+        task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
+        for task in eval_config.tasks
+    )
+
+
 def run_workflows(model_spec, runtime_config, json_fpath):
     workflow_results = []
     if WorkflowType.from_string(runtime_config.workflow) == WorkflowType.RELEASE:
@@ -151,15 +167,33 @@ def run_workflows(model_spec, runtime_config, json_fpath):
             )
         if model_spec.model_name in TEST_CONFIGS:
             workflows_to_run.append(WorkflowType.TESTS)
+        # Agentic evals have no v1 runner; run them via the v2 bridge before the
+        # report step so run_reports.py picks up their Harbor result.json output.
+        if has_agentic_tasks_configured(model_spec.model_name):
+            workflows_to_run.append(WorkflowType.AGENTIC)
+        else:
+            logger.info(
+                f"Skipping agentic for {model_spec.model_name}: "
+                "no EVALS_AGENTIC tasks configured."
+            )
         workflows_to_run.append(WorkflowType.REPORTS)
         for wf in workflows_to_run:
             if done_trace_capture:
                 runtime_config.disable_trace_capture = True
             logger.info(f"Next workflow in release: {wf.name}")
             runtime_config.workflow = wf.name
-            workflow_results.append(
-                run_single_workflow(model_spec, runtime_config, json_fpath)
-            )
+            if wf == WorkflowType.AGENTIC:
+                # Delegate agentic to the v2 engine. Imported lazily to avoid a
+                # circular import (v2_bridge imports WorkflowResult from here).
+                from workflows.v2_bridge import run_v2_workflows
+
+                workflow_results.extend(
+                    run_v2_workflows(model_spec, runtime_config, json_fpath)
+                )
+            else:
+                workflow_results.append(
+                    run_single_workflow(model_spec, runtime_config, json_fpath)
+                )
             done_trace_capture = True
         return workflow_results
     else:

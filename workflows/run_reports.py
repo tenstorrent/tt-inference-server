@@ -2654,13 +2654,21 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         agentic_file_name_pattern = get_agentic_result_file_pattern(
             model_spec, eval_run_id
         )
-        agentic_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{agentic_file_name_pattern}"
-        files.extend(glob(agentic_file_path_pattern))
-        direct_agentic_file_path_pattern = str(
-            Path(args.output_path) / agentic_file_name_pattern
-        )
-        if direct_agentic_file_path_pattern != agentic_file_path_pattern:
-            files.extend(glob(direct_agentic_file_path_pattern))
+        agentic_file_path_patterns = [
+            # v1 path: agentic tasks run inside the evals workflow.
+            f"{get_default_workflow_root_log_dir()}/evals_output/{agentic_file_name_pattern}",
+            # v2 path: --workflow agentic writes Harbor result.json (same format
+            # and eval_<id>/agentic/<task>/result.json layout) under reports_output/agentic.
+            f"{get_default_workflow_root_log_dir()}/reports_output/agentic/{agentic_file_name_pattern}",
+            # explicit output dir for the current run.
+            str(Path(args.output_path) / agentic_file_name_pattern),
+        ]
+        seen_patterns: set[str] = set()
+        for pattern in agentic_file_path_patterns:
+            if pattern in seen_patterns:
+                continue
+            seen_patterns.add(pattern)
+            files.extend(glob(pattern))
 
     if "image" in model_spec.supported_modalities:
         image_file_name_pattern = f"eval_{eval_run_id}/*_results.json"
