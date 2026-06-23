@@ -154,7 +154,7 @@ class Session {
   // eviction data race. Each returns false (state unchanged) if its
   // precondition is not met.
   friend class tt::services::SessionManager;
-  friend class SessionTestHelper;
+  friend class ::SessionTestHelper;
   bool markPrepared();   // IDLE           -> PREPARED
   bool markInFlight();   // IDLE/PREPARED  -> IN_FLIGHT
   bool clearInFlight();  // IN_FLIGHT      -> IDLE, also clears cancelFn
