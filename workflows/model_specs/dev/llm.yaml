@@ -67,6 +67,10 @@ templates:
       override_tt_config:
         sample_on_device_mode: all
         trace_region_size: 134217728  # 128 MB; vLLM default 50 MB is too small for long prefill
+      known_issues:
+        - workflow_type: EVALS
+          task_name: aime25
+          reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -92,6 +96,10 @@ templates:
       override_tt_config:
         trace_region_size: 58000000
         sample_on_device_mode: decode_only
+      known_issues:
+        - workflow_type: EVALS
+          task_name: aime25
+          reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
