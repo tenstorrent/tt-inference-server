@@ -212,6 +212,11 @@ void LLMPipeline::resolveSession(
         }
         sessionManager_->registerPrefixHash(acquired->sessionId,
                                             routingInfo.blocks);
+        // Eagerly drop any resident tail past the common prefix: this turn's
+        // new/diverged blocks are not computed yet. The full prefix is marked
+        // resident again at stream end (finalizeAndRegisterHashes).
+        sessionManager_->shrinkResidentPrefixToMatchedTokens(
+            acquired->sessionId, matchedTokens);
         if (req->responseId.has_value()) {
           sessionManager_->registerResponseId(*req->previousResponseId,
                                               *req->responseId);
@@ -294,6 +299,11 @@ void LLMPipeline::resolveSession(
         }
         sessionManager_->registerPrefixHash(acquired->sessionId,
                                             routingInfo.blocks);
+        // Eagerly drop any resident tail past the common prefix: this turn's
+        // new/diverged blocks are not computed yet. The full prefix is marked
+        // resident again at stream end (finalizeAndRegisterHashes).
+        sessionManager_->shrinkResidentPrefixToMatchedTokens(
+            acquired->sessionId, acquired->numberOfMatchedTokens);
         info.validSessionFound = true;
         info.registrationHashes = routingInfo.hashes();
         onResolved(info);

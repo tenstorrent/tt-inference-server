@@ -278,6 +278,16 @@ void DisaggregationService::setupSocketHandlers() {
                       // Releasing to IDLE-but-cached also lets the next turn's
                       // prefix cache match it. clearInFlight() is idempotent.
                       if (!prefillSessionId.empty() && sessionManager) {
+                        // The prefill computed the whole prompt prefix, so all
+                        // of its blocks are now resident and safe to copy from.
+                        // (Prefill is one-shot, so there is no stream-end
+                        // finalize to mark residency as on the decode path.)
+                        if (!isError) {
+                          sessionManager->setResidentPrefixBlocks(
+                              prefillSessionId,
+                              static_cast<uint32_t>(
+                                  message.registrationHashes.size()));
+                        }
                         sessionManager->releaseInFlight(prefillSessionId);
                       }
                     });
@@ -352,6 +362,11 @@ void DisaggregationService::resolvePrefillSession(
          .setKvPositionId = true,
          .logPrefix = "[DisaggregationService]"});
     sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
+    // Eagerly drop any resident tail past the common prefix: this turn's
+    // new/diverged blocks are not computed yet. The full prefix is marked
+    // resident again when this prefill completes (see prefill result callback).
+    sessionManager->shrinkResidentPrefixToMatchedTokens(
+        acquired->sessionId, acquired->numberOfMatchedTokens);
     socketService->sendPrefillCacheBlocksAdded(blockHashes(blockInfos));
     onResolved();
   } else {

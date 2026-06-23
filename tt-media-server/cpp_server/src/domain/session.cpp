@@ -34,8 +34,9 @@ bool Session::markPrepared() {
 bool Session::clearInFlight() {
   if (state_ != SessionState::IN_FLIGHT) return false;
   state_ = SessionState::IDLE;
-  // The request finished, so its prefill ran and the prefix KV is now resident.
-  kv_committed_ = true;
+  // committed_blocks_ is NOT reset here: the resident KV survives across turns
+  // on the same slot. It is set when the prefix becomes resident (prefill
+  // complete / finalizeAndRegisterHashes) and shrunk eagerly on a rewind.
   cancelFn_ = nullptr;
   deltaTokens_.clear();
   generatedTokens_.clear();
@@ -111,6 +112,9 @@ void Session::finalizeAndRegisterHashes() {
     // Prepend initial blocks to form complete block list
     std::vector<utils::BlockHashInfo> allBlocks = initialBlocks_;
     allBlocks.insert(allBlocks.end(), newBlocks.begin(), newBlocks.end());
+    // The whole prompt delta + generated tokens have now been computed, so
+    // every block in allBlocks is resident and safe to copy from.
+    committed_blocks_ = static_cast<uint32_t>(allBlocks.size());
     onComplete_(session_id_, allBlocks);
   }
 }

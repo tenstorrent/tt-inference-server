@@ -919,6 +919,179 @@ TEST_F(PrefillIntegrationTest, SlotCopy_SkippedWhenSourceKvNotCommitted) {
   server->setMemoryAutoRespond(true);
 }
 
+// Validates the scenario-2 fix: a copy from an in-flight source is capped at
+// the source's RESIDENT prefix, not its registered prefix. The source session
+// has 3 committed blocks (turn 1) and is held in-flight by a turn-2 extension
+// that registered a 4th block whose KV is NOT computed yet. A new request that
+// matches all 4 blocks must copy only the 3 resident blocks and prefill the
+// 4th itself — copying the 4th would read uncomputed KV.
+//
+//   A0: seed 3 blocks, COMPLETE          -> committedBlocks = 3
+//   A1: extend to 4 blocks, HIT, IN_FLIGHT (4th block not yet resident)
+//   C : matches all 4 blocks -> copy capped to 3 blocks (96 tokens),
+//       delta = 1 block (32 tokens), kv_position_id = 95.
+TEST_F(PrefillIntegrationTest, SlotCopy_CapsAtCommittedBlocksDuringExtension) {
+  server->setMemoryAutoRespond(false);
+
+  // 3 blocks of 32 tokens each = 96 tokens.
+  const std::vector<int64_t> baseTokens = [] {
+    std::vector<int64_t> t;
+    for (int i = 1; i <= 96; ++i) t.push_back(i * 100);
+    return t;
+  }();
+  const std::vector<uint64_t> seedHashes = {5001, 5002, 5003};
+  uint32_t sourceSlot = 0;
+
+  // --- A0: seed the session and COMPLETE it (3 blocks become resident). ---
+  {
+    const uint32_t taskId = 99400;
+    tt::sockets::PrefillRequestMessage req(taskId);
+    req.tokenIds = baseTokens;
+    req.maxTokens = 10;
+    req.slotId = 0;
+    req.temperature = 0.7f;
+    req.topP = 0.9f;
+    req.registrationHashes = seedHashes;
+    ASSERT_TRUE(mockDecode->send(tt::sockets::tags::PREFILL_REQUEST, req));
+
+    tt::domain::ManageMemoryTask memReq{};
+    auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
+    bool received = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (server->memoryRequestQueue().tryPop(memReq)) {
+        received = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(received) << "A0: expected ALLOCATE";
+
+    tt::domain::ManageMemoryResult memRes{};
+    memRes.taskId = memReq.taskId;
+    memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
+    memRes.slotId = 4;
+    server->memoryResultQueue().push(memRes);
+
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr) << "A0: no Sequence";
+    sourceSlot = seq->getPrefillKVCacheSlot();
+
+    // COMPLETE A0 so its 3 blocks are marked resident (committedBlocks = 3).
+    tt::test::WorkerResponse(seq->taskId)
+        .tokenWithFlags(42, tt::ipc::SharedToken::FLAG_FINAL)
+        .sendTo(server->resultQueue());
+    auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
+        tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value()) << "A0: no PrefillResultMessage";
+    EXPECT_FALSE(result->error);
+  }
+
+  // --- A1: extension to 4 blocks, HITs A0's session, held IN_FLIGHT. ---
+  // The 4th block is registered for discovery but its KV is NOT resident.
+  uint32_t a1TaskId = 0;
+  {
+    std::vector<int64_t> tokensA1 = baseTokens;
+    for (int i = 1; i <= 32; ++i) tokensA1.push_back(10000 + i * 100);
+
+    const uint32_t taskId = 99401;
+    tt::sockets::PrefillRequestMessage req(taskId);
+    req.tokenIds = tokensA1;  // 128 tokens = 4 blocks
+    req.maxTokens = 10;
+    req.slotId = 0;
+    req.temperature = 0.7f;
+    req.topP = 0.9f;
+    req.registrationHashes = {5001, 5002, 5003, 5004};
+    ASSERT_TRUE(mockDecode->send(tt::sockets::tags::PREFILL_REQUEST, req));
+
+    // HIT (no ALLOCATE) — reuses A0's session.
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    tt::domain::ManageMemoryTask spurious{};
+    EXPECT_FALSE(server->memoryRequestQueue().tryPop(spurious))
+        << "A1: unexpected ALLOCATE — should HIT A0's session";
+
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr) << "A1: no Sequence";
+    EXPECT_TRUE(seq->isContinuation()) << "A1: must be a continuation";
+    a1TaskId = seq->taskId;
+    // DON'T complete A1 — keep the session IN_FLIGHT with the 4th block
+    // registered but not resident (committedBlocks stays 3).
+  }
+
+  // --- C: matches all 4 blocks; copy must be capped to the resident 3. ---
+  {
+    std::vector<int64_t> tokensC = baseTokens;
+    for (int i = 1; i <= 32; ++i) tokensC.push_back(10000 + i * 100);
+
+    const uint32_t taskId = 99402;
+    tt::sockets::PrefillRequestMessage req(taskId);
+    req.tokenIds = tokensC;  // 128 tokens = 4 blocks (same prefix as A1)
+    req.maxTokens = 10;
+    req.slotId = 5;
+    req.temperature = 0.7f;
+    req.topP = 0.9f;
+    req.registrationHashes = {5001, 5002, 5003, 5004};  // matches all 4
+    ASSERT_TRUE(mockDecode->send(tt::sockets::tags::PREFILL_REQUEST, req));
+
+    // Session is IN_FLIGHT → falls through to ALLOCATE with a slot copy.
+    tt::domain::ManageMemoryTask memReq{};
+    auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
+    bool received = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (server->memoryRequestQueue().tryPop(memReq)) {
+        received = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(received) << "C: expected ALLOCATE (session in-flight)";
+    ASSERT_TRUE(memReq.slotIdToCopyFrom.has_value())
+        << "C: ALLOCATE should carry slotIdToCopyFrom (slot copy)";
+    EXPECT_EQ(*memReq.slotIdToCopyFrom, sourceSlot)
+        << "C: should copy from the source session's slot";
+
+    tt::domain::ManageMemoryResult memRes{};
+    memRes.taskId = memReq.taskId;
+    memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
+    memRes.slotId = 6;
+    server->memoryResultQueue().push(memRes);
+
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr) << "C: no Sequence";
+    EXPECT_TRUE(seq->isContinuation()) << "C: must be a slot-copy continuation";
+    ASSERT_TRUE(seq->getKVPositionId().has_value());
+    // The crux: copy is capped at the 3 RESIDENT blocks (96 tokens), so
+    // kv_position_id = 95 and the 4th block (32 tokens) is prefilled locally.
+    // Without the cap the copy would take all 4 blocks (kv_position_id 127,
+    // 0 delta tokens) and read the uncomputed 4th block.
+    EXPECT_EQ(*seq->getKVPositionId(), 95u)
+        << "C: copy must stop at the resident prefix (3 blocks = 96 tokens)";
+    EXPECT_EQ(seq->getNumPromptTokens(), 32u)
+        << "C: the 4th (non-resident) block must be prefilled locally";
+
+    tt::test::WorkerResponse(seq->taskId)
+        .tokenWithFlags(99, tt::ipc::SharedToken::FLAG_FINAL)
+        .sendTo(server->resultQueue());
+    auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
+        tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value()) << "C: no PrefillResultMessage";
+    EXPECT_FALSE(result->error);
+  }
+
+  // --- Cleanup: complete A1 so the suite can proceed. ---
+  {
+    tt::test::WorkerResponse(a1TaskId)
+        .tokenWithFlags(50, tt::ipc::SharedToken::FLAG_FINAL)
+        .sendTo(server->resultQueue());
+    auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
+        tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value()) << "A1 cleanup: no PrefillResultMessage";
+  }
+
+  server->setMemoryAutoRespond(true);
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------

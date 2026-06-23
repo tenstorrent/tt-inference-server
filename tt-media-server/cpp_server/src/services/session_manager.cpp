@@ -703,6 +703,18 @@ SessionManager::tryAcquireByPrefixHash(
   return AcquiredSession{false, {}, 0, 0, 0, std::move(candidates)};
 }
 
+namespace {
+// Inverse of the firstBlock + (n-1)*block token layout. Matched/resident token
+// counts are always block-aligned, so this round-trips exactly.
+uint32_t tokensToBlocks(uint32_t tokens, size_t firstBlockSize,
+                        size_t blockSize) {
+  if (tokens == 0) return 0;
+  if (tokens <= firstBlockSize || blockSize == 0) return 1;
+  return static_cast<uint32_t>(1 + (tokens - firstBlockSize + blockSize - 1) /
+                                       blockSize);
+}
+}  // namespace
+
 std::optional<SessionManager::Candidate> SessionManager::findASlotToCopyFrom(
     const std::vector<Candidate>& candidates) const {
   const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
@@ -712,34 +724,42 @@ std::optional<SessionManager::Candidate> SessionManager::findASlotToCopyFrom(
   for (const auto& candidate : candidates) {
     if (candidate.matchedBlocks == 0) continue;
 
-    const size_t matchedTokens =
-        firstBlockSize + (candidate.matchedBlocks > 1
-                              ? (candidate.matchedBlocks - 1) * blockSize
-                              : 0);
+    // Cap the copy at the source's resident prefix. The match may extend into
+    // blocks the source has registered but not yet prefilled (a brand-new
+    // session, or the new tail of an in-flight extension/rewind turn); copying
+    // those would read uncomputed or stale KV. committedBlocks() is the only
+    // portion guaranteed resident.
+    uint32_t residentBlocks = 0;
+    sessions.modify(candidate.sessionId,
+                    [&residentBlocks](std::shared_ptr<domain::Session>& s) {
+                      residentBlocks = s->committedBlocks();
+                    });
+    const size_t usableBlocks =
+        std::min<size_t>(candidate.matchedBlocks, residentBlocks);
+    if (usableBlocks == 0) {
+      TT_LOG_DEBUG(
+          "[SessionManager] findASlotToCopyFrom: candidate sessionId={} has no "
+          "resident KV (matchedBlocks={}, committedBlocks={}), skipping",
+          candidate.sessionId, candidate.matchedBlocks, residentBlocks);
+      continue;
+    }
 
-    if (matchedTokens >= minTokens) {
-      // Skip sources whose KV is not yet resident. When two requests with a
-      // shared prefix arrive together, the first registers its prefix before
-      // its prefill completes; copying from it here would copy uncomputed KV.
-      bool committed = false;
-      sessions.modify(candidate.sessionId,
-                      [&committed](std::shared_ptr<domain::Session>& s) {
-                        committed = s->isKvCommitted();
-                      });
-      if (!committed) {
-        TT_LOG_DEBUG(
-            "[SessionManager] findASlotToCopyFrom: candidate sessionId={} KV "
-            "not yet committed, skipping",
-            candidate.sessionId);
-        continue;
-      }
+    const size_t usableTokens =
+        firstBlockSize +
+        (usableBlocks > 1 ? (usableBlocks - 1) * blockSize : 0);
 
+    if (usableTokens >= minTokens) {
       TT_LOG_DEBUG(
           "[SessionManager] findASlotToCopyFrom: candidate sessionId={} "
-          "matchedBlocks={} matchedTokens={} >= minTokensToCopy={}",
-          candidate.sessionId, candidate.matchedBlocks, matchedTokens,
-          minTokens);
-      return candidate;
+          "matchedBlocks={} committedBlocks={} usableBlocks={} usableTokens={} "
+          ">= minTokensToCopy={}",
+          candidate.sessionId, candidate.matchedBlocks, residentBlocks,
+          usableBlocks, usableTokens, minTokens);
+      // Return the candidate capped to its resident prefix so the copy plan
+      // copies exactly the computed KV and the caller prefills the rest.
+      Candidate capped = candidate;
+      capped.matchedBlocks = usableBlocks;
+      return capped;
     }
   }
 
@@ -748,6 +768,34 @@ std::optional<SessionManager::Candidate> SessionManager::findASlotToCopyFrom(
       "(minTokensToCopy={}, candidates={})",
       minTokens, candidates.size());
   return std::nullopt;
+}
+
+void SessionManager::setResidentPrefixBlocks(const std::string& sessionId,
+                                             uint32_t residentBlocks) {
+  bool found = sessions.modify(
+      sessionId, [residentBlocks](std::shared_ptr<domain::Session>& s) {
+        s->setCommittedBlocks(residentBlocks);
+      });
+  TT_LOG_DEBUG(
+      "[SessionManager] setResidentPrefixBlocks: sessionId={} "
+      "residentBlocks={} "
+      "found={}",
+      sessionId, residentBlocks, found);
+}
+
+void SessionManager::shrinkResidentPrefixToMatchedTokens(
+    const std::string& sessionId, uint32_t matchedTokens) {
+  const uint32_t matchedBlocks =
+      tokensToBlocks(matchedTokens, tt::config::kvCacheFirstBlockSize(),
+                     tt::config::kvCacheBlockSize());
+  sessions.modify(sessionId,
+                  [matchedBlocks](std::shared_ptr<domain::Session>& s) {
+                    s->shrinkCommittedBlocks(matchedBlocks);
+                  });
+  TT_LOG_DEBUG(
+      "[SessionManager] shrinkResidentPrefixToMatchedTokens: sessionId={} "
+      "matchedTokens={} -> matchedBlocks={}",
+      sessionId, matchedTokens, matchedBlocks);
 }
 
 void SessionManager::registerPrefixHash(
