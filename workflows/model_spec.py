@@ -4037,6 +4037,55 @@ cnn_templates = [
     ),
 ]
 
+# =============================================================================
+# training_templates
+# =============================================================================
+training_templates = [
+    ModelSpecTemplate(
+        weights=["google/gemma-1.1-2b-it"],
+        tt_metal_commit="25891d3",
+        impl=tt_transformers_impl,
+        docker_image="tt-media-server-forge:local",
+        min_disk_gb=15,
+        min_ram_gb=6,
+        model_type=ModelType.TRAINING,
+        inference_engine=InferenceEngine.FORGE.value,
+        status=ModelStatusTypes.EXPERIMENTAL,
+        uses_tensor_model_cache=False,
+        env_vars={
+            "MODEL_RUNNER": "training-gemma-lora",
+            "TRAINING_MODEL": "gemma-1.1-2b-it",
+        },
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=1,
+                max_context=1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300,
+                max_concurrency=1,
+                max_context=1024,
+                env_vars={
+                    # Single-chip training on a P300 board: only 1 chip is
+                    # visible (DEVICE_IDS_1), so tt-metal classifies it as a
+                    # CUSTOM cluster type and requires an explicit mesh graph
+                    # descriptor. Use the 1-chip (p150) descriptor. The forge
+                    # image bundles tt-metal under the worker venv, so this is
+                    # an absolute path under TT_METAL_HOME.
+                    "TT_MESH_GRAPH_DESC_PATH": (
+                        "/home/container_app_user/app/server/venv-worker/lib/"
+                        "python3.12/site-packages/pjrt_plugin_tt/tt-metal/"
+                        "tt_metal/fabric/mesh_graph_descriptors/"
+                        "p150_mesh_graph_descriptor.textproto"
+                    ),
+                },
+            ),
+        ],
+    ),
+]
+
 # make spec_templates from the templates in the correct order
 spec_templates = [
     *llm_templates,
@@ -4046,6 +4095,7 @@ spec_templates = [
     *audio_tts_templates,
     *embedding_templates,
     *cnn_templates,
+    *training_templates,
 ]
 
 
