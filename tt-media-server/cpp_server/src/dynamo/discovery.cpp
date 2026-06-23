@@ -159,6 +159,11 @@ RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
     // + <tool_call>/<arg_key>/<arg_value> tool calls (glm47 parser).
     return {"glm45", "glm47"};
   }
+  if (modelType == "deepseek_v4") {
+    // DeepSeek-V4-Pro: dedicated V4 reasoning + tool-call parsers (vs the
+    // deepseek_r1 reasoning / no tool parser the deepseek_v3 default gets).
+    return {"deepseek_v4", "deepseek_v4"};
+  }
   // deepseek_v3 and unknown types default to DeepSeek R1 reasoning.
   return {"deepseek_r1", nullptr};
 }

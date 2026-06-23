@@ -240,4 +240,27 @@ download_tokenizer \
     "json" \
     "true"
 
+# The Dynamo frontend renders chat templates with minijinja, which rejects
+# Jinja2's `.0` numeric-index syntax (parses `0.` as a float -> "unexpected
+# float"). GLM-5.2's template indexes `m.content.0`; rewrite to `m.content[0]`,
+# accepted by both minijinja and Python Jinja2. Without this the frontend fails
+# to load the model: "PromptFormatter.from_mdc: syntax error: unexpected float".
+GLM52_TMPL="${TOKENIZER_DIR}/zai-org/GLM-5.2/chat_template.jinja"
+if [ -f "${GLM52_TMPL}" ] && grep -q 'm\.content\.0' "${GLM52_TMPL}"; then
+    sed -i 's/m\.content\.0/m.content[0]/g' "${GLM52_TMPL}"
+    echo "  patched GLM-5.2 chat_template.jinja for minijinja (.0 -> [0])"
+fi
+
+# DeepSeek-V4-Pro (public, no auth). DeepSeek-R1 family tokenizer (tokenizer.json,
+# eos <｜end▁of▁sentence｜>). NOTE: this repo ships NO chat template — neither
+# inline in tokenizer_config.json nor a separate chat_template.jinja — so
+# needs_chat_template stays "false" (a "true" would fail on the 404). model_type
+# "deepseek_v4" maps to the deepseek_v4 reasoning + tool-call parsers in
+# discovery.cpp.
+download_tokenizer \
+    "deepseek-ai/DeepSeek-V4-Pro" \
+    "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/resolve/main" \
+    "false" \
+    '{"model_type":"deepseek_v4","architectures":["DeepseekV4ForCausalLM"]}'
+
 echo ""

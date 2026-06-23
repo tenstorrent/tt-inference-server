@@ -208,6 +208,8 @@ std::string tokenizerDirForModel(config::ModelType model) {
       return "MiniMaxAI/MiniMax-M2.7";
     case config::ModelType::GLM_5_2:
       return "zai-org/GLM-5.2";
+    case config::ModelType::DEEPSEEK_V4_PRO:
+      return "deepseek-ai/DeepSeek-V4-Pro";
     case config::ModelType::DEEPSEEK_R1_0528:
     default:
       return "deepseek-ai/DeepSeek-R1-0528";
@@ -232,6 +234,7 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
       // implementation is added.
       return std::make_unique<DeepseekTokenizer>(path);
     case config::ModelType::DEEPSEEK_R1_0528:
+    case config::ModelType::DEEPSEEK_V4_PRO:
     default:
       return std::make_unique<DeepseekTokenizer>(path);
   }
@@ -334,6 +337,22 @@ const StaticTokenizerInfo& glm52Info() {
   return kInfo;
 }
 
+// IDs verified against the fetched DeepSeek-V4-Pro tokenizer (added_tokens in
+// tokenizer.json). Same DeepSeek-R1 special-token layout (eos 1, assistant
+// header 128804) but the <think>/</think> ids differ from R1-0528
+// (128821/128822 vs 128798/128799), so it needs its own static info.
+const StaticTokenizerInfo& deepseekV4ProInfo() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"deepseek-ai/DeepSeek-V4-Pro",
+      /*stopTokenIds=*/{1},
+      /*eosTokenId=*/1,  // <｜end▁of▁sentence｜> (config + generation_config)
+      /*assistantHeaderSequence=*/{128804},  // <｜Assistant｜>
+      /*thinkStartTokenId=*/128821,          // <think>
+      /*thinkEndTokenId=*/128822,            // </think>
+  };
+  return kInfo;
+}
+
 }  // namespace
 
 const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
@@ -350,6 +369,8 @@ const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
       return minimaxM27Info();
     case config::ModelType::GLM_5_2:
       return glm52Info();
+    case config::ModelType::DEEPSEEK_V4_PRO:
+      return deepseekV4ProInfo();
   }
   throw std::invalid_argument(
       "tokenizers::staticInfoFor: no static info registered for ModelType " +
