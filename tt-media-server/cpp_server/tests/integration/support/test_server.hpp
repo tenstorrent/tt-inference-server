@@ -9,14 +9,13 @@
 //      tt::test::runWorkerSubprocess (see test_worker_main.hpp).
 //   2. Wait for the worker subprocess to signal warmup.
 //   3. Open the IPC queues — the test process now plays the worker on those.
-//   4. Bind a Drogon HTTP listener on a dedicated thread.
+//   4. Start DynamoEndpoint to accept requests from Dynamo frontend.
+//
+// All requests are routed through the external Dynamo frontend (HTTP → Dynamo →
+// TCP → DynamoEndpoint → LLMPipeline). Tests must have Dynamo running:
+//   cd dynamo_frontend && ./deploy.sh --local-build
 
 #pragma once
-
-#include <arpa/inet.h>
-#include <drogon/drogon.h>
-#include <sys/socket.h>
-#include <unistd.h>
 
 #include <atomic>
 #include <chrono>
@@ -26,7 +25,6 @@
 #include <string>
 #include <thread>
 
-#include "../../support/http_client.hpp"
 #include "../../support/worker_response.hpp"
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
@@ -43,9 +41,6 @@ namespace tt::test {
 
 class TestServer {
  public:
-  static constexpr const char* kHost = "127.0.0.1";
-  static constexpr uint16_t kPort = 18082;
-
   static std::unique_ptr<TestServer> start() {
     auto s = std::unique_ptr<TestServer>(new TestServer());
     s->init();
@@ -60,12 +55,7 @@ class TestServer {
       dynamoEndpoint_->stop();
       dynamoEndpoint_.reset();
     }
-    drogon::app().quit();
-    if (drogonThread_.joinable()) drogonThread_.join();
   }
-
-  const char* host() const { return kHost; }
-  uint16_t port() const { return kPort; }
 
   // Test reads from here to see what the controller pushed.
   tt::ipc::boost::TaskQueue& taskQueue() { return *taskQueue_; }
@@ -105,23 +95,14 @@ class TestServer {
   //   2. wait for that worker to signal warmup
   //   3. open the IPC queues — test now plays the worker on those queues
   //   4. start the memory auto-responder so most tests don't have to care
-  //   5. start HTTP listener and wait for it
-  //   6. optionally start DynamoEndpoint (if DYNAMO_ENDPOINT_ENABLED=1)
-  //   7. drive one synthetic request end-to-end so every thread that
-  //      lazy-inits a thread_local tokenizer pays the cost here, not
-  //      during the first real TEST_F
+  //   5. start DynamoEndpoint (required - DYNAMO_ENDPOINT_ENABLED must be 1)
   void init() {
     tt::utils::service_factory::initializeServices();
     tt::utils::service_factory::startConfiguredService();
     waitForLLMReady();
     openIpcQueues();
     startMemoryAutoResponder();
-    startHttpListener();
-    waitForListener();
-    if (tt::config::dynamoEndpointEnabled()) {
-      startDynamoEndpoint();
-    }
-    warmupTokenizers();
+    startDynamoEndpoint();
   }
 
   void waitForLLMReady() {
@@ -172,35 +153,16 @@ class TestServer {
     });
   }
 
-  // drogon::app().run() blocks until quit(); spin it on a dedicated thread so
-  // tests can keep issuing requests against the listener. One IO loop is
-  // plenty for serial test traffic.
-  void startHttpListener() {
-    drogonThread_ = std::thread(
-        [] { drogon::app().addListener(kHost, kPort).setThreadNum(1).run(); });
-  }
-
-  void waitForListener() {
-    const auto deadline = std::chrono::steady_clock::now() + kStartupTimeout;
-    while (std::chrono::steady_clock::now() < deadline) {
-      int sock = ::socket(AF_INET, SOCK_STREAM, 0);
-      sockaddr_in addr{};
-      addr.sin_family = AF_INET;
-      addr.sin_port = htons(kPort);
-      ::inet_pton(AF_INET, kHost, &addr.sin_addr);
-      bool up = (::connect(sock, reinterpret_cast<sockaddr*>(&addr),
-                           sizeof(addr)) == 0);
-      ::close(sock);
-      if (up) return;
-      std::this_thread::sleep_for(kPollInterval);
-    }
-    throw std::runtime_error("TestServer: HTTP listener never came up");
-  }
-
   // Start the DynamoEndpoint to accept requests from Dynamo frontend. This
-  // creates an LLMPipeline (same as HTTP path) and registers with etcd so the
-  // external Dynamo frontend can discover and route requests to this backend.
+  // creates an LLMPipeline and registers with etcd so the external Dynamo
+  // frontend can discover and route requests to this backend.
   void startDynamoEndpoint() {
+    if (!tt::config::dynamoEndpointEnabled()) {
+      throw std::runtime_error(
+          "TestServer: DYNAMO_ENDPOINT_ENABLED must be set to 1. "
+          "All tests route through Dynamo frontend.");
+    }
+
     auto llmService = std::dynamic_pointer_cast<tt::services::LLMService>(
         tt::services::ServiceContainer::instance().getService(
             tt::config::ModelService::LLM));
@@ -227,38 +189,10 @@ class TestServer {
     dynamoEndpoint_->start();
   }
 
-  // Drive one /v1/chat/completions request through the full pipeline so
-  // every thread that lazy-inits a `thread_local` tokenizer (#3179) does
-  // it now: the Drogon IO worker (toLLMRequest + preProcess encode) and
-  // the LLMService consumer (createStreamDecoder on first token). The
-  // first init is a 7.8MB JSON read + Rust tokenizer construction —
-  // measured at ~600ms (IO) + ~520ms (consumer) on the CI runner.
-  // Without this warmup, the first real TEST_F's HTTP response arrives
-  // later than the default 250ms idle timeout, the client returns an
-  // empty body, and tests that touch the response fail. The 2s idle
-  // timeout used here is wide enough to cover both cold inits.
-  // Auto-responder is on (default), so the memory ALLOCATE is handled
-  // automatically; we play mock worker for the one token round-trip.
-  void warmupTokenizers() {
-    std::thread mockWorker([this] {
-      auto seq = taskQueue_->receive();
-      if (seq) {
-        WorkerResponse(seq->taskId).token(0).finalize().sendTo(*resultQueue_);
-      }
-    });
-    (void)sendAndReceive(
-        kHost, kPort,
-        R"({"model":"warmup","messages":[{"role":"user","content":"hi"}],)"
-        R"("max_tokens":1,"stream":true})",
-        "your-secret-key", /*idleTimeoutMs=*/2000);
-    mockWorker.join();
-  }
-
   std::unique_ptr<tt::ipc::boost::TaskQueue> taskQueue_;
   std::unique_ptr<tt::ipc::boost::ResultQueue> resultQueue_;
   std::unique_ptr<tt::ipc::boost::MemoryRequestQueue> memoryRequestQueue_;
   std::unique_ptr<tt::ipc::boost::MemoryResultQueue> memoryResultQueue_;
-  std::thread drogonThread_;
   std::thread memoryAutoResponderThread_;
   std::atomic<bool> autoRespond_{true};
   std::atomic<bool> stopAutoResponder_{false};

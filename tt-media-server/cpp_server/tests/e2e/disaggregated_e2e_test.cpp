@@ -45,7 +45,6 @@
 #include "services/llm_pipeline.hpp"
 #include "support/chat_completion_stream.hpp"
 #include "support/dynamo_test_fixture.hpp"
-#include "support/http_client.hpp"
 #include "support/http_response.hpp"
 #include "support/test_worker_main.hpp"
 #include "support/worker_response.hpp"

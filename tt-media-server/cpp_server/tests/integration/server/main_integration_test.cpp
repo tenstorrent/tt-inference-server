@@ -31,10 +31,8 @@
 #include "../support/multiturn_prefix_cache.hpp"
 #include "../support/test_server.hpp"
 #include "domain/manage_memory.hpp"
-#include "ipc/interface/result_queue.hpp"
 #include "support/chat_completion_stream.hpp"
 #include "support/dynamo_test_fixture.hpp"
-#include "support/http_client.hpp"
 #include "support/http_response.hpp"
 #include "support/test_worker_main.hpp"
 #include "support/worker_response.hpp"
@@ -79,13 +77,6 @@ class MainIntegrationTest
   }
 
   static void TearDownTestSuite() { server.reset(); }
-
-  // For tests that need to bypass Dynamo and use direct HTTP (if any).
-  static std::future<std::string> asyncRequestDirect(const std::string& body) {
-    return std::async(std::launch::async, [body] {
-      return tt::test::sendAndReceive(server->host(), server->port(), body);
-    });
-  }
 
   // Mock the worker producing one output token + a clean final marker.
   // Tests that need a custom token stream use tt::test::WorkerResponse
@@ -444,7 +435,7 @@ TEST_F(MainIntegrationTest,
   // bug is masked, so 80% is required to guard it.
   setenv("PREFIX_CACHE_HIT_THRESHOLD", "80", 1);
   tt::test::verifyMultiTurnPrefixGrowth(*server, userMessages, assistantReply,
-                                        /*blockSize=*/32, &dynamoConfig_);
+                                        /*blockSize=*/32, dynamoConfig_);
   setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);  // restore suite default
 }
 
