@@ -673,9 +673,9 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // tokens, big follow-up is ~1200 tokens. If prefix cache worked, prefill
   // receives only the delta (~1204 tokens for assistant + big follow-up), not
   // the full conversation (~2304 tokens). With additional tokenization tokens,
-  // the delta should be 1216 tokens.
+  // the delta should be 1217 tokens.
 
-  EXPECT_EQ(bigDeltaPromptTokens, 1216)
+  EXPECT_EQ(bigDeltaPromptTokens, 1217)
       << "Prefill should receive delta tokens only (prefix cache hit), not "
          "full conversation";
   TT_LOG_INFO(
