@@ -495,9 +495,9 @@ class DynamoTestFixture : public ::testing::Test {
     dynamoConfig_ = DynamoConfig::fromEnv();
     if (!waitForDynamoFrontend(dynamoConfig_, timeoutSec)) {
       dynamoAvailable_ = false;
-      dynamoUnavailableReason_ =
-          "Dynamo frontend not reachable at " + dynamoConfig_.host + ":" +
-          std::to_string(dynamoConfig_.port);
+      dynamoUnavailableReason_ = "Dynamo frontend not reachable at " +
+                                 dynamoConfig_.host + ":" +
+                                 std::to_string(dynamoConfig_.port);
       std::cerr << "[" << testName() << "] " << dynamoUnavailableReason_
                 << std::endl;
       std::cerr << "  Start with: cd dynamo_frontend && ./deploy.sh "

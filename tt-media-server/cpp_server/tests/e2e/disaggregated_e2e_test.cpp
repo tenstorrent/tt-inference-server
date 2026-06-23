@@ -112,7 +112,8 @@ void configurePrefillEnv() {
   // Create WorkerMetricsShm before services (worker subprocess will open it).
   const std::string shmName = tt::config::workerMetricsShmName();
   const size_t numWorkers = tt::config::numWorkers();
-  auto workerMetricsShm = tt::worker::WorkerMetricsShm::create(shmName, numWorkers);
+  auto workerMetricsShm =
+      tt::worker::WorkerMetricsShm::create(shmName, numWorkers);
 
   tt::utils::service_factory::initializeServices();
   tt::utils::service_factory::startConfiguredService();
@@ -258,7 +259,8 @@ class PrefillTestServer {
   void createWorkerMetricsShm() {
     const std::string shmName = tt::config::workerMetricsShmName();
     const size_t numWorkers = tt::config::numWorkers();
-    workerMetricsShmPtr = tt::worker::WorkerMetricsShm::create(shmName, numWorkers);
+    workerMetricsShmPtr =
+        tt::worker::WorkerMetricsShm::create(shmName, numWorkers);
   }
 
   void waitForLLMReady() {
