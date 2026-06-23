@@ -84,30 +84,12 @@ def _vllm_tt_metal_dev_mounts(
         return []
 
     mounts: List[str] = []
-    # As of the tt-metal main bump (3f727969e22) we use main's native
-    # generator_vllm.py and no longer bind-mount gemma4_generator_vllm_9970093.py
-    # (which was pinned to the 9970093 API and force-disabled prefill tracing).
-    # Only the vLLM-side patches (platform + reasoning parser, pinned to vLLM
-    # 3334377) are still mounted.
-    gemma4_platform = (
-        repo_root_path
-        / "vllm-tt-metal/patches/gemma4_platform_vllm_3334377.py"
-    )
-
-    if gemma4_platform.is_file():
-        platform_container_path = (
-            f"{user_home_path}/vllm/plugins/vllm-tt-plugin/src/vllm_tt_plugin/platform.py"
-        )
-        mounts.extend(
-            [
-                "--mount",
-                f"type=bind,src={gemma4_platform},dst={platform_container_path}",
-            ]
-        )
-        logger.info(
-            f"Dev mode: mounting Gemma4 unified platform patch from {gemma4_platform}"
-        )
-
+    # As of the vLLM dev bump (9d88cd5) we use vLLM dev's native platform.py
+    # (which registers the Gemma4 architectures and adds the hybrid-KV HMA opt-in)
+    # and tt-metal's native generator_vllm.py. We therefore no longer bind-mount
+    # gemma4_platform_vllm_3334377.py or gemma4_generator_vllm_9970093.py (both
+    # pinned to older APIs that would revert that newer logic). Only the reasoning
+    # parser, still missing upstream, is mounted.
     gemma4_reasoning_parser = (
         repo_root_path
         / "vllm-tt-metal/patches/gemma4_reasoning_parser_vllm_3334377.py"

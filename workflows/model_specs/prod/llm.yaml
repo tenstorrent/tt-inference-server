@@ -129,7 +129,7 @@ templates:
     - google/gemma-4-12b-it
   impl: tt_transformers
   tt_metal_commit: "a4967d5f39d"  # tt-metal PR #47556 — hybrid KV + prefill trace fix (shared image)
-  vllm_commit: "3334377"  # tenstorrent/vllm dev (Harry: hybrid-kvc + Gemma4 plugin)
+  vllm_commit: "9d88cd5"  # tenstorrent/vllm dev tip (incl. #421 hybrid-KV per-model max tokens)
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
@@ -137,7 +137,11 @@ templates:
       max_context: 131072  # 128 * 1024
       default_impl: true
       env_vars:
-        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+        # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
+        # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
+        # laid the TP collectives over the wrong fabric links and corrupted decode
+        # logits; the default p150_x4 descriptor (selected from MESH_DEVICE) is correct.
+        MESH_DEVICE: "P150x4"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
       override_tt_config:
         fabric_config: FABRIC_1D
@@ -157,7 +161,7 @@ templates:
     - google/gemma-4-31b-it
   impl: tt_transformers
   tt_metal_commit: "a4967d5f39d"  # tt-metal PR #47556 — hybrid KV + prefill trace fix (shared image)
-  vllm_commit: "3334377"  # tenstorrent/vllm dev (Harry: hybrid-kvc + Gemma4 plugin)
+  vllm_commit: "9d88cd5"  # tenstorrent/vllm dev tip (incl. #421 hybrid-KV per-model max tokens)
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
@@ -165,7 +169,11 @@ templates:
       max_context: 131072  # 128 * 1024
       default_impl: true
       env_vars:
-        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+        # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
+        # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
+        # laid the TP collectives over the wrong fabric links and corrupted decode
+        # logits; the default p150_x4 descriptor (selected from MESH_DEVICE) is correct.
+        MESH_DEVICE: "P150x4"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
       override_tt_config:
         fabric_config: FABRIC_1D
