@@ -40,7 +40,6 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
-#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <future>
@@ -52,6 +51,7 @@
 #include <vector>
 
 #include "chat_request.hpp"
+#include "dynamo/etcd_client.hpp"
 
 namespace tt::test {
 
@@ -311,27 +311,34 @@ inline std::string dynamoEtcdEndpointsFromEnv() {
   return "http://127.0.0.1:2379";
 }
 
+/// etcd key prefix where cpp_server registers DynamoEndpoint instances.
+/// Matches discovery.cpp: v1/instances/<namespace>/<component>/<endpoint>/
+inline std::string etcdInstancePrefixFromEnv() {
+  const char* ns = std::getenv("DYNAMO_NAMESPACE");
+  const char* component = std::getenv("DYNAMO_COMPONENT");
+  const char* endpoint = std::getenv("DYNAMO_ENDPOINT_NAME");
+  return "v1/instances/" + std::string(ns ? ns : "default") + "/" +
+         (component ? component : "backend") + "/" +
+         (endpoint ? endpoint : "generate") + "/";
+}
+
 /// Poll etcd until a cpp_server DynamoEndpoint registers under the configured
 /// namespace/component/endpoint prefix. Integration tests mock the worker on
 /// the IPC task queue, so a full HTTP warmup would hang waiting for tokens.
 inline bool waitForEtcdBackendRegistration(int timeoutSec = 30) {
   const std::string endpoints = dynamoEtcdEndpointsFromEnv();
-  const char* ns = std::getenv("DYNAMO_NAMESPACE");
-  const char* component = std::getenv("DYNAMO_COMPONENT");
-  const char* endpoint = std::getenv("DYNAMO_ENDPOINT_NAME");
-  const std::string prefix = std::string(ns ? ns : "default") + "/" +
-                             (component ? component : "backend") + "/" +
-                             (endpoint ? endpoint : "generate") + "/";
+  const std::string prefix = etcdInstancePrefixFromEnv();
 
   auto deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(timeoutSec);
 
+  tt::dynamo::EtcdClient client(endpoints, /*timeout_ms=*/2000);
   while (std::chrono::steady_clock::now() < deadline) {
-    const std::string cmd =
-        "etcdctl --endpoints=" + endpoints + " get --prefix '" + prefix +
-        "' --keys-only 2>/dev/null | grep -q .";
-    if (std::system(cmd.c_str()) == 0) {
-      return true;
+    try {
+      if (client.hasKeysWithPrefix(prefix)) {
+        return true;
+      }
+    } catch (const tt::dynamo::EtcdError&) {
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
   }
@@ -484,12 +491,15 @@ class DynamoClient {
 template <typename Derived>
 class DynamoTestFixture : public ::testing::Test {
  protected:
-  static bool initDynamo(int timeoutSec = 5) {
+  static bool initDynamo(int timeoutSec = 30) {
     dynamoConfig_ = DynamoConfig::fromEnv();
     if (!waitForDynamoFrontend(dynamoConfig_, timeoutSec)) {
       dynamoAvailable_ = false;
-      std::cerr << "[" << testName() << "] Dynamo frontend not available at "
-                << dynamoConfig_.host << ":" << dynamoConfig_.port << std::endl;
+      dynamoUnavailableReason_ =
+          "Dynamo frontend not reachable at " + dynamoConfig_.host + ":" +
+          std::to_string(dynamoConfig_.port);
+      std::cerr << "[" << testName() << "] " << dynamoUnavailableReason_
+                << std::endl;
       std::cerr << "  Start with: cd dynamo_frontend && ./deploy.sh "
                    "--local-build"
                 << std::endl;
@@ -501,10 +511,12 @@ class DynamoTestFixture : public ::testing::Test {
 
   static bool warmupDynamo() {
     if (!waitForEtcdBackendRegistration(/*timeoutSec=*/30)) {
-      std::cerr << "[" << testName() << "] Dynamo backend not registered in "
-                << "etcd (frontend may not be able to route requests)"
-                << std::endl;
       dynamoAvailable_ = false;
+      dynamoUnavailableReason_ =
+          "No cpp_server backend registered in etcd under " +
+          etcdInstancePrefixFromEnv();
+      std::cerr << "[" << testName() << "] " << dynamoUnavailableReason_
+                << std::endl;
       return false;
     }
     return true;
@@ -512,8 +524,7 @@ class DynamoTestFixture : public ::testing::Test {
 
   void SetUp() override {
     if (!dynamoAvailable_) {
-      FAIL() << "Dynamo frontend not available. Start with: "
-             << "cd dynamo_frontend && ./deploy.sh --local-build";
+      FAIL() << dynamoUnavailableReason_;
     }
   }
 
@@ -538,6 +549,7 @@ class DynamoTestFixture : public ::testing::Test {
 
   static DynamoConfig dynamoConfig_;
   static bool dynamoAvailable_;
+  static std::string dynamoUnavailableReason_;
 
  private:
   static const char* testName() { return typeid(Derived).name(); }
@@ -548,5 +560,9 @@ DynamoConfig DynamoTestFixture<Derived>::dynamoConfig_;
 
 template <typename Derived>
 bool DynamoTestFixture<Derived>::dynamoAvailable_ = false;
+
+template <typename Derived>
+std::string DynamoTestFixture<Derived>::dynamoUnavailableReason_ =
+    "Dynamo infrastructure not initialized";
 
 }  // namespace tt::test

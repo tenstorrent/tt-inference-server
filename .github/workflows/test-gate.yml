@@ -731,6 +731,8 @@ jobs:
       DYNAMO_ENDPOINT_ENABLED: "1"
       DYNAMO_HOST: 127.0.0.1
       DYNAMO_PORT: "8080"
+      DYNAMO_MODEL: deepseek-ai/DeepSeek-R1-0528
+      DYN_TCP_RPC_HOST: 127.0.0.1
       MODEL_NAME: deepseek-ai/DeepSeek-R1-0528
     defaults:
       run:
@@ -818,6 +820,16 @@ jobs:
             --package ai-dynamo \
             --package uvloop
 
+      - name: Assert tokenizer + config bundle for Dynamo frontend
+        run: |
+          MODEL_DIR="cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
+          for f in config.json tokenizer.json tokenizer_config.json; do
+            [ -f "${MODEL_DIR}/${f}" ] || {
+              echo "::error::Missing ${MODEL_DIR}/${f} — Dynamo frontend needs all three."
+              exit 1
+            }
+          done
+
       - name: Start Dynamo frontend (port 8080)
         run: |
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8080 --label "Dynamo frontend"
@@ -848,6 +860,14 @@ jobs:
         run: |
           [ -f frontend.pid ] && kill "$(cat frontend.pid)" 2>/dev/null || true
           [ -f etcd.pid ] && kill "$(cat etcd.pid)" 2>/dev/null || true
+
+      - name: Show Dynamo logs on test failure
+        if: failure()
+        run: |
+          echo "=== etcd.log ==="
+          [ -f etcd.log ] && cat etcd.log || echo "(missing)"
+          echo "=== frontend.log ==="
+          [ -f frontend.log ] && cat frontend.log || echo "(missing)"
 
       # ── Mock backend benchmarks (same job) ───────────────────────────
       # The binary just built in cpp_server/build is benchmarked in place, so
