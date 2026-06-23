@@ -227,4 +227,17 @@ download_tokenizer \
     "json" \
     "true"
 
+# GLM-5.2 (public, no auth). Ships its chat template as a separate
+# chat_template.jinja (not inline in tokenizer_config.json), so needs_chat_template
+# is "true". config.json carries the full eos set, but generation_config.json is
+# fetched best-effort like every model. model_type "glm_moe_dsa" maps to the
+# glm45 (reasoning) + glm47 (tool-call) Dynamo parsers in discovery.cpp.
+download_tokenizer \
+    "zai-org/GLM-5.2" \
+    "https://huggingface.co/zai-org/GLM-5.2/resolve/main" \
+    "false" \
+    '{"model_type":"glm_moe_dsa","architectures":["GlmMoeDsaForCausalLM"]}' \
+    "json" \
+    "true"
+
 echo ""
