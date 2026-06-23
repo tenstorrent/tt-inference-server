@@ -10,7 +10,9 @@ class SessionTestHelper {
  public:
   static bool markPrepared(tt::domain::Session& s) { return s.markPrepared(); }
   static bool markInFlight(tt::domain::Session& s) { return s.markInFlight(); }
-  static bool clearInFlight(tt::domain::Session& s) { return s.clearInFlight(); }
+  static bool clearInFlight(tt::domain::Session& s) {
+    return s.clearInFlight();
+  }
 };
 
 namespace {
@@ -65,7 +67,8 @@ TEST(SessionState, MarkInFlightFromPrepared) {
 
 TEST(SessionState, MarkInFlightFromIdle) {
   tt::domain::Session s(1u);
-  EXPECT_TRUE(SessionTestHelper::markInFlight(s));  // IDLE -> IN_FLIGHT is allowed (fast path)
+  EXPECT_TRUE(SessionTestHelper::markInFlight(
+      s));  // IDLE -> IN_FLIGHT is allowed (fast path)
   EXPECT_TRUE(s.isInFlight());
   EXPECT_FALSE(s.isIdle());
   EXPECT_FALSE(s.isPrepared());
@@ -98,8 +101,8 @@ TEST(SessionState, ClearInFlightFromIdleReturnsFalse) {
 TEST(SessionState, ClearInFlightFromPreparedReturnsFalseAndPreservesState) {
   tt::domain::Session s(1u);
   ASSERT_TRUE(SessionTestHelper::markPrepared(s));
-  EXPECT_FALSE(
-      SessionTestHelper::clearInFlight(s));  // PREPARED -> IDLE not allowed via clearInFlight
+  EXPECT_FALSE(SessionTestHelper::clearInFlight(
+      s));  // PREPARED -> IDLE not allowed via clearInFlight
   EXPECT_TRUE(s.isPrepared());
 }
 

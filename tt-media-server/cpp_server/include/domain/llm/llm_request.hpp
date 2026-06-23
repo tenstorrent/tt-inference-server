@@ -194,8 +194,8 @@ struct LLMRequest : BaseRequest {
         << " min_p=" << detail::optStr(min_p)
         << " presence_penalty=" << presence_penalty
         << " frequency_penalty=" << frequency_penalty << " n=" << n
-        << " stop_count=" << stop.size()
-        << " slotId=" << detail::optStr(slotId) << " disaggregation_override="
+        << " stop_count=" << stop.size() << " slotId=" << detail::optStr(slotId)
+        << " disaggregation_override="
         << detail::optStr(disaggregation_override);
     return out.str();
   }

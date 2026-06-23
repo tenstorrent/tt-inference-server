@@ -21,7 +21,8 @@ namespace tt::services {
 class SessionManager;  // friend: owns the locked state transitions below
 }
 
-class SessionTestHelper;  // friend: allows unit tests to access protected methods
+class SessionTestHelper;  // friend: allows unit tests to access protected
+                          // methods
 
 namespace tt::domain {
 
