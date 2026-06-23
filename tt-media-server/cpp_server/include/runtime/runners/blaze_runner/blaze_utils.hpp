@@ -66,6 +66,7 @@ inline sch::GenerationParams makeGenerationParams(
       .sampling = userSampling,
       .reasoning_sampling = userSampling,
       .disaggregated_decode = seq.isDisaggregated(),
+      .starts_in_thinking = seq.getStartsInThinking(),
       .stop_tokens = seq.getSamplingParams().stop_token_ids,
   };
 }

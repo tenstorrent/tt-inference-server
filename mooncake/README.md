@@ -11,7 +11,7 @@ that moves device-DRAM KV between galaxies."
 | [poc1](poc1) | Python | Raw `MooncakeDistributedStore` `put`/`get` smoke test — the baseline. |
 | [poc2](poc2) | Python | The control-plane orchestration loop (scheduler looks local→remote, pulls via a **mocked** migration worker). Targets #4017. |
 | [poc3](poc3) | Python | Mooncake Store's multi-tier storage (local DRAM / remote DRAM / SSD) in isolation, with an authoritative read-tier classifier. |
-| [poc-transfer-engine](poc-transfer-engine) | C++ | The **custom UMD device-DRAM backend** for the Transfer Engine + Mooncake transport, driving a sender→transfer→verify migration worker. Targets #3890. |
+| [poc-transfer-engine](poc-transfer-engine) | C++ | The **custom UMD device-DRAM backend** for the Transfer Engine + Mooncake transport, driving a sender→transfer→verify migration worker. Targets #3890. Also hosts the **metadata-service worker discovery** PoC (`migration_worker_discovery`): two hosts find each other by a predefined logical name with dynamic ports, host RAM only. Targets #4209. |
 
 ## Python PoCs (poc1–poc3)
 
