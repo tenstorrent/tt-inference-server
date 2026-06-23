@@ -11,10 +11,12 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <cerrno>
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -98,6 +100,58 @@ bool parseProtocol(const std::string& value, TransportProtocol& out) {
   return false;
 }
 
+// Strict unsigned parse: the WHOLE token must be a plain non-negative integer.
+// strtoull alone would silently accept "4Gib" as 4 (it stops at the first
+// non-digit); we reject any leftover so a typo fails loud instead of allocating
+// 4 bytes (#4294 bug).
+bool parseSizeBytes(const std::string& value, std::size_t& out,
+                    std::string& err) {
+  if (value.empty() || value.front() == '-') {
+    err = "must be a non-negative integer";
+    return false;
+  }
+  errno = 0;
+  char* end = nullptr;
+  const unsigned long long parsed = std::strtoull(value.c_str(), &end, 0);
+  if (errno == ERANGE) {
+    err = "out of range";
+    return false;
+  }
+  if (end == value.c_str() || *end != '\0') {
+    err = "must be a plain integer (no suffixes like 'GiB')";
+    return false;
+  }
+  out = static_cast<std::size_t>(parsed);
+  return true;
+}
+
+// Strict positive-int parse: the WHOLE token must parse and be > 0. atoi would
+// turn "abc" (and an explicit "0") into 0, which means "give up discovery
+// immediately" — so an invalid value silently broke bring-up (#4294 bug).
+bool parsePositiveInt(const std::string& value, int& out, std::string& err) {
+  if (value.empty()) {
+    err = "must be a positive integer";
+    return false;
+  }
+  errno = 0;
+  char* end = nullptr;
+  const long parsed = std::strtol(value.c_str(), &end, 10);
+  if (errno == ERANGE || parsed > std::numeric_limits<int>::max()) {
+    err = "out of range";
+    return false;
+  }
+  if (end == value.c_str() || *end != '\0') {
+    err = "must be a plain integer";
+    return false;
+  }
+  if (parsed <= 0) {
+    err = "must be > 0";
+    return false;
+  }
+  out = static_cast<int>(parsed);
+  return true;
+}
+
 // Phase 1: parse and validate everything before any resource is touched.
 bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
   for (int i = 1; i < argc; ++i) {
@@ -115,13 +169,23 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
       continue;
     }
     if (a == "--host-dram-bytes" && next(v)) {
-      cfg.host_dram_bytes = std::strtoull(v.c_str(), nullptr, 0);
+      std::string perr;
+      if (!parseSizeBytes(v, cfg.host_dram_bytes, perr)) {
+        std::cerr << "--host-dram-bytes invalid ('" << v << "'): " << perr
+                  << "\n";
+        return false;
+      }
       continue;
     }
     if (a == "--protocol" && next(v) && parseProtocol(v, cfg.protocol))
       continue;
     if (a == "--discovery-timeout-sec" && next(v)) {
-      cfg.discovery_timeout_sec = std::atoi(v.c_str());
+      std::string perr;
+      if (!parsePositiveInt(v, cfg.discovery_timeout_sec, perr)) {
+        std::cerr << "--discovery-timeout-sec invalid ('" << v << "'): " << perr
+                  << "\n";
+        return false;
+      }
       continue;
     }
     std::cerr << "unknown/incomplete arg: " << a << "\n";
