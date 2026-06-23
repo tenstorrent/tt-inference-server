@@ -4043,7 +4043,7 @@ cnn_templates = [
 training_templates = [
     ModelSpecTemplate(
         weights=["google/gemma-1.1-2b-it"],
-        tt_metal_commit="2496be4",
+        tt_metal_commit="25891d3",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
