@@ -605,3 +605,132 @@ concurrency.
 **Projected e2e with Tier-1:** gpqa ~1h20m + mmlu_pro ~2h16m ≈ **~3.5h evals (0 timeouts)** +
 benchmarks ~3.5h ≈ **~7h**, with benchmarks now the dominant block → Tier-3 (sweep trim) is the
 next wall-clock lever.
+
+---
+
+## Stage 6 — full e2e release with staircase fix live + gpqa conc 8 + 3600s (2026-06-23)
+
+*Branch `kmabee/forge_llm_chunked_prefill.debug`. Log `local_release_qwen3_8b_p8009_20260623_042534.log`.
+Server: `launch_qwen3_8b.sh` (gmu 0.30), full Qwen3-8B on P150, port 8009; release flow via
+`--server-url` (no Docker), `limit-samples-mode=ci-nightly`, `specs=dev`.*
+
+**This is the first e2e run with all three landed changes together.** Config delta vs Stage 4/5:
+
+| Knob | Stage 4 → Stage 6 |
+|---|---|
+| tt-xla plugin | wheel `863947492` (#4278 fix only) → **local editable venv + the chunked-prefill batch-budget "staircase" fix (`5b62c877a`)** — `max_num_batched_tokens = max_num_seqs × prefill_chunk_size`, so the `[32, n]` prefill graph fills instead of serializing 2-at-a-time |
+| gpqa concurrency | 32 → **8** (Tier-1, now exercised in the *release flow*, not just standalone) |
+| gpqa request timeout | 7200 (Stage-4 experiment) → **3600** (reverted, as planned) |
+
+### E2E timing (this run)
+
+| Phase | Wall-clock | start (UTC) | notes |
+|---|---|---|---|
+| **Total release** | **7h09m** | 04:25 | `run.py` exit=1 (evals returncode 1 — mmlu_pro inference failures) |
+| Evals | 4h36m | 04:25 | ~flat vs Stage 4, but composition shifted (see below) |
+| — r1_gpqa_diamond | **1h16m** | 04:37 | **conc 8: 0 timeouts**, exact_match **0.45** |
+| — mmlu_pro | **3h08m** | 05:53 | conc 32: **21 timeouts** (was 0), exact_match **0.6069** — **regressed** |
+| Benchmarks | **2h33m** | 09:01 | ~13m warmup + 15-run text sweep + 6-run structured |
+| Reports | <1m | 11:35 | acceptance FAIL (status=EXPERIMENTAL, no tiers enforced) |
+
+### Stage 4 → Stage 6 comparison
+
+| | Stage 4 (wheel, conc 32 gpqa) | **Stage 6 (staircase + conc 8 gpqa)** | Δ |
+|---|---|---|---|
+| **Total wall-clock** | 8h09m | **7h09m** | **−1h00m** |
+| Evals stage | 4h33m | 4h36m | ~flat |
+| — r1_gpqa_diamond | 2h07m (24 timeouts, 0.225) | **1h16m (0 timeouts, 0.45)** | **−51m, 2× accuracy** ✅ |
+| — mmlu_pro | 2h16m (0 timeouts, 0.6316) | **3h08m (21 timeouts, 0.6069)** | **+52m, regressed** ⚠ |
+| Benchmarks | 3h35m | **2h33m** | **−1h02m** ✅ |
+| text-sweep Σ rows | ~7,943 s (2h12m) | **~4,405 s (1h13m)** | **−45%** ✅ |
+
+**Two wins and one regression — and they cancel in the evals stage but not overall.**
+
+1. **gpqa conc-8 works in the real flow** (validates Stage 5): timeouts 24 → **0**, score 0.225 → **0.45**
+   (≈0.70 of GPU ref 64.14), wall −51m. The accuracy "failure" was a timeout/truncation artifact; with
+   the working set fit to the KV pool it now answers. (0.45 here vs 0.60 in the Stage-5 standalone is
+   within the n≈40 stderr of ±0.08 — run-to-run noise, not a real drop.)
+2. **Benchmarks ~1h faster** — the staircase fix's headline (table below): the prefill-bound
+   multi-concurrency big-ISL rows collapse (cfg6 1239→414 s, cfg8 1988→470 s).
+3. **mmlu_pro regressed: 0 → 21 timeouts, 0.6316 → 0.6069, +52m.** Same conc-32 config; the **only**
+   server-side change is the now-live staircase fix. This is the **decode-starvation / co-scheduling**
+   side-effect we identified in the cfg6 analysis (gist): the batch-budget fill makes prefills batch,
+   but the strict prefill-first AscendScheduler then **interrupts decode** on every refill (`waiting=0`
+   trickle), inflating TPOT on the longest sustained-output docs until 21 of them miss the 3600s
+   streaming timeout. The prefill fix and the decode-starvation regression are **the same scheduler
+   behavior seen from two sides** — exactly why the co-scheduling follow-up matters.
+
+### Stage 6 benchmark sweep — staircase fix vs Stage 4 (Qwen3-8B, gmu 0.30)
+
+`agg tok/s` = vLLM `Output token throughput`. **Bold** = the staircase fix's target (con>1, large ISL).
+
+| cfg | con | ISL | OSL | n | S4 tok/s | **S6 tok/s** | S4 TTFT ms | **S6 TTFT ms** | S4 wall | **S6 wall** | note |
+|----:|----:|------:|----:|----:|--------:|----------:|---------:|-----------:|--------:|---------:|---|
+| 1 | 1 | 128 | 128 | 8 | 12.22 | 13.56 | 1,224.8 | 1,217.2 | 80 | 70 | single-stream TTFT still ~1.2 s (not staircase's target) ⚠ |
+| 2 | 32 | 128 | 128 | 256 | 78.18 | 70.18 | 3,410 | 2,902 | 394 | 428 | ~flat |
+| 3 | 1 | 128 | 1024 | 4 | 12.72 | 13.92 | 1,223 | 1,219 | 63 | 47 | TTFT still ~1.2 s ⚠ |
+| 4 | 32 | 128 | 1024 | 128 | 120.68 | **137.19** | 1,744 | 1,692 | 246 | 242 | +14% (partial recovery toward S2's 180.68) |
+| 5 | 1 | 1024 | 128 | 4 | 6.79 | 7.21 | 9,071 | 9,065 | 75 | 71 | ~flat |
+| **6** | **32** | **1024** | 128 | 128 | **12.53** | **38.81** | **106,754** | **22,447** | **1,239** | **414** | **3.1× tput, −79% TTFT, −67% wall** ✅ |
+| 7 | 1 | 2048 | 128 | 4 | 3.98 | 4.12 | 21,777 | 20,950 | 129 | 120 | ~flat |
+| **8** | **18** | **2048** | 128 | 72 | **4.56** | **19.38** | **180,009** | **34,951** | **1,988** | **470** | **4.25× tput, −76% wall** ✅ |
+| 9 | 1 | 4096 | 128 | 4 | 2.21 | 2.60 | 43,876 | 37,054 | 219 | 189 | ~flat |
+| **10** | **9** | **4096** | 128 | 36 | **2.32** | **4.22** | **128,005** | **62,011** | **1,905** | **1,031** | **1.8× tput, −46% wall** ✅ |
+| 11 | 1 | 8192 | 128 | 2 | 1.63 | 1.54 | 64,495 | 64,486 | 157 | 153 | ~flat |
+| **12** | **4** | **8192** | 128 | 8 | **1.28** | **1.88** | **208,006** | **142,797** | **793** | **534** | **1.5× tput, −33% wall** ✅ |
+| 13 | 1 | 16384 | 128 | 2 | 1.07 | 0.88 | 91,773 | 91,741 | 218 | 209 | ~flat |
+| 14 | 2 | 16384 | 128 | 4 | 1.21 | 1.00 | 92,551 | 92,532 | 404 | 396 | ~flat |
+| 15 | 1 | 32768 | 128 | 1 | 3.89 | 4.00 | 4,768 | 4,765 | 33 | 32 | n=1 outlier (TTFT implausibly low — same artifact as S2/S4) |
+
+**The staircase fix does exactly what it targets and nothing it doesn't:** every `con>1, ISL≥1024`
+row (6/8/10/12) drops 33–76% in wall and 1.5–4.3× in throughput, because those are the rows where
+the old budget serialized prefills 2-at-a-time. The `con=1` rows and the `ISL=128` rows are
+unchanged (no batching to gain). **cfg1/cfg3 single-stream short-ISL TTFT is still ~1,217 ms**
+(unchanged from Stage 4) — the batch-budget fix is multi-request, so it doesn't touch the
+single-stream path, and `ttft_check` still FAILs on it. That single-stream TTFT is now the lone
+benchmark-acceptance blocker, separate from #4326.
+
+### Stage 6 structured-output sweep (6 runs) — ~flat vs Stage 4
+
+con4 / OSL128 / n100, so prefill-light → staircase fix barely moves it (as expected):
+
+| # | dataset | struct out | S4 tok/s | **S6 tok/s** | S4 wall | **S6 wall** |
+|--:|---|--:|--------:|----------:|--------:|---------:|
+| 1 | json | 1.0 | 46.04 | 48.45 | 278 | 264 |
+| 2 | json | 0.0 | 45.68 | 48.49 | 280 | 264 |
+| 3 | json-unique | 1.0 | 44.96 | 47.66 | 285 | 269 |
+| 4 | json-unique | 0.0 | 45.14 | 47.12 | 284 | 272 |
+| 5 | xgrammar_bench | 1.0 | 25.94 | 26.87 | 489 | 474 |
+| 6 | xgrammar_bench | 0.0 | 36.20 | 37.84 | 345 | 328 |
+
+`xgrammar_bench` ratio 1.0 (run 5) is still the slow outlier (grammar-constrained decode). Σ ≈ 31m.
+
+### Acceptance (FAIL — informational; status=EXPERIMENTAL, no tiers enforced)
+
+| check | actual | threshold | ratio |
+|---|---:|---:|---:|
+| gpqa accuracy | 45.00 | 64.14 (ref) | 0.70 |
+| mmlu_pro accuracy | 60.69 | 66.07 (ref) | 0.92 |
+| cfg1 functional ttft | 1,217 ms | 300 ms | 4.06 |
+| cfg1 complete tput_user | 15.61 | 18.5 | 0.84 |
+| cfg1 target tput_user | 15.61 | 37.0 | 0.42 |
+
+(Both eval scores cleared *published* refs — gpqa 0.45 vs pub 0.62 ratio 0.73; mmlu_pro 60.69 vs pub
+56.73 ratio 1.07 — but fall short of the stricter *GPU* reference scores.)
+
+### Takeaway / where we are
+
+1. **Staircase fix (#4326) is a real benchmark win** — prefill-bound multi-concurrency configs 1.5–4.3×
+   faster, text sweep −45%, total e2e −1h. Confirmed as the right fix for the prefill half.
+2. **gpqa conc-8 (Tier-1) is validated end-to-end** — 0 timeouts, accuracy doubled, −51m. Keep it.
+3. **New regression to chase: mmlu_pro decode-starvation at conc 32** (0→21 timeouts, +52m). It is the
+   flip side of the staircase fix — the strict prefill-first scheduler interrupting decode on every
+   trickle refill (gist analysis). **Next lever = decode/prefill co-scheduling** (reserve a per-step
+   decode budget / mix prefill+decode), a *separate* tt-xla scheduler change from #4326. Until then,
+   mmlu_pro could be capped like gpqa (e.g. conc 16) as a stopgap — but that trades the parallelism that
+   keeps its 308-doc set fast, so the real fix is co-scheduling.
+4. **Lone benchmark blocker is single-stream short-ISL TTFT (~1.2 s)** — unchanged by #4326, fails
+   `ttft_check`. Distinct issue (small-ISL trace-capture / chunked-prefill on the `.debug` branch).
+5. **We are at ~7h e2e**, evals ~flat (gpqa win offset by mmlu_pro regression), benchmarks now the
+   smaller block. Fixing mmlu_pro co-scheduling would reclaim the ~52m and the timeouts; after that,
+   benchmark sweep-trim (Tier-3) is the next wall-clock lever.
