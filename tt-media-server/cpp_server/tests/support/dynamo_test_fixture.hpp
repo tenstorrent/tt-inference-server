@@ -105,6 +105,7 @@ struct UsageInfo {
   int completionTokens = 0;
   int totalTokens = 0;
   int cachedTokens = 0;
+  int reasoningTokens = 0;  // Thinking tokens excluded from prefix hash
 };
 
 struct ChatResponse {
@@ -175,6 +176,10 @@ inline ChatResponse parseStreamingResponse(const std::string& rawResponse) {
       if (usageVal.isMember("prompt_tokens_details")) {
         const auto& ptd = usageVal["prompt_tokens_details"];
         result.usage.cachedTokens = ptd.get("cached_tokens", 0).asInt();
+      }
+      if (usage.isMember("completion_tokens_details")) {
+        const auto& ctd = usage["completion_tokens_details"];
+        result.usage.reasoningTokens = ctd.get("reasoning_tokens", 0).asInt();
       }
     }
   }
