@@ -27,8 +27,7 @@
 #include <string>
 #include <vector>
 
-#include "../../support/chat_request.hpp"
-#include "../../support/dynamo_client.hpp"
+#include "../../support/dynamo_test_fixture.hpp"
 #include "../../support/http_client.hpp"
 #include "../../support/worker_response.hpp"
 #include "test_server.hpp"

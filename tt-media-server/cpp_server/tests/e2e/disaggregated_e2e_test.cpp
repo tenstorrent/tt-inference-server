@@ -89,16 +89,7 @@ void configureDecodeEnv() {
   configureCommonEnv();
   setenv("LLM_MODE", "decode", 1);
   setQueueEnv(DECODE_QUEUE_PREFIX);
-
-  // Enable DynamoEndpoint so external Dynamo frontend can route requests here.
-  setenv("DYNAMO_ENDPOINT_ENABLED", "1", 1);
-  setenv("DYNAMO_BIND_HOST", "0.0.0.0", 1);
-  setenv("DYNAMO_NAMESPACE", "default", 1);
-  setenv("DYNAMO_COMPONENT", "backend", 1);
-  setenv("DYNAMO_ENDPOINT_NAME", "generate", 1);
-  // Point to etcd started by deploy.sh (default port 2379).
-  setenv("DYNAMO_ETCD_ENDPOINTS", "http://127.0.0.1:2379", 1);
-  setenv("DYNAMO_ETCD_LEASE_TTL_SECS", "30", 1);
+  tt::test::configureDynamoEnv();
 }
 
 void configurePrefillEnv() {

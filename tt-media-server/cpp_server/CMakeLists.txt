@@ -1019,6 +1019,7 @@ target_link_libraries(prefix_cache_e2e_test PRIVATE
 )
 target_include_directories(prefix_cache_e2e_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
 )
 
 # Tokenizer benchmark

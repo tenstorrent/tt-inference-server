@@ -24,11 +24,11 @@
 #include <vector>
 
 #include "config/defaults.hpp"
-#include "dynamo_test_helpers.hpp"
+#include "support/dynamo_test_fixture.hpp"
 
 namespace {
 
-using namespace tt::test::dynamo;
+using namespace tt::test;
 
 // ---------------------------------------------------------------------------
 // Prefix cache calculation
