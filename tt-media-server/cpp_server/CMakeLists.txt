@@ -1098,6 +1098,32 @@ if(KAFKA_ENABLED)
     target_include_directories(remote_kv_manager_impl_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
+
+    # KV migration worker library
+    add_library(kv_migration_worker
+        src/runtime/worker/kv_migration_worker.cpp
+        src/runtime/worker/stub_migration_executor.cpp
+    )
+    target_include_directories(kv_migration_worker PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(kv_migration_worker PUBLIC
+        messaging
+        spdlog::spdlog
+    )
+
+    # Unit test for KvMigrationWorker (uses in-process fake Kafka + mock executor).
+    add_executable(kv_migration_worker_test
+        tests/unit/workers/kv_migration_worker_test.cpp
+    )
+    target_link_libraries(kv_migration_worker_test PRIVATE
+        kv_migration_worker
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(kv_migration_worker_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
 else()
     message(STATUS "Kafka support disabled (use -DKAFKA_ENABLED=ON to enable)")
 endif()
@@ -1278,6 +1304,31 @@ if(KAFKA_ENABLED)
         target_link_libraries(tt_consumer PRIVATE spdlog::spdlog)
     endif()
     target_compile_options(tt_consumer PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    # Separate process so the legacy `tt_consumer` is untouched.
+    add_executable(tt_kv_migration_consumer
+        src/kv_migration_consumer_main.cpp
+    )
+    target_include_directories(tt_kv_migration_consumer PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(tt_kv_migration_consumer PRIVATE
+        Drogon::Drogon
+        llm_runner_lib
+        kv_migration_worker
+        messaging
+    )
+    if(USE_EXTERNAL_FMT)
+        target_link_libraries(tt_kv_migration_consumer PRIVATE
+            spdlog::spdlog fmt::fmt)
+    else()
+        target_link_libraries(tt_kv_migration_consumer PRIVATE spdlog::spdlog)
+    endif()
+    target_compile_options(tt_kv_migration_consumer PRIVATE
         -Wall
         -Wextra
         -Wpedantic
