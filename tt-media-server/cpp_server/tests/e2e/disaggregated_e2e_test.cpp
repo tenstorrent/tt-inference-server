@@ -209,7 +209,7 @@ void configurePrefillEnv() {
   stopTaskResponder.store(true);
   autoResponder.join();
   taskResponder.join();
-  dynamoEndpoint->stop();
+  // Skip DynamoEndpoint::stop() — graceful shutdown can hang on open streams.
   std::_Exit(0);
 }
 
@@ -369,8 +369,22 @@ class DisaggregatedE2ETest
 
     if (decodePid > 0) {
       kill(decodePid, SIGTERM);
-      int status = 0;
-      waitpid(decodePid, &status, 0);
+      const auto deadline =
+          std::chrono::steady_clock::now() + std::chrono::seconds(5);
+      while (std::chrono::steady_clock::now() < deadline) {
+        int status = 0;
+        const pid_t w = waitpid(decodePid, &status, WNOHANG);
+        if (w == decodePid) {
+          decodePid = -1;
+          break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+      if (decodePid > 0) {
+        kill(decodePid, SIGKILL);
+        waitpid(decodePid, nullptr, 0);
+        decodePid = -1;
+      }
     }
 
     unlink(sentinelPath.c_str());

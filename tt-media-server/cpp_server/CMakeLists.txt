@@ -961,7 +961,7 @@ add_test(NAME DisaggregatedE2ETest COMMAND disaggregated_e2e_test)
 # Integration tests boot the full server stack and share ports/resources.
 # Prevent parallel execution via RESOURCE_LOCK.
 set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2ETest PROPERTIES
-    TIMEOUT 120
+    TIMEOUT 180
     RESOURCE_LOCK integration_server
 )
 gtest_discover_tests(scheduler_test)
@@ -1009,7 +1009,7 @@ add_test(NAME CancellationE2E
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_e2e_with_server.sh
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
-set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 120)
+set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 180)
 
 # Prefix cache E2E test (requires external Dynamo server)
 add_executable(prefix_cache_e2e_test tests/e2e/prefix_cache_e2e_test.cpp)

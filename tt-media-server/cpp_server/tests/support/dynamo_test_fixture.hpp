@@ -40,6 +40,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <future>
@@ -300,6 +301,43 @@ inline bool waitForDynamoFrontend(const DynamoConfig& cfg,
   return waitForTcpPort(cfg.host, cfg.port, timeoutSec);
 }
 
+inline std::string dynamoEtcdEndpointsFromEnv() {
+  if (const char* endpoints = std::getenv("DYNAMO_ETCD_ENDPOINTS")) {
+    return endpoints;
+  }
+  if (const char* endpoints = std::getenv("ETCD_ENDPOINTS")) {
+    return endpoints;
+  }
+  return "http://127.0.0.1:2379";
+}
+
+/// Poll etcd until a cpp_server DynamoEndpoint registers under the configured
+/// namespace/component/endpoint prefix. Integration tests mock the worker on
+/// the IPC task queue, so a full HTTP warmup would hang waiting for tokens.
+inline bool waitForEtcdBackendRegistration(int timeoutSec = 30) {
+  const std::string endpoints = dynamoEtcdEndpointsFromEnv();
+  const char* ns = std::getenv("DYNAMO_NAMESPACE");
+  const char* component = std::getenv("DYNAMO_COMPONENT");
+  const char* endpoint = std::getenv("DYNAMO_ENDPOINT_NAME");
+  const std::string prefix = std::string(ns ? ns : "default") + "/" +
+                             (component ? component : "backend") + "/" +
+                             (endpoint ? endpoint : "generate") + "/";
+
+  auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(timeoutSec);
+
+  while (std::chrono::steady_clock::now() < deadline) {
+    const std::string cmd =
+        "etcdctl --endpoints=" + endpoints + " get --prefix '" + prefix +
+        "' --keys-only 2>/dev/null | grep -q .";
+    if (std::system(cmd.c_str()) == 0) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  }
+  return false;
+}
+
 inline bool warmupDynamoFrontend(const DynamoConfig& cfg) {
   const std::string warmupBody =
       R"({"model":")" + cfg.model +
@@ -462,9 +500,10 @@ class DynamoTestFixture : public ::testing::Test {
   }
 
   static bool warmupDynamo() {
-    if (!warmupDynamoFrontend(dynamoConfig_)) {
-      std::cerr << "[" << testName() << "] Dynamo frontend warmup failed "
-                << "(backend may not have registered with etcd)" << std::endl;
+    if (!waitForEtcdBackendRegistration(/*timeoutSec=*/30)) {
+      std::cerr << "[" << testName() << "] Dynamo backend not registered in "
+                << "etcd (frontend may not be able to route requests)"
+                << std::endl;
       dynamoAvailable_ = false;
       return false;
     }

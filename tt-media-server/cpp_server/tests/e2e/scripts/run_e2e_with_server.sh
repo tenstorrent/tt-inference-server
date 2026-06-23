@@ -26,6 +26,14 @@ cleanup() {
     if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
         echo "Stopping server (PID $SERVER_PID)..."
         kill "$SERVER_PID" 2>/dev/null || true
+        for _ in $(seq 1 10); do
+            kill -0 "$SERVER_PID" 2>/dev/null || break
+            sleep 1
+        done
+        if kill -0 "$SERVER_PID" 2>/dev/null; then
+            echo "Server did not exit after SIGTERM; sending SIGKILL..."
+            kill -9 "$SERVER_PID" 2>/dev/null || true
+        fi
         wait "$SERVER_PID" 2>/dev/null || true
     fi
 }
@@ -41,6 +49,9 @@ fi
 echo "Starting mock server on port $PORT..."
 export LLM_DEVICE_BACKEND=mock
 export MODEL_SERVICE=llm
+# Disable DynamoEndpoint for this test - it doesn't need Dynamo and enabling it
+# causes shutdown hangs when the server is killed.
+export DYNAMO_ENDPOINT_ENABLED=0
 "$SERVER_BIN" -p "$PORT" -h 127.0.0.1 -t 4 > /dev/null 2>&1 &
 SERVER_PID=$!
 

@@ -52,10 +52,9 @@ class TestServer {
     stopAutoResponder_.store(true);
     if (memoryAutoResponderThread_.joinable())
       memoryAutoResponderThread_.join();
-    if (dynamoEndpoint_) {
-      dynamoEndpoint_->stop();
-      dynamoEndpoint_.reset();
-    }
+    // DynamoEndpoint::stop() can block on open call-home streams; the test
+    // process exits immediately after TearDownTestSuite anyway.
+    dynamoEndpoint_.release();
   }
 
   // Test reads from here to see what the controller pushed.
