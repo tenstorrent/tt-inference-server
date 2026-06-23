@@ -5,7 +5,8 @@
 //
 // Provides:
 //   - DynamoConfig: configuration for Dynamo frontend connection
-//   - DynamoTestFixture: base fixture with availability checking and graceful skip
+//   - DynamoTestFixture: base fixture with availability checking and graceful
+//   skip
 //   - DynamoClient: high-level chat API for E2E tests
 //   - HTTP client helpers for sending requests via Dynamo frontend
 //   - SSE response parsing utilities
@@ -29,9 +30,8 @@
 
 #pragma once
 
-#include <gtest/gtest.h>
-
 #include <arpa/inet.h>
+#include <gtest/gtest.h>
 #include <json/json.h>
 #include <netdb.h>
 #include <sys/socket.h>
@@ -177,8 +177,8 @@ inline ChatResponse parseStreamingResponse(const std::string& rawResponse) {
         const auto& ptd = usageVal["prompt_tokens_details"];
         result.usage.cachedTokens = ptd.get("cached_tokens", 0).asInt();
       }
-      if (usage.isMember("completion_tokens_details")) {
-        const auto& ctd = usage["completion_tokens_details"];
+      if (usageVal.isMember("completion_tokens_details")) {
+        const auto& ctd = usageVal["completion_tokens_details"];
         result.usage.reasoningTokens = ctd.get("reasoning_tokens", 0).asInt();
       }
     }

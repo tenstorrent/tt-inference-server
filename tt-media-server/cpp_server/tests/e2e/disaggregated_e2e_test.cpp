@@ -35,14 +35,14 @@
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
 #include "domain/sentinel_values.hpp"
+#include "dynamo/dynamo_endpoint.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/boost/boost_task_queue.hpp"
+#include "services/llm_pipeline.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
 #include "sockets/inter_server_service.hpp"
-#include "dynamo/dynamo_endpoint.hpp"
-#include "services/llm_pipeline.hpp"
 #include "support/chat_completion_stream.hpp"
 #include "support/dynamo_test_fixture.hpp"
 #include "support/http_response.hpp"
@@ -188,7 +188,9 @@ void configurePrefillEnv() {
   dynamoEndpoint->start();
 
   std::ofstream(sentinelPath) << "ready";
-  TT_LOG_INFO("[DecodeSubprocess] Ready with DynamoEndpoint, sentinel written to {}", sentinelPath);
+  TT_LOG_INFO(
+      "[DecodeSubprocess] Ready with DynamoEndpoint, sentinel written to {}",
+      sentinelPath);
 
   static std::atomic<bool> done{false};
   std::signal(SIGTERM, [](int) { done.store(true); });
@@ -512,7 +514,7 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
           .user(largePrompt)
           .assistant("Here is my response.")  // Simulated assistant response
                                               // from turn 1
-          .user(followUpMessage)  // New user message (small delta)
+          .user(followUpMessage)              // New user message (small delta)
           .maxTokens(1)
           .stream());
 
@@ -561,13 +563,13 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // not just a small addition to Part 2's cached conversation.
   std::string bigFollowUp = generatePromptWithApproxTokens(1196);
 
-  auto bigDeltaFuture =
-      asyncRequest(chatRequest()
-                       .user(largePrompt)
-                       .assistant("Here is my response.")  // Same as Part 1's response
-                       .user(bigFollowUp)                  // Big delta (~1200 tokens)
-                       .maxTokens(1)
-                       .stream());
+  auto bigDeltaFuture = asyncRequest(
+      chatRequest()
+          .user(largePrompt)
+          .assistant("Here is my response.")  // Same as Part 1's response
+          .user(bigFollowUp)                  // Big delta (~1200 tokens)
+          .maxTokens(1)
+          .stream());
 
   // Should go to prefill again (big delta). Part 3 MUST get a cache HIT on
   //  prefill because Part 1 already established the session - no ALLOCATE
