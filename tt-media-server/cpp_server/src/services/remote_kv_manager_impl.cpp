@@ -14,8 +14,8 @@ namespace tt::services {
 RemoteKVManagerImpl::RemoteKVManagerImpl(
     std::unique_ptr<tt::messaging::IKafkaProducer> requestProducer,
     std::unique_ptr<tt::messaging::IKafkaConsumer> ackConsumer,
-    std::chrono::milliseconds timeout,
-    std::chrono::milliseconds sweepInterval, int drainPollMs)
+    std::chrono::milliseconds timeout, std::chrono::milliseconds sweepInterval,
+    int drainPollMs)
     : requestProducer(std::move(requestProducer)),
       ackConsumer(std::move(ackConsumer)),
       timeout(timeout),
@@ -58,9 +58,8 @@ uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
     // occurs we keep the older record (insert is a no-op) and the caller
     // will observe whatever state that older migration is in. This is safer
     // than overwriting an in-flight record.
-    auto [it, inserted] =
-        migrations.emplace(id, MigrationState{MigrationStatus::IN_PROGRESS,
-                                              now});
+    auto [it, inserted] = migrations.emplace(
+        id, MigrationState{MigrationStatus::IN_PROGRESS, now});
     if (!inserted) {
       TT_LOG_WARN(
           "[RemoteKVManagerImpl] id collision on migration_id={}; returning "
