@@ -1124,6 +1124,18 @@ if(KAFKA_ENABLED)
     target_include_directories(kv_migration_worker_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
+
+    add_executable(remote_kv_manager_kafka_test
+        tests/integration/remote_kv_manager_kafka_test.cpp
+    )
+    target_link_libraries(remote_kv_manager_kafka_test PRIVATE
+        kv_migration_worker
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(remote_kv_manager_kafka_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
 else()
     message(STATUS "Kafka support disabled (use -DKAFKA_ENABLED=ON to enable)")
 endif()
