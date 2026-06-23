@@ -717,6 +717,21 @@ jobs:
       no_proxy: "localhost,127.0.0.1,::1"
       CI_CCACHE: "1"
       CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
+      # Dynamo discovery env vars - shared by etcd, frontend, and test backends.
+      # Mirrors cpp_server/scripts/start_dynamo.sh exports.
+      DYN_DISCOVERY_BACKEND: etcd
+      ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYN_REQUEST_PLANE: tcp
+      DYN_EVENT_PLANE: zmq
+      DYNAMO_DISCOVERY_BACKEND: etcd
+      DYNAMO_ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYNAMO_NAMESPACE: default
+      DYNAMO_COMPONENT: backend
+      DYNAMO_ENDPOINT_NAME: generate
+      DYNAMO_ENDPOINT_ENABLED: "1"
+      DYNAMO_HOST: 127.0.0.1
+      DYNAMO_PORT: "8080"
+      MODEL_NAME: deepseek-ai/DeepSeek-R1-0528
     defaults:
       run:
         working-directory: tt-media-server
@@ -753,14 +768,76 @@ jobs:
           ./build.sh --blaze
           cd ..
 
-      - name: Start Dynamo infrastructure
-        run: bash cpp_server/scripts/ci/start_dynamo.sh
+      # ── Dynamo infrastructure for integration/e2e tests ──────────────────
+      # Same approach as cpp-heavy-checks.yml: binary etcd + Python venv frontend.
+      - name: Install etcd from upstream release
+        working-directory: .
+        run: |
+          ETCD_VER=v3.5.13
+          curl -fsSL \
+            "https://github.com/etcd-io/etcd/releases/download/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz" \
+            -o /tmp/etcd.tar.gz
+          mkdir -p /tmp/etcd
+          tar xzf /tmp/etcd.tar.gz -C /tmp/etcd --strip-components=1
+          sudo install -m 0755 /tmp/etcd/etcd    /usr/local/bin/etcd
+          sudo install -m 0755 /tmp/etcd/etcdctl /usr/local/bin/etcdctl
+          etcd --version
+
+      - name: Start etcd
+        run: |
+          pkill -f '/usr/local/bin/etcd' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 2380 --label "etcd"
+          rm -rf /tmp/etcd-data
+          etcd \
+            --data-dir /tmp/etcd-data \
+            --advertise-client-urls=http://127.0.0.1:2379 \
+            --listen-client-urls=http://127.0.0.1:2379 \
+            --listen-peer-urls=http://127.0.0.1:2380 \
+            --initial-advertise-peer-urls=http://127.0.0.1:2380 \
+            --initial-cluster='default=http://127.0.0.1:2380' \
+            > etcd.log 2>&1 &
+          echo $! > etcd.pid
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command 'etcdctl --endpoints=http://127.0.0.1:2379 endpoint health' \
+            --pid-file etcd.pid \
+            --failure-log etcd.log \
+            --label "etcd"
+
+      - name: Set up uv for Dynamo frontend
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+
+      - name: Create dynamo venv
+        run: |
+          mkdir -p "$HOME/.venvs"
+          bash cpp_server/scripts/ci/install_bench_client.sh \
+            --venv "$HOME/.venvs/dynamo" \
+            --python ${{ env.PYTHON_VERSION }} \
+            --package ai-dynamo \
+            --package uvloop
+
+      - name: Start Dynamo frontend (port 8080)
+        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8080 --label "Dynamo frontend"
+          MODEL_PATH="${GITHUB_WORKSPACE}/tt-media-server/cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
+          "$HOME/.venvs/dynamo/bin/python3" -m dynamo.frontend \
+              --http-port 8080 \
+              --router-mode kv \
+              --model-name "${MODEL_NAME}" \
+              --model-path "${MODEL_PATH}" \
+              > frontend.log 2>&1 &
+          echo $! > frontend.pid
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command 'curl -sf "http://127.0.0.1:8080/v1/models" 2>/dev/null | grep -q "\"data\""' \
+            --timeout 120 \
+            --interval 2 \
+            --pid-file frontend.pid \
+            --failure-log frontend.log \
+            --label "Dynamo frontend"
 
       - name: Run C++ unit tests
-        env:
-          DYNAMO_HOST: 127.0.0.1
-          DYNAMO_PORT: 8080
-          ETCD_ENDPOINTS: http://127.0.0.1:2379
         run: |
           cd cpp_server/build
           ctest --output-on-failure
@@ -768,7 +845,9 @@ jobs:
 
       - name: Stop Dynamo infrastructure
         if: always()
-        run: bash cpp_server/scripts/ci/start_dynamo.sh --stop
+        run: |
+          [ -f frontend.pid ] && kill "$(cat frontend.pid)" 2>/dev/null || true
+          [ -f etcd.pid ] && kill "$(cat etcd.pid)" 2>/dev/null || true
 
       # ── Mock backend benchmarks (same job) ───────────────────────────
       # The binary just built in cpp_server/build is benchmarked in place, so
