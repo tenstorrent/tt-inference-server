@@ -27,11 +27,11 @@
 #include <string>
 #include <vector>
 
-#include "support/chat_request.hpp"
-#include "support/dynamo_client.hpp"
-#include "support/http_client.hpp"
-#include "support/test_server.hpp"
-#include "support/worker_response.hpp"
+#include "../../support/chat_request.hpp"
+#include "../../support/dynamo_client.hpp"
+#include "../../support/http_client.hpp"
+#include "../../support/worker_response.hpp"
+#include "test_server.hpp"
 
 namespace tt::test {
 

@@ -33,7 +33,7 @@ def test_inserts_new_model_and_idempotent_rerun(tmp_path, fixtures_dir, vllm_spe
 
 def test_multi_impl_same_device(tmp_path, fixtures_dir, sample_impl):
     """Two impls under one (model, engine, device) -> one defaultImpl chosen."""
-    from workflows.model_spec import DeviceModelSpec, ImplSpec, ModelSpecTemplate
+    from workflows.model_spec import DeviceModelSpec, ImplSpec, ProdModelSpecTemplate
     from workflows.workflow_types import DeviceTypes, InferenceEngine
 
     work = tmp_path / "values.yaml"
@@ -47,9 +47,10 @@ def test_multi_impl_same_device(tmp_path, fixtures_dir, sample_impl):
     )
 
     def make(impl, default_impl: bool):
-        return ModelSpecTemplate(
+        return ProdModelSpecTemplate(
             weights=["acme/MultiImpl-7B"],
             impl=impl,
+            version="0.12.0",
             tt_metal_commit="aaa",
             vllm_commit="bbb",
             inference_engine=InferenceEngine.VLLM.value,
@@ -77,16 +78,17 @@ def test_multi_impl_same_device(tmp_path, fixtures_dir, sample_impl):
 
 def test_multi_engine_same_model(tmp_path, fixtures_dir, sample_impl):
     """Two engines on the same model -> defaultEngine picked by precedence."""
-    from workflows.model_spec import DeviceModelSpec, ModelSpecTemplate
+    from workflows.model_spec import DeviceModelSpec, ProdModelSpecTemplate
     from workflows.workflow_types import DeviceTypes, InferenceEngine
 
     work = tmp_path / "values.yaml"
     work.write_text((fixtures_dir / "test_values.yaml").read_text())
 
     def make(engine):
-        return ModelSpecTemplate(
+        return ProdModelSpecTemplate(
             weights=["acme/MultiEngine-7B"],
             impl=sample_impl,
+            version="0.12.0",
             tt_metal_commit="aaa",
             vllm_commit="bbb" if engine == InferenceEngine.VLLM.value else None,
             inference_engine=engine,

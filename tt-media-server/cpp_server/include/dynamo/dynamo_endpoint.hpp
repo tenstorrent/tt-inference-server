@@ -87,7 +87,6 @@ class DynamoEndpoint {
   Options options_;
 
   std::unique_ptr<DynamoServer> server_;
-  std::thread server_thread_;
   std::thread keepalive_thread_;
   std::unique_ptr<trantor::EventLoopThreadPool> loop_pool_;
   std::atomic<bool> running_{false};

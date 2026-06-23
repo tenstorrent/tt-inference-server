@@ -28,14 +28,14 @@
 #include <memory>
 #include <string>
 
+#include "../support/multiturn_prefix_cache.hpp"
+#include "../support/test_server.hpp"
 #include "domain/manage_memory.hpp"
 #include "ipc/interface/result_queue.hpp"
 #include "support/chat_completion_stream.hpp"
 #include "support/dynamo_test_fixture.hpp"
 #include "support/http_client.hpp"
 #include "support/http_response.hpp"
-#include "support/multiturn_prefix_cache.hpp"
-#include "support/test_server.hpp"
 #include "support/test_worker_main.hpp"
 #include "support/worker_response.hpp"
 #include "utils/logger.hpp"
@@ -673,15 +673,16 @@ TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
   future.get();
 }
 
-TEST_F(MainIntegrationTest, MigrationId_IsZeroInRegularMode) {
+TEST_F(MainIntegrationTest, MigrationId_IsNulloptInRegularMode) {
   // In regular (non-disaggregated) mode, no migration ID is generated.
-  // Verify the field survives IPC serialization as 0 (not garbage).
+  // Verify the field survives IPC serialization as nullopt (not garbage).
   auto future = asyncRequest(chatRequest().user("hello").maxTokens(1).stream());
 
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
-  EXPECT_EQ(seq->getMigrationId(), 0u)
-      << "migrationId must be 0 in regular mode (only prefill generates it)";
+  EXPECT_FALSE(seq->getMigrationId().has_value())
+      << "migrationId must be nullopt in regular mode (only prefill generates "
+         "it)";
 
   mockWorkerResponse(seq->taskId);
   future.get();
