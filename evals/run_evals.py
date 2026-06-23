@@ -538,9 +538,7 @@ def build_eval_command(
     # Inject seed into gen_kwargs to ensure it propagates to vLLM SamplingParams.
     # Without this, seed from --seed flag only controls lm-eval dataset ordering,
     # not generation randomness, causing non-deterministic outputs.
-    effective_gen_kwargs = _inject_seed_into_gen_kwargs(
-        effective_gen_kwargs, task.seed
-    )
+    effective_gen_kwargs = _inject_seed_into_gen_kwargs(effective_gen_kwargs, task.seed)
 
     optional_model_args = []
     if effective_max_concurrent:
