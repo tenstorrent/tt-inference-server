@@ -753,11 +753,22 @@ jobs:
           ./build.sh --blaze
           cd ..
 
+      - name: Start Dynamo infrastructure
+        run: bash cpp_server/scripts/ci/start_dynamo.sh
+
       - name: Run C++ unit tests
+        env:
+          DYNAMO_HOST: 127.0.0.1
+          DYNAMO_PORT: 8080
+          ETCD_ENDPOINTS: http://127.0.0.1:2379
         run: |
           cd cpp_server/build
           ctest --output-on-failure
-          cd ../..
+          cd ..
+
+      - name: Stop Dynamo infrastructure
+        if: always()
+        run: bash cpp_server/scripts/ci/start_dynamo.sh --stop
 
       # ── Mock backend benchmarks (same job) ───────────────────────────
       # The binary just built in cpp_server/build is benchmarked in place, so
