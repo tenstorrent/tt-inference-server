@@ -82,9 +82,10 @@ void MooncakeMigrationWorker::run(const std::atomic<bool>& stopRequested) {
 // Reverse-order teardown: stop being discoverable before the engine drops, so
 // no in-flight peer write lands on memory we've freed. Idempotent.
 void MooncakeMigrationWorker::teardown() {
-  if (memoryRegistered_ && engine_) {
+  // exchange() makes this idempotent even if two threads race here: only the
+  // caller that flips true->false performs the single unregister.
+  if (memoryRegistered_.exchange(false) && engine_) {
     engine_->unregisterLocalMemory(hostDramPool_.data());
-    memoryRegistered_ = false;
   }
 }
 

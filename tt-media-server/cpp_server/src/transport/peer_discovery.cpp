@@ -37,8 +37,18 @@ std::optional<std::map<std::string, SegmentHandle>> PeerDiscovery::resolveAll(
   }
 
   if (resolved.size() < peerNames.size()) {
-    TT_LOG_WARN("[PeerDiscovery] timed out: resolved {}/{} peers in {}s",
-                resolved.size(), peerNames.size(), config_.timeout_sec);
+    // Name the peers we never reached — debugging a 20-worker mesh from a bare
+    // "resolved 18/20" is painful otherwise.
+    std::string missing;
+    for (const auto& name : peerNames) {
+      if (resolved.count(name)) continue;
+      if (!missing.empty()) missing += ", ";
+      missing += name;
+    }
+    TT_LOG_WARN(
+        "[PeerDiscovery] timed out after {}s: resolved {}/{} peers; still "
+        "missing: {}",
+        config_.timeout_sec, resolved.size(), peerNames.size(), missing);
     return std::nullopt;
   }
   return resolved;

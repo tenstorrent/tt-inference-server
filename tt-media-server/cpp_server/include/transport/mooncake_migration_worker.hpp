@@ -109,7 +109,9 @@ class MooncakeMigrationWorker {
   std::vector<uint8_t> hostDramPool_;  ///< Registered/published by bringUp().
   std::vector<uint8_t> staging_;       ///< Spike host staging buffer (#3890).
   std::map<std::string, SegmentHandle> peers_;  ///< Resolved by bringUp().
-  bool memoryRegistered_ = false;
+  /// Atomic so run()'s teardown and ~dtor's teardown can't double-unregister;
+  /// teardown() flips it with exchange() to stay idempotent.
+  std::atomic<bool> memoryRegistered_{false};
 };
 
 }  // namespace tt::transport
