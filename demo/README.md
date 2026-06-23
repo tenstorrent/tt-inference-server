@@ -99,6 +99,27 @@ $PY demo/dots_ocr_endpoint_demo.py \
     --max-tokens 2048
 ```
 
+### Continuous batching (concurrency)
+
+The server uses vLLM continuous batching on the data-parallel (DP=8) dots.ocr
+pipeline. Pass `--concurrency N` (1–8) to fan the folder out across `N` in-flight
+requests; the server batches them into one shared decode step, so wall-clock and
+aggregate throughput improve well below `N×` the sequential time:
+
+```bash
+# Sequential baseline
+$PY demo/dots_ocr_endpoint_demo.py --image-dir $SAMPLE_DOCS --limit 8 --concurrency 1
+
+# Continuous batching (cap at the DP batch of 8)
+$PY demo/dots_ocr_endpoint_demo.py --image-dir $SAMPLE_DOCS --limit 8 --concurrency 8
+```
+
+The summary line reports `wall-clock` and `aggregate tok/s`. On a T3K, 8 letter-boxed
+documents go from ~130 s / ~16 tok/s (sequential) to ~49 s / ~50 tok/s
+(`--concurrency 8`) — roughly **2.7× faster wall-clock, ~3× aggregate throughput** —
+with identical transcriptions. `N > 8` exceeds the DP batch and is rejected by the
+S2 decode path, so keep `N ≤ 8`.
+
 ## Step 5 — Read the results
 
 The batch demo writes everything to `demo/demo_outputs/`:
@@ -163,6 +184,7 @@ The `demo/dots_ocr_endpoint_demo.py` client (used in Step 4) accepts:
 | `--limit N` | only process the first N images | `20` |
 | `--max-tokens N` | cap transcription length (higher = slower) | `2048` |
 | `--prompt "..."` | tailor the instruction (e.g. tables / key-value extraction) | extract-all-text |
+| `--concurrency N` | number of in-flight requests (continuous batching); cap at 8 (DP batch) | `1` |
 | `--base-url URL` | hit the server directly, bypassing the resize proxy | `http://127.0.0.1:8001/v1` |
 | `--out DIR` | output directory | `demo/demo_outputs` |
 
@@ -174,6 +196,20 @@ $PY demo/dots_ocr_endpoint_demo.py \
     --prompt "Extract all tables as Markdown." \
     --limit 5
 ```
+
+## vLLM features in this deployment
+
+The dots.ocr S2 path drives the vLLM v1 engine on the DP=8 paged pipeline. What is
+active in this deployment:
+
+| Feature | Status | How it shows up |
+|---|---|---|
+| Continuous batching | **on** | `--concurrency 8` batches in-flight requests into one decode step (see speedup above); server log shows multi-seq scheduler steps |
+| PagedAttention KV cache | **on** | `set_vllm_page_table` installs each request's page table per decode; KV block budget capped to the pipeline's 512-block buffer |
+| Chunked prefill | **on** | long prompts (> chunk size) are prefilled in segments over the paged KV; short demo images don't trigger it |
+| Sampling & anti-repetition | **on** | `temperature>0` plus `repetition_penalty` / `presence_penalty` / `frequency_penalty` are applied host-side on returned logits; `temperature 0` stays greedy/stable |
+| Multimodal continuous batching | **on** | concurrent image requests are batched across DP streams (the proxy normalizes them to one grid; native-resolution images exercise the per-request multi-grid path) |
+| Prefix caching | **off by design** | the reset-on-prefill broadcast cache cannot honor skipped prefixes; disabled for `DotsOCRForCausalLM` in `vlm.yaml` and the generator capability |
 
 ## Troubleshooting
 

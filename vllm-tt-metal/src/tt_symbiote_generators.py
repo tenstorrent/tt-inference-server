@@ -173,6 +173,39 @@ class _TTSymbioteGenerator(Generator):
         # single-shot (traced) prefill; when a prompt exceeds the budget the S2
         # path loops the eager chunked prefill over the paged KV.
         self._prefill_chunk_size: Optional[int] = None
+        # Phase 1 (true DP prefill + stable request->device map). When enabled,
+        # K co-scheduled new requests are prefilled in ONE SIMD pass (each landing
+        # on its own DP device row) instead of K serialized broadcast passes, and
+        # each live request decodes on the device that holds its KV. Set
+        # ``DOTS_OCR_DP_PREFILL=0`` to fall back to the proven broadcast path.
+        self._dp_serving = os.environ.get("DOTS_OCR_DP_PREFILL", "1") not in (
+            "0",
+            "false",
+            "False",
+        )
+        # Phase 2 (on-device greedy decode). When enabled, greedy decode steps run
+        # the native on-device argmax graph and bridge the chosen token back to
+        # vLLM via one-hot logits, avoiding the per-step full-vocab logits readback
+        # + host sampling. dots.ocr is a greedy OCR model (demo uses temperature=0),
+        # so this is byte-identical to host greedy. Set ``DOTS_OCR_ONDEVICE_GREEDY=0``
+        # to force the host-logits path (full sampling: temperature/top-p/penalties).
+        self._ondevice_greedy = os.environ.get("DOTS_OCR_ONDEVICE_GREEDY", "1") not in (
+            "0",
+            "false",
+            "False",
+        )
+        self._dp_batch: Optional[int] = None
+        # device row -> resident request signature (first block id), or None.
+        self._device_owner: List[Optional[int]] = []
+        # request signature -> device row it owns.
+        self._sig_device: Dict[int, int] = {}
+        # signatures that decoded in the most recent decode step (live set).
+        self._last_live: set = set()
+        # Phase 3: device-ordered page table last installed into the cache, so a
+        # decode step can skip the ``set_vllm_page_table`` upload/copy when the
+        # mapping is unchanged (no request add/remove, no new block). Set to None
+        # by any prefill (which installs its own table) to force a reinstall.
+        self._last_pt_dev: Any = None
 
     # ------------------------------------------------------------------
     # Construction (vLLM factory entry point, called by TTModelLoader)
@@ -795,6 +828,159 @@ class _TTSymbioteGenerator(Generator):
             return 0
         return p
 
+    # ------------------------------------------------------------------
+    # Phase 1: stable request -> DP-device mapping (true DP prefill)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _pt_signature(pt_row: Any) -> int:
+        """Stable per-request key = first physical block id of its block table.
+
+        vLLM hands the same block table (same physical block ids) for a request on
+        every step of its lifetime, while ``condense()`` reorders the active batch
+        rows as requests finish. Keying on the first block id therefore tracks a
+        request across steps without any vLLM-fork plugin change. Freed blocks are
+        only reused after the owning request is gone (reconciled in decode), so the
+        key is unambiguous at any instant.
+        """
+        import torch
+
+        t = pt_row if torch.is_tensor(pt_row) else torch.as_tensor(pt_row)
+        return int(t.reshape(-1)[0].item())
+
+    def _ensure_dp_state(self) -> int:
+        if self._dp_batch is None:
+            self._dp_batch = int(getattr(self.pipeline.config, "batch_size", 1))
+            self._device_owner = [None] * self._dp_batch
+        return self._dp_batch
+
+    def _assign_prefill_devices(self, sigs: List[int]) -> Optional[List[int]]:
+        """Assign each new request (by signature) to a genuinely-free DP row.
+
+        CORRECTNESS over cleverness: only rows with ``owner is None`` (freed by a
+        prior decode-step reconcile) are assigned. We never evict an *owned* row,
+        because a request that finished is not reconciled until the NEXT decode
+        step -- so between its completion and that step every row looks owned, and
+        reclaiming one risks evicting a still-live decoder (it would then read the
+        wrong device's KV -> garbage). When not enough free rows exist we return
+        ``None`` and the caller falls back to broadcast prefill (KV written to all
+        rows; decode still serves it from its assigned row). This costs nothing in
+        the common churn case: single-request (``K==1``) admissions are one 8-wide
+        SIMD pass whether DP or broadcast, and the multi-request DP win only needs
+        to fire on the initial burst, when rows are genuinely free.
+
+        Stale rows left by a fully-drained prior run self-heal on the first decode
+        of the next run (``_reconcile_decode_owners`` frees any owner not in the
+        new live set).
+        """
+        self._ensure_dp_state()
+        n = self._dp_batch
+        free = [d for d in range(n) if self._device_owner[d] is None]
+        if len(free) < len(sigs):
+            return None
+        assigned: List[int] = []
+        fi = 0
+        for s in sigs:
+            d = self._sig_device.get(s)
+            if not (d is not None and self._device_owner[d] == s):
+                d = free[fi]
+                fi += 1
+            self._device_owner[d] = s
+            self._sig_device[s] = d
+            assigned.append(d)
+        return assigned
+
+    def _reconcile_decode_owners(self, active_sigs: List[int]) -> None:
+        """Free devices whose resident request is no longer in the active set."""
+        self._ensure_dp_state()
+        live = set(active_sigs)
+        self._last_live = live
+        for d, owner in enumerate(self._device_owner):
+            if owner is not None and owner not in live:
+                self._device_owner[d] = None
+                if self._sig_device.get(owner) == d:
+                    self._sig_device.pop(owner, None)
+
+    def _decode_devices(self, sigs: List[int]) -> List[int]:
+        """Device row per active request (vLLM order). Defensive: a signature
+        never seen at prefill (should not happen) grabs a free row."""
+        self._ensure_dp_state()
+        devs: List[int] = []
+        for s in sigs:
+            d = self._sig_device.get(s)
+            if d is None or self._device_owner[d] != s:
+                d = next(
+                    (c for c in range(self._dp_batch) if self._device_owner[c] is None),
+                    0,
+                )
+                self._device_owner[d] = s
+                self._sig_device[s] = d
+            devs.append(d)
+        return devs
+
+    def _prefill_dp(
+        self,
+        cache: Any,
+        reqs: List[dict],
+        devs: List[int],
+        dp_batch: int,
+    ) -> Any:
+        """True DP prefill: K new requests in ONE SIMD pass, KV per device row.
+
+        Builds a full ``[dp_batch, S]`` device-ordered batch: real request ``j``
+        occupies its assigned row ``devs[j]``; every other row is padding that
+        replicates ``reqs[0]`` (tokens + image + *its* blocks), so the redundant
+        SIMD writes on those rows land on ``reqs[0]``'s blocks (free on those
+        devices) and never touch a paused decoder's resident KV. Returns the K
+        real requests' first-token logits as ``[K, 1, vocab]`` in vLLM order.
+        """
+        import torch
+
+        pad = reqs[0]
+        row_req: List[dict] = [pad] * dp_batch
+        for rq, d in zip(reqs, devs):
+            row_req[d] = rq
+
+        ids_full = torch.cat([rq["ids"] for rq in row_req], dim=0).contiguous()
+        pt_dev = torch.cat([rq["pt"] for rq in row_req], dim=0).to(torch.int32).contiguous()
+        # Per-row (NOT broadcast) page table: row i -> device i's request blocks.
+        self._install_page_table(cache, pt_dev)
+        self._last_pt_dev = None  # cache now holds the prefill table; force decode reinstall
+
+        have_vision = all(rq["pv"] is not None and rq["grid"] is not None for rq in row_req)
+        pv_full = grid_full = None
+        same_grid = True
+        if have_vision:
+            grids = [rq["grid"] for rq in row_req]
+            g0 = grids[0]
+            same_grid = all(bool(torch.equal(g, g0)) for g in grids)
+            pv_full = torch.cat([rq["pv"] for rq in row_req], dim=0).contiguous()
+            grid_full = torch.cat(grids, dim=0).contiguous()
+
+        if not self._warmed_up:
+            self.pipeline.warmup(
+                ids_full,
+                pixel_values=pv_full,
+                image_grid_thw=grid_full,
+                return_logits=True,
+            )
+            self._warmed_up = True
+
+        if not have_vision:
+            logits8 = self.pipeline.forward_logits_prefill(ids_full)
+        elif same_grid:
+            logits8 = self.pipeline.forward_logits_prefill(
+                ids_full, pixel_values=pv_full, image_grid_thw=grid_full
+            )
+        else:
+            logits8 = self.pipeline.forward_logits_prefill_multigrid(
+                ids_full, pv_full, grid_full
+            )
+        if not torch.is_tensor(logits8):
+            logits8 = torch.as_tensor(logits8)
+        logits8 = logits8.reshape(dp_batch, -1)
+        out = torch.stack([logits8[d] for d in devs], dim=0)  # vLLM order
+        return out.unsqueeze(1)  # [K, 1, vocab]
+
     def _prefill_s2(
         self,
         tokens: Any,
@@ -829,8 +1015,47 @@ class _TTSymbioteGenerator(Generator):
             batch = int(input_ids.shape[0])
             dp_batch = int(getattr(self.pipeline.config, "batch_size", 1))
 
-            # CONTINUOUS-BATCHING CORRECTNESS: prefill each request ON ITS OWN,
-            # broadcasting its KV to EVERY DP stream (mesh device). vLLM may admit
+            # Phase 1 TRUE DP PREFILL: prefill all K co-scheduled new requests in
+            # ONE SIMD pass (each landing on its own DP device row) rather than K
+            # serialized broadcast passes (~8x prefill loss). Restricted to the
+            # single-shot case (no chunk / no prefix); those fall through to the
+            # broadcast loop. If no free device row can be assigned we also fall
+            # back, so correctness is never at risk.
+            if self._dp_serving and dp_batch > 1 and pt_full is not None:
+                reqs: List[dict] = []
+                any_special = False
+                for r in range(batch):
+                    ids_r = input_ids[r:r + 1]
+                    pv_r, grid_r = self._slice_request_mm(pixel_values, image_grid_thw, r)
+                    pt_r = pt_full[r:r + 1]
+                    seq_len_r = int(ids_r.shape[-1])
+                    prefix_len = 0
+                    if num_computed_tokens is not None:
+                        try:
+                            p = int(list(num_computed_tokens)[r])
+                            if 0 < p < seq_len_r:
+                                prefix_len = p
+                        except (TypeError, ValueError, IndexError):
+                            prefix_len = 0
+                    cs = self._prefill_chunk_size
+                    use_chunk = (cs is not None and cs > 0 and seq_len_r > cs) or prefix_len > 0
+                    any_special = any_special or use_chunk
+                    reqs.append(
+                        {
+                            "ids": ids_r,
+                            "pv": pv_r,
+                            "grid": grid_r,
+                            "pt": pt_r,
+                            "sig": self._pt_signature(pt_r),
+                        }
+                    )
+                if not any_special:
+                    devs = self._assign_prefill_devices([rq["sig"] for rq in reqs])
+                    if devs is not None:
+                        return self._prefill_dp(cache, reqs, devs, dp_batch)
+
+            # CONTINUOUS-BATCHING CORRECTNESS (fallback): prefill each request ON
+            # ITS OWN, broadcasting its KV to EVERY DP stream (mesh device). vLLM may admit
             # requests across multiple prefill waves and then decode them together
             # in a single DP step; a request's row in that combined decode is not
             # the row it prefilled on. Because each device owns a *replicated* KV
@@ -847,6 +1072,7 @@ class _TTSymbioteGenerator(Generator):
                 # Tile this request's blocks across every DP stream so the SIMD
                 # prefill writes its KV to all mesh devices.
                 self._install_page_table(cache, pt_r, broadcast=True)
+                self._last_pt_dev = None  # broadcast table installed; force decode reinstall
 
                 seq_len_r = int(ids_r.shape[-1])
                 # TS-8 per-request prefix: skip an already-cached prefix.
@@ -863,6 +1089,7 @@ class _TTSymbioteGenerator(Generator):
                 use_chunk = (
                     chunk_size is not None and chunk_size > 0 and seq_len_r > chunk_size
                 ) or prefix_len > 0
+
                 if use_chunk and (chunk_size is None or chunk_size <= 0):
                     chunk_size = 256
                 if use_chunk:
@@ -967,17 +1194,6 @@ class _TTSymbioteGenerator(Generator):
                     f"multi-sequence continuous batching (design W4/M2)."
                 )
 
-            # CONTINUOUS-BATCHING CORRECTNESS: the pipeline decodes SIMD over
-            # exactly ``pipe_batch`` (== mesh devices) rows. When fewer requests
-            # are active, the inactive rows MUST NOT write KV through stale page
-            # table rows (left pointing at other requests' blocks) -- that slowly
-            # corrupts resident KV across request cycles and breaks single-stream
-            # serving after a few requests. Instead we pad by REPLICATING active
-            # row 0 into every inactive row: padding rows re-decode a real request
-            # (same token, position AND blocks), so their KV writes are idempotent
-            # duplicates on those rows' devices (which already hold that request's
-            # KV from the broadcast prefill) and corrupt nothing. The active rows'
-            # logits are sliced back out below.
             pt_full = None
             if page_table is not None:
                 pt_full = page_table if torch.is_tensor(page_table) else torch.as_tensor(page_table)
@@ -987,6 +1203,62 @@ class _TTSymbioteGenerator(Generator):
 
             tok_list = [int(x) for x in tok_t.tolist()]
             pos_list = [int(x) for x in pos_t.tolist()] if pos_t is not None else None
+
+            # Phase 1 STABLE MAP decode: each live request decodes on the device
+            # row that holds its KV (written there by true DP prefill). vLLM
+            # compacts the active batch as requests finish, so recover each
+            # request's device from its block-table identity (first block id),
+            # build a full device-ordered ``[pipe_batch]`` decode (free rows
+            # replicate an active request -> harmless duplicate writes to that
+            # request's blocks on the free device), and gather logits back into
+            # vLLM's compacted order.
+            use_stable = (
+                self._dp_serving
+                and pipe_batch > 1
+                and pt_full is not None
+                and pos_list is not None
+            )
+            if use_stable:
+                sigs = [self._pt_signature(pt_full[j]) for j in range(n_active)]
+                self._reconcile_decode_owners(sigs)
+                devs = self._decode_devices(sigs)
+                n_blocks = int(pt_full.shape[1])
+                tok_dev = [tok_list[0]] * pipe_batch
+                pos_dev = [pos_list[0]] * pipe_batch
+                pt_dev = pt_full[0:1].expand(pipe_batch, n_blocks).clone()
+                for j, d in enumerate(devs):
+                    tok_dev[d] = tok_list[j]
+                    pos_dev[d] = pos_list[j]
+                    pt_dev[d] = pt_full[j]
+                _pt_c = pt_dev.contiguous()
+                if (
+                    self._last_pt_dev is not None
+                    and self._last_pt_dev.shape == _pt_c.shape
+                    and torch.equal(self._last_pt_dev, _pt_c)
+                ):
+                    pass  # page table unchanged -> skip the set_vllm_page_table upload
+                else:
+                    self._install_page_table(cache, _pt_c)
+                    self._last_pt_dev = _pt_c.clone()
+                _pos_dev_t = torch.as_tensor(pos_dev, dtype=torch.int32)
+                if self._ondevice_greedy:
+                    # On-device argmax: read back only the chosen token per row.
+                    toks8 = self.pipeline.forward_tokens_decode(tok_dev, cache_position=_pos_dev_t)
+                    chosen = [int(toks8[d]) for d in devs]  # vLLM compacted order
+                else:
+                    toks8 = None
+                    logits8 = self.pipeline.forward_logits_decode(tok_dev, cache_position=_pos_dev_t)
+                if self._ondevice_greedy:
+                    # Bridge greedy tokens to vLLM via one-hot logits [K, 1, vocab].
+                    return self._onehot_logits(chosen)
+                if not torch.is_tensor(logits8):
+                    logits8 = torch.as_tensor(logits8)
+                logits8 = logits8.reshape(pipe_batch, -1)
+                out = torch.stack([logits8[d] for d in devs], dim=0)  # vLLM order
+                return out.unsqueeze(1)
+
+            # Fallback (broadcast / single-stream): replicate active row 0 into the
+            # inactive rows so no SIMD row writes through a stale page-table row.
             if pipe_batch > 1 and n_active < pipe_batch:
                 pad = pipe_batch - n_active
                 tok_list = tok_list + [tok_list[0]] * pad
@@ -995,10 +1267,8 @@ class _TTSymbioteGenerator(Generator):
                 if pt_full is not None:
                     pt_full = torch.cat([pt_full, pt_full[:1].expand(pad, pt_full.shape[1])], dim=0).contiguous()
 
-            # Install the full-width (replicated) page table so every SIMD row maps
-            # to a real request's blocks (no stale rows).
             self._install_page_table(cache, pt_full)
-
+            self._last_pt_dev = None  # fallback path installed its own table
             prev = tok_list[0] if len(tok_list) == 1 else tok_list
             cache_position = torch.as_tensor(pos_list, dtype=torch.int32) if pos_list is not None else None
             logits = self.pipeline.forward_logits_decode(prev, cache_position=cache_position)
@@ -1165,6 +1435,26 @@ def _dots_ocr_max_tokens_all_users(
     ``num_tt_blocks = ceil(tokens/block_size) + block_size_headroom``; we subtract
     one DP batch's worth of headroom so the final block count lands at (or just
     below) ``max_num_blocks`` and every vLLM-assigned block ID stays in range.
+
+    Capacity / concurrency tradeoff (Phase 4 review, L4):
+    * Per-device buffer = ``max_num_blocks`` = max(256, 8*64) = **512 blocks**;
+      the page table is ``[batch_size, blocks_per_sequence] = [8, 64]`` so each DP
+      stream is hard-capped at ``blocks_per_sequence*block_size = 64*64 = 4096``
+      tokens (prompt + generated). vLLM draws block IDs from one ~504-block pool
+      shared by all 8 streams (504/8 ~= 63 blocks ~= 4032 tokens/stream at full
+      8-way concurrency), so the design point is **8 concurrent pages of <=~4K
+      tokens** -- which covers the dots.ocr OCR workload (vision prompt ~2.8K +
+      typical output). Validated: 48 images @ conc-8, 0 degenerate outputs.
+    * A page exceeding 4096 tokens is **silently truncated** at
+      ``TTNNPagedAttentionKVCache.paged_fill_on_device`` (_attention.py: K/V is
+      clipped to ``blocks_per_sequence*block_size``) -> tail of a very long page
+      is dropped. To support longer pages at full concurrency, raise
+      ``blocks_per_sequence`` in pipeline._create_paged_kv_cache (e.g. 96 ->
+      6144 tokens/stream, ``max_num_blocks``=max(256,8*96)=768 per device, ~+50%
+      KV DRAM) AND bump the ``blocks_per_sequence`` local below to the same value
+      (the two are intentionally kept in sync by hand; a mismatch either wastes
+      blocks or hands out IDs past the buffer). Preemption/KV-swap is
+      unsupported, so the cap (not preemption) is what bounds admission.
     """
     block_size = 64
     blocks_per_sequence = 64
