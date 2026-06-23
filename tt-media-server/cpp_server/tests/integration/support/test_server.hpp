@@ -32,6 +32,7 @@
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/boost/boost_task_queue.hpp"
+#include "runtime/worker/worker_metrics_shm.hpp"
 #include "services/llm_pipeline.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
@@ -91,18 +92,32 @@ class TestServer {
   TestServer() = default;
 
   // Bring up the stack in production order:
+  //   0. create WorkerMetricsShm (worker subprocess will open it)
   //   1. register services, then start them (forks worker via WorkerManager)
   //   2. wait for that worker to signal warmup
   //   3. open the IPC queues — test now plays the worker on those queues
   //   4. start the memory auto-responder so most tests don't have to care
   //   5. start DynamoEndpoint (required - DYNAMO_ENDPOINT_ENABLED must be 1)
   void init() {
+    createWorkerMetricsShm();
     tt::utils::service_factory::initializeServices();
     tt::utils::service_factory::startConfiguredService();
     waitForLLMReady();
     openIpcQueues();
     startMemoryAutoResponder();
     startDynamoEndpoint();
+  }
+
+  // Create the WorkerMetricsShm that the worker subprocess will open.
+  // Must be called before initializeServices() which spawns workers.
+  void createWorkerMetricsShm() {
+    const std::string shmName = tt::config::workerMetricsShmName();
+    const size_t numWorkers = tt::config::numWorkers();
+    workerMetricsShm_ = worker::WorkerMetricsShm::create(shmName, numWorkers);
+    if (!workerMetricsShm_) {
+      throw std::runtime_error(
+          "TestServer: failed to create WorkerMetricsShm '" + shmName + "'");
+    }
   }
 
   void waitForLLMReady() {
@@ -189,6 +204,7 @@ class TestServer {
     dynamoEndpoint_->start();
   }
 
+  std::unique_ptr<worker::WorkerMetricsShm> workerMetricsShm_;
   std::unique_ptr<tt::ipc::boost::TaskQueue> taskQueue_;
   std::unique_ptr<tt::ipc::boost::ResultQueue> resultQueue_;
   std::unique_ptr<tt::ipc::boost::MemoryRequestQueue> memoryRequestQueue_;

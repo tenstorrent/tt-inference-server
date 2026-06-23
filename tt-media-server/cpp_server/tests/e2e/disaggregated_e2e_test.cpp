@@ -39,6 +39,7 @@
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/boost/boost_task_queue.hpp"
+#include "runtime/worker/worker_metrics_shm.hpp"
 #include "services/llm_pipeline.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
@@ -107,6 +108,11 @@ void configurePrefillEnv() {
 [[noreturn]] void runDecodeServerSubprocess(const char* sentinelPath) {
   configureDecodeEnv();
   tt::utils::ZeroOverheadLogger::initialize();
+
+  // Create WorkerMetricsShm before services (worker subprocess will open it).
+  const std::string shmName = tt::config::workerMetricsShmName();
+  const size_t numWorkers = tt::config::numWorkers();
+  auto workerMetricsShm = tt::worker::WorkerMetricsShm::create(shmName, numWorkers);
 
   tt::utils::service_factory::initializeServices();
   tt::utils::service_factory::startConfiguredService();
@@ -241,11 +247,18 @@ class PrefillTestServer {
   PrefillTestServer() = default;
 
   void init() {
+    createWorkerMetricsShm();
     tt::utils::service_factory::initializeServices();
     tt::utils::service_factory::startConfiguredService();
     waitForLLMReady();
     openIpcQueues();
     startMemoryAutoResponder();
+  }
+
+  void createWorkerMetricsShm() {
+    const std::string shmName = tt::config::workerMetricsShmName();
+    const size_t numWorkers = tt::config::numWorkers();
+    workerMetricsShmPtr = tt::worker::WorkerMetricsShm::create(shmName, numWorkers);
   }
 
   void waitForLLMReady() {
@@ -295,6 +308,7 @@ class PrefillTestServer {
     });
   }
 
+  std::unique_ptr<tt::worker::WorkerMetricsShm> workerMetricsShmPtr;
   std::unique_ptr<tt::ipc::boost::TaskQueue> taskQueuePtr;
   std::unique_ptr<tt::ipc::boost::ResultQueue> resultQueuePtr;
   std::unique_ptr<tt::ipc::boost::MemoryRequestQueue> memoryRequestQueuePtr;
