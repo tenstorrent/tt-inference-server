@@ -3514,8 +3514,13 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=52.0,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    # Full SWE-bench Verified (500), mini-swe-agent, single
+                    # H100 NVL bring-your-own vLLM (gemma-4-31B-it, max-model-len
+                    # 204800, enable_thinking=true), temp=1.0/top_p=0.95/
+                    # top_k=20, 160K in / 32K out, 2026-06-18. 324/500 resolved
+                    # = 64.80%, which exceeds the published 52.0 (ratio 1.25).
+                    gpu_reference_score=64.80,
+                    gpu_reference_score_ref="run.py --workflow evals swe_bench_verified full (500), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-18",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
