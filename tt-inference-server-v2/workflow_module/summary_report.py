@@ -28,7 +28,7 @@ from report_module import (
     ReportGenerator,
     ReportSchema,
     acceptance_criteria_check,
-    format_acceptance_summary_markdown,
+    build_acceptance_export,
 )
 from report_module.acceptance_criteria import CATEGORY_BENCHMARKS
 from report_module.display import display_name
@@ -226,14 +226,7 @@ def generate_summary_report(
     categories = [
         category for category in categories if category.name == CATEGORY_BENCHMARKS
     ]
-    schema.metadata["acceptance_summary_markdown"] = format_acceptance_summary_markdown(
-        accepted, blockers, categories
-    )
-    schema.metadata["acceptance_criteria"] = {
-        "accepted": accepted,
-        "blockers": blockers,
-        "categories": [category.to_dict() for category in categories],
-    }
+    schema.metadata.update(build_acceptance_export(accepted, blockers, categories))
     logger.info(
         "Benchmark summary acceptance: %s (%d blocker(s))",
         "PASS" if accepted else "FAIL",
