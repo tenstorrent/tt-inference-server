@@ -151,7 +151,7 @@ host both peers can reach, then run a receiver and a sender:
 
 ```bash
 # Single-host smoke test (auto-starts the service, runs both workers):
-tests/integration/run_migration_worker_discovery.sh
+tests/e2e/scripts/run_migration_worker_discovery.sh
 
 # Two-host run:
 #  metadata host (META_HOST): serves http://0.0.0.0:18080/metadata
@@ -187,7 +187,7 @@ Workers are symmetric peers: each takes its own `--name` and its peers as `--pee
 is `CONNECTED to N peers` then `READY`. Logic is launcher-agnostic — a bash loop, MPI, or an
 orchestrator all just spawn one process per worker.
 
-**MPI integration test** (`tests/integration/run_migration_workers_mpi.sh`, ctest
+**MPI e2e test** (`tests/e2e/scripts/run_migration_workers_mpi.sh`, ctest
 `MooncakeMpiDiscovery`): starts the metadata service, then `mpirun -np 20` launches 4 prefill +
 16 decode workers on one host. `migration_worker_rank_launch.sh` maps each rank to a
 disaggregated topology — `prefill-p` peers `decode-(4p..4p+3)`, each `decode-d` peers back to
@@ -196,7 +196,7 @@ disaggregated topology — `prefill-p` peers `decode-(4p..4p+3)`, each `decode-d
 ```bash
 # all 20 workers, self-contained (auto-starts metadata service):
 WORKER_BIN=./build/bringup_mooncake_worker \
-  tests/integration/run_migration_workers_mpi.sh
+  tests/e2e/scripts/run_migration_workers_mpi.sh
 ```
 
 ## Validation status

@@ -23,6 +23,9 @@ MC_BIND_ADDRESS="${MC_BIND_ADDRESS:-127.0.0.1}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RANK_LAUNCH="${SCRIPT_DIR}/migration_worker_rank_launch.sh"
+# The metadata service launcher is infrastructure (not a test), so it stays
+# under tests/integration/ while this orchestrator lives in tests/e2e/scripts/.
+META_SERVER="${SCRIPT_DIR}/../../integration/run_mooncake_metadata_server.sh"
 MPI_LOG="${MPI_LOG:-/tmp/tt_mc_mpi_workers.log}"
 META_LOG="${META_LOG:-/tmp/tt_mc_metadata_mpi.log}"
 
@@ -66,7 +69,7 @@ if [[ -n "${METADATA:-}" ]]; then
 else
   echo "Starting metadata service on ${MC_BIND_ADDRESS}:${HTTP_PORT}..."
   HTTP_PORT="${HTTP_PORT}" BIND_HOST="${MC_BIND_ADDRESS}" \
-    "${SCRIPT_DIR}/run_mooncake_metadata_server.sh" >"${META_LOG}" 2>&1 &
+    "${META_SERVER}" >"${META_LOG}" 2>&1 &
   meta_pid=$!
   META_URI="http://${MC_BIND_ADDRESS}:${HTTP_PORT}/metadata"
   ready=0
