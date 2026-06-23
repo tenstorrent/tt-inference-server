@@ -416,6 +416,62 @@ void LLMPipeline::resolveSession(
       loop, routingInfo.blocks, /*slotId=*/std::nullopt, slotToCopyFrom);
 }
 
+void LLMPipeline::runStreamingRequest(
+    std::shared_ptr<tt::domain::llm::LLMRequest> req, trantor::EventLoop* loop,
+    StreamCallbackFactory makeStreamCallback, GenerationHandlers handlers,
+    std::function<void()> cancelFn) const {
+  if (!cancelFn) {
+    cancelFn = [this, taskId = req->task_id]() { abortRequest(taskId); };
+  }
+  auto resolvedHandlers = handlers;
+  auto errorHandlers = std::move(handlers);
+
+  resolveSession(
+      req, loop,
+      [this, req, makeStreamCallback = std::move(makeStreamCallback),
+       handlers =
+           std::move(resolvedHandlers)](SessionInfo sessionInfo) mutable {
+        if (handlers.onSessionResolved) {
+          handlers.onSessionResolved(sessionInfo);
+        }
+
+        // dispatchGeneration moves req->session, so keep a stable copy.
+        auto sessionPtr = req->session;
+        try {
+          service_->preProcess(*req);
+        } catch (const std::exception& e) {
+          if (handlers.onPreProcessError) {
+            handlers.onPreProcessError(e, sessionPtr);
+          }
+          return;
+        }
+
+        if (handlers.onPreProcessed) {
+          handlers.onPreProcessed();
+        }
+
+        auto streamCallback = makeStreamCallback(sessionInfo, sessionPtr);
+        try {
+          dispatchGeneration(*req, sessionInfo, streamCallback);
+        } catch (const std::exception& e) {
+          if (handlers.onDispatchError) {
+            handlers.onDispatchError(e, sessionPtr);
+          }
+          return;
+        }
+
+        if (handlers.onDispatchSucceeded) {
+          handlers.onDispatchSucceeded();
+        }
+      },
+      [handlers = std::move(errorHandlers)](const SessionError& err) mutable {
+        if (handlers.onSessionError) {
+          handlers.onSessionError(err);
+        }
+      },
+      std::move(cancelFn));
+}
+
 void LLMPipeline::dispatchGeneration(
     tt::domain::llm::LLMRequest& request, SessionInfo sessionInfo,
     const std::function<void(const tt::domain::llm::LLMStreamChunk&, bool)>& cb)

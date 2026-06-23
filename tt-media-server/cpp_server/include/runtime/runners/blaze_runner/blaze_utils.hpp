@@ -64,17 +64,31 @@ inline sch::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
 
 inline sch::GenerationParams makeGenerationParams(
     const tt::domain::llm::Sequence& seq) {
+      const sch::PhaseSamplingParams userSampling{
+        .temperature = seq.getSamplingParams().temperature,
+        .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
+        .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
+    };
   return {
       .max_new_tokens =
           static_cast<uint32_t>(seq.getSamplingParams().max_tokens.value_or(
               static_cast<int>(tt::config::maxContextLength()))),
       .spec_decode = seq.getSamplingParams().fast_mode,
       .ignore_eos = seq.getSamplingParams().ignore_eos,
-      .temperature = seq.getSamplingParams().temperature,
-      .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
-      .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
+      .sampling = userSampling,
+      .reasoning_sampling = userSampling,
       .disaggregated_decode = seq.isDisaggregated(),
-      .stop_tokens = seq.getSamplingParams().stop_token_ids};
+      .starts_in_thinking = seq.getStartsInThinking(),
+      .stop_tokens = seq.getSamplingParams().stop_token_ids,
+  };
+}
+
+inline void postProcessSamplingParams(sch::GenerationParams& params) {
+  if (tt::config::sampleOnlyInReasoning()) {
+    // We argmax outside the reasoning phase
+    params.sampling = sch::PhaseSamplingParams{
+        .temperature = 1.0f, .top_p = 1.0f, .top_k = 1};
+  }
 }
 
 inline void fillSequenceFields(sch::ISRequest& req,
@@ -84,6 +98,7 @@ inline void fillSequenceFields(sch::ISRequest& req,
   if (seq.getKVPositionId().has_value()) {  // override position id
     req.position_id = *seq.getKVPositionId();
   }
+  postProcessSamplingParams(req.gen);
 }
 
 inline sch::ISRequest makeSubmitRequest(
