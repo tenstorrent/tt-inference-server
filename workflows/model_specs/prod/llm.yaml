@@ -228,7 +228,7 @@ templates:
     - Qwen/Qwen3.5-9B
   impl: qwen35_9b_blackhole
   version: "0.15.0"
-  tt_metal_commit: fbca6d05661
+  tt_metal_commit: 40e06f1d39a
   vllm_commit: 0410f6b0c
   inference_engine: VLLM
   device_model_specs:
@@ -253,7 +253,7 @@ templates:
 # Qwen3.5-27B (bf16) and Qwen3.6-27B reuse the SAME tt-metal code as the 9B
 # (models/demos/blackhole/qwen3_5_9b; shared Qwen35ForCausalLM vLLM wrapper) — the model is
 # selected by HF_MODEL + MESH_DEVICE=P150x4 (tensor parallel across 4 P150s; the mesh drives TP,
-# so no vLLM parallel arg). B=1 serving. tt_metal_commit fbca6d05661 keeps Q in bf16 through the
+# so no vLLM parallel arg). B=1 serving. tt_metal_commit 40e06f1d39a keeps Q in bf16 through the
 # chunked SDPA (the bf8-Q long-context degeneration fix) + the get_max_tokens 256k override, plus
 # the rope-dim / decode-drift / long-context-degeneration fixes layered on top of 8ebeaba79ac;
 # validated to 256K ISL on bf16 27B (250k-token prompt → coherent summary) and 64K on 3.6-27B.
@@ -261,7 +261,7 @@ templates:
     - Qwen/Qwen3.5-27B
   impl: qwen35_9b_blackhole
   version: "0.15.0"
-  tt_metal_commit: fbca6d05661
+  tt_metal_commit: 40e06f1d39a
   vllm_commit: 0410f6b0c
   inference_engine: VLLM
   device_model_specs:
@@ -272,6 +272,9 @@ templates:
       # Prefix caching forces vLLM into "align" mamba-cache mode, which requires chunked prefill
       vllm_args:
         no-enable-prefix-caching: true
+        # Repetition control for the 27B-TP decode-drift loops (see the 3.6-27B block). temp 0.7 +
+        # repetition_penalty 1.1 breaks the greedy/temp-1.0 repetition; serve thinking-OFF too.
+        # override_generation_config: '{"temperature": 0.7, "top_k": 20, "top_p": 0.95, "repetition_penalty": 1.1}'
       override_tt_config:
         trace_mode: all
         trace_region_size: 268435456  # 256 MB
@@ -286,7 +289,7 @@ templates:
     - Qwen/Qwen3.6-27B
   impl: qwen35_9b_blackhole
   version: "0.15.0"
-  tt_metal_commit: fbca6d05661
+  tt_metal_commit: 40e06f1d39a
   vllm_commit: 0410f6b0c
   inference_engine: VLLM
   device_model_specs:
@@ -297,6 +300,14 @@ templates:
       # Prefix caching forces vLLM into "align" mamba-cache mode, which requires chunked prefill
       vllm_args:
         no-enable-prefix-caching: true
+        # Repetition control for the 27B-TP decode-drift loops (distributed bf16/bf8 decode-path
+        # precision over 64 layers, amplified by the sharp full-attention -> greedy/temp-1.0
+        # repetition). On-device A/B (3.6-27B, P150x4): temp 0.7 + repetition_penalty 1.1 breaks the
+        # loops with coherent + factually-correct output (the model generation_config defaulted to
+        # temperature 1.0 with NO penalty). ALSO serve thinking-OFF (request chat_template_kwargs
+        # enable_thinking=false) — thinking-on accumulates more decode drift. Per-request sampling
+        # params override this default.
+        # override_generation_config: '{"temperature": 0.7, "top_k": 20, "top_p": 0.95, "repetition_penalty": 1.1}'
       override_tt_config:
         trace_mode: all
         trace_region_size: 268435456  # 256 MB
