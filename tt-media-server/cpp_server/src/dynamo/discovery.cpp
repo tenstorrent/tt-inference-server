@@ -155,13 +155,9 @@ RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
     return {"basic", "minimax_m2"};
   }
   if (modelType == "glm_moe_dsa") {
-    // GLM-5.2: <think>...</think> reasoning (glm45 parser, no force_reasoning)
-    // + <tool_call>/<arg_key>/<arg_value> tool calls (glm47 parser).
     return {"glm45", "glm47"};
   }
   if (modelType == "deepseek_v4") {
-    // DeepSeek-V4-Pro: dedicated V4 reasoning + tool-call parsers (vs the
-    // deepseek_r1 reasoning / no tool parser the deepseek_v3 default gets).
     return {"deepseek_v4", "deepseek_v4"};
   }
   // deepseek_v3 and unknown types default to DeepSeek R1 reasoning.
