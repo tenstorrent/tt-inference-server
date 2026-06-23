@@ -487,4 +487,4 @@ templates:
     rednote-hilab/dots.ocr:
       # tt_symbiote pip version installed into the image (build_docker_images.py
       # reads this; default index is the production PyPI — see the Dockerfile note).
-      tt_symbiote_version: "0.1.5"
+      tt_symbiote_version: "0.1.6"
