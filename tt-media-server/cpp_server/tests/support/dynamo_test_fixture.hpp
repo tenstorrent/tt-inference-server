@@ -473,8 +473,8 @@ class DynamoTestFixture : public ::testing::Test {
 
   void SetUp() override {
     if (!dynamoAvailable_) {
-      GTEST_SKIP() << "Dynamo frontend not available. Start with: "
-                   << "cd dynamo_frontend && ./deploy.sh --local-build";
+      FAIL() << "Dynamo frontend not available. Start with: "
+             << "cd dynamo_frontend && ./deploy.sh --local-build";
     }
   }
 
