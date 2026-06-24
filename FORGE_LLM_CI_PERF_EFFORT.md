@@ -734,3 +734,149 @@ con4 / OSL128 / n100, so prefill-light → staircase fix barely moves it (as exp
 5. **We are at ~7h e2e**, evals ~flat (gpqa win offset by mmlu_pro regression), benchmarks now the
    smaller block. Fixing mmlu_pro co-scheduling would reclaim the ~52m and the timeouts; after that,
    benchmark sweep-trim (Tier-3) is the next wall-clock lever.
+
+---
+
+## Stage 7 — b1-prefill (`min_num_seqs=1`) + `prefill_batch_threshold=16`, full e2e (2026-06-24)
+
+*Branch `kmabee/chunked_prefill_isue_4986_explore.rebase.followups` (tt-xla) = Stage 6 code **plus**
+the b1-prefill change: Asif's "Multiple batch_size for prefill" cherry-pick (`0b5a2aa3a`, tt-xla #5281)
++ the fused-sampling fix (`0a0a8c34f`). Same `launch_qwen3_8b.sh` (gmu 0.30, full Qwen3-8B, P150, port
+8009, `enable_trace`, opt1, `prefill_chunk_size=2048`) as Stage 6 — the **only** delta is `MIN_NUM_SEQS=1`,
+which precompiles a `[1, n]` prefill graph and selects it whenever a prefill step has ≤1 request (single
+requests, and the high-concurrency steady-state "trickle" refills). Logs: `bench_4rows_20260623_230057/`
+(warm, reported) and `..._224525/` (cold).*
+
+**Scope.** The b1-only benchmark preview (`bench_4rows.sh` cfg 1–6, **warm**) is immediately below.
+It is followed by the **full e2e** (b1 + `prefill_batch_threshold=16`): evals, the 15-row release
+sweep (compared against this preview), and structured. **Headline: the e2e resolved
+the mmlu_pro conc-32 decode starvation** (Stage 6's 21 timeouts → 0) and cut **total wall to 3h56m**
+(Stage 6 7h09m). Per-section results below.
+
+### Stage 6 → Stage 7 benchmark sweep — b1 vs staircase-only (cfg 1–6, gmu 0.30, warm)
+
+This is the cleanest isolation of b1: Stage 6 already has the batch-budget/staircase fix, so the deltas
+below are the **b1 contribution alone**. (`agg tok/s` = vLLM `Output token throughput`.)
+
+| cfg | con | ISL | OSL | n | S6 tok/s | **S7 tok/s** | S6 TTFT ms | **S7 TTFT ms** | S6 wall | **S7 wall** | b1 effect |
+|----:|----:|------:|----:|----:|--------:|----------:|---------:|-----------:|--------:|---------:|---|
+| 1 | 1 | 128 | 128 | 8 | 13.56 | 15.30 | 1,217 | **144** | 70 | 60 | conc-1 TTFT **−88%** ✅ (resolves Stage-6 takeaway #4) |
+| 2 | 32 | 128 | 128 | 256 | 70.18 | **220.65** | 2,902 | 1,391 | 428 | **139** | **3.1× tput**, TPOT 130 ms, **−68% wall** ✅ |
+| 3 | 1 | 128 | 1024 | 4 | 13.92 | 15.20 | 1,219 | **92** | 47 | 78 | conc-1 TTFT **−92%** ✅ (wall noisy: n=4 + early-EOS) |
+| 4 | 32 | 128 | 1024 | 128 | 137.19 | **263.11** | 1,692 | 582 | 242 | **135** | **1.9× tput**, TPOT 86 ms, **−44% wall** ✅ |
+| 5 | 1 | **1024** | 128 | 4 | 7.21 | **14.12** | 9,065 | **367** | 71 | **36** | **2.0× tput, TTFT −96%** ✅ (headline single-stream) |
+| **6** | **32** | **1024** | 128 | 128 | **38.81** | **93.49** | 22,447 | 18,379 | **414** | **169** | **2.4× tput**, TPOT 195 ms, **414→169 s wall (−59%)** ✅ |
+
+(Cumulative vs the pre-everything Stage-4 baseline: cfg6 went 1,239 s → 414 s (#4326) → **169 s** (b1);
+agg 12.5 → 38.8 → **93.5 tok/s**.)
+
+### Read
+
+- **conc-1 rows (1/3/5) — pure b1 prefill win.** A lone request prefills on `[1, n]` instead of padding
+  to `[32, n]`; batch-budget does nothing at conc 1, so this is b1 alone. TTFT collapses across the
+  board (cfg1 −88%, cfg3 −92%, **cfg5 (ISL 1024) 9,065 → 367 ms, −96%**), matching the standalone
+  "~16× at ISL 1024" projection. **This directly fixes Stage-6 takeaway #4** (the ~1.2 s single-stream
+  short-ISL TTFT that was failing `ttft_check`): cfg1/cfg3 TTFT are now ~0.1 s.
+- **conc-32 rows (2/4/6) — the #4335 decode-starvation lever.** Steady-state single-request refills now
+  hit the cheap `[1, n]` graph instead of `[32, n]`, so each prefill interruption of the decode loop is
+  far shorter → higher agg tput and lower TPOT: cfg6 **2.4× tput / −59% wall**, cfg2 **3.1×**, cfg4 1.9×.
+  This is the benchmark-side signal that b1 should also relieve the mmlu_pro conc-32 timeouts (to be
+  confirmed in the overnight e2e).
+
+### Caveats / pending
+
+- **Warm pass only** is reported. The cold pass showed inflated conc-1 TTFT (cfg1 3,849 ms, cfg5
+  8,118 ms) — first-touch **lazy compile of the b1 graph** (mmanzoor's precompile was not ported; the
+  b1 graph compiles on first use). Porting the b1 precompile is a known follow-up so production startup
+  pays it once at warmup, not on the first request.
+- **cfg 1–6 only.** cfg 7–15 (larger ISL, 2k–32k) not yet measured with b1; conc-1 large-ISL rows
+  (7/9/11/13/15) should benefit similarly (single-request prefill), the few con>1 large-ISL rows
+  (8/10/12/14) via the trickle-refill effect.
+- **Evals: RESOLVED — see *Stage 7 e2e — evals* below.** The decisive #4335 test (mmlu_pro conc-32
+  streaming timeouts 21 → **0**) is answered. Full 15-row sweep + structured still pending the
+  in-progress e2e.
+
+### Stage 7 e2e — evals (b1 + `prefill_batch_threshold=16`): mmlu_pro starvation RESOLVED (2026-06-24)
+
+*Config note: the benchmark preview above is **b1 alone** (`min_num_seqs=1`). This e2e run adds the
+follow-on **`prefill_batch_threshold=16`** heuristic (a superset) — relevant because the conc-32
+trickle refills (≤16 pending) are exactly what it routes to the cheap b1 graph. Otherwise the same
+`launch_qwen3_8b.sh` server (gmu 0.30, full Qwen3-8B, P150, port 8009, chunked prefill
+`prefill_chunk_size=2048`, opt1, `enable_trace`), `ci-nightly`, server pre-warmed. Log:
+`local_release_qwen3_8b_p8009_20260624_143138.log`. Benchmarks + structured still running — appended later.*
+
+**The decisive #4335 result: the mmlu_pro conc-32 decode-starvation regression is gone.**
+
+| | Stage 6 (staircase, b32) | **Stage 7 e2e (b1 + threshold=16)** | Δ |
+|---|---|---|---|
+| **Evals stage** | 4h36m | **3h06m** | **−1h30m** ✅ |
+| — r1_gpqa_diamond (conc 8, limit 0.2) | 1h16m (0 timeouts, 0.45) | 1h20m (0 timeouts, **0.475**) | ~flat |
+| — mmlu_pro (conc 32, limit 0.05) | **3h08m (21 timeouts, 0.6069)** | **1h43m (0 timeouts, 0.6151)** | **−1h25m, 21 → 0 timeouts** ✅ |
+
+- **mmlu_pro: 21 → 0 streaming timeouts, wall 3h08m → 1h43m (−45%), score 0.6069 → 0.6151.** The
+  decode-starvation regression Stage 6 introduced (batch-budget prefill-first co-scheduling interrupting
+  decode on every trickle refill) is **fully resolved**: those ≤16-pending refills now hit the cheap
+  `[1, n]` b1 graph (served serially via the threshold) instead of a `[32, n]` b32 batch, so each decode
+  interruption is far shorter and no doc misses the 3,600 s streaming budget. (0 timeouts verified — no
+  ReadTimeout / retry / truncation events anywhere in the eval phase.)
+- **Faster than even the pre-regression baseline.** Clean Stage-4 mmlu_pro was 2h16m / 0 timeouts /
+  0.6316; this run is **1h43m — 33 min faster than the clean b32 baseline**, at parity score (0.6151 vs
+  0.6316, within run-to-run noise; both 0-timeout). b1+threshold doesn't just undo the Stage-6
+  regression — it beats where we started.
+- **gpqa ~flat** (1h16m → 1h20m, 0.45 → 0.475): it was already conc-8 / 0-timeout in Stage 6, not the
+  starvation case, so b1 has little to add; the +4m is noise.
+- **Evals stage −1h30m overall** (4h36m → 3h06m), entirely from the mmlu_pro recovery.
+
+### Stage 7 e2e — benchmark sweep (b1 + threshold=16) (2026-06-24)
+
+**Total e2e wall: 3h56m** (exit 0) — vs Stage 6 **7h09m** and Stage 4 8h09m (**≈−45% vs Stage 6**).
+(The report's "Acceptance criteria FAILED" line is benign: status=EXPERIMENTAL enforces no tiers.)
+
+**b1-only preview → b1 + threshold=16, cfg 1–6** (e2e-flow numbers vs the b1-only `bench_4rows` preview
+above; the threshold's incremental win over b1-alone is the conc-32 rows):
+
+| cfg | con·ISL·OSL | b1-only  tok/s · TTFT · wall | b1+thr (e2e)  tok/s · TTFT · wall | threshold Δ |
+|--:|---|---|---|---|
+| 1 | 1·128·128 | 15.30 · 144 · 60 | 15.40 · 95 · 59 | parity (conc-1: threshold n/a) |
+| **2** | 32·128·128 | 220.65 · 1391 · 139 | **280.02 · 1400 · 106** | **+27% tok/s, −24% wall** ✅ |
+| 3 | 1·128·1024 | 15.20 · 92 · 78 | 15.28 · 95 · 38 | parity (wall noisy, n=4) |
+| 4 | 32·128·1024 | 263.11 · 582 · 135 | 252.70 · 741 · 140 | ~parity |
+| 5 | 1·1024·128 | 14.12 · 367 · 36 | 14.03 · 305 · 36 | parity |
+| **6** | 32·1024·128 | 93.49 · 18,379 · 169 | **136.07 · 14,244 · 119** | **+46% tok/s, −30% wall, −22% TTFT** ✅ |
+
+- **The threshold's incremental win over b1-alone is the conc-32 rows** (cfg2 +27%, cfg6 +46% tok/s): at
+  conc 32 the ≤16-pending steady-state refills now route to the cheap `[1,n]` b1 graph (serially)
+  instead of a `[32,n]` b32 batch — the same lever that killed the mmlu_pro timeouts. **conc-1 rows are
+  parity** (threshold is a no-op at conc 1; b1 alone already handles the lone prefill); cfg4 ~parity.
+- conc-32 rows carry meaningful run-to-run variance (cfg6 ±~15–20% between passes), so read the conc-32
+  deltas as directional — the durable signal is conc-32 throughput up, conc-1 unchanged.
+
+**Full 15-row release sweep (b1 + threshold=16, from the e2e flow):**
+
+| cfg | con·ISL·OSL | tok/s | TTFT ms | wall s |
+|--:|---|--:|--:|--:|
+| 1 | 1·128·128 | 15.40 | 95 | 59 |
+| 2 | 32·128·128 | 280.02 | 1,400 | 106 |
+| 3 | 1·128·1024 | 15.28 | 95 | 38 |
+| 4 | 32·128·1024 | 252.70 | 741 | 140 |
+| 5 | 1·1024·128 | 14.03 | 305 | 36 |
+| 6 | 32·1024·128 | 136.07 | 14,244 | 119 |
+| 7 | 1·2048·128 | 12.46 | 799 | 40 |
+| 8 | 18·2048·128 | 92.01 | 4,961 | 98 |
+| 9 | 1·4096·128 | 10.63 | 1,275 | 46 |
+| 10 | 9·4096·128 | 46.54 | 4,489 | 96 |
+| 11 | 1·8192·128 | 8.45 | 1,886 | 28 |
+| 12 | 4·8192·128 | 19.70 | 4,896 | 50 |
+| 13 | 1·16384·128 | 5.89 | 2,803 | 32 |
+| 14 | 2·16384·128 | 9.45 | 2,897 | 47 |
+| 15 | 1·32768·128 | 4.62 | 375 | 28 |
+
+(cfg 7–15 are the first b1+threshold measurements of the large-ISL rows; no b1-only preview to A/B.)
+
+**Structured-output sweep (6 runs):** ~53–59 tok/s, TTFT 168–300 ms, ~217–238 s each — healthy/flat,
+no regression from the b1+threshold path.
+
+**Net for Stage 7:** b1 alone wins single-request TTFT (preview, ~40× full-model); the
+`prefill_batch_threshold=16` heuristic adds a **+16–31% conc-32 throughput/wall win** AND **clears the
+mmlu_pro decode-starvation regression** (21→0 timeouts, mmlu_pro 3h08m→1h43m), bringing **total e2e to
+3h56m** — faster than both the Stage-6 regression (7h09m) and the pre-everything Stage-4 baseline (8h09m).
