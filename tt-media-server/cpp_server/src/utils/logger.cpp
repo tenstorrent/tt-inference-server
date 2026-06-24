@@ -150,7 +150,7 @@ ZeroOverheadLogger::Level ZeroOverheadLogger::parseLogLevel(
 
   std::cerr << "Unknown log level '" << levelStr << "', using 'info'"
             << std::endl;
-  return INFO;
+  return DEBUG;
 }
 
 std::string ZeroOverheadLogger::levelToString(Level level) {

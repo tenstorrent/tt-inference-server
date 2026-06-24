@@ -28,6 +28,16 @@ Agentic evals (LLM-only, --workflow agentic):
         python tt-inference-server-v2/run_agentic.py \
             --model Qwen3.6-27B --workflow agentic --device gpu \
             --service-port 8000
+
+Speculative-decoding benchmark (LLM-only, --workflow benchmarks):
+    Requires the dedicated ``V2_SPEC_DECODE`` venv (aiperf>=0.8 for the
+    SPEED-Bench dataset plugins). Use the thin launcher
+    ``run_spec_decode.py``. Server-side speculative config is out of scope:
+    the sweep measures whatever server it is pointed at.
+
+        python tt-inference-server-v2/run_spec_decode.py \
+            --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
+            --spec-decode --spec-decode-preset ci --service-port 8000
 """
 
 from __future__ import annotations
@@ -111,6 +121,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workflow", required=True, choices=valid_workflows)
     parser.add_argument("--device", required=True, choices=valid_devices)
     parser.add_argument("--service-port", type=int, default=8000)
+    parser.add_argument(
+        "--server-url",
+        type=str,
+        default=None,
+        help=(
+            "Base URL of an already-running inference server to target "
+            "(e.g. 'http://192.168.1.10'). Overrides the default localhost "
+            "host; combine with --service-port unless the URL carries an "
+            "explicit port. Propagated from v1 run.py --server-url through "
+            "the v2 bridge."
+        ),
+    )
     parser.add_argument(
         "--num-prompts",
         type=int,
@@ -240,23 +262,110 @@ def parse_args() -> argparse.Namespace:
             "https://github.com/ai-dynamo/aiperf/blob/main/docs/tutorials/prefix-synthesis.md"
         ),
     )
+    # ----- Speculative-decoding benchmark (LLM-only) ------------------
+    # When --spec-decode is set, BenchmarksWorkflow swaps its default
+    # media-task dispatch for the AIPerf SPEED-Bench spec-decode sweep (wired
+    # through CommandFactory -> OrchestratorMetadata.spec_decode). Validated
+    # below to require --workflow benchmarks. Run via run_spec_decode.py so
+    # the V2_SPEC_DECODE venv (aiperf>=0.8 for the SPEED-Bench dataset
+    # plugins) is in place before these heavy deps are needed.
+    parser.add_argument(
+        "--spec-decode",
+        action="store_true",
+        help=(
+            "Switch the benchmarks workflow to the AIPerf speculative-"
+            "decoding sweep over SPEED-Bench (all 11 qualitative "
+            "categories plus the throughput concurrency sweep). Scrapes "
+            "the vLLM vllm:spec_decode_* Prometheus counters per run for "
+            "acceptance rate / mean accepted length. The server's "
+            "speculative_config is out of scope and must be set by "
+            "whoever launched it. Requires --workflow benchmarks. Launch "
+            "through run_spec_decode.py."
+        ),
+    )
+    parser.add_argument(
+        "--spec-decode-preset",
+        type=str,
+        choices=["ci", "full"],
+        default="full",
+        help=(
+            "Preset for --spec-decode (default: full). 'ci' is a short "
+            "regression-friendly sweep (the 'coding' qualitative category "
+            "plus speed_bench_throughput_32k at concurrency 1/16/64), "
+            "'full' is every SPEED-Bench qualitative category plus the "
+            "whole throughput ISL x concurrency grid."
+        ),
+    )
+    parser.add_argument(
+        "--spec-decode-warmup-requests",
+        type=int,
+        default=4,
+        help=(
+            "Short chat-completion warmup requests sent before the "
+            "spec-decode sweep (default: 4; 0 disables)."
+        ),
+    )
     parser.add_argument(
         "--jwt-secret",
         type=str,
         default=None,
         help=(
-            "JWT secret for prefix-cache runs that hit an inference server "
-            "behind JWT auth. Mints a 'debug-test' token internally and sets "
-            "OPENAI_API_KEY for AIPerf. Reads $JWT_SECRET when omitted."
+            "JWT secret for prefix-cache / spec-decode runs that hit an "
+            "inference server behind JWT auth. Mints a 'debug-test' token "
+            "internally and sets OPENAI_API_KEY for AIPerf. Reads "
+            "$JWT_SECRET when omitted."
+        ),
+    )
+
+    parser.add_argument(
+        "--tools",
+        type=str,
+        choices=["vllm", "aiperf", "genai", "genai_perf", "guidellm"],
+        default="vllm",
+        help=(
+            "LLM benchmark tool/driver to use for LLM models: 'vllm' "
+            "(vllm bench serve, default), 'aiperf', 'genai'/'genai_perf' "
+            "(genai-perf via Docker), or 'guidellm'."
+        ),
+    )
+
+    # ----- Serving-bench suites (--workflow serving_bench) ------------
+    parser.add_argument(
+        "--serving-bench-suites",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated serving-bench suites to run (default: all suites "
+            "under test_module/serving_bench, e.g. agentic_bench, benchmark). "
+            "Suite knobs (DURATION, TARGET_CONCURRENCY, ...) are read from the "
+            "environment; --limit-samples-mode selects a knob preset and each "
+            "suite's defaults.env fills the rest."
         ),
     )
 
     args = parser.parse_args()
     if args.repeat < 1:
         parser.error("--repeat must be >= 1")
+    if args.server_url:
+        from utils.url_helpers import normalize_server_url
+
+        try:
+            args.server_url = normalize_server_url(args.server_url)
+        except ValueError as e:
+            parser.error(str(e))
     if args.prefix_cache and args.workflow != "benchmarks":
         parser.error(
             "--prefix-cache currently requires --workflow benchmarks "
+            f"(got --workflow {args.workflow})."
+        )
+    if args.spec_decode and args.workflow != "benchmarks":
+        parser.error(
+            "--spec-decode currently requires --workflow benchmarks "
+            f"(got --workflow {args.workflow})."
+        )
+    if args.serving_bench_suites and args.workflow != "serving_bench":
+        parser.error(
+            "--serving-bench-suites requires --workflow serving_bench "
             f"(got --workflow {args.workflow})."
         )
     if args.output_dir is None:

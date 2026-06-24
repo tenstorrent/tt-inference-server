@@ -8,9 +8,6 @@ templates:
 - weights:
     - openai/gpt-oss-20b
   impl: gpt_oss
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
@@ -46,9 +43,6 @@ templates:
 - weights:
     - openai/gpt-oss-120b
   impl: gpt_oss
-  version: "0.12.0"
-  tt_metal_commit: 805f43d
-  vllm_commit: a45c614
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
@@ -85,8 +79,6 @@ templates:
 - weights:
     - openai/gpt-oss-120b
   impl: gpt_oss
-  tt_metal_commit: 747215b  # handrew/gpt-oss-p150 branch
-  vllm_commit: 7678b70  # stable branch
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
@@ -112,9 +104,6 @@ templates:
 - weights:
     - arcee-ai/AFM-4.5B
   impl: tt_transformers
-  version: "0.3.0"
-  tt_metal_commit: ae65ee5
-  vllm_commit: 35f023f
   inference_engine: VLLM
   # need to add default sampling params here because they're
   # not in generation_config.json
@@ -137,9 +126,6 @@ templates:
 - weights:
     - google/gemma-3-1b-it
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: c254ee3
-  vllm_commit: c4f2327
   inference_engine: VLLM
   device_model_specs:
     - device: N150
@@ -155,9 +141,6 @@ templates:
 - weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: e0e0500
-  vllm_commit: 409b1cd
   inference_engine: VLLM
   device_model_specs:
     - device: N150
@@ -209,9 +192,6 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 22be241
   inference_engine: VLLM
   device_model_specs:
     - device: P300
@@ -227,9 +207,6 @@ templates:
 - weights:
     - Qwen/Qwen3-32B
   impl: qwen3_32b_galaxy
-  version: "0.11.1"
-  tt_metal_commit: bac8b34
-  vllm_commit: 7c6685a
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
@@ -279,9 +256,6 @@ templates:
 - weights:
     - Qwen/Qwen3-32B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: e95ffa5
-  vllm_commit: 48eba14
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
@@ -339,9 +313,6 @@ templates:
     kmd:
       specifier: ">=2.4.1"
       mode: STRICT
-  version: "0.10.0"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
   inference_engine: VLLM
   device_model_specs:
     - device: P150X8
@@ -368,9 +339,6 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.14.0"
-  tt_metal_commit: 80180b9
-  vllm_commit: 7678b70
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
@@ -391,9 +359,6 @@ templates:
 - weights:
     - mistralai/Mistral-7B-Instruct-v0.3
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 9b67e09
-  vllm_commit: a91b644
   inference_engine: VLLM
   device_model_specs:
     - device: N150
@@ -415,8 +380,6 @@ templates:
 - weights:
     - mistralai/Mistral-Small-3.1-24B-Instruct-2503
   impl: tt_transformers
-  tt_metal_commit: 9e3b1b3
-  vllm_commit: 1d0aa18
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
@@ -440,9 +403,6 @@ templates:
 - weights:
     - Qwen/QwQ-32B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: e95ffa5
-  vllm_commit: 48eba14
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
@@ -480,9 +440,6 @@ templates:
     - Qwen/Qwen2.5-72B
     - Qwen/Qwen2.5-72B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 13f44c5
-  vllm_commit: 0edd242
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
@@ -528,9 +485,6 @@ templates:
     - Qwen/Qwen2.5-7B
     - Qwen/Qwen2.5-7B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 5b5db8a
-  vllm_commit: e771fff
   inference_engine: VLLM
   device_model_specs:
     - device: N300
@@ -558,9 +512,6 @@ templates:
     - meta-llama/Llama-3.1-70B-Instruct
     - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
   impl: llama3_70b_galaxy
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
@@ -612,9 +563,6 @@ templates:
 - weights:
     - deepseek-ai/DeepSeek-R1-0528
   impl: deepseek_r1_galaxy
-  version: "0.12.0"
-  tt_metal_commit: 805f43d
-  vllm_commit: a45c614
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
@@ -674,9 +622,6 @@ templates:
     kmd:
       specifier: ">=2.2.0"
       mode: SUGGESTED
-  version: "0.11.1"
-  tt_metal_commit: 750ca54
-  vllm_commit: 38dee8c
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
@@ -707,9 +652,6 @@ templates:
     - meta-llama/Llama-3.1-70B-Instruct
     - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
   inference_engine: VLLM
   device_model_specs:
     - device: P150X4
@@ -765,9 +707,6 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.10.0"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
@@ -807,9 +746,6 @@ templates:
     kmd:
       specifier: ">=2.1.0"
       mode: STRICT
-  version: "0.2.0"
-  tt_metal_commit: v0.62.0-rc33
-  vllm_commit: e7c329b
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY_T3K
@@ -840,9 +776,6 @@ templates:
     - meta-llama/Llama-3.2-1B
     - meta-llama/Llama-3.2-1B-Instruct
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: 84b4c53
-  vllm_commit: 222ee06
   inference_engine: VLLM
   device_model_specs:
     - device: N150
@@ -871,9 +804,6 @@ templates:
     - meta-llama/Llama-3.2-3B
     - meta-llama/Llama-3.2-3B-Instruct
   impl: tt_transformers
-  version: "0.3.0"
-  tt_metal_commit: 20edc39
-  vllm_commit: 03cb300
   inference_engine: VLLM
   device_model_specs:
     - device: N150
@@ -901,9 +831,6 @@ templates:
     - meta-llama/Llama-3.1-8B
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
   inference_engine: VLLM
   device_model_specs:
     - device: N150
@@ -939,9 +866,6 @@ templates:
     - meta-llama/Llama-3.1-8B
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: 55fd115
-  vllm_commit: aa4ae1e
   inference_engine: VLLM
   device_model_specs:
     - device: P100
@@ -954,6 +878,18 @@ templates:
       max_concurrency: 32
       max_context: 65536  # 64 * 1024
       default_impl: true
+      override_tt_config:
+        trace_region_size: 900000000  # match P100 (single BH chip); 50MB default too small for prefill trace (#4005)
+      known_issues:
+        - workflow_type: EVALS
+          task_name: longbench_code_e
+          reason: "longbench_code_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_fewshot_e
+          reason: "longbench_fewshot_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_summarization_e
+          reason: "longbench_summarization_e measured score is ~94% which does not satisfy the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
   status: EXPERIMENTAL
   metadata:
     meta-llama/Llama-3.1-8B:
@@ -965,9 +901,6 @@ templates:
     - meta-llama/Llama-3.1-8B
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
   inference_engine: VLLM
   device_model_specs:
     - device: P150X4
@@ -997,9 +930,6 @@ templates:
     kmd:
       specifier: ">=2.4.1"
       mode: STRICT
-  version: "0.10.0"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
   inference_engine: VLLM
   device_model_specs:
     - device: P150X8
@@ -1028,9 +958,6 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.14.0"
-  tt_metal_commit: 80180b9
-  vllm_commit: 7678b70
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
@@ -1040,6 +967,16 @@ templates:
       override_tt_config:
         sample_on_device_mode: decode_only
         trace_region_size: 155000000
+      known_issues:
+        - workflow_type: EVALS
+          task_name: longbench_code_e
+          reason: "longbench_code_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_fewshot_e
+          reason: "longbench_fewshot_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_summarization_e
+          reason: "longbench_summarization_e measured score is ~94% which does not satisfy the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
     - device: P300
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
@@ -1058,9 +995,6 @@ templates:
     - meta-llama/Llama-3.1-8B
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: bac8b34
-  vllm_commit: 7c6685a
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
@@ -1102,9 +1036,6 @@ templates:
 - weights:
     - Qwen/Qwen2.5-Coder-32B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 17a5973
-  vllm_commit: aa4ae1e
   inference_engine: VLLM
   device_model_specs:
     - device: T3K

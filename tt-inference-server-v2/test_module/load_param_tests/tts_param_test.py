@@ -59,7 +59,7 @@ class TTSParamTest(BaseTest):
     TASK_TYPE = "text_to_speech"
 
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/v1/audio/speech"
+        self.url = f"{self.base_url}/v1/audio/speech"
 
         payloads = [
             default_payload,

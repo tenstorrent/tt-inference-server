@@ -10,7 +10,6 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlparse
 
 import jwt
 import requests
@@ -20,6 +19,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
+from utils.url_helpers import resolve_deploy_url, resolve_host_port
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -27,7 +27,6 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from utils.remote_readiness import _wait_for_remote_openai_ready
 from benchmarking.benchmark_config import (
     BENCHMARK_CONFIGS,
     BenchmarkConfig,
@@ -35,7 +34,6 @@ from benchmarking.benchmark_config import (
     powers_of_two_up_to,
     select_smoke_test_benchmark_config,
 )
-from benchmarking.run_genai_benchmarks import run_genai_benchmarks
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
@@ -137,83 +135,6 @@ def parse_args():
     return ret_args
 
 
-def _resolve_deploy_url(runtime_config: RuntimeConfig) -> str:
-    """Resolve the inference server base URL for benchmarks.
-
-    When ``--server-url`` is set (e.g. the Tenstorrent console), target that
-    remote OpenAI-compatible endpoint instead of localhost.
-    """
-    server_url = getattr(runtime_config, "server_url", None)
-    if server_url:
-        return server_url
-    return os.environ.get("DEPLOY_URL", "http://127.0.0.1")
-
-
-def _is_remote_server(runtime_config: RuntimeConfig) -> bool:
-    return bool(getattr(runtime_config, "server_url", None))
-
-
-def _setup_benchmark_auth(jwt_secret: str, model_spec: ModelSpec, logger) -> None:
-    """Configure OPENAI_API_KEY for local JWT auth or remote literal tokens."""
-    if (
-        model_spec.inference_engine == InferenceEngine.MEDIA.value
-        or model_spec.inference_engine == InferenceEngine.FORGE.value
-    ):
-        os.environ["OPENAI_API_KEY"] = "your-secret-key"
-        os.environ["VLLM_API_KEY"] = "your-secret-key"
-        logger.info("VLLM_API_KEY environment variable set to your-secret-key.")
-    elif jwt_secret:
-        json_payload = json.loads(
-            '{"team_id": "tenstorrent", "token_id": "debug-test"}'
-        )
-        encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
-        os.environ["OPENAI_API_KEY"] = encoded_jwt
-        logger.info(
-            "OPENAI_API_KEY environment variable set using provided JWT secret."
-        )
-    elif os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY"):
-        literal_key = os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
-        os.environ["OPENAI_API_KEY"] = literal_key
-        logger.info(
-            "OPENAI_API_KEY environment variable set from literal "
-            "API_KEY / OPENAI_API_KEY for remote endpoint benchmarks."
-        )
-
-
-def _benchmark_api_model(model_spec, remote_server: bool) -> str:
-    """Model id sent to the inference API (may differ from hf_model_repo on console)."""
-    if remote_server or model_spec.tt_metal_commit == "remote":
-        return model_spec.metadata.get(
-            "remote_api_model", f"openai/{model_spec.hf_model_repo}"
-        )
-    return model_spec.hf_model_repo
-
-
-def _benchmark_server_url_args(
-    deploy_url: str, service_port, remote_server: bool
-) -> list[str]:
-    """Build vllm bench URL args.
-
-    Remote HTTPS endpoints need ``--base-url`` so requests use TLS. Localhost
-    keeps ``--host``/``--port`` (plain HTTP).
-    """
-    parsed = urlparse(deploy_url.rstrip("/"))
-    host = parsed.hostname or "localhost"
-    port = str(parsed.port) if parsed.port is not None else str(service_port)
-    scheme = parsed.scheme
-
-    if remote_server or scheme == "https":
-        if scheme in ("http", "https") and parsed.netloc:
-            base_url = deploy_url.rstrip("/")
-        elif port == "443":
-            base_url = f"https://{host}:{port}"
-        else:
-            base_url = f"http://{host}:{port}"
-        return ["--base-url", base_url]
-
-    return ["--host", host, "--port", port]
-
-
 def build_benchmark_command(
     task,
     benchmark_script,
@@ -223,7 +144,6 @@ def build_benchmark_command(
     benchmark_config,
     model_spec,
     deploy_url: str = "http://127.0.0.1",
-    remote_server: bool = False,
 ):
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     isl = params.isl
@@ -248,9 +168,7 @@ def build_benchmark_command(
     dataset_name = "random-mm" if params.task_type == "vlm" else "random"
     backend = "openai-chat"
 
-    server_url_args = _benchmark_server_url_args(
-        deploy_url, service_port, remote_server
-    )
+    host, port = resolve_host_port(deploy_url, service_port)
 
     # fmt: off
     cmd = [
@@ -259,8 +177,9 @@ def build_benchmark_command(
         "serve",
         "--backend", backend,
         "--endpoint", "/v1/chat/completions",
-        "--model", _benchmark_api_model(model_spec, remote_server),
-        *server_url_args,
+        "--model", model_spec.hf_model_repo,
+        "--host", host,
+        "--port", port,
         "--dataset-name", dataset_name,
         "--max-concurrency", str(max_concurrency),
         "--num-prompts", str(num_prompts),
@@ -272,30 +191,18 @@ def build_benchmark_command(
         "--result-filename", str(result_filename),
     ]
 
-    # aiohttp advertises gzip by default; gateways (e.g. console) compress
-    # SSE for gzip-accepting clients and buffer each response until
-    # generation completes, which breaks TTFT/TPOT/ITL measurement.
-    # NOTE: vllm bench serve defines --header with nargs="*", so a repeated
-    # --header flag silently overwrites the previous one; all headers must be
-    # passed as values of a single --header occurrence.
-    extra_headers = ["Accept-Encoding=identity"]
-
-    if remote_server:
-        # Already probed via _wait_for_remote_openai_ready; vllm's internal check
-        # uses --host/--port defaults (HTTP, no auth) and would spin for 600s.
-        cmd.extend(["--ready-check-timeout-sec", "0"])
-        # vllm bench serve does not auto-read OPENAI_API_KEY; pass it explicitly.
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        if api_key:
-            extra_headers.append(f"Authorization=Bearer {api_key}")
-        cmd.extend(["--trust-remote-code"])
-
-    cmd.extend(["--header", *extra_headers])
-
-    # only truncate prompts for local vLLM; console rejects vLLM-specific extra fields
-    if params.task_type == "text" and not remote_server:
+    # only truncate prompts for text-only tasks; VLMs interleave vision tokens
+    # in the prompt and truncation can drop them, causing 400s at the preprocessor
+    if params.task_type == "text":
+        # Pin output length via max_tokens in the request body. --random-output-len
+        # isn't always enforced as a hard cap server-side (the forge OpenAI-compat
+        # server ignores it), so requests can run unbounded -- Qwen3-32B then emits
+        # ~1000+ reasoning tokens for osl=128 and blows the 6h CI cap. max_tokens in
+        # the body is honored.
         cmd.extend([
-            "--extra-body", json.dumps({"truncate_prompt_tokens": str(isl)}),
+            "--extra-body", json.dumps(
+                {"truncate_prompt_tokens": str(isl), "max_tokens": int(osl)}
+            ),
         ])
 
     if params.task_type == "vlm":
@@ -317,7 +224,6 @@ def build_structured_output_command(
     service_port,
     model_spec,
     deploy_url: str = "http://127.0.0.1",
-    remote_server: bool = False,
 ):
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     ratio_tag = (
@@ -332,24 +238,16 @@ def build_structured_output_command(
         f"_osl-{params.osl}_maxcon-{params.max_concurrency}_n-{params.num_prompts}.json"
     )
 
-    server_url_args = _benchmark_server_url_args(
-        deploy_url, service_port, remote_server
-    )
-
-    # Remote servers (e.g. the Tenstorrent console) only expose
-    # /v1/chat/completions, not /v1/completions.  Use the openai-chat backend
-    # so requests are wrapped in the chat message format and routed to the
-    # correct endpoint.  For local vLLM servers use the native vllm backend.
-    backend = "openai-chat" if remote_server else "vllm"
-    endpoint_args = ["--endpoint", "/v1/chat/completions"] if remote_server else []
+    host, port = resolve_host_port(deploy_url, service_port)
 
     # fmt: off
     cmd = [
         str(venv_python),
         str(structured_output_script),
-        "--backend", backend,
-        *server_url_args,
-        "--model", _benchmark_api_model(model_spec, remote_server),
+        "--backend", "vllm",
+        "--host", host,
+        "--port", port,
+        "--model", model_spec.hf_model_repo,
         "--dataset", params.structured_dataset,
         "--max-concurrency", str(params.max_concurrency),
         "--num-prompts", str(params.num_prompts),
@@ -359,14 +257,11 @@ def build_structured_output_command(
         "--save-results",
         "--result-dir", str(output_path),
         "--result-filename", result_filepath.name,
-        *endpoint_args,
     ]
     if params.structured_output_ratio is None:
         cmd.append("--no-structured-output")
     else:
         cmd.extend(["--structured-output-ratio", str(params.structured_output_ratio)])
-    if remote_server:
-        cmd.append("--trust-remote-code")
     # fmt: on
     return cmd, result_filepath
 
@@ -402,10 +297,9 @@ def main():
     device_str = runtime_config.device
     service_port = runtime_config.service_port
     disable_trace_capture = runtime_config.disable_trace_capture
-    # Mirror EnvironmentConfig's default so genai-perf sees the same deploy URL
-    # as the vLLM-bench path when --server-url is set.
-    deploy_url = _resolve_deploy_url(runtime_config)
-    remote_server = _is_remote_server(runtime_config)
+    # Resolved once here so the genai-perf branch (which returns before
+    # env_config is constructed) sees the same value used later.
+    deploy_url = resolve_deploy_url(runtime_config)
 
     # Automatically control trace capture based on has_builtin_warmup
     # Only apply automatic logic if user hasn't explicitly set --disable-trace-capture
@@ -420,45 +314,32 @@ def main():
 
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
-    # Check for tools selection (genai vs vllm)
-    tools = runtime_config.tools if runtime_config.tools is not None else "vllm"
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_spec=: {model_spec}")
     logger.info(f"device=: {device_str}")
     logger.info(f"service_port=: {service_port}")
     logger.info(f"output_path=: {args.output_path}")
-    logger.info(f"tools=: {tools}")
-    logger.info(f"deploy_url=: {deploy_url}")
-    logger.info(f"remote_server=: {remote_server}")
 
     # set environment vars
-    _setup_benchmark_auth(jwt_secret, model_spec, logger)
+    if jwt_secret:
+        # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
+        json_payload = json.loads(
+            '{"team_id": "tenstorrent", "token_id": "debug-test"}'
+        )
+        encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
+        os.environ["OPENAI_API_KEY"] = encoded_jwt
+        logger.info(
+            "OPENAI_API_KEY environment variable set using provided JWT secret."
+        )
+    if (
+        model_spec.inference_engine == InferenceEngine.MEDIA.value
+        or model_spec.inference_engine == InferenceEngine.FORGE.value
+    ):
+        os.environ["OPENAI_API_KEY"] = "your-secret-key"
+        os.environ["VLLM_API_KEY"] = "your-secret-key"
+        logger.info("VLLM_API_KEY environment variable set to your-secret-key.")
 
     env_vars = os.environ.copy()
-    if tools == "genai":
-        logger.info("Using genai-perf (Triton SDK) for benchmarking")
-
-        # Determine debug mode from limit_samples_mode
-        limit_samples_mode_str = runtime_config.limit_samples_mode
-        debug_mode = False
-        if limit_samples_mode_str:
-            limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
-            # Enable debug mode for quick test modes
-            if limit_mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_COMMIT):
-                debug_mode = True
-                logger.info(
-                    f"Enabling genai-perf debug mode (2 benchmarks) for limit_samples_mode={limit_samples_mode_str}"
-                )
-
-        return_code = run_genai_benchmarks(
-            model_spec=model_spec,
-            output_path=args.output_path,
-            jwt_secret=jwt_secret,
-            service_port=service_port,
-            debug=debug_mode,
-            deploy_url=deploy_url,
-        )
-        return return_code
 
     # Look up the evaluation configuration for the model using BENCHMARK_CONFIGS.
     if model_spec.model_id not in BENCHMARK_CONFIGS:
@@ -546,10 +427,7 @@ def main():
         message = f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
         raise AssertionError(message)
 
-    if remote_server:
-        logger.info("Wait for remote OpenAI-compatible endpoint to be ready ...")
-    else:
-        logger.info("Wait for the vLLM server to be ready ...")
+    logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = jwt_secret
     env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
@@ -562,27 +440,13 @@ def main():
         model_spec=model_spec,
         runtime_config=runtime_config,
     )
-    if remote_server:
-        if not _wait_for_remote_openai_ready(prompt_client):
-            logger.error(
-                "⛔️ Remote inference endpoint is not ready. Aborting benchmarks."
-            )
-            return 1
-    else:
-        logger.info(
-            "Using tensor_cache_timeout:=%ss as the vLLM server startup budget (covers tensor cache generation and warm-cache restarts on multi-DP-engine deployments)",
-            prompt_client.cache_monitor.get_tensor_cache_timeout(),
-        )
-        if not prompt_client.wait_for_healthy():
-            logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks. ")
-            return 1
-
-    if remote_server:
-        disable_trace_capture = True
-        logger.info(
-            "Skipping trace capture for remote --server-url endpoint "
-            "(vLLM trace-capture routes are not exposed remotely)."
-        )
+    logger.info(
+        "Using tensor_cache_timeout:=%ss as the vLLM server startup budget (covers tensor cache generation and warm-cache restarts on multi-DP-engine deployments)",
+        prompt_client.cache_monitor.get_tensor_cache_timeout(),
+    )
+    if not prompt_client.wait_for_healthy():
+        logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks. ")
+        return 1
 
     # keep track of captured traces to avoid re-running requests
     captured_traces = set()
@@ -621,17 +485,14 @@ def main():
                     )
                 captured_traces.update(sorted_context_lens_set)
             for i, params in enumerate(params_list, 1):
-                if not remote_server:
-                    try:
-                        health_check = prompt_client.get_health()
-                    except requests.exceptions.RequestException as error:
-                        logger.error("Health check request failed: %s", error)
-                        return 1
-                    if health_check.status_code != 200:
-                        logger.error(
-                            "⛔️ vLLM server is not healthy. Aborting benchmarks."
-                        )
-                        return 1
+                try:
+                    health_check = prompt_client.get_health()
+                except requests.exceptions.RequestException as error:
+                    logger.error("Health check request failed: %s", error)
+                    return 1
+                if health_check.status_code != 200:
+                    logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks.")
+                    return 1
 
                 logger.info(
                     f"Running benchmark {model_spec.model_name}: {i}/{len(params_list)}"
@@ -662,7 +523,6 @@ def main():
                             service_port=service_port,
                             model_spec=model_spec,
                             deploy_url=deploy_url,
-                            remote_server=remote_server,
                         )
                     )
                 else:
@@ -675,7 +535,6 @@ def main():
                         benchmark_config=benchmark_config,
                         model_spec=model_spec,
                         deploy_url=deploy_url,
-                        remote_server=remote_server,
                     )
                 return_code = run_command(command=cmd, logger=logger, env=env_vars)
                 return_codes.append(return_code)

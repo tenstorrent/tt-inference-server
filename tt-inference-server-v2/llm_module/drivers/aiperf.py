@@ -83,6 +83,7 @@ class AIPerfDriver(LLMDriver):
         env = dict(context.extra_env)
         if server.auth_token:
             env["OPENAI_API_KEY"] = server.auth_token
+            cmd.extend(["--api-key", server.auth_token])
 
         rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
         if rc != 0:

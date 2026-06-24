@@ -87,8 +87,8 @@ class LLMPerformanceRunner:
                 result.return_codes.append(1)
                 return result
 
-            if not skip_trace_capture:
-                unique_lens = sorted({(c.isl, c.osl) for c in configs})
+            unique_lens = sorted({(c.isl, c.osl) for c in configs if c.isl and c.osl})
+            if not skip_trace_capture and unique_lens:
                 try:
                     self.server_controller.capture_traces(
                         context_lens=unique_lens,

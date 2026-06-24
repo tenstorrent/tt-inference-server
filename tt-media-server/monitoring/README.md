@@ -90,7 +90,7 @@ monitoring/
     └── dashboards/
         ├── tt_media_server_cpp.json          # C++ server dashboard (latency, throughput, queue)
         ├── tt_media_server_python.json       # Python server dashboard (legacy, sunsetting)
-        └── tt_prefill_gateway.json           # PrefillGateway routing, latency, heartbeat dashboard
+        └── tt_prefill_gateway.json           # PrefillGateway routing, latency, registration-age dashboard
 ```
 
 ## Ports
@@ -126,7 +126,7 @@ Python server (uvicorn) gets its own group:
 
 Prometheus loads gateway rules from
 [`prometheus/rules/prefill_gateway.yml`](./prometheus/rules/prefill_gateway.yml).
-The initial rules cover stale prefill heartbeats, low prefix-match rate, high
+The initial rules cover stale prefill registrations, low prefix-match rate, high
 prefill latency, and observed request timeouts. They appear in Prometheus and
 Grafana as long as the gateway scrape target is reachable.
 

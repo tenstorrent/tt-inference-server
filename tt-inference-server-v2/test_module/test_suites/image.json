@@ -237,6 +237,9 @@
                         },
                         "motif+galaxy": {
                             "image_generation_time": 11
+                        },
+                        "motif+t3k": {
+                            "image_generation_time": 22
                         }
                     }
                 },
@@ -260,6 +263,9 @@
                         },
                         "motif+galaxy": {
                             "image_generation_time": 15
+                        },
+                        "motif+t3k": {
+                            "image_generation_time": 32
                         }
                     }
                 },
@@ -283,6 +289,9 @@
                         },
                         "motif+galaxy": {
                             "image_generation_time": 25
+                        },
+                        "motif+t3k": {
+                            "image_generation_time": 52
                         }
                     }
                 },
@@ -300,6 +309,26 @@
                         "motif": {
                             "model": "Motif-Image-6B-Preview"
                         }
+                    }
+                }
+            ]
+        },
+        {
+            "models": [
+                "z_image_turbo"
+            ],
+            "devices": [
+                "p300x2"
+            ],
+            "num_of_devices": 1,
+            "test_cases": [
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "9 iterations (Z-Image-Turbo)",
+                    "targets": {
+                        "num_inference_steps": 9,
+                        "image_generation_time": 15
                     }
                 }
             ]

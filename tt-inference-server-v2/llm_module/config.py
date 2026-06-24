@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,7 @@ class ServerConnection:
     model: str
     tokenizer: str = ""
     auth_token: str = ""
+    is_remote: bool = False
 
     def __post_init__(self) -> None:
         if not self.tokenizer:
@@ -52,7 +54,22 @@ class ServerConnection:
         host = self.base_url.rstrip("/")
         if "://" not in host:
             host = f"http://{host}"
+        if self.is_remote:
+            return host
+        if urlparse(host).port is not None:
+            return host
         return f"{host}:{self.service_port}"
+
+    @property
+    def host(self) -> str:
+        """Bare hostname (no scheme/port), for drivers that take ``--host``."""
+        from utils.url_helpers import resolve_host_port
+
+        normalized = self.base_url.rstrip("/")
+        if "://" not in normalized:
+            normalized = f"http://{normalized}"
+        host, _ = resolve_host_port(normalized, self.service_port)
+        return host
 
 
 @dataclass(frozen=True)

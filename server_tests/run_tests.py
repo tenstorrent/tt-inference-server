@@ -9,7 +9,6 @@ import jwt
 import logging
 import sys
 from pathlib import Path
-from urllib.parse import urlparse
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -21,6 +20,7 @@ from utils.remote_readiness import _wait_for_remote_openai_ready
 from server_tests.test_config import TEST_CONFIGS, TestTask
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
+from utils.url_helpers import build_base_url, resolve_deploy_url
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
 from workflows.runtime_config import RuntimeConfig
@@ -44,14 +44,6 @@ def _resolve_deploy_url(runtime_config: RuntimeConfig) -> str:
 
 def _is_remote_server(runtime_config: RuntimeConfig) -> bool:
     return bool(getattr(runtime_config, "server_url", None))
-
-
-def _resolve_api_base_url(deploy_url: str, service_port: int) -> str:
-    """Build the OpenAI API base URL (without /v1 suffix)."""
-    parsed = urlparse(deploy_url.rstrip("/"))
-    if parsed.port is not None:
-        return deploy_url.rstrip("/")
-    return f"{deploy_url.rstrip('/')}:{service_port}"
 
 
 def _setup_tests_auth(jwt_secret: str, remote_server: bool, logger) -> None:
@@ -112,8 +104,10 @@ def build_test_command(
 
     test_kwargs_list = [f"-{arg}" for arg in task.test_args]
 
-    base = _resolve_api_base_url(deploy_url, service_port)
+    base = build_base_url(deploy_url, service_port)
     if task.task_name == "vllm_responses":
+        # vLLM responses test needs the service port to connect to the server.
+        base = build_base_url(deploy_url, service_port)
         test_kwargs_list.extend(["--endpoint-url", f"{base}/v1/responses"])
     elif task.task_name == "vllm_chat_completions":
         test_kwargs_list.extend(["--endpoint-url", f"{base}/v1/chat/completions"])
@@ -199,7 +193,7 @@ def main():
     # runtime config loaded from JSON
     device_str = runtime_config.device
     service_port = runtime_config.service_port
-    deploy_url = _resolve_deploy_url(runtime_config)
+    deploy_url = resolve_deploy_url(runtime_config)
     # Propagate to subprocesses (pytest, etc.) that read DEPLOY_URL /
     # SERVICE_PORT (conftest --endpoint-url default, BaseTest). Without
     # exporting SERVICE_PORT, a non-default --service-port wouldn't reach

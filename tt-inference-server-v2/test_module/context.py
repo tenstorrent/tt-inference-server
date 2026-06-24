@@ -11,10 +11,17 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
+
+from utils.url_helpers import (
+    DEFAULT_DEPLOY_URL,
+    build_base_url,
+    resolve_host_port,
+)
 
 from ._test_common import HardwareRequirement
 from .health_tests import run_device_liveness
@@ -36,10 +43,30 @@ class MediaContext:
     service_port: int
     spec_tests_num_prompts_cap: Optional[int] = None
     runtime_config: Optional[Any] = None
+    server_url: Optional[str] = None
+    remote_server: bool = False
+
+    @property
+    def _deploy_url(self) -> str:
+        """Resolved deploy URL, delegating the default to url_helpers."""
+        return self.server_url or DEFAULT_DEPLOY_URL
 
     @property
     def base_url(self) -> str:
-        return f"http://localhost:{self.service_port}"
+        return build_base_url(self._deploy_url, self.service_port)
+
+    @property
+    def server_host(self) -> str:
+        """Scheme + host with no port, for split host/port consumers."""
+        host, _ = resolve_host_port(self._deploy_url, self.service_port)
+        scheme = urlparse(self._deploy_url).scheme or "http"
+        return f"{scheme}://{host}"
+
+    @property
+    def server_port(self) -> int:
+        """Explicit port from ``server_url`` when present, else service_port."""
+        _, port = resolve_host_port(self._deploy_url, self.service_port)
+        return int(port)
 
     @property
     def test_payloads_path(self) -> str:

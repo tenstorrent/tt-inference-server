@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 import requests
 from report_module.schema import Block
 
+from utils.url_helpers import DEFAULT_DEPLOY_URL, build_base_url
+
 from .blockify import block_id
 from .hardware_requirements import HardwareRequirement
 from .test_classes import TestConfig
@@ -77,6 +79,12 @@ class BaseTest(ABC):
             str(ctx.service_port)
             if ctx is not None
             else os.getenv("SERVICE_PORT", "8000")
+        )
+
+        self.base_url = (
+            ctx.base_url
+            if ctx is not None
+            else build_base_url(DEFAULT_DEPLOY_URL, self.service_port)
         )
         self.timeout = config.get("timeout")
         self.retry_attempts = config.get("retry_attempts")
@@ -149,7 +157,7 @@ class BaseTest(ABC):
         response that shows insufficient chips, e.g. a ``*LoadTest`` running
         on a Galaxy board where some workers aren't ready.
         """
-        health_url = f"http://localhost:{self.service_port}/tt-liveness"
+        health_url = f"{self.base_url}/tt-liveness"
         try:
             response = requests.get(health_url, timeout=HEALTH_CHECK_CONFIG.TIMEOUT)
         except requests.exceptions.RequestException as e:
@@ -424,7 +432,10 @@ class BaseTest(ABC):
         retry_delay = (
             retry_delay if retry_delay is not None else HEALTH_CHECK_CONFIG.RETRY_DELAY
         )
-        health_url = f"http://localhost:{service_port}/tt-liveness"
+        deploy_url = (
+            self.ctx._deploy_url if self.ctx is not None else DEFAULT_DEPLOY_URL
+        )
+        health_url = f"{build_base_url(deploy_url, service_port)}/tt-liveness"
         logger.info("Waiting for server at %s ...", health_url)
 
         for attempt in range(1, max_attempts + 1):

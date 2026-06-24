@@ -92,6 +92,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.vllm_forge_gemma4_31b",
         fromlist=["VLLMForgeGemma4_31BRunner"],
     ).VLLMForgeGemma4_31BRunner(wid),
+    ModelRunners.VLLMForge_QWEN_32B: lambda wid: __import__(
+        "tt_model_runners.vllm_forge_qwen_32b",
+        fromlist=["VLLMForgeQwen32BRunner"],
+    ).VLLMForgeQwen32BRunner(wid),
     ModelRunners.TT_XLA_RESNET: lambda wid: __import__(
         "tt_model_runners.forge_runners.runners", fromlist=["ForgeResnetRunner"]
     ).ForgeResnetRunner(wid),
@@ -113,6 +117,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_XLA_VIT: lambda wid: __import__(
         "tt_model_runners.forge_runners.runners", fromlist=["ForgeVitRunner"]
     ).ForgeVitRunner(wid),
+    ModelRunners.TT_XLA_YOLOX_NANO: lambda wid: __import__(
+        "tt_model_runners.forge_runners.runners", fromlist=["ForgeYoloxNanoRunner"]
+    ).ForgeYoloxNanoRunner(wid),
     ModelRunners.TRAINING_GEMMA_LORA: lambda wid: __import__(
         "tt_model_runners.forge_training_runners.training_gemma_lora_runner",
         fromlist=["TrainingGemmaLoraRunner"],

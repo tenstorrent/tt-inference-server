@@ -8,78 +8,106 @@
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
+#include "tt_llm_engine/pipeline/channel_configs.hpp"
+#include "tt_llm_engine/pipeline/prefill_pipeline_config.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
+#include "tt_llm_engine/scheduler/prefill/prefill_types.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners::blaze::utils {
 
-namespace ds = tt_llm_engine::scheduler::decode;
+namespace sch = tt_llm_engine::scheduler;
+namespace ds = sch::decode;
+namespace ps = sch::prefill;
 
-inline ds::ISRequest makeAllocateRequest(uint32_t requestId) {
+inline sch::ISRequest makeAllocateRequest(uint32_t requestId) {
   return {.type = ds::RequestType::ALLOCATE,
           .request_id = requestId,
           .tokens = {},
-          .gen = {}};
+          .gen = {},
+          .position_id = std::nullopt,
+          .dest_slot_id = std::nullopt};
 }
 
-inline ds::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {
+inline sch::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {
   return {.type = ds::RequestType::EVICT,
           .request_id = requestId,
           .slot_id = slotId,
           .tokens = {},
-          .gen = {}};
+          .gen = {},
+          .position_id = std::nullopt,
+          .dest_slot_id = std::nullopt};
 }
 
-inline ds::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
+inline sch::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
   return {.type = ds::RequestType::STOP,
           .request_id = requestId,
           .slot_id = slotId,
           .tokens = {},
-          .gen = {}};
+          .gen = {},
+          .position_id = std::nullopt,
+          .dest_slot_id = std::nullopt};
 }
 
-inline ds::GenerationParams makeGenerationParams(
+inline sch::GenerationParams makeGenerationParams(
     const tt::domain::llm::Sequence& seq) {
-  ds::GenerationParams params = {
+  const sch::PhaseSamplingParams userSampling{
+      .temperature = seq.getSamplingParams().temperature,
+      .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
+      .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
+  };
+  return {
       .max_new_tokens =
           static_cast<uint32_t>(seq.getSamplingParams().max_tokens.value_or(
               static_cast<int>(tt::config::maxContextLength()))),
       .spec_decode = seq.getSamplingParams().fast_mode,
       .ignore_eos = seq.getSamplingParams().ignore_eos,
-      .temperature = seq.getSamplingParams().temperature,
-      .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
-      .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
+      .sampling = userSampling,
+      .reasoning_sampling = userSampling,
       .disaggregated_decode = seq.isDisaggregated(),
-      .stop_tokens = seq.getSamplingParams().stop_token_ids};
-
-  if (seq.getKVPositionId().has_value()) {  // override position id
-    params.position_id = *seq.getKVPositionId();
-  }
-  return params;
+      .starts_in_thinking = seq.getStartsInThinking(),
+      .stop_tokens = seq.getSamplingParams().stop_token_ids,
+  };
 }
 
-inline void fillSequenceFields(ds::ISRequest& req,
+inline void postProcessSamplingParams(sch::GenerationParams& params) {
+  if (tt::config::sampleOnlyInReasoning()) {
+    // We argmax outside the reasoning phase
+    params.sampling = sch::PhaseSamplingParams{
+        .temperature = 1.0f, .top_p = 1.0f, .top_k = 1};
+  }
+}
+
+inline void fillSequenceFields(sch::ISRequest& req,
                                const tt::domain::llm::Sequence& seq) {
   req.tokens.assign(seq.getTokenIds().begin(), seq.getTokenIds().end());
   req.gen = makeGenerationParams(seq);
+  postProcessSamplingParams(req.gen);
 }
 
-inline ds::ISRequest makeSubmitRequest(uint32_t slotId,
-                                       const tt::domain::llm::Sequence& seq) {
-  ds::ISRequest req{};
+inline sch::ISRequest makeSubmitRequest(
+    uint32_t slotId, const tt::domain::llm::Sequence& seq,
+    std::optional<uint32_t> destSlotId = std::nullopt) {
+  sch::ISRequest req{};
   req.type = ds::RequestType::SUBMIT;
   req.slot_id = slotId;
+  req.dest_slot_id = destSlotId;
   fillSequenceFields(req, seq);
   return req;
 }
 
-inline ds::ISRequest makeContinueRequest(uint32_t slotId,
-                                         const tt::domain::llm::Sequence& seq) {
-  ds::ISRequest req{};
+inline sch::ISRequest makeContinueRequest(
+    uint32_t slotId, const tt::domain::llm::Sequence& seq,
+    std::optional<uint32_t> destSlotId = std::nullopt) {
+  sch::ISRequest req{};
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
+  req.dest_slot_id = destSlotId;
   fillSequenceFields(req, seq);
+  if (seq.getKVPositionId().has_value()) {  // override position id
+    req.position_id = *seq.getKVPositionId();
+  }
   return req;
 }
 
@@ -92,6 +120,16 @@ inline void initSlotForRun(SlotContext& slot,
   slot.ignoreEos = seq.getSamplingParams().ignore_eos;
   slot.specAcceptsAtStart = sched.get_spec_accepts(slot.slotId);
   slot.specRejectsAtStart = sched.get_spec_rejects(slot.slotId);
+  slot.taskId = seq.taskId;
+  slot.tokensGenerated = 0;
+}
+
+// Populates per-run fields on `slot` from `seq`. Snapshots the slot's spec
+// counters at this moment so handleOutput can later report per-turn deltas.
+// Does not touch state machine / metrics / task binding — caller's job.
+inline void initSlotForRun(SlotContext& slot,
+                           const tt::domain::llm::Sequence& seq) {
+  slot.ignoreEos = seq.getSamplingParams().ignore_eos;
   slot.taskId = seq.taskId;
   slot.tokensGenerated = 0;
 }
@@ -125,7 +163,7 @@ inline SpecDelta computeAndLogSpecDelta(ds::DecodeScheduler& sched,
 
 namespace pl = tt_llm_engine::pipeline;
 
-pl::WireFormat wireFormatFromString(const std::string& s) {
+inline pl::WireFormat wireFormatFromString(const std::string& s) {
   static const std::unordered_map<std::string, pl::WireFormat> formats = {
       {"deepseek", pl::WireFormat::DEEPSEEK},
       {"loopback", pl::WireFormat::LOOPBACK},
@@ -139,7 +177,7 @@ pl::WireFormat wireFormatFromString(const std::string& s) {
   throw std::runtime_error("Invalid wire format: " + s);
 }
 
-inline pl::PipelineConfig makePipelineConfig(
+inline pl::PipelineConfig makeDecodePipelineConfig(
     const tt::config::LLMConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
@@ -165,7 +203,37 @@ inline pl::PipelineConfig makePipelineConfig(
       };
        */
     default:
-      throw std::runtime_error("Invalid blaze runner type");
+      throw std::runtime_error("Invalid blaze decode runner type");
+  }
+}
+
+inline pl::PrefillPipelineConfig makePrefillPipelineConfig(
+    const tt::config::LLMConfig& config) {
+  switch (config.runner_type) {
+    case tt::config::ModelRunnerType::PIPELINE_MANAGER:
+      return pl::PrefillH2DConfig{
+          .service_id = tt::config::blazeSocketDescriptorPrefix(),
+          .connect_timeout_ms = tt::config::pmConnectTimeoutMs()};
+    case tt::config::ModelRunnerType::MOCK_PIPELINE:
+      return pl::PrefillMockConfig{.auto_layer_acks = true};
+    default:
+      throw std::runtime_error("Invalid blaze prefill runner type");
+  }
+}
+
+inline pl::CounterChannelConfig makePrefillAckChannelConfig(
+    const tt::config::LLMConfig& config) {
+  switch (config.runner_type) {
+    case tt::config::ModelRunnerType::PIPELINE_MANAGER:
+      return pl::InterProcessCounterChannelConfig{
+          .shm_name = "/tt_prefill_layer_acks_" +
+                      tt::config::blazeSocketDescriptorPrefix(),
+          .connect_timeout_ms = 60000,
+      };
+    case tt::config::ModelRunnerType::MOCK_PIPELINE:
+      return pl::SingleProcessCounterChannelConfig{};
+    default:
+      throw std::runtime_error("Invalid blaze prefill runner type");
   }
 }
 

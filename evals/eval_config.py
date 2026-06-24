@@ -65,7 +65,6 @@ class SWEbenchEvalConfig:
     sweagent_config: str = "config/default.yaml"
     mini_config: str = "swebench.yaml"
     mini_model_class: str = "litellm"
-    mini_last_n_observations: int = 15
     mini_environment_class: str = "docker"
     swebench_timeout_sec: Optional[int] = None
     shuffle: bool = True
@@ -157,7 +156,7 @@ _eval_config_list = [
                     published_score=90.5,
                     published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
                     gpu_reference_score=90.91,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3752#issuecomment-4574524682",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -167,15 +166,14 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "max_length": 256 * 1024,
+                    "max_length": 120 * 1024,
                     # Per-request HTTP timeout (lm-eval default 1800s). Long
                     # reasoning generations on the shared console can exceed
                     # 30min under load, so allow up to 2h before giving up.
                     "timeout": 7200,
                 },
                 gen_kwargs={
-
-                    "max_gen_toks": 256 * 1024,
+                    "max_gen_toks": 120 * 1024,
                     "until": ["[EOS]"],
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -195,7 +193,7 @@ _eval_config_list = [
                     published_score=66.7,
                     published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
                     gpu_reference_score=61.9,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3752#issuecomment-4586446467",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -216,13 +214,13 @@ _eval_config_list = [
                         # "interleaved_thinking": True,  # Feeds reasoning content back into the message history
                         "temperature": 1.0,
                         "model_info": {
-                            "max_input_tokens": 256 * 1024,
-                            "max_output_tokens": 64 * 1024,
+                            "max_input_tokens": 48 * 1024,
+                            "max_output_tokens": 128 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 1.0,
-                            "max_tokens": 64 * 1024,
-                            "timeout":  60 * 60,
+                            "max_tokens": 128 * 1024,
+                            "timeout": 60 * 60,
                         },
                         # "llm_call_kwargs": {
                         #     "extra_body": {
@@ -254,7 +252,7 @@ _eval_config_list = [
                     published_score=80.2,
                     published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
                     gpu_reference_score=66.2,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3752#issuecomment-4574524682",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -271,9 +269,11 @@ _eval_config_list = [
                     n_tasks=None,
                     temperature=1.0,
                     top_p=1.0,
-                    max_input_tokens=256 * 1024,
-                    max_output_tokens=64 * 1024,
-                    mini_last_n_observations=15,
+                    # max inputs tokens should be increased when we get a chance
+                    max_input_tokens=48 * 1024,
+                    max_output_tokens=32 * 1024,
+                    # mini_last_n_observations is ommitted for now
+                    # mini_last_n_observations=15,
                     # completion_kwargs={
                     #     "extra_body": {
                     #         "top_k": 20,
@@ -285,7 +285,7 @@ _eval_config_list = [
                             "pytest-dev__pytest-5262",
                             "django__django-14672",
                             "sympy__sympy-13551",
-                            "sphinx-doc__sphinx-9281"
+                            "sphinx-doc__sphinx-9281",
                         ],
                     },
                 ),
@@ -414,7 +414,6 @@ _eval_config_list = [
                     top_p=0.95,
                     max_input_tokens=200 * 1024,
                     max_output_tokens=64 * 1024,
-                    mini_last_n_observations=15,
                     instance_ids_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-12143",
@@ -1927,17 +1926,12 @@ _eval_config_list = [
         hf_model_repo="deepseek-ai/DeepSeek-R1-0528",
         tasks=[
             EvalTask(
-                task_name="r1_gpqa_diamond",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=1,
-                # The remote Tenstorrent console only exposes /v1/chat/completions
-                # (text /v1/completions returns 404), so use the chat API.
-                use_chat_api=True,
+                task_name="r1_aime24",
                 score=EvalTaskScore(
-                    published_score=90.5,
-                    published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
-                    gpu_reference_score=90.91,
-                    gpu_reference_score_ref="TBD",
+                    published_score=91.40,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-0528#deepseek-r1-0528-1",
+                    gpu_reference_score=83.33,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/357#issuecomment-3048350923",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -1946,132 +1940,47 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "max_length": 64 * 1024,
-                    # Per-request HTTP timeout (lm-eval default 1800s). Long
-                    # reasoning generations on the shared console can exceed
-                    # 30min under load, so allow up to 2h before giving up.
-                    "timeout": 7200,
+                    "max_length": 32768,
                 },
                 gen_kwargs={
-
-                    "max_gen_toks": 60 * 1024,
-                    # "until": ["[EOS]"],
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 1.0,
-                    # "top_k": 20,
-                    "top_p": 1.0,
-                    "stream": "true",
+                    "stream": "false",
+                    "max_gen_toks": 28 * 1024,  # Allow up to 4K prompt tokens
                 },
+                seed=42,
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
-                task_name="terminal_bench_2",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=66.7,
-                    published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
-                    gpu_reference_score=61.9,
-                    gpu_reference_score_ref="TBD",
+                    published_score=81.00,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-0528#deepseek-r1-0528-1",
+                    gpu_reference_score=81.31,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/357#issuecomment-3048350923",
                     score_func=score_task_single_key,
                     score_func_kwargs={
-                        "result_keys": ["accuracy"],
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
                         "unit": "percent",
                     },
                 ),
-                agentic_eval_config=TerminalBenchEvalConfig(
-                    dataset="terminal-bench/terminal-bench-2",
-                    agent="terminus-2",
-                    n_concurrent_trials=8,
-                    n_attempts=1,
-                    n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
-                    agent_timeout_sec=2 * 60 * 60,
-                    agent_kwargs={
-                        "parser_name": "json",
-                        # "interleaved_thinking": True,  # Feeds reasoning content back into the message history
-                        "temperature": 1.0,
-                        "model_info": {
-                            "max_input_tokens": 48 * 1024,
-                            "max_output_tokens": 64 * 1024,
-                        },
-                        "llm_kwargs": {
-                            "top_p": 1.0,
-                            "max_tokens": 64 * 1024,
-                            "timeout":  60 * 60,
-                        },
-                        # "llm_call_kwargs": {
-                        #     "extra_body": {
-                        #         "chat_template_kwargs": {
-                        #             "thinking": True,
-                        #             "preserve_thinking": True,
-                        #         }
-                        #     },
-                        # },
-                    },
-                    task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/break-filter-js-from-html",
-                            "terminal-bench/cobol-modernization",
-                            "terminal-bench/compile-compcert",
-                            "terminal-bench/feal-differential-cryptanalysis",
-                            "terminal-bench/qemu-startup",
-                        ],
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 32768,
                 },
-            ),
-            EvalTask(
-                task_name="swe_bench_verified",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                score=EvalTaskScore(
-                    published_score=80.2,
-                    published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
-                    gpu_reference_score=66.2,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["accuracy"],
-                        "unit": "percent",
-                    },
-                ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
-                    n_concurrent_trials=8,
-                    max_workers=24,
-                    n_tasks=None,
-                    temperature=1.0,
-                    top_p=1.0,
-                    max_input_tokens=48 * 1024,
-                    max_output_tokens=16 * 1024,
-                    mini_last_n_observations=15,
-                    # completion_kwargs={
-                    #     "extra_body": {
-                    #         "top_k": 20,
-                    #     },
-                    # },
-                    instance_ids_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-12143",
-                            "pytest-dev__pytest-5262",
-                            "django__django-14672",
-                            "sympy__sympy-13551",
-                            "sphinx-doc__sphinx-9281"
-                        ],
-                    },
-                ),
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 28 * 1024,  # Allow up to 4K prompt tokens
+                },
+                seed=42,
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -3025,6 +2934,23 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="Tongyi-MAI/Z-Image-Turbo",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=14.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="openai/whisper-large-v3",
         tasks=[
             EvalTask(
@@ -3398,6 +3324,23 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="yolox_nano",
+        tasks=[
+            EvalTask(
+                task_name="load_image",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=25.8,
+                    published_score_ref="https://arxiv.org/abs/2107.08430",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="microsoft/speecht5_tts",
         tasks=[
             EvalTask(
@@ -3520,7 +3463,7 @@ _eval_config_list = [
                 task_name="aime25",
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.05,  # 30 samples * 0.05 ~= 1 sample
-                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 30 samples * 0.2 = 6 samples
+                    EvalLimitMode.CI_NIGHTLY: 0.50,  # 30 samples * 0.2 = 6 samples
                 },
                 score=EvalTaskScore(
                     published_score=92.5,  # AIME 2025 score (without tools)
@@ -3664,6 +3607,34 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="google/gemma-4-31b-it",
+        tasks=[
+            EvalTask(
+                task_name="ifeval",
+                score=EvalTaskScore(
+                    # First TT user of gemma-4-31b-it (no prior TTNN entry) and
+                    # no published gemma-4 reference yet -- fill published_score /
+                    # gpu_reference_score from the first CI_NIGHTLY run.
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                # Downsampled: first user of the model, trim nightly runtime.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.1,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),

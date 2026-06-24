@@ -1,9 +1,10 @@
 name: C++ Heavy Checks (scheduled)
 
-# Heavy cpp_server jobs (the 3 self-hosted perf benches, Dynamo integration,
-# and the ThreadSanitizers) are too slow / queue-bound to gate every PR. They
-# run on a schedule (and on demand) instead. The fast per-commit checks (lint,
-# compile, unit tests, and the mock-backend benchmark) stay in test-gate.yml.
+# Heavy cpp_server jobs (the self-hosted mock_pipeline perf bench, Dynamo
+# integration, and the ThreadSanitizers) are too slow / queue-bound to gate
+# every PR. They run on a schedule (and on demand) instead. The fast
+# per-commit checks (lint, compile, unit tests, and the mock-backend
+# benchmark) stay in test-gate.yml.
 on:
   schedule:
     # GitHub cron is UTC and does NOT observe DST. CET=UTC+1 (winter),
@@ -186,10 +187,21 @@ jobs:
         run: |
           CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
           CHECK=cpp_server/scripts/ci/check_vllm_result.py
+          THRESHOLD_LOG=benchmark_thresholds.log
           FAIL=0
+          : > "$THRESHOLD_LOG"
+
+          set +e
           python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock_pipeline \
-            --result vllm-bench-mock-pipeline.json || FAIL=1
+            --result vllm-bench-mock-pipeline.json 2>&1 | tee -a "$THRESHOLD_LOG"
+          STATUS=${PIPESTATUS[0]}
+          set -e
+
+          if [[ "$STATUS" -ne 0 ]]; then
+            FAIL=1
+          fi
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
+          echo "BENCH_THRESHOLD_LOG=$THRESHOLD_LOG" >> "$GITHUB_ENV"
 
       # ── Artifacts & logs ─────────────────────────────────────────────
       - name: Show server logs
@@ -220,7 +232,17 @@ jobs:
 
       - name: Check benchmark result
         if: always()
-        run: exit "${BENCH_FAIL:-0}"
+        run: |
+          if [[ "${BENCH_FAIL:-0}" -ne 0 ]]; then
+            LOG="${BENCH_THRESHOLD_LOG:-benchmark_thresholds.log}"
+            echo "::error::Benchmark threshold check failed. Details from $LOG:"
+            if [[ -f "$LOG" ]]; then
+              cat "$LOG"
+            else
+              echo "No benchmark threshold log found; see the 'Check benchmark thresholds' step."
+            fi
+            exit 1
+          fi
 
   cpp-server-prefill-decode-split:
     name: C++ Server Prefill/Decode Split Test
@@ -295,7 +317,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "TCP direct split prefill"
           cd cpp_server/build
           NS=tcp_prefill
-          SOCKET_TRANSPORT=tcp LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          SOCKET_TRANSPORT=tcp LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -320,7 +342,7 @@ jobs:
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8001 \
             --dataset-name random \
-            --random-input-len 128 \
+            --random-input-len 1024 \
             --random-output-len 128 \
             --num-prompts 1000 \
             --max-concurrency 64 \
@@ -359,7 +381,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "ZMQ direct split prefill"
           cd cpp_server/build
           NS=zmq_prefill
-          SOCKET_TRANSPORT=zmq LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          SOCKET_TRANSPORT=zmq LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -384,7 +406,7 @@ jobs:
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8001 \
             --dataset-name random \
-            --random-input-len 128 \
+            --random-input-len 1024 \
             --random-output-len 128 \
             --num-prompts 1000 \
             --max-concurrency 64 \
@@ -399,36 +421,15 @@ jobs:
           [ -f zmq_prefill.pid ] && kill $(cat zmq_prefill.pid) 2>/dev/null || true
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 8002 --port 9000 --label "ZMQ direct split"
 
-      # ── Round 2: mock_prefill_runner + Prefill + Decode split ────────
-      - name: Clean shared memory segments
+      # ── Round 2: Prefill + Mock Decode split ─────────────────────────
+      - name: Start Prefill server (mock decode split)
         run: |
-          rm -f /dev/shm/tt_ipc_p2c /dev/shm/tt_ipc_c2p 2>/dev/null || true
-
-      - name: Start mock_prefill_runner (rank 0 coordinator)
-        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "mock decode split prefill"
           cd cpp_server
-          TT_IPC_SHM_P2C=tt_ipc_p2c \
-          TT_IPC_SHM_C2P=tt_ipc_c2p \
-          LLM_DEVICE_BACKEND=ttrun \
-            python src/runtime/runners/mock_prefill_runner.py \
-            > ../mock_prefill_runner.log 2>&1 &
-          echo $! > ../mock_prefill_runner.pid
-          cd ..
-          sleep 2
-          if ! kill -0 "$(cat mock_prefill_runner.pid)" 2>/dev/null; then
-            echo "ERROR: mock_prefill_runner exited during startup"
-            cat mock_prefill_runner.log || true
-            exit 1
-          fi
-
-      - name: Start Prefill server (mock_prefill_runner round)
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "mock_prefill_runner prefill"
-          cd cpp_server
-          NS=r2_prefill
-          TT_IPC_SHM_C2P=tt_ipc_c2p TT_IPC_SHM_P2C=tt_ipc_p2c \
+          NS=mock_decode_prefill
+          SOCKET_TRANSPORT=zmq \
           TT_LOG_LEVEL=debug \
-          LLM_MODE=prefill LLM_DEVICE_BACKEND=prefill \
+          LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
@@ -438,17 +439,18 @@ jobs:
           TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
           TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
             ./build/tt_media_server_cpp -p 8001 -t 4 \
-            > ../prefill_server_runner.log 2>&1 &
-          echo $! > ../prefill_server_runner.pid
+            > ../mock_decode_prefill.log 2>&1 &
+          echo $! > ../mock_decode_prefill.pid
           cd ..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8001 --pid-file prefill_server_runner.pid --label "mock_prefill_runner prefill server"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8001 --pid-file mock_decode_prefill.pid --label "mock decode split prefill server"
 
-      - name: Start Decode server (mock_prefill_runner round)
+      - name: Start Decode server (mock decode split)
         run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 9000 --label "mock_prefill_runner decode"
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 9000 --label "mock decode split decode"
           cd cpp_server
-          NS=r2_decode
-          LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+          NS=mock_decode
+          SOCKET_TRANSPORT=zmq \
+          LLM_DEVICE_BACKEND=mock LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
           TT_LOG_LEVEL=debug \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
@@ -458,23 +460,23 @@ jobs:
           TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
           TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
             ./build/tt_media_server_cpp -p 8000 -t 4 \
-            > ../decode_server_runner.log 2>&1 &
-          echo $! > ../decode_server_runner.pid
+            > ../mock_decode.log 2>&1 &
+          echo $! > ../mock_decode.pid
           cd ..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8000 --pid-file decode_server_runner.pid --label "mock_prefill_runner decode server"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8000 --pid-file mock_decode.pid --label "mock decode split decode server"
 
-      - name: Verify prefill/decode socket connection
+      - name: Verify mock decode split socket connection
         run: |
           bash cpp_server/scripts/ci/wait_for_liveness.sh \
             --port 8001 \
             --expect '"socket_status":"client:connected"' \
-            --pid-file prefill_server_runner.pid \
-            --label "mock_prefill_runner prefill socket"
+            --pid-file mock_decode_prefill.pid \
+            --label "mock decode split prefill socket"
           bash cpp_server/scripts/ci/wait_for_liveness.sh \
             --port 8000 \
             --expect '"socket_status":"server:connected' \
-            --pid-file decode_server_runner.pid \
-            --label "mock_prefill_runner decode socket"
+            --pid-file mock_decode.pid \
+            --label "mock decode split decode socket"
           PREFILL_LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
           DECODE_LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
           echo "Prefill liveness: $PREFILL_LIVENESS"
@@ -493,14 +495,14 @@ jobs:
             FAIL=1
           fi
           if ! echo "$DECODE_LIVENESS" | grep -q '"socket_status":"server:connected'; then
-            echo "ERROR: Decode server socket_status does not start with 'server:connected'"
+            echo "ERROR: Decode socket_status does not start with 'server:connected'"
             FAIL=1
           fi
           if [ "$FAIL" -ne 0 ]; then
             exit 1
           fi
 
-      - name: Run vLLM bench serve against mock_prefill_runner split
+      - name: Run vLLM bench serve against mock decode split
         env:
           OPENAI_API_KEY: 'your-secret-key'
         run: |
@@ -511,35 +513,51 @@ jobs:
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8000 \
             --dataset-name random \
-            --random-input-len 128 \
+            --random-input-len 1024 \
             --random-output-len 128 \
             --num-prompts 1000 \
             --max-concurrency 64 \
             --save-result \
-            --result-filename "vllm-bench-split-runner-result.json" \
-            2>&1 | tee bench_split_runner_output.txt
+            --result-filename "vllm-bench-split-mock-decode-result.json" \
+            2>&1 | tee bench_split_mock_decode_output.txt
 
-      - name: Stop split servers (round 2)
+      - name: Stop mock decode split servers
         if: always()
         run: |
-          [ -f decode_server_runner.pid ] && kill $(cat decode_server_runner.pid) 2>/dev/null || true
-          [ -f prefill_server_runner.pid ] && kill $(cat prefill_server_runner.pid) 2>/dev/null || true
-          [ -f mock_prefill_runner.pid ] && kill $(cat mock_prefill_runner.pid) 2>/dev/null || true
-          rm -f /dev/shm/tt_ipc_p2c /dev/shm/tt_ipc_c2p 2>/dev/null || true
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 8001 --port 9000 --label "mock_prefill_runner split"
+          [ -f mock_decode.pid ] && kill $(cat mock_decode.pid) 2>/dev/null || true
+          [ -f mock_decode_prefill.pid ] && kill $(cat mock_decode_prefill.pid) 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 8001 --port 9000 --label "mock decode split"
 
       - name: Check benchmark thresholds
         run: |
           CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
           CHECK=cpp_server/scripts/ci/check_vllm_result.py
+          THRESHOLD_LOG=benchmark_thresholds.log
           FAIL=0
-          python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_tcp \
-            --result vllm-bench-split-tcp-result.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_zmq \
-            --result vllm-bench-split-zmq-result.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_runner \
-            --result vllm-bench-split-runner-result.json || FAIL=1
+          : > "$THRESHOLD_LOG"
+
+          check_threshold() {
+            local scenario="$1"
+            local result="$2"
+            echo "=== $scenario ($result) ===" | tee -a "$THRESHOLD_LOG"
+
+            set +e
+            python3 "$CHECK" --config "$CONFIG" --scenario "$scenario" \
+              --result "$result" 2>&1 | tee -a "$THRESHOLD_LOG"
+            local status=${PIPESTATUS[0]}
+            set -e
+
+            echo "" | tee -a "$THRESHOLD_LOG"
+            if [[ "$status" -ne 0 ]]; then
+              FAIL=1
+            fi
+          }
+
+          check_threshold prefill_decode_split_tcp vllm-bench-split-tcp-result.json
+          check_threshold prefill_decode_split_zmq vllm-bench-split-zmq-result.json
+          check_threshold prefill_decode_split_mock_decode vllm-bench-split-mock-decode-result.json
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
+          echo "BENCH_THRESHOLD_LOG=$THRESHOLD_LOG" >> "$GITHUB_ENV"
 
       - name: Show server logs
         if: always()
@@ -572,25 +590,18 @@ jobs:
             echo "No zmq_prefill.log file found"
           fi
           echo ""
-          echo "=== mock_prefill_runner Logs (round 2) ==="
-          if [ -f mock_prefill_runner.log ]; then
-            cat mock_prefill_runner.log
+          echo "=== Prefill Server Logs (mock decode round) ==="
+          if [ -f mock_decode_prefill.log ]; then
+            cat mock_decode_prefill.log
           else
-            echo "No mock_prefill_runner.log file found"
+            echo "No mock_decode_prefill.log file found"
           fi
           echo ""
-          echo "=== Prefill Server Logs (round 2) ==="
-          if [ -f prefill_server_runner.log ]; then
-            cat prefill_server_runner.log
+          echo "=== Decode Server Logs (mock decode round) ==="
+          if [ -f mock_decode.log ]; then
+            cat mock_decode.log
           else
-            echo "No prefill_server_runner.log file found"
-          fi
-          echo ""
-          echo "=== Decode Server Logs (round 2) ==="
-          if [ -f decode_server_runner.log ]; then
-            cat decode_server_runner.log
-          else
-            echo "No decode_server_runner.log file found"
+            echo "No mock_decode.log file found"
           fi
 
       - name: Upload benchmark result
@@ -601,7 +612,7 @@ jobs:
           path: |
             tt-media-server/vllm-bench-split-tcp-result.json
             tt-media-server/vllm-bench-split-zmq-result.json
-            tt-media-server/vllm-bench-split-runner-result.json
+            tt-media-server/vllm-bench-split-mock-decode-result.json
           retention-days: 1
           if-no-files-found: warn
 
@@ -615,15 +626,24 @@ jobs:
             tt-media-server/tcp_prefill.log
             tt-media-server/zmq_decode.log
             tt-media-server/zmq_prefill.log
-            tt-media-server/mock_prefill_runner.log
-            tt-media-server/prefill_server_runner.log
-            tt-media-server/decode_server_runner.log
+            tt-media-server/mock_decode.log
+            tt-media-server/mock_decode_prefill.log
           retention-days: 1
           if-no-files-found: warn
 
       - name: Check benchmark result
         if: always()
-        run: exit "${BENCH_FAIL:-0}"
+        run: |
+          if [[ "${BENCH_FAIL:-0}" -ne 0 ]]; then
+            LOG="${BENCH_THRESHOLD_LOG:-benchmark_thresholds.log}"
+            echo "::error::Benchmark threshold check failed. Details from $LOG:"
+            if [[ -f "$LOG" ]]; then
+              cat "$LOG"
+            else
+              echo "No benchmark threshold log found; see the 'Check benchmark thresholds' step."
+            fi
+            exit 1
+          fi
 
   cpp-server-gateway-split:
     name: C++ Server Gateway Split Test
@@ -694,8 +714,8 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8201 --port 9201 --label "TCP gateway prefill-1"
           cd cpp_server/build
           NS=gw_prefill1
-          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9201 \
-          PREFILL_SERVER_ID=prefill-1 PREFILL_MAX_IN_FLIGHT=4 \
+          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline SOCKET_PORT=9201 \
+          PREFILL_SERVER_ID=prefill-1 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -713,8 +733,8 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8202 --port 9202 --label "TCP gateway prefill-2"
           cd cpp_server/build
           NS=gw_prefill2
-          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9202 \
-          PREFILL_SERVER_ID=prefill-2 PREFILL_MAX_IN_FLIGHT=4 \
+          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline SOCKET_PORT=9202 \
+          PREFILL_SERVER_ID=prefill-2 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -802,7 +822,7 @@ jobs:
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8200 \
             --dataset-name random \
-            --random-input-len 128 \
+            --random-input-len 1024 \
             --random-output-len 128 \
             --num-prompts 1000 \
             --max-concurrency 64 \
@@ -825,9 +845,9 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8201 --label "ZMQ gateway prefill-1"
           cd cpp_server/build
           NS=gw_zmq_prefill1
-          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
+          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9201 \
-          PREFILL_SERVER_ID=prefill-1 PREFILL_MAX_IN_FLIGHT=4 \
+          PREFILL_SERVER_ID=prefill-1 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -845,9 +865,9 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8202 --label "ZMQ gateway prefill-2"
           cd cpp_server/build
           NS=gw_zmq_prefill2
-          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
+          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9201 \
-          PREFILL_SERVER_ID=prefill-2 PREFILL_MAX_IN_FLIGHT=4 \
+          PREFILL_SERVER_ID=prefill-2 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -934,7 +954,7 @@ jobs:
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8200 \
             --dataset-name random \
-            --random-input-len 128 \
+            --random-input-len 1024 \
             --random-output-len 128 \
             --num-prompts 1000 \
             --max-concurrency 64 \
@@ -955,12 +975,31 @@ jobs:
         run: |
           CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
           CHECK=cpp_server/scripts/ci/check_vllm_result.py
+          THRESHOLD_LOG=benchmark_thresholds.log
           FAIL=0
-          python3 "$CHECK" --config "$CONFIG" --scenario gateway_split_tcp \
-            --result vllm-bench-gateway-split-tcp-result.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario gateway_split_zmq \
-            --result vllm-bench-gateway-split-zmq-result.json || FAIL=1
+          : > "$THRESHOLD_LOG"
+
+          check_threshold() {
+            local scenario="$1"
+            local result="$2"
+            echo "=== $scenario ($result) ===" | tee -a "$THRESHOLD_LOG"
+
+            set +e
+            python3 "$CHECK" --config "$CONFIG" --scenario "$scenario" \
+              --result "$result" 2>&1 | tee -a "$THRESHOLD_LOG"
+            local status=${PIPESTATUS[0]}
+            set -e
+
+            echo "" | tee -a "$THRESHOLD_LOG"
+            if [[ "$status" -ne 0 ]]; then
+              FAIL=1
+            fi
+          }
+
+          check_threshold gateway_split_tcp vllm-bench-gateway-split-tcp-result.json
+          check_threshold gateway_split_zmq vllm-bench-gateway-split-zmq-result.json
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
+          echo "BENCH_THRESHOLD_LOG=$THRESHOLD_LOG" >> "$GITHUB_ENV"
 
       - name: Show server logs
         if: always()
@@ -1002,7 +1041,18 @@ jobs:
 
       - name: Check benchmark result
         if: always()
-        run: exit "${BENCH_FAIL:-0}"
+        run: |
+          if [[ "${BENCH_FAIL:-0}" -ne 0 ]]; then
+            LOG="${BENCH_THRESHOLD_LOG:-benchmark_thresholds.log}"
+            echo "::error::Benchmark threshold check failed. Details from $LOG:"
+            if [[ -f "$LOG" ]]; then
+              cat "$LOG"
+            else
+              echo "No benchmark threshold log found; see the 'Check benchmark thresholds' step."
+            fi
+            exit 1
+          fi
+
 
   dynamo-frontend-integration:
     needs: cpp-build
@@ -1354,6 +1404,187 @@ jobs:
           retention-days: 1
           if-no-files-found: warn
 
+  dynamo-prefix-cache-e2e:
+    needs: cpp-build
+    name: Dynamo Frontend Prefix Cache E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+      no_proxy: "localhost,127.0.0.1,::1"
+      DYN_DISCOVERY_BACKEND: etcd
+      ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYN_REQUEST_PLANE: tcp
+      DYN_EVENT_PLANE: zmq
+      DYNAMO_DISCOVERY_BACKEND: etcd
+      DYNAMO_ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYNAMO_NAMESPACE: default
+      DYNAMO_COMPONENT: backend
+      DYNAMO_ENDPOINT_NAME: generate
+      DYNAMO_ENDPOINT_ENABLED: "1"
+      LLM_DEVICE_BACKEND: mock_pipeline
+      MODEL_NAME: deepseek-ai/DeepSeek-R1-0528
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download C++ build
+        uses: actions/download-artifact@v7
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Set up C++ build artifact
+        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
+
+      - name: Install etcd from upstream release
+        working-directory: .
+        run: |
+          ETCD_VER=v3.5.13
+          curl -fsSL \
+            "https://github.com/etcd-io/etcd/releases/download/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz" \
+            -o /tmp/etcd.tar.gz
+          mkdir -p /tmp/etcd
+          tar xzf /tmp/etcd.tar.gz -C /tmp/etcd --strip-components=1
+          sudo install -m 0755 /tmp/etcd/etcd    /usr/local/bin/etcd
+          sudo install -m 0755 /tmp/etcd/etcdctl /usr/local/bin/etcdctl
+          etcd --version
+          etcdctl version
+
+      - name: Start etcd
+        run: |
+          pkill -f '/usr/local/bin/etcd' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 2380 --label "etcd"
+          rm -rf /tmp/etcd-data
+          etcd \
+            --data-dir /tmp/etcd-data \
+            --advertise-client-urls=http://127.0.0.1:2379 \
+            --listen-client-urls=http://127.0.0.1:2379 \
+            --listen-peer-urls=http://127.0.0.1:2380 \
+            --initial-advertise-peer-urls=http://127.0.0.1:2380 \
+            --initial-cluster='default=http://127.0.0.1:2380' \
+            > etcd.log 2>&1 &
+          echo $! > etcd.pid
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command 'etcdctl --endpoints=http://127.0.0.1:2379 endpoint health' \
+            --pid-file etcd.pid \
+            --failure-log etcd.log \
+            --label "etcd"
+
+      - name: Set up uv for Dynamo
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+
+      - name: Create dynamo venv with ai-dynamo + requests
+        run: |
+          mkdir -p "$HOME/.venvs"
+          bash cpp_server/scripts/ci/install_bench_client.sh \
+            --venv "$HOME/.venvs/dynamo" \
+            --python ${{ env.PYTHON_VERSION }} \
+            --package ai-dynamo \
+            --package uvloop \
+            --package requests
+
+      - name: Start cpp_server backend (port 8001)
+        env:
+          KV_CACHE_FIRST_BLOCK_SIZE: '128'
+          KV_CACHE_BLOCK_SIZE: '32'
+        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "Dynamo backend"
+          cd cpp_server
+          ./build/tt_media_server_cpp -p 8001 > ../backend.log 2>&1 &
+          echo $! > ../backend.pid
+          cd ..
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 8001 \
+            --timeout 120 \
+            --interval 2 \
+            --pid-file backend.pid \
+            --label "Dynamo backend"
+
+      - name: Assert tokenizer + config bundle from cpp-build artifact
+        run: |
+          MODEL_DIR="cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
+          for f in config.json tokenizer.json tokenizer_config.json; do
+            [ -f "${MODEL_DIR}/${f}" ] || {
+              echo "::error::Missing ${MODEL_DIR}/${f} in cpp-build artifact."
+              exit 1
+            }
+          done
+
+      - name: Start Dynamo frontend (port 8000)
+        env:
+          DYN_TOKENIZER: 'fastokens'
+          DYN_CHAT_PROCESSOR: 'dynamo'
+        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "Dynamo frontend"
+          MODEL_PATH="${GITHUB_WORKSPACE}/tt-media-server/cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
+          "$HOME/.venvs/dynamo/bin/python3" -m dynamo.frontend \
+              --http-port 8000 \
+              --router-mode kv \
+              --model-name "${MODEL_NAME}" \
+              --model-path "${MODEL_PATH}" \
+              > frontend.log 2>&1 &
+          echo $! > frontend.pid
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command 'curl -sf "http://127.0.0.1:8000/v1/models" 2>/dev/null | grep -q "\"data\""' \
+            --timeout 120 \
+            --interval 2 \
+            --pid-file frontend.pid \
+            --failure-log frontend.log \
+            --label "Dynamo frontend"
+
+      - name: Run prefix cache E2E tests against Dynamo frontend
+        env:
+          DYNAMO_HOST: '127.0.0.1'
+          DYNAMO_PORT: '8000'
+          DYNAMO_MODEL: 'deepseek-ai/DeepSeek-R1-0528'
+          KV_CACHE_FIRST_BLOCK_SIZE: '128'
+          KV_CACHE_BLOCK_SIZE: '32'
+        run: |
+          cd cpp_server/build
+          ./prefix_cache_e2e_test
+
+      - name: Stop Dynamo frontend, cpp_server backend, and etcd
+        if: always()
+        run: |
+          for pidfile in frontend.pid backend.pid etcd.pid; do
+            [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null || true
+          done
+          pkill -f 'dynamo.frontend' 2>/dev/null || true
+          pkill -f 'tt_media_server_cpp' 2>/dev/null || true
+          pkill -f '/usr/local/bin/etcd' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 2380 --port 8000 --port 8001 --label "Dynamo prefix cache E2E"
+
+      - name: Show server logs
+        if: always()
+        run: |
+          for LOG in etcd.log frontend.log backend.log; do
+            echo "=== $LOG ==="
+            [ -f "$LOG" ] && cat "$LOG" || echo "(not found)"
+            echo ""
+          done
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: dynamo-prefix-cache-e2e-logs
+          path: |
+            tt-media-server/etcd.log
+            tt-media-server/frontend.log
+            tt-media-server/backend.log
+          retention-days: 1
+          if-no-files-found: warn
+
   cpp-tsan:
     name: C++ ThreadSanitizer
     runs-on: ubuntu-latest
@@ -1598,4 +1829,3 @@ jobs:
             tt-media-server/gw_tsan_zmq.log
           retention-days: 7
           if-no-files-found: warn
-

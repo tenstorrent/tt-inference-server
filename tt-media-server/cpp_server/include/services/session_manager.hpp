@@ -90,7 +90,11 @@ class SessionManager {
   uint32_t acquireInFlight(const std::string& sessionId,
                            std::function<void()> cancelFn);
 
-  domain::Session* getSession(const std::string& sessionId);
+  // Atomically transitions the session from IN_FLIGHT back to IDLE.
+  // Thread-safe: holds the ConcurrentMap lock during the state transition.
+  void releaseInFlight(const std::string& sessionId);
+
+  std::shared_ptr<domain::Session> getSession(const std::string& sessionId);
   size_t getActiveSessionCount() const;
 
   // Lock/unlock a slot to prevent eviction.
@@ -146,6 +150,53 @@ class SessionManager {
   void registerPrefixHash(const std::string& sessionId,
                           const std::vector<utils::BlockHashInfo>& blockInfos);
 
+  /**
+   * Response-id continuation lookup.
+   * Atomically marks the matching session in-flight and registers the cancel
+   * function under the same lock.
+   *
+   * Returns:
+   *   AcquiredSession — session found under `previousResponseId` and locked.
+   *   nullopt         — no session registered under this id (or id empty).
+   *                     Caller should fall back to createSession.
+   *
+   * Throws:
+   *   SessionInFlightException — a session is registered under this id but is
+   *                              already serving another request (HTTP 429).
+   */
+  std::optional<AcquiredSession> tryAcquireByResponseId(
+      const std::string& previousResponseId, std::function<void()> cancelFn);
+
+  /**
+   * First-time registration: associate a brand-new session with a response id.
+   */
+  void initResponseId(const std::string& sessionId,
+                      const std::string& responseId);
+
+  /**
+   * Re-key an existing response-id index entry. Looks up the session currently
+   * registered under `previousResponseId`, removes that entry, and inserts a
+   * new entry under `responseId`. No-op when either id is empty.
+   */
+  void registerResponseId(const std::string& previousResponseId,
+                          const std::string& responseId);
+
+  /**
+   * Compute how many tokens of `blockInfos` are already cached for `sessionId`
+   * in the prefix index. Used after response-id acquisition to derive the
+   * delta. Returns {matchedTokens, accumulatedThinkTokens}.
+   */
+  std::pair<uint32_t, uint32_t> computeMatchedTokens(
+      const std::string& sessionId,
+      const std::vector<utils::BlockHashInfo>& blockInfos);
+
+  /**
+   * Reset accumulatedThinkTokens to 0 on all prefix index entries that contain
+   * the given session. Called when prefill-on-decode overrides thinking tokens
+   * so that future lookups report zero cached think tokens for this session.
+   */
+  void clearSessionBlockThinkTokens(const std::string& sessionId);
+
  private:
   struct PendingAllocation {
     tt::domain::Session session;
@@ -167,6 +218,8 @@ class SessionManager {
   void sendDeallocRequest(const std::string& sessionId, uint32_t slotId);
   void finalizeSessionClose(const std::string& sessionId,
                             const domain::Session& session);
+  // Wrap a Session into the map's shared_ptr value and inject its release hook.
+  void insertSession(const domain::Session& session);
   void readerLoop();
   void retryFailedAllocations();
   void retryFailedDeallocs();
@@ -174,10 +227,16 @@ class SessionManager {
   void updateSessionCountMetric();
 
   // Prefix index helpers: maintain prefixIndex alongside the sessions map.
-  void addToPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
   void removeFromPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
 
-  mutable utils::ConcurrentMap<std::string, domain::Session> sessions;
+  // Drop the responseId -> session mapping when it points at `sessionId`
+  // (called on close/evict). No-op if the id is empty or has been re-pointed
+  // at a different session.
+  void removeFromResponseIdIndex(const std::string& sessionId,
+                                 const std::string& responseId);
+
+  mutable utils::ConcurrentMap<std::string, std::shared_ptr<domain::Session>>
+      sessions;
 
   // An entry in the prefix index: a group of sessions sharing the same prefix
   // path, together with the remaining block info that follows (used for deeper
@@ -197,6 +256,13 @@ class SessionManager {
   // hashes pointing to different sessions/slots).
   // Used by tryAcquireByPrefixHash / registerPrefixHash for prefix caching.
   utils::ConcurrentMap<uint64_t, std::vector<PrefixIndexEntry>> prefixIndex;
+
+  // Secondary index: previous_response_id -> the session registered under it.
+  // Unlike prefixIndex (where many sessions can share a content hash), response
+  // ids are unique per turn, so each id maps to exactly one session. The
+  // prefix delta is derived from block matching (computeMatchedTokens), not
+  // stored here. Used by tryAcquireByResponseId / registerResponseId.
+  utils::ConcurrentMap<std::string, std::string> responseIdIndex;
 
   std::unique_ptr<ipc::boost::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::boost::MemoryResultQueue> memoryResultQueue;
