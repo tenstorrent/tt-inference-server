@@ -152,12 +152,18 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
       .sendTo(server->resultQueue());
 
   // 6. Assert on the SSE stream.
-  const auto response = tt::test::HttpResponse::parse(responseFuture.get());
+  const auto rawResponse = responseFuture.get();
+  TT_LOG_INFO("[Test] Raw response length: {} bytes", rawResponse.size());
+  TT_LOG_INFO("[Test] Raw response body (first 2000 chars): {}",
+              rawResponse.substr(0, 2000));
+  const auto response = tt::test::HttpResponse::parse(rawResponse);
   EXPECT_EQ(response.statusCode(), 200);
   EXPECT_NE(response.header("content-type").find("text/event-stream"),
             std::string::npos);
 
   const auto stream = tt::test::ChatCompletionStream::parse(response);
+  TT_LOG_INFO("[Test] SSE chunks: {}, endedWithDone: {}", stream.chunkCount(),
+              stream.endedWithDone());
   EXPECT_TRUE(stream.endedWithDone());
   EXPECT_EQ(stream.initialRole(), "assistant");
   EXPECT_FALSE(stream.contentDeltas().empty())
