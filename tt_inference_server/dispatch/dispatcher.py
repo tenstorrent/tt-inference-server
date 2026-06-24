@@ -107,7 +107,8 @@ def _compute_capabilities(
         and rotary_pct == 1.0
         # CP-1: qkv/o bias now applied on-device (ttnn.add) in the attention paths,
         # so attn_bias no longer forces the slow CPU-readback route.
-        and not head_norm
+        # CP-4: per-head Q/K RMSNorm now runs on-device (ttnn.rms_norm), so head_norm
+        # no longer blocks the fast path.
         and head_dim % 32 == 0
         and group >= 1
         # CP-5: decode SDPA accepts arbitrary GQA groups (probe PCC 0.9997 for g=7,12),

@@ -492,6 +492,11 @@ class _LayerWeights:
     norm1_b_ln_tt: object = None
     norm2_w_ln_tt: object = None
     norm2_b_ln_tt: object = None
+    # CP-4: per-head Q/K RMSNorm weight as device row tensors (1, head_dim).
+    q_norm_w_tt: object = None
+    k_norm_w_tt: object = None
+    # SWA: gemma3 per-layer sliding-window size for the decode SDPA (0 = full attention).
+    swa_window: int = 0
 
 
 def _layernorm_cpu(x: torch.Tensor, weight, bias, eps: float) -> torch.Tensor:
@@ -924,6 +929,13 @@ class TTModelRunner:
             out = ttnn.repeat(out, ttnn.Shape([TILE, 1]))
         return out
 
+    def _head_rmsnorm_dev(self, x4, w_row_tt, eps=1e-6):
+        """Per-head RMSNorm over head_dim via ttnn.rms_norm (CP-4). x4: [1,1,nh,hd];
+        w_row_tt: (1, head_dim) broadcast across heads. Replaces CPU _apply_head_norm
+        (Qwen3/Gemma3). PCC 0.99999 vs torch (tests/diagnostic/probe_head_rmsnorm.py)."""
+        import ttnn
+        return ttnn.rms_norm(x4, epsilon=eps, weight=w_row_tt)
+
     def _layer_forward(self, hidden_tt, layer_idx: int, kv_pos: int):
         import ttnn
         lw = self._layers[layer_idx]
@@ -1170,6 +1182,10 @@ class TTModelRunner:
         q4  = ttnn.reshape(ttnn.slice(row, [0, 0],    [1, qend]), [1, 1, nh,  hd_p])
         k4  = ttnn.reshape(ttnn.slice(row, [0, qend], [1, kend]), [1, 1, nkv, hd_p])
         v4  = ttnn.reshape(ttnn.slice(row, [0, kend], [1, qkvp]), [1, 1, nkv, hd_p])
+        if lw.q_norm_w_tt is not None:                   # CP-4: per-head Q/K RMSNorm on device
+            q4 = self._head_rmsnorm_dev(q4, lw.q_norm_w_tt)
+        if lw.k_norm_w_tt is not None:
+            k4 = self._head_rmsnorm_dev(k4, lw.k_norm_w_tt)
         q_rot = self._dev_rope(q4, c4, s4)
         k_rot = self._dev_rope(k4, c4, s4)
 
@@ -1300,6 +1316,10 @@ class TTModelRunner:
         q4 = ttnn.reshape(ttnn.slice(row, [0, 0],    [1, qend]), [1, 1, nh,  hd_p])
         k4 = ttnn.reshape(ttnn.slice(row, [0, qend], [1, kend]), [1, 1, nkv, hd_p])
         v4 = ttnn.reshape(ttnn.slice(row, [0, kend], [1, qkvp]), [1, 1, nkv, hd_p])
+        if lw.q_norm_w_tt is not None:                   # CP-4: per-head Q/K RMSNorm on device
+            q4 = self._head_rmsnorm_dev(q4, lw.q_norm_w_tt)
+        if lw.k_norm_w_tt is not None:
+            k4 = self._head_rmsnorm_dev(k4, lw.k_norm_w_tt)
         q_rot = self._dev_rope(q4, c4, s4)
         k_rot = self._dev_rope(k4, c4, s4)
 
@@ -1319,11 +1339,13 @@ class TTModelRunner:
         if self._nh_pad != nh:
             q_rot = ttnn.pad(q_rot, [(0, 0), (0, 0), (0, self._nh_pad - nh), (0, 0)], 0.0)
 
+        # SWA (gemma3): clip sliding layers to their window; global layers pass 0 (full attn).
+        swa_kw = {"sliding_window_size": lw.swa_window} if lw.swa_window else {}
         attn = ttnn.transformer.paged_scaled_dot_product_attention_decode(
             q_rot, self._kp[layer_idx], self._vp[layer_idx],
             cur_pos_tensor=self._cur_pos_dev, page_table_tensor=self._page_table,
             scale=self._attn_scale_value(), program_config=self._sdpa_pcfg,
-            memory_config=ttnn.DRAM_MEMORY_CONFIG)   # [1,1,nh_pad,hd]
+            memory_config=ttnn.DRAM_MEMORY_CONFIG, **swa_kw)   # [1,1,nh_pad,hd]
 
         if self._nh_pad != nh:
             attn = ttnn.slice(attn, [0, 0, 0, 0], [1, 1, nh, hd_p])   # real heads only
@@ -1654,9 +1676,22 @@ class TTModelRunner:
         # Per-layer weights
         self._layers: List[_LayerWeights] = []
         n = len(layers_list)
+        # Sliding-window attention (gemma3): model-level window + global-layer pattern.
+        _hfc = getattr(self._hf_cfg, "text_config", self._hf_cfg)
+        _swa_cfg = getattr(_hfc, "sliding_window", None)
+        _swa_pat = getattr(_hfc, "sliding_window_pattern", 6) or 6
         for i, layer in enumerate(layers_list):
             print(f"    layer {i+1}/{n}", end="\r")
             attn = _find_layer_attn(layer)
+            # Per-layer SWA window for the decode SDPA (0 = full attention / global layer).
+            # Prefer the HF layer's own is_sliding flag; fall back to the gemma global pattern.
+            if _swa_cfg:
+                _is_sliding = getattr(attn, "is_sliding", getattr(layer, "is_sliding", None))
+                if _is_sliding is None:
+                    _is_sliding = ((i + 1) % _swa_pat != 0)
+                swa_window = int(_swa_cfg) if _is_sliding else 0
+            else:
+                swa_window = 0
             mlp  = _find_layer_mlp(layer)
             n1, n2, n3, n4 = _find_layer_norms(layer)
 
@@ -1711,6 +1746,9 @@ class TTModelRunner:
             # CP-1: device twin of the qkv bias (1, total_qkv_p) for on-device/paged attn.
             qkv_b_tt = (_to_tt(qkv_b_cpu.unsqueeze(0), self._device)
                         if qkv_b_cpu is not None else None)
+            # CP-4: per-head Q/K norm weights (CPU + device twins for on-device attn).
+            q_norm_cpu = self._load_head_norm_w(attn, "q_norm", gemma_norm)
+            k_norm_cpu = self._load_head_norm_w(attn, "k_norm", gemma_norm)
 
             lw = _LayerWeights(
                 norm1_w  = self._upload_norm_w(getattr(n1, "weight", None), gemma_norm),
@@ -1738,8 +1776,12 @@ class TTModelRunner:
                 norm4_w  = self._upload_norm_w(getattr(n4, "weight", None), gemma_norm) if has_post_ff else None,
                 norm4_sc = self._make_scaler_tt(cfg.hidden_size) if has_post_ff else None,
                 norm_style = norm_style,
-                q_norm_w = self._load_head_norm_w(attn, "q_norm", gemma_norm),
-                k_norm_w = self._load_head_norm_w(attn, "k_norm", gemma_norm),
+                q_norm_w = q_norm_cpu,
+                k_norm_w = k_norm_cpu,
+                q_norm_w_tt = self._ln_row_tt(q_norm_cpu),   # CP-4: per-head norm on device
+                k_norm_w_tt = self._ln_row_tt(k_norm_cpu),
+                swa_window = swa_window,                      # SWA: per-layer sliding window
+
                 norm1_w_cpu = n1.weight.detach().float() if self._uses_layernorm else None,
                 norm1_b     = n1.bias.detach().float()   if (self._uses_layernorm and getattr(n1, "bias", None) is not None) else None,
                 norm2_w_cpu = n2.weight.detach().float() if self._uses_layernorm else None,
@@ -1752,6 +1794,10 @@ class TTModelRunner:
             )
             self._layers.append(lw)
         print()
+        if _swa_cfg:
+            _nsl = sum(1 for lw in self._layers if lw.swa_window)
+            print(f"  Sliding-window attention: {_nsl}/{n} sliding layers "
+                  f"(window={_swa_cfg}), {n - _nsl} global (full attn)")
 
     def _load_head_norm_w(self, attn, attr: str, gemma_style: bool):
         """Load per-head Q/K norm weight as a CPU float tensor, or None."""
@@ -2121,9 +2167,10 @@ class TTModelRunner:
         no_headnorm = all(lw.q_norm_w is None and lw.k_norm_w is None for lw in self._layers)
         full_rope   = (self._rotary_ndims == hd)
         # CP-1: qkv bias now applied on-device. CP-3: LayerNorm now runs on-device
-        # (ttnn.layer_norm), so it no longer blocks eligibility — but ALiBi still does
-        # (per-head bias can't fold into the shared-mask SDPA decode; CP-6 deferred).
-        introspect_eligible = bool(full_rope and hd_p == hd and no_headnorm and not self._uses_alibi)
+        # (ttnn.layer_norm). CP-4: per-head Q/K norm runs on-device (ttnn.rms_norm).
+        # So neither bias, LayerNorm, nor head_norm blocks eligibility — but ALiBi still
+        # does (per-head bias can't fold into the shared-mask SDPA decode; CP-6 deferred).
+        introspect_eligible = bool(full_rope and hd_p == hd and not self._uses_alibi)
         # (#3 Phase C) listed -> derived fast_path capability (which also folds in the
         # group|32 / nh<=32 SDPA-pad constraint from _setup_paged_decode); novel -> the
         # introspection floor. They agree for every listed fast-path model.
