@@ -1429,35 +1429,37 @@ def _dots_ocr_max_tokens_all_users(
     """Token budget sizing get_num_available_blocks_tt to the dots.ocr buffer.
 
     The pipeline paged cache (see pipeline._create_paged_kv_cache) is built with
-    ``block_size=64``, ``blocks_per_sequence=64`` and
-    ``max_num_blocks = max(256, batch_size*64)`` where ``batch_size==num_devices``
+    ``block_size=64``, ``blocks_per_sequence=128`` and
+    ``max_num_blocks = max(256, batch_size*128)`` where ``batch_size==num_devices``
     under DP. The worker turns the returned token budget into
     ``num_tt_blocks = ceil(tokens/block_size) + block_size_headroom``; we subtract
     one DP batch's worth of headroom so the final block count lands at (or just
     below) ``max_num_blocks`` and every vLLM-assigned block ID stays in range.
 
     Capacity / concurrency tradeoff (Phase 4 review, L4):
-    * Per-device buffer = ``max_num_blocks`` = max(256, 8*64) = **512 blocks**;
-      the page table is ``[batch_size, blocks_per_sequence] = [8, 64]`` so each DP
-      stream is hard-capped at ``blocks_per_sequence*block_size = 64*64 = 4096``
-      tokens (prompt + generated). vLLM draws block IDs from one ~504-block pool
-      shared by all 8 streams (504/8 ~= 63 blocks ~= 4032 tokens/stream at full
-      8-way concurrency), so the design point is **8 concurrent pages of <=~4K
-      tokens** -- which covers the dots.ocr OCR workload (vision prompt ~2.8K +
-      typical output). Validated: 48 images @ conc-8, 0 degenerate outputs.
-    * A page exceeding 4096 tokens is **silently truncated** at
+    * Per-device buffer = ``max_num_blocks`` = max(256, 8*128) = **1024 blocks**;
+      the page table is ``[batch_size, blocks_per_sequence] = [8, 128]`` so each DP
+      stream is hard-capped at ``blocks_per_sequence*block_size = 128*64 = 8192``
+      tokens (prompt + generated). vLLM draws block IDs from one ~1016-block pool
+      shared by all 8 streams (1016/8 ~= 127 blocks ~= 8128 tokens/stream at full
+      8-way concurrency), so the design point is **8 concurrent pages of <=~8K
+      tokens** -- which covers the dots.ocr OCR workload (vision prompt ~2.8-3K +
+      full-page OCR or layout-JSON output). KV is cheap here (GQA, 2 KV heads,
+      head_dim 128, 28 layers, bf16 => ~28KB/token), so the 1024-block buffer is
+      only ~1.8GB/device -- comfortable on a 12GB Wormhole chip.
+    * A page exceeding 8192 tokens is **silently truncated** at
       ``TTNNPagedAttentionKVCache.paged_fill_on_device`` (_attention.py: K/V is
       clipped to ``blocks_per_sequence*block_size``) -> tail of a very long page
       is dropped. To support longer pages at full concurrency, raise
-      ``blocks_per_sequence`` in pipeline._create_paged_kv_cache (e.g. 96 ->
-      6144 tokens/stream, ``max_num_blocks``=max(256,8*96)=768 per device, ~+50%
-      KV DRAM) AND bump the ``blocks_per_sequence`` local below to the same value
-      (the two are intentionally kept in sync by hand; a mismatch either wastes
-      blocks or hands out IDs past the buffer). Preemption/KV-swap is
+      ``blocks_per_sequence`` in pipeline._create_paged_kv_cache (e.g. 160 ->
+      10240 tokens/stream, ``max_num_blocks``=max(256,8*160)=1280 per device,
+      ~+25% KV DRAM) AND bump the ``blocks_per_sequence`` local below to the same
+      value (the two are intentionally kept in sync by hand; a mismatch either
+      wastes blocks or hands out IDs past the buffer). Preemption/KV-swap is
       unsupported, so the cap (not preemption) is what bounds admission.
     """
     block_size = 64
-    blocks_per_sequence = 64
+    blocks_per_sequence = 128
     batch_size = max(1, int(num_devices))
     max_num_blocks = max(256, batch_size * blocks_per_sequence)
     # Reserve a full batch of blocks for the worker's worst-case +block_size*max_batch
