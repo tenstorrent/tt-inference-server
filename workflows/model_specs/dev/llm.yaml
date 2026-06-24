@@ -1155,7 +1155,7 @@ templates:
 
 - weights:
     - google/gemma-4-26B-A4B-it
-  impl: tt_transformer
+  impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
     - device: GPU
