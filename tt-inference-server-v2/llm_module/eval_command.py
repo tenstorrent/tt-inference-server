@@ -59,15 +59,6 @@ def _clamp_max_gen_toks(
     return out
 
 
-def _inject_seed_into_gen_kwargs(gen_kwargs: dict, seed: int) -> dict:
-    """Return a copy of gen_kwargs with seed added if not already present."""
-    if "seed" in gen_kwargs:
-        return gen_kwargs
-    out = dict(gen_kwargs)
-    out["seed"] = str(seed)
-    return out
-
-
 def _get_limit_mode(runtime_config) -> Optional[EvalLimitMode]:
     if runtime_config is None or not getattr(
         runtime_config, "limit_samples_mode", None
@@ -228,9 +219,6 @@ def build_eval_command(
     effective_gen_kwargs = _clamp_max_gen_toks(
         task.gen_kwargs, device_max_context, task.task_name
     )
-
-    # Inject seed into gen_kwargs to ensure it propagates to vLLM SamplingParams.
-    effective_gen_kwargs = _inject_seed_into_gen_kwargs(effective_gen_kwargs, task.seed)
 
     optional_model_args = []
     if effective_max_concurrent:
