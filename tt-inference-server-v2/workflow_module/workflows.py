@@ -30,12 +30,63 @@ from .execution import (
 # because these sweeps bypass the media-task dispatcher.
 _PREFIX_CACHE_TASK_LABEL = "prefix_cache"
 _LLM_BENCH_TASK_LABEL = "llm_benchmark"
+_LLM_EVAL_TASK_LABEL = "llm_eval"
 _SPEC_DECODE_TASK_LABEL = "spec_decode"
 
 
 class EvalsWorkflow(WorkflowExecution):
     name = "evals"
     task_types = (MediaTaskType.EVALUATION,)
+
+    def run_tasks(self) -> List[TaskOutcome]:
+        if self.ctx.model_spec.model_type == ModelType.LLM:
+            return [self._run_llm_eval_task()]
+        return super().run_tasks()
+
+    def _run_llm_eval_task(self) -> TaskOutcome:
+        """Drive the standard (lm-eval / lmms-eval) sweep for an LLM model.
+
+        Delegates to :func:`test_module.llm_tests.llm_eval_tests.run_llm_eval`,
+        which gates on server health, runs each task, scores the results, and
+        forwards Blocks to the accumulator. Agentic evals are a separate
+        workflow. Imported from the leaf submodule so the media runner imports
+        stay untouched.
+        """
+        from test_module.llm_tests.llm_eval_tests import run_llm_eval
+
+        bench = self.orchestrator_metadata.llm_bench
+        auth_token = bench.auth_token if bench is not None else ""
+        self.logger.info("→ task=%s", _LLM_EVAL_TASK_LABEL)
+        started = time.time()
+        try:
+            blocks = run_llm_eval(self.ctx, auth_token=auth_token)
+        except Exception as e:
+            elapsed = time.time() - started
+            self.logger.exception(
+                "❌ %s raised after %.1fs: %s", _LLM_EVAL_TASK_LABEL, elapsed, e
+            )
+            return TaskOutcome("evaluation", 1, elapsed, None)
+
+        elapsed = time.time() - started
+        if not blocks:
+            # No standard eval tasks configured (e.g. an agentic-only model) —
+            # a clean no-op, not a failure. Acceptance still runs on whatever
+            # other workflows accumulated.
+            self.logger.info(
+                "%s: model has no standard eval tasks (%.1fs)",
+                _LLM_EVAL_TASK_LABEL,
+                elapsed,
+            )
+            return TaskOutcome("evaluation", 0, elapsed, None)
+
+        self.logger.info(
+            "✅ %s blocks=%d kind=%s (%.1fs)",
+            _LLM_EVAL_TASK_LABEL,
+            len(blocks),
+            blocks[0].kind,
+            elapsed,
+        )
+        return TaskOutcome("evaluation", 0, elapsed, blocks[0].kind)
 
 
 class AgenticWorkflow(WorkflowExecution):

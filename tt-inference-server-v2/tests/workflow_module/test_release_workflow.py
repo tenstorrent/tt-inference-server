@@ -11,7 +11,6 @@ from workflows.workflow_types import ModelType
 from workflow_module.execution import OrchestratorMetadata, TaskOutcome
 from workflow_module.workflows import (
     ReleaseWorkflow,
-    WORKFLOW_REGISTRY,
     get_workflow_class,
 )
 
@@ -49,7 +48,12 @@ def _run_release(ctx):
     ):
         wf = ReleaseWorkflow(ctx, accumulator=acc, orchestrator_metadata=meta)
         outcomes = wf.run_tasks()
-    return outcomes, {"evals": evals_cls, "benchmarks": bench_cls, "spec_tests": spec_cls}, acc, meta
+    return (
+        outcomes,
+        {"evals": evals_cls, "benchmarks": bench_cls, "spec_tests": spec_cls},
+        acc,
+        meta,
+    )
 
 
 class TestReleaseWorkflowRegistry:
