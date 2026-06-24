@@ -47,6 +47,8 @@ enum class ModelType {
   KIMI_K2_6,
   GPT_OSS_120B,
   MINIMAX_M2_7,
+  GLM_5_2,
+  DEEPSEEK_V4_PRO,
 };
 
 enum class LLMMode {
@@ -91,6 +93,8 @@ enum class Model {
   KIMI_K2_6,
   GPT_OSS_120B,
   MINIMAX_M2_7,
+  GLM_5_2,
+  DEEPSEEK_V4_PRO,
 };
 
 struct ModelMapping {
@@ -104,6 +108,8 @@ static constexpr ModelMapping MODEL_MAPPINGS[] = {
     {Model::KIMI_K2_6, "moonshotai/Kimi-K2.6"},
     {Model::GPT_OSS_120B, "openai/gpt-oss-120b"},
     {Model::MINIMAX_M2_7, "MiniMaxAI/MiniMax-M2.7"},
+    {Model::GLM_5_2, "zai-org/GLM-5.2"},
+    {Model::DEEPSEEK_V4_PRO, "deepseek-ai/DeepSeek-V4-Pro"},
 };
 
 inline std::string toString(Model m) {
