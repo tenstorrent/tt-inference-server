@@ -96,24 +96,28 @@ def _compute_capabilities(
     the runner's `_ondevice_attn_eligible` flag with the `_setup_paged_decode` ok_shape
     gate (and the nh<=32 / group|32 check).
 
-    lm_head_ondevice (on-device final-norm + matmul + argmax) needs an RMSNorm-family
-    final norm — rmsnorm or gemma_rms, the latter being rmsnorm with a (1+w) weight baked
-    in at upload. LayerNorm (mean-sub + bias) is not yet supported on-device. Unaligned
+    lm_head_ondevice (on-device final-norm + matmul + argmax): always True. The
+    _lm_head_graph handles RMSNorm, gemma_rms (rmsnorm with (1+w) baked in), and (CP-3)
+    LayerNorm (mean-sub + bias via ttnn.layer_norm) final norms on-device. Unaligned
     vocab is handled by the runner's pad-mask, so no vocab alignment constraint applies.
-    This matches the runner's current `not self._uses_layernorm` gate.
     """
     group = (n_heads // n_kv_heads) if n_kv_heads else 0
     fast_path = (
-        norm_type == "rmsnorm"
+        norm_type in ("rmsnorm", "layernorm")   # CP-3: LayerNorm runs on-device (ttnn.layer_norm)
         and rotary_pct == 1.0
-        and not attn_bias
+        # CP-1: qkv/o bias now applied on-device (ttnn.add) in the attention paths,
+        # so attn_bias no longer forces the slow CPU-readback route.
         and not head_norm
         and head_dim % 32 == 0
         and group >= 1
-        and 32 % group == 0
+        # CP-5: decode SDPA accepts arbitrary GQA groups (probe PCC 0.9997 for g=7,12),
+        # so 32 % group == 0 is no longer required — _nh_pad = group * (32//group).
         and n_heads <= 32
+        # CP-3/CP-6: ALiBi (cpu backend) can't fold into the SDPA decode kernel.
+        and attn_backend != "cpu"
     )
-    lm_head_ondevice = (norm_type != "layernorm")
+    # CP-3: _lm_head_graph handles RMSNorm and LayerNorm final norms on device.
+    lm_head_ondevice = True
     return Capabilities(
         fast_path=fast_path,
         lm_head_ondevice=lm_head_ondevice,

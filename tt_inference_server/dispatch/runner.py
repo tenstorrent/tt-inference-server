@@ -483,6 +483,15 @@ class _LayerWeights:
     norm1_b: object = None
     norm2_w_cpu: object = None
     norm2_b: object = None
+    # CP-1: fused QKV bias as a device tensor (1, total_qkv_p) for the on-device/paged
+    # attention paths — twin of the CPU `qkv_b`. None when the model has no qkv bias.
+    qkv_b_tt: object = None
+    # CP-3: per-layer LayerNorm weight+bias as device row tensors (1, hidden) for
+    # on-device ttnn.layer_norm. None for RMSNorm models.
+    norm1_w_ln_tt: object = None
+    norm1_b_ln_tt: object = None
+    norm2_w_ln_tt: object = None
+    norm2_b_ln_tt: object = None
 
 
 def _layernorm_cpu(x: torch.Tensor, weight, bias, eps: float) -> torch.Tensor:
@@ -506,6 +515,11 @@ class TTModelRunner:
     Weights are uploaded to device once at init. Each token generation step
     runs all layers on device and only reads back the final hidden state for
     lm_head projection.
+
+    This is the generic fallback runner and satisfies the ``BaseRunner`` contract
+    (``dispatch/base.py``): generate / generate_stream / benchmark plus the
+    _tokenizer / _listed / _community attributes. Custom runners for non-standard
+    architectures implement the same contract — see ``docs/custom_runners.md``.
     """
 
     def __init__(
@@ -884,6 +898,32 @@ class TTModelRunner:
             hidden_tt = ttnn.multiply(hidden_tt, self._embed_scale)
         return hidden_tt
 
+    def _ln_row_tt(self, vec):
+        """Build a (1, hidden) bf16 TILE device tensor from a (hidden,) CPU vector for
+        ttnn.layer_norm gamma/beta (CP-3). Returns None if vec is None."""
+        import ttnn
+        if vec is None:
+            return None
+        return ttnn.from_torch(vec.detach().float().bfloat16().unsqueeze(0),
+                               dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT,
+                               device=self._device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+
+    def _layernorm_dev(self, h_tt, w_row_tt, b_row_tt, eps):
+        """On-device LayerNorm via ttnn.layer_norm (multi-core, trace-safe). w_row_tt/
+        b_row_tt are (1, hidden). Replaces the CPU _layernorm_cpu readback. PCC 0.99999
+        vs torch verified in CP-0 (tests/diagnostic/probe_layernorm_pcc.py).
+
+        ttnn.layer_norm preserves the input's logical row count, but the decode-path
+        convention (matching rmsnorm's output buffer) is (TILE, hidden_p) — only row 0
+        carries the token. A bare embed output is logical (1, hidden_p), so broadcast the
+        normalized row to TILE rows; otherwise the downstream matmul output_tensor= scratch
+        (TILE, *) volume mismatches (the pythia gpt_neox crash)."""
+        import ttnn
+        out = ttnn.layer_norm(h_tt, epsilon=eps, weight=w_row_tt, bias=b_row_tt)
+        if out.shape[0] != TILE:
+            out = ttnn.repeat(out, ttnn.Shape([TILE, 1]))
+        return out
+
     def _layer_forward(self, hidden_tt, layer_idx: int, kv_pos: int):
         import ttnn
         lw = self._layers[layer_idx]
@@ -891,22 +931,15 @@ class TTModelRunner:
         def rmsnorm_buf():
             return self._rmsnorm_buf_tt
 
-        def seq_norm(h_tt, w_tt, sc_tt, w_cpu, b_cpu):
+        def seq_norm(h_tt, w_tt, sc_tt, w_ln_tt, b_ln_tt):
             """Pre-sublayer norm for the sequential (llama-style) residual path.
-            CPU LayerNorm (mean-sub + bias) for LayerNorm models (BLOOM, StableLM,
-            Falcon); on-device RMSNorm otherwise. Mirrors the gpt_neox branch."""
+            On-device ttnn.layer_norm for LayerNorm models (StableLM, Falcon, BLOOM);
+            on-device RMSNorm otherwise. CP-3: trace-safe, no CPU readback."""
             if not self._uses_layernorm:
                 return self._dispatcher.rmsnorm(h_tt, w_tt, sc_tt, rmsnorm_buf())
             eps = getattr(self._hf_cfg, "layer_norm_eps",
                           getattr(self._hf_cfg, "rms_norm_eps", 1e-5))
-            hsz = self._cfg.hidden_size
-            hp  = _tile_align(hsz)
-            hcpu = ttnn.to_torch(h_tt)[0, :hsz].float()
-            ncpu = _layernorm_cpu(hcpu, w_cpu, b_cpu, eps)
-            v_row = torch.nn.functional.pad(ncpu.bfloat16(), (0, hp - hsz)).unsqueeze(0)
-            v_2d  = v_row.expand(TILE, -1).contiguous()
-            return ttnn.from_torch(v_2d, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT,
-                                   device=self._device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+            return self._layernorm_dev(h_tt, w_ln_tt, b_ln_tt, eps)
 
         # output_tensor= for residual adds writes into pre-allocated hidden scratch,
         # eliminating 2 device tensor allocations per layer per token.
@@ -941,25 +974,11 @@ class TTModelRunner:
             #   attn and MLP both branch from the same pre-norm hidden state
             #   hidden += attn(norm1(hidden)) + mlp(norm2(hidden))
             if self._uses_layernorm:
+                # CP-3: on-device ttnn.layer_norm — no CPU readback (trace-safe).
                 eps = getattr(self._hf_cfg, "layer_norm_eps",
                               getattr(self._hf_cfg, "rms_norm_eps", 1e-5))
-                hidden_size = self._cfg.hidden_size
-                hidden_p    = _tile_align(hidden_size)
-                h_torch = ttnn.to_torch(hidden_tt)
-                # hidden_tt is (TILE, hidden_p); the actual data is in row 0
-                hidden_cpu = h_torch[0, :hidden_size].float()
-                normed1_cpu = _layernorm_cpu(hidden_cpu, lw.norm1_w_cpu, lw.norm1_b, eps)
-                normed2_cpu = _layernorm_cpu(hidden_cpu, lw.norm2_w_cpu, lw.norm2_b, eps)
-                # Upload as (TILE, hidden_p) — same shape as rmsnorm output buffer
-                def _ln_to_tt(v_cpu):
-                    v_row = torch.nn.functional.pad(
-                        v_cpu.bfloat16(), (0, hidden_p - hidden_size)).unsqueeze(0)
-                    v_2d = v_row.expand(TILE, -1).contiguous()
-                    return ttnn.from_torch(v_2d, dtype=ttnn.bfloat16,
-                                          layout=ttnn.TILE_LAYOUT, device=self._device,
-                                          memory_config=ttnn.DRAM_MEMORY_CONFIG)
-                normed1_tt = _ln_to_tt(normed1_cpu)
-                normed2_tt = _ln_to_tt(normed2_cpu)
+                normed1_tt = self._layernorm_dev(hidden_tt, lw.norm1_w_ln_tt, lw.norm1_b_ln_tt, eps)
+                normed2_tt = self._layernorm_dev(hidden_tt, lw.norm2_w_ln_tt, lw.norm2_b_ln_tt, eps)
             else:
                 normed1_tt = self._dispatcher.rmsnorm(hidden_tt, lw.norm1_w, lw.norm1_sc, rmsnorm_buf())
                 normed2_tt = self._dispatcher.rmsnorm(hidden_tt, lw.norm2_w, lw.norm2_sc, rmsnorm_buf())
@@ -971,13 +990,13 @@ class TTModelRunner:
             # Llama / Qwen / Mistral / (LayerNorm: BLOOM, StableLM, Falcon) pattern:
             #   hidden += attn(norm1(hidden))
             #   hidden += mlp(norm2(hidden))
-            normed1_tt = seq_norm(hidden_tt, lw.norm1_w, lw.norm1_sc, lw.norm1_w_cpu, lw.norm1_b)
+            normed1_tt = seq_norm(hidden_tt, lw.norm1_w, lw.norm1_sc, lw.norm1_w_ln_tt, lw.norm1_b_ln_tt)
             attn_out_tt = self._attention(normed1_tt, layer_idx, kv_pos)
             hidden_tt = add_resid(hidden_tt, attn_out_tt)
             if self._ladder_subop:                  # intra-layer rung (#49, DISPATCH_LADDER_SUBOP=1)
                 self._ladder_capture(f"layer{layer_idx}.post_attn", hidden_tt)
 
-            normed2_tt = seq_norm(hidden_tt, lw.norm2_w, lw.norm2_sc, lw.norm2_w_cpu, lw.norm2_b)
+            normed2_tt = seq_norm(hidden_tt, lw.norm2_w, lw.norm2_sc, lw.norm2_w_ln_tt, lw.norm2_b_ln_tt)
             mlp_out_tt = self._mlp(normed2_tt, layer_idx)
             hidden_tt = add_resid(hidden_tt, mlp_out_tt)
 
@@ -1146,6 +1165,8 @@ class TTModelRunner:
 
         # split row 0 of qkv into per-head Q/K/V, then RoPE Q and K
         row = ttnn.slice(qkv_tt, [0, 0], [1, qkvp])
+        if lw.qkv_b_tt is not None:                      # CP-1: fused QKV bias on device
+            row = ttnn.add(row, lw.qkv_b_tt)
         q4  = ttnn.reshape(ttnn.slice(row, [0, 0],    [1, qend]), [1, 1, nh,  hd_p])
         k4  = ttnn.reshape(ttnn.slice(row, [0, qend], [1, kend]), [1, 1, nkv, hd_p])
         v4  = ttnn.reshape(ttnn.slice(row, [0, kend], [1, qkvp]), [1, 1, nkv, hd_p])
@@ -1203,14 +1224,19 @@ class TTModelRunner:
         # Requires group | 32 (else padded grouping can't match the real group). NOTE: padding
         # nh<32 up to 32 wastes attention compute (32/nh x query heads) — benchmark the tax;
         # group-does-not-divide-32 models (starcoder g=12, qwen2.5 g=7) take the custom route.
-        ok_shape = (nkv > 0 and nh % nkv == 0 and group > 0 and 32 % group == 0 and nh <= 32)
+        # CP-5: the decode SDPA accepts arbitrary GQA groups (probe_gqa_sdpa_group.py,
+        # PCC 0.9997 for group 7/12), so group | 32 is no longer required.
+        ok_shape = (nkv > 0 and nh % nkv == 0 and group > 0 and nh <= 32)
         if not (self._ondevice_attn_eligible and hd_p == hd and ok_shape):
             print(f"  Paged decode: NOT eligible (need eligible on-device attn + tile head_dim "
-                  f"+ nh<=32 with group|32; nh={nh}, nkv={nkv}, group={group}, hd_p==hd={hd_p == hd})")
+                  f"+ nh<=32; nh={nh}, nkv={nkv}, group={group}, hd_p==hd={hd_p == hd})")
             return
         self._nh, self._nkv = nh, nkv          # real head counts
-        self._nh_pad = 32                       # decode SDPA pads Q to 32
+        # CP-5: pad q to group*nkv_pad — that is 32 for group|32 (validated path, unchanged)
+        # and exactly nh for group∤32 (starcoder2 g=12 -> 24, qwen2.5 g=7 -> 28). The padded
+        # grouping nh_pad/nkv_pad always equals the real group, so q-heads map to real kv-heads.
         self._nkv_pad = 32 // group             # == nkv when nh==32 (no-op)
+        self._nh_pad = group * self._nkv_pad    # 32 for group|32; nh for group∤32
         self._block = 32
         self._nblocks = math.ceil(_tile_align(self._max_seq) / self._block)
         n = len(self._layers)
@@ -1269,6 +1295,8 @@ class TTModelRunner:
 
         # split row 0 -> per-head Q/K/V, RoPE Q and K
         row = ttnn.slice(qkv_tt, [0, 0], [1, qkvp])
+        if lw.qkv_b_tt is not None:                      # CP-1: fused QKV bias on device
+            row = ttnn.add(row, lw.qkv_b_tt)
         q4 = ttnn.reshape(ttnn.slice(row, [0, 0],    [1, qend]), [1, 1, nh,  hd_p])
         k4 = ttnn.reshape(ttnn.slice(row, [0, qend], [1, kend]), [1, 1, nkv, hd_p])
         v4 = ttnn.reshape(ttnn.slice(row, [0, kend], [1, qkvp]), [1, 1, nkv, hd_p])
@@ -1417,13 +1445,8 @@ class TTModelRunner:
             return
         vocab   = int(self._lm_head_w_cpu.shape[0])          # [vocab, hidden]
         vocab_p = int(self._lm_head_w_tt.shape[-1])          # uploaded [hidden_p, vocab_p]
-        # (#3 Phase C) listed -> derived lm_head_ondevice (norm_type != layernorm);
-        # novel -> the introspection floor (not _uses_layernorm). Equivalent by construction.
-        norm_ok = self._caps.lm_head_ondevice if self._listed else (not self._uses_layernorm)
-        if not norm_ok:
-            print("  On-device lm_head: NOT eligible (LayerNorm final norm not yet "
-                  "supported on-device) -> CPU lm_head")
-            return
+        # CP-3: _lm_head_graph now handles both RMSNorm and LayerNorm final norms on
+        # device, so lm_head_ondevice is no longer norm-gated.
         # On-device lm_head only PAYS OFF folded into the decode trace (#31). Run
         # standalone (model not on the traced fast path) it adds a per-token device
         # matmul+argmax that is slower than the CPU lm_head — measured -14..-18% on
@@ -1458,8 +1481,14 @@ class TTModelRunner:
         and argmax allocate fixed-address buffers captured by the trace (no host roundtrip).
         """
         import ttnn
-        normed_tt = self._dispatcher.rmsnorm(hidden_tt, self._final_norm_w_tt,
-                                             self._final_norm_sc_tt, self._rmsnorm_buf_tt)
+        if self._uses_layernorm:                            # CP-3: LayerNorm-aware final norm
+            eps = getattr(self._hf_cfg, "layer_norm_eps",
+                          getattr(self._hf_cfg, "rms_norm_eps", 1e-5))
+            normed_tt = self._layernorm_dev(hidden_tt, self._final_norm_w_ln_tt,
+                                            self._final_norm_b_ln_tt, eps)
+        else:
+            normed_tt = self._dispatcher.rmsnorm(hidden_tt, self._final_norm_w_tt,
+                                                 self._final_norm_sc_tt, self._rmsnorm_buf_tt)
         logits_tt = ttnn.matmul(normed_tt, self._lm_head_w_tt,
                                 compute_kernel_config=self._lmhead_ckc)
         if self._lmhead_pad_mask is not None:
@@ -1611,6 +1640,9 @@ class TTModelRunner:
         self._final_norm_sc_tt = self._make_scaler_tt(cfg.hidden_size)
         _fnb = getattr(final_norm, "bias", None)
         self._final_norm_b_cpu = _fnb.detach().float() if _fnb is not None else None
+        # CP-3: device row tensors for on-device LayerNorm final norm (lm_head trace path)
+        self._final_norm_w_ln_tt = self._ln_row_tt(final_w) if self._uses_layernorm else None
+        self._final_norm_b_ln_tt = self._ln_row_tt(_fnb) if self._uses_layernorm else None
 
         # lm_head (GPTNeoX names it embed_out)
         lm_head_mod = getattr(hf_model, "lm_head", None) or getattr(hf_model, "embed_out", None)
@@ -1676,6 +1708,9 @@ class TTModelRunner:
             o_b_tt = self._upload_bias(getattr(o_mod, "bias", None), cfg.hidden_size)
 
             qkv_b_cpu = _get_qkv_bias(attn, cfg)
+            # CP-1: device twin of the qkv bias (1, total_qkv_p) for on-device/paged attn.
+            qkv_b_tt = (_to_tt(qkv_b_cpu.unsqueeze(0), self._device)
+                        if qkv_b_cpu is not None else None)
 
             lw = _LayerWeights(
                 norm1_w  = self._upload_norm_w(getattr(n1, "weight", None), gemma_norm),
@@ -1684,6 +1719,7 @@ class TTModelRunner:
                 norm2_sc = self._make_scaler_tt(cfg.hidden_size),
                 qkv_w = _to_tt(qkv_cat, self._device, dtype=self._weight_dtype()),
                 qkv_b = qkv_b_cpu,
+                qkv_b_tt = qkv_b_tt,
                 q_end = q_out_p,
                 k_end = q_out_p + k_out_p,
                 o_w   = self._upload_linear_w(
@@ -1708,6 +1744,11 @@ class TTModelRunner:
                 norm1_b     = n1.bias.detach().float()   if (self._uses_layernorm and getattr(n1, "bias", None) is not None) else None,
                 norm2_w_cpu = n2.weight.detach().float() if self._uses_layernorm else None,
                 norm2_b     = n2.bias.detach().float()   if (self._uses_layernorm and getattr(n2, "bias", None) is not None) else None,
+                # CP-3: device row tensors for on-device ttnn.layer_norm
+                norm1_w_ln_tt = self._ln_row_tt(getattr(n1, "weight", None)) if self._uses_layernorm else None,
+                norm1_b_ln_tt = self._ln_row_tt(getattr(n1, "bias", None))   if self._uses_layernorm else None,
+                norm2_w_ln_tt = self._ln_row_tt(getattr(n2, "weight", None)) if self._uses_layernorm else None,
+                norm2_b_ln_tt = self._ln_row_tt(getattr(n2, "bias", None))   if self._uses_layernorm else None,
             )
             self._layers.append(lw)
         print()
@@ -2079,7 +2120,10 @@ class TTModelRunner:
         no_bias     = all(lw.qkv_b is None for lw in self._layers)
         no_headnorm = all(lw.q_norm_w is None and lw.k_norm_w is None for lw in self._layers)
         full_rope   = (self._rotary_ndims == hd)
-        introspect_eligible = bool(full_rope and hd_p == hd and no_bias and no_headnorm and not self._uses_layernorm)
+        # CP-1: qkv bias now applied on-device. CP-3: LayerNorm now runs on-device
+        # (ttnn.layer_norm), so it no longer blocks eligibility — but ALiBi still does
+        # (per-head bias can't fold into the shared-mask SDPA decode; CP-6 deferred).
+        introspect_eligible = bool(full_rope and hd_p == hd and no_headnorm and not self._uses_alibi)
         # (#3 Phase C) listed -> derived fast_path capability (which also folds in the
         # group|32 / nh<=32 SDPA-pad constraint from _setup_paged_decode); novel -> the
         # introspection floor. They agree for every listed fast-path model.
