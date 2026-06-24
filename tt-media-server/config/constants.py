@@ -1343,7 +1343,13 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
-        "request_processing_timeout_seconds": 3000,
+        # The image eval dispatches all 100 prompts concurrently, but a single
+        # N150 serves them one at a time (max_batch_size=1) at ~30s/image, so the
+        # tail of the queue can wait the full batch before being served. 3000s was
+        # just under that, timing the tail out and cascading into the 6h job cap.
+        # Bump well above the worst-case queue drain (incl. retries) to let the
+        # full eval + benchmark batches complete.
+        "request_processing_timeout_seconds": 10000,
     },
     (ModelRunners.TT_XLA_SDXL, DeviceTypes.P150X4): {
         "device_mesh_shape": (1, 1),
