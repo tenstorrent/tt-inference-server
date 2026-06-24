@@ -159,9 +159,16 @@ def ocr_one(session, base_url, api_key, model, prompt, max_tokens, path, timeout
         "messages": [
             {
                 "role": "user",
+                # Image MUST precede the text prompt. dots.ocr was trained/validated
+                # with image-before-text ordering (see the validated
+                # tt_symbiote .../models/dots_ocr inputs builder, which places
+                # {image} before {text}). With text-first ordering the model can
+                # emit <|endoftext|> as its very first greedy token on some pages
+                # (observed on pages 1 & 8 of the t1 set), yielding empty output.
+                # Image-first matches the trained format and produces full output.
                 "content": [
-                    {"type": "text", "text": prompt},
                     {"type": "image_url", "image_url": {"url": to_data_uri(path)}},
+                    {"type": "text", "text": prompt},
                 ],
             }
         ],
