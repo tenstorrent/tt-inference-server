@@ -418,6 +418,17 @@ templates:
         # (TT_SYMBIOTE_SERVING_TIER=DotsOCRForCausalLM=S0_GREEDY_ENGINE), drop this
         # var so the pipeline builds batch=1 (the S0 bridge feeds one stream).
         DOTS_OCR_PARALLELISM: "DP"
+        # Select the S2_PAGED serving tier EXPLICITLY. The adapter's tier comes from
+        # tt_symbiote's model-authoritative pin (serving_tier_for), whose default for
+        # DotsOCRForCausalLM is S0_GREEDY_ENGINE; S2 is an opt-in override
+        # (tt_symbiote_generators.get_serving_recipes). DOTS_OCR_PARALLELISM=DP above
+        # builds the batch=8 DP pipeline, but WITHOUT this override the adapter serves
+        # via the S0 single-stream path (batch=1) and the pipeline's prefill rejects
+        # the mismatch: "DP batch-parallel prefill expects input_ids batch 8, got 1"
+        # -> EngineCore dies on the first request. Pin S2 so the tier and the pipeline
+        # batch agree. (Do NOT rely on the package default matching: a freshly pulled
+        # image may pin S0.)
+        TT_SYMBIOTE_SERVING_TIER: "DotsOCRForCausalLM=S2_PAGED"
       vllm_args:
         # dots.ocr ships custom modeling code on the HF Hub, so vLLM's
         # ModelConfig requires trust_remote_code to load it.
