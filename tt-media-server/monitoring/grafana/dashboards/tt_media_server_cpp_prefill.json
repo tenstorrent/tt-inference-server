@@ -280,6 +280,186 @@
         "x": 0,
         "y": 4
       },
+      "id": 1030,
+      "panels": [],
+      "title": "Prefix Cache (Hits & Queries)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Queries: returning-user requests checked against the prefix cache. Hits: subset that reused an existing KV cache. Counters are cumulative since process start.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 5
+      },
+      "id": 1031,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "tt_prefix_cache_queries_total{role=\"prefill\"}",
+          "legendFormat": "Queries",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "tt_prefix_cache_hits_total{role=\"prefill\"}",
+          "legendFormat": "Hits",
+          "refId": "B"
+        }
+      ],
+      "title": "Prefix Cache (totals)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Per-second rate of prefix-cache lookups (Queries/s) and the subset that hit an existing KV cache (Hits/s), averaged over 5m.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 5
+      },
+      "id": 1032,
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(tt_prefix_cache_queries_total{role=\"prefill\"}[5m])",
+          "legendFormat": "Queries/s"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(tt_prefix_cache_hits_total{role=\"prefill\"}[5m])",
+          "legendFormat": "Hits/s"
+        }
+      ],
+      "title": "Prefix Cache Throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Prefix-cache hit rate: rate(tt_prefix_cache_hits_total[5m]) / rate(tt_prefix_cache_queries_total[5m]). Shows gaps when there is no prefix-cache traffic.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 5
+      },
+      "id": 1033,
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * rate(tt_prefix_cache_hits_total{role=\"prefill\"}[5m]) / rate(tt_prefix_cache_queries_total{role=\"prefill\"}[5m])",
+          "legendFormat": "Hit Rate"
+        }
+      ],
+      "title": "Prefix Cache Hit Rate",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
       "id": 1040,
       "title": "Prefix Caching (KV Blocks)",
       "type": "row"
@@ -311,7 +491,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 14
       },
       "id": 1041,
       "options": {
@@ -358,7 +538,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 22
       },
       "id": 1042,
       "options": {
@@ -433,7 +613,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 34
       },
       "id": 1050,
       "title": "Prefill Input (ISL per request)",
@@ -465,7 +645,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 26
+        "y": 35
       },
       "id": 1051,
       "options": {
@@ -540,7 +720,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 26
+        "y": 35
       },
       "id": 1052,
       "options": {
@@ -592,7 +772,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 43
       },
       "id": 1010,
       "title": "Prefill Latency",
@@ -623,7 +803,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 35
+        "y": 44
       },
       "id": 1011,
       "options": {
@@ -694,7 +874,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 35
+        "y": 44
       },
       "id": 1012,
       "options": {
@@ -746,7 +926,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 52
       },
       "id": 104,
       "title": "Infrastructure (per-process CPU / memory / threads)",
@@ -781,7 +961,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 44
+        "y": 53
       },
       "id": 105,
       "options": {
@@ -839,7 +1019,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 44
+        "y": 53
       },
       "id": 106,
       "options": {
@@ -897,7 +1077,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 44
+        "y": 53
       },
       "id": 107,
       "options": {
@@ -955,7 +1135,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 52
+        "y": 61
       },
       "id": 108,
       "options": {
@@ -1013,7 +1193,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 52
+        "y": 61
       },
       "id": 109,
       "options": {
@@ -1071,7 +1251,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 52
+        "y": 61
       },
       "id": 110,
       "options": {
@@ -1128,5 +1308,5 @@
   "timezone": "browser",
   "title": "TT Inference Server \u2014 Prefill (disaggregated)",
   "uid": "tt-inference-server-prefill",
-  "version": 1
+  "version": 2
 }
