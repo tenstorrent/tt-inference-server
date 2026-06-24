@@ -49,14 +49,13 @@ git checkout -b stable
 ## Step 1: update `models-ci-config.json`
 
 Within the `models-ci-config.json` file, update which models and devices should belong to the upcoming release. 
-Remove all the entries from the release list, which are not going to be actually released. 
-Open question: do we need to do the same on the main branch as well? or to introduce new file with final list of models that are going to be released?
+Remove all the entries from the release list, which are not going to be actually released.
 
 ## Step 2: update `VERSION` file
 
 Bump the version of the `VERSION` file (major/minor/patch syntax).
 
-## run `release.yml` using the default arguments
+## during the release cycle run `release.yml` using the default arguments
 
 From  the `tt-shield` repository, run the `release.yml` using the default arguments:
 
@@ -198,6 +197,8 @@ The full script path is: ```https://github.com/tenstorrent/tt-inference-server/b
 ## Update Release Zoo
 
 From the `tt-shield` Actions tab we need to run the `"Update Release Zoo"` action so the page on Models Dashboard is being refreshed.
+
+https://github.com/tenstorrent/tt-shield/actions/workflows/update-release-zoo.yml
 
 ## Create post-release branch and PR
 
