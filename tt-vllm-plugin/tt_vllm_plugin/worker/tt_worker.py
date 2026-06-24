@@ -288,10 +288,15 @@ def get_mesh_grid(dp_rank=0):
         "N150x4": (1, 4),
         "P150x4": (1, 4),
         "T3K": (1, 8),
-        # P150x8 (BH LoudBox / an 8-chip Galaxy carve) is a 2x4 mesh, matching
-        # DeviceTypes.P150X8 and tt-metal's validated bh_galaxy_dual_2x4 split.
-        # (1,8) is not a valid carve of the 8x4 Blackhole Galaxy.
-        "P150x8": (2, 4),
+        # P150x8 (8-chip BH LoudBox / 8-chip Galaxy carve) must be a 1x8 row
+        # submesh. tt-transformers shards the model with cluster_shape == the
+        # mesh shape: cluster_shape[1] is the TP/heads axis (n_heads %
+        # cluster_shape[1] == 0) and cluster_shape[0] is the K/dim axis, which
+        # MUST be 1 for a single-tray TP=8 config. A (2,4) shape splits the
+        # wqkv dim/K axis by 2 and crashes in TensorSpec ("Shard height 2048
+        # must match physical height 1024 for width sharded"). The physical
+        # tray being 2x4 is reconciled by opening it as a logical 1x8 line.
+        "P150x8": (1, 8),
         "TG": (8, 4),
         "BH-Galaxy": (8, 4),
     }
