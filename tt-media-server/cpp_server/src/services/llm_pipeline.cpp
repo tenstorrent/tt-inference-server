@@ -187,7 +187,11 @@ void LLMPipeline::resolveSession(
         auto [matchedTokens, thinkTokens] =
             sessionManager_->computeMatchedTokens(acquired->sessionId,
                                                   routingInfo.blocks);
-        req->kv_position_id = matchedTokens - 1 + thinkTokens;
+        // kv_position_id is the first free KV index: matched prompt tokens plus
+        // the think tokens already resident in the cache. The delta prompt is
+        // trimmed by the same matched count, so kv_position_id stays equal to
+        // the absolute position of the first token handed to the worker.
+        req->kv_position_id = matchedTokens + thinkTokens;
         session_resolution::applyDeltaPrompt(*req, matchedTokens,
                                              {.skipUnlessRegularMode = true,
                                               .setKvPositionId = false,
@@ -259,14 +263,13 @@ void LLMPipeline::resolveSession(
         req->session = sessionManager_->getSession(acquired->sessionId);
         req->sessionId = acquired->sessionId;
         req->continuation = true;
-        // kv_position_id accounts for both non-thinking tokens (matched) and
-        // thinking tokens (accumulated in cache but not in hash)
-        const uint32_t deltaMatchedTokens =
-            acquired->numberOfMatchedTokens > 0
-                ? acquired->numberOfMatchedTokens - 1
-                : 0;
-        req->kv_position_id =
-            deltaMatchedTokens + acquired->accumulatedThinkTokens;
+        // kv_position_id is the first free KV index: it accounts for both the
+        // matched non-thinking tokens and the thinking tokens (resident in the
+        // cache but absent from the hash). The delta prompt is trimmed by the
+        // same matched count so kv_position_id stays equal to the absolute
+        // position of the first token handed to the worker.
+        const uint32_t matchedTokens = acquired->numberOfMatchedTokens;
+        req->kv_position_id = matchedTokens + acquired->accumulatedThinkTokens;
         req->accumulated_think_tokens =
             static_cast<int>(acquired->accumulatedThinkTokens);
 
@@ -274,7 +277,7 @@ void LLMPipeline::resolveSession(
         if (auto* p = std::get_if<std::vector<int>>(&req->prompt)) {
           fullPrompt = *p;
         }
-        session_resolution::applyDeltaPrompt(*req, deltaMatchedTokens,
+        session_resolution::applyDeltaPrompt(*req, matchedTokens,
                                              {.skipUnlessRegularMode = true,
                                               .setKvPositionId = false,
                                               .logPrefix = {}});
@@ -372,7 +375,7 @@ void LLMPipeline::resolveSession(
         // If we copied from a slot, mark as continuation with kv_position_id.
         if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
           req->continuation = true;
-          req->kv_position_id = copyMatchedTokens - 1;
+          req->kv_position_id = copyMatchedTokens;
           session_resolution::applyDeltaPrompt(*req, copyMatchedTokens,
                                                {.skipUnlessRegularMode = true,
                                                 .setKvPositionId = false,
@@ -490,8 +493,10 @@ void LLMPipeline::dispatchGeneration(
       // usage.prompt_tokens_details.cached_tokens.
       int reusedPrefixTokens = 0;
       if (request.continuation && request.kv_position_id.has_value()) {
+        // kv_position_id is the first free KV index, so the matched non-think
+        // prompt length is kv_position_id minus the resident think tokens.
         uint32_t matchedTokens =
-            *request.kv_position_id + 1 -
+            *request.kv_position_id -
             static_cast<uint32_t>(request.accumulated_think_tokens);
         const auto fullPromptTokens =
             std::get<std::vector<int>>(request.prompt).size();
@@ -563,7 +568,9 @@ bool LLMPipeline::shouldDoPrefillOnDecode(
   // cache and won't need prefilling again — deduct them from the effective
   // prompt size used for the threshold comparison.
   if (request.kv_position_id.has_value()) {
-    const size_t cached = static_cast<size_t>(*request.kv_position_id + 1) -
+    // kv_position_id is the first free KV index; the cached non-think prefix
+    // length is therefore kv_position_id minus the resident think tokens.
+    const size_t cached = static_cast<size_t>(*request.kv_position_id) -
                           static_cast<size_t>(request.accumulated_think_tokens);
     promptTokens = (promptTokens > cached) ? promptTokens - cached : 0;
   }
