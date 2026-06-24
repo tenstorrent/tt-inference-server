@@ -91,6 +91,7 @@ inline sch::ISRequest makeSubmitRequest(
     std::optional<uint32_t> destSlotId = std::nullopt) {
   sch::ISRequest req{};
   req.type = ds::RequestType::SUBMIT;
+  req.request_id = seq.taskId;
   req.slot_id = slotId;
   req.dest_slot_id = destSlotId;
   fillSequenceFields(req, seq);
@@ -102,6 +103,7 @@ inline sch::ISRequest makeContinueRequest(
     std::optional<uint32_t> destSlotId = std::nullopt) {
   sch::ISRequest req{};
   req.type = ds::RequestType::CONTINUE;
+  req.request_id = seq.taskId;
   req.slot_id = slotId;
   req.dest_slot_id = destSlotId;
   fillSequenceFields(req, seq);
@@ -215,7 +217,10 @@ inline pl::PrefillPipelineConfig makePrefillPipelineConfig(
           .service_id = tt::config::blazeSocketDescriptorPrefix(),
           .connect_timeout_ms = tt::config::pmConnectTimeoutMs()};
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
-      return pl::PrefillMockConfig{.auto_layer_acks = true};
+      return pl::PrefillMockConfig{
+          .auto_layer_acks = true,
+          .chunk_latency = std::chrono::milliseconds(50),  // faster for tests
+      };
     default:
       throw std::runtime_error("Invalid blaze prefill runner type");
   }

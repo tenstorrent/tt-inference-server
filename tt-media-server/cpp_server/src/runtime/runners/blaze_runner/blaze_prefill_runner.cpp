@@ -378,6 +378,16 @@ inline void BlazePrefillRunner::handleMemoryResponse(
       handleStopAck(taskId, slotId);
       break;
     }
+    case ps::RequestType::SUBMIT: {
+      TT_LOG_ERROR(
+          "[BlazePrefillRunner] handleMemoryResponse: SUBMIT error for "
+          "taskId={}, slotId={}, error_code={}",
+          taskId, slotId, response.error_code);
+      ipc::helpers::pushToken(
+          *resultQueue, taskId, 0,
+          ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
+      break;
+    }
     default: {
       TT_LOG_ERROR(
           "[BlazePrefillRunner] handleMemoryResponse: unexpected action for "
@@ -654,8 +664,12 @@ void BlazePrefillRunner::handleRequest(
   auto& slotContext = slotManager.getSlotContext(slotId);
   switch (slotContext.state) {
     case SlotState::IDLE: {
-      ps::ISRequest req = utils::makeSubmitRequest(
-          slotId, *request, std::make_optional(request->getKVCacheSlot()));
+      std::optional<uint32_t> destSlotId = std::nullopt;
+      if (request->isDisaggregated() &&
+          request->getKVCacheSlot() != tt::domain::INVALID_SLOT_ID) {
+        destSlotId = request->getKVCacheSlot();
+      }
+      ps::ISRequest req = utils::makeSubmitRequest(slotId, *request, destSlotId);
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] handleRequest: SUBMIT taskId={}, slotId={}, "
           "isContinuation={}, numPromptTokens={}, totalTokens={}, "

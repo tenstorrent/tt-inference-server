@@ -380,6 +380,18 @@ inline void BlazeDecodeRunner::handleMemoryResponse(
       handleStopAck(taskId, slotId);
       break;
     }
+    case ds::RequestType::SUBMIT:
+    case ds::RequestType::CONTINUE: {
+      TT_LOG_ERROR(
+          "[BlazeDecodeRunner] handleMemoryResponse: {} error for "
+          "taskId={}, slotId={}, error_code={}",
+          action == ds::RequestType::SUBMIT ? "SUBMIT" : "CONTINUE", taskId,
+          slotId, response.error_code);
+      ipc::helpers::pushToken(
+          *resultQueue, taskId, 0,
+          ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
+      break;
+    }
     default: {
       TT_LOG_ERROR(
           "[BlazeDecodeRunner] handleMemoryResponse: unexpected action for "
