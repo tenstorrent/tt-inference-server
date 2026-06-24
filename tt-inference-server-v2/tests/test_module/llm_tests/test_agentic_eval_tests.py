@@ -53,6 +53,9 @@ class FakeTerminalBenchConfig:
     quiet: bool = True
     yes: bool = True
     task_names_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
+    agent_import_path: Optional[str] = None
+    environment_env: Dict[str, str] = field(default_factory=dict)
+    verifier_env: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

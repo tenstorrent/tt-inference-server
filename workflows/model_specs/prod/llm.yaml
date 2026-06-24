@@ -1029,3 +1029,4 @@ templates:
   metadata:
     Qwen/Qwen2.5-Coder-32B-Instruct:
       tool_call_parser_name: hermes
+      

@@ -170,7 +170,7 @@ def run_workflows(model_spec, runtime_config, json_fpath):
         # Agentic evals have no v1 runner; run them via the v2 bridge before the
         # report step so run_reports.py picks up their Harbor result.json output.
         if has_agentic_tasks_configured(model_spec.model_name):
-            workflows_to_run.append(WorkflowType.AGENTIC)
+            workflows_to_run.insert(1, WorkflowType.AGENTIC)
         else:
             logger.info(
                 f"Skipping agentic for {model_spec.model_name}: "
