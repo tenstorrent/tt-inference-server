@@ -84,6 +84,28 @@ def _clamp_max_gen_toks(
     return out
 
 
+def _inject_seed_into_gen_kwargs(gen_kwargs: dict, seed: int) -> dict:
+    """Return a copy of gen_kwargs with seed added if not already present.
+
+    This ensures the seed propagates from EvalTask configuration to the API
+    request's SamplingParams, fixing non-deterministic outputs when do_sample=true.
+
+    Args:
+        gen_kwargs: Original generation kwargs from task configuration
+        seed: Seed value from task.seed
+
+    Returns:
+        Copy of gen_kwargs with seed included
+    """
+    if "seed" in gen_kwargs:
+        # Seed already explicitly set in gen_kwargs, don't override
+        return gen_kwargs
+
+    out = dict(gen_kwargs)
+    out["seed"] = str(seed)
+    return out
+
+
 # fmt: off
 IMAGE_RESOLUTIONS = [
     (512, 512),
@@ -512,6 +534,11 @@ def build_eval_command(
     effective_gen_kwargs = _clamp_max_gen_toks(
         task.gen_kwargs, device_max_context, task.task_name
     )
+
+    # Inject seed into gen_kwargs to ensure it propagates to vLLM SamplingParams.
+    # Without this, seed from --seed flag only controls lm-eval dataset ordering,
+    # not generation randomness, causing non-deterministic outputs.
+    effective_gen_kwargs = _inject_seed_into_gen_kwargs(effective_gen_kwargs, task.seed)
 
     optional_model_args = []
     if effective_max_concurrent:
