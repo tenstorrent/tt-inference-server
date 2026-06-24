@@ -427,6 +427,24 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
 
     vllm_files = glob(f"{benchmarks_output_dir}/{vllm_pattern}")
+    # v2 LLM benchmarks write under reports_output/benchmarks/**/llm/ with
+    # hf-repo-based filenames; include them in the v1 release report path.
+    v2_llm_glob = (
+        f"{get_default_workflow_root_log_dir()}/reports_output/benchmarks/**/llm/benchmark_*.json"
+    )
+    hf_model_token = model_spec.hf_model_repo.replace("/", "__")
+    v2_llm_files = [
+        path
+        for path in glob(v2_llm_glob, recursive=True)
+        if hf_model_token in Path(path).name
+        or model_spec.model_name in Path(path).name
+    ]
+    if v2_llm_files:
+        logger.info(
+            "Found %d v2 LLM benchmark file(s) under reports_output/benchmarks",
+            len(v2_llm_files),
+        )
+        vllm_files = list(dict.fromkeys(vllm_files + v2_llm_files))
     structured_files = glob(f"{benchmarks_output_dir}/{structured_pattern}")
     # vllm_pattern also matches structured files; subtract them so they're processed once.
     vllm_files = [f for f in vllm_files if f not in set(structured_files)]
@@ -1401,13 +1419,32 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         agentic_file_name_pattern = get_agentic_result_file_pattern(
             model_spec, eval_run_id
         )
-        agentic_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{agentic_file_name_pattern}"
-        files.extend(glob(agentic_file_path_pattern))
-        direct_agentic_file_path_pattern = str(
-            Path(args.output_path) / agentic_file_name_pattern
-        )
-        if direct_agentic_file_path_pattern != agentic_file_path_pattern:
-            files.extend(glob(direct_agentic_file_path_pattern))
+        hf_eval_id = model_spec.hf_model_repo.replace("/", "__")
+        agentic_file_path_patterns = [
+            # v1 path: agentic tasks used to run inside the evals workflow.
+            f"{get_default_workflow_root_log_dir()}/evals_output/{agentic_file_name_pattern}",
+            # v2 path (legacy layout): eval_<model_id>/agentic/<task>/result.json.
+            f"{get_default_workflow_root_log_dir()}/reports_output/agentic/{agentic_file_name_pattern}",
+            # v2 path (current layout): reports_output/agentic/<run>/eval_<hf_model>/agentic/<task>/result.json.
+            f"{get_default_workflow_root_log_dir()}/reports_output/agentic/*/eval_{hf_eval_id}/agentic/*/result.json",
+            # Explicit output dir for the current run (both layouts).
+            str(Path(args.output_path) / agentic_file_name_pattern),
+            str(
+                Path(args.output_path)
+                / "agentic"
+                / "*"
+                / f"eval_{hf_eval_id}"
+                / "agentic"
+                / "*"
+                / "result.json"
+            ),
+        ]
+        seen_patterns = set()
+        for pattern in agentic_file_path_patterns:
+            if pattern in seen_patterns:
+                continue
+            seen_patterns.add(pattern)
+            files.extend(glob(pattern))
 
     if "image" in model_spec.supported_modalities:
         image_file_name_pattern = f"eval_{eval_run_id}/*_results.json"

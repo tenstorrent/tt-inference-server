@@ -1097,8 +1097,8 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: SUPER_CLUSTER
-      max_concurrency: 1
-      max_context: 2048 # 64 * 1024; 
+      max_concurrency: 16
+      max_context: 8192 # 64 * 1024; 
       default_impl: true
       # Shared console endpoint intermittently 500s/403s (WAF) under load;
       # extra retries prevent transient failures from dropping eval samples.

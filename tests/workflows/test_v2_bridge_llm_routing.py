@@ -57,6 +57,17 @@ def test_llm_evals_stays_on_v1():
     assert v2_bridge.can_route_to_v2(spec, rc) is False
 
 
+def test_release_stays_on_v1_except_benchmarks_step():
+    """Release orchestration stays on v1; only the benchmarks sub-step uses v2."""
+    spec, rc = _spec(ModelType.LLM), _rc(workflow="release")
+    assert v2_bridge._is_llm_benchmark_run(WorkflowType.RELEASE, spec, rc) is False
+    assert v2_bridge.can_route_to_v2(spec, rc) is False
+    bench_rc = _rc(workflow="benchmarks")
+    assert (
+        v2_bridge._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, bench_rc) is True
+    )
+
+
 def test_non_routed_media_benchmarks_stays_on_v1():
     spec, rc = _spec(ModelType.IMAGE, name="not-a-routed-model"), _rc()
     assert v2_bridge._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is False
@@ -85,6 +96,29 @@ def test_build_llm_bench_cmd_forwards_tools_and_jwt():
         Path("/tmp/out"),
     )
     assert cmd_jwt[cmd_jwt.index("--jwt-secret") + 1] == "sek"
+
+
+def test_run_v2_llm_benchmark_workflow_invokes_launcher(monkeypatch, tmp_path):
+    spec, rc = _spec(ModelType.LLM), _rc(server_url="https://console.example.com")
+    calls = []
+
+    def fake_run_command(cmd, logger=None, env=None):
+        calls.append(cmd)
+        return 0
+
+    monkeypatch.setattr(v2_bridge, "run_command", fake_run_command)
+    monkeypatch.setattr(
+        v2_bridge, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+
+    result = v2_bridge.run_v2_llm_benchmark_workflow(spec, rc, "/tmp/spec.json")
+
+    assert result.workflow_name == "benchmarks"
+    assert result.return_code == 0
+    assert len(calls) == 1
+    cmd = calls[0]
+    assert "run_llm_bench.py" in cmd[1]
+    assert cmd[cmd.index("--server-url") + 1] == "https://console.example.com"
 
 
 if __name__ == "__main__":

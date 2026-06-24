@@ -145,10 +145,7 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
         )
         delegate_desc = "spec-decode (run_spec_decode.py)"
     elif _is_llm_benchmark_run(wf, model_spec, runtime_config):
-        cmd = _build_llm_bench_cmd(
-            v2_dir, model_spec, runtime_config, json_fpath, output_dir
-        )
-        delegate_desc = "llm-bench (run_llm_bench.py)"
+        return [run_v2_llm_benchmark_workflow(model_spec, runtime_config, json_fpath)]
     else:
         v2_run_py = v2_dir / "run.py"
         if not v2_run_py.is_file():
@@ -204,6 +201,38 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
     return [WorkflowResult(workflow_name=v2_workflow, return_code=return_code)]
 
 
+def run_v2_llm_benchmark_workflow(
+    model_spec, runtime_config, json_fpath
+) -> WorkflowResult:
+    """Run LLM benchmarks through v2's ``run_llm_bench.py`` launcher.
+
+    Used for ``--workflow benchmarks`` and for the benchmarks step inside
+    v1's ``--workflow release`` orchestrator (evals/reports stay on v1).
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    v2_dir = repo_root / _V2_DIR_NAME
+    output_dir = get_default_workflow_root_log_dir() / "reports_output" / "benchmarks"
+    ensure_readwriteable_dir(output_dir)
+
+    cmd = _build_llm_bench_cmd(
+        v2_dir, model_spec, runtime_config, json_fpath, output_dir
+    )
+    env = os.environ.copy()
+    env["TT_V1_RUN_COMMAND"] = "python " + shlex.join(sys.argv)
+
+    logger.info(
+        "Delegating LLM benchmarks to v2 engine via llm-bench (run_llm_bench.py)."
+    )
+    return_code = run_command(cmd, logger=logger, env=env)
+    if return_code != 0:
+        logger.error(
+            "⛔ v2 LLM benchmarks workflow failed with return code: %s", return_code
+        )
+    else:
+        logger.info("✅ Completed v2 LLM benchmarks workflow")
+    return WorkflowResult(workflow_name="benchmarks", return_code=return_code)
+
+
 def _base_v2_cmd(
     launcher, model_spec, runtime_config, json_fpath, output_dir, v2_workflow
 ):
@@ -245,9 +274,11 @@ def _forward_jwt(cmd, runtime_config) -> None:
 
 def _build_agentic_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):
     launcher = _resolve_launcher(v2_dir, "run_agentic.py", "agentic")
-    return _base_v2_cmd(
+    cmd = _base_v2_cmd(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "agentic"
     )
+    _forward_jwt(cmd, runtime_config)
+    return cmd
 
 
 def _build_prefix_cache_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):

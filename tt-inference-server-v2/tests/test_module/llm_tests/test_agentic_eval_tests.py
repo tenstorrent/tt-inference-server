@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -53,6 +54,9 @@ class FakeTerminalBenchConfig:
     quiet: bool = True
     yes: bool = True
     task_names_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
+    agent_import_path: Optional[str] = None
+    environment_env: Dict[str, str] = field(default_factory=dict)
+    verifier_env: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -207,6 +211,29 @@ class TestAgenticDriverConfigMapping:
         assert cfg.jobs_dir == Path("/tmp/out/eval_Qwen__Qwen3.6-27B/agentic")
         assert cfg.model_name == "openai/Qwen/Qwen3.6-27B"
 
+    def test_terminal_bench_config_forwards_harbor_adapter_fields(self):
+        task = _terminal_task()
+        task.agentic_eval_config.agent_import_path = (
+            "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent"
+        )
+        task.agentic_eval_config.environment_env = {"TAU2_USER_MODEL": "openai/Qwen"}
+        task.agentic_eval_config.verifier_env = {
+            "TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen"
+        }
+
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            _driver_context(),
+        )
+
+        assert (
+            cfg.agent_import_path
+            == "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent"
+        )
+        assert cfg.environment_env == {"TAU2_USER_MODEL": "openai/Qwen"}
+        assert cfg.verifier_env == {"TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen"}
+
     def test_swebench_config_uses_limit_mode_instance_ids_and_n_tasks(self):
         task = _swebench_task()
         task.swebench_eval_config.instance_ids_map = {
@@ -243,6 +270,44 @@ class TestTerminalBenchHarness:
             run_cmd.return_value.returncode = 17
 
             assert run_terminal_bench(cfg) == 17
+
+    def test_harbor_config_includes_adapter_and_env_overrides(self, tmp_path):
+        task = _terminal_task()
+        task.agentic_eval_config.agent_timeout_sec = None
+        task.agentic_eval_config.agent_import_path = (
+            "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent"
+        )
+        task.agentic_eval_config.environment_env = {
+            "TAU2_USER_MODEL": "openai/Qwen/Qwen3.6-27B"
+        }
+        task.agentic_eval_config.verifier_env = {
+            "TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen/Qwen3.6-27B"
+        }
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch("llm_module.agentic.terminal_bench.subprocess.run") as run_cmd:
+            run_cmd.return_value.returncode = 17
+
+            assert run_terminal_bench(cfg) == 17
+
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        harbor_config = json.loads(config_path.read_text())
+        assert harbor_config["agents"][0]["import_path"] == (
+            "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent"
+        )
+        assert "name" not in harbor_config["agents"][0]
+        assert harbor_config["environment"]["env"] == {
+            "TAU2_USER_MODEL": "openai/Qwen/Qwen3.6-27B"
+        }
+        assert harbor_config["verifier"]["env"] == {
+            "TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen/Qwen3.6-27B"
+        }
+        run_cmd.assert_called_once()
 
 
 class TestSWEbenchHarness:
