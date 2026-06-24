@@ -17,6 +17,7 @@
 #include "runtime/runners/blaze_runner/blaze_utils.hpp"
 #include "runtime/worker/single_process_worker_metrics.hpp"
 #include "services/memory_services/memory_manager.hpp"
+#include "tt_llm_engine/scheduler/scheduler_types.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 namespace tt::runners::blaze {
@@ -42,6 +43,11 @@ BlazeDecodeRunner::BlazeDecodeRunner(
   managerParams.think_close_token_id =
       static_cast<uint32_t>(thinkTokenIds.second);
   managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
+  if (tt::config::specDecodeMode() == "mtp") {
+    managerParams.spec_decode_mode = ds::SpecDecodeMode::MTP;
+    managerParams.max_spec_tokens =
+        static_cast<uint32_t>(tt::config::mtpLevel());
+  }
   decodeScheduler =
       std::make_unique<ds::DecodeScheduler>(pipelineConfig, managerParams);
   TT_LOG_INFO(

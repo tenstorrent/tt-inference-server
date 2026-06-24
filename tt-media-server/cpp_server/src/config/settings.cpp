@@ -709,6 +709,18 @@ std::string dynamoEtcdEndpoints() {
   return defaults::DYNAMO_ETCD_ENDPOINTS;
 }
 
+std::string specDecodeMode() {
+  return envString("SPEC_DECODE_MODE", defaults::SPEC_DECODE_MODE);
+}
+
+size_t mtpLevel() {
+  auto val = static_cast<size_t>(envUlong("MTP_LEVEL", defaults::MTP_LEVEL));
+  if (val > 4) {
+    throw std::runtime_error("MTP_LEVEL must be <= 4");
+  }
+  return val;
+}
+
 int64_t dynamoEtcdLeaseTtlSecs() {
   const char* v = std::getenv("DYNAMO_ETCD_LEASE_TTL_SECS");
   if (!v || !*v) return defaults::DYNAMO_ETCD_LEASE_TTL_SECS;
