@@ -301,14 +301,24 @@ class SpecTestsWorkflow(WorkflowExecution):
 class ReleaseWorkflow(WorkflowExecution):
     name = "release"
     children: ClassVar[Sequence[str]] = ("evals", "benchmarks", "spec_tests")
+    llm_children: ClassVar[Sequence[str]] = ("evals", "benchmarks")
 
     def run_tasks(self) -> List[TaskOutcome]:
+        children = (
+            self.llm_children
+            if self.ctx.model_spec.model_type == ModelType.LLM
+            else self.children
+        )
         outcomes: List[TaskOutcome] = []
-        for child_name in self.children:
+        for child_name in children:
             child_cls = WORKFLOW_REGISTRY[child_name]
             self.logger.info("--- release: %s ---", child_name)
-            for task_type in child_cls.task_types:
-                outcomes.append(self._dispatch_task(task_type))
+            child = child_cls(
+                self.ctx,
+                accumulator=self.accumulator,
+                orchestrator_metadata=self.orchestrator_metadata,
+            )
+            outcomes.extend(child.run_tasks())
         return outcomes
 
 
