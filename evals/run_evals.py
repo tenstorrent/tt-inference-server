@@ -558,7 +558,6 @@ def build_eval_command(
     # lm-eval (text) expects full completions api route in base_url
     # lmms-eval (vision) expects base_url WITHOUT the endpoint path
     if task.workflow_venv_type in [
-        WorkflowVenvType.EVALS_META,
         WorkflowVenvType.EVALS_VISION,
     ]:
         _base_url = base_url
