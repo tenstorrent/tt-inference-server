@@ -186,7 +186,7 @@ TEST(MockRemoteKVManager, GetMigrationReturnsRecordReflectingStatus) {
   const auto rec = mgr.getMigration(id);
   ASSERT_TRUE(rec.has_value());
   EXPECT_EQ(rec->status, MigrationStatus::SUCCESSFUL);
-  EXPECT_FALSE(rec->migration_id.empty());
+  EXPECT_EQ(rec->migration_id, id);
 }
 
 TEST(MockRemoteKVManager, GetMigrationUnknownIdReturnsNullopt) {

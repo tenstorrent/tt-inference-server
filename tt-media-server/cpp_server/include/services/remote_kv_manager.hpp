@@ -5,7 +5,6 @@
 
 #include <cstdint>
 #include <ctime>
-#include <string>
 
 namespace tt::services {
 
@@ -17,7 +16,7 @@ enum class MigrationStatus {
 };
 
 struct Migration {
-  std::string migration_id;
+  uint64_t migration_id;
   std::time_t time_created;
   MigrationStatus status;
 };

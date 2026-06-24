@@ -80,7 +80,7 @@ std::string serialize(const MigrationRequestMessage& mrm) {
 
 std::string serialize(const MigrationResponseMessage& mrm) {
   Json::Value root;
-  root["migration_id"] = mrm.migration_id;
+  root["migration_id"] = static_cast<Json::UInt64>(mrm.migration_id);
   root["status"] = std::string(toWire(mrm.status));
 
   return write(root);

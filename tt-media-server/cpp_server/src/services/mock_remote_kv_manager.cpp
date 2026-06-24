@@ -4,7 +4,6 @@
 #include "services/mock_remote_kv_manager.hpp"
 
 #include <chrono>
-#include <string>
 
 namespace tt::services {
 
@@ -28,7 +27,7 @@ uint64_t MockRemoteKVManager::migrate(const MigrationRequest& request) {
                                             : MigrationStatus::IN_PROGRESS;
 
   Migration migration{
-      /*migration_id=*/std::to_string(id),
+      /*migration_id=*/id,
       /*time_created=*/nowSeconds(),
       /*status=*/initialStatus,
   };

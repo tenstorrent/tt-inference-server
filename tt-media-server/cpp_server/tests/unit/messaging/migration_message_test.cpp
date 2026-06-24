@@ -187,6 +187,15 @@ TEST(MigrationResponseMessageWire, SerializeEmitsExpectedFields) {
   EXPECT_EQ(root.size(), 2u);
 }
 
+TEST(MigrationResponseMessageWire, HandlesMaxUint64MigrationId) {
+  MigrationResponseMessage in = makeResponse(MigrationStatus::SUCCESSFUL);
+  in.migration_id = std::numeric_limits<uint64_t>::max();
+
+  const auto out = parseMigrationResponse(serialize(in));
+  ASSERT_TRUE(out.has_value());
+  EXPECT_EQ(out->migration_id, std::numeric_limits<uint64_t>::max());
+}
+
 TEST(MigrationResponseMessageWire, StatusUsesEnumNameOnTheWire) {
   // Cross-language consumers (Python) read this field as a string; if the C++
   // side ever switches to numeric encoding it'll break them silently.
