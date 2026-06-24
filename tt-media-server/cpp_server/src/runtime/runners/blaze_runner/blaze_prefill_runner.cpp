@@ -669,7 +669,8 @@ void BlazePrefillRunner::handleRequest(
           request->getKVCacheSlot() != tt::domain::INVALID_SLOT_ID) {
         destSlotId = request->getKVCacheSlot();
       }
-      ps::ISRequest req = utils::makeSubmitRequest(slotId, *request, destSlotId);
+      ps::ISRequest req =
+          utils::makeSubmitRequest(slotId, *request, destSlotId);
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] handleRequest: SUBMIT taskId={}, slotId={}, "
           "isContinuation={}, numPromptTokens={}, totalTokens={}, "
