@@ -1029,23 +1029,3 @@ templates:
   metadata:
     Qwen/Qwen2.5-Coder-32B-Instruct:
       tool_call_parser_name: hermes
-
-- weights:
-    - Qwen/Qwen3.6-27B
-  impl: tt_transformers
-  version: "0.1.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
-  inference_engine: VLLM
-  device_model_specs:
-    - device: GPU
-      max_concurrency: 32
-      max_context: 256000  # 256 * 1024
-      default_impl: true
-  status: EXPERIMENTAL
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    Qwen/Qwen3.6-27B:
-      reasoning_parser_name: qwen3
-      tool_call_parser_name: hermes

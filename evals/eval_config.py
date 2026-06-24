@@ -421,11 +421,9 @@ _eval_config_list = [
                     dataset="sierra-research/tau3-bench",
                     agent="tau3_llm_agent",
                     agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
-                    task_names=[
-                        "sierra-research/tau3-bench__tau3-banking_knowledge-*"
-                    ],
-                    # A single served instance is shared by the agent, 
-                    # the simulated user, and the verifier.
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    # A single served instance is shared by the agent,
+                    # the simulated user, and the Natural Language verifier.
                     n_concurrent_trials=4,
                     n_attempts=1,
                     n_tasks=97,
