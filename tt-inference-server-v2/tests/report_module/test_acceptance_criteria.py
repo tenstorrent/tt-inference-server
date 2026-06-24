@@ -19,6 +19,7 @@ from report_module.acceptance_criteria import (
     STATUS_PASS,
     CategoryResult,
     acceptance_criteria_check,
+    build_acceptance_export,
     format_acceptance_summary_markdown,
 )
 from report_module.schema import Block, ReportSchema
@@ -176,9 +177,16 @@ def test_spec_tests_success_true_passes():
 def test_summary_markdown_passing():
     categories = [CategoryResult(CATEGORY_BENCHMARKS, STATUS_PASS, total=2, failed=0)]
     md = format_acceptance_summary_markdown(True, {}, categories)
-    assert "Overall status: `PASS`" in md
+    assert "Acceptance status: `PASS`" in md
     assert "All acceptance criteria passed." in md
     assert "2/2 passed" in md
+
+
+def test_summary_markdown_includes_model_status():
+    categories = [CategoryResult(CATEGORY_BENCHMARKS, STATUS_PASS, total=1, failed=0)]
+    md = format_acceptance_summary_markdown(True, {}, categories, "COMPLETE")
+    assert "Acceptance status: `PASS`" in md
+    assert "Model status: `COMPLETE`" in md
 
 
 def test_summary_markdown_lists_blockers():
@@ -186,6 +194,27 @@ def test_summary_markdown_lists_blockers():
     md = format_acceptance_summary_markdown(
         False, {"benchmarks:B.target.ttft_check": "ttft too slow"}, categories
     )
-    assert "Overall status: `FAIL`" in md
+    assert "Acceptance status: `FAIL`" in md
     assert "#### Blockers" in md
     assert "`benchmarks:B.target.ttft_check`: ttft too slow" in md
+
+
+def test_build_acceptance_export_shape():
+    categories = [CategoryResult(CATEGORY_BENCHMARKS, STATUS_PASS, total=1, failed=0)]
+    export = build_acceptance_export(True, {}, categories, "COMPLETE")
+    assert export["acceptance_criteria"] is True
+    assert export["acceptance_blockers"] == {}
+    metadata = export["acceptance_criteria_metadata"]
+    assert metadata["enforcement_result"] == "PASS"
+    assert metadata["model_status"] == "COMPLETE"
+    assert metadata["categories"][0]["name"] == CATEGORY_BENCHMARKS
+    assert "Acceptance status: `PASS`" in export["acceptance_summary_markdown"]
+
+
+def test_build_acceptance_export_failure_defaults_model_status():
+    categories = [CategoryResult(CATEGORY_BENCHMARKS, STATUS_FAIL, total=1, failed=1)]
+    export = build_acceptance_export(False, {"benchmarks:B": "bad"}, categories)
+    assert export["acceptance_criteria"] is False
+    assert export["acceptance_blockers"] == {"benchmarks:B": "bad"}
+    assert export["acceptance_criteria_metadata"]["enforcement_result"] == "FAIL"
+    assert export["acceptance_criteria_metadata"]["model_status"] == ""
