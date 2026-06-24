@@ -2,9 +2,8 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 """Tests for standard LLM evals: scoring, result-loading, orchestration, wiring.
-These tests cover the copied
-scoring loop, the result-JSON loader, ``run_llm_eval`` orchestration, and the
-``EvalsWorkflow`` LLM override.
+ These tests cover the copied scoring loop, the result-JSON loader, ``run_llm_eval`` 
+ orchestration, and the ``EvalsWorkflow`` LLM override.
 """
 
 from __future__ import annotations

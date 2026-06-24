@@ -25,11 +25,16 @@ from test_module import MediaContext
 from .commands import Command, SummaryCommand, WorkflowCommand
 from .execution import (
     LLMBenchOptions,
+    LLMEvalOptions,
     OrchestratorMetadata,
     PrefixCacheOptions,
     ServingBenchOptions,
     SpecDecodeOptions,
 )
+
+# Workflows whose LLM path runs the standard-eval / perf-benchmark child.
+_LLM_BENCH_WORKFLOWS = frozenset({"benchmarks", "release"})
+_LLM_EVAL_WORKFLOWS = frozenset({"evals", "release"})
 
 logger = logging.getLogger(__name__)
 
@@ -164,12 +169,18 @@ def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetada
         spec_decode=_build_spec_decode_options(args),
         serving_bench=_build_serving_bench_options(args),
         llm_bench=_build_llm_bench_options(args),
+        llm_eval=_build_llm_eval_options(args),
     )
 
 
 def _build_llm_bench_options(args: argparse.Namespace) -> Optional[LLMBenchOptions]:
-    """Translate ``--tools`` into ``LLMBenchOptions`` for LLM benchmarks."""
-    if getattr(args, "workflow", None) != "benchmarks":
+    """Translate ``--tools`` into ``LLMBenchOptions`` for the LLM perf benchmark.
+
+    Built for ``--workflow benchmarks`` and ``--workflow release`` (whose
+    benchmark child runs the same sweep). The prefix-cache / spec-decode
+    variants have their own options and are excluded.
+    """
+    if getattr(args, "workflow", None) not in _LLM_BENCH_WORKFLOWS:
         return None
     if getattr(args, "prefix_cache", False):
         return None
@@ -177,6 +188,32 @@ def _build_llm_bench_options(args: argparse.Namespace) -> Optional[LLMBenchOptio
         return None
     return LLMBenchOptions(
         tools=getattr(args, "tools", None) or "vllm",
+        auth_token=_mint_jwt_if_secret(getattr(args, "jwt_secret", None)),
+        venv_python=_release_bench_venv_python(args),
+    )
+
+
+def _release_bench_venv_python(args: argparse.Namespace) -> Optional[str]:
+    """Tool-venv interpreter for the release benchmark child.
+
+    A standalone benchmarks run is already inside the tool venv (run_llm_bench.py
+    re-execs there), so its driver uses ``sys.executable`` — return ``None``.
+    A release run executes in the V2_RUN_SCRIPT venv, so pin the default
+    perf-tool venv (V2_LLM_VLLM); the v2 bridge provisions it before run.py.
+    """
+    if getattr(args, "workflow", None) != "release":
+        return None
+    from workflows.workflow_types import WorkflowVenvType
+    from workflows.workflow_venvs import VENV_CONFIGS
+
+    return str(VENV_CONFIGS[WorkflowVenvType.V2_LLM_VLLM].venv_python)
+
+
+def _build_llm_eval_options(args: argparse.Namespace) -> Optional[LLMEvalOptions]:
+    """Bearer-token plumbing for the LLM standard-eval child (evals/release)."""
+    if getattr(args, "workflow", None) not in _LLM_EVAL_WORKFLOWS:
+        return None
+    return LLMEvalOptions(
         auth_token=_mint_jwt_if_secret(getattr(args, "jwt_secret", None)),
     )
 

@@ -90,6 +90,19 @@ def _is_llm_benchmark_run(wf, model_spec, runtime_config) -> bool:
     )
 
 
+def _is_llm_eval_run(wf, model_spec) -> bool:
+    """LLM ``--workflow evals`` / ``--workflow release`` route to v2.
+
+    Standard evals run lm-eval / lmms-eval through ``EvalsWorkflow``; release
+    additionally runs the perf benchmark. Both go through the generic run.py
+    branch (no launcher) — the eval subprocess uses the per-task venv binary.
+    """
+    return model_spec.model_type == ModelType.LLM and wf in (
+        WorkflowType.EVALS,
+        WorkflowType.RELEASE,
+    )
+
+
 def can_route_to_v2(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
     # Agentic evals, serving-bench benchmark suites, and the prefix-cache /
@@ -102,6 +115,8 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
     ):
         return True
     if _is_llm_benchmark_run(wf, model_spec, runtime_config):
+        return True
+    if _is_llm_eval_run(wf, model_spec):
         return True
     if not is_v2_routed_model(model_spec):
         return False
@@ -177,10 +192,15 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
         ]
         if runtime_config.docker_server:
             cmd.append("--docker-server")
+        _extend_if_set(cmd, "--server-url", getattr(runtime_config, "server_url", None))
         if wf == WorkflowType.SERVING_BENCH:
             _extend_if_set(
                 cmd, "--serving-bench-suites", runtime_config.serving_bench_suites
             )
+        elif _is_llm_eval_run(wf, model_spec):
+            # Standard evals (and release) need the bearer token to reach a
+            # JWT-protected server; run.py mints it from --jwt-secret/$JWT_SECRET.
+            _forward_jwt(cmd, runtime_config)
         else:
             sdxl_n = getattr(runtime_config, "sdxl_num_prompts", None)
             if sdxl_n not in (None, "", "0"):
@@ -316,12 +336,47 @@ def _ensure_v2_venv(model_spec) -> Path:
     return venv_config.venv_python
 
 
+# Standard LLM/VLM eval backends (mirrors llm_module.eval_configs). EVALS_AGENTIC
+# is provisioned by the agentic launcher, not here.
+_V2_LLM_STANDARD_EVAL_VENVS = frozenset(
+    {
+        WorkflowVenvType.EVALS_COMMON,
+        WorkflowVenvType.EVALS_META,
+        WorkflowVenvType.EVALS_VISION,
+    }
+)
+
+
+def _llm_eval_venv_types(model_spec) -> List[WorkflowVenvType]:
+    """Standard eval venvs the model's lm-eval tasks need (from EVAL_CONFIGS)."""
+    try:
+        from evals.eval_config import EVAL_CONFIGS
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("Could not import EVAL_CONFIGS (%s); skipping eval venvs.", e)
+        return []
+    cfg = EVAL_CONFIGS.get(model_spec.model_name)
+    if cfg is None:
+        return []
+    seen = {
+        t.workflow_venv_type
+        for t in cfg.tasks
+        if t.workflow_venv_type in _V2_LLM_STANDARD_EVAL_VENVS
+    }
+    return sorted(seen, key=lambda v: v.name)
+
+
 def _v2_dependency_venv_types(model_spec, wf) -> List[WorkflowVenvType]:
     venv_types: List[WorkflowVenvType] = []
     if wf in _V2_EVAL_WORKFLOWS:
         eval_venv = _V2_EVAL_VENV_BY_MODEL_TYPE.get(model_spec.model_type)
         if eval_venv is not None:
             venv_types.append(eval_venv)
+        if model_spec.model_type == ModelType.LLM:
+            venv_types.extend(_llm_eval_venv_types(model_spec))
+    # The release benchmark child runs the default perf tool (vllm) in-process
+    # under V2_RUN_SCRIPT, so its tool venv must exist up front.
+    if wf == WorkflowType.RELEASE and model_spec.model_type == ModelType.LLM:
+        venv_types.append(WorkflowVenvType.V2_LLM_VLLM)
     return venv_types
 
 

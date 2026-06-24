@@ -12,6 +12,7 @@ registry edit, not a structural change.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import ClassVar, Dict, List, Sequence, Type
 
 from test_module.task_types import MediaTaskType
@@ -54,8 +55,8 @@ class EvalsWorkflow(WorkflowExecution):
         """
         from test_module.llm_tests.llm_eval_tests import run_llm_eval
 
-        bench = self.orchestrator_metadata.llm_bench
-        auth_token = bench.auth_token if bench is not None else ""
+        opts = self.orchestrator_metadata.llm_eval
+        auth_token = opts.auth_token if opts is not None else ""
         self.logger.info("→ task=%s", _LLM_EVAL_TASK_LABEL)
         started = time.time()
         try:
@@ -206,12 +207,14 @@ class BenchmarksWorkflow(WorkflowExecution):
         from test_module.llm_tests.llm_benchmark_tests import run_llm_bench
 
         self.logger.info("→ task=%s tools=%s", _LLM_BENCH_TASK_LABEL, opts.tools)
+        venv_python = Path(opts.venv_python) if opts.venv_python else None
         return self._run_bench_task(
             _LLM_BENCH_TASK_LABEL,
             lambda: run_llm_bench(
                 self.ctx,
                 tools=opts.tools,
                 auth_token=opts.auth_token,
+                venv_python=venv_python,
             ),
         )
 

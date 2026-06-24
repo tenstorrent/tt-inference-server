@@ -2,12 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Routing tests for the v2 LLM-benchmark bridge.
-
-LLM models + ``--workflow benchmarks`` are fully ported to v2 (replacing
-v1's run_benchmarks.py + run_reports.py). These check the predicate, the
-``can_route_to_v2`` decision, and the launcher command the bridge builds.
-"""
+"""Routing tests for the v2 LLM-benchmark bridge."""
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -51,10 +46,52 @@ def test_prefix_cache_is_not_llm_bench_but_still_routes():
     assert v2_bridge.can_route_to_v2(spec, rc) is True
 
 
-def test_llm_evals_stays_on_v1():
+def test_llm_evals_routes_to_v2():
     spec, rc = _spec(ModelType.LLM), _rc(workflow="evals")
     assert v2_bridge._is_llm_benchmark_run(WorkflowType.EVALS, spec, rc) is False
-    assert v2_bridge.can_route_to_v2(spec, rc) is False
+    assert v2_bridge._is_llm_eval_run(WorkflowType.EVALS, spec) is True
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
+
+
+def test_llm_release_routes_to_v2():
+    spec, rc = _spec(ModelType.LLM), _rc(workflow="release")
+    assert v2_bridge._is_llm_eval_run(WorkflowType.RELEASE, spec) is True
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
+
+
+def test_media_eval_run_is_not_llm_eval():
+    spec = _spec(ModelType.IMAGE, name="not-a-routed-model")
+    assert v2_bridge._is_llm_eval_run(WorkflowType.EVALS, spec) is False
+    assert v2_bridge.can_route_to_v2(spec, _rc(workflow="evals")) is False
+
+
+def test_release_provisions_eval_and_bench_venvs(monkeypatch):
+    from workflows.workflow_types import WorkflowVenvType
+
+    spec = _spec(ModelType.LLM)
+    monkeypatch.setattr(
+        v2_bridge,
+        "_llm_eval_venv_types",
+        lambda ms: [WorkflowVenvType.EVALS_COMMON, WorkflowVenvType.EVALS_META],
+    )
+    venvs = v2_bridge._v2_dependency_venv_types(spec, WorkflowType.RELEASE)
+    assert WorkflowVenvType.EVALS_COMMON in venvs
+    assert WorkflowVenvType.EVALS_META in venvs
+    assert WorkflowVenvType.V2_LLM_VLLM in venvs
+
+
+def test_evals_provisions_only_eval_venvs(monkeypatch):
+    from workflows.workflow_types import WorkflowVenvType
+
+    spec = _spec(ModelType.LLM)
+    monkeypatch.setattr(
+        v2_bridge,
+        "_llm_eval_venv_types",
+        lambda ms: [WorkflowVenvType.EVALS_COMMON],
+    )
+    venvs = v2_bridge._v2_dependency_venv_types(spec, WorkflowType.EVALS)
+    assert venvs == [WorkflowVenvType.EVALS_COMMON]
+    assert WorkflowVenvType.V2_LLM_VLLM not in venvs
 
 
 def test_non_routed_media_benchmarks_stays_on_v1():
@@ -75,7 +112,7 @@ def test_build_llm_bench_cmd_forwards_tools_and_jwt():
     assert str(v2_dir / "run_llm_bench.py") in cmd
     assert cmd[cmd.index("--workflow") + 1] == "benchmarks"
     assert cmd[cmd.index("--tools") + 1] == "guidellm"
-    assert "--jwt-secret" not in cmd  # None is not forwarded
+    assert "--jwt-secret" not in cmd  
 
     cmd_jwt = v2_bridge._build_llm_bench_cmd(
         v2_dir,
