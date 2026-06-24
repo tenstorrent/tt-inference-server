@@ -217,11 +217,11 @@ _eval_config_list = [
                         "temperature": 1.0,
                         "model_info": {
                             "max_input_tokens": 256 * 1024,
-                            "max_output_tokens": 32 * 1024,
+                            "max_output_tokens": 64 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 1.0,
-                            "max_tokens": 32 * 1024,
+                            "max_tokens": 64 * 1024,
                             "timeout":  60 * 60,
                         },
                         # "llm_call_kwargs": {
@@ -272,7 +272,7 @@ _eval_config_list = [
                     temperature=1.0,
                     top_p=1.0,
                     max_input_tokens=256 * 1024,
-                    max_output_tokens=32 * 1024,
+                    max_output_tokens=64 * 1024,
                     mini_last_n_observations=15,
                     # completion_kwargs={
                     #     "extra_body": {
@@ -366,11 +366,11 @@ _eval_config_list = [
                         "temperature": 1.0,
                         "model_info": {
                             "max_input_tokens": 200 * 1024,
-                            "max_output_tokens": 32 * 1024,
+                            "max_output_tokens": 64 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 32 * 1024,
+                            "max_tokens": 64 * 1024,
                             "timeout": 60 * 60,
                         },
                     },
@@ -388,47 +388,47 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
-            # EvalTask(
-            #     task_name="swe_bench_verified",
-            #     workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-            #     score=EvalTaskScore(
-            #         published_score=79.9,
-            #         published_score_ref="https://huggingface.co/MiniMaxAI/MiniMax-M2.7",
-            #         gpu_reference_score=None,
-            #         gpu_reference_score_ref="TBD",
-            #         score_func=score_task_single_key,
-            #         score_func_kwargs={
-            #             "result_keys": ["accuracy"],
-            #             "unit": "percent",
-            #         },
-            #     ),
-            #     swebench_eval_config=SWEbenchEvalConfig(
-            #         dataset_name="SWE-bench/SWE-bench_Verified",
-            #         sweagent_subset="verified",
-            #         dataset_split="test",
-            #         agent_backend="mini-swe-agent",
-            #         n_concurrent_trials=8,
-            #         max_workers=24,
-            #         n_tasks=None,
-            #         temperature=1.0,
-            #         top_p=0.95,
-            #         max_input_tokens=200 * 1024,
-            #         max_output_tokens=32 * 1024,
-            #         mini_last_n_observations=15,
-            #         instance_ids_map={
-            #             EvalLimitMode.CI_NIGHTLY: [
-            #                 "django__django-12143",
-            #                 "pytest-dev__pytest-5262",
-            #                 "django__django-14672",
-            #                 "sympy__sympy-13551",
-            #                 "sphinx-doc__sphinx-9281",
-            #             ],
-            #         },
-            #     ),
-            #     limit_samples_map={
-            #         EvalLimitMode.SMOKE_TEST: 5,
-            #     },
-            # ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=79.9,
+                    published_score_ref="https://huggingface.co/MiniMaxAI/MiniMax-M2.7",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=8,
+                    max_workers=24,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=0.95,
+                    max_input_tokens=200 * 1024,
+                    max_output_tokens=64 * 1024,
+                    mini_last_n_observations=15,
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-12143",
+                            "pytest-dev__pytest-5262",
+                            "django__django-14672",
+                            "sympy__sympy-13551",
+                            "sphinx-doc__sphinx-9281",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
         ],
     ),
     EvalConfig(

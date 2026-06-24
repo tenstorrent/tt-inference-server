@@ -8,7 +8,6 @@ import logging
 import os
 import sys
 import time
-from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -32,9 +31,7 @@ from utils.remote_readiness import _wait_for_remote_openai_ready
 from benchmarking.benchmark_config import (
     BENCHMARK_CONFIGS,
     BenchmarkConfig,
-    calculate_vision_tokens,
     expand_concurrency_sweep_params,
-    get_num_prompts,
     powers_of_two_up_to,
     select_smoke_test_benchmark_config,
 )
@@ -78,76 +75,6 @@ BENCHMARKS_TASK_TYPES = [
     ModelType.TEXT_TO_SPEECH,
     ModelType.VIDEO,
 ]
-
-# Tenstorrent console limits: 128K total context, 50K max input (ISL), 32 in-flight.
-REMOTE_CONSOLE_MAX_ISL = 51200  # 50 * 1024
-REMOTE_CONSOLE_MAX_CONTEXT = 131072  # 128 * 1024
-REMOTE_CONSOLE_MAX_CONCURRENCY = 32
-
-
-
-def _param_fits_remote_console(params, *, model_name: str) -> bool:
-    """Return False when a sweep exceeds remote console input/total context limits."""
-    if params.isl is None or params.osl is None:
-        return True
-
-    isl = int(params.isl)
-    osl = int(params.osl)
-    if isl > REMOTE_CONSOLE_MAX_ISL:
-        return False
-
-    vision_tokens = 0
-    if getattr(params, "task_type", "text") == "vlm":
-        vision_tokens = calculate_vision_tokens(
-            params.image_height,
-            params.image_width,
-            params.images_per_prompt,
-            model_name,
-        )
-    return isl + osl + vision_tokens <= REMOTE_CONSOLE_MAX_CONTEXT
-
-
-def _adjust_params_for_remote_console(params_list, *, model_name: str):
-    adjusted = []
-    skipped = 0
-    capped = 0
-    for params in params_list:
-        if not _param_fits_remote_console(params, model_name=model_name):
-            skipped += 1
-            continue
-        if (
-            params.max_concurrency is not None
-            and params.max_concurrency > REMOTE_CONSOLE_MAX_CONCURRENCY
-        ):
-            new_concurrency = REMOTE_CONSOLE_MAX_CONCURRENCY
-            if params.isl is not None and params.osl is not None:
-                new_num_prompts = get_num_prompts(
-                    params.isl, params.osl, new_concurrency
-                )
-            else:
-                new_num_prompts = params.num_prompts
-            params = replace(
-                params,
-                max_concurrency=new_concurrency,
-                num_prompts=new_num_prompts,
-            )
-            capped += 1
-        adjusted.append(params)
-    if skipped:
-        logger.info(
-            "Skipped %s benchmark param(s) exceeding remote console limits "
-            "(max_isl=%s, max_context=%s).",
-            skipped,
-            REMOTE_CONSOLE_MAX_ISL,
-            REMOTE_CONSOLE_MAX_CONTEXT,
-        )
-    if capped:
-        logger.info(
-            "Capped max_concurrency to %s on %s benchmark param(s) for remote console.",
-            REMOTE_CONSOLE_MAX_CONCURRENCY,
-            capped,
-        )
-    return adjusted
 
 
 def _is_smoke_test_mode(runtime_config: RuntimeConfig) -> bool:
@@ -285,7 +212,6 @@ def _benchmark_server_url_args(
         return ["--base-url", base_url]
 
     return ["--host", host, "--port", port]
-
 
 
 def build_benchmark_command(
@@ -587,10 +513,6 @@ def main():
         if device in task.param_map
         for param in task.param_map[device]
     ]
-    # if remote_server:
-    #     all_params = _adjust_params_for_remote_console(
-    #         all_params, model_name=model_spec.model_name
-    #     )
 
     if model_spec.model_type in BENCHMARKS_TASK_TYPES:
         return_code = run_benchmarks(

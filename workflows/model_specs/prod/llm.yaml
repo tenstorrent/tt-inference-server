@@ -1035,9 +1035,9 @@ templates:
   tt_metal_commit: remote  # placeholder: model is served externally, not built locally
   inference_engine: VLLM
   device_model_specs:
-    - device: GPU
-      max_concurrency: 16
-      max_context: 131072  # 128 * 1024; remote console MAX_ISL is 50K (see run_benchmarks)
+    - device: SUPER_CLUSTER
+      max_concurrency: 32
+      max_context: 262144  # 256 * 1024; 
       default_impl: true
       # Shared console endpoint intermittently 500s/403s (WAF) under load;
       # extra retries prevent transient failures from dropping eval samples.
@@ -1061,9 +1061,9 @@ templates:
   tt_metal_commit: remote  # placeholder: model is served externally, not built locally
   inference_engine: VLLM
   device_model_specs:
-    - device: GPU
+    - device: SUPER_CLUSTER
       max_concurrency: 32
-      max_context: 204800  # 200 * 1024; remote console MAX_ISL is 50K (see run_benchmarks)
+      max_context: 204800  # 200 * 1024; 
       default_impl: true
       # Shared console endpoint intermittently 500s/403s (WAF) under load;
       # extra retries prevent transient failures from dropping eval samples.
@@ -1088,9 +1088,9 @@ templates:
   tt_metal_commit: remote  # placeholder: model is served externally, not built locally
   inference_engine: VLLM
   device_model_specs:
-    - device: GPU
-      max_concurrency: 16
-      max_context: 131072  # 128 * 1024; remote console MAX_ISL is 50K (see run_benchmarks)
+    - device: SUPER_CLUSTER
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024; 
       default_impl: true
       # Shared console endpoint intermittently 500s/403s (WAF) under load;
       # extra retries prevent transient failures from dropping eval samples.
