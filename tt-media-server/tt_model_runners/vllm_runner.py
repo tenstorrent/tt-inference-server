@@ -86,6 +86,17 @@ class VLLMForgeRunner(BaseDeviceRunner):
         # config + filters weights at load, so only N layers compile/run). Slashes
         # compile time for pipecleaning. 0/unset = full model. e.g. NUM_HIDDEN_LAYERS=1.
         num_hidden_layers = os.getenv("NUM_HIDDEN_LAYERS")
+        # Lower bound for prefill request-batch warmup (tt-xla #5281): when set
+        # below max_num_seqs, the plugin also precompiles a smaller-batch prefill
+        # graph (e.g. b1) and selects it for low-concurrency prefills (lower TTFT)
+        # while decode stays at max_num_seqs. Only passed when set, so backends
+        # without the min_num_seqs TTConfig field are unaffected.
+        min_num_seqs = os.getenv("MIN_NUM_SEQS")
+        # b1-prefill batch threshold (tt-xla #5281): when <= this many prefills
+        # are pending, the scheduler serves them on the small (min_num_seqs/b1)
+        # graph serially instead of one wasted-row b32 batch. Only meaningful
+        # alongside MIN_NUM_SEQS. Only passed when set.
+        prefill_batch_threshold = os.getenv("PREFILL_BATCH_THRESHOLD")
         additional_config = {
             "enable_const_eval": True,
             "min_context_len": self.settings.vllm.min_context_length,
@@ -101,6 +112,10 @@ class VLLMForgeRunner(BaseDeviceRunner):
             additional_config["fp32_dest_acc_en"] = fp32_dest_acc_en.lower() == "true"
         if num_hidden_layers:
             additional_config["num_hidden_layers"] = int(num_hidden_layers)
+        if min_num_seqs:
+            additional_config["min_num_seqs"] = int(min_num_seqs)
+        if prefill_batch_threshold:
+            additional_config["prefill_batch_threshold"] = int(prefill_batch_threshold)
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
@@ -172,6 +187,10 @@ class VLLMForgeRunner(BaseDeviceRunner):
 
         start = time.time()
         num_tokens = 0
+        gen_total = (
+            0  # DECODE-PROBE: running total (output_kind=DELTA -> per-step delta)
+        )
+        final_ro = None
         async for request_output in self.llm_engine.generate(
             self._build_vllm_input(request), sampling_params, request._task_id
         ):
@@ -181,6 +200,8 @@ class VLLMForgeRunner(BaseDeviceRunner):
 
             # token_ids is cumulative in vLLM, so the last value is the total
             num_tokens = len(outputs[0].token_ids)
+            gen_total += num_tokens  # DECODE-PROBE
+            final_ro = request_output  # DECODE-PROBE
 
             for output in outputs:
                 chunk_text = output.text
@@ -204,6 +225,26 @@ class VLLMForgeRunner(BaseDeviceRunner):
         self.logger.info(
             f"Device {self.device_id}: Streaming generation completed: "
             f"{num_tokens} tokens in {duration:.4f} seconds ({rate:.2f} tok/sec)"
+        )
+
+        # DECODE-PROBE: split engine-internal decode rate (vLLM RequestOutput.metrics
+        # last_token_ts - first_token_ts) from the runner/client wall rate. If
+        # engine-internal stays flat while client_rate degrades with output length,
+        # the cost is the Python async per-token serving path, not the engine.
+        eng_rate = None
+        try:
+            m = final_ro.metrics if final_ro is not None else None
+            ts0 = getattr(m, "first_token_ts", None)
+            ts1 = getattr(m, "last_token_ts", None)
+            if ts0 and ts1 and gen_total > 1 and (ts1 - ts0) > 0:
+                eng_rate = (gen_total - 1) / (ts1 - ts0)
+        except Exception:
+            pass
+        client_rate = (gen_total / duration) if duration > 0 else 0.0
+        self.logger.info(
+            f"[DECODE-PROBE] dev={self.device_id} gen_tokens={gen_total} "
+            f"client_rate={client_rate:.2f} engine_internal_rate="
+            f"{eng_rate if eng_rate is None else round(eng_rate, 2)}"
         )
 
         yield CompletionOutput(
