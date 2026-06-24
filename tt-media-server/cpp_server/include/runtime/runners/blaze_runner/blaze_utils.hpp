@@ -11,7 +11,9 @@
 #include "domain/llm/sequence.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
 #include "scheduler/decode/mock_migration_client.hpp"
+#ifdef ENABLE_BLAZE_MIGRATION
 #include "scheduler/migration_layer_client_adapter.hpp"
+#endif
 #include "scheduler/mock_migration_client.hpp"
 #include "tt_llm_engine/pipeline/channel_configs.hpp"
 #include "tt_llm_engine/pipeline/prefill_pipeline_config.hpp"
@@ -254,10 +256,16 @@ inline std::unique_ptr<sch::MigrationClientInterface>
 makeMigrationClientInterface(const tt::config::LLMConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
+#ifdef ENABLE_BLAZE_MIGRATION
       return std::make_unique<sch::MigrationLayerClientAdapter>(
           tt::config::migrationCmdQueueName(),
           tt::config::migrationTableQueueName(),
           tt::config::migrationRespQueueName());
+#else
+      throw std::runtime_error(
+          "LLM_DEVICE_BACKEND=pipeline_manager requires a build with "
+          "--blaze-with-migration");
+#endif
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       if (tt::config::enableMigration()) {
         return std::make_unique<sch::MockMigrationClient>();
@@ -273,10 +281,16 @@ inline std::unique_ptr<sch::MigrationClientInterface>
 makeDecodeMigrationClientInterface(const tt::config::LLMConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
+#ifdef ENABLE_BLAZE_MIGRATION
       return std::make_unique<sch::MigrationLayerClientAdapter>(
           tt::config::migrationCmdQueueName(),
           tt::config::migrationTableQueueName(),
           tt::config::migrationRespQueueName());
+#else
+      throw std::runtime_error(
+          "LLM_DEVICE_BACKEND=pipeline_manager requires a build with "
+          "--blaze-with-migration");
+#endif
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       if (tt::config::enableMigration()) {
         return std::make_unique<ds::MockMigrationClient>();
