@@ -163,6 +163,10 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 #   - CUDA-only packages never used on TT hardware
 #   - Packages from tt-metal's create_venv.sh not imported by tt-media-server
 # Keep: ctranslate2, onnxruntime (real whisperx deps used in audio_manager.py)
+# opencv note: whisperx pulls opencv-python (full GUI build) as a transitive dep,
+#   while tt-metal's venv already has opencv-python-headless. Having both installed
+#   simultaneously produces a broken cv2 (IMREAD_COLOR missing). Remove the full
+#   GUI build; keep headless which is correct for a display-less server.
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && CUDA_PKGS=\$(uv pip list 2>/dev/null | grep -i '^nvidia-' | awk '{print \$1}' | tr '\n' ' ') \
     && if [ -n \"\${CUDA_PKGS}\" ]; then \
@@ -182,7 +186,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
         bokeh \
         dash \
         llvmlite \
-        opencv-python-headless \
+        opencv-python \
         2>/dev/null || true"
 
 # Fix GPG keys before installing cpp_server dependencies
