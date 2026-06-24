@@ -79,10 +79,6 @@ templates:
       # warmup). Run UNet-only on device (VAE/CLIP on CPU) — verified ~16s/image.
       env_vars:
         TTXLA_SDXL_FULL_ON_DEVICE: "false"
-    - device: P150X8
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: false
     - device: P300X2
       max_concurrency: 1
       max_context: 65536  # 64 * 1024

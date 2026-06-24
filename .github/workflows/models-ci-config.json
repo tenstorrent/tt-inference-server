@@ -674,14 +674,10 @@
           "ci": {
             "nightly": {
               "devices": [
-                "N150",
-                "P150X8"
+                "N150"
               ],
               "device-args": {
                 "N150": {
-                  "additional-args": "--impl sdxl-forge"
-                },
-                "P150X8": {
                   "additional-args": "--impl sdxl-forge"
                 }
               }
