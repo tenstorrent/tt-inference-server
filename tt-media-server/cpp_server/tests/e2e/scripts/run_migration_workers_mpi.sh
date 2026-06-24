@@ -14,7 +14,9 @@
 # MC_BIND_ADDRESS (127.0.0.1).
 set -uo pipefail
 
-readonly NUM_WORKERS=20
+NUM_PREFILL="${NUM_PREFILL:-4}"
+NUM_DECODE="${NUM_DECODE:-16}"
+readonly NUM_WORKERS=$(( NUM_PREFILL + NUM_DECODE ))
 WORKER_BIN="${WORKER_BIN:-./build/bringup_mooncake_worker}"
 HTTP_PORT="${HTTP_PORT:-18080}"
 HOST_DRAM_BYTES="${HOST_DRAM_BYTES:-1048576}"
@@ -85,7 +87,7 @@ else
   echo "Metadata service ready at ${META_URI}"
 fi
 
-echo "Launching ${NUM_WORKERS} workers (4 prefill + 16 decode) via mpirun..."
+echo "Launching ${NUM_WORKERS} workers (${NUM_PREFILL} prefill + ${NUM_DECODE} decode) via mpirun..."
 : >"${MPI_LOG}"
 # --oversubscribe: 20 ranks on one CI host with fewer cores.
 # --tag-output: prefix each line with its rank for debuggable logs.
@@ -94,6 +96,8 @@ WORKER_BIN="${WORKER_BIN}" \
 METADATA="${META_URI}" \
 HOST_DRAM_BYTES="${HOST_DRAM_BYTES}" \
 DISCOVERY_TIMEOUT_SEC="${DISCOVERY_TIMEOUT_SEC}" \
+NUM_PREFILL="${NUM_PREFILL}" \
+NUM_DECODE="${NUM_DECODE}" \
   mpirun --oversubscribe --tag-output -np "${NUM_WORKERS}" \
     bash "${RANK_LAUNCH}" >"${MPI_LOG}" 2>&1 &
 mpi_pid=$!
