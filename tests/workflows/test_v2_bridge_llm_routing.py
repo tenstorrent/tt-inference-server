@@ -72,7 +72,10 @@ def test_release_provisions_eval_and_bench_venvs(monkeypatch):
     monkeypatch.setattr(
         v2_bridge,
         "_llm_eval_venv_types",
-        lambda ms: [WorkflowVenvType.EVALS_COMMON, WorkflowVenvType.EVALS_META],
+        lambda ms, rc=None: [
+            WorkflowVenvType.EVALS_COMMON,
+            WorkflowVenvType.EVALS_META,
+        ],
     )
     venvs = v2_bridge._v2_dependency_venv_types(spec, WorkflowType.RELEASE)
     assert WorkflowVenvType.EVALS_COMMON in venvs
@@ -87,11 +90,49 @@ def test_evals_provisions_only_eval_venvs(monkeypatch):
     monkeypatch.setattr(
         v2_bridge,
         "_llm_eval_venv_types",
-        lambda ms: [WorkflowVenvType.EVALS_COMMON],
+        lambda ms, rc=None: [WorkflowVenvType.EVALS_COMMON],
     )
     venvs = v2_bridge._v2_dependency_venv_types(spec, WorkflowType.EVALS)
     assert venvs == [WorkflowVenvType.EVALS_COMMON]
     assert WorkflowVenvType.V2_LLM_VLLM not in venvs
+
+
+def _ev_task(name, venv):
+    return SimpleNamespace(task_name=name, workflow_venv_type=venv)
+
+
+def test_selected_eval_tasks_eval_samples_filters_to_requested():
+    from workflows.workflow_types import WorkflowVenvType as V
+
+    tasks = [
+        _ev_task("meta_gpqa", V.EVALS_META),
+        _ev_task("longbench_single_e", V.EVALS_COMMON),
+    ]
+    rc = SimpleNamespace(
+        eval_samples='{"longbench_single_e": [0, 1, 2]}', limit_samples_mode=None
+    )
+    sel = v2_bridge._selected_eval_tasks(tasks, rc)
+    assert [t.task_name for t in sel] == ["longbench_single_e"]
+
+
+def test_selected_eval_tasks_smoke_keeps_first_only():
+    from workflows.workflow_types import WorkflowVenvType as V
+
+    tasks = [
+        _ev_task("meta_gpqa", V.EVALS_META),
+        _ev_task("longbench_single_e", V.EVALS_COMMON),
+    ]
+    rc = SimpleNamespace(eval_samples=None, limit_samples_mode="smoke-test")
+    sel = v2_bridge._selected_eval_tasks(tasks, rc)
+    assert [t.task_name for t in sel] == ["meta_gpqa"]
+
+
+def test_selected_eval_tasks_no_narrowing_returns_all():
+    from workflows.workflow_types import WorkflowVenvType as V
+
+    tasks = [_ev_task("a", V.EVALS_COMMON), _ev_task("b", V.EVALS_META)]
+    rc = SimpleNamespace(eval_samples=None, limit_samples_mode=None)
+    assert v2_bridge._selected_eval_tasks(tasks, rc) == tasks
 
 
 def test_non_routed_media_benchmarks_stays_on_v1():
