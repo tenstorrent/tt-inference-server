@@ -2654,14 +2654,27 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         agentic_file_name_pattern = get_agentic_result_file_pattern(
             model_spec, eval_run_id
         )
+        hf_eval_id = model_spec.hf_model_repo.replace("/", "__")
         agentic_file_path_patterns = [
             # v1 path: agentic tasks run inside the evals workflow.
             f"{get_default_workflow_root_log_dir()}/evals_output/{agentic_file_name_pattern}",
-            # v2 path: --workflow agentic writes Harbor result.json (same format
-            # and eval_<id>/agentic/<task>/result.json layout) under reports_output/agentic.
+            # v2 path (legacy layout): eval_<model_id>/agentic/<task>/result.json
+            # directly under reports_output/agentic.
             f"{get_default_workflow_root_log_dir()}/reports_output/agentic/{agentic_file_name_pattern}",
-            # explicit output dir for the current run.
+            # v2 path (current layout): run_agentic.py nests output under
+            # reports_output/agentic/<model>_<device>_agentic/eval_<hf_model>/agentic/<task>/.
+            f"{get_default_workflow_root_log_dir()}/reports_output/agentic/*/eval_{hf_eval_id}/agentic/*/result.json",
+            # explicit output dir for the current run (both layouts).
             str(Path(args.output_path) / agentic_file_name_pattern),
+            str(
+                Path(args.output_path)
+                / "agentic"
+                / "*"
+                / f"eval_{hf_eval_id}"
+                / "agentic"
+                / "*"
+                / "result.json"
+            ),
         ]
         seen_patterns: set[str] = set()
         for pattern in agentic_file_path_patterns:
