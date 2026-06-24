@@ -558,7 +558,8 @@ class TestMainWorkflowIntegration:
         """Test main run.py workflow for benchmarks without docker server.
 
         Uses a post-0.11 model — pre-0.11 specs are refused by
-        validate_runtime_args (_check_image_version_supported).
+        validate_runtime_args (_check_image_version_supported). LLM benchmarks
+        route to the v2 engine (run_v2_workflows), not the v1 run_workflows.
         """
         test_args = [
             "run.py",
@@ -571,16 +572,18 @@ class TestMainWorkflowIntegration:
         ]
 
         with patch("sys.argv", test_args), patch(
-            "run.run_workflows",
+            "run.run_v2_workflows",
             return_value=[WorkflowResult(workflow_name="benchmarks", return_code=0)],
+        ) as mock_run_v2_workflows, patch(
+            "run.run_workflows"
         ) as mock_run_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
             # Run main
             result = main()
 
-            # Verify workflow ran without setup_host
-            assert mock_run_workflows.called
+            assert mock_run_v2_workflows.called
+            assert not mock_run_workflows.called
             assert result == 0
 
     def test_main_returns_one_when_any_workflow_fails(
@@ -589,7 +592,9 @@ class TestMainWorkflowIntegration:
         """Test main run.py returns failure when any workflow result is non-zero.
 
         Uses a post-0.11 model — pre-0.11 specs are refused by
-        validate_runtime_args (_check_image_version_supported).
+        validate_runtime_args (_check_image_version_supported). LLM benchmarks
+        route to the v2 engine (run_v2_workflows); main() propagates a non-zero
+        return code from either dispatch path identically.
         """
         test_args = [
             "run.py",
@@ -602,17 +607,20 @@ class TestMainWorkflowIntegration:
         ]
 
         with patch("sys.argv", test_args), patch(
-            "run.run_workflows",
+            "run.run_v2_workflows",
             return_value=[
                 WorkflowResult(workflow_name="benchmarks", return_code=1),
                 WorkflowResult(workflow_name="reports", return_code=0),
             ],
+        ) as mock_run_v2_workflows, patch(
+            "run.run_workflows"
         ) as mock_run_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
             result = main()
 
-            assert mock_run_workflows.called
+            assert mock_run_v2_workflows.called
+            assert not mock_run_workflows.called
             assert result == 1
 
     def test_main_release_raises_when_validate_setup_fails(

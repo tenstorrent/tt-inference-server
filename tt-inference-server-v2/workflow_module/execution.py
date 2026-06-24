@@ -12,6 +12,7 @@ dispatcher:
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from abc import ABC
@@ -24,7 +25,7 @@ from report_module import (
     ReportGenerator,
     ReportSchema,
     acceptance_criteria_check,
-    format_acceptance_summary_markdown,
+    build_acceptance_export,
 )
 from test_module.task_types import MediaTaskType
 
@@ -107,6 +108,21 @@ class ServingBenchOptions:
 
 
 @dataclass(frozen=True)
+class LLMBenchOptions:
+    """LLM performance-benchmark knobs forwarded to ``BenchmarksWorkflow``.
+
+    ``tools`` value selecting the perf-tool driver
+    (``vllm`` / ``aiperf`` / ``genai`` / ``guidellm``).
+    ``auth_token`` is the bearer token (minted JWT) sent to the server.
+    Threaded through ``OrchestratorMetadata`` so ``run.py`` stays decoupled
+    from ``llm_module``.
+    """
+
+    tools: str = "vllm"
+    auth_token: str = ""
+
+
+@dataclass(frozen=True)
 class OrchestratorMetadata:
     """Top-level metadata the per-task runners can't see themselves.
 
@@ -120,6 +136,7 @@ class OrchestratorMetadata:
     prefix_cache: Optional[PrefixCacheOptions] = None
     spec_decode: Optional[SpecDecodeOptions] = None
     serving_bench: Optional[ServingBenchOptions] = None
+    llm_bench: Optional[LLMBenchOptions] = None
 
 
 class WorkflowExecution(ABC):
@@ -259,20 +276,31 @@ class WorkflowExecution(ABC):
 
     def apply_acceptance_criteria(self, schema: ReportSchema) -> Tuple[bool, list]:
         accepted, blockers, categories = acceptance_criteria_check(schema)
-        schema.metadata["acceptance_summary_markdown"] = (
-            format_acceptance_summary_markdown(accepted, blockers, categories)
+        schema.metadata.update(
+            build_acceptance_export(
+                accepted, blockers, categories, self._model_status()
+            )
         )
-        schema.metadata["acceptance_criteria"] = {
-            "accepted": accepted,
-            "blockers": blockers,
-            "categories": [c.to_dict() for c in categories],
-        }
         self.logger.info(
             "Acceptance: %s (%d blocker(s))",
             "PASS" if accepted else "FAIL",
             len(blockers),
         )
         return accepted, blockers
+
+    def _model_status(self) -> Optional[str]:
+        path = self.orchestrator_metadata.runtime_model_spec_json
+        if not path:
+            return None
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return None
+        spec = data.get("runtime_model_spec") if isinstance(data, dict) else None
+        if isinstance(spec, dict):
+            return spec.get("status")
+        return None
 
     def inject_metadata(self, schema: ReportSchema) -> None:
         meta = schema.metadata
@@ -295,6 +323,7 @@ class WorkflowExecution(ABC):
 
 __all__ = [
     "ServingBenchOptions",
+    "LLMBenchOptions",
     "OrchestratorMetadata",
     "PrefixCacheOptions",
     "SpecDecodeOptions",

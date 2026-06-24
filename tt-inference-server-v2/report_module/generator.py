@@ -19,15 +19,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
 from report_module import renderers
+from report_module.acceptance_criteria import ACCEPTANCE_EXPORT_KEYS
 from report_module.report_file_saver import ReportFileSaver
 from report_module.schema import Block, ReportSchema, SchemaLike
 
 logger = logging.getLogger(__name__)
 
 
-_METADATA_RENDERING_KEYS = frozenset(
-    {"acceptance_summary_markdown", "acceptance_criteria"}
-)
+_METADATA_RENDERING_KEYS = frozenset(ACCEPTANCE_EXPORT_KEYS)
 
 
 @dataclass(frozen=True)
@@ -66,11 +65,10 @@ class ReportGenerator:
 
         self._file_saver.write_markdown(release_md, md_path, strict=True)
         json_payload = normalized.to_dict()
-        json_payload["metadata"] = {
-            k: v
-            for k, v in json_payload.get("metadata", {}).items()
-            if k not in _METADATA_RENDERING_KEYS
-        }
+        metadata = json_payload.get("metadata", {})
+        for key in ACCEPTANCE_EXPORT_KEYS:
+            if key in metadata:
+                json_payload[key] = metadata.pop(key)
         self._file_saver.write_json(json_payload, json_path, strict=True)
         self._write_report_data(out_dir, json_payload)
         logger.info("Generated report: md=%s, json=%s", md_path, json_path)
