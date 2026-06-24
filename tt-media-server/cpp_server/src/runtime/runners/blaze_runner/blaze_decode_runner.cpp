@@ -52,8 +52,13 @@ BlazeDecodeRunner::BlazeDecodeRunner(
     migrationClientInterface->connect_to(
         tt::config::migrationPrefillEndpointId(), "CONNECTOR", "ds_pd");
   }
-  decodeScheduler = std::make_unique<ds::DecodeScheduler>(
-      pipelineConfig, managerParams, std::move(migrationClientInterface));
+  if (tt::config::specDecodeMode() == "mtp") {
+    managerParams.spec_decode_mode = ds::SpecDecodeMode::MTP;
+    managerParams.max_spec_tokens =
+        static_cast<uint32_t>(tt::config::mtpLevel());
+  }
+  decodeScheduler =
+      std::make_unique<ds::DecodeScheduler>(pipelineConfig, managerParams);
   TT_LOG_INFO(
       "BlazeDecodeRunner: DecodeScheduler constructed, calling start()...");
   decodeScheduler->start();

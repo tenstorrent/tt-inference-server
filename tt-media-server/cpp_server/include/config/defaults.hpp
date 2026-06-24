@@ -62,6 +62,9 @@ constexpr const char* KAFKA_GROUP_ID = "migration-workers";
 
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 
+constexpr const char* SPEC_DECODE_MODE = "none";
+constexpr size_t MTP_LEVEL = 1;
+
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
 constexpr const char* TT_RESULT_QUEUE = "tt_results";
 constexpr const char* TT_CANCEL_QUEUE = "tt_cancels";
