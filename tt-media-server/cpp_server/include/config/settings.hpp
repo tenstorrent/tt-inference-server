@@ -219,6 +219,10 @@ uint32_t modelNumLayers();
  * defaults::PREFILL_CHUNK_SIZE. */
 uint32_t prefillChunkSize();
 
+/** Migrate full KV from MIGRATE_FULL_KV. Default:
+ * defaults::MIGRATE_FULL_KV. */
+bool migrateFullKV();
+
 /** Enable migration from ENABLE_MIGRATION. Default:
  * defaults::ENABLE_MIGRATION. */
 bool enableMigration();

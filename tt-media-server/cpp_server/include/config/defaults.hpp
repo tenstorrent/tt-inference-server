@@ -48,6 +48,7 @@ constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
 constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
 constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 40;
 constexpr bool USE_FAST_MODE = false;
+constexpr bool MIGRATE_FULL_KV = false;
 constexpr bool ENABLE_MIGRATION = false;
 constexpr const char* MIGRATION_CMD_QUEUE_NAME = "mig_ep0_cmd";
 constexpr const char* MIGRATION_TABLE_QUEUE_NAME = "mig_ep0_table";

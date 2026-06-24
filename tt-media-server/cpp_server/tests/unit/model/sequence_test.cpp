@@ -191,6 +191,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   orig.setDecodePositionId(18);
   orig.setDecodeSkipTokens(11);
   orig.setMigrationId(0xDEADBEEFCAFE1234ULL);
+  orig.setStartsInThinking(true);
 
   std::ostringstream os;
   orig.serialize(os);
@@ -215,6 +216,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   EXPECT_EQ(restored.numCachedBlocks(), orig.numCachedBlocks());
   ASSERT_TRUE(restored.getMigrationId().has_value());
   EXPECT_EQ(*restored.getMigrationId(), *orig.getMigrationId());
+  EXPECT_EQ(restored.getStartsInThinking(), orig.getStartsInThinking());
 
   const auto& sp = restored.getSamplingParams();
   const auto& spOrig = orig.getSamplingParams();

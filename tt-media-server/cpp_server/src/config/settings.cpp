@@ -233,6 +233,10 @@ std::string blazeSocketDescriptorPrefix() {
   return cached;
 }
 
+bool migrateFullKV() {
+  return envBool("MIGRATE_FULL_KV", defaults::MIGRATE_FULL_KV);
+}
+
 unsigned pmConnectTimeoutMs() {
   return static_cast<unsigned>(
       envUlong("PM_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));

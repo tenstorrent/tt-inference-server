@@ -128,6 +128,9 @@ void Sequence::serialize(std::ostream& os) const {
     os.write(reinterpret_cast<const char*>(&migrationIdValue),
              sizeof(migrationIdValue));
   }
+  uint8_t startsInThinkingFlag = startsInThinking_ ? 1 : 0;
+  os.write(reinterpret_cast<const char*>(&startsInThinkingFlag),
+           sizeof(startsInThinkingFlag));
 }
 
 Sequence Sequence::deserialize(std::istream& is) {
