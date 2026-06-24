@@ -112,7 +112,7 @@ def test_build_llm_bench_cmd_forwards_tools_and_jwt():
     assert str(v2_dir / "run_llm_bench.py") in cmd
     assert cmd[cmd.index("--workflow") + 1] == "benchmarks"
     assert cmd[cmd.index("--tools") + 1] == "guidellm"
-    assert "--jwt-secret" not in cmd  
+    assert "--jwt-secret" not in cmd
 
     cmd_jwt = v2_bridge._build_llm_bench_cmd(
         v2_dir,

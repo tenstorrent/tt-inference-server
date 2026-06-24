@@ -30,7 +30,6 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from evals.eval_config import EVAL_CONFIGS, EvalConfig, EvalTask
-from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
@@ -105,15 +104,6 @@ def _inject_seed_into_gen_kwargs(gen_kwargs: dict, seed: int) -> dict:
     out["seed"] = str(seed)
     return out
 
-
-# fmt: off
-IMAGE_RESOLUTIONS = [
-    (512, 512),
-    (512, 1024),
-    (1024, 512),
-    (1024, 1024)
-    ]
-# fmt: on
 
 EVAL_TASK_TYPES = [
     ModelType.IMAGE,
@@ -323,23 +313,8 @@ def _setup_openai_api_key(args, logger):
     logger.info("OPENAI_API_KEY environment variable set.")
 
 
-def _has_agentic_eval_tasks(eval_config: EvalConfig) -> bool:
-    return any(
-        task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
-        for task in eval_config.tasks
-    )
-
-
 def _get_openai_base_url(service_port) -> str:
     return f"http://127.0.0.1:{service_port}/v1"
-
-
-def _setup_agentic_eval_env(service_port):
-    base_url = _get_openai_base_url(service_port)
-    os.environ.setdefault("OPENAI_API_KEY", os.getenv("API_KEY", "EMPTY"))
-    os.environ.setdefault("OPENAI_BASE_URL", base_url)
-    os.environ.setdefault("OPENAI_API_BASE", base_url)
-    logger.info("OpenAI-compatible environment configured for agentic evals.")
 
 
 def _resolve_task_names(
@@ -851,17 +826,6 @@ def main():
 
     # runtime config loaded from JSON
     device_str = runtime_config.device
-    disable_trace_capture = runtime_config.disable_trace_capture
-
-    # Automatically control trace capture based on has_builtin_warmup
-    # Only apply automatic logic if user hasn't explicitly set --disable-trace-capture
-    if not disable_trace_capture and hasattr(model_spec, "has_builtin_warmup"):
-        if model_spec.has_builtin_warmup:
-            disable_trace_capture = True
-            logger.info(
-                "Model has builtin warmup (has_builtin_warmup=True), "
-                "automatically disabling trace capture for evals workflow"
-            )
 
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_EVALS_CONFIG
@@ -906,10 +870,6 @@ def main():
     if has_code_eval_tasks:
         os.environ["HF_ALLOW_CODE_EVAL"] = "1"
         logger.info("Set HF_ALLOW_CODE_EVAL=1 for code evaluation tasks")
-
-    has_agentic_eval_tasks = _has_agentic_eval_tasks(eval_config)
-    if has_agentic_eval_tasks:
-        _setup_agentic_eval_env(runtime_config.service_port)
 
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
@@ -979,79 +939,15 @@ def main():
         )
         return 1
 
-    # For LLM models, use PromptClient for health checks and trace capture
+    # LLM evals are served by the v2 engine (tt-inference-server-v2/run.py via
+    # workflows/v2_bridge). The v1 LLM eval path has been retired; reaching here
+    # means can_route_to_v2 did not route this LLM to v2 (a routing regression).
     else:
-        prompt_client = PromptClient(
-            env_config,
-            model_spec=model_spec,
-            runtime_config=runtime_config,
+        raise SystemExit(
+            f"LLM evals for {model_spec.model_name!r} are served by the v2 engine; "
+            "the v1 LLM eval path has been retired. Reaching this branch means "
+            "workflows/v2_bridge.can_route_to_v2 did not route this model to v2."
         )
-        logger.info(
-            "Using tensor_cache_timeout:=%ss as the vLLM server startup budget (covers tensor cache generation and warm-cache restarts on multi-DP-engine deployments)",
-            prompt_client.cache_monitor.get_tensor_cache_timeout(),
-        )
-        if not prompt_client.wait_for_healthy():
-            logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
-            return 1
-
-        if has_agentic_eval_tasks:
-            logger.info("Skipping trace capture for agentic eval tasks.")
-        elif not disable_trace_capture:
-            if "image" in model_spec.supported_modalities:
-                prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
-            else:
-                prompt_client.capture_traces()
-
-        # Execute lm_eval for each task.
-        logger.info("Running vLLM evals client ...")
-        device_max_context = getattr(
-            getattr(model_spec, "device_model_spec", None), "max_context", None
-        )
-        return_codes = []
-        for task in eval_config.tasks:
-            # Skip if device can't fit this task's prompts (avoids 4xx retry-storm).
-            min_ctx = getattr(task, "min_context_required", None)
-            if min_ctx and device_max_context and device_max_context < min_ctx:
-                logger.warning(
-                    f"Skipping {task.task_name}: requires max_context >= {min_ctx}, "
-                    f"device provides {device_max_context}."
-                )
-                return_codes.append(0)
-                continue
-
-            health_check = prompt_client.get_health()
-            if health_check.status_code != 200:
-                logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
-                return 1
-
-            logger.info(
-                f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
-            )
-
-            logger.info(f"Running lm_eval for:\n {task}")
-            cmd = build_eval_command(
-                task,
-                model_spec,
-                device_str,
-                args.output_path,
-                runtime_config.service_port,
-                runtime_config=runtime_config,
-                deploy_url=env_config.deploy_url,
-            )
-            if not cmd:
-                logger.info("Skipping task %s (no command built)", task.task_name)
-                return_codes.append(0)
-                continue
-            return_code = run_command(command=cmd, logger=logger, env=env_vars)
-            return_codes.append(return_code)
-
-        if all(return_code == 0 for return_code in return_codes):
-            logger.info("✅ Completed evals")
-            return 0
-        logger.error(
-            f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
-        )
-        return 1
 
 
 def run_media_evals(

@@ -144,7 +144,7 @@ class TestLLMBenchOptions:
                 spec_decode=False,
             )
         )
-        assert opts.tools == "vllm" 
+        assert opts.tools == "vllm"
         assert opts.venv_python is not None
         assert "vllm" in opts.venv_python.lower()
 
@@ -160,9 +160,9 @@ class TestMintJwt:
 
     def test_secret_mints_token_and_exports_env(self, monkeypatch):
         pytest.importorskip("jwt")
-        monkeypatch.setenv("OPENAI_API_KEY", "")  
+        monkeypatch.setenv("OPENAI_API_KEY", "")
         token = cf._mint_jwt_if_secret("super-secret-key-of-sufficient-length-1234")
-        assert token  
+        assert token
         import os
 
         assert os.environ["OPENAI_API_KEY"] == token
