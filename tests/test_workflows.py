@@ -139,9 +139,9 @@ class TestWorkflowVenvValidation:
 
         for workflow_type in workflows_requiring_venv:
             config = WORKFLOW_CONFIGS[workflow_type]
-            assert (
-                config.workflow_run_script_venv_type is not None
-            ), f"{workflow_type.name} workflow must have a venv configuration"
+            assert config.workflow_run_script_venv_type is not None, (
+                f"{workflow_type.name} workflow must have a venv configuration"
+            )
 
     def test_server_workflow_is_special_case(self):
         """Document that server workflow intentionally has no venv config."""
@@ -214,9 +214,9 @@ class TestWorkflowExecution:
             assert mock_run_single.call_count == 5
 
             expected_order = ["EVALS", "BENCHMARKS", "SPEC_TESTS", "TESTS", "REPORTS"]
-            assert (
-                workflow_calls == expected_order
-            ), f"Expected {expected_order}, got {workflow_calls}"
+            assert workflow_calls == expected_order, (
+                f"Expected {expected_order}, got {workflow_calls}"
+            )
 
             # Check trace capture logic by examining args modifications
             # Note: The args object is modified in place, so we rely on the implementation details
@@ -578,9 +578,7 @@ class TestMainWorkflowIntegration:
             "run.run_workflows"
         ) as mock_run_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
-        ), patch(
-            "workflows.log_setup.setup_run_logger"
-        ):
+        ), patch("workflows.log_setup.setup_run_logger"):
             # Run main
             result = main()
 
@@ -618,9 +616,7 @@ class TestMainWorkflowIntegration:
             "run.run_workflows"
         ) as mock_run_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
-        ), patch(
-            "workflows.log_setup.setup_run_logger"
-        ):
+        ), patch("workflows.log_setup.setup_run_logger"):
             result = main()
 
             assert mock_run_v2_workflows.called
@@ -646,9 +642,7 @@ class TestMainWorkflowIntegration:
             side_effect=RuntimeError("validation failed"),
         ), patch("run.run_workflows") as mock_run_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
-        ), patch(
-            "workflows.log_setup.setup_run_logger"
-        ):
+        ), patch("workflows.log_setup.setup_run_logger"):
             with pytest.raises(RuntimeError, match="validation failed"):
                 main()
 
@@ -674,9 +668,7 @@ class TestMainWorkflowIntegration:
             side_effect=RuntimeError("host setup failed"),
         ), patch("run.run_workflows") as mock_run_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
-        ), patch(
-            "workflows.log_setup.setup_run_logger"
-        ):
+        ), patch("workflows.log_setup.setup_run_logger"):
             with pytest.raises(RuntimeError, match="host setup failed"):
                 main()
 
@@ -703,13 +695,9 @@ class TestMainWorkflowIntegration:
         ), patch(
             "run.run_docker_server",
             side_effect=RuntimeError("docker start failed"),
-        ), patch(
-            "run.run_workflows"
-        ) as mock_run_workflows, patch(
+        ), patch("run.run_workflows") as mock_run_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
-        ), patch(
-            "workflows.log_setup.setup_run_logger"
-        ):
+        ), patch("workflows.log_setup.setup_run_logger"):
             with pytest.raises(RuntimeError, match="docker start failed"):
                 main()
 
@@ -736,9 +724,7 @@ class TestMainWorkflowIntegration:
             "run.validate_setup",
         ), patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
-        ), patch(
-            "workflows.log_setup.setup_run_logger"
-        ):
+        ), patch("workflows.log_setup.setup_run_logger"):
             with pytest.raises(RuntimeError, match="venv setup failed"):
                 main()
 
@@ -781,15 +767,11 @@ class TestMainWorkflowIntegration:
                 WorkflowResult(workflow_name="tests", return_code=0),
                 WorkflowResult(workflow_name="reports", return_code=0),
             ],
-        ), patch(
-            "subprocess.run"
-        ) as mock_subprocess_run, patch(
+        ), patch("subprocess.run") as mock_subprocess_run, patch(
             "run.get_current_commit_sha", return_value="deadbeefdead"
         ), patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
-        ), patch(
-            "workflows.log_setup.setup_run_logger"
-        ):
+        ), patch("workflows.log_setup.setup_run_logger"):
             result = main()
 
         assert result == 0
@@ -895,9 +877,7 @@ class TestSpecTestsBehavior:
             return_value=[fake_suite],
         ), patch.object(
             spec_tests_run.importlib, "import_module", return_value=fake_module
-        ), patch.object(
-            spec_tests_run, "ServerRunner"
-        ) as mock_runner:
+        ), patch.object(spec_tests_run, "ServerRunner") as mock_runner:
             mock_runner.return_value.run.side_effect = KeyboardInterrupt
             result = spec_tests_run.main()
 
