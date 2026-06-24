@@ -345,6 +345,72 @@ inline bool waitForEtcdBackendRegistration(int timeoutSec = 30) {
   return false;
 }
 
+/// Poll the Dynamo frontend's /v1/models endpoint until the configured model
+/// appears in the response. This confirms the router has discovered the backend
+/// via etcd and is ready to route requests — not just that etcd has the key.
+/// Without this, the first request can hit a 404 if the router hasn't yet
+/// processed the etcd watch event.
+inline bool waitForModelDiscovery(const DynamoConfig& cfg,
+                                  int timeoutSec = 30) {
+  auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(timeoutSec);
+
+  while (std::chrono::steady_clock::now() < deadline) {
+    try {
+      int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+      if (sock < 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        continue;
+      }
+
+      sockaddr_in addr{};
+      addr.sin_family = AF_INET;
+      addr.sin_port = htons(cfg.port);
+      ::inet_pton(AF_INET, cfg.host.c_str(), &addr.sin_addr);
+
+      timeval tv{5, 0};
+      ::setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+      ::setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+      if (::connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) !=
+          0) {
+        ::close(sock);
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        continue;
+      }
+
+      std::ostringstream req;
+      req << "GET /v1/models HTTP/1.1\r\n"
+          << "Host: " << cfg.host << ":" << cfg.port << "\r\n"
+          << "Connection: close\r\n"
+          << "\r\n";
+      std::string request = req.str();
+
+      if (::send(sock, request.c_str(), request.size(), 0) < 0) {
+        ::close(sock);
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        continue;
+      }
+
+      std::string response;
+      char buf[4096];
+      ssize_t n;
+      while ((n = ::recv(sock, buf, sizeof(buf), 0)) > 0) {
+        response.append(buf, static_cast<size_t>(n));
+      }
+      ::close(sock);
+
+      if (response.find("HTTP/1.1 200") != std::string::npos &&
+          response.find(cfg.model) != std::string::npos) {
+        return true;
+      }
+    } catch (...) {
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  }
+  return false;
+}
+
 inline bool warmupDynamoFrontend(const DynamoConfig& cfg) {
   const std::string warmupBody =
       R"({"model":")" + cfg.model +
@@ -515,6 +581,17 @@ class DynamoTestFixture : public ::testing::Test {
       dynamoUnavailableReason_ =
           "No cpp_server backend registered in etcd under " +
           etcdInstancePrefixFromEnv();
+      std::cerr << "[" << testName() << "] " << dynamoUnavailableReason_
+                << std::endl;
+      return false;
+    }
+    // Wait for the router to discover the backend via /v1/models. This avoids
+    // 404s on the first request due to etcd watch propagation delay.
+    if (!waitForModelDiscovery(dynamoConfig_, /*timeoutSec=*/30)) {
+      dynamoAvailable_ = false;
+      dynamoUnavailableReason_ =
+          "Model " + dynamoConfig_.model +
+          " not visible in /v1/models after backend registration";
       std::cerr << "[" << testName() << "] " << dynamoUnavailableReason_
                 << std::endl;
       return false;
