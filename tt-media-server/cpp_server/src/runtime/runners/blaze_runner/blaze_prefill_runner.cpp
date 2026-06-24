@@ -4,12 +4,10 @@
 #include "runtime/runners/blaze_runner/blaze_prefill_runner.hpp"
 
 #include <cassert>
-#include <chrono>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <optional>
-#include <thread>
 #include <utility>
 
 #include "config/settings.hpp"
