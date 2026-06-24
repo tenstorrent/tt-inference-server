@@ -15,8 +15,10 @@ import time
 from typing import ClassVar, Dict, List, Sequence, Type
 
 from test_module.task_types import MediaTaskType
+from workflows.workflow_types import ModelType
 
 from .execution import (
+    LLMBenchOptions,
     PrefixCacheOptions,
     SpecDecodeOptions,
     TaskOutcome,
@@ -27,6 +29,7 @@ from .execution import (
 # TaskOutcome / acceptance summary tables. Not members of MediaTaskType
 # because these sweeps bypass the media-task dispatcher.
 _PREFIX_CACHE_TASK_LABEL = "prefix_cache"
+_LLM_BENCH_TASK_LABEL = "llm_benchmark"
 _SPEC_DECODE_TASK_LABEL = "spec_decode"
 
 
@@ -135,16 +138,38 @@ class BenchmarksWorkflow(WorkflowExecution):
         spec_decode_opts = self.orchestrator_metadata.spec_decode
         if spec_decode_opts is not None:
             return [self._run_spec_decode_task(spec_decode_opts)]
+        if self.ctx.model_spec.model_type == ModelType.LLM:
+            opts = self.orchestrator_metadata.llm_bench or LLMBenchOptions()
+            return [self._run_llm_bench_task(opts)]
         return super().run_tasks()
+
+    def _run_llm_bench_task(self, opts: LLMBenchOptions) -> TaskOutcome:
+        """Drive the LLM performance sweep in place of media benchmarks.
+
+        Delegates to :func:`test_module.llm_tests.llm_benchmark_tests.run_llm_bench`,
+        which selects the perf-tool driver from ``opts.tools``, builds the
+        ``BENCHMARK_CONFIGS`` sweep, runs it, and forwards the resulting
+        Blocks to the accumulator. Imported from the leaf submodule so the
+        media runner imports stay untouched.
+        """
+        from test_module.llm_tests.llm_benchmark_tests import run_llm_bench
+
+        self.logger.info("→ task=%s tools=%s", _LLM_BENCH_TASK_LABEL, opts.tools)
+        return self._run_bench_task(
+            _LLM_BENCH_TASK_LABEL,
+            lambda: run_llm_bench(
+                self.ctx,
+                tools=opts.tools,
+                auth_token=opts.auth_token,
+            ),
+        )
 
     def _run_prefix_cache_task(self, opts: PrefixCacheOptions) -> TaskOutcome:
         """Drive the AIPerf prefix-cache sweep in place of media benchmarks.
 
         Delegates to :func:`test_module.llm_tests.prefix_cache_tests.run_prefix_cache`,
         which builds the scenario plan, runs each AIPerf invocation, and
-        forwards the resulting Blocks to the accumulator. We only need
-        to translate its ``list[Block]`` return into a single
-        :class:`TaskOutcome`.
+        forwards the resulting Blocks to the accumulator.
 
         Imported from the leaf submodule (not ``test_module``) so the
         prefix-cache code path skips the audio/image/video/CNN/TTS/
@@ -154,9 +179,9 @@ class BenchmarksWorkflow(WorkflowExecution):
         from test_module.llm_tests.prefix_cache_tests import run_prefix_cache
 
         self.logger.info("→ task=%s preset=%s", _PREFIX_CACHE_TASK_LABEL, opts.preset)
-        started = time.time()
-        try:
-            blocks = run_prefix_cache(
+        return self._run_bench_task(
+            _PREFIX_CACHE_TASK_LABEL,
+            lambda: run_prefix_cache(
                 self.ctx,
                 preset=opts.preset,
                 scenarios=opts.scenarios,
@@ -165,35 +190,51 @@ class BenchmarksWorkflow(WorkflowExecution):
                 scenarios_json=opts.scenarios_json,
                 trace_path=opts.trace_path,
                 auth_token=opts.auth_token,
-            )
+            ),
+        )
+
+    def _run_bench_task(self, label: str, run_sweep) -> TaskOutcome:
+        """Run an LLM sweep callable and map its ``RunnerResult`` to a TaskOutcome.
+
+        ``run_sweep`` returns a :class:`llm_module.runner.RunnerResult`. A
+        non-zero return code on *any* sweep point (``result.ok`` is False)
+        fails the task even when some Blocks were produced — a partial sweep
+        failure must not report success.
+        """
+        started = time.time()
+        try:
+            result = run_sweep()
         except Exception as e:
             elapsed = time.time() - started
             self.logger.exception(
-                "❌ task=%s raised after %.1fs: %s",
-                _PREFIX_CACHE_TASK_LABEL,
-                elapsed,
-                e,
+                "❌ task=%s raised after %.1fs: %s", label, elapsed, e
             )
-            return TaskOutcome(_PREFIX_CACHE_TASK_LABEL, 1, elapsed, None)
+            return TaskOutcome(label, 1, elapsed, None)
 
         elapsed = time.time() - started
-        if not blocks:
+        if not result.blocks:
+            self.logger.error("❌ task=%s produced no blocks (%.1fs)", label, elapsed)
+            return TaskOutcome(label, 1, elapsed, None)
+
+        block_kind = result.blocks[0].kind
+        if not result.ok:
             self.logger.error(
-                "❌ task=%s produced no blocks (%.1fs)",
-                _PREFIX_CACHE_TASK_LABEL,
+                "❌ task=%s partial failure: %d block(s) but return_codes=%s (%.1fs)",
+                label,
+                len(result.blocks),
+                result.return_codes,
                 elapsed,
             )
-            return TaskOutcome(_PREFIX_CACHE_TASK_LABEL, 1, elapsed, None)
+            return TaskOutcome(label, 1, elapsed, block_kind)
 
-        block_kind = blocks[0].kind
         self.logger.info(
             "✅ task=%s blocks=%d kind=%s (%.1fs)",
-            _PREFIX_CACHE_TASK_LABEL,
-            len(blocks),
+            label,
+            len(result.blocks),
             block_kind,
             elapsed,
         )
-        return TaskOutcome(_PREFIX_CACHE_TASK_LABEL, 0, elapsed, block_kind)
+        return TaskOutcome(label, 0, elapsed, block_kind)
 
     def _run_spec_decode_task(self, opts: SpecDecodeOptions) -> TaskOutcome:
         """Drive one spec-decode phase in place of media benchmarks.

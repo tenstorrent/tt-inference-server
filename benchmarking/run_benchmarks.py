@@ -34,7 +34,6 @@ from benchmarking.benchmark_config import (
     powers_of_two_up_to,
     select_smoke_test_benchmark_config,
 )
-from benchmarking.run_genai_benchmarks import run_genai_benchmarks
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
@@ -315,40 +314,11 @@ def main():
 
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
-    # Check for tools selection (genai vs vllm)
-    tools = runtime_config.tools if runtime_config.tools is not None else "vllm"
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_spec=: {model_spec}")
     logger.info(f"device=: {device_str}")
     logger.info(f"service_port=: {service_port}")
     logger.info(f"output_path=: {args.output_path}")
-    logger.info(f"tools=: {tools}")
-
-    # Route to genai-perf benchmarks if tools=genai
-    if tools == "genai":
-        logger.info("Using genai-perf (Triton SDK) for benchmarking")
-
-        # Determine debug mode from limit_samples_mode
-        limit_samples_mode_str = runtime_config.limit_samples_mode
-        debug_mode = False
-        if limit_samples_mode_str:
-            limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
-            # Enable debug mode for quick test modes
-            if limit_mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_COMMIT):
-                debug_mode = True
-                logger.info(
-                    f"Enabling genai-perf debug mode (2 benchmarks) for limit_samples_mode={limit_samples_mode_str}"
-                )
-
-        return_code = run_genai_benchmarks(
-            model_spec=model_spec,
-            output_path=args.output_path,
-            jwt_secret=jwt_secret,
-            service_port=service_port,
-            debug=debug_mode,
-            deploy_url=deploy_url,
-        )
-        return return_code
 
     # set environment vars
     if jwt_secret:

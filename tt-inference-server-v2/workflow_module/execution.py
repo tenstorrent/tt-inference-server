@@ -108,6 +108,21 @@ class ServingBenchOptions:
 
 
 @dataclass(frozen=True)
+class LLMBenchOptions:
+    """LLM performance-benchmark knobs forwarded to ``BenchmarksWorkflow``.
+
+    ``tools`` value selecting the perf-tool driver
+    (``vllm`` / ``aiperf`` / ``genai`` / ``guidellm``).
+    ``auth_token`` is the bearer token (minted JWT) sent to the server.
+    Threaded through ``OrchestratorMetadata`` so ``run.py`` stays decoupled
+    from ``llm_module``.
+    """
+
+    tools: str = "vllm"
+    auth_token: str = ""
+
+
+@dataclass(frozen=True)
 class OrchestratorMetadata:
     """Top-level metadata the per-task runners can't see themselves.
 
@@ -121,6 +136,7 @@ class OrchestratorMetadata:
     prefix_cache: Optional[PrefixCacheOptions] = None
     spec_decode: Optional[SpecDecodeOptions] = None
     serving_bench: Optional[ServingBenchOptions] = None
+    llm_bench: Optional[LLMBenchOptions] = None
 
 
 class WorkflowExecution(ABC):
@@ -307,6 +323,7 @@ class WorkflowExecution(ABC):
 
 __all__ = [
     "ServingBenchOptions",
+    "LLMBenchOptions",
     "OrchestratorMetadata",
     "PrefixCacheOptions",
     "SpecDecodeOptions",

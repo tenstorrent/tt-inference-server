@@ -77,6 +77,19 @@ def _is_spec_decode_run(wf, runtime_config) -> bool:
     )
 
 
+def _is_llm_benchmark_run(wf, model_spec, runtime_config) -> bool:
+    """Any LLM model + ``--workflow benchmarks`` routes to v2's ``llm_module``;
+    the ``--tools`` value selects the driver. The prefix-cache and spec-decode
+    variants have their own dispatch and are handled separately.
+    """
+    return (
+        wf == WorkflowType.BENCHMARKS
+        and model_spec.model_type == ModelType.LLM
+        and not _is_prefix_cache_run(wf, runtime_config)
+        and not _is_spec_decode_run(wf, runtime_config)
+    )
+
+
 def can_route_to_v2(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
     # Agentic evals, serving-bench benchmark suites, and the prefix-cache /
@@ -87,6 +100,8 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
         or _is_prefix_cache_run(wf, runtime_config)
         or _is_spec_decode_run(wf, runtime_config)
     ):
+        return True
+    if _is_llm_benchmark_run(wf, model_spec, runtime_config):
         return True
     if not is_v2_routed_model(model_spec):
         return False
@@ -129,6 +144,11 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
             v2_dir, model_spec, runtime_config, json_fpath, output_dir
         )
         delegate_desc = "spec-decode (run_spec_decode.py)"
+    elif _is_llm_benchmark_run(wf, model_spec, runtime_config):
+        cmd = _build_llm_bench_cmd(
+            v2_dir, model_spec, runtime_config, json_fpath, output_dir
+        )
+        delegate_desc = "llm-bench (run_llm_bench.py)"
     else:
         v2_run_py = v2_dir / "run.py"
         if not v2_run_py.is_file():
@@ -207,25 +227,31 @@ def _base_v2_cmd(
         cmd.append("--docker-server")
     if getattr(runtime_config, "server_url", None):
         cmd.extend(["--server-url", runtime_config.server_url])
-    sdxl_n = getattr(runtime_config, "sdxl_num_prompts", None)
-    if sdxl_n not in (None, "", "0"):
-        cmd.extend(["--num-prompts", str(sdxl_n)])
     return cmd
 
 
-def _build_agentic_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):
-    launcher = v2_dir / "run_agentic.py"
+def _resolve_launcher(v2_dir, filename, label):
+    launcher = v2_dir / filename
     if not launcher.is_file():
-        raise FileNotFoundError(f"v2 agentic launcher not found at {launcher}.")
+        raise FileNotFoundError(f"v2 {label} launcher not found at {launcher}.")
+    return launcher
+
+
+def _forward_jwt(cmd, runtime_config) -> None:
+    # run.py reads $JWT_SECRET when --jwt-secret is omitted; only forward an
+    # explicit value so the env fallback still works.
+    _extend_if_set(cmd, "--jwt-secret", runtime_config.jwt_secret)
+
+
+def _build_agentic_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):
+    launcher = _resolve_launcher(v2_dir, "run_agentic.py", "agentic")
     return _base_v2_cmd(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "agentic"
     )
 
 
 def _build_prefix_cache_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):
-    launcher = v2_dir / "run_prefix_cache.py"
-    if not launcher.is_file():
-        raise FileNotFoundError(f"v2 prefix-cache launcher not found at {launcher}.")
+    launcher = _resolve_launcher(v2_dir, "run_prefix_cache.py", "prefix-cache")
     cmd = _base_v2_cmd(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"
     )
@@ -242,16 +268,22 @@ def _build_prefix_cache_cmd(v2_dir, model_spec, runtime_config, json_fpath, outp
         cmd, "--prefix-cache-scenarios-json", runtime_config.prefix_cache_scenarios_json
     )
     _extend_if_set(cmd, "--prefix-cache-trace", runtime_config.prefix_cache_trace)
-    # run.py reads $JWT_SECRET when --jwt-secret is omitted; only forward an
-    # explicit value so the env fallback still works.
-    _extend_if_set(cmd, "--jwt-secret", runtime_config.jwt_secret)
+    _forward_jwt(cmd, runtime_config)
+    return cmd
+
+
+def _build_llm_bench_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):
+    launcher = _resolve_launcher(v2_dir, "run_llm_bench.py", "llm-bench")
+    cmd = _base_v2_cmd(
+        launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"
+    )
+    _extend_if_set(cmd, "--tools", runtime_config.tools)
+    _forward_jwt(cmd, runtime_config)
     return cmd
 
 
 def _build_spec_decode_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):
-    launcher = v2_dir / "run_spec_decode.py"
-    if not launcher.is_file():
-        raise FileNotFoundError(f"v2 spec-decode launcher not found at {launcher}.")
+    launcher = _resolve_launcher(v2_dir, "run_spec_decode.py", "spec-decode")
     cmd = _base_v2_cmd(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"
     )
@@ -260,9 +292,7 @@ def _build_spec_decode_cmd(v2_dir, model_spec, runtime_config, json_fpath, outpu
     _extend_if_set(
         cmd, "--spec-decode-warmup-requests", runtime_config.spec_decode_warmup_requests
     )
-    # run.py reads $JWT_SECRET when --jwt-secret is omitted; only forward an
-    # explicit value so the env fallback still works.
-    _extend_if_set(cmd, "--jwt-secret", runtime_config.jwt_secret)
+    _forward_jwt(cmd, runtime_config)
     return cmd
 
 
