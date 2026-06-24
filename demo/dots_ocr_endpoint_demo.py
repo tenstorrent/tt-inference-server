@@ -43,6 +43,7 @@ import argparse
 import base64
 import hashlib
 import hmac
+import io
 import json
 import mimetypes
 import os
@@ -61,9 +62,21 @@ import requests
 MAX_CONCURRENCY = 8
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".gif"}
+# Canonical dots.ocr prompt — the layout-extraction prompt the model was
+# trained/validated with (see tt_symbiote .../models/dots_ocr inputs DEFAULT_PROMPT).
+# Using the trained prompt avoids the degenerate-decoding failures (blank pages,
+# repetition loops) seen with the ad-hoc plain-text prompt. To go back to the
+# plain-text prompt, pass:
+#   --prompt "Extract all the text content from this image, preserving the reading order."
 DEFAULT_PROMPT = (
-    "Extract all the text content from this image, preserving the reading order."
+    "Please output the layout information from the image, including each layout "
+    "element's text content. Output the text in reading order as markdown."
 )
+# dots.ocr vision tower is tuned for the validated patch grid (84,132) -> 1848x1176
+# px. Off-grid resolutions select an untuned vision-SDPA config and can trigger
+# garbled/loop output. We letterbox every image to this box (mirrors
+# evals/dots_ocr_image_resize_proxy.py) so requests always hit the validated grid.
+VALIDATED_GRID_WH = (1848, 1176)
 # Placeholder default for --api-key; treated as "not provided" so we fall back to
 # minting a token from $JWT_SECRET.
 PLACEHOLDER_API_KEY = "your-secret-key"
@@ -134,7 +147,38 @@ def discover_images(image_dir: Path, limit: int) -> list[Path]:
     return images[:limit]
 
 
-def to_data_uri(path: Path) -> str:
+def _letterbox_png_b64(path: Path, target_wh) -> str:
+    """Letterbox the image at ``path`` to ``target_wh`` (W,H), preserving aspect
+    ratio and white-padding the remainder, then return a base64 PNG data URI.
+
+    Mirrors evals/dots_ocr_image_resize_proxy.py::_letterbox so the demo lands on
+    dots.ocr's validated patch grid without needing the separate :8001 proxy.
+    Requires Pillow (in the tt-metal python_env).
+    """
+    from PIL import Image  # lazy import: only needed when resizing is enabled
+
+    tw, th = target_wh
+    img = Image.open(path).convert("RGB")
+    w, h = img.size
+    if w > 0 and h > 0:
+        scale = min(tw / w, th / h)
+        new_w, new_h = max(1, round(w * scale)), max(1, round(h * scale))
+        resized = img.resize((new_w, new_h), Image.BICUBIC)
+        canvas = Image.new("RGB", (tw, th), (255, 255, 255))
+        canvas.paste(resized, ((tw - new_w) // 2, (th - new_h) // 2))
+    else:
+        canvas = Image.new("RGB", (tw, th), (255, 255, 255))
+    buf = io.BytesIO()
+    canvas.save(buf, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def to_data_uri(path: Path, resize_to=None) -> str:
+    """Base64 data URI for ``path``. If ``resize_to`` is a (W,H) tuple, the image
+    is letterboxed to that box (validated grid) before encoding; otherwise the
+    original bytes are sent as-is."""
+    if resize_to is not None:
+        return _letterbox_png_b64(path, resize_to)
     mime = mimetypes.guess_type(str(path))[0] or "image/png"
     b64 = base64.b64encode(path.read_bytes()).decode("ascii")
     return f"data:{mime};base64,{b64}"
@@ -153,7 +197,8 @@ def get_session() -> requests.Session:
     return sess
 
 
-def ocr_one(session, base_url, api_key, model, prompt, max_tokens, path, timeout):
+def ocr_one(session, base_url, api_key, model, prompt, max_tokens, path, timeout,
+            resize_to=None):
     payload = {
         "model": model,
         "messages": [
@@ -167,7 +212,7 @@ def ocr_one(session, base_url, api_key, model, prompt, max_tokens, path, timeout
                 # (observed on pages 1 & 8 of the t1 set), yielding empty output.
                 # Image-first matches the trained format and produces full output.
                 "content": [
-                    {"type": "image_url", "image_url": {"url": to_data_uri(path)}},
+                    {"type": "image_url", "image_url": {"url": to_data_uri(path, resize_to)}},
                     {"type": "text", "text": prompt},
                 ],
             }
@@ -287,6 +332,16 @@ def main():
     ap.add_argument("--prompt", default=os.getenv("DEMO_PROMPT", DEFAULT_PROMPT))
     ap.add_argument("--max-tokens", type=int, default=int(os.getenv("DEMO_MAX_TOKENS", "2048")))
     ap.add_argument("--timeout", type=float, default=600.0)
+    ap.add_argument(
+        "--resize-grid",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Letterbox each image to dots.ocr's validated grid "
+        f"({VALIDATED_GRID_WH[0]}x{VALIDATED_GRID_WH[1]}) before sending "
+        "(default on). Use --no-resize-grid to send native resolution.",
+    )
+    ap.add_argument("--target-width", type=int, default=VALIDATED_GRID_WH[0])
+    ap.add_argument("--target-height", type=int, default=VALIDATED_GRID_WH[1])
     ap.add_argument("--out", default=default_out)
     ap.add_argument(
         "--concurrency",
@@ -330,6 +385,8 @@ def main():
     print(f"Images   : {len(images)} from {image_dir}")
     print(f"Prompt   : {args.prompt!r}")
     print(f"Conc.    : {concurrency} ({'sequential' if concurrency == 1 else 'continuous batching'})")
+    resize_to = (args.target_width, args.target_height) if args.resize_grid else None
+    print(f"Resize   : {f'letterbox to {resize_to[0]}x{resize_to[1]} (validated grid)' if resize_to else 'off (native resolution)'}")
     print(f"Output   : {out}\n")
     print(f"{'#':>3}  {'image':24}  {'status':8}  {'lat(s)':>7}  {'tok':>5}  {'tok/s':>6}  preview")
     print("-" * 100)
@@ -342,6 +399,7 @@ def main():
             r = ocr_one(
                 get_session(), args.base_url, api_key, args.model,
                 args.prompt, args.max_tokens, path, args.timeout,
+                resize_to=resize_to,
             )
             r["ok"] = True
             (out / "txt" / f"{path.stem}.txt").write_text(r["text"], encoding="utf-8")
