@@ -25,7 +25,11 @@ ttl 1.1.3 API:
 import ttl  # must be a global for the DSL tracer
 
 TILE = 32   # module-level constant so it's a global, not a closure capture
-_MAX_GRID_X = 13
+# FW 19.6.0 reports an 11-wide compute grid (device.compute_with_storage_grid_size() ==
+# (11, 10)); earlier firmware exposed 13. A 24-head model factors to 12 cols and overflowed
+# ("Kernel grid (12,2) exceeds device compute grid (11,10)" — the starcoder2 error), so the
+# cap is 11. TODO: source from device / HardwareConfig (#18/#19) instead of hardcoding.
+_MAX_GRID_X = 11
 _MAX_GRID_Y = 10
 
 

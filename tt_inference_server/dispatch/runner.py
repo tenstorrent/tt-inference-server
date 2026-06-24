@@ -1685,13 +1685,13 @@ class TTModelRunner:
             attn = _find_layer_attn(layer)
             # Per-layer SWA window for the decode SDPA (0 = full attention / global layer).
             # Prefer the HF layer's own is_sliding flag; fall back to the gemma global pattern.
-            if _swa_cfg:
+            if _swa_cfg and os.environ.get("DISPATCH_DISABLE_SWA", "0") != "1":
                 _is_sliding = getattr(attn, "is_sliding", getattr(layer, "is_sliding", None))
                 if _is_sliding is None:
                     _is_sliding = ((i + 1) % _swa_pat != 0)
                 swa_window = int(_swa_cfg) if _is_sliding else 0
             else:
-                swa_window = 0
+                swa_window = 0   # DISPATCH_DISABLE_SWA=1 -> full attention (SWA A/B control)
             mlp  = _find_layer_mlp(layer)
             n1, n2, n3, n4 = _find_layer_norms(layer)
 
