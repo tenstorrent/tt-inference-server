@@ -187,10 +187,10 @@ class VLLMForgeRunner(BaseDeviceRunner):
 
         start = time.time()
         num_tokens = 0
-        gen_total = (
-            0  # DECODE-PROBE: running total (output_kind=DELTA -> per-step delta)
-        )
-        final_ro = None
+        # DECODE-PROBE (disabled): uncomment with the block below to split engine
+        # vs client decode rate. running total (output_kind=DELTA -> per-step delta).
+        # gen_total = 0
+        # final_ro = None
         async for request_output in self.llm_engine.generate(
             self._build_vllm_input(request), sampling_params, request._task_id
         ):
@@ -200,8 +200,8 @@ class VLLMForgeRunner(BaseDeviceRunner):
 
             # token_ids is cumulative in vLLM, so the last value is the total
             num_tokens = len(outputs[0].token_ids)
-            gen_total += num_tokens  # DECODE-PROBE
-            final_ro = request_output  # DECODE-PROBE
+            # gen_total += num_tokens  # DECODE-PROBE (disabled)
+            # final_ro = request_output  # DECODE-PROBE (disabled)
 
             for output in outputs:
                 chunk_text = output.text
@@ -227,25 +227,26 @@ class VLLMForgeRunner(BaseDeviceRunner):
             f"{num_tokens} tokens in {duration:.4f} seconds ({rate:.2f} tok/sec)"
         )
 
-        # DECODE-PROBE: split engine-internal decode rate (vLLM RequestOutput.metrics
-        # last_token_ts - first_token_ts) from the runner/client wall rate. If
-        # engine-internal stays flat while client_rate degrades with output length,
-        # the cost is the Python async per-token serving path, not the engine.
-        eng_rate = None
-        try:
-            m = final_ro.metrics if final_ro is not None else None
-            ts0 = getattr(m, "first_token_ts", None)
-            ts1 = getattr(m, "last_token_ts", None)
-            if ts0 and ts1 and gen_total > 1 and (ts1 - ts0) > 0:
-                eng_rate = (gen_total - 1) / (ts1 - ts0)
-        except Exception:
-            pass
-        client_rate = (gen_total / duration) if duration > 0 else 0.0
-        self.logger.info(
-            f"[DECODE-PROBE] dev={self.device_id} gen_tokens={gen_total} "
-            f"client_rate={client_rate:.2f} engine_internal_rate="
-            f"{eng_rate if eng_rate is None else round(eng_rate, 2)}"
-        )
+        # DECODE-PROBE (disabled): split engine-internal decode rate (vLLM
+        # RequestOutput.metrics last_token_ts - first_token_ts) from the runner/client
+        # wall rate. If engine-internal stays flat while client_rate degrades with
+        # output length, the cost is the Python async per-token serving path, not the
+        # engine. Re-enable together with the gen_total/final_ro lines above.
+        # eng_rate = None
+        # try:
+        #     m = final_ro.metrics if final_ro is not None else None
+        #     ts0 = getattr(m, "first_token_ts", None)
+        #     ts1 = getattr(m, "last_token_ts", None)
+        #     if ts0 and ts1 and gen_total > 1 and (ts1 - ts0) > 0:
+        #         eng_rate = (gen_total - 1) / (ts1 - ts0)
+        # except Exception:
+        #     pass
+        # client_rate = (gen_total / duration) if duration > 0 else 0.0
+        # self.logger.info(
+        #     f"[DECODE-PROBE] dev={self.device_id} gen_tokens={gen_total} "
+        #     f"client_rate={client_rate:.2f} engine_internal_rate="
+        #     f"{eng_rate if eng_rate is None else round(eng_rate, 2)}"
+        # )
 
         yield CompletionOutput(
             type=FINAL_TYPE,
