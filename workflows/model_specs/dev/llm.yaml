@@ -1141,8 +1141,6 @@ templates:
 - weights:
     - google/gemma-4-31B-it
   impl: tt_transformers
-  version: "0.16.0"
-  tt_metal_commit: 2521a03
   inference_engine: VLLM
   device_model_specs:
     - device: GPU
@@ -1157,9 +1155,7 @@ templates:
 
 - weights:
     - google/gemma-4-26B-A4B-it
-  impl: tt_transformers
-  version: "0.16.0"
-  tt_metal_commit: 2521a03
+  impl: tt_transformer
   inference_engine: VLLM
   device_model_specs:
     - device: GPU
@@ -1175,8 +1171,6 @@ templates:
 - weights:
     - google/gemma-4-12B-it
   impl: tt_transformers
-  version: "0.16.0"
-  tt_metal_commit: 2521a03
   inference_engine: VLLM
   device_model_specs:
     - device: GPU
@@ -1192,8 +1186,6 @@ templates:
 - weights:
     - google/gemma-4-E4B-it
   impl: tt_transformers
-  version: "0.16.0"
-  tt_metal_commit: 2521a03
   inference_engine: VLLM
   device_model_specs:
     - device: GPU
@@ -1209,8 +1201,6 @@ templates:
 - weights:
     - google/gemma-4-E2B-it
   impl: tt_transformers
-  version: "0.16.0"
-  tt_metal_commit: 2521a03
   inference_engine: VLLM
   device_model_specs:
     - device: GPU
