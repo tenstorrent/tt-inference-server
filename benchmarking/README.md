@@ -45,7 +45,7 @@ For detailed comparison, TTFT measurement differences, and usage guide, see [Ben
 
 ### `run_benchmarks.py`
 
-Purpose: Main script for vLLM benchmarks defined in `BENCHMARK_CONFIGS`, called by `run.py` via `run_workflows.py`.
+Purpose: Main script for benchmarks built from the resolved runtime model spec, called by `run.py` via `run_workflows.py`.
 
 ### `run_genai_benchmarks.py`
 
@@ -78,7 +78,7 @@ Purpose: defines all static information known ahead of run time for benchmarks t
 - **`BenchmarkConfig`**: a set of tasks for a specific model implementation.
 - **`BenchmarkTask`**: defines python environment to use and mapping of tasks to parameters for each device.
 - **`BenchmarkTaskParams`**: Defines how a benchmark should be run.
-- **`BENCHMARK_CONFIGS`**: Final dictionary mapping all internal model names to their BenchmarkConfig.
+- **`get_benchmark_config`**: Builds a `BenchmarkConfig` from the resolved runtime model spec.
 
 ## Benchmark Targets
 
