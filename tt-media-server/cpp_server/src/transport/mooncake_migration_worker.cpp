@@ -15,6 +15,7 @@ namespace tt::transport {
 
 namespace {
 constexpr int K_HOLD_POLL_MS = 200;
+constexpr int K_HEARTBEAT_SEC = 30;  // periodic "still alive" log while holding
 }  // namespace
 
 MooncakeMigrationWorker::MooncakeMigrationWorker(
@@ -23,9 +24,8 @@ MooncakeMigrationWorker::MooncakeMigrationWorker(
 
 MooncakeMigrationWorker::~MooncakeMigrationWorker() { teardown(); }
 
-// Ordered bring-up (#4294). Each phase only proceeds if the previous one
-// succeeded, and a failure unwinds whatever was already set up — so we never
-// leave a half-initialised worker advertised to the cluster.
+// Ordered bring-up. Each phase only proceeds if the previous one
+// succeeded.
 bool MooncakeMigrationWorker::bringUp() {
   if (!engine_) {
     TT_LOG_ERROR("[MooncakeMigrationWorker] bringUp: no engine");
@@ -70,10 +70,20 @@ bool MooncakeMigrationWorker::bringUp() {
 
 // Phase 6: hold until the caller's stop source fires, then tear down.
 void MooncakeMigrationWorker::run(const std::atomic<bool>& stopRequested) {
-  TT_LOG_INFO("[MooncakeMigrationWorker] '{}' READY; holding until stop",
-              config_.segment_name);
+  TT_LOG_INFO(
+      "[MooncakeMigrationWorker] '{}' READY; holding until stop ({} peers)",
+      config_.segment_name, peers_.size());
+  const auto start = std::chrono::steady_clock::now();
+  auto nextHeartbeat = start + std::chrono::seconds(K_HEARTBEAT_SEC);
   while (!stopRequested.load()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(K_HOLD_POLL_MS));
+    const auto now = std::chrono::steady_clock::now();
+    if (now < nextHeartbeat) continue;
+    const auto upSec =
+        std::chrono::duration_cast<std::chrono::seconds>(now - start).count();
+    TT_LOG_INFO("[MooncakeMigrationWorker] '{}' alive — {} peers, up {}s",
+                config_.segment_name, peers_.size(), upSec);
+    nextHeartbeat = now + std::chrono::seconds(K_HEARTBEAT_SEC);
   }
   TT_LOG_INFO("[MooncakeMigrationWorker] '{}' stopping", config_.segment_name);
   teardown();
