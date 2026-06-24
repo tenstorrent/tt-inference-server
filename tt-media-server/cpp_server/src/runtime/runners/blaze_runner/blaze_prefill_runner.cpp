@@ -37,15 +37,14 @@ BlazePrefillRunner::BlazePrefillRunner(
   ps::SchedulerParams managerParams{};
   managerParams.dest_endpoint_id = tt::config::migrationDecodeEndpointId();
   managerParams.self_endpoint_id = tt::config::migrationPrefillEndpointId();
-  managerParams.layers_per_chunk =
-      tt::config::modelNumLayers();
-  managerParams.chunk_size =
-      tt::config::prefillChunkSize();
+  managerParams.layers_per_chunk = tt::config::modelNumLayers();
+  managerParams.chunk_size = tt::config::prefillChunkSize();
   managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
   auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
   auto migrationClientInterface = utils::makeMigrationClientInterface(config);
   if (tt::config::enableMigration()) {
-    migrationClientInterface->connect_to(tt::config::migrationDecodeEndpointId(), "PUBLISHER", "ds_pd");
+    migrationClientInterface->connect_to(
+        tt::config::migrationDecodeEndpointId(), "PUBLISHER", "ds_pd");
   }
   prefillScheduler = std::make_unique<ps::PrefillScheduler>(
       pipelineConfig, ackChannelConfig, managerParams,
@@ -85,8 +84,7 @@ bool BlazePrefillRunner::warmup() {
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
-  std::vector<int64_t> warmupTokens(tt::config::prefillChunkSize(),
-                                    12345);
+  std::vector<int64_t> warmupTokens(tt::config::prefillChunkSize(), 12345);
   uint32_t warmupTaskId = 0;
 
   auto warmupSeq = std::make_unique<tt::domain::llm::Sequence>(
@@ -205,8 +203,8 @@ void BlazePrefillRunner::step() {
     TT_LOG_DEBUG(
         "[BlazePrefillRunner] step: got Sequence taskId={}, slotId={}, "
         "numPromptTokens={}, totalTokens={}",
-        task->taskId, task->getPrefillKVCacheSlot(),
-        task->getNumPromptTokens(), task->getTokenIds().size());
+        task->taskId, task->getPrefillKVCacheSlot(), task->getNumPromptTokens(),
+        task->getTokenIds().size());
     handleTask(std::move(task));
   }
   checkOutputHang();
@@ -620,7 +618,8 @@ inline void BlazePrefillRunner::handleStopRequest(uint32_t taskId) {
   tt::worker::SingleProcessWorkerMetrics::instance().decrementActiveRequests();
 }
 
-void BlazePrefillRunner::handleSchedulerOutput(const ps::OutputMessage& output) {
+void BlazePrefillRunner::handleSchedulerOutput(
+    const ps::OutputMessage& output) {
   tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
   lastOutputTime = std::chrono::steady_clock::now();
   auto& slotContext = slotManager.getSlotContext(output.slot_id);
@@ -713,8 +712,7 @@ void BlazePrefillRunner::handleTask(
           task->taskId, slotId, task->isContinuation(),
           task->getNumPromptTokens(), task->getTokenIds().size(),
           slotManager.activeRunningCount(),
-          task->getMigrationId().has_value() ? *task->getMigrationId()
-                                                : -1);
+          task->getMigrationId().has_value() ? *task->getMigrationId() : -1);
 
       auto migrationUuid = task->getMigrationId();
       auto destSlot = migrationUuid.has_value()

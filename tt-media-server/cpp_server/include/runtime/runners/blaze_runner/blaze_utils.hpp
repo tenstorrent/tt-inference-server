@@ -64,11 +64,11 @@ inline sch::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
 
 inline sch::GenerationParams makeGenerationParams(
     const tt::domain::llm::Sequence& seq) {
-      const sch::PhaseSamplingParams userSampling{
-        .temperature = seq.getSamplingParams().temperature,
-        .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
-        .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
-    };
+  const sch::PhaseSamplingParams userSampling{
+      .temperature = seq.getSamplingParams().temperature,
+      .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
+      .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
+  };
   return {
       .max_new_tokens =
           static_cast<uint32_t>(seq.getSamplingParams().max_tokens.value_or(

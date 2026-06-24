@@ -49,7 +49,8 @@ BlazeDecodeRunner::BlazeDecodeRunner(
   managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
   managerParams.self_endpoint_id = tt::config::migrationDecodeEndpointId();
   if (tt::config::enableMigration()) {
-    migrationClientInterface->connect_to(tt::config::migrationPrefillEndpointId(), "CONNECTOR", "ds_pd");
+    migrationClientInterface->connect_to(
+        tt::config::migrationPrefillEndpointId(), "CONNECTOR", "ds_pd");
   }
   decodeScheduler = std::make_unique<ds::DecodeScheduler>(
       pipelineConfig, managerParams, std::move(migrationClientInterface));
@@ -191,8 +192,8 @@ void BlazeDecodeRunner::step() {
     TT_LOG_DEBUG(
         "[BlazeDecodeRunner] step: got Sequence taskId={}, slotId={}, "
         "numPromptTokens={}, totalTokens={}",
-        task->taskId, task->getKVCacheSlot(),
-        task->getNumPromptTokens(), task->getTokenIds().size());
+        task->taskId, task->getKVCacheSlot(), task->getNumPromptTokens(),
+        task->getTokenIds().size());
     handleTask(std::move(task));
   }
   checkOutputHang();
@@ -434,7 +435,8 @@ inline void BlazeDecodeRunner::handleSubmitError(uint32_t slotId,
     // A STOP/EVICT raced the rejection; that teardown path owns finalizing the
     // stream, so there is nothing to do here.
     TT_LOG_WARN(
-        "[BlazeDecodeRunner] handleSubmitError: SUBMIT rejected (error_code={}) "
+        "[BlazeDecodeRunner] handleSubmitError: SUBMIT rejected "
+        "(error_code={}) "
         "for slotId={} in state={} — STOP/EVICT in flight, dropping",
         errorCode, slotId, toString(slotContext.state));
     return;
@@ -743,8 +745,7 @@ void BlazeDecodeRunner::handleTask(
           task->taskId, slotId, isNew, task->isContinuation(),
           task->getNumPromptTokens(), task->getTokenIds().size(),
           slotManager.activeRunningCount(),
-          task->getMigrationId().has_value() ? *task->getMigrationId()
-                                                : -1);
+          task->getMigrationId().has_value() ? *task->getMigrationId() : -1);
       ds::ISRequest req = isNew ? utils::makeSubmitRequest(slotId, *task)
                                 : utils::makeContinueRequest(slotId, *task);
       TT_LOG_DEBUG(

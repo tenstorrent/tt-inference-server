@@ -49,7 +49,8 @@ class BlazeDecodeRunner : public IRunner {
   inline void handleMemoryRequest(const tt::domain::ManageMemoryTask& request);
   inline void handleAllocateRequest(
       const tt::domain::ManageMemoryTask& memoryRequest);
-  inline void handleEvictRequest(const tt::domain::ManageMemoryTask& memoryRequest);
+  inline void handleEvictRequest(
+      const tt::domain::ManageMemoryTask& memoryRequest);
   inline void handleSchedulerResponse(const ds::SchedulerResponse& response);
   inline void handleAllocateAck(uint32_t taskId, uint32_t slotId);
   inline void handleSubmitError(uint32_t slotId, int32_t errorCode);
