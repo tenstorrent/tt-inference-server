@@ -38,7 +38,7 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
                    std::optional<uint32_t> kvPositionId, int decodePositionId,
                    int decodeSkipTokens, std::optional<uint64_t> migrationId,
                    bool startsInThinking,
-                   std::optional<uint64_t> migrationStartPosition)
+                   std::optional<uint32_t> migrationStartPosition)
     : taskId(taskId),
       status(SequenceStatus::WAITING),
       tokenIds(std::move(inputTokenIds)),
@@ -138,7 +138,7 @@ void Sequence::serialize(std::ostream& os) const {
   os.write(reinterpret_cast<const char*>(&hasMigrationStartPosition),
            sizeof(hasMigrationStartPosition));
   if (hasMigrationStartPosition) {
-    uint64_t migrationStartPositionValue = migrationStartPosition.value();
+    uint32_t migrationStartPositionValue = migrationStartPosition.value();
     os.write(reinterpret_cast<const char*>(&migrationStartPositionValue),
              sizeof(migrationStartPositionValue));
   }
@@ -213,7 +213,7 @@ Sequence Sequence::deserialize(std::istream& is) {
   is.read(reinterpret_cast<char*>(&hasMigrationStartPosition),
           sizeof(hasMigrationStartPosition));
   if (hasMigrationStartPosition) {
-    seq.migrationStartPosition = std::make_optional<uint64_t>(0);
+    seq.migrationStartPosition = std::make_optional<uint32_t>(0);
     is.read(reinterpret_cast<char*>(&(*seq.migrationStartPosition)),
             sizeof(*seq.migrationStartPosition));
   } else {
