@@ -138,6 +138,12 @@ def run_prefix_cache(
     model_repo = getattr(spec, "hf_model_repo", "") or ""
     model_id = getattr(spec, "model_id", "") or model_repo
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
+    # Models whose HF repo ships a custom tokenizer (e.g. Kimi) need
+    # AIPerf's tokenizer load to trust remote code; opt in per model via
+    # spec metadata so we don't execute Hub code for every model.
+    tokenizer_trust_remote_code = bool(
+        getattr(spec, "metadata", {}).get("tokenizer_trust_remote_code", False)
+    )
 
     driver = AIPerfPrefixCacheDriver(
         venv_python=Path(venv_python) if venv_python else Path(sys.executable),
@@ -157,6 +163,7 @@ def run_prefix_cache(
         model=model_repo,
         tokenizer=model_repo,
         auth_token=auth_token,
+        tokenizer_trust_remote_code=tokenizer_trust_remote_code,
     )
     context = DriverContext(output_dir=output_root, device=device_label)
 

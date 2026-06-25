@@ -44,6 +44,10 @@ class ServerConnection:
     tokenizer: str = ""
     auth_token: str = ""
     is_remote: bool = False
+    # Allow AIPerf's tokenizer load to execute custom code from the HF Hub
+    # repo (e.g. moonshotai/Kimi-* ships a custom tokenizer). Driven per
+    # model from the spec metadata; off by default for safety.
+    tokenizer_trust_remote_code: bool = False
 
     def __post_init__(self) -> None:
         if not self.tokenizer:
