@@ -28,6 +28,10 @@ same API-key auth) as the OpenAI routes. This avoids forking vLLM.
 from __future__ import annotations
 
 import logging
+import os
+import signal
+import threading
+import time
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -36,6 +40,10 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/internal/weights", tags=["tt-weight-update"])
+
+# Separate router for non-weights control-plane endpoints (e.g. shutdown) that
+# live directly under /v1/internal rather than /v1/internal/weights.
+control_router = APIRouter(prefix="/v1/internal", tags=["tt-control"])
 
 
 class WeightUpdateRequest(BaseModel):
@@ -185,6 +193,38 @@ async def reset_prefix_cache(request: Request):
     return {"status": "ok"}
 
 
+class ShutdownResponse(BaseModel):
+    status: str
+
+
+@control_router.post("/shutdown", response_model=ShutdownResponse)
+async def shutdown(request: Request):
+    """Gracefully stop this (co-located) vLLM server.
+
+    The co-located trainer runs in the SAME single mpirun world as this server
+    and calls this after its final weight push. Without it the server -- a
+    long-running process with no self-exit -- keeps the mpirun world alive, so
+    the launcher hangs until ``scancel``/walltime and leaks device-holding
+    children. We send ``SIGTERM`` to this (APIServer) process AFTER the response
+    is flushed; vLLM's signal handler then tears down the EngineCore + workers
+    cleanly. Fired from a short-delay background thread so the caller still gets
+    its ``200``.
+    """
+    delay_s = 0.5
+
+    def _terminate() -> None:
+        time.sleep(delay_s)
+        logger.info(
+            "Shutdown requested via /v1/internal/shutdown; sending SIGTERM to self (pid=%s)",
+            os.getpid(),
+        )
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=_terminate, daemon=True).start()
+    logger.info("Shutdown requested; server will stop in %.1fs", delay_s)
+    return ShutdownResponse(status="stopping")
+
+
 def install() -> None:
     """Mount the weight-update router on the vLLM OpenAI API server FastAPI app.
 
@@ -223,9 +263,13 @@ def install() -> None:
         if getattr(self.state, "_tt_weight_update_mounted", False):
             return
         self.include_router(router)
+        self.include_router(control_router)
         self.state._tt_weight_update_mounted = True
         self.state.tt_weights_version = 0
-        logger.info("Mounted TT weight-update routes under /v1/internal/weights")
+        logger.info(
+            "Mounted TT weight-update routes under /v1/internal/weights "
+            "and control routes under /v1/internal"
+        )
 
     __init___with_weight_update._tt_weight_update_patched = True  # type: ignore[attr-defined]
     fastapi.FastAPI.__init__ = __init___with_weight_update
