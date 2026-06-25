@@ -16,6 +16,8 @@
 
 namespace tt::transport {
 
+class PeerDiscoveryService;
+
 /// Which side of the galaxy-to-galaxy transfer this worker plays.
 enum class MigrationRole : uint8_t {
   Sender,    ///< Writes the tensor and pushes it through the transfer engine.
@@ -42,21 +44,23 @@ struct MigrationWorkerConfig {
   std::size_t host_dram_bytes = 0;  ///< Pool the worker registers/publishes.
 
   /// Peers this worker discovers on bring-up. Each entry is a logical segment
-  /// name resolved through the metadata service; ports are dynamic.
+  /// name resolved through the metadata service; ports are dynamic. The *how*
+  /// of discovery (timeout, poll interval) lives in PeerDiscoveryService, not
+  /// here — this config only names the peers (the *what*).
   std::vector<std::string> peer_segment_names;
-  int discovery_timeout_sec = 30;  ///< Discovery gives up after this long.
 };
 
 /**
  * @brief A migration worker that owns its full lifecycle on a host.
  *
- * The worker takes an (uninitialised) ITransferEngine by injection and then
- * owns the ordered bring-up that makes it a live, discoverable participant
- * (#4294): allocate its host-DRAM pool, init the engine against the metadata
- * service, register/publish that pool, and discover its peers. The phase
- * ordering — register *before* connect, so peers can resolve us in return — is
- * a correctness invariant enforced here, not by the caller. Teardown
- * (unregister) happens in reverse order, including on destruction.
+ * The worker takes an (uninitialised) ITransferEngine and a PeerDiscoveryService
+ * by injection, then owns the ordered bring-up that makes it a live,
+ * discoverable participant: allocate its host-DRAM pool, init the engine
+ * against the metadata service, register/publish that pool, and — by *delegating*
+ * to the discovery service — resolve its peers. The phase ordering (register
+ * *before* discover, so peers can resolve us in return) is a correctness
+ * invariant the worker owns; the discovery mechanism itself is not its concern.
+ * Teardown (unregister) happens in reverse order, including on destruction.
  *
  * It also still drives the original #3890 spike scope (writeTensorOnSender /
  * transferToReceiver / verifyTensorOnReceiver), which operate once the engine
@@ -65,7 +69,8 @@ struct MigrationWorkerConfig {
 class MooncakeMigrationWorker {
  public:
   MooncakeMigrationWorker(MigrationWorkerConfig config,
-                          std::shared_ptr<ITransferEngine> engine);
+                          std::shared_ptr<ITransferEngine> engine,
+                          std::shared_ptr<PeerDiscoveryService> discovery);
   ~MooncakeMigrationWorker();
 
   MooncakeMigrationWorker(const MooncakeMigrationWorker&) = delete;

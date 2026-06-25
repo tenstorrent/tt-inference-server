@@ -8,7 +8,7 @@
 #include <utility>
 
 #include "transport/i_storage_backend.hpp"
-#include "transport/peer_discovery.hpp"
+#include "transport/peer_discovery_service.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::transport {
@@ -19,8 +19,11 @@ constexpr int K_HEARTBEAT_SEC = 30;  // periodic "still alive" log while holding
 }  // namespace
 
 MooncakeMigrationWorker::MooncakeMigrationWorker(
-    MigrationWorkerConfig config, std::shared_ptr<ITransferEngine> engine)
-    : config_(std::move(config)), engine_(std::move(engine)) {}
+    MigrationWorkerConfig config, std::shared_ptr<ITransferEngine> engine,
+    std::shared_ptr<PeerDiscoveryService> discovery)
+    : config_(std::move(config)),
+      engine_(std::move(engine)),
+      discovery_(std::move(discovery)) {}
 
 MooncakeMigrationWorker::~MooncakeMigrationWorker() { teardown(); }
 
@@ -29,6 +32,10 @@ MooncakeMigrationWorker::~MooncakeMigrationWorker() { teardown(); }
 bool MooncakeMigrationWorker::bringUp() {
   if (!engine_) {
     TT_LOG_ERROR("[MooncakeMigrationWorker] bringUp: no engine");
+    return false;
+  }
+  if (!discovery_) {
+    TT_LOG_ERROR("[MooncakeMigrationWorker] bringUp: no discovery service");
     return false;
   }
   if (config_.host_dram_bytes == 0) {
@@ -60,11 +67,16 @@ bool MooncakeMigrationWorker::bringUp() {
   TT_LOG_INFO("[MooncakeMigrationWorker] '{}' published {} bytes",
               config_.segment_name, hostDramPool_.size());
 
-  // Phase 5: discover peers — the readiness gate.
-  if (!connect()) {
+  // Phase 5: discover peers — the readiness gate. The worker owns *when* this
+  // happens (after publish, so peers can resolve us back); the injected
+  // PeerDiscoveryService owns *how*.
+  auto resolved =
+      discovery_->discover(*engine_, config_.peer_segment_names);
+  if (!resolved) {
     teardown();
     return false;
   }
+  peers_ = std::move(*resolved);
   return true;
 }
 
@@ -97,36 +109,6 @@ void MooncakeMigrationWorker::teardown() {
   if (memoryRegistered_.exchange(false) && engine_) {
     engine_->unregisterLocalMemory(hostDramPool_.data());
   }
-}
-
-// Phase 5 detail: resolve every configured peer through the metadata service
-// and cache the handles. Blocks until all peers are found or the discovery
-// timeout elapses.
-bool MooncakeMigrationWorker::connect() {
-  if (!engine_) {
-    TT_LOG_ERROR("[MooncakeMigrationWorker] connect: no engine");
-    return false;
-  }
-  if (config_.peer_segment_names.empty()) {
-    TT_LOG_WARN("[MooncakeMigrationWorker] connect: no peers configured");
-    peers_.clear();
-    return true;
-  }
-
-  PeerDiscovery discovery(
-      PeerDiscoveryConfig{/*poll_interval_ms=*/1000,
-                          /*timeout_sec=*/config_.discovery_timeout_sec});
-  auto resolved = discovery.resolveAll(*engine_, config_.peer_segment_names);
-  if (!resolved) {
-    TT_LOG_ERROR(
-        "[MooncakeMigrationWorker] connect: discovery timed out before all "
-        "peers were reachable");
-    return false;
-  }
-
-  peers_ = std::move(*resolved);
-  TT_LOG_INFO("[MooncakeMigrationWorker] CONNECTED to {} peers", peers_.size());
-  return true;
 }
 
 // Step 1 (sender): write a known tensor into this galaxy's device DRAM, so the
