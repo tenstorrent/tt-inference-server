@@ -314,6 +314,9 @@ inline pl::CounterChannelConfig makePrefillAckChannelConfig(
 
 inline std::unique_ptr<sch::MigrationClientInterface>
 makeMigrationClientInterface(const tt::config::LLMConfig& config) {
+  if (!tt::config::enableMigration()) {
+    return nullptr;
+  }
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
 #ifdef ENABLE_BLAZE_MIGRATION
@@ -327,14 +330,7 @@ makeMigrationClientInterface(const tt::config::LLMConfig& config) {
           "--blaze-with-migration");
 #endif
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
-      if (tt::config::enableMigration()) {
-        // No migration worker in mock-pipeline mode: auto-ack the burst so the
-        // prefill scheduler finalizes the migrating SUBMIT (emits
-        // prefill_complete).
-        return std::make_unique<sch::MockMigrationClient>(/*autoAck=*/true);
-      } else {
-        return nullptr;
-      }
+      return std::make_unique<sch::MockMigrationClient>(/*autoAck=*/true);
     default:
       throw std::runtime_error("Invalid blaze decode runner type");
   }
@@ -342,6 +338,9 @@ makeMigrationClientInterface(const tt::config::LLMConfig& config) {
 
 inline std::unique_ptr<sch::MigrationClientInterface>
 makeDecodeMigrationClientInterface(const tt::config::LLMConfig& config) {
+  if (!tt::config::enableMigration()) {
+    return nullptr;
+  }
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
 #ifdef ENABLE_BLAZE_MIGRATION
@@ -355,11 +354,7 @@ makeDecodeMigrationClientInterface(const tt::config::LLMConfig& config) {
           "--blaze-with-migration");
 #endif
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
-      if (tt::config::enableMigration()) {
-        return std::make_unique<ds::MockMigrationClient>();
-      } else {
-        return nullptr;
-      }
+      return std::make_unique<ds::MockMigrationClient>();
     default:
       throw std::runtime_error("Invalid blaze decode runner type");
   }
