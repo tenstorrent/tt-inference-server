@@ -29,12 +29,12 @@ from tt_inference_server.dispatch.dispatcher import (
 EXPECTED = {
     "meta-llama/Llama-3-8B-Instruct":            ("rmsnorm",   "silu",      1.0,  False, False, "none",        True,  True),
     "deepseek-ai/DeepSeek-R1-Distill-Llama-8B":  ("rmsnorm",   "silu",      1.0,  False, False, "none",        True,  True),
-    "Qwen/Qwen2.5-7B-Instruct":                  ("rmsnorm",   "silu",      1.0,  True,  False, "none",        False, True),
+    "Qwen/Qwen2.5-7B-Instruct":                  ("rmsnorm",   "silu",      1.0,  True,  False, "none",        True,  True),
     "mistralai/Mistral-7B-v0.3":                 ("rmsnorm",   "silu",      1.0,  False, False, "none",        True,  True),
     "google/gemma-2-2b-it":                      ("gemma_rms", "gelu_tanh", 1.0,  False, False, "sqrt_hidden", False, True),
     "microsoft/Phi-3.5-mini-instruct":           ("rmsnorm",   "silu",      1.0,  False, False, "none",        True,  True),
     "allenai/OLMo-1B-hf":                        ("rmsnorm",   "silu",      1.0,  False, False, "none",        True,  True),
-    "EleutherAI/pythia-2.8b":                    ("layernorm", "gelu",      0.25, True,  True,  "none",        False, False),
+    "EleutherAI/pythia-2.8b":                    ("layernorm", "gelu",      0.25, True,  True,  "none",        False, True),
 }
 
 
