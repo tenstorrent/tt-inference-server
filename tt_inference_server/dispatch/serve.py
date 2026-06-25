@@ -309,6 +309,10 @@ def main(argv=None):
     sp.add_argument("--max-seq", type=int, default=2048)
     sp.add_argument("--no-trace", action="store_true",
                     help="Don't reserve a device trace region (disables the traced fast path)")
+    sp.add_argument("--runner", default=None, metavar="MODULE:CLASS",
+                    help="Use a custom runner (e.g. 'pkg.mod:MyRunner') instead of the generic "
+                         "TTModelRunner. Overrides auto-discovery. A runner self-declared by the "
+                         "model repo is honored only with --unsafe.")
 
     args = parser.parse_args(argv)
     if args.command != "serve":
@@ -329,6 +333,7 @@ def main(argv=None):
             max_seq=args.max_seq,
             unsafe=True,
             trace_region_size=0 if args.no_trace else 134217728,
+            runner=args.runner,
         )
     except Exception as exc:
         # Clean load-time failure (unknown arch / weight mapping / download error).

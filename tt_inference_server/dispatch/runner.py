@@ -668,10 +668,8 @@ class TTModelRunner:
 
         t0 = time.perf_counter()
 
-        # Prefill: run each prompt token to populate KV cache
-        next_id = None
-        for pos, tok_id in enumerate(input_ids):
-            next_id = self._decode_step(tok_id, pos)
+        # Prefill: populate the KV cache for the whole prompt (batched if eligible + flag).
+        next_id = self._prefill(input_ids)
 
         output_ids = []
         # Decode: generate new tokens
@@ -925,7 +923,10 @@ class TTModelRunner:
         (TILE, *) volume mismatches (the pythia gpt_neox crash)."""
         import ttnn
         out = ttnn.layer_norm(h_tt, epsilon=eps, weight=w_row_tt, bias=b_row_tt)
-        if out.shape[0] != TILE:
+        # Decode-only convention: pad a bare (1,H) embed row up to (TILE,H) to match the
+        # rmsnorm scratch volume. In prefill the input is logical (N,H) and must stay (N,H)
+        # — repeating to TILE would explode it to (N*TILE, H).
+        if not getattr(self, "_prefilling", False) and out.shape[0] != TILE:
             out = ttnn.repeat(out, ttnn.Shape([TILE, 1]))
         return out
 
@@ -936,26 +937,80 @@ class TTModelRunner:
         import ttnn
         return ttnn.rms_norm(x4, epsilon=eps, weight=w_row_tt)
 
+    def _rmsnorm_dev(self, h_tt, w_2d_tt, eps):
+        """RMSNorm via native ttnn.rms_norm (fp32-internal variance) — the permanent fix for
+        BUG-MISTRAL-01 (#22), replacing the custom single-core kernel's bf16 variance that
+        under-normalized high-dynamic-range inputs. w_2d_tt is the (TILE, hidden_p) weight;
+        row 0 is the per-feature weight (gemma (1+w) baked in).
+
+        Decode convention: ttnn.rms_norm preserves the input's logical row count, but the
+        decode matmul's pre-allocated output_tensor scratch is (TILE, *) — so a bare 1-row
+        result must be broadcast back to TILE rows (same fix as _layernorm_dev / the pythia
+        gpt_neox crash). In prefill the input is logical (N, H) and must stay (N, H)."""
+        import ttnn
+        hp = _tile_align(self._cfg.hidden_size)
+        w_row = ttnn.slice(w_2d_tt, [0, 0], [1, hp])
+        out = ttnn.rms_norm(h_tt, epsilon=eps, weight=w_row)
+        if not getattr(self, "_prefilling", False) and out.shape[0] != TILE:
+            out = ttnn.repeat(out, ttnn.Shape([TILE, 1]))
+        return out
+
+    def _bias_add(self, x_tt, bias_tt):
+        """Add a [1,W] bias row to x. In prefill x is [N,W] and binary_ng rejects the
+        subtile height-broadcast of a 1-row bias, so materialize it to [N,W] first (and
+        free the temp). Decode (N=1, not prefilling) takes the plain broadcast add —
+        byte-identical to before."""
+        import ttnn
+        if getattr(self, "_prefilling", False):
+            # The stored bias is a TILE-padded [32, W] (data in row 0, rows 1..31 zero);
+            # decode adds it to a 32-padded single row. Prefill x is [N, W], so slice the
+            # canonical bias row and materialize it to N rows (binary_ng rejects the
+            # subtile height-broadcast of a 1-row operand).
+            w = x_tt.shape[-1]
+            b1 = ttnn.slice(bias_tt, [0, 0], [1, w])
+            bias_n = ttnn.repeat(b1, ttnn.Shape([self._prefill_N, 1]))
+            out = ttnn.add(x_tt, bias_n)
+            ttnn.deallocate(b1)
+            ttnn.deallocate(bias_n)
+            return out
+        return ttnn.add(x_tt, bias_tt)
+
     def _layer_forward(self, hidden_tt, layer_idx: int, kv_pos: int):
         import ttnn
         lw = self._layers[layer_idx]
 
         def rmsnorm_buf():
+            if getattr(self, "_prefilling", False):        # prefill: fresh [N, hidden_p] out
+                hp = _tile_align(self._cfg.hidden_size)     # logical N rows (match the input!)
+                return ttnn.zeros([self._prefill_N, hp], dtype=ttnn.bfloat16,
+                                  layout=ttnn.TILE_LAYOUT, device=self._device,
+                                  memory_config=ttnn.DRAM_MEMORY_CONFIG)
             return self._rmsnorm_buf_tt
+
+        def rms(h_tt, w_tt, sc_tt):
+            """RMSNorm via native ttnn.rms_norm (fp32-internal variance), for BOTH decode and
+            prefill. Replaces the custom single-core ttl kernel, whose bf16 sum-of-squares
+            accumulation under-normalized high-dynamic-range inputs (magnitude inflated 1.5-3x,
+            correct direction) — the root cause of BUG-MISTRAL-01 (#22). ttnn.rms_norm computes
+            the variance in fp32 and is correct by construction; a 128-tile fp32 reduce cannot
+            fit the custom single-core kernel's L1/DST budget, so the native op is the fix."""
+            eps = getattr(self._hf_cfg, "rms_norm_eps", 1e-6)
+            return self._rmsnorm_dev(h_tt, w_tt, eps)
 
         def seq_norm(h_tt, w_tt, sc_tt, w_ln_tt, b_ln_tt):
             """Pre-sublayer norm for the sequential (llama-style) residual path.
             On-device ttnn.layer_norm for LayerNorm models (StableLM, Falcon, BLOOM);
             on-device RMSNorm otherwise. CP-3: trace-safe, no CPU readback."""
             if not self._uses_layernorm:
-                return self._dispatcher.rmsnorm(h_tt, w_tt, sc_tt, rmsnorm_buf())
+                return rms(h_tt, w_tt, sc_tt)
             eps = getattr(self._hf_cfg, "layer_norm_eps",
                           getattr(self._hf_cfg, "rms_norm_eps", 1e-5))
             return self._layernorm_dev(h_tt, w_ln_tt, b_ln_tt, eps)
 
         # output_tensor= for residual adds writes into pre-allocated hidden scratch,
         # eliminating 2 device tensor allocations per layer per token.
-        aot = {"output_tensor": self._hidden_scratch_tt} if self._add_ot else {}
+        aot = ({} if getattr(self, "_prefilling", False)
+               else ({"output_tensor": self._hidden_scratch_tt} if self._add_ot else {}))
 
         def add_resid(h_tt, sub_tt):
             """Residual add, scaling the sublayer output by residual_multiplier first
@@ -972,14 +1027,14 @@ class TTModelRunner:
             #   normed2 = norm3(hidden)
             #   mlp_raw = mlp(normed2)
             #   hidden  += norm4(mlp_raw)        ← norm wraps mlp OUTPUT
-            normed1_tt  = self._dispatcher.rmsnorm(hidden_tt, lw.norm1_w, lw.norm1_sc, rmsnorm_buf())
+            normed1_tt  = rms(hidden_tt, lw.norm1_w, lw.norm1_sc)
             attn_raw_tt = self._attention(normed1_tt, layer_idx, kv_pos)
-            attn_normed = self._dispatcher.rmsnorm(attn_raw_tt, lw.norm2_w, lw.norm2_sc, rmsnorm_buf())
+            attn_normed = rms(attn_raw_tt, lw.norm2_w, lw.norm2_sc)
             hidden_tt   = ttnn.add(hidden_tt, attn_normed, **aot)
 
-            normed2_tt  = self._dispatcher.rmsnorm(hidden_tt, lw.norm3_w, lw.norm3_sc, rmsnorm_buf())
+            normed2_tt  = rms(hidden_tt, lw.norm3_w, lw.norm3_sc)
             mlp_raw_tt  = self._mlp(normed2_tt, layer_idx)
-            mlp_normed  = self._dispatcher.rmsnorm(mlp_raw_tt, lw.norm4_w, lw.norm4_sc, rmsnorm_buf())
+            mlp_normed  = rms(mlp_raw_tt, lw.norm4_w, lw.norm4_sc)
             hidden_tt   = ttnn.add(hidden_tt, mlp_normed, **aot)
         elif lw.norm_style == "gpt_neox":
             # GPTNeoX parallel residual pattern:
@@ -992,8 +1047,8 @@ class TTModelRunner:
                 normed1_tt = self._layernorm_dev(hidden_tt, lw.norm1_w_ln_tt, lw.norm1_b_ln_tt, eps)
                 normed2_tt = self._layernorm_dev(hidden_tt, lw.norm2_w_ln_tt, lw.norm2_b_ln_tt, eps)
             else:
-                normed1_tt = self._dispatcher.rmsnorm(hidden_tt, lw.norm1_w, lw.norm1_sc, rmsnorm_buf())
-                normed2_tt = self._dispatcher.rmsnorm(hidden_tt, lw.norm2_w, lw.norm2_sc, rmsnorm_buf())
+                normed1_tt = rms(hidden_tt, lw.norm1_w, lw.norm1_sc)
+                normed2_tt = rms(hidden_tt, lw.norm2_w, lw.norm2_sc)
             attn_out_tt = self._attention(normed1_tt, layer_idx, kv_pos)
             mlp_out_tt = self._mlp(normed2_tt, layer_idx)
             hidden_tt = add_resid(hidden_tt, attn_out_tt)
@@ -1055,9 +1110,14 @@ class TTModelRunner:
         hd   = cfg.head_dim
         hd_p = _tile_align(hd)
 
-        # Fused QKV projection — write into pre-allocated scratch (no mmap)
-        qkv_ot  = self._qkv_scratch_tt if self._matmul_ot else None
+        # Fused QKV projection — write into pre-allocated scratch (no mmap; not in prefill)
+        _pf = getattr(self, "_prefilling", False)
+        qkv_ot  = self._qkv_scratch_tt if (self._matmul_ot and not _pf) else None
         qkv_tt  = _matmul_safe(normed_tt, lw.qkv_w, self._device, output_tensor=qkv_ot)
+
+        # Batched prefill (eager, [N,hidden]): causal SDPA + paged_fill_cache.
+        if _pf:
+            return self._attention_prefill(qkv_tt, layer_idx, lw)
 
         # Paged path (issue #30): trace-safe device-indexed KV write + paged SDPA decode.
         if self._paged_attn:
@@ -1355,6 +1415,111 @@ class TTModelRunner:
         attn_t = ttnn.repeat(attn_flat, ttnn.Shape([TILE, 1]))
         return self._o_proj(attn_t, lw)
 
+    # ---- Batched prefill (Phase 2) -------------------------------------------------
+    def _dev_rope_prefill(self, x4, c4, s4):
+        """RoPE over a sequence. x4: [1,H,N,hd]; c4/s4: [1,1,N,hd] (per-position, broadcast
+        over heads). Same rotate-half convention as _dev_rope (probe PCC 0.999997)."""
+        import ttnn
+        hd = self._cfg.head_dim
+        half = hd // 2
+        H, N = x4.shape[1], x4.shape[2]
+        a = ttnn.slice(x4, [0, 0, 0, 0],    [1, H, N, half])
+        b = ttnn.slice(x4, [0, 0, 0, half], [1, H, N, hd])
+        rh = ttnn.concat([ttnn.neg(b), a], dim=-1)
+        return ttnn.add(ttnn.multiply(x4, c4), ttnn.multiply(rh, s4))
+
+    def _rope_tables_prefill(self, N: int):
+        """Gather cos/sin for positions 0..N-1 from the resident rope tables -> [1,1,N,hd]."""
+        import ttnn
+        hd = self._cfg.head_dim
+        pidx = ttnn.from_torch(torch.arange(N, dtype=torch.int32).reshape(1, N), dtype=ttnn.uint32,
+                               layout=ttnn.ROW_MAJOR_LAYOUT, device=self._device,
+                               memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        c = ttnn.embedding(pidx, self._rope_cos_dev, layout=ttnn.TILE_LAYOUT)   # [1,N,rotary_ndims]
+        s = ttnn.embedding(pidx, self._rope_sin_dev, layout=ttnn.TILE_LAYOUT)
+        return ttnn.reshape(c, [1, 1, N, hd]), ttnn.reshape(s, [1, 1, N, hd])
+
+    def _attention_prefill(self, qkv_tt, layer_idx: int, lw):
+        """Batched prefill attention over N tokens: contiguous causal SDPA + paged_fill_cache.
+        Reuses CP-1 bias, CP-4 per-head norm, the rope convention, and _o_proj. Fills the SAME
+        paged cache decode reads (paged_fill_cache offset == paged_update_cache, probe-verified)."""
+        import ttnn
+        cfg = self._cfg
+        hd, hd_p = cfg.head_dim, _tile_align(cfg.head_dim)
+        nh, nkv = cfg.num_heads, cfg.num_kv_heads
+        N = self._prefill_N
+        qend, kend, qkvp = nh * hd_p, nh * hd_p + nkv * hd_p, nh * hd_p + 2 * nkv * hd_p
+        if lw.qkv_b_tt is not None:                                    # CP-1
+            qkv_tt = self._bias_add(qkv_tt, lw.qkv_b_tt)
+
+        def to_heads(c0, c1, H):                                       # [N, H*hd_p] -> [1,H,N,hd_p]
+            t = ttnn.reshape(ttnn.slice(qkv_tt, [0, c0], [N, c1]), [1, N, H, hd_p])
+            return ttnn.permute(t, (0, 2, 1, 3))
+        q4 = to_heads(0, qend, nh)
+        k4 = to_heads(qend, kend, nkv)
+        v4 = to_heads(kend, qkvp, nkv)
+        if lw.q_norm_w_tt is not None:                                # CP-4
+            q4 = self._head_rmsnorm_dev(q4, lw.q_norm_w_tt)
+        if lw.k_norm_w_tt is not None:
+            k4 = self._head_rmsnorm_dev(k4, lw.k_norm_w_tt)
+        c4, s4 = self._rope_tables_prefill(N)
+        q_rot = self._dev_rope_prefill(q4, c4, s4)
+        k_rot = self._dev_rope_prefill(k4, c4, s4)
+
+        # write positions 0..N-1 into the paged cache (pad kv heads to nkv_pad)
+        kfill, vfill = k_rot, v4
+        if self._nkv_pad != nkv:
+            hpad = [(0, 0), (0, self._nkv_pad - nkv), (0, 0), (0, 0)]
+            kfill = ttnn.pad(k_rot, hpad, 0.0)
+            vfill = ttnn.pad(v4, hpad, 0.0)
+        ttnn.experimental.paged_fill_cache(self._kp[layer_idx], kfill, self._page_table, batch_idx=0)
+        ttnn.experimental.paged_fill_cache(self._vp[layer_idx], vfill, self._page_table, batch_idx=0)
+
+        # causal SDPA on contiguous q/k/v (real nh/nkv — no decode 32-pad)
+        swa_kw = {"sliding_window_size": lw.swa_window} if lw.swa_window else {}
+        attn = ttnn.transformer.scaled_dot_product_attention(
+            q_rot, k_rot, v4, is_causal=True, scale=self._attn_scale_value(),
+            program_config=self._sdpa_pcfg, **swa_kw)                 # [1,nh,N,hd_p]
+        attn_t = ttnn.reshape(ttnn.permute(attn, (0, 2, 1, 3)), [N, nh * hd_p])
+        return self._o_proj(attn_t, lw)
+
+    def _prefill(self, input_ids):
+        """Populate the KV cache for the whole prompt; return the first next-token id.
+        Batched on-device prefill for paged-eligible models behind DISPATCH_BATCHED_PREFILL;
+        otherwise the token-by-token loop (correct for every model)."""
+        import os
+        if (getattr(self, "_paged_attn", False)
+                and os.environ.get("DISPATCH_BATCHED_PREFILL", "0") == "1"
+                and 0 < len(input_ids) <= self._max_seq):
+            return self._prefill_batched(input_ids)
+        next_id = None
+        for pos, tok in enumerate(input_ids):
+            next_id = self._decode_step(tok, pos)
+        return next_id
+
+    def _prefill_batched(self, input_ids):
+        """Eager batched prefill: embed N tokens, run all layers on [N,hidden], fill the paged
+        cache for 0..N-1, return lm_head(position N-1). Decode then continues from cur_pos=N."""
+        import ttnn
+        N = len(input_ids)
+        hp = _tile_align(self._cfg.hidden_size)
+        self._prefilling = True
+        self._prefill_N = N
+        try:
+            ids = ttnn.from_torch(torch.tensor(input_ids, dtype=torch.int32).reshape(1, N),
+                                  dtype=ttnn.uint32, layout=ttnn.ROW_MAJOR_LAYOUT,
+                                  device=self._device, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+            emb = ttnn.embedding(ids, self._embed_tt)                 # [1, N, hidden]
+            hidden = ttnn.to_layout(ttnn.reshape(emb, [N, hp]), ttnn.TILE_LAYOUT)
+            if self._embed_scale != 1.0:
+                hidden = ttnn.multiply(hidden, self._embed_scale)
+            for i in range(len(self._layers)):
+                hidden = self._layer_forward(hidden, i, 0)            # kv_pos unused in prefill
+            last = ttnn.slice(hidden, [N - 1, 0], [N, hp])           # [1, hp] = position N-1
+        finally:
+            self._prefilling = False
+        return self._lm_head(last)
+
     def _mlp(self, normed_tt, layer_idx: int):
         """MLP using ttnn.matmul for large weight matrices.
 
@@ -1370,15 +1535,16 @@ class TTModelRunner:
         # (#3 Phase C) listed -> matrix activation (canonical silu/gelu/gelu_tanh/relu2);
         # novel -> _cfg.activation (raw HF act string). Both are matched below.
         act  = self._entry.activation if self._listed else self._cfg.activation
-        mot  = self._matmul_ot
-        muot = self._mul_ot
+        _pf  = getattr(self, "_prefilling", False)   # prefill: fresh alloc, no TILE scratch
+        mot  = self._matmul_ot and not _pf
+        muot = self._mul_ot and not _pf
 
         if lw.gate_w is None:
             # 2-proj MLP: act(up(x)+up_b) → down(·)+down_b  (GPTNeoX, BLOOM, Starcoder2, OLMo)
             up_ot = self._up_scratch_tt if mot else None
             up_tt = _matmul_safe(normed_tt, lw.up_w, self._device, output_tensor=up_ot)
             if lw.up_b is not None:                 # bias before activation
-                up_biased = ttnn.add(up_tt, lw.up_b)
+                up_biased = self._bias_add(up_tt, lw.up_b)
                 if up_ot is None:
                     ttnn.deallocate(up_tt)
                 up_tt, up_ot = up_biased, None      # own the fresh tensor now
@@ -1393,7 +1559,7 @@ class TTModelRunner:
             result = _matmul_safe(act_tt, lw.down_w, self._device)
             ttnn.deallocate(act_tt)
             if lw.down_b is not None:
-                res_biased = ttnn.add(result, lw.down_b)
+                res_biased = self._bias_add(result, lw.down_b)
                 ttnn.deallocate(result)
                 result = res_biased
             return result
@@ -1405,12 +1571,12 @@ class TTModelRunner:
         up_tt   = _matmul_safe(normed_tt, lw.up_w,   self._device, output_tensor=up_ot)
 
         if lw.gate_b is not None:                   # presence-driven; no-op for Llama-style
-            t = ttnn.add(gate_tt, lw.gate_b)
+            t = self._bias_add(gate_tt, lw.gate_b)
             if gate_ot is None:
                 ttnn.deallocate(gate_tt)
             gate_tt, gate_ot = t, None
         if lw.up_b is not None:
-            t = ttnn.add(up_tt, lw.up_b)
+            t = self._bias_add(up_tt, lw.up_b)
             if up_ot is None:
                 ttnn.deallocate(up_tt)
             up_tt, up_ot = t, None
@@ -1437,7 +1603,7 @@ class TTModelRunner:
         if act_ot is None:
             ttnn.deallocate(activated_tt)
         if lw.down_b is not None:
-            res_biased = ttnn.add(result, lw.down_b)
+            res_biased = self._bias_add(result, lw.down_b)
             ttnn.deallocate(result)
             result = res_biased
         return result
@@ -1508,9 +1674,9 @@ class TTModelRunner:
                           getattr(self._hf_cfg, "rms_norm_eps", 1e-5))
             normed_tt = self._layernorm_dev(hidden_tt, self._final_norm_w_ln_tt,
                                             self._final_norm_b_ln_tt, eps)
-        else:
-            normed_tt = self._dispatcher.rmsnorm(hidden_tt, self._final_norm_w_tt,
-                                                 self._final_norm_sc_tt, self._rmsnorm_buf_tt)
+        else:                                               # RMSNorm final norm (#22 fix)
+            eps = getattr(self._hf_cfg, "rms_norm_eps", 1e-5)
+            normed_tt = self._rmsnorm_dev(hidden_tt, self._final_norm_w_tt, eps)
         logits_tt = ttnn.matmul(normed_tt, self._lm_head_w_tt,
                                 compute_kernel_config=self._lmhead_ckc)
         if self._lmhead_pad_mask is not None:
@@ -1563,10 +1729,9 @@ class TTModelRunner:
             hidden_cpu = ttnn.to_torch(hidden_tt)[0, :hidden].float()
             normed_cpu = _layernorm_cpu(hidden_cpu, self._final_norm_w_cpu,
                                         self._final_norm_b_cpu, eps)
-        else:
-            normed_tt  = self._dispatcher.rmsnorm(hidden_tt, self._final_norm_w_tt,
-                                                   self._final_norm_sc_tt,
-                                                   self._rmsnorm_buf_tt)
+        else:                                               # RMSNorm final norm (#22 fix)
+            eps = getattr(self._hf_cfg, "rms_norm_eps", 1e-5)
+            normed_tt  = self._rmsnorm_dev(hidden_tt, self._final_norm_w_tt, eps)
             normed_cpu = ttnn.to_torch(normed_tt)[0, :hidden].float()   # (hidden,)
         logits = normed_cpu @ self._lm_head_w_cpu.T                 # (vocab,)
         # Granite divides logits by logits_scaling (#43). No effect on greedy argmax
@@ -1859,7 +2024,7 @@ class TTModelRunner:
         import ttnn
         out = _matmul_safe(inp, lw.o_w, self._device)
         if lw.o_b is not None:
-            biased = ttnn.add(out, lw.o_b)
+            biased = self._bias_add(out, lw.o_b)
             ttnn.deallocate(out)
             out = biased
         return out
