@@ -80,43 +80,6 @@ TEST(BlazePrefillRunnerIntegrationTest,
 }
 
 TEST(BlazePrefillRunnerIntegrationTest,
-     ShortContinuationAfterPartialPrefillWithTailReplayCompletes) {
-  BlazePrefillRunnerHarness harness;
-
-  constexpr uint32_t seedTaskId = 303;
-  const auto allocateResponse = harness.allocate(seedTaskId);
-  ASSERT_EQ(allocateResponse.taskId, seedTaskId);
-  ASSERT_EQ(allocateResponse.status, domain::ManageMemoryStatus::SUCCESS);
-  ASSERT_NE(allocateResponse.slotId, domain::INVALID_SLOT_ID);
-
-  domain::llm::SamplingParams samplingParams;
-  samplingParams.max_tokens = 1;
-  samplingParams.ignore_eos = false;
-
-  // Leave the prefill scheduler at real_pos=37.
-  harness.submitSequence(seedTaskId, allocateResponse.slotId,
-                         test::makeSequentialPrompt(37), samplingParams);
-  const auto seedTokens = harness.collectTaskTokensUntilFinal(seedTaskId);
-  ASSERT_FALSE(seedTokens.empty());
-  ASSERT_TRUE(seedTokens.back().isFinal());
-
-  constexpr uint32_t continuationTaskId = 304;
-  domain::llm::Sequence continuation(continuationTaskId,
-                                     test::kDefaultBlockSize,
-                                     {32, 33, 34, 35, 36, 99}, samplingParams);
-  continuation.setPrefillKVCacheSlot(allocateResponse.slotId);
-  continuation.setKVPositionId(37);
-  harness.taskQueue().push(continuation);
-  const auto continuationTokens =
-      harness.collectTaskTokensUntilFinal(continuationTaskId);
-  harness.assertRunnerHealthy();
-
-  ASSERT_FALSE(continuationTokens.empty());
-  EXPECT_FALSE(continuationTokens.back().isError());
-  EXPECT_TRUE(continuationTokens.back().isFinal());
-}
-
-TEST(BlazePrefillRunnerIntegrationTest,
      ContinuationWithoutKvPositionUsesDecodePositionAndCompletes) {
   BlazePrefillRunnerHarness harness;
 

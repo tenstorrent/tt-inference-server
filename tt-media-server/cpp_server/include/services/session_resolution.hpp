@@ -25,9 +25,6 @@ struct DeltaPromptOptions {
 };
 
 // Trim the cached prefix from a token prompt and update prompt_tokens_count.
-// If the matched prefix ends inside a scheduler tile, keep that tile's tail in
-// the prompt. The prefill scheduler needs those replay tokens to rebuild the
-// partial tile before appending new content.
 // Returns the number of tokens removed.
 inline uint32_t applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
                                  uint32_t matchedTokens,
@@ -38,20 +35,15 @@ inline uint32_t applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
   }
 
   auto& tokens = std::get<std::vector<int>>(req.prompt);
-  if (static_cast<size_t>(matchedTokens) >= tokens.size()) {
+  const size_t skip = static_cast<size_t>(matchedTokens);
+  if (skip >= tokens.size()) {
     return 0;
   }
-  const uint32_t tailReplay =
-      matchedTokens % static_cast<uint32_t>(tt::config::kvCacheBlockSize());
-  const uint32_t tokensToTrim = matchedTokens - tailReplay;
-  const size_t skip = static_cast<size_t>(tokensToTrim);
 
   if (!options.logPrefix.empty() && matchedTokens > 0) {
-    TT_LOG_DEBUG(
-        "{} applyDeltaPrompt: matchedTokens={} tailReplay={} "
-        "trimmedTokens={} remainder={}",
-        options.logPrefix, matchedTokens, tailReplay, tokensToTrim,
-        static_cast<uint32_t>(tokens.size()) - matchedTokens);
+    TT_LOG_DEBUG("{} applyDeltaPrompt: matchedTokens={} remainder={}",
+                 options.logPrefix, matchedTokens,
+                 static_cast<uint32_t>(tokens.size()) - matchedTokens);
   }
 
   tokens.erase(tokens.begin(), tokens.begin() + static_cast<ptrdiff_t>(skip));
@@ -63,7 +55,7 @@ inline uint32_t applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
     req.kv_position_id = matchedTokens;
   }
 
-  return tokensToTrim;
+  return matchedTokens;
 }
 
 struct SlotCopyPlan {

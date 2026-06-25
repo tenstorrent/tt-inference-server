@@ -214,11 +214,15 @@ GenerateRequest parse_generate_request(const std::vector<uint8_t>& bodyBytes) {
 }
 
 std::vector<uint8_t> encode_stream_chunk(const TokenChunk& chunk) {
-  auto encodeError = [](const std::string& message,
-                        uint16_t code) -> std::vector<uint8_t> {
+  // If this chunk carries an error, encode as Annotated::error format
+  // so the Dynamo frontend's check_for_backend_error can intercept it.
+  if (chunk.error.has_value()) {
+    // Encode the error message as a JSON payload with a status code so the
+    // Dynamo frontend's extract_backend_error_if_present() can parse it and
+    // return the correct HTTP status (e.g. 400 instead of default 500).
     Json::Value errorPayload(Json::objectValue);
-    errorPayload["message"] = message;
-    errorPayload["code"] = code;
+    errorPayload["message"] = *chunk.error;
+    errorPayload["code"] = chunk.error_code.value_or(500);
     std::string errorJson = dumpJsonCompact(errorPayload);
 
     Json::Value annotated(Json::objectValue);
@@ -234,20 +238,6 @@ std::vector<uint8_t> encode_stream_chunk(const TokenChunk& chunk) {
 
     std::string s = dumpJsonCompact(wrapper);
     return std::vector<uint8_t>(s.begin(), s.end());
-  };
-
-  // If this chunk carries an error, encode as Annotated::error format
-  // so the Dynamo frontend's check_for_backend_error can intercept it.
-  if (chunk.error.has_value()) {
-    // Encode the error message as a JSON payload with a status code so the
-    // Dynamo frontend's extract_backend_error_if_present() can parse it and
-    // return the correct HTTP status (e.g. 400 instead of default 500).
-    return encodeError(*chunk.error, chunk.error_code.value_or(500));
-  }
-
-  if (chunk.finish_reason == "error" ||
-      chunk.finish_reason == "timeout_error") {
-    return encodeError(*chunk.finish_reason, 500);
   }
 
   Json::Value tokenData(Json::objectValue);

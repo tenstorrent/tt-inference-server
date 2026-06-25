@@ -14,9 +14,10 @@ using namespace tt::domain::llm;
 // Exercise the production helper used by both DisaggregationService and
 // LLMPipeline session resolution.
 //
-// When `matchedTokens` is not a multiple of 32, the scheduler needs the
-// preceding partial-tile tokens replayed. We trim to the tile boundary while
-// keeping kv_position_id at the true matched-token count.
+// `matchedTokens` is always a multiple of 32 (prefix-cache blocks are 32 tokens
+// wide), so we trim exactly `matchedTokens` and the resumed prefill starts on a
+// tile boundary. No 32-rounding / pull-back of matched tokens is performed; the
+// trailing partial tile of the remaining suffix is handled by prefill.
 namespace {
 
 void applyDeltaPrompt(LLMRequest& req, uint32_t matchedTokens) {
@@ -65,20 +66,6 @@ TEST(ApplyDeltaPrompt, RemainderNotAligned_SentAsIs) {
   EXPECT_EQ(tokens.front(), 640);
   EXPECT_EQ(req.kv_position_id, 640u);
   EXPECT_EQ(req.prompt_tokens_count, 17);
-}
-
-TEST(ApplyDeltaPrompt, NonAlignedMatchedTokens_ReplaysPartialTileTail) {
-  // 37 matched tokens means the first 32 are reusable, but tokens [32, 37) must
-  // be replayed so the scheduler can rebuild the partial tile before token 37.
-  auto req = makeRequest(38);
-  applyDeltaPrompt(req, 37);
-
-  auto& tokens = std::get<std::vector<int>>(req.prompt);
-  ASSERT_EQ(tokens.size(), 6u);
-  EXPECT_EQ(tokens.front(), 32);
-  EXPECT_EQ(tokens.back(), 37);
-  EXPECT_EQ(req.kv_position_id, 37u);
-  EXPECT_EQ(req.prompt_tokens_count, 6);
 }
 
 // The whole remaining suffix (including the prior partial tile) is sent.

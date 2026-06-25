@@ -23,7 +23,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
-#include <numeric>
 #include <string>
 #include <thread>
 #include <vector>
@@ -528,96 +527,6 @@ TEST_F(PrefillIntegrationTest, MultiTurn_SubsequentRequestsAreContinuations) {
         << "Turn " << turn << ": no PrefillResultMessage";
     EXPECT_FALSE(result->error);
   }
-
-  server->setMemoryAutoRespond(true);
-}
-
-TEST_F(PrefillIntegrationTest, PrefixHitWithPartialTrailingTileSetsPositionId) {
-  server->setMemoryAutoRespond(false);
-
-  std::vector<int64_t> tokens(10008);
-  std::iota(tokens.begin(), tokens.end(), 1);
-
-  std::vector<uint64_t> hashes(309);
-  std::iota(hashes.begin(), hashes.end(), 6001);
-
-  const uint32_t firstTaskId = 99300;
-  tt::sockets::PrefillRequestMessage firstReq(firstTaskId);
-  firstReq.tokenIds = tokens;
-  firstReq.maxTokens = 10;
-  firstReq.slotId = 5;
-  firstReq.registrationHashes = hashes;
-
-  ASSERT_TRUE(mockDecode->send(tt::sockets::tags::PREFILL_REQUEST, firstReq));
-
-  tt::domain::ManageMemoryTask memReq{};
-  auto deadline =
-      std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
-  bool received = false;
-  while (std::chrono::steady_clock::now() < deadline) {
-    if (server->memoryRequestQueue().tryPop(memReq)) {
-      received = true;
-      break;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-  ASSERT_TRUE(received) << "Expected initial ALLOCATE";
-  EXPECT_EQ(memReq.action, tt::domain::MemoryManagementAction::ALLOCATE);
-
-  tt::domain::ManageMemoryResult memRes{};
-  memRes.taskId = memReq.taskId;
-  memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
-  memRes.slotId = 5;
-  server->memoryResultQueue().push(memRes);
-
-  auto firstSeq = server->taskQueue().receive();
-  ASSERT_NE(firstSeq, nullptr);
-  EXPECT_FALSE(firstSeq->isContinuation());
-
-  tt::test::WorkerResponse(firstSeq->taskId)
-      .tokenWithFlags(42, tt::ipc::SharedToken::FLAG_FINAL)
-      .sendTo(server->resultQueue());
-
-  auto firstResult = mockDecode->receive<tt::sockets::PrefillResultMessage>(
-      tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
-  ASSERT_TRUE(firstResult.has_value());
-  EXPECT_FALSE(firstResult->error);
-
-  const uint32_t secondTaskId = 99301;
-  tt::sockets::PrefillRequestMessage secondReq(secondTaskId);
-  secondReq.tokenIds = tokens;
-  secondReq.maxTokens = 10;
-  secondReq.slotId = 5;
-  secondReq.registrationHashes = hashes;
-
-  ASSERT_TRUE(mockDecode->send(tt::sockets::tags::PREFILL_REQUEST, secondReq));
-
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  tt::domain::ManageMemoryTask spuriousAlloc{};
-  EXPECT_FALSE(server->memoryRequestQueue().tryPop(spuriousAlloc))
-      << "Second request should reuse the prefill-side session";
-
-  auto secondSeq = server->taskQueue().receive();
-  ASSERT_NE(secondSeq, nullptr);
-  EXPECT_TRUE(secondSeq->isContinuation());
-  ASSERT_TRUE(secondSeq->getKVPositionId().has_value());
-  const uint32_t expectedMatchedTokens = static_cast<uint32_t>(
-      tt::config::kvCacheFirstBlockSize() +
-      (hashes.size() - 1) * tt::config::kvCacheBlockSize());
-  const size_t expectedReplayTokens = tokens.size() - expectedMatchedTokens;
-  EXPECT_EQ(*secondSeq->getKVPositionId(), expectedMatchedTokens);
-  EXPECT_EQ(secondSeq->getNumPromptTokens(), expectedReplayTokens);
-  EXPECT_EQ(secondSeq->getTokenIds().size(), expectedReplayTokens);
-  EXPECT_EQ(secondSeq->getTokenIds().front(), tokens[expectedMatchedTokens]);
-
-  tt::test::WorkerResponse(secondSeq->taskId)
-      .tokenWithFlags(43, tt::ipc::SharedToken::FLAG_FINAL)
-      .sendTo(server->resultQueue());
-
-  auto secondResult = mockDecode->receive<tt::sockets::PrefillResultMessage>(
-      tt::sockets::tags::PREFILL_RESULT, std::chrono::milliseconds(5000));
-  ASSERT_TRUE(secondResult.has_value());
-  EXPECT_FALSE(secondResult->error);
 
   server->setMemoryAutoRespond(true);
 }
