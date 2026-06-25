@@ -27,9 +27,15 @@ MooncakeMigrationWorker::MooncakeMigrationWorker(
 
 MooncakeMigrationWorker::~MooncakeMigrationWorker() { teardown(); }
 
+// Convenience overload: bring up with a cancel token that never fires.
+bool MooncakeMigrationWorker::bringUp() {
+  static const std::atomic<bool> never{false};
+  return bringUp(never);
+}
+
 // Ordered bring-up. Each phase only proceeds if the previous one
 // succeeded.
-bool MooncakeMigrationWorker::bringUp() {
+bool MooncakeMigrationWorker::bringUp(const std::atomic<bool>& cancelToken) {
   if (!engine_) {
     TT_LOG_ERROR("[MooncakeMigrationWorker] bringUp: no engine");
     return false;
@@ -68,10 +74,11 @@ bool MooncakeMigrationWorker::bringUp() {
               config_.segment_name, hostDramPool_.size());
 
   // Phase 5: discover peers — the readiness gate. The worker owns *when* this
-  // happens (after publish, so peers can resolve us back); the injected
+  // happens (after publish, so peers can resolve us back) and forwards the
+  // cancel token so a stop request aborts discovery promptly; the injected
   // PeerDiscoveryService owns *how*.
   auto resolved =
-      discovery_->discover(*engine_, config_.peer_segment_names);
+      discovery_->discover(*engine_, config_.peer_segment_names, &cancelToken);
   if (!resolved) {
     teardown();
     return false;
@@ -107,7 +114,12 @@ void MooncakeMigrationWorker::teardown() {
   // exchange() makes this idempotent even if two threads race here: only the
   // caller that flips true->false performs the single unregister.
   if (memoryRegistered_.exchange(false) && engine_) {
-    engine_->unregisterLocalMemory(hostDramPool_.data());
+    if (!engine_->unregisterLocalMemory(hostDramPool_.data())) {
+      TT_LOG_WARN(
+          "[MooncakeMigrationWorker] '{}' unregisterLocalMemory failed during "
+          "teardown; segment may linger in the metadata service",
+          config_.segment_name);
+    }
   }
 }
 

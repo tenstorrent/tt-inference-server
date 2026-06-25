@@ -81,8 +81,13 @@ class MooncakeMigrationWorker {
    *        discover peers. Fail-fast; on failure unwinds whatever earlier
    *        phases set up. Returns true once the worker is READY (engine up,
    *        segment published, all peers connected).
+   *
+   * The @p cancelToken overload lets discovery be aborted promptly (e.g. on
+   * SIGTERM) instead of blocking until the discovery timeout; the parameterless
+   * overload is equivalent to a token that never fires.
    */
   bool bringUp();
+  bool bringUp(const std::atomic<bool>& cancelToken);
 
   /**
    * @brief Block until @p stopRequested is set (the hold-until-SIGTERM phase),
