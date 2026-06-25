@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import importlib
 import os
 import sys
 from contextlib import suppress
@@ -224,22 +225,36 @@ class TTWorker(WorkerBase):
     def _import_weight_bridge():
         """Import tt-metal's ``WeightBridge`` module.
 
-        The bridge currently ships inside the tt-metal examples tree
-        (``tt-train/sources/examples/grpo_speedup/utils/weight_bridge.py``,
-        PR #45734) rather than an installed package, so we add that directory
-        to ``sys.path`` and import it as a top-level module. ``weight_bridge``
-        has no relative imports, so importing it standalone avoids colliding
-        with the server's own ``utils`` package.
+        The bridge ships inside the tt-metal examples tree
+        (``tt-train/sources/examples/grpo_speedup/utils/inference_bridge.py``,
+        PR #45734; originally named ``weight_bridge.py`` before the bridge +
+        Ttt server/client were consolidated into ``inference_bridge.py``)
+        rather than an installed package, so we add that directory to
+        ``sys.path`` and import it as a top-level module. The module has no
+        relative imports, so importing it standalone avoids colliding with the
+        server's own ``utils`` package. The ``WeightBridge`` class name is
+        stable across the rename, so only the module name has to be probed; the
+        sender (tt-training-service) probes the same names so both ends speak
+        the same wire protocol.
 
         Override the location with ``TT_WEIGHT_BRIDGE_DIR`` if the bridge
         moves to a different path.
         """
-        try:
-            import weight_bridge  # type: ignore
+        # Module names to try, newest first (``weight_bridge`` kept as a
+        # fallback for older tt-metal checkouts).
+        mod_names = ("inference_bridge", "weight_bridge")
 
-            return weight_bridge
-        except ImportError:
-            pass
+        def _try_import():
+            for mod_name in mod_names:
+                try:
+                    return importlib.import_module(mod_name)
+                except ImportError:
+                    continue
+            return None
+
+        module = _try_import()
+        if module is not None:
+            return module
 
         bridge_dir = os.getenv("TT_WEIGHT_BRIDGE_DIR")
         if not bridge_dir:
@@ -255,17 +270,16 @@ class TTWorker(WorkerBase):
                 )
         if bridge_dir and bridge_dir not in sys.path:
             sys.path.append(bridge_dir)
-        try:
-            import weight_bridge  # type: ignore
-
-            return weight_bridge
-        except ImportError as exc:
-            raise ImportError(
+        module = _try_import()
+        if module is not None:
+            return module
+        raise ImportError(
                 "Could not import tt-metal's WeightBridge. Set TT_WEIGHT_BRIDGE_DIR "
-                "to the directory containing weight_bridge.py (from tt-metal "
-                "PR #45734, tt-train/.../grpo_speedup/utils), or ensure TT_METAL_HOME "
-                "points at a tt-metal checkout that contains it."
-            ) from exc
+                "to the directory containing inference_bridge.py (from tt-metal "
+                "PR #45734, tt-train/.../grpo_speedup/utils; older checkouts named "
+                "it weight_bridge.py), or ensure TT_METAL_HOME points at a tt-metal "
+                "checkout that contains it."
+            )
 
     def _get_weight_bridge(self, sender_rank: int):
         """Create (or reuse) the receiver-side ``WeightBridge`` (role='ttt').
@@ -348,7 +362,7 @@ class TTWorker(WorkerBase):
             sender_rank,
             rank,
         )
-        hf_dict = bridge.transfer_state()
+        hf_dict = bridge.recv_state()
 
         # 2. Apply in place (preserves device buffer addresses / traces).
         model.update_weights(hf_dict, hf_rope=hf_rope)
