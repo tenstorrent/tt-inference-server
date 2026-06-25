@@ -14,12 +14,14 @@ from glob import glob
 from pathlib import Path
 from typing import List, Tuple, Union
 
+from evals.eval_config import resolve_eval_reference
 from llm_module import HttpServerController
 from llm_module.eval_command import build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
 from report_module.schema import Block
 from workflow_module import accept_blocks
 from workflows.utils import run_command
+from workflows.workflow_types import EvalLimitMode
 
 from .._test_common import ReportCheckTypes, TestStatus, block_id
 from ..context import MediaContext
@@ -30,6 +32,17 @@ logger = logging.getLogger(__name__)
 # value comes from DeviceModelSpec.tensor_cache_timeout (first-compile/warmup for
 # large forge LLMs can exceed 1200s); bump it per model in the model spec.
 _DEFAULT_WAIT_HEALTHY_TIMEOUT_S = 3600.0
+
+
+def _limit_mode(ctx: MediaContext):
+    """Resolve the run's EvalLimitMode (from --ci-mode / --limit-samples-mode).
+
+    Returns None for unrestricted full runs, in which case scoring compares
+    against the full-dataset gpu_reference_score.
+    """
+    rc = getattr(ctx, "runtime_config", None)
+    mode_str = getattr(rc, "limit_samples_mode", None) if rc is not None else None
+    return EvalLimitMode.from_string(mode_str) if mode_str else None
 
 
 def _device_label(ctx: MediaContext) -> str:
@@ -110,10 +123,14 @@ def _target_keys(task, results: dict) -> List[str]:
 
 
 def _score_one(
-    task, results: dict, t_key: str
+    task, results: dict, t_key: str, ref: dict
 ) -> Tuple[float, Union[float, str], Union[float, str], ReportCheckTypes]:
     """Compute (score, ratio_to_published, ratio_to_reference, accuracy_check)
-    for one task/subtask. Real copy of the v1 evals_release scoring."""
+    for one task/subtask. Real copy of the v1 evals_release scoring.
+
+    ``ref`` is the resolved reference dict from
+    ``evals.eval_config.resolve_eval_reference`` (full-set or, under a limit
+    mode, the matching subset reference)."""
     # Shallow-copy so kwargs["task_name"] = t_key doesn't mutate the shared
     # config dict for subsequent tasks in this process.
     kwargs = dict(task.score.score_func_kwargs)
@@ -144,8 +161,8 @@ def _score_one(
         score = 100 - score
 
     published = task.score.published_score
-    reference = task.score.gpu_reference_score
-    tolerance = task.score.tolerance
+    reference = ref["reference_score"]
+    tolerance = ref["tolerance"]
 
     if published:
         assert published > 0, "Published score is not > 0"
@@ -156,9 +173,16 @@ def _score_one(
     if reference:
         assert reference > 0, "Reference score is not > 0"
         ratio_to_reference: Union[float, str] = score / reference
-        accuracy_check = ReportCheckTypes.from_result(
-            ratio_to_reference >= (1.0 - tolerance)
-        )
+        if ref["abs_margin"] is not None:
+            # Absolute-margin check: robust for tiny subsets where a single
+            # item flips the score in coarse steps.
+            accuracy_check = ReportCheckTypes.from_result(
+                score >= reference - ref["abs_margin"]
+            )
+        else:
+            accuracy_check = ReportCheckTypes.from_result(
+                ratio_to_reference >= (1.0 - tolerance)
+            )
     else:
         ratio_to_reference = "N/A"
         if published:
@@ -183,9 +207,16 @@ def blocks_for_task(ctx: MediaContext, task, results: dict) -> List[Block]:
         logger.info("%s ran but is not gradable: %s.", task.task_name, reason)
         return [_status_block(ctx, task, TestStatus.NA, reason)]
 
+    # Under --ci-mode / --limit-samples-mode, compare the subset score against
+    # the matching subset reference (mode_reference_scores) instead of the
+    # full-dataset gpu_reference_score.
+    ref = resolve_eval_reference(task.score, _limit_mode(ctx))
+
     blocks: List[Block] = []
     for t_key in _target_keys(task, results):
-        score, ratio_pub, ratio_ref, accuracy_check = _score_one(task, results, t_key)
+        score, ratio_pub, ratio_ref, accuracy_check = _score_one(
+            task, results, t_key, ref
+        )
         blocks.append(
             Block(
                 kind="evals",
@@ -194,16 +225,17 @@ def blocks_for_task(ctx: MediaContext, task, results: dict) -> List[Block]:
                 id=block_id(ctx) or None,
                 targets={
                     "task_name": t_key,
-                    "tolerance": task.score.tolerance,
+                    "tolerance": ref["tolerance"],
                     "published_score": task.score.published_score,
                     "published_score_ref": task.score.published_score_ref,
                 },
                 data={
                     "task_name": t_key,
-                    "tolerance": task.score.tolerance,
+                    "tolerance": ref["tolerance"],
                     "published_score": task.score.published_score,
                     "published_score_ref": task.score.published_score_ref,
-                    "gpu_reference_score": task.score.gpu_reference_score,
+                    "gpu_reference_score": ref["reference_score"],
+                    "gpu_reference_score_ref": ref["reference_ref"],
                     "score": score,
                     "ratio_to_published": ratio_pub,
                     "ratio_to_reference": ratio_ref,
