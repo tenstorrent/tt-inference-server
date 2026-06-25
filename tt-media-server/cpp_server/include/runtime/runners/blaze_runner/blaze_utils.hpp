@@ -26,8 +26,7 @@
 
 namespace {
 
-const char* requestTypeToString(
-    tt_llm_engine::scheduler::RequestType type) {
+const char* requestTypeToString(tt_llm_engine::scheduler::RequestType type) {
   switch (type) {
     case tt_llm_engine::scheduler::RequestType::ALLOCATE:
       return "ALLOCATE";
