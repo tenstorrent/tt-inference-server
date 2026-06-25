@@ -71,7 +71,6 @@ class TestPrefixCacheOptions:
 
     def test_built_from_flags(self, monkeypatch):
         monkeypatch.delenv("JWT_SECRET", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         args = Namespace(
             prefix_cache=True,
             prefix_cache_preset="full",
@@ -94,20 +93,7 @@ class TestPrefixCacheOptions:
 class TestMintJwt:
     def test_no_secret_returns_empty(self, monkeypatch):
         monkeypatch.delenv("JWT_SECRET", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         assert cf._mint_jwt_if_secret(None) == ""
-
-    def test_openai_api_key_used_when_no_secret(self, monkeypatch):
-        monkeypatch.delenv("JWT_SECRET", raising=False)
-        monkeypatch.setenv("OPENAI_API_KEY", "your-secret-key")
-        # No JWT secret -> fall back to the static OPENAI_API_KEY verbatim.
-        assert cf._mint_jwt_if_secret(None) == "your-secret-key"
-
-    def test_jwt_secret_takes_precedence_over_openai_api_key(self, monkeypatch):
-        pytest.importorskip("jwt")
-        monkeypatch.setenv("OPENAI_API_KEY", "your-secret-key")
-        token = cf._mint_jwt_if_secret("super-secret-key-of-sufficient-length-1234")
-        assert token != "your-secret-key"  # minted JWT, not the static key
 
     def test_secret_mints_token_and_exports_env(self, monkeypatch):
         pytest.importorskip("jwt")
