@@ -16,7 +16,7 @@ TEST(PrefillRegistryTest, PreRegisteredPrefillIsUnhealthyUntilMarked) {
 
   auto snaps = reg.snapshot();
   ASSERT_EQ(snaps.size(), 1u);
-  EXPECT_EQ(snaps[0].server_id, "A");
+  EXPECT_EQ(snaps[0].serverId, "A");
   EXPECT_FALSE(snaps[0].healthy);
 }
 
@@ -29,7 +29,7 @@ TEST(PrefillRegistryTest, MarkRegisteredTurnsPrefillHealthy) {
   auto snaps = reg.snapshot();
   ASSERT_EQ(snaps.size(), 1u);
   EXPECT_TRUE(snaps[0].healthy);
-  EXPECT_EQ(snaps[0].max_in_flight, 8u);
+  EXPECT_EQ(snaps[0].maxInFlight, 8u);
 }
 
 TEST(PrefillRegistryTest, SetAcceptingTasksUpdatesSnapshot) {
@@ -41,12 +41,12 @@ TEST(PrefillRegistryTest, SetAcceptingTasksUpdatesSnapshot) {
 
   auto snaps = reg.snapshot();
   ASSERT_EQ(snaps.size(), 1u);
-  EXPECT_FALSE(snaps[0].accepting_tasks);
+  EXPECT_FALSE(snaps[0].acceptingTasks);
 
   reg.setAcceptingTasks("A", true);
   snaps = reg.snapshot();
   ASSERT_EQ(snaps.size(), 1u);
-  EXPECT_TRUE(snaps[0].accepting_tasks);
+  EXPECT_TRUE(snaps[0].acceptingTasks);
 }
 
 TEST(PrefillRegistryTest, MarkRegisteredReturnsFalseForUnknownPrefill) {
@@ -88,7 +88,7 @@ TEST(PrefillRegistryTest, InflightCountSaturatesAtZeroOnDecrement) {
 
   auto snaps = reg.snapshot();
   ASSERT_EQ(snaps.size(), 1u);
-  EXPECT_EQ(snaps[0].in_flight, 0u);
+  EXPECT_EQ(snaps[0].inFlight, 0u);
 }
 
 TEST(PrefillRegistryTest, IncrementDecrementInflightUpdatesSnapshot) {
@@ -102,7 +102,7 @@ TEST(PrefillRegistryTest, IncrementDecrementInflightUpdatesSnapshot) {
 
   auto snaps = reg.snapshot();
   ASSERT_EQ(snaps.size(), 1u);
-  EXPECT_EQ(snaps[0].in_flight, 2u);
+  EXPECT_EQ(snaps[0].inFlight, 2u);
 }
 
 TEST(PrefillRegistryTest, GetSocketManagerReturnsNullptrForUnknown) {
@@ -110,27 +110,25 @@ TEST(PrefillRegistryTest, GetSocketManagerReturnsNullptrForUnknown) {
   EXPECT_EQ(reg.getSocketManager("UNKNOWN"), nullptr);
 }
 
-TEST(PrefillRegistryTest, CacheBlockDeltasAreTrackedPerPrefill) {
+TEST(PrefillRegistryTest, CacheBlocksAreTrackedPerPrefill) {
   PrefillRegistry reg;
   reg.preRegister("A", nullptr);
   reg.preRegister("B", nullptr);
 
   reg.addCachedBlocks("A", {1, 2, 3});
   reg.addCachedBlocks("B", {1, 4});
-  reg.evictCachedBlocks("A", {2});
 
   reg.addCachedBlocks("UNKNOWN", {7});
-  reg.evictCachedBlocks("UNKNOWN", {7});
 
   auto snaps = reg.snapshot();
   ASSERT_EQ(snaps.size(), 2u);
   for (const auto& snap : snaps) {
-    if (snap.server_id == "A") {
-      EXPECT_EQ(snap.cached_blocks, 2u);
-    } else if (snap.server_id == "B") {
-      EXPECT_EQ(snap.cached_blocks, 2u);
+    if (snap.serverId == "A") {
+      EXPECT_EQ(snap.cachedBlocks, 3u);
+    } else if (snap.serverId == "B") {
+      EXPECT_EQ(snap.cachedBlocks, 2u);
     } else {
-      FAIL() << "Unexpected server id " << snap.server_id;
+      FAIL() << "Unexpected server id " << snap.serverId;
     }
   }
 }
@@ -148,17 +146,17 @@ TEST(PrefillRegistryTest, RoutingSnapshotComputesContiguousPrefixDepth) {
 
   ASSERT_EQ(snaps.size(), 2u);
   for (const auto& snap : snaps) {
-    if (snap.server_id == "A") {
-      EXPECT_EQ(snap.prefix_match_depth, 1u);
-    } else if (snap.server_id == "B") {
-      EXPECT_EQ(snap.prefix_match_depth, 2u);
+    if (snap.serverId == "A") {
+      EXPECT_EQ(snap.prefixMatchDepth, 1u);
+    } else if (snap.serverId == "B") {
+      EXPECT_EQ(snap.prefixMatchDepth, 2u);
     } else {
-      FAIL() << "Unexpected server id " << snap.server_id;
+      FAIL() << "Unexpected server id " << snap.serverId;
     }
   }
 }
 
-TEST(PrefillRegistryTest, RoutingSnapshotReflectsEvictionsAndMarkDown) {
+TEST(PrefillRegistryTest, MarkDownClearsRoutingCacheView) {
   PrefillRegistry reg;
   reg.preRegister("A", nullptr);
   reg.markRegistered("A", 4);
@@ -166,17 +164,12 @@ TEST(PrefillRegistryTest, RoutingSnapshotReflectsEvictionsAndMarkDown) {
 
   auto snaps = reg.routingSnapshot({10, 20});
   ASSERT_EQ(snaps.size(), 1u);
-  EXPECT_EQ(snaps[0].prefix_match_depth, 2u);
-
-  reg.evictCachedBlocks("A", {20});
-  snaps = reg.routingSnapshot({10, 20});
-  ASSERT_EQ(snaps.size(), 1u);
-  EXPECT_EQ(snaps[0].prefix_match_depth, 1u);
+  EXPECT_EQ(snaps[0].prefixMatchDepth, 2u);
 
   reg.markDown("A");
   snaps = reg.routingSnapshot({10});
   ASSERT_EQ(snaps.size(), 1u);
-  EXPECT_EQ(snaps[0].prefix_match_depth, 0u);
+  EXPECT_EQ(snaps[0].prefixMatchDepth, 0u);
 }
 
 }  // namespace

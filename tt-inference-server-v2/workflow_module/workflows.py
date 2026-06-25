@@ -12,21 +12,82 @@ registry edit, not a structural change.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import ClassVar, Dict, List, Sequence, Type
 
 from test_module.task_types import MediaTaskType
+from workflows.workflow_types import ModelType
 
-from .execution import PrefixCacheOptions, TaskOutcome, WorkflowExecution
+from .execution import (
+    LLMBenchOptions,
+    PrefixCacheOptions,
+    SpecDecodeOptions,
+    TaskOutcome,
+    WorkflowExecution,
+)
 
-# Synthetic task label used for the prefix-cache run in TaskOutcome /
-# acceptance summary tables. Not a member of MediaTaskType because the
-# sweep bypasses the media-task dispatcher.
+# Synthetic task labels used for the prefix-cache / spec-decode runs in
+# TaskOutcome / acceptance summary tables. Not members of MediaTaskType
+# because these sweeps bypass the media-task dispatcher.
 _PREFIX_CACHE_TASK_LABEL = "prefix_cache"
+_LLM_BENCH_TASK_LABEL = "llm_benchmark"
+_LLM_EVAL_TASK_LABEL = "llm_eval"
+_SPEC_DECODE_TASK_LABEL = "spec_decode"
 
 
 class EvalsWorkflow(WorkflowExecution):
     name = "evals"
     task_types = (MediaTaskType.EVALUATION,)
+
+    def run_tasks(self) -> List[TaskOutcome]:
+        if self.ctx.model_spec.model_type == ModelType.LLM:
+            return [self._run_llm_eval_task()]
+        return super().run_tasks()
+
+    def _run_llm_eval_task(self) -> TaskOutcome:
+        """Drive the standard (lm-eval / lmms-eval) sweep for an LLM model.
+
+        Delegates to :func:`test_module.llm_tests.llm_eval_tests.run_llm_eval`,
+        which gates on server health, runs each task, scores the results, and
+        forwards Blocks to the accumulator. Agentic evals are a separate
+        workflow. Imported from the leaf submodule so the media runner imports
+        stay untouched.
+        """
+        from test_module.llm_tests.llm_eval_tests import run_llm_eval
+
+        opts = self.orchestrator_metadata.llm_eval
+        auth_token = opts.auth_token if opts is not None else ""
+        self.logger.info("→ task=%s", _LLM_EVAL_TASK_LABEL)
+        started = time.time()
+        try:
+            blocks = run_llm_eval(self.ctx, auth_token=auth_token)
+        except Exception as e:
+            elapsed = time.time() - started
+            self.logger.exception(
+                "❌ %s raised after %.1fs: %s", _LLM_EVAL_TASK_LABEL, elapsed, e
+            )
+            return TaskOutcome("evaluation", 1, elapsed, None)
+
+        elapsed = time.time() - started
+        if not blocks:
+            # No standard eval tasks configured (e.g. an agentic-only model) —
+            # a clean no-op, not a failure. Acceptance still runs on whatever
+            # other workflows accumulated.
+            self.logger.info(
+                "%s: model has no standard eval tasks (%.1fs)",
+                _LLM_EVAL_TASK_LABEL,
+                elapsed,
+            )
+            return TaskOutcome("evaluation", 0, elapsed, None)
+
+        self.logger.info(
+            "✅ %s blocks=%d kind=%s (%.1fs)",
+            _LLM_EVAL_TASK_LABEL,
+            len(blocks),
+            blocks[0].kind,
+            elapsed,
+        )
+        return TaskOutcome("evaluation", 0, elapsed, blocks[0].kind)
 
 
 class AgenticWorkflow(WorkflowExecution):
@@ -123,19 +184,46 @@ class BenchmarksWorkflow(WorkflowExecution):
     task_types = (MediaTaskType.BENCHMARK,)
 
     def run_tasks(self) -> List[TaskOutcome]:
-        opts = self.orchestrator_metadata.prefix_cache
-        if opts is None:
-            return super().run_tasks()
-        return [self._run_prefix_cache_task(opts)]
+        prefix_cache_opts = self.orchestrator_metadata.prefix_cache
+        if prefix_cache_opts is not None:
+            return [self._run_prefix_cache_task(prefix_cache_opts)]
+        spec_decode_opts = self.orchestrator_metadata.spec_decode
+        if spec_decode_opts is not None:
+            return [self._run_spec_decode_task(spec_decode_opts)]
+        if self.ctx.model_spec.model_type == ModelType.LLM:
+            opts = self.orchestrator_metadata.llm_bench or LLMBenchOptions()
+            return [self._run_llm_bench_task(opts)]
+        return super().run_tasks()
+
+    def _run_llm_bench_task(self, opts: LLMBenchOptions) -> TaskOutcome:
+        """Drive the LLM performance sweep in place of media benchmarks.
+
+        Delegates to :func:`test_module.llm_tests.llm_benchmark_tests.run_llm_bench`,
+        which selects the perf-tool driver from ``opts.tools``, builds the
+        ``BENCHMARK_CONFIGS`` sweep, runs it, and forwards the resulting
+        Blocks to the accumulator. Imported from the leaf submodule so the
+        media runner imports stay untouched.
+        """
+        from test_module.llm_tests.llm_benchmark_tests import run_llm_bench
+
+        self.logger.info("→ task=%s tools=%s", _LLM_BENCH_TASK_LABEL, opts.tools)
+        venv_python = Path(opts.venv_python) if opts.venv_python else None
+        return self._run_bench_task(
+            _LLM_BENCH_TASK_LABEL,
+            lambda: run_llm_bench(
+                self.ctx,
+                tools=opts.tools,
+                auth_token=opts.auth_token,
+                venv_python=venv_python,
+            ),
+        )
 
     def _run_prefix_cache_task(self, opts: PrefixCacheOptions) -> TaskOutcome:
         """Drive the AIPerf prefix-cache sweep in place of media benchmarks.
 
         Delegates to :func:`test_module.llm_tests.prefix_cache_tests.run_prefix_cache`,
         which builds the scenario plan, runs each AIPerf invocation, and
-        forwards the resulting Blocks to the accumulator. We only need
-        to translate its ``list[Block]`` return into a single
-        :class:`TaskOutcome`.
+        forwards the resulting Blocks to the accumulator.
 
         Imported from the leaf submodule (not ``test_module``) so the
         prefix-cache code path skips the audio/image/video/CNN/TTS/
@@ -145,9 +233,9 @@ class BenchmarksWorkflow(WorkflowExecution):
         from test_module.llm_tests.prefix_cache_tests import run_prefix_cache
 
         self.logger.info("→ task=%s preset=%s", _PREFIX_CACHE_TASK_LABEL, opts.preset)
-        started = time.time()
-        try:
-            blocks = run_prefix_cache(
+        return self._run_bench_task(
+            _PREFIX_CACHE_TASK_LABEL,
+            lambda: run_prefix_cache(
                 self.ctx,
                 preset=opts.preset,
                 scenarios=opts.scenarios,
@@ -156,35 +244,105 @@ class BenchmarksWorkflow(WorkflowExecution):
                 scenarios_json=opts.scenarios_json,
                 trace_path=opts.trace_path,
                 auth_token=opts.auth_token,
+            ),
+        )
+
+    def _run_bench_task(self, label: str, run_sweep) -> TaskOutcome:
+        """Run an LLM sweep callable and map its ``RunnerResult`` to a TaskOutcome.
+
+        ``run_sweep`` returns a :class:`llm_module.runner.RunnerResult`. A
+        non-zero return code on *any* sweep point (``result.ok`` is False)
+        fails the task even when some Blocks were produced — a partial sweep
+        failure must not report success.
+        """
+        started = time.time()
+        try:
+            result = run_sweep()
+        except Exception as e:
+            elapsed = time.time() - started
+            self.logger.exception(
+                "❌ task=%s raised after %.1fs: %s", label, elapsed, e
+            )
+            return TaskOutcome(label, 1, elapsed, None)
+
+        elapsed = time.time() - started
+        if not result.blocks:
+            self.logger.error("❌ task=%s produced no blocks (%.1fs)", label, elapsed)
+            return TaskOutcome(label, 1, elapsed, None)
+
+        block_kind = result.blocks[0].kind
+        if not result.ok:
+            self.logger.error(
+                "❌ task=%s partial failure: %d block(s) but return_codes=%s (%.1fs)",
+                label,
+                len(result.blocks),
+                result.return_codes,
+                elapsed,
+            )
+            return TaskOutcome(label, 1, elapsed, block_kind)
+
+        self.logger.info(
+            "✅ task=%s blocks=%d kind=%s (%.1fs)",
+            label,
+            len(result.blocks),
+            block_kind,
+            elapsed,
+        )
+        return TaskOutcome(label, 0, elapsed, block_kind)
+
+    def _run_spec_decode_task(self, opts: SpecDecodeOptions) -> TaskOutcome:
+        """Drive one spec-decode phase in place of media benchmarks.
+
+        Delegates to :func:`test_module.llm_tests.spec_decode_tests.run_spec_decode`,
+        which builds the sweep plan, runs each AIPerf invocation, and
+        forwards the resulting Blocks to the accumulator. We only need
+        to translate its ``list[Block]`` return into a single
+        :class:`TaskOutcome`.
+
+        Imported from the leaf submodule (not ``test_module``) so the
+        spec-decode code path skips the audio/image/video/CNN/TTS/
+        embedding runner imports that ``test_module/__init__.py`` would
+        otherwise trigger.
+        """
+        from test_module.llm_tests.spec_decode_tests import run_spec_decode
+
+        self.logger.info("→ task=%s preset=%s", _SPEC_DECODE_TASK_LABEL, opts.preset)
+        started = time.time()
+        try:
+            blocks = run_spec_decode(
+                self.ctx,
+                preset=opts.preset,
+                warmup_requests=opts.warmup_requests,
+                auth_token=opts.auth_token,
             )
         except Exception as e:
             elapsed = time.time() - started
             self.logger.exception(
-                "❌ task=%s raised after %.1fs: %s",
-                _PREFIX_CACHE_TASK_LABEL,
+                "✘ task=%s raised after %.1fs: %s",
+                _SPEC_DECODE_TASK_LABEL,
                 elapsed,
                 e,
             )
-            return TaskOutcome(_PREFIX_CACHE_TASK_LABEL, 1, elapsed, None)
+            return TaskOutcome(_SPEC_DECODE_TASK_LABEL, 1, elapsed, None)
 
         elapsed = time.time() - started
         if not blocks:
             self.logger.error(
-                "❌ task=%s produced no blocks (%.1fs)",
-                _PREFIX_CACHE_TASK_LABEL,
+                "✘ task=%s produced no blocks (%.1fs)",
+                _SPEC_DECODE_TASK_LABEL,
                 elapsed,
             )
-            return TaskOutcome(_PREFIX_CACHE_TASK_LABEL, 1, elapsed, None)
+            return TaskOutcome(_SPEC_DECODE_TASK_LABEL, 1, elapsed, None)
 
         block_kind = blocks[0].kind
         self.logger.info(
-            "✅ task=%s blocks=%d kind=%s (%.1fs)",
-            _PREFIX_CACHE_TASK_LABEL,
+            "✓ task=%s blocks=%d kind=%s (%.1fs)",
+            _SPEC_DECODE_TASK_LABEL,
             len(blocks),
             block_kind,
             elapsed,
         )
-        return TaskOutcome(_PREFIX_CACHE_TASK_LABEL, 0, elapsed, block_kind)
+        return TaskOutcome(_SPEC_DECODE_TASK_LABEL, 0, elapsed, block_kind)
 
 
 class SpecTestsWorkflow(WorkflowExecution):
@@ -197,14 +355,24 @@ class SpecTestsWorkflow(WorkflowExecution):
 class ReleaseWorkflow(WorkflowExecution):
     name = "release"
     children: ClassVar[Sequence[str]] = ("evals", "benchmarks", "spec_tests")
+    llm_children: ClassVar[Sequence[str]] = ("evals", "benchmarks")
 
     def run_tasks(self) -> List[TaskOutcome]:
+        children = (
+            self.llm_children
+            if self.ctx.model_spec.model_type == ModelType.LLM
+            else self.children
+        )
         outcomes: List[TaskOutcome] = []
-        for child_name in self.children:
+        for child_name in children:
             child_cls = WORKFLOW_REGISTRY[child_name]
             self.logger.info("--- release: %s ---", child_name)
-            for task_type in child_cls.task_types:
-                outcomes.append(self._dispatch_task(task_type))
+            child = child_cls(
+                self.ctx,
+                accumulator=self.accumulator,
+                orchestrator_metadata=self.orchestrator_metadata,
+            )
+            outcomes.extend(child.run_tasks())
         return outcomes
 
 

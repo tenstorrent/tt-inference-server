@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include "config/runner_config.hpp"
@@ -219,13 +220,45 @@ unsigned pmConnectTimeoutMs();
  * defaults::PM_MAX_USERS. */
 size_t pmMaxUsers();
 
-/** Prefill number of layers from PREFILL_NUM_LAYERS. Default:
- * defaults::PREFILL_NUM_LAYERS. */
-std::string prefillNumLayers();
+/** Model number of layers from MODEL_NUM_LAYERS. Default:
+ * defaults::MODEL_NUM_LAYERS. */
+uint32_t modelNumLayers();
 
 /** Prefill chunk size from PREFILL_CHUNK_SIZE. Default:
  * defaults::PREFILL_CHUNK_SIZE. */
-std::string prefillChunkSize();
+uint32_t prefillChunkSize();
+
+/** Migrate full KV from MIGRATE_FULL_KV. Default:
+ * defaults::MIGRATE_FULL_KV. */
+bool migrateFullKV();
+
+/** Enable migration from ENABLE_MIGRATION. Default:
+ * defaults::ENABLE_MIGRATION. */
+bool enableMigration();
+
+/** Migration cmd queue name from MIGRATION_CMD_QUEUE_NAME. Default:
+ * defaults::MIGRATION_CMD_QUEUE_NAME. */
+std::string migrationCmdQueueName();
+
+/** Migration table queue name from MIGRATION_TABLE_QUEUE_NAME. Default:
+ * defaults::MIGRATION_TABLE_QUEUE_NAME. */
+std::string migrationTableQueueName();
+
+/** Migration resp queue name from MIGRATION_RESP_QUEUE_NAME. Default:
+ * defaults::MIGRATION_RESP_QUEUE_NAME. */
+std::string migrationRespQueueName();
+
+/** Migration prefill endpoint id from MIGRATION_PREFILL_ENDPOINT_ID. Default:
+ * defaults::MIGRATION_PREFILL_ENDPOINT_ID. */
+uint32_t migrationPrefillEndpointId();
+
+/** Migration decode endpoint id from MIGRATION_DECODE_ENDPOINT_ID. Default:
+ * defaults::MIGRATION_DECODE_ENDPOINT_ID. */
+uint32_t migrationDecodeEndpointId();
+
+/** Prefill ack channel name from PREFILL_ACK_CHANNEL_NAME. Default:
+ * defaults::PREFILL_ACK_CHANNEL_NAME. */
+std::string prefillAckChannelName();
 
 /** Warmup timeout (ms) while waiting for the first token during runner warmup.
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
@@ -246,6 +279,13 @@ std::string ttResultQueueName();
 /** Cancel queue name from TT_CANCEL_QUEUE. Default: defaults::TT_CANCEL_QUEUE.
  */
 std::string ttCancelQueueName();
+
+/** Spec decode mode from SPEC_DECODE_MODE. Default: defaults::SPEC_DECODE_MODE.
+ */
+std::string specDecodeMode();
+
+/** MTP level from MTP_LEVEL. Default: defaults::MTP_LEVEL. */
+size_t mtpLevel();
 
 /** Media payload task queue name from TT_MEDIA_TASK_QUEUE. */
 std::string ttMediaTaskQueueName();

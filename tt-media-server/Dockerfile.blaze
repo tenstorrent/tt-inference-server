@@ -165,7 +165,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && export PATH=${HOME_DIR}/.cargo/bin:${PATH} \
     && export TT_METAL_HOME=${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal \
     && cd ${APP_DIR}/server/cpp_server \
-    && ./build.sh --blaze"
+    && ./build.sh --blaze-with-migration"
 
 # Add script for running C++ server
 COPY "tt-media-server/run_cpp.sh" "${APP_DIR}/server/run_cpp.sh"

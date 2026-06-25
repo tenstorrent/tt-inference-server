@@ -22,6 +22,7 @@ DISPLAY_NAMES: Dict[str, str] = {
     "max_concurrency": "Concurrency",
     "concurrency": "Concurrency",
     "num_requests": "Num Requests",
+    "error_request_count": "Errors",
     "num_runs": "Total Runs",
     "num_prompts": "Num Prompts",
     "num_responses": "Num Responses",
@@ -120,6 +121,17 @@ DISPLAY_NAMES: Dict[str, str] = {
     "dataset": "Dataset",
     "structured_output_ratio": "SO Ratio",
     "correct_rate_pct": "Correct Rate (%)",
+    # Speculative decoding (aiperf spec-decode sweep)
+    "public_dataset": "Dataset",
+    "output_len": "OSL",
+    "completed": "Completed",
+    "acceptance_rate": "Accept Rate",
+    "mean_accepted_length": "Mean Acc Len",
+    "p95_ttft_ms": "P95 TTFT (ms)",
+    "p95_tpot_ms": "P95 TPOT (ms)",
+    "p95_e2el_ms": "P95 E2EL (ms)",
+    "p99_e2el_ms": "P99 E2EL (ms)",
+    "output_throughput": "Output Token Throughput (tokens/s)",
 }
 
 # Raw key → digits after the decimal point. Missing keys use
@@ -164,6 +176,13 @@ DECIMAL_PLACES: Dict[str, int] = {
     "rtr": 3,
     "wer": 4,
     "audio_duration": 2,
+    "acceptance_rate": 3,
+    "mean_accepted_length": 2,
+    "p95_ttft_ms": 1,
+    "p95_tpot_ms": 1,
+    "p95_e2el_ms": 1,
+    "p99_e2el_ms": 1,
+    "output_throughput": 2,
 }
 
 # Footnote glossary. Looked up by raw key. Only add entries for terms
