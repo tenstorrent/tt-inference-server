@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 
+#include "config/runner_config.hpp"
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
@@ -177,6 +178,10 @@ inline sch::ISRequest makeContinueRequest(
   req.dest_slot_id = destSlotId;
   req.migration_uuid = seq.getMigrationId();
   fillSequenceFields(req, seq);
+  if (tt::config::LLMConfig().runner_type ==
+      tt::config::ModelRunnerType::MOCK_PIPELINE) {
+    req.gen.await_kv_migration = false;
+  }
   return req;
 }
 
@@ -323,7 +328,10 @@ makeMigrationClientInterface(const tt::config::LLMConfig& config) {
 #endif
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       if (tt::config::enableMigration()) {
-        return std::make_unique<sch::MockMigrationClient>();
+        // No migration worker in mock-pipeline mode: auto-ack the burst so the
+        // prefill scheduler finalizes the migrating SUBMIT (emits
+        // prefill_complete).
+        return std::make_unique<sch::MockMigrationClient>(/*autoAck=*/true);
       } else {
         return nullptr;
       }
