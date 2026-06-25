@@ -186,27 +186,46 @@ async def reset_prefix_cache(request: Request):
 
 
 def install() -> None:
-    """Monkeypatch vLLM's ``build_app`` to mount the weight-update router.
+    """Mount the weight-update router on the vLLM OpenAI API server FastAPI app.
 
-    Must be called before the OpenAI API server module is run (i.e. before
-    ``runpy.run_module("vllm.entrypoints.openai.api_server", ...)``).
-    Idempotent.
+    Must be called before the OpenAI API server module is run. Idempotent.
+
+    Implementation note -- why we hook ``fastapi.FastAPI.__init__`` rather than
+    vLLM's ``build_app``:
+
+    ``run_vllm_api_server.py`` launches the server via
+    ``runpy.run_module("vllm.entrypoints.openai.api_server", run_name="__main__")``,
+    which RE-EXECUTES that module's source in a brand-new ``__main__`` namespace.
+    A monkeypatch of ``api_server.build_app`` on the already-imported module
+    object is therefore shadowed by the freshly-redefined ``build_app`` and is
+    never consulted -- the server mounts only its stock routes and every
+    ``/v1/internal/weights/*`` call 404s. (At launch, ``runpy`` even warns:
+    "'vllm.entrypoints.openai.api_server' found in sys.modules ... prior to
+    execution ...; this may result in unpredictable behaviour".)
+
+    ``fastapi`` is imported once and is NOT re-executed by ``runpy``, so a hook
+    on ``FastAPI.__init__`` survives the re-exec. Every FastAPI app built in
+    this process (in practice just the vLLM server app) gets the router mounted
+    immediately after construction; the API-key auth middleware vLLM adds later
+    is app-level (Starlette) and so still covers these routes.
     """
-    import vllm.entrypoints.openai.api_server as api_server
+    import fastapi
 
-    if getattr(api_server.build_app, "_tt_weight_update_patched", False):
+    if getattr(fastapi.FastAPI.__init__, "_tt_weight_update_patched", False):
         return
 
-    original_build_app = api_server.build_app
+    original_init = fastapi.FastAPI.__init__
 
-    def build_app_with_weight_update(args):
-        app = original_build_app(args)
-        app.include_router(router)
-        app.state.tt_weights_version = 0
-        logger.info(
-            "Mounted TT weight-update routes under /v1/internal/weights"
-        )
-        return app
+    def __init___with_weight_update(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        # Guard against double-mounting (e.g. nested/sub-apps or a re-entrant
+        # construction): only the first init per app installs the router.
+        if getattr(self.state, "_tt_weight_update_mounted", False):
+            return
+        self.include_router(router)
+        self.state._tt_weight_update_mounted = True
+        self.state.tt_weights_version = 0
+        logger.info("Mounted TT weight-update routes under /v1/internal/weights")
 
-    build_app_with_weight_update._tt_weight_update_patched = True  # type: ignore[attr-defined]
-    api_server.build_app = build_app_with_weight_update
+    __init___with_weight_update._tt_weight_update_patched = True  # type: ignore[attr-defined]
+    fastapi.FastAPI.__init__ = __init___with_weight_update
