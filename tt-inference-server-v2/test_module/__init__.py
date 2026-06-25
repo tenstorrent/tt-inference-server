@@ -47,7 +47,7 @@ _LAZY_FROM_CONTEXT = {
     "get_tokenizer",
 }
 
-_LAZY_FROM_LLM_TESTS = {"run_llm_performance", "run_prefix_cache"}
+_LAZY_FROM_LLM_TESTS = {"run_llm_performance", "run_llm_bench", "run_prefix_cache"}
 
 _LAZY_FROM_DISPATCH = {
     "BENCHMARK_DISPATCH",

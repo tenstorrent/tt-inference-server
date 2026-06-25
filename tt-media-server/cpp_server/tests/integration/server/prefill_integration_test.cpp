@@ -183,8 +183,8 @@ class MockDecodeServer {
 
   ~MockDecodeServer() { socket.close(); }
 
-  /// Block until a peer DEALER connects. Returns the peer's ZMQ identity.
-  std::vector<uint8_t> waitForPeer(
+  /// Wait for registration and capture the prefill DEALER identity.
+  std::vector<uint8_t> waitForRegistration(
       std::chrono::milliseconds timeout = std::chrono::milliseconds(10000)) {
     auto deadline = std::chrono::steady_clock::now() + timeout;
     while (std::chrono::steady_clock::now() < deadline) {
@@ -287,8 +287,8 @@ class PrefillIntegrationTest : public ::testing::Test {
 
     server = PrefillTestServer::start();
 
-    // Wait for the prefill server to connect (it will send a registration msg)
-    auto peer = mockDecode->waitForPeer();
+    // Capture the prefill DEALER identity before sending requests.
+    auto peer = mockDecode->waitForRegistration();
     ASSERT_FALSE(peer.empty())
         << "Prefill server never connected to mock decode";
   }

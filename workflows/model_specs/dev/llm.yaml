@@ -67,6 +67,10 @@ templates:
       override_tt_config:
         sample_on_device_mode: all
         trace_region_size: 134217728  # 128 MB; vLLM default 50 MB is too small for long prefill
+      known_issues:
+        - workflow_type: EVALS
+          task_name: aime25
+          reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -92,6 +96,10 @@ templates:
       override_tt_config:
         trace_region_size: 58000000
         sample_on_device_mode: decode_only
+      known_issues:
+        - workflow_type: EVALS
+          task_name: aime25
+          reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -880,6 +888,16 @@ templates:
       default_impl: true
       override_tt_config:
         trace_region_size: 900000000  # match P100 (single BH chip); 50MB default too small for prefill trace (#4005)
+      known_issues:
+        - workflow_type: EVALS
+          task_name: longbench_code_e
+          reason: "longbench_code_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_fewshot_e
+          reason: "longbench_fewshot_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_summarization_e
+          reason: "longbench_summarization_e measured score is ~94% which does not satisfy the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
   status: EXPERIMENTAL
   metadata:
     meta-llama/Llama-3.1-8B:
@@ -957,6 +975,16 @@ templates:
       override_tt_config:
         sample_on_device_mode: decode_only
         trace_region_size: 155000000
+      known_issues:
+        - workflow_type: EVALS
+          task_name: longbench_code_e
+          reason: "longbench_code_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_fewshot_e
+          reason: "longbench_fewshot_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_summarization_e
+          reason: "longbench_summarization_e measured score is ~94% which does not satisfy the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
     - device: P300
       max_concurrency: 32
       max_context: 131072  # 128 * 1024

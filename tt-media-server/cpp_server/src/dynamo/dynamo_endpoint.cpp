@@ -15,7 +15,6 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
-#include <future>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -27,7 +26,6 @@
 #include "domain/llm/llm_response.hpp"
 #include "domain/session.hpp"
 #include "services/llm_pipeline.hpp"
-#include "services/llm_service.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
@@ -203,7 +201,6 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
 
     trantor::EventLoop* loop = pool->getNextLoop();
     auto req = buildLLMRequest(dynReq);
-    auto svc = pipeline->service();
 
     // Reasoning/usage accounting for the Dynamo path. The worker doesn't decode
     // or run the response writer here (the frontend detokenizes), so we count
@@ -243,9 +240,10 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
     // asynchronously on the loop — no blocking, no per-request thread. The
     // pipeline callbacks below are unchanged: sendChunk/signalDone forward to
     // it.
-    auto writer = DynamoStreamWriter::create(
-        loop, connInfo, probeId,
-        [svc, taskId = req->task_id]() { svc->abortRequest(taskId); });
+    auto cancelFn = [pipeline, taskId = req->task_id]() {
+      pipeline->abortRequest(taskId);
+    };
+    auto writer = DynamoStreamWriter::create(loop, connInfo, probeId, cancelFn);
     writer->connect();
 
     auto sendChunk = [writer](const TokenChunk& chunk) {
@@ -253,8 +251,11 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
     };
     auto signalDone = [writer]() { writer->finalize(); };
 
-    auto cancelFn = [svc, taskId = req->task_id]() {
-      svc->abortRequest(taskId);
+    auto sendErrorAndDone = [sendChunk, signalDone]() {
+      TokenChunk err;
+      err.finish_reason = "error";
+      sendChunk(err);
+      signalDone();
     };
 
     // Reject requests whose prompt exceeds the maximum input sequence length.
@@ -274,11 +275,12 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       return;
     }
 
-    pipeline->resolveSession(
-        req, loop,
-        [pipeline, req, sendChunk, signalDone, recvT, firstChunkSeen, probeId,
-         usage](services::LLMPipeline::SessionInfo info) {
-          using SteadyClock = std::chrono::steady_clock;
+    auto preProcessStart = std::make_shared<SteadyClock::time_point>();
+    auto dispatchStart = std::make_shared<SteadyClock::time_point>();
+
+    services::LLMPipeline::GenerationHandlers handlers;
+    handlers.onSessionResolved =
+        [recvT, probeId, preProcessStart](services::LLMPipeline::SessionInfo) {
           const auto tSession = SteadyClock::now();
           const auto sessionMs =
               std::chrono::duration_cast<std::chrono::microseconds>(tSession -
@@ -288,163 +290,139 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           TT_LOG_INFO(
               "[DynamoLatency] id={} stage=session_ready ms_since_recv={:.3f}",
               probeId.empty() ? "?" : probeId, sessionMs);
-
-          auto svc = pipeline->service();
-          // Pre-dispatch shared_ptr copy: dispatchGeneration std::move()s the
-          // request into produceStream, emptying req->session. The callback and
-          // error paths use this copy to release (and it keeps the session
-          // alive for token accumulation).
-          auto sessionPtr = req->session;
-          const auto tPreStart = SteadyClock::now();
-          try {
-            svc->preProcess(*req);
-          } catch (const std::exception& e) {
-            TT_LOG_WARN("[DynamoEndpoint] preProcess failed: {}", e.what());
-            if (sessionPtr) sessionPtr->release();
-            TokenChunk err;
-            err.finish_reason = "error";
-            sendChunk(err);
-            signalDone();
-            return;
-          }
-          const auto preProcessMs =
-              std::chrono::duration_cast<std::chrono::microseconds>(
-                  SteadyClock::now() - tPreStart)
-                  .count() /
-              1000.0;
-          TT_LOG_INFO(
-              "[DynamoLatency] id={} stage=preprocessed preprocess_ms={:.3f}",
-              probeId.empty() ? "?" : probeId, preProcessMs);
-
-          const auto tDispatch = SteadyClock::now();
-          auto cb = [req, svc, sessionPtr, sendChunk, signalDone, recvT,
-                     firstChunkSeen, probeId, tDispatch,
-                     usage](const tt::domain::llm::LLMStreamChunk& chunk,
-                            bool isFinal) {
-            // Log worker-side TTFT exactly once per request: total since recv
-            // AND time spent purely in BlazeRunner (since dispatchGeneration).
-            // Splitting these lets us tell the difference between "session
-            // resolve + preprocess took 400ms" and "the model itself took
-            // 400ms to emit its first token".
-            bool expected = false;
-            if (firstChunkSeen->compare_exchange_strong(expected, true)) {
-              using SteadyClock = std::chrono::steady_clock;
-              const auto firstChunkT = SteadyClock::now();
-              const auto sinceRecvMs =
-                  std::chrono::duration_cast<std::chrono::microseconds>(
-                      firstChunkT - recvT)
-                      .count() /
-                  1000.0;
-              const auto sinceDispatchMs =
-                  std::chrono::duration_cast<std::chrono::microseconds>(
-                      firstChunkT - tDispatch)
-                      .count() /
-                  1000.0;
-              TT_LOG_INFO(
-                  "[DynamoLatency] id={} stage=first_chunk "
-                  "worker_recv_to_first_chunk_ms={:.3f} "
-                  "dispatch_to_first_chunk_ms={:.3f}",
-                  probeId.empty() ? "?" : probeId, sinceRecvMs,
-                  sinceDispatchMs);
-            }
-
-            // Disaggregation: the decode server stamps the prefill server's
-            // prefix-cache reuse count onto the first chunk. Capture it so the
-            // final usage block can report it (the decode-side request is not a
-            // continuation, so the formula below would otherwise yield 0).
-            if (chunk.cached_prompt_tokens.has_value()) {
-              usage->cachedTokens = *chunk.cached_prompt_tokens;
-            }
-
-            // Track token for prefix cache hash accumulation. Use the captured
-            // sessionPtr, not req->session: the request was std::move()'d into
-            // produceStream by dispatchGeneration, emptying req->session.
-            if (sessionPtr && !chunk.choices.empty() &&
-                chunk.choices[0].token_id) {
-              sessionPtr->addGeneratedToken(
-                  static_cast<int>(*chunk.choices[0].token_id));
-            }
-
-            // Usage accounting: count generated tokens and the reasoning span.
-            if (!chunk.choices.empty() && chunk.choices[0].token_id) {
-              const int tid = static_cast<int>(*chunk.choices[0].token_id);
-              const auto kNo = tt::utils::tokenizers::kNoTokenId;
-              usage->completion += 1;
-              if (usage->thinkStart != kNo && tid == usage->thinkStart) {
-                usage->inReasoning = true;
-              }
-              if (usage->inReasoning) usage->reasoning += 1;
-              if (usage->thinkEnd != kNo && tid == usage->thinkEnd) {
-                usage->inReasoning = false;
-              }
-            }
-
-            // Finalize session state before sending final chunk
-            if (isFinal && sessionPtr) {
-              sessionPtr->finalizeAndRegisterHashes();
-              sessionPtr->release();
-            }
-
-            TokenChunk out = toTokenChunk(chunk, isFinal);
-            if (isFinal) {
-              DynamoUsage du;
-              du.prompt_tokens = req->full_prompt_tokens_count;
-              du.completion_tokens = usage->completion;
-              du.total_tokens = du.prompt_tokens + du.completion_tokens;
-              // Prefer the prefix-cache reuse reported by the prefill server in
-              // disaggregation; fall back to the aggregated-path formula
-              // (continuation delta) when not disaggregated.
-              int cached =
-                  usage->cachedTokens > 0
-                      ? usage->cachedTokens
-                      : (req->continuation ? req->full_prompt_tokens_count -
-                                                 req->prompt_tokens_count
-                                           : 0);
-              du.cached_tokens = cached < 0 ? 0 : cached;
-              // Only report reasoning_tokens for models that have think tokens.
-              const auto kNo = tt::utils::tokenizers::kNoTokenId;
-              if (usage->thinkStart != kNo || usage->thinkEnd != kNo) {
-                du.reasoning_tokens = usage->reasoning;
-              }
-              out.completion_usage = du;
-            }
-            const bool sent = sendChunk(out);
-            if (isFinal) {
-              signalDone();
-              return;
-            }
-            if (!sent) {
-              TT_LOG_WARN(
-                  "[DynamoEndpoint] downstream send failed for task {}; "
-                  "aborting generation",
-                  req->task_id);
-              svc->abortRequest(req->task_id);
-              return;
-            }
-          };
-
-          try {
-            pipeline->dispatchGeneration(*req, info, cb);
-          } catch (const std::exception& e) {
-            TT_LOG_ERROR("[DynamoEndpoint] dispatchGeneration failed: {}",
-                         e.what());
-            if (sessionPtr) sessionPtr->release();
-            TokenChunk err;
-            err.finish_reason = "error";
-            sendChunk(err);
-            signalDone();
-          }
-        },
-        [sendChunk,
-         signalDone](const services::LLMPipeline::SessionError& err) {
+          *preProcessStart = SteadyClock::now();
+        };
+    handlers.onPreProcessed = [preProcessStart, dispatchStart, probeId]() {
+      const auto preProcessMs =
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              SteadyClock::now() - *preProcessStart)
+              .count() /
+          1000.0;
+      TT_LOG_INFO(
+          "[DynamoLatency] id={} stage=preprocessed preprocess_ms={:.3f}",
+          probeId.empty() ? "?" : probeId, preProcessMs);
+      *dispatchStart = SteadyClock::now();
+    };
+    handlers.onPreProcessError =
+        [sendErrorAndDone](const std::exception& e,
+                           std::shared_ptr<tt::domain::Session> sessionPtr) {
+          TT_LOG_WARN("[DynamoEndpoint] preProcess failed: {}", e.what());
+          if (sessionPtr) sessionPtr->release();
+          sendErrorAndDone();
+        };
+    handlers.onDispatchError =
+        [sendErrorAndDone](const std::exception& e,
+                           std::shared_ptr<tt::domain::Session> sessionPtr) {
+          TT_LOG_ERROR("[DynamoEndpoint] dispatchGeneration failed: {}",
+                       e.what());
+          if (sessionPtr) sessionPtr->release();
+          sendErrorAndDone();
+        };
+    handlers.onSessionError =
+        [sendErrorAndDone](const services::LLMPipeline::SessionError& err) {
           TT_LOG_WARN("[DynamoEndpoint] Session resolution failed: {}",
                       err.message);
-          TokenChunk e;
-          e.finish_reason = "error";
-          sendChunk(e);
-          signalDone();
+          sendErrorAndDone();
+        };
+
+    pipeline->runStreamingRequest(
+        req, loop,
+        [pipeline, req, sendChunk, signalDone, recvT, firstChunkSeen, probeId,
+         usage,
+         dispatchStart](services::LLMPipeline::SessionInfo,
+                        std::shared_ptr<tt::domain::Session> sessionPtr) {
+          services::LLMPipeline::StreamCallback cb =
+              [pipeline, req, sessionPtr, sendChunk, signalDone, recvT,
+               firstChunkSeen, probeId, tDispatch = *dispatchStart, usage](
+                  const tt::domain::llm::LLMStreamChunk& chunk, bool isFinal) {
+                bool expected = false;
+                if (firstChunkSeen->compare_exchange_strong(expected, true)) {
+                  using SteadyClock = std::chrono::steady_clock;
+                  const auto firstChunkT = SteadyClock::now();
+                  const auto sinceRecvMs =
+                      std::chrono::duration_cast<std::chrono::microseconds>(
+                          firstChunkT - recvT)
+                          .count() /
+                      1000.0;
+                  const auto sinceDispatchMs =
+                      std::chrono::duration_cast<std::chrono::microseconds>(
+                          firstChunkT - tDispatch)
+                          .count() /
+                      1000.0;
+                  TT_LOG_INFO(
+                      "[DynamoLatency] id={} stage=first_chunk "
+                      "worker_recv_to_first_chunk_ms={:.3f} "
+                      "dispatch_to_first_chunk_ms={:.3f}",
+                      probeId.empty() ? "?" : probeId, sinceRecvMs,
+                      sinceDispatchMs);
+                }
+
+                if (chunk.cached_prompt_tokens.has_value()) {
+                  usage->cachedTokens = *chunk.cached_prompt_tokens;
+                }
+
+                // dispatchGeneration moves req->session, so use the stable
+                // copy.
+                if (sessionPtr && !chunk.choices.empty() &&
+                    chunk.choices[0].token_id) {
+                  sessionPtr->addGeneratedToken(
+                      static_cast<int>(*chunk.choices[0].token_id));
+                }
+
+                if (!chunk.choices.empty() && chunk.choices[0].token_id) {
+                  const int tid = static_cast<int>(*chunk.choices[0].token_id);
+                  const auto kNo = tt::utils::tokenizers::kNoTokenId;
+                  usage->completion += 1;
+                  if (usage->thinkStart != kNo && tid == usage->thinkStart) {
+                    usage->inReasoning = true;
+                  }
+                  if (usage->inReasoning) usage->reasoning += 1;
+                  if (usage->thinkEnd != kNo && tid == usage->thinkEnd) {
+                    usage->inReasoning = false;
+                  }
+                }
+
+                if (isFinal && sessionPtr) {
+                  sessionPtr->finalizeAndRegisterHashes();
+                  sessionPtr->release();
+                }
+
+                TokenChunk out = toTokenChunk(chunk, isFinal);
+                if (isFinal) {
+                  DynamoUsage du;
+                  du.prompt_tokens = req->full_prompt_tokens_count;
+                  du.completion_tokens = usage->completion;
+                  du.total_tokens = du.prompt_tokens + du.completion_tokens;
+                  const int cached =
+                      usage->cachedTokens > 0
+                          ? usage->cachedTokens
+                          : (req->continuation ? req->full_prompt_tokens_count -
+                                                     req->prompt_tokens_count
+                                               : 0);
+                  du.cached_tokens = cached < 0 ? 0 : cached;
+                  const auto kNo = tt::utils::tokenizers::kNoTokenId;
+                  if (usage->thinkStart != kNo || usage->thinkEnd != kNo) {
+                    du.reasoning_tokens = usage->reasoning;
+                  }
+                  out.completion_usage = du;
+                }
+
+                const bool sent = sendChunk(out);
+                if (isFinal) {
+                  signalDone();
+                  return;
+                }
+                if (!sent) {
+                  TT_LOG_WARN(
+                      "[DynamoEndpoint] downstream send failed for task {}; "
+                      "aborting generation",
+                      req->task_id);
+                  pipeline->abortRequest(req->task_id);
+                }
+              };
+          return cb;
         },
-        std::move(cancelFn));
+        std::move(handlers), std::move(cancelFn));
   };
 }
 

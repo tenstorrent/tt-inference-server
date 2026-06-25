@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 _MODEL_DIFF_PARAM_OVERRIDES = {
     "FLUX.1-dev": {"seed": 0},
     "FLUX.1-schnell": {"seed": 0},
+    "Motif-Image-6B-Preview": {"seed": 0},
 }
 default_payload = {
     "prompt": "A beautiful sunset over a mountain landscape with vibrant colors",
