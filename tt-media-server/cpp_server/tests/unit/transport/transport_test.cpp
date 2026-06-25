@@ -317,6 +317,32 @@ TEST(PeerDiscoveryService, NoPeersResolvesToEmptyMap) {
   EXPECT_TRUE(engine.callLog.empty());  // no openSegment attempts
 }
 
+// Duplicate names must not inflate the expected count (which would wedge
+// discovery into a permanent false timeout): they collapse to one entry and
+// are polled once.
+TEST(PeerDiscoveryService, DeduplicatesRepeatedPeerNames) {
+  FakeTransferEngine engine;
+  engine.resolveAfterMisses = {{"a", 0}, {"b", 0}};
+  PeerDiscoveryService discovery(fastDiscovery(1));
+
+  const auto resolved = discovery.discover(engine, {"a", "a", "b", "a"});
+  ASSERT_TRUE(resolved.has_value());
+  EXPECT_EQ(resolved->size(), 2u);
+  EXPECT_EQ(engine.openAttempts["a"], 1);  // resolved once despite repeats
+}
+
+// Empty names are ignored entirely — never passed to openSegment.
+TEST(PeerDiscoveryService, IgnoresEmptyPeerNames) {
+  FakeTransferEngine engine;
+  engine.resolveAfterMisses = {{"real", 0}};
+  PeerDiscoveryService discovery(fastDiscovery(1));
+
+  const auto resolved = discovery.discover(engine, {"", "real", ""});
+  ASSERT_TRUE(resolved.has_value());
+  EXPECT_EQ(resolved->size(), 1u);
+  EXPECT_EQ(engine.openAttempts.count(""), 0u);  // never tried to open ""
+}
+
 // Bring-up happy path: the worker inits, publishes its pool, then discovers its
 // peer — and crucially registers BEFORE opening any peer segment, so peers can
 // resolve it in return (the #4294 ordering invariant).
