@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-// bringup_mooncake_worker: production entry point for a migration worker
-// (#4294). Brings a worker up through a strict phased startup — config →
-// allocate host-DRAM pool → init engine → register memory (publishes our
-// segment) → discover peers (readiness gate) → hold until SIGTERM — then tears
-// down in reverse order. The discovery itself lives in MooncakeMigrationWorker
-// / PeerDiscovery; this file is the thin orchestration around it.
+// bringup_mooncake_worker: production entry point / composition root for a
+// migration worker. Parses + validates CLI, then wires the worker's
+// collaborators — the transfer engine and the PeerDiscoveryService — and hands
+// them to a MooncakeMigrationWorker that owns the phased lifecycle (allocate
+// host-DRAM pool → init engine → register/publish → discover peers → hold until
+// SIGTERM → teardown in reverse). This file only constructs and wires; it does
+// not sequence the phases or perform discovery itself.
 
 #include <unistd.h>
 
@@ -24,6 +25,7 @@
 #include "transport/host_dram_storage_backend.hpp"
 #include "transport/mooncake_migration_worker.hpp"
 #include "transport/mooncake_transfer_engine.hpp"
+#include "transport/peer_discovery_service.hpp"
 #include "transport/transfer_types.hpp"
 #include "utils/logger.hpp"
 
@@ -34,6 +36,7 @@ using namespace tt::transport;
 constexpr std::size_t K_DEFAULT_HOST_DRAM_BYTES = 4ULL << 30;  // 4 GiB
 constexpr std::size_t K_RAM_HEADROOM_BYTES = 1ULL << 30;       // 1 GiB
 constexpr int K_DEFAULT_DISCOVERY_TIMEOUT_SEC = 30;
+constexpr int K_DISCOVERY_POLL_INTERVAL_MS = 1000;
 
 struct WorkerConfig {
   std::string metadata_uri;        ///< Discovery service (REQUIRED).
@@ -204,8 +207,9 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
 }
 
 // Translate parsed CLI flags into the worker's domain config. The worker owns
-// the lifecycle (allocate/init/register/connect/run/teardown); main only wires
-// dependencies and maps config — it does not sequence the phases.
+// the lifecycle (allocate/init/register/discover/run/teardown); main only wires
+// dependencies and maps config — it does not sequence the phases. The discovery
+// timeout is not part of this config: it belongs to the PeerDiscoveryService.
 MigrationWorkerConfig toWorkerConfig(const WorkerConfig& cli) {
   MigrationWorkerConfig cfg;
   cfg.metadata_uri = cli.metadata_uri;
@@ -213,7 +217,6 @@ MigrationWorkerConfig toWorkerConfig(const WorkerConfig& cli) {
   cfg.protocol = cli.protocol;
   cfg.host_dram_bytes = cli.host_dram_bytes;
   cfg.peer_segment_names = cli.peers;
-  cfg.discovery_timeout_sec = cli.discovery_timeout_sec;
   return cfg;
 }
 
@@ -231,11 +234,15 @@ int main(int argc, char** argv) {
   std::signal(SIGTERM, onSignal);
   std::signal(SIGINT, onSignal);
 
-  // Composition root: build the engine (storage + transport) and hand it to a
-  // worker that owns its own bring-up and teardown.
+  // Composition root: build the worker's collaborators (engine + discovery
+  // service) and hand them to a worker that owns its own bring-up and teardown.
   auto engine = std::make_shared<MooncakeTransferEngine>(
       std::make_shared<HostDramStorageBackend>());
-  MooncakeMigrationWorker worker(toWorkerConfig(cli), std::move(engine));
+  auto discovery = std::make_shared<PeerDiscoveryService>(PeerDiscoveryConfig{
+      K_DISCOVERY_POLL_INTERVAL_MS, cli.discovery_timeout_sec});
+
+  MooncakeMigrationWorker worker(toWorkerConfig(cli), std::move(engine),
+                                 std::move(discovery));
 
   if (!worker.bringUp()) {
     TT_LOG_ERROR("[bringup] '{}' bring-up failed", cli.name);
