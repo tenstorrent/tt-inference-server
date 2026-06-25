@@ -381,7 +381,7 @@ def register_tt_models(impl_id=None):
     )
     ModelRegistry.register_model(
         "TTQwen3_5ForConditionalGeneration",
-        "models.demos.blackhole.qwen3_5_9b.tt.qwen35_vllm:Qwen35ForCausalLM",
+        "models.demos.blackhole.qwen36.tt.qwen36_vllm:Qwen36ForCausalLM",
     )
 
 

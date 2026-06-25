@@ -228,7 +228,7 @@ templates:
     - Qwen/Qwen3.5-9B
   impl: qwen35_9b_blackhole
   version: "0.15.0"
-  tt_metal_commit: 40e06f1d39a
+  tt_metal_commit: 214bf59a86c
   vllm_commit: 0410f6b0c
   inference_engine: VLLM
   device_model_specs:
@@ -251,9 +251,9 @@ templates:
       tool_call_parser_name: hermes
 
 # Qwen3.5-27B (bf16) and Qwen3.6-27B reuse the SAME tt-metal code as the 9B
-# (models/demos/blackhole/qwen3_5_9b; shared Qwen35ForCausalLM vLLM wrapper) — the model is
+# (models/demos/blackhole/qwen36; shared Qwen36ForCausalLM vLLM wrapper) — the model is
 # selected by HF_MODEL + MESH_DEVICE=P150x4 (tensor parallel across 4 P150s; the mesh drives TP,
-# so no vLLM parallel arg). B=1 serving. tt_metal_commit 40e06f1d39a keeps Q in bf16 through the
+# so no vLLM parallel arg). B=1 serving. tt_metal_commit 214bf59a86c keeps Q in bf16 through the
 # chunked SDPA (the bf8-Q long-context degeneration fix) + the get_max_tokens 256k override, plus
 # the rope-dim / decode-drift / long-context-degeneration fixes layered on top of 8ebeaba79ac;
 # validated to 256K ISL on bf16 27B (250k-token prompt → coherent summary) and 64K on 3.6-27B.
@@ -261,7 +261,7 @@ templates:
     - Qwen/Qwen3.5-27B
   impl: qwen35_9b_blackhole
   version: "0.15.0"
-  tt_metal_commit: 40e06f1d39a
+  tt_metal_commit: 214bf59a86c
   vllm_commit: 0410f6b0c
   inference_engine: VLLM
   device_model_specs:
@@ -289,7 +289,7 @@ templates:
     - Qwen/Qwen3.6-27B
   impl: qwen35_9b_blackhole
   version: "0.15.0"
-  tt_metal_commit: 40e06f1d39a
+  tt_metal_commit: 214bf59a86c
   vllm_commit: 0410f6b0c
   inference_engine: VLLM
   device_model_specs:

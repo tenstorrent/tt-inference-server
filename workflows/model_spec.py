@@ -233,7 +233,7 @@ qwen35_9b_blackhole_impl = ImplSpec(
     impl_id="qwen35_9b_blackhole",
     impl_name="qwen3.5-9b-blackhole",
     repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/blackhole/qwen3_5_9b",
+    code_path="models/demos/blackhole/qwen36",
 )
 gpt_oss_impl = ImplSpec(
     impl_id="gpt_oss",
