@@ -539,7 +539,7 @@ TEST_F(PrefillIntegrationTest, PrefixHitWithPartialTrailingTileSetsPositionId) {
   std::iota(tokens.begin(), tokens.end(), 1);
 
   std::vector<uint64_t> hashes(309);
-  std::iota(hashes.begin(), hashes.end(), 1001);
+  std::iota(hashes.begin(), hashes.end(), 6001);
 
   const uint32_t firstTaskId = 99300;
   tt::sockets::PrefillRequestMessage firstReq(firstTaskId);
@@ -601,10 +601,9 @@ TEST_F(PrefillIntegrationTest, PrefixHitWithPartialTrailingTileSetsPositionId) {
   ASSERT_NE(secondSeq, nullptr);
   EXPECT_TRUE(secondSeq->isContinuation());
   ASSERT_TRUE(secondSeq->getKVPositionId().has_value());
-  const uint32_t expectedMatchedTokens =
-      static_cast<uint32_t>(tt::config::kvCacheFirstBlockSize() +
-                            (hashes.size() - 1) *
-                                tt::config::kvCacheBlockSize());
+  const uint32_t expectedMatchedTokens = static_cast<uint32_t>(
+      tt::config::kvCacheFirstBlockSize() +
+      (hashes.size() - 1) * tt::config::kvCacheBlockSize());
   const size_t expectedReplayTokens = tokens.size() - expectedMatchedTokens;
   EXPECT_EQ(*secondSeq->getKVPositionId(), expectedMatchedTokens);
   EXPECT_EQ(secondSeq->getNumPromptTokens(), expectedReplayTokens);

@@ -47,10 +47,11 @@ inline uint32_t applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
   const size_t skip = static_cast<size_t>(tokensToTrim);
 
   if (!options.logPrefix.empty() && matchedTokens > 0) {
-    TT_LOG_DEBUG("{} applyDeltaPrompt: matchedTokens={} tailReplay={} "
-                 "trimmedTokens={} remainder={}",
-                 options.logPrefix, matchedTokens, tailReplay, tokensToTrim,
-                 static_cast<uint32_t>(tokens.size()) - matchedTokens);
+    TT_LOG_DEBUG(
+        "{} applyDeltaPrompt: matchedTokens={} tailReplay={} "
+        "trimmedTokens={} remainder={}",
+        options.logPrefix, matchedTokens, tailReplay, tokensToTrim,
+        static_cast<uint32_t>(tokens.size()) - matchedTokens);
   }
 
   tokens.erase(tokens.begin(), tokens.begin() + static_cast<ptrdiff_t>(skip));

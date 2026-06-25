@@ -101,9 +101,9 @@ TEST(BlazePrefillRunnerIntegrationTest,
   ASSERT_TRUE(seedTokens.back().isFinal());
 
   constexpr uint32_t continuationTaskId = 304;
-  domain::llm::Sequence continuation(
-      continuationTaskId, test::kDefaultBlockSize, {32, 33, 34, 35, 36, 99},
-      samplingParams);
+  domain::llm::Sequence continuation(continuationTaskId,
+                                     test::kDefaultBlockSize,
+                                     {32, 33, 34, 35, 36, 99}, samplingParams);
   continuation.setPrefillKVCacheSlot(allocateResponse.slotId);
   continuation.setKVPositionId(37);
   harness.taskQueue().push(continuation);
@@ -139,8 +139,8 @@ TEST(BlazePrefillRunnerIntegrationTest,
 
   constexpr uint32_t continuationTaskId = 1304;
   domain::llm::Sequence continuation(
-      continuationTaskId, test::kDefaultBlockSize,
-      {32, 99}, /*numPromptTokens=*/2,
+      continuationTaskId, test::kDefaultBlockSize, {32, 99},
+      /*numPromptTokens=*/2,
       /*slotId=*/allocateResponse.slotId,
       /*prefillSlotId=*/allocateResponse.slotId, /*continuation=*/true,
       /*disaggregated=*/false,
