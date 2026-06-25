@@ -283,6 +283,13 @@ class KernelDispatcher:
     ):
         self._device = device
         self._model_config = model_config
+        # Resolve the hardware capability config once (tt-smi via tt-kernel, ttnn
+        # fallback, deployment default). Flows to compat's L1/DRAM budgets and to
+        # capabilities(). On the p150 the detected L1 budget equals the legacy default,
+        # so this is behavior-preserving there.
+        if hw_config is None:
+            from tt_inference_server.dispatch.hardware import detect_hardware
+            hw_config = detect_hardware(device)
         self._hw_config = hw_config
         self._cache: Dict[Tuple, Any] = {}
         self._unsafe = unsafe

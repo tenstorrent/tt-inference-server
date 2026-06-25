@@ -16,7 +16,9 @@ from typing import Dict, Tuple
 
 TILE = 32
 BF16_TILE_BYTES = 32 * 32 * 2  # 2048 bytes per bf16 tile
-# Fallback when no HardwareConfig is provided — matches the p150 91.5% budget.
+# Last-resort fallback for direct callers that pass hw_config=None. The dispatcher now
+# always supplies a detected HardwareConfig (see hardware.detect_hardware), so this is
+# rarely hit; it mirrors bh_p150_1card's budget: int(1_572_864 * 0.915).
 _DEFAULT_L1_BUDGET_BYTES = 1_439_170
 
 
