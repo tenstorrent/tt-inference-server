@@ -365,7 +365,23 @@ class TTWorker(WorkerBase):
         hf_dict = bridge.recv_state()
 
         # 2. Apply in place (preserves device buffer addresses / traces).
-        model.update_weights(hf_dict, hf_rope=hf_rope)
+        #    An EMPTY dict is the co-located plumbing-test payload
+        #    (SIM_PAYLOAD=empty): the trainer streams a zero-entry manifest to
+        #    exercise the full connect/transfer/barrier/HTTP round-trip without a
+        #    real Contract-B weight set. ``Transformer.update_weights`` is strict
+        #    (it raises KeyError on the first missing HF key), so short-circuit to
+        #    a no-op here rather than handing it the empty dict. The version is
+        #    still bumped and the barrier still runs, so the round-trip the
+        #    trainer observes is identical to a real update.
+        if hf_dict:
+            model.update_weights(hf_dict, hf_rope=hf_rope)
+            applied = True
+        else:
+            logger.info(
+                "Received empty weight payload (plumbing test); skipping "
+                "model.update_weights and applying a no-op version bump."
+            )
+            applied = False
 
         # 3. Drop the received handles and fence so the sender can free its
         #    source tensors before we touch the model again for inference.
@@ -377,9 +393,20 @@ class TTWorker(WorkerBase):
             version if version is not None else self._weights_version + 1
         )
         logger.info(
-            "Weight update complete; weights_version=%s", self._weights_version
+            "Weight update complete; weights_version=%s weights_applied=%s",
+            self._weights_version,
+            applied,
         )
-        return {"rank": rank, "updated": True, "version": self._weights_version}
+        # ``updated`` reports control-plane success (the version was recorded and
+        # the bridge round-trip completed), which the HTTP endpoint uses to
+        # confirm a worker handled the request; ``weights_applied`` distinguishes
+        # a real in-place apply from the empty-payload plumbing no-op.
+        return {
+            "rank": rank,
+            "updated": True,
+            "weights_applied": applied,
+            "version": self._weights_version,
+        }
 
     def get_weights_version(self) -> int:
         """Return the current on-device weights/policy version."""
