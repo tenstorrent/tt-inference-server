@@ -1056,6 +1056,9 @@ templates:
       remote_api_model: moonshotai/Kimi-K2.6
       reasoning_parser_name: deepseek_r1
       tool_call_parser_name: hermes
+      # Kimi ships a custom tokenizer; AIPerf-driven sweeps (prefix-cache,
+      # spec-decode) must trust remote code to load it.
+      tokenizer_trust_remote_code: true
 
 # Remote-served model: evaluated against an external OpenAI-compatible
 # endpoint via `--server-url` (e.g. Tenstorrent console). The GPU device entry

@@ -210,6 +210,7 @@ class AIPerfPrefixCacheDriver:
             url=server.url_with_port,
             artifact_dir=str(artifact_dir),
             auth_token=server.auth_token,
+            tokenizer_trust_remote_code=server.tokenizer_trust_remote_code,
         )
         _log_run_header(prefix_run)
         logger.info("Executing: %s", " ".join(cmd))
@@ -300,6 +301,7 @@ def _build_aiperf_cmd(
     url: str,
     artifact_dir: str,
     auth_token: str,
+    tokenizer_trust_remote_code: bool = False,
 ) -> List[str]:
     """Construct the AIPerf CLI command for one prefix-cache run.
 
@@ -350,6 +352,10 @@ def _build_aiperf_cmd(
         "--server-metrics-formats",
         "jsonl",
     ]
+    # Required for tokenizers with custom Hub code (e.g. Kimi). Bare
+    # store-true flag (aiperf defines it with negative=False).
+    if tokenizer_trust_remote_code:
+        cmd.append("--tokenizer-trust-remote-code")
     if emit_request_count:
         cmd.extend(["--request-count", str(run.request_count)])
 
