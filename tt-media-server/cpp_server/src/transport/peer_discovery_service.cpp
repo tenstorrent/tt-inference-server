@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "transport/peer_discovery.hpp"
+#include "transport/peer_discovery_service.hpp"
 
 #include <chrono>
 #include <thread>
@@ -11,10 +11,32 @@
 
 namespace tt::transport {
 
-PeerDiscovery::PeerDiscovery(PeerDiscoveryConfig config) : config_(config) {}
+PeerDiscoveryService::PeerDiscoveryService(PeerDiscoveryConfig config)
+    : config_(config) {}
 
-std::optional<std::map<std::string, SegmentHandle>> PeerDiscovery::resolveAll(
-    ITransferEngine& engine, const std::vector<std::string>& peerNames) {
+std::optional<std::map<std::string, SegmentHandle>>
+PeerDiscoveryService::discover(ITransferEngine& engine,
+                               const std::vector<std::string>& peerNames) {
+  if (peerNames.empty()) {
+    TT_LOG_WARN("[PeerDiscoveryService] no peers configured");
+    return std::map<std::string, SegmentHandle>{};
+  }
+
+  auto resolved = resolveAll(engine, peerNames);
+  if (!resolved) {
+    TT_LOG_ERROR(
+        "[PeerDiscoveryService] discovery timed out before all peers were "
+        "reachable");
+    return std::nullopt;
+  }
+
+  TT_LOG_INFO("[PeerDiscoveryService] CONNECTED to {} peers", resolved->size());
+  return resolved;
+}
+
+std::optional<std::map<std::string, SegmentHandle>>
+PeerDiscoveryService::resolveAll(ITransferEngine& engine,
+                                 const std::vector<std::string>& peerNames) {
   std::map<std::string, SegmentHandle> resolved;
   const auto deadline = std::chrono::steady_clock::now() +
                         std::chrono::seconds(config_.timeout_sec);
@@ -26,7 +48,7 @@ std::optional<std::map<std::string, SegmentHandle>> PeerDiscovery::resolveAll(
       const SegmentHandle handle = engine.openSegment(name);
       if (handle != kInvalidSegment) {
         resolved.emplace(name, handle);
-        TT_LOG_DEBUG("[PeerDiscovery] resolved '{}' ({}/{})", name,
+        TT_LOG_DEBUG("[PeerDiscoveryService] resolved '{}' ({}/{})", name,
                      resolved.size(), peerNames.size());
       }
     }
@@ -46,8 +68,8 @@ std::optional<std::map<std::string, SegmentHandle>> PeerDiscovery::resolveAll(
       missing += name;
     }
     TT_LOG_WARN(
-        "[PeerDiscovery] timed out after {}s: resolved {}/{} peers; still "
-        "missing: {}",
+        "[PeerDiscoveryService] timed out after {}s: resolved {}/{} peers; "
+        "still missing: {}",
         config_.timeout_sec, resolved.size(), peerNames.size(), missing);
     return std::nullopt;
   }
