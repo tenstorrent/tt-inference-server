@@ -187,6 +187,96 @@ class TestAgenticParser:
         )
 
 
+class TestAgenticModeReference:
+    """Under --ci-mode, agentic scoring compares against the task's CI-subset
+    reference (mode_reference_scores) instead of the full gpu_reference_score."""
+
+    def _score(self):
+        from evals.eval_config import EvalTaskScore, ModeReferenceScore
+
+        return EvalTaskScore(
+            published_score=None,
+            published_score_ref="x",
+            score_func=lambda *a, **k: 0.0,
+            gpu_reference_score=64.80,
+            gpu_reference_score_ref="full (500)",
+            tolerance=0.05,
+            mode_reference_scores={
+                EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                    40.0, ref="ci-nightly 5 instances", abs_margin=20.0
+                )
+            },
+        )
+
+    def test_subset_20pct_fails_full_but_passes_ci_abs_margin(self):
+        score = self._score()
+        # 20% vs full 64.80 -> FAIL; vs subset 40.0 w/ abs_margin 20 -> PASS.
+        assert (
+            compute_accuracy_check({"accuracy": 0.20}, score, None)
+            == ReportCheckTypes.FAIL
+        )
+        assert (
+            compute_accuracy_check({"accuracy": 0.20}, score, EvalLimitMode.CI_NIGHTLY)
+            == ReportCheckTypes.PASS
+        )
+
+    def test_subset_zero_fails_ci_abs_margin(self):
+        score = self._score()
+        assert (
+            compute_accuracy_check({"accuracy": 0.0}, score, EvalLimitMode.CI_NIGHTLY)
+            == ReportCheckTypes.FAIL
+        )
+
+    def test_parser_block_labels_subset_reference(self):
+        parser = AgenticEvalParser(
+            task_name="swe_bench_verified",
+            score=self._score(),
+            limit_mode=EvalLimitMode.CI_NIGHTLY,
+        )
+        block = parser.parse(HARBOR_RESULT_FIXTURE, device="N150")
+
+        assert block.targets["gpu_reference_score"] == 40.0
+        assert "[CI_NIGHTLY subset]" in block.targets["gpu_reference_score_ref"]
+
+
+class TestStandardEvalModeReference:
+    """Standard lm-eval scoring (_score_one) honors the CI-subset reference."""
+
+    def _gpqa_score(self):
+        from evals.eval_config import EvalTaskScore, ModeReferenceScore
+        from evals.eval_utils import score_task_single_key
+
+        return EvalTaskScore(
+            published_score=84.3,
+            published_score_ref="x",
+            score_func=score_task_single_key,
+            gpu_reference_score=83.33,
+            gpu_reference_score_ref="full (198)",
+            tolerance=0.05,
+            score_func_kwargs={"result_keys": ["exact_match,none"], "unit": "percent"},
+            mode_reference_scores={
+                EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(72.5, tolerance=0.10)
+            },
+        )
+
+    def test_subset_score_fails_full_but_passes_ci_subset(self):
+        from evals.eval_config import resolve_eval_reference
+        from test_module.llm_tests.llm_eval_tests import _score_one
+
+        score = self._gpqa_score()
+        task = SimpleNamespace(score=score, task_name="r1_gpqa_diamond")
+        results = {"r1_gpqa_diamond": {"exact_match,none": 0.725}}
+
+        ref_full = resolve_eval_reference(score, None)
+        _, _, _, ac_full = _score_one(task, results, "r1_gpqa_diamond", ref_full)
+        assert ac_full == ReportCheckTypes.FAIL
+
+        ref_ci = resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
+        s, _, _, ac_ci = _score_one(task, results, "r1_gpqa_diamond", ref_ci)
+        assert abs(s - 72.5) < 1e-6
+        assert ac_ci == ReportCheckTypes.PASS
+
+
 class TestAgenticDriverConfigMapping:
     def test_terminal_bench_config_uses_limit_mode_task_names_and_n_tasks(self):
         task = _terminal_task()

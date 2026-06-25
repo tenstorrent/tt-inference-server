@@ -25,6 +25,7 @@ from benchmarking.summary_report import (
 )
 from benchmarking.summary_report import get_markdown_table
 from evals.eval_config import EVAL_CONFIGS
+from evals.eval_config import resolve_eval_reference as _resolve_eval_reference
 from stress_tests.stress_tests_summary_report import (
     generate_report as stress_test_generate_report_helper,
 )
@@ -51,6 +52,7 @@ from workflows.workflow_config import (
 # from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import (
     DeviceTypes,
+    EvalLimitMode,
     ModelType,
     ReportCheckTypes,
 )
@@ -1075,6 +1077,12 @@ def evals_release_report_data(args, results, meta_data, model_spec):
     task_type = model_spec.model_type.task_type
     report_rows = []
 
+    # When the run uses a limit mode (--limit-samples-mode / --ci-mode), the
+    # accuracy check should compare against a subset-specific reference rather
+    # than the full-dataset gpu_reference_score (see _resolve_eval_reference).
+    limit_mode_str = getattr(args, "limit_samples_mode", None)
+    limit_mode = EvalLimitMode.from_string(limit_mode_str) if limit_mode_str else None
+
     for task in eval_config.tasks:
         if not task.score:
             logger.info(
@@ -1143,14 +1151,22 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                 else:
                     ratio_to_published = "N/A"
 
-                if task.score.gpu_reference_score:
-                    assert task.score.gpu_reference_score > 0, (
-                        "Reference score is not > 0"
-                    )
-                    ratio_to_reference = score / task.score.gpu_reference_score
-                    accuracy_check = ReportCheckTypes.from_result(
-                        ratio_to_reference >= (1.0 - task.score.tolerance)
-                    )
+                ref = _resolve_eval_reference(task.score, limit_mode)
+                reference_score = ref["reference_score"]
+
+                if reference_score:
+                    assert reference_score > 0, "Reference score is not > 0"
+                    ratio_to_reference = score / reference_score
+                    if ref["abs_margin"] is not None:
+                        # Absolute-margin check: robust for tiny subsets where a
+                        # single item flips the score in coarse steps.
+                        accuracy_check = ReportCheckTypes.from_result(
+                            score >= reference_score - ref["abs_margin"]
+                        )
+                    else:
+                        accuracy_check = ReportCheckTypes.from_result(
+                            ratio_to_reference >= (1.0 - ref["tolerance"])
+                        )
                 else:
                     ratio_to_reference = "N/A"
                     if task.score.published_score:
@@ -1169,8 +1185,8 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                         "accuracy_check": accuracy_check,
                         "score": score,
                         "ratio_to_reference": ratio_to_reference,
-                        "gpu_reference_score": task.score.gpu_reference_score,
-                        "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
+                        "gpu_reference_score": reference_score,
+                        "gpu_reference_score_ref": ref["reference_ref"],
                         "ratio_to_published": ratio_to_published,
                         "published_score": task.score.published_score,
                         "published_score_ref": task.score.published_score_ref,
@@ -1182,6 +1198,7 @@ def evals_release_report_data(args, results, meta_data, model_spec):
             ratio_to_published = "N/A"
             ratio_to_reference = "N/A"
             accuracy_check = ReportCheckTypes.NA
+            ref = _resolve_eval_reference(task.score, limit_mode)
 
             report_rows.append(
                 {
@@ -1192,8 +1209,8 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                     "accuracy_check": accuracy_check,
                     "score": score,
                     "ratio_to_reference": ratio_to_reference,
-                    "gpu_reference_score": task.score.gpu_reference_score,
-                    "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
+                    "gpu_reference_score": ref["reference_score"],
+                    "gpu_reference_score_ref": ref["reference_ref"],
                     "ratio_to_published": ratio_to_published,
                     "published_score": task.score.published_score,
                     "published_score_ref": task.score.published_score_ref,
@@ -2393,12 +2410,17 @@ def main():
             device,
             runtime_model_spec_json,
             percentile_report=False,
+            limit_samples_mode=None,
         ):
             self.output_path = output_path
             self.model = model
             self.device = device
             self.runtime_model_spec_json = runtime_model_spec_json
             self.percentile_report = percentile_report
+            # Propagated so evals_release_report_data() can compare CI/limit-mode
+            # subset scores against subset-specific references (see
+            # EvalTaskScore.mode_reference_scores).
+            self.limit_samples_mode = limit_samples_mode
 
     percentile_report = runtime_config.percentile_report
 
@@ -2408,6 +2430,7 @@ def main():
         device_str,
         args.runtime_model_spec_json,
         percentile_report=percentile_report,
+        limit_samples_mode=runtime_config.limit_samples_mode,
     )
 
     # generate vLLM benchmarks report

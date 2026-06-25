@@ -30,7 +30,11 @@ class AgenticEvalDriver(LLMDriver):
     def __init__(self, task: Any, *, runtime_config: Any = None) -> None:
         self.task = task
         self.runtime_config = runtime_config
-        self._parser = AgenticEvalParser(task_name=task.task_name, score=task.score)
+        self._parser = AgenticEvalParser(
+            task_name=task.task_name,
+            score=task.score,
+            limit_mode=_get_limit_mode(runtime_config),
+        )
 
     def result_path(self, server: ServerConnection, context: DriverContext) -> Path:
         output_dir = _agentic_output_dir(context.output_dir, server.model, self.task)
@@ -57,6 +61,7 @@ class AgenticEvalDriver(LLMDriver):
             task_name=self.task.task_name,
             score=self.task.score,
             result_path=result_path,
+            limit_mode=_get_limit_mode(self.runtime_config),
         )
         return DriverResult(return_code=rc, raw=raw, raw_path=result_path)
 
