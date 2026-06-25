@@ -1262,6 +1262,40 @@ def resolve_install_gemma4_requirements(
     )
 
 
+def commit_combo_requires_gemma4_requirements(tt_metal_commit, vllm_commit):
+    """Return True if any catalog maps this commit combo to a Gemma 4 model.
+
+    Scans every catalog environment (prod + dev) instead of only the env loaded
+    into MODEL_SPECS, so single-image builds (build_single_docker.sh) resolve
+    INSTALL_GEMMA4_REQUIREMENTS the same way the release/nightly path does -
+    regardless of MODEL_SPECS_ENV. Gemma 4 needs transformers 5.x from tt-metal's
+    models/demos/gemma4/requirements.txt; without it vLLM ModelConfig validation
+    fails at runtime with "model type gemma4_unified but Transformers does not
+    recognize this architecture".
+    """
+    from workflows.model_spec import (
+        _CATALOG_FILES,
+        _MODEL_SPECS_DIR,
+        _VALID_MODEL_SPECS_ENVS,
+        get_model_spec_map,
+        load_templates_from_yaml,
+    )
+
+    for env in _VALID_MODEL_SPECS_ENVS:
+        env_dir = _MODEL_SPECS_DIR / env
+        templates = []
+        for fname in _CATALOG_FILES:
+            catalog_path = env_dir / fname
+            if catalog_path.exists():
+                templates.extend(load_templates_from_yaml(catalog_path))
+        model_configs = get_model_spec_map(templates)
+        if combination_requires_gemma4_requirements(
+            model_configs, tt_metal_commit, vllm_commit
+        ):
+            return True
+    return False
+
+
 def list_image_combinations(model_configs, build_metal_commit=None):
     """
     Get unique Docker image commit combinations that would be built.

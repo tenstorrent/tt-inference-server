@@ -672,6 +672,78 @@ def apply_local_hf_model_vllm_args(model_spec_json: dict, vllm_args: dict) -> di
     return updated_vllm_args
 
 
+def preflight_check_gemma4_transformers(model_spec_json: dict) -> None:
+    """Fail fast if this container's transformers can't parse a Gemma 4 model.
+
+    Gemma 4 (``gemma4_unified`` arch) requires transformers 5.x, installed into
+    the image only when it is built with ``INSTALL_GEMMA4_REQUIREMENTS=1`` (which
+    pulls tt-metal's ``models/demos/gemma4/requirements.txt``). When that step is
+    skipped, vLLM's ``ModelConfig`` validation raises ``model type gemma4_unified
+    but Transformers does not recognize this architecture`` - but only after the
+    engine starts, so CI burns the full health-check timeout (~1h) before
+    failing. Detecting it here exits in seconds with an actionable message.
+
+    The check reads the local config.json (set up by ``model_setup`` via
+    ``HF_MODEL``) and confirms its ``model_type`` is registered in transformers,
+    mirroring exactly what vLLM triggers - without network access, an HF token,
+    or executing any remote model code. If the config can't be inspected (e.g.
+    multihost weights on shared storage), the preflight is skipped rather than
+    failing spuriously.
+    """
+    hf_model_repo = model_spec_json.get("hf_model_repo", "")
+    if not _is_gemma4_hf_repo(hf_model_repo):
+        return
+
+    local_weights_path = os.getenv("HF_MODEL")
+    if not local_weights_path:
+        logger.warning(
+            "Skipping Gemma 4 transformers preflight: HF_MODEL is not set, cannot "
+            "inspect config.json locally."
+        )
+        return
+
+    config_path = Path(local_weights_path) / "config.json"
+    if not config_path.exists():
+        logger.warning(
+            f"Skipping Gemma 4 transformers preflight: {config_path} not found."
+        )
+        return
+
+    try:
+        import transformers
+        from transformers.models.auto.configuration_auto import CONFIG_MAPPING
+
+        transformers_version = getattr(transformers, "__version__", "unknown")
+        with open(config_path) as config_file:
+            model_type = json.load(config_file).get("model_type")
+    except Exception as exc:  # noqa: BLE001 - preflight must never crash the server
+        logger.warning(f"Skipping Gemma 4 transformers preflight: {exc}")
+        return
+
+    if not model_type:
+        logger.warning(
+            f"Skipping Gemma 4 transformers preflight: no model_type in {config_path}."
+        )
+        return
+
+    if model_type not in CONFIG_MAPPING:
+        raise SystemExit(
+            "❌ Preflight failed: this container's transformers "
+            f"({transformers_version}) does not recognize the Gemma 4 "
+            f"architecture (model_type={model_type!r}) for {hf_model_repo}. The "
+            "inference-server image was built without "
+            "INSTALL_GEMMA4_REQUIREMENTS=1 (transformers 5.x from tt-metal "
+            "models/demos/gemma4/requirements.txt). Rebuild the image with Gemma 4 "
+            "requirements enabled (build_single_docker.sh auto-detects this from "
+            "the tt-metal/vLLM commit combo, or pass --install-gemma4-requirements)."
+        )
+
+    logger.info(
+        f"Gemma 4 transformers preflight OK: transformers {transformers_version} "
+        f"recognizes model_type={model_type!r} for {hf_model_repo}."
+    )
+
+
 def _normalize_vllm_arg_name(arg_name: str) -> str:
     return arg_name.lstrip("-").split("=", 1)[0].replace("-", "_")
 
@@ -826,6 +898,11 @@ def main():
     set_metal_timeout_env_vars()
     set_runtime_env_vars(model_spec)
     runtime_settings(model_spec, no_auth=args.no_auth)
+
+    # Fail fast (before the long trace-capture warmup / health wait) if the image
+    # lacks transformers support for this Gemma 4 model.
+    preflight_check_gemma4_transformers(model_spec)
+
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
     default_vllm_args = apply_local_hf_model_vllm_args(model_spec, default_vllm_args)
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
