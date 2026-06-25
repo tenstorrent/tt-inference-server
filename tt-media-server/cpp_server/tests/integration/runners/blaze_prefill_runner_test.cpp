@@ -93,8 +93,7 @@ TEST(BlazePrefillRunnerIntegrationTest,
   samplingParams.max_tokens = 1;
   samplingParams.ignore_eos = false;
 
-  // Leave the prefill scheduler at real_pos=37, so a one-token continuation is
-  // shorter than the 5-token tail needed to complete the current 32-token tile.
+  // Leave the prefill scheduler at real_pos=37.
   harness.submitSequence(seedTaskId, allocateResponse.slotId,
                          test::makeSequentialPrompt(37), samplingParams);
   const auto seedTokens = harness.collectTaskTokensUntilFinal(seedTaskId);
@@ -114,6 +113,49 @@ TEST(BlazePrefillRunnerIntegrationTest,
 
   ASSERT_FALSE(continuationTokens.empty());
   EXPECT_FALSE(continuationTokens.back().isError());
+  EXPECT_TRUE(continuationTokens.back().isFinal());
+}
+
+TEST(BlazePrefillRunnerIntegrationTest,
+     ContinuationWithoutKvPositionUsesDecodePositionAndCompletes) {
+  BlazePrefillRunnerHarness harness;
+
+  constexpr uint32_t seedTaskId = 1303;
+  const auto allocateResponse = harness.allocate(seedTaskId);
+  ASSERT_EQ(allocateResponse.taskId, seedTaskId);
+  ASSERT_EQ(allocateResponse.status, domain::ManageMemoryStatus::SUCCESS);
+  ASSERT_NE(allocateResponse.slotId, domain::INVALID_SLOT_ID);
+
+  domain::llm::SamplingParams samplingParams;
+  samplingParams.max_tokens = 1;
+  samplingParams.ignore_eos = false;
+
+  // Without position_id, real_pos=37 requires five replay tokens.
+  harness.submitSequence(seedTaskId, allocateResponse.slotId,
+                         test::makeSequentialPrompt(37), samplingParams);
+  const auto seedTokens = harness.collectTaskTokensUntilFinal(seedTaskId);
+  ASSERT_FALSE(seedTokens.empty());
+  ASSERT_TRUE(seedTokens.back().isFinal());
+
+  constexpr uint32_t continuationTaskId = 1304;
+  domain::llm::Sequence continuation(
+      continuationTaskId, test::kDefaultBlockSize,
+      {32, 99}, /*numPromptTokens=*/2,
+      /*slotId=*/allocateResponse.slotId,
+      /*prefillSlotId=*/allocateResponse.slotId, /*continuation=*/true,
+      /*disaggregated=*/false,
+      std::make_unique<domain::llm::SamplingParams>(samplingParams),
+      /*kvPositionId=*/std::nullopt, /*decodePositionId=*/32,
+      /*decodeSkipTokens=*/32, /*migrationId=*/std::nullopt);
+
+  harness.taskQueue().push(continuation);
+  const auto continuationTokens =
+      harness.collectTaskTokensUntilFinal(continuationTaskId);
+  harness.assertRunnerHealthy();
+
+  ASSERT_FALSE(continuationTokens.empty());
+  EXPECT_FALSE(continuationTokens.back().isError())
+      << "Continuation should use decodePositionId as scheduler position_id";
   EXPECT_TRUE(continuationTokens.back().isFinal());
 }
 
