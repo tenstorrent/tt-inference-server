@@ -151,7 +151,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=16,
+                max_concurrent=64,
                 # The remote Tenstorrent console only exposes /v1/chat/completions
                 # (text /v1/completions returns 404), so use the chat API.
                 use_chat_api=True,
@@ -1928,64 +1928,64 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="deepseek-ai/DeepSeek-R1-0528",
         tasks=[
-            # EvalTask(
-            #     task_name="r1_aime24",
-            #     score=EvalTaskScore(
-            #         published_score=91.40,
-            #         published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-0528#deepseek-r1-0528-1",
-            #         gpu_reference_score=83.33,
-            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/357#issuecomment-3048350923",
-            #         score_func=score_task_single_key,
-            #         score_func_kwargs={
-            #             "result_keys": [
-            #                 "exact_match,none",
-            #             ],
-            #             "unit": "percent",
-            #         },
-            #     ),
-            #     workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-            #     model_kwargs={
-            #         "max_length": 32768,
-            #     },
-            #     gen_kwargs={
-            #         "stream": "false",
-            #         "max_gen_toks": 28 * 1024,  # Allow up to 4K prompt tokens
-            #     },
-            #     seed=42,
-            #     limit_samples_map={
-            #         EvalLimitMode.CI_NIGHTLY: 0.2,
-            #         EvalLimitMode.SMOKE_TEST: 0.01,
-            #     },
-            # ),
-            # EvalTask(
-            #     task_name="r1_gpqa_diamond",
-            #     score=EvalTaskScore(
-            #         published_score=81.00,
-            #         published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-0528#deepseek-r1-0528-1",
-            #         gpu_reference_score=81.31,
-            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/357#issuecomment-3048350923",
-            #         score_func=score_task_single_key,
-            #         score_func_kwargs={
-            #             "result_keys": [
-            #                 "exact_match,none",
-            #             ],
-            #             "unit": "percent",
-            #         },
-            #     ),
-            #     workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-            #     model_kwargs={
-            #         "max_length": 32768,
-            #     },
-            #     gen_kwargs={
-            #         "stream": "false",
-            #         "max_gen_toks": 28 * 1024,  # Allow up to 4K prompt tokens
-            #     },
-            #     seed=42,
-            #     limit_samples_map={
-            #         EvalLimitMode.CI_NIGHTLY: 0.2,
-            #         EvalLimitMode.SMOKE_TEST: 0.01,
-            #     },
-            # ),
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=91.40,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-0528#deepseek-r1-0528-1",
+                    gpu_reference_score=83.33,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/357#issuecomment-3048350923",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 32768,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 28 * 1024,  # Allow up to 4K prompt tokens
+                },
+                seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=81.00,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-0528#deepseek-r1-0528-1",
+                    gpu_reference_score=81.31,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/357#issuecomment-3048350923",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 32768,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 28 * 1024,  # Allow up to 4K prompt tokens
+                },
+                seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
             EvalTask(
                 task_name="terminal_bench_2",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
