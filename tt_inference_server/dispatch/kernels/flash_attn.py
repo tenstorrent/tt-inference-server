@@ -24,7 +24,7 @@ ttl 1.1.3 API:
 
 import ttl  # must be a global for the DSL tracer
 
-TILE = 32   # module-level constant so it's a global, not a closure capture
+TILE = 32  # module-level constant so it's a global, not a closure capture
 # FW 19.6.0 reports an 11-wide compute grid (device.compute_with_storage_grid_size() ==
 # (11, 10)); earlier firmware exposed 13. A 24-head model factors to 12 cols and overflowed
 # ("Kernel grid (12,2) exceeds device compute grid (11,10)" — the starcoder2 error), so the
@@ -88,48 +88,82 @@ def make_flash_attn_kernel(
         n_chunks = kv_seq_tiles // kv_chunk_tiles
 
         # Input DFBs
-        q_dfb         = ttl.make_dataflow_buffer_like(Q_all,       shape=(1, head_dim_tiles),   block_count=1)
-        k_dfb         = ttl.make_dataflow_buffer_like(K_all,       shape=(kv_chunk_tiles, head_dim_tiles), block_count=2)
-        v_dfb         = ttl.make_dataflow_buffer_like(V_all,       shape=(kv_chunk_tiles, head_dim_tiles), block_count=2)
-        sc_dfb        = ttl.make_dataflow_buffer_like(scale_tile,  shape=(1, 1), block_count=1)
-        ninf_dfb      = ttl.make_dataflow_buffer_like(neg_inf_tile,shape=(1, 1), block_count=1)
-        zero_dfb      = ttl.make_dataflow_buffer_like(zero_tile,   shape=(1, 1), block_count=1)
-        zero_head_dfb = ttl.make_dataflow_buffer_like(zero_head,   shape=(1, head_dim_tiles), block_count=1)
-        ones_dfb      = ttl.make_dataflow_buffer_like(ones_tile,   shape=(1, 1), block_count=1)
-        mask_dfb      = ttl.make_dataflow_buffer_like(mask,        shape=(1, kv_chunk_tiles), block_count=2)
+        q_dfb = ttl.make_dataflow_buffer_like(
+            Q_all, shape=(1, head_dim_tiles), block_count=1
+        )
+        k_dfb = ttl.make_dataflow_buffer_like(
+            K_all, shape=(kv_chunk_tiles, head_dim_tiles), block_count=2
+        )
+        v_dfb = ttl.make_dataflow_buffer_like(
+            V_all, shape=(kv_chunk_tiles, head_dim_tiles), block_count=2
+        )
+        sc_dfb = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, 1), block_count=1)
+        ninf_dfb = ttl.make_dataflow_buffer_like(
+            neg_inf_tile, shape=(1, 1), block_count=1
+        )
+        zero_dfb = ttl.make_dataflow_buffer_like(zero_tile, shape=(1, 1), block_count=1)
+        zero_head_dfb = ttl.make_dataflow_buffer_like(
+            zero_head, shape=(1, head_dim_tiles), block_count=1
+        )
+        ones_dfb = ttl.make_dataflow_buffer_like(ones_tile, shape=(1, 1), block_count=1)
+        mask_dfb = ttl.make_dataflow_buffer_like(
+            mask, shape=(1, kv_chunk_tiles), block_count=2
+        )
 
         # Intermediate DFBs
-        kt_dfb        = ttl.make_dataflow_buffer_like(K_all,       shape=(head_dim_tiles, kv_chunk_tiles), block_count=2)
-        qk_dfb        = ttl.make_dataflow_buffer_like(mask,        shape=(1, kv_chunk_tiles), block_count=2)
-        scaled_dfb    = ttl.make_dataflow_buffer_like(mask,        shape=(1, kv_chunk_tiles), block_count=2)
-        chunk_max_dfb = ttl.make_dataflow_buffer_like(scale_tile,  shape=(1, 1), block_count=2)
-        m_dfb         = ttl.make_dataflow_buffer_like(scale_tile,  shape=(1, 1), block_count=2)
-        alpha_dfb     = ttl.make_dataflow_buffer_like(scale_tile,  shape=(1, 1), block_count=2)
-        m_new_dfb     = ttl.make_dataflow_buffer_like(scale_tile,  shape=(1, 1), block_count=2)
-        m_bcast_dfb   = ttl.make_dataflow_buffer_like(mask,        shape=(1, kv_chunk_tiles), block_count=2)
-        alpha_bcast_dfb = ttl.make_dataflow_buffer_like(Q_all,     shape=(1, head_dim_tiles), block_count=2)
-        exp_dfb       = ttl.make_dataflow_buffer_like(mask,        shape=(1, kv_chunk_tiles), block_count=2)
-        chunk_sum_dfb = ttl.make_dataflow_buffer_like(scale_tile,  shape=(1, 1), block_count=2)
-        l_dfb         = ttl.make_dataflow_buffer_like(scale_tile,  shape=(1, 1), block_count=2)
-        o_dfb         = ttl.make_dataflow_buffer_like(Q_all,       shape=(1, head_dim_tiles), block_count=2)
-        o_corr_dfb    = ttl.make_dataflow_buffer_like(Q_all,       shape=(1, head_dim_tiles), block_count=2)
-        pv_dfb        = ttl.make_dataflow_buffer_like(Q_all,       shape=(1, head_dim_tiles), block_count=2)
-        l_bcast_dfb   = ttl.make_dataflow_buffer_like(Q_all,       shape=(1, head_dim_tiles), block_count=2)
-        out_dfb       = ttl.make_dataflow_buffer_like(out,         shape=(1, head_dim_tiles), block_count=2)
+        kt_dfb = ttl.make_dataflow_buffer_like(
+            K_all, shape=(head_dim_tiles, kv_chunk_tiles), block_count=2
+        )
+        qk_dfb = ttl.make_dataflow_buffer_like(
+            mask, shape=(1, kv_chunk_tiles), block_count=2
+        )
+        scaled_dfb = ttl.make_dataflow_buffer_like(
+            mask, shape=(1, kv_chunk_tiles), block_count=2
+        )
+        chunk_max_dfb = ttl.make_dataflow_buffer_like(
+            scale_tile, shape=(1, 1), block_count=2
+        )
+        m_dfb = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, 1), block_count=2)
+        alpha_dfb = ttl.make_dataflow_buffer_like(
+            scale_tile, shape=(1, 1), block_count=2
+        )
+        m_new_dfb = ttl.make_dataflow_buffer_like(
+            scale_tile, shape=(1, 1), block_count=2
+        )
+        m_bcast_dfb = ttl.make_dataflow_buffer_like(
+            mask, shape=(1, kv_chunk_tiles), block_count=2
+        )
+        alpha_bcast_dfb = ttl.make_dataflow_buffer_like(
+            Q_all, shape=(1, head_dim_tiles), block_count=2
+        )
+        exp_dfb = ttl.make_dataflow_buffer_like(
+            mask, shape=(1, kv_chunk_tiles), block_count=2
+        )
+        chunk_sum_dfb = ttl.make_dataflow_buffer_like(
+            scale_tile, shape=(1, 1), block_count=2
+        )
+        l_dfb = ttl.make_dataflow_buffer_like(scale_tile, shape=(1, 1), block_count=2)
+        o_dfb = ttl.make_dataflow_buffer_like(
+            Q_all, shape=(1, head_dim_tiles), block_count=2
+        )
+        o_corr_dfb = ttl.make_dataflow_buffer_like(
+            Q_all, shape=(1, head_dim_tiles), block_count=2
+        )
+        pv_dfb = ttl.make_dataflow_buffer_like(
+            Q_all, shape=(1, head_dim_tiles), block_count=2
+        )
+        l_bcast_dfb = ttl.make_dataflow_buffer_like(
+            Q_all, shape=(1, head_dim_tiles), block_count=2
+        )
+        out_dfb = ttl.make_dataflow_buffer_like(
+            out, shape=(1, head_dim_tiles), block_count=2
+        )
 
         @ttl.compute()
         def compute():
             nx, ny = ttl.node(dims=2)
-            h = ny * grid_cols + nx
 
-            with (
-                q_dfb.wait() as q,
-                sc_dfb.wait() as scale,
-                ninf_dfb.wait() as ninf,
-                zero_dfb.wait() as zero,
-                zero_head_dfb.wait() as zh,
-                ones_dfb.wait() as ones,
-            ):
+            with q_dfb.wait() as q, sc_dfb.wait() as scale, ninf_dfb.wait() as ninf, zero_dfb.wait() as zero, zero_head_dfb.wait() as zh, ones_dfb.wait():
                 with m_dfb.reserve() as m_init:
                     m_init.store(ninf)
                 with l_dfb.reserve() as l_init:
@@ -142,11 +176,7 @@ def make_flash_attn_kernel(
                         kt.store(ttl.math.transpose(kc))
                     with kt_dfb.wait() as kt, qk_dfb.reserve() as qk:
                         qk.store(q @ kt)
-                    with (
-                        qk_dfb.wait() as qk,
-                        mask_dfb.wait() as msk,
-                        scaled_dfb.reserve() as sc_out,
-                    ):
+                    with qk_dfb.wait() as qk, mask_dfb.wait() as msk, scaled_dfb.reserve() as sc_out:
                         sc_out.store(scale * qk + msk)
 
                     with scaled_dfb.wait() as sv:
@@ -164,16 +194,14 @@ def make_flash_attn_kernel(
                                 alpha.store(ttl.math.exp(m_old - mn))
                             with m_bcast_dfb.reserve() as mn_bc:
                                 mn_bc.store(
-                                    ttl.math.broadcast(mn, dims=[-1], shape=(1, kv_chunk_tiles))
+                                    ttl.math.broadcast(
+                                        mn, dims=[-1], shape=(1, kv_chunk_tiles)
+                                    )
                                 )
                             with m_dfb.reserve() as m_next:
                                 m_next.store(mn)
 
-                    with (
-                        scaled_dfb.wait() as sv2,
-                        m_bcast_dfb.wait() as mn_bc,
-                        exp_dfb.reserve() as ex,
-                    ):
+                    with scaled_dfb.wait() as sv2, m_bcast_dfb.wait() as mn_bc, exp_dfb.reserve() as ex:
                         ex.store(ttl.math.exp(sv2 - mn_bc))
 
                     with exp_dfb.wait() as ex:
@@ -182,41 +210,31 @@ def make_flash_attn_kernel(
                         with exp_dfb.reserve() as ex_copy:
                             ex_copy.store(ex)
 
-                    with (
-                        alpha_dfb.wait() as alph,
-                        l_dfb.wait() as l_old,
-                        chunk_sum_dfb.wait() as cs,
-                    ):
+                    with alpha_dfb.wait() as alph, l_dfb.wait() as l_old, chunk_sum_dfb.wait() as cs:
                         with l_dfb.reserve() as l_new:
                             l_new.store(alph * l_old + cs)
                         with alpha_bcast_dfb.reserve() as ab:
                             ab.store(
-                                ttl.math.broadcast(alph, dims=[-1], shape=(1, head_dim_tiles))
+                                ttl.math.broadcast(
+                                    alph, dims=[-1], shape=(1, head_dim_tiles)
+                                )
                             )
-                    with (
-                        alpha_bcast_dfb.wait() as ab,
-                        o_dfb.wait() as o_old,
-                        o_corr_dfb.reserve() as oc,
-                    ):
+                    with alpha_bcast_dfb.wait() as ab, o_dfb.wait() as o_old, o_corr_dfb.reserve() as oc:
                         oc.store(ab * o_old)
 
                     with exp_dfb.wait() as ex2, v_dfb.wait() as vc, pv_dfb.reserve() as pv:
                         pv.store(ex2 @ vc)
 
-                    with (
-                        o_corr_dfb.wait() as oc,
-                        pv_dfb.wait() as pv,
-                        o_dfb.reserve() as o_new,
-                    ):
+                    with o_corr_dfb.wait() as oc, pv_dfb.wait() as pv, o_dfb.reserve() as o_new:
                         o_new.store(oc + pv)
 
                 with l_dfb.wait() as l_final, l_bcast_dfb.reserve() as lb:
-                    lb.store(ttl.math.broadcast(l_final, dims=[-1], shape=(1, head_dim_tiles)))
-                with (
-                    o_dfb.wait() as o_final,
-                    l_bcast_dfb.wait() as lb,
-                    out_dfb.reserve() as final_out,
-                ):
+                    lb.store(
+                        ttl.math.broadcast(
+                            l_final, dims=[-1], shape=(1, head_dim_tiles)
+                        )
+                    )
+                with o_dfb.wait() as o_final, l_bcast_dfb.wait() as lb, out_dfb.reserve() as final_out:
                     final_out.store(o_final * ttl.math.recip(lb))
 
         @ttl.datamovement()
@@ -242,17 +260,25 @@ def make_flash_attn_kernel(
             for c in range(n_chunks):
                 kv_off = kv_base + c * kv_chunk_tiles
                 with k_dfb.reserve() as blk:
-                    ttl.copy(K_all[kv_off : kv_off + kv_chunk_tiles, 0:head_dim_tiles], blk).wait()
+                    ttl.copy(
+                        K_all[kv_off : kv_off + kv_chunk_tiles, 0:head_dim_tiles], blk
+                    ).wait()
                 with mask_dfb.reserve() as blk:
-                    ttl.copy(mask[0, c * kv_chunk_tiles : (c + 1) * kv_chunk_tiles], blk).wait()
+                    ttl.copy(
+                        mask[0, c * kv_chunk_tiles : (c + 1) * kv_chunk_tiles], blk
+                    ).wait()
                 with v_dfb.reserve() as blk:
-                    ttl.copy(V_all[kv_off : kv_off + kv_chunk_tiles, 0:head_dim_tiles], blk).wait()
+                    ttl.copy(
+                        V_all[kv_off : kv_off + kv_chunk_tiles, 0:head_dim_tiles], blk
+                    ).wait()
 
         @ttl.datamovement()
         def dm_write():
             nx, ny = ttl.node(dims=2)
             h = ny * grid_cols + nx
             with out_dfb.wait() as blk:
-                ttl.copy(blk, out[0, h * head_dim_tiles : (h + 1) * head_dim_tiles]).wait()
+                ttl.copy(
+                    blk, out[0, h * head_dim_tiles : (h + 1) * head_dim_tiles]
+                ).wait()
 
     return flash_attn_kernel

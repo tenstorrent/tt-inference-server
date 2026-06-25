@@ -101,7 +101,9 @@ def resolve_attn_config(
     Returns a dict of kwargs for make_flash_attn_kernel.
     Raises ShapeNotSupportedError if no valid config exists.
     """
-    l1_budget = hw_config.l1_budget() if hw_config is not None else _DEFAULT_L1_BUDGET_BYTES
+    l1_budget = (
+        hw_config.l1_budget() if hw_config is not None else _DEFAULT_L1_BUDGET_BYTES
+    )
     head_dim_padded = tile_align(head_dim)
     head_dim_tiles = head_dim_padded // TILE
 
@@ -136,7 +138,9 @@ def resolve_swiglu_config(
     Returns a dict of kwargs for make_swiglu_kernel.
     Raises ShapeNotSupportedError if no valid config exists.
     """
-    l1_budget = hw_config.l1_budget() if hw_config is not None else _DEFAULT_L1_BUDGET_BYTES
+    l1_budget = (
+        hw_config.l1_budget() if hw_config is not None else _DEFAULT_L1_BUDGET_BYTES
+    )
     M_tiles = to_tiles(M)
     K_tiles = to_tiles(K)
     N_tiles = to_tiles(N)

@@ -31,13 +31,23 @@ def make_rmsnorm_kernel(seq_tiles: int, hidden_tiles: int, eps: float = 1e-6):
         # Single-pass kernel: no pipeline loop so block_count=1 for all large DFBs.
         # sum_dfb stays at 2 because it is read and written in the same compute
         # step (rsqrt reads sum then writes back into sum).
-        x_dfb     = ttl.make_dataflow_buffer_like(x,       shape=(seq_tiles, hidden_tiles), block_count=1)
-        w_dfb     = ttl.make_dataflow_buffer_like(weight,   shape=(seq_tiles, hidden_tiles), block_count=1)
-        sc_dfb    = ttl.make_dataflow_buffer_like(scaler,   shape=(1, 1),                   block_count=1)
-        sq_dfb    = ttl.make_dataflow_buffer_like(x,        shape=(seq_tiles, hidden_tiles), block_count=1)
-        sum_dfb   = ttl.make_dataflow_buffer_like(scaler,   shape=(1, 1),                   block_count=2)
-        bcast_dfb = ttl.make_dataflow_buffer_like(x,        shape=(seq_tiles, hidden_tiles), block_count=1)
-        out_dfb   = ttl.make_dataflow_buffer_like(out,      shape=(seq_tiles, hidden_tiles), block_count=1)
+        x_dfb = ttl.make_dataflow_buffer_like(
+            x, shape=(seq_tiles, hidden_tiles), block_count=1
+        )
+        w_dfb = ttl.make_dataflow_buffer_like(
+            weight, shape=(seq_tiles, hidden_tiles), block_count=1
+        )
+        sc_dfb = ttl.make_dataflow_buffer_like(scaler, shape=(1, 1), block_count=1)
+        sq_dfb = ttl.make_dataflow_buffer_like(
+            x, shape=(seq_tiles, hidden_tiles), block_count=1
+        )
+        sum_dfb = ttl.make_dataflow_buffer_like(scaler, shape=(1, 1), block_count=2)
+        bcast_dfb = ttl.make_dataflow_buffer_like(
+            x, shape=(seq_tiles, hidden_tiles), block_count=1
+        )
+        out_dfb = ttl.make_dataflow_buffer_like(
+            out, shape=(seq_tiles, hidden_tiles), block_count=1
+        )
 
         @ttl.compute()
         def compute():
@@ -53,19 +63,27 @@ def make_rmsnorm_kernel(seq_tiles: int, hidden_tiles: int, eps: float = 1e-6):
                     rsq.store(ttl.math.rsqrt(smv))
                 # broadcast scalar (1,1) → (seq_tiles, hidden_tiles) along columns
                 with sum_dfb.wait() as rsqv, bcast_dfb.reserve() as bc:
-                    bc.store(ttl.math.broadcast(rsqv, dims=[-1], shape=(seq_tiles, hidden_tiles)))
+                    bc.store(
+                        ttl.math.broadcast(
+                            rsqv, dims=[-1], shape=(seq_tiles, hidden_tiles)
+                        )
+                    )
                 # normalize and apply learnable weight
                 with bcast_dfb.wait() as bcv, out_dfb.reserve() as o:
                     o.store(xv * bcv * wv)
 
         @ttl.datamovement()
         def dm_read():
-            with x_dfb.reserve()  as blk: ttl.copy(x[0:seq_tiles, 0:hidden_tiles], blk).wait()
-            with w_dfb.reserve()  as blk: ttl.copy(weight[0:seq_tiles, 0:hidden_tiles], blk).wait()
-            with sc_dfb.reserve() as blk: ttl.copy(scaler[0, 0], blk).wait()
+            with x_dfb.reserve() as blk:
+                ttl.copy(x[0:seq_tiles, 0:hidden_tiles], blk).wait()
+            with w_dfb.reserve() as blk:
+                ttl.copy(weight[0:seq_tiles, 0:hidden_tiles], blk).wait()
+            with sc_dfb.reserve() as blk:
+                ttl.copy(scaler[0, 0], blk).wait()
 
         @ttl.datamovement()
         def dm_write():
-            with out_dfb.wait() as blk: ttl.copy(blk, out[0:seq_tiles, 0:hidden_tiles]).wait()
+            with out_dfb.wait() as blk:
+                ttl.copy(blk, out[0:seq_tiles, 0:hidden_tiles]).wait()
 
     return rmsnorm_kernel

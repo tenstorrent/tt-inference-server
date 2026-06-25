@@ -5,21 +5,27 @@
 
 from __future__ import annotations
 
-from . import config_gemma3 as gemma3, config_llama3 as llama3, config_mistral as mistral, config_qwen2_5 as qwen2_5, config_qwen3 as qwen3
+from . import (
+    config_gemma3 as gemma3,
+    config_llama3 as llama3,
+    config_mistral as mistral,
+    config_qwen2_5 as qwen2_5,
+    config_qwen3 as qwen3,
+)
 from .config_qwen2_5 import ModelConfig
 from .config_mistral import MoEModelConfig
 
 # Maps HuggingFace architecture name → config module
 _FAMILY_MAP = {
-    "Qwen2ForCausalLM":   qwen2_5,
-    "Qwen3ForCausalLM":   qwen3,
-    "LlamaForCausalLM":   llama3,
+    "Qwen2ForCausalLM": qwen2_5,
+    "Qwen3ForCausalLM": qwen3,
+    "LlamaForCausalLM": llama3,
     "MistralForCausalLM": mistral,
     "MixtralForCausalLM": mistral,
-    "Gemma3ForCausalLM":              gemma3,
+    "Gemma3ForCausalLM": gemma3,
     "Gemma3ForConditionalGeneration": gemma3,
     # Gemma 1 and 2 use same 4-norm pattern — reuse gemma3 config
-    "GemmaForCausalLM":  gemma3,
+    "GemmaForCausalLM": gemma3,
     "Gemma2ForCausalLM": gemma3,
 }
 
@@ -37,8 +43,11 @@ def detect_model_family(hf_config) -> ModelConfig:
     if arch in _FAMILY_MAP:
         mod = _FAMILY_MAP[arch]
         # Each config module exposes either ModelConfig or a family-named class
-        cfg_class = getattr(mod, "ModelConfig",
-                    getattr(mod, arch.replace("ForCausalLM", "Config"), None))
+        cfg_class = getattr(
+            mod,
+            "ModelConfig",
+            getattr(mod, arch.replace("ForCausalLM", "Config"), None),
+        )
         if cfg_class is not None:
             return cfg_class.from_hf_config(hf_config)
         return _from_hf_config_generic(hf_config)
@@ -63,8 +72,9 @@ def _from_hf_config_generic(hf_config) -> ModelConfig:
     # epsilon under one of several field names (Falcon uses `layer_norm_epsilon`)
     # and no `rms_norm_eps`.
     norm_type = "rmsnorm"
-    has_ln_eps = (hasattr(hf_config, "layer_norm_eps")
-                  or hasattr(hf_config, "layer_norm_epsilon"))
+    has_ln_eps = hasattr(hf_config, "layer_norm_eps") or hasattr(
+        hf_config, "layer_norm_epsilon"
+    )
     if has_ln_eps and not hasattr(hf_config, "rms_norm_eps"):
         norm_type = "layernorm"
 
@@ -72,10 +82,12 @@ def _from_hf_config_generic(hf_config) -> ModelConfig:
     # variants are the tanh approximation (distinguished from "gelu" so the runner can
     # pick the matching ttnn.gelu mode).
     act_map = {
-        "silu": "silu", "swish": "silu",
+        "silu": "silu",
+        "swish": "silu",
         "gelu": "gelu",
         "gelu_tanh": "gelu_tanh",
-        "gelu_new": "gelu_tanh", "gelu_fast": "gelu_tanh",
+        "gelu_new": "gelu_tanh",
+        "gelu_fast": "gelu_tanh",
         "gelu_pytorch_tanh": "gelu_tanh",
         "relu": "relu2",
     }
@@ -88,15 +100,21 @@ def _from_hf_config_generic(hf_config) -> ModelConfig:
         hf_act = {"bloom": "gelu_tanh", "falcon": "gelu"}.get(model_type, "silu")
     activation = act_map.get(hf_act, "silu")
 
-    eps = getattr(hf_config, "rms_norm_eps",
-          getattr(hf_config, "layer_norm_eps",
-          getattr(hf_config, "layer_norm_epsilon", 1e-6)))
+    eps = getattr(
+        hf_config,
+        "rms_norm_eps",
+        getattr(
+            hf_config, "layer_norm_eps", getattr(hf_config, "layer_norm_epsilon", 1e-6)
+        ),
+    )
 
     # MoE fields
-    num_experts = getattr(hf_config, "num_local_experts",
-                  getattr(hf_config, "num_experts", 0))
-    top_k = getattr(hf_config, "num_experts_per_tok",
-            getattr(hf_config, "top_k_experts", 2))
+    num_experts = getattr(
+        hf_config, "num_local_experts", getattr(hf_config, "num_experts", 0)
+    )
+    top_k = getattr(
+        hf_config, "num_experts_per_tok", getattr(hf_config, "top_k_experts", 2)
+    )
 
     if num_experts > 0:
         return MoEModelConfig(

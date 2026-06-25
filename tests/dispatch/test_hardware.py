@@ -6,6 +6,7 @@
 Covers the budget/grid policy math and the detection fallback ladder. No hardware:
 the tt-kernel and ttnn detectors are monkeypatched.
 """
+
 import pytest
 
 from tt_inference_server.dispatch import hardware
@@ -20,6 +21,7 @@ from tt_inference_server.dispatch.hardware import (
 def test_p150_budget_matches_legacy_compat_default():
     # The whole behavior-preserving argument: detected p150 budget == compat fallback.
     from tt_inference_server.dispatch.compat import _DEFAULT_L1_BUDGET_BYTES
+
     assert KNOWN_CONFIGS["bh_p150_1card"].l1_budget() == _DEFAULT_L1_BUDGET_BYTES
 
 
@@ -45,15 +47,20 @@ def test_detect_prefers_tt_kernel(monkeypatch):
     class _Info:
         arch = "blackhole"
         device_count = 2
-    monkeypatch.setattr(hardware, "_detect_via_tt_kernel",
-                        lambda: hardware._config_for(_Info.arch, _Info.device_count))
+
+    monkeypatch.setattr(
+        hardware,
+        "_detect_via_tt_kernel",
+        lambda: hardware._config_for(_Info.arch, _Info.device_count),
+    )
     assert detect_hardware().name == "bh_p150_2card"
 
 
 def test_detect_falls_back_to_ttnn(monkeypatch):
     monkeypatch.setattr(hardware, "_detect_via_tt_kernel", lambda: None)
-    monkeypatch.setattr(hardware, "_detect_via_ttnn",
-                        lambda device=None: KNOWN_CONFIGS["gs_e150_1card"])
+    monkeypatch.setattr(
+        hardware, "_detect_via_ttnn", lambda device=None: KNOWN_CONFIGS["gs_e150_1card"]
+    )
     assert detect_hardware().name == "gs_e150_1card"
 
 

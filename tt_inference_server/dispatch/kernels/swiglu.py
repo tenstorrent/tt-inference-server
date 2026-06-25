@@ -34,15 +34,33 @@ _ACTIVATIONS = {"silu", "gelu", "relu2"}
 def _make_kernel_silu(M_tiles, K_tiles, N_tiles):
     @ttl.operation(grid=(1, 1))
     def kernel(gate, w_gate, bias_gate, up, w_up, bias_up, out):
-        gate_dfb    = ttl.make_dataflow_buffer_like(gate,      shape=(M_tiles, K_tiles), block_count=1)
-        wg_dfb      = ttl.make_dataflow_buffer_like(w_gate,    shape=(K_tiles, N_tiles), block_count=1)
-        bg_dfb      = ttl.make_dataflow_buffer_like(bias_gate, shape=(M_tiles, N_tiles), block_count=1)
-        up_dfb      = ttl.make_dataflow_buffer_like(up,        shape=(M_tiles, K_tiles), block_count=1)
-        wu_dfb      = ttl.make_dataflow_buffer_like(w_up,      shape=(K_tiles, N_tiles), block_count=1)
-        bu_dfb      = ttl.make_dataflow_buffer_like(bias_up,   shape=(M_tiles, N_tiles), block_count=1)
-        act_dfb     = ttl.make_dataflow_buffer_like(out,       shape=(M_tiles, N_tiles), block_count=1)
-        up_proj_dfb = ttl.make_dataflow_buffer_like(out,       shape=(M_tiles, N_tiles), block_count=1)
-        out_dfb     = ttl.make_dataflow_buffer_like(out,       shape=(M_tiles, N_tiles), block_count=1)
+        gate_dfb = ttl.make_dataflow_buffer_like(
+            gate, shape=(M_tiles, K_tiles), block_count=1
+        )
+        wg_dfb = ttl.make_dataflow_buffer_like(
+            w_gate, shape=(K_tiles, N_tiles), block_count=1
+        )
+        bg_dfb = ttl.make_dataflow_buffer_like(
+            bias_gate, shape=(M_tiles, N_tiles), block_count=1
+        )
+        up_dfb = ttl.make_dataflow_buffer_like(
+            up, shape=(M_tiles, K_tiles), block_count=1
+        )
+        wu_dfb = ttl.make_dataflow_buffer_like(
+            w_up, shape=(K_tiles, N_tiles), block_count=1
+        )
+        bu_dfb = ttl.make_dataflow_buffer_like(
+            bias_up, shape=(M_tiles, N_tiles), block_count=1
+        )
+        act_dfb = ttl.make_dataflow_buffer_like(
+            out, shape=(M_tiles, N_tiles), block_count=1
+        )
+        up_proj_dfb = ttl.make_dataflow_buffer_like(
+            out, shape=(M_tiles, N_tiles), block_count=1
+        )
+        out_dfb = ttl.make_dataflow_buffer_like(
+            out, shape=(M_tiles, N_tiles), block_count=1
+        )
 
         @ttl.compute()
         def compute():
@@ -58,16 +76,23 @@ def _make_kernel_silu(M_tiles, K_tiles, N_tiles):
 
         @ttl.datamovement()
         def dm_read():
-            with gate_dfb.reserve() as blk: ttl.copy(gate[0:M_tiles, 0:K_tiles], blk).wait()
-            with wg_dfb.reserve()   as blk: ttl.copy(w_gate[0:K_tiles, 0:N_tiles], blk).wait()
-            with bg_dfb.reserve()   as blk: ttl.copy(bias_gate[0:M_tiles, 0:N_tiles], blk).wait()
-            with up_dfb.reserve()   as blk: ttl.copy(up[0:M_tiles, 0:K_tiles], blk).wait()
-            with wu_dfb.reserve()   as blk: ttl.copy(w_up[0:K_tiles, 0:N_tiles], blk).wait()
-            with bu_dfb.reserve()   as blk: ttl.copy(bias_up[0:M_tiles, 0:N_tiles], blk).wait()
+            with gate_dfb.reserve() as blk:
+                ttl.copy(gate[0:M_tiles, 0:K_tiles], blk).wait()
+            with wg_dfb.reserve() as blk:
+                ttl.copy(w_gate[0:K_tiles, 0:N_tiles], blk).wait()
+            with bg_dfb.reserve() as blk:
+                ttl.copy(bias_gate[0:M_tiles, 0:N_tiles], blk).wait()
+            with up_dfb.reserve() as blk:
+                ttl.copy(up[0:M_tiles, 0:K_tiles], blk).wait()
+            with wu_dfb.reserve() as blk:
+                ttl.copy(w_up[0:K_tiles, 0:N_tiles], blk).wait()
+            with bu_dfb.reserve() as blk:
+                ttl.copy(bias_up[0:M_tiles, 0:N_tiles], blk).wait()
 
         @ttl.datamovement()
         def dm_write():
-            with out_dfb.wait() as blk: ttl.copy(blk, out[0:M_tiles, 0:N_tiles]).wait()
+            with out_dfb.wait() as blk:
+                ttl.copy(blk, out[0:M_tiles, 0:N_tiles]).wait()
 
     return kernel
 
@@ -75,15 +100,33 @@ def _make_kernel_silu(M_tiles, K_tiles, N_tiles):
 def _make_kernel_gelu(M_tiles, K_tiles, N_tiles):
     @ttl.operation(grid=(1, 1))
     def kernel(gate, w_gate, bias_gate, up, w_up, bias_up, out):
-        gate_dfb    = ttl.make_dataflow_buffer_like(gate,      shape=(M_tiles, K_tiles), block_count=1)
-        wg_dfb      = ttl.make_dataflow_buffer_like(w_gate,    shape=(K_tiles, N_tiles), block_count=1)
-        bg_dfb      = ttl.make_dataflow_buffer_like(bias_gate, shape=(M_tiles, N_tiles), block_count=1)
-        up_dfb      = ttl.make_dataflow_buffer_like(up,        shape=(M_tiles, K_tiles), block_count=1)
-        wu_dfb      = ttl.make_dataflow_buffer_like(w_up,      shape=(K_tiles, N_tiles), block_count=1)
-        bu_dfb      = ttl.make_dataflow_buffer_like(bias_up,   shape=(M_tiles, N_tiles), block_count=1)
-        act_dfb     = ttl.make_dataflow_buffer_like(out,       shape=(M_tiles, N_tiles), block_count=1)
-        up_proj_dfb = ttl.make_dataflow_buffer_like(out,       shape=(M_tiles, N_tiles), block_count=1)
-        out_dfb     = ttl.make_dataflow_buffer_like(out,       shape=(M_tiles, N_tiles), block_count=1)
+        gate_dfb = ttl.make_dataflow_buffer_like(
+            gate, shape=(M_tiles, K_tiles), block_count=1
+        )
+        wg_dfb = ttl.make_dataflow_buffer_like(
+            w_gate, shape=(K_tiles, N_tiles), block_count=1
+        )
+        bg_dfb = ttl.make_dataflow_buffer_like(
+            bias_gate, shape=(M_tiles, N_tiles), block_count=1
+        )
+        up_dfb = ttl.make_dataflow_buffer_like(
+            up, shape=(M_tiles, K_tiles), block_count=1
+        )
+        wu_dfb = ttl.make_dataflow_buffer_like(
+            w_up, shape=(K_tiles, N_tiles), block_count=1
+        )
+        bu_dfb = ttl.make_dataflow_buffer_like(
+            bias_up, shape=(M_tiles, N_tiles), block_count=1
+        )
+        act_dfb = ttl.make_dataflow_buffer_like(
+            out, shape=(M_tiles, N_tiles), block_count=1
+        )
+        up_proj_dfb = ttl.make_dataflow_buffer_like(
+            out, shape=(M_tiles, N_tiles), block_count=1
+        )
+        out_dfb = ttl.make_dataflow_buffer_like(
+            out, shape=(M_tiles, N_tiles), block_count=1
+        )
 
         @ttl.compute()
         def compute():
@@ -99,16 +142,23 @@ def _make_kernel_gelu(M_tiles, K_tiles, N_tiles):
 
         @ttl.datamovement()
         def dm_read():
-            with gate_dfb.reserve() as blk: ttl.copy(gate[0:M_tiles, 0:K_tiles], blk).wait()
-            with wg_dfb.reserve()   as blk: ttl.copy(w_gate[0:K_tiles, 0:N_tiles], blk).wait()
-            with bg_dfb.reserve()   as blk: ttl.copy(bias_gate[0:M_tiles, 0:N_tiles], blk).wait()
-            with up_dfb.reserve()   as blk: ttl.copy(up[0:M_tiles, 0:K_tiles], blk).wait()
-            with wu_dfb.reserve()   as blk: ttl.copy(w_up[0:K_tiles, 0:N_tiles], blk).wait()
-            with bu_dfb.reserve()   as blk: ttl.copy(bias_up[0:M_tiles, 0:N_tiles], blk).wait()
+            with gate_dfb.reserve() as blk:
+                ttl.copy(gate[0:M_tiles, 0:K_tiles], blk).wait()
+            with wg_dfb.reserve() as blk:
+                ttl.copy(w_gate[0:K_tiles, 0:N_tiles], blk).wait()
+            with bg_dfb.reserve() as blk:
+                ttl.copy(bias_gate[0:M_tiles, 0:N_tiles], blk).wait()
+            with up_dfb.reserve() as blk:
+                ttl.copy(up[0:M_tiles, 0:K_tiles], blk).wait()
+            with wu_dfb.reserve() as blk:
+                ttl.copy(w_up[0:K_tiles, 0:N_tiles], blk).wait()
+            with bu_dfb.reserve() as blk:
+                ttl.copy(bias_up[0:M_tiles, 0:N_tiles], blk).wait()
 
         @ttl.datamovement()
         def dm_write():
-            with out_dfb.wait() as blk: ttl.copy(blk, out[0:M_tiles, 0:N_tiles]).wait()
+            with out_dfb.wait() as blk:
+                ttl.copy(blk, out[0:M_tiles, 0:N_tiles]).wait()
 
     return kernel
 
@@ -116,15 +166,33 @@ def _make_kernel_gelu(M_tiles, K_tiles, N_tiles):
 def _make_kernel_relu2(M_tiles, K_tiles, N_tiles):
     @ttl.operation(grid=(1, 1))
     def kernel(gate, w_gate, bias_gate, up, w_up, bias_up, out):
-        gate_dfb    = ttl.make_dataflow_buffer_like(gate,      shape=(M_tiles, K_tiles), block_count=1)
-        wg_dfb      = ttl.make_dataflow_buffer_like(w_gate,    shape=(K_tiles, N_tiles), block_count=1)
-        bg_dfb      = ttl.make_dataflow_buffer_like(bias_gate, shape=(M_tiles, N_tiles), block_count=1)
-        up_dfb      = ttl.make_dataflow_buffer_like(up,        shape=(M_tiles, K_tiles), block_count=1)
-        wu_dfb      = ttl.make_dataflow_buffer_like(w_up,      shape=(K_tiles, N_tiles), block_count=1)
-        bu_dfb      = ttl.make_dataflow_buffer_like(bias_up,   shape=(M_tiles, N_tiles), block_count=1)
-        act_dfb     = ttl.make_dataflow_buffer_like(out,       shape=(M_tiles, N_tiles), block_count=1)
-        up_proj_dfb = ttl.make_dataflow_buffer_like(out,       shape=(M_tiles, N_tiles), block_count=1)
-        out_dfb     = ttl.make_dataflow_buffer_like(out,       shape=(M_tiles, N_tiles), block_count=1)
+        gate_dfb = ttl.make_dataflow_buffer_like(
+            gate, shape=(M_tiles, K_tiles), block_count=1
+        )
+        wg_dfb = ttl.make_dataflow_buffer_like(
+            w_gate, shape=(K_tiles, N_tiles), block_count=1
+        )
+        bg_dfb = ttl.make_dataflow_buffer_like(
+            bias_gate, shape=(M_tiles, N_tiles), block_count=1
+        )
+        up_dfb = ttl.make_dataflow_buffer_like(
+            up, shape=(M_tiles, K_tiles), block_count=1
+        )
+        wu_dfb = ttl.make_dataflow_buffer_like(
+            w_up, shape=(K_tiles, N_tiles), block_count=1
+        )
+        bu_dfb = ttl.make_dataflow_buffer_like(
+            bias_up, shape=(M_tiles, N_tiles), block_count=1
+        )
+        act_dfb = ttl.make_dataflow_buffer_like(
+            out, shape=(M_tiles, N_tiles), block_count=1
+        )
+        up_proj_dfb = ttl.make_dataflow_buffer_like(
+            out, shape=(M_tiles, N_tiles), block_count=1
+        )
+        out_dfb = ttl.make_dataflow_buffer_like(
+            out, shape=(M_tiles, N_tiles), block_count=1
+        )
 
         @ttl.compute()
         def compute():
@@ -141,25 +209,40 @@ def _make_kernel_relu2(M_tiles, K_tiles, N_tiles):
 
         @ttl.datamovement()
         def dm_read():
-            with gate_dfb.reserve() as blk: ttl.copy(gate[0:M_tiles, 0:K_tiles], blk).wait()
-            with wg_dfb.reserve()   as blk: ttl.copy(w_gate[0:K_tiles, 0:N_tiles], blk).wait()
-            with bg_dfb.reserve()   as blk: ttl.copy(bias_gate[0:M_tiles, 0:N_tiles], blk).wait()
-            with up_dfb.reserve()   as blk: ttl.copy(up[0:M_tiles, 0:K_tiles], blk).wait()
-            with wu_dfb.reserve()   as blk: ttl.copy(w_up[0:K_tiles, 0:N_tiles], blk).wait()
-            with bu_dfb.reserve()   as blk: ttl.copy(bias_up[0:M_tiles, 0:N_tiles], blk).wait()
+            with gate_dfb.reserve() as blk:
+                ttl.copy(gate[0:M_tiles, 0:K_tiles], blk).wait()
+            with wg_dfb.reserve() as blk:
+                ttl.copy(w_gate[0:K_tiles, 0:N_tiles], blk).wait()
+            with bg_dfb.reserve() as blk:
+                ttl.copy(bias_gate[0:M_tiles, 0:N_tiles], blk).wait()
+            with up_dfb.reserve() as blk:
+                ttl.copy(up[0:M_tiles, 0:K_tiles], blk).wait()
+            with wu_dfb.reserve() as blk:
+                ttl.copy(w_up[0:K_tiles, 0:N_tiles], blk).wait()
+            with bu_dfb.reserve() as blk:
+                ttl.copy(bias_up[0:M_tiles, 0:N_tiles], blk).wait()
 
         @ttl.datamovement()
         def dm_write():
-            with out_dfb.wait() as blk: ttl.copy(blk, out[0:M_tiles, 0:N_tiles]).wait()
+            with out_dfb.wait() as blk:
+                ttl.copy(blk, out[0:M_tiles, 0:N_tiles]).wait()
 
     return kernel
 
 
-_BUILDERS = {"silu": _make_kernel_silu, "gelu": _make_kernel_gelu, "relu2": _make_kernel_relu2}
+_BUILDERS = {
+    "silu": _make_kernel_silu,
+    "gelu": _make_kernel_gelu,
+    "relu2": _make_kernel_relu2,
+}
 
 
-def make_swiglu_kernel(M_tiles: int, K_tiles: int, N_tiles: int, activation: str = "silu"):
+def make_swiglu_kernel(
+    M_tiles: int, K_tiles: int, N_tiles: int, activation: str = "silu"
+):
     """Return a compiled SwiGLU/GLU kernel for the given tile dimensions."""
     if activation not in _ACTIVATIONS:
-        raise ValueError(f"activation must be one of {set(_ACTIVATIONS)}, got {activation!r}")
+        raise ValueError(
+            f"activation must be one of {set(_ACTIVATIONS)}, got {activation!r}"
+        )
     return _BUILDERS[activation](M_tiles, K_tiles, N_tiles)

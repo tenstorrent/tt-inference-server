@@ -26,8 +26,10 @@ from tt_inference_server.dispatch import load_model
 # Fakes
 # --------------------------------------------------------------------------- #
 
+
 class FakeRunner:
     """A minimal runner that satisfies the BaseRunner contract."""
+
     MANAGES_OWN_DEVICE = False
 
     def __init__(self, model_path, device, **kwargs):
@@ -56,6 +58,7 @@ class OwnDeviceRunner(FakeRunner):
         super().__init__(model_path, device, **kwargs)
         # A real mesh runner would open its own device here.
         import ttnn  # the stubbed fake injected by the test
+
         self.own_device = ttnn.open_mesh_device()
 
 
@@ -88,6 +91,7 @@ def inject_module():
 def fake_ttnn():
     """Inject a fake ttnn module; yield it so tests can assert on its calls."""
     import unittest.mock as mock
+
     fake = types.ModuleType("ttnn")
     fake.open_device = mock.MagicMock(return_value="DEVICE")
     fake.open_mesh_device = mock.MagicMock(return_value="MESH")
@@ -104,6 +108,7 @@ def fake_ttnn():
 # --------------------------------------------------------------------------- #
 # validate_runner
 # --------------------------------------------------------------------------- #
+
 
 def test_validate_runner_accepts_complete():
     base.validate_runner(FakeRunner("m", None))
@@ -127,6 +132,7 @@ def test_validate_runner_rejects_missing_attr():
 # --------------------------------------------------------------------------- #
 # _load_dotted
 # --------------------------------------------------------------------------- #
+
 
 def test_load_dotted_colon(inject_module):
     inject_module("fake_pkg_a", Thing=FakeRunner)
@@ -152,12 +158,16 @@ def test_load_dotted_missing_module():
 # resolution precedence
 # --------------------------------------------------------------------------- #
 
+
 def test_explicit_arg_wins(inject_module, monkeypatch):
     inject_module("fake_explicit", Runner=FakeRunner)
     # Even if an entry point would also match, the explicit arg short-circuits first.
-    monkeypatch.setattr(base, "iter_entry_point_runners",
-                        lambda: [_make_ep("ep", OwnDeviceRunner)])
-    cls, source = base.resolve_runner_class("some/model", "fake_explicit:Runner", unsafe=True)
+    monkeypatch.setattr(
+        base, "iter_entry_point_runners", lambda: [_make_ep("ep", OwnDeviceRunner)]
+    )
+    cls, source = base.resolve_runner_class(
+        "some/model", "fake_explicit:Runner", unsafe=True
+    )
     assert cls is FakeRunner
     assert source.startswith("explicit:")
 
@@ -173,12 +183,18 @@ def test_entry_point_match_by_model_type(monkeypatch):
     class EPRunner(FakeRunner):
         supported_model_types = {"qwen3_5_moe"}
 
-    monkeypatch.setattr(base, "iter_entry_point_runners",
-                        lambda: [_make_ep("qwen", EPRunner)])
+    monkeypatch.setattr(
+        base, "iter_entry_point_runners", lambda: [_make_ep("qwen", EPRunner)]
+    )
     monkeypatch.setattr(base, "load_hf_config", lambda p: None)
-    monkeypatch.setattr(base, "_raw_config_json",
-                        lambda p: {"model_type": "qwen3_5_moe",
-                                   "architectures": ["Qwen3_5MoeForCausalLM"]})
+    monkeypatch.setattr(
+        base,
+        "_raw_config_json",
+        lambda p: {
+            "model_type": "qwen3_5_moe",
+            "architectures": ["Qwen3_5MoeForCausalLM"],
+        },
+    )
     cls, source = base.resolve_runner_class("some/model", None, unsafe=False)
     assert cls is EPRunner
     assert source.startswith("entry_point:")
@@ -188,11 +204,15 @@ def test_entry_point_no_match_falls_through(monkeypatch):
     class EPRunner(FakeRunner):
         supported_model_types = {"qwen3_5_moe"}
 
-    monkeypatch.setattr(base, "iter_entry_point_runners",
-                        lambda: [_make_ep("qwen", EPRunner)])
+    monkeypatch.setattr(
+        base, "iter_entry_point_runners", lambda: [_make_ep("qwen", EPRunner)]
+    )
     monkeypatch.setattr(base, "load_hf_config", lambda p: None)
-    monkeypatch.setattr(base, "_raw_config_json",
-                        lambda p: {"model_type": "llama", "architectures": ["LlamaForCausalLM"]})
+    monkeypatch.setattr(
+        base,
+        "_raw_config_json",
+        lambda p: {"model_type": "llama", "architectures": ["LlamaForCausalLM"]},
+    )
     cls, source = base.resolve_runner_class("some/model", None, unsafe=False)
     assert cls is None
     assert source == "generic"
@@ -207,11 +227,17 @@ def test_entry_point_specificity_breaks_tie(monkeypatch):
         def claims(cls, hf_config):
             return True
 
-    monkeypatch.setattr(base, "iter_entry_point_runners",
-                        lambda: [_make_ep("a", ByType), _make_ep("b", ByClaim)])
+    monkeypatch.setattr(
+        base,
+        "iter_entry_point_runners",
+        lambda: [_make_ep("a", ByType), _make_ep("b", ByClaim)],
+    )
     monkeypatch.setattr(base, "load_hf_config", lambda p: None)
-    monkeypatch.setattr(base, "_raw_config_json",
-                        lambda p: {"model_type": "qwen3_5_moe", "architectures": ["X"]})
+    monkeypatch.setattr(
+        base,
+        "_raw_config_json",
+        lambda p: {"model_type": "qwen3_5_moe", "architectures": ["X"]},
+    )
     cls, _ = base.resolve_runner_class("some/model", None, unsafe=False)
     assert cls is ByClaim  # claims() (rank 3) beats model_type (rank 1)
 
@@ -223,11 +249,15 @@ def test_entry_point_ambiguous_raises(monkeypatch):
     class B(FakeRunner):
         supported_model_types = {"qwen3_5_moe"}
 
-    monkeypatch.setattr(base, "iter_entry_point_runners",
-                        lambda: [_make_ep("a", A), _make_ep("b", B)])
+    monkeypatch.setattr(
+        base, "iter_entry_point_runners", lambda: [_make_ep("a", A), _make_ep("b", B)]
+    )
     monkeypatch.setattr(base, "load_hf_config", lambda p: None)
-    monkeypatch.setattr(base, "_raw_config_json",
-                        lambda p: {"model_type": "qwen3_5_moe", "architectures": ["X"]})
+    monkeypatch.setattr(
+        base,
+        "_raw_config_json",
+        lambda p: {"model_type": "qwen3_5_moe", "architectures": ["X"]},
+    )
     with pytest.raises(RuntimeError, match="[Aa]mbiguous"):
         base.resolve_runner_class("some/model", None, unsafe=False)
 
@@ -235,6 +265,7 @@ def test_entry_point_ambiguous_raises(monkeypatch):
 # --------------------------------------------------------------------------- #
 # self-declaration (trust-gated)
 # --------------------------------------------------------------------------- #
+
 
 def _write_model_dir(tmp_path, **config):
     (tmp_path / "config.json").write_text(json.dumps(config))
@@ -253,7 +284,9 @@ def test_self_declared_ignored_without_unsafe(inject_module, tmp_path, monkeypat
 def test_self_declared_honored_with_unsafe(inject_module, tmp_path, monkeypatch):
     inject_module("fake_self2", Runner=FakeRunner)
     monkeypatch.setattr(base, "iter_entry_point_runners", lambda: [])
-    model_dir = _write_model_dir(tmp_path, model_type="x", tt_runner="fake_self2:Runner")
+    model_dir = _write_model_dir(
+        tmp_path, model_type="x", tt_runner="fake_self2:Runner"
+    )
     cls, source = base.resolve_runner_class(model_dir, None, unsafe=True)
     assert cls is FakeRunner
     assert source.startswith("self_declared:")
@@ -263,7 +296,9 @@ def test_self_declared_sidecar(inject_module, tmp_path, monkeypatch):
     inject_module("fake_self3", Runner=FakeRunner)
     monkeypatch.setattr(base, "iter_entry_point_runners", lambda: [])
     (tmp_path / "config.json").write_text(json.dumps({"model_type": "x"}))
-    (tmp_path / "tt_dispatch.json").write_text(json.dumps({"runner": "fake_self3:Runner"}))
+    (tmp_path / "tt_dispatch.json").write_text(
+        json.dumps({"runner": "fake_self3:Runner"})
+    )
     cls, source = base.resolve_runner_class(str(tmp_path), None, unsafe=True)
     assert cls is FakeRunner
 
@@ -272,7 +307,9 @@ def test_self_declared_allowlist_blocks(inject_module, tmp_path, monkeypatch):
     inject_module("fake_self4", Runner=FakeRunner)
     monkeypatch.setattr(base, "iter_entry_point_runners", lambda: [])
     monkeypatch.setenv(base.ENV_ALLOW, "some_other_pkg")
-    model_dir = _write_model_dir(tmp_path, model_type="x", tt_runner="fake_self4:Runner")
+    model_dir = _write_model_dir(
+        tmp_path, model_type="x", tt_runner="fake_self4:Runner"
+    )
     with pytest.raises(RuntimeError, match="allow"):
         base.resolve_runner_class(model_dir, None, unsafe=True)
 
@@ -281,7 +318,9 @@ def test_self_declared_allowlist_permits(inject_module, tmp_path, monkeypatch):
     inject_module("fake_self5", Runner=FakeRunner)
     monkeypatch.setattr(base, "iter_entry_point_runners", lambda: [])
     monkeypatch.setenv(base.ENV_ALLOW, "fake_self5")  # module-prefix whitelist
-    model_dir = _write_model_dir(tmp_path, model_type="x", tt_runner="fake_self5:Runner")
+    model_dir = _write_model_dir(
+        tmp_path, model_type="x", tt_runner="fake_self5:Runner"
+    )
     cls, _ = base.resolve_runner_class(model_dir, None, unsafe=True)
     assert cls is FakeRunner
 
@@ -289,6 +328,7 @@ def test_self_declared_allowlist_permits(inject_module, tmp_path, monkeypatch):
 # --------------------------------------------------------------------------- #
 # load_model: device ownership
 # --------------------------------------------------------------------------- #
+
 
 def test_load_model_generic_when_nothing_claims(monkeypatch):
     # No explicit, no entry points, not unsafe -> generic fallback path is selected.
@@ -307,7 +347,9 @@ def test_load_model_custom_runner_owns_device(inject_module, fake_ttnn):
     assert handle.community is True  # FakeRunner._community
 
 
-def test_load_model_simple_custom_runner_uses_load_model_device(inject_module, fake_ttnn):
+def test_load_model_simple_custom_runner_uses_load_model_device(
+    inject_module, fake_ttnn
+):
     inject_module("fake_simple", Runner=FakeRunner)  # MANAGES_OWN_DEVICE = False
     handle = load_model("some/model", unsafe=False, runner="fake_simple:Runner")
     fake_ttnn.open_device.assert_called_once()

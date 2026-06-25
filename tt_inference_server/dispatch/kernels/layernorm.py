@@ -33,17 +33,31 @@ def make_layernorm_kernel(seq_tiles: int, hidden_tiles: int, eps: float = 1e-5):
     def layernorm_kernel(x, weight, bias, scaler, out):
         # Single-pass kernel: block_count=1 for all large DFBs.
         # var_dfb stays at 2 because it is read and written in the same step.
-        x_dfb        = ttl.make_dataflow_buffer_like(x,      shape=(seq_tiles, hidden_tiles), block_count=1)
-        w_dfb        = ttl.make_dataflow_buffer_like(weight,  shape=(seq_tiles, hidden_tiles), block_count=1)
-        b_dfb        = ttl.make_dataflow_buffer_like(bias,    shape=(seq_tiles, hidden_tiles), block_count=1)
-        sc_dfb       = ttl.make_dataflow_buffer_like(scaler,  shape=(1, 1),                   block_count=1)
-        mean_dfb     = ttl.make_dataflow_buffer_like(scaler,  shape=(1, 1),                   block_count=2)
-        mean_bc_dfb  = ttl.make_dataflow_buffer_like(x,       shape=(seq_tiles, hidden_tiles), block_count=1)
-        centered_dfb = ttl.make_dataflow_buffer_like(x,       shape=(seq_tiles, hidden_tiles), block_count=2)
-        var_dfb      = ttl.make_dataflow_buffer_like(scaler,  shape=(1, 1),                   block_count=2)
-        rstd_dfb     = ttl.make_dataflow_buffer_like(scaler,  shape=(1, 1),                   block_count=2)
-        rstd_bc_dfb  = ttl.make_dataflow_buffer_like(x,       shape=(seq_tiles, hidden_tiles), block_count=1)
-        out_dfb      = ttl.make_dataflow_buffer_like(out,     shape=(seq_tiles, hidden_tiles), block_count=1)
+        x_dfb = ttl.make_dataflow_buffer_like(
+            x, shape=(seq_tiles, hidden_tiles), block_count=1
+        )
+        w_dfb = ttl.make_dataflow_buffer_like(
+            weight, shape=(seq_tiles, hidden_tiles), block_count=1
+        )
+        b_dfb = ttl.make_dataflow_buffer_like(
+            bias, shape=(seq_tiles, hidden_tiles), block_count=1
+        )
+        sc_dfb = ttl.make_dataflow_buffer_like(scaler, shape=(1, 1), block_count=1)
+        mean_dfb = ttl.make_dataflow_buffer_like(scaler, shape=(1, 1), block_count=2)
+        mean_bc_dfb = ttl.make_dataflow_buffer_like(
+            x, shape=(seq_tiles, hidden_tiles), block_count=1
+        )
+        centered_dfb = ttl.make_dataflow_buffer_like(
+            x, shape=(seq_tiles, hidden_tiles), block_count=2
+        )
+        var_dfb = ttl.make_dataflow_buffer_like(scaler, shape=(1, 1), block_count=2)
+        rstd_dfb = ttl.make_dataflow_buffer_like(scaler, shape=(1, 1), block_count=2)
+        rstd_bc_dfb = ttl.make_dataflow_buffer_like(
+            x, shape=(seq_tiles, hidden_tiles), block_count=1
+        )
+        out_dfb = ttl.make_dataflow_buffer_like(
+            out, shape=(seq_tiles, hidden_tiles), block_count=1
+        )
 
         @ttl.compute()
         def compute():
@@ -52,7 +66,11 @@ def make_layernorm_kernel(seq_tiles: int, hidden_tiles: int, eps: float = 1e-5):
                 with mean_dfb.reserve() as mn:
                     mn.store(ttl.math.reduce_sum(xv, dims=[-1]) * sc)
                 with mean_dfb.wait() as mnv, mean_bc_dfb.reserve() as mn_bc:
-                    mn_bc.store(ttl.math.broadcast(mnv, dims=[-1], shape=(seq_tiles, hidden_tiles)))
+                    mn_bc.store(
+                        ttl.math.broadcast(
+                            mnv, dims=[-1], shape=(seq_tiles, hidden_tiles)
+                        )
+                    )
 
                 # x - mean
                 with mean_bc_dfb.wait() as mn_bc, centered_dfb.reserve() as ctr:
@@ -70,7 +88,11 @@ def make_layernorm_kernel(seq_tiles: int, hidden_tiles: int, eps: float = 1e-5):
                 with var_dfb.wait() as varv, rstd_dfb.reserve() as rs:
                     rs.store(ttl.math.rsqrt(varv))
                 with rstd_dfb.wait() as rsv, rstd_bc_dfb.reserve() as rs_bc:
-                    rs_bc.store(ttl.math.broadcast(rsv, dims=[-1], shape=(seq_tiles, hidden_tiles)))
+                    rs_bc.store(
+                        ttl.math.broadcast(
+                            rsv, dims=[-1], shape=(seq_tiles, hidden_tiles)
+                        )
+                    )
 
                 # normalize, scale, shift
                 with centered_dfb.wait() as ctrv2, rstd_bc_dfb.wait() as rs_bc, out_dfb.reserve() as o:

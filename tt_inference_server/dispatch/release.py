@@ -48,8 +48,16 @@ def _warmup(model: str, tokens: int, max_seq: int) -> int:
 def _push_argv(args, cache_dir: str) -> "list[str]":
     # Invoke tt-kernel as a module via the current interpreter so it works whether or not
     # the venv's bin/ (with the `tt-kernel` console script) is on PATH.
-    argv = [sys.executable, "-m", "tt_kernel.cli", "push", args.repo, "--cache-dir", cache_dir,
-            "--private" if args.private else "--public"]
+    argv = [
+        sys.executable,
+        "-m",
+        "tt_kernel.cli",
+        "push",
+        args.repo,
+        "--cache-dir",
+        cache_dir,
+        "--private" if args.private else "--public",
+    ]
     if args.build_key is not None:
         argv += ["--build-key", str(args.build_key)]
     if args.weights:
@@ -66,24 +74,75 @@ def _push_argv(args, cache_dir: str) -> "list[str]":
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="release", description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--model", required=True, help="HF id or local weights dir to warm up.")
-    ap.add_argument("--repo", help="Target bundle repo as namespace/name (required unless --warmup-only).")
-    ap.add_argument("--weights", help="HF model repo id this bundle targets (recorded in the manifest).")
-    ap.add_argument("--runner-spec", help="Runner as module:Class (packaged with --python-package, else reference).")
-    ap.add_argument("--python-package", action="append", help="Runner wheel/sdist to ship (repeatable).")
-    ap.add_argument("--entry-point", help="Entry-point name the wheel registers under tt_inference_server.runners.")
-    ap.add_argument("--runner-source", help="For a reference runner: pip name / git URL.")
-    ap.add_argument("--tokens", type=int, default=8, help="Warmup tokens to generate (default 8).")
-    ap.add_argument("--max-seq", type=int, default=512, help="Warmup max_seq (default 512).")
-    ap.add_argument("--cache-dir", help="Cache root to compile into (default: a fresh temp dir).")
-    ap.add_argument("--build-key", type=int, help="Explicit build_key to publish (only needed if ambiguous).")
-    ap.add_argument("--private", action="store_true", help="Publish the repo private (default public).")
-    ap.add_argument("--public", action="store_true", help="Publish public (the default; accepted for explicitness).")
-    ap.add_argument("--skip-warmup", action="store_true", help="Assume the cache-dir is already populated.")
-    ap.add_argument("--dry-run", action="store_true", help="Warm up but print the push command instead of running it.")
-    ap.add_argument("--warmup-only", action="store_true", help=argparse.SUPPRESS)  # internal subprocess mode
+    ap = argparse.ArgumentParser(
+        prog="release",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ap.add_argument(
+        "--model", required=True, help="HF id or local weights dir to warm up."
+    )
+    ap.add_argument(
+        "--repo",
+        help="Target bundle repo as namespace/name (required unless --warmup-only).",
+    )
+    ap.add_argument(
+        "--weights",
+        help="HF model repo id this bundle targets (recorded in the manifest).",
+    )
+    ap.add_argument(
+        "--runner-spec",
+        help="Runner as module:Class (packaged with --python-package, else reference).",
+    )
+    ap.add_argument(
+        "--python-package",
+        action="append",
+        help="Runner wheel/sdist to ship (repeatable).",
+    )
+    ap.add_argument(
+        "--entry-point",
+        help="Entry-point name the wheel registers under tt_inference_server.runners.",
+    )
+    ap.add_argument(
+        "--runner-source", help="For a reference runner: pip name / git URL."
+    )
+    ap.add_argument(
+        "--tokens", type=int, default=8, help="Warmup tokens to generate (default 8)."
+    )
+    ap.add_argument(
+        "--max-seq", type=int, default=512, help="Warmup max_seq (default 512)."
+    )
+    ap.add_argument(
+        "--cache-dir", help="Cache root to compile into (default: a fresh temp dir)."
+    )
+    ap.add_argument(
+        "--build-key",
+        type=int,
+        help="Explicit build_key to publish (only needed if ambiguous).",
+    )
+    ap.add_argument(
+        "--private",
+        action="store_true",
+        help="Publish the repo private (default public).",
+    )
+    ap.add_argument(
+        "--public",
+        action="store_true",
+        help="Publish public (the default; accepted for explicitness).",
+    )
+    ap.add_argument(
+        "--skip-warmup",
+        action="store_true",
+        help="Assume the cache-dir is already populated.",
+    )
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Warm up but print the push command instead of running it.",
+    )
+    ap.add_argument(
+        "--warmup-only", action="store_true", help=argparse.SUPPRESS
+    )  # internal subprocess mode
     args = ap.parse_args(argv)
 
     if args.warmup_only:
@@ -96,18 +155,36 @@ def main(argv=None) -> int:
 
     if not args.skip_warmup:
         env = {**os.environ, "TT_METAL_CACHE": cache_dir}
-        print(f"[release] warming up {args.model} ({args.tokens} tokens) ...", flush=True)
+        print(
+            f"[release] warming up {args.model} ({args.tokens} tokens) ...", flush=True
+        )
         subprocess.run(
-            [sys.executable, "-m", "tt_inference_server.dispatch.release", "--warmup-only",
-             "--model", args.model, "--tokens", str(args.tokens), "--max-seq", str(args.max_seq)],
-            env=env, check=True,
+            [
+                sys.executable,
+                "-m",
+                "tt_inference_server.dispatch.release",
+                "--warmup-only",
+                "--model",
+                args.model,
+                "--tokens",
+                str(args.tokens),
+                "--max-seq",
+                str(args.max_seq),
+            ],
+            env=env,
+            check=True,
         )
 
     push = _push_argv(args, cache_dir)
     if args.dry_run:
         from tt_kernel import cache
+
         out_root = cache.resolve_out_root(cache_dir)
-        print("[release] DRY RUN — populated build_keys:", cache.list_build_keys(out_root), flush=True)
+        print(
+            "[release] DRY RUN — populated build_keys:",
+            cache.list_build_keys(out_root),
+            flush=True,
+        )
         print("[release] would run:\n  " + " ".join(push), flush=True)
         return 0
 

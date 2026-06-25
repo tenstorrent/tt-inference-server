@@ -3,7 +3,7 @@
 
 """Public API for the dispatch layer.
 
-    from tt_inference_server.dispatch import load_model, ModelHandle
+from tt_inference_server.dispatch import load_model, ModelHandle
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from typing import Optional
 @dataclass
 class ModelHandle:
     """Returned by load_model(). Wraps a TTModelRunner with the public interface."""
+
     _runner: object
     model_path: str
     listed: bool = True
@@ -25,7 +26,9 @@ class ModelHandle:
 
     def generate_stream(self, prompt: str, max_new_tokens: int = 50, **kwargs):
         """Yield decoded text deltas one decode step at a time (for streaming serve)."""
-        return self._runner.generate_stream(prompt, max_new_tokens=max_new_tokens, **kwargs)
+        return self._runner.generate_stream(
+            prompt, max_new_tokens=max_new_tokens, **kwargs
+        )
 
     def benchmark(self, prompt: str, n_tokens: int = 50):
         return self._runner.benchmark(prompt, n_tokens=n_tokens)
@@ -44,9 +47,11 @@ def _construct_runner(runner_cls, model_path, device, **candidate_kwargs):
     (trace_region_size is simply dropped for TTModelRunner).
     """
     import inspect
+
     sig = inspect.signature(runner_cls.__init__)
-    accepts_var_kw = any(p.kind is inspect.Parameter.VAR_KEYWORD
-                         for p in sig.parameters.values())
+    accepts_var_kw = any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+    )
     if accepts_var_kw:
         kwargs = dict(candidate_kwargs)
     else:
@@ -69,19 +74,29 @@ def _notice_tuned_bundle_available(model_path: str) -> None:
         return
     try:
         import pathlib
+
         local = pathlib.Path(model_path).is_dir()
         res = tt_kernel.resolve_bundle(model_path, local_only=local)
         if not res.exists:
             return
-        where = "installed" if res.installed else f"published — `tt-kernel pull {model_path}`"
+        where = (
+            "installed"
+            if res.installed
+            else f"published — `tt-kernel pull {model_path}`"
+        )
         if res.has_runner:
-            print(f"[dispatch] a tuned tt-kernel bundle exists for {model_path} "
-                  f"(runner {res.runner_spec}, {where}); running the generic dynamic path "
-                  f"instead. Use `tt-kernel run {model_path}` for the author's tuned path.",
-                  flush=True)
+            print(
+                f"[dispatch] a tuned tt-kernel bundle exists for {model_path} "
+                f"(runner {res.runner_spec}, {where}); running the generic dynamic path "
+                f"instead. Use `tt-kernel run {model_path}` for the author's tuned path.",
+                flush=True,
+            )
         else:
-            print(f"[dispatch] a tt-kernel kernel-cache bundle is {where} for {model_path}; "
-                  f"precompiled kernels will be used from the on-disk cache.", flush=True)
+            print(
+                f"[dispatch] a tt-kernel kernel-cache bundle is {where} for {model_path}; "
+                f"precompiled kernels will be used from the on-disk cache.",
+                flush=True,
+            )
     except Exception:  # noqa: BLE001 — a courtesy notice must never break a load
         return
 
@@ -118,19 +133,22 @@ def load_model(
             (explicit env DISPATCH_RUNNER -> entry-point match -> --unsafe self-declared
             -> generic TTModelRunner). See dispatch/base.py and docs/custom_runners.md.
     """
-    from tt_inference_server.dispatch.base import (
-        resolve_runner_class, validate_runner)
+    from tt_inference_server.dispatch.base import resolve_runner_class, validate_runner
 
     # Resolve which runner backs this model. None -> generic TTModelRunner fallback.
     runner_cls, source = resolve_runner_class(model_path, runner, unsafe)
     if runner_cls is None:
         from tt_inference_server.dispatch.runner import TTModelRunner
+
         runner_cls = TTModelRunner
         # Generic dynamic path selected — surface a curated bundle if one exists.
         _notice_tuned_bundle_available(model_path)
     else:
-        print(f"[dispatch] runner: {runner_cls.__module__}:{runner_cls.__name__} "
-              f"(source={source})", flush=True)
+        print(
+            f"[dispatch] runner: {runner_cls.__module__}:{runner_cls.__name__} "
+            f"(source={source})",
+            flush=True,
+        )
 
     # Device ownership: a runner with MANAGES_OWN_DEVICE opens/owns/closes its own
     # device (e.g. a 1x1 mesh) — load_model must not open one or it would conflict.
@@ -138,13 +156,19 @@ def load_model(
     _owns_device = device is None and not manages_own_device
     if _owns_device:
         import ttnn
+
         ids = device_ids or [0]
         device = ttnn.open_device(device_id=ids[0], trace_region_size=trace_region_size)
 
     runner_obj = _construct_runner(
-        runner_cls, model_path, device,
-        max_seq=max_seq, unsafe=unsafe, force_novel=force_novel,
-        trace_region_size=trace_region_size, device_ids=device_ids,
+        runner_cls,
+        model_path,
+        device,
+        max_seq=max_seq,
+        unsafe=unsafe,
+        force_novel=force_novel,
+        trace_region_size=trace_region_size,
+        device_ids=device_ids,
     )
     validate_runner(runner_obj)
 
@@ -158,6 +182,7 @@ def load_model(
     if _owns_device:
         import atexit
         import ttnn
+
         atexit.register(ttnn.close_device, device)
 
     return handle

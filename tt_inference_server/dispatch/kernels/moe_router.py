@@ -36,16 +36,32 @@ def make_moe_router_kernel(hidden_tiles: int, expert_tiles: int):
 
     @ttl.operation(grid=(1, 1))
     def moe_router_kernel(hidden, w_router, probs_out):
-        h_dfb      = ttl.make_dataflow_buffer_like(hidden,    shape=(1, hidden_tiles),  block_count=1)
-        wr_dfb     = ttl.make_dataflow_buffer_like(w_router,  shape=(hidden_tiles, expert_tiles), block_count=1)
-        logit_dfb  = ttl.make_dataflow_buffer_like(probs_out, shape=(1, expert_tiles),  block_count=2)
-        max_dfb    = ttl.make_dataflow_buffer_like(probs_out, shape=(1, 1),             block_count=2)
-        max_bc_dfb = ttl.make_dataflow_buffer_like(probs_out, shape=(1, expert_tiles),  block_count=2)
-        shift_dfb  = ttl.make_dataflow_buffer_like(probs_out, shape=(1, expert_tiles),  block_count=2)
-        exp_dfb    = ttl.make_dataflow_buffer_like(probs_out, shape=(1, expert_tiles),  block_count=2)
-        sum_dfb    = ttl.make_dataflow_buffer_like(probs_out, shape=(1, 1),             block_count=2)
-        sum_bc_dfb = ttl.make_dataflow_buffer_like(probs_out, shape=(1, expert_tiles),  block_count=2)
-        out_dfb    = ttl.make_dataflow_buffer_like(probs_out, shape=(1, expert_tiles),  block_count=2)
+        h_dfb = ttl.make_dataflow_buffer_like(
+            hidden, shape=(1, hidden_tiles), block_count=1
+        )
+        wr_dfb = ttl.make_dataflow_buffer_like(
+            w_router, shape=(hidden_tiles, expert_tiles), block_count=1
+        )
+        logit_dfb = ttl.make_dataflow_buffer_like(
+            probs_out, shape=(1, expert_tiles), block_count=2
+        )
+        max_dfb = ttl.make_dataflow_buffer_like(probs_out, shape=(1, 1), block_count=2)
+        max_bc_dfb = ttl.make_dataflow_buffer_like(
+            probs_out, shape=(1, expert_tiles), block_count=2
+        )
+        shift_dfb = ttl.make_dataflow_buffer_like(
+            probs_out, shape=(1, expert_tiles), block_count=2
+        )
+        exp_dfb = ttl.make_dataflow_buffer_like(
+            probs_out, shape=(1, expert_tiles), block_count=2
+        )
+        sum_dfb = ttl.make_dataflow_buffer_like(probs_out, shape=(1, 1), block_count=2)
+        sum_bc_dfb = ttl.make_dataflow_buffer_like(
+            probs_out, shape=(1, expert_tiles), block_count=2
+        )
+        out_dfb = ttl.make_dataflow_buffer_like(
+            probs_out, shape=(1, expert_tiles), block_count=2
+        )
 
         @ttl.compute()
         def compute():
@@ -62,7 +78,9 @@ def make_moe_router_kernel(hidden_tiles: int, expert_tiles: int):
                         lv_copy.store(lv)
 
                 with max_dfb.wait() as mx, max_bc_dfb.reserve() as mx_bc:
-                    mx_bc.store(ttl.math.broadcast(mx, dims=[-1], shape=(1, expert_tiles)))
+                    mx_bc.store(
+                        ttl.math.broadcast(mx, dims=[-1], shape=(1, expert_tiles))
+                    )
 
                 with logit_dfb.wait() as lv2, max_bc_dfb.wait() as mx_bc:
                     with shift_dfb.reserve() as sh:
@@ -78,7 +96,11 @@ def make_moe_router_kernel(hidden_tiles: int, expert_tiles: int):
                         ex_copy.store(ex)
 
                 with sum_dfb.wait() as sm, sum_bc_dfb.reserve() as sm_bc:
-                    sm_bc.store(ttl.math.broadcast(ttl.math.recip(sm), dims=[-1], shape=(1, expert_tiles)))
+                    sm_bc.store(
+                        ttl.math.broadcast(
+                            ttl.math.recip(sm), dims=[-1], shape=(1, expert_tiles)
+                        )
+                    )
 
                 with exp_dfb.wait() as ex2, sum_bc_dfb.wait() as sm_bc:
                     with out_dfb.reserve() as o:
@@ -86,8 +108,10 @@ def make_moe_router_kernel(hidden_tiles: int, expert_tiles: int):
 
         @ttl.datamovement()
         def dm_read():
-            with h_dfb.reserve()  as blk: ttl.copy(hidden[0, 0:hidden_tiles], blk).wait()
-            with wr_dfb.reserve() as blk: ttl.copy(w_router[0:hidden_tiles, 0:expert_tiles], blk).wait()
+            with h_dfb.reserve() as blk:
+                ttl.copy(hidden[0, 0:hidden_tiles], blk).wait()
+            with wr_dfb.reserve() as blk:
+                ttl.copy(w_router[0:hidden_tiles, 0:expert_tiles], blk).wait()
 
         @ttl.datamovement()
         def dm_write():

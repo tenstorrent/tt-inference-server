@@ -32,5 +32,6 @@ class ModelConfig:
             intermediate_size=intermediate,
         )
 
+
 # Per-size dim tables (CONFIGS) were retired in #3 Phase D — dims for listed models now
 # live in model_matrix.toml (authoritative); novel models derive via from_hf_config above.

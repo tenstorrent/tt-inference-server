@@ -40,8 +40,8 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # Module-global serving state (set in main()).
-_HANDLE = None            # ModelHandle
-_MODEL_ID = None          # str shown in the API
+_HANDLE = None  # ModelHandle
+_MODEL_ID = None  # str shown in the API
 _INFER_LOCK = threading.Lock()
 
 
@@ -49,15 +49,21 @@ _INFER_LOCK = threading.Lock()
 # Prompt rendering
 # ----------------------------------------------------------------------------
 
+
 def _render_chat(messages) -> str:
     """Render OpenAI chat messages to a single prompt string via the tokenizer's chat
     template (preserving multi-turn structure). Falls back to a simple role-tagged join
     when the tokenizer has no chat template."""
     tok = _HANDLE.tokenizer
-    msgs = [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in messages]
+    msgs = [
+        {"role": m.get("role", "user"), "content": m.get("content", "")}
+        for m in messages
+    ]
     if hasattr(tok, "apply_chat_template") and getattr(tok, "chat_template", None):
         try:
-            return tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+            return tok.apply_chat_template(
+                msgs, tokenize=False, add_generation_prompt=True
+            )
         except Exception:
             pass
     parts = [f"{m['role']}: {m['content']}" for m in msgs]
@@ -69,13 +75,15 @@ def _render_chat(messages) -> str:
 # Inference (serialized) — returns (text, usage_dict) or yields stream deltas
 # ----------------------------------------------------------------------------
 
+
 def _run(prompt: str, max_tokens: int, temperature: float):
     """Run a full (non-streaming) generation. Returns (text, finish_reason, usage)."""
     with _INFER_LOCK:
         text_parts = []
         meta = {"finish_reason": "length", "prompt_tokens": 0, "completion_tokens": 0}
-        for piece in _HANDLE.generate_stream(prompt, max_new_tokens=max_tokens,
-                                              temperature=temperature, chat=False):
+        for piece in _HANDLE.generate_stream(
+            prompt, max_new_tokens=max_tokens, temperature=temperature, chat=False
+        ):
             if isinstance(piece, dict):
                 meta = piece
             else:
@@ -91,8 +99,9 @@ def _run(prompt: str, max_tokens: int, temperature: float):
 def _run_stream(prompt: str, max_tokens: int, temperature: float):
     """Yield (delta_text_or_None, meta_or_None). Holds the infer lock for the whole stream."""
     with _INFER_LOCK:
-        for piece in _HANDLE.generate_stream(prompt, max_new_tokens=max_tokens,
-                                             temperature=temperature, chat=False):
+        for piece in _HANDLE.generate_stream(
+            prompt, max_new_tokens=max_tokens, temperature=temperature, chat=False
+        ):
             if isinstance(piece, dict):
                 yield None, piece
             else:
@@ -102,6 +111,7 @@ def _run_stream(prompt: str, max_tokens: int, temperature: float):
 # ----------------------------------------------------------------------------
 # HTTP handler
 # ----------------------------------------------------------------------------
+
 
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -132,14 +142,24 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path == "/health":
             return self._send_json(200, {"status": "ok", "model": _MODEL_ID})
         if self.path == "/v1/models":
-            return self._send_json(200, {
-                "object": "list",
-                "data": [{
-                    "id": _MODEL_ID, "object": "model", "created": int(time.time()),
-                    "owned_by": "dispatch",
-                    "dispatch": {"listed": _HANDLE.listed, "community": _HANDLE.community},
-                }],
-            })
+            return self._send_json(
+                200,
+                {
+                    "object": "list",
+                    "data": [
+                        {
+                            "id": _MODEL_ID,
+                            "object": "model",
+                            "created": int(time.time()),
+                            "owned_by": "dispatch",
+                            "dispatch": {
+                                "listed": _HANDLE.listed,
+                                "community": _HANDLE.community,
+                            },
+                        }
+                    ],
+                },
+            )
         return self._error(404, f"unknown path {self.path}", "not_found")
 
     def do_POST(self):
@@ -171,7 +191,9 @@ class _Handler(BaseHTTPRequestHandler):
                 if isinstance(prompt, list):
                     prompt = prompt[0]
         except Exception as exc:
-            return self._error(422, f"prompt construction failed: {exc}", "unsafe_model_failure")
+            return self._error(
+                422, f"prompt construction failed: {exc}", "unsafe_model_failure"
+            )
 
         if stream:
             return self._stream_completion(prompt, max_tokens, temperature, chat)
@@ -190,16 +212,26 @@ class _Handler(BaseHTTPRequestHandler):
         cid = ("chatcmpl-" if chat else "cmpl-") + uuid.uuid4().hex[:24]
         created = int(time.time())
         if chat:
-            choice = {"index": 0, "message": {"role": "assistant", "content": text},
-                      "finish_reason": finish_reason}
+            choice = {
+                "index": 0,
+                "message": {"role": "assistant", "content": text},
+                "finish_reason": finish_reason,
+            }
             obj = "chat.completion"
         else:
             choice = {"index": 0, "text": text, "finish_reason": finish_reason}
             obj = "text_completion"
-        self._send_json(200, {
-            "id": cid, "object": obj, "created": created, "model": _MODEL_ID,
-            "choices": [choice], "usage": usage,
-        })
+        self._send_json(
+            200,
+            {
+                "id": cid,
+                "object": obj,
+                "created": created,
+                "model": _MODEL_ID,
+                "choices": [choice],
+                "usage": usage,
+            },
+        )
 
     def _stream_completion(self, prompt, max_tokens, temperature, chat):
         cid = ("chatcmpl-" if chat else "cmpl-") + uuid.uuid4().hex[:24]
@@ -216,15 +248,28 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
         def chunk(delta, finish=None):
-            ch = ({"index": 0, "delta": ({"content": delta} if delta is not None else {}),
-                   "finish_reason": finish} if chat
-                  else {"index": 0, "text": delta or "", "finish_reason": finish})
-            return {"id": cid, "object": obj, "created": created, "model": _MODEL_ID,
-                    "choices": [ch]}
+            ch = (
+                {
+                    "index": 0,
+                    "delta": ({"content": delta} if delta is not None else {}),
+                    "finish_reason": finish,
+                }
+                if chat
+                else {"index": 0, "text": delta or "", "finish_reason": finish}
+            )
+            return {
+                "id": cid,
+                "object": obj,
+                "created": created,
+                "model": _MODEL_ID,
+                "choices": [ch],
+            }
 
         try:
             if chat:
-                sse(chunk(None))  # role-priming delta (OpenAI sends an empty assistant delta first)
+                sse(
+                    chunk(None)
+                )  # role-priming delta (OpenAI sends an empty assistant delta first)
             finish_reason = "length"
             for delta, meta in _run_stream(prompt, max_tokens, temperature):
                 if meta is not None:
@@ -237,8 +282,14 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             # Best-effort error frame; the stream may already be partially sent.
             try:
-                sse({"error": {"message": f"{type(exc).__name__}: {exc}",
-                               "type": "unsafe_model_failure"}})
+                sse(
+                    {
+                        "error": {
+                            "message": f"{type(exc).__name__}: {exc}",
+                            "type": "unsafe_model_failure",
+                        }
+                    }
+                )
                 self.wfile.write(b"data: [DONE]\n\n")
                 self.wfile.flush()
             except Exception:
@@ -269,11 +320,17 @@ def _scrub_stale_tt_paths(environ) -> "list[str]":
     overrides from an old checkout). Output dirs in ``_OUTPUT_PATH_VARS`` are exempt —
     they're allowed to not exist yet. Mutates ``environ``; returns the removed entries."""
     from pathlib import Path
+
     scrubbed = []
     for k, v in list(environ.items()):
         if k in _OUTPUT_PATH_VARS:
             continue
-        if k.startswith("TT_") and isinstance(v, str) and v.startswith("/") and not Path(v).exists():
+        if (
+            k.startswith("TT_")
+            and isinstance(v, str)
+            and v.startswith("/")
+            and not Path(v).exists()
+        ):
             del environ[k]
             scrubbed.append(f"{k}={v}")
     return scrubbed
@@ -295,11 +352,15 @@ def _ensure_tt_metal_root():
     Must run before ttnn is imported (i.e. before load_model)."""
     import os
     from pathlib import Path
+
     candidate = Path(sys.prefix).parent  # <tt-metal>/python_env -> <tt-metal>
     if not (candidate / "tt_metal" / "soc_descriptors").is_dir():
         cur = os.environ.get("TT_METAL_RUNTIME_ROOT") or os.environ.get("TT_METAL_HOME")
-        print(f"[serve] WARNING: {candidate} has no tt_metal/soc_descriptors; relying on "
-              f"current root ({cur!r}) — ttnn may fail", flush=True)
+        print(
+            f"[serve] WARNING: {candidate} has no tt_metal/soc_descriptors; relying on "
+            f"current root ({cur!r}) — ttnn may fail",
+            flush=True,
+        )
         return
     # (1) Scrub stale TT_* path overrides (absolute paths that no longer exist), but
     #     never the output dirs (TT_METAL_CACHE) — those are created lazily.
@@ -308,30 +369,47 @@ def _ensure_tt_metal_root():
     for var in ("TT_METAL_RUNTIME_ROOT", "TT_METAL_HOME"):
         os.environ[var] = str(candidate)
     if scrubbed:
-        print(f"[serve] scrubbed {len(scrubbed)} stale TT_* path var(s): "
-              + "; ".join(scrubbed), flush=True)
+        print(
+            f"[serve] scrubbed {len(scrubbed)} stale TT_* path var(s): "
+            + "; ".join(scrubbed),
+            flush=True,
+        )
     print(f"[serve] tt-metal root = {candidate}", flush=True)
 
 
 def main(argv=None):
     _ensure_tt_metal_root()
-    parser = argparse.ArgumentParser(prog="tt-inference-server",
-                                     description="Dispatch OpenAI-compatible serving prototype")
+    parser = argparse.ArgumentParser(
+        prog="tt-inference-server",
+        description="Dispatch OpenAI-compatible serving prototype",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sp = sub.add_parser("serve", help="Load a model and serve it over an OpenAI-compatible API")
+    sp = sub.add_parser(
+        "serve", help="Load a model and serve it over an OpenAI-compatible API"
+    )
     sp.add_argument("model", help="HuggingFace model id or local path")
-    sp.add_argument("--unsafe", action="store_true",
-                    help="Acknowledge no correctness/SLA guarantee (required)")
+    sp.add_argument(
+        "--unsafe",
+        action="store_true",
+        help="Acknowledge no correctness/SLA guarantee (required)",
+    )
     sp.add_argument("--host", default="127.0.0.1")
     sp.add_argument("--port", type=int, default=8000)
     sp.add_argument("--max-seq", type=int, default=2048)
-    sp.add_argument("--no-trace", action="store_true",
-                    help="Don't reserve a device trace region (disables the traced fast path)")
-    sp.add_argument("--runner", default=None, metavar="MODULE:CLASS",
-                    help="Use a custom runner (e.g. 'pkg.mod:MyRunner') instead of the generic "
-                         "TTModelRunner. Overrides auto-discovery. A runner self-declared by the "
-                         "model repo is honored only with --unsafe.")
+    sp.add_argument(
+        "--no-trace",
+        action="store_true",
+        help="Don't reserve a device trace region (disables the traced fast path)",
+    )
+    sp.add_argument(
+        "--runner",
+        default=None,
+        metavar="MODULE:CLASS",
+        help="Use a custom runner (e.g. 'pkg.mod:MyRunner') instead of the generic "
+        "TTModelRunner. Overrides auto-discovery. A runner self-declared by the "
+        "model repo is honored only with --unsafe.",
+    )
 
     args = parser.parse_args(argv)
     if args.command != "serve":
@@ -345,6 +423,7 @@ def main(argv=None):
     _MODEL_ID = args.model
 
     from tt_inference_server.dispatch import load_model
+
     print(f"[serve] loading {args.model} (unsafe acknowledged) ...", flush=True)
     try:
         _HANDLE = load_model(

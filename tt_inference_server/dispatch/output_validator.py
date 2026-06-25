@@ -40,18 +40,19 @@ from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple
 
 # --- Named thresholds (promoted from the inline magic numbers) -------------
-VALIDATION_MIN_TOKENS = 10          # reject runs shorter than this many tokens
-TOKEN_REPETITION_FRACTION = 0.5     # >50% of token ids being one id => loop
-PHRASE_LOOP_MIN_WORDS = 12          # only run the n-gram check on enough words
-PHRASE_LOOP_NGRAMS = (1, 2, 3)      # n-gram sizes scanned for phrase loops
-PHRASE_LOOP_FRACTION = 0.30         # one n-gram covering >30% of grams => loop
-EXOTIC_CHAR_LIMIT = 3               # >this many non-Latin letters => garbage
-PUNCT_FRACTION = 0.40               # >40% non-alphanumeric (non-space) => soup
+VALIDATION_MIN_TOKENS = 10  # reject runs shorter than this many tokens
+TOKEN_REPETITION_FRACTION = 0.5  # >50% of token ids being one id => loop
+PHRASE_LOOP_MIN_WORDS = 12  # only run the n-gram check on enough words
+PHRASE_LOOP_NGRAMS = (1, 2, 3)  # n-gram sizes scanned for phrase loops
+PHRASE_LOOP_FRACTION = 0.30  # one n-gram covering >30% of grams => loop
+EXOTIC_CHAR_LIMIT = 3  # >this many non-Latin letters => garbage
+PUNCT_FRACTION = 0.40  # >40% non-alphanumeric (non-space) => soup
 
 
 @dataclass(frozen=True)
 class ValidatorThresholds:
     """Tunable thresholds for validate_output. Defaults reproduce the tuned cascade."""
+
     min_tokens: int = VALIDATION_MIN_TOKENS
     token_repetition_fraction: float = TOKEN_REPETITION_FRACTION
     phrase_loop_min_words: int = PHRASE_LOOP_MIN_WORDS
@@ -101,7 +102,7 @@ def validate_output(
     # 2. phrase-loop: a short n-gram repeated heavily (period > 1 loops)
     if len(words) >= t.phrase_loop_min_words:
         for ngram in t.phrase_loop_ngrams:
-            grams = [tuple(words[i:i + ngram]) for i in range(len(words) - ngram + 1)]
+            grams = [tuple(words[i : i + ngram]) for i in range(len(words) - ngram + 1)]
             if not grams:
                 continue
             _top, cnt = Counter(grams).most_common(1)[0]

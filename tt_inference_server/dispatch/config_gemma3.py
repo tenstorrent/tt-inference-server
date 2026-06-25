@@ -24,7 +24,9 @@ class Gemma3Config:
         hidden = cfg.hidden_size
         n_heads = cfg.num_attention_heads
         # Read actual activation (gelu_pytorch_tanh is Gemma's default)
-        hf_act = getattr(cfg, "hidden_activation", getattr(cfg, "hidden_act", "gelu_pytorch_tanh"))
+        hf_act = getattr(
+            cfg, "hidden_activation", getattr(cfg, "hidden_act", "gelu_pytorch_tanh")
+        )
         return cls(
             num_heads=n_heads,
             num_kv_heads=cfg.num_key_value_heads,
@@ -32,8 +34,7 @@ class Gemma3Config:
             hidden_size=hidden,
             intermediate_size=cfg.intermediate_size,
             activation=hf_act,
-            norm_eps=getattr(cfg, "rms_norm_eps",
-                     getattr(cfg, "layer_norm_eps", 1e-6)),
+            norm_eps=getattr(cfg, "rms_norm_eps", getattr(cfg, "layer_norm_eps", 1e-6)),
         )
 
 

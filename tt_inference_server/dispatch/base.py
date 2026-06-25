@@ -38,8 +38,10 @@ ENTRY_POINT_GROUP = "tt_inference_server.runners"
 
 # Env overrides (parallel to the CLI flags) — useful for `python -m ... serve`
 # wrappers and tests.
-ENV_RUNNER = "DISPATCH_RUNNER"          # "module:Class" explicit override
-ENV_ALLOW = "DISPATCH_RUNNER_ALLOW"     # comma-separated allowlist for self-declared runners
+ENV_RUNNER = "DISPATCH_RUNNER"  # "module:Class" explicit override
+ENV_ALLOW = (
+    "DISPATCH_RUNNER_ALLOW"  # comma-separated allowlist for self-declared runners
+)
 
 
 @runtime_checkable
@@ -76,12 +78,21 @@ class BaseRunner(Protocol):
     _listed: bool
     _community: bool
 
-    def generate(self, prompt: str, max_new_tokens: int = 50,
-                 temperature: float = 1.0, chat: bool = True) -> str: ...
+    def generate(
+        self,
+        prompt: str,
+        max_new_tokens: int = 50,
+        temperature: float = 1.0,
+        chat: bool = True,
+    ) -> str: ...
 
-    def generate_stream(self, prompt: str, max_new_tokens: int = 50,
-                        temperature: float = 1.0,
-                        chat: bool = True) -> Iterator[Union[str, dict]]: ...
+    def generate_stream(
+        self,
+        prompt: str,
+        max_new_tokens: int = 50,
+        temperature: float = 1.0,
+        chat: bool = True,
+    ) -> Iterator[Union[str, dict]]: ...
 
     def benchmark(self, prompt: str, n_tokens: int = 50) -> "tuple[float, str]": ...
 
@@ -97,7 +108,9 @@ def validate_runner(obj) -> None:
     attributes set in ``__init__`` (a Protocol ``isinstance`` check alone would
     not, since the attrs are annotations, not class defaults).
     """
-    missing_methods = [m for m in _REQUIRED_METHODS if not callable(getattr(obj, m, None))]
+    missing_methods = [
+        m for m in _REQUIRED_METHODS if not callable(getattr(obj, m, None))
+    ]
     missing_attrs = [a for a in _REQUIRED_ATTRS if not hasattr(obj, a)]
     if missing_methods or missing_attrs:
         cls = type(obj).__name__
@@ -105,8 +118,10 @@ def validate_runner(obj) -> None:
         if missing_methods:
             parts.append(f"missing method(s): {', '.join(missing_methods)}")
         if missing_attrs:
-            parts.append(f"missing attribute(s): {', '.join(missing_attrs)} "
-                         "(set them in __init__)")
+            parts.append(
+                f"missing attribute(s): {', '.join(missing_attrs)} "
+                "(set them in __init__)"
+            )
         raise TypeError(
             f"Runner {cls!r} does not satisfy the BaseRunner contract: "
             + "; ".join(parts)
@@ -149,6 +164,7 @@ def _load_dotted(spec: str):
 # HF config loading (for discovery / matching — does NOT execute remote code)
 # --------------------------------------------------------------------------- #
 
+
 def load_hf_config(model_path: str):
     """Best-effort load of a model's HF config for runner discovery.
 
@@ -158,6 +174,7 @@ def load_hf_config(model_path: str):
     """
     try:
         from transformers import AutoConfig
+
         return AutoConfig.from_pretrained(model_path, trust_remote_code=False)
     except Exception:  # noqa: BLE001 — custom arch may need trust_remote_code; fall back
         return None
@@ -181,6 +198,7 @@ def _raw_config_json(model_path: str) -> dict:
     # Hub id: download just config.json (no model code execution).
     try:
         from huggingface_hub import hf_hub_download
+
         path = hf_hub_download(model_path, "config.json")
         return json.loads(pathlib.Path(path).read_text())
     except Exception:  # noqa: BLE001
@@ -205,12 +223,14 @@ def _config_model_type(hf_config, raw: Optional[dict] = None) -> str:
 # Entry-point discovery (precedence step 2)
 # --------------------------------------------------------------------------- #
 
+
 def iter_entry_point_runners():
     """Yield (name, EntryPoint) for every registered ``tt_inference_server.runners``.
 
     Tolerant of the importlib.metadata API differences across Python versions.
     """
     from importlib import metadata
+
     try:
         eps = metadata.entry_points(group=ENTRY_POINT_GROUP)  # py3.10+
     except TypeError:  # pragma: no cover — py3.9 returns a dict
@@ -259,6 +279,7 @@ def match_runner(hf_config, raw: Optional[dict] = None):
             runner_cls = ep.load()
         except Exception as exc:  # noqa: BLE001 — skip a broken package, keep going
             import sys
+
             sys.stderr.write(
                 f"[dispatch] WARNING: runner entry point {name!r} failed to load: "
                 f"{type(exc).__name__}: {exc}\n"
@@ -287,8 +308,10 @@ def match_runner(hf_config, raw: Optional[dict] = None):
 # HF repo self-declaration (precedence step 3 — trust-gated)
 # --------------------------------------------------------------------------- #
 
-def parse_self_declared_runner(model_path: str, hf_config=None,
-                               raw: Optional[dict] = None) -> Optional[str]:
+
+def parse_self_declared_runner(
+    model_path: str, hf_config=None, raw: Optional[dict] = None
+) -> Optional[str]:
     """Return a ``"module:Class"`` runner spec self-declared by the model repo, or None.
 
     Sources, in order:
@@ -338,6 +361,7 @@ def runner_allowed(spec: str) -> bool:
 # Top-level resolver (used by load_model)
 # --------------------------------------------------------------------------- #
 
+
 def resolve_runner_class(model_path: str, explicit: Optional[str], unsafe: bool):
     """Resolve the runner class for ``model_path`` by precedence.
 
@@ -372,6 +396,7 @@ def resolve_runner_class(model_path: str, explicit: Optional[str], unsafe: bool)
                     "refusing to load it. Add it to the allowlist or pass --runner."
                 )
             import sys
+
             sys.stderr.write(
                 f"[dispatch] WARNING: honoring self-declared runner {spec!r} from the "
                 "model repo (trust_remote_code-class: this imports and executes "

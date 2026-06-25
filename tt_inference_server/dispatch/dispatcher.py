@@ -54,6 +54,7 @@ class Capabilities:
       fast_path        <- _ondevice_attn_eligible + _setup_paged_decode ok_shape
       lm_head_ondevice <- _setup_ondevice_lmhead eligibility
     """
+
     fast_path: bool
     lm_head_ondevice: bool
     attn_backend: str
@@ -67,6 +68,7 @@ class ResolvedConfig:
     replacing the per-arch dim modules / hardcoded CONFIGS dicts in registry.py for
     listed models. Novel models keep detect_model_family()'s HF-config introspection.
     """
+
     hidden_size: int
     num_heads: int
     num_kv_heads: int
@@ -103,7 +105,8 @@ def _compute_capabilities(
     """
     group = (n_heads // n_kv_heads) if n_kv_heads else 0
     fast_path = (
-        norm_type in ("rmsnorm", "layernorm")   # CP-3: LayerNorm runs on-device (ttnn.layer_norm)
+        norm_type
+        in ("rmsnorm", "layernorm")  # CP-3: LayerNorm runs on-device (ttnn.layer_norm)
         and rotary_pct == 1.0
         # CP-1: qkv/o bias now applied on-device (ttnn.add) in the attention paths,
         # so attn_bias no longer forces the slow CPU-readback route.
@@ -155,12 +158,20 @@ def derive_capabilities(hf_config) -> Capabilities:
     else:
         norm_type = "rmsnorm"
 
-    rotary_pct = float(getattr(text_cfg, "partial_rotary_factor",
-                               getattr(text_cfg, "rotary_pct", 1.0)) or 1.0)
+    rotary_pct = float(
+        getattr(text_cfg, "partial_rotary_factor", getattr(text_cfg, "rotary_pct", 1.0))
+        or 1.0
+    )
     # LayerNorm-family archs (GPTNeoX/Pythia) carry qkv bias; otherwise read the flag.
-    attn_bias = bool(getattr(text_cfg, "attention_bias", False)) or (norm_type == "layernorm")
+    attn_bias = bool(getattr(text_cfg, "attention_bias", False)) or (
+        norm_type == "layernorm"
+    )
     head_norm = arch.startswith("Qwen3") or "gemma3" in model_type
-    attn_backend = "ttnn" if (n_kv and n_heads % n_kv == 0 and 32 % (n_heads // n_kv) == 0) else "custom"
+    attn_backend = (
+        "ttnn"
+        if (n_kv and n_heads % n_kv == 0 and 32 % (n_heads // n_kv) == 0)
+        else "custom"
+    )
 
     return _compute_capabilities(
         norm_type=norm_type,
@@ -195,21 +206,27 @@ class ModelMatrixEntry:
     status: str
     # --- behavioral fields (schema v2, issue #3). Defaults reproduce today's
     #     HF-derived behavior so an entry that omits them is a no-op. ---
-    norm_type: str = "rmsnorm"          # rmsnorm | layernorm | gemma_rms
-    activation: str = "silu"            # silu | gelu | gelu_tanh | relu2
-    rotary_pct: float = 1.0             # 1.0 full; 0.25 partial (GPTNeoX/StableLM)
-    attn_bias: bool = False             # qkv + o-proj bias present
-    head_norm: bool = False             # per-head q/k RMSNorm (Qwen3/Gemma3)
-    parallel_residual: bool = False     # attn + MLP branch the same pre-norm (GPTNeoX)
-    embed_scale: str = "none"           # none | sqrt_hidden (Gemma scales embeds)
-    attn_backend: str = "ttnn"          # ttnn | custom | cpu (#34 backend-per-op)
+    norm_type: str = "rmsnorm"  # rmsnorm | layernorm | gemma_rms
+    activation: str = "silu"  # silu | gelu | gelu_tanh | relu2
+    rotary_pct: float = 1.0  # 1.0 full; 0.25 partial (GPTNeoX/StableLM)
+    attn_bias: bool = False  # qkv + o-proj bias present
+    head_norm: bool = False  # per-head q/k RMSNorm (Qwen3/Gemma3)
+    parallel_residual: bool = False  # attn + MLP branch the same pre-norm (GPTNeoX)
+    embed_scale: str = "none"  # none | sqrt_hidden (Gemma scales embeds)
+    attn_backend: str = "ttnn"  # ttnn | custom | cpu (#34 backend-per-op)
     # Granite (#43) architectural scaling factors. None = fall through to the HF config
     # value (so an omitted field is a no-op); a set value OVERRIDES it, same as the other
     # behavioral fields. Read by the runner's _scaling_factor().
-    embedding_multiplier: Optional[float] = None   # scales input embeddings
-    residual_multiplier: Optional[float] = None    # scales each sublayer output pre-residual-add
-    attention_multiplier: Optional[float] = None   # overrides the 1/sqrt(head_dim) softmax scale
-    logits_scaling: Optional[float] = None          # divides final logits (no-op for greedy argmax)
+    embedding_multiplier: Optional[float] = None  # scales input embeddings
+    residual_multiplier: Optional[float] = (
+        None  # scales each sublayer output pre-residual-add
+    )
+    attention_multiplier: Optional[float] = (
+        None  # overrides the 1/sqrt(head_dim) softmax scale
+    )
+    logits_scaling: Optional[float] = (
+        None  # divides final logits (no-op for greedy argmax)
+    )
     issue: Optional[int] = None
     notes: str = ""
 
@@ -289,6 +306,7 @@ class KernelDispatcher:
         # so this is behavior-preserving there.
         if hw_config is None:
             from tt_inference_server.dispatch.hardware import detect_hardware
+
             hw_config = detect_hardware(device)
         self._hw_config = hw_config
         self._cache: Dict[Tuple, Any] = {}
@@ -330,6 +348,7 @@ class KernelDispatcher:
         self._lock_fh = None
         try:
             import fcntl as _fcntl
+
             _fcntl.flock(fh, _fcntl.LOCK_UN)
             fh.close()
         except Exception:
@@ -407,8 +426,11 @@ class KernelDispatcher:
     # Kernel dispatch (shape-keyed cache)
     # ------------------------------------------------------------------
 
-    def swiglu(self, gate, w_gate, bias_gate, up, w_up, bias_up, out, activation="silu"):
+    def swiglu(
+        self, gate, w_gate, bias_gate, up, w_up, bias_up, out, activation="silu"
+    ):
         from tt_inference_server.dispatch.kernels.swiglu import make_swiglu_kernel
+
         M, K, N = gate.shape[0], gate.shape[1], w_gate.shape[1]
         key = ("swiglu", M, K, N, activation)
         if key not in self._cache:
@@ -416,21 +438,44 @@ class KernelDispatcher:
             self._cache[key] = make_swiglu_kernel(**cfg)
         return self._cache[key](gate, w_gate, bias_gate, up, w_up, bias_up, out)
 
-    def flash_attn(self, Q, K, V, scale, neg_inf, zero, zero_head, ones, mask, out,
-                   N_heads: int = None, N_kv_heads: int = None):
+    def flash_attn(
+        self,
+        Q,
+        K,
+        V,
+        scale,
+        neg_inf,
+        zero,
+        zero_head,
+        ones,
+        mask,
+        out,
+        N_heads: int = None,
+        N_kv_heads: int = None,
+    ):
         head_dim = Q.shape[-1]
         n_heads = N_heads or Q.shape[0]
         n_kv = N_kv_heads or K.shape[0]
         kv_seq = K.shape[0] // n_kv if n_kv else K.shape[0]
         key = ("flash_attn", n_heads, n_kv, head_dim)
         if key not in self._cache:
-            from tt_inference_server.dispatch.kernels.flash_attn import make_flash_attn_kernel
-            cfg = resolve_attn_config(n_heads, n_kv, head_dim, kv_seq, hw_config=self._hw_config)
-            self._cache[key] = make_flash_attn_kernel(**cfg)
-        return self._cache[key](Q, K, V, scale, neg_inf, zero, zero_head, ones, mask, out)
+            from tt_inference_server.dispatch.kernels.flash_attn import (
+                make_flash_attn_kernel,
+            )
 
-    def kv_decode(self, Q, K_cache, V_cache, scale, neg_inf, zero, zero_head, out, ones=None):
+            cfg = resolve_attn_config(
+                n_heads, n_kv, head_dim, kv_seq, hw_config=self._hw_config
+            )
+            self._cache[key] = make_flash_attn_kernel(**cfg)
+        return self._cache[key](
+            Q, K, V, scale, neg_inf, zero, zero_head, ones, mask, out
+        )
+
+    def kv_decode(
+        self, Q, K_cache, V_cache, scale, neg_inf, zero, zero_head, out, ones=None
+    ):
         from tt_inference_server.dispatch.kernels.kv_decode import make_kv_decode_kernel
+
         N_kv_heads, head_dim = Q.shape[0], Q.shape[1]
         max_seq = K_cache.shape[0] // N_kv_heads
         key = ("kv_decode", N_kv_heads, head_dim, max_seq)
@@ -440,10 +485,13 @@ class KernelDispatcher:
                 head_dim_tiles=to_tiles(head_dim),
                 max_seq_tiles=to_tiles(max_seq),
             )
-        return self._cache[key](Q, K_cache, V_cache, scale, neg_inf, zero, zero_head, out)
+        return self._cache[key](
+            Q, K_cache, V_cache, scale, neg_inf, zero, zero_head, out
+        )
 
     def rmsnorm(self, x, weight, scaler, out):
         from tt_inference_server.dispatch.kernels.rmsnorm import make_rmsnorm_kernel
+
         seq, hidden = x.shape[0], x.shape[1]
         key = ("rmsnorm", seq, hidden)
         if key not in self._cache:
@@ -453,6 +501,7 @@ class KernelDispatcher:
 
     def layernorm(self, x, weight, bias, scaler, out):
         from tt_inference_server.dispatch.kernels.layernorm import make_layernorm_kernel
+
         seq, hidden = x.shape[0], x.shape[1]
         key = ("layernorm", seq, hidden)
         if key not in self._cache:
@@ -460,15 +509,21 @@ class KernelDispatcher:
             self._cache[key] = make_layernorm_kernel(**cfg)
         return self._cache[key](x, weight, bias, scaler, out)
 
-    def moe_route(self, hidden, w_router, probs_out, N_experts: int, top_k: int, ones=None):
+    def moe_route(
+        self, hidden, w_router, probs_out, N_experts: int, top_k: int, ones=None
+    ):
         """Run router projection + softmax on device, then top-k on host."""
         import torch
         import ttnn
+
         hidden_dim = hidden.shape[1]
         expert_tiles = max(1, (N_experts + 31) // 32)
         key = ("moe_router", hidden_dim, N_experts)
         if key not in self._cache:
-            from tt_inference_server.dispatch.kernels.moe_router import make_moe_router_kernel
+            from tt_inference_server.dispatch.kernels.moe_router import (
+                make_moe_router_kernel,
+            )
+
             self._cache[key] = make_moe_router_kernel(
                 hidden_tiles=to_tiles(hidden_dim),
                 expert_tiles=expert_tiles,
@@ -485,6 +540,7 @@ class KernelDispatcher:
 # ------------------------------------------------------------------
 # Pre-compiled kernel cache warming
 # ------------------------------------------------------------------
+
 
 def _sha256(path: pathlib.Path) -> str:
     h = hashlib.sha256()
@@ -505,8 +561,7 @@ def _device_build_key(device) -> Optional[str]:
     if not _TT_METAL_CACHE.is_dir():
         return None
     candidates = [
-        d for d in _TT_METAL_CACHE.iterdir()
-        if d.is_dir() and (d / "kernels").is_dir()
+        d for d in _TT_METAL_CACHE.iterdir() if d.is_dir() and (d / "kernels").is_dir()
     ]
     if not candidates:
         return None
@@ -534,7 +589,10 @@ def _warm_kernel_cache(device) -> None:
         with open(_MANIFEST_PATH) as f:
             manifest = json.load(f)
     except Exception as exc:
-        warnings.warn(f"Could not read kernel manifest ({exc}); using JIT compilation.", UserWarning)
+        warnings.warn(
+            f"Could not read kernel manifest ({exc}); using JIT compilation.",
+            UserWarning,
+        )
         return
 
     build_key = _device_build_key(device)
@@ -613,6 +671,7 @@ def _install_kernel_patch_overlay() -> None:
     for the kernel you want into <patch_dir>/ (same basename), then edit it.
     """
     import hashlib
+
     patch_dir = os.environ.get(_KERNEL_PATCH_ENV)
     if not patch_dir:
         return
@@ -620,14 +679,18 @@ def _install_kernel_patch_overlay() -> None:
     if not patch_path.is_dir():
         warnings.warn(
             f"{_KERNEL_PATCH_ENV}={patch_dir} is not a directory; no kernel patches applied.",
-            UserWarning)
+            UserWarning,
+        )
         return
     try:
         from ttl import ttl_api
-    except Exception as exc:  # ttl not importable (e.g. no-device CI) — nothing to patch
+    except (
+        Exception
+    ) as exc:  # ttl not importable (e.g. no-device CI) — nothing to patch
         warnings.warn(
             f"Could not import ttl.ttl_api for kernel patching ({exc}); no patches applied.",
-            UserWarning)
+            UserWarning,
+        )
         return
     if getattr(ttl_api, "_dispatch_patch_installed", False):
         return  # idempotent — only wrap once per process
@@ -646,13 +709,16 @@ def _install_kernel_patch_overlay() -> None:
     ttl_api._write_kernel_to_tmp = _patched_write
     ttl_api._dispatch_patch_installed = True
     available = sorted(p.name for p in patch_path.glob("ttlang_kernel_*.cpp"))
-    print(f"  Kernel-patch overlay ACTIVE ({_KERNEL_PATCH_ENV}={patch_path}); "
-          f"patches: {available or '(none found)'}")
+    print(
+        f"  Kernel-patch overlay ACTIVE ({_KERNEL_PATCH_ENV}={patch_path}); "
+        f"patches: {available or '(none found)'}"
+    )
 
 
 # ------------------------------------------------------------------
 # Matrix loading helpers
 # ------------------------------------------------------------------
+
 
 def _opt_float(v):
     """Coerce an optional numeric matrix field to float, preserving None (= unset)."""
