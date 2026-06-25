@@ -40,7 +40,6 @@ BlazePrefillRunner::BlazePrefillRunner(
   managerParams.layers_per_chunk = tt::config::modelNumLayers();
   managerParams.chunk_size = tt::config::prefillChunkSize();
   managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
-  managerParams.migrate_full_prefix = tt::config::migrateFullKV();
   auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
   auto migrationClientInterface = utils::makeMigrationClientInterface(config);
   if (tt::config::enableMigration()) {

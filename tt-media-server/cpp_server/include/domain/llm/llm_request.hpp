@@ -127,6 +127,11 @@ struct LLMRequest : BaseRequest {
   // transfer / result. Generated on the prefill server and echoed back.
   std::optional<uint64_t> migrationId;
 
+  // Per-request KV migration start position for disaggregated prefill. Set by
+  // the prefill server after comparing prefill-side and decode-side matched
+  // prefix lengths.
+  std::optional<uint32_t> migrationStartPosition;
+
   // First free index in the per-user KV cache: the absolute KV position where
   // the worker writes the next token's KV, equal to the position of the first
   // token handed to the worker. The runner forwards it verbatim as
