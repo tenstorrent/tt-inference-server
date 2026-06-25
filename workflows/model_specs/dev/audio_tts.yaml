@@ -26,12 +26,23 @@ templates:
       max_concurrency: 32
       max_context: 65536  # 64 * 1024
       default_impl: true
-    - device: BLACKHOLE_GALAXY
-      max_concurrency: 32
-      max_context: 65536  # 64 * 1024
-      default_impl: true
     - device: T3K
       max_concurrency: 4
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+
+- weights:
+    - openai/whisper-large-v3
+    - distil-whisper/distil-large-v3
+  impl: whisper
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: AUDIO
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32
       max_context: 65536  # 64 * 1024
       default_impl: true
     - device: P300
