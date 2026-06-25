@@ -49,7 +49,14 @@ struct WorkerConfig {
 
 std::atomic<bool> g_stopRequested{false};
 
-void onSignal(int /*signum*/) { g_stopRequested.store(true); }
+// Touched from a signal handler, so it must be lock-free: [support.signal]
+// permits a handler to access a lock-free atomic (not just sig_atomic_t).
+static_assert(std::atomic<bool>::is_always_lock_free,
+              "g_stopRequested must be lock-free to be signal-safe");
+
+void onSignal(int /*signum*/) {
+  g_stopRequested.store(true, std::memory_order_relaxed);
+}
 
 void usage() {
   std::cerr
@@ -244,7 +251,9 @@ int main(int argc, char** argv) {
   MooncakeMigrationWorker worker(toWorkerConfig(cli), std::move(engine),
                                  std::move(discovery));
 
-  if (!worker.bringUp()) {
+  // Pass the stop flag into bring-up too, so a SIGTERM/SIGINT during discovery
+  // aborts promptly instead of blocking until the discovery timeout.
+  if (!worker.bringUp(g_stopRequested)) {
     TT_LOG_ERROR("[bringup] '{}' bring-up failed", cli.name);
     return 1;
   }
