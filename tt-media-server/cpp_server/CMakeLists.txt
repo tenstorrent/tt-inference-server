@@ -788,6 +788,15 @@ target_include_directories(session_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(mock_remote_kv_manager_test
+    tests/unit/services/mock_remote_kv_manager_test.cpp
+    src/services/mock_remote_kv_manager.cpp
+)
+target_link_libraries(mock_remote_kv_manager_test PRIVATE GTest::gtest_main)
+target_include_directories(mock_remote_kv_manager_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(session_manager_test
     tests/integration/sessions/session_manager_test.cpp
     src/domain/session.cpp
@@ -1089,6 +1098,8 @@ if(KAFKA_ENABLED)
     add_library(messaging
         src/messaging/kafka_producer.cpp
         src/messaging/kafka_consumer.cpp
+        src/messaging/migration_message.cpp
+        src/services/remote_kv_manager_impl.cpp
     )
     target_include_directories(messaging PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -1098,6 +1109,7 @@ if(KAFKA_ENABLED)
         ${RDKAFKA_LIB}
         ${RDKAFKACPP_LIB}
         spdlog::spdlog
+        JsonCpp::JsonCpp
     )
 
     # Migration worker library (for consumer instances)
@@ -1111,6 +1123,67 @@ if(KAFKA_ENABLED)
         messaging
         spdlog::spdlog
         JsonCpp::JsonCpp
+    )
+    # Unit test for migration_message JSON (de)serialization.
+    add_executable(migration_message_test
+        tests/unit/messaging/migration_message_test.cpp
+    )
+    target_link_libraries(migration_message_test PRIVATE
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(migration_message_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    # Unit test for RemoteKVManagerImpl (uses in-process fake producer/consumer).
+    add_executable(remote_kv_manager_impl_test
+        tests/unit/services/remote_kv_manager_impl_test.cpp
+    )
+    target_link_libraries(remote_kv_manager_impl_test PRIVATE
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(remote_kv_manager_impl_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    # KV migration worker library
+    add_library(kv_migration_worker
+        src/runtime/worker/kv_migration_worker.cpp
+        src/runtime/worker/stub_migration_executor.cpp
+    )
+    target_include_directories(kv_migration_worker PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(kv_migration_worker PUBLIC
+        messaging
+        spdlog::spdlog
+    )
+
+    # Unit test for KvMigrationWorker (uses in-process fake Kafka + mock executor).
+    add_executable(kv_migration_worker_test
+        tests/unit/workers/kv_migration_worker_test.cpp
+    )
+    target_link_libraries(kv_migration_worker_test PRIVATE
+        kv_migration_worker
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(kv_migration_worker_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    add_executable(remote_kv_manager_kafka_test
+        tests/integration/remote_kv_manager_kafka_test.cpp
+    )
+    target_link_libraries(remote_kv_manager_kafka_test PRIVATE
+        kv_migration_worker
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(remote_kv_manager_kafka_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 else()
     message(STATUS "Kafka support disabled (use -DKAFKA_ENABLED=ON to enable)")
@@ -1292,6 +1365,31 @@ if(KAFKA_ENABLED)
         target_link_libraries(tt_consumer PRIVATE spdlog::spdlog)
     endif()
     target_compile_options(tt_consumer PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    # Separate process so the legacy `tt_consumer` is untouched.
+    add_executable(tt_kv_migration_consumer
+        src/kv_migration_consumer_main.cpp
+    )
+    target_include_directories(tt_kv_migration_consumer PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(tt_kv_migration_consumer PRIVATE
+        Drogon::Drogon
+        llm_runner_lib
+        kv_migration_worker
+        messaging
+    )
+    if(USE_EXTERNAL_FMT)
+        target_link_libraries(tt_kv_migration_consumer PRIVATE
+            spdlog::spdlog fmt::fmt)
+    else()
+        target_link_libraries(tt_kv_migration_consumer PRIVATE spdlog::spdlog)
+    endif()
+    target_compile_options(tt_kv_migration_consumer PRIVATE
         -Wall
         -Wextra
         -Wpedantic
