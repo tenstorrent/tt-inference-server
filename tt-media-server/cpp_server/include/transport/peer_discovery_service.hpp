@@ -49,9 +49,9 @@ class PeerDiscoveryService {
    *                    names are ignored, and an empty (or all-empty) list is a
    *                    no-op success.
    * @param cancelToken optional flag observed between sweeps; when it flips to
-   *                    true, discovery aborts promptly (returns nullopt) instead
-   *                    of blocking until the timeout — e.g. so a SIGTERM during
-   *                    bring-up doesn't hang for 30s. nullptr => not cancellable.
+   *                    true, discovery aborts promptly (returns nullopt)
+   * instead of blocking until the timeout — e.g. so a SIGTERM during bring-up
+   * doesn't hang for 30s. nullptr => not cancellable.
    * @return name -> handle for all unique peers (empty map when there are no
    *         valid names), or nullopt if the timeout elapsed or discovery was
    *         cancelled before all were found.

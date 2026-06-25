@@ -346,7 +346,7 @@ TEST(PeerDiscoveryService, IgnoresEmptyPeerNames) {
 // A set cancel token aborts discovery after a single sweep, rather than
 // blocking until the (here, long) timeout — exactly one open attempt is made.
 TEST(PeerDiscoveryService, CancelTokenAbortsPromptly) {
-  FakeTransferEngine engine;  // "ghost" never resolves
+  FakeTransferEngine engine;                           // "ghost" never resolves
   PeerDiscoveryService discovery(fastDiscovery(600));  // would block ~10min
   std::atomic<bool> cancel{true};
 

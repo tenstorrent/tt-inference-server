@@ -53,14 +53,15 @@ struct MigrationWorkerConfig {
 /**
  * @brief A migration worker that owns its full lifecycle on a host.
  *
- * The worker takes an (uninitialised) ITransferEngine and a PeerDiscoveryService
- * by injection, then owns the ordered bring-up that makes it a live,
- * discoverable participant: allocate its host-DRAM pool, init the engine
- * against the metadata service, register/publish that pool, and — by *delegating*
- * to the discovery service — resolve its peers. The phase ordering (register
- * *before* discover, so peers can resolve us in return) is a correctness
- * invariant the worker owns; the discovery mechanism itself is not its concern.
- * Teardown (unregister) happens in reverse order, including on destruction.
+ * The worker takes an (uninitialised) ITransferEngine and a
+ * PeerDiscoveryService by injection, then owns the ordered bring-up that makes
+ * it a live, discoverable participant: allocate its host-DRAM pool, init the
+ * engine against the metadata service, register/publish that pool, and — by
+ * *delegating* to the discovery service — resolve its peers. The phase ordering
+ * (register *before* discover, so peers can resolve us in return) is a
+ * correctness invariant the worker owns; the discovery mechanism itself is not
+ * its concern. Teardown (unregister) happens in reverse order, including on
+ * destruction.
  *
  * It also still drives the original #3890 spike scope (writeTensorOnSender /
  * transferToReceiver / verifyTensorOnReceiver), which operate once the engine
@@ -114,7 +115,8 @@ class MooncakeMigrationWorker {
 
   MigrationWorkerConfig config_;
   std::shared_ptr<ITransferEngine> engine_;
-  std::shared_ptr<PeerDiscoveryService> discovery_;  ///< How peers are resolved.
+  std::shared_ptr<PeerDiscoveryService>
+      discovery_;                      ///< How peers are resolved.
   std::vector<uint8_t> hostDramPool_;  ///< Registered/published by bringUp().
   std::vector<uint8_t> staging_;       ///< Spike host staging buffer.
   std::map<std::string, SegmentHandle> peers_;  ///< Resolved by bringUp().

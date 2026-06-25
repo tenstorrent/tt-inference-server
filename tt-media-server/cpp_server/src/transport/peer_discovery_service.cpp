@@ -64,8 +64,9 @@ PeerDiscoveryService::discover(ITransferEngine& engine,
                                const std::atomic<bool>* cancelToken) {
   const std::vector<std::string> wanted = uniquePeers(peerNames);
   if (wanted.size() != peerNames.size()) {
-    TT_LOG_WARN("[PeerDiscoveryService] ignored {} duplicate/empty peer name(s)",
-                peerNames.size() - wanted.size());
+    TT_LOG_WARN(
+        "[PeerDiscoveryService] ignored {} duplicate/empty peer name(s)",
+        peerNames.size() - wanted.size());
   }
   if (wanted.empty()) {
     TT_LOG_WARN("[PeerDiscoveryService] no peers configured");
@@ -77,7 +78,8 @@ PeerDiscoveryService::discover(ITransferEngine& engine,
     const std::string missing = joinMissing(wanted, resolved);
     if (cancelToken && cancelToken->load()) {
       TT_LOG_WARN(
-          "[PeerDiscoveryService] cancelled: resolved {}/{} peers; abandoned: {}",
+          "[PeerDiscoveryService] cancelled: resolved {}/{} peers; abandoned: "
+          "{}",
           resolved.size(), wanted.size(), missing);
     } else {
       TT_LOG_ERROR(
