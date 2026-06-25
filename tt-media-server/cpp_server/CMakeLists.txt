@@ -667,6 +667,14 @@ target_include_directories(transport_test PRIVATE
 )
 
 if(ENABLE_BLAZE)
+    add_executable(blaze_utils_test
+        tests/unit/runners/blaze_utils_test.cpp
+    )
+    target_link_libraries(blaze_utils_test PRIVATE llm_runner_lib GTest::gtest_main)
+    target_include_directories(blaze_utils_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
     add_executable(blaze_decode_runner_test
         tests/integration/runners/blaze_decode_runner_test.cpp
         src/runtime/worker/single_process_worker_metrics.cpp
@@ -1002,6 +1010,7 @@ gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(transport_test)
 if(ENABLE_BLAZE)
+    gtest_discover_tests(blaze_utils_test)
     gtest_discover_tests(blaze_decode_runner_test)
     gtest_discover_tests(blaze_prefill_runner_test)
 endif()

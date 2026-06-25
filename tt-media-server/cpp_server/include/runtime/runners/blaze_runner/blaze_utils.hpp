@@ -100,6 +100,11 @@ inline void fillSequenceFields(sch::ISRequest& req,
   req.gen = makeGenerationParams(seq);
   if (seq.getKVPositionId().has_value()) {  // override position id
     req.position_id = *seq.getKVPositionId();
+  } else if (seq.isContinuation() && seq.getDecodePositionId() > 0) {
+    // Disaggregated prefill continuations must not let the scheduler fall back
+    // to slot real_pos: after a prior turn that can point past the replay tail
+    // and make an otherwise valid continuation look malformed.
+    req.position_id = static_cast<uint32_t>(seq.getDecodePositionId());
   }
   postProcessSamplingParams(req.gen);
 }
