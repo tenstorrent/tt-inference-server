@@ -112,6 +112,7 @@ inline sch::ISRequest makeSubmitRequest(
   req.slot_id = slotId;
   req.dest_slot_id = destSlotId;
   req.migration_uuid = seq.getMigrationId();
+  req.migration_start_position = seq.getMigrationStartPosition();
   fillSequenceFields(req, seq);
   return req;
 }
