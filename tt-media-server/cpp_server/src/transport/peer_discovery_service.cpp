@@ -60,7 +60,8 @@ PeerDiscoveryService::PeerDiscoveryService(PeerDiscoveryConfig config)
 
 std::optional<std::map<std::string, SegmentHandle>>
 PeerDiscoveryService::discover(ITransferEngine& engine,
-                               const std::vector<std::string>& peerNames) {
+                               const std::vector<std::string>& peerNames,
+                               const std::atomic<bool>* cancelToken) {
   const std::vector<std::string> wanted = uniquePeers(peerNames);
   if (wanted.size() != peerNames.size()) {
     TT_LOG_WARN("[PeerDiscoveryService] ignored {} duplicate/empty peer name(s)",
@@ -71,13 +72,19 @@ PeerDiscoveryService::discover(ITransferEngine& engine,
     return std::map<std::string, SegmentHandle>{};
   }
 
-  auto resolved = resolveAll(engine, wanted);
+  auto resolved = resolveAll(engine, wanted, cancelToken);
   if (resolved.size() < wanted.size()) {
-    TT_LOG_ERROR(
-        "[PeerDiscoveryService] timed out after {}s: resolved {}/{} peers; "
-        "still missing: {}",
-        config_.timeout_sec, resolved.size(), wanted.size(),
-        joinMissing(wanted, resolved));
+    const std::string missing = joinMissing(wanted, resolved);
+    if (cancelToken && cancelToken->load()) {
+      TT_LOG_WARN(
+          "[PeerDiscoveryService] cancelled: resolved {}/{} peers; abandoned: {}",
+          resolved.size(), wanted.size(), missing);
+    } else {
+      TT_LOG_ERROR(
+          "[PeerDiscoveryService] timed out after {}s: resolved {}/{} peers; "
+          "still missing: {}",
+          config_.timeout_sec, resolved.size(), wanted.size(), missing);
+    }
     return std::nullopt;
   }
 
@@ -86,19 +93,22 @@ PeerDiscoveryService::discover(ITransferEngine& engine,
 }
 
 std::map<std::string, SegmentHandle> PeerDiscoveryService::resolveAll(
-    ITransferEngine& engine, const std::vector<std::string>& wanted) const {
+    ITransferEngine& engine, const std::vector<std::string>& wanted,
+    const std::atomic<bool>* cancelToken) const {
   std::map<std::string, SegmentHandle> resolved;
   const auto deadline = std::chrono::steady_clock::now() +
                         std::chrono::seconds(config_.timeout_sec);
 
-  while (resolved.size() < wanted.size() &&
-         std::chrono::steady_clock::now() < deadline) {
+  // do/while guarantees at least one attempt — a 0s timeout means "try once",
+  // never "skip discovery entirely".
+  do {
     sweepUnresolved(engine, wanted, resolved);
-    if (resolved.size() < wanted.size()) {
-      std::this_thread::sleep_for(
-          std::chrono::milliseconds(config_.poll_interval_ms));
-    }
-  }
+    if (resolved.size() >= wanted.size()) break;
+    if (cancelToken && cancelToken->load()) break;
+    if (std::chrono::steady_clock::now() >= deadline) break;
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(config_.poll_interval_ms));
+  } while (true);
   return resolved;
 }
 
