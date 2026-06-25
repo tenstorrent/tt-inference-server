@@ -104,15 +104,14 @@ class MooncakeMigrationWorker {
   bool verifyTensorOnReceiver(const std::vector<uint8_t>& expected);
 
  private:
-  /// Phase 5: discover every configured peer, caching handles in peers_.
-  bool connect();
   /// Reverse-order teardown; idempotent so run() and ~dtor can both call it.
   void teardown();
 
   MigrationWorkerConfig config_;
   std::shared_ptr<ITransferEngine> engine_;
+  std::shared_ptr<PeerDiscoveryService> discovery_;  ///< How peers are resolved.
   std::vector<uint8_t> hostDramPool_;  ///< Registered/published by bringUp().
-  std::vector<uint8_t> staging_;       ///< Spike host staging buffer (#3890).
+  std::vector<uint8_t> staging_;       ///< Spike host staging buffer.
   std::map<std::string, SegmentHandle> peers_;  ///< Resolved by bringUp().
   /// Atomic so run()'s teardown and ~dtor's teardown can't double-unregister;
   /// teardown() flips it with exchange() to stay idempotent.
