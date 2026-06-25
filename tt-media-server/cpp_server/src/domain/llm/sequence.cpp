@@ -218,8 +218,7 @@ Sequence Sequence::deserialize(std::istream& is) {
             sizeof(*seq.migrationStartPosition));
   } else {
     seq.migrationStartPosition = std::nullopt;
-    return seq;
   }
-
+  return seq;
 }
 }  // namespace tt::domain::llm

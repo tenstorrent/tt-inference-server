@@ -96,9 +96,13 @@ class Sequence {
 
   const std::vector<int>& getBlockTable() const { return blockTable; }
   std::vector<int>& getMutableBlockTable() { return blockTable; }
-  
-  std::optional<uint64_t> getMigrationStartPosition() const { return migrationStartPosition; }
-  void setMigrationStartPosition(uint64_t position) { migrationStartPosition = position; }
+
+  std::optional<uint64_t> getMigrationStartPosition() const {
+    return migrationStartPosition;
+  }
+  void setMigrationStartPosition(uint64_t position) {
+    migrationStartPosition = position;
+  }
 
   const SamplingParams& getSamplingParams() const { return *samplingParams; }
   SamplingParams& getMutableSamplingParams() { return *samplingParams; }
