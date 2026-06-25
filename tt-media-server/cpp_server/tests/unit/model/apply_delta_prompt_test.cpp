@@ -48,8 +48,8 @@ TEST(ApplyDeltaPrompt, RemainderAlreadyAligned) {
 
   auto& tokens = std::get<std::vector<int>>(req.prompt);
   EXPECT_EQ(tokens.size(), 32u);
-  EXPECT_EQ(tokens.front(), 96);  // first remaining token
-  EXPECT_EQ(req.kv_position_id, 95u);
+  EXPECT_EQ(tokens.front(), 96);       // first remaining token
+  EXPECT_EQ(req.kv_position_id, 96u);  // first free KV index
   EXPECT_EQ(req.prompt_tokens_count, 32);
 }
 
@@ -64,7 +64,7 @@ TEST(ApplyDeltaPrompt, RemainderNotAligned_SentAsIs) {
   auto& tokens = std::get<std::vector<int>>(req.prompt);
   EXPECT_EQ(tokens.size(), 17u);
   EXPECT_EQ(tokens.front(), 640);
-  EXPECT_EQ(req.kv_position_id, 639u);
+  EXPECT_EQ(req.kv_position_id, 640u);
   EXPECT_EQ(req.prompt_tokens_count, 17);
 }
 
@@ -77,7 +77,7 @@ TEST(ApplyDeltaPrompt, MultiTurnSuffix) {
   auto& tokens = std::get<std::vector<int>>(req.prompt);
   EXPECT_EQ(tokens.size(), 1297u);  // 17 + 1280
   EXPECT_EQ(tokens.front(), 640);
-  EXPECT_EQ(req.kv_position_id, 639u);
+  EXPECT_EQ(req.kv_position_id, 640u);
   EXPECT_EQ(req.prompt_tokens_count, 1297);
 }
 
@@ -110,7 +110,7 @@ TEST(ApplyDeltaPrompt, LargePrompt) {
   auto& tokens = std::get<std::vector<int>>(req.prompt);
   EXPECT_EQ(tokens.size(), 544u);
   EXPECT_EQ(tokens.front(), 1504);
-  EXPECT_EQ(req.kv_position_id, 1503u);
+  EXPECT_EQ(req.kv_position_id, 1504u);
 }
 
 // Exact 32-boundary matched tokens with exact remainder.
@@ -121,5 +121,5 @@ TEST(ApplyDeltaPrompt, ExactBoundaries) {
 
   auto& tokens = std::get<std::vector<int>>(req.prompt);
   EXPECT_EQ(tokens.size(), 64u);
-  EXPECT_EQ(req.kv_position_id, 191u);
+  EXPECT_EQ(req.kv_position_id, 192u);
 }

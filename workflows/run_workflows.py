@@ -11,8 +11,6 @@ from server_tests.test_categorization_system import TestFilter
 from server_tests.test_config import TEST_CONFIGS
 from workflows.utils import ensure_readwriteable_dir, run_command
 from workflows.workflow_config import (
-    WORKFLOW_BENCHMARKS_AIPERF_CONFIG,
-    WORKFLOW_BENCHMARKS_GUIDELLM_CONFIG,
     WORKFLOW_CONFIGS,
     WorkflowType,
     get_default_workflow_root_log_dir,
@@ -35,13 +33,20 @@ class WorkflowSetup:
         self.runtime_model_spec_json_path = json_fpath
         _workflow_type = WorkflowType.from_string(self.runtime_config.workflow)
 
+        self.workflow_config = WORKFLOW_CONFIGS[_workflow_type]
+
         tools = getattr(self.runtime_config, "tools", "vllm")
-        if _workflow_type == WorkflowType.BENCHMARKS and tools == "aiperf":
-            self.workflow_config = WORKFLOW_BENCHMARKS_AIPERF_CONFIG
-        elif _workflow_type == WorkflowType.BENCHMARKS and tools == "guidellm":
-            self.workflow_config = WORKFLOW_BENCHMARKS_GUIDELLM_CONFIG
-        else:
-            self.workflow_config = WORKFLOW_CONFIGS[_workflow_type]
+        if _workflow_type == WorkflowType.BENCHMARKS and tools in (
+            "aiperf",
+            "guidellm",
+        ):
+            logger.warning(
+                "--tools %s is ignored on the v1 benchmark path for %s; it is only "
+                "supported for LLM models routed to v2. Running the default "
+                "benchmark tool.",
+                tools,
+                self.model_spec.model_name,
+            )
 
         # only the server workflow does not require a venv
         assert self.workflow_config.workflow_run_script_venv_type is not None

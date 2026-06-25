@@ -230,6 +230,13 @@ FetchContent_MakeAvailable(cppzmq)
 
 # Option to enable tt-llm-engine (formerly tt-blaze pipeline_manager)
 option(ENABLE_BLAZE "Enable tt-llm-engine support" OFF)
+# Real shmem migration (MigrationLayerClientAdapter + migration_client static lib).
+# mock_pipeline CI builds use --blaze only; disaggregated pipeline_manager runs
+# need --blaze-with-migration (implies ENABLE_BLAZE).
+option(ENABLE_BLAZE_MIGRATION "Build real shmem migration client (requires ENABLE_BLAZE)" OFF)
+if(ENABLE_BLAZE_MIGRATION AND NOT ENABLE_BLAZE)
+    message(FATAL_ERROR "ENABLE_BLAZE_MIGRATION=ON requires ENABLE_BLAZE=ON (use build.sh --blaze-with-migration)")
+endif()
 
 if(ENABLE_BLAZE)
     # tt-llm-engine (Core-only at compile time when TT::Metalium is not in scope;
@@ -478,6 +485,40 @@ if(ENABLE_BLAZE)
         message(STATUS "Linking llm_runner_lib against TtLlmEngine::Core")
     endif()
     target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE)
+    # Header-only MigrationClientInterface implementations (MigrationLayerClientAdapter,
+    # MockMigrationClient) live under the engine's src tree rather than its public
+    # include tree; blaze_utils.hpp instantiates them, so expose that path.
+    target_include_directories(llm_runner_lib PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/src)
+
+    if(ENABLE_BLAZE_MIGRATION)
+        target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE_MIGRATION)
+        # MigrationLayerClientAdapter forwards to migration_worker::MigrationLayerClient,
+        # whose implementation lives in the disaggregation/migration project. That
+        # project is a standalone CMake project() (own CPM cache + find_package(MPI)),
+        # so it can't be add_subdirectory'd here. Its client is lightweight though
+        # (just POSIX shmem queues), so we compile the two needed translation units
+        # directly into a small static lib and link it in. There is a single concrete
+        # implementation (no mock/real .so swap), so static linking is sufficient for
+        # both Core and LD_PRELOAD'd Full runs.
+        set(_MIG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration)
+        set(_MIG_TT_STL "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/tt-metal/tt_stl")
+        add_library(migration_client STATIC
+            ${_MIG_DIR}/src/migration_client.cpp
+            ${_MIG_DIR}/src/file_lock_guard.cpp)
+        set_target_properties(migration_client PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        target_include_directories(migration_client PUBLIC
+            ${_MIG_DIR}/include
+            ${_MIG_DIR}/src/worker
+            ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/src/common
+            ${TT_METAL_INCLUDE_DIRS}
+            ${_MIG_TT_STL})
+        target_link_libraries(migration_client PUBLIC spdlog::spdlog PRIVATE rt)
+        target_link_libraries(llm_runner_lib PUBLIC migration_client)
+        message(STATUS "Blaze migration client: ENABLED (ENABLE_BLAZE_MIGRATION=ON)")
+    else()
+        message(STATUS "Blaze migration client: DISABLED (use build.sh --blaze-with-migration for pipeline_manager shmem migration)")
+    endif()
 else()
     message(STATUS "Skipping tt-llm-engine linking (ENABLE_BLAZE=OFF)")
 endif()
