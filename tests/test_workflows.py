@@ -245,7 +245,9 @@ class TestWorkflowExecution:
 
         def make_setup(_model_spec, runtime_config_arg, _json_fpath):
             manager = MagicMock()
-            manager.workflow_config.name = runtime_config_arg.workflow
+            # Real WorkflowSetup exposes the lowercase workflow-config name;
+            # the loop assigns the uppercase enum name to runtime_config.workflow.
+            manager.workflow_config.name = runtime_config_arg.workflow.lower()
             manager.run_workflow_script.return_value = 0
             return manager
 
@@ -253,6 +255,10 @@ class TestWorkflowExecution:
             "workflows.run_workflows.has_spec_tests_configured", return_value=False
         ), patch(
             "workflows.run_workflows.has_agentic_tasks_configured", return_value=False
+        ), patch(
+            # DeepSeek-R1-0528 has server tests configured; isolate this test to
+            # the benchmarks-delegation behavior by dropping the TESTS step.
+            "workflows.run_workflows.TEST_CONFIGS", {}
         ), patch(
             "workflows.v2_bridge.run_v2_llm_benchmark_workflow",
             return_value=WorkflowResult(workflow_name="benchmarks", return_code=0),
@@ -816,7 +822,7 @@ class TestMainWorkflowIntegration:
         ]
 
         with patch("sys.argv", test_args), patch(
-            "run.run_workflows",
+            "run.run_v2_workflows",
             side_effect=RuntimeError("venv setup failed"),
         ), patch(
             "run.validate_setup",
@@ -857,7 +863,7 @@ class TestMainWorkflowIntegration:
             "run.run_docker_server",
             return_value=mock_server_handle,
         ), patch(
-            "run.run_workflows",
+            "run.run_v2_workflows",
             return_value=[
                 WorkflowResult(workflow_name="evals", return_code=0),
                 WorkflowResult(workflow_name="benchmarks", return_code=0),

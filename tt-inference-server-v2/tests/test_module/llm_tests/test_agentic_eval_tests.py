@@ -386,7 +386,11 @@ class TestSelectAgenticTasks:
     def test_empty_task_list_returns_empty(self):
         assert _select_agentic_tasks(self._ctx_with_tasks([])) == []
 
-    def test_mixed_tasks_raises(self):
+    def test_mixed_tasks_returns_only_agentic(self):
+        # Mixed standard + agentic EvalConfigs are expected (e.g. a model with
+        # both mmlu and swebench). The agentic workflow selects only the
+        # EVALS_AGENTIC tasks and skips the rest rather than raising, so that
+        # an LLM release can run agentic for such models.
         t_agentic = _terminal_task()
         t_other = _terminal_task(
             task_name="mmlu",
@@ -394,12 +398,7 @@ class TestSelectAgenticTasks:
         )
         ctx = self._ctx_with_tasks([t_agentic, t_other])
 
-        try:
-            _select_agentic_tasks(ctx)
-        except RuntimeError as exc:
-            assert "non-agentic tasks" in str(exc)
-        else:
-            raise AssertionError("Expected mixed agentic task selection to fail")
+        assert _select_agentic_tasks(ctx) == [t_agentic]
 
 
 class TestAgenticBridge:

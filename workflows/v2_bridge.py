@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shlex
@@ -90,6 +91,44 @@ def _is_llm_benchmark_run(wf, model_spec, runtime_config) -> bool:
     )
 
 
+def _llm_release_includes_agentic(model_spec) -> bool:
+    """True if an LLM release should also run the dedicated agentic launcher.
+
+    Agentic evals (Terminal-Bench-2 / SWE-bench Verified) run their harness
+    (harbor / swebench) from inside the EVALS_AGENTIC venv, so they cannot run
+    in-process under the v2 release engine (V2_RUN_SCRIPT venv). When a model
+    configures EVALS_AGENTIC tasks, release dispatches a separate
+    ``run_agentic.py`` subprocess (mirrors v1 release = evals + agentic +
+    benchmarks). Models without agentic tasks skip it.
+    """
+    if model_spec.model_type != ModelType.LLM:
+        return False
+    try:
+        from evals.eval_config import EVAL_CONFIGS
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("Could not import EVAL_CONFIGS (%s); skipping agentic.", e)
+        return False
+    cfg = EVAL_CONFIGS.get(model_spec.model_name)
+    if cfg is None:
+        return False
+    return any(
+        task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC for task in cfg.tasks
+    )
+
+
+def _is_llm_eval_run(wf, model_spec) -> bool:
+    """LLM ``--workflow evals`` / ``--workflow release`` route to v2.
+
+    Standard evals run lm-eval / lmms-eval through ``EvalsWorkflow``; release
+    additionally runs the perf benchmark. Both go through the generic run.py
+    branch (no launcher) — the eval subprocess uses the per-task venv binary.
+    """
+    return model_spec.model_type == ModelType.LLM and wf in (
+        WorkflowType.EVALS,
+        WorkflowType.RELEASE,
+    )
+
+
 def can_route_to_v2(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
     # Agentic evals, serving-bench benchmark suites, and the prefix-cache /
@@ -102,6 +141,8 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
     ):
         return True
     if _is_llm_benchmark_run(wf, model_spec, runtime_config):
+        return True
+    if _is_llm_eval_run(wf, model_spec):
         return True
     if not is_v2_routed_model(model_spec):
         return False
@@ -154,7 +195,7 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
                 "The tt-inference-server-v2/ directory is required for image-model workflows."
             )
         venv_python = _ensure_v2_venv(model_spec)
-        _ensure_v2_dependency_venvs(model_spec, wf)
+        _ensure_v2_dependency_venvs(model_spec, wf, runtime_config)
 
         cmd = [
             str(venv_python),
@@ -174,10 +215,15 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
         ]
         if runtime_config.docker_server:
             cmd.append("--docker-server")
+        _extend_if_set(cmd, "--server-url", getattr(runtime_config, "server_url", None))
         if wf == WorkflowType.SERVING_BENCH:
             _extend_if_set(
                 cmd, "--serving-bench-suites", runtime_config.serving_bench_suites
             )
+        elif _is_llm_eval_run(wf, model_spec):
+            # Standard evals (and release) need the bearer token to reach a
+            # JWT-protected server; run.py mints it from --jwt-secret/$JWT_SECRET.
+            _forward_jwt(cmd, runtime_config)
         else:
             sdxl_n = getattr(runtime_config, "sdxl_num_prompts", None)
             if sdxl_n not in (None, "", "0"):
@@ -198,7 +244,41 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
         )
     else:
         logger.info(f"✅ Completed v2 workflow: {v2_workflow}")
-    return [WorkflowResult(workflow_name=v2_workflow, return_code=return_code)]
+    results = [WorkflowResult(workflow_name=v2_workflow, return_code=return_code)]
+    # An LLM release additionally runs agentic evals through their dedicated
+    # launcher (EVALS_AGENTIC venv); the in-process v2 release engine cannot.
+    if wf == WorkflowType.RELEASE and _llm_release_includes_agentic(model_spec):
+        results.append(
+            _run_release_agentic_step(v2_dir, model_spec, runtime_config, json_fpath)
+        )
+    return results
+
+
+def _run_release_agentic_step(
+    v2_dir, model_spec, runtime_config, json_fpath
+) -> WorkflowResult:
+    """Run the agentic launcher as the agentic step of an LLM release.
+
+    Uses the same ``run_agentic.py`` path and output location as a standalone
+    ``--workflow agentic`` run so report aggregation picks up the result.json.
+    """
+    output_dir = get_default_workflow_root_log_dir() / "reports_output" / "agentic"
+    ensure_readwriteable_dir(output_dir)
+    cmd = _build_agentic_cmd(
+        v2_dir, model_spec, runtime_config, json_fpath, output_dir
+    )
+    env = os.environ.copy()
+    env["TT_V1_RUN_COMMAND"] = "python " + shlex.join(sys.argv)
+
+    logger.info("Delegating release agentic step to v2 engine via agentic launcher.")
+    return_code = run_command(cmd, logger=logger, env=env)
+    if return_code != 0:
+        logger.error(
+            "⛔ v2 release agentic step failed with return code: %s", return_code
+        )
+    else:
+        logger.info("✅ Completed v2 release agentic step")
+    return WorkflowResult(workflow_name="agentic", return_code=return_code)
 
 
 def run_v2_llm_benchmark_workflow(
@@ -347,17 +427,101 @@ def _ensure_v2_venv(model_spec) -> Path:
     return venv_config.venv_python
 
 
-def _v2_dependency_venv_types(model_spec, wf) -> List[WorkflowVenvType]:
+# Standard LLM/VLM eval backends (mirrors llm_module.eval_configs). EVALS_AGENTIC
+# is provisioned by the agentic launcher, not here.
+_V2_LLM_STANDARD_EVAL_VENVS = frozenset(
+    {
+        WorkflowVenvType.EVALS_COMMON,
+        WorkflowVenvType.EVALS_META,
+        WorkflowVenvType.EVALS_VISION,
+    }
+)
+
+
+def _eval_samples_task_names(runtime_config):
+    """Task names selected by --eval-samples (JSON string or file), or None."""
+    raw = getattr(runtime_config, "eval_samples", None)
+    if not raw:
+        return None
+    try:
+        mapping = json.loads(raw)
+    except (TypeError, ValueError):
+        try:
+            mapping = json.loads(Path(raw).read_text())
+        except Exception:
+            return None
+    return set(mapping) if isinstance(mapping, dict) else None
+
+
+def _is_smoke_mode(runtime_config) -> bool:
+    mode = getattr(runtime_config, "limit_samples_mode", None)
+    if not mode:
+        return False
+    from workflows.workflow_types import EvalLimitMode
+
+    try:
+        return EvalLimitMode.from_string(mode) == EvalLimitMode.SMOKE_TEST
+    except Exception:
+        return False
+
+
+def _selected_eval_tasks(tasks, runtime_config):
+    """Apply the same selection ``get_llm_eval_tasks`` does, so we provision
+    only the venvs the run will actually use (--eval-samples / smoke-test).
+    Falls back to all tasks when nothing narrows them (over-provision is safe;
+    under-provision would break a task the run still tries to execute)."""
+    names = _eval_samples_task_names(runtime_config)
+    if names:
+        sel = [t for t in tasks if t.task_name in names]
+        if sel:
+            return sel
+    if _is_smoke_mode(runtime_config) and tasks:
+        return [tasks[0]]
+    return tasks
+
+
+def _llm_eval_venv_types(model_spec, runtime_config=None) -> List[WorkflowVenvType]:
+    """Standard eval venvs the run will actually use (from EVAL_CONFIGS).
+
+    Honors --eval-samples / smoke-test so a single-task run doesn't provision
+    the (heavy) venvs of tasks it won't execute.
+    """
+    try:
+        from evals.eval_config import EVAL_CONFIGS
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("Could not import EVAL_CONFIGS (%s); skipping eval venvs.", e)
+        return []
+    cfg = EVAL_CONFIGS.get(model_spec.model_name)
+    if cfg is None:
+        return []
+    tasks = _selected_eval_tasks(cfg.tasks, runtime_config)
+    seen = {
+        t.workflow_venv_type
+        for t in tasks
+        if t.workflow_venv_type in _V2_LLM_STANDARD_EVAL_VENVS
+    }
+    return sorted(seen, key=lambda v: v.name)
+
+
+def _v2_dependency_venv_types(
+    model_spec, wf, runtime_config=None
+) -> List[WorkflowVenvType]:
     venv_types: List[WorkflowVenvType] = []
     if wf in _V2_EVAL_WORKFLOWS:
         eval_venv = _V2_EVAL_VENV_BY_MODEL_TYPE.get(model_spec.model_type)
         if eval_venv is not None:
             venv_types.append(eval_venv)
+        if model_spec.model_type == ModelType.LLM:
+            venv_types.extend(_llm_eval_venv_types(model_spec, runtime_config))
+    # The release benchmark child runs the default perf tool (vllm) in-process
+    # under V2_RUN_SCRIPT, so its tool venv must exist up front.
+    if wf == WorkflowType.RELEASE and model_spec.model_type == ModelType.LLM:
+        venv_types.append(WorkflowVenvType.V2_LLM_VLLM)
     return venv_types
 
 
-def _ensure_v2_dependency_venvs(model_spec, wf) -> None:
-    for venv_type in _v2_dependency_venv_types(model_spec, wf):
+def _ensure_v2_dependency_venvs(model_spec, wf, runtime_config=None) -> None:
+    for venv_type in _v2_dependency_venv_types(model_spec, wf, runtime_config):
         venv_config = VENV_CONFIGS[venv_type]
         logger.info("Provisioning v2 dependency venv: %s", venv_type.name)
         setup_completed = venv_config.setup(model_spec=model_spec)

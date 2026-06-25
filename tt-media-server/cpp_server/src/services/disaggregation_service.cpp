@@ -89,6 +89,11 @@ void DisaggregationService::setupSocketHandlers() {
             auto request = LLMRequest(message.taskId);
             request.disaggregated = true;
             request.migrationId = message.migrationId;
+            // Intentional exception to the first-free-index convention: the
+            // prefill-generated token is NOT migrated, so decode's first step
+            // reprocesses the last prompt token. That token already occupies
+            // KV index size-1, so decode resumes there rather than at the next
+            // free slot, and the prompt is just that single trailing token.
             request.kv_position_id =
                 static_cast<uint32_t>(message.tokenIds.size() - 1);
             request.prompt.emplace<std::vector<int>>(message.tokenIds.end() - 1,
@@ -387,11 +392,11 @@ void DisaggregationService::resolvePrefillSession(
           // If copying, set continuation and kv_position_id on the request.
           if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
             request->continuation = true;
-            request->kv_position_id = copyMatchedTokens - 1;
+            request->kv_position_id = copyMatchedTokens;
             session_resolution::applyDeltaPrompt(
                 *request, copyMatchedTokens,
                 {.skipUnlessRegularMode = false,
-                 .setKvPositionId = true,
+                 .setKvPositionId = false,
                  .logPrefix = "[DisaggregationService]"});
           }
           onResolved();
@@ -421,8 +426,11 @@ void DisaggregationService::handleStreamingRequest(
     auto maxTokens = request.max_tokens;
     auto slotId = request.slotId;
     auto tokenIds = std::get<std::vector<int>>(request.prompt);
+    // kv_position_id is the first free KV index (the matched prefix occupies
+    // [0, kv_position_id)), which is exactly the position the prefill server
+    // should resume writing from.
     int decodePositionId = request.kv_position_id.has_value()
-                               ? static_cast<int>(*request.kv_position_id + 1)
+                               ? static_cast<int>(*request.kv_position_id)
                                : 0;
     // Same reused prefix as decodePositionId but excluding the accumulated
     // think tokens that were folded into kv_position_id during session

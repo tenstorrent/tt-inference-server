@@ -1338,6 +1338,13 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_XLA_SDXL, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 3000,
+    },
     (ModelRunners.TT_XLA_SDXL, DeviceTypes.P150X4): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
