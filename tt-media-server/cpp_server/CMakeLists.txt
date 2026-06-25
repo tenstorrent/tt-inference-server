@@ -540,7 +540,7 @@ add_library(transport_lib
     src/transport/umd_device_access.cpp
     src/transport/mooncake_transfer_engine.cpp
     src/transport/mooncake_migration_worker.cpp
-    src/transport/peer_discovery.cpp
+    src/transport/peer_discovery_service.cpp
     src/utils/logger.cpp
 )
 target_include_directories(transport_lib PUBLIC

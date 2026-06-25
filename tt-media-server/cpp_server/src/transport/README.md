@@ -179,10 +179,11 @@ Gotchas:
 
 ## Mooncake Migration Worker discovery
 
-`bringup_mooncake_worker` is the worker's entry point (one process per worker). `PeerDiscovery`
-holds the resolve-with-retry loop; `MooncakeMigrationWorker` owns the ordered lifecycle —
-allocate host-DRAM pool → init engine → register/publish (makes us discoverable) → discover
-peers → hold until SIGTERM → teardown in reverse. **Register-before-connect** is the invariant.
+`bringup_mooncake_worker` is the worker's entry point / composition root (one process per
+worker). `PeerDiscoveryService` owns *how* peers are resolved (the resolve-with-retry loop +
+timeout); `MooncakeMigrationWorker` owns the ordered lifecycle — allocate host-DRAM pool → init
+engine → register/publish (makes us discoverable) → **delegate** peer discovery → hold until
+SIGTERM → teardown in reverse. **Register-before-discover** is the invariant the worker owns.
 Workers are symmetric peers: each takes its own `--name` and its peers as `--peer`; success
 is `CONNECTED to N peers` then `READY`. Logic is launcher-agnostic — a bash loop, MPI, or an
 orchestrator all just spawn one process per worker.
@@ -208,7 +209,11 @@ WORKER_BIN=./build/bringup_mooncake_worker \
 | Mooncake transport loopback TCP (host backend, `--mooncake`) | impl |
 | Two-galaxy acceptance, both backends enabled | pending a two-process HW run |
 | Metadata-service worker discovery, two hosts, host RAM (#4209, `migration_worker_discovery`) | **validated** (two hosts, 1 MiB tensor, byte-verified MATCH) |
-| Productionized discovery worker (#4294, `bringup_mooncake_worker`) | **validated** (single host, MPI `-np 20` = 4 prefill + 16 decode, all `CONNECTED`→`READY`) |
+| Productionized discovery worker (#4294, `bringup_mooncake_worker`) | **validated locally** (single host, MPI `-np 20` = 4 prefill + 16 decode, all `CONNECTED`→`READY`; run manually, not yet wired into CI) |
+
+Note: the unit/smoke `transport_test` runs in any CI build; the MPI discovery
+e2e (`MooncakeMpiDiscovery`) is currently a manual/local check (it needs the
+Mooncake build + a metadata service) and is not yet in a GitHub workflow.
 
 ## Future work — wiring into the tt-llm-engine migration worker
 
@@ -260,3 +265,11 @@ inside tt-llm-engine while `transport_lib` is dependency-free.
 **Other follow-ups:** custom zero-copy / RDMA-direct `Transport` subclass (register the
 UMD DRAM mapping instead of bouncing); multi-tensor / batched transfers; concurrency
 and failure/retry semantics matching the incumbent's ULFM behaviour.
+
+**Discovery lifecycle (post-merge):** discovery resolves peers once at bring-up and the
+worker then holds the handles until SIGTERM. Steady-state membership changes are not yet
+handled — if a peer crashes and restarts on a new dynamic port, its cached `SegmentHandle`
+goes stale. Production needs periodic peer health checks and re-discovery/reconnection on
+peer restart (plus metrics: peer count, time-to-ready, reconnection events). Discovery is
+already cancellable (a SIGTERM during bring-up aborts the poll loop promptly); wiring the
+MPI e2e into CI is also pending.
