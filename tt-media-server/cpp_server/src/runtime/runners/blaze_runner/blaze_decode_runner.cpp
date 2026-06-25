@@ -57,8 +57,8 @@ BlazeDecodeRunner::BlazeDecodeRunner(
     managerParams.max_spec_tokens =
         static_cast<uint32_t>(tt::config::mtpLevel());
   }
-  decodeScheduler =
-      std::make_unique<ds::DecodeScheduler>(pipelineConfig, managerParams, std::move(migrationClientInterface));
+  decodeScheduler = std::make_unique<ds::DecodeScheduler>(
+      pipelineConfig, managerParams, std::move(migrationClientInterface));
   TT_LOG_INFO(
       "BlazeDecodeRunner: DecodeScheduler constructed, calling start()...");
   decodeScheduler->start();

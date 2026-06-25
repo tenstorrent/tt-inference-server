@@ -27,8 +27,7 @@
 
 namespace {
 
-const char* requestTypeToString(
-    tt_llm_engine::scheduler::RequestType type) {
+const char* requestTypeToString(tt_llm_engine::scheduler::RequestType type) {
   switch (type) {
     case tt_llm_engine::scheduler::RequestType::ALLOCATE:
       return "ALLOCATE";
@@ -179,7 +178,8 @@ inline sch::ISRequest makeContinueRequest(
   req.dest_slot_id = destSlotId;
   req.migration_uuid = seq.getMigrationId();
   fillSequenceFields(req, seq);
-  if (tt::config::LLMConfig().runner_type == tt::config::ModelRunnerType::MOCK_PIPELINE) {
+  if (tt::config::LLMConfig().runner_type ==
+      tt::config::ModelRunnerType::MOCK_PIPELINE) {
     req.gen.await_kv_migration = false;
   }
   return req;
@@ -329,7 +329,8 @@ makeMigrationClientInterface(const tt::config::LLMConfig& config) {
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       if (tt::config::enableMigration()) {
         // No migration worker in mock-pipeline mode: auto-ack the burst so the
-        // prefill scheduler finalizes the migrating SUBMIT (emits prefill_complete).
+        // prefill scheduler finalizes the migrating SUBMIT (emits
+        // prefill_complete).
         return std::make_unique<sch::MockMigrationClient>(/*autoAck=*/true);
       } else {
         return nullptr;
