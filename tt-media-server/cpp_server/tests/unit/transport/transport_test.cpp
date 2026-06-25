@@ -343,6 +343,28 @@ TEST(PeerDiscoveryService, IgnoresEmptyPeerNames) {
   EXPECT_EQ(engine.openAttempts.count(""), 0u);  // never tried to open ""
 }
 
+// A set cancel token aborts discovery after a single sweep, rather than
+// blocking until the (here, long) timeout — exactly one open attempt is made.
+TEST(PeerDiscoveryService, CancelTokenAbortsPromptly) {
+  FakeTransferEngine engine;  // "ghost" never resolves
+  PeerDiscoveryService discovery(fastDiscovery(600));  // would block ~10min
+  std::atomic<bool> cancel{true};
+
+  const auto resolved = discovery.discover(engine, {"ghost"}, &cancel);
+  EXPECT_FALSE(resolved.has_value());
+  EXPECT_EQ(engine.openAttempts["ghost"], 1);  // one sweep, then bailed out
+}
+
+// A 0s timeout still makes exactly one attempt (it is not a no-op).
+TEST(PeerDiscoveryService, ZeroTimeoutTriesExactlyOnce) {
+  FakeTransferEngine engine;  // "ghost" never resolves
+  PeerDiscoveryService discovery(fastDiscovery(0));
+
+  const auto resolved = discovery.discover(engine, {"ghost"});
+  EXPECT_FALSE(resolved.has_value());
+  EXPECT_EQ(engine.openAttempts["ghost"], 1);
+}
+
 // Bring-up happy path: the worker inits, publishes its pool, then discovers its
 // peer — and crucially registers BEFORE opening any peer segment, so peers can
 // resolve it in return (the #4294 ordering invariant).
