@@ -257,6 +257,28 @@ _UNSAFE_NOTICE = (
 )
 
 
+# TT_* env vars that legitimately point at a not-yet-created OUTPUT dir (tt-metal makes
+# them lazily). These must NOT be scrubbed for non-existence — e.g. a producer pointing
+# TT_METAL_CACHE at a fresh cache dir would otherwise have it deleted, silently sending
+# kernels back to the default cache.
+_OUTPUT_PATH_VARS = frozenset({"TT_METAL_CACHE"})
+
+
+def _scrub_stale_tt_paths(environ) -> "list[str]":
+    """Remove TT_* env vars whose value is an absolute path that no longer exists (stale
+    overrides from an old checkout). Output dirs in ``_OUTPUT_PATH_VARS`` are exempt —
+    they're allowed to not exist yet. Mutates ``environ``; returns the removed entries."""
+    from pathlib import Path
+    scrubbed = []
+    for k, v in list(environ.items()):
+        if k in _OUTPUT_PATH_VARS:
+            continue
+        if k.startswith("TT_") and isinstance(v, str) and v.startswith("/") and not Path(v).exists():
+            del environ[k]
+            scrubbed.append(f"{k}={v}")
+    return scrubbed
+
+
 def _ensure_tt_metal_root():
     """Point tt-metal at the correct source tree before ttnn is imported.
 
@@ -279,12 +301,9 @@ def _ensure_tt_metal_root():
         print(f"[serve] WARNING: {candidate} has no tt_metal/soc_descriptors; relying on "
               f"current root ({cur!r}) — ttnn may fail", flush=True)
         return
-    # (1) Scrub stale TT_* path overrides (absolute paths that no longer exist).
-    scrubbed = []
-    for k, v in list(os.environ.items()):
-        if k.startswith("TT_") and v.startswith("/") and not Path(v).exists():
-            del os.environ[k]
-            scrubbed.append(f"{k}={v}")
+    # (1) Scrub stale TT_* path overrides (absolute paths that no longer exist), but
+    #     never the output dirs (TT_METAL_CACHE) — those are created lazily.
+    scrubbed = _scrub_stale_tt_paths(os.environ)
     # (2) Force the authoritative root.
     for var in ("TT_METAL_RUNTIME_ROOT", "TT_METAL_HOME"):
         os.environ[var] = str(candidate)
