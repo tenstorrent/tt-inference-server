@@ -232,32 +232,46 @@ def _build_spec_decode_options(
 
 
 def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
-    """Mint a ``debug-test`` JWT and export it as ``OPENAI_API_KEY``.
+    """Resolve the bearer token forwarded to benchmark drivers (AIPerf ``--api-key``).
 
-    Looks at the ``--jwt-secret`` arg first, then ``$JWT_SECRET``. When no
-    secret is supplied, returns the empty string (auth disabled). Matches the
-    inference server's expected debug token for JWT auth.
+    Precedence:
+
+    1. ``--jwt-secret`` / ``$JWT_SECRET`` -> mint a ``debug-test`` HS256 JWT and
+       export it as ``OPENAI_API_KEY`` (for servers behind JWT auth).
+    2. ``$OPENAI_API_KEY`` -> used verbatim as a static API key, for servers
+       that do a plain bearer-key compare (e.g. the cpp_server's default
+       ``your-secret-key``, or a reference vLLM started with ``--api-key``).
+    3. Otherwise -> empty string (auth disabled).
     """
     secret = jwt_secret_arg or os.getenv("JWT_SECRET", "")
-    if not secret:
-        return ""
-    try:
-        import jwt as _jwt
-    except ImportError:
-        logger.warning(
-            "PyJWT is not installed; --jwt-secret was supplied but no token "
-            "will be minted. Install pyjwt to enable JWT-protected servers."
+    if secret:
+        try:
+            import jwt as _jwt
+        except ImportError:
+            logger.warning(
+                "PyJWT is not installed; --jwt-secret was supplied but no token "
+                "will be minted. Install pyjwt to enable JWT-protected servers."
+            )
+        else:
+            payload = {
+                "team_id": "tenstorrent",
+                "token_id": "debug-test",
+                "exp": int(_dt.datetime.now(_dt.timezone.utc).timestamp())
+                + 24 * 3600,
+            }
+            encoded = _jwt.encode(payload, secret, algorithm="HS256")
+            os.environ["OPENAI_API_KEY"] = encoded
+            logger.info("Minted debug-test JWT and exported as OPENAI_API_KEY.")
+            return encoded
+
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    if api_key:
+        logger.info(
+            "Using OPENAI_API_KEY from the environment as the API key "
+            "(no JWT secret supplied)."
         )
-        return ""
-    payload = {
-        "team_id": "tenstorrent",
-        "token_id": "debug-test",
-        "exp": int(_dt.datetime.now(_dt.timezone.utc).timestamp()) + 24 * 3600,
-    }
-    encoded = _jwt.encode(payload, secret, algorithm="HS256")
-    os.environ["OPENAI_API_KEY"] = encoded
-    logger.info("Minted debug-test JWT and exported as OPENAI_API_KEY.")
-    return encoded
+        return api_key
+    return ""
 
 
 def _load_runtime_config(path: Optional[str]) -> Optional[RuntimeConfig]:
