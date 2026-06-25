@@ -24,6 +24,7 @@
 #include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
+#include "dynamo/native_prefill_handoff.hpp"
 #include "domain/session.hpp"
 #include "services/llm_pipeline.hpp"
 #include "utils/id_generator.hpp"
@@ -169,8 +170,10 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
   trantor::EventLoopThreadPool* pool = loop_pool_.get();
 
   if (options_.worker_role == DiscoveryWorkerRole::PREFILL) {
-    return [pool](const GenerateRequest& dynReq,
-                  const TcpStreamConnectionInfo& connInfo) {
+    const std::string localPrefillId =
+        options_.component + "/" + options_.endpoint;
+    return [pool, localPrefillId](const GenerateRequest& dynReq,
+                                  const TcpStreamConnectionInfo& connInfo) {
       const std::string requestId =
           dynReq.raw.get("request_id", "").asString();
       TT_LOG_INFO(
@@ -181,6 +184,23 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       auto writer = DynamoStreamWriter::create(pool->getNextLoop(), connInfo,
                                                requestId, []() {});
       writer->connect();
+
+      if (tt::config::dynamoNativePrefillHandoffEnabled()) {
+        TokenChunk handoff;
+        handoff.finish_reason = "prefill_handoff";
+        const auto migrationId = tt::utils::MigrationIDGenerator::generate();
+        const auto nativeHandoff = buildMetadataOnlyNativePrefillHandoff(
+            requestId, migrationId,
+            static_cast<uint32_t>(dynReq.token_ids.size()), localPrefillId);
+        handoff.disaggregated_params =
+            nativePrefillHandoffToDisaggregatedParams(nativeHandoff);
+        // Debug mirror only; Dynamo's native prefill/decode handoff reads
+        // disaggregated_params.
+        handoff.engine_data = nativePrefillHandoffToEngineData(nativeHandoff);
+        writer->sendChunk(handoff);
+        writer->finalize();
+        return;
+      }
 
       TokenChunk err;
       err.error =
@@ -257,6 +277,36 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       sendChunk(err);
       signalDone();
     };
+
+    if (const Json::Value* handoffJson =
+            findNativePrefillHandoffJson(dynReq.raw)) {
+      if (!tt::config::dynamoNativePrefillHandoffEnabled()) {
+        TokenChunk err;
+        err.error =
+            "Dynamo native prefill handoff metadata was provided, but "
+            "DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED is not enabled";
+        err.error_code = 501;
+        sendChunk(err);
+        signalDone();
+        return;
+      }
+      auto handoff = parseNativePrefillHandoff(*handoffJson);
+      auto validation = validateNativePrefillHandoffForDecode(handoff);
+      if (!validation.ok) {
+        TokenChunk err;
+        err.error = validation.error;
+        err.error_code = 501;
+        sendChunk(err);
+        signalDone();
+        return;
+      }
+      applyNativePrefillHandoffToRequest(handoff, *req);
+      TT_LOG_INFO(
+          "[DynamoEndpoint] Native prefill handoff accepted taskId={} "
+          "selected_prefill_id={} migrationId={} mooncake_status={}",
+          req->task_id, handoff.selected_prefill_id, *req->migrationId,
+          handoff.mooncake_status);
+    }
 
     // Reject requests whose prompt exceeds the maximum input sequence length.
     const size_t maxInputSeqLen = tt::config::maxISL();

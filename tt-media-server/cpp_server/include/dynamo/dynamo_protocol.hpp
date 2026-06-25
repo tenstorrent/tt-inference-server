@@ -175,6 +175,10 @@ struct TokenChunk {
   std::optional<uint16_t> error_code;
   /// Populated on the final chunk only; serialized as `completion_usage`.
   std::optional<DynamoUsage> completion_usage;
+  /// Engine-owned payload for Dynamo disaggregated prefill/decode handoff.
+  /// Prefill workers return it; Dynamo injects it into decode requests under
+  /// `prefill_result.disaggregated_params`.
+  Json::Value disaggregated_params;
   /// When non-null, serialized as `engine_data`; the frontend surfaces it on
   /// the response `nvext.engine_data` when the client requests it via
   /// `nvext.extra_fields: ["engine_data"]`.

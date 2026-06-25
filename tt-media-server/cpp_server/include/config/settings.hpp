@@ -353,6 +353,10 @@ std::string dynamoEndpointName();
  * auto, decode, prefill. auto derives from LLM_MODE. */
 std::string dynamoWorkerRole();
 
+/** Enable the experimental Dynamo-native prefill handoff control plane. From
+ * DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED. Default: false. */
+bool dynamoNativePrefillHandoffEnabled();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();

@@ -17,6 +17,11 @@
 # prefill Dynamo endpoint is a discovery stub only; real prefill traffic still
 # uses the cpp_server inter-server socket / PrefillGateway path.
 #
+# Optional native handoff control-plane spike:
+#   DYNAMO_REGISTER_PREFILL=1 DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=1 ./run_stack.sh up
+# Enables the prefill endpoint to return TT handoff metadata in engine_data.
+# Decode still requires Mooncake migration status=complete before continuing.
+#
 # Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; frontend -> /tmp/tt_frontend.log.
 
 set -euo pipefail
@@ -37,6 +42,7 @@ PREFILL_PORT="${PREFILL_PORT:-8002}"     # prefill REST
 SOCKET_PORT="${SOCKET_PORT:-9000}"       # decode<->prefill inter-server socket
 MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
 DYNAMO_REGISTER_PREFILL="${DYNAMO_REGISTER_PREFILL:-0}"
+DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED="${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED:-0}"
 ETCD_NAME="${ETCD_NAME:-etcd}"
 PIDFILE="/tmp/tt_stack.pids"
 
@@ -110,6 +116,7 @@ worker_dynamo_env() {
     echo "DYNAMO_NAMESPACE=default"
     echo "DYNAMO_COMPONENT=backend"
     echo "DYNAMO_ENDPOINT_NAME=generate"
+    echo "DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED}"
 }
 
 prefill_dynamo_env() {
@@ -120,6 +127,7 @@ prefill_dynamo_env() {
     echo "DYNAMO_NAMESPACE=default"
     echo "DYNAMO_COMPONENT=prefill"
     echo "DYNAMO_ENDPOINT_NAME=generate"
+    echo "DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED}"
 }
 
 start_frontend() {

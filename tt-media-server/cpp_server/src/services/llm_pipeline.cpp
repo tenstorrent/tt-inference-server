@@ -486,6 +486,39 @@ void LLMPipeline::dispatchGeneration(
   }
 
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
+    if (request.dynamo_native_prefill_handoff) {
+      if (!request.migrationId.has_value() || !request.kv_position_id.has_value()) {
+        throw std::runtime_error(
+            "Dynamo native prefill handoff requires migrationId and "
+            "kv_position_id");
+      }
+      if (request.dynamo_native_prefill_decode_slot_id.has_value() &&
+          request.slotId.has_value() &&
+          *request.dynamo_native_prefill_decode_slot_id != *request.slotId) {
+        throw std::runtime_error(
+            "Dynamo native prefill handoff decode slot does not match the "
+            "resolved session slot");
+      }
+      if (auto* tokens = std::get_if<std::vector<int>>(&request.prompt);
+          tokens != nullptr && tokens->size() > 1) {
+        const int lastToken = tokens->back();
+        request.prompt.emplace<std::vector<int>>(1, lastToken);
+        request.prompt_tokens_count = 1;
+      }
+      request.disaggregated = true;
+      TT_LOG_INFO(
+          "[LLMPipeline] Using Dynamo-native prefill handoff taskId={} "
+          "migrationId={} kv_position_id={}",
+          request.task_id, *request.migrationId, *request.kv_position_id);
+      service_->submitStreamingRequest(
+          request,
+          stampCachedPromptTokens(cb,
+                                  request.dynamo_native_prefill_cached_tokens
+                                      .value_or(0)),
+          /*skipPreProcess=*/true);
+      return;
+    }
+
     if (shouldDoPrefillOnDecode(request)) {
       // If continuation, trim prompt to only the uncached delta before
       // submitting to the local decode device. The trimmed-off prefix is what

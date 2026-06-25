@@ -276,6 +276,9 @@ std::vector<uint8_t> encode_stream_chunk(const TokenChunk& chunk) {
   if (!chunk.engine_data.isNull()) {
     tokenData["engine_data"] = chunk.engine_data;
   }
+  if (!chunk.disaggregated_params.isNull()) {
+    tokenData["disaggregated_params"] = chunk.disaggregated_params;
+  }
 
   // Annotated<T>: {"data": <token_data>}
   Json::Value annotated(Json::objectValue);

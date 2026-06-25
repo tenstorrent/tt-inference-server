@@ -797,4 +797,9 @@ std::string dynamoWorkerRole() {
   return llmMode() == LLMMode::PREFILL_ONLY ? "prefill" : "decode";
 }
 
+bool dynamoNativePrefillHandoffEnabled() {
+  return envBool("DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED",
+                 defaults::DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED);
+}
+
 }  // namespace tt::config
