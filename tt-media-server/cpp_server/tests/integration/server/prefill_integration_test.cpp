@@ -942,7 +942,7 @@ TEST_F(PrefillIntegrationTest, SlotCopy_SkippedWhenSourceKvNotCommitted) {
 //   A0: seed 3 blocks, COMPLETE          -> committedBlocks = 3
 //   A1: extend to 4 blocks, HIT, IN_FLIGHT (4th block not yet resident)
 //   C : matches all 4 blocks -> copy capped to 3 blocks (96 tokens),
-//       delta = 1 block (32 tokens), kv_position_id = 95.
+//       delta = 1 block (32 tokens), kv_position_id = 96.
 TEST_F(PrefillIntegrationTest, SlotCopy_CapsAtCommittedBlocksDuringExtension) {
   server->setMemoryAutoRespond(false);
 
@@ -1075,10 +1075,10 @@ TEST_F(PrefillIntegrationTest, SlotCopy_CapsAtCommittedBlocksDuringExtension) {
     EXPECT_TRUE(seq->isContinuation()) << "C: must be a slot-copy continuation";
     ASSERT_TRUE(seq->getKVPositionId().has_value());
     // The crux: copy is capped at the 3 RESIDENT blocks (96 tokens), so
-    // kv_position_id = 95 and the 4th block (32 tokens) is prefilled locally.
-    // Without the cap the copy would take all 4 blocks (kv_position_id 127,
-    // 0 delta tokens) and read the uncomputed 4th block.
-    EXPECT_EQ(*seq->getKVPositionId(), 95u)
+    // kv_position_id is the first free KV index and the 4th block (32 tokens)
+    // is prefilled locally. Without the cap the copy would take all 4 blocks
+    // (kv_position_id 128, 0 delta tokens) and read the uncomputed 4th block.
+    EXPECT_EQ(*seq->getKVPositionId(), 96u)
         << "C: copy must stop at the resident prefix (3 blocks = 96 tokens)";
     EXPECT_EQ(seq->getNumPromptTokens(), 32u)
         << "C: the 4th (non-resident) block must be prefilled locally";
