@@ -534,6 +534,85 @@ TemplateAPI.model_call = _tt_model_call
 '''
 
 
+_AIPERF_TRUST_SENTINEL = "# === TT patch: tokenizer trust_remote_code env ==="
+
+# Monkeypatch appended to the END of aiperf/common/tokenizer.py. AIPerf 0.5.0's
+# trace-driven decode (dataset/generator/parallel_decode.py) reloads the
+# tokenizer inside worker processes via Tokenizer.from_pretrained(name) with the
+# default trust_remote_code=False -- it never propagates
+# user_config.tokenizer.trust_remote_code (the --tokenizer-trust-remote-code
+# flag) into the pool. Models whose HF repo ships a custom tokenizer (e.g.
+# moonshotai/Kimi-*) then raise a trust_remote_code ValueError in the worker
+# initializer, which surfaces as BrokenProcessPool on mooncake_trace scenarios.
+# Routing the default through an env var lets the prefix-cache driver opt the
+# whole aiperf process tree in (workers inherit os.environ). Patching the single
+# from_pretrained chokepoint covers the main process, the worker initializer,
+# and the small-batch sequential fallback at once.
+_AIPERF_TRUST_PATCH = '''
+
+# === TT patch: tokenizer trust_remote_code env ===
+# Applied post-install by workflows.workflow_venvs.patch_aiperf_tokenizer_trust_remote_code.
+import os as _tt_os  # noqa: E402
+
+_TT_TRUST_ENV = "AIPERF_TOKENIZER_TRUST_REMOTE_CODE"
+_tt_orig_from_pretrained = Tokenizer.from_pretrained.__func__
+
+
+def _tt_from_pretrained(cls, name, trust_remote_code=False, revision="main"):
+    if not trust_remote_code and _tt_os.environ.get(_TT_TRUST_ENV, "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        trust_remote_code = True
+    return _tt_orig_from_pretrained(
+        cls, name, trust_remote_code=trust_remote_code, revision=revision
+    )
+
+
+Tokenizer.from_pretrained = classmethod(_tt_from_pretrained)
+# === end TT patch ===
+'''
+
+
+def patch_aiperf_tokenizer_trust_remote_code(
+    venv_config: "VenvConfig",
+    model_spec: "ModelSpec",
+) -> bool:
+    """Hook for V2_PREFIX_CACHE: honor trust_remote_code in aiperf decode workers.
+
+    AIPerf 0.5.0 drops ``trust_remote_code`` when it reloads the tokenizer inside
+    the trace-decode process pool, so the ``--tokenizer-trust-remote-code`` flag
+    only fixes synthetic scenarios; mooncake_trace scenarios still die with
+    BrokenProcessPool for custom-tokenizer models (e.g. Kimi). We patch the
+    installed ``Tokenizer.from_pretrained`` to fall back to the
+    ``AIPERF_TOKENIZER_TRUST_REMOTE_CODE`` env var, which the driver sets per
+    model. The patch is appended once (guarded by a sentinel) so it survives as
+    long as the venv exists; venv rebuilds re-apply it.
+    """
+    matches = sorted(
+        venv_config.venv_path.glob(
+            "lib/python*/site-packages/aiperf/common/tokenizer.py"
+        )
+    )
+    if not matches:
+        logger.warning(
+            "Could not locate aiperf/common/tokenizer.py under "
+            f"{venv_config.venv_path}; trust_remote_code patch not applied. "
+            "Trace-driven prefix-cache scenarios may fail for custom-tokenizer "
+            "models (e.g. Kimi)."
+        )
+        return True
+    tokenizer_path = matches[0]
+    text = tokenizer_path.read_text()
+    if _AIPERF_TRUST_SENTINEL in text:
+        logger.info(f"aiperf trust_remote_code patch already present in {tokenizer_path}")
+        return True
+    tokenizer_path.write_text(text + _AIPERF_TRUST_PATCH)
+    logger.info(f"applied aiperf trust_remote_code patch to {tokenizer_path}")
+    return True
+
+
 def patch_evals_common_chat_streaming(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",
@@ -645,6 +724,7 @@ _venv_config_list = [
         requirements_file="v2-prefix-cache.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
+        setup_function=patch_aiperf_tokenizer_trust_remote_code,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.V2_LLM_VLLM,
