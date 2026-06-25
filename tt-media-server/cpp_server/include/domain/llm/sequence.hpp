@@ -46,7 +46,7 @@ class Sequence {
            int decodePositionId = 0, int decodeSkipTokens = 0,
            std::optional<uint64_t> migrationId = std::nullopt,
            bool startsInThinking = false,
-           std::optional<uint64_t> migrationStartPosition = std::nullopt);
+           std::optional<uint32_t> migrationStartPosition = std::nullopt);
 
   void serialize(std::ostream& os) const;
   static Sequence deserialize(std::istream& is);
@@ -97,10 +97,10 @@ class Sequence {
   const std::vector<int>& getBlockTable() const { return blockTable; }
   std::vector<int>& getMutableBlockTable() { return blockTable; }
 
-  std::optional<uint64_t> getMigrationStartPosition() const {
+  std::optional<uint32_t> getMigrationStartPosition() const {
     return migrationStartPosition;
   }
-  void setMigrationStartPosition(uint64_t position) {
+  void setMigrationStartPosition(uint32_t position) {
     migrationStartPosition = position;
   }
 
@@ -151,7 +151,7 @@ class Sequence {
   int decodeSkipTokens = 0;
   // Unique 64-bit ID correlating this sequence with a prefill migration.
   std::optional<uint64_t> migrationId;
-  std::optional<uint64_t> migrationStartPosition;
+  std::optional<uint32_t> migrationStartPosition;
   // Upstream-derived: prompt begins inside an unclosed think block.
   bool startsInThinking_ = false;
 };

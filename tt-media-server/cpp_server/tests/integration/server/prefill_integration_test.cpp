@@ -496,6 +496,7 @@ TEST_F(PrefillIntegrationTest, MultiTurn_SubsequentRequestsAreContinuations) {
     req.temperature = 0.7f;
     req.topP = 0.9f;
     req.registrationHashes = hashes;
+    req.decodeSkipTokens = turn == 1 ? 0 : 100000;
 
     bool sent = mockDecode->send(tt::sockets::tags::PREFILL_REQUEST, req);
     ASSERT_TRUE(sent) << "Turn " << turn << ": failed to send";
@@ -516,6 +517,18 @@ TEST_F(PrefillIntegrationTest, MultiTurn_SubsequentRequestsAreContinuations) {
     // Delta prompt: only the new tokens should be sent (not the full prompt).
     EXPECT_LT(seq->getNumPromptTokens(), baseTokens.size())
         << "Turn " << turn << ": should send delta, not full prompt";
+    ASSERT_TRUE(seq->getKVPositionId().has_value())
+        << "Turn " << turn << ": continuation must set kv_position_id";
+    ASSERT_TRUE(seq->getMigrationStartPosition().has_value())
+        << "Turn " << turn << ": must set migration_start_position";
+    const uint32_t expectedMigrationStart =
+        req.decodeSkipTokens < static_cast<int>(*seq->getKVPositionId())
+            ? 0u
+            : *seq->getKVPositionId();
+    EXPECT_EQ(*seq->getMigrationStartPosition(), expectedMigrationStart)
+        << "Turn " << turn
+        << ": migration_start_position should full-migrate only when decode "
+           "has fewer matched tokens than prefill";
 
     tt::test::WorkerResponse(seq->taskId)
         .tokenWithFlags(42 + turn, tt::ipc::SharedToken::FLAG_FINAL)

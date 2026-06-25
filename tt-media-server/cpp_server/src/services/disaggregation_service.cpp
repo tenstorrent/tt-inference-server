@@ -201,6 +201,16 @@ void DisaggregationService::setupSocketHandlers() {
                     fullPromptTokens >= trimmedPromptTokens
                         ? fullPromptTokens - trimmedPromptTokens
                         : 0);
+                request->migrationStartPosition =
+                    request->decode_skip_tokens < cachedTokens
+                        ? 0u
+                        : static_cast<uint32_t>(cachedTokens);
+                TT_LOG_DEBUG(
+                    "[DisaggregationService] taskId={} "
+                    "migrationStartPosition={} prefillMatchedTokens={} "
+                    "decodeSkipTokens={}",
+                    message.taskId, *request->migrationStartPosition,
+                    cachedTokens, request->decode_skip_tokens);
                 // Capture the resolved sessionId by value:
                 // submitStreamingRequest hands the request to the pipeline, so
                 // request->sessionId is no longer reliable by the time this
