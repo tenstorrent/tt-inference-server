@@ -54,6 +54,38 @@ def _construct_runner(runner_cls, model_path, device, **candidate_kwargs):
     return runner_cls(model_path, device, **kwargs)
 
 
+def _notice_tuned_bundle_available(model_path: str) -> None:
+    """Best-effort courtesy notice: if a curated tt-kernel bundle exists for this id but
+    we're about to run the generic dynamic path, tell the user the tuned path is there.
+
+    Never blocks, never imports the bundle's runner, and swallows every failure (tt_kernel
+    not installed, offline, not a hub id). For a local model directory the Hub is
+    irrelevant, so the probe stays local-only; for a hub id it also checks published
+    bundles (load_model runs once at startup, so a single manifest fetch is acceptable).
+    """
+    try:
+        import tt_kernel
+    except Exception:  # noqa: BLE001 — tt_kernel is an optional integration, not a dep
+        return
+    try:
+        import pathlib
+        local = pathlib.Path(model_path).is_dir()
+        res = tt_kernel.resolve_bundle(model_path, local_only=local)
+        if not res.exists:
+            return
+        where = "installed" if res.installed else f"published — `tt-kernel pull {model_path}`"
+        if res.has_runner:
+            print(f"[dispatch] a tuned tt-kernel bundle exists for {model_path} "
+                  f"(runner {res.runner_spec}, {where}); running the generic dynamic path "
+                  f"instead. Use `tt-kernel run {model_path}` for the author's tuned path.",
+                  flush=True)
+        else:
+            print(f"[dispatch] a tt-kernel kernel-cache bundle is {where} for {model_path}; "
+                  f"precompiled kernels will be used from the on-disk cache.", flush=True)
+    except Exception:  # noqa: BLE001 — a courtesy notice must never break a load
+        return
+
+
 def load_model(
     model_path: str,
     device=None,
@@ -94,6 +126,8 @@ def load_model(
     if runner_cls is None:
         from tt_inference_server.dispatch.runner import TTModelRunner
         runner_cls = TTModelRunner
+        # Generic dynamic path selected — surface a curated bundle if one exists.
+        _notice_tuned_bundle_available(model_path)
     else:
         print(f"[dispatch] runner: {runner_cls.__module__}:{runner_cls.__name__} "
               f"(source={source})", flush=True)
