@@ -204,6 +204,16 @@ download_tokenizer \
     '{"model_type":"kimi_k25","architectures":["KimiK25ForConditionalGeneration"]}' \
     "tiktoken"
 
+# Kimi K2.7-Code (public tiktoken tokenizer + jinja chat template; no
+# tokenizer.json on HF). Same kimi_k25 tokenizer layout as Kimi-K2.6, so it
+# reuses the kimi_k25 -> {kimi_k25, kimi_k2} parser branch in discovery.cpp.
+download_tokenizer \
+    "moonshotai/Kimi-K2.7-Code" \
+    "https://huggingface.co/moonshotai/Kimi-K2.7-Code/resolve/main" \
+    "false" \
+    '{"model_type":"kimi_k25","architectures":["KimiK25ForConditionalGeneration"]}' \
+    "tiktoken"
+
 # GPT-OSS 120B (public, no auth)
 # generation_config.json (fetched best-effort for all models) is important here:
 # config.json declares only eos_token_id=200002, but the full stop set lives in

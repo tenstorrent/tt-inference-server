@@ -200,6 +200,8 @@ std::string tokenizerDirForModel(config::ModelType model) {
   switch (model) {
     case config::ModelType::KIMI_K2_6:
       return "moonshotai/Kimi-K2.6";
+    case config::ModelType::KIMI_K2_7_CODE:
+      return "moonshotai/Kimi-K2.7-Code";
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return "meta-llama/Llama-3.1-8B-Instruct";
     case config::ModelType::GPT_OSS_120B:
@@ -222,8 +224,9 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return std::make_unique<LlamaTokenizer>(path);
     case config::ModelType::KIMI_K2_6:
-      // Kimi K2.6 uses model-specific files, but currently shares the same
-      // chat-template/tool-call behavior as DeepSeek until a dedicated
+    case config::ModelType::KIMI_K2_7_CODE:
+      // Kimi K2.6 / K2.7-Code use model-specific files, but currently share the
+      // same chat-template/tool-call behavior as DeepSeek until a dedicated
       // Kimi tokenizer implementation is added.
       return std::make_unique<DeepseekTokenizer>(path);
     case config::ModelType::GPT_OSS_120B:
@@ -280,6 +283,22 @@ const StaticTokenizerInfo& llama31Info() {
 const StaticTokenizerInfo& kimiK26Info() {
   static const StaticTokenizerInfo kInfo{
       /*modelName=*/"moonshotai/Kimi-K2.6",
+      /*stopTokenIds=*/{163586},
+      /*eosTokenId=*/163585,
+      /*assistantHeaderSequence=*/{163588},
+      /*thinkStartTokenId=*/163606,  // <think>
+      /*thinkEndTokenId=*/163607,    // </think>
+  };
+  return kInfo;
+}
+
+// IDs verified against the fetched Kimi-K2.7-Code tokenizer; identical layout
+// to Kimi-K2.6 (config.json eos_token_id 163586 <|im_end|>, [EOS] 163585,
+// <|im_assistant|> 163588, <think>/</think> 163606/163607). model_type is
+// "kimi_k25", so discovery reuses the existing kimi_k25 parser branch.
+const StaticTokenizerInfo& kimiK27CodeInfo() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"moonshotai/Kimi-K2.7-Code",
       /*stopTokenIds=*/{163586},
       /*eosTokenId=*/163585,
       /*assistantHeaderSequence=*/{163588},
@@ -363,6 +382,8 @@ const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
       return llama31Info();
     case config::ModelType::KIMI_K2_6:
       return kimiK26Info();
+    case config::ModelType::KIMI_K2_7_CODE:
+      return kimiK27CodeInfo();
     case config::ModelType::GPT_OSS_120B:
       return gptOss120bInfo();
     case config::ModelType::MINIMAX_M2_7:
