@@ -16,8 +16,18 @@
 #   SERVER_SERVICE=cpp \
 #     docker compose -f monitoring/docker-compose.yml up -d
 #
+# For a disaggregated deployment (LLM_MODE=prefill + LLM_MODE=decode), point
+# Prometheus at BOTH servers instead. They expose identical metric names and
+# are told apart by a role label; the prefill/decode dashboards filter on it:
+#
+#   PREFILL_TARGET=$(hostname):8001 \
+#   DECODE_TARGET=$(hostname):8000 \
+#     docker compose -f monitoring/docker-compose.yml up -d
+#
 # SERVER_TARGET defaults to 'tt-inference-server:8000'.
 # SERVER_SERVICE defaults to 'python' (kept for backwards compat).
+# PREFILL_TARGET defaults to 'tt-prefill-server:8001' (down when unused → no series).
+# DECODE_TARGET  defaults to 'tt-decode-server:8000'  (down when unused → no series).
 # GATEWAY_TARGET defaults to 'prefill-gateway:9091'.
 # Open Grafana at http://localhost:3000  (admin / admin)
 
@@ -31,6 +41,8 @@ services:
     environment:
       - SERVER_TARGET=${SERVER_TARGET:-tt-inference-server:8000}
       - SERVER_SERVICE=${SERVER_SERVICE:-python}
+      - PREFILL_TARGET=${PREFILL_TARGET:-tt-prefill-server:8001}
+      - DECODE_TARGET=${DECODE_TARGET:-tt-decode-server:8000}
       - GATEWAY_TARGET=${GATEWAY_TARGET:-prefill-gateway:9091}
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -41,7 +53,7 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
-        sed "s|__SERVER_TARGET__|$$SERVER_TARGET|g; s|__SERVER_SERVICE__|$$SERVER_SERVICE|g; s|__GATEWAY_TARGET__|$$GATEWAY_TARGET|g"
+        sed "s|__SERVER_TARGET__|$$SERVER_TARGET|g; s|__SERVER_SERVICE__|$$SERVER_SERVICE|g; s|__PREFILL_TARGET__|$$PREFILL_TARGET|g; s|__DECODE_TARGET__|$$DECODE_TARGET|g; s|__GATEWAY_TARGET__|$$GATEWAY_TARGET|g"
         /etc/prometheus/prometheus.yml.tmpl > /tmp/prometheus.yml
         && exec /bin/prometheus
         --config.file=/tmp/prometheus.yml
