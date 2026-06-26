@@ -581,6 +581,7 @@ add_library(transport_lib
     src/transport/umd_device_access.cpp
     src/transport/mooncake_transfer_engine.cpp
     src/transport/mooncake_migration_worker.cpp
+    src/transport/peer_discovery_service.cpp
     src/utils/logger.cpp
 )
 target_include_directories(transport_lib PUBLIC
@@ -638,11 +639,20 @@ if(TARGET transfer_engine)
 
     # #4209 migration-worker discovery PoC (see src/transport/README.md).
     add_executable(migration_worker_discovery
-        tests/integration/migration_worker_discovery.cpp)
+        tests/e2e/migration_worker_discovery.cpp)
     target_link_libraries(migration_worker_discovery PRIVATE transport_lib)
     target_include_directories(migration_worker_discovery PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
     message(STATUS "migration_worker_discovery: ENABLED (#4209 discovery PoC)")
+
+    # #4294 production worker entry point: phased startup that registers a
+    # host-DRAM pool and discovers its peers via MooncakeMigrationWorker.
+    add_executable(bringup_mooncake_worker
+        src/transport/bringup_mooncake_worker.cpp)
+    target_link_libraries(bringup_mooncake_worker PRIVATE transport_lib)
+    target_include_directories(bringup_mooncake_worker PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    message(STATUS "bringup_mooncake_worker: ENABLED (#4294 production worker)")
 endif()
 
 # Unit tests (link llm_runner_lib)
@@ -1031,6 +1041,26 @@ gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(health_controller_test)
 gtest_discover_tests(image_generate_request_test)
 gtest_discover_tests(media_payload_ipc_test)
+
+# MPI discovery e2e test: launches 4 prefill + 16 decode
+# bringup_mooncake_worker processes on one host and checks every worker
+# discovers its peers. Needs the Mooncake-built worker target plus mpirun, so it
+# only registers when both are present (skipped on the metal-less unit lane).
+if(TARGET bringup_mooncake_worker)
+    find_program(MPIEXEC_EXECUTABLE NAMES mpirun mpiexec)
+    if(MPIEXEC_EXECUTABLE)
+        add_test(NAME MooncakeMpiDiscovery
+            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_migration_workers_mpi.sh
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+        set_tests_properties(MooncakeMpiDiscovery PROPERTIES
+            TIMEOUT 180
+            RESOURCE_LOCK integration_server
+            ENVIRONMENT "WORKER_BIN=$<TARGET_FILE:bringup_mooncake_worker>")
+        message(STATUS "MooncakeMpiDiscovery: ENABLED (#4294 MPI e2e test)")
+    else()
+        message(STATUS "MooncakeMpiDiscovery: SKIPPED (mpirun/mpiexec not found)")
+    endif()
+endif()
 
 add_executable(apply_delta_prompt_test tests/unit/model/apply_delta_prompt_test.cpp)
 target_link_libraries(apply_delta_prompt_test PRIVATE GTest::gtest_main llm_runner_lib)

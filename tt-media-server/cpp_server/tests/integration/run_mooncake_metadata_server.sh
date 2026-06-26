@@ -33,6 +33,15 @@ fi
 MOON_DIR="$(pip show mooncake-transfer-engine 2>/dev/null \
   | awk -F': ' '/^Location/{print $2}')/mooncake"
 SERVER_PY="${MOON_DIR}/http_metadata_server.py"
+
+# Fall back to the in-tree wheel when the package isn't pip-installed (e.g. a
+# Mooncake build that vendors the wheel without installing it).
+if [[ ! -f "${SERVER_PY}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  REPO_SERVER_PY="${SCRIPT_DIR}/../../third_party/Mooncake/mooncake-wheel/mooncake/http_metadata_server.py"
+  [[ -f "${REPO_SERVER_PY}" ]] && SERVER_PY="${REPO_SERVER_PY}"
+fi
+
 if [[ ! -f "${SERVER_PY}" ]]; then
   echo "ERROR: http_metadata_server.py not found at ${SERVER_PY}." >&2
   echo "Install the wheel: pip install mooncake-transfer-engine==0.3.6.post1 aiohttp" >&2
