@@ -113,12 +113,38 @@ class BGELargeENRunner(EmbeddingRunner):
 
 
 class BGEM3Runner(EmbeddingRunner):
-    """Dense-only BGE-M3 embedding runner."""
+    """Dense-only BGE-M3 embedding runner.
+
+    Supports two backends, selected by the device config's ``is_galaxy``:
+
+      * **single chip** (``is_galaxy=False``, e.g. P150 / one chip of a BH
+        Galaxy): the optimized ``BgeM3ForEmbeddingOptimized`` wrapper, fixed to
+        batch 1 / ISL 512 / CLS pooling / bfloat8_b with on-device pooling +
+        trace replay. Returns a bare ``[B, HIDDEN]`` dense tensor.
+      * **galaxy / multi-chip** (``is_galaxy=True``): the original
+        ``BgeM3ForEmbedding`` (multi-batch, data-parallel across the mesh),
+        sized from the device config. Returns a dict; we take ``dense_vecs``.
+
+    This lets the same runner serve single-chip and galaxy machines without
+    code changes -- just point ``DEVICE`` at the matching config.
+    """
+
+    # Optimized single-chip wrapper is specialized to this fixed shape.
+    _OPT_MAX_BATCH = 1
+    _OPT_MAX_SEQ_LEN = 512
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
-        self.max_model_len = self.settings.vllm.max_model_length
-        self.max_num_seqs = self.settings.vllm.max_num_seqs
+        # ``is_galaxy`` comes from the resolved device config (settings).
+        self._is_galaxy = bool(getattr(self.settings, "is_galaxy", False))
+        if self._is_galaxy:
+            # Multi-chip: honor the device-config sizes.
+            self.max_model_len = self.settings.vllm.max_model_length
+            self.max_num_seqs = self.settings.vllm.max_num_seqs
+        else:
+            # Single chip: the optimized wrapper is fixed to B1/S512.
+            self.max_model_len = self._OPT_MAX_SEQ_LEN
+            self.max_num_seqs = self._OPT_MAX_BATCH
         self.model_name = SupportedModels.BGE_M3.value
         self.tokenizer = EmbeddingTokenizer(self.model_name)
 
@@ -139,19 +165,37 @@ class BGEM3Runner(EmbeddingRunner):
             attention_mask=tokenized.get("attention_mask"),
         )
         ttnn.synchronize_device(self.ttnn_device)
-        return super()._process_result(result["dense_vecs"], requests, token_counts)
+        # The optimized single-chip wrapper returns a bare [B, HIDDEN] dense
+        # tensor; the galaxy model returns a dict with sparse/colbert/dense.
+        dense = result["dense_vecs"] if isinstance(result, dict) else result
+        return super()._process_result(dense, requests, token_counts)
 
     def _load_model(self):
-        self.logger.info(f"Device {self.device_id}: Loading model...")
-        from models.demos.wormhole.bge_m3.demo.generator_vllm import BgeM3ForEmbedding
-
-        self.model = BgeM3ForEmbedding(
-            device=self.ttnn_device,
-            max_batch_size=self.settings.max_batch_size,
-            max_seq_len=self.max_model_len,
-            dtype=ttnn.bfloat8_b,
-            model_name=self.model_name,
+        self.logger.info(
+            f"Device {self.device_id}: Loading model (is_galaxy={self._is_galaxy})..."
         )
+        if self._is_galaxy:
+            from models.demos.wormhole.bge_m3.demo.generator_vllm import BgeM3ForEmbedding
+
+            self.model = BgeM3ForEmbedding(
+                device=self.ttnn_device,
+                max_batch_size=self.settings.max_batch_size,
+                max_seq_len=self.max_model_len,
+                dtype=ttnn.bfloat8_b,
+                model_name=self.model_name,
+            )
+        else:
+            from models.demos.wormhole.bge_m3.demo.generator_vllm_optimized import (
+                BgeM3ForEmbeddingOptimized,
+            )
+
+            self.model = BgeM3ForEmbeddingOptimized(
+                device=self.ttnn_device,
+                max_batch_size=self._OPT_MAX_BATCH,
+                max_seq_len=self._OPT_MAX_SEQ_LEN,
+                dtype=ttnn.bfloat8_b,
+                model_name=self.model_name,
+            )
         self.logger.info(f"Device {self.device_id}: Model loaded successfully")
 
 

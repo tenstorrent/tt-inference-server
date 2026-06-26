@@ -1295,6 +1295,49 @@ ModelConfigs = {
         "default_throttle_level": 0,
         "use_queue_per_worker": True,
     },
+    # Single Blackhole chip (P150 / one chip of a BH Galaxy via
+    # TT_VISIBLE_DEVICES=0). Tuned for the optimized wrapper
+    # (BgeM3ForEmbeddingOptimized), which is fixed to batch 1 / ISL 512 / CLS
+    # pooling on one chip. is_galaxy=False so the Wormhole galaxy mesh config
+    # (n150 descriptor + 7,7 core grid override) is NOT applied to the BH chip.
+    (ModelRunners.BGEM3, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 512,
+            "max_num_batched_tokens": 512,
+            "min_context_length": 8,
+            "max_num_seqs": 1,
+        },
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
+        "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
+    # Blackhole Galaxy as 32 INDEPENDENT single-chip replicas (process data
+    # parallel). Each of the 32 workers binds one chip and runs the optimized
+    # wrapper (BgeM3ForEmbeddingOptimized: B1/S512/CLS). is_galaxy=False so the
+    # Wormhole galaxy mesh override is NOT applied and the fast single-chip path
+    # is used per worker -- same architecture as serve.py --dp 32 (good latency,
+    # full 32-chip throughput), unlike the single-mesh GALAXY config above.
+    (ModelRunners.BGEM3, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "max_batch_size": 1,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 512,
+            "max_num_batched_tokens": 512,
+            "min_context_length": 8,
+            "max_num_seqs": 1,
+        },
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
+        "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
     (ModelRunners.VLLMForge, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
