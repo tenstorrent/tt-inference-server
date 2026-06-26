@@ -676,6 +676,20 @@ target_include_directories(transport_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(dynamo_protocol_test
+    tests/unit/dynamo/dynamo_protocol_test.cpp
+    src/dynamo/dynamo_protocol.cpp
+    src/utils/logger.cpp
+)
+target_link_libraries(dynamo_protocol_test PRIVATE
+    Drogon::Drogon
+    JsonCpp::JsonCpp
+    spdlog::spdlog
+    GTest::gtest_main)
+target_include_directories(dynamo_protocol_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 if(ENABLE_BLAZE)
     add_executable(blaze_decode_runner_test
         tests/integration/runners/blaze_decode_runner_test.cpp
@@ -1020,6 +1034,7 @@ set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2E
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(transport_test)
+gtest_discover_tests(dynamo_protocol_test)
 if(ENABLE_BLAZE)
     gtest_discover_tests(blaze_decode_runner_test)
     gtest_discover_tests(blaze_prefill_runner_test)
