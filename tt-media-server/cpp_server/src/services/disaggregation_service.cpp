@@ -366,10 +366,11 @@ void DisaggregationService::resolvePrefillSession(
     // in-flight hold (see clearInFlight below).
     request->sessionId = acquired->sessionId;
     request->continuation = true;
+    request->kv_position_id = acquired->numberOfMatchedTokens;
     session_resolution::applyDeltaPrompt(
         *request, acquired->numberOfMatchedTokens,
         {.skipUnlessRegularMode = false,
-         .setKvPositionId = true,
+         .setKvPositionId = false,
          .logPrefix = "[DisaggregationService]"});
     sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
     // Eagerly drop any resident tail past the common prefix: this turn's

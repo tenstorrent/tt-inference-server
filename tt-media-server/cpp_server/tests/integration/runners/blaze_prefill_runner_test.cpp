@@ -79,8 +79,7 @@ TEST(BlazePrefillRunnerIntegrationTest,
   expectNoDecodeTokens(producedTokens);
 }
 
-TEST(BlazePrefillRunnerIntegrationTest,
-     ContinuationWithoutKvPositionUsesDecodePositionAndCompletes) {
+TEST(BlazePrefillRunnerIntegrationTest, ContinuationWithKvPositionCompletes) {
   BlazePrefillRunnerHarness harness;
 
   constexpr uint32_t seedTaskId = 1303;
@@ -108,7 +107,7 @@ TEST(BlazePrefillRunnerIntegrationTest,
       /*prefillSlotId=*/allocateResponse.slotId, /*continuation=*/true,
       /*disaggregated=*/false,
       std::make_unique<domain::llm::SamplingParams>(samplingParams),
-      /*kvPositionId=*/std::nullopt, /*decodePositionId=*/32,
+      /*kvPositionId=*/32, /*decodePositionId=*/32,
       /*decodeSkipTokens=*/32, /*migrationId=*/std::nullopt);
 
   harness.taskQueue().push(continuation);
@@ -118,7 +117,7 @@ TEST(BlazePrefillRunnerIntegrationTest,
 
   ASSERT_FALSE(continuationTokens.empty());
   EXPECT_FALSE(continuationTokens.back().isError())
-      << "Continuation should use decodePositionId as scheduler position_id";
+      << "Continuation should use kvPositionId as scheduler position_id";
   EXPECT_TRUE(continuationTokens.back().isFinal());
 }
 

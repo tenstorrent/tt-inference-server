@@ -100,8 +100,6 @@ inline void fillSequenceFields(sch::ISRequest& req,
   req.gen = makeGenerationParams(seq);
   if (seq.getKVPositionId().has_value()) {  // override position id
     req.position_id = *seq.getKVPositionId();
-  } else if (seq.isContinuation() && seq.getDecodePositionId() > 0) {
-    req.position_id = static_cast<uint32_t>(seq.getDecodePositionId());
   }
   postProcessSamplingParams(req.gen);
 }
