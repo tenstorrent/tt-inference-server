@@ -163,10 +163,13 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 #   - CUDA-only packages never used on TT hardware
 #   - Packages from tt-metal's create_venv.sh not imported by tt-media-server
 # Keep: ctranslate2, onnxruntime (real whisperx deps used in audio_manager.py)
-# opencv note: whisperx pulls opencv-python (full GUI build) as a transitive dep,
-#   while tt-metal's venv already has opencv-python-headless. Having both installed
-#   simultaneously produces a broken cv2 (IMREAD_COLOR missing). Remove the full
-#   GUI build; keep headless which is correct for a display-less server.
+# opencv note: opencv-python (full GUI build, pulled transitively by whisperx) and
+#   opencv-python-headless (shipped by tt-metal's venv) install into the SAME cv2/
+#   directory and are mutually exclusive. When both are present their file records
+#   overlap, so uninstalling either one deletes the shared cv2/ files and leaves the
+#   survivor as dead metadata (No module named 'cv2'). To guarantee a single clean
+#   install we uninstall BOTH variants and then reinstall only the headless build,
+#   which is the correct variant for a display-less server (and smaller).
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && CUDA_PKGS=\$(uv pip list 2>/dev/null | grep -i '^nvidia-' | awk '{print \$1}' | tr '\n' ' ') \
     && if [ -n \"\${CUDA_PKGS}\" ]; then \
@@ -186,8 +189,9 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
         bokeh \
         dash \
         llvmlite \
-        opencv-python \
-        2>/dev/null || true"
+        2>/dev/null || true \
+    && uv pip uninstall --yes opencv-python opencv-python-headless 2>/dev/null || true \
+    && uv pip install --no-cache-dir opencv-python-headless"
 
 # Fix GPG keys before installing cpp_server dependencies
 RUN apt-get clean && rm -rf /var/lib/apt/lists/* \
