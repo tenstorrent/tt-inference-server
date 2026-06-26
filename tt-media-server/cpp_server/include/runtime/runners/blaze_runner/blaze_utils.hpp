@@ -178,10 +178,6 @@ inline sch::ISRequest makeContinueRequest(
   req.dest_slot_id = destSlotId;
   req.migration_uuid = seq.getMigrationId();
   fillSequenceFields(req, seq);
-  if (tt::config::LLMConfig().runner_type ==
-      tt::config::ModelRunnerType::MOCK_PIPELINE) {
-    req.gen.await_kv_migration = false;
-  }
   return req;
 }
 
@@ -330,7 +326,7 @@ makeMigrationClientInterface(const tt::config::LLMConfig& config) {
           "--blaze-with-migration");
 #endif
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
-      return std::make_unique<sch::MockMigrationClient>(/*autoAck=*/true);
+      return std::make_unique<sch::MockMigrationClient>();
     default:
       throw std::runtime_error("Invalid blaze decode runner type");
   }
