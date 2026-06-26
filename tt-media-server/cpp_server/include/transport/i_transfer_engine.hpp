@@ -73,6 +73,19 @@ class ITransferEngine {
   virtual SegmentHandle openSegment(const std::string& segmentName) = 0;
 
   /**
+   * @brief Force-refresh a peer's segment descriptor from the metadata service
+   *        and return its (possibly new) handle.
+   *
+   * After a peer restarts on a fresh dynamic port it re-publishes under the
+   * same logical name with a new address. RDMA force-updates the cached
+   * descriptor on its own retry path, but TCP reads a stale cached descriptor
+   * and would keep targeting the dead address. Senders call this after a
+   * transfer fails to pick up the peer's current address before retrying.
+   * @return a usable handle, or kInvalidSegment if the peer is unresolvable.
+   */
+  virtual SegmentHandle refreshSegment(const std::string& segmentName) = 0;
+
+  /**
    * @brief Submit a single transfer and block until it completes or fails.
    *
    * Convenience over the batched Mooncake API for the PoC's one-tensor path.
