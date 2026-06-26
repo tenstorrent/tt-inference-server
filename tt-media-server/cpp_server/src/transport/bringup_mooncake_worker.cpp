@@ -23,6 +23,11 @@
 //      MooncakeMigrationWorker has zero Kafka surface area — the only file
 //      that knows about Kafka in this binary is this one.
 //
+//      Workers that should not consume requests (e.g. decode-side peers in
+//      a prefill→decode topology) pass --no-kafka. They skip Kafka client
+//      construction entirely and just hold open their Mooncake segment
+//      until SIGTERM via a heartbeat-only idle loop.
+//
 // The main thread is the consumer thread; it polls Kafka with a short
 // timeout that also paces the periodic "still alive" heartbeat. On
 // SIGTERM/SIGINT the stop flag flips, the loop exits, and stack-scope
@@ -41,6 +46,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "config/defaults.hpp"
@@ -84,6 +90,10 @@ struct WorkerConfig {
   std::size_t host_dram_bytes = K_DEFAULT_HOST_DRAM_BYTES;
   int discovery_timeout_sec = K_DEFAULT_DISCOVERY_TIMEOUT_SEC;
   TransportProtocol protocol = TransportProtocol::Tcp;
+  // When false (--no-kafka), the worker brings Mooncake up and then idles
+  // until SIGTERM without ever creating Kafka clients. Used for receiver
+  // roles in a prefill→decode topology.
+  bool kafka_enabled = true;
 };
 
 std::atomic<bool> g_stopRequested{false};
@@ -108,6 +118,7 @@ void usage() {
          "  [--host-dram-bytes N]  pool size, page-aligned (default 4 GiB)\n"
          "  [--protocol tcp|rdma]  transport (default tcp)\n"
          "  [--discovery-timeout-sec S] (default 30)\n"
+         "  [--no-kafka]           skip Kafka clients; idle after bring-up\n"
          "\n"
          "Multi-NIC hosts: set MC_TCP_BIND_ADDRESS to the IP peers connect "
          "to.\n";
@@ -237,6 +248,10 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
       }
       continue;
     }
+    if (a == "--no-kafka") {
+      cfg.kafka_enabled = false;
+      continue;
+    }
     std::cerr << "unknown/incomplete arg: " << a << "\n";
     return false;
   }
@@ -325,6 +340,19 @@ void handleMigrationRequest(const std::string& raw,
   }
 }
 
+void emitHeartbeatIfDue(
+    const std::string& workerName, const MooncakeMigrationWorker& worker,
+    std::chrono::steady_clock::time_point startTime,
+    std::chrono::steady_clock::time_point& nextHeartbeat) {
+  const auto now = std::chrono::steady_clock::now();
+  if (now < nextHeartbeat) return;
+  const auto upSec =
+      std::chrono::duration_cast<std::chrono::seconds>(now - startTime).count();
+  TT_LOG_INFO("[bringup] '{}' alive — {} peers, up {}s", workerName,
+              worker.peers().size(), upSec);
+  nextHeartbeat = now + std::chrono::seconds(K_HEARTBEAT_SEC);
+}
+
 // Single-threaded poll loop: drains migration requests from Kafka and emits a
 // "still alive" heartbeat every K_HEARTBEAT_SEC. receive()'s timeout also paces
 // stop-flag responsiveness (a SIGTERM is honored within K_KAFKA_POLL_MS).
@@ -340,16 +368,21 @@ void runMigrationLoop(const std::string& workerName,
     if (auto raw = requestConsumer.receive(K_KAFKA_POLL_MS); raw.has_value()) {
       handleMigrationRequest(*raw, worker, ackProducer);
     }
+    emitHeartbeatIfDue(workerName, worker, startTime, nextHeartbeat);
+  }
+}
 
-    const auto now = std::chrono::steady_clock::now();
-    if (now >= nextHeartbeat) {
-      const auto upSec =
-          std::chrono::duration_cast<std::chrono::seconds>(now - startTime)
-              .count();
-      TT_LOG_INFO("[bringup] '{}' alive — {} peers, up {}s", workerName,
-                  worker.peers().size(), upSec);
-      nextHeartbeat = now + std::chrono::seconds(K_HEARTBEAT_SEC);
-    }
+// No-Kafka path: hold open the Mooncake segment until SIGTERM. Receiver-role
+// workers (e.g. decode peers in a prefill→decode topology) take this branch so
+// they don't compete with prefill workers for Kafka requests.
+void runIdleLoop(const std::string& workerName, MooncakeMigrationWorker& worker,
+                 const std::atomic<bool>& stopRequested) {
+  const auto startTime = std::chrono::steady_clock::now();
+  auto nextHeartbeat = startTime + std::chrono::seconds(K_HEARTBEAT_SEC);
+
+  while (!stopRequested.load()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(K_KAFKA_POLL_MS));
+    emitHeartbeatIfDue(workerName, worker, startTime, nextHeartbeat);
   }
 }
 
@@ -381,6 +414,15 @@ int main(int argc, char** argv) {
   if (!worker.bringUp(g_stopRequested)) {
     TT_LOG_ERROR("[bringup] '{}' bring-up failed", cli.name);
     return 1;
+  }
+
+  if (!cli.kafka_enabled) {
+    TT_LOG_INFO(
+        "[bringup] '{}' READY ({} peers); Kafka disabled — entering idle loop",
+        cli.name, worker.peers().size());
+    runIdleLoop(cli.name, worker, g_stopRequested);
+    TT_LOG_INFO("[bringup] '{}' stopping", cli.name);
+    return 0;
   }
 
   const auto kafka = loadKafkaConfig();
