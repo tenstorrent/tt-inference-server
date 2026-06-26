@@ -265,10 +265,9 @@ void DisaggregationService::setupSocketHandlers() {
                                 reason, response.error.value_or("error"));
                       } else {
                         prefillResult.remainingTokens =
-                            maxTokens.has_value()
-                                ? std::optional<int>(
-                                      std::max(0, maxTokens.value()))
-                                : std::nullopt;
+                            maxTokens.has_value() ? std::optional<int>(std::max(
+                                                        0, maxTokens.value()))
+                                                  : std::nullopt;
                         prefillResult.tokenIds.insert(
                             prefillResult.tokenIds.end(),
                             message.tokenIds.begin(), message.tokenIds.end());
