@@ -248,8 +248,8 @@ int main(int argc, char** argv) {
   auto discovery = std::make_shared<PeerDiscoveryService>(PeerDiscoveryConfig{
       K_DISCOVERY_POLL_INTERVAL_MS, cli.discovery_timeout_sec});
 
-  MooncakeMigrationWorker worker(toWorkerConfig(cli), std::move(engine),
-                                 std::move(discovery));
+  MooncakeMigrationWorker worker{toWorkerConfig(cli), std::move(engine),
+                                 std::move(discovery)};
 
   // Pass the stop flag into bring-up too, so a SIGTERM/SIGINT during discovery
   // aborts promptly instead of blocking until the discovery timeout.

@@ -112,7 +112,7 @@ TEST(MooncakeTransferEngine, ComposesStorageBackend) {
 // init() touches the network/metadata service, so that path is exercised by
 // the integration tests instead.
 TEST(MooncakeTransferEngine, MethodsReportFailureWithoutMooncake) {
-  MooncakeTransferEngine engine(std::make_shared<HostDramStorageBackend>());
+  MooncakeTransferEngine engine{std::make_shared<HostDramStorageBackend>()};
   EXPECT_FALSE(engine.init(EngineConfig{}));
 
   std::vector<uint8_t> buffer(64, 0);
@@ -378,7 +378,7 @@ TEST(MooncakeMigrationWorker, BringUpRegistersBeforeConnecting) {
   cfg.host_dram_bytes = 4096;
   cfg.peer_segment_names = {"peer-0"};
 
-  MooncakeMigrationWorker worker(cfg, engine, fastDiscoveryService(5));
+  MooncakeMigrationWorker worker{cfg, engine, fastDiscoveryService(5)};
   ASSERT_TRUE(worker.bringUp());
   EXPECT_EQ(worker.peers().size(), 1u);
   EXPECT_EQ(engine->registerCount, 1);
@@ -405,7 +405,7 @@ TEST(MooncakeMigrationWorker, BringUpRejectsBadConfig) {
   auto engine = std::make_shared<FakeTransferEngine>();
   MigrationWorkerConfig zeroPool = cfg;
   zeroPool.host_dram_bytes = 0;
-  MooncakeMigrationWorker worker(zeroPool, engine, fastDiscoveryService(5));
+  MooncakeMigrationWorker worker{zeroPool, engine, fastDiscoveryService(5)};
   EXPECT_FALSE(worker.bringUp());
   EXPECT_EQ(engine->registerCount, 0);  // nothing allocated/published
 }
@@ -440,7 +440,7 @@ TEST(MooncakeMigrationWorker, BringUpUnwindsWhenDiscoveryTimesOut) {
   cfg.segment_name = "self";
   cfg.peer_segment_names = {"ghost"};
 
-  MooncakeMigrationWorker worker(cfg, engine, fastDiscoveryService(0));
+  MooncakeMigrationWorker worker{cfg, engine, fastDiscoveryService(0)};
   EXPECT_FALSE(worker.bringUp());
   EXPECT_EQ(engine->registerCount, 1);
   EXPECT_EQ(engine->unregisterCount, 1);  // teardown unwound the publish
@@ -453,7 +453,7 @@ TEST(MooncakeMigrationWorker, BringUpWithNoPeersIsReady) {
   cfg.host_dram_bytes = 4096;
   cfg.segment_name = "self";  // no peer_segment_names
 
-  MooncakeMigrationWorker worker(cfg, engine, fastDiscoveryService(5));
+  MooncakeMigrationWorker worker{cfg, engine, fastDiscoveryService(5)};
   EXPECT_TRUE(worker.bringUp());
   EXPECT_TRUE(worker.peers().empty());
   EXPECT_EQ(engine->registerCount, 1);
@@ -470,7 +470,7 @@ TEST(MooncakeMigrationWorker, RunStopsAndTearsDownOnce) {
   cfg.peer_segment_names = {"peer-0"};
 
   {
-    MooncakeMigrationWorker worker(cfg, engine, fastDiscoveryService(5));
+    MooncakeMigrationWorker worker{cfg, engine, fastDiscoveryService(5)};
     ASSERT_TRUE(worker.bringUp());
     std::atomic<bool> stop{true};  // already requested -> returns immediately
     worker.run(stop);
