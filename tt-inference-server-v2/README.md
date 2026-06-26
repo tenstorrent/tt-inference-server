@@ -247,11 +247,39 @@ selects the per-workflow venv externally for image-model runs, keeping venv
 selection out of `run.py`.
 
 Scenarios (`shared_system`, `prefix_pool`, `multi_turn`, `baseline`,
-`mooncake_trace`) and per-preset grids are JSON-defined and overridable with
-`--prefix-cache-scenarios-json`. Override the mooncake trace input with
-`--prefix-cache-trace`; the in-tree fixture at
+`mooncake_trace`) and per-preset grids (`ci`, `full`, `highcache_50k`) are
+JSON-defined and overridable with `--prefix-cache-scenarios-json`. Override the
+mooncake trace input with `--prefix-cache-trace`; the in-tree fixture at
 [`llm_module/prefix_cache/sample_traces/ci_mooncake.jsonl`](llm_module/prefix_cache/sample_traces/ci_mooncake.jsonl)
 ships with the repo for reproducible CI runs.
+
+### `highcache_50k` preset (trillion-scale customer shape)
+
+`--prefix-cache-preset highcache_50k` encodes a high-reuse, large-context
+serving shape: a **50K shared (cacheable) system prefix + 5K new ISL + 500 OSL
+at concurrency 32** (one SC16 decode unit). The shared prefix is sent as an
+identical system message across every session, so once warm the per-session KV
+cache hit-rate is `50000 / (50000 + 5000) = ~90.9%` — meeting the ≥ 90% target —
+and total input is ~55K tokens/request. It expands to two runs:
+
+- `shared_system` (`shared_system_prompt_length=50000`, 100% prefix reuse), and
+- a matched zero-prefix `baseline` (same 5K ISL / 500 OSL / c32) so the report's
+  *Uplift vs baseline* table isolates the TTFT P50/P90/P99 improvement
+  attributable to prefix caching.
+
+`request_count=256` (8 waves of 32) gives usable TTFT percentiles including a
+rough P99; bump it in
+[`llm_module/prefix_cache/manifest.json`](llm_module/prefix_cache/manifest.json)
+for a tighter P99. Pair it with `--prefix-cache-metrics-url` (below) so the
+worker `tt_prefix_cache_*` counters populate the hit-rate column:
+
+```bash
+python tt-inference-server-v2/run_prefix_cache.py \
+    --model <trillion-class-model> --workflow benchmarks --device tt \
+    --service-port 8000 --prefix-cache --prefix-cache-preset highcache_50k \
+    --prefix-cache-metrics-url <cpp_server-worker-host:port> \
+    --jwt-secret "$JWT_SECRET"
+```
 
 By default AIPerf auto-derives the `/metrics` scrape from the load target
 (`--service-port`). In a Dynamo deployment that target is the prefix-unaware
