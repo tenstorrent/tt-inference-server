@@ -1,4 +1,4 @@
-# FLUX.1-dev Tenstorrent Support on BH QuietBox 2
+# Z-Image-Turbo Tenstorrent Support on BH QuietBox 2
 
 #### Useful links
 
@@ -6,14 +6,7 @@
 - [Search other image models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`FLUX.1-dev` is also supported on hardware:
-
-- [WH Galaxy](FLUX.1-dev_galaxy.md)
-- [BH LoudBox](FLUX.1-dev_p150x8.md)
-- [BH 4xP150](FLUX.1-dev_p150x4.md)
-- [WH LoudBox/QuietBox](FLUX.1-dev_t3k.md)
-
-## Quickstart - Deploy FLUX.1-dev Inference Server on BH QuietBox 2
+## Quickstart - Deploy Z-Image-Turbo Inference Server on BH QuietBox 2
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
@@ -22,7 +15,7 @@ This model is supported by [tt-media-server](../../../tt-media-server/README.md)
 **via run.py command**
 
 ```bash
-python3 run.py --model FLUX.1-dev --device p300x2 --workflow server --docker-server
+python3 run.py --model Z-Image-Turbo --device p300x2 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -30,8 +23,8 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 
 | Parameter | Value |
 |-----------|-------|
-| Weights | [black-forest-labs/FLUX.1-dev](https://huggingface.co/black-forest-labs/FLUX.1-dev) |
-| Model Status | 🟢 Complete |
+| Weights | [Tongyi-MAI/Z-Image-Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) |
+| Model Status | 🟡 Functional |
 | Max Batch Size | 1 |
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers) |
 | tt-metal Commit | `8c48a10` |
