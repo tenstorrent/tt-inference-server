@@ -224,7 +224,8 @@ int runSender(const Options& o) {
   wcfg.peer_segment_name = peerName;
   wcfg.device_addr = storage.device_addr;
   wcfg.tensor_bytes = o.bytes;
-  MooncakeMigrationWorker worker(wcfg, engine);
+  // Discovery is unused here — this PoC drives the data-plane spike directly.
+  MooncakeMigrationWorker worker{wcfg, engine, /*discovery=*/nullptr};
 
   const std::vector<std::uint8_t> pattern = makePattern(o.bytes);
   if (!worker.writeTensorOnSender(pattern)) {
@@ -360,7 +361,8 @@ int runReceiver(const Options& o) {
   wcfg.role = MigrationRole::Receiver;
   wcfg.device_addr = storage.device_addr;
   wcfg.tensor_bytes = o.bytes;
-  MooncakeMigrationWorker worker(wcfg, engine);
+  // Discovery is unused here — this PoC drives the data-plane spike directly.
+  MooncakeMigrationWorker worker{wcfg, engine, /*discovery=*/nullptr};
 
   const std::vector<std::uint8_t> expected = makePattern(o.bytes);
   const bool ok = worker.verifyTensorOnReceiver(expected);
