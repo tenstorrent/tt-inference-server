@@ -142,6 +142,7 @@ def get_media_server_docker_env_vars(model_spec):
 
     env_vars = {
         "CACHE_ROOT": "/home/container_app_user/cache_root",  # TODO: remove this
+        "HF_HOME": "/home/container_app_user/cache_root/huggingface",  # Keep HF weight cache on the persistent cache_root volume
         "MODEL": model_spec.model_name,
         "DEVICE": model_spec.device_type.name.lower(),
     }

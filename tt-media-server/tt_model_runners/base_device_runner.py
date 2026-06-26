@@ -28,8 +28,15 @@ class BaseDeviceRunner(ABC):
                 num_torch_threads = 16 if self.settings.use_dynamic_batcher else 1
             setup_runner_environment(device_id, cpu_threads, num_torch_threads)
 
-        if not os.getenv("HF_TOKEN", None) and not (
-            os.getenv("HF_HOME", None) and any(os.scandir(os.getenv("HF_HOME")))
+        hf_home = os.getenv("HF_HOME")
+        # os.scandir raises if HF_HOME points at a not-yet-created dir, so guard on isdir.
+        hf_home_populated = (
+            bool(hf_home) and os.path.isdir(hf_home) and any(os.scandir(hf_home))
+        )
+        if (
+            self.requires_weights
+            and not os.getenv("HF_TOKEN")
+            and not hf_home_populated
         ):
             self.logger.warning(
                 "HF_TOKEN environment variable is not set and no cached models found in HF_HOME. Some models may not load properly."

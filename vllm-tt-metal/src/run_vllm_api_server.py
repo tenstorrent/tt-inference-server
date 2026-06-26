@@ -302,18 +302,28 @@ def ensure_weights_available(model_spec: dict) -> Path:
         logger.info(f"Using pre-mounted weights from MODEL_WEIGHTS_DIR: {weights_path}")
         return weights_path
 
-    # Default: download weights into cache_root
+    # Default: download weights into cache_root.
+    # snapshot_download resumes partial downloads and skips files already present, so
+    # always invoke it: a partially-downloaded directory looks non-empty but would crash
+    # the server at load time if treated as complete. Fall back to existing weights only
+    # when the hub is unreachable, preserving offline startup with complete weights.
     cache_root = Path(os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root"))
     model_name = model_spec["model_name"]
     weights_path = cache_root / "weights" / model_name
+    hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
 
-    if not weights_path.exists() or not any(weights_path.iterdir()):
-        hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
-        logger.info(f"Downloading weights from {hf_repo} to {weights_path}")
-        weights_path.mkdir(parents=True, exist_ok=True)
+    weights_path.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Ensuring weights from {hf_repo} are present at {weights_path}")
+    try:
         snapshot_download(repo_id=hf_repo, local_dir=weights_path)
-    else:
-        logger.info(f"Weights already exist at {weights_path}")
+    except Exception as e:
+        if any(weights_path.iterdir()):
+            logger.warning(
+                f"Could not reach Hugging Face to verify weights ({e}); "
+                f"using existing weights at {weights_path}"
+            )
+        else:
+            raise
 
     os.environ["MODEL_WEIGHTS_DIR"] = str(weights_path)
     return weights_path
