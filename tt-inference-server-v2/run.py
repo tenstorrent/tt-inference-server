@@ -262,6 +262,25 @@ def parse_args() -> argparse.Namespace:
             "https://github.com/ai-dynamo/aiperf/blob/main/docs/tutorials/prefix-synthesis.md"
         ),
     )
+    parser.add_argument(
+        "--prefix-cache-metrics-url",
+        type=str,
+        action="append",
+        default=None,
+        metavar="URL",
+        help=(
+            "Worker Prometheus /metrics endpoint holding the "
+            "tt_prefix_cache_* counters, forwarded to AIPerf as "
+            "--server-metrics. Load still targets --service-port (the "
+            "Dynamo frontend); this only redirects the metrics scrape to "
+            "the cpp_server worker, which the prefix-unaware frontend does "
+            "not aggregate. Accepts a full URL, host:port, or "
+            "host:port/metrics (http:// and /metrics are added if missing). "
+            "Repeat for multi-worker (KV-routed) deployments; the parser "
+            "sums hit/query deltas across endpoints. Without it the scrape "
+            "hits the frontend and the hit-rate column is null."
+        ),
+    )
     # ----- Speculative-decoding benchmark (LLM-only) ------------------
     # When --spec-decode is set, BenchmarksWorkflow swaps its default
     # media-task dispatch for the AIPerf SPEED-Bench spec-decode sweep (wired

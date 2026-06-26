@@ -69,6 +69,7 @@ def run_prefix_cache(
     scenarios_json: Optional[str] = None,
     trace_path: Optional[str] = None,
     auth_token: str = "",
+    metrics_urls: Sequence[str] = (),
     venv_python: Optional[Path] = None,
     server_controller: Optional[ServerController] = None,
     output_subdir: str = "prefix_cache",
@@ -88,6 +89,13 @@ def run_prefix_cache(
     auth_token:
         Bearer token sent to the inference server (JWT, OPENAI_API_KEY).
         Empty string disables auth.
+    metrics_urls:
+        Extra Prometheus ``/metrics`` endpoints (cpp_server workers)
+        scraped by AIPerf via ``--server-metrics`` for the
+        ``tt_prefix_cache_*`` counters, independent of the load target.
+        Repeatable for multi-worker (KV-routed) deployments. Empty keeps
+        AIPerf's auto-derived ``/metrics`` from ``ctx.server_host`` (the
+        Dynamo frontend), which does not expose the counters.
     venv_python:
         Python interpreter that has ``aiperf`` installed. Falls back to
         ``sys.executable``.
@@ -164,6 +172,7 @@ def run_prefix_cache(
         tokenizer=model_repo,
         auth_token=auth_token,
         tokenizer_trust_remote_code=tokenizer_trust_remote_code,
+        prefix_cache_metrics_urls=tuple(metrics_urls or ()),
     )
     context = DriverContext(output_dir=output_root, device=device_label)
 

@@ -86,6 +86,7 @@ class TestPrefixCacheOptions:
             prefix_cache_request_rate=4.0,
             prefix_cache_scenarios_json=None,
             prefix_cache_trace=None,
+            prefix_cache_metrics_url=["worker-a:9000", "worker-b:9000/metrics"],
             jwt_secret=None,
         )
         opts = cf._build_prefix_cache_options(args)
@@ -95,6 +96,28 @@ class TestPrefixCacheOptions:
         assert opts.arrival_pattern == "poisson"
         assert opts.request_rate == 4.0
         assert opts.auth_token == ""  # no secret -> auth disabled
+        # Repeatable --prefix-cache-metrics-url -> tuple, forwarded verbatim
+        # (normalization happens later in the driver).
+        assert opts.metrics_urls == ("worker-a:9000", "worker-b:9000/metrics")
+
+    def test_metrics_urls_default_empty_when_flag_absent(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        # No prefix_cache_metrics_url attr at all (image-model entry path).
+        args = Namespace(
+            prefix_cache=True,
+            prefix_cache_preset="ci",
+            prefix_cache_scenarios=None,
+            prefix_cache_arrival=None,
+            prefix_cache_request_rate=None,
+            prefix_cache_scenarios_json=None,
+            prefix_cache_trace=None,
+            jwt_secret=None,
+        )
+        opts = cf._build_prefix_cache_options(args)
+        assert opts is not None
+        assert opts.metrics_urls == ()
 
 
 class TestLLMEvalOptions:

@@ -81,6 +81,11 @@ class PrefixCacheOptions:
     scenarios_json: Optional[str] = None
     trace_path: Optional[str] = None
     auth_token: str = ""
+    # Worker /metrics endpoints scraped by AIPerf (--server-metrics) for
+    # the prefix-cache counters, independent of the load target. Repeatable
+    # for multi-worker deployments. Empty keeps AIPerf's auto-derived
+    # /metrics from --url (the frontend), which lacks the counters.
+    metrics_urls: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

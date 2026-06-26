@@ -256,6 +256,7 @@ def _build_prefix_cache_options(
         scenarios_json=args.prefix_cache_scenarios_json,
         trace_path=args.prefix_cache_trace,
         auth_token=_mint_jwt_if_secret(args.jwt_secret),
+        metrics_urls=tuple(getattr(args, "prefix_cache_metrics_url", None) or ()),
     )
 
 

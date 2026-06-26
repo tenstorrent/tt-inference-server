@@ -472,6 +472,17 @@ def parse_arguments():
         help="Path to a mooncake-format JSONL trace file for mooncake_trace scenarios.",
     )
     prefix_cache_group.add_argument(
+        "--prefix-cache-metrics-url",
+        type=str,
+        action="append",
+        default=None,
+        metavar="URL",
+        help="Worker /metrics endpoint with the tt_prefix_cache_* counters, forwarded to "
+        "AIPerf as --server-metrics (load stays on the frontend). Accepts a full URL, "
+        "host:port, or host:port/metrics. Repeatable for multi-worker deployments. "
+        "Without it the scrape hits the prefix-unaware frontend and hit-rate is null.",
+    )
+    prefix_cache_group.add_argument(
         "--jwt-secret",
         type=str,
         default=None,
