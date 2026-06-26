@@ -1088,7 +1088,7 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="r1_gpqa_diamond",
-                # Tier-1 KV fix: gpqa generates long (up to max_gen_toks=12288).
+                # Tier-1 KV fix: gpqa generates long (up to max_gen_toks=32768).
                 # At conc 32 the 32×(prompt+gen) working set oversubscribes the
                 # ~139k-token forge P150 KV pool -> preemption thrash -> >half the
                 # docs miss the 3600s timeout. Cap concurrency at 8 so the active
@@ -1110,18 +1110,29 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
+                    # r1_gpqa_diamond is long reasoning (up to max_gen_toks=32768);
+                    # lm-eval's request timeout defaults to 1800s (30 min), which
+                    # truncated the longest docs. Kept at 3600s: bumping to 7200s did
+                    # NOT help — gpqa is decode-bound at conc 32 (~1.6 tok/s/user under
+                    # the prefill backlog), so ~24/40 docs still timed out and 7200s
+                    # just doubled gpqa wall (57m -> 2h07m) for the same 0.225 score.
+                    # NOTE: restoring the cap to 32768 lengthens worst-case
+                    # generations, so watch this 3600s budget at higher concurrency
+                    # (raise it if long-reasoning docs start timing out). Real fix:
+                    # chunked-prefill batch budget
+                    # (DEBUG_chunked_prefill_batch_budget.md) / lower gpqa concurrency.
+                    "timeout": "3600",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
-                # max_gen_toks lowered from 32768 to 12288 so `prompt + max_gen_toks`
-                # fits the forge_vllm_plugin P150 max_model_len=16384 envelope.
-                # Observed r1_gpqa_diamond prompts run up to ~2.4k tokens, so a
-                # 12288 output cap leaves ~3700-token headroom. The original 32K
-                # output budget is intended for ≥64K-context devices; clamping
-                # here is safe at 16K but caps reasoning depth on long-context
-                # devices too — revisit if a >16K-context Qwen3-8B impl lands.
+                # max_gen_toks restored to 32768: the forge_vllm_plugin P150
+                # max_model_len is now 40960 (was 16384 when this was clamped to
+                # 12288), so prompt + 32768 (~35k worst case at ~2.4k-token gpqa
+                # prompts) fits with headroom and no longer caps reasoning depth.
+                # The 12288 clamp was truncating long Qwen3 reasoning before the
+                # final answer, depressing the gpqa score.
                 gen_kwargs={
                     "stream": "true",
-                    "max_gen_toks": 12288,
+                    "max_gen_toks": 32768,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 0.6,
@@ -1155,15 +1166,14 @@ _eval_config_list = [
                     "timeout": "3600",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
-                # max_gen_toks lowered 32768 -> 12288 for forge P150 (max_model_len=16384).
-                # Earlier value 14336 assumed prompts ≤ ~1.1k tokens; observed CI
-                # prompts run up to 2477, so 14336 + 2477 = 16813 > 16384 → 4xx
-                # rejection on every long-prompt sample, cascading into a 6h
-                # workflow timeout. 12288 matches r1_gpqa_diamond and leaves
-                # ~3700 tokens of prompt headroom. Tracked in #4000.
+                # max_gen_toks restored to 32768: forge P150 max_model_len is now
+                # 40960 (was 16384 when this was clamped). Observed mmlu_pro 5-shot
+                # prompts run up to ~2.5k tokens, so 32768 + prompt (~35k) fits with
+                # headroom; the prior 12288 clamp (to avoid 4xx rejections at the old
+                # 16384 envelope) is no longer needed. Tracked in #4000.
                 gen_kwargs={
                     "stream": "true",
-                    "max_gen_toks": 12288,
+                    "max_gen_toks": 32768,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 0.6,
@@ -1199,12 +1209,12 @@ _eval_config_list = [
                 model_kwargs={
                     "max_length": 65536,
                 },
-                # max_gen_toks lowered 32768 -> 12288 so `prompt + max_gen_toks`
-                # fits forge_vllm_plugin P150 max_model_len=16384. See the same
-                # note on the Qwen3-8B r1_gpqa_diamond entry above.
+                # max_gen_toks restored to 32768: forge_vllm_plugin P150
+                # max_model_len is now 40960 (was 16384 when clamped to 12288).
+                # See the same note on the Qwen3-8B r1_gpqa_diamond entry above.
                 gen_kwargs={
                     "stream": "true",
-                    "max_gen_toks": 12288,
+                    "max_gen_toks": 32768,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 0.6,
@@ -1237,12 +1247,12 @@ _eval_config_list = [
                     "max_length": 65536,
                     "timeout": "3600",
                 },
-                # max_gen_toks lowered 32768 -> 12288 so `prompt + max_gen_toks`
-                # fits forge P150 max_model_len=16384. See the same note on the
+                # max_gen_toks restored to 32768: forge P150 max_model_len is now
+                # 40960 (was 16384 when clamped to 12288). See the same note on the
                 # Qwen3-8B mmlu_pro entry above. Tracked in #4000.
                 gen_kwargs={
                     "stream": "true",
-                    "max_gen_toks": 12288,
+                    "max_gen_toks": 32768,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 0.6,
