@@ -706,6 +706,16 @@ std::string kafkaOffloadTopicName() {
                    defaults::KAFKA_OFFLOAD_TOPIC_NAME);
 }
 
+std::string kafkaMigrationRequestTopic() {
+  return envString("KAFKA_MIGRATION_REQUEST_TOPIC",
+                   defaults::KAFKA_MIGRATION_REQUEST_TOPIC);
+}
+
+std::string kafkaMigrationAckTopic() {
+  return envString("KAFKA_MIGRATION_ACK_TOPIC",
+                   defaults::KAFKA_MIGRATION_ACK_TOPIC);
+}
+
 uint32_t migrationPrefillEndpointId() {
   return static_cast<uint32_t>(
       envUlong("MIGRATION_PREFILL_ENDPOINT_ID",
