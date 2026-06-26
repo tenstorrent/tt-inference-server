@@ -267,7 +267,7 @@ void DisaggregationService::setupSocketHandlers() {
                         prefillResult.remainingTokens =
                             maxTokens.has_value()
                                 ? std::optional<int>(
-                                      std::max(0, maxTokens.value() - 1))
+                                      std::max(0, maxTokens.value()))
                                 : std::nullopt;
                         prefillResult.tokenIds.insert(
                             prefillResult.tokenIds.end(),
