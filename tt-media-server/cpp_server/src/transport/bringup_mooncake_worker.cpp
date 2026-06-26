@@ -2,17 +2,38 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 // bringup_mooncake_worker: production entry point / composition root for a
-// migration worker. Parses + validates CLI, then wires the worker's
-// collaborators — the transfer engine and the PeerDiscoveryService — and hands
-// them to a MooncakeMigrationWorker that owns the phased lifecycle (allocate
-// host-DRAM pool → init engine → register/publish → discover peers → hold until
-// SIGTERM → teardown in reverse). This file only constructs and wires; it does
-// not sequence the phases or perform discovery itself.
+// migration worker process. Two responsibilities — *only* at this binary
+// layer:
+//
+//   1. Mooncake bring-up. Parse + validate CLI, build the transfer engine and
+//      PeerDiscoveryService, hand them to a MooncakeMigrationWorker that owns
+//      the phased lifecycle (allocate host-DRAM pool → init engine →
+//      register/publish → discover peers). Worker dtor handles teardown in
+//      reverse on process exit.
+//
+//   2. KV-migration request loop. Once Mooncake is READY, the main thread
+//      drains MigrationRequestMessages from Kafka, logs them, and publishes
+//      acks — inlined here on purpose. The shape mirrors KvMigrationWorker's
+//      consumerLoop in src/runtime/worker/kv_migration_worker.cpp (used by
+//      tt_kv_migration_consumer), but the two binaries deliberately don't
+//      share that code: this loop will grow a dispatch through `worker`
+//      (writeTensorOnSender / transferToReceiver / verifyTensorOnReceiver)
+//      while the consumer binary stays generic via its IMigrationExecutor
+//      injection point. Keeping the loop here also means
+//      MooncakeMigrationWorker has zero Kafka surface area — the only file
+//      that knows about Kafka in this binary is this one.
+//
+// The main thread is the consumer thread; it polls Kafka with a short
+// timeout that also paces the periodic "still alive" heartbeat. On
+// SIGTERM/SIGINT the stop flag flips, the loop exits, and stack-scope
+// destructors tear down in reverse order (Kafka clients, then
+// MooncakeMigrationWorker unregisters its segment).
 
 #include <unistd.h>
 
 #include <atomic>
 #include <cerrno>
+#include <chrono>
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
@@ -22,6 +43,11 @@
 #include <string>
 #include <vector>
 
+#include "config/defaults.hpp"
+#include "messaging/kafka_consumer.hpp"
+#include "messaging/kafka_producer.hpp"
+#include "messaging/migration_message.hpp"
+#include "services/remote_kv_manager.hpp"
 #include "transport/host_dram_storage_backend.hpp"
 #include "transport/mooncake_migration_worker.hpp"
 #include "transport/mooncake_transfer_engine.hpp"
@@ -37,6 +63,19 @@ constexpr std::size_t K_DEFAULT_HOST_DRAM_BYTES = 4ULL << 30;  // 4 GiB
 constexpr std::size_t K_RAM_HEADROOM_BYTES = 1ULL << 30;       // 1 GiB
 constexpr int K_DEFAULT_DISCOVERY_TIMEOUT_SEC = 30;
 constexpr int K_DISCOVERY_POLL_INTERVAL_MS = 1000;
+// Kafka poll timeout also paces the heartbeat granularity: receive() blocks for
+// up to K_KAFKA_POLL_MS, which is short enough that g_stopRequested is honored
+// promptly and the heartbeat fires within K_KAFKA_POLL_MS of K_HEARTBEAT_SEC.
+constexpr int K_KAFKA_POLL_MS = 100;
+constexpr int K_HEARTBEAT_SEC = 30;
+
+// Mirror of tt::config::*() lookups without dragging in llm_runner_lib for one
+// process-orchestration binary: same KAFKA_* env-var contract, same defaults
+// from include/config/defaults.hpp.
+std::string envOr(const char* key, const char* fallback) {
+  const char* v = std::getenv(key);
+  return (v != nullptr && *v != '\0') ? std::string{v} : std::string{fallback};
+}
 
 struct WorkerConfig {
   std::string metadata_uri;        ///< Discovery service (REQUIRED).
@@ -227,6 +266,93 @@ MigrationWorkerConfig toWorkerConfig(const WorkerConfig& cli) {
   return cfg;
 }
 
+void installSignalHandlers() {
+  std::signal(SIGTERM, onSignal);
+  std::signal(SIGINT, onSignal);
+}
+
+struct KafkaConfig {
+  std::string brokers;
+  std::string requestTopic;
+  std::string ackTopic;
+  std::string groupId;
+};
+
+// Same env-var contract as tt::config::* in src/config/settings.cpp; mirrored
+// here so this binary doesn't need to link llm_runner_lib just for four
+// lookups.
+KafkaConfig loadKafkaConfig() {
+  return KafkaConfig{
+      .brokers = envOr("KAFKA_BROKERS", tt::config::defaults::KAFKA_BROKERS),
+      .requestTopic =
+          envOr("KAFKA_MIGRATION_REQUEST_TOPIC",
+                tt::config::defaults::KAFKA_MIGRATION_REQUEST_TOPIC),
+      .ackTopic = envOr("KAFKA_MIGRATION_ACK_TOPIC",
+                        tt::config::defaults::KAFKA_MIGRATION_ACK_TOPIC),
+      .groupId = envOr("KAFKA_GROUP_ID", tt::config::defaults::KAFKA_GROUP_ID),
+  };
+}
+
+// Parse + log one migration request, then publish a SUCCESSFUL ack. `worker`
+// is the future dispatch point (writeTensorOnSender / transferToReceiver /
+// verifyTensorOnReceiver); today it's unused and only ensures the call site
+// won't change when the data plane is wired.
+void handleMigrationRequest(const std::string& raw,
+                            [[maybe_unused]] MooncakeMigrationWorker& worker,
+                            tt::messaging::IKafkaProducer& ackProducer) {
+  const auto parsed = tt::messaging::parseMigrationRequest(raw);
+  if (!parsed.has_value()) {
+    TT_LOG_WARN("[bringup] dropping unparseable request: {}", raw);
+    return;
+  }
+
+  TT_LOG_INFO(
+      "[bringup] migration_id={} src_slot={} dst_slot={} layer_id={} "
+      "positions=[{}..{}]",
+      parsed->migration_id, parsed->src_slot, parsed->dst_slot,
+      parsed->layer_id, parsed->position_start, parsed->position_end);
+
+  const tt::messaging::MigrationResponseMessage ack{
+      .migration_id = parsed->migration_id,
+      .status = tt::services::MigrationStatus::SUCCESSFUL,
+  };
+  std::string err;
+  if (!ackProducer.send(tt::messaging::serialize(ack), &err)) {
+    TT_LOG_ERROR("[bringup] ack send failed migration_id={}: {}",
+                 parsed->migration_id, err);
+  } else {
+    TT_LOG_DEBUG("[bringup] acked migration_id={}", parsed->migration_id);
+  }
+}
+
+// Single-threaded poll loop: drains migration requests from Kafka and emits a
+// "still alive" heartbeat every K_HEARTBEAT_SEC. receive()'s timeout also paces
+// stop-flag responsiveness (a SIGTERM is honored within K_KAFKA_POLL_MS).
+void runMigrationLoop(const std::string& workerName,
+                      MooncakeMigrationWorker& worker,
+                      tt::messaging::IKafkaConsumer& requestConsumer,
+                      tt::messaging::IKafkaProducer& ackProducer,
+                      const std::atomic<bool>& stopRequested) {
+  const auto startTime = std::chrono::steady_clock::now();
+  auto nextHeartbeat = startTime + std::chrono::seconds(K_HEARTBEAT_SEC);
+
+  while (!stopRequested.load()) {
+    if (auto raw = requestConsumer.receive(K_KAFKA_POLL_MS); raw.has_value()) {
+      handleMigrationRequest(*raw, worker, ackProducer);
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (now >= nextHeartbeat) {
+      const auto upSec =
+          std::chrono::duration_cast<std::chrono::seconds>(now - startTime)
+              .count();
+      TT_LOG_INFO("[bringup] '{}' alive — {} peers, up {}s", workerName,
+                  worker.peers().size(), upSec);
+      nextHeartbeat = now + std::chrono::seconds(K_HEARTBEAT_SEC);
+    }
+  }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -237,17 +363,16 @@ int main(int argc, char** argv) {
     usage();
     return 2;
   }
-
-  std::signal(SIGTERM, onSignal);
-  std::signal(SIGINT, onSignal);
+  installSignalHandlers();
 
   // Composition root: build the worker's collaborators (engine + discovery
   // service) and hand them to a worker that owns its own bring-up and teardown.
+  // Kept inline because MooncakeMigrationWorker is non-movable (atomic member),
+  // so it cannot be returned from a helper without heap-allocating.
   auto engine = std::make_shared<MooncakeTransferEngine>(
       std::make_shared<HostDramStorageBackend>());
   auto discovery = std::make_shared<PeerDiscoveryService>(PeerDiscoveryConfig{
       K_DISCOVERY_POLL_INTERVAL_MS, cli.discovery_timeout_sec});
-
   MooncakeMigrationWorker worker{toWorkerConfig(cli), std::move(engine),
                                  std::move(discovery)};
 
@@ -257,6 +382,31 @@ int main(int argc, char** argv) {
     TT_LOG_ERROR("[bringup] '{}' bring-up failed", cli.name);
     return 1;
   }
-  worker.run(g_stopRequested);
+
+  const auto kafka = loadKafkaConfig();
+  TT_LOG_INFO("[bringup] '{}' READY ({} peers); entering KV-migration loop",
+              cli.name, worker.peers().size());
+  TT_LOG_INFO(
+      "[bringup] Kafka brokers={} request_topic={} ack_topic={} group={}",
+      kafka.brokers, kafka.requestTopic, kafka.ackTopic, kafka.groupId);
+
+  tt::messaging::KafkaConsumer requestConsumer{
+      tt::messaging::KafkaConsumerConfig{
+          .brokers = kafka.brokers,
+          .topic = kafka.requestTopic,
+          .group_id = kafka.groupId,
+      }};
+  tt::messaging::KafkaProducer ackProducer{tt::messaging::KafkaProducerConfig{
+      .brokers = kafka.brokers,
+      .topic = kafka.ackTopic,
+  }};
+
+  runMigrationLoop(cli.name, worker, requestConsumer, ackProducer,
+                   g_stopRequested);
+
+  TT_LOG_INFO("[bringup] '{}' stopping", cli.name);
+  // Stack-scope destructors run in reverse: Kafka clients close (the producer
+  // flushes any in-flight ack on dtor; see KafkaProducer::~KafkaProducer),
+  // then MooncakeMigrationWorker unregisters its published segment.
   return 0;
 }

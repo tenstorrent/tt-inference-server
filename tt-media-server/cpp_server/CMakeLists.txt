@@ -645,14 +645,9 @@ if(TARGET transfer_engine)
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
     message(STATUS "migration_worker_discovery: ENABLED (#4209 discovery PoC)")
 
-    # #4294 production worker entry point: phased startup that registers a
-    # host-DRAM pool and discovers its peers via MooncakeMigrationWorker.
-    add_executable(bringup_mooncake_worker
-        src/transport/bringup_mooncake_worker.cpp)
-    target_link_libraries(bringup_mooncake_worker PRIVATE transport_lib)
-    target_include_directories(bringup_mooncake_worker PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include)
-    message(STATUS "bringup_mooncake_worker: ENABLED (#4294 production worker)")
+    # #4294 production worker entry point is defined later, inside the
+    # KAFKA_ENABLED block, because it links kv_migration_worker for the Kafka
+    # request loop. See `if(KAFKA_ENABLED)` further down.
 endif()
 
 # Unit tests (link llm_runner_lib)
@@ -1145,6 +1140,7 @@ if(KAFKA_ENABLED)
         src/messaging/kafka_consumer.cpp
         src/messaging/migration_message.cpp
         src/services/remote_kv_manager_impl.cpp
+        src/utils/logger.cpp
     )
     target_include_directories(messaging PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -1205,6 +1201,29 @@ if(KAFKA_ENABLED)
         messaging
         spdlog::spdlog
     )
+
+    # #4294 production worker entry point: combines Mooncake bring-up
+    # (transport_lib) with the Kafka request/ack loop (kv_migration_worker).
+    # Gated on `transfer_engine` since the Mooncake transport is what makes
+    # the bring-up meaningful; without it the binary would have nothing to
+    # publish/discover and would only exercise the stub executor path.
+    if(TARGET transfer_engine)
+        # Links `messaging` (Kafka clients + migration_message parsers) rather
+        # than the heavier `kv_migration_worker` lib: the Kafka loop is inlined
+        # in bringup_mooncake_worker.cpp on purpose so MooncakeMigrationWorker
+        # stays Kafka-blind and this binary doesn't share its consumer-loop
+        # body with src/kv_migration_consumer_main.cpp.
+        add_executable(bringup_mooncake_worker
+            src/transport/bringup_mooncake_worker.cpp)
+        target_link_libraries(bringup_mooncake_worker PRIVATE
+            transport_lib
+            messaging)
+        target_include_directories(bringup_mooncake_worker PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        message(STATUS "bringup_mooncake_worker: ENABLED (#4294 production worker)")
+    else()
+        message(STATUS "bringup_mooncake_worker: SKIPPED (requires Mooncake transfer_engine target)")
+    endif()
 
     # Unit test for KvMigrationWorker (uses in-process fake Kafka + mock executor).
     add_executable(kv_migration_worker_test
