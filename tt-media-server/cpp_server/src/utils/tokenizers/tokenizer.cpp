@@ -292,8 +292,8 @@ const StaticTokenizerInfo& kimiK26Info() {
   return kInfo;
 }
 
-// IDs verified against the fetched Kimi-K2.7-Code tokenizer; identical layout to
-// Kimi-K2.6 (config.json eos_token_id 163586 <|im_end|>, [EOS] 163585,
+// IDs verified against the fetched Kimi-K2.7-Code tokenizer; identical layout
+// to Kimi-K2.6 (config.json eos_token_id 163586 <|im_end|>, [EOS] 163585,
 // <|im_assistant|> 163588, <think>/</think> 163606/163607). model_type is
 // "kimi_k25", so discovery reuses the existing kimi_k25 parser branch.
 const StaticTokenizerInfo& kimiK27CodeInfo() {
