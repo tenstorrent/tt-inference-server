@@ -19,8 +19,8 @@ Json::Value parseJson(const std::vector<uint8_t>& bytes) {
   std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
   std::string errors;
   const std::string body(bytes.begin(), bytes.end());
-  EXPECT_TRUE(reader->parse(body.data(), body.data() + body.size(), &root,
-                            &errors))
+  EXPECT_TRUE(
+      reader->parse(body.data(), body.data() + body.size(), &root, &errors))
       << errors;
   return root;
 }
@@ -31,8 +31,8 @@ Json::Value parseJsonString(const std::string& body) {
   builder["collectComments"] = false;
   std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
   std::string errors;
-  EXPECT_TRUE(reader->parse(body.data(), body.data() + body.size(), &root,
-                            &errors))
+  EXPECT_TRUE(
+      reader->parse(body.data(), body.data() + body.size(), &root, &errors))
       << errors;
   return root;
 }
