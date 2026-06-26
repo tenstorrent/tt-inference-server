@@ -16,7 +16,12 @@ from argparse import Namespace
 import pytest
 
 from workflow_module import command_factory as cf
-from workflow_module.execution import PrefixCacheOptions, ServingBenchOptions
+from workflow_module.execution import (
+    LLMBenchOptions,
+    LLMEvalOptions,
+    PrefixCacheOptions,
+    ServingBenchOptions,
+)
 
 
 class TestResolveServerMode:
@@ -90,6 +95,64 @@ class TestPrefixCacheOptions:
         assert opts.auth_token == ""  # no secret -> auth disabled
 
 
+class TestLLMEvalOptions:
+    def test_none_for_non_eval_workflow(self):
+        assert cf._build_llm_eval_options(Namespace(workflow="benchmarks")) is None
+
+    def test_built_for_evals(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        opts = cf._build_llm_eval_options(Namespace(workflow="evals", jwt_secret=None))
+        assert isinstance(opts, LLMEvalOptions)
+        assert opts.auth_token == ""
+
+    def test_built_for_release_threads_minted_token(self, monkeypatch):
+        monkeypatch.setattr(cf, "_mint_jwt_if_secret", lambda secret: f"tok:{secret}")
+        opts = cf._build_llm_eval_options(
+            Namespace(workflow="release", jwt_secret="sek")
+        )
+        assert isinstance(opts, LLMEvalOptions)
+        assert opts.auth_token == "tok:sek"
+
+
+class TestLLMBenchOptions:
+    def test_none_for_non_bench_workflow(self):
+        assert cf._build_llm_bench_options(Namespace(workflow="evals")) is None
+
+    def test_benchmarks_has_no_venv_python(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        opts = cf._build_llm_bench_options(
+            Namespace(
+                workflow="benchmarks",
+                tools="aiperf",
+                jwt_secret=None,
+                prefix_cache=False,
+                spec_decode=False,
+            )
+        )
+        assert isinstance(opts, LLMBenchOptions)
+        assert opts.tools == "aiperf"
+        assert opts.venv_python is None
+
+    def test_release_pins_tool_venv_python(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        opts = cf._build_llm_bench_options(
+            Namespace(
+                workflow="release",
+                tools=None,
+                jwt_secret=None,
+                prefix_cache=False,
+                spec_decode=False,
+            )
+        )
+        assert opts.tools == "vllm"
+        assert opts.venv_python is not None
+        assert "vllm" in opts.venv_python.lower()
+
+    def test_prefix_cache_defers(self):
+        args = Namespace(workflow="benchmarks", prefix_cache=True, spec_decode=False)
+        assert cf._build_llm_bench_options(args) is None
+
+
 class TestMintJwt:
     def test_no_secret_returns_empty(self, monkeypatch):
         monkeypatch.delenv("JWT_SECRET", raising=False)
@@ -97,9 +160,9 @@ class TestMintJwt:
 
     def test_secret_mints_token_and_exports_env(self, monkeypatch):
         pytest.importorskip("jwt")
-        monkeypatch.setenv("OPENAI_API_KEY", "")  # tracked for restore
+        monkeypatch.setenv("OPENAI_API_KEY", "")
         token = cf._mint_jwt_if_secret("super-secret-key-of-sufficient-length-1234")
-        assert token  # non-empty JWT
+        assert token
         import os
 
         assert os.environ["OPENAI_API_KEY"] == token

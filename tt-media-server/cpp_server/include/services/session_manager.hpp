@@ -197,6 +197,25 @@ class SessionManager {
    */
   void clearSessionBlockThinkTokens(const std::string& sessionId);
 
+  /**
+   * Mark the leading `residentBlocks` blocks of `sessionId`'s prefix as
+   * resident (KV computed and safe to copy from). Called when a prefill
+   * completes. Sets the count outright — the whole prompt is resident at that
+   * point. See Session::committedBlocks.
+   */
+  void setResidentPrefixBlocks(const std::string& sessionId,
+                               uint32_t residentBlocks);
+
+  /**
+   * Eagerly shrink `sessionId`'s resident-prefix count to the block count that
+   * corresponds to `matchedTokens` (the common prefix this turn shares with the
+   * cached session). On a divergent "rewind" turn this drops the now-stale tail
+   * before the slot overwrites it; on a pure extension it is a no-op. Called on
+   * a prefix-cache / response-id continuation HIT.
+   */
+  void shrinkResidentPrefixToMatchedTokens(const std::string& sessionId,
+                                           uint32_t matchedTokens);
+
  private:
   struct PendingAllocation {
     tt::domain::Session session;
