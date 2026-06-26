@@ -151,7 +151,7 @@ host both peers can reach, then run a receiver and a sender:
 
 ```bash
 # Single-host smoke test (auto-starts the service, runs both workers):
-tests/integration/run_migration_worker_discovery.sh
+tests/e2e/scripts/run_migration_worker_discovery.sh
 
 # Two-host run:
 #  metadata host (META_HOST): serves http://0.0.0.0:18080/metadata
@@ -177,6 +177,29 @@ Gotchas:
 - The `404 metadata not found` lines at startup are **expected** — the engine probes for
   its own name before registering it.
 
+## Mooncake Migration Worker discovery
+
+`bringup_mooncake_worker` is the worker's entry point / composition root (one process per
+worker). `PeerDiscoveryService` owns *how* peers are resolved (the resolve-with-retry loop +
+timeout); `MooncakeMigrationWorker` owns the ordered lifecycle — allocate host-DRAM pool → init
+engine → register/publish (makes us discoverable) → **delegate** peer discovery → hold until
+SIGTERM → teardown in reverse. **Register-before-discover** is the invariant the worker owns.
+Workers are symmetric peers: each takes its own `--name` and its peers as `--peer`; success
+is `CONNECTED to N peers` then `READY`. Logic is launcher-agnostic — a bash loop, MPI, or an
+orchestrator all just spawn one process per worker.
+
+**MPI e2e test** (`tests/e2e/scripts/run_migration_workers_mpi.sh`, ctest
+`MooncakeMpiDiscovery`): starts the metadata service, then `mpirun -np 20` launches 4 prefill +
+16 decode workers on one host. `migration_worker_rank_launch.sh` maps each rank to a
+disaggregated topology — `prefill-p` peers `decode-(4p..4p+3)`, each `decode-d` peers back to
+`prefill-(d/4)` — and the test passes once all 20 log `CONNECTED` within the timeout.
+
+```bash
+# all 20 workers, self-contained (auto-starts metadata service):
+WORKER_BIN=./build/bringup_mooncake_worker \
+  tests/e2e/scripts/run_migration_workers_mpi.sh
+```
+
 ## Validation status
 
 | Step | Status |
@@ -186,6 +209,11 @@ Gotchas:
 | Mooncake transport loopback TCP (host backend, `--mooncake`) | impl |
 | Two-galaxy acceptance, both backends enabled | pending a two-process HW run |
 | Metadata-service worker discovery, two hosts, host RAM (#4209, `migration_worker_discovery`) | **validated** (two hosts, 1 MiB tensor, byte-verified MATCH) |
+| Productionized discovery worker (#4294, `bringup_mooncake_worker`) | **validated locally** (single host, MPI `-np 20` = 4 prefill + 16 decode, all `CONNECTED`→`READY`; run manually, not yet wired into CI) |
+
+Note: the unit/smoke `transport_test` runs in any CI build; the MPI discovery
+e2e (`MooncakeMpiDiscovery`) is currently a manual/local check (it needs the
+Mooncake build + a metadata service) and is not yet in a GitHub workflow.
 
 ## Future work — wiring into the tt-llm-engine migration worker
 
@@ -237,3 +265,11 @@ inside tt-llm-engine while `transport_lib` is dependency-free.
 **Other follow-ups:** custom zero-copy / RDMA-direct `Transport` subclass (register the
 UMD DRAM mapping instead of bouncing); multi-tensor / batched transfers; concurrency
 and failure/retry semantics matching the incumbent's ULFM behaviour.
+
+**Discovery lifecycle (post-merge):** discovery resolves peers once at bring-up and the
+worker then holds the handles until SIGTERM. Steady-state membership changes are not yet
+handled — if a peer crashes and restarts on a new dynamic port, its cached `SegmentHandle`
+goes stale. Production needs periodic peer health checks and re-discovery/reconnection on
+peer restart (plus metrics: peer count, time-to-ready, reconnection events). Discovery is
+already cancellable (a SIGTERM during bring-up aborts the poll loop promptly); wiring the
+MPI e2e into CI is also pending.

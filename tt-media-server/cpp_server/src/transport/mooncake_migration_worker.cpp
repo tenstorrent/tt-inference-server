@@ -3,16 +3,125 @@
 
 #include "transport/mooncake_migration_worker.hpp"
 
+#include <chrono>
+#include <thread>
 #include <utility>
 
 #include "transport/i_storage_backend.hpp"
+#include "transport/peer_discovery_service.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::transport {
 
+namespace {
+constexpr int K_HOLD_POLL_MS = 200;
+constexpr int K_HEARTBEAT_SEC = 30;  // periodic "still alive" log while holding
+}  // namespace
+
 MooncakeMigrationWorker::MooncakeMigrationWorker(
-    MigrationWorkerConfig config, std::shared_ptr<ITransferEngine> engine)
-    : config_(std::move(config)), engine_(std::move(engine)) {}
+    MigrationWorkerConfig config, std::shared_ptr<ITransferEngine> engine,
+    std::shared_ptr<PeerDiscoveryService> discovery)
+    : config_(std::move(config)),
+      engine_(std::move(engine)),
+      discovery_(std::move(discovery)) {}
+
+MooncakeMigrationWorker::~MooncakeMigrationWorker() { teardown(); }
+
+// Convenience overload: bring up with a cancel token that never fires.
+bool MooncakeMigrationWorker::bringUp() {
+  static const std::atomic<bool> never{false};
+  return bringUp(never);
+}
+
+// Ordered bring-up. Each phase only proceeds if the previous one
+// succeeded.
+bool MooncakeMigrationWorker::bringUp(const std::atomic<bool>& cancelToken) {
+  if (!engine_) {
+    TT_LOG_ERROR("[MooncakeMigrationWorker] bringUp: no engine");
+    return false;
+  }
+  if (!discovery_) {
+    TT_LOG_ERROR("[MooncakeMigrationWorker] bringUp: no discovery service");
+    return false;
+  }
+  if (config_.host_dram_bytes == 0) {
+    TT_LOG_ERROR("[MooncakeMigrationWorker] bringUp: host_dram_bytes is 0");
+    return false;
+  }
+
+  // Phase 2: allocate the host-DRAM pool peers will write into.
+  hostDramPool_.assign(config_.host_dram_bytes, 0);
+
+  // Phase 3: init the engine against the metadata service.
+  EngineConfig ecfg;
+  ecfg.metadata_uri = config_.metadata_uri;
+  ecfg.local_server_name = config_.segment_name;
+  ecfg.protocol = config_.protocol;
+  if (!engine_->init(ecfg)) {
+    TT_LOG_ERROR("[MooncakeMigrationWorker] bringUp: engine init failed");
+    return false;
+  }
+
+  // Phase 4: register memory — this publishes our segment to the cluster.
+  if (!engine_->registerLocalMemory(hostDramPool_.data(),
+                                    hostDramPool_.size())) {
+    TT_LOG_ERROR(
+        "[MooncakeMigrationWorker] bringUp: registerLocalMemory failed");
+    return false;
+  }
+  memoryRegistered_ = true;
+  TT_LOG_INFO("[MooncakeMigrationWorker] '{}' published {} bytes",
+              config_.segment_name, hostDramPool_.size());
+
+  // Phase 5: discover peers — the readiness gate. The worker owns *when* this
+  // happens (after publish, so peers can resolve us back) and forwards the
+  // cancel token so a stop request aborts discovery promptly; the injected
+  // PeerDiscoveryService owns *how*.
+  auto resolved =
+      discovery_->discover(*engine_, config_.peer_segment_names, &cancelToken);
+  if (!resolved) {
+    teardown();
+    return false;
+  }
+  peers_ = std::move(*resolved);
+  return true;
+}
+
+// Phase 6: hold until the caller's stop source fires, then tear down.
+void MooncakeMigrationWorker::run(const std::atomic<bool>& stopRequested) {
+  TT_LOG_INFO(
+      "[MooncakeMigrationWorker] '{}' READY; holding until stop ({} peers)",
+      config_.segment_name, peers_.size());
+  const auto start = std::chrono::steady_clock::now();
+  auto nextHeartbeat = start + std::chrono::seconds(K_HEARTBEAT_SEC);
+  while (!stopRequested.load()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(K_HOLD_POLL_MS));
+    const auto now = std::chrono::steady_clock::now();
+    if (now < nextHeartbeat) continue;
+    const auto upSec =
+        std::chrono::duration_cast<std::chrono::seconds>(now - start).count();
+    TT_LOG_INFO("[MooncakeMigrationWorker] '{}' alive — {} peers, up {}s",
+                config_.segment_name, peers_.size(), upSec);
+    nextHeartbeat = now + std::chrono::seconds(K_HEARTBEAT_SEC);
+  }
+  TT_LOG_INFO("[MooncakeMigrationWorker] '{}' stopping", config_.segment_name);
+  teardown();
+}
+
+// Reverse-order teardown: stop being discoverable before the engine drops, so
+// no in-flight peer write lands on memory we've freed. Idempotent.
+void MooncakeMigrationWorker::teardown() {
+  // exchange() makes this idempotent even if two threads race here: only the
+  // caller that flips true->false performs the single unregister.
+  if (memoryRegistered_.exchange(false) && engine_) {
+    if (!engine_->unregisterLocalMemory(hostDramPool_.data())) {
+      TT_LOG_WARN(
+          "[MooncakeMigrationWorker] '{}' unregisterLocalMemory failed during "
+          "teardown; segment may linger in the metadata service",
+          config_.segment_name);
+    }
+  }
+}
 
 // Step 1 (sender): write a known tensor into this galaxy's device DRAM, so the
 // data plane has something to migrate. Goes straight through the storage

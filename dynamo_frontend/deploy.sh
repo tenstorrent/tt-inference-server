@@ -324,6 +324,8 @@ docker run -d --name "$WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
     "${WORKER_GATEWAY_ENV[@]}" \
     "${WORKER_MODEL_ENV[@]}" \
     -e MAX_SESSIONS_COUNT=128 -e TT_LOG_LEVEL=debug -e USE_FAST_MODE=1 \
+    -e MIN_TOKENS_TO_COPY="${MIN_TOKENS_TO_COPY:-1024}" \
+    -e MOCK_PREFILL_SLEEP_MS="${MOCK_PREFILL_SLEEP_MS:-0}" \
     -e DYN_TX_TRACE="${DYN_TX_TRACE:-}" \
     "$WORKER_IMAGE" \
     ${LOCAL_BUILD:+-c 'cd cpp_server && LIB="$(pwd)/tt-llm-engine/build-full/libtt_llm_engine.so.0"; [ -f "$LIB" ] && export LD_PRELOAD="$LIB"; ./build/tt_media_server_cpp'} \

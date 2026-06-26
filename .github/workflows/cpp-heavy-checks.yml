@@ -13,6 +13,11 @@ on:
     - cron: '0 11 * * *'   # ~12:00 CET / 13:00 CEST  (noon)
     - cron: '0 23 * * *'   # ~00:00 CET / 01:00 CEST  (night)
   workflow_dispatch:
+    inputs:
+      run_split_tests:
+        description: 'Run the split tests (prefill/decode and gateway)'
+        type: boolean
+        default: false
 
 concurrency:
   group: cpp-heavy-${{ github.ref }}
@@ -245,6 +250,7 @@ jobs:
           fi
 
   cpp-server-prefill-decode-split:
+    if: ${{ inputs.run_split_tests }}
     name: C++ Server Prefill/Decode Split Test
     # Self-hosted: this job launches 2-4 cpp_server processes (each -t 4)
     # concurrently. On a 4-core GitHub runner that oversubscribes the CPU and
@@ -646,6 +652,7 @@ jobs:
           fi
 
   cpp-server-gateway-split:
+    if: ${{ inputs.run_split_tests }}
     name: C++ Server Gateway Split Test
     # Self-hosted: this job launches a PrefillGateway plus 3-4 cpp_server
     # processes (each -t 4) concurrently. On a 4-core GitHub runner that
