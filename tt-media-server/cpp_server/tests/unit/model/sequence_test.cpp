@@ -190,6 +190,9 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   orig.setKVPositionId(17);
   orig.setDecodePositionId(18);
   orig.setDecodeSkipTokens(11);
+  orig.setMigrationId(0xDEADBEEFCAFE1234ULL);
+  orig.setStartsInThinking(true);
+  orig.setMigrationStartPosition(128);
 
   std::ostringstream os;
   orig.serialize(os);
@@ -212,6 +215,12 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   EXPECT_EQ(restored.getDecodePositionId(), orig.getDecodePositionId());
   EXPECT_EQ(restored.getDecodeSkipTokens(), orig.getDecodeSkipTokens());
   EXPECT_EQ(restored.numCachedBlocks(), orig.numCachedBlocks());
+  ASSERT_TRUE(restored.getMigrationId().has_value());
+  EXPECT_EQ(*restored.getMigrationId(), *orig.getMigrationId());
+  EXPECT_EQ(restored.getStartsInThinking(), orig.getStartsInThinking());
+  ASSERT_TRUE(restored.getMigrationStartPosition().has_value());
+  EXPECT_EQ(*restored.getMigrationStartPosition(),
+            *orig.getMigrationStartPosition());
 
   const auto& sp = restored.getSamplingParams();
   const auto& spOrig = orig.getSamplingParams();
@@ -242,6 +251,7 @@ TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
   EXPECT_EQ(restored.getNumPromptTokens(), 0u);
   EXPECT_EQ(restored.getLastToken(), 0);
   EXPECT_FALSE(restored.getKVPositionId().has_value());
+  EXPECT_FALSE(restored.getMigrationId().has_value());
 }
 
 TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
@@ -264,6 +274,22 @@ TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
   EXPECT_EQ(restored.getLastToken(), 40);
   EXPECT_EQ(restored.getNumPromptTokens(), 2u);
   EXPECT_EQ(restored.getNumCachedTokens(), 256u);
+  EXPECT_FALSE(restored.getMigrationId().has_value());
+}
+
+TEST(SequenceTest, SerializeDeserialize_MigrationIdUnsetRemainsNullopt) {
+  Sequence orig(12345, 256, {10, 20}, SamplingParams{.max_tokens = 5});
+  ASSERT_FALSE(orig.getMigrationId().has_value());
+  ASSERT_FALSE(orig.getMigrationStartPosition().has_value());
+
+  std::ostringstream os;
+  orig.serialize(os);
+  std::istringstream is(os.str());
+
+  Sequence restored = Sequence::deserialize(is);
+
+  EXPECT_FALSE(restored.getMigrationId().has_value());
+  EXPECT_FALSE(restored.getMigrationStartPosition().has_value());
 }
 
 }  // namespace

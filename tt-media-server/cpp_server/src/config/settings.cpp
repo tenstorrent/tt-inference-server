@@ -237,6 +237,10 @@ std::string blazeSocketDescriptorPrefix() {
   return cached;
 }
 
+bool migrateFullKV() {
+  return envBool("MIGRATE_FULL_KV", defaults::MIGRATE_FULL_KV);
+}
+
 unsigned pmConnectTimeoutMs() {
   return static_cast<unsigned>(
       envUlong("PM_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
@@ -285,12 +289,12 @@ std::string ttWarmupSignalsQueueName() {
                    defaults::TT_WARMUP_SIGNALS_QUEUE);
 }
 
-std::string prefillNumLayers() {
-  return envString("PREFILL_NUM_LAYERS", defaults::PREFILL_NUM_LAYERS);
+uint32_t modelNumLayers() {
+  return envUlong("MODEL_NUM_LAYERS", defaults::MODEL_NUM_LAYERS);
 }
 
-std::string prefillChunkSize() {
-  return envString("PREFILL_CHUNK_SIZE", defaults::PREFILL_CHUNK_SIZE);
+uint32_t prefillChunkSize() {
+  return envUlong("PREFILL_CHUNK_SIZE", defaults::PREFILL_CHUNK_SIZE);
 }
 
 std::string ttMemoryRequestQueueName() {
@@ -669,6 +673,30 @@ bool useFastMode() {
   return envUlong("USE_FAST_MODE", defaults::USE_FAST_MODE);
 }
 
+bool enableMigration() {
+  return envBool("ENABLE_MIGRATION", defaults::ENABLE_MIGRATION);
+}
+
+std::string migrationCmdQueueName() {
+  return envString("MIGRATION_CMD_QUEUE_NAME",
+                   defaults::MIGRATION_CMD_QUEUE_NAME);
+}
+
+std::string migrationTableQueueName() {
+  return envString("MIGRATION_TABLE_QUEUE_NAME",
+                   defaults::MIGRATION_TABLE_QUEUE_NAME);
+}
+
+std::string migrationRespQueueName() {
+  return envString("MIGRATION_RESP_QUEUE_NAME",
+                   defaults::MIGRATION_RESP_QUEUE_NAME);
+}
+
+std::string prefillAckChannelName() {
+  return envString("PREFILL_ACK_CHANNEL_NAME",
+                   defaults::PREFILL_ACK_CHANNEL_NAME);
+}
+
 std::string kafkaBrokers() {
   return envString("KAFKA_BROKERS", defaults::KAFKA_BROKERS);
 }
@@ -676,6 +704,27 @@ std::string kafkaBrokers() {
 std::string kafkaOffloadTopicName() {
   return envString("KAFKA_OFFLOAD_TOPIC_NAME",
                    defaults::KAFKA_OFFLOAD_TOPIC_NAME);
+}
+
+std::string kafkaMigrationRequestTopic() {
+  return envString("KAFKA_MIGRATION_REQUEST_TOPIC",
+                   defaults::KAFKA_MIGRATION_REQUEST_TOPIC);
+}
+
+std::string kafkaMigrationAckTopic() {
+  return envString("KAFKA_MIGRATION_ACK_TOPIC",
+                   defaults::KAFKA_MIGRATION_ACK_TOPIC);
+}
+
+uint32_t migrationPrefillEndpointId() {
+  return static_cast<uint32_t>(
+      envUlong("MIGRATION_PREFILL_ENDPOINT_ID",
+               defaults::MIGRATION_PREFILL_ENDPOINT_ID));
+}
+
+uint32_t migrationDecodeEndpointId() {
+  return static_cast<uint32_t>(envUlong(
+      "MIGRATION_DECODE_ENDPOINT_ID", defaults::MIGRATION_DECODE_ENDPOINT_ID));
 }
 
 std::string kafkaGroupId() {

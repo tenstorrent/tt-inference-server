@@ -118,6 +118,25 @@ TEST(LLMServiceProcessStreamingRequest,
   EXPECT_FALSE(pushed->getStartsInThinking());
 }
 
+TEST(LLMServiceProcessStreamingRequest, PropagatesMigrationStartPosition) {
+  auto taskQueue = std::make_shared<tt::ipc::in_memory::TaskQueue>();
+  auto llmService = makeService(taskQueue);
+  tt::domain::llm::LLMRequest request{/*taskId=*/7};
+  request.prompt = std::vector<int>{10, 20, 30};
+  request.skip_special_tokens = true;
+  request.migrationStartPosition = 64;
+
+  llmService->submitStreamingRequest(
+      request, [](const tt::domain::llm::LLMStreamChunk&, bool) {},
+      /*skipPreProcess=*/true);
+
+  ASSERT_FALSE(taskQueue->empty());
+  auto pushed = taskQueue->tryPop();
+  ASSERT_NE(pushed, nullptr);
+  ASSERT_TRUE(pushed->getMigrationStartPosition().has_value());
+  EXPECT_EQ(*pushed->getMigrationStartPosition(), 64u);
+}
+
 int main(int argc, char** argv) {
   configureEnvForTest();
   ::testing::InitGoogleTest(&argc, argv);

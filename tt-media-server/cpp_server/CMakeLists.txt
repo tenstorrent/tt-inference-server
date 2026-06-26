@@ -230,6 +230,13 @@ FetchContent_MakeAvailable(cppzmq)
 
 # Option to enable tt-llm-engine (formerly tt-blaze pipeline_manager)
 option(ENABLE_BLAZE "Enable tt-llm-engine support" OFF)
+# Real shmem migration (MigrationLayerClientAdapter + migration_client static lib).
+# mock_pipeline CI builds use --blaze only; disaggregated pipeline_manager runs
+# need --blaze-with-migration (implies ENABLE_BLAZE).
+option(ENABLE_BLAZE_MIGRATION "Build real shmem migration client (requires ENABLE_BLAZE)" OFF)
+if(ENABLE_BLAZE_MIGRATION AND NOT ENABLE_BLAZE)
+    message(FATAL_ERROR "ENABLE_BLAZE_MIGRATION=ON requires ENABLE_BLAZE=ON (use build.sh --blaze-with-migration)")
+endif()
 
 if(ENABLE_BLAZE)
     # tt-llm-engine (Core-only at compile time when TT::Metalium is not in scope;
@@ -478,6 +485,40 @@ if(ENABLE_BLAZE)
         message(STATUS "Linking llm_runner_lib against TtLlmEngine::Core")
     endif()
     target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE)
+    # Header-only MigrationClientInterface implementations (MigrationLayerClientAdapter,
+    # MockMigrationClient) live under the engine's src tree rather than its public
+    # include tree; blaze_utils.hpp instantiates them, so expose that path.
+    target_include_directories(llm_runner_lib PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/src)
+
+    if(ENABLE_BLAZE_MIGRATION)
+        target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE_MIGRATION)
+        # MigrationLayerClientAdapter forwards to migration_worker::MigrationLayerClient,
+        # whose implementation lives in the disaggregation/migration project. That
+        # project is a standalone CMake project() (own CPM cache + find_package(MPI)),
+        # so it can't be add_subdirectory'd here. Its client is lightweight though
+        # (just POSIX shmem queues), so we compile the two needed translation units
+        # directly into a small static lib and link it in. There is a single concrete
+        # implementation (no mock/real .so swap), so static linking is sufficient for
+        # both Core and LD_PRELOAD'd Full runs.
+        set(_MIG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration)
+        set(_MIG_TT_STL "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/tt-metal/tt_stl")
+        add_library(migration_client STATIC
+            ${_MIG_DIR}/src/migration_client.cpp
+            ${_MIG_DIR}/src/file_lock_guard.cpp)
+        set_target_properties(migration_client PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        target_include_directories(migration_client PUBLIC
+            ${_MIG_DIR}/include
+            ${_MIG_DIR}/src/worker
+            ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/src/common
+            ${TT_METAL_INCLUDE_DIRS}
+            ${_MIG_TT_STL})
+        target_link_libraries(migration_client PUBLIC spdlog::spdlog PRIVATE rt)
+        target_link_libraries(llm_runner_lib PUBLIC migration_client)
+        message(STATUS "Blaze migration client: ENABLED (ENABLE_BLAZE_MIGRATION=ON)")
+    else()
+        message(STATUS "Blaze migration client: DISABLED (use build.sh --blaze-with-migration for pipeline_manager shmem migration)")
+    endif()
 else()
     message(STATUS "Skipping tt-llm-engine linking (ENABLE_BLAZE=OFF)")
 endif()
@@ -744,6 +785,15 @@ add_executable(session_test
 )
 target_link_libraries(session_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(session_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(mock_remote_kv_manager_test
+    tests/unit/services/mock_remote_kv_manager_test.cpp
+    src/services/mock_remote_kv_manager.cpp
+)
+target_link_libraries(mock_remote_kv_manager_test PRIVATE GTest::gtest_main)
+target_include_directories(mock_remote_kv_manager_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -1048,6 +1098,8 @@ if(KAFKA_ENABLED)
     add_library(messaging
         src/messaging/kafka_producer.cpp
         src/messaging/kafka_consumer.cpp
+        src/messaging/migration_message.cpp
+        src/services/remote_kv_manager_impl.cpp
     )
     target_include_directories(messaging PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -1057,6 +1109,7 @@ if(KAFKA_ENABLED)
         ${RDKAFKA_LIB}
         ${RDKAFKACPP_LIB}
         spdlog::spdlog
+        JsonCpp::JsonCpp
     )
 
     # Migration worker library (for consumer instances)
@@ -1070,6 +1123,67 @@ if(KAFKA_ENABLED)
         messaging
         spdlog::spdlog
         JsonCpp::JsonCpp
+    )
+    # Unit test for migration_message JSON (de)serialization.
+    add_executable(migration_message_test
+        tests/unit/messaging/migration_message_test.cpp
+    )
+    target_link_libraries(migration_message_test PRIVATE
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(migration_message_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    # Unit test for RemoteKVManagerImpl (uses in-process fake producer/consumer).
+    add_executable(remote_kv_manager_impl_test
+        tests/unit/services/remote_kv_manager_impl_test.cpp
+    )
+    target_link_libraries(remote_kv_manager_impl_test PRIVATE
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(remote_kv_manager_impl_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    # KV migration worker library
+    add_library(kv_migration_worker
+        src/runtime/worker/kv_migration_worker.cpp
+        src/runtime/worker/stub_migration_executor.cpp
+    )
+    target_include_directories(kv_migration_worker PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(kv_migration_worker PUBLIC
+        messaging
+        spdlog::spdlog
+    )
+
+    # Unit test for KvMigrationWorker (uses in-process fake Kafka + mock executor).
+    add_executable(kv_migration_worker_test
+        tests/unit/workers/kv_migration_worker_test.cpp
+    )
+    target_link_libraries(kv_migration_worker_test PRIVATE
+        kv_migration_worker
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(kv_migration_worker_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    add_executable(remote_kv_manager_kafka_test
+        tests/integration/remote_kv_manager_kafka_test.cpp
+    )
+    target_link_libraries(remote_kv_manager_kafka_test PRIVATE
+        kv_migration_worker
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(remote_kv_manager_kafka_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 else()
     message(STATUS "Kafka support disabled (use -DKAFKA_ENABLED=ON to enable)")
@@ -1251,6 +1365,31 @@ if(KAFKA_ENABLED)
         target_link_libraries(tt_consumer PRIVATE spdlog::spdlog)
     endif()
     target_compile_options(tt_consumer PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+
+    # Separate process so the legacy `tt_consumer` is untouched.
+    add_executable(tt_kv_migration_consumer
+        src/kv_migration_consumer_main.cpp
+    )
+    target_include_directories(tt_kv_migration_consumer PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(tt_kv_migration_consumer PRIVATE
+        Drogon::Drogon
+        llm_runner_lib
+        kv_migration_worker
+        messaging
+    )
+    if(USE_EXTERNAL_FMT)
+        target_link_libraries(tt_kv_migration_consumer PRIVATE
+            spdlog::spdlog fmt::fmt)
+    else()
+        target_link_libraries(tt_kv_migration_consumer PRIVATE spdlog::spdlog)
+    endif()
+    target_compile_options(tt_kv_migration_consumer PRIVATE
         -Wall
         -Wextra
         -Wpedantic
