@@ -205,12 +205,12 @@ bug or correlating an incident with a release.
 
 Response fields:
 
-| Field                          | Meaning                                                                |
-| ------------------------------ | ---------------------------------------------------------------------- |
-| `tt_inference_server.version`  | Semver of this server build (from `VERSION` file).                     |
-| `tt_inference_server.commit`   | Git commit of the `tt-inference-server` repo at build time.            |
-| `tt_blaze.commit`              | Git commit of the `tt-blaze` submodule used at build time.             |
-| `tt_metal.commit`              | Git commit of the `tt-metal` submodule (inside tt-blaze) at build time. |
+| Field                          | Meaning                                                                      |
+| ------------------------------ | -----------------------------------------------------------------------------|
+| `tt_inference_server.version`  | Semver of this server build (from `VERSION` file).                           |
+| `tt_inference_server.commit`   | Git commit of the `tt-inference-server` repo at build time.                  |
+| `tt_llm_engine.commit`         | Git commit of the `tt-llm-engine` submodule used at build time.              |
+| `tt_metal.commit`              | Git commit of the `tt-metal` submodule (inside tt-llm-engine) at build time. |
 
 **Example:**
 
@@ -220,7 +220,7 @@ Response fields:
     "version": "0.5.0",
     "commit": "56741604fa1e1d2cb8a..."
   },
-  "tt_blaze": {
+  "tt_llm_engine": {
     "commit": "8df8a38675123db7b56..."
   },
   "tt_metal": {
