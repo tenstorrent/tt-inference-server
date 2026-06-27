@@ -208,6 +208,8 @@ std::string tokenizerDirForModel(config::ModelType model) {
       return "openai/gpt-oss-120b";
     case config::ModelType::MINIMAX_M2_7:
       return "MiniMaxAI/MiniMax-M2.7";
+    case config::ModelType::GLM_5_1:
+      return "zai-org/GLM-5.1";
     case config::ModelType::GLM_5_2:
       return "zai-org/GLM-5.2";
     case config::ModelType::DEEPSEEK_V4_PRO:
@@ -231,6 +233,7 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
       return std::make_unique<DeepseekTokenizer>(path);
     case config::ModelType::GPT_OSS_120B:
     case config::ModelType::MINIMAX_M2_7:
+    case config::ModelType::GLM_5_1:
     case config::ModelType::GLM_5_2:
       // These load their own model-specific files but currently reuse the
       // DeepSeek chat-template/tool-call behavior until a dedicated tokenizer
@@ -338,6 +341,25 @@ const StaticTokenizerInfo& minimaxM27Info() {
   return kInfo;
 }
 
+// IDs verified against the fetched GLM-5.1 tokenizer (added_tokens in
+// tokenizer.json). Identical special-token layout to GLM-5.2: same eos set
+// [154820, 154827, 154829] and <think>/</think> 154841/154842, and the same
+// glm_moe_dsa model_type (so discovery reuses the glm45/glm47 parser branch).
+const StaticTokenizerInfo& glm51Info() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"zai-org/GLM-5.1",
+      // config.json / generation_config.json eos_token_id:
+      // [154820, 154827, 154829] = <|endoftext|>, <|user|>, <|observation|>.
+      /*stopTokenIds=*/{154827, 154829},
+      /*eosTokenId=*/154820,  // <|endoftext|> (primary; also pad + tokenizer
+                              // eos)
+      /*assistantHeaderSequence=*/{},
+      /*thinkStartTokenId=*/154841,  // <think>
+      /*thinkEndTokenId=*/154842,    // </think>
+  };
+  return kInfo;
+}
+
 // IDs verified against the fetched GLM-5.2 tokenizer (added_tokens in
 // tokenizer.json). GLM uses <think>...</think> reasoning and <tool_call>/
 // <arg_key>/<arg_value> tool calls.
@@ -388,6 +410,8 @@ const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
       return gptOss120bInfo();
     case config::ModelType::MINIMAX_M2_7:
       return minimaxM27Info();
+    case config::ModelType::GLM_5_1:
+      return glm51Info();
     case config::ModelType::GLM_5_2:
       return glm52Info();
     case config::ModelType::DEEPSEEK_V4_PRO:

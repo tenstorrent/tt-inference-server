@@ -56,6 +56,7 @@ std::string resolveBlazeSocketDescriptorPrefix() {
       return "gpt-oss";
     case ModelType::MINIMAX_M2_7:
       return "minimax";
+    case ModelType::GLM_5_1:
     case ModelType::GLM_5_2:
       return "glm";
     case ModelType::DEEPSEEK_V4_PRO:
@@ -477,6 +478,7 @@ ModelType modelType() {
       return ModelType::LLAMA_3_1_8B_INSTRUCT;
     if (m == "openai/gpt-oss-120b") return ModelType::GPT_OSS_120B;
     if (m == "MiniMaxAI/MiniMax-M2.7") return ModelType::MINIMAX_M2_7;
+    if (m == "zai-org/GLM-5.1") return ModelType::GLM_5_1;
     if (m == "zai-org/GLM-5.2") return ModelType::GLM_5_2;
     if (m == "deepseek-ai/DeepSeek-V4-Pro") return ModelType::DEEPSEEK_V4_PRO;
     return ModelType::DEEPSEEK_R1_0528;
@@ -500,6 +502,7 @@ bool sampleOnlyInReasoning() {
     case ModelType::KIMI_K2_7_CODE:
     case ModelType::GPT_OSS_120B:
     case ModelType::MINIMAX_M2_7:
+    case ModelType::GLM_5_1:
     case ModelType::GLM_5_2:
     case ModelType::DEEPSEEK_V4_PRO:
       return false;
