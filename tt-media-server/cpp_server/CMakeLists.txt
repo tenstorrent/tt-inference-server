@@ -1222,7 +1222,7 @@ if(KAFKA_ENABLED)
             message(STATUS "MooncakeMpiDiscovery: ENABLED (#4294 MPI e2e test)")
 
             add_test(NAME MooncakeKafkaMigration
-                COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_kafka_migration_workers_mpi.sh
+                COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_kafka_migration_workers_mpi.py
                 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
             set_tests_properties(MooncakeKafkaMigration PROPERTIES
                 TIMEOUT 240
