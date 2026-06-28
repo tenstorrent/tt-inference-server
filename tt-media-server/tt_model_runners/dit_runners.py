@@ -950,11 +950,28 @@ class TTLtx23DistilledRunner(TTDiTRunner):
     )
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
-        frames, audio = self.pipeline.generate(**_ltx23_pipeline_args(requests[0], self.resolution))
+        # LTX_YUV_EXPORT: device does RGB→YUV 4:2:0 so the d2h + ffmpeg feed move ~half the bytes
+        # and libx264 skips its RGB→YUV conversion. Frames come back as (T, planar_bytes) yuv420p.
+        yuv_export = os.environ.get("LTX_YUV_EXPORT", "0") in ("1", "true", "True")
+        output_type = "yuv" if yuv_export else "rgb"
+        frames, audio = self.pipeline.generate(
+            **_ltx23_pipeline_args(requests[0], self.resolution, output_type=output_type)
+        )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         if self.export_in_runner:
             from utils.video_manager import VideoManager
 
+            if yuv_export:
+                return [
+                    VideoManager().export_yuv420p_to_mp4_with_audio(
+                        frames,
+                        audio.waveform,
+                        audio.sampling_rate,
+                        width=self.resolution.width,
+                        height=self.resolution.height,
+                        fps=LTX23_FPS,
+                    )
+                ]
             return [
                 VideoManager().export_rgb_planar_to_mp4_with_audio(
                     frames,

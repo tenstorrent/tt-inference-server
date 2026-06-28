@@ -120,6 +120,89 @@ class VideoManager:
             except OSError:
                 pass
 
+    def export_yuv420p_to_mp4_with_audio(
+        self,
+        frames_planar,
+        audio_waveform,
+        sample_rate: int,
+        width: int,
+        height: int,
+        fps: int = 24,
+    ) -> str:
+        """Export pre-converted YUV 4:2:0 planar frames + audio to an AV MP4 (H.264 + AAC).
+
+        ``frames_planar`` is uint8 shape ``(T, height*width + 2*(height/2 * width/2))`` —
+        per-frame ``[Y | Cb | Cr]`` row-major, the ffmpeg yuv420p layout the device YUV op
+        produces. Feeding yuv420p directly skips libx264's RGB→YUV conversion and moves
+        ~half the bytes of the RGB path.
+        """
+        arr = np.asarray(frames_planar)
+        if arr.ndim == 3 and arr.shape[0] == 1:
+            arr = arr[0]
+        if arr.ndim != 2:
+            raise ValueError(f"Expected YUV420p planar (T, planar_bytes), got {arr.shape}")
+        expected = height * width + 2 * ((height // 2) * (width // 2))
+        if arr.shape[1] != expected:
+            raise ValueError(
+                f"yuv420p planar row must be {expected} bytes for {width}x{height}, got {arr.shape[1]}"
+            )
+        arr = np.ascontiguousarray(arr, dtype=np.uint8)
+
+        _VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = str(_VIDEO_OUTPUT_DIR / f"{uuid.uuid4()}.mp4")
+        crf = max(_MIN_CRF, min(_MAX_CRF, int(os.environ.get("TT_VIDEO_EXPORT_CRF", "23"))))
+        preset = os.environ.get("TT_VIDEO_EXPORT_PRESET", "ultrafast").strip()
+
+        wav_path = _write_temp_wav(audio_waveform, sample_rate)
+        try:
+            cmd = [
+                "ffmpeg", "-y",
+                "-f", "rawvideo", "-pix_fmt", "yuv420p",
+                "-s", f"{width}x{height}", "-r", str(fps),
+                "-i", "-",
+                "-i", wav_path,
+                "-c:v", "libx264", "-crf", str(crf), "-pix_fmt", "yuv420p",
+            ]
+            if preset:
+                cmd += ["-preset", preset]
+            cmd += ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", output_path]
+            self._stream_bytes_to_ffmpeg(cmd, arr)
+            return output_path
+        except Exception as e:
+            self._logger.error(f"YUV420p export failed: {e}")
+            raise RuntimeError(f"Failed to export YUV420p video+audio: {e}") from e
+        finally:
+            try:
+                os.remove(wav_path)
+            except OSError:
+                pass
+
+    @staticmethod
+    def _stream_bytes_to_ffmpeg(cmd, arr, timeout: int = _FFMPEG_ENCODE_TIMEOUT_S) -> None:
+        """Stream a contiguous uint8 array to ffmpeg stdin in chunks (zero-copy via memoryview)."""
+        process = subprocess.Popen(
+            cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+        )
+        try:
+            mv = memoryview(arr.reshape(-1))
+            chunk = 8 << 20
+            for i in range(0, len(mv), chunk):
+                process.stdin.write(mv[i : i + chunk])
+            process.stdin.close()
+            stderr = process.stderr.read()
+            rc = process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            raise RuntimeError("FFmpeg export timed out") from None
+        except Exception:
+            process.kill()
+            process.wait()
+            raise
+        if rc != 0:
+            error_msg = stderr.decode(errors="replace") if stderr else "Unknown error"
+            raise RuntimeError(f"FFmpeg failed: {error_msg}")
+
     @staticmethod
     def _stream_planar_to_ffmpeg(
         cmd: list[str],
@@ -135,7 +218,9 @@ class VideoManager:
         try:
             for t in range(t_frames):
                 for c in plane_order:
-                    process.stdin.write(np.ascontiguousarray(arr[c, t]).tobytes())
+                    # arr[c, t] is already C-contiguous; write its buffer directly to skip a
+                    # ~900MB/frame-set tobytes() copy on the export critical path.
+                    process.stdin.write(np.ascontiguousarray(arr[c, t]))
             process.stdin.close()
             stderr = process.stderr.read()
             rc = process.wait(timeout=timeout)
