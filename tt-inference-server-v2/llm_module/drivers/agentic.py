@@ -30,6 +30,7 @@ class AgenticEvalDriver(LLMDriver):
     def __init__(self, task: Any, *, runtime_config: Any = None) -> None:
         self.task = task
         self.runtime_config = runtime_config
+        self.venv_python = _agentic_venv_python()
         self._parser = AgenticEvalParser(task_name=task.task_name, score=task.score)
 
     def result_path(self, server: ServerConnection, context: DriverContext) -> Path:
@@ -83,6 +84,7 @@ class SWEbenchAgenticDriver(AgenticEvalDriver):
             context,
             runtime_config=self.runtime_config,
             n_tasks=n_tasks,
+            venv_python=self.venv_python,
         )
         rc = run_swebench(run_config)
         return self._load_result(rc, self.result_path(server, context))
@@ -110,9 +112,29 @@ class TerminalBenchAgenticDriver(AgenticEvalDriver):
             context,
             runtime_config=self.runtime_config,
             n_tasks=n_tasks,
+            venv_python=self.venv_python,
         )
         rc = run_terminal_bench(run_config)
         return self._load_result(rc, self.result_path(server, context))
+
+
+def _agentic_venv_python() -> Optional[Path]:
+    """Interpreter of the EVALS_AGENTIC venv whose bin/ holds harbor/sweagent.
+
+    Returned to the harness so it can locate its CLI even when the agentic
+    driver runs as a child of the V2_RUN_SCRIPT engine (release path) rather
+    than after ``run_agentic.py`` re-execs into the agentic venv. Resolution
+    failures fall back to ``None`` (current interpreter), preserving standalone
+    behavior.
+    """
+    try:
+        from workflows.workflow_types import WorkflowVenvType
+        from workflows.workflow_venvs import VENV_CONFIGS
+
+        return VENV_CONFIGS[WorkflowVenvType.EVALS_AGENTIC].venv_python
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("Could not resolve EVALS_AGENTIC venv python (%s).", e)
+        return None
 
 
 def make_agentic_driver(task: Any, *, runtime_config: Any = None) -> AgenticEvalDriver:
@@ -133,6 +155,7 @@ def build_swebench_config(
     *,
     runtime_config: Any = None,
     n_tasks: Optional[int] = None,
+    venv_python: Optional[Path] = None,
 ) -> SWEbenchRunConfig:
     cfg = task.swebench_eval_config
     return SWEbenchRunConfig(
@@ -161,6 +184,7 @@ def build_swebench_config(
         random_delay_multiplier=cfg.random_delay_multiplier,
         score_existing_predictions=False,
         instance_ids=resolve_instance_ids(task, runtime_config),
+        venv_python=venv_python,
     )
 
 
@@ -171,6 +195,7 @@ def build_terminal_bench_config(
     *,
     runtime_config: Any = None,
     n_tasks: Optional[int] = None,
+    venv_python: Optional[Path] = None,
 ) -> TerminalBenchRunConfig:
     cfg = task.agentic_eval_config
     jobs_dir = _agentic_output_dir(context.output_dir, server.model, task).parent
@@ -197,6 +222,7 @@ def build_terminal_bench_config(
         agent_import_path=cfg.agent_import_path,
         environment_env=cfg.environment_env,
         verifier_env=cfg.verifier_env,
+        venv_python=venv_python,
     )
 
 

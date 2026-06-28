@@ -45,6 +45,15 @@ class SWEbenchRunConfig:
     random_delay_multiplier: float
     score_existing_predictions: bool
     instance_ids: list[str] = field(default_factory=list)
+    # Interpreter whose bin/ holds the ``sweagent`` / ``mini-extra`` CLIs and
+    # whose ``-m swebench`` is importable. ``None`` uses the current interpreter
+    # (standalone ``run_agentic.py`` re-execs into the EVALS_AGENTIC venv); set
+    # on the release path where the harness runs as a child of the engine.
+    venv_python: Optional[Path] = None
+
+
+def _interpreter(config: SWEbenchRunConfig) -> Path:
+    return Path(config.venv_python) if config.venv_python else Path(sys.executable)
 
 
 def _run_command(cmd: list[str], cwd: Path, env: dict[str, str]) -> int:
@@ -142,8 +151,9 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
     return config_path
 
 
-def _get_sweagent_source_dir() -> Optional[Path]:
-    source_dir = Path(sys.executable).parent.parent / "SWE-agent"
+def _get_sweagent_source_dir(interpreter: Optional[Path] = None) -> Optional[Path]:
+    base = Path(interpreter) if interpreter else Path(sys.executable)
+    source_dir = base.parent.parent / "SWE-agent"
     return source_dir if source_dir.exists() else None
 
 
@@ -165,8 +175,9 @@ def build_sweagent_command(
     sweagent_config_path: Path,
     sweagent_output_dir: Path,
 ) -> list[str]:
-    sweagent_exec = Path(sys.executable).parent / "sweagent"
-    sweagent_source_dir = _get_sweagent_source_dir()
+    interpreter = _interpreter(config)
+    sweagent_exec = interpreter.parent / "sweagent"
+    sweagent_source_dir = _get_sweagent_source_dir(interpreter)
     base_config_path = _resolve_sweagent_config_path(
         config.sweagent_config, sweagent_source_dir
     )
@@ -201,7 +212,7 @@ def build_mini_sweagent_command(
     mini_config_path: Path,
     mini_output_dir: Path,
 ) -> list[str]:
-    mini_exec = Path(sys.executable).parent / "mini-extra"
+    mini_exec = _interpreter(config).parent / "mini-extra"
     cmd = [
         str(mini_exec),
         "swebench",
@@ -280,7 +291,7 @@ def build_swebench_harness_command(
     run_id: str,
 ) -> list[str]:
     cmd = [
-        sys.executable,
+        str(_interpreter(config)),
         "-m",
         "swebench.harness.run_evaluation",
         "--dataset_name",
@@ -404,7 +415,7 @@ def run(config: SWEbenchRunConfig) -> int:
     env.setdefault("OPENAI_API_BASE", config.api_base)
     env.setdefault("SWE_AGENT_LOG_STREAM_LEVEL", "INFO")
     env.setdefault("MSWEA_COST_TRACKING", "ignore_errors")
-    sweagent_source_dir = _get_sweagent_source_dir()
+    sweagent_source_dir = _get_sweagent_source_dir(_interpreter(config))
     if sweagent_source_dir is not None:
         env.setdefault("SWE_AGENT_CONFIG_DIR", str(sweagent_source_dir / "config"))
         env.setdefault("SWE_AGENT_TOOLS_DIR", str(sweagent_source_dir / "tools"))

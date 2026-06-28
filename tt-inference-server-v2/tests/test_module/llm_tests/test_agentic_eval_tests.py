@@ -154,22 +154,30 @@ class TestAgenticParser:
 
         assert block.kind == "evals"
         assert block.task_type == "llm"
+        assert block.title == "LLM Eval — terminal_bench_2"
         assert block.targets["task_name"] == "terminal_bench_2"
-        assert abs(block.data["accuracy"] - 0.62) < 1e-9
-        assert block.data["n_trials"] == 89
-        assert block.data["n_resolved"] == 3
+        assert block.targets["n_trials"] == 89
+        assert block.targets["n_resolved"] == 3
+        assert abs(block.data["score"] - 62.0) < 1e-9
+        assert block.data["task_name"] == "terminal_bench_2"
+        assert block.data["published_score"] == 0.5
+        assert block.data["gpu_reference_score"] == 0.45
+        assert abs(block.data["ratio_to_published"] - (62.0 / 0.5)) < 1e-9
         assert block.data["accuracy_check"] == ReportCheckTypes.PASS
+        assert "success" not in block.data
+        assert "accuracy" not in block.data
 
     def test_failure_block_uses_failing_accuracy_check(self):
         parser = AgenticEvalParser(task_name="terminal_bench_2", score=FakeScore())
         block = parser.failure_block(return_code=7, device="N150")
 
         assert block.kind == "evals"
-        assert block.data == {
-            "success": False,
-            "accuracy_check": 3,
-            "subprocess_rc": 7,
-        }
+        assert block.title == "LLM Eval — terminal_bench_2"
+        assert block.data["task_name"] == "terminal_bench_2"
+        assert block.data["score"] is None
+        assert block.data["accuracy_check"] == ReportCheckTypes.FAIL
+        assert block.data["success"] is False
+        assert block.data["subprocess_rc"] == 7
 
     def test_compute_accuracy_check_boundaries(self):
         score = FakeScore(gpu_reference_score=50.0, tolerance=0.05)

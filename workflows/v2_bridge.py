@@ -92,14 +92,14 @@ def _is_llm_benchmark_run(wf, model_spec, runtime_config) -> bool:
 
 
 def _llm_release_includes_agentic(model_spec) -> bool:
-    """True if an LLM release should also run the dedicated agentic launcher.
+    """True if an LLM release should also run agentic evals.
 
-    Agentic evals (Terminal-Bench-2 / SWE-bench Verified) run their harness
-    (harbor / swebench) from inside the EVALS_AGENTIC venv, so they cannot run
-    in-process under the v2 release engine (V2_RUN_SCRIPT venv). When a model
-    configures EVALS_AGENTIC tasks, release dispatches a separate
-    ``run_agentic.py`` subprocess (mirrors v1 release = evals + agentic +
-    benchmarks). Models without agentic tasks skip it.
+    Agentic evals (Terminal-Bench-2 / SWE-bench Verified) now run in-process as
+    a child of the v2 release engine: the harness binaries are resolved from the
+    EVALS_AGENTIC venv explicitly (not from ``sys.executable``), so their Blocks
+    land in the single release report. This predicate gates only the up-front
+    provisioning of the EVALS_AGENTIC venv; the release engine itself decides
+    whether to run the agentic child (see ReleaseWorkflow._llm_children).
     """
     if model_spec.model_type != ModelType.LLM:
         return False
@@ -244,41 +244,10 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
         )
     else:
         logger.info(f"✅ Completed v2 workflow: {v2_workflow}")
-    results = [WorkflowResult(workflow_name=v2_workflow, return_code=return_code)]
-    # An LLM release additionally runs agentic evals through their dedicated
-    # launcher (EVALS_AGENTIC venv); the in-process v2 release engine cannot.
-    if wf == WorkflowType.RELEASE and _llm_release_includes_agentic(model_spec):
-        results.append(
-            _run_release_agentic_step(v2_dir, model_spec, runtime_config, json_fpath)
-        )
-    return results
-
-
-def _run_release_agentic_step(
-    v2_dir, model_spec, runtime_config, json_fpath
-) -> WorkflowResult:
-    """Run the agentic launcher as the agentic step of an LLM release.
-
-    Uses the same ``run_agentic.py`` path and output location as a standalone
-    ``--workflow agentic`` run so report aggregation picks up the result.json.
-    """
-    output_dir = get_default_workflow_root_log_dir() / "reports_output" / "agentic"
-    ensure_readwriteable_dir(output_dir)
-    cmd = _build_agentic_cmd(
-        v2_dir, model_spec, runtime_config, json_fpath, output_dir
-    )
-    env = os.environ.copy()
-    env["TT_V1_RUN_COMMAND"] = "python " + shlex.join(sys.argv)
-
-    logger.info("Delegating release agentic step to v2 engine via agentic launcher.")
-    return_code = run_command(cmd, logger=logger, env=env)
-    if return_code != 0:
-        logger.error(
-            "⛔ v2 release agentic step failed with return code: %s", return_code
-        )
-    else:
-        logger.info("✅ Completed v2 release agentic step")
-    return WorkflowResult(workflow_name="agentic", return_code=return_code)
+    # Agentic evals run in-process as a release child (their Blocks are already
+    # in the report the engine wrote). Parameter tests will be added here once
+    # they are available on main as a v2 workflow.
+    return [WorkflowResult(workflow_name=v2_workflow, return_code=return_code)]
 
 
 def run_v2_llm_benchmark_workflow(
@@ -517,6 +486,10 @@ def _v2_dependency_venv_types(
     # under V2_RUN_SCRIPT, so its tool venv must exist up front.
     if wf == WorkflowType.RELEASE and model_spec.model_type == ModelType.LLM:
         venv_types.append(WorkflowVenvType.V2_LLM_VLLM)
+        # The agentic release child resolves harbor/sweagent from the
+        # EVALS_AGENTIC venv, so it must exist before the engine subprocess runs.
+        if _llm_release_includes_agentic(model_spec):
+            venv_types.append(WorkflowVenvType.EVALS_AGENTIC)
     return venv_types
 
 

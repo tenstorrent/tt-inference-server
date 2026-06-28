@@ -35,6 +35,17 @@ _LLM_EVAL_TASK_LABEL = "llm_eval"
 _SPEC_DECODE_TASK_LABEL = "spec_decode"
 
 
+def _has_agentic_tasks(ctx) -> bool:
+    """True if the run's eval tasks include any EVALS_AGENTIC task."""
+    from workflows.workflow_types import WorkflowVenvType
+
+    tasks = getattr(getattr(ctx, "all_params", None), "tasks", None) or []
+    return any(
+        getattr(t, "workflow_venv_type", None) == WorkflowVenvType.EVALS_AGENTIC
+        for t in tasks
+    )
+
+
 class EvalsWorkflow(WorkflowExecution):
     name = "evals"
     task_types = (MediaTaskType.EVALUATION,)
@@ -358,11 +369,10 @@ class ReleaseWorkflow(WorkflowExecution):
     llm_children: ClassVar[Sequence[str]] = ("evals", "benchmarks")
 
     def run_tasks(self) -> List[TaskOutcome]:
-        children = (
-            self.llm_children
-            if self.ctx.model_spec.model_type == ModelType.LLM
-            else self.children
-        )
+        if self.ctx.model_spec.model_type == ModelType.LLM:
+            children = self._llm_children()
+        else:
+            children = self.children
         outcomes: List[TaskOutcome] = []
         for child_name in children:
             child_cls = WORKFLOW_REGISTRY[child_name]
@@ -374,6 +384,19 @@ class ReleaseWorkflow(WorkflowExecution):
             )
             outcomes.extend(child.run_tasks())
         return outcomes
+
+    def _llm_children(self) -> Sequence[str]:
+        """LLM release children, appending ``agentic`` when the model has
+        EVALS_AGENTIC tasks configured.
+
+        Agentic now runs in-process as a release child (its harness binaries
+        are resolved from the EVALS_AGENTIC venv explicitly), so its Blocks
+        land in the single release report. Models without agentic tasks skip
+        it to avoid a no-op failure.
+        """
+        if _has_agentic_tasks(self.ctx):
+            return tuple(self.llm_children) + ("agentic",)
+        return self.llm_children
 
 
 WORKFLOW_REGISTRY: Dict[str, Type[WorkflowExecution]] = {

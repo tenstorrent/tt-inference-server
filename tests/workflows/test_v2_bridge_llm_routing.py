@@ -216,7 +216,7 @@ def test_llm_release_includes_agentic_false_for_non_llm(monkeypatch):
     assert v2_bridge._llm_release_includes_agentic(_spec(ModelType.IMAGE)) is False
 
 
-def test_release_dispatches_agentic_step_when_configured(monkeypatch, tmp_path):
+def test_release_dispatches_only_engine(monkeypatch, tmp_path):
     spec, rc = _spec(ModelType.LLM), _rc(workflow="release")
     calls = []
 
@@ -231,38 +231,16 @@ def test_release_dispatches_agentic_step_when_configured(monkeypatch, tmp_path):
         v2_bridge, "get_default_workflow_root_log_dir", lambda: tmp_path
     )
     monkeypatch.setattr(v2_bridge, "ensure_readwriteable_dir", lambda p: None)
-    monkeypatch.setattr(v2_bridge, "_llm_release_includes_agentic", lambda ms: True)
 
     results = v2_bridge.run_v2_workflows(spec, rc, str(tmp_path / "spec.json"))
 
-    assert [r.workflow_name for r in results] == ["release", "agentic"]
-    assert all(r.return_code == 0 for r in results)
-    # Two subprocesses: the v2 release engine (run.py) and the agentic launcher.
-    assert any("run.py" in c[1] for c in calls)
-    assert any("run_agentic.py" in c[1] for c in calls)
-
-
-def test_release_skips_agentic_step_when_not_configured(monkeypatch, tmp_path):
-    spec, rc = _spec(ModelType.LLM), _rc(workflow="release")
-    calls = []
-
-    monkeypatch.setattr(
-        v2_bridge, "run_command", lambda cmd, logger=None, env=None: calls.append(cmd) or 0
-    )
-    monkeypatch.setattr(v2_bridge, "_ensure_v2_venv", lambda ms: Path("/fake/python"))
-    monkeypatch.setattr(
-        v2_bridge, "_ensure_v2_dependency_venvs", lambda *a, **k: None
-    )
-    monkeypatch.setattr(
-        v2_bridge, "get_default_workflow_root_log_dir", lambda: tmp_path
-    )
-    monkeypatch.setattr(v2_bridge, "ensure_readwriteable_dir", lambda p: None)
-    monkeypatch.setattr(v2_bridge, "_llm_release_includes_agentic", lambda ms: False)
-
-    results = v2_bridge.run_v2_workflows(spec, rc, str(tmp_path / "spec.json"))
-
+    # Agentic now runs in-process inside the release engine; no extra
+    # subprocess for agentic, tests, or report merging.
     assert [r.workflow_name for r in results] == ["release"]
+    assert all(r.return_code == 0 for r in results)
+    assert any("run.py" in c[1] for c in calls)
     assert not any("run_agentic.py" in c[1] for c in calls)
+    assert not any("run_release_merge.py" in c[1] for c in calls)
 
 
 if __name__ == "__main__":

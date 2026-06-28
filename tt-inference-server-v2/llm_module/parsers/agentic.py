@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, Union
 
 from report_module.schema import Block
 from workflows.workflow_types import ReportCheckTypes
@@ -44,18 +44,19 @@ class AgenticEvalParser(LLMResultParser):
             )
         if self.result_path is not None:
             targets["job_result_path"] = str(self.result_path)
+        _attach_harbor_targets(targets, metrics)
 
         return Block(
             kind=self.kind,
             task_type="llm",
-            title=f"Agentic Eval - {self.task_name}",
+            title=f"LLM Eval — {self.task_name}",
             id=_block_id(self.task_name, device),
             targets=targets,
-            data={
-                "success": True,
-                "accuracy_check": compute_accuracy_check(metrics, self.score),
-                **metrics,
-            },
+            data=_build_evals_data(
+                task_name=self.task_name,
+                score=self.score,
+                metrics=metrics,
+            ),
         )
 
     def failure_block(self, *, return_code: int, device: str = "") -> Block:
@@ -65,11 +66,87 @@ class AgenticEvalParser(LLMResultParser):
         return Block(
             kind=self.kind,
             task_type="llm",
-            title=f"Agentic Eval - {self.task_name} (FAILED)",
+            title=f"LLM Eval — {self.task_name}",
             id=_block_id(self.task_name, device),
             targets=targets,
-            data={"success": False, "accuracy_check": 3, "subprocess_rc": return_code},
+            data=_build_evals_data(
+                task_name=self.task_name,
+                score=self.score,
+                metrics={},
+                success=False,
+                subprocess_rc=return_code,
+            ),
         )
+
+
+def _build_evals_data(
+    *,
+    task_name: str,
+    score: Any,
+    metrics: Mapping[str, Any],
+    success: bool = True,
+    error: Optional[str] = None,
+    subprocess_rc: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Shape agentic results like standard lm-eval Blocks for report rendering."""
+
+    tolerance = getattr(score, "tolerance", None)
+    published = getattr(score, "published_score", None)
+    published_ref = getattr(score, "published_score_ref", None)
+    reference = getattr(score, "gpu_reference_score", None)
+
+    accuracy = metrics.get("accuracy")
+    normalized_score: Optional[float]
+    if accuracy is None:
+        normalized_score = None
+    else:
+        normalized_score = _normalize_accuracy_to_percent(accuracy)
+
+    if normalized_score is not None and score is not None:
+        ratio_pub: Union[float, str] = (
+            normalized_score / published if published else "N/A"
+        )
+        ratio_ref: Union[float, str] = (
+            normalized_score / reference if reference else "N/A"
+        )
+        accuracy_check = compute_accuracy_check(metrics, score)
+    elif not success:
+        ratio_pub = "N/A"
+        ratio_ref = "N/A"
+        accuracy_check = ReportCheckTypes.FAIL
+    else:
+        ratio_pub = "N/A"
+        ratio_ref = "N/A"
+        accuracy_check = ReportCheckTypes.NA
+
+    data: Dict[str, Any] = {
+        "task_name": task_name,
+        "tolerance": tolerance,
+        "published_score": published,
+        "published_score_ref": published_ref,
+        "gpu_reference_score": reference,
+        "score": normalized_score,
+        "ratio_to_published": ratio_pub,
+        "ratio_to_reference": ratio_ref,
+        "accuracy_check": accuracy_check,
+    }
+    if not success:
+        data["success"] = False
+        if subprocess_rc is not None:
+            data["subprocess_rc"] = subprocess_rc
+        if error:
+            data["error"] = error
+    return data
+
+
+def _attach_harbor_targets(targets: Dict[str, Any], metrics: Mapping[str, Any]) -> None:
+    """Keep Harbor-specific counters in targets for JSON export only."""
+    for key in ("n_trials", "n_resolved", "pass_at_1"):
+        if key in metrics:
+            targets[key] = metrics[key]
+    for key, value in metrics.items():
+        if key.startswith("pass_at_") and key != "pass_at_1":
+            targets[key] = value
 
 
 def extract_harbor_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
