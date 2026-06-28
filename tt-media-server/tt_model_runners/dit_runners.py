@@ -863,8 +863,10 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
         return _wan22_i2v_warmup_request("A golden retriever running on a sandy beach")
 
 
-LTX23_TRACE_REGION_BYTES = 300_000_000  # both stage traces, ~236 MB at 1080p
+LTX23_TRACE_REGION_BYTES = 500_000_000  # video s1+s2 + BWE/vocoder traces at 1080p
 LTX23_GALAXY_ROUTER_MAX_PAYLOAD_BYTES = 8192
+# Depthwise audio taps (native ttnn.conv1d) run an UntilizeWithHalo gather that needs L1_SMALL.
+LTX23_L1_SMALL_BYTES = 32768
 # Distilled transformer file + Gemma-3 encoder; the latent upscaler is pinned in the pipeline.
 LTX23_DISTILLED_FILENAME = "ltx-2.3-22b-distilled-1.1.safetensors"
 LTX23_GEMMA_REPO = "google/gemma-3-12b-it-qat-q4_0-unquantized"
@@ -872,7 +874,7 @@ LTX23_FPS = 24  # distilled output frame rate; audio decode + AV mux must agree
 
 
 def _ltx23_dit_device_params(mesh_shape: tuple) -> dict:
-    device_params: dict = {}
+    device_params: dict = {"l1_small_size": LTX23_L1_SMALL_BYTES}
     # Trace region is wasted DRAM unless tracing is on (see create_pipeline).
     if os.environ.get("LTX_TRACED", "0") in ("1", "true", "True"):
         device_params["trace_region_size"] = LTX23_TRACE_REGION_BYTES
