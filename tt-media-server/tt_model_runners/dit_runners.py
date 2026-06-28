@@ -26,6 +26,7 @@ from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerate
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.tt_dit.pipelines.ltx.pipeline_ltx_distilled import LTXDistilledPipeline
+from models.tt_dit.pipelines.ltx.pipeline_ltx import DEFAULT_NEGATIVE_PROMPT as LTX23_REFERENCE_NEGATIVE_PROMPT
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
 from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
 from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
@@ -871,6 +872,11 @@ LTX23_L1_SMALL_BYTES = 32768
 LTX23_DISTILLED_FILENAME = "ltx-2.3-22b-distilled-1.1.safetensors"
 LTX23_GEMMA_REPO = "google/gemma-3-12b-it-qat-q4_0-unquantized"
 LTX23_FPS = 24  # distilled output frame rate; audio decode + AV mux must agree
+# Distilled denoise is a fixed sigma schedule (8 + 3) and guidance-free (no CFG), so the request's
+# num_inference_steps and negative_prompt have no effect; surfaced (not applied) for transparency.
+LTX23_STAGE1_STEPS = 8
+LTX23_STAGE2_STEPS = 3
+LTX23_TOTAL_STEPS = LTX23_STAGE1_STEPS + LTX23_STAGE2_STEPS
 
 
 def _ltx23_dit_device_params(mesh_shape: tuple) -> dict:
@@ -943,6 +949,24 @@ class TTLtx23DistilledRunner(TTDiTRunner):
     def get_pipeline_device_params(self):
         return _ltx23_dit_device_params(self.settings.device_mesh_shape)
 
+    def _log_distilled_contract(self, request: VideoGenerateRequest) -> None:
+        """Surface that the distilled model ignores num_inference_steps/negative_prompt rather than
+        silently dropping them: it runs a fixed 8+3 sigma schedule and is guidance-free (no CFG).
+        The full reference negative prompt is logged once; the per-request notes fire only when set."""
+        if not getattr(self, "_logged_distilled_contract", False):
+            self.logger.info(
+                f"LTX-2.3 distilled: fixed {LTX23_TOTAL_STEPS}-step schedule "
+                f"(stage1={LTX23_STAGE1_STEPS} + stage2={LTX23_STAGE2_STEPS}); guidance-free (no CFG). "
+                f"Reference negative prompt (NOT applied): {LTX23_REFERENCE_NEGATIVE_PROMPT}"
+            )
+            self._logged_distilled_contract = True
+        if request.num_inference_steps is not None and request.num_inference_steps != LTX23_TOTAL_STEPS:
+            self.logger.info(
+                f"Ignoring num_inference_steps={request.num_inference_steps}: distilled schedule is fixed."
+            )
+        if request.negative_prompt:
+            self.logger.info("Ignoring negative_prompt: distilled model is guidance-free.")
+
     @log_execution_time(
         f"{dit_runner_log_map[get_settings().model_runner]} inference",
         TelemetryEvent.MODEL_INFERENCE,
@@ -950,6 +974,7 @@ class TTLtx23DistilledRunner(TTDiTRunner):
     )
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
+        self._log_distilled_contract(requests[0])
         # LTX_YUV_EXPORT: device does RGB→YUV 4:2:0 so the d2h + ffmpeg feed move ~half the bytes
         # and libx264 skips its RGB→YUV conversion. Frames come back as (T, planar_bytes) yuv420p.
         yuv_export = os.environ.get("LTX_YUV_EXPORT", "0") in ("1", "true", "True")
