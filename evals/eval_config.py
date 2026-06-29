@@ -1229,6 +1229,14 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
+                # Cap concurrency at 8 (vs the default 32). mmlu_pro at conc 32
+                # starves decode under prefill-first co-scheduling: long-tail
+                # requests stall per-token and trip the streaming timeout. The
+                # 4B (weaker) produces more runaway/no-EOS generations to the
+                # full max_gen_toks=32768, so it hit 27 timeouts at conc 32 and
+                # crashed the release (run 28352703551). 8 keeps the long-tail
+                # decoders moving. Mirrors the Qwen3-8B r1_gpqa_diamond cap.
+                max_concurrent=8,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
