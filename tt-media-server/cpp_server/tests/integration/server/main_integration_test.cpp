@@ -258,13 +258,13 @@ TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
     if (i == 0) {
       EXPECT_EQ(seq->getTokenIds().size(), 72u) << "turn 0 tokenIds size";
     } else if (i == 1) {
-      // 2nd turn is 96 tokens -> 64 from cache (2 blocks), 32 new
-      EXPECT_EQ(seq->getTokenIds().size(), 32u) << "turn 1 tokenIds size";
+      // 2nd turn is 97 tokens -> 64 from cache (2 blocks), 33 new
+      EXPECT_EQ(seq->getTokenIds().size(), 33u) << "turn 1 tokenIds size";
       ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 1 kvPositionId";
       EXPECT_EQ(*seq->getKVPositionId(), 64u) << "turn 1 kvPositionId value";
     } else if (i == 2) {
-      // 3rd turn is 123 tokens -> 96 from cache (3 blocks), 27 new
-      EXPECT_EQ(seq->getTokenIds().size(), 27u) << "turn 2 tokenIds size";
+      // 3rd turn is 125 tokens -> 96 from cache (3 blocks), 29 new
+      EXPECT_EQ(seq->getTokenIds().size(), 29u) << "turn 2 tokenIds size";
       ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 2 kvPositionId";
       EXPECT_EQ(*seq->getKVPositionId(), 96u) << "turn 2 kvPositionId value";
     }
@@ -592,7 +592,7 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
       << "request D should hit C's session (slot 1)";
   EXPECT_EQ(seqD->getKVCacheSlot(), 1u)
       << "request D should reuse slot 1 from request C";
-  EXPECT_EQ(seqD->getTokenIds().size(), 13u) << "request D tokenIds size";
+  EXPECT_EQ(seqD->getTokenIds().size(), 14u) << "request D tokenIds size";
   ASSERT_TRUE(seqD->getKVPositionId().has_value())
       << "request D should have kv_position_id set";
   // 128 matched tokens (4 blocks); next token's KV at first free index 128.
