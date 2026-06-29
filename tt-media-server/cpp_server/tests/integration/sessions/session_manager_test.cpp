@@ -412,9 +412,7 @@ TEST(SessionManagerPrefixCache,
     return blocks;
   };
 
-  // Mirrors the issue #4401 log shape: a short request fully matches the first
-  // 35 blocks of a much longer busy session (35/1283 = 2.7%, below threshold),
-  // while a second busy source is a qualifying copy candidate.
+  // Issue #4401 shape: 35/1283 blocks is below the 40% hit threshold.
   auto rejectedBlocks = makeBlocks(1283);
   std::vector<tt::utils::BlockHashInfo> requestBlocks(
       rejectedBlocks.begin(), rejectedBlocks.begin() + 35);
@@ -423,16 +421,10 @@ TEST(SessionManagerPrefixCache,
 
   auto rejectedSessionId =
       createSessionWithSlot(manager, lf.loop, 2u, rejectedBlocks);
-  auto qualifyingSessionId =
-      createSessionWithSlot(manager, lf.loop, 3u, qualifyingBlocks);
   ASSERT_FALSE(rejectedSessionId.empty());
-  ASSERT_FALSE(qualifyingSessionId.empty());
 
   manager.setResidentPrefixBlocks(rejectedSessionId, rejectedBlocks.size());
-  manager.setResidentPrefixBlocks(qualifyingSessionId,
-                                  qualifyingBlocks.size());
   acquireInFlight(manager, rejectedSessionId);
-  acquireInFlight(manager, qualifyingSessionId);
 
   const char* previousThreshold = std::getenv("PREFIX_CACHE_HIT_THRESHOLD");
   const std::string previousValue =
@@ -441,19 +433,32 @@ TEST(SessionManagerPrefixCache,
 
   auto acquired = manager.tryAcquireByPrefixHash(requestBlocks, nullptr);
   if (!acquired.has_value()) {
-    ADD_FAILURE() << "busy prefix candidates should be returned for slot-copy "
-                     "evaluation";
+    ADD_FAILURE() << "busy prefix candidates should be returned";
+  } else {
+    EXPECT_FALSE(acquired->sessionFound);
+    EXPECT_FALSE(manager.findASlotToCopyFrom(acquired->candidatesList))
+        << "threshold-rejected candidates must not be copy sources";
+  }
+
+  auto qualifyingSessionId =
+      createSessionWithSlot(manager, lf.loop, 3u, qualifyingBlocks);
+  ASSERT_FALSE(qualifyingSessionId.empty());
+  manager.setResidentPrefixBlocks(qualifyingSessionId,
+                                  qualifyingBlocks.size());
+  acquireInFlight(manager, qualifyingSessionId);
+
+  acquired = manager.tryAcquireByPrefixHash(requestBlocks, nullptr);
+  if (!acquired.has_value()) {
+    ADD_FAILURE() << "valid busy candidates should be returned";
   } else {
     EXPECT_FALSE(acquired->sessionFound);
     auto copyCandidate = manager.findASlotToCopyFrom(acquired->candidatesList);
     if (!copyCandidate.has_value()) {
       ADD_FAILURE()
-          << "the qualifying busy session should still be eligible for slot "
-             "copy";
+          << "the threshold-valid busy session should remain copy-eligible";
     } else {
       EXPECT_EQ(copyCandidate->sessionId, qualifyingSessionId)
-          << "slot copy must not use a prefix candidate rejected by "
-             "PREFIX_CACHE_HIT_THRESHOLD";
+          << "slot copy must skip the threshold-rejected session";
     }
   }
 
