@@ -25,6 +25,7 @@ Configuration:
     --brokers <host:port>     Override the bootstrap address
     KAFKA_BROKERS             Same, via env (default: kafka:9092)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -69,7 +70,9 @@ def _wait_for_broker(admin: AdminClient, timeout_s: float = 30.0) -> None:
         except KafkaException as exc:
             last_err = exc
         time.sleep(1.0)
-    raise SystemExit(f"broker not ready after {timeout_s:.0f}s (last error: {last_err})")
+    raise SystemExit(
+        f"broker not ready after {timeout_s:.0f}s (last error: {last_err})"
+    )
 
 
 def _build_request(args: argparse.Namespace, index: int) -> dict[str, Any]:
@@ -82,11 +85,7 @@ def _build_request(args: argparse.Namespace, index: int) -> dict[str, Any]:
             "position_start": 0,
             "position_end": random.choice([16, 32, 64, 128, 256]),
         }
-    base_id = (
-        args.migration_id
-        if args.migration_id is not None
-        else time.time_ns()
-    )
+    base_id = args.migration_id if args.migration_id is not None else time.time_ns()
     return {
         "migration_id": base_id + index,
         "src_slot": args.src_slot,
@@ -200,9 +199,7 @@ def cmd_tail(args: argparse.Namespace) -> None:
                     print(f"!!! {msg.error()}", file=sys.stderr)
                 continue
             value = msg.value().decode("utf-8", errors="replace")
-            print(
-                f"[{topic} p{msg.partition()} o{msg.offset()}] {value}"
-            )
+            print(f"[{topic} p{msg.partition()} o{msg.offset()}] {value}")
             seen += 1
             if args.max and seen >= args.max:
                 break
