@@ -14,10 +14,11 @@ namespace tt::services {
 RemoteKVManagerImpl::RemoteKVManagerImpl(
     std::unique_ptr<tt::messaging::IKafkaProducer> requestProducer,
     std::unique_ptr<tt::messaging::IKafkaConsumer> ackConsumer,
-    std::chrono::milliseconds timeout, std::chrono::milliseconds sweepInterval,
-    int drainPollMs)
+    std::size_t migrationWorkerPoolSize, std::chrono::milliseconds timeout,
+    std::chrono::milliseconds sweepInterval, int drainPollMs)
     : requestProducer(std::move(requestProducer)),
       ackConsumer(std::move(ackConsumer)),
+      migrationWorkerPoolSize(migrationWorkerPoolSize),
       timeout(timeout),
       sweepInterval(sweepInterval),
       drainPollMs(drainPollMs) {
@@ -31,13 +32,20 @@ RemoteKVManagerImpl::RemoteKVManagerImpl(
         "[RemoteKVManagerImpl] null ackConsumer; statuses will never "
         "transition out of IN_PROGRESS via ack");
   }
+  if (this->migrationWorkerPoolSize == 0) {
+    TT_LOG_WARN(
+        "[RemoteKVManagerImpl] migrationWorkerPoolSize=0; clamping to 1. "
+        "Downloads would never reach COMPLETED with pool size 0.");
+    this->migrationWorkerPoolSize = 1;
+  }
   running.store(true, std::memory_order_relaxed);
   lastSweep = std::chrono::steady_clock::now();
   drainThread = std::thread([this] { drainLoop(); });
   TT_LOG_INFO(
-      "[RemoteKVManagerImpl] started (timeout={}ms, sweep={}ms, "
+      "[RemoteKVManagerImpl] started (workerPool={}, timeout={}ms, sweep={}ms, "
       "drainPoll={}ms)",
-      this->timeout.count(), this->sweepInterval.count(), this->drainPollMs);
+      this->migrationWorkerPoolSize, this->timeout.count(),
+      this->sweepInterval.count(), this->drainPollMs);
 }
 
 RemoteKVManagerImpl::~RemoteKVManagerImpl() {
@@ -113,6 +121,64 @@ MigrationStatus RemoteKVManagerImpl::getStatus(uint64_t migrationId) const {
   return it->second.status;
 }
 
+// ---------------------------------------------------------------------------
+// Mooncake-store path. No-op for now: we mint an id and bookkeep the
+// download lifecycle so callers see a real state machine (IN_PROGRESS →
+// FAILED via the timeout sweep), but the request payloads are not yet
+// published to Kafka and no fan-out / aggregation logic exists. The
+// dedicated request/ack topics live in defaults.hpp (KAFKA_KV_DOWNLOAD_*,
+// KAFKA_KV_OFFLOAD_REQUEST_TOPIC); wiring producers/consumers for them is
+// a follow-up.
+// ---------------------------------------------------------------------------
+
+uint64_t RemoteKVManagerImpl::downloadFromStore(
+    const DownloadKVRequest& request) {
+  const uint64_t id = tt::utils::MigrationIDGenerator::generate();
+  const auto now = std::chrono::steady_clock::now();
+
+  {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto [it, inserted] = downloads.emplace(
+        id, DownloadState{KVTransferStatus::IN_PROGRESS,
+                          /*usablePrefixCount=*/0, now});
+    if (!inserted) {
+      TT_LOG_WARN(
+          "[RemoteKVManagerImpl] id collision on download transfer_id={}; "
+          "returning existing record (status={})",
+          id, static_cast<int>(it->second.status));
+      return id;
+    }
+  }
+
+  TT_LOG_INFO(
+      "[RemoteKVManagerImpl] downloadFromStore (no-op) transfer_id={} "
+      "dst_slot={} blocks={} pool={}",
+      id, request.dstSlot, request.blocks.size(), migrationWorkerPoolSize);
+  return id;
+}
+
+KVTransferResult RemoteKVManagerImpl::getDownloadResult(
+    uint64_t transferId) const {
+  std::lock_guard<std::mutex> lock(mtx);
+  auto it = downloads.find(transferId);
+  if (it == downloads.end()) {
+    return KVTransferResult{KVTransferStatus::UNKNOWN, 0};
+  }
+  return KVTransferResult{it->second.status, it->second.usablePrefixCount};
+}
+
+uint64_t RemoteKVManagerImpl::offloadToStore(const OffloadKVRequest& request) {
+  // Fire-and-forget: no tracking, no Kafka publish (yet). Mint an id
+  // purely for log correlation so a future Kafka producer can stitch
+  // submit-time and ack-time logs together.
+  const uint64_t id = tt::utils::MigrationIDGenerator::generate();
+  TT_LOG_INFO(
+      "[RemoteKVManagerImpl] offloadToStore (no-op, fire-and-forget) "
+      "offload_id={} src_slot={} blocks={}",
+      id, request.srcSlot, request.blocks.size());
+  return id;
+}
+
 void RemoteKVManagerImpl::drainLoop() {
   TT_LOG_INFO("[RemoteKVManagerImpl] drain loop entered");
 
@@ -161,21 +227,39 @@ void RemoteKVManagerImpl::drainLoop() {
 
 void RemoteKVManagerImpl::sweepLocked(
     std::chrono::steady_clock::time_point now) {
-  size_t timedOut = 0;
+  size_t timedOutMigrations = 0;
   for (auto& [id, state] : migrations) {
     if (state.status == MigrationStatus::IN_PROGRESS &&
         now - state.submittedAt >= timeout) {
       state.status = MigrationStatus::FAILED;
-      ++timedOut;
+      ++timedOutMigrations;
       TT_LOG_WARN(
           "[RemoteKVManagerImpl] migration_id={} timed out after {}ms; marked "
           "FAILED",
           id, timeout.count());
     }
   }
-  if (timedOut > 0) {
+  if (timedOutMigrations > 0) {
     TT_LOG_INFO("[RemoteKVManagerImpl] sweeper timed out {} migration(s)",
-                timedOut);
+                timedOutMigrations);
+  }
+
+  size_t timedOutDownloads = 0;
+  for (auto& [id, state] : downloads) {
+    if (state.status == KVTransferStatus::IN_PROGRESS &&
+        now - state.submittedAt >= timeout) {
+      state.status = KVTransferStatus::FAILED;
+      state.usablePrefixCount = 0;
+      ++timedOutDownloads;
+      TT_LOG_WARN(
+          "[RemoteKVManagerImpl] download transfer_id={} timed out after {}ms; "
+          "marked FAILED",
+          id, timeout.count());
+    }
+  }
+  if (timedOutDownloads > 0) {
+    TT_LOG_INFO("[RemoteKVManagerImpl] sweeper timed out {} download(s)",
+                timedOutDownloads);
   }
 }
 

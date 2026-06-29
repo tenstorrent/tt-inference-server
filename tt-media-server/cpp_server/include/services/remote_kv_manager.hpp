@@ -50,15 +50,26 @@ struct MigrationRequest {
  *                  blocks are fixed-size, the worker uses positionId to
  *                  locate the exact byte range to read/write inside the
  *                  slot's KV layout — no allocator round-trip needed.
+ *   - tokenCount:  number of tokens this block covers. Lets the schema
+ *                  carry the "first block is larger" pattern
+ *                  (e.g. tokenCount=128 for block 0, 32 for the rest)
+ *                  without committing to a fixed layout on the wire.
  *
  * Blocks in a request are dependency-chained (block i+1 is only meaningful
  * if blocks [0..i] are also present), so the order of the request vector
  * MUST be the same order they occupy in the slot — index 0 = oldest token
  * position, last entry = most recent.
+ *
+ * positionId and tokenCount are deliberately over-determined: a well-formed
+ * chain satisfies `blocks[i+1].positionId == blocks[i].positionId +
+ * blocks[i].tokenCount`. The redundancy lets the worker validate the chain
+ * in a single pass and lets the wire schema represent non-uniform block
+ * sizes in the future without another schema change.
  */
 struct KVCacheBlockRef {
   uint64_t blockHash;
   uint32_t positionId;
+  uint32_t tokenCount;
 };
 
 /**
@@ -76,8 +87,9 @@ struct DownloadKVRequest {
 /**
  * Offload the listed blocks from srcSlot into the Mooncake store. The
  * manager fans the request out to every migration worker; each worker
- * publishes only the layers it owns. See KVTransferResult for the
- * aggregation rule.
+ * publishes only the layers it owns. Offload is fire-and-forget by design
+ * — there is no result-poll method, the impl will not track the
+ * submission past send.
  */
 struct OffloadKVRequest {
   uint32_t srcSlot;
@@ -85,11 +97,10 @@ struct OffloadKVRequest {
 };
 
 /**
- * Lifecycle of a download/offload transfer. Parallel in spirit to
- * MigrationStatus but kept separate because the "did it work" answer here
- * is not a single bit: a COMPLETED transfer may still have downloaded
- * zero blocks. Read KVTransferResult::usablePrefixCount for the actual
- * outcome.
+ * Lifecycle of a download transfer. Parallel in spirit to MigrationStatus
+ * but kept separate because the "did it work" answer here is not a single
+ * bit: a COMPLETED transfer may still have downloaded zero blocks. Read
+ * KVTransferResult::usablePrefixCount for the actual outcome.
  */
 enum class KVTransferStatus {
   UNKNOWN,      ///< Id was never issued, or has been garbage-collected.
@@ -100,8 +111,7 @@ enum class KVTransferStatus {
 };
 
 /**
- * Result of a download or offload, polled via getDownloadResult() or
- * getOffloadResult().
+ * Result of a download, polled via getDownloadResult().
  *
  * usablePrefixCount: the largest k such that blocks [0..k) were
  * successfully transferred on EVERY worker that participated, AND those k
@@ -136,7 +146,35 @@ struct KVTransferResult {
 /**
  * Async client to the pool of migration workers. The scheduler-facing
  * surface for issuing KV-cache migrations and Mooncake-store transfers.
- * Publishes requests on Kafka and tracks completion via an ACK topic.
+ * Publishes requests on Kafka and tracks completion via per-operation ACK
+ * topics.
+ *
+ * When to use which entry point:
+ *
+ *   migrate()            slot→slot point-to-point copy between two known
+ *                        peers. Use for the prefill→decode handoff in
+ *                        latency-tight scenarios where the destination is
+ *                        already chosen. No store interaction. Caller
+ *                        polls getStatus() until terminal.
+ *
+ *   downloadFromStore()  hash-keyed fetch from the Mooncake store into a
+ *                        local slot. Use to hydrate a slot's prefix when
+ *                        local prefix-cache lookup missed and the
+ *                        scheduler needs to know how much it can reuse
+ *                        before computing the tail. Synchronous in
+ *                        spirit: callers are expected to poll
+ *                        getDownloadResult() until COMPLETED or FAILED
+ *                        and act on usablePrefixCount before scheduling
+ *                        compute on the missing tail.
+ *
+ *   offloadToStore()     hash-keyed publish to the Mooncake store from a
+ *                        local slot. Use to persist newly computed blocks
+ *                        (write-through during decode) or to save a slot
+ *                        before eviction. Fire-and-forget by design: the
+ *                        impl does not retain per-submission state and
+ *                        there is no result-poll method. The returned id
+ *                        is for log correlation only and may be
+ *                        discarded.
  *
  * Thread-safety: all methods are safe to call from any thread.
  */
@@ -189,23 +227,12 @@ class IRemoteKVManager {
 
   /**
    * Ask the migration workers to offload the listed blocks from
-   * request.srcSlot into the Mooncake store. Returns immediately with a
-   * fresh id; poll with getOffloadResult().
-   *
-   * Same dependency-ordered list and fan-out semantics as
-   * downloadFromStore(); the result reports the longest leading prefix
-   * that EVERY worker successfully published, so a downstream lookup is
-   * guaranteed to find a usable chain.
+   * request.srcSlot into the Mooncake store. Fire-and-forget: returns a
+   * fresh id for log correlation only and the impl does not retain
+   * per-submission state. There is no corresponding getOffloadResult()
+   * — by design.
    */
-  [[nodiscard]] virtual uint64_t offloadToStore(
-      const OffloadKVRequest& request) = 0;
-
-  /**
-   * Look up the current result of a previously submitted offloadToStore()
-   * call. Returns {KVTransferStatus::UNKNOWN, 0} if the id was never
-   * issued or has been garbage-collected.
-   */
-  virtual KVTransferResult getOffloadResult(uint64_t transferId) const = 0;
+  virtual uint64_t offloadToStore(const OffloadKVRequest& request) = 0;
 };
 
 }  // namespace tt::services

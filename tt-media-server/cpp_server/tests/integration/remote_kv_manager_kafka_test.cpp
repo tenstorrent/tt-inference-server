@@ -105,7 +105,8 @@ class RemoteKVManagerKafkaTest : public ::testing::Test {
         });
     return std::make_unique<RemoteKVManagerImpl>(
         std::move(producer), std::move(consumer),
-        /*timeout=*/30s, /*sweepInterval=*/200ms, /*drainPollMs=*/50);
+        /*migrationWorkerPoolSize=*/1, /*timeout=*/30s,
+        /*sweepInterval=*/200ms, /*drainPollMs=*/50);
   }
 
   std::unique_ptr<tt::worker::KvMigrationWorker> makeWorker(
