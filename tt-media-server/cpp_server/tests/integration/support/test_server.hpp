@@ -12,8 +12,8 @@
 //   4. Start DynamoEndpoint to accept requests from Dynamo frontend.
 //
 // All requests are routed through the external Dynamo frontend (HTTP → Dynamo →
-// TCP → DynamoEndpoint → LLMPipeline). Tests must have Dynamo running:
-//   cd dynamo_frontend && ./deploy.sh --local-build
+// TCP → DynamoEndpoint → LLMPipeline). Start etcd + frontend without a worker:
+//   cd dynamo_frontend && ./deploy.sh --no-monitoring --no-worker
 
 #pragma once
 

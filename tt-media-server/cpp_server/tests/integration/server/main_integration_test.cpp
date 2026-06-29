@@ -9,9 +9,16 @@
 // and the worker). The fixture also mocks the worker by pushing tokens to
 // the result queue, so responses complete and can be asserted on.
 //
-// IMPORTANT: This test requires external infrastructure to be running:
-//   cd dynamo_frontend && ./deploy.sh --local-build
-// Tests will skip gracefully if Dynamo frontend is not available.
+// IMPORTANT: This test requires external Dynamo infrastructure (etcd + frontend).
+// The test registers its own mock DynamoEndpoint in-process — do not start a
+// deploy.sh worker alongside it.
+//
+//   Terminal 1:  cd dynamo_frontend && ./deploy.sh --no-monitoring --no-worker
+//   Terminal 2:  cd cpp_server/build && ctest -R MainIntegrationTest --output-on-failure
+//
+// Do not set DYNAMO_HOST=127.0.0.1 when Docker publishes ports on the host
+// (remote dev containers): leave DYNAMO_HOST unset so the fixture auto-detects
+// the docker bridge gateway. Tests fail fast if the frontend is unreachable.
 //
 // Test infrastructure lives under tests/support/:
 //   - TestServer          : brings the full server stack up in-process
@@ -638,7 +645,12 @@ TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
   const auto body = response.json();
   ASSERT_EQ(body["choices"].size(), 1u);
   EXPECT_EQ(body["choices"][0]["message"]["role"].asString(), "assistant");
-  EXPECT_FALSE(body["choices"][0]["message"]["content"].asString().empty());
+
+  const auto& msg = body["choices"][0]["message"];
+  const std::string text =
+      msg["content"].isString() ? msg["content"].asString()
+                                : msg.get("reasoning_content", "").asString();
+  EXPECT_FALSE(text.empty());
 }
 
 TEST_F(MainIntegrationTest, SamplingParams_MaxTokensAndTemperature) {

@@ -526,13 +526,21 @@ inline int64_t currentTimeMillis() {
 // Dynamo environment configuration
 // ---------------------------------------------------------------------------
 
+inline std::string dynamoEtcdEndpointsForTests() {
+  if (waitForTcpPort("127.0.0.1", 2379, /*timeoutSec=*/1)) {
+    return "http://127.0.0.1:2379";
+  }
+  return "http://" + detectDockerGateway() + ":2379";
+}
+
 inline void configureDynamoEnv() {
   setenv("DYNAMO_ENDPOINT_ENABLED", "1", 1);
   setenv("DYNAMO_BIND_HOST", "0.0.0.0", 1);
   setenv("DYNAMO_NAMESPACE", "default", 1);
   setenv("DYNAMO_COMPONENT", "backend", 1);
   setenv("DYNAMO_ENDPOINT_NAME", "generate", 1);
-  setenv("DYNAMO_ETCD_ENDPOINTS", "http://127.0.0.1:2379", 1);
+  const std::string etcdEndpoints = dynamoEtcdEndpointsForTests();
+  setenv("DYNAMO_ETCD_ENDPOINTS", etcdEndpoints.c_str(), 1);
   setenv("DYNAMO_ETCD_LEASE_TTL_SECS", "30", 1);
 }
 
@@ -603,7 +611,7 @@ class DynamoTestFixture : public ::testing::Test {
       std::cerr << "[" << testName() << "] " << dynamoUnavailableReason_
                 << std::endl;
       std::cerr << "  Start with: cd dynamo_frontend && ./deploy.sh "
-                   "--local-build"
+                   "--no-monitoring --no-worker"
                 << std::endl;
       return false;
     }

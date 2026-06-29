@@ -46,6 +46,7 @@ LOCAL_BUILD=""
 CPP_SERVER_DIR="${SCRIPT_DIR}/../tt-media-server/cpp_server"
 MONITORING_ENABLED=1
 MONITORING_STARTED=0
+WORKER_ENABLED=1
 PREFILL_GATEWAY_ENABLED=0
 PREFILL_GATEWAY_STARTED=0
 PREFILL_WORKER_STARTED=0
@@ -113,6 +114,8 @@ Usage: $0 [options]
   --prefill-gateway-prefill-bind <host:port>
                                ZMQ prefill bind endpoint (default: ${PREFILL_GATEWAY_PREFILL_BIND})
   --no-monitoring              skip Prometheus + Grafana deployment
+  --no-worker                  etcd + frontend only (for cpp_server integration tests
+                               that register their own mock DynamoEndpoint in-process)
 
 LLM_DEVICE_BACKEND, HF_TOKEN, and perf knobs (ROUTER_MODE, DYN_TOKENIZER,
 RAYON_NUM_THREADS, DYN_RUNTIME_*, RUST_LOG, DYN_TX_TRACE,
@@ -152,6 +155,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --no-monitoring)  MONITORING_ENABLED=0;             shift ;;
+        --no-worker)      WORKER_ENABLED=0;                 shift ;;
         *) echo "Unknown argument: $1" >&2; usage ;;
     esac
 done
@@ -159,7 +163,7 @@ done
 # Local-build: validate the binary and prepare the bind-mount + entrypoint.
 LOCAL_BUILD_MOUNT=()
 WORKER_ENTRYPOINT=()
-if [[ -n "$LOCAL_BUILD" ]]; then
+if [[ -n "$LOCAL_BUILD" && "$WORKER_ENABLED" == "1" ]]; then
     CPP_SERVER_DIR_ABS="$(readlink -f "$CPP_SERVER_DIR" 2>/dev/null || true)"
     [[ -d "$CPP_SERVER_DIR_ABS" ]] || die "cpp_server directory not found: $CPP_SERVER_DIR"
     [[ -f "$CPP_SERVER_DIR_ABS/build/tt_media_server_cpp" ]] \
@@ -174,10 +178,16 @@ if [[ "$MONITORING_ENABLED" == "1" ]]; then
     docker compose version >/dev/null 2>&1 || die "docker compose is required for monitoring"
 fi
 if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
+    [[ "$WORKER_ENABLED" == "1" ]] \
+        || die "--prefill-gateway requires a worker; omit --no-worker"
     ensure_prefill_gateway_image
     if [[ "$PREFILL_GATEWAY_SOCKET_TRANSPORT" == "tcp" && "${#PREFILL_GATEWAY_PREFILLS[@]}" -eq 0 ]]; then
         die "--prefill-gateway-prefill is required when PREFILL_GATEWAY_SOCKET_TRANSPORT=tcp"
     fi
+fi
+if [[ -n "$LOCAL_BUILD" && "$WORKER_ENABLED" == "0" ]]; then
+    log "ignoring --local-build (--no-worker: integration tests supply their own backend)"
+    LOCAL_BUILD=""
 fi
 
 require_host_port_free 2379 "etcd"
@@ -208,15 +218,33 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-docker network inspect "$NETWORK_NAME" >/dev/null 2>&1 \
-    || { log "creating network $NETWORK_NAME"; docker network create "$NETWORK_NAME" >/dev/null; }
+if [[ "$WORKER_ENABLED" == "1" || "$PREFILL_GATEWAY_ENABLED" == "1" || "$MONITORING_ENABLED" == "1" ]]; then
+    docker network inspect "$NETWORK_NAME" >/dev/null 2>&1 \
+        || { log "creating network $NETWORK_NAME"; docker network create "$NETWORK_NAME" >/dev/null; }
+fi
 
 # ── etcd ──────────────────────────────────────────────────────────────────
-log "starting etcd ($ETCD_IMAGE)"
-docker run -d --name "$ETCD_NAME" --network "$NETWORK_NAME" -p 2379:2379 \
-    "$ETCD_IMAGE" /usr/local/bin/etcd --name dyn-etcd \
-        --advertise-client-urls http://0.0.0.0:2379 \
-        --listen-client-urls http://0.0.0.0:2379 >/dev/null
+if [[ "$WORKER_ENABLED" == "0" ]]; then
+    # Host networking: integration tests run in a sibling dev container and
+    # reach published services via the docker bridge gateway (172.17.0.1).
+    # The frontend must also be able to call back to the test's advertised
+    # Dynamo TCP address on that dev container — bridge networking isolates
+    # the frontend from 172.17.0.0/16 unless it shares the host netns.
+    log "starting etcd on host network ($ETCD_IMAGE)"
+    docker run -d --name "$ETCD_NAME" --network host \
+        "$ETCD_IMAGE" /usr/local/bin/etcd --name default \
+            --advertise-client-urls http://127.0.0.1:2379 \
+            --listen-client-urls http://0.0.0.0:2379 \
+            --listen-peer-urls http://127.0.0.1:2380 \
+            --initial-advertise-peer-urls http://127.0.0.1:2380 \
+            --initial-cluster default=http://127.0.0.1:2380 >/dev/null
+else
+    log "starting etcd ($ETCD_IMAGE)"
+    docker run -d --name "$ETCD_NAME" --network "$NETWORK_NAME" -p 2379:2379 \
+        "$ETCD_IMAGE" /usr/local/bin/etcd --name dyn-etcd \
+            --advertise-client-urls http://0.0.0.0:2379 \
+            --listen-client-urls http://0.0.0.0:2379 >/dev/null
+fi
 
 log "waiting for etcd"
 for _ in $(seq 1 30); do
@@ -310,60 +338,90 @@ if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
     )
 fi
 
-log "starting worker ($WORKER_IMAGE)"
-docker run -d --name "$WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
-    "${DEVICE_ARGS[@]}" "${LOCAL_BUILD_MOUNT[@]}" "${WORKER_ENTRYPOINT[@]}" \
-    -e DYNAMO_ENDPOINT_ENABLED=1 \
-    -e DYNAMO_DISCOVERY_BACKEND=etcd \
-    -e DYNAMO_ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
-    -e DYNAMO_NAMESPACE=default -e DYNAMO_COMPONENT=backend -e DYNAMO_ENDPOINT_NAME=generate \
-    -e SERVER_MODE=cpp \
-    -e MODEL="$HF_MODEL_ID" \
-    -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
-    -e DEVICE_IDS="$DEVICE_IDS" \
-    "${WORKER_GATEWAY_ENV[@]}" \
-    "${WORKER_MODEL_ENV[@]}" \
-    -e MAX_SESSIONS_COUNT=128 -e TT_LOG_LEVEL=debug -e USE_FAST_MODE=1 \
-    -e MIN_TOKENS_TO_COPY="${MIN_TOKENS_TO_COPY:-1024}" \
-    -e MOCK_PREFILL_SLEEP_MS="${MOCK_PREFILL_SLEEP_MS:-0}" \
-    -e DYN_TX_TRACE="${DYN_TX_TRACE:-}" \
-    "$WORKER_IMAGE" \
-    ${LOCAL_BUILD:+-c 'cd cpp_server && LIB="$(pwd)/tt-llm-engine/build-full/libtt_llm_engine.so.0"; [ -f "$LIB" ] && export LD_PRELOAD="$LIB"; ./build/tt_media_server_cpp'} \
-    >/dev/null
+if [[ "$WORKER_ENABLED" == "1" ]]; then
+    log "starting worker ($WORKER_IMAGE)"
+    docker run -d --name "$WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
+        "${DEVICE_ARGS[@]}" "${LOCAL_BUILD_MOUNT[@]}" "${WORKER_ENTRYPOINT[@]}" \
+        -e DYNAMO_ENDPOINT_ENABLED=1 \
+        -e DYNAMO_DISCOVERY_BACKEND=etcd \
+        -e DYNAMO_ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
+        -e DYNAMO_NAMESPACE=default -e DYNAMO_COMPONENT=backend -e DYNAMO_ENDPOINT_NAME=generate \
+        -e SERVER_MODE=cpp \
+        -e MODEL="$HF_MODEL_ID" \
+        -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
+        -e DEVICE_IDS="$DEVICE_IDS" \
+        "${WORKER_GATEWAY_ENV[@]}" \
+        "${WORKER_MODEL_ENV[@]}" \
+        -e MAX_SESSIONS_COUNT=128 -e TT_LOG_LEVEL=debug -e USE_FAST_MODE=1 \
+        -e MIN_TOKENS_TO_COPY="${MIN_TOKENS_TO_COPY:-1024}" \
+        -e MOCK_PREFILL_SLEEP_MS="${MOCK_PREFILL_SLEEP_MS:-0}" \
+        -e DYN_TX_TRACE="${DYN_TX_TRACE:-}" \
+        "$WORKER_IMAGE" \
+        ${LOCAL_BUILD:+-c 'cd cpp_server && LIB="$(pwd)/tt-llm-engine/build-full/libtt_llm_engine.so.0"; [ -f "$LIB" ] && export LD_PRELOAD="$LIB"; ./build/tt_media_server_cpp'} \
+        >/dev/null
 
-log "waiting for worker to register with etcd (up to 60s)"
-for _ in $(seq 1 60); do
-    docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only v1/instances/ 2>/dev/null \
-        | grep -q '^v1/instances/' && { REGISTERED=1; break; }
-    docker ps --format '{{.Names}}' | grep -q "^${WORKER_NAME}\$" \
-        || { docker logs --tail 80 "$WORKER_NAME" >&2 || true; die "worker exited before registering"; }
-    sleep 1
-done
-[[ -n "${REGISTERED:-}" ]] || { docker logs --tail 80 "$WORKER_NAME" >&2 || true; die "worker did not register within 60s"; }
-log "worker registered:"
-docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only v1/ | grep -v '^$' | sed 's/^/[deploy]   /'
+    log "waiting for worker to register with etcd (up to 60s)"
+    for _ in $(seq 1 60); do
+        docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only v1/instances/ 2>/dev/null \
+            | grep -q '^v1/instances/' && { REGISTERED=1; break; }
+        docker ps --format '{{.Names}}' | grep -q "^${WORKER_NAME}\$" \
+            || { docker logs --tail 80 "$WORKER_NAME" >&2 || true; die "worker exited before registering"; }
+        sleep 1
+    done
+    [[ -n "${REGISTERED:-}" ]] || { docker logs --tail 80 "$WORKER_NAME" >&2 || true; die "worker did not register within 60s"; }
+    log "worker registered:"
+    docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only v1/ | grep -v '^$' | sed 's/^/[deploy]   /'
+else
+    log "skipping worker (--no-worker: integration tests register their own backend)"
+fi
 
 # ── frontend ────────────────────────────────────────────────────────────────
 # The frontend image bakes the tokenizer tree at the path each worker advertises
 # in its MDC, so the run is model-agnostic: it resolves every discovered model's
 # tokenizer locally and serves whatever workers register in etcd.
-log "starting frontend ($FRONTEND_IMAGE)"
-docker run -d --name "$FRONTEND_NAME" --network "$NETWORK_NAME" -p "${FRONTEND_HOST_PORT}:8000" \
-    -e DYN_DISCOVERY_BACKEND=etcd \
-    -e ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
-    -e MODEL_NAME="$MODEL_NAME" \
-    -e HF_TOKEN="${HF_TOKEN:-}" \
-    -e DYN_CHAT_PROCESSOR="${DYN_CHAT_PROCESSOR:-dynamo}" \
-    -e DYN_RUNTIME_NUM_WORKER_THREADS="${DYN_RUNTIME_NUM_WORKER_THREADS:-}" \
-    -e DYN_RUNTIME_MAX_BLOCKING_THREADS="${DYN_RUNTIME_MAX_BLOCKING_THREADS:-}" \
-    -e DYN_COMPUTE_THREADS="${DYN_COMPUTE_THREADS:-}" \
-    -e RAYON_NUM_THREADS="${RAYON_NUM_THREADS:-}" \
-    -e DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
-    -e DYN_DEBUG_PERF="${DYN_DEBUG_PERF:-0}" \
-    -e DYN_ENABLE_ANTHROPIC_API="${DYN_ENABLE_ANTHROPIC_API:-true}" \
-    -e ROUTER_MODE="${ROUTER_MODE:-kv}" \
-    -e RUST_LOG="${RUST_LOG:-}" \
-    "$FRONTEND_IMAGE" >/dev/null
+TOKENIZER_DIR="${CPP_SERVER_DIR}/tokenizers/deepseek-ai/DeepSeek-R1-0528"
+if [[ "$WORKER_ENABLED" == "0" ]]; then
+    [[ -d "$TOKENIZER_DIR" ]] \
+        || die "missing tokenizer bundle for --no-worker: $TOKENIZER_DIR"
+    log "starting frontend on host network ($FRONTEND_IMAGE)"
+    docker run -d --name "$FRONTEND_NAME" --network host \
+        -v "${TOKENIZER_DIR}:/app/model:ro" \
+        -e DYN_DISCOVERY_BACKEND=etcd \
+        -e ETCD_ENDPOINTS=http://127.0.0.1:2379 \
+        -e HTTP_PORT="${FRONTEND_HOST_PORT}" \
+        -e MODEL_PATH=/app/model \
+        -e MODEL_NAME="$HF_MODEL_ID" \
+        -e HF_TOKEN="${HF_TOKEN:-}" \
+        -e DYN_CHAT_PROCESSOR="${DYN_CHAT_PROCESSOR:-dynamo}" \
+        -e DYN_RUNTIME_NUM_WORKER_THREADS="${DYN_RUNTIME_NUM_WORKER_THREADS:-}" \
+        -e DYN_RUNTIME_MAX_BLOCKING_THREADS="${DYN_RUNTIME_MAX_BLOCKING_THREADS:-}" \
+        -e DYN_COMPUTE_THREADS="${DYN_COMPUTE_THREADS:-}" \
+        -e RAYON_NUM_THREADS="${RAYON_NUM_THREADS:-}" \
+        -e DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
+        -e DYN_DEBUG_PERF="${DYN_DEBUG_PERF:-0}" \
+        -e DYN_ENABLE_ANTHROPIC_API="${DYN_ENABLE_ANTHROPIC_API:-true}" \
+        -e ROUTER_MODE="${ROUTER_MODE:-kv}" \
+        -e RUST_LOG="${RUST_LOG:-}" \
+        "$FRONTEND_IMAGE" >/dev/null
+else
+    log "starting frontend ($FRONTEND_IMAGE)"
+    docker run -d --name "$FRONTEND_NAME" --network "$NETWORK_NAME" -p "${FRONTEND_HOST_PORT}:8000" \
+        -e DYN_DISCOVERY_BACKEND=etcd \
+        -e ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
+        -e MODEL_NAME="$MODEL_NAME" \
+        -e HF_TOKEN="${HF_TOKEN:-}" \
+        -e DYN_CHAT_PROCESSOR="${DYN_CHAT_PROCESSOR:-dynamo}" \
+        -e DYN_RUNTIME_NUM_WORKER_THREADS="${DYN_RUNTIME_NUM_WORKER_THREADS:-}" \
+        -e DYN_RUNTIME_MAX_BLOCKING_THREADS="${DYN_RUNTIME_MAX_BLOCKING_THREADS:-}" \
+        -e DYN_COMPUTE_THREADS="${DYN_COMPUTE_THREADS:-}" \
+        -e RAYON_NUM_THREADS="${RAYON_NUM_THREADS:-}" \
+        -e DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
+        -e DYN_DEBUG_PERF="${DYN_DEBUG_PERF:-0}" \
+        -e DYN_ENABLE_ANTHROPIC_API="${DYN_ENABLE_ANTHROPIC_API:-true}" \
+        -e ROUTER_MODE="${ROUTER_MODE:-kv}" \
+        -e RUST_LOG="${RUST_LOG:-}" \
+        "$FRONTEND_IMAGE" >/dev/null
+fi
 
 if [[ "$MONITORING_ENABLED" == "1" ]]; then
     MONITORING_SERVER_TARGET="${SERVER_TARGET:-${FRONTEND_NAME}:8000}"
@@ -396,5 +454,11 @@ fi
 if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
     log "PrefillGateway metrics on ${PREFILL_GATEWAY_NAME}:${PREFILL_GATEWAY_METRICS_PORT} inside ${NETWORK_NAME}"
 fi
-log "tailing worker logs (Ctrl+C to tear down)"
-docker logs -f "$WORKER_NAME"
+if [[ "$WORKER_ENABLED" == "1" ]]; then
+    log "tailing worker logs (Ctrl+C to tear down)"
+    docker logs -f "$WORKER_NAME"
+else
+    log "etcd + frontend ready for integration tests (Ctrl+C to tear down)"
+    log "  cd tt-media-server/cpp_server/build && ctest -R MainIntegrationTest --output-on-failure"
+    docker logs -f "$FRONTEND_NAME"
+fi
