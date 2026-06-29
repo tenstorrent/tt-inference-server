@@ -47,7 +47,8 @@ FROM ${TT_LLM_ENGINE_IMAGE} AS engine
 # ==============================================================================
 # BUILDER STAGE - compile cpp_server against the prebuilt engine.
 # ==============================================================================
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS builder
+# FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS builder
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-light-amd64:latest AS builder
 
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
@@ -308,7 +309,8 @@ RUN set -eux; \
 # Same shape as before; path expectations changed (TT_METAL_HOME under /opt,
 # LD_LIBRARY_PATH points at the engine artifact dirs).
 # ==============================================================================
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS runtime
+# FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS runtime
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-light-amd64:latest AS runtime
 
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
