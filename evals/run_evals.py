@@ -834,6 +834,16 @@ def main():
     setup_workflow_script_logger(logger)
     logger.info(f"Running {__file__} ...")
 
+    # Periodic host-resource logging (memory / RSS / disk) to diagnose runner
+    # OOM / lost-communication failures during long evals. Off by default;
+    # enable with EVAL_RESMON=1. See evals/resource_monitor.py.
+    try:
+        from evals.resource_monitor import start_resource_monitor
+
+        start_resource_monitor(logger)
+    except Exception as e:
+        logger.info(f"[RESMON] could not start resource monitor: {e!r}")
+
     args = parse_args()
     model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
     runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
