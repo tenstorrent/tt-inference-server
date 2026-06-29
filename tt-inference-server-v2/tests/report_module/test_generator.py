@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -74,24 +75,37 @@ class TestGenerate:
         result = ReportGenerator().generate(_schema(), tmp_path)
         assert "Tenstorrent Model Release Summary: m on n300" in result.markdown
 
-    def test_acceptance_markdown_keys_dropped_from_json(self, tmp_path: Path):
+    def test_acceptance_criteria_promoted_to_top_level_json(self, tmp_path: Path):
         schema = ReportSchema(
             metadata={
                 "report_id": "r1",
                 "model_name": "m",
                 "device": "n300",
                 "acceptance_summary_markdown": "### Acceptance Criteria",
-                "acceptance_criteria": {"accepted": True},
+                "acceptance_criteria": True,
+                "acceptance_blockers": {},
+                "acceptance_criteria_metadata": {
+                    "enforcement_result": "PASS",
+                    "model_status": "COMPLETE",
+                },
             },
             sections=[],
         )
         result = ReportGenerator().generate(schema, tmp_path)
-        # The acceptance markdown appears in the rendered report...
+        # The acceptance section is rendered, but kept out of the inline
+        # metadata code-block...
         assert "### Acceptance Criteria" in result.markdown
-        # ...but the rendering-only metadata keys are stripped from JSON.
-        payload = result.json_path.read_text()
-        assert "acceptance_summary_markdown" not in payload
-        assert "acceptance_criteria" not in payload
+        metadata_block = result.markdown.split("### Acceptance Criteria")[0]
+        assert "acceptance_summary_markdown" not in metadata_block
+        assert "acceptance_criteria" not in metadata_block
+        # ...while the JSON promotes the acceptance fields to top-level (v1 shape)
+        # and removes them from metadata.
+        payload = json.loads(result.json_path.read_text())
+        assert payload["acceptance_criteria"] is True
+        assert payload["acceptance_blockers"] == {}
+        assert payload["acceptance_criteria_metadata"]["model_status"] == "COMPLETE"
+        assert payload["acceptance_summary_markdown"] == "### Acceptance Criteria"
+        assert "acceptance_criteria" not in payload["metadata"]
 
     def test_renderer_exception_does_not_abort_report(
         self, tmp_path: Path, monkeypatch

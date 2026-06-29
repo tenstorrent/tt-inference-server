@@ -317,6 +317,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--tools",
+        type=str,
+        choices=["vllm", "aiperf", "genai", "genai_perf", "guidellm"],
+        default="vllm",
+        help=(
+            "LLM benchmark tool/driver to use for LLM models: 'vllm' "
+            "(vllm bench serve, default), 'aiperf', 'genai'/'genai_perf' "
+            "(genai-perf via Docker), or 'guidellm'."
+        ),
+    )
+
     # ----- Serving-bench suites (--workflow serving_bench) ------------
     parser.add_argument(
         "--serving-bench-suites",

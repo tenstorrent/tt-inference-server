@@ -192,13 +192,13 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   // fewer tokens than the full prompt are sent.
   EXPECT_TRUE(followUpSeq->getNumPromptTokens() > 0)
       << "continuation should still send some tokens";
-  // Verify kv_position_id matches (matched_tokens - 1) for the 0-indexed KV
-  // position. With block_size=32, first block matched = 32 tokens, so
-  // kv_position_id = 31 (0-indexed position of last matched token).
+  // Verify kv_position_id is the first free KV index (== matched_tokens). With
+  // block_size=32, the first block matched = 32 tokens, so the next token's KV
+  // is written at index 32.
   ASSERT_TRUE(followUpSeq->getKVPositionId().has_value())
       << "continuation should have kv_position_id set";
-  EXPECT_EQ(*followUpSeq->getKVPositionId(), 31u)
-      << "kv_position_id should be one less than matched tokens (0-indexed)";
+  EXPECT_EQ(*followUpSeq->getKVPositionId(), 32u)
+      << "kv_position_id should equal matched tokens (first free KV index)";
   tt::test::WorkerResponse(followUpSeq->taskId)
       .token(43)
       .finalize()
@@ -268,15 +268,15 @@ TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
     if (i == 0) {
       EXPECT_EQ(seq->getTokenIds().size(), 72u) << "turn 0 tokenIds size";
     } else if (i == 1) {
-      // 2nd turn is 96 tokens -> 63 from cache, 33 new
-      EXPECT_EQ(seq->getTokenIds().size(), 33u) << "turn 1 tokenIds size";
+      // 2nd turn is 96 tokens -> 64 from cache (2 blocks), 32 new
+      EXPECT_EQ(seq->getTokenIds().size(), 32u) << "turn 1 tokenIds size";
       ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 1 kvPositionId";
-      EXPECT_EQ(*seq->getKVPositionId(), 63u) << "turn 1 kvPositionId value";
+      EXPECT_EQ(*seq->getKVPositionId(), 64u) << "turn 1 kvPositionId value";
     } else if (i == 2) {
-      // 3rd turn is 123 tokens -> 95 from cache, 28 new
-      EXPECT_EQ(seq->getTokenIds().size(), 28u) << "turn 2 tokenIds size";
+      // 3rd turn is 123 tokens -> 96 from cache (3 blocks), 27 new
+      EXPECT_EQ(seq->getTokenIds().size(), 27u) << "turn 2 tokenIds size";
       ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 2 kvPositionId";
-      EXPECT_EQ(*seq->getKVPositionId(), 95u) << "turn 2 kvPositionId value";
+      EXPECT_EQ(*seq->getKVPositionId(), 96u) << "turn 2 kvPositionId value";
     }
     // after first turn it should be a continuation
     EXPECT_EQ(seq->isContinuation(), i > 0) << "turn " << i;
@@ -305,12 +305,12 @@ TEST_F(MainIntegrationTest, MultiTurn_MatchedTokensEqualPriorPromptBlocks) {
   // We don't hardcode any tokenizer output: each turn's full prompt length is
   // reconstructed from the server's own reported numbers
   //     full_prompt = delta_tokens_sent_to_worker + kv_position_id
-  // (the worker is sent the prompt minus the first matched_tokens-1 tokens).
-  // In general kv_position_id == matched_tokens-1 + accumulated_think_tokens.
-  // Think-filtering IS active in this harness (it defaults to DeepSeek-R1,
-  // whose think ids 128798/128799 are live), but this conversation is plain
-  // text and contains no <think>/</think> marker tokens, so
-  // accumulated_think_tokens is 0 and kv_position_id == matched_tokens-1. The
+  // (the worker is sent the prompt minus the first matched_tokens tokens).
+  // In general kv_position_id == matched_tokens + accumulated_think_tokens
+  // (the first free KV index). Think-filtering IS active in this harness (it
+  // defaults to DeepSeek-R1, whose think ids 128798/128799 are live), but this
+  // conversation is plain text and contains no <think>/</think> marker tokens,
+  // so accumulated_think_tokens is 0 and kv_position_id == matched_tokens. The
   // assertions are therefore exact yet independent of the active tokenizer.
   // This is the regression guard for the multiturn matched-token accounting:
   // the pre-fix bug registered corrupt blocks past the matched prefix, so the
@@ -365,8 +365,9 @@ TEST_F(MainIntegrationTest, MultiTurn_MatchedTokensEqualPriorPromptBlocks) {
       ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn " << turn;
 
       // No think-marker tokens in this plain-text conversation, so
-      // accumulated_think_tokens == 0 and matched == kv_position_id + 1.
-      const uint32_t matched = *seq->getKVPositionId() + 1;
+      // accumulated_think_tokens == 0 and matched == kv_position_id (the first
+      // free KV index).
+      const uint32_t matched = *seq->getKVPositionId();
       const uint32_t expected =
           kBlock * static_cast<uint32_t>(priorFullPrompt / kBlock);
 
@@ -554,7 +555,9 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
   EXPECT_EQ(seqC->getTokenIds().size(), 66u) << "request C tokenIds size";
   ASSERT_TRUE(seqC->getKVPositionId().has_value())
       << "slot copy should set kv_position_id";
-  EXPECT_EQ(*seqC->getKVPositionId(), 63u) << "request C kvPositionId value";
+  // 64 matched tokens (2 blocks) copied into indices [0, 64); the next token's
+  // KV is written at index 64 (first free index).
+  EXPECT_EQ(*seqC->getKVPositionId(), 64u) << "request C kvPositionId value";
 
   // Complete request C.
   tt::test::WorkerResponse(seqC->taskId)
@@ -599,10 +602,11 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
       << "request D should hit C's session (slot 1)";
   EXPECT_EQ(seqD->getKVCacheSlot(), 1u)
       << "request D should reuse slot 1 from request C";
-  EXPECT_EQ(seqD->getTokenIds().size(), 14u) << "request D tokenIds size";
+  EXPECT_EQ(seqD->getTokenIds().size(), 13u) << "request D tokenIds size";
   ASSERT_TRUE(seqD->getKVPositionId().has_value())
       << "request D should have kv_position_id set";
-  EXPECT_EQ(*seqD->getKVPositionId(), 127u) << "request D kvPositionId value";
+  // 128 matched tokens (4 blocks); next token's KV at first free index 128.
+  EXPECT_EQ(*seqD->getKVPositionId(), 128u) << "request D kvPositionId value";
 
   tt::test::WorkerResponse(seqD->taskId)
       .token(101)

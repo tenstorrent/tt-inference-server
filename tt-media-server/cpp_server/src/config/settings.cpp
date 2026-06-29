@@ -50,11 +50,16 @@ std::string resolveBlazeSocketDescriptorPrefix() {
     case ModelType::LLAMA_3_1_8B_INSTRUCT:
       return "llama";
     case ModelType::KIMI_K2_6:
+    case ModelType::KIMI_K2_7_CODE:
       return "kimi";
     case ModelType::GPT_OSS_120B:
       return "gpt-oss";
     case ModelType::MINIMAX_M2_7:
       return "minimax";
+    case ModelType::GLM_5_2:
+      return "glm";
+    case ModelType::DEEPSEEK_V4_PRO:
+      return "deepseek";
   }
 }
 
@@ -233,6 +238,10 @@ std::string blazeSocketDescriptorPrefix() {
   return cached;
 }
 
+bool migrateFullKV() {
+  return envBool("MIGRATE_FULL_KV", defaults::MIGRATE_FULL_KV);
+}
+
 unsigned pmConnectTimeoutMs() {
   return static_cast<unsigned>(
       envUlong("PM_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
@@ -281,12 +290,12 @@ std::string ttWarmupSignalsQueueName() {
                    defaults::TT_WARMUP_SIGNALS_QUEUE);
 }
 
-std::string prefillNumLayers() {
-  return envString("PREFILL_NUM_LAYERS", defaults::PREFILL_NUM_LAYERS);
+uint32_t modelNumLayers() {
+  return envUlong("MODEL_NUM_LAYERS", defaults::MODEL_NUM_LAYERS);
 }
 
-std::string prefillChunkSize() {
-  return envString("PREFILL_CHUNK_SIZE", defaults::PREFILL_CHUNK_SIZE);
+uint32_t prefillChunkSize() {
+  return envUlong("PREFILL_CHUNK_SIZE", defaults::PREFILL_CHUNK_SIZE);
 }
 
 std::string ttMemoryRequestQueueName() {
@@ -463,10 +472,13 @@ ModelType modelType() {
     // Derive model type from MODEL env var
     std::string m = envString("MODEL", defaults::MODEL);
     if (m == "moonshotai/Kimi-K2.6") return ModelType::KIMI_K2_6;
+    if (m == "moonshotai/Kimi-K2.7-Code") return ModelType::KIMI_K2_7_CODE;
     if (m == "meta-llama/Llama-3.1-8B-Instruct")
       return ModelType::LLAMA_3_1_8B_INSTRUCT;
     if (m == "openai/gpt-oss-120b") return ModelType::GPT_OSS_120B;
     if (m == "MiniMaxAI/MiniMax-M2.7") return ModelType::MINIMAX_M2_7;
+    if (m == "zai-org/GLM-5.2") return ModelType::GLM_5_2;
+    if (m == "deepseek-ai/DeepSeek-V4-Pro") return ModelType::DEEPSEEK_V4_PRO;
     return ModelType::DEEPSEEK_R1_0528;
   }();
   return cached;
@@ -485,8 +497,11 @@ bool sampleOnlyInReasoning() {
       return true;
     case ModelType::LLAMA_3_1_8B_INSTRUCT:
     case ModelType::KIMI_K2_6:
+    case ModelType::KIMI_K2_7_CODE:
     case ModelType::GPT_OSS_120B:
     case ModelType::MINIMAX_M2_7:
+    case ModelType::GLM_5_2:
+    case ModelType::DEEPSEEK_V4_PRO:
       return false;
   }
   return false;
@@ -661,6 +676,30 @@ bool useFastMode() {
   return envUlong("USE_FAST_MODE", defaults::USE_FAST_MODE);
 }
 
+bool enableMigration() {
+  return envBool("ENABLE_MIGRATION", defaults::ENABLE_MIGRATION);
+}
+
+std::string migrationCmdQueueName() {
+  return envString("MIGRATION_CMD_QUEUE_NAME",
+                   defaults::MIGRATION_CMD_QUEUE_NAME);
+}
+
+std::string migrationTableQueueName() {
+  return envString("MIGRATION_TABLE_QUEUE_NAME",
+                   defaults::MIGRATION_TABLE_QUEUE_NAME);
+}
+
+std::string migrationRespQueueName() {
+  return envString("MIGRATION_RESP_QUEUE_NAME",
+                   defaults::MIGRATION_RESP_QUEUE_NAME);
+}
+
+std::string prefillAckChannelName() {
+  return envString("PREFILL_ACK_CHANNEL_NAME",
+                   defaults::PREFILL_ACK_CHANNEL_NAME);
+}
+
 std::string kafkaBrokers() {
   return envString("KAFKA_BROKERS", defaults::KAFKA_BROKERS);
 }
@@ -668,6 +707,27 @@ std::string kafkaBrokers() {
 std::string kafkaOffloadTopicName() {
   return envString("KAFKA_OFFLOAD_TOPIC_NAME",
                    defaults::KAFKA_OFFLOAD_TOPIC_NAME);
+}
+
+std::string kafkaMigrationRequestTopic() {
+  return envString("KAFKA_MIGRATION_REQUEST_TOPIC",
+                   defaults::KAFKA_MIGRATION_REQUEST_TOPIC);
+}
+
+std::string kafkaMigrationAckTopic() {
+  return envString("KAFKA_MIGRATION_ACK_TOPIC",
+                   defaults::KAFKA_MIGRATION_ACK_TOPIC);
+}
+
+uint32_t migrationPrefillEndpointId() {
+  return static_cast<uint32_t>(
+      envUlong("MIGRATION_PREFILL_ENDPOINT_ID",
+               defaults::MIGRATION_PREFILL_ENDPOINT_ID));
+}
+
+uint32_t migrationDecodeEndpointId() {
+  return static_cast<uint32_t>(envUlong(
+      "MIGRATION_DECODE_ENDPOINT_ID", defaults::MIGRATION_DECODE_ENDPOINT_ID));
 }
 
 std::string kafkaGroupId() {
@@ -699,6 +759,18 @@ std::string dynamoEtcdEndpoints() {
     return v;
   }
   return defaults::DYNAMO_ETCD_ENDPOINTS;
+}
+
+std::string specDecodeMode() {
+  return envString("SPEC_DECODE_MODE", defaults::SPEC_DECODE_MODE);
+}
+
+size_t mtpLevel() {
+  auto val = static_cast<size_t>(envUlong("MTP_LEVEL", defaults::MTP_LEVEL));
+  if (val > 4) {
+    throw std::runtime_error("MTP_LEVEL must be <= 4");
+  }
+  return val;
 }
 
 int64_t dynamoEtcdLeaseTtlSecs() {

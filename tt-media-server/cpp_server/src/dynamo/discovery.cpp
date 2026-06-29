@@ -154,6 +154,12 @@ RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
   if (modelType == "minimax_m2") {
     return {"basic", "minimax_m2"};
   }
+  if (modelType == "glm_moe_dsa") {
+    return {"glm45", "glm47"};
+  }
+  if (modelType == "deepseek_v4") {
+    return {"deepseek_v4", "deepseek_v4"};
+  }
   // deepseek_v3 and unknown types default to DeepSeek R1 reasoning.
   return {"deepseek_r1", nullptr};
 }

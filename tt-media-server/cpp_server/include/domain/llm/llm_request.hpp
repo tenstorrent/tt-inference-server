@@ -127,11 +127,22 @@ struct LLMRequest : BaseRequest {
   // transfer / result. Generated on the prefill server and echoed back.
   std::optional<uint64_t> migrationId;
 
-  // For disaggregated decode: position in KV Cache of the migrated token (the
-  // first token produced by the prefill server) in the per-user KV cache. The
-  // decode scheduler uses this as `position_id` so the migrated token lands at
-  // the correct KV slot and `current_position` advances to it + 1. Set iff
-  // `disaggregated == true`.
+  // Per-request KV migration start position for disaggregated prefill. Set by
+  // the prefill server after comparing prefill-side and decode-side matched
+  // prefix lengths.
+  std::optional<uint32_t> migrationStartPosition;
+
+  // First free index in the per-user KV cache: the absolute KV position where
+  // the worker writes the next token's KV, equal to the position of the first
+  // token handed to the worker. The runner forwards it verbatim as
+  // `position_id`. Set on continuations (prefix-cache hits, response-id hits,
+  // slot copies) to `matched_tokens + accumulated_think_tokens`, where
+  // `matched_tokens` is the trimmed prefix length.
+  //
+  // One intentional exception: a disaggregated decode handoff reprocesses the
+  // last prompt token (the prefill-generated token is not migrated), so it is
+  // set to `tokenIds.size() - 1` — the index that last token already occupies —
+  // rather than the next free slot.
   std::optional<uint32_t> kv_position_id;
 
   // Number of tokens already in the decode-side KV cache that the prefill

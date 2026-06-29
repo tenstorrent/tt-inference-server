@@ -44,7 +44,6 @@
             },
             "release": {
               "devices": [
-                "P150",
                 "P300X2"
               ]
             }
@@ -675,7 +674,12 @@
             "nightly": {
               "devices": [
                 "N150"
-              ]
+              ],
+              "device-args": {
+                "N150": {
+                  "additional-args": "--impl sdxl-forge"
+                }
+              }
             }
           }
         }

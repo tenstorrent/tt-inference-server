@@ -406,6 +406,24 @@ _venv_config_list = [
         python_version="3.11",
     ),
     VenvConfig(
+        venv_type=WorkflowVenvType.V2_LLM_VLLM,
+        requirements_file="v2-llm-vllm.txt",
+        extra_dirs=("artifacts",),
+        python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.V2_LLM_GUIDELLM,
+        requirements_file="v2-llm-guidellm.txt",
+        extra_dirs=("artifacts",),
+        python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.V2_LLM_AIPERF,
+        requirements_file="v2-llm-aiperf.txt",
+        extra_dirs=("artifacts",),
+        python_version="3.11",
+    ),
+    VenvConfig(
         venv_type=WorkflowVenvType.V2_SPEC_DECODE,
         requirements_file="v2-spec-decode.txt",
         extra_dirs=("artifacts",),
@@ -449,17 +467,6 @@ _venv_config_list = [
         extra_dirs=("work_dir",),
         python_version="3.11",
         setup_function=fetch_structured_output_scripts_forge,
-    ),
-    VenvConfig(
-        venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
-        requirements_file="benchmarks-aiperf.txt",
-        extra_dirs=("artifacts",),
-        python_version="3.11",
-    ),
-    VenvConfig(
-        venv_type=WorkflowVenvType.BENCHMARKS_GUIDELLM,
-        requirements_file="benchmarks-guidellm.txt",
-        python_version="3.11",
     ),
     # No pip; directory and/or runtime check
     VenvConfig(
