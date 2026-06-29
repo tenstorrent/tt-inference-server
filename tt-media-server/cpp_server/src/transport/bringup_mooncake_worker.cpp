@@ -340,10 +340,10 @@ void handleMigrationRequest(const std::string& raw,
   }
 }
 
-void emitHeartbeatIfDue(const std::string& workerName,
-                        const MooncakeMigrationWorker& worker,
-                        std::chrono::steady_clock::time_point startTime,
-                        std::chrono::steady_clock::time_point& nextHeartbeat) {
+void emitHeartbeatIfDue(
+    const std::string& workerName, const MooncakeMigrationWorker& worker,
+    std::chrono::steady_clock::time_point startTime,
+    std::chrono::steady_clock::time_point& nextHeartbeat) {
   const auto now = std::chrono::steady_clock::now();
   if (now < nextHeartbeat) return;
   const auto upSec =

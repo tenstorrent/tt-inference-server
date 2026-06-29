@@ -26,7 +26,6 @@ Configuration is read from env vars (see migration_e2e.config). Exit codes:
 This file is intentionally thin: each lifecycle stage lives in its own
 migration_e2e.* module so new tests can reuse the building blocks.
 """
-
 from __future__ import annotations
 
 import pathlib

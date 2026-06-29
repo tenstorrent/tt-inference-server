@@ -6,7 +6,6 @@ Centralizes the env-var contract used by the MPI + Kafka e2e tests. New tests
 should call `load_config()` (or construct a `Config` directly) instead of
 reading `os.environ` ad hoc, so the contract stays in one place.
 """
-
 from __future__ import annotations
 
 import os
@@ -63,7 +62,9 @@ def load_config() -> Config:
     def _float(key: str, default: float) -> float:
         return float(os.environ.get(key, str(default)))
 
-    worker_bin_raw = os.environ.get("WORKER_BIN", "./build/bringup_mooncake_worker")
+    worker_bin_raw = os.environ.get(
+        "WORKER_BIN", "./build/bringup_mooncake_worker"
+    )
     return Config(
         num_prefill=_int("NUM_PREFILL", 4),
         num_decode=_int("NUM_DECODE", 16),

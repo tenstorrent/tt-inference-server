@@ -12,7 +12,6 @@ The bringup_mooncake_worker process emits two milestones we tail for:
 
 The mesh is "ready" when both lines are present at the expected counts.
 """
-
 from __future__ import annotations
 
 import pathlib
@@ -77,7 +76,9 @@ def wait_for_mesh(
         if state.is_ready(cfg):
             return state
         if prefill_proc.poll() is not None or decode_proc.poll() is not None:
-            print("ERROR: one mpirun exited before mesh was up.", file=sys.stderr)
+            print(
+                "ERROR: one mpirun exited before mesh was up.", file=sys.stderr
+            )
             break
         time.sleep(1.0)
     return read_mesh_state(cfg)

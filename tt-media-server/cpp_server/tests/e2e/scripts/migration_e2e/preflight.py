@@ -7,7 +7,6 @@ unreachable or topics missing) is verified here before we spend time launching
 workers. PreflightError is the single error type callers map to a misconfig
 exit code (e.g. 2).
 """
-
 from __future__ import annotations
 
 import os
@@ -31,9 +30,13 @@ def preflight(cfg: Config) -> None:
             "Build it: ./build.sh --blaze --kafka --mooncake"
         )
     if shutil.which("mpirun") is None:
-        raise PreflightError("mpirun not found; install Open MPI to run this test.")
+        raise PreflightError(
+            "mpirun not found; install Open MPI to run this test."
+        )
     if not cfg.rank_launch_script.is_file():
-        raise PreflightError(f"rank launcher missing: {cfg.rank_launch_script}")
+        raise PreflightError(
+            f"rank launcher missing: {cfg.rank_launch_script}"
+        )
     if not cfg.metadata_server_script.is_file():
         raise PreflightError(
             f"metadata server script missing: {cfg.metadata_server_script}"

@@ -17,7 +17,6 @@ available under the current interpreter (see _bootstrap). The bootstrap runs
 BEFORE any submodule top-level imports, so a fresh ctest invocation can pick
 up cpp_server/.venv transparently.
 """
-
 from __future__ import annotations
 
 import pathlib
