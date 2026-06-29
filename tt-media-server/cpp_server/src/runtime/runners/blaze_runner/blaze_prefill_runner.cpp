@@ -15,11 +15,40 @@
 #include "ipc/helpers/token_push.hpp"
 #include "runtime/runners/blaze_runner/blaze_slot_manager.hpp"
 #include "runtime/runners/blaze_runner/blaze_utils.hpp"
+#include "runtime/runners/blaze_runner/mock_scheduler.hpp"
 #include "runtime/worker/single_process_worker_metrics.hpp"
 #include "services/memory_services/memory_manager.hpp"
+#include "tt_llm_engine/scheduler/prefill/prefill_scheduler.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners::blaze {
+namespace {
+
+namespace ps = tt_llm_engine::scheduler::prefill;
+
+class RealPrefillScheduler final : public IPrefillScheduler {
+ public:
+  explicit RealPrefillScheduler(std::unique_ptr<ps::PrefillScheduler> impl)
+      : impl_(std::move(impl)) {}
+
+  void start() override { impl_->start(); }
+  void stop() override { impl_->stop(); }
+  bool push_request(const ps::ISRequest& request) override {
+    return impl_->push_request(request);
+  }
+  bool try_pop_response(ps::SchedulerResponse& response) override {
+    return impl_->try_pop_response(response);
+  }
+  bool try_pop_output(ps::OutputMessage& output) override {
+    return impl_->try_pop_output(output);
+  }
+
+ private:
+  std::unique_ptr<ps::PrefillScheduler> impl_;
+};
+
+}  // namespace
+
 BlazePrefillRunner::BlazePrefillRunner(
     const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
     tt::ipc::ITaskQueue* taskQueue, tt::ipc::ICancelQueue* stopQueue,
@@ -31,26 +60,34 @@ BlazePrefillRunner::BlazePrefillRunner(
       slotManager(tt::config::pmMaxUsers()),
       lastOutputTime(std::chrono::steady_clock::now()),
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
-  TT_LOG_INFO(
-      "BlazePrefillRunner: Constructing PrefillScheduler with SocketConfig...");
-  auto pipelineConfig = utils::makePrefillPipelineConfig(config);
-  ps::SchedulerParams managerParams{};
-  managerParams.dest_endpoint_id = tt::config::migrationDecodeEndpointId();
-  managerParams.self_endpoint_id = tt::config::migrationPrefillEndpointId();
-  managerParams.layers_per_chunk = tt::config::modelNumLayers();
-  managerParams.chunk_size = tt::config::prefillChunkSize();
-  managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
-  auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
-  auto migrationClientInterface = utils::makeMigrationClientInterface(config);
-  if (tt::config::enableMigration()) {
-    migrationClientInterface->connect_to(
-        tt::config::migrationDecodeEndpointId(), "PUBLISHER", "ds_pd");
+  const auto maxUsers = static_cast<uint32_t>(tt::config::pmMaxUsers());
+  if (config.runner_type == tt::config::ModelRunnerType::MOCK_PIPELINE &&
+      tt::config::useMockScheduler()) {
+    TT_LOG_INFO(
+        "BlazePrefillRunner: using MockPrefillScheduler (single-threaded)");
+    prefillScheduler = std::make_unique<MockPrefillScheduler>(maxUsers);
+  } else {
+    TT_LOG_INFO(
+        "BlazePrefillRunner: Constructing PrefillScheduler with SocketConfig...");
+    auto pipelineConfig = utils::makePrefillPipelineConfig(config);
+    ps::SchedulerParams managerParams{};
+    managerParams.dest_endpoint_id = tt::config::migrationDecodeEndpointId();
+    managerParams.self_endpoint_id = tt::config::migrationPrefillEndpointId();
+    managerParams.layers_per_chunk = tt::config::modelNumLayers();
+    managerParams.chunk_size = tt::config::prefillChunkSize();
+    managerParams.max_users = maxUsers;
+    auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
+    auto migrationClientInterface = utils::makeMigrationClientInterface(config);
+    if (tt::config::enableMigration()) {
+      migrationClientInterface->connect_to(
+          tt::config::migrationDecodeEndpointId(), "PUBLISHER", "ds_pd");
+    }
+    prefillScheduler = std::make_unique<RealPrefillScheduler>(
+        std::make_unique<ps::PrefillScheduler>(
+            pipelineConfig, ackChannelConfig, managerParams,
+            std::move(migrationClientInterface)));
+    TT_LOG_INFO("BlazePrefillRunner: PrefillScheduler constructed");
   }
-  prefillScheduler = std::make_unique<ps::PrefillScheduler>(
-      pipelineConfig, ackChannelConfig, managerParams,
-      std::move(migrationClientInterface));
-  TT_LOG_INFO(
-      "BlazePrefillRunner: PrefillScheduler constructed, calling start()...");
   prefillScheduler->start();
   TT_LOG_INFO(
       "BlazePrefillRunner: PipelineManager started, creating MemoryManager...");

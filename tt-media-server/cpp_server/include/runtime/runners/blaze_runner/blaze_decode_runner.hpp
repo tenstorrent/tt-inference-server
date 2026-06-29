@@ -16,9 +16,9 @@
 #include "ipc/interface/task_queue.hpp"
 #include "runtime/runners/blaze_runner/blaze_slot_manager.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
+#include "runtime/runners/blaze_runner/scheduler_interface.hpp"
 #include "runtime/runners/ipc_runner.hpp"
 #include "services/memory_services/memory_manager.hpp"
-#include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
 
 namespace tt::runners::blaze {
@@ -68,7 +68,7 @@ class BlazeDecodeRunner : public IRunner {
   ipc::IResultQueue* resultQueue;
   tt::ipc::ITaskQueue* taskQueue;
   tt::ipc::ICancelQueue* stopQueue;
-  std::unique_ptr<ds::DecodeScheduler> decodeScheduler;
+  std::unique_ptr<IDecodeScheduler> decodeScheduler;
   PendingRequests pendingRequests;
   SlotManager slotManager;
   std::atomic<bool> stopped{false};

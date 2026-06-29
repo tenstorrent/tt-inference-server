@@ -12,6 +12,7 @@
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
+#include "runtime/runners/blaze_runner/scheduler_interface.hpp"
 #include "scheduler/decode/mock_migration_client.hpp"
 #ifdef ENABLE_BLAZE_MIGRATION
 #include "scheduler/migration_layer_client_adapter.hpp"
@@ -19,7 +20,6 @@
 #include "scheduler/mock_migration_client.hpp"
 #include "tt_llm_engine/pipeline/channel_configs.hpp"
 #include "tt_llm_engine/pipeline/prefill_pipeline_config.hpp"
-#include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
 #include "tt_llm_engine/scheduler/migration_client_interface.hpp"
 #include "tt_llm_engine/scheduler/prefill/prefill_types.hpp"
@@ -183,10 +183,10 @@ inline sch::ISRequest makeContinueRequest(
 
 // Populates per-run fields on `slot` from `seq`. Snapshots the slot's spec
 // counters at this moment so handleOutput can later report per-turn deltas.
-// Does not touch state machine / metrics / task binding — caller's job.
+// Does not touch state machine / metrics / task binding - caller's job.
 inline void initSlotForRun(SlotContext& slot,
                            const tt::domain::llm::Sequence& seq,
-                           ds::DecodeScheduler& sched) {
+                           IDecodeScheduler& sched) {
   slot.ignoreEos = seq.getSamplingParams().ignore_eos;
   slot.specAcceptsAtStart = sched.get_spec_accepts(slot.slotId);
   slot.specRejectsAtStart = sched.get_spec_rejects(slot.slotId);
@@ -194,9 +194,7 @@ inline void initSlotForRun(SlotContext& slot,
   slot.tokensGenerated = 0;
 }
 
-// Populates per-run fields on `slot` from `seq`. Snapshots the slot's spec
-// counters at this moment so handleOutput can later report per-turn deltas.
-// Does not touch state machine / metrics / task binding — caller's job.
+// Prefill overload: no spec-decode counters to snapshot.
 inline void initSlotForRun(SlotContext& slot,
                            const tt::domain::llm::Sequence& seq) {
   slot.ignoreEos = seq.getSamplingParams().ignore_eos;
@@ -211,7 +209,7 @@ struct SpecDelta {
 
 // Computes the (accepts, rejects) deltas relative to slot start and logs the
 // per-turn acceptance summary.
-inline SpecDelta computeAndLogSpecDelta(ds::DecodeScheduler& sched,
+inline SpecDelta computeAndLogSpecDelta(IDecodeScheduler& sched,
                                         const SlotContext& slot,
                                         const ds::OutputMessage& output,
                                         uint32_t taskId) {

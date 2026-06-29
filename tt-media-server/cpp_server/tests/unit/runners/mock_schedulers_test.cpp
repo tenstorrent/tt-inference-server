@@ -1,0 +1,182 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
+#include "runtime/runners/blaze_runner/mock_scheduler.hpp"
+
+#include <gtest/gtest.h>
+
+#include <chrono>
+#include <cstdlib>
+#include <vector>
+
+namespace tt::runners::blaze {
+namespace {
+
+namespace sch = tt_llm_engine::scheduler;
+
+sch::ISRequest makeAllocate(uint32_t requestId) {
+  return {.type = sch::RequestType::ALLOCATE,
+          .request_id = requestId,
+          .tokens = {},
+          .gen = {}};
+}
+
+sch::ISRequest makeSubmit(uint32_t slotId, uint32_t maxNewTokens,
+                          std::vector<uint32_t> tokens = {1, 2, 3}) {
+  sch::ISRequest req{};
+  req.type = sch::RequestType::SUBMIT;
+  req.slot_id = slotId;
+  req.tokens = std::move(tokens);
+  req.gen.max_new_tokens = maxNewTokens;
+  return req;
+}
+
+// RAII env override; restores the prior (unset) state on scope exit so tests
+// don't leak latency config into each other.
+class ScopedEnv {
+ public:
+  ScopedEnv(const char* key, const char* value) : key_(key) {
+    setenv(key_, value, 1);
+  }
+  ~ScopedEnv() { unsetenv(key_); }
+
+  ScopedEnv(const ScopedEnv&) = delete;
+  ScopedEnv& operator=(const ScopedEnv&) = delete;
+
+ private:
+  const char* key_;
+};
+
+uint32_t drainOutputs(MockDecodeScheduler& scheduler) {
+  uint32_t count = 0;
+  sch::OutputMessage out{};
+  while (scheduler.try_pop_output(out)) {
+    ++count;
+  }
+  return count;
+}
+
+// Allocates a slot, submits a SUBMIT with `promptLen` prompt tokens requesting
+// `maxNewTokens`, and returns the wall-clock time the (synchronous) emission
+// took. `tokenCount` receives how many outputs were produced.
+std::chrono::microseconds timeDecode(uint32_t maxNewTokens, size_t promptLen,
+                                     uint32_t& tokenCount) {
+  MockDecodeScheduler scheduler(4);
+  scheduler.start();
+  EXPECT_TRUE(scheduler.push_request(makeAllocate(1)));
+  sch::SchedulerResponse alloc{};
+  EXPECT_TRUE(scheduler.try_pop_response(alloc));
+
+  const std::vector<uint32_t> prompt(promptLen, 7u);
+  const auto start = std::chrono::steady_clock::now();
+  EXPECT_TRUE(
+      scheduler.push_request(makeSubmit(alloc.slot_id, maxNewTokens, prompt)));
+  const auto elapsed = std::chrono::steady_clock::now() - start;
+
+  tokenCount = drainOutputs(scheduler);
+  return std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
+}
+
+TEST(MockSchedulerTest, PrefillSubmitCompletesWithNoDecodeTokens) {
+  MockPrefillScheduler scheduler(4);
+  scheduler.start();
+
+  ASSERT_TRUE(scheduler.push_request(makeAllocate(1)));
+  sch::SchedulerResponse allocateResponse{};
+  ASSERT_TRUE(scheduler.try_pop_response(allocateResponse));
+  const uint32_t slotId = allocateResponse.slot_id;
+
+  ASSERT_TRUE(scheduler.push_request(makeSubmit(slotId, 0)));
+
+  sch::OutputMessage output{};
+  ASSERT_TRUE(scheduler.try_pop_output(output));
+  EXPECT_TRUE(output.prefill_complete);
+  EXPECT_EQ(output.real_pos, 3u);
+  EXPECT_EQ(output.token_id, sch::EMPTY_TOKEN);
+  EXPECT_FALSE(scheduler.try_pop_output(output));
+}
+
+TEST(MockSchedulerTest, DecodeSubmitEmitsMaxNewTokens) {
+  MockDecodeScheduler scheduler(4);
+  scheduler.start();
+
+  ASSERT_TRUE(scheduler.push_request(makeAllocate(1)));
+  sch::SchedulerResponse allocateResponse{};
+  ASSERT_TRUE(scheduler.try_pop_response(allocateResponse));
+  const uint32_t slotId = allocateResponse.slot_id;
+
+  ASSERT_TRUE(scheduler.push_request(makeSubmit(slotId, 3)));
+
+  for (uint32_t i = 0; i < 3; ++i) {
+    sch::OutputMessage output{};
+    ASSERT_TRUE(scheduler.try_pop_output(output)) << "missing token " << i;
+    EXPECT_EQ(output.tokens_generated, i + 1);
+    EXPECT_EQ(output.is_complete, i + 1 == 3);
+  }
+}
+
+TEST(MockSchedulerTest, PrefillRejectsContinue) {
+  MockPrefillScheduler scheduler(4);
+  scheduler.start();
+
+  sch::ISRequest continueReq{};
+  continueReq.type = sch::RequestType::CONTINUE;
+  continueReq.slot_id = 0;
+  ASSERT_TRUE(scheduler.push_request(continueReq));
+
+  sch::SchedulerResponse response{};
+  ASSERT_TRUE(scheduler.try_pop_response(response));
+  EXPECT_NE(response.error_code, sch::request_error::kOk);
+}
+
+// Models the real decode engine's steady-state throughput: 64 pipeline stages
+// of ~44us each give a fill (first-token) latency of 64*44 = 2816us, but once
+// the pipeline is full a token retires every stage-time, i.e. ~1 token / 44us
+// (~22.7k tok/s) -- independent of prompt length. The mock reproduces this by
+// spacing tokens at a fixed decodeTokenLatency, so the observed rate must
+// depend only on that spacing, never on the number of input (prompt) tokens.
+// (Set MOCK_DECODE_TOKEN_LATENCY_US=44 to emit at the real ~22.7k tok/s; here a
+// larger spacing keeps the test fast while exercising the same invariant.)
+TEST(MockSchedulerTest, DecodeThroughputIsFlatAndInputIndependent) {
+  constexpr unsigned kTokenLatencyUs = 1000;
+  constexpr uint32_t kMaxNewTokens = 50;
+  ScopedEnv prefillLatency("MOCK_PREFILL_LATENCY_MS", "0");
+  ScopedEnv tokenLatency("MOCK_DECODE_TOKEN_LATENCY_US", "1000");
+
+  uint32_t shortCount = 0;
+  uint32_t longCount = 0;
+  const auto shortPrompt = timeDecode(kMaxNewTokens, /*promptLen=*/4, shortCount);
+  const auto longPrompt =
+      timeDecode(kMaxNewTokens, /*promptLen=*/8192, longCount);
+
+  // Output count is governed solely by max_new_tokens; a 2048x larger prompt
+  // yields exactly the same number of tokens.
+  EXPECT_EQ(shortCount, kMaxNewTokens);
+  EXPECT_EQ(longCount, kMaxNewTokens);
+
+  // Wall time is bounded below by the sum of the inter-token sleeps: sleep_for
+  // never returns early, so emission cannot be faster than (K-1) * latency
+  // (no spacing precedes the first token). It is bounded above by that floor
+  // plus an overshoot budget for OS scheduling jitter. Both prompt sizes must
+  // land in this same window - the window depends only on K and latency, which
+  // is exactly the input-independence we want.
+  const auto nominalUs = std::chrono::microseconds(
+      static_cast<int64_t>(kMaxNewTokens - 1) * kTokenLatencyUs);
+  const auto floorUs = nominalUs - nominalUs / 100;  // 1% clock-source grace
+  const auto ceilUs = nominalUs + nominalUs / 2;     // +50% overshoot budget
+
+  for (const auto elapsed : {shortPrompt, longPrompt}) {
+    EXPECT_GE(elapsed, floorUs);
+    EXPECT_LE(elapsed, ceilUs);
+  }
+
+  // Input-independence, stated explicitly: a 2048x larger prompt shifts the run
+  // time by no more than the overshoot budget (run-to-run jitter only).
+  // This makes the "prompt size doesn't change the time" intent explicit and obvious to a future reader
+  EXPECT_NEAR(static_cast<double>(shortPrompt.count()),
+              static_cast<double>(longPrompt.count()),
+              static_cast<double>((ceilUs - floorUs).count()));
+}
+
+}  // namespace
+}  // namespace tt::runners::blaze
