@@ -50,11 +50,13 @@ std::string resolveBlazeSocketDescriptorPrefix() {
     case ModelType::LLAMA_3_1_8B_INSTRUCT:
       return "llama";
     case ModelType::KIMI_K2_6:
+    case ModelType::KIMI_K2_7_CODE:
       return "kimi";
     case ModelType::GPT_OSS_120B:
       return "gpt-oss";
     case ModelType::MINIMAX_M2_7:
       return "minimax";
+    case ModelType::GLM_5_1:
     case ModelType::GLM_5_2:
       return "glm";
     case ModelType::DEEPSEEK_V4_PRO:
@@ -235,10 +237,6 @@ std::string blazeSocketDescriptorPrefix() {
   static const std::string cached = envString(
       "BLAZE_SOCKET_DESCRIPTOR_PREFIX", resolveBlazeSocketDescriptorPrefix());
   return cached;
-}
-
-bool migrateFullKV() {
-  return envBool("MIGRATE_FULL_KV", defaults::MIGRATE_FULL_KV);
 }
 
 unsigned pmConnectTimeoutMs() {
@@ -471,10 +469,12 @@ ModelType modelType() {
     // Derive model type from MODEL env var
     std::string m = envString("MODEL", defaults::MODEL);
     if (m == "moonshotai/Kimi-K2.6") return ModelType::KIMI_K2_6;
+    if (m == "moonshotai/Kimi-K2.7-Code") return ModelType::KIMI_K2_7_CODE;
     if (m == "meta-llama/Llama-3.1-8B-Instruct")
       return ModelType::LLAMA_3_1_8B_INSTRUCT;
     if (m == "openai/gpt-oss-120b") return ModelType::GPT_OSS_120B;
     if (m == "MiniMaxAI/MiniMax-M2.7") return ModelType::MINIMAX_M2_7;
+    if (m == "zai-org/GLM-5.1") return ModelType::GLM_5_1;
     if (m == "zai-org/GLM-5.2") return ModelType::GLM_5_2;
     if (m == "deepseek-ai/DeepSeek-V4-Pro") return ModelType::DEEPSEEK_V4_PRO;
     return ModelType::DEEPSEEK_R1_0528;
@@ -495,8 +495,10 @@ bool sampleOnlyInReasoning() {
       return true;
     case ModelType::LLAMA_3_1_8B_INSTRUCT:
     case ModelType::KIMI_K2_6:
+    case ModelType::KIMI_K2_7_CODE:
     case ModelType::GPT_OSS_120B:
     case ModelType::MINIMAX_M2_7:
+    case ModelType::GLM_5_1:
     case ModelType::GLM_5_2:
     case ModelType::DEEPSEEK_V4_PRO:
       return false;
@@ -704,6 +706,16 @@ std::string kafkaBrokers() {
 std::string kafkaOffloadTopicName() {
   return envString("KAFKA_OFFLOAD_TOPIC_NAME",
                    defaults::KAFKA_OFFLOAD_TOPIC_NAME);
+}
+
+std::string kafkaMigrationRequestTopic() {
+  return envString("KAFKA_MIGRATION_REQUEST_TOPIC",
+                   defaults::KAFKA_MIGRATION_REQUEST_TOPIC);
+}
+
+std::string kafkaMigrationAckTopic() {
+  return envString("KAFKA_MIGRATION_ACK_TOPIC",
+                   defaults::KAFKA_MIGRATION_ACK_TOPIC);
 }
 
 uint32_t migrationPrefillEndpointId() {

@@ -201,6 +201,16 @@ void DisaggregationService::setupSocketHandlers() {
                     fullPromptTokens >= trimmedPromptTokens
                         ? fullPromptTokens - trimmedPromptTokens
                         : 0);
+                request->migrationStartPosition =
+                    request->decode_skip_tokens < cachedTokens
+                        ? 0u
+                        : static_cast<uint32_t>(cachedTokens);
+                TT_LOG_DEBUG(
+                    "[DisaggregationService] taskId={} "
+                    "migrationStartPosition={} prefillMatchedTokens={} "
+                    "decodeSkipTokens={}",
+                    message.taskId, *request->migrationStartPosition,
+                    cachedTokens, request->decode_skip_tokens);
                 // Capture the resolved sessionId by value:
                 // submitStreamingRequest hands the request to the pipeline, so
                 // request->sessionId is no longer reliable by the time this
@@ -255,10 +265,9 @@ void DisaggregationService::setupSocketHandlers() {
                                 reason, response.error.value_or("error"));
                       } else {
                         prefillResult.remainingTokens =
-                            maxTokens.has_value()
-                                ? std::optional<int>(
-                                      std::max(0, maxTokens.value() - 1))
-                                : std::nullopt;
+                            maxTokens.has_value() ? std::optional<int>(std::max(
+                                                        0, maxTokens.value()))
+                                                  : std::nullopt;
                         prefillResult.tokenIds.insert(
                             prefillResult.tokenIds.end(),
                             message.tokenIds.begin(), message.tokenIds.end());
@@ -278,6 +287,16 @@ void DisaggregationService::setupSocketHandlers() {
                       // Releasing to IDLE-but-cached also lets the next turn's
                       // prefix cache match it. clearInFlight() is idempotent.
                       if (!prefillSessionId.empty() && sessionManager) {
+                        // The prefill computed the whole prompt prefix, so all
+                        // of its blocks are now resident and safe to copy from.
+                        // (Prefill is one-shot, so there is no stream-end
+                        // finalize to mark residency as on the decode path.)
+                        if (!isError) {
+                          sessionManager->setResidentPrefixBlocks(
+                              prefillSessionId,
+                              static_cast<uint32_t>(
+                                  message.registrationHashes.size()));
+                        }
                         sessionManager->releaseInFlight(prefillSessionId);
                       }
                     });
@@ -352,6 +371,11 @@ void DisaggregationService::resolvePrefillSession(
          .setKvPositionId = true,
          .logPrefix = "[DisaggregationService]"});
     sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
+    // Eagerly drop any resident tail past the common prefix: this turn's
+    // new/diverged blocks are not computed yet. The full prefix is marked
+    // resident again when this prefill completes (see prefill result callback).
+    sessionManager->shrinkResidentPrefixToMatchedTokens(
+        acquired->sessionId, acquired->numberOfMatchedTokens);
     socketService->sendPrefillCacheBlocksAdded(blockHashes(blockInfos));
     onResolved();
   } else {

@@ -27,6 +27,8 @@ if [[ ! -x "${BIN}" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Metadata service launcher is infrastructure, kept under tests/integration/.
+META_SERVER="${SCRIPT_DIR}/../../integration/run_mooncake_metadata_server.sh"
 META_LOG="${META_LOG:-/tmp/tt_mc_metadata.log}"
 meta_pid=""
 cleanup() { [[ -n "${meta_pid}" ]] && kill "${meta_pid}" 2>/dev/null; }
@@ -53,7 +55,7 @@ if [[ -n "${METADATA:-}" ]]; then
 else
   echo "Auto-starting HTTP metadata service on 127.0.0.1:${HTTP_PORT}..."
   HTTP_PORT="${HTTP_PORT}" BIND_HOST=127.0.0.1 \
-    "${SCRIPT_DIR}/run_mooncake_metadata_server.sh" >"${META_LOG}" 2>&1 &
+    "${META_SERVER}" >"${META_LOG}" 2>&1 &
   meta_pid=$!
   META_URI="http://127.0.0.1:${HTTP_PORT}/metadata"
   # Wait until it answers a PUT; binding can fail (e.g. port in use).

@@ -192,6 +192,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   orig.setDecodeSkipTokens(11);
   orig.setMigrationId(0xDEADBEEFCAFE1234ULL);
   orig.setStartsInThinking(true);
+  orig.setMigrationStartPosition(128);
 
   std::ostringstream os;
   orig.serialize(os);
@@ -217,6 +218,9 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   ASSERT_TRUE(restored.getMigrationId().has_value());
   EXPECT_EQ(*restored.getMigrationId(), *orig.getMigrationId());
   EXPECT_EQ(restored.getStartsInThinking(), orig.getStartsInThinking());
+  ASSERT_TRUE(restored.getMigrationStartPosition().has_value());
+  EXPECT_EQ(*restored.getMigrationStartPosition(),
+            *orig.getMigrationStartPosition());
 
   const auto& sp = restored.getSamplingParams();
   const auto& spOrig = orig.getSamplingParams();
@@ -276,6 +280,7 @@ TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
 TEST(SequenceTest, SerializeDeserialize_MigrationIdUnsetRemainsNullopt) {
   Sequence orig(12345, 256, {10, 20}, SamplingParams{.max_tokens = 5});
   ASSERT_FALSE(orig.getMigrationId().has_value());
+  ASSERT_FALSE(orig.getMigrationStartPosition().has_value());
 
   std::ostringstream os;
   orig.serialize(os);
@@ -284,6 +289,7 @@ TEST(SequenceTest, SerializeDeserialize_MigrationIdUnsetRemainsNullopt) {
   Sequence restored = Sequence::deserialize(is);
 
   EXPECT_FALSE(restored.getMigrationId().has_value());
+  EXPECT_FALSE(restored.getMigrationStartPosition().has_value());
 }
 
 }  // namespace

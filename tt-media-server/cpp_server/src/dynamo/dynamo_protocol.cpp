@@ -23,6 +23,7 @@
 #include <thread>
 #include <utility>
 
+#include "domain/llm/llm_error_reason.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::dynamo {
@@ -51,6 +52,31 @@ std::string dumpJsonCompact(const Json::Value& v) {
   writer["indentation"] = "";
   writer["emitUTF8"] = true;
   return Json::writeString(writer, v);
+}
+
+std::vector<uint8_t> encodeAnnotatedError(const std::string& message,
+                                          uint16_t code) {
+  // Encode the error message as a JSON payload with a status code so the
+  // Dynamo frontend's extract_backend_error_if_present() can parse it and
+  // return the correct HTTP status (e.g. 400 instead of default 500).
+  Json::Value errorPayload(Json::objectValue);
+  errorPayload["message"] = message;
+  errorPayload["code"] = code;
+  std::string errorJson = dumpJsonCompact(errorPayload);
+
+  Json::Value annotated(Json::objectValue);
+  annotated["data"] = Json::Value::null;
+  annotated["event"] = "error";
+  Json::Value comment(Json::arrayValue);
+  comment.append(errorJson);
+  annotated["comment"] = std::move(comment);
+
+  Json::Value wrapper(Json::objectValue);
+  wrapper["data"] = std::move(annotated);
+  wrapper["complete_final"] = false;
+
+  std::string s = dumpJsonCompact(wrapper);
+  return std::vector<uint8_t>(s.begin(), s.end());
 }
 
 std::string framedString(const TwoPartMessage& tp) {
@@ -217,27 +243,12 @@ std::vector<uint8_t> encode_stream_chunk(const TokenChunk& chunk) {
   // If this chunk carries an error, encode as Annotated::error format
   // so the Dynamo frontend's check_for_backend_error can intercept it.
   if (chunk.error.has_value()) {
-    // Encode the error message as a JSON payload with a status code so the
-    // Dynamo frontend's extract_backend_error_if_present() can parse it and
-    // return the correct HTTP status (e.g. 400 instead of default 500).
-    Json::Value errorPayload(Json::objectValue);
-    errorPayload["message"] = *chunk.error;
-    errorPayload["code"] = chunk.error_code.value_or(500);
-    std::string errorJson = dumpJsonCompact(errorPayload);
+    return encodeAnnotatedError(*chunk.error, chunk.error_code.value_or(500));
+  }
 
-    Json::Value annotated(Json::objectValue);
-    annotated["data"] = Json::Value::null;
-    annotated["event"] = "error";
-    Json::Value comment(Json::arrayValue);
-    comment.append(errorJson);
-    annotated["comment"] = std::move(comment);
-
-    Json::Value wrapper(Json::objectValue);
-    wrapper["data"] = std::move(annotated);
-    wrapper["complete_final"] = false;
-
-    std::string s = dumpJsonCompact(wrapper);
-    return std::vector<uint8_t>(s.begin(), s.end());
+  if (chunk.finish_reason.has_value() &&
+      tt::domain::llm::isErrorFinishReason(*chunk.finish_reason)) {
+    return encodeAnnotatedError(*chunk.finish_reason, 500);
   }
 
   Json::Value tokenData(Json::objectValue);

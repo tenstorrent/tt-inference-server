@@ -190,6 +190,15 @@ std::string kafkaBrokers();
  * defaults::KAFKA_OFFLOAD_TOPIC_NAME. */
 std::string kafkaOffloadTopicName();
 
+/** Kafka topic for KV-migration requests (decode -> migration worker). From
+ * KAFKA_MIGRATION_REQUEST_TOPIC. Default:
+ * defaults::KAFKA_MIGRATION_REQUEST_TOPIC. */
+std::string kafkaMigrationRequestTopic();
+
+/** Kafka topic for KV-migration acks (migration worker -> decode). From
+ * KAFKA_MIGRATION_ACK_TOPIC. Default: defaults::KAFKA_MIGRATION_ACK_TOPIC. */
+std::string kafkaMigrationAckTopic();
+
 /** Kafka consumer group ID from KAFKA_GROUP_ID. Default:
  * defaults::KAFKA_GROUP_ID. */
 std::string kafkaGroupId();
@@ -218,10 +227,6 @@ uint32_t modelNumLayers();
 /** Prefill chunk size from PREFILL_CHUNK_SIZE. Default:
  * defaults::PREFILL_CHUNK_SIZE. */
 uint32_t prefillChunkSize();
-
-/** Migrate full KV from MIGRATE_FULL_KV. Default:
- * defaults::MIGRATE_FULL_KV. */
-bool migrateFullKV();
 
 /** Enable migration from ENABLE_MIGRATION. Default:
  * defaults::ENABLE_MIGRATION. */
