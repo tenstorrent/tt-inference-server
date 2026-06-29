@@ -15,10 +15,6 @@ std::time_t nowSeconds() {
 
 }  // namespace
 
-// ---------------------------------------------------------------------------
-// Migration
-// ---------------------------------------------------------------------------
-
 uint64_t MockRemoteKVManager::migrate(const MigrationRequest& request) {
   std::lock_guard<std::mutex> lock(mtx);
   const uint64_t id = nextId++;
@@ -94,19 +90,11 @@ void MockRemoteKVManager::forceStatus(uint64_t migrationId,
   it->second.pollsRemaining = 0;
 }
 
-// ---------------------------------------------------------------------------
-// Download
-// ---------------------------------------------------------------------------
-
 uint64_t MockRemoteKVManager::downloadFromStore(
     const DownloadKVRequest& request) {
   std::lock_guard<std::mutex> lock(mtx);
   const uint64_t id = nextId++;
 
-  // Resolve the sentinel ("use full prefix") against the actual request
-  // size at submit time. Tests that want a partial-hit simulation set an
-  // explicit usablePrefixCount via setDefaultDownloadResult and the
-  // sentinel is bypassed.
   KVTransferResult terminal = defaultTerminalDownloadResult;
   if (terminal.usablePrefixCount == USE_FULL_PREFIX_SENTINEL) {
     terminal.usablePrefixCount = static_cast<uint32_t>(request.blocks.size());
@@ -177,20 +165,12 @@ void MockRemoteKVManager::forceDownloadResult(uint64_t transferId,
   it->second.pollsRemaining = 0;
 }
 
-// ---------------------------------------------------------------------------
-// Offload (fire-and-forget)
-// ---------------------------------------------------------------------------
-
 uint64_t MockRemoteKVManager::offloadToStore(const OffloadKVRequest& request) {
   std::lock_guard<std::mutex> lock(mtx);
   const uint64_t id = nextId++;
   offloads.emplace(id, request);
   return id;
 }
-
-// ---------------------------------------------------------------------------
-// Shared bookkeeping
-// ---------------------------------------------------------------------------
 
 void MockRemoteKVManager::clear() {
   std::lock_guard<std::mutex> lock(mtx);

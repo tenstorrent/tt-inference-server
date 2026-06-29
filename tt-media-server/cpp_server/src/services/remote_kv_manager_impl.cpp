@@ -121,16 +121,6 @@ MigrationStatus RemoteKVManagerImpl::getStatus(uint64_t migrationId) const {
   return it->second.status;
 }
 
-// ---------------------------------------------------------------------------
-// Mooncake-store path. No-op for now: we mint an id and bookkeep the
-// download lifecycle so callers see a real state machine (IN_PROGRESS →
-// FAILED via the timeout sweep), but the request payloads are not yet
-// published to Kafka and no fan-out / aggregation logic exists. The
-// dedicated request/ack topics live in defaults.hpp (KAFKA_KV_DOWNLOAD_*,
-// KAFKA_KV_OFFLOAD_REQUEST_TOPIC); wiring producers/consumers for them is
-// a follow-up.
-// ---------------------------------------------------------------------------
-
 uint64_t RemoteKVManagerImpl::downloadFromStore(
     const DownloadKVRequest& request) {
   const uint64_t id = tt::utils::MigrationIDGenerator::generate();
@@ -168,9 +158,6 @@ KVTransferResult RemoteKVManagerImpl::getDownloadResult(
 }
 
 uint64_t RemoteKVManagerImpl::offloadToStore(const OffloadKVRequest& request) {
-  // Fire-and-forget: no tracking, no Kafka publish (yet). Mint an id
-  // purely for log correlation so a future Kafka producer can stitch
-  // submit-time and ack-time logs together.
   const uint64_t id = tt::utils::MigrationIDGenerator::generate();
   TT_LOG_INFO(
       "[RemoteKVManagerImpl] offloadToStore (no-op, fire-and-forget) "

@@ -38,17 +38,14 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
    * @param ackConsumer           Kafka consumer subscribed to the
    *   migration-ack topic, with a unique group.id. Ownership is taken.
    * @param migrationWorkerPoolSize  Number of migration workers the manager
-   *   will fan download requests out to. Used by the download path's
-   *   COMPLETION rule ("we wait for all N workers to ack"). The migrate()
-   *   path is unaffected — it targets a single peer per request.
-   *   Must be >= 1; values <= 0 are treated as 1 with a warning.
+   *   fans download requests out to. A download reaches COMPLETED once
+   *   this many workers have ack'd. Must be >= 1.
    * @param timeout               Max age of an IN_PROGRESS migration /
    *   download before the sweeper marks it FAILED. Default 60s.
    * @param sweepInterval         How often the drain thread runs the
-   *   timeout sweep. Default 5s. Tests can pass a small value to force
-   *   fast resolution.
+   *   timeout sweep. Default 5s.
    * @param drainPollMs           Per-iteration poll timeout passed to the
-   *   consumer. Default 100ms. Lower values trade CPU for responsiveness.
+   *   consumer. Default 100ms.
    */
   RemoteKVManagerImpl(
       std::unique_ptr<tt::messaging::IKafkaProducer> requestProducer,
@@ -66,13 +63,6 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
   [[nodiscard]] uint64_t migrate(const MigrationRequest& request) override;
   MigrationStatus getStatus(uint64_t migrationId) const override;
 
-  // Mooncake-store path. The current implementation is a no-op: the
-  // request payloads are NOT yet published to Kafka and no fan-out /
-  // aggregation logic exists. downloadFromStore() returns a fresh id
-  // and tracks the entry as IN_PROGRESS so the timeout sweep can
-  // eventually flip it to FAILED — keeping the lifecycle observable
-  // without lying about completion. offloadToStore() simply logs and
-  // returns an id for correlation; nothing is tracked past return.
   [[nodiscard]] uint64_t downloadFromStore(
       const DownloadKVRequest& request) override;
   KVTransferResult getDownloadResult(uint64_t transferId) const override;
