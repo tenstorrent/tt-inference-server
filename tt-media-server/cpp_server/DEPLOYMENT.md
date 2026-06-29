@@ -344,8 +344,8 @@ roughly an hour.
 
 | Variable                         | Default  | Description                                                                                                                                                                                  |
 | -------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WARMUP_TIMEOUT_MS`              | `120000` | Max wait for the first token during runner warmup.                                                                                                                                           |
-| `OUTPUT_HANG_TIMEOUT_MS`         | `120000` | Max gap with no model output (while a request is in flight) before the worker self-terminates.                                                                                               |
+| `WARMUP_TIMEOUT_MS`              | `150000` | Max wait for the first token during runner warmup.                                                                                                                                           |
+| `OUTPUT_HANG_TIMEOUT_MS`         | `150000` | Max gap with no model output (while a request is in flight) before the worker self-terminates.                                                                                               |
 | `PM_CONNECT_TIMEOUT_MS`          | `30000`  | Pipeline manager connect timeout. Must be large enough to ride out runner startup.                                                                                                           |
 | `KV_MIGRATION_TIMEOUT_MS`        | `60000`  | Max age of an `IN_PROGRESS` KV migration before `RemoteKVManagerImpl`'s sweeper marks it `FAILED`. Bump to 300000–600000 (5–10 min) if a stuck migration worker should not fail-fast.        |
 | `KV_MIGRATION_SWEEP_INTERVAL_MS` | `5000`   | How often `RemoteKVManagerImpl`'s drain loop runs the timeout sweep. Worst-case observed latency for marking a stale migration `FAILED` is `KV_MIGRATION_TIMEOUT_MS + this`.                 |
