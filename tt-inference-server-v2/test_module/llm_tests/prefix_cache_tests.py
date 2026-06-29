@@ -165,7 +165,20 @@ def run_prefix_cache(
         auth_token=auth_token,
         tokenizer_trust_remote_code=tokenizer_trust_remote_code,
     )
-    context = DriverContext(output_dir=output_root, device=device_label)
+    # The --tokenizer-trust-remote-code flag only reaches aiperf's main-process
+    # tokenizer; its trace-decode worker pool reloads the tokenizer from just
+    # the name and ignores the flag. The venv's post-install patch
+    # (workflows.workflow_venvs.patch_aiperf_tokenizer_trust_remote_code) routes
+    # that default through this env var so trace scenarios (mooncake_trace) work
+    # for custom-tokenizer models too.
+    extra_env = (
+        {"AIPERF_TOKENIZER_TRUST_REMOTE_CODE": "1"}
+        if tokenizer_trust_remote_code
+        else {}
+    )
+    context = DriverContext(
+        output_dir=output_root, device=device_label, extra_env=extra_env
+    )
 
     if server_controller is not None and not server_controller.wait_for_healthy():
         logger.error("Inference server not healthy; aborting prefix-cache sweep.")
