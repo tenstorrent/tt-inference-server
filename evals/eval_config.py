@@ -4406,8 +4406,8 @@ _eval_config_list = [
                     # a looser 10% tolerance instead of the full-set 83.33.
                     mode_reference_scores={
                         EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=72.50,
-                            ref="ci-nightly r1_gpqa_diamond (doc_ids 0-39), H100 gemma-4-31B-it, 2026-06-22",
+                            score=80.00,
+                            ref="ci-nightly r1_gpqa_diamond (doc_ids 0-39), H100 gemma-4-31B-it, 2026-06-29",
                             tolerance=0.10,
                         ),
                     },
@@ -4470,8 +4470,8 @@ _eval_config_list = [
                     # tolerates one flipped task on a 5-item subset on its own.
                     mode_reference_scores={
                         EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=40.00,
-                            ref="ci-nightly terminal_bench_2 (5 tasks), H100 gemma-4-31B-it, 2026-06-22",
+                            score=60.00,
+                            ref="ci-nightly terminal_bench_2 (5 tasks), H100 gemma-4-31B-it, 2026-06-29",
                             tolerance=0.10,
                         ),
                     },
@@ -4547,8 +4547,8 @@ _eval_config_list = [
                     # tolerates one flipped instance on a 5-item subset on its own.
                     mode_reference_scores={
                         EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=40.00,
-                            ref="ci-nightly swe_bench_verified (5 instances), H100 gemma-4-31B-it, 2026-06-22",
+                            score=60.00,
+                            ref="ci-nightly swe_bench_verified (5 instances), H100 gemma-4-31B-it, 2026-06-29",
                             tolerance=0.10,
                         ),
                     },
