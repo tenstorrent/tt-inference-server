@@ -504,11 +504,31 @@ if(ENABLE_BLAZE)
         message(STATUS "Linking llm_runner_lib against TtLlmEngine::Core")
     endif()
     target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE)
+    # Detect where the tt-llm-engine source tree lives. Two layouts are supported:
+    #   1. Monolithic flow (main's Dockerfile.blaze): cpp_server/tt-llm-engine/ —
+    #      cloned in-tree during the Docker build.
+    #   2. Slim flow (v2 Dockerfile.blaze): /opt/tt-llm-engine-src/ — COPY'd from
+    #      the prebuilt tt-llm-engine image's source tree.
+    # Both layouts expose the same subdirectories (src/, disaggregation/, tt-metal/),
+    # so a single root variable lets every consumer-of-engine-source path adapt.
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/CMakeLists.txt")
+        set(_TT_LLM_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine")
+        message(STATUS "tt-llm-engine source: in-tree at ${_TT_LLM_ENGINE_ROOT}")
+    elseif(EXISTS "/opt/tt-llm-engine-src/CMakeLists.txt")
+        set(_TT_LLM_ENGINE_ROOT "/opt/tt-llm-engine-src")
+        message(STATUS "tt-llm-engine source: slim engine image at ${_TT_LLM_ENGINE_ROOT}")
+    else()
+        message(FATAL_ERROR
+            "ENABLE_BLAZE=ON but tt-llm-engine source not found. Expected either "
+            "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/ (in-tree clone, monolithic flow) "
+            "or /opt/tt-llm-engine-src/ (slim engine image flow).")
+    endif()
+
     # Header-only MigrationClientInterface implementations (MigrationLayerClientAdapter,
     # MockMigrationClient) live under the engine's src tree rather than its public
     # include tree; blaze_utils.hpp instantiates them, so expose that path.
     target_include_directories(llm_runner_lib PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/src)
+        ${_TT_LLM_ENGINE_ROOT}/src)
 
     if(ENABLE_BLAZE_MIGRATION)
         target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE_MIGRATION)
@@ -520,8 +540,8 @@ if(ENABLE_BLAZE)
         # directly into a small static lib and link it in. There is a single concrete
         # implementation (no mock/real .so swap), so static linking is sufficient for
         # both Core and LD_PRELOAD'd Full runs.
-        set(_MIG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration)
-        set(_MIG_TT_STL "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/tt-metal/tt_stl")
+        set(_MIG_DIR ${_TT_LLM_ENGINE_ROOT}/disaggregation/migration)
+        set(_MIG_TT_STL "${_TT_LLM_ENGINE_ROOT}/tt-metal/tt_stl")
         add_library(migration_client STATIC
             ${_MIG_DIR}/src/migration_client.cpp
             ${_MIG_DIR}/src/file_lock_guard.cpp)
@@ -529,7 +549,7 @@ if(ENABLE_BLAZE)
         target_include_directories(migration_client PUBLIC
             ${_MIG_DIR}/include
             ${_MIG_DIR}/src/worker
-            ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/src/common
+            ${_TT_LLM_ENGINE_ROOT}/src/common
             ${TT_METAL_INCLUDE_DIRS}
             ${_MIG_TT_STL})
         target_link_libraries(migration_client PUBLIC spdlog::spdlog PRIVATE rt)
