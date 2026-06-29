@@ -379,13 +379,13 @@ Model model();
 unsigned kvMigrationTimeoutMs();
 
 /** How often (ms) the RemoteKVManagerImpl drain thread runs its timeout sweep.
-* From KV_MIGRATION_SWEEP_INTERVAL_MS. Default:
-* defaults::KV_MIGRATION_SWEEP_INTERVAL_MS. */
+ * From KV_MIGRATION_SWEEP_INTERVAL_MS. Default:
+ * defaults::KV_MIGRATION_SWEEP_INTERVAL_MS. */
 unsigned kvMigrationSweepIntervalMs();
 
 /** Per-iteration Kafka poll timeout (ms) for the RemoteKVManagerImpl drain
-* loop. From KV_MIGRATION_DRAIN_POLL_MS. Default:
-* defaults::KV_MIGRATION_DRAIN_POLL_MS. */
+ * loop. From KV_MIGRATION_DRAIN_POLL_MS. Default:
+ * defaults::KV_MIGRATION_DRAIN_POLL_MS. */
 unsigned kvMigrationDrainPollMs();
 
 }  // namespace tt::config

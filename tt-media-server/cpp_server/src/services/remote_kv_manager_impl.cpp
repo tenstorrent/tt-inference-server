@@ -12,13 +12,18 @@
 namespace tt::services {
 
 /**
- * Constructor for RemoteKVManagerImpl. Initializes the manager with the given parameters.
+ * Constructor for RemoteKVManagerImpl. Initializes the manager with the given
+ * parameters.
  *
  * @param requestProducer Kafka producer wired to the migration-request topic.
- * @param ackConsumer Kafka consumer subscribed to the migration-ack topic, with a unique group.id.
- * @param timeout Max age of an IN_PROGRESS migration before the sweeper marks it FAILED. Default 60s.
- * @param sweepInterval How often the drain thread runs the timeout sweep. Default 5s.
- * @param drainPollMs Per-iteration poll timeout passed to the consumer. Default 100ms.
+ * @param ackConsumer Kafka consumer subscribed to the migration-ack topic, with
+ * a unique group.id.
+ * @param timeout Max age of an IN_PROGRESS migration before the sweeper marks
+ * it FAILED. Default 60s.
+ * @param sweepInterval How often the drain thread runs the timeout sweep.
+ * Default 5s.
+ * @param drainPollMs Per-iteration poll timeout passed to the consumer. Default
+ * 100ms.
  */
 RemoteKVManagerImpl::RemoteKVManagerImpl(
     std::unique_ptr<tt::messaging::IKafkaProducer> requestProducer,
@@ -50,7 +55,8 @@ RemoteKVManagerImpl::RemoteKVManagerImpl(
 }
 
 /**
- * Destructor for RemoteKVManagerImpl. Stops the drain loop and joins the drain thread.
+ * Destructor for RemoteKVManagerImpl. Stops the drain loop and joins the drain
+ * thread.
  */
 RemoteKVManagerImpl::~RemoteKVManagerImpl() {
   running.store(false, std::memory_order_relaxed);
@@ -62,9 +68,10 @@ RemoteKVManagerImpl::~RemoteKVManagerImpl() {
 
 /**
  * Method migrate is used to migrate a key-value pair from one slot to another.
- * It generates a new migration id and adds a new migration state to the migrations map with status IN_PROGRESS.
- * It also sends a migration request message to the request topic.
- * 
+ * It generates a new migration id and adds a new migration state to the
+ * migrations map with status IN_PROGRESS. It also sends a migration request
+ * message to the request topic.
+ *
  * Returns the migration id.
  */
 uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
@@ -112,7 +119,8 @@ uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
     std::lock_guard<std::mutex> lock(mtx);
     auto it = migrations.find(id);
 
-    // We need check the migration status to avoid overwriting a successful or failed migration.
+    // We need check the migration status to avoid overwriting a successful or
+    // failed migration.
     if (it != migrations.end() &&
         it->second.status == MigrationStatus::IN_PROGRESS) {
       it->second.status = MigrationStatus::FAILED;
@@ -126,7 +134,8 @@ uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
 }
 
 /**
- * Method getStatus is used to get the status of a migration for given migrationId.
+ * Method getStatus is used to get the status of a migration for given
+ * migrationId.
  */
 MigrationStatus RemoteKVManagerImpl::getStatus(uint64_t migrationId) const {
   std::lock_guard<std::mutex> lock(mtx);
@@ -139,17 +148,19 @@ MigrationStatus RemoteKVManagerImpl::getStatus(uint64_t migrationId) const {
 }
 
 /**
- * Method drainLoop is used to drain the acknowledgments from the ack topic and update the migration status.
- * It also sweeps the migrations and marks any migration whose request was issued more than `timeout` 
- * ago and is still IN_PROGRESS as FAILED.
- * 
+ * Method drainLoop is used to drain the acknowledgments from the ack topic and
+ * update the migration status. It also sweeps the migrations and marks any
+ * migration whose request was issued more than `timeout` ago and is still
+ * IN_PROGRESS as FAILED.
+ *
  * Runs as a background thread.
  */
 void RemoteKVManagerImpl::drainLoop() {
   TT_LOG_INFO("[RemoteKVManagerImpl] drain loop entered");
 
   while (running.load(std::memory_order_relaxed)) {
-    // Drain the acknowledgments from the ack topic and update the migration status.
+    // Drain the acknowledgments from the ack topic and update the migration
+    // status.
     if (ackConsumer) {
       auto msg = ackConsumer->receive(drainPollMs);
       if (msg.has_value()) {
@@ -181,7 +192,8 @@ void RemoteKVManagerImpl::drainLoop() {
       std::this_thread::sleep_for(std::chrono::milliseconds(drainPollMs));
     }
 
-    // Sweep the migrations and mark any migration whose request was issued more than `timeout` 
+    // Sweep the migrations and mark any migration whose request was issued more
+    // than `timeout`
     const auto now = std::chrono::steady_clock::now();
     if (now - lastSweep >= sweepInterval) {
       std::lock_guard<std::mutex> lock(mtx);
@@ -194,8 +206,9 @@ void RemoteKVManagerImpl::drainLoop() {
 }
 
 /**
- * Method sweepLocked is used to sweep the migrations and mark any migration whose request was 
- * issued more than `timeout` ago and is still IN_PROGRESS as FAILED.
+ * Method sweepLocked is used to sweep the migrations and mark any migration
+ * whose request was issued more than `timeout` ago and is still IN_PROGRESS as
+ * FAILED.
  */
 void RemoteKVManagerImpl::sweepLocked(
     std::chrono::steady_clock::time_point now) {
