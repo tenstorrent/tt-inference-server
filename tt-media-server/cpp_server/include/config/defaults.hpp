@@ -79,14 +79,14 @@ constexpr uint32_t MODEL_NUM_LAYERS = 61;
 constexpr uint32_t PREFILL_CHUNK_SIZE = 5120;
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 128;
-constexpr unsigned WARMUP_TIMEOUT_MS = 120000;
+constexpr unsigned WARMUP_TIMEOUT_MS = 150000;
 /**
  * Max time (ms) the runner may go without producing a model output while at
  * least one request is in flight before it self-terminates the worker
  * process. Self-terminating lets the infrastructure monitoring stack notice
  * the crash and restart the server instead of hanging silently.
  */
-constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 120000;
+constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 150000;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 constexpr const char* WIRE_FORMAT = "blaze";
