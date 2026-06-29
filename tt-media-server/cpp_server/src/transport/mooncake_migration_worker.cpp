@@ -3,8 +3,6 @@
 
 #include "transport/mooncake_migration_worker.hpp"
 
-#include <chrono>
-#include <thread>
 #include <utility>
 
 #include "transport/i_storage_backend.hpp"
@@ -12,11 +10,6 @@
 #include "utils/logger.hpp"
 
 namespace tt::transport {
-
-namespace {
-constexpr int K_HOLD_POLL_MS = 200;
-constexpr int K_HEARTBEAT_SEC = 30;  // periodic "still alive" log while holding
-}  // namespace
 
 MooncakeMigrationWorker::MooncakeMigrationWorker(
     MigrationWorkerConfig config, std::shared_ptr<ITransferEngine> engine,
@@ -85,27 +78,6 @@ bool MooncakeMigrationWorker::bringUp(const std::atomic<bool>& cancelToken) {
   }
   peers_ = std::move(*resolved);
   return true;
-}
-
-// Phase 6: hold until the caller's stop source fires, then tear down.
-void MooncakeMigrationWorker::run(const std::atomic<bool>& stopRequested) {
-  TT_LOG_INFO(
-      "[MooncakeMigrationWorker] '{}' READY; holding until stop ({} peers)",
-      config_.segment_name, peers_.size());
-  const auto start = std::chrono::steady_clock::now();
-  auto nextHeartbeat = start + std::chrono::seconds(K_HEARTBEAT_SEC);
-  while (!stopRequested.load()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(K_HOLD_POLL_MS));
-    const auto now = std::chrono::steady_clock::now();
-    if (now < nextHeartbeat) continue;
-    const auto upSec =
-        std::chrono::duration_cast<std::chrono::seconds>(now - start).count();
-    TT_LOG_INFO("[MooncakeMigrationWorker] '{}' alive — {} peers, up {}s",
-                config_.segment_name, peers_.size(), upSec);
-    nextHeartbeat = now + std::chrono::seconds(K_HEARTBEAT_SEC);
-  }
-  TT_LOG_INFO("[MooncakeMigrationWorker] '{}' stopping", config_.segment_name);
-  teardown();
 }
 
 // Reverse-order teardown: stop being discoverable before the engine drops, so

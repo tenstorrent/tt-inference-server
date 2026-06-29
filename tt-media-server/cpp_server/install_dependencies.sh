@@ -52,8 +52,17 @@ elif ! drogon_found 2>/dev/null; then
     APT_PKGS+=(build-essential cmake g++ pkg-config curl git)
 fi
 if [ "${INSTALL_KAFKA}" = 1 ]; then
-    APT_PKGS+=(librdkafka-dev)
-    echo "Kafka deps: will install librdkafka-dev (for KAFKA_ENABLED=ON builds)"
+    # librdkafka-dev depends on librdkafka1 + librdkafka++1 on Ubuntu/Debian,
+    # but list them explicitly so minimal base images that prune transitive
+    # deps still end up with a working C++ runtime. CMakeLists.txt:1134-1136
+    # requires both -lrdkafka and -lrdkafka++ plus the librdkafka/ headers.
+    if [ "${RUNTIME_ONLY}" = 1 ]; then
+        APT_PKGS+=(librdkafka1 librdkafka++1)
+        echo "Kafka deps: will install librdkafka1 + librdkafka++1 (runtime)"
+    else
+        APT_PKGS+=(librdkafka-dev librdkafka1 librdkafka++1)
+        echo "Kafka deps: will install librdkafka-dev + runtime libs (for KAFKA_ENABLED=ON builds)"
+    fi
 fi
 
 $SUDO apt-get update -qq
