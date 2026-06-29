@@ -15,6 +15,10 @@ std::time_t nowSeconds() {
 
 }  // namespace
 
+// ---------------------------------------------------------------------------
+// Migration
+// ---------------------------------------------------------------------------
+
 uint64_t MockRemoteKVManager::migrate(const MigrationRequest& request) {
   std::lock_guard<std::mutex> lock(mtx);
   const uint64_t id = nextId++;
@@ -32,25 +36,23 @@ uint64_t MockRemoteKVManager::migrate(const MigrationRequest& request) {
       /*status=*/initialStatus,
   };
 
-  entries.emplace(id, Entry{
-                          /*migration=*/std::move(migration),
-                          /*request=*/request,
-                          /*pollsRemaining=*/initialPollsBeforeResolution,
-                          /*terminal=*/defaultTerminalStatus,
-                      });
+  migrations.emplace(id, MigrationEntry{
+                             /*migration=*/std::move(migration),
+                             /*request=*/request,
+                             /*pollsRemaining=*/initialPollsBeforeResolution,
+                             /*terminal=*/defaultTerminalStatus,
+                         });
   return id;
 }
 
 MigrationStatus MockRemoteKVManager::getStatus(uint64_t migrationId) const {
   std::lock_guard<std::mutex> lock(mtx);
-  auto it = entries.find(migrationId);
-  if (it == entries.end()) {
+  auto it = migrations.find(migrationId);
+  if (it == migrations.end()) {
     return MigrationStatus::UNKNOWN;
   }
 
-  Entry& e = it->second;
-  // Once a migration has reached a terminal state (either the natural
-  // terminal or one set by forceStatus) we just report it back.
+  MigrationEntry& e = it->second;
   if (e.migration.status != MigrationStatus::IN_PROGRESS) {
     return e.migration.status;
   }
@@ -78,8 +80,8 @@ void MockRemoteKVManager::setPollsBeforeResolution(size_t polls) {
 void MockRemoteKVManager::forceStatus(uint64_t migrationId,
                                       MigrationStatus status) {
   std::lock_guard<std::mutex> lock(mtx);
-  auto it = entries.find(migrationId);
-  if (it == entries.end()) {
+  auto it = migrations.find(migrationId);
+  if (it == migrations.end()) {
     // Silently ignore — id was never issued or has been cleared. We don't
     // throw here because tests routinely call forceStatus with ids they
     // haven't yet observed; the wrong-order case fails loudly via UNKNOWN
@@ -92,22 +94,132 @@ void MockRemoteKVManager::forceStatus(uint64_t migrationId,
   it->second.pollsRemaining = 0;
 }
 
+// ---------------------------------------------------------------------------
+// Download
+// ---------------------------------------------------------------------------
+
+uint64_t MockRemoteKVManager::downloadFromStore(
+    const DownloadKVRequest& request) {
+  std::lock_guard<std::mutex> lock(mtx);
+  const uint64_t id = nextId++;
+
+  // Resolve the sentinel ("use full prefix") against the actual request
+  // size at submit time. Tests that want a partial-hit simulation set an
+  // explicit usablePrefixCount via setDefaultDownloadResult and the
+  // sentinel is bypassed.
+  KVTransferResult terminal = defaultTerminalDownloadResult;
+  if (terminal.usablePrefixCount == USE_FULL_PREFIX_SENTINEL) {
+    terminal.usablePrefixCount = static_cast<uint32_t>(request.blocks.size());
+  }
+
+  const KVTransferStatus initialStatus =
+      initialDownloadPollsBeforeResolution == 0 ? terminal.status
+                                                : KVTransferStatus::IN_PROGRESS;
+
+  downloads.emplace(
+      id, DownloadEntry{
+              /*request=*/request,
+              /*status=*/initialStatus,
+              /*pollsRemaining=*/initialDownloadPollsBeforeResolution,
+              /*terminal=*/terminal,
+          });
+  return id;
+}
+
+KVTransferResult MockRemoteKVManager::getDownloadResult(
+    uint64_t transferId) const {
+  std::lock_guard<std::mutex> lock(mtx);
+  auto it = downloads.find(transferId);
+  if (it == downloads.end()) {
+    return KVTransferResult{KVTransferStatus::UNKNOWN, 0};
+  }
+
+  DownloadEntry& e = it->second;
+  if (e.status != KVTransferStatus::IN_PROGRESS) {
+    return KVTransferResult{e.status,
+                            e.status == KVTransferStatus::COMPLETED
+                                ? e.terminal.usablePrefixCount
+                                : 0u};
+  }
+
+  if (e.pollsRemaining > 0) {
+    --e.pollsRemaining;
+  }
+  if (e.pollsRemaining == 0) {
+    e.status = e.terminal.status;
+  }
+
+  return KVTransferResult{e.status,
+                          e.status == KVTransferStatus::COMPLETED
+                              ? e.terminal.usablePrefixCount
+                              : 0u};
+}
+
+void MockRemoteKVManager::setDefaultDownloadResult(KVTransferResult result) {
+  std::lock_guard<std::mutex> lock(mtx);
+  defaultTerminalDownloadResult = result;
+}
+
+void MockRemoteKVManager::setDownloadPollsBeforeResolution(size_t polls) {
+  std::lock_guard<std::mutex> lock(mtx);
+  initialDownloadPollsBeforeResolution = polls;
+}
+
+void MockRemoteKVManager::forceDownloadResult(uint64_t transferId,
+                                              KVTransferResult result) {
+  std::lock_guard<std::mutex> lock(mtx);
+  auto it = downloads.find(transferId);
+  if (it == downloads.end()) {
+    return;
+  }
+  it->second.status = result.status;
+  it->second.terminal = result;
+  it->second.pollsRemaining = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Offload (fire-and-forget)
+// ---------------------------------------------------------------------------
+
+uint64_t MockRemoteKVManager::offloadToStore(const OffloadKVRequest& request) {
+  std::lock_guard<std::mutex> lock(mtx);
+  const uint64_t id = nextId++;
+  offloads.emplace(id, request);
+  return id;
+}
+
+// ---------------------------------------------------------------------------
+// Shared bookkeeping
+// ---------------------------------------------------------------------------
+
 void MockRemoteKVManager::clear() {
   std::lock_guard<std::mutex> lock(mtx);
-  entries.clear();
+  migrations.clear();
+  downloads.clear();
+  offloads.clear();
   nextId = 1;
 }
 
 size_t MockRemoteKVManager::migrationCount() const {
   std::lock_guard<std::mutex> lock(mtx);
-  return entries.size();
+  return migrations.size();
+}
+
+size_t MockRemoteKVManager::downloadCount() const {
+  std::lock_guard<std::mutex> lock(mtx);
+  return downloads.size();
+}
+
+size_t MockRemoteKVManager::offloadCount() const {
+  std::lock_guard<std::mutex> lock(mtx);
+  return offloads.size();
 }
 
 std::optional<MigrationRequest> MockRemoteKVManager::getRequest(
     uint64_t migrationId) const {
   std::lock_guard<std::mutex> lock(mtx);
-  auto it = entries.find(migrationId);
-  if (it == entries.end()) return std::nullopt;
+  auto it = migrations.find(migrationId);
+  if (it == migrations.end()) return std::nullopt;
 
   return it->second.request;
 }
@@ -115,10 +227,26 @@ std::optional<MigrationRequest> MockRemoteKVManager::getRequest(
 std::optional<Migration> MockRemoteKVManager::getMigration(
     uint64_t migrationId) const {
   std::lock_guard<std::mutex> lock(mtx);
-  auto it = entries.find(migrationId);
-  if (it == entries.end()) return std::nullopt;
+  auto it = migrations.find(migrationId);
+  if (it == migrations.end()) return std::nullopt;
 
   return it->second.migration;
+}
+
+std::optional<DownloadKVRequest> MockRemoteKVManager::getDownloadRequest(
+    uint64_t transferId) const {
+  std::lock_guard<std::mutex> lock(mtx);
+  auto it = downloads.find(transferId);
+  if (it == downloads.end()) return std::nullopt;
+  return it->second.request;
+}
+
+std::optional<OffloadKVRequest> MockRemoteKVManager::getOffloadRequest(
+    uint64_t offloadId) const {
+  std::lock_guard<std::mutex> lock(mtx);
+  auto it = offloads.find(offloadId);
+  if (it == offloads.end()) return std::nullopt;
+  return it->second;
 }
 
 }  // namespace tt::services

@@ -61,6 +61,27 @@ constexpr const char* KAFKA_GROUP_ID = "migration-workers";
 constexpr const char* KAFKA_MIGRATION_REQUEST_TOPIC = "kv-migration-requests";
 constexpr const char* KAFKA_MIGRATION_ACK_TOPIC = "kv-migration-acks";
 
+// Mooncake-store offload / download Kafka topics. Kept separate from the
+// migration topics on purpose: offload-on-every-step traffic can be heavy
+// and we don't want it head-of-line-blocking the latency-sensitive
+// download or migrate paths. Each operation gets its own consumer
+// thread on the worker side.
+constexpr const char* KAFKA_KV_DOWNLOAD_REQUEST_TOPIC = "kv-download-requests";
+constexpr const char* KAFKA_KV_DOWNLOAD_ACK_TOPIC = "kv-download-acks";
+// No ack topic for offload — offloadToStore() is fire-and-forget by
+// design. Workers still log/metric their per-block outcomes; nothing is
+// surfaced back to the scheduler.
+constexpr const char* KAFKA_KV_OFFLOAD_REQUEST_TOPIC = "kv-offload-requests";
+
+// Number of migration workers in the pool. RemoteKVManagerImpl uses this
+// to decide when a download has fully reported (the aggregator flips
+// IN_PROGRESS → COMPLETED once all `MIGRATION_WORKER_POOL_SIZE` workers
+// have ack'd). Must match the actual worker count deployed by the
+// bringup orchestration (one bringup_mooncake_worker process per
+// pipeline rank). Treat changes here as topology changes that require
+// a coordinated restart of scheduler + workers.
+constexpr size_t MIGRATION_WORKER_POOL_SIZE = 1;
+
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 
 constexpr const char* SPEC_DECODE_MODE = "none";

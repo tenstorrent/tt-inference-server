@@ -718,6 +718,26 @@ std::string kafkaMigrationAckTopic() {
                    defaults::KAFKA_MIGRATION_ACK_TOPIC);
 }
 
+std::string kafkaKvDownloadRequestTopic() {
+  return envString("KAFKA_KV_DOWNLOAD_REQUEST_TOPIC",
+                   defaults::KAFKA_KV_DOWNLOAD_REQUEST_TOPIC);
+}
+
+std::string kafkaKvDownloadAckTopic() {
+  return envString("KAFKA_KV_DOWNLOAD_ACK_TOPIC",
+                   defaults::KAFKA_KV_DOWNLOAD_ACK_TOPIC);
+}
+
+std::string kafkaKvOffloadRequestTopic() {
+  return envString("KAFKA_KV_OFFLOAD_REQUEST_TOPIC",
+                   defaults::KAFKA_KV_OFFLOAD_REQUEST_TOPIC);
+}
+
+size_t migrationWorkerPoolSize() {
+  return static_cast<size_t>(envUlong("MIGRATION_WORKER_POOL_SIZE",
+                                      defaults::MIGRATION_WORKER_POOL_SIZE));
+}
+
 uint32_t migrationPrefillEndpointId() {
   return static_cast<uint32_t>(
       envUlong("MIGRATION_PREFILL_ENDPOINT_ID",

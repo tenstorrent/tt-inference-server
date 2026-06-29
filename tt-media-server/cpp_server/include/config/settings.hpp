@@ -199,6 +199,28 @@ std::string kafkaMigrationRequestTopic();
  * KAFKA_MIGRATION_ACK_TOPIC. Default: defaults::KAFKA_MIGRATION_ACK_TOPIC. */
 std::string kafkaMigrationAckTopic();
 
+/** Kafka topic for Mooncake-store KV-download requests (scheduler ->
+ * migration worker). From KAFKA_KV_DOWNLOAD_REQUEST_TOPIC. Default:
+ * defaults::KAFKA_KV_DOWNLOAD_REQUEST_TOPIC. */
+std::string kafkaKvDownloadRequestTopic();
+
+/** Kafka topic for Mooncake-store KV-download acks (migration worker ->
+ * scheduler). From KAFKA_KV_DOWNLOAD_ACK_TOPIC. Default:
+ * defaults::KAFKA_KV_DOWNLOAD_ACK_TOPIC. */
+std::string kafkaKvDownloadAckTopic();
+
+/** Kafka topic for Mooncake-store KV-offload requests (scheduler ->
+ * migration worker). Fire-and-forget; no ack topic counterpart by
+ * design. From KAFKA_KV_OFFLOAD_REQUEST_TOPIC. Default:
+ * defaults::KAFKA_KV_OFFLOAD_REQUEST_TOPIC. */
+std::string kafkaKvOffloadRequestTopic();
+
+/** Number of migration workers RemoteKVManagerImpl expects to fan
+ * download requests out to. Must match the deployed pool. From
+ * MIGRATION_WORKER_POOL_SIZE. Default:
+ * defaults::MIGRATION_WORKER_POOL_SIZE. */
+size_t migrationWorkerPoolSize();
+
 /** Kafka consumer group ID from KAFKA_GROUP_ID. Default:
  * defaults::KAFKA_GROUP_ID. */
 std::string kafkaGroupId();

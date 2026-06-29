@@ -142,14 +142,16 @@ bool waitFor(Pred pred, std::chrono::milliseconds timeout = 2s) {
 }
 
 // Convenience builder: aggressive timings so async transitions resolve in
-// the milliseconds range.
+// the milliseconds range. workerPoolSize is irrelevant for the migrate()
+// path covered by these tests; we pass 1 to keep the constructor happy.
 std::unique_ptr<RemoteKVManagerImpl> makeManager(
     std::unique_ptr<IKafkaProducer> producer,
     std::unique_ptr<IKafkaConsumer> consumer,
     std::chrono::milliseconds timeout = 500ms,
     std::chrono::milliseconds sweep = 10ms) {
   return std::make_unique<RemoteKVManagerImpl>(
-      std::move(producer), std::move(consumer), timeout, sweep,
+      std::move(producer), std::move(consumer),
+      /*migrationWorkerPoolSize=*/1, timeout, sweep,
       /*drainPollMs=*/5);
 }
 
