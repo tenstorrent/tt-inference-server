@@ -8,6 +8,7 @@
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <vector>
 
 #include "services/remote_kv_manager.hpp"
 
@@ -38,7 +39,7 @@ class MockRemoteKVManager : public IRemoteKVManager {
   [[nodiscard]] uint64_t downloadFromStore(
       const DownloadKVRequest& request) override;
   KVTransferResult getDownloadResult(uint64_t transferId) const override;
-  uint64_t offloadToStore(const OffloadKVRequest& request) override;
+  void offloadToStore(const OffloadKVRequest& request) override;
 
   void setDefaultStatus(MigrationStatus status);
   void setPollsBeforeResolution(size_t polls);
@@ -58,7 +59,8 @@ class MockRemoteKVManager : public IRemoteKVManager {
   size_t downloadCount() const;
   size_t offloadCount() const;
   std::optional<DownloadKVRequest> getDownloadRequest(uint64_t transferId) const;
-  std::optional<OffloadKVRequest> getOffloadRequest(uint64_t offloadId) const;
+  /// Snapshot of all offloads ever submitted, in submission order.
+  std::vector<OffloadKVRequest> offloadRequests() const;
 
  private:
   struct MigrationEntry {
@@ -98,7 +100,7 @@ class MockRemoteKVManager : public IRemoteKVManager {
   mutable std::unordered_map<uint64_t, MigrationEntry> migrations;
   mutable std::unordered_map<uint64_t, DownloadEntry> downloads;
 
-  std::unordered_map<uint64_t, OffloadKVRequest> offloads;
+  std::vector<OffloadKVRequest> offloads;
 };
 
 }  // namespace tt::services

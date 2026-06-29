@@ -165,11 +165,9 @@ void MockRemoteKVManager::forceDownloadResult(uint64_t transferId,
   it->second.pollsRemaining = 0;
 }
 
-uint64_t MockRemoteKVManager::offloadToStore(const OffloadKVRequest& request) {
+void MockRemoteKVManager::offloadToStore(const OffloadKVRequest& request) {
   std::lock_guard<std::mutex> lock(mtx);
-  const uint64_t id = nextId++;
-  offloads.emplace(id, request);
-  return id;
+  offloads.push_back(request);
 }
 
 void MockRemoteKVManager::clear() {
@@ -221,12 +219,9 @@ std::optional<DownloadKVRequest> MockRemoteKVManager::getDownloadRequest(
   return it->second.request;
 }
 
-std::optional<OffloadKVRequest> MockRemoteKVManager::getOffloadRequest(
-    uint64_t offloadId) const {
+std::vector<OffloadKVRequest> MockRemoteKVManager::offloadRequests() const {
   std::lock_guard<std::mutex> lock(mtx);
-  auto it = offloads.find(offloadId);
-  if (it == offloads.end()) return std::nullopt;
-  return it->second;
+  return offloads;
 }
 
 }  // namespace tt::services

@@ -66,7 +66,7 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
   [[nodiscard]] uint64_t downloadFromStore(
       const DownloadKVRequest& request) override;
   KVTransferResult getDownloadResult(uint64_t transferId) const override;
-  uint64_t offloadToStore(const OffloadKVRequest& request) override;
+  void offloadToStore(const OffloadKVRequest& request) override;
 
  private:
   void drainLoop();

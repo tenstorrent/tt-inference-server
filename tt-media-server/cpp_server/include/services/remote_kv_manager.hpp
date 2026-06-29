@@ -94,7 +94,7 @@ struct KVTransferResult {
  *   downloadFromStore()  hash-keyed fetch into a slot. Use on prefix
  *                        miss; caller polls getDownloadResult().
  *   offloadToStore()     hash-keyed publish from a slot. Fire-and-forget;
- *                        no result-poll method.
+ *                        returns void.
  *
  * Thread-safety: all methods are safe to call from any thread.
  */
@@ -130,11 +130,10 @@ class IRemoteKVManager {
   virtual KVTransferResult getDownloadResult(uint64_t transferId) const = 0;
 
   /**
-   * Fire-and-forget. Returns a fresh id for log correlation only; the
-   * impl does not retain per-submission state and there is no
-   * getOffloadResult().
+   * Fire-and-forget. The impl does not retain per-submission state and
+   * there is no getOffloadResult().
    */
-  virtual uint64_t offloadToStore(const OffloadKVRequest& request) = 0;
+  virtual void offloadToStore(const OffloadKVRequest& request) = 0;
 };
 
 }  // namespace tt::services

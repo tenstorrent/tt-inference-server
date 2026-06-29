@@ -157,13 +157,11 @@ KVTransferResult RemoteKVManagerImpl::getDownloadResult(
   return KVTransferResult{it->second.status, it->second.usablePrefixCount};
 }
 
-uint64_t RemoteKVManagerImpl::offloadToStore(const OffloadKVRequest& request) {
-  const uint64_t id = tt::utils::MigrationIDGenerator::generate();
+void RemoteKVManagerImpl::offloadToStore(const OffloadKVRequest& request) {
   TT_LOG_INFO(
       "[RemoteKVManagerImpl] offloadToStore (no-op, fire-and-forget) "
-      "offload_id={} src_slot={} blocks={}",
-      id, request.srcSlot, request.blocks.size());
-  return id;
+      "src_slot={} blocks={}",
+      request.srcSlot, request.blocks.size());
 }
 
 void RemoteKVManagerImpl::drainLoop() {
