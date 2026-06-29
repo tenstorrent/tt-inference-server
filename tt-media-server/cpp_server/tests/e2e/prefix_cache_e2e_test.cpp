@@ -23,8 +23,8 @@
 #include <thread>
 #include <vector>
 
+#include "../support/dynamo_test_fixture.hpp"
 #include "config/defaults.hpp"
-#include "support/dynamo_test_fixture.hpp"
 
 namespace {
 

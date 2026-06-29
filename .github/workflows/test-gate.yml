@@ -831,6 +831,9 @@ jobs:
           done
 
       - name: Start Dynamo frontend (port 8080)
+        env:
+          DYN_TOKENIZER: fastokens
+          DYN_CHAT_PROCESSOR: dynamo
         run: |
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8080 --label "Dynamo frontend"
           MODEL_PATH="${GITHUB_WORKSPACE}/tt-media-server/cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"

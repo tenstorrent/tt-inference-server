@@ -88,6 +88,7 @@ void configureCommonEnv() {
 void configureDecodeEnv() {
   configureCommonEnv();
   setenv("LLM_MODE", "decode", 1);
+  setenv("MAX_TOKENS_TO_PREFILL_ON_DECODE", "1000", 1);
   setQueueEnv(DECODE_QUEUE_PREFIX);
   tt::test::configureDynamoEnv();
 }
@@ -199,10 +200,24 @@ void configurePrefillEnv() {
       "[DecodeSubprocess] Ready with DynamoEndpoint, sentinel written to {}",
       sentinelPath);
 
+  const std::string healthSentinel =
+      std::string(sentinelPath) + ".prefill_health";
+  static std::atomic<bool> healthSentinelWritten{false};
+
   static std::atomic<bool> done{false};
   std::signal(SIGTERM, [](int) { done.store(true); });
   std::signal(SIGINT, [](int) { done.store(true); });
   while (!done.load()) {
+    if (!healthSentinelWritten.load()) {
+      auto socket = tt::services::ServiceContainer::instance().socket();
+      if (socket && socket->isConnected()) {
+        std::ofstream(healthSentinel) << "ready";
+        healthSentinelWritten.store(true);
+        TT_LOG_INFO(
+            "[DecodeSubprocess] Prefill health ready, sentinel written to {}",
+            healthSentinel);
+      }
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 
@@ -390,6 +405,7 @@ class DisaggregatedE2ETest
     }
 
     unlink(sentinelPath.c_str());
+    unlink((sentinelPath + ".prefill_health").c_str());
   }
 
   static std::unique_ptr<PrefillTestServer> prefillServer;
@@ -444,10 +460,24 @@ class DisaggregatedE2ETest
 
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
     while (std::chrono::steady_clock::now() < deadline) {
-      if (socket->isConnected()) return;
+      if (socket->isConnected()) break;
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-    throw std::runtime_error("Prefill server never connected to decode server");
+    if (!socket->isConnected()) {
+      throw std::runtime_error(
+          "Prefill server never connected to decode server");
+    }
+
+    // Decode runs prefill health probes after the ZMQ client connects; routing
+    // treats the prefill as unavailable until that handshake completes.
+    const std::string healthSentinel = sentinelPath + ".prefill_health";
+    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (std::filesystem::exists(healthSentinel)) return;
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    throw std::runtime_error(
+        "Decode server never reported prefill health ready");
   }
 };
 
