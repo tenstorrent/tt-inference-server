@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
-from evals.eval_config import resolve_eval_reference
+from evals.eval_config import accept_eval_score, resolve_eval_reference
 from report_module.schema import Block
 from workflows.workflow_types import ReportCheckTypes
 
@@ -94,8 +94,9 @@ def compute_accuracy_check(
     """Map accuracy to the report check convention: NA=1, PASS=2, FAIL=3.
 
     Under a limit mode (--ci-mode / --limit-samples-mode) with a matching
-    ``mode_reference_scores`` entry, compares against the subset reference —
-    using an absolute margin when defined (robust for tiny agentic subsets).
+    ``mode_reference_scores`` entry, compares against the subset reference using
+    the sample-count-aware check (n_trials = subset size), which gives tiny
+    agentic subsets the right leniency without a hand-tuned margin.
     """
 
     accuracy = metrics.get("accuracy")
@@ -103,14 +104,15 @@ def compute_accuracy_check(
         return ReportCheckTypes.NA
     accuracy = _normalize_accuracy_to_percent(accuracy)
     ref = resolve_eval_reference(score, limit_mode)
-    target = ref["reference_score"] or score.published_score
-    if target is None:
-        return ReportCheckTypes.NA
-    if ref["abs_margin"] is not None:
-        passed = accuracy >= target - ref["abs_margin"]
-    else:
+    n_total = metrics.get("n_trials")
+    passed = accept_eval_score(ref, accuracy, n_total=n_total)
+    if passed is None:
+        # No gpu reference; fall back to published score ratio.
+        published = getattr(score, "published_score", None)
+        if not published:
+            return ReportCheckTypes.NA
         tol = ref["tolerance"] or 0.05
-        passed = accuracy >= target * (1 - tol)
+        passed = accuracy >= published * (1 - tol)
     return ReportCheckTypes.PASS if passed else ReportCheckTypes.FAIL
 
 

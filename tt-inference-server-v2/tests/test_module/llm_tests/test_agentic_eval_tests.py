@@ -189,7 +189,8 @@ class TestAgenticParser:
 
 class TestAgenticModeReference:
     """Under --ci-mode, agentic scoring compares against the task's CI-subset
-    reference (mode_reference_scores) instead of the full gpu_reference_score."""
+    reference (mode_reference_scores) using the sample-count-aware check
+    (n_trials = subset size) instead of the full gpu_reference_score."""
 
     def _score(self):
         from evals.eval_config import EvalTaskScore, ModeReferenceScore
@@ -203,27 +204,28 @@ class TestAgenticModeReference:
             tolerance=0.05,
             mode_reference_scores={
                 EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                    40.0, ref="ci-nightly 5 instances", abs_margin=20.0
+                    40.0, ref="ci-nightly 5 instances", tolerance=0.10
                 )
             },
         )
 
-    def test_subset_20pct_fails_full_but_passes_ci_abs_margin(self):
+    def test_subset_20pct_fails_full_but_passes_ci_sample_aware(self):
+        # 5-instance subset: 1/5 (20%). threshold = floor(5*0.40*0.9) = 1.
         score = self._score()
-        # 20% vs full 64.80 -> FAIL; vs subset 40.0 w/ abs_margin 20 -> PASS.
+        metrics = {"accuracy": 0.20, "n_trials": 5}
         assert (
-            compute_accuracy_check({"accuracy": 0.20}, score, None)
-            == ReportCheckTypes.FAIL
+            compute_accuracy_check(metrics, score, None) == ReportCheckTypes.FAIL
         )
         assert (
-            compute_accuracy_check({"accuracy": 0.20}, score, EvalLimitMode.CI_NIGHTLY)
+            compute_accuracy_check(metrics, score, EvalLimitMode.CI_NIGHTLY)
             == ReportCheckTypes.PASS
         )
 
-    def test_subset_zero_fails_ci_abs_margin(self):
+    def test_subset_zero_fails_ci(self):
         score = self._score()
+        metrics = {"accuracy": 0.0, "n_trials": 5}
         assert (
-            compute_accuracy_check({"accuracy": 0.0}, score, EvalLimitMode.CI_NIGHTLY)
+            compute_accuracy_check(metrics, score, EvalLimitMode.CI_NIGHTLY)
             == ReportCheckTypes.FAIL
         )
 
@@ -265,16 +267,39 @@ class TestStandardEvalModeReference:
 
         score = self._gpqa_score()
         task = SimpleNamespace(score=score, task_name="r1_gpqa_diamond")
-        results = {"r1_gpqa_diamond": {"exact_match,none": 0.725}}
+        # 28/40 correct = 70%; full ref 83.33 FAIL, subset ref 72.5 PASS.
+        results = {"r1_gpqa_diamond": {"exact_match,none": 0.70}}
 
         ref_full = resolve_eval_reference(score, None)
-        _, _, _, ac_full = _score_one(task, results, "r1_gpqa_diamond", ref_full)
+        _, _, _, ac_full = _score_one(
+            task, results, "r1_gpqa_diamond", ref_full, n_total=40
+        )
         assert ac_full == ReportCheckTypes.FAIL
 
         ref_ci = resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
-        s, _, _, ac_ci = _score_one(task, results, "r1_gpqa_diamond", ref_ci)
-        assert abs(s - 72.5) < 1e-6
+        s, _, _, ac_ci = _score_one(
+            task, results, "r1_gpqa_diamond", ref_ci, n_total=40
+        )
+        assert abs(s - 70.0) < 1e-6
         assert ac_ci == ReportCheckTypes.PASS
+
+    def test_collect_sample_counts_reads_effective(self, tmp_path):
+        import json as _json
+        from test_module.llm_tests.llm_eval_tests import collect_sample_counts
+
+        f = tmp_path / "results_x.json"
+        f.write_text(
+            _json.dumps(
+                {
+                    "results": {"r1_gpqa_diamond": {"exact_match,none": 0.7}},
+                    "n-samples": {
+                        "r1_gpqa_diamond": {"original": 198, "effective": 40}
+                    },
+                }
+            )
+        )
+        counts = collect_sample_counts([str(f)])
+        assert counts == {"r1_gpqa_diamond": 40}
 
 
 class TestAgenticDriverConfigMapping:
@@ -411,7 +436,11 @@ class TestSelectAgenticTasks:
     def test_empty_task_list_returns_empty(self):
         assert _select_agentic_tasks(self._ctx_with_tasks([])) == []
 
-    def test_mixed_tasks_raises(self):
+    def test_mixed_tasks_returns_only_agentic(self):
+        # Mixed configs (e.g. GPQA + agentic) are normal; the agentic runner
+        # selects the agentic tasks and skips the standard ones (which run under
+        # --workflow evals). --eval-samples can't be used under --ci-mode, so a
+        # hard failure here would block agentic CI runs.
         t_agentic = _terminal_task()
         t_other = _terminal_task(
             task_name="mmlu",
@@ -419,12 +448,7 @@ class TestSelectAgenticTasks:
         )
         ctx = self._ctx_with_tasks([t_agentic, t_other])
 
-        try:
-            _select_agentic_tasks(ctx)
-        except RuntimeError as exc:
-            assert "non-agentic tasks" in str(exc)
-        else:
-            raise AssertionError("Expected mixed agentic task selection to fail")
+        assert _select_agentic_tasks(ctx) == [t_agentic]
 
 
 class TestAgenticBridge:

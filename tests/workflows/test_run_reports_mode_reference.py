@@ -3,13 +3,13 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Tests for mode-aware reference selection in the evals release report.
+"""Tests for mode-aware, sample-count-aware reference selection.
 
 Under --ci-mode (--limit-samples-mode ci-nightly) only a fixed subset of each
 task runs, so the accuracy check must compare the subset score against a
-subset-specific reference (EvalTaskScore.mode_reference_scores) instead of the
-full-dataset gpu_reference_score. See evals.eval_config.ModeReferenceScore and
-workflows.run_reports._resolve_eval_reference.
+subset-specific reference (EvalTaskScore.mode_reference_scores) using a
+sample-count-aware integer floor. See evals.eval_config.resolve_eval_reference
+and evals.eval_config.accept_eval_score.
 """
 
 from pathlib import Path
@@ -17,7 +17,12 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from evals.eval_config import EvalTaskScore, ModeReferenceScore
+from evals.eval_config import (
+    EvalTaskScore,
+    ModeReferenceScore,
+    accept_eval_score,
+    resolve_eval_reference,
+)
 from workflows.run_reports import _resolve_eval_reference
 from workflows.workflow_types import EvalLimitMode
 
@@ -35,6 +40,14 @@ def _make_score(**overrides):
     return EvalTaskScore(**base)
 
 
+# --- reference selection ----------------------------------------------------
+
+
+def test_run_reports_reuses_shared_resolver():
+    # run_reports aliases the shared resolver (single source of truth).
+    assert _resolve_eval_reference is resolve_eval_reference
+
+
 def test_no_limit_mode_falls_back_to_full_reference():
     score = _make_score(
         mode_reference_scores={
@@ -42,20 +55,18 @@ def test_no_limit_mode_falls_back_to_full_reference():
         }
     )
 
-    ref = _resolve_eval_reference(score, None)
+    ref = resolve_eval_reference(score, None)
 
     assert ref["is_mode_ref"] is False
     assert ref["reference_score"] == 83.33
     assert ref["reference_ref"] == "full (198)"
     assert ref["tolerance"] == 0.05
-    assert ref["abs_margin"] is None
 
 
 def test_limit_mode_without_matching_entry_falls_back():
-    # Task has no CI_NIGHTLY reference -> full-set baseline is used.
     score = _make_score(mode_reference_scores={})
 
-    ref = _resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
+    ref = resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
 
     assert ref["is_mode_ref"] is False
     assert ref["reference_score"] == 83.33
@@ -70,13 +81,11 @@ def test_ci_nightly_uses_subset_reference_and_tolerance():
         }
     )
 
-    ref = _resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
+    ref = resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
 
     assert ref["is_mode_ref"] is True
     assert ref["reference_score"] == 72.5
-    # Subset-specific tolerance overrides the task default.
     assert ref["tolerance"] == 0.10
-    assert ref["abs_margin"] is None
     assert "ci-nightly doc_ids 0-39" in ref["reference_ref"]
     assert "[CI_NIGHTLY subset]" in ref["reference_ref"]
 
@@ -84,69 +93,69 @@ def test_ci_nightly_uses_subset_reference_and_tolerance():
 def test_mode_reference_tolerance_none_falls_back_to_task_tolerance():
     score = _make_score(
         tolerance=0.07,
-        mode_reference_scores={
-            EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(72.5)
-        },
+        mode_reference_scores={EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(72.5)},
     )
 
-    ref = _resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
+    ref = resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
 
     assert ref["tolerance"] == 0.07
 
 
-def test_abs_margin_is_propagated_for_tiny_subsets():
+# --- acceptance: sample-count-aware -----------------------------------------
+
+
+def test_full_reference_uses_ratio_check():
+    score = _make_score()
+    ref = resolve_eval_reference(score, None)
+    # 72.5 / 83.33 = 0.87 < 0.95 -> FAIL (full-set ratio, n ignored)
+    assert accept_eval_score(ref, 72.5, n_total=40) is False
+    # 80 / 83.33 = 0.96 >= 0.95 -> PASS
+    assert accept_eval_score(ref, 80.0, n_total=40) is True
+
+
+def test_gpqa_subset_passes_sample_aware_but_fails_full():
     score = _make_score(
-        gpu_reference_score=44.94,
-        mode_reference_scores={
-            EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                40.0, ref="5 tasks", abs_margin=20.0
-            )
-        },
-    )
-
-    ref = _resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
-
-    assert ref["is_mode_ref"] is True
-    assert ref["reference_score"] == 40.0
-    assert ref["abs_margin"] == 20.0
-
-
-def _ratio_pass(score, ref):
-    """Mirror the run_reports ratio-based PASS condition."""
-    return (score / ref["reference_score"]) >= (1.0 - ref["tolerance"])
-
-
-def _abs_margin_pass(score, ref):
-    """Mirror the run_reports absolute-margin PASS condition."""
-    return score >= ref["reference_score"] - ref["abs_margin"]
-
-
-def test_subset_score_passes_against_subset_but_fails_full_reference():
-    # GPQA: 72.5 on the 40-question CI subset. Full ref 83.33 would FAIL.
-    score_obj = _make_score(
         mode_reference_scores={
             EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(72.5, tolerance=0.10)
         }
     )
-    observed = 72.5
+    full = resolve_eval_reference(score, None)
+    ci = resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
 
-    full_ref = _resolve_eval_reference(score_obj, None)
-    assert _ratio_pass(observed, full_ref) is False  # 72.5/83.33 = 0.87 < 0.95
-
-    mode_ref = _resolve_eval_reference(score_obj, EvalLimitMode.CI_NIGHTLY)
-    assert _ratio_pass(observed, mode_ref) is True  # 72.5/72.5 = 1.0 >= 0.90
+    # 70% on 40 -> 28 correct. Full ref FAIL; subset (threshold floor(40*0.725*0.9)=26) PASS.
+    assert accept_eval_score(full, 70.0, n_total=40) is False
+    assert accept_eval_score(ci, 70.0, n_total=40) is True
 
 
-def test_abs_margin_pass_and_fail_boundaries():
-    score_obj = _make_score(
+def test_tiny_subset_tolerates_one_flip_without_abs_margin():
+    # 5-item agentic subset, reference 40% (=2/5), tol 10%.
+    # threshold = floor(5 * 0.40 * 0.90) = floor(1.8) = 1 -> need >= 1/5.
+    score = _make_score(
         gpu_reference_score=44.94,
         mode_reference_scores={
-            EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(40.0, abs_margin=20.0)
+            EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(40.0, tolerance=0.10)
         },
     )
-    mode_ref = _resolve_eval_reference(score_obj, EvalLimitMode.CI_NIGHTLY)
+    ci = resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
 
-    # One agentic task flips (40 -> 20): still within the 20pt margin -> PASS.
-    assert _abs_margin_pass(20.0, mode_ref) is True
-    # Two tasks flip (40 -> 0): below ref - margin -> FAIL.
-    assert _abs_margin_pass(0.0, mode_ref) is False
+    assert accept_eval_score(ci, 40.0, n_total=5) is True  # 2/5
+    assert accept_eval_score(ci, 20.0, n_total=5) is True  # 1/5 (one flip)
+    assert accept_eval_score(ci, 0.0, n_total=5) is False  # 0/5
+
+
+def test_mode_reference_without_sample_count_falls_back_to_ratio():
+    score = _make_score(
+        mode_reference_scores={
+            EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(40.0, tolerance=0.10)
+        }
+    )
+    ci = resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
+    # No n_total -> ratio: 20/40 = 0.5 < 0.9 -> FAIL; 40/40 = 1.0 -> PASS.
+    assert accept_eval_score(ci, 20.0, n_total=None) is False
+    assert accept_eval_score(ci, 40.0, n_total=None) is True
+
+
+def test_no_reference_returns_none():
+    score = _make_score(gpu_reference_score=None)
+    ref = resolve_eval_reference(score, None)
+    assert accept_eval_score(ref, 50.0, n_total=40) is None
