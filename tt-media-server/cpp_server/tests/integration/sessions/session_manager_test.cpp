@@ -398,8 +398,7 @@ TEST(SessionManagerConcurrency,
 // Prefix-cache slot-copy tests
 // ---------------------------------------------------------------------------
 
-TEST(SessionManagerPrefixCache,
-     SlotCopySkipsThresholdRejectedBusyCandidate) {
+TEST(SessionManagerPrefixCache, SlotCopySkipsThresholdRejectedBusyCandidate) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
@@ -443,8 +442,7 @@ TEST(SessionManagerPrefixCache,
   auto qualifyingSessionId =
       createSessionWithSlot(manager, lf.loop, 3u, qualifyingBlocks);
   ASSERT_FALSE(qualifyingSessionId.empty());
-  manager.setResidentPrefixBlocks(qualifyingSessionId,
-                                  qualifyingBlocks.size());
+  manager.setResidentPrefixBlocks(qualifyingSessionId, qualifyingBlocks.size());
   acquireInFlight(manager, qualifyingSessionId);
 
   acquired = manager.tryAcquireByPrefixHash(requestBlocks, nullptr);
