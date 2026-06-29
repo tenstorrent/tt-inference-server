@@ -435,9 +435,12 @@ def parse_arguments():
     prefix_cache_group.add_argument(
         "--prefix-cache-preset",
         type=str,
-        choices=["ci", "full"],
+        choices=["ci", "full", "highcache_50k"],
         default="full",
-        help="Preset for --prefix-cache (default: full). 'ci' is a short regression sweep.",
+        help="Preset for --prefix-cache (default: full). 'ci' is a short regression sweep; "
+        "'highcache_50k' simulates the customer trillion-scale shape (50K shared/cacheable "
+        "prefix + 5K new ISL + 500 OSL at concurrency 32, ~90.9%% steady-state hit-rate) "
+        "with a matched zero-prefix baseline for TTFT-uplift comparison.",
     )
     prefix_cache_group.add_argument(
         "--prefix-cache-scenarios",
@@ -474,11 +477,13 @@ def parse_arguments():
     prefix_cache_group.add_argument(
         "--prefix-cache-metrics-url",
         type=str,
+        action="append",
         default=None,
-        help=(
-            "Prometheus metrics endpoint to scrape for prefix-cache counters "
-            "(forwarded to AIPerf --server-metrics)."
-        ),
+        metavar="URL",
+        help="Worker /metrics endpoint with the tt_prefix_cache_* counters, forwarded to "
+        "AIPerf as --server-metrics (load stays on the frontend). Accepts a full URL, "
+        "host:port, or host:port/metrics. Repeatable for multi-worker deployments. "
+        "Without it the scrape hits the prefix-unaware frontend and hit-rate is null.",
     )
     prefix_cache_group.add_argument(
         "--jwt-secret",

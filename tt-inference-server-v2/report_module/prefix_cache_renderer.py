@@ -247,9 +247,13 @@ def render_aiperf_prefix_cache(block: Block, metadata: Mapping[str, Any]) -> str
         "**Benchmarking Tool:** "
         "[AIPerf](https://github.com/ai-dynamo/aiperf) with the "
         "`--prefix-cache` scenario set. Cache hit-rate is derived from the "
-        "vLLM Prometheus counters `vllm:prefix_cache_hits_total` / "
-        "`vllm:prefix_cache_queries_total` scraped during each run via "
-        "AIPerf's `--server-metrics`."
+        "worker Prometheus counters `tt_prefix_cache_hits_total` / "
+        "`tt_prefix_cache_queries_total` (or the vLLM "
+        "`vllm:prefix_cache_*` equivalents) scraped during each run via "
+        "AIPerf's `--server-metrics`. In a Dynamo deployment point "
+        "`--prefix-cache-metrics-url` at the cpp_server worker(s); the "
+        "prefix-unaware frontend does not aggregate these counters. "
+        "Multi-worker deltas are summed across endpoints."
     )
 
     if synthetic_rows:

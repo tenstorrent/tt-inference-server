@@ -256,6 +256,7 @@ class BenchmarksWorkflow(WorkflowExecution):
                 scenarios_json=opts.scenarios_json,
                 trace_path=opts.trace_path,
                 auth_token=opts.auth_token,
+                metrics_urls=opts.metrics_urls,
                 venv_python=Path(opts.venv_python) if opts.venv_python else None,
             ),
         )

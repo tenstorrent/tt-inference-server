@@ -207,12 +207,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--prefix-cache-preset",
         type=str,
-        choices=["ci", "full"],
+        choices=["ci", "full", "highcache_50k"],
         default="full",
         help=(
             "Preset for --prefix-cache (default: full). 'ci' is a short "
             "regression-friendly sweep, 'full' is the comprehensive serving "
-            "validation sweep."
+            "validation sweep, 'highcache_50k' simulates the customer "
+            "trillion-scale shape (50K shared/cacheable prefix + 5K new ISL + "
+            "500 OSL at concurrency 32; ~90.9%% steady-state hit-rate) with a "
+            "matched zero-prefix baseline for TTFT-uplift comparison."
         ),
     )
     parser.add_argument(
@@ -267,10 +270,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--prefix-cache-metrics-url",
         type=str,
+        action="append",
         default=None,
+        metavar="URL",
         help=(
-            "Prometheus metrics endpoint to scrape for prefix-cache counters "
-            "(forwarded to AIPerf --server-metrics)."
+            "Worker Prometheus /metrics endpoint holding the "
+            "tt_prefix_cache_* counters, forwarded to AIPerf as "
+            "--server-metrics. Load still targets --service-port (the "
+            "Dynamo frontend); this only redirects the metrics scrape to "
+            "the cpp_server worker, which the prefix-unaware frontend does "
+            "not aggregate. Accepts a full URL, host:port, or "
+            "host:port/metrics (http:// and /metrics are added if missing). "
+            "Repeat for multi-worker (KV-routed) deployments; the parser "
+            "sums hit/query deltas across endpoints. Without it the scrape "
+            "hits the frontend and the hit-rate column is null."
         ),
     )
     # ----- Speculative-decoding benchmark (LLM-only) ------------------

@@ -34,7 +34,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from urllib.parse import urlparse
 
 from ..config import DriverContext, ServerConnection
 from ..prefix_cache import PrefixCacheRun
@@ -42,14 +43,23 @@ from ._subprocess import load_json, run_command
 
 logger = logging.getLogger(__name__)
 
-# AIPerf 0.5 strips the canonical Prometheus ``_total`` suffix when it
-# writes ``server_metrics_export.jsonl``. Older AIPerf builds and raw
-# scrapes keep it. Accept both spellings.
+# Prefix-cache counter names vary by backend and AIPerf version:
+#   * cpp_server (Tenstorrent worker) exposes ``tt_prefix_cache_*_total``.
+#   * vLLM exposes ``vllm:prefix_cache_*_total``.
+#   * AIPerf 0.5 strips the canonical Prometheus ``_total`` suffix when it
+#     writes ``server_metrics_export.jsonl``; older builds / raw scrapes
+#     keep it.
+# We accept every spelling; ``_first_populated`` picks whichever series is
+# actually present in the scrape.
 PREFIX_CACHE_HITS_METRIC_ALIASES: Tuple[str, ...] = (
+    "tt_prefix_cache_hits_total",
+    "tt_prefix_cache_hits",
     "vllm:prefix_cache_hits_total",
     "vllm:prefix_cache_hits",
 )
 PREFIX_CACHE_QUERIES_METRIC_ALIASES: Tuple[str, ...] = (
+    "tt_prefix_cache_queries_total",
+    "tt_prefix_cache_queries",
     "vllm:prefix_cache_queries_total",
     "vllm:prefix_cache_queries",
 )
@@ -211,6 +221,7 @@ class AIPerfPrefixCacheDriver:
             artifact_dir=str(artifact_dir),
             auth_token=server.auth_token,
             tokenizer_trust_remote_code=server.tokenizer_trust_remote_code,
+            metrics_urls=server.prefix_cache_metrics_urls,
         )
         _log_run_header(prefix_run)
         logger.info("Executing: %s", " ".join(cmd))
@@ -292,6 +303,25 @@ class AIPerfPrefixCacheDriver:
 # ---------------------------------------------------------------------
 
 
+def _normalize_metrics_url(value: str) -> str:
+    """Normalize a worker metrics endpoint for AIPerf ``--server-metrics``.
+
+    Accepts a full URL, ``host:port``, or ``host:port/metrics`` and
+    returns a fully-qualified URL: prepends ``http://`` when no scheme is
+    present and appends ``/metrics`` when the URL has no path. A bare
+    hostname (no port) is passed through with a scheme but will only work
+    if the caller actually included a port -- there is no sane default
+    worker metrics port to assume in a Dynamo deployment.
+    """
+    candidate = value.strip()
+    if "://" not in candidate:
+        candidate = f"http://{candidate}"
+    parsed = urlparse(candidate)
+    if parsed.path in ("", "/"):
+        candidate = f"{candidate.rstrip('/')}/metrics"
+    return candidate
+
+
 def _build_aiperf_cmd(
     *,
     run: PrefixCacheRun,
@@ -302,8 +332,17 @@ def _build_aiperf_cmd(
     artifact_dir: str,
     auth_token: str,
     tokenizer_trust_remote_code: bool = False,
+    metrics_urls: Sequence[str] = (),
 ) -> List[str]:
     """Construct the AIPerf CLI command for one prefix-cache run.
+
+    ``metrics_urls`` are extra Prometheus ``/metrics`` endpoints
+    (cpp_server workers) forwarded to AIPerf via ``--server-metrics``.
+    AIPerf scrapes them independently of ``--url`` (the load target /
+    Dynamo frontend) and tags each exported series with ``endpoint_url``.
+    When empty, AIPerf falls back to auto-deriving ``/metrics`` from
+    ``--url`` (the prefix-unaware frontend), which is why the hit-rate
+    column is ``null`` without this flag in a Dynamo deployment.
 
     Two modes:
 
@@ -352,6 +391,15 @@ def _build_aiperf_cmd(
         "--server-metrics-formats",
         "jsonl",
     ]
+    # Point the scrape at the worker /metrics endpoint(s) holding the
+    # prefix-cache counters. Without this AIPerf auto-derives /metrics
+    # from --url (the frontend), which does not expose them. Repeatable
+    # for multi-worker (KV-routed) deployments; the parser sums across the
+    # endpoint_url-tagged series.
+    normalized_metrics_urls = [_normalize_metrics_url(u) for u in metrics_urls if u]
+    if normalized_metrics_urls:
+        cmd.append("--server-metrics")
+        cmd.extend(normalized_metrics_urls)
     # Required for tokenizers with custom Hub code (e.g. Kimi). Bare
     # store-true flag (aiperf defines it with negative=False).
     if tokenizer_trust_remote_code:
@@ -557,25 +605,36 @@ def _parse_aiperf_output(artifact_dir: Path) -> Dict[str, Any]:
     }
 
 
-def _collect_metric_samples(
-    server_metrics_path: Path,
-) -> Dict[str, List[float]]:
-    """Collect series of ``vllm:prefix_cache_*`` samples from JSONL scrape.
-
-    AIPerf writes one JSONL line per Prometheus scrape snapshot. AIPerf
-    0.5 nests the scrape under a top-level ``"metrics"`` key; older
-    shapes put metrics at the top level. We tolerate both, and we
-    tolerate both ``_total`` and stripped metric-name spellings.
-    """
-    series: Dict[str, List[float]] = {
+def _new_series_dict() -> Dict[str, List[float]]:
+    return {
         alias: []
         for alias in (
             *PREFIX_CACHE_HITS_METRIC_ALIASES,
             *PREFIX_CACHE_QUERIES_METRIC_ALIASES,
         )
     }
+
+
+def _collect_metric_samples(
+    server_metrics_path: Path,
+) -> Dict[str, Dict[str, List[float]]]:
+    """Collect prefix-cache sample series from a JSONL scrape, per endpoint.
+
+    AIPerf writes one JSONL line per Prometheus scrape snapshot, and one
+    snapshot per endpoint when several endpoints are configured via
+    ``--server-metrics``. Each line carries a top-level ``endpoint_url``
+    plus a ``metrics`` dict (AIPerf 0.5; older shapes put metrics at the
+    top level). We bucket samples by ``endpoint_url`` so multi-worker
+    (KV-routed) deltas can be computed per worker and summed -- a single
+    flat series would interleave workers and corrupt ``last - first``.
+
+    Returns ``{endpoint_url: {metric_alias: [samples...]}}``. A missing
+    ``endpoint_url`` (older single-endpoint exports) buckets under ``""``.
+    Both ``_total`` and stripped metric-name spellings are tolerated.
+    """
+    by_endpoint: Dict[str, Dict[str, List[float]]] = {}
     if not server_metrics_path.exists():
-        return series
+        return by_endpoint
 
     def _extract_numeric(payload: Any) -> Optional[float]:
         if isinstance(payload, (int, float)):
@@ -608,12 +667,18 @@ def _collect_metric_samples(
                     snapshot = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                endpoint = ""
+                if isinstance(snapshot, dict):
+                    endpoint = str(snapshot.get("endpoint_url", "") or "")
                 payload = (
                     snapshot["metrics"]
                     if isinstance(snapshot, dict)
                     and isinstance(snapshot.get("metrics"), dict)
                     else snapshot
                 )
+                if not isinstance(payload, dict):
+                    continue
+                series = by_endpoint.setdefault(endpoint, _new_series_dict())
                 for metric_name in series.keys():
                     if metric_name in payload:
                         value = _extract_numeric(payload[metric_name])
@@ -623,7 +688,7 @@ def _collect_metric_samples(
         logger.warning(
             "Could not read server-metrics file %s: %s", server_metrics_path, e
         )
-    return series
+    return by_endpoint
 
 
 def _parse_server_metrics_for_prefix_cache(
@@ -656,31 +721,50 @@ def _parse_server_metrics_for_prefix_cache(
         )
         return out
 
-    samples = _collect_metric_samples(server_metrics_path)
+    by_endpoint = _collect_metric_samples(server_metrics_path)
 
-    def _first_populated(aliases: Tuple[str, ...]) -> List[float]:
+    def _first_populated(
+        series: Mapping[str, List[float]], aliases: Tuple[str, ...]
+    ) -> List[float]:
         for alias in aliases:
-            series = samples.get(alias) or []
-            if series:
-                return series
+            values = series.get(alias) or []
+            if values:
+                return values
         return []
 
-    hits = _first_populated(PREFIX_CACHE_HITS_METRIC_ALIASES)
-    queries = _first_populated(PREFIX_CACHE_QUERIES_METRIC_ALIASES)
-    if not hits or not queries:
+    # Per worker (endpoint_url) compute last - first, then sum across
+    # workers so KV-routed multi-worker deployments aggregate correctly.
+    hits_delta = 0.0
+    queries_delta = 0.0
+    hits_final = 0.0
+    queries_final = 0.0
+    saw_hits = False
+    saw_queries = False
+    for series in by_endpoint.values():
+        hits = _first_populated(series, PREFIX_CACHE_HITS_METRIC_ALIASES)
+        queries = _first_populated(series, PREFIX_CACHE_QUERIES_METRIC_ALIASES)
+        if hits:
+            hits_delta += max(hits[-1] - hits[0], 0.0)
+            hits_final += hits[-1]
+            saw_hits = True
+        if queries:
+            queries_delta += max(queries[-1] - queries[0], 0.0)
+            queries_final += queries[-1]
+            saw_queries = True
+
+    if not saw_hits or not saw_queries:
         logger.warning(
-            "vLLM prefix-cache counters not present in %s. Hit rate "
-            "unavailable for this run.",
+            "Prefix-cache counters (tt_prefix_cache_* / vllm:prefix_cache_*) "
+            "not present in %s. Hit rate unavailable for this run. Verify "
+            "AIPerf --server-metrics points at the worker /metrics endpoint.",
             server_metrics_path,
         )
         return out
 
-    hits_delta = max(hits[-1] - hits[0], 0.0)
-    queries_delta = max(queries[-1] - queries[0], 0.0)
     out["prefix_cache_hits_delta"] = hits_delta
     out["prefix_cache_queries_delta"] = queries_delta
-    out["prefix_cache_hits_final"] = hits[-1]
-    out["prefix_cache_queries_final"] = queries[-1]
+    out["prefix_cache_hits_final"] = hits_final
+    out["prefix_cache_queries_final"] = queries_final
     out["prefix_cache_hit_rate"] = (
         (hits_delta / queries_delta) if queries_delta > 0 else 0.0
     )

@@ -76,7 +76,7 @@ class RuntimeConfig:
     prefix_cache_request_rate: Optional[float] = None
     prefix_cache_scenarios_json: Optional[str] = None
     prefix_cache_trace: Optional[str] = None
-    prefix_cache_metrics_url: Optional[str] = None
+    prefix_cache_metrics_url: Optional[List[str]] = None
     jwt_secret: Optional[str] = None
     serving_bench_suites: Optional[str] = None
 
