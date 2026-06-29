@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 """Kafka CLI for the cpp_server KvMigrationWorker dev loop.
 
 Uses confluent-kafka (librdkafka bindings) -- the same client library the C++

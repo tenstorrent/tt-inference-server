@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
 # Single-container dev Kafka broker for cpp_server.
 #
 # Brings up apache/kafka:4.0.0 in single-node KRaft mode (combined broker +
