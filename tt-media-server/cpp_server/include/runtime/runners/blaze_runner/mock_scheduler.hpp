@@ -93,6 +93,20 @@ class MockSchedulerCore {
     return true;
   }
 
+  // Drop every output queued for `slotId`. Used by EVICT/STOP so a token the
+  // emitter produced just before cancellation can't outlive the slot - the
+  // runner drains scheduler responses before outputs, so the EVICT/STOP ack
+  // would otherwise flip the slot to IDLE/FREE first and the stale output
+  // would then either trip "unexpected token for IDLE slot" or, worse, be
+  // misattributed to whoever re-allocates the slot.
+  void purgeOutputsForSlot(uint32_t slotId) {
+    outputs.erase(std::remove_if(outputs.begin(), outputs.end(),
+                                 [&](const sch::OutputMessage& o) {
+                                   return o.slot_id == slotId;
+                                 }),
+                  outputs.end());
+  }
+
  private:
   static sch::SchedulerResponse makeAck(const sch::ISRequest& request) {
     return sch::SchedulerResponse{
@@ -323,6 +337,8 @@ class MockDecodeScheduler final : public IDecodeScheduler {
         std::remove_if(pending.begin(), pending.end(),
                        [&](const PendingJob& j) { return j.slotId == slotId; }),
         pending.end());
+    // Drop any tokens the emitter already published for this slot
+    core.purgeOutputsForSlot(slotId);
   }
 
   void emitterLoop() {

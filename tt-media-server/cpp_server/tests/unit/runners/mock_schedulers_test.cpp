@@ -167,6 +167,69 @@ TEST(MockSchedulerTest, DecodeSubmitWithZeroMaxNewTokensCompletesImmediately) {
   EXPECT_FALSE(scheduler.try_pop_output(output));
 }
 
+// Regression: with the async emitter, EVICT/STOP used to drop the in-flight
+// PendingJob but leave already-published tokens in core.outputs. The decode
+// runner drains scheduler responses before outputs, so the EVICT ack would
+// flip the slot to FREE before the stale token was processed, tripping the
+// "unexpected token for IDLE slot" assert (or, if the slot was re-allocated
+// first, silently misattributing the token to a new task).
+TEST(MockSchedulerTest, EvictPurgesQueuedAndPendingOutputsForSlot) {
+  ScopedEnv prefillLatency("MOCK_PREFILL_LATENCY_MS", "0");
+  ScopedEnv tokenLatency("MOCK_DECODE_TOKEN_LATENCY_US", "0");
+
+  MockDecodeScheduler scheduler(4);
+  scheduler.start();
+
+  // Two slots: we'll evict A and make sure B is unaffected.
+  ASSERT_TRUE(scheduler.push_request(makeAllocate(1)));
+  sch::SchedulerResponse allocA{};
+  ASSERT_TRUE(scheduler.try_pop_response(allocA));
+  ASSERT_TRUE(scheduler.push_request(makeAllocate(2)));
+  sch::SchedulerResponse allocB{};
+  ASSERT_TRUE(scheduler.try_pop_response(allocB));
+  ASSERT_NE(allocA.slot_id, allocB.slot_id);
+
+  // Submit a long decode on A so the emitter has plenty to publish, plus a
+  // short one on B that should survive the EVICT untouched. Sleep briefly to
+  // let the emitter thread run; with latency=0 it pumps everything in one
+  // burst.
+  constexpr uint32_t kLongA = 50;
+  constexpr uint32_t kShortB = 3;
+  ASSERT_TRUE(scheduler.push_request(makeSubmit(allocA.slot_id, kLongA)));
+  ASSERT_TRUE(scheduler.push_request(makeSubmit(allocB.slot_id, kShortB)));
+  std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+  // EVICT A. Per the contract, this must purge both the in-flight PendingJob
+  // (if any tokens are left) AND any tokens already sitting in core.outputs.
+  sch::ISRequest evict{};
+  evict.type = sch::RequestType::EVICT;
+  evict.slot_id = allocA.slot_id;
+  ASSERT_TRUE(scheduler.push_request(evict));
+
+  // The EVICT ack response must still arrive.
+  sch::SchedulerResponse evictAck{};
+  ASSERT_TRUE(scheduler.try_pop_response(evictAck));
+  EXPECT_EQ(evictAck.slot_id, allocA.slot_id);
+  EXPECT_EQ(evictAck.request_type, sch::RequestType::EVICT);
+
+  // Drain all remaining outputs. None should belong to the evicted slot; the
+  // surviving slot must still get exactly its kShortB tokens.
+  uint32_t slotAOutputs = 0;
+  uint32_t slotBOutputs = 0;
+  sch::OutputMessage out{};
+  while (waitForOutput(scheduler, out, std::chrono::milliseconds(50))) {
+    if (out.slot_id == allocA.slot_id) {
+      ++slotAOutputs;
+    } else if (out.slot_id == allocB.slot_id) {
+      ++slotBOutputs;
+    }
+  }
+  EXPECT_EQ(slotAOutputs, 0u)
+      << "stale token for evicted slot leaked through outputs queue";
+  EXPECT_EQ(slotBOutputs, kShortB)
+      << "EVICT on slot A spuriously dropped B's tokens";
+}
+
 TEST(MockSchedulerTest, PrefillRejectsContinue) {
   MockPrefillScheduler scheduler(4);
   scheduler.start();
