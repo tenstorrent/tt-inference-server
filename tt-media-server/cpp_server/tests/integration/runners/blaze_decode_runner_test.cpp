@@ -23,13 +23,13 @@ namespace {
 class EnvSetter {
  public:
   EnvSetter(const char* key, const char* value) {
-    key_ = key;
-    setenv(key_, value, 1);
+    this->key = key;
+    setenv(this->key, value, 1);
   }
-  ~EnvSetter() { unsetenv(key_); }
+  ~EnvSetter() { unsetenv(key); }
 
  private:
-  const char* key_;
+  const char* key;
 };
 
 constexpr uint64_t MOCK_PIPELINE_TOKEN_ID = 12345u;

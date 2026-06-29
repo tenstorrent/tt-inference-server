@@ -35,16 +35,17 @@ sch::ISRequest makeSubmit(uint32_t slotId, uint32_t maxNewTokens,
 // don't leak latency config into each other.
 class ScopedEnv {
  public:
-  ScopedEnv(const char* key, const char* value) : key_(key) {
-    setenv(key_, value, 1);
+  ScopedEnv(const char* key, const char* value) {
+    this->key = key;
+    setenv(this->key, value, 1);
   }
-  ~ScopedEnv() { unsetenv(key_); }
+  ~ScopedEnv() { unsetenv(key); }
 
   ScopedEnv(const ScopedEnv&) = delete;
   ScopedEnv& operator=(const ScopedEnv&) = delete;
 
  private:
-  const char* key_;
+  const char* key;
 };
 
 uint32_t drainOutputs(MockDecodeScheduler& scheduler) {

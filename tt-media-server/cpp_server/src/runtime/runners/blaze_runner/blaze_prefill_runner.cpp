@@ -28,23 +28,23 @@ namespace ps = tt_llm_engine::scheduler::prefill;
 
 class RealPrefillScheduler final : public IPrefillScheduler {
  public:
-  explicit RealPrefillScheduler(std::unique_ptr<ps::PrefillScheduler> impl)
-      : impl_(std::move(impl)) {}
+  explicit RealPrefillScheduler(std::unique_ptr<ps::PrefillScheduler> scheduler)
+      : impl(std::move(scheduler)) {}
 
-  void start() override { impl_->start(); }
-  void stop() override { impl_->stop(); }
+  void start() override { impl->start(); }
+  void stop() override { impl->stop(); }
   bool push_request(const ps::ISRequest& request) override {
-    return impl_->push_request(request);
+    return impl->push_request(request);
   }
   bool try_pop_response(ps::SchedulerResponse& response) override {
-    return impl_->try_pop_response(response);
+    return impl->try_pop_response(response);
   }
   bool try_pop_output(ps::OutputMessage& output) override {
-    return impl_->try_pop_output(output);
+    return impl->try_pop_output(output);
   }
 
  private:
-  std::unique_ptr<ps::PrefillScheduler> impl_;
+  std::unique_ptr<ps::PrefillScheduler> impl;
 };
 
 }  // namespace

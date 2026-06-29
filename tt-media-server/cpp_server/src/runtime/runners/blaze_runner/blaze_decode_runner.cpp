@@ -28,29 +28,29 @@ namespace {
 
 class RealDecodeScheduler final : public IDecodeScheduler {
  public:
-  explicit RealDecodeScheduler(std::unique_ptr<ds::DecodeScheduler> impl)
-      : impl_(std::move(impl)) {}
+  explicit RealDecodeScheduler(std::unique_ptr<ds::DecodeScheduler> scheduler)
+      : impl(std::move(scheduler)) {}
 
-  void start() override { impl_->start(); }
-  void stop() override { impl_->stop(); }
+  void start() override { impl->start(); }
+  void stop() override { impl->stop(); }
   bool push_request(const ds::ISRequest& request) override {
-    return impl_->push_request(request);
+    return impl->push_request(request);
   }
   bool try_pop_response(ds::SchedulerResponse& response) override {
-    return impl_->try_pop_response(response);
+    return impl->try_pop_response(response);
   }
   bool try_pop_output(ds::OutputMessage& output) override {
-    return impl_->try_pop_output(output);
+    return impl->try_pop_output(output);
   }
   uint32_t get_spec_accepts(uint32_t slotId) const override {
-    return impl_->get_spec_accepts(slotId);
+    return impl->get_spec_accepts(slotId);
   }
   uint32_t get_spec_rejects(uint32_t slotId) const override {
-    return impl_->get_spec_rejects(slotId);
+    return impl->get_spec_rejects(slotId);
   }
 
  private:
-  std::unique_ptr<ds::DecodeScheduler> impl_;
+  std::unique_ptr<ds::DecodeScheduler> impl;
 };
 
 }  // namespace
