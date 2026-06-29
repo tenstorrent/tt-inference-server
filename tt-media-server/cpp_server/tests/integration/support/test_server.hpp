@@ -52,9 +52,12 @@ class TestServer {
     stopAutoResponder_.store(true);
     if (memoryAutoResponderThread_.joinable())
       memoryAutoResponderThread_.join();
-    // ~DynamoEndpoint calls stop() and revokes the etcd lease so later
-    // integration tests don't route to a dead backend.
-    dynamoEndpoint_.reset();
+    // Revoke etcd and stop accepting without joining in-flight Dynamo streams
+    // (stop() can block until ctest's 300s timeout).
+    if (dynamoEndpoint_) {
+      dynamoEndpoint_->abandon();
+      dynamoEndpoint_.reset();
+    }
   }
 
   // Test reads from here to see what the controller pushed.

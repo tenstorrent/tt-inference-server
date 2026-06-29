@@ -79,6 +79,11 @@ class DynamoEndpoint {
   /// to call multiple times.
   void stop();
 
+  /// Revoke discovery and stop accepting, but do not join in-flight Dynamo
+  /// call-home streams. Used by integration tests where the process exits
+  /// immediately after teardown.
+  void abandon();
+
  private:
   GenerateHandler makeGenerateHandler();
   std::string detectAdvertiseHost() const;

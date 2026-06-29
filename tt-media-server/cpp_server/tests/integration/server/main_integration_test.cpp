@@ -247,6 +247,10 @@ TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
       "thanks",
   };
 
+  constexpr uint32_t kBlock =
+      32;  // KV_CACHE_(FIRST_)BLOCK_SIZE in configureEnv
+  size_t priorFullPrompt = 0;
+
   for (size_t i = 0; i < userMessages.size(); ++i) {
     convo.user(userMessages[i]).maxTokens(1).stream();
     auto future = asyncRequest(convo);
@@ -254,22 +258,22 @@ TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
     auto seq = server->taskQueue().receive();
     ASSERT_NE(seq, nullptr) << "turn " << i;
 
-    // first turn is 72 tokens
     if (i == 0) {
-      EXPECT_EQ(seq->getTokenIds().size(), 72u) << "turn 0 tokenIds size";
-    } else if (i == 1) {
-      // 2nd turn is 97 tokens -> 64 from cache (2 blocks), 33 new
-      EXPECT_EQ(seq->getTokenIds().size(), 33u) << "turn 1 tokenIds size";
-      ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 1 kvPositionId";
-      EXPECT_EQ(*seq->getKVPositionId(), 64u) << "turn 1 kvPositionId value";
-    } else if (i == 2) {
-      // 3rd turn is 125 tokens -> 96 from cache (3 blocks), 29 new
-      EXPECT_EQ(seq->getTokenIds().size(), 29u) << "turn 2 tokenIds size";
-      ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 2 kvPositionId";
-      EXPECT_EQ(*seq->getKVPositionId(), 96u) << "turn 2 kvPositionId value";
+      EXPECT_FALSE(seq->isContinuation()) << "turn 0";
+      priorFullPrompt = seq->getNumPromptTokens();
+      ASSERT_GE(priorFullPrompt, kBlock)
+          << "opener must form at least one block";
+    } else {
+      ASSERT_TRUE(seq->isContinuation()) << "turn " << i;
+      ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn " << i;
+      const uint32_t matched = *seq->getKVPositionId();
+      const uint32_t expected =
+          kBlock * static_cast<uint32_t>(priorFullPrompt / kBlock);
+      EXPECT_EQ(matched, expected)
+          << "turn " << i << ": matched tokens must equal complete blocks of "
+          << "the prior full prompt (" << priorFullPrompt << " tokens)";
+      priorFullPrompt = seq->getNumPromptTokens() + matched;
     }
-    // after first turn it should be a continuation
-    EXPECT_EQ(seq->isContinuation(), i > 0) << "turn " << i;
 
     mockWorkerResponse(seq->taskId);
     future.get();
@@ -592,11 +596,19 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
       << "request D should hit C's session (slot 1)";
   EXPECT_EQ(seqD->getKVCacheSlot(), 1u)
       << "request D should reuse slot 1 from request C";
-  EXPECT_EQ(seqD->getTokenIds().size(), 14u) << "request D tokenIds size";
+  const uint32_t cFullPrompt =
+      seqC->getTokenIds().size() + *seqC->getKVPositionId();
+  constexpr uint32_t kBlock = 32;
+  const uint32_t expectedMatched =
+      kBlock * static_cast<uint32_t>(cFullPrompt / kBlock);
   ASSERT_TRUE(seqD->getKVPositionId().has_value())
       << "request D should have kv_position_id set";
-  // 128 matched tokens (4 blocks); next token's KV at first free index 128.
-  EXPECT_EQ(*seqD->getKVPositionId(), 128u) << "request D kvPositionId value";
+  EXPECT_EQ(*seqD->getKVPositionId(), expectedMatched)
+      << "request D should match complete blocks of C's full prompt";
+  const uint32_t dFullPrompt =
+      seqD->getTokenIds().size() + *seqD->getKVPositionId();
+  EXPECT_GT(dFullPrompt, cFullPrompt)
+      << "request D should extend C's conversation";
 
   tt::test::WorkerResponse(seqD->taskId)
       .token(101)

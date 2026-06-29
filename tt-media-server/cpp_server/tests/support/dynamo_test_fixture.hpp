@@ -44,6 +44,7 @@
 #include <fstream>
 #include <future>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -204,6 +205,41 @@ inline std::string buildHttpRequest(const std::string& host, uint16_t port,
   return oss.str();
 }
 
+inline std::optional<size_t> parseHttpContentLength(
+    const std::string& headers) {
+  constexpr std::string_view kPrefix = "Content-Length:";
+  auto pos = headers.find(kPrefix);
+  if (pos == std::string::npos) {
+    return std::nullopt;
+  }
+  pos += kPrefix.size();
+  while (pos < headers.size() && headers[pos] == ' ') {
+    ++pos;
+  }
+  try {
+    return static_cast<size_t>(std::stoul(headers.substr(pos)));
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
+inline bool hasCompleteHttpResponse(const std::string& response) {
+  const auto headerEnd = response.find("\r\n\r\n");
+  if (headerEnd == std::string::npos) {
+    return false;
+  }
+  const std::string headers = response.substr(0, headerEnd);
+  if (headers.find("text/event-stream") != std::string::npos) {
+    return response.find("data: [DONE]") != std::string::npos;
+  }
+  const size_t bodyStart = headerEnd + 4;
+  if (const auto contentLength = parseHttpContentLength(headers)) {
+    return response.size() >= bodyStart + *contentLength;
+  }
+  // Fallback for responses without Content-Length.
+  return bodyStart < response.size() && response[bodyStart] == '{';
+}
+
 inline std::string sendHttpRequest(const std::string& host, uint16_t port,
                                    const std::string& body,
                                    int timeoutMs = 120000) {
@@ -246,7 +282,7 @@ inline std::string sendHttpRequest(const std::string& host, uint16_t port,
 
   while ((n = ::recv(sock, buf, sizeof(buf), 0)) > 0) {
     response.append(buf, static_cast<size_t>(n));
-    if (response.find("data: [DONE]") != std::string::npos) {
+    if (hasCompleteHttpResponse(response)) {
       break;
     }
   }
