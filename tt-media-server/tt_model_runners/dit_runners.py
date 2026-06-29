@@ -877,6 +877,7 @@ LTX23_FPS = 24  # distilled output frame rate; audio decode + AV mux must agree
 LTX23_STAGE1_STEPS = 8
 LTX23_STAGE2_STEPS = 3
 LTX23_TOTAL_STEPS = LTX23_STAGE1_STEPS + LTX23_STAGE2_STEPS
+LTX23_DEFAULT_SEED = 42  # matches the API example; used when the request omits seed
 
 
 def _ltx23_dit_device_params(mesh_shape: tuple) -> dict:
@@ -909,8 +910,7 @@ def _ltx23_pipeline_args(request, resolution, output_type: str = "rgb") -> dict:
         "width": resolution.width,
         "fps": LTX23_FPS,
     }
-    if request.seed is not None:
-        pipeline_args["seed"] = int(request.seed)
+    pipeline_args["seed"] = int(request.seed) if request.seed is not None else LTX23_DEFAULT_SEED
     return pipeline_args
 
 
