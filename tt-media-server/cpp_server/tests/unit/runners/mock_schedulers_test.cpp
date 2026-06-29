@@ -140,6 +140,33 @@ TEST(MockSchedulerTest, DecodeSubmitEmitsMaxNewTokens) {
   }
 }
 
+TEST(MockSchedulerTest, DecodeSubmitWithZeroMaxNewTokensCompletesImmediately) {
+  ScopedEnv prefillLatency("MOCK_PREFILL_LATENCY_MS", "0");
+  ScopedEnv tokenLatency("MOCK_DECODE_TOKEN_LATENCY_US", "0");
+
+  MockDecodeScheduler scheduler(4);
+  scheduler.start();
+
+  ASSERT_TRUE(scheduler.push_request(makeAllocate(1)));
+  sch::SchedulerResponse allocateResponse{};
+  ASSERT_TRUE(scheduler.try_pop_response(allocateResponse));
+  const uint32_t slotId = allocateResponse.slot_id;
+
+  ASSERT_TRUE(scheduler.push_request(makeSubmit(slotId, /*maxNewTokens=*/0)));
+
+  sch::OutputMessage output{};
+  ASSERT_TRUE(waitForOutput(scheduler, output));
+  EXPECT_TRUE(output.is_complete);
+  EXPECT_EQ(output.tokens_generated, 0u);
+  EXPECT_EQ(output.token_id, sch::EMPTY_TOKEN);
+  EXPECT_EQ(output.slot_id, slotId);
+
+  // No further outputs - sleep a bit and confirm the emitter isn't still
+  // producing phantom tokens.
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  EXPECT_FALSE(scheduler.try_pop_output(output));
+}
+
 TEST(MockSchedulerTest, PrefillRejectsContinue) {
   MockPrefillScheduler scheduler(4);
   scheduler.start();

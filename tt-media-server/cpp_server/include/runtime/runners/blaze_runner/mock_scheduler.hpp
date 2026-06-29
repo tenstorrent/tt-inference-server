@@ -254,8 +254,25 @@ class MockDecodeScheduler final : public IDecodeScheduler {
           break;
         case sch::RequestType::SUBMIT:
         case sch::RequestType::CONTINUE:
-          enqueueJobLocked(request);
-          wakeEmitter = true;
+          if (request.gen.max_new_tokens == 0) {
+            // max_new_tokens == 0 is a no-op decode (e.g. a stray submit, or a
+            // prefill-only path that routes through here). Don't enqueue: the
+            // emitter's isLast = (emitted + 1 == maxTokens) check would never
+            // fire for maxTokens == 0 and the slot would stream phantom tokens
+            // until uint32_t wraparound. Emit a single terminal output instead
+            // so the runner finalizes the slot cleanly.
+            sch::OutputMessage terminal{};
+            terminal.slot_id = request.slot_id;
+            terminal.is_complete = true;
+            terminal.tokens_generated = 0;
+            terminal.position_id = request.position_id.value_or(
+                static_cast<uint32_t>(request.tokens.size()));
+            terminal.request_id = request.request_id;
+            core.pushOutput(terminal);
+          } else {
+            enqueueJobLocked(request);
+            wakeEmitter = true;
+          }
           break;
         default:
           break;
