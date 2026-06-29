@@ -87,7 +87,7 @@ constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
  * process. Self-terminating lets the infrastructure monitoring stack notice
  * the crash and restart the server instead of hanging silently.
  */
-constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 60000;
+constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 120000;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 constexpr const char* WIRE_FORMAT = "blaze";
