@@ -25,6 +25,7 @@ from benchmarking.summary_report import (
 )
 from benchmarking.summary_report import get_markdown_table
 from evals.eval_config import EVAL_CONFIGS
+from evals.eval_config import accept_eval_score
 from evals.eval_config import resolve_eval_reference as _resolve_eval_reference
 from stress_tests.stress_tests_summary_report import (
     generate_report as stress_test_generate_report_helper,
@@ -1155,18 +1156,14 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                 reference_score = ref["reference_score"]
 
                 if reference_score:
-                    assert reference_score > 0, "Reference score is not > 0"
                     ratio_to_reference = score / reference_score
-                    if ref["abs_margin"] is not None:
-                        # Absolute-margin check: robust for tiny subsets where a
-                        # single item flips the score in coarse steps.
-                        accuracy_check = ReportCheckTypes.from_result(
-                            score >= reference_score - ref["abs_margin"]
-                        )
-                    else:
-                        accuracy_check = ReportCheckTypes.from_result(
-                            ratio_to_reference >= (1.0 - ref["tolerance"])
-                        )
+                    # Sample-count-aware for subset (mode) references; ratio for
+                    # full-set. n_total is not plumbed into the v1 report path
+                    # (subset refs only apply to v2-routed models), so this
+                    # falls back to the ratio check here.
+                    accuracy_check = ReportCheckTypes.from_result(
+                        accept_eval_score(ref, score, n_total=None)
+                    )
                 else:
                     ratio_to_reference = "N/A"
                     if task.score.published_score:

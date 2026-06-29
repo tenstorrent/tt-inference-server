@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -23,16 +24,18 @@ class ModeReferenceScore:
     compares the subset score against the matching subset reference instead of
     the full-dataset gpu_reference_score (apples-to-apples). ``score`` is in the
     same unit as the task score (typically percent).
+
+    The acceptance check for a subset reference is sample-count-aware (see
+    ``accept_eval_score``): PASS when
+    ``round(score/100 * n) >= floor(n * ref/100 * (1 - tolerance))``. The
+    integer floor gives small subsets the right leniency automatically (a 5-item
+    subset moves in 20% steps), so no separate absolute-margin knob is needed.
     """
 
     score: float
     ref: str = ""
-    # Falls back to EvalTaskScore.tolerance when None (ratio-based check).
+    # Falls back to EvalTaskScore.tolerance when None.
     tolerance: Optional[float] = None
-    # If set, PASS uses an absolute margin (score >= ref - abs_margin) instead
-    # of the ratio check. Better for tiny subsets (e.g. 5 agentic tasks) where
-    # a single flip moves the score in coarse 20% steps.
-    abs_margin: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -84,7 +87,6 @@ def resolve_eval_reference(score_obj, limit_mode):
             "tolerance": mode_ref.tolerance
             if mode_ref.tolerance is not None
             else score_obj.tolerance,
-            "abs_margin": mode_ref.abs_margin,
             "is_mode_ref": True,
         }
 
@@ -92,9 +94,39 @@ def resolve_eval_reference(score_obj, limit_mode):
         "reference_score": score_obj.gpu_reference_score,
         "reference_ref": full_ref_label,
         "tolerance": score_obj.tolerance,
-        "abs_margin": None,
         "is_mode_ref": False,
     }
+
+
+def accept_eval_score(ref, score, n_total=None):
+    """Decide PASS/FAIL for an observed percent ``score`` against ``ref``.
+
+    ``ref`` is a dict from ``resolve_eval_reference``. Returns True (PASS),
+    False (FAIL), or None when no reference is defined (caller renders N/A).
+
+    For a subset (mode) reference with a known sample count ``n_total`` the
+    check is sample-count-aware:
+
+        n_correct_obs = round(score/100 * n_total)
+        threshold     = floor(n_total * reference/100 * (1 - tolerance))
+        PASS iff n_correct_obs >= threshold
+
+    The integer floor lets tiny subsets tolerate one flipped item without a
+    hand-tuned absolute margin. When ``n_total`` is unknown, or for the
+    full-dataset reference path, it falls back to the percent ratio check
+    (score / reference >= 1 - tolerance), preserving prior behavior.
+    """
+    reference = ref["reference_score"]
+    tolerance = ref["tolerance"]
+    if not reference:
+        return None
+    assert reference > 0, "Reference score is not > 0"
+    if ref.get("is_mode_ref") and n_total:
+        ref_rate = reference / 100.0
+        threshold = math.floor(n_total * ref_rate * (1.0 - tolerance))
+        observed = round(score / 100.0 * n_total)
+        return observed >= threshold
+    return (score / reference) >= (1.0 - tolerance)
 
 
 @dataclass(frozen=True)
@@ -4434,13 +4466,13 @@ _eval_config_list = [
                     gpu_reference_score=44.94,
                     gpu_reference_score_ref="run.py --workflow evals terminal_bench_2 full (89), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-17",
                     # CI subset (--ci-mode -> ci-nightly task_names_map = 5
-                    # tasks). With only 5 tasks the score moves in 20% steps, so
-                    # use an absolute margin (one task) rather than a ratio.
+                    # tasks). The sample-count-aware check (accept_eval_score)
+                    # tolerates one flipped task on a 5-item subset on its own.
                     mode_reference_scores={
                         EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
                             score=40.00,
                             ref="ci-nightly terminal_bench_2 (5 tasks), H100 gemma-4-31B-it, 2026-06-22",
-                            abs_margin=20.0,
+                            tolerance=0.10,
                         ),
                     },
                     score_func=score_task_single_key,
@@ -4511,14 +4543,13 @@ _eval_config_list = [
                     gpu_reference_score=64.80,
                     gpu_reference_score_ref="run.py --workflow evals swe_bench_verified full (500), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-18",
                     # CI subset (--ci-mode -> ci-nightly instance_ids_map = 5
-                    # instances). With only 5 instances the score moves in 20%
-                    # steps, so use an absolute margin (one instance) instead of
-                    # a ratio against the full-set 64.80.
+                    # instances). The sample-count-aware check (accept_eval_score)
+                    # tolerates one flipped instance on a 5-item subset on its own.
                     mode_reference_scores={
                         EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
                             score=40.00,
                             ref="ci-nightly swe_bench_verified (5 instances), H100 gemma-4-31B-it, 2026-06-22",
-                            abs_margin=20.0,
+                            tolerance=0.10,
                         ),
                     },
                     score_func=score_task_single_key,

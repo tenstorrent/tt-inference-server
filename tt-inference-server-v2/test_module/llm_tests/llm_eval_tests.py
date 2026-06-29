@@ -14,7 +14,7 @@ from glob import glob
 from pathlib import Path
 from typing import List, Tuple, Union
 
-from evals.eval_config import resolve_eval_reference
+from evals.eval_config import accept_eval_score, resolve_eval_reference
 from llm_module import HttpServerController
 from llm_module.eval_command import build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
@@ -112,6 +112,31 @@ def merge_eval_results(files) -> dict:
     return results
 
 
+def collect_sample_counts(files) -> dict:
+    """Map task_name -> effective sample count from lm-eval result JSONs.
+
+    Used for the sample-count-aware acceptance check on CI/limit-mode subsets.
+    lm-eval writes ``n-samples: {task: {original, effective}}``; ``effective`` is
+    the count actually scored (after ``--limit``). Returns ``{}`` for formats
+    without this field (e.g. some lmms-eval outputs), in which case scoring falls
+    back to the ratio check.
+    """
+    counts: dict = {}
+    for json_file in files:
+        try:
+            with Path(json_file).open("r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        for task_name, info in (data.get("n-samples", {}) or {}).items():
+            if task_name in counts or not isinstance(info, dict):
+                continue
+            eff = info.get("effective")
+            if isinstance(eff, int):
+                counts[task_name] = eff
+    return counts
+
+
 # --- scoring one task's results into Block(kind="evals") ---------------------
 
 
@@ -123,14 +148,16 @@ def _target_keys(task, results: dict) -> List[str]:
 
 
 def _score_one(
-    task, results: dict, t_key: str, ref: dict
+    task, results: dict, t_key: str, ref: dict, n_total=None
 ) -> Tuple[float, Union[float, str], Union[float, str], ReportCheckTypes]:
     """Compute (score, ratio_to_published, ratio_to_reference, accuracy_check)
     for one task/subtask. Real copy of the v1 evals_release scoring.
 
     ``ref`` is the resolved reference dict from
     ``evals.eval_config.resolve_eval_reference`` (full-set or, under a limit
-    mode, the matching subset reference)."""
+    mode, the matching subset reference). ``n_total`` is the effective sample
+    count, used for the sample-count-aware acceptance check on subset
+    references."""
     # Shallow-copy so kwargs["task_name"] = t_key doesn't mutate the shared
     # config dict for subsequent tasks in this process.
     kwargs = dict(task.score.score_func_kwargs)
@@ -171,18 +198,11 @@ def _score_one(
         ratio_to_published = "N/A"
 
     if reference:
-        assert reference > 0, "Reference score is not > 0"
         ratio_to_reference: Union[float, str] = score / reference
-        if ref["abs_margin"] is not None:
-            # Absolute-margin check: robust for tiny subsets where a single
-            # item flips the score in coarse steps.
-            accuracy_check = ReportCheckTypes.from_result(
-                score >= reference - ref["abs_margin"]
-            )
-        else:
-            accuracy_check = ReportCheckTypes.from_result(
-                ratio_to_reference >= (1.0 - tolerance)
-            )
+        # Sample-count-aware for subset references, ratio for full-set.
+        accuracy_check = ReportCheckTypes.from_result(
+            accept_eval_score(ref, score, n_total=n_total)
+        )
     else:
         ratio_to_reference = "N/A"
         if published:
@@ -195,17 +215,23 @@ def _score_one(
     return score, ratio_to_published, ratio_to_reference, accuracy_check
 
 
-def blocks_for_task(ctx: MediaContext, task, results: dict) -> List[Block]:
+def blocks_for_task(
+    ctx: MediaContext, task, results: dict, sample_counts: dict = None
+) -> List[Block]:
     """Score ``task`` against ``results`` and build one Block per task/subtask.
 
-    A task that ran but has no score defined is not gradable -> one NA Bloc.
+    A task that ran but has no score defined is not gradable -> one NA Block.
     A task with a score but no matching results still returns ``[]`` so the
     caller can surface a FAIL block for a task that ran but scored nothing.
+    ``sample_counts`` maps task_name -> effective sample count for the
+    sample-count-aware acceptance check on subset references.
     """
     if not task.score:
         reason = "no eval score defined"
         logger.info("%s ran but is not gradable: %s.", task.task_name, reason)
         return [_status_block(ctx, task, TestStatus.NA, reason)]
+
+    sample_counts = sample_counts or {}
 
     # Under --ci-mode / --limit-samples-mode, compare the subset score against
     # the matching subset reference (mode_reference_scores) instead of the
@@ -215,7 +241,7 @@ def blocks_for_task(ctx: MediaContext, task, results: dict) -> List[Block]:
     blocks: List[Block] = []
     for t_key in _target_keys(task, results):
         score, ratio_pub, ratio_ref, accuracy_check = _score_one(
-            task, results, t_key, ref
+            task, results, t_key, ref, n_total=sample_counts.get(t_key)
         )
         blocks.append(
             Block(
@@ -379,10 +405,12 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         rc_by_task[task.task_name] = _run_eval_task(ctx, task, auth_token)
         ran_tasks.append(task)
 
-    results = merge_eval_results(discover_eval_results(ctx.output_path, ctx.model_spec))
+    result_files = discover_eval_results(ctx.output_path, ctx.model_spec)
+    results = merge_eval_results(result_files)
+    sample_counts = collect_sample_counts(result_files)
     blocks: List[Block] = list(skipped_blocks)
     for task in ran_tasks:
-        task_blocks = blocks_for_task(ctx, task, results)
+        task_blocks = blocks_for_task(ctx, task, results, sample_counts)
         if task_blocks:
             blocks.extend(task_blocks)
         else:
