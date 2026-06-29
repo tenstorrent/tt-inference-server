@@ -13,6 +13,8 @@ warm request is ``50000 / (50000 + 5000) = ~90.9%``, matching the customer's
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from llm_module.prefix_cache import build_runs
 
 
@@ -24,7 +26,8 @@ def test_highcache_50k_shared_system_shape():
     runs = build_runs(preset="highcache_50k")
     by_scenario = {r.scenario: r for r in runs}
 
-    assert set(by_scenario) == {"shared_system", "baseline"}
+    # Dual traffic generators (synthetic + trace) plus the zero-prefix control.
+    assert set(by_scenario) == {"shared_system", "mooncake_trace", "baseline"}
 
     shared = by_scenario["shared_system"]
     assert shared.shared_system_prompt_length == 50000
@@ -33,6 +36,41 @@ def test_highcache_50k_shared_system_shape():
     assert shared.concurrency == 32
     assert shared.arrival_pattern == "constant"
     assert shared.request_count == 256
+
+
+def test_highcache_50k_every_run_carries_customer_goodput_slo():
+    runs = build_runs(preset="highcache_50k")
+    assert runs  # non-empty
+    for run in runs:
+        assert run.goodput == (
+            "time_to_first_token:4000 output_token_throughput_per_user:45"
+        )
+
+
+def test_goodput_cli_override_takes_precedence():
+    override = "time_to_first_token:9999 inter_token_latency:22"
+    runs = build_runs(
+        preset="highcache_50k", scenarios="shared_system", goodput=override
+    )
+    assert runs
+    assert all(r.goodput == override for r in runs)
+
+
+def test_ci_preset_has_no_goodput_by_default():
+    runs = build_runs(preset="ci", scenarios="shared_system")
+    assert runs
+    assert all(r.goodput is None for r in runs)
+
+
+def test_highcache_50k_mooncake_trace_resolves_bundled_trace():
+    trace_run = _run_by_scenario("highcache_50k")["mooncake_trace"]
+    assert trace_run.uses_trace
+    assert trace_run.custom_dataset_type == "mooncake_trace"
+    assert trace_run.block_size == 512
+    assert trace_run.concurrency == 32
+    trace_path = Path(trace_run.trace_input_file)
+    assert trace_path.name == "customer_mooncake.jsonl"
+    assert trace_path.exists()
 
 
 def test_highcache_50k_hit_rate_is_at_least_90_percent():

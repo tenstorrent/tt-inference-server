@@ -116,6 +116,40 @@ class TestBuildAiperfCmd:
         # Only the one real endpoint follows the flag (next token is a flag).
         assert cmd[idx + 2].startswith("--")
 
+    def test_goodput_slo_passed_as_single_token(self):
+        run = _synthetic_run()
+        slo = "time_to_first_token:4000 output_token_throughput_per_user:45"
+        run.goodput = slo
+        cmd = _build_aiperf_cmd(
+            run=run,
+            venv_python=Path("/tmp/venv/bin/python"),
+            model_name="m",
+            tokenizer="m",
+            url="http://dynamo-frontend:8000",
+            artifact_dir="/tmp/art",
+            auth_token="",
+        )
+        idx = cmd.index("--goodput")
+        # AIPerf's --goodput is a single-token flag (its validator splits the
+        # string internally); the whole SLO must be one argv element so the
+        # second pair is not consumed positionally.
+        assert cmd[idx + 1] == slo
+        # The next token after the SLO is a flag, not a stray KEY:VALUE pair.
+        if idx + 2 < len(cmd):
+            assert cmd[idx + 2].startswith("--")
+
+    def test_goodput_omitted_when_unset(self):
+        cmd = _build_aiperf_cmd(
+            run=_synthetic_run(),
+            venv_python=Path("/tmp/venv/bin/python"),
+            model_name="m",
+            tokenizer="m",
+            url="http://dynamo-frontend:8000",
+            artifact_dir="/tmp/art",
+            auth_token="",
+        )
+        assert "--goodput" not in cmd
+
 
 def _write_jsonl(path: Path, lines: list) -> None:
     with open(path, "w", encoding="utf-8") as f:

@@ -267,6 +267,7 @@ def _build_prefix_cache_options(
         request_rate=args.prefix_cache_request_rate,
         scenarios_json=args.prefix_cache_scenarios_json,
         trace_path=args.prefix_cache_trace,
+        goodput=getattr(args, "prefix_cache_goodput", None),
         auth_token=_mint_jwt_if_secret(args.jwt_secret),
         metrics_urls=tuple(getattr(args, "prefix_cache_metrics_url", None) or ()),
         venv_python=_release_venv_python(args, WorkflowVenvType.V2_PREFIX_CACHE),

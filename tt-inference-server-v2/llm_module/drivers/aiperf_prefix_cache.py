@@ -511,6 +511,17 @@ def _build_aiperf_cmd(
                 ]
             )
 
+    # Goodput SLO enforcement (AIPerf Use Case 4). ``run.goodput`` is a
+    # space-separated ``KEY:VALUE`` string (e.g.
+    # ``"time_to_first_token:4000 output_token_throughput_per_user:45"``).
+    # AIPerf's ``--goodput`` is a single-token flag (it is NOT
+    # consume_multiple; its validator splits the one string internally), so
+    # the entire SLO must be passed as ONE argv element. Splitting it would
+    # make every pair after the first fall through as a positional arg.
+    # Works in both synthetic and trace modes.
+    if run.goodput and run.goodput.strip():
+        cmd.extend(["--goodput", run.goodput.strip()])
+
     if auth_token:
         cmd.extend(["--api-key", auth_token])
     return cmd
@@ -565,34 +576,49 @@ def _parse_aiperf_output(artifact_dir: Path) -> Dict[str, Any]:
     return {
         "mean_ttft_ms": _pct(ttft, "avg", "mean"),
         "median_ttft_ms": _pct(ttft, "p50", "median"),
+        "p90_ttft_ms": _pct(ttft, "p90"),
         "p95_ttft_ms": _pct(ttft, "p95"),
         "p99_ttft_ms": _pct(ttft, "p99"),
         "std_ttft_ms": _pct(ttft, "std"),
         "mean_tpot_ms": _pct(itl, "avg", "mean"),
         "median_tpot_ms": _pct(itl, "p50", "median"),
+        "p90_tpot_ms": _pct(itl, "p90"),
         "p95_tpot_ms": _pct(itl, "p95"),
         "p99_tpot_ms": _pct(itl, "p99"),
         "std_tpot_ms": _pct(itl, "std"),
         # ITL shares its source block with TPOT.
         "mean_itl_ms": _pct(itl, "avg", "mean"),
         "median_itl_ms": _pct(itl, "p50", "median"),
+        "p90_itl_ms": _pct(itl, "p90"),
         "p95_itl_ms": _pct(itl, "p95"),
         "p99_itl_ms": _pct(itl, "p99"),
         "std_itl_ms": _pct(itl, "std"),
         "mean_e2el_ms": _pct(e2el, "avg", "mean"),
         "median_e2el_ms": _pct(e2el, "p50", "median"),
+        "p90_e2el_ms": _pct(e2el, "p90"),
         "p95_e2el_ms": _pct(e2el, "p95"),
         "p99_e2el_ms": _pct(e2el, "p99"),
         "std_e2el_ms": _pct(e2el, "std"),
         "output_token_throughput": (
             summary.get("output_token_throughput", {}) or {}
         ).get("avg", 0),
+        # Per-user output speed (tokens/s/user); maps to the customer's
+        # "Output Speed > 45 t/s/u" SLA and AIPerf's goodput metric tag.
+        "output_token_throughput_per_user": (
+            summary.get("output_token_throughput_per_user", {}) or {}
+        ).get("avg", 0),
+        "median_output_token_throughput_per_user": _pct(
+            summary.get("output_token_throughput_per_user", {}) or {}, "p50", "median"
+        ),
         "total_token_throughput": (summary.get("total_token_throughput", {}) or {}).get(
             "avg", 0
         ),
         "request_throughput": (summary.get("request_throughput", {}) or {}).get(
             "avg", 0
         ),
+        # Goodput (requests/sec meeting every --goodput SLO). Present only
+        # when --goodput was supplied; 0/absent otherwise.
+        "goodput": (summary.get("goodput", {}) or {}).get("avg", 0),
         "completed": int((summary.get("request_count", {}) or {}).get("avg", 0)),
         "total_input_tokens": int(
             (summary.get("input_sequence_length", {}) or {}).get("avg", 0)
@@ -877,6 +903,7 @@ def _build_payload(
         "arrival_pattern": run.arrival_pattern,
         "arrival_smoothness": run.arrival_smoothness,
         "request_rate": run.request_rate,
+        "goodput_slo": run.goodput,
         "shared_system_prompt_length": run.shared_system_prompt_length,
         "num_prefix_prompts": run.num_prefix_prompts,
         "prefix_prompt_length": run.prefix_prompt_length,

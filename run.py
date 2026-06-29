@@ -475,6 +475,17 @@ def parse_arguments():
         help="Path to a mooncake-format JSONL trace file for mooncake_trace scenarios.",
     )
     prefix_cache_group.add_argument(
+        "--prefix-cache-goodput",
+        type=str,
+        default=None,
+        metavar="SLO",
+        help="AIPerf --goodput SLO string: space-separated KEY:VALUE pairs (metric tag : "
+        "value in display unit). Reports requests/sec meeting every threshold. Tags include "
+        "time_to_first_token (ms), request_latency (ms), inter_token_latency (ms), "
+        "output_token_throughput_per_user (tokens/s). Overrides the preset/scenario goodput. "
+        "Example: 'time_to_first_token:4000 output_token_throughput_per_user:45'.",
+    )
+    prefix_cache_group.add_argument(
         "--prefix-cache-metrics-url",
         type=str,
         action="append",
