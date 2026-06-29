@@ -795,4 +795,22 @@ std::string dynamoEndpointName() {
   return envString("DYNAMO_ENDPOINT_NAME", defaults::DYNAMO_ENDPOINT_NAME);
 }
 
+/** 
+* Mooncake KV Migration configuration.
+*/
+unsigned kvMigrationTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("KV_MIGRATION_TIMEOUT_MS", defaults::KV_MIGRATION_TIMEOUT_MS));
+}
+
+unsigned kvMigrationSweepIntervalMs() {
+  return static_cast<unsigned>(envUlong("KV_MIGRATION_SWEEP_INTERVAL_MS",
+                                        defaults::KV_MIGRATION_SWEEP_INTERVAL_MS));
+}
+
+unsigned kvMigrationDrainPollMs() {
+  return static_cast<unsigned>(envUlong("KV_MIGRATION_DRAIN_POLL_MS",
+                                        defaults::KV_MIGRATION_DRAIN_POLL_MS));
+}
+
 }  // namespace tt::config
