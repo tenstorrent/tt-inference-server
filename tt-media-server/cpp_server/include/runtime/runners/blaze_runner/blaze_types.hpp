@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -49,6 +50,7 @@ struct SlotContext {
   uint32_t specAcceptsAtStart = 0;
   uint32_t specRejectsAtStart = 0;
   uint32_t tokensGenerated = 0;
+  size_t promptTokens = 0;
   std::optional<uint32_t> pendingAckRequestId = std::nullopt;
   std::optional<ds::ISRequest> deferredEvict = std::nullopt;
   std::unique_ptr<tt::domain::llm::Sequence> deferredContinue = nullptr;

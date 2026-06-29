@@ -3,7 +3,9 @@
 
 #pragma once
 
+#include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -55,6 +57,29 @@ namespace tt::runners::blaze::utils {
 namespace sch = tt_llm_engine::scheduler;
 namespace ds = sch::decode;
 namespace ps = sch::prefill;
+
+inline std::chrono::milliseconds dynamicOutputHangTimeout(
+    size_t promptTokens, uint32_t activeUsers,
+    std::chrono::milliseconds minTimeout) {
+  const auto configuredMax =
+      std::chrono::milliseconds(tt::config::outputHangTimeoutMaxMs());
+  const auto maxTimeout = std::max(minTimeout, configuredMax);
+  const auto minPrefillTokensPerSecond =
+      tt::config::outputHangMinPrefillTokensPerSecond();
+  if (promptTokens == 0 || activeUsers == 0 ||
+      minPrefillTokensPerSecond == 0) {
+    return minTimeout;
+  }
+
+  const uint64_t tokenWork =
+      static_cast<uint64_t>(promptTokens) * static_cast<uint64_t>(activeUsers);
+  const uint64_t estimatedMs =
+      (tokenWork * 1000 + minPrefillTokensPerSecond - 1) /
+      minPrefillTokensPerSecond;
+  const auto estimatedTimeout =
+      std::chrono::milliseconds(static_cast<int64_t>(estimatedMs));
+  return std::clamp(estimatedTimeout, minTimeout, maxTimeout);
+}
 
 inline void logISRequest(const sch::ISRequest& req) {
   const sch::GenerationParams& gen = req.gen;
@@ -192,6 +217,7 @@ inline void initSlotForRun(SlotContext& slot,
   slot.specRejectsAtStart = sched.get_spec_rejects(slot.slotId);
   slot.taskId = seq.taskId;
   slot.tokensGenerated = 0;
+  slot.promptTokens = seq.getNumPromptTokens();
 }
 
 // Populates per-run fields on `slot` from `seq`. Snapshots the slot's spec
@@ -202,6 +228,7 @@ inline void initSlotForRun(SlotContext& slot,
   slot.ignoreEos = seq.getSamplingParams().ignore_eos;
   slot.taskId = seq.taskId;
   slot.tokensGenerated = 0;
+  slot.promptTokens = seq.getNumPromptTokens();
 }
 
 struct SpecDelta {

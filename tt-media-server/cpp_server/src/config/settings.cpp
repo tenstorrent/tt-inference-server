@@ -261,6 +261,17 @@ unsigned outputHangTimeoutMs() {
       envUlong("OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
 }
 
+unsigned outputHangTimeoutMaxMs() {
+  return static_cast<unsigned>(envUlong("OUTPUT_HANG_TIMEOUT_MAX_MS",
+                                        defaults::OUTPUT_HANG_TIMEOUT_MAX_MS));
+}
+
+unsigned outputHangMinPrefillTokensPerSecond() {
+  return static_cast<unsigned>(envUlong(
+      "OUTPUT_HANG_MIN_PREFILL_TOKENS_PER_SECOND",
+      defaults::OUTPUT_HANG_MIN_PREFILL_TOKENS_PER_SECOND));
+}
+
 std::string ttTaskQueueName() {
   return envString("TT_TASK_QUEUE", defaults::TT_TASK_QUEUE);
 }

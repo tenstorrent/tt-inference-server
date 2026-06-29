@@ -264,10 +264,20 @@ std::string prefillAckChannelName();
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
 unsigned warmupTimeoutMs();
 
-/** Max time (ms) without any model output while at least one request is in
- * flight before the runner self-terminates the worker process. From
- * OUTPUT_HANG_TIMEOUT_MS. Default: defaults::OUTPUT_HANG_TIMEOUT_MS. */
+/** Minimum time (ms) without any model output while at least one request is in
+ * flight before the runner self-terminates the worker process. Long prompts
+ * can extend this dynamically. From OUTPUT_HANG_TIMEOUT_MS. Default:
+ * defaults::OUTPUT_HANG_TIMEOUT_MS. */
 unsigned outputHangTimeoutMs();
+
+/** Max dynamic output hang timeout (ms). From OUTPUT_HANG_TIMEOUT_MAX_MS.
+ * Default: defaults::OUTPUT_HANG_TIMEOUT_MAX_MS. */
+unsigned outputHangTimeoutMaxMs();
+
+/** Assumed lower-bound aggregate prefill throughput used to estimate dynamic
+ * output hang timeouts. From OUTPUT_HANG_MIN_PREFILL_TOKENS_PER_SECOND.
+ * Default: defaults::OUTPUT_HANG_MIN_PREFILL_TOKENS_PER_SECOND. */
+unsigned outputHangMinPrefillTokensPerSecond();
 
 /** Task queue name from TT_TASK_QUEUE. Default: defaults::TT_TASK_QUEUE. */
 std::string ttTaskQueueName();

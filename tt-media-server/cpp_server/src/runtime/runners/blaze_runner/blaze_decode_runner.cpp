@@ -684,6 +684,7 @@ void BlazeDecodeRunner::handleSchedulerOutput(const ds::OutputMessage& output) {
 
 void BlazeDecodeRunner::checkOutputHang() {
   auto currentTime = std::chrono::steady_clock::now();
+  auto activeUsers = slotManager.activeRunningCount();
 
   for (const auto& slot : slotManager.getSlots()) {
     const char* hangKind = nullptr;
@@ -704,20 +705,26 @@ void BlazeDecodeRunner::checkOutputHang() {
 
     auto stalledFor = std::chrono::duration_cast<std::chrono::milliseconds>(
         currentTime - slot.lastProgressTime);
-    if (stalledFor <= outputHangTimeout) {
+    auto promptTokensForTimeout =
+        (slot.state == SlotState::RUNNING && slot.tokensGenerated == 0)
+            ? slot.promptTokens
+            : 0;
+    auto threshold = utils::dynamicOutputHangTimeout(
+        promptTokensForTimeout, activeUsers, outputHangTimeout);
+    if (stalledFor <= threshold) {
       continue;
     }
 
     TT_LOG_CRITICAL(
         "[BlazeRunner] Hang detected on Slot {} in state {}: {} for {} ms "
-        "(threshold {} ms). Total in-flight generations: {}. "
+        "(threshold {} ms, timeoutPromptTokens={}, activeUsers={}). "
         "Self-terminating worker for infrastructure restart.",
-        slot.slotId,                        // Which slot broke?
-        toString(slot.state),               // What was it waiting on?
-        hangKind,                           // Human-readable cause
-        stalledFor.count(),                 // How bad is it?
-        outputHangTimeout.count(),          // What was the limit?
-        slotManager.activeRunningCount());  // Global context
+        slot.slotId,           // Which slot broke?
+        toString(slot.state),  // What was it waiting on?
+        hangKind,              // Human-readable cause
+        stalledFor.count(),    // How bad is it?
+        threshold.count(),     // What was the dynamic limit?
+        promptTokensForTimeout, activeUsers);
 
     TT_LOG_CRITICAL("[BlazeRunner] State dump\n{}",
                     slotManager.dumpSlotStates());

@@ -82,12 +82,14 @@ constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 128;
 constexpr unsigned WARMUP_TIMEOUT_MS = 120000;
 /**
- * Max time (ms) the runner may go without producing a model output while at
- * least one request is in flight before it self-terminates the worker
- * process. Self-terminating lets the infrastructure monitoring stack notice
- * the crash and restart the server instead of hanging silently.
+ * Minimum time (ms) the runner may go without producing a model output while
+ * at least one request is in flight before it self-terminates the worker
+ * process. Long prompts can extend this dynamically up to
+ * OUTPUT_HANG_TIMEOUT_MAX_MS.
  */
 constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 120000;
+constexpr unsigned OUTPUT_HANG_TIMEOUT_MAX_MS = 3600000;
+constexpr unsigned OUTPUT_HANG_MIN_PREFILL_TOKENS_PER_SECOND = 100;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 constexpr const char* WIRE_FORMAT = "blaze";

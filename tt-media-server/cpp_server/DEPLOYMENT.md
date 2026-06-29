@@ -342,11 +342,13 @@ hardware takes a long time, so production deployments typically set
 `PM_CONNECT_TIMEOUT_MS` to several hours and `WARMUP_TIMEOUT_MS` to
 roughly an hour.
 
-| Variable                 | Default | Description                                                                                              |
-| ------------------------ | ------- | -------------------------------------------------------------------------------------------------------- |
-| `WARMUP_TIMEOUT_MS`      | `120000` | Max wait for the first token during runner warmup.                                                     |
-| `OUTPUT_HANG_TIMEOUT_MS` | `120000` | Max gap with no model output (while a request is in flight) before the worker self-terminates.          |
-| `PM_CONNECT_TIMEOUT_MS`  | `30000` | Pipeline manager connect timeout. Must be large enough to ride out runner startup.                       |
+| Variable                                      | Default   | Description                                                                                                  |
+| --------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------ |
+| `WARMUP_TIMEOUT_MS`                           | `120000`  | Max wait for the first token during runner warmup.                                                           |
+| `OUTPUT_HANG_TIMEOUT_MS`                      | `120000`  | Minimum max gap with no model output before the worker self-terminates. Long prompts can extend this value. |
+| `OUTPUT_HANG_TIMEOUT_MAX_MS`                  | `3600000` | Cap for the dynamic no-output timeout.                                                                       |
+| `OUTPUT_HANG_MIN_PREFILL_TOKENS_PER_SECOND`   | `100`     | Lower-bound aggregate prefill throughput used to estimate long-prompt no-output timeout.                     |
+| `PM_CONNECT_TIMEOUT_MS`                       | `30000`   | Pipeline manager connect timeout. Must be large enough to ride out runner startup.                           |
 
 ### Shared memory and IPC
 

@@ -3,6 +3,7 @@
 
 #include "runtime/runners/blaze_runner/blaze_prefill_runner.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
@@ -675,17 +676,24 @@ void BlazePrefillRunner::checkOutputHang() {
     lastOutputTime = std::chrono::steady_clock::now();
     return;
   }
+  size_t maxPromptTokens = 0;
+  for (const auto& slot : slotManager.getSlots()) {
+    if (slot.state == SlotState::RUNNING) {
+      maxPromptTokens = std::max(maxPromptTokens, slot.promptTokens);
+    }
+  }
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::steady_clock::now() - lastOutputTime);
-  if (elapsed <= outputHangTimeout) {
+  auto threshold = utils::dynamicOutputHangTimeout(
+      maxPromptTokens, runningCount, outputHangTimeout);
+  if (elapsed <= threshold) {
     return;
   }
   TT_LOG_CRITICAL(
       "[BlazePrefillRunner] Output hang detected: no model output for {} ms "
-      "with {} "
-      "in-flight generation(s) (threshold={} ms). Self-terminating worker so "
-      "infrastructure can restart the server.",
-      elapsed.count(), runningCount, outputHangTimeout.count());
+      "with {} in-flight generation(s) (threshold={} ms, maxPromptTokens={}). "
+      "Self-terminating worker so infrastructure can restart the server.",
+      elapsed.count(), runningCount, threshold.count(), maxPromptTokens);
   std::abort();
 }
 

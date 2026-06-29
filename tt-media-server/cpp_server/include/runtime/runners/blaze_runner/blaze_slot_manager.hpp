@@ -41,6 +41,7 @@ class SlotManager {
       ss << " specAcceptsAtStart=" << slots[i].specAcceptsAtStart << "\n";
       ss << " specRejectsAtStart=" << slots[i].specRejectsAtStart << "\n";
       ss << " tokensGenerated=" << slots[i].tokensGenerated << "\n";
+      ss << " promptTokens=" << slots[i].promptTokens << "\n";
       ss << "----------------------------------------\n";
     }
     return ss.str();
@@ -54,6 +55,7 @@ class SlotManager {
     slot.specAcceptsAtStart = 0;
     slot.specRejectsAtStart = 0;
     slot.tokensGenerated = 0;
+    slot.promptTokens = 0;
     slot.pendingAckRequestId.reset();
     slot.deferredEvict.reset();
     slot.deferredContinue.reset();
@@ -106,6 +108,7 @@ class SlotManager {
     slotContext.specAcceptsAtStart = 0;
     slotContext.specRejectsAtStart = 0;
     slotContext.tokensGenerated = 0;
+    slotContext.promptTokens = 0;
     slotContext.pendingAckRequestId.reset();
     setSlotState(slotId, SlotState::IDLE);
   }
