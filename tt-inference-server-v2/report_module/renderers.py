@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Mapping, Sequence
 
 from report_module.display import (
     DISPLAY_NAMES,
+    FOOTNOTES,
     decimal_places,
     display_name,
     target_checks_header,
@@ -259,10 +260,16 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
     heading = _heading(
         block.kind, model, device, block.title or "", block.task_type or ""
     )
+    footnote = FOOTNOTES.get(block.kind)
 
     if len(records) > 1:
         table = _build_table(records)
-        return f"{heading}\n\n{table}" if table else ""
+        if not table:
+            return ""
+        parts = [heading, table]
+        if footnote:
+            parts.append(footnote)
+        return "\n\n".join(parts)
 
     record = records[0]
     scalar_fields: Dict[str, Any] = {}
@@ -291,7 +298,11 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
             continue
         parts.append(f"#### {_humanize_key(key)}\n\n{sub_table}")
 
-    return "\n\n".join(parts) if len(parts) > 1 else ""
+    if len(parts) <= 1:
+        return ""
+    if footnote:
+        parts.append(footnote)
+    return "\n\n".join(parts)
 
 
 for _kind in GENERIC_KINDS:

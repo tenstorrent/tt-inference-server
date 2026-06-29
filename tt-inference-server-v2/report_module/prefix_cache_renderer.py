@@ -247,13 +247,11 @@ def render_aiperf_prefix_cache(block: Block, metadata: Mapping[str, Any]) -> str
         "**Benchmarking Tool:** "
         "[AIPerf](https://github.com/ai-dynamo/aiperf) with the "
         "`--prefix-cache` scenario set. Cache hit-rate is derived from the "
-        "worker Prometheus counters `tt_prefix_cache_hits_total` / "
-        "`tt_prefix_cache_queries_total` (or the vLLM "
-        "`vllm:prefix_cache_*` equivalents) scraped during each run via "
-        "AIPerf's `--server-metrics`. In a Dynamo deployment point "
-        "`--prefix-cache-metrics-url` at the cpp_server worker(s); the "
-        "prefix-unaware frontend does not aggregate these counters. "
-        "Multi-worker deltas are summed across endpoints."
+        "serving engine's prefix-cache hit/query counters scraped during "
+        "each run via AIPerf's `--server-metrics`. In a Dynamo deployment "
+        "point `--prefix-cache-metrics-url` at the worker(s) that own the "
+        "cache; the prefix-unaware frontend does not aggregate these "
+        "counters. Multi-worker deltas are summed across endpoints."
     )
 
     if synthetic_rows:
@@ -278,7 +276,8 @@ def render_aiperf_prefix_cache(block: Block, metadata: Mapping[str, Any]) -> str
                 "mooncake_trace`. **Synth** variants apply the "
                 "`--synthesis-*` multipliers. **Trace Theo. Hit %** is the "
                 "upper bound from `aiperf analyze-trace`; **Measured Hit %** "
-                "is the actual vLLM hit-rate observed during the run.\n\n"
+                "is the actual serving-engine hit-rate observed during the "
+                "run.\n\n"
                 f"{trace_table}"
             )
 
@@ -301,7 +300,8 @@ def render_aiperf_prefix_cache(block: Block, metadata: Mapping[str, Any]) -> str
     parts.append(
         "**Metric definitions:**\n"
         "> - **Cache Hit %**: `(hits_delta / queries_delta) * 100` from the "
-        "vLLM Prometheus counters across the benchmark window.\n"
+        "serving engine's prefix-cache counters across the benchmark "
+        "window.\n"
         "> - **TTFT / TPOT / ITL / E2EL P50/P95/P99**: AIPerf percentiles "
         "from `profile_export_aiperf.json`.\n"
         "> - **Scenarios**: `shared_system` (100% shared prefix), "

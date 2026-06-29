@@ -340,9 +340,11 @@ def _forward_prefix_cache(cmd, runtime_config) -> None:
         cmd, "--prefix-cache-scenarios-json", runtime_config.prefix_cache_scenarios_json
     )
     _extend_if_set(cmd, "--prefix-cache-trace", runtime_config.prefix_cache_trace)
-    _extend_if_set(
-        cmd, "--prefix-cache-metrics-url", runtime_config.prefix_cache_metrics_url
-    )
+    # --prefix-cache-metrics-url is action="append" (a list); emit one flag
+    # per URL rather than stringifying the whole list, which would forward a
+    # bogus "['https://...']" URL and leave the hit-rate column null.
+    for metrics_url in getattr(runtime_config, "prefix_cache_metrics_url", None) or []:
+        _extend_if_set(cmd, "--prefix-cache-metrics-url", metrics_url)
 
 
 def _forward_spec_decode(cmd, runtime_config) -> None:

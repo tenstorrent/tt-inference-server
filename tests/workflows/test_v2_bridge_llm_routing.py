@@ -277,7 +277,9 @@ def test_release_forwards_prefix_cache_and_spec_decode_flags(monkeypatch, tmp_pa
         prefix_cache_scenarios="multi_turn",
         prefix_cache_arrival="poisson",
         prefix_cache_request_rate=2.0,
-        prefix_cache_metrics_url="blaze-a29-server-ngrok.n.cloud.tenstorrent.com/metrics",
+        prefix_cache_metrics_url=[
+            "blaze-a29-server-ngrok.n.cloud.tenstorrent.com/metrics"
+        ],
         spec_decode=True,
         spec_decode_preset="ci",
         spec_decode_warmup_requests=2,
