@@ -68,7 +68,8 @@ BlazePrefillRunner::BlazePrefillRunner(
     prefillScheduler = std::make_unique<MockPrefillScheduler>(maxUsers);
   } else {
     TT_LOG_INFO(
-        "BlazePrefillRunner: Constructing PrefillScheduler with SocketConfig...");
+        "BlazePrefillRunner: Constructing PrefillScheduler with "
+        "SocketConfig...");
     auto pipelineConfig = utils::makePrefillPipelineConfig(config);
     ps::SchedulerParams managerParams{};
     managerParams.dest_endpoint_id = tt::config::migrationDecodeEndpointId();

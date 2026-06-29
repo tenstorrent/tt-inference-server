@@ -21,15 +21,14 @@ namespace tt::runners::blaze {
 namespace {
 
 class EnvSetter {
-  public:
-    EnvSetter(const char* key, const char* value) {
+ public:
+  EnvSetter(const char* key, const char* value) {
     key_ = key;
     setenv(key_, value, 1);
   }
-  ~EnvSetter() {
-      unsetenv(key_);
-    }
-  private:
+  ~EnvSetter() { unsetenv(key_); }
+
+ private:
   const char* key_;
 };
 

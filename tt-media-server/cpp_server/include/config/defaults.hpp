@@ -145,7 +145,8 @@ constexpr int64_t DYNAMO_ETCD_LEASE_TTL_SECS = 10;
 // MockSchedulers (MOCK_USE_SCHEDULER=1 on mock_pipeline backend).
 constexpr bool MOCK_USE_SCHEDULER = false;
 constexpr unsigned MOCK_PREFILL_LATENCY_MS = 100;
-constexpr unsigned MOCK_DECODE_TOKEN_LATENCY_US = 64*44;  // 64 * 44us = 2816us
+constexpr unsigned MOCK_DECODE_TOKEN_LATENCY_US =
+    64 * 44;  // 64 * 44us = 2816us
 constexpr unsigned MOCK_DECODE_TOKEN_ID = 12345;
 
 }  // namespace tt::config::defaults

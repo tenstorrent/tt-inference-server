@@ -122,8 +122,8 @@ class MockPrefillScheduler final : public IPrefillScheduler {
  public:
   explicit MockPrefillScheduler(uint32_t maxUsers)
       : core_(maxUsers),
-        prefillLatency_(std::chrono::milliseconds(
-            tt::config::mockPrefillLatencyMs())) {}
+        prefillLatency_(
+            std::chrono::milliseconds(tt::config::mockPrefillLatencyMs())) {}
 
   void start() override { core_.start(); }
   void stop() override { core_.stop(); }
@@ -181,10 +181,11 @@ class MockDecodeScheduler final : public IDecodeScheduler {
   explicit MockDecodeScheduler(uint32_t maxUsers)
       : core_(maxUsers),
         decodeTokenId_(tt::config::mockDecodeTokenId()),
-        prefillLatency_(std::chrono::milliseconds(
-            tt::config::mockPrefillLatencyMs())),
-        decodeTokenLatency_(std::chrono::microseconds(
-            tt::config::mockDecodeTokenLatencyUs())) {}
+        prefillLatency_(
+            std::chrono::milliseconds(tt::config::mockPrefillLatencyMs())),
+        decodeTokenLatency_(
+            std::chrono::microseconds(tt::config::mockDecodeTokenLatencyUs())) {
+  }
 
   void start() override { core_.start(); }
   void stop() override { core_.stop(); }
@@ -227,8 +228,8 @@ class MockDecodeScheduler final : public IDecodeScheduler {
     }
 
     const uint32_t maxTokens = request.gen.max_new_tokens;
-    const uint32_t basePosition =
-        request.position_id.value_or(static_cast<uint32_t>(request.tokens.size()));
+    const uint32_t basePosition = request.position_id.value_or(
+        static_cast<uint32_t>(request.tokens.size()));
 
     for (uint32_t i = 0; i < maxTokens; ++i) {
       if (i > 0 && decodeTokenLatency_.count() > 0) {

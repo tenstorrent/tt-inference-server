@@ -100,7 +100,8 @@ BlazeDecodeRunner::BlazeDecodeRunner(
     }
     decodeScheduler = std::make_unique<RealDecodeScheduler>(
         std::make_unique<ds::DecodeScheduler>(
-            pipelineConfig, managerParams, std::move(migrationClientInterface)));
+            pipelineConfig, managerParams,
+            std::move(migrationClientInterface)));
     TT_LOG_INFO("BlazeDecodeRunner: DecodeScheduler constructed");
   }
   decodeScheduler->start();

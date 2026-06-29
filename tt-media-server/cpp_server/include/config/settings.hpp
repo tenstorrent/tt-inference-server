@@ -368,7 +368,8 @@ bool useMockScheduler();
 unsigned mockPrefillLatencyMs();
 
 /** Per-decode-token spacing for MockSchedulers. From
- * MOCK_DECODE_TOKEN_LATENCY_US. Default: defaults::MOCK_DECODE_TOKEN_LATENCY_US.
+ * MOCK_DECODE_TOKEN_LATENCY_US. Default:
+ * defaults::MOCK_DECODE_TOKEN_LATENCY_US.
  */
 unsigned mockDecodeTokenLatencyUs();
 

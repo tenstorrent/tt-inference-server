@@ -333,8 +333,8 @@ unsigned mockPrefillLatencyMs() {
 }
 
 unsigned mockDecodeTokenLatencyUs() {
-  return static_cast<unsigned>(envUlong("MOCK_DECODE_TOKEN_LATENCY_US",
-                                        defaults::MOCK_DECODE_TOKEN_LATENCY_US));
+  return static_cast<unsigned>(envUlong(
+      "MOCK_DECODE_TOKEN_LATENCY_US", defaults::MOCK_DECODE_TOKEN_LATENCY_US));
 }
 
 uint32_t mockDecodeTokenId() {

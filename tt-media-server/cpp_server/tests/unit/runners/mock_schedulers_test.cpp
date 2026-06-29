@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runtime/runners/blaze_runner/mock_scheduler.hpp"
-
 #include <gtest/gtest.h>
 
 #include <chrono>
 #include <cstdlib>
 #include <vector>
+
+#include "runtime/runners/blaze_runner/mock_scheduler.hpp"
 
 namespace tt::runners::blaze {
 namespace {
@@ -145,7 +145,8 @@ TEST(MockSchedulerTest, DecodeThroughputIsFlatAndInputIndependent) {
 
   uint32_t shortCount = 0;
   uint32_t longCount = 0;
-  const auto shortPrompt = timeDecode(kMaxNewTokens, /*promptLen=*/4, shortCount);
+  const auto shortPrompt =
+      timeDecode(kMaxNewTokens, /*promptLen=*/4, shortCount);
   const auto longPrompt =
       timeDecode(kMaxNewTokens, /*promptLen=*/8192, longCount);
 
@@ -172,7 +173,8 @@ TEST(MockSchedulerTest, DecodeThroughputIsFlatAndInputIndependent) {
 
   // Input-independence, stated explicitly: a 2048x larger prompt shifts the run
   // time by no more than the overshoot budget (run-to-run jitter only).
-  // This makes the "prompt size doesn't change the time" intent explicit and obvious to a future reader
+  // This makes the "prompt size doesn't change the time" intent explicit and
+  // obvious to a future reader
   EXPECT_NEAR(static_cast<double>(shortPrompt.count()),
               static_cast<double>(longPrompt.count()),
               static_cast<double>((ceilUs - floorUs).count()));
