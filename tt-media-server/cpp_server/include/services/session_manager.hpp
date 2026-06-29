@@ -8,7 +8,6 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <functional>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -19,6 +18,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "domain/prefix_index.hpp"
+#include "domain/response_id_index.hpp"
 #include "domain/session.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "utils/concurrent_map.hpp"
@@ -48,14 +49,7 @@ enum class CloseSessionResult {
 
 class SessionManager {
  public:
-  struct Candidate {
-    std::string sessionId;
-    size_t
-        matchedBlocks;  // total matched blocks (1 for key + matched remaining)
-    size_t sessionBlocks;  // total blocks in the cached session
-    uint32_t thinkTokens;  // accumulated think tokens at matched block
-  };
-
+ using Candidate = domain::Candidate;
   // Result of tryAcquireByPrefixHash: the session's UUID and pre-assigned slot.
   struct AcquiredSession {
     bool sessionFound;
@@ -226,44 +220,12 @@ class SessionManager {
   void handleMemoryResult(const domain::ManageMemoryResult& result);
   void updateSessionCountMetric();
 
-  // Prefix index helpers: maintain prefixIndex alongside the sessions map.
-  void removeFromPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
-
-  // Drop the responseId -> session mapping when it points at `sessionId`
-  // (called on close/evict). No-op if the id is empty or has been re-pointed
-  // at a different session.
-  void removeFromResponseIdIndex(const std::string& sessionId,
-                                 const std::string& responseId);
-
   mutable utils::ConcurrentMap<std::string, std::shared_ptr<domain::Session>>
       sessions;
 
-  // An entry in the prefix index: a group of sessions sharing the same prefix
-  // path, together with the remaining block info that follows (used for deeper
-  // prefix matching / numberOfMatchedTokens calculation).
-  struct RemainingBlockInfo {
-    uint64_t hash;
-    uint32_t accumulatedThinkTokens;
-  };
-
-  struct PrefixIndexEntry {
-    std::list<std::string> sessionIds;              // sessions registered here
-    std::list<RemainingBlockInfo> remainingBlocks;  // subsequent block info
-    uint32_t keyBlockThinkTokens = 0;  // think tokens at key hash block
-  };
-
-  // Secondary index: block hash -> entries (each with different remaining
-  // hashes pointing to different sessions/slots).
-  // Used by tryAcquireByPrefixHash / registerPrefixHash for prefix caching.
-  utils::ConcurrentMap<uint64_t, std::vector<PrefixIndexEntry>> prefixIndex;
-
-  // Secondary index: previous_response_id -> the session registered under it.
-  // Unlike prefixIndex (where many sessions can share a content hash), response
-  // ids are unique per turn, so each id maps to exactly one session. The
-  // prefix delta is derived from block matching (computeMatchedTokens), not
-  // stored here. Used by tryAcquireByResponseId / registerResponseId.
-  utils::ConcurrentMap<std::string, std::string> responseIdIndex;
-
+      domain::PrefixIndex prefixIndex;
+      domain::ResponseIdIndex responseIdIndex;
+        
   std::unique_ptr<ipc::boost::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::boost::MemoryResultQueue> memoryResultQueue;
 
