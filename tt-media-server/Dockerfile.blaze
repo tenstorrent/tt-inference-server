@@ -143,6 +143,11 @@ RUN export CARGO_HOME=${HOME_DIR}/.cargo \
 # TT_LLM_ENGINE_COMMIT (same pattern as tt-metal in tt-media-server/Dockerfile),
 # keeping the image in lockstep with the superproject's submodule gitlink. The
 # nested tt-metal submodule is pinned transitively to whatever that commit references.
+
+# download.pytorch.org intermittently returns 503 during dependency installs;
+# raise uv's HTTP retry count (default 3) for every uv invocation in create_venv.sh.
+ENV UV_HTTP_RETRIES=10
+
 RUN --mount=type=secret,id=github_token \
     : "${TT_LLM_ENGINE_COMMIT:?must be set to the pinned tt-llm-engine submodule SHA, e.g. --build-arg TT_LLM_ENGINE_COMMIT=\$(git rev-parse :tt-media-server/cpp_server/tt-llm-engine)}" \
     && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine \
