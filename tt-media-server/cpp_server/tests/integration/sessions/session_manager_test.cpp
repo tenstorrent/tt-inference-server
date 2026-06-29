@@ -7,6 +7,7 @@
 #include <trantor/net/EventLoop.h>
 
 #include <atomic>
+#include <cstdlib>
 #include <string>
 #include <thread>
 #include <vector>
@@ -391,6 +392,78 @@ TEST(SessionManagerConcurrency,
     EXPECT_LE(cancelCount.load(), 1) << "iteration " << i;
     EXPECT_EQ(manager.getActiveSessionCount(), 0u) << "iteration " << i;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Prefix-cache slot-copy tests
+// ---------------------------------------------------------------------------
+
+TEST(SessionManagerPrefixCache,
+     SlotCopySkipsThresholdRejectedBusyCandidate) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto makeBlocks = [](size_t count) {
+    std::vector<tt::utils::BlockHashInfo> blocks;
+    blocks.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+      blocks.push_back({static_cast<uint64_t>(1000 + i), 0});
+    }
+    return blocks;
+  };
+
+  // Mirrors the issue #4401 log shape: a short request fully matches the first
+  // 35 blocks of a much longer busy session (35/1283 = 2.7%, below threshold),
+  // while a second busy source is a qualifying copy candidate.
+  auto rejectedBlocks = makeBlocks(1283);
+  std::vector<tt::utils::BlockHashInfo> requestBlocks(
+      rejectedBlocks.begin(), rejectedBlocks.begin() + 35);
+  std::vector<tt::utils::BlockHashInfo> qualifyingBlocks(
+      rejectedBlocks.begin(), rejectedBlocks.begin() + 34);
+
+  auto rejectedSessionId =
+      createSessionWithSlot(manager, lf.loop, 2u, rejectedBlocks);
+  auto qualifyingSessionId =
+      createSessionWithSlot(manager, lf.loop, 3u, qualifyingBlocks);
+  ASSERT_FALSE(rejectedSessionId.empty());
+  ASSERT_FALSE(qualifyingSessionId.empty());
+
+  manager.setResidentPrefixBlocks(rejectedSessionId, rejectedBlocks.size());
+  manager.setResidentPrefixBlocks(qualifyingSessionId,
+                                  qualifyingBlocks.size());
+  acquireInFlight(manager, rejectedSessionId);
+  acquireInFlight(manager, qualifyingSessionId);
+
+  const char* previousThreshold = std::getenv("PREFIX_CACHE_HIT_THRESHOLD");
+  const std::string previousValue =
+      previousThreshold == nullptr ? "" : previousThreshold;
+  setenv("PREFIX_CACHE_HIT_THRESHOLD", "40", 1);
+
+  auto acquired = manager.tryAcquireByPrefixHash(requestBlocks, nullptr);
+  if (!acquired.has_value()) {
+    ADD_FAILURE() << "busy prefix candidates should be returned for slot-copy "
+                     "evaluation";
+  } else {
+    EXPECT_FALSE(acquired->sessionFound);
+    auto copyCandidate = manager.findASlotToCopyFrom(acquired->candidatesList);
+    if (!copyCandidate.has_value()) {
+      ADD_FAILURE()
+          << "the qualifying busy session should still be eligible for slot "
+             "copy";
+    } else {
+      EXPECT_EQ(copyCandidate->sessionId, qualifyingSessionId)
+          << "slot copy must not use a prefix candidate rejected by "
+             "PREFIX_CACHE_HIT_THRESHOLD";
+    }
+  }
+
+  if (previousThreshold == nullptr) {
+    unsetenv("PREFIX_CACHE_HIT_THRESHOLD");
+  } else {
+    setenv("PREFIX_CACHE_HIT_THRESHOLD", previousValue.c_str(), 1);
+  }
+  manager.getSession(rejectedSessionId)->release();
+  manager.getSession(qualifyingSessionId)->release();
 }
 
 // ---------------------------------------------------------------------------

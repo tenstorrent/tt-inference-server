@@ -628,6 +628,7 @@ SessionManager::tryAcquireByPrefixHash(
 
   const float threshold = tt::config::prefixCacheHitThreshold();
   bool anyBusy = false;
+  std::vector<Candidate> copyCandidates;
   for (const auto& candidate : candidates) {
     // Check if match percentage meets threshold (skip if below).
     if (threshold > 0.0f) {
@@ -685,7 +686,10 @@ SessionManager::tryAcquireByPrefixHash(
       return acquired;
     }
 
-    anyBusy |= busy;
+    if (busy) {
+      anyBusy = true;
+      copyCandidates.push_back(candidate);
+    }
   }
 
   if (anyBusy) {
@@ -698,9 +702,8 @@ SessionManager::tryAcquireByPrefixHash(
       "[SessionManager] tryAcquireByPrefixHash: no acquirable session for "
       "keyHash={}",
       keyHash);
-  // Return candidates sorted by matched tokens descending even though no
-  // session was acquired
-  return AcquiredSession{false, {}, 0, 0, 0, std::move(candidates)};
+  // Return only threshold-accepted busy candidates for slot-copy planning.
+  return AcquiredSession{false, {}, 0, 0, 0, std::move(copyCandidates)};
 }
 
 namespace {
