@@ -151,7 +151,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=64,
+                max_concurrent=32,
                 # The remote Tenstorrent console only exposes /v1/chat/completions
                 # (text /v1/completions returns 404), so use the chat API.
                 use_chat_api=True,
@@ -206,7 +206,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
-                    n_concurrent_trials=8,
+                    n_concurrent_trials=16,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=16,
@@ -267,7 +267,7 @@ _eval_config_list = [
                     sweagent_subset="verified",
                     dataset_split="test",
                     agent_backend="mini-swe-agent",
-                    n_concurrent_trials=8,
+                    n_concurrent_trials=16,
                     max_workers=24,
                     n_tasks=None,
                     temperature=1.0,
@@ -2025,6 +2025,8 @@ _eval_config_list = [
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "terminal-bench/break-filter-js-from-html",
+                            # "terminal-bench/financial-document-processor",
+
                         ],
                     },
                 ),

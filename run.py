@@ -563,15 +563,15 @@ def parse_arguments():
     if args.eval_samples and args.limit_samples_mode:
         parser.error("--eval-samples and --limit-samples-mode are mutually exclusive.")
 
-    if args.prefix_cache and args.workflow != "benchmarks":
+    if args.prefix_cache and args.workflow not in ("benchmarks", "release"):
         parser.error(
-            "--prefix-cache currently requires --workflow benchmarks "
+            "--prefix-cache currently requires --workflow benchmarks or release "
             f"(got --workflow {args.workflow})."
         )
 
-    if args.spec_decode and args.workflow != "benchmarks":
+    if args.spec_decode and args.workflow not in ("benchmarks", "release"):
         parser.error(
-            "--spec-decode currently requires --workflow benchmarks "
+            "--spec-decode currently requires --workflow benchmarks or release "
             f"(got --workflow {args.workflow})."
         )
 

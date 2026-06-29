@@ -86,6 +86,7 @@ class PrefixCacheOptions:
     # for multi-worker deployments. Empty keeps AIPerf's auto-derived
     # /metrics from --url (the frontend), which lacks the counters.
     metrics_urls: Tuple[str, ...] = ()
+    venv_python: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,7 @@ class SpecDecodeOptions:
     preset: str = "full"
     warmup_requests: int = 4
     auth_token: str = ""
+    venv_python: Optional[str] = None
 
 
 @dataclass(frozen=True)

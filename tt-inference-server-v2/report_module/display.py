@@ -100,7 +100,10 @@ DISPLAY_NAMES: Dict[str, str] = {
     "tolerance": "Tolerance",
     "published_score": "Published Score",
     "published_score_ref": "Published Score Ref",
+    "gpu_reference_score": "GPU Reference Score",
     "score": "Score",
+    "ratio_to_published": "Ratio to Published",
+    "ratio_to_reference": "Ratio to Reference",
     "accuracy_check": "Accuracy Check",
     # Liveness / infra
     "status": "Status",

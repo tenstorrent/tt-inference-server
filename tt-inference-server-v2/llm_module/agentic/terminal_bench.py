@@ -39,6 +39,11 @@ class TerminalBenchRunConfig:
     agent_import_path: Optional[str] = None
     environment_env: dict[str, str] = field(default_factory=dict)
     verifier_env: dict[str, str] = field(default_factory=dict)
+    # Interpreter whose bin/ holds the ``harbor`` CLI. When ``None`` the current
+    # interpreter is used (standalone ``run_agentic.py`` already re-execs into
+    # the EVALS_AGENTIC venv). Set on the release path, where the harness runs
+    # as a child of the V2_RUN_SCRIPT engine and must reach harbor explicitly.
+    venv_python: Optional[Path] = None
 
 
 def _get_agent_kwargs(config: TerminalBenchRunConfig) -> dict[str, Any]:
@@ -142,7 +147,8 @@ def _annotate_result_file(result_file: Path) -> None:
 
 
 def run(config: TerminalBenchRunConfig) -> int:
-    harbor_exec = Path(sys.executable).parent / "harbor"
+    interpreter = config.venv_python or Path(sys.executable)
+    harbor_exec = Path(interpreter).parent / "harbor"
 
     if _needs_config_file(config):
         harbor_config_path = _write_harbor_config(config)
