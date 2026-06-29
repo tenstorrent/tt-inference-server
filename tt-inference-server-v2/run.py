@@ -187,9 +187,10 @@ def parse_args() -> argparse.Namespace:
     # ----- Prefix-caching benchmark (LLM-only) -----------------------
     # When --prefix-cache is set, BenchmarksWorkflow swaps its default
     # media-task dispatch for the AIPerf prefix-cache scenario sweep (wired
-    # through CommandFactory -> OrchestratorMetadata.prefix_cache). Validated
-    # below to require --workflow benchmarks. Run via run_prefix_cache.py so
-    # the V2_PREFIX_CACHE venv is in place before these heavy deps are needed.
+    # through CommandFactory -> OrchestratorMetadata.prefix_cache). Standalone
+    # benchmarks run through run_prefix_cache.py so the V2_PREFIX_CACHE venv is
+    # in place before these heavy deps are needed; release pins that venv
+    # explicitly for its in-process benchmark child.
     parser.add_argument(
         "--prefix-cache",
         action="store_true",
@@ -199,7 +200,8 @@ def parse_args() -> argparse.Namespace:
             "baseline, mooncake_trace). Captures vLLM "
             "prefix_cache_hits/queries via Prometheus and reports "
             "P50/P95/P99 for TTFT/TPOT/ITL/E2EL alongside cache hit-rate. "
-            "Requires --workflow benchmarks. Launch through run_prefix_cache.py."
+            "Requires --workflow benchmarks or release. Standalone benchmark "
+            "runs should launch through run_prefix_cache.py."
         ),
     )
     parser.add_argument(
@@ -262,13 +264,23 @@ def parse_args() -> argparse.Namespace:
             "https://github.com/ai-dynamo/aiperf/blob/main/docs/tutorials/prefix-synthesis.md"
         ),
     )
+    parser.add_argument(
+        "--prefix-cache-metrics-url",
+        type=str,
+        default=None,
+        help=(
+            "Prometheus metrics endpoint to scrape for prefix-cache counters "
+            "(forwarded to AIPerf --server-metrics)."
+        ),
+    )
     # ----- Speculative-decoding benchmark (LLM-only) ------------------
     # When --spec-decode is set, BenchmarksWorkflow swaps its default
     # media-task dispatch for the AIPerf SPEED-Bench spec-decode sweep (wired
-    # through CommandFactory -> OrchestratorMetadata.spec_decode). Validated
-    # below to require --workflow benchmarks. Run via run_spec_decode.py so
-    # the V2_SPEC_DECODE venv (aiperf>=0.8 for the SPEED-Bench dataset
-    # plugins) is in place before these heavy deps are needed.
+    # through CommandFactory -> OrchestratorMetadata.spec_decode). Standalone
+    # benchmarks run through run_spec_decode.py so the V2_SPEC_DECODE venv
+    # (aiperf>=0.8 for the SPEED-Bench dataset plugins) is in place before
+    # these heavy deps are needed; release pins that venv explicitly for its
+    # in-process benchmark child.
     parser.add_argument(
         "--spec-decode",
         action="store_true",
@@ -279,8 +291,8 @@ def parse_args() -> argparse.Namespace:
             "the vLLM vllm:spec_decode_* Prometheus counters per run for "
             "acceptance rate / mean accepted length. The server's "
             "speculative_config is out of scope and must be set by "
-            "whoever launched it. Requires --workflow benchmarks. Launch "
-            "through run_spec_decode.py."
+            "whoever launched it. Requires --workflow benchmarks or release. "
+            "Standalone benchmark runs should launch through run_spec_decode.py."
         ),
     )
     parser.add_argument(
@@ -353,14 +365,14 @@ def parse_args() -> argparse.Namespace:
             args.server_url = normalize_server_url(args.server_url)
         except ValueError as e:
             parser.error(str(e))
-    if args.prefix_cache and args.workflow != "benchmarks":
+    if args.prefix_cache and args.workflow not in ("benchmarks", "release"):
         parser.error(
-            "--prefix-cache currently requires --workflow benchmarks "
+            "--prefix-cache currently requires --workflow benchmarks or release "
             f"(got --workflow {args.workflow})."
         )
-    if args.spec_decode and args.workflow != "benchmarks":
+    if args.spec_decode and args.workflow not in ("benchmarks", "release"):
         parser.error(
-            "--spec-decode currently requires --workflow benchmarks "
+            "--spec-decode currently requires --workflow benchmarks or release "
             f"(got --workflow {args.workflow})."
         )
     if args.serving_bench_suites and args.workflow != "serving_bench":

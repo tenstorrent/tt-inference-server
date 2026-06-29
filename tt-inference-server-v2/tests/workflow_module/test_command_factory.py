@@ -21,6 +21,7 @@ from workflow_module.execution import (
     LLMEvalOptions,
     PrefixCacheOptions,
     ServingBenchOptions,
+    SpecDecodeOptions,
 )
 
 
@@ -96,6 +97,63 @@ class TestPrefixCacheOptions:
         assert opts.request_rate == 4.0
         assert opts.auth_token == ""  # no secret -> auth disabled
 
+    def test_release_pins_tool_venv_python(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        args = Namespace(
+            workflow="release",
+            prefix_cache=True,
+            prefix_cache_preset="ci",
+            prefix_cache_scenarios=None,
+            prefix_cache_arrival=None,
+            prefix_cache_request_rate=None,
+            prefix_cache_scenarios_json=None,
+            prefix_cache_trace=None,
+            jwt_secret=None,
+        )
+        opts = cf._build_prefix_cache_options(args)
+        assert isinstance(opts, PrefixCacheOptions)
+        assert opts.venv_python is not None
+        assert "prefix" in opts.venv_python.lower()
+
+
+class TestSpecDecodeOptions:
+    def test_none_when_flag_absent(self):
+        assert cf._build_spec_decode_options(Namespace()) is None
+
+    def test_built_from_flags(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        args = Namespace(
+            spec_decode=True,
+            spec_decode_preset="ci",
+            spec_decode_warmup_requests=2,
+            jwt_secret=None,
+        )
+        opts = cf._build_spec_decode_options(args)
+        assert isinstance(opts, SpecDecodeOptions)
+        assert opts.preset == "ci"
+        assert opts.warmup_requests == 2
+        assert opts.auth_token == ""
+
+    def test_release_pins_tool_venv_python(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        args = Namespace(
+            workflow="release",
+            spec_decode=True,
+            spec_decode_preset="ci",
+            spec_decode_warmup_requests=4,
+            jwt_secret=None,
+        )
+        opts = cf._build_spec_decode_options(args)
+        assert isinstance(opts, SpecDecodeOptions)
+        assert opts.venv_python is not None
+        assert "spec" in opts.venv_python.lower()
+
 
 class TestLLMEvalOptions:
     def test_none_for_non_eval_workflow(self):
@@ -157,6 +215,36 @@ class TestLLMBenchOptions:
     def test_prefix_cache_defers(self):
         args = Namespace(workflow="benchmarks", prefix_cache=True, spec_decode=False)
         assert cf._build_llm_bench_options(args) is None
+
+    def test_release_with_prefix_cache_still_builds_bench_options(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        opts = cf._build_llm_bench_options(
+            Namespace(
+                workflow="release",
+                tools=None,
+                jwt_secret=None,
+                prefix_cache=True,
+                spec_decode=False,
+            )
+        )
+        assert isinstance(opts, LLMBenchOptions)
+        assert opts.tools == "vllm"
+        assert opts.venv_python is not None
+
+    def test_release_with_spec_decode_still_builds_bench_options(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        opts = cf._build_llm_bench_options(
+            Namespace(
+                workflow="release",
+                tools=None,
+                jwt_secret=None,
+                prefix_cache=False,
+                spec_decode=True,
+            )
+        )
+        assert isinstance(opts, LLMBenchOptions)
+        assert opts.tools == "vllm"
+        assert opts.venv_python is not None
 
 
 class TestMintJwt:

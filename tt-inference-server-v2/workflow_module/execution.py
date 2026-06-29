@@ -81,6 +81,7 @@ class PrefixCacheOptions:
     scenarios_json: Optional[str] = None
     trace_path: Optional[str] = None
     auth_token: str = ""
+    venv_python: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,7 @@ class SpecDecodeOptions:
     preset: str = "full"
     warmup_requests: int = 4
     auth_token: str = ""
+    venv_python: Optional[str] = None
 
 
 @dataclass(frozen=True)

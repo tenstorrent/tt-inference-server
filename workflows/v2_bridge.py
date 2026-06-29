@@ -224,6 +224,9 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
             # Standard evals (and release) need the bearer token to reach a
             # JWT-protected server; run.py mints it from --jwt-secret/$JWT_SECRET.
             _forward_jwt(cmd, runtime_config)
+            if wf == WorkflowType.RELEASE:
+                _forward_prefix_cache(cmd, runtime_config)
+                _forward_spec_decode(cmd, runtime_config)
         else:
             sdxl_n = getattr(runtime_config, "sdxl_num_prompts", None)
             if sdxl_n not in (None, "", "0"):
@@ -319,6 +322,37 @@ def _forward_jwt(cmd, runtime_config) -> None:
     # run.py reads $JWT_SECRET when --jwt-secret is omitted; only forward an
     # explicit value so the env fallback still works.
     _extend_if_set(cmd, "--jwt-secret", runtime_config.jwt_secret)
+
+
+def _forward_prefix_cache(cmd, runtime_config) -> None:
+    if not getattr(runtime_config, "prefix_cache", False):
+        return
+    cmd.append("--prefix-cache")
+    cmd.extend(["--prefix-cache-preset", runtime_config.prefix_cache_preset])
+    _extend_if_set(
+        cmd, "--prefix-cache-scenarios", runtime_config.prefix_cache_scenarios
+    )
+    _extend_if_set(cmd, "--prefix-cache-arrival", runtime_config.prefix_cache_arrival)
+    _extend_if_set(
+        cmd, "--prefix-cache-request-rate", runtime_config.prefix_cache_request_rate
+    )
+    _extend_if_set(
+        cmd, "--prefix-cache-scenarios-json", runtime_config.prefix_cache_scenarios_json
+    )
+    _extend_if_set(cmd, "--prefix-cache-trace", runtime_config.prefix_cache_trace)
+    _extend_if_set(
+        cmd, "--prefix-cache-metrics-url", runtime_config.prefix_cache_metrics_url
+    )
+
+
+def _forward_spec_decode(cmd, runtime_config) -> None:
+    if not getattr(runtime_config, "spec_decode", False):
+        return
+    cmd.append("--spec-decode")
+    cmd.extend(["--spec-decode-preset", runtime_config.spec_decode_preset])
+    _extend_if_set(
+        cmd, "--spec-decode-warmup-requests", runtime_config.spec_decode_warmup_requests
+    )
 
 
 def _build_agentic_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):
@@ -486,6 +520,10 @@ def _v2_dependency_venv_types(
     # under V2_RUN_SCRIPT, so its tool venv must exist up front.
     if wf == WorkflowType.RELEASE and model_spec.model_type == ModelType.LLM:
         venv_types.append(WorkflowVenvType.V2_LLM_VLLM)
+        if getattr(runtime_config, "prefix_cache", False):
+            venv_types.append(WorkflowVenvType.V2_PREFIX_CACHE)
+        if getattr(runtime_config, "spec_decode", False):
+            venv_types.append(WorkflowVenvType.V2_SPEC_DECODE)
         # The agentic release child resolves harbor/sweagent from the
         # EVALS_AGENTIC venv, so it must exist before the engine subprocess runs.
         if _llm_release_includes_agentic(model_spec):

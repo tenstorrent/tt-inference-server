@@ -21,6 +21,16 @@ def _rc(workflow="benchmarks", **kw):
     base = dict(
         workflow=workflow,
         prefix_cache=False,
+        prefix_cache_preset="full",
+        prefix_cache_scenarios=None,
+        prefix_cache_arrival=None,
+        prefix_cache_request_rate=None,
+        prefix_cache_scenarios_json=None,
+        prefix_cache_trace=None,
+        prefix_cache_metrics_url=None,
+        spec_decode=False,
+        spec_decode_preset="full",
+        spec_decode_warmup_requests=None,
         tools="aiperf",
         jwt_secret=None,
         device="t3k",
@@ -81,6 +91,21 @@ def test_release_provisions_eval_and_bench_venvs(monkeypatch):
     assert WorkflowVenvType.EVALS_COMMON in venvs
     assert WorkflowVenvType.EVALS_META in venvs
     assert WorkflowVenvType.V2_LLM_VLLM in venvs
+
+
+def test_release_provisions_prefix_cache_and_spec_decode_venvs(monkeypatch):
+    from workflows.workflow_types import WorkflowVenvType
+
+    spec = _spec(ModelType.LLM)
+    rc = _rc(workflow="release", prefix_cache=True, spec_decode=True)
+    monkeypatch.setattr(v2_bridge, "_llm_eval_venv_types", lambda ms, rc=None: [])
+    monkeypatch.setattr(v2_bridge, "_llm_release_includes_agentic", lambda ms: False)
+
+    venvs = v2_bridge._v2_dependency_venv_types(spec, WorkflowType.RELEASE, rc)
+
+    assert WorkflowVenvType.V2_LLM_VLLM in venvs
+    assert WorkflowVenvType.V2_PREFIX_CACHE in venvs
+    assert WorkflowVenvType.V2_SPEC_DECODE in venvs
 
 
 def test_evals_provisions_only_eval_venvs(monkeypatch):
@@ -241,6 +266,52 @@ def test_release_dispatches_only_engine(monkeypatch, tmp_path):
     assert any("run.py" in c[1] for c in calls)
     assert not any("run_agentic.py" in c[1] for c in calls)
     assert not any("run_release_merge.py" in c[1] for c in calls)
+
+
+def test_release_forwards_prefix_cache_and_spec_decode_flags(monkeypatch, tmp_path):
+    spec = _spec(ModelType.LLM)
+    rc = _rc(
+        workflow="release",
+        prefix_cache=True,
+        prefix_cache_preset="ci",
+        prefix_cache_scenarios="multi_turn",
+        prefix_cache_arrival="poisson",
+        prefix_cache_request_rate=2.0,
+        prefix_cache_metrics_url="blaze-a29-server-ngrok.n.cloud.tenstorrent.com/metrics",
+        spec_decode=True,
+        spec_decode_preset="ci",
+        spec_decode_warmup_requests=2,
+    )
+    calls = []
+
+    monkeypatch.setattr(
+        v2_bridge, "run_command", lambda cmd, logger=None, env=None: calls.append(cmd) or 0
+    )
+    monkeypatch.setattr(v2_bridge, "_ensure_v2_venv", lambda ms: Path("/fake/python"))
+    monkeypatch.setattr(
+        v2_bridge, "_ensure_v2_dependency_venvs", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        v2_bridge, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+    monkeypatch.setattr(v2_bridge, "ensure_readwriteable_dir", lambda p: None)
+
+    v2_bridge.run_v2_workflows(spec, rc, str(tmp_path / "spec.json"))
+
+    assert len(calls) == 1
+    cmd = calls[0]
+    assert "--prefix-cache" in cmd
+    assert cmd[cmd.index("--prefix-cache-preset") + 1] == "ci"
+    assert cmd[cmd.index("--prefix-cache-scenarios") + 1] == "multi_turn"
+    assert cmd[cmd.index("--prefix-cache-arrival") + 1] == "poisson"
+    assert cmd[cmd.index("--prefix-cache-request-rate") + 1] == "2.0"
+    assert (
+        cmd[cmd.index("--prefix-cache-metrics-url") + 1]
+        == "blaze-a29-server-ngrok.n.cloud.tenstorrent.com/metrics"
+    )
+    assert "--spec-decode" in cmd
+    assert cmd[cmd.index("--spec-decode-preset") + 1] == "ci"
+    assert cmd[cmd.index("--spec-decode-warmup-requests") + 1] == "2"
 
 
 if __name__ == "__main__":

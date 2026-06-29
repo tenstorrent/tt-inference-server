@@ -192,9 +192,13 @@ def _build_llm_bench_options(args: argparse.Namespace) -> Optional[LLMBenchOptio
     """
     if getattr(args, "workflow", None) not in _LLM_BENCH_WORKFLOWS:
         return None
-    if getattr(args, "prefix_cache", False):
+    if getattr(args, "workflow", None) == "benchmarks" and getattr(
+        args, "prefix_cache", False
+    ):
         return None
-    if getattr(args, "spec_decode", False):
+    if getattr(args, "workflow", None) == "benchmarks" and getattr(
+        args, "spec_decode", False
+    ):
         return None
     return LLMBenchOptions(
         tools=getattr(args, "tools", None) or "vllm",
@@ -211,12 +215,18 @@ def _release_bench_venv_python(args: argparse.Namespace) -> Optional[str]:
     A release run executes in the V2_RUN_SCRIPT venv, so pin the default
     perf-tool venv (V2_LLM_VLLM); the v2 bridge provisions it before run.py.
     """
+    from workflows.workflow_types import WorkflowVenvType
+
+    return _release_venv_python(args, WorkflowVenvType.V2_LLM_VLLM)
+
+
+def _release_venv_python(args: argparse.Namespace, venv_type) -> Optional[str]:
+    """Interpreter pinned for release children that need a tool venv."""
     if getattr(args, "workflow", None) != "release":
         return None
-    from workflows.workflow_types import WorkflowVenvType
     from workflows.workflow_venvs import VENV_CONFIGS
 
-    return str(VENV_CONFIGS[WorkflowVenvType.V2_LLM_VLLM].venv_python)
+    return str(VENV_CONFIGS[venv_type].venv_python)
 
 
 def _build_llm_eval_options(args: argparse.Namespace) -> Optional[LLMEvalOptions]:
@@ -248,6 +258,8 @@ def _build_prefix_cache_options(
     """
     if not getattr(args, "prefix_cache", False):
         return None
+    from workflows.workflow_types import WorkflowVenvType
+
     return PrefixCacheOptions(
         preset=args.prefix_cache_preset,
         scenarios=args.prefix_cache_scenarios,
@@ -256,6 +268,7 @@ def _build_prefix_cache_options(
         scenarios_json=args.prefix_cache_scenarios_json,
         trace_path=args.prefix_cache_trace,
         auth_token=_mint_jwt_if_secret(args.jwt_secret),
+        venv_python=_release_venv_python(args, WorkflowVenvType.V2_PREFIX_CACHE),
     )
 
 
@@ -271,10 +284,13 @@ def _build_spec_decode_options(
     """
     if not getattr(args, "spec_decode", False):
         return None
+    from workflows.workflow_types import WorkflowVenvType
+
     return SpecDecodeOptions(
         preset=args.spec_decode_preset,
         warmup_requests=args.spec_decode_warmup_requests,
         auth_token=_mint_jwt_if_secret(args.jwt_secret),
+        venv_python=_release_venv_python(args, WorkflowVenvType.V2_SPEC_DECODE),
     )
 
 
