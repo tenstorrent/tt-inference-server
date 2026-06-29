@@ -12,6 +12,7 @@ Building blocks (`build_ack_consumer`, `wait_for_assignment`, `produce_one`,
 without copy-pasting — e.g. produce N requests, assert per-id partitioning,
 or check FAILED-status paths.
 """
+
 from __future__ import annotations
 
 import json
@@ -105,9 +106,7 @@ def drain_acks(
             continue
         if msg.error():
             if msg.error().code() != KafkaError._PARTITION_EOF:
-                print(
-                    f"!!! consumer poll error: {msg.error()}", file=sys.stderr
-                )
+                print(f"!!! consumer poll error: {msg.error()}", file=sys.stderr)
             continue
         try:
             payload = json.loads(msg.value().decode("utf-8", errors="replace"))

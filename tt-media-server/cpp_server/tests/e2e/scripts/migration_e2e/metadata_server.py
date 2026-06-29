@@ -7,6 +7,7 @@ in-tree run_mooncake_metadata_server.sh in a new process group. The returned
 Popen is None when an external server is used; the caller should still hand
 it to a cleanup hook unconditionally.
 """
+
 from __future__ import annotations
 
 import os
@@ -21,9 +22,7 @@ from migration_e2e.preflight import PreflightError
 
 def probe_metadata(url: str, timeout_sec: float = 2.0) -> bool:
     """PUT a no-op probe key and treat a 200 as 'service reachable'."""
-    req = urllib.request.Request(
-        url + "?key=__probe__", data=b"{}", method="PUT"
-    )
+    req = urllib.request.Request(url + "?key=__probe__", data=b"{}", method="PUT")
     try:
         with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
             return resp.status == 200
@@ -38,9 +37,7 @@ def start_metadata_server(
         print(f"Using existing metadata service: {cfg.metadata_override}")
         return None, cfg.metadata_override
 
-    print(
-        f"Starting metadata service on {cfg.mc_bind_address}:{cfg.http_port}..."
-    )
+    print(f"Starting metadata service on {cfg.mc_bind_address}:{cfg.http_port}...")
     env = os.environ.copy()
     env["HTTP_PORT"] = str(cfg.http_port)
     env["BIND_HOST"] = cfg.mc_bind_address

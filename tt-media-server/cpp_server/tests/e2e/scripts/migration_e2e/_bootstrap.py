@@ -6,6 +6,7 @@ Lets the e2e tests run as plain ctest entries (no `source .venv/bin/activate`
 in the wrapping shell). Called once from migration_e2e/__init__.py, before
 any module-level `import confluent_kafka` in the package.
 """
+
 from __future__ import annotations
 
 import os
@@ -16,6 +17,7 @@ import sys
 def ensure_confluent_kafka() -> None:
     try:
         import confluent_kafka  # noqa: F401
+
         return
     except ImportError:
         pass
