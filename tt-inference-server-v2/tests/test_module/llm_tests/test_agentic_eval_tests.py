@@ -213,9 +213,7 @@ class TestAgenticModeReference:
         # 5-instance subset: 1/5 (20%). threshold = floor(5*0.40*0.9) = 1.
         score = self._score()
         metrics = {"accuracy": 0.20, "n_trials": 5}
-        assert (
-            compute_accuracy_check(metrics, score, None) == ReportCheckTypes.FAIL
-        )
+        assert compute_accuracy_check(metrics, score, None) == ReportCheckTypes.FAIL
         assert (
             compute_accuracy_check(metrics, score, EvalLimitMode.CI_NIGHTLY)
             == ReportCheckTypes.PASS
