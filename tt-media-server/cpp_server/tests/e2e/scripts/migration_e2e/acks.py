@@ -125,8 +125,14 @@ def drain_acks(
     return statuses, unrelated
 
 
-def produce_and_count_acks(cfg: Config) -> bool:
-    """End-to-end PASS/FAIL: send one request, expect cfg.num_prefill SUCCESSFULs."""
+def produce_migration_request(cfg: Config) -> tuple[int, Consumer]:
+    """Subscribe to ACK_TOPIC, then send exactly one migration request.
+
+    The ACK consumer is subscribed and waits for partition assignment BEFORE
+    the produce, otherwise early acks can be lost on slow brokers (see
+    `wait_for_assignment`). Returns (migration_id, live consumer) — the caller
+    owns the consumer and must close it (e.g. via ExitStack).
+    """
     # nanoseconds-since-epoch keeps the id unique across rapid re-runs. The
     # ack drainer matches on migration_id alone, so collisions would let
     # stale acks falsely satisfy a fresh request.
@@ -141,26 +147,27 @@ def produce_and_count_acks(cfg: Config) -> bool:
     }
 
     consumer = build_ack_consumer(cfg.kafka_brokers)
-    try:
-        consumer.subscribe([ACK_TOPIC])
-        wait_for_assignment(consumer)
+    consumer.subscribe([ACK_TOPIC])
+    wait_for_assignment(consumer)
 
-        print(
-            f"Producing 1 request migration_id={migration_id}, "
-            f"expecting {cfg.num_prefill} acks..."
-        )
-        print(f"-> {REQUEST_TOPIC}: {json.dumps(payload)}")
-        produce_one(cfg.kafka_brokers, payload)
+    print(
+        f"Producing 1 request migration_id={migration_id}, "
+        f"expecting {cfg.num_prefill} acks..."
+    )
+    print(f"-> {REQUEST_TOPIC}: {json.dumps(payload)}")
+    produce_one(cfg.kafka_brokers, payload)
+    return migration_id, consumer
 
-        print(
-            f"waiting up to {cfg.ack_timeout_sec:.0f}s for {cfg.num_prefill} "
-            f"acks on {ACK_TOPIC} with migration_id={migration_id}..."
-        )
-        statuses, unrelated = drain_acks(
-            consumer, migration_id, cfg.num_prefill, cfg.ack_timeout_sec
-        )
-    finally:
-        consumer.close()
+
+def count_acks(cfg: Config, migration_id: int, consumer: Consumer) -> bool:
+    """Drain ACK_TOPIC and PASS iff cfg.num_prefill SUCCESSFUL acks arrive."""
+    print(
+        f"waiting up to {cfg.ack_timeout_sec:.0f}s for {cfg.num_prefill} "
+        f"acks on {ACK_TOPIC} with migration_id={migration_id}..."
+    )
+    statuses, unrelated = drain_acks(
+        consumer, migration_id, cfg.num_prefill, cfg.ack_timeout_sec
+    )
 
     print(f"matched={len(statuses)} expected={cfg.num_prefill}")
     if unrelated:
