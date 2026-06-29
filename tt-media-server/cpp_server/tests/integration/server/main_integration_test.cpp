@@ -120,7 +120,7 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
       "to produce at least thirty two tokens after tokenization so that the "
       "prefix cache can form a block and the follow-up request can match it";
   auto responseFuture =
-      asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+      asyncRequest(chatRequest().user(opener).maxTokens(1).stream());
 
   // 2. Receive and assert on the ALLOCATE.
   tt::domain::ManageMemoryTask memReq{};
@@ -166,7 +166,7 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   //    (full_prompt - matched_tokens) tokens to prefill.
   const std::string longPriorAssistant =
       "this is the assistant response that was generated for the initial turn";
-  auto followUpFuture = asyncRequest(ChatRequest()
+  auto followUpFuture = asyncRequest(chatRequest()
                                          .user(opener)
                                          .assistant(longPriorAssistant)
                                          .user("y")
@@ -205,7 +205,7 @@ TEST_F(MainIntegrationTest, WorkerResponseBuilder_MultipleTokensThenFinalize) {
   // Push 3 specific tokens via WorkerResponse and assert the SSE stream
   // delivered them as separate content deltas, terminated by [DONE].
   auto responseFuture =
-      asyncRequest(ChatRequest().user("hello").maxTokens(3).stream());
+      asyncRequest(chatRequest().user("hello").maxTokens(3).stream());
 
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
@@ -460,7 +460,7 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
       "multi-block matching behavior with a longer common prefix region";
 
   // --- Request A: seed the session ---
-  auto futureA = asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+  auto futureA = asyncRequest(chatRequest().user(opener).maxTokens(1).stream());
 
   tt::domain::ManageMemoryTask memReqA{};
   server->memoryRequestQueue().receive(memReqA);
@@ -485,7 +485,7 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
   futureA.get();
 
   // --- Request B: continuation that keeps the session in-flight ---
-  auto futureB = asyncRequest(ChatRequest()
+  auto futureB = asyncRequest(chatRequest()
                                   .user(opener)
                                   .assistant("ok")
                                   .user("thirty two tokens after tokenization "
@@ -503,7 +503,7 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
 
   // --- Request C: same prefix, different suffix → triggers slot copy ---
   auto futureC = asyncRequest(
-      ChatRequest()
+      chatRequest()
           .user("slot-copy-test-unique-opener with enough words to produce at "
                 "least more than we expect to have which is thirty two tokens "
                 "after tokenization so that the prefix cache can form a block "
@@ -568,7 +568,7 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
   // pick slot 1 (C's session) as the better fit because D's prompt shares
   // more blocks with C's registered session than with A/B's.
   auto futureD = asyncRequest(
-      ChatRequest()
+      chatRequest()
           .user("slot-copy-test-unique-opener with enough words to produce at "
                 "least more than we expect to have which is thirty two tokens "
                 "after tokenization so that the prefix cache can form a block "
@@ -611,7 +611,7 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
 TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
   // Most tests use streaming; this one verifies the non-streaming code path
   // still returns a single buffered JSON document with the assistant message.
-  auto responseFuture = asyncRequest(ChatRequest().user("hello").maxTokens(1));
+  auto responseFuture = asyncRequest(chatRequest().user("hello").maxTokens(1));
 
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
@@ -631,7 +631,7 @@ TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
 
 TEST_F(MainIntegrationTest, SamplingParams_MaxTokensAndTemperature) {
   auto future = asyncRequest(
-      ChatRequest().user("hello").maxTokens(42).temperature(0.7).stream());
+      chatRequest().user("hello").maxTokens(42).temperature(0.7).stream());
 
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
@@ -646,7 +646,7 @@ TEST_F(MainIntegrationTest, SamplingParams_MaxTokensAndTemperature) {
 
 TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
   // LLM_MODE=regular: every request is served locally, never disaggregated.
-  auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
+  auto future = asyncRequest(chatRequest().user("hello").maxTokens(1).stream());
 
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
@@ -659,7 +659,7 @@ TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
 TEST_F(MainIntegrationTest, MigrationId_IsNulloptInRegularMode) {
   // In regular (non-disaggregated) mode, no migration ID is generated.
   // Verify the field survives IPC serialization as nullopt (not garbage).
-  auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
+  auto future = asyncRequest(chatRequest().user("hello").maxTokens(1).stream());
 
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
@@ -683,9 +683,9 @@ TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
   server->setMemoryAutoRespond(false);
 
   auto future1 = asyncRequest(
-      ChatRequest().user("two-first-turns-test").maxTokens(1).stream());
+      chatRequest().user("two-first-turns-test").maxTokens(1).stream());
   auto future2 = asyncRequest(
-      ChatRequest().user("two-first-turns-test").maxTokens(1).stream());
+      chatRequest().user("two-first-turns-test").maxTokens(1).stream());
 
   // Drain both ALLOCATEs before responding to either, so the test can prove
   // they ran concurrently rather than serialised behind one another.
@@ -744,7 +744,7 @@ TEST_F(MainIntegrationTest, FirstRequestWithHistory_IsNotAContinuation) {
   // hash is computed from messages[0..n-2] (everything except the trailing
   // [assistant, user] pair), and the rest of the suite uses "hello" — we
   // need a string no other test has registered.
-  auto future = asyncRequest(ChatRequest()
+  auto future = asyncRequest(chatRequest()
                                  .user("history-test-unique-first-turn")
                                  .assistant("hi back")
                                  .user("how are you")
@@ -801,9 +801,9 @@ TEST_F(MainIntegrationTest,
   // --- Seed phase ----------------------------------------------------------
   {
     auto seedF1 =
-        asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+        asyncRequest(chatRequest().user(opener).maxTokens(1).stream());
     auto seedF2 =
-        asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+        asyncRequest(chatRequest().user(opener).maxTokens(1).stream());
 
     tt::domain::ManageMemoryTask seedAlloc1{}, seedAlloc2{};
     server->memoryRequestQueue().receive(seedAlloc1);
@@ -829,13 +829,13 @@ TEST_F(MainIntegrationTest,
   }
 
   // --- Main phase ----------------------------------------------------------
-  auto future1 = asyncRequest(ChatRequest()
+  auto future1 = asyncRequest(chatRequest()
                                   .user(opener)
                                   .assistant("thread A's reply")
                                   .user("thread A's followup")
                                   .maxTokens(1)
                                   .stream());
-  auto future2 = asyncRequest(ChatRequest()
+  auto future2 = asyncRequest(chatRequest()
                                   .user(opener)
                                   .assistant("thread B's reply")
                                   .user("thread B's followup")
@@ -870,7 +870,7 @@ TEST_F(MainIntegrationTest,
 
 TEST_F(MainIntegrationTest, SystemMessage_DoesNotTriggerContinuation) {
   // A system + user message is a first turn even though there are two messages.
-  auto future = asyncRequest(ChatRequest()
+  auto future = asyncRequest(chatRequest()
                                  .system("you are helpful")
                                  .user("hello")
                                  .maxTokens(1)

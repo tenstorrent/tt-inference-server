@@ -52,9 +52,9 @@ class TestServer {
     stopAutoResponder_.store(true);
     if (memoryAutoResponderThread_.joinable())
       memoryAutoResponderThread_.join();
-    // DynamoEndpoint::stop() can block on open call-home streams; the test
-    // process exits immediately after TearDownTestSuite anyway.
-    dynamoEndpoint_.release();
+    // ~DynamoEndpoint calls stop() and revokes the etcd lease so later
+    // integration tests don't route to a dead backend.
+    dynamoEndpoint_.reset();
   }
 
   // Test reads from here to see what the controller pushed.
