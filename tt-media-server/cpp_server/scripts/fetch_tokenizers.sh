@@ -237,6 +237,18 @@ download_tokenizer \
     "json" \
     "true"
 
+# GLM-5.1 (public, no auth). Same glm_moe_dsa tokenizer/family as GLM-5.2
+# (same eos set + <think>/</think> ids), so it reuses the glm45/glm47 parser
+# branch in discovery.cpp. Ships its chat template as a separate
+# chat_template.jinja, so needs_chat_template is "true".
+download_tokenizer \
+    "zai-org/GLM-5.1" \
+    "https://huggingface.co/zai-org/GLM-5.1/resolve/main" \
+    "false" \
+    '{"model_type":"glm_moe_dsa","architectures":["GlmMoeDsaForCausalLM"]}' \
+    "json" \
+    "true"
+
 # GLM-5.2 (public, no auth). Ships its chat template as a separate
 # chat_template.jinja (not inline in tokenizer_config.json), so needs_chat_template
 # is "true". config.json carries the full eos set, but generation_config.json is
@@ -252,14 +264,17 @@ download_tokenizer \
 
 # The Dynamo frontend renders chat templates with minijinja, which rejects
 # Jinja2's `.0` numeric-index syntax (parses `0.` as a float -> "unexpected
-# float"). GLM-5.2's template indexes `m.content.0`; rewrite to `m.content[0]`,
-# accepted by both minijinja and Python Jinja2. Without this the frontend fails
-# to load the model: "PromptFormatter.from_mdc: syntax error: unexpected float".
-GLM52_TMPL="${TOKENIZER_DIR}/zai-org/GLM-5.2/chat_template.jinja"
-if [ -f "${GLM52_TMPL}" ] && grep -q 'm\.content\.0' "${GLM52_TMPL}"; then
-    sed -i 's/m\.content\.0/m.content[0]/g' "${GLM52_TMPL}"
-    echo "  patched GLM-5.2 chat_template.jinja for minijinja (.0 -> [0])"
-fi
+# float"). GLM-5.1 and GLM-5.2 templates index `m.content.0`; rewrite to
+# `m.content[0]`, accepted by both minijinja and Python Jinja2. Without this the
+# frontend fails to load the model:
+# "PromptFormatter.from_mdc: syntax error: unexpected float".
+for GLM_TMPL in "${TOKENIZER_DIR}/zai-org/GLM-5.1/chat_template.jinja" \
+                "${TOKENIZER_DIR}/zai-org/GLM-5.2/chat_template.jinja"; do
+    if [ -f "${GLM_TMPL}" ] && grep -q 'm\.content\.0' "${GLM_TMPL}"; then
+        sed -i 's/m\.content\.0/m.content[0]/g' "${GLM_TMPL}"
+        echo "  patched ${GLM_TMPL#"${TOKENIZER_DIR}/"} for minijinja (.0 -> [0])"
+    fi
+done
 
 # DeepSeek-V4-Pro (public, no auth). DeepSeek-R1 family tokenizer (tokenizer.json,
 # eos <｜end▁of▁sentence｜>). NOTE: this repo ships NO chat template — neither

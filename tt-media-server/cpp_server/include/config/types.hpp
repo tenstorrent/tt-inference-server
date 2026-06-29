@@ -48,6 +48,7 @@ enum class ModelType {
   KIMI_K2_7_CODE,
   GPT_OSS_120B,
   MINIMAX_M2_7,
+  GLM_5_1,
   GLM_5_2,
   DEEPSEEK_V4_PRO,
 };
@@ -95,6 +96,7 @@ enum class Model {
   KIMI_K2_7_CODE,
   GPT_OSS_120B,
   MINIMAX_M2_7,
+  GLM_5_1,
   GLM_5_2,
   DEEPSEEK_V4_PRO,
 };
@@ -111,6 +113,7 @@ static constexpr ModelMapping MODEL_MAPPINGS[] = {
     {Model::KIMI_K2_7_CODE, "moonshotai/Kimi-K2.7-Code"},
     {Model::GPT_OSS_120B, "openai/gpt-oss-120b"},
     {Model::MINIMAX_M2_7, "MiniMaxAI/MiniMax-M2.7"},
+    {Model::GLM_5_1, "zai-org/GLM-5.1"},
     {Model::GLM_5_2, "zai-org/GLM-5.2"},
     {Model::DEEPSEEK_V4_PRO, "deepseek-ai/DeepSeek-V4-Pro"},
 };
