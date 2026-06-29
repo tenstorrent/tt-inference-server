@@ -344,8 +344,8 @@ roughly an hour.
 
 | Variable                 | Default | Description                                                                                              |
 | ------------------------ | ------- | -------------------------------------------------------------------------------------------------------- |
-| `WARMUP_TIMEOUT_MS`      | `10000` | Max wait for the first token during runner warmup.                                                       |
-| `OUTPUT_HANG_TIMEOUT_MS` | `60000` | Max gap with no model output (while a request is in flight) before the worker self-terminates.           |
+| `WARMUP_TIMEOUT_MS`      | `150000` | Max wait for the first token during runner warmup.                                                     |
+| `OUTPUT_HANG_TIMEOUT_MS` | `150000` | Max gap with no model output (while a request is in flight) before the worker self-terminates.          |
 | `PM_CONNECT_TIMEOUT_MS`  | `30000` | Pipeline manager connect timeout. Must be large enough to ride out runner startup.                       |
 
 ### Shared memory and IPC

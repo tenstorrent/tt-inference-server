@@ -48,7 +48,6 @@ constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
 constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
 constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 40;
 constexpr bool USE_FAST_MODE = false;
-constexpr bool MIGRATE_FULL_KV = false;
 constexpr bool ENABLE_MIGRATION = false;
 constexpr const char* MIGRATION_CMD_QUEUE_NAME = "mig_ep0_cmd";
 constexpr const char* MIGRATION_TABLE_QUEUE_NAME = "mig_ep0_table";
@@ -80,14 +79,14 @@ constexpr uint32_t MODEL_NUM_LAYERS = 61;
 constexpr uint32_t PREFILL_CHUNK_SIZE = 5120;
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 128;
-constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
+constexpr unsigned WARMUP_TIMEOUT_MS = 150000;
 /**
  * Max time (ms) the runner may go without producing a model output while at
  * least one request is in flight before it self-terminates the worker
  * process. Self-terminating lets the infrastructure monitoring stack notice
  * the crash and restart the server instead of hanging silently.
  */
-constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 60000;
+constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 150000;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 constexpr const char* WIRE_FORMAT = "blaze";
