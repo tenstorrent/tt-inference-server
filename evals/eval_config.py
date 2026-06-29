@@ -169,14 +169,14 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "max_length": 120 * 1024,
+                    "max_length": 256 * 1024,
                     # Per-request HTTP timeout (lm-eval default 1800s). Long
                     # reasoning generations on the shared console can exceed
                     # 30min under load, so allow up to 2h before giving up.
                     "timeout": 7200,
                 },
                 gen_kwargs={
-                    "max_gen_toks": 120 * 1024,
+                    "max_gen_toks": 256 * 1024,
                     "until": ["[EOS]"],
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -204,7 +204,7 @@ _eval_config_list = [
                     },
                 ),
                 agentic_eval_config=TerminalBenchEvalConfig(
-                    dataset="terminal-bench/terminal-bench-2",
+                    dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
                     n_concurrent_trials=16,
                     n_attempts=1,
@@ -304,7 +304,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=16,
+                max_concurrent=32,
                 # The remote Tenstorrent console only exposes /v1/chat/completions
                 # (text /v1/completions returns 404), so use the chat API.
                 use_chat_api=True,
@@ -347,7 +347,7 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=51.1,
                     published_score_ref="https://huggingface.co/MiniMaxAI/MiniMax-M2.7",
-                    gpu_reference_score=None,
+                    gpu_reference_score=52.8,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
@@ -363,7 +363,7 @@ _eval_config_list = [
                     n_tasks=89,
                     override_cpus=16,
                     override_memory_mb=32 * 1024,
-                    agent_timeout_sec=2 * 60 * 60,
+                    agent_timeout_sec=30 * 60,
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
@@ -3514,7 +3514,7 @@ _eval_config_list = [
                 task_name="aime25",
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.05,  # 30 samples * 0.05 ~= 1 sample
-                    EvalLimitMode.CI_NIGHTLY: 0.50,  # 30 samples * 0.2 = 6 samples
+                    EvalLimitMode.CI_NIGHTLY: 1.0,#0.50,  # 30 samples * 0.2 = 6 samples
                 },
                 score=EvalTaskScore(
                     published_score=92.5,  # AIME 2025 score (without tools)
@@ -3530,7 +3530,7 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
-                max_concurrent=16,
+                max_concurrent=24,
                 model_kwargs={
                     "timeout": "14400",
                 },
@@ -3552,7 +3552,7 @@ _eval_config_list = [
                 task_name="gpqa_diamond_cot_zeroshot",
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.006,  # 198 samples * 0.006 ~= 1 sample
-                    EvalLimitMode.CI_NIGHTLY: 0.035,  # 198 samples * 0.035 ~= 6 samples
+                    EvalLimitMode.CI_NIGHTLY: 1.0,#0.035,  # 198 samples * 0.035 ~= 6 samples
                 },
                 score=EvalTaskScore(
                     published_score=80.1,  # GPQA Diamond score (without tools)
@@ -3568,7 +3568,7 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
-                max_concurrent=16,
+                max_concurrent=24,
                 model_kwargs={
                     "timeout": "14400",
                 },

@@ -1114,3 +1114,26 @@ templates:
       remote_api_model: deepseek-ai/DeepSeek-R1-0528
       reasoning_parser_name: deepseek_r1
       tool_call_parser_name: deepseek_v3
+
+- weights:
+    - openai/gpt-oss-120b
+  impl: gpt_oss
+  version: remote
+  tt_metal_commit: remote  # placeholder: model is served externally, not built locally
+  inference_engine: VLLM
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      # Shared console endpoint intermittently 500s/403s (WAF) under load;
+      # extra retries prevent transient failures from dropping eval samples.
+      # eval_max_retries: 3
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    openai/gpt-oss-120b:
+      remote_api_model: openai/gpt-oss-120b
+      reasoning_parser_name: openai_gptoss
+      tool_call_parser_name: openai
