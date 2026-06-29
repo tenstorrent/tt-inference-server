@@ -459,9 +459,10 @@ TEST(MooncakeMigrationWorker, BringUpWithNoPeersIsReady) {
   EXPECT_EQ(engine->registerCount, 1);
 }
 
-// run() returns once stop is already requested and tears down exactly once
-// (idempotent: the destructor's teardown must not unregister again).
-TEST(MooncakeMigrationWorker, RunStopsAndTearsDownOnce) {
+// The destructor tears down exactly once. The worker no longer owns a hold-
+// loop (process lifetime is the binary's job), so the only teardown trigger is
+// stack scope; this test guards the idempotency invariant on that path.
+TEST(MooncakeMigrationWorker, DestructorTearsDownOnce) {
   auto engine = std::make_shared<FakeTransferEngine>();
   engine->resolveAfterMisses = {{"peer-0", 0}};
   MigrationWorkerConfig cfg;
@@ -472,10 +473,8 @@ TEST(MooncakeMigrationWorker, RunStopsAndTearsDownOnce) {
   {
     MooncakeMigrationWorker worker{cfg, engine, fastDiscoveryService(5)};
     ASSERT_TRUE(worker.bringUp());
-    std::atomic<bool> stop{true};  // already requested -> returns immediately
-    worker.run(stop);
-    EXPECT_EQ(engine->unregisterCount, 1);
-  }  // destructor runs teardown again; must stay idempotent
+    EXPECT_EQ(engine->unregisterCount, 0);
+  }
   EXPECT_EQ(engine->unregisterCount, 1);
 }
 
