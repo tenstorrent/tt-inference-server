@@ -91,8 +91,6 @@ _T2V_EXAMPLES = {
         "summary": "Text-to-video",
         "value": {
             "prompt": "A serene mountain landscape with flowing water",
-            "negative_prompt": "blurry, low quality",
-            "num_inference_steps": 20,
             "seed": 42,
         },
     },
