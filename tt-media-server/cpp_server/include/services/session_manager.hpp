@@ -49,7 +49,7 @@ enum class CloseSessionResult {
 
 class SessionManager {
  public:
- using Candidate = domain::Candidate;
+  using Candidate = domain::Candidate;
   // Result of tryAcquireByPrefixHash: the session's UUID and pre-assigned slot.
   struct AcquiredSession {
     bool sessionFound;
@@ -223,9 +223,9 @@ class SessionManager {
   mutable utils::ConcurrentMap<std::string, std::shared_ptr<domain::Session>>
       sessions;
 
-      domain::PrefixIndex prefixIndex;
-      domain::ResponseIdIndex responseIdIndex;
-        
+  domain::PrefixIndex prefixIndex;
+  domain::ResponseIdIndex responseIdIndex;
+
   std::unique_ptr<ipc::boost::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::boost::MemoryResultQueue> memoryResultQueue;
 

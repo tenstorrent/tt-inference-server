@@ -821,7 +821,7 @@ void SessionManager::initResponseId(const std::string& sessionId,
                   [&responseId](std::shared_ptr<domain::Session>& s) {
                     s->setResponseId(responseId);
                   });
-responseIdIndex.init(responseId, sessionId);
+  responseIdIndex.init(responseId, sessionId);
 }
 
 void SessionManager::registerResponseId(const std::string& previousResponseId,
@@ -833,8 +833,9 @@ void SessionManager::registerResponseId(const std::string& previousResponseId,
     return;
   }
 
- const auto sessionIdOpt = responseIdIndex.rekey(previousResponseId, responseId);
- if (!sessionIdOpt.has_value()) {
+  const auto sessionIdOpt =
+      responseIdIndex.rekey(previousResponseId, responseId);
+  if (!sessionIdOpt.has_value()) {
     TT_LOG_WARN(
         "[SessionManager] registerResponseId: previousId={} not in index",
         previousResponseId);
@@ -862,7 +863,8 @@ std::pair<uint32_t, uint32_t> SessionManager::computeMatchedTokens(
   const size_t firstBlockTokens = tt::config::kvCacheFirstBlockSize();
   const size_t blockTokens = tt::config::kvCacheBlockSize();
 
-  const auto [matchedBlocks, thinkTokens] = prefixIndex.computeMatchedBlocks(sessionId, blockInfos);
+  const auto [matchedBlocks, thinkTokens] =
+      prefixIndex.computeMatchedBlocks(sessionId, blockInfos);
 
   if (matchedBlocks == 0) {
     return {0, 0};
@@ -903,7 +905,5 @@ void SessionManager::updateSessionCountMetric() {
   tt::metrics::ServerMetrics::instance().setActiveSessionsCount(
       static_cast<double>(getActiveSessionCount()));
 }
-
-
 
 }  // namespace tt::services

@@ -3,7 +3,6 @@
 
 #include "domain/response_id_index.hpp"
 
-
 namespace tt::domain {
 
 std::optional<std::string> ResponseIdIndex::lookup(const std::string& id) {
