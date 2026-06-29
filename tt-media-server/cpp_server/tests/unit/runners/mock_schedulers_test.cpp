@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <thread>
 #include <vector>
 
 #include "runtime/runners/blaze_runner/mock_scheduler.hpp"
@@ -48,18 +49,37 @@ class ScopedEnv {
   const char* key;
 };
 
-uint32_t drainOutputs(MockDecodeScheduler& scheduler) {
+// Block (with a short poll loop) until an output is available or `timeout`
+// elapses. The async emitter thread produces tokens on its own schedule, so
+// callers can no longer assume try_pop_output succeeds the instant
+// push_request returns.
+bool waitForOutput(
+    MockDecodeScheduler& scheduler, sch::OutputMessage& out,
+    std::chrono::milliseconds timeout = std::chrono::seconds(2)) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  do {
+    if (scheduler.try_pop_output(out)) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::microseconds(50));
+  } while (std::chrono::steady_clock::now() < deadline);
+  return scheduler.try_pop_output(out);
+}
+
+// Drain exactly `expected` outputs, returning the actual count seen before the
+// timeout. Returns < expected if the emitter stalls.
+uint32_t drainOutputs(MockDecodeScheduler& scheduler, uint32_t expected) {
   uint32_t count = 0;
   sch::OutputMessage out{};
-  while (scheduler.try_pop_output(out)) {
+  while (count < expected && waitForOutput(scheduler, out)) {
     ++count;
   }
   return count;
 }
 
 // Allocates a slot, submits a SUBMIT with `promptLen` prompt tokens requesting
-// `maxNewTokens`, and returns the wall-clock time the (synchronous) emission
-// took. `tokenCount` receives how many outputs were produced.
+// `maxNewTokens`, and returns the wall-clock time from push_request to the
+// final output. `tokenCount` receives how many outputs were produced.
 std::chrono::microseconds timeDecode(uint32_t maxNewTokens, size_t promptLen,
                                      uint32_t& tokenCount) {
   MockDecodeScheduler scheduler(4);
@@ -72,9 +92,8 @@ std::chrono::microseconds timeDecode(uint32_t maxNewTokens, size_t promptLen,
   const auto start = std::chrono::steady_clock::now();
   EXPECT_TRUE(
       scheduler.push_request(makeSubmit(alloc.slot_id, maxNewTokens, prompt)));
+  tokenCount = drainOutputs(scheduler, maxNewTokens);
   const auto elapsed = std::chrono::steady_clock::now() - start;
-
-  tokenCount = drainOutputs(scheduler);
   return std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
 }
 
@@ -98,6 +117,11 @@ TEST(MockSchedulerTest, PrefillSubmitCompletesWithNoDecodeTokens) {
 }
 
 TEST(MockSchedulerTest, DecodeSubmitEmitsMaxNewTokens) {
+  // Keep this test fast: skip the default 100ms prefill stall and the
+  // ~2.8ms decode spacing.
+  ScopedEnv prefillLatency("MOCK_PREFILL_LATENCY_MS", "0");
+  ScopedEnv tokenLatency("MOCK_DECODE_TOKEN_LATENCY_US", "0");
+
   MockDecodeScheduler scheduler(4);
   scheduler.start();
 
@@ -110,7 +134,7 @@ TEST(MockSchedulerTest, DecodeSubmitEmitsMaxNewTokens) {
 
   for (uint32_t i = 0; i < 3; ++i) {
     sch::OutputMessage output{};
-    ASSERT_TRUE(scheduler.try_pop_output(output)) << "missing token " << i;
+    ASSERT_TRUE(waitForOutput(scheduler, output)) << "missing token " << i;
     EXPECT_EQ(output.tokens_generated, i + 1);
     EXPECT_EQ(output.is_complete, i + 1 == 3);
   }
@@ -156,12 +180,13 @@ TEST(MockSchedulerTest, DecodeThroughputIsFlatAndInputIndependent) {
   EXPECT_EQ(shortCount, kMaxNewTokens);
   EXPECT_EQ(longCount, kMaxNewTokens);
 
-  // Wall time is bounded below by the sum of the inter-token sleeps: sleep_for
-  // never returns early, so emission cannot be faster than (K-1) * latency
-  // (no spacing precedes the first token). It is bounded above by that floor
-  // plus an overshoot budget for OS scheduling jitter. Both prompt sizes must
-  // land in this same window - the window depends only on K and latency, which
-  // is exactly the input-independence we want.
+  // Wall time is bounded below by the sum of the inter-token spacings: the
+  // emitter's cv_.wait_until never returns early, so emission cannot be faster
+  // than (K-1) * latency (no spacing precedes the first token). It is bounded
+  // above by that floor plus an overshoot budget for OS scheduling jitter
+  // (thread wake-up + consumer poll jitter). Both prompt sizes must land in
+  // this same window - the window depends only on K and latency, which is
+  // exactly the input-independence we want.
   const auto nominalUs = std::chrono::microseconds(
       static_cast<int64_t>(kMaxNewTokens - 1) * kTokenLatencyUs);
   const auto floorUs = nominalUs - nominalUs / 100;  // 1% clock-source grace

@@ -3,9 +3,12 @@
 
 #pragma once
 
+#include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -20,73 +23,73 @@ namespace sch = tt_llm_engine::scheduler;
 // Shared slot pool + response/output queues for mock schedulers.
 class MockSchedulerCore {
  public:
-  explicit MockSchedulerCore(uint32_t maxUsers) : slotInUse_(maxUsers, false) {
-    freeSlots_.reserve(maxUsers);
+  explicit MockSchedulerCore(uint32_t maxUsers) : slotInUse(maxUsers, false) {
+    freeSlots.reserve(maxUsers);
     for (uint32_t i = 0; i < maxUsers; ++i) {
-      freeSlots_.push_back(i);
+      freeSlots.push_back(i);
     }
   }
 
-  void start() { running_ = true; }
+  void start() { running = true; }
 
   void stop() {
-    running_ = false;
-    responses_.clear();
-    outputs_.clear();
-    freeSlots_.clear();
-    for (uint32_t i = 0; i < slotInUse_.size(); ++i) {
-      slotInUse_[i] = false;
-      freeSlots_.push_back(i);
+    running = false;
+    responses.clear();
+    outputs.clear();
+    freeSlots.clear();
+    for (uint32_t i = 0; i < slotInUse.size(); ++i) {
+      slotInUse[i] = false;
+      freeSlots.push_back(i);
     }
   }
 
-  bool isRunning() const { return running_; }
+  bool isRunning() const { return running; }
 
   bool handleAllocate(const sch::ISRequest& request) {
     sch::SchedulerResponse response{};
     response.request_id = request.request_id;
     response.request_type = sch::RequestType::ALLOCATE;
-    if (freeSlots_.empty()) {
+    if (freeSlots.empty()) {
       response.slot_id = sch::INVALID_SLOT;
       response.error_code = sch::request_error::kNoFreeSlot;
     } else {
-      const uint32_t slotId = freeSlots_.back();
-      freeSlots_.pop_back();
-      slotInUse_[slotId] = true;
+      const uint32_t slotId = freeSlots.back();
+      freeSlots.pop_back();
+      slotInUse[slotId] = true;
       response.slot_id = slotId;
       response.error_code = sch::request_error::kOk;
     }
-    responses_.push_back(response);
+    responses.push_back(response);
     return true;
   }
 
   bool handleEvictOrStop(const sch::ISRequest& request) {
     freeSlot(request.slot_id);
-    responses_.push_back(makeAck(request));
+    responses.push_back(makeAck(request));
     return true;
   }
 
   void pushResponse(sch::SchedulerResponse response) {
-    responses_.push_back(response);
+    responses.push_back(response);
   }
 
-  void pushOutput(sch::OutputMessage output) { outputs_.push_back(output); }
+  void pushOutput(sch::OutputMessage output) { outputs.push_back(output); }
 
   bool tryPopResponse(sch::SchedulerResponse& response) {
-    if (responses_.empty()) {
+    if (responses.empty()) {
       return false;
     }
-    response = responses_.front();
-    responses_.pop_front();
+    response = responses.front();
+    responses.pop_front();
     return true;
   }
 
   bool tryPopOutput(sch::OutputMessage& output) {
-    if (outputs_.empty()) {
+    if (outputs.empty()) {
       return false;
     }
-    output = outputs_.front();
-    outputs_.pop_front();
+    output = outputs.front();
+    outputs.pop_front();
     return true;
   }
 
@@ -101,17 +104,17 @@ class MockSchedulerCore {
   }
 
   void freeSlot(uint32_t slotId) {
-    if (slotId < slotInUse_.size() && slotInUse_[slotId]) {
-      slotInUse_[slotId] = false;
-      freeSlots_.push_back(slotId);
+    if (slotId < slotInUse.size() && slotInUse[slotId]) {
+      slotInUse[slotId] = false;
+      freeSlots.push_back(slotId);
     }
   }
 
-  bool running_ = false;
-  std::vector<bool> slotInUse_;
-  std::vector<uint32_t> freeSlots_;
-  std::deque<sch::SchedulerResponse> responses_;
-  std::deque<sch::OutputMessage> outputs_;
+  bool running = false;
+  std::vector<bool> slotInUse;
+  std::vector<uint32_t> freeSlots;
+  std::deque<sch::SchedulerResponse> responses;
+  std::deque<sch::OutputMessage> outputs;
 };
 
 }  // namespace detail
@@ -121,38 +124,38 @@ namespace sch = tt_llm_engine::scheduler;
 class MockPrefillScheduler final : public IPrefillScheduler {
  public:
   explicit MockPrefillScheduler(uint32_t maxUsers)
-      : core_(maxUsers),
-        prefillLatency_(
+      : core(maxUsers),
+        prefillLatency(
             std::chrono::milliseconds(tt::config::mockPrefillLatencyMs())) {}
 
-  void start() override { core_.start(); }
-  void stop() override { core_.stop(); }
+  void start() override { core.start(); }
+  void stop() override { core.stop(); }
 
   bool push_request(const sch::ISRequest& request) override {
-    if (!core_.isRunning()) {
+    if (!core.isRunning()) {
       return false;
     }
 
     switch (request.type) {
       case sch::RequestType::ALLOCATE:
-        return core_.handleAllocate(request);
+        return core.handleAllocate(request);
       case sch::RequestType::EVICT:
       case sch::RequestType::STOP:
-        return core_.handleEvictOrStop(request);
+        return core.handleEvictOrStop(request);
       case sch::RequestType::SUBMIT: {
-        if (prefillLatency_.count() > 0) {
-          std::this_thread::sleep_for(prefillLatency_);
+        if (prefillLatency.count() > 0) {
+          std::this_thread::sleep_for(prefillLatency);
         }
         sch::OutputMessage output{};
         output.slot_id = request.slot_id;
         output.prefill_complete = true;
         output.real_pos = static_cast<uint32_t>(request.tokens.size());
         output.request_id = request.request_id;
-        core_.pushOutput(output);
+        core.pushOutput(output);
         return true;
       }
       case sch::RequestType::CONTINUE:
-        core_.pushResponse(sch::SchedulerResponse{
+        core.pushResponse(sch::SchedulerResponse{
             .request_id = request.request_id,
             .slot_id = request.slot_id,
             .error_code = sch::request_error::kMalformedTokenStream,
@@ -164,92 +167,207 @@ class MockPrefillScheduler final : public IPrefillScheduler {
   }
 
   bool try_pop_response(sch::SchedulerResponse& response) override {
-    return core_.tryPopResponse(response);
+    return core.tryPopResponse(response);
   }
 
   bool try_pop_output(sch::OutputMessage& output) override {
-    return core_.tryPopOutput(output);
+    return core.tryPopOutput(output);
   }
 
  private:
-  detail::MockSchedulerCore core_;
-  std::chrono::milliseconds prefillLatency_;
+  detail::MockSchedulerCore core;
+  std::chrono::milliseconds prefillLatency;
 };
 
+// Asynchronous mock decode scheduler.
+//
+// push_request() returns immediately for SUBMIT/CONTINUE after enqueuing a
+// PendingJob; a single background emitter thread paces token emission per slot
+// at decodeTokenLatency intervals (first token deferred by prefillLatency).
+// This keeps the runner thread free to service cancels, memory requests, and
+// other slots' outputs while a long generation is in flight - which is the
+// point of having a mock scheduler for bottleneck testing in the first place
+// (a synchronous emitter would just serialize everything on the runner).
+//
+// EVICT/STOP synchronously drop any pending emission for the affected slot,
+// mirroring real hardware: once a slot is yanked, no further tokens come out.
 class MockDecodeScheduler final : public IDecodeScheduler {
  public:
   explicit MockDecodeScheduler(uint32_t maxUsers)
-      : core_(maxUsers),
-        decodeTokenId_(tt::config::mockDecodeTokenId()),
-        prefillLatency_(
+      : core(maxUsers),
+        decodeTokenId(tt::config::mockDecodeTokenId()),
+        prefillLatency(
             std::chrono::milliseconds(tt::config::mockPrefillLatencyMs())),
-        decodeTokenLatency_(
+        decodeTokenLatency(
             std::chrono::microseconds(tt::config::mockDecodeTokenLatencyUs())) {
   }
 
-  void start() override { core_.start(); }
-  void stop() override { core_.stop(); }
+  ~MockDecodeScheduler() override { stop(); }
+
+  MockDecodeScheduler(const MockDecodeScheduler&) = delete;
+  MockDecodeScheduler& operator=(const MockDecodeScheduler&) = delete;
+  MockDecodeScheduler(MockDecodeScheduler&&) = delete;
+  MockDecodeScheduler& operator=(MockDecodeScheduler&&) = delete;
+
+  void start() override {
+    std::lock_guard<std::mutex> lock(mutex);
+    core.start();
+    if (!emitter.joinable()) {
+      stopRequested = false;
+      emitter = std::thread([this] { emitterLoop(); });
+    }
+  }
+
+  void stop() override {
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      if (!emitter.joinable() && !core.isRunning()) {
+        return;
+      }
+      stopRequested = true;
+      pending.clear();
+      core.stop();
+    }
+    cv.notify_all();
+    if (emitter.joinable()) {
+      emitter.join();
+    }
+  }
 
   bool push_request(const sch::ISRequest& request) override {
-    if (!core_.isRunning()) {
-      return false;
+    bool wakeEmitter = false;
+    bool result = true;
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      if (!core.isRunning()) {
+        return false;
+      }
+      switch (request.type) {
+        case sch::RequestType::ALLOCATE:
+          result = core.handleAllocate(request);
+          break;
+        case sch::RequestType::EVICT:
+        case sch::RequestType::STOP:
+          cancelSlotLocked(request.slot_id);
+          wakeEmitter = true;
+          result = core.handleEvictOrStop(request);
+          break;
+        case sch::RequestType::SUBMIT:
+        case sch::RequestType::CONTINUE:
+          enqueueJobLocked(request);
+          wakeEmitter = true;
+          break;
+        default:
+          break;
+      }
     }
-
-    switch (request.type) {
-      case sch::RequestType::ALLOCATE:
-        return core_.handleAllocate(request);
-      case sch::RequestType::EVICT:
-      case sch::RequestType::STOP:
-        return core_.handleEvictOrStop(request);
-      case sch::RequestType::SUBMIT:
-      case sch::RequestType::CONTINUE:
-        emitDecodeTokens(request);
-        return true;
-      default:
-        return true;
+    if (wakeEmitter) {
+      cv.notify_all();
     }
+    return result;
   }
 
   bool try_pop_response(sch::SchedulerResponse& response) override {
-    return core_.tryPopResponse(response);
+    std::lock_guard<std::mutex> lock(mutex);
+    return core.tryPopResponse(response);
   }
 
   bool try_pop_output(sch::OutputMessage& output) override {
-    return core_.tryPopOutput(output);
+    std::lock_guard<std::mutex> lock(mutex);
+    return core.tryPopOutput(output);
   }
 
   uint32_t get_spec_accepts(uint32_t /*slotId*/) const override { return 0; }
   uint32_t get_spec_rejects(uint32_t /*slotId*/) const override { return 0; }
 
  private:
-  void emitDecodeTokens(const sch::ISRequest& request) {
-    if (prefillLatency_.count() > 0) {
-      std::this_thread::sleep_for(prefillLatency_);
-    }
+  struct PendingJob {
+    uint32_t slotId = sch::INVALID_SLOT;
+    uint32_t requestId = 0;
+    uint32_t maxTokens = 0;
+    uint32_t emitted = 0;
+    uint32_t basePosition = 0;
+    std::chrono::steady_clock::time_point nextAt{};
+  };
 
-    const uint32_t maxTokens = request.gen.max_new_tokens;
-    const uint32_t basePosition = request.position_id.value_or(
+  void enqueueJobLocked(const sch::ISRequest& request) {
+    PendingJob job;
+    job.slotId = request.slot_id;
+    job.requestId = request.request_id;
+    job.maxTokens = request.gen.max_new_tokens;
+    job.basePosition = request.position_id.value_or(
         static_cast<uint32_t>(request.tokens.size()));
+    job.nextAt = std::chrono::steady_clock::now() + prefillLatency;
+    pending.push_back(job);
+  }
 
-    for (uint32_t i = 0; i < maxTokens; ++i) {
-      if (i > 0 && decodeTokenLatency_.count() > 0) {
-        std::this_thread::sleep_for(decodeTokenLatency_);
+  void cancelSlotLocked(uint32_t slotId) {
+    pending.erase(
+        std::remove_if(pending.begin(), pending.end(),
+                       [&](const PendingJob& j) { return j.slotId == slotId; }),
+        pending.end());
+  }
+
+  void emitterLoop() {
+    std::unique_lock<std::mutex> lock(mutex);
+    while (!stopRequested) {
+      if (pending.empty()) {
+        cv.wait(lock);
+        continue;
       }
-      const bool isLast = (i + 1 == maxTokens);
-      core_.pushOutput(sch::OutputMessage{
-          .slot_id = request.slot_id,
-          .token_id = decodeTokenId_,
-          .is_complete = isLast,
-          .tokens_generated = i + 1,
-          .position_id = basePosition + i,
-      });
+
+      // Snapshot "now" once per tick so a just-rescheduled job (especially
+      // when decodeTokenLatency == 0) doesn't fire again in this iteration.
+      const auto now = std::chrono::steady_clock::now();
+      auto nextDeadline = std::chrono::steady_clock::time_point::max();
+
+      for (auto it = pending.begin(); it != pending.end();) {
+        if (it->nextAt <= now) {
+          const bool isLast = (it->emitted + 1 == it->maxTokens);
+          core.pushOutput(sch::OutputMessage{
+              .slot_id = it->slotId,
+              .token_id = decodeTokenId,
+              .is_complete = isLast,
+              .tokens_generated = it->emitted + 1,
+              .position_id = it->basePosition + it->emitted,
+              .request_id = it->requestId,
+          });
+          ++it->emitted;
+          if (isLast) {
+            it = pending.erase(it);
+            continue;
+          }
+          it->nextAt = now + decodeTokenLatency;
+        }
+        if (it->nextAt < nextDeadline) {
+          nextDeadline = it->nextAt;
+        }
+        ++it;
+      }
+
+      // cv.wait_until atomically releases the lock, which lets consumers
+      // (the runner thread polling try_pop_output / try_pop_response, or
+      // push_request handing in a new SUBMIT) grab it. Even when the deadline
+      // is in the past (latency-0 stress mode), the unlock-relock round trip
+      // is a deliberate yield point that keeps the consumer from starving.
+      if (pending.empty()) {
+        cv.wait(lock);
+      } else {
+        cv.wait_until(lock, nextDeadline);
+      }
     }
   }
 
-  detail::MockSchedulerCore core_;
-  uint32_t decodeTokenId_;
-  std::chrono::milliseconds prefillLatency_;
-  std::chrono::microseconds decodeTokenLatency_;
+  detail::MockSchedulerCore core;
+  uint32_t decodeTokenId;
+  std::chrono::milliseconds prefillLatency;
+  std::chrono::microseconds decodeTokenLatency;
+
+  std::mutex mutex;
+  std::condition_variable cv;
+  std::vector<PendingJob> pending;
+  bool stopRequested = false;
+  std::thread emitter;
 };
 
 }  // namespace tt::runners::blaze
