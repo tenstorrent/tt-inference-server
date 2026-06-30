@@ -61,6 +61,11 @@ constexpr const char* KAFKA_GROUP_ID = "migration-workers";
 constexpr const char* KAFKA_MIGRATION_REQUEST_TOPIC = "kv-migration-requests";
 constexpr const char* KAFKA_MIGRATION_ACK_TOPIC = "kv-migration-acks";
 
+// Mooncake KV Migration configuration.
+constexpr unsigned KV_MIGRATION_TIMEOUT_MS = 60000;
+constexpr unsigned KV_MIGRATION_SWEEP_INTERVAL_MS = 5000;
+constexpr unsigned KV_MIGRATION_DRAIN_POLL_MS = 100;
+
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 
 constexpr const char* SPEC_DECODE_MODE = "none";

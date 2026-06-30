@@ -90,7 +90,7 @@ inline sch::ISRequest makeAllocateRequest(
       .tokens = {},
       .gen = {},
   };
-  if (migrateFromSlot.has_value()) {
+  if (tt::config::enableMigration() and migrateFromSlot.has_value()) {
     req.migrate_from_slot = *migrateFromSlot;
   }
   return req;
@@ -153,6 +153,9 @@ inline void fillSequenceFields(sch::ISRequest& req,
     req.position_id = *seq.getKVPositionId();
   }
   postProcessSamplingParams(req.gen);
+  if (tt::config::enableMigration()) {
+    req.migration_uuid = seq.getMigrationId();
+  }
 }
 
 inline sch::ISRequest makeSubmitRequest(
@@ -161,9 +164,10 @@ inline sch::ISRequest makeSubmitRequest(
   sch::ISRequest req{};
   req.type = ds::RequestType::SUBMIT;
   req.slot_id = slotId;
-  req.dest_slot_id = destSlotId;
-  req.migration_uuid = seq.getMigrationId();
-  req.migration_start_position = seq.getMigrationStartPosition();
+  if (tt::config::enableMigration()) {
+    req.migration_start_position = seq.getMigrationStartPosition();
+    req.dest_slot_id = destSlotId;
+  }
   fillSequenceFields(req, seq);
   logISRequest(req);
   return req;
@@ -175,8 +179,9 @@ inline sch::ISRequest makeContinueRequest(
   sch::ISRequest req{};
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
-  req.dest_slot_id = destSlotId;
-  req.migration_uuid = seq.getMigrationId();
+  if (tt::config::enableMigration()) {
+    req.dest_slot_id = destSlotId;
+  }
   fillSequenceFields(req, seq);
   return req;
 }
