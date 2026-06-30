@@ -31,6 +31,12 @@ jobs:
                   id
                   fields(first: 50) {
                     nodes {
+                      __typename
+                      ... on ProjectV2Field {
+                        id
+                        name
+                        dataType
+                      }
                       ... on ProjectV2SingleSelectField {
                         id
                         name
@@ -38,6 +44,10 @@ jobs:
                           id
                           name
                         }
+                      }
+                      ... on ProjectV2IterationField {
+                        id
+                        name
                       }
                     }
                   }
@@ -47,139 +57,19 @@ jobs:
           ' -f org="$ORG" -F number="$PROJECT_NUMBER")
 
           project_id=$(echo "$project_meta" \
-            | jq -r '.data.organization.projectV2.id')
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['organization']['projectV2']['id'])")
 
           if [[ -z "$project_id" || "$project_id" == "null" ]]; then
             echo "ERROR: Could not resolve project #$PROJECT_NUMBER for org $ORG" >&2
             exit 1
           fi
 
-          # Extract the Priority single-select field as a single JSON object
-          priority_field=$(echo "$project_meta" \
-            | jq 'first(
-                .data.organization.projectV2.fields.nodes[]
-                | select((.name // "") | ascii_downcase == "priority")
-              )')
+          echo "DEBUG project_id=$project_id"
 
-          priority_field_id=$(echo "$priority_field" | jq -r '.id // empty')
-
-          if [[ -z "$priority_field_id" || "$priority_field_id" == "null" ]]; then
-            echo "ERROR: Could not find a Priority single-select field on project $PROJECT_NUMBER" >&2
-            echo "Available fields (raw JSON):" >&2
-            echo "$project_meta" | jq '.data.organization.projectV2.fields.nodes' >&2
-            exit 1
-          fi
-
-          # Try to get options via direct node query (org-level custom fields don't return options
-          # via the project→fields path; need to query the field node directly)
-          priority_options=$(gh api graphql -f query='
-            query($fieldId: ID!) {
-              node(id: $fieldId) {
-                ... on ProjectV2SingleSelectField {
-                  options {
-                    id
-                    name
-                  }
-                }
-              }
-            }
-          ' -f fieldId="$priority_field_id" | jq '.data.node.options')
-
-          echo "DEBUG options via node query: $priority_options"
-
-          # Also try gh project field-list as a fallback
-          echo "DEBUG gh project field-list output:"
-          gh project field-list "$PROJECT_NUMBER" --owner "$ORG" --format json 2>&1 | head -c 2000 || true
-
-          option_id_for() {
-            local wanted="$1"
-            echo "$priority_options" \
-              | jq -r --arg w "$wanted" '
-                  .[]
-                  | select((.name | ascii_downcase) == ($w | ascii_downcase))
-                  | .id
-                '
-          }
-
-          p1_option_id=$(option_id_for "p1")
-          p2_option_id=$(option_id_for "p2")
-          p3_option_id=$(option_id_for "p3")
-
-          if [[ -z "$p1_option_id" || "$p1_option_id" == "null" || \
-                -z "$p2_option_id" || "$p2_option_id" == "null" || \
-                -z "$p3_option_id" || "$p3_option_id" == "null" ]]; then
-            echo "ERROR: Could not find P1/P2/P3 options via any method" >&2
-            echo "options via node query: $(echo "$priority_options" | jq -c .)" >&2
-            exit 1
-          fi
-
-          # addProjectV2ItemById is idempotent: returns existing item ID if already tracked
-          item_id=$(gh api graphql -f query='
-            mutation($project: ID!, $item: ID!) {
-              addProjectV2ItemById(input: { projectId: $project, contentId: $item }) {
-                item { id }
-              }
-            }
-          ' -f project="$project_id" -f item="$ISSUE_NODE_ID" \
-            | jq -r '.data.addProjectV2ItemById.item.id')
-
-          if [[ -z "$item_id" || "$item_id" == "null" ]]; then
-            echo "ERROR: Failed to add/locate issue in project" >&2
-            exit 1
-          fi
-
-          if [[ "$EVENT_ACTION" == "labeled" ]]; then
-            case "$CHANGED_LABEL" in
-              "priority:high")   target_option_id="$p1_option_id" ;;
-              "priority:medium") target_option_id="$p2_option_id" ;;
-              "priority:low")    target_option_id="$p3_option_id" ;;
-              *)
-                echo "Label '$CHANGED_LABEL' is not a mapped priority label — nothing to do."
-                exit 0
-                ;;
-            esac
-
-            gh api graphql -f query='
-              mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
-                updateProjectV2ItemFieldValue(input: {
-                  projectId:  $project
-                  itemId:     $item
-                  fieldId:    $field
-                  value:      { singleSelectOptionId: $option }
-                }) {
-                  projectV2Item { id }
-                }
-              }
-            ' -f project="$project_id" \
-              -f item="$item_id" \
-              -f field="$priority_field_id" \
-              -f option="$target_option_id"
-
-            echo "Set Priority to '$CHANGED_LABEL' for issue #${{ github.event.issue.number }}"
-
-          elif [[ "$EVENT_ACTION" == "unlabeled" ]]; then
-            remaining=$(gh api \
-              "/repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/labels" \
-              --jq '[.[].name | select(startswith("priority:"))] | length')
-
-            if [[ "$remaining" -gt 0 ]]; then
-              echo "Another priority label is still present — leaving Priority field unchanged."
-              exit 0
-            fi
-
-            gh api graphql -f query='
-              mutation($project: ID!, $item: ID!, $field: ID!) {
-                clearProjectV2ItemFieldValue(input: {
-                  projectId: $project
-                  itemId:    $item
-                  fieldId:   $field
-                }) {
-                  projectV2Item { id }
-                }
-              }
-            ' -f project="$project_id" \
-              -f item="$item_id" \
-              -f field="$priority_field_id"
-
-            echo "Cleared Priority field for issue #${{ github.event.issue.number }} (no priority labels remain)"
-          fi
+          echo "DEBUG all fields (typename + full data):"
+          echo "$project_meta" | python3 -c "
+          import sys, json
+          fields = json.load(sys.stdin)['data']['organization']['projectV2']['fields']['nodes']
+          for f in fields:
+              print(json.dumps(f, indent=2))
+          "
