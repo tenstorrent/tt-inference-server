@@ -57,6 +57,20 @@ def create_pr(title: str, body: str, branch: str, cwd: str | None = None) -> str
 
     results = []
 
+    # Restore the real push URL before pushing — run.py poisons it to DISABLED
+    # so the implementer agent cannot push during its phase.
+    rc, url_out = _run(["git", "remote", "get-url", "origin"])
+    if rc != 0:
+        results.append("$ git remote get-url origin\n" + url_out)
+        results.append(f"(step failed with exit code {rc})")
+        return "\n".join(results)
+    real_url = url_out.strip()
+    rc, set_out = _run(["git", "remote", "set-url", "--push", "origin", real_url])
+    if rc != 0:
+        results.append("$ git remote set-url --push origin <url>\n" + set_out)
+        results.append(f"(step failed with exit code {rc})")
+        return "\n".join(results)
+
     # Each step is an argv list — branch and title are plain tokens, never
     # interpolated into a shell string.
     steps: list[tuple[str, list[str]]] = [
