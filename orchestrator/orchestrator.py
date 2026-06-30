@@ -18,7 +18,7 @@ Flow (groom mode):
 
 import textwrap
 from orchestrator.personas import (
-    IMPLEMENTER, REVIEWERS,
+    IMPLEMENTER, REVIEWERS, ACCEPTANCE_REVIEWER,
     GROOMER, GROOM_REVIEWERS,
 )
 import orchestrator.agent as A
@@ -41,6 +41,35 @@ def _extract_verdict(text: str) -> tuple[bool, str]:
     if "APPROVED" in text[-300:].upper():
         return True, ""
     return False, text[-500:]
+
+
+def _build_reviewer_messages(
+    reviewer: dict,
+    shared_history: list[dict],
+    task: str,
+    prompt: str,
+) -> list[dict]:
+    """Build the message list for a reviewer call.
+
+    The acceptance reviewer receives the original task prompt prepended as a
+    user message so it can check every stated and implied criterion.  Other
+    reviewers receive the shared history unchanged.
+    """
+    if reviewer["name"] == ACCEPTANCE_REVIEWER["name"]:
+        task_context = textwrap.dedent(f"""
+            The following is the original task prompt that the implementer was asked to complete.
+            Use it to verify that every stated and implied acceptance criterion has been met.
+
+            --- ORIGINAL TASK ---
+            {task}
+            --- END ORIGINAL TASK ---
+        """).strip()
+        return (
+            [{"role": "user", "content": task_context}]
+            + shared_history
+            + [{"role": "user", "content": prompt}]
+        )
+    return shared_history + [{"role": "user", "content": prompt}]
 
 
 def orchestrate(
@@ -108,9 +137,10 @@ def orchestrate(
                 if debate_round == 0
                 else "The implementer has revised. Please re-evaluate your previous objections."
             )
+            messages = _build_reviewer_messages(reviewer, shared_history, task, prompt)
             review_text, rev_history = A.run(
                 reviewer,
-                shared_history + [{"role": "user", "content": prompt}],
+                messages,
                 cwd=repo_path,
                 max_tool_rounds=max_tool_rounds,
                 verbose=verbose,
@@ -207,45 +237,22 @@ def orchestrate_groom(
     ``False``.
 
     Args:
-        task:               Natural-language description of the grooming goal
-                            (e.g. "triage open issues and assign priorities").
-        repo_path:          Absolute path to the target git repository.  The
-                            ``gh`` CLI commands are executed in this directory
-                            so that they pick up the correct GitHub remote.
+        task:               Natural-language description of the grooming session.
+        repo_path:          Absolute path to the target git repository.
         max_debate_rounds:  Maximum groomer <-> reviewer debate iterations.
         max_tool_rounds:    Hard cap on tool-call iterations per agent call.
-                            Defaults to DEFAULT_MAX_TOOL_ROUNDS (100).  Pass a
-                            lower value for simple tasks, a higher value for
-                            complex ones.
+                            Defaults to DEFAULT_MAX_TOOL_ROUNDS (100).
         verbose:            Stream progress to stdout.
-        api_key:            Optional LiteLLM API key.  Falls back to the
-                            ``TT_CHAT_API_KEY`` env-var and then the key file
-                            when None.
+        api_key:            Optional LiteLLM API key.
     """
 
     def log(msg: str):
         if verbose:
             print(msg, flush=True)
 
-    # -- Fetch open issues to give the groomer rich context up-front ----------
-    from orchestrator.tools import list_issues as _list_issues
-    log("\n=== FETCHING OPEN ISSUES ===")
-    issues_json = _list_issues(state="open", limit=200, cwd=repo_path)
-    log(f"[context] fetched issue list ({len(issues_json)} chars)")
-
-    groomer_task = textwrap.dedent(f"""
-        {task}
-
-        Here is the current list of open issues in JSON format:
-        {issues_json}
-
-        Analyse each issue and apply the appropriate labels, comments, and
-        closures (for confirmed duplicates or out-of-scope items).
-        When you have finished processing all issues end with: GROOMING_COMPLETE
-    """).strip()
-
     # -- Phase 1: Grooming ----------------------------------------------------
     log("\n=== GROOMER ===")
+    groomer_task = task
     try:
         groom_text, groom_history = A.run(
             GROOMER,
