@@ -2,8 +2,8 @@
 
 import json
 from openai import OpenAI
-from config import LITELLM_BASE_URL, get_api_key
-import tools as T
+from orchestrator.config import LITELLM_BASE_URL, get_api_key
+import orchestrator.tools as T
 
 def _client(api_key: str | None = None) -> OpenAI:
     return OpenAI(base_url=LITELLM_BASE_URL, api_key=get_api_key(api_key))
@@ -12,7 +12,7 @@ def run(
     persona: dict,
     messages: list[dict],
     cwd: str | None = None,
-    max_tool_rounds: int = 40,
+    max_tool_rounds: int = 20,
     verbose: bool = True,
     api_key: str | None = None,
 ) -> tuple[str, list[dict]]:
@@ -28,7 +28,7 @@ def run(
         verbose:         Print tool-call activity to stdout.
         api_key:         Optional LiteLLM API key.  Falls back to the
                          ``TT_CHAT_API_KEY`` env-var and then the key file
-                         when *None*.
+                         when None.
     """
     client = _client(api_key)
     history = [{"role": "system", "content": persona["system"]}] + messages
@@ -58,7 +58,7 @@ def run(
         history.append(assistant_entry)
 
         if not msg.tool_calls:
-            # Done — return the text response
+            # Done - return the text response
             return msg.content or "", history
 
         # Execute each tool call and append results

@@ -3,7 +3,9 @@ import os
 LITELLM_BASE_URL = "https://litellm-proxy--tenstorrent.workload.tenstorrent.com"
 KEY_FILE = "/workspace/global/.litellm.key"
 
-def get_api_key() -> str:
+def get_api_key(api_key: str | None = None) -> str:
+    if api_key is not None:
+        return api_key
     if "TT_CHAT_API_KEY" in os.environ:
         return os.environ["TT_CHAT_API_KEY"]
     with open(KEY_FILE) as f:
