@@ -6,9 +6,6 @@ on:
 
 permissions:
   issues: read
-  # projects: write is a project-level permission; the token still needs it
-  # declared here so GitHub exposes it to the workflow.
-  projects: write
 
 jobs:
   sync:
@@ -18,7 +15,7 @@ jobs:
     steps:
       - name: Sync priority label to project field
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           ORG: tenstorrent
           PROJECT_NUMBER: 354
           ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
