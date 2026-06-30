@@ -28,27 +28,18 @@ def git_status(cwd: str | None = None) -> str:
 def git_diff(cwd: str | None = None) -> str:
     return bash_exec("git diff HEAD", cwd=cwd)
 
-def _run(argv: list[str], cwd: str | None = None) -> str:
-    """Run a command as a list (no shell expansion) and return combined output."""
-    r = subprocess.run(argv, capture_output=True, text=True, timeout=120, cwd=cwd)
-    out = r.stdout + r.stderr
-    return out[:8000] if len(out) > 8000 else out
-
 def create_pr(title: str, body: str, branch: str, cwd: str | None = None) -> str:
-    # All user-controlled values (title, body, branch) are passed as discrete
-    # argv elements — never interpolated into a shell string — so there is no
-    # shell injection risk regardless of what those strings contain.
     cmds = [
-        ["git", "checkout", "-b", branch],
-        ["git", "add", "-A"],
-        ["git", "commit", "-m", title],
-        ["git", "push", "-u", "origin", branch],
-        ["gh", "pr", "create", "--title", title, "--body", body],
+        f"git checkout -b {branch}",
+        "git add -A",
+        f'git commit -m "{title}"',
+        f"git push -u origin {branch}",
+        f'gh pr create --title "{title}" --body "{body}"',
     ]
     results = []
-    for argv in cmds:
-        out = _run(argv, cwd=cwd)
-        results.append(f"$ {' '.join(argv)}\n{out}")
+    for cmd in cmds:
+        out = bash_exec(cmd, cwd=cwd)
+        results.append(f"$ {cmd}\n{out}")
         if "error" in out.lower() and "nothing to commit" not in out.lower():
             results.append("(stopping on error)")
             break

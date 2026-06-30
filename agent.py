@@ -28,16 +28,18 @@ def run(
         verbose:         Print tool-call activity to stdout.
         api_key:         Optional LiteLLM API key.  Falls back to the
                          ``TT_CHAT_API_KEY`` env-var and then the key file
-                         when None.
+                         when *None*.
     """
     client = _client(api_key)
     history = [{"role": "system", "content": persona["system"]}] + messages
 
     for round_num in range(max_tool_rounds):
+        # create_pr is orchestrator-only — agents must not call it directly
+        agent_tools = [t for t in T.DEFS if t["function"]["name"] != "create_pr"]
         response = client.chat.completions.create(
             model=persona["model"],
             messages=history,
-            tools=T.DEFS,
+            tools=agent_tools,
             tool_choice="auto",
         )
         msg = response.choices[0].message
@@ -56,7 +58,7 @@ def run(
         history.append(assistant_entry)
 
         if not msg.tool_calls:
-            # Done - return the text response
+            # Done — return the text response
             return msg.content or "", history
 
         # Execute each tool call and append results
