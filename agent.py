@@ -5,8 +5,8 @@ from openai import OpenAI
 from config import LITELLM_BASE_URL, get_api_key
 import tools as T
 
-def _client() -> OpenAI:
-    return OpenAI(base_url=LITELLM_BASE_URL, api_key=get_api_key())
+def _client(api_key: str | None = None) -> OpenAI:
+    return OpenAI(base_url=LITELLM_BASE_URL, api_key=get_api_key(api_key))
 
 def run(
     persona: dict,
@@ -14,12 +14,23 @@ def run(
     cwd: str | None = None,
     max_tool_rounds: int = 20,
     verbose: bool = True,
+    api_key: str | None = None,
 ) -> tuple[str, list[dict]]:
     """
     Run a persona against a message history.
     Returns (final_text, updated_messages_including_system).
+
+    Args:
+        persona:         Persona dict (name, model, system prompt).
+        messages:        Conversation history to send to the model.
+        cwd:             Working directory for tool calls.
+        max_tool_rounds: Hard cap on tool-call iterations before giving up.
+        verbose:         Print tool-call activity to stdout.
+        api_key:         Optional LiteLLM API key.  Falls back to the
+                         ``TT_CHAT_API_KEY`` env-var and then the key file
+                         when None.
     """
-    client = _client()
+    client = _client(api_key)
     history = [{"role": "system", "content": persona["system"]}] + messages
 
     for round_num in range(max_tool_rounds):
@@ -45,7 +56,7 @@ def run(
         history.append(assistant_entry)
 
         if not msg.tool_calls:
-            # Done — return the text response
+            # Done - return the text response
             return msg.content or "", history
 
         # Execute each tool call and append results
