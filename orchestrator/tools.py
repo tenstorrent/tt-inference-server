@@ -29,20 +29,66 @@ def git_diff(cwd: str | None = None) -> str:
     return bash_exec("git diff HEAD", cwd=cwd)
 
 def create_pr(title: str, body: str, branch: str, cwd: str | None = None) -> str:
-    cmds = [
-        f"git checkout -b {branch}",
-        "git add -A",
-        f'git commit -m "{title}"',
-        f"git push -u origin {branch}",
-        f'gh pr create --title "{title}" --body "{body}"',
-    ]
+    """Create a GitHub PR for *branch*.
+
+    Every git/gh command is run with shell=False so that special characters in
+    *title*, *body*, or *branch* are passed as literal argv tokens — no shell
+    metacharacter quoting is required.  The PR body is written to a temporary
+    file and passed via ``--body-file`` so that quotes, backticks, dollar signs,
+    newlines, and any other content are transmitted verbatim to gh.
+
+    Failure is detected via exit code rather than scanning stdout for the word
+    "error", which previously caused false positives on benign git/gh output.
+    """
+    import tempfile, pathlib
+
+    def _run(argv: list[str]) -> tuple[int, str]:
+        """Run *argv* with shell=False; return (returncode, combined output)."""
+        r = subprocess.run(
+            argv,
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=cwd,
+        )
+        out = r.stdout + r.stderr
+        return r.returncode, out[:8000] if len(out) > 8000 else out
+
     results = []
-    for cmd in cmds:
-        out = bash_exec(cmd, cwd=cwd)
-        results.append(f"$ {cmd}\n{out}")
-        if "error" in out.lower() and "nothing to commit" not in out.lower():
-            results.append("(stopping on error)")
-            break
+
+    # Each step is an argv list — branch and title are plain tokens, never
+    # interpolated into a shell string.
+    steps: list[tuple[str, list[str]]] = [
+        (f"git checkout -b {branch}",        ["git", "checkout", "-b", branch]),
+        ("git add -A",                        ["git", "add", "-A"]),
+        (f"git commit -m {title!r}",          ["git", "commit", "-m", title]),
+        (f"git push -u origin {branch}",      ["git", "push", "-u", "origin", branch]),
+    ]
+
+    for label, argv in steps:
+        rc, out = _run(argv)
+        results.append(f"$ {label}\n{out}")
+        # "nothing to commit" is a successful no-op — don't treat it as failure.
+        if rc != 0 and "nothing to commit" not in out.lower():
+            results.append(f"(step failed with exit code {rc})")
+            return "\n".join(results)
+
+    # Write the PR body to a temp file so its content never passes through a
+    # shell.  --body-file reads the file directly; no escaping is needed.
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False)
+    try:
+        tmp.write(body)
+        tmp.close()
+        rc, out = _run(
+            ["gh", "pr", "create", "--title", title, "--body-file", tmp.name]
+        )
+        results.append(f"$ gh pr create --title {title!r} --body-file <tempfile>\n{out}")
+        if rc != 0:
+            results.append(f"(step failed with exit code {rc})")
+    finally:
+        pathlib.Path(tmp.name).unlink(missing_ok=True)
+
     return "\n".join(results)
 
 # -- internal helper: shell=False gh runner -----------------------------------
