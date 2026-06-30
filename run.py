@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
 Usage:
-  python run.py [--api-key KEY] [--mode {pr,groom}] [--run-dir DIR] <repo_path> "<task description>"
+  python run.py [--api-key KEY] [--mode {pr,groom}] [--run-dir DIR]
+                [--max-tool-rounds N] <repo_path> "<task description>"
 
 Examples:
   python run.py ~/code/myrepo "add rate limiting to the /login endpoint"
   python run.py --mode groom /repo "triage open issues"
   python run.py --run-dir /tmp/myrun ~/code/myrepo "add rate limiting to the /login endpoint"
   python run.py --api-key sk-my-key ~/code/myrepo "add rate limiting to the /login endpoint"
+  python run.py --max-tool-rounds 20 ~/code/myrepo "fix this one-line typo"
+  python run.py --max-tool-rounds 200 ~/code/myrepo "refactor the entire auth module"
 
 Modes:
   pr    (default) Implement a code change, debate with reviewers, and open a
@@ -26,6 +29,12 @@ Run directory (--run-dir or ORCHESTRATOR_RUN_DIR env var):
   the process. The file contains {"status": "running"|"done"|"failed",
   "pr_url": "...", "error": "..."}.
 
+Max tool rounds (--max-tool-rounds):
+  Hard cap on tool-call iterations per agent call.  The default (100) is
+  intentionally generous because the cap is a safety rail, not a cost-control
+  mechanism.  Use a lower value for simple single-file tasks and a higher
+  value for large multi-file refactors.
+
 Security note: passing the key via --api-key will expose it in the process
 listing (e.g. `ps aux`) and in shell history. Prefer the TT_CHAT_API_KEY
 environment variable or the key file for non-interactive / CI use.
@@ -36,7 +45,7 @@ import sys, os, argparse, json
 # (bare filename, relative path, or absolute path).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from orchestrator import orchestrate, orchestrate_groom
+from orchestrator import orchestrate, orchestrate_groom, DEFAULT_MAX_TOOL_ROUNDS
 
 
 def write_status(run_dir, status, **kwargs):
@@ -90,6 +99,18 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--max-tool-rounds",
+        metavar="N",
+        type=int,
+        default=DEFAULT_MAX_TOOL_ROUNDS,
+        help=(
+            f"Hard cap on tool-call iterations per agent call (default: {DEFAULT_MAX_TOOL_ROUNDS}). "
+            "Lower this for simple single-file tasks; raise it for large "
+            "multi-file refactors.  The cap is a safety rail — cost is better "
+            "controlled at the token/dollar level."
+        ),
+    )
+    parser.add_argument(
         "repo_path",
         help="Path to the target git repository.",
     )
@@ -124,6 +145,7 @@ def main():
                 args.task,
                 repo_path,
                 max_debate_rounds=3,
+                max_tool_rounds=args.max_tool_rounds,
                 verbose=True,
                 api_key=args.api_key,
             )
@@ -132,6 +154,7 @@ def main():
                 args.task,
                 repo_path,
                 max_debate_rounds=3,
+                max_tool_rounds=args.max_tool_rounds,
                 verbose=True,
                 api_key=args.api_key,
             )
