@@ -13,6 +13,7 @@
 
 #include "transport/i_transfer_engine.hpp"
 #include "transport/transfer_types.hpp"
+#include "transport/worker_health.hpp"
 
 namespace tt::transport {
 
@@ -97,6 +98,11 @@ class MooncakeMigrationWorker {
   /// Segment handles for the peers resolved during bringUp() (name -> handle).
   const std::map<std::string, SegmentHandle>& peers() const { return peers_; }
 
+  /// The worker's observable health (liveness/readiness + metrics). Owned by
+  /// the worker and updated as bring-up and teardown progress; the composition
+  /// root attaches an HTTP surface to it. Never null.
+  const std::shared_ptr<WorkerHealth>& health() const { return health_; }
+
   /// Step 1 (sender): write a known tensor into this galaxy's device DRAM.
   bool writeTensorOnSender(const std::vector<uint8_t>& tensor);
 
@@ -111,10 +117,21 @@ class MooncakeMigrationWorker {
   /// can both call it without double-unregistering.
   void teardown();
 
+  /// Push the staged host buffer to the configured peer, fire-and-forget: one
+  /// attempt, no retry. On failure it force-refreshes the peer's cached
+  /// descriptor (so the NEXT request can reach a peer that restarted on a new
+  /// address) and bumps the observability counters, then returns false so the
+  /// failure propagates. Assumes staging_ is registered and filled.
+  bool pushStagedToPeer();
+
+  /// Submit the staged buffer to @p peer and block; true iff it completed.
+  bool submitStaged(SegmentHandle peer);
+
   MigrationWorkerConfig config_;
   std::shared_ptr<ITransferEngine> engine_;
   std::shared_ptr<PeerDiscoveryService>
-      discovery_;                      ///< How peers are resolved.
+      discovery_;                         ///< How peers are resolved.
+  std::shared_ptr<WorkerHealth> health_;  ///< Liveness/readiness + metrics.
   std::vector<uint8_t> hostDramPool_;  ///< Registered/published by bringUp().
   std::vector<uint8_t> staging_;       ///< Spike host staging buffer.
   std::map<std::string, SegmentHandle> peers_;  ///< Resolved by bringUp().

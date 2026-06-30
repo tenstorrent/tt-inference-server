@@ -153,6 +153,37 @@ SegmentHandle MooncakeTransferEngine::openSegment(
   return static_cast<SegmentHandle>(id);
 }
 
+SegmentHandle MooncakeTransferEngine::refreshSegment(
+    const std::string& segmentName) {
+  if (!impl_->initialized) {
+    TT_LOG_ERROR("[MooncakeTransferEngine] refreshSegment before init");
+    return kInvalidSegment;
+  }
+  const mooncake::SegmentID id = impl_->engine->openSegment(segmentName);
+  if (static_cast<int64_t>(id) < 0) {
+    TT_LOG_ERROR(
+        "[MooncakeTransferEngine] refreshSegment({}): openSegment "
+        "failed",
+        segmentName);
+    return kInvalidSegment;
+  }
+  // force_update re-fetches the descriptor from the metadata service and
+  // overwrites the cached (pre-restart) entry, so the next submit reads the
+  // peer's current address. The non-forced read in submitAndWait then sees it.
+  auto metadata = impl_->engine->getMetadata();
+  auto segmentDesc =
+      metadata ? metadata->getSegmentDescByID(id, /*force_update=*/true)
+               : nullptr;
+  if (!segmentDesc || segmentDesc->buffers.empty()) {
+    TT_LOG_ERROR(
+        "[MooncakeTransferEngine] refreshSegment({}): no registered buffer "
+        "after force-update",
+        segmentName);
+    return kInvalidSegment;
+  }
+  return static_cast<SegmentHandle>(id);
+}
+
 TransferStatus MooncakeTransferEngine::submitAndWait(
     const TransferRequest& request) {
   TransferStatus result{TransferState::Failed, 0};
@@ -289,6 +320,15 @@ SegmentHandle MooncakeTransferEngine::openSegment(
     const std::string& segmentName) {
   TT_LOG_WARN(
       "[MooncakeTransferEngine] openSegment({}) unavailable (built without "
+      "Mooncake)",
+      segmentName);
+  return kInvalidSegment;
+}
+
+SegmentHandle MooncakeTransferEngine::refreshSegment(
+    const std::string& segmentName) {
+  TT_LOG_WARN(
+      "[MooncakeTransferEngine] refreshSegment({}) unavailable (built without "
       "Mooncake)",
       segmentName);
   return kInvalidSegment;

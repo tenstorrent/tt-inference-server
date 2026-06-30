@@ -65,6 +65,7 @@ class MooncakeTransferEngine : public ITransferEngine {
   bool registerLocalMemory(void* addr, std::size_t length) override;
   bool unregisterLocalMemory(void* addr) override;
   SegmentHandle openSegment(const std::string& segmentName) override;
+  SegmentHandle refreshSegment(const std::string& segmentName) override;
   TransferStatus submitAndWait(const TransferRequest& request) override;
 
  private:
