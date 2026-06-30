@@ -22,6 +22,7 @@ from orchestrator.personas import (
     GROOMER, GROOM_REVIEWERS,
 )
 import orchestrator.agent as A
+from orchestrator.agent import MaxToolRoundsError
 
 
 def _extract_verdict(text: str) -> tuple[bool, str]:
@@ -67,13 +68,18 @@ def orchestrate(
 
     # -- Phase 1: Implementation ----------------------------------------------
     log("\n=== IMPLEMENTER ===")
-    impl_text, impl_history = A.run(
-        IMPLEMENTER,
-        [{"role": "user", "content": task}],
-        cwd=repo_path,
-        verbose=verbose,
-        api_key=api_key,
-    )
+    try:
+        impl_text, impl_history = A.run(
+            IMPLEMENTER,
+            [{"role": "user", "content": task}],
+            cwd=repo_path,
+            verbose=verbose,
+            api_key=api_key,
+        )
+    except MaxToolRoundsError as exc:
+        log(f"\n=== IMPLEMENTER ABORTED: {exc} ===")
+        log("Aborting run — implementer hit tool-round cap; work is incomplete.")
+        return False
     log(f"[implementer] {impl_text[:300]}...")
 
     # Strip the system message; shared context for reviewers starts here
@@ -133,13 +139,18 @@ def orchestrate(
             When done, end with: IMPLEMENTATION_COMPLETE
         """).strip()
 
-        impl_text, impl_history = A.run(
-            IMPLEMENTER,
-            shared_history + [{"role": "user", "content": rebuttal_prompt}],
-            cwd=repo_path,
-            verbose=verbose,
-            api_key=api_key,
-        )
+        try:
+            impl_text, impl_history = A.run(
+                IMPLEMENTER,
+                shared_history + [{"role": "user", "content": rebuttal_prompt}],
+                cwd=repo_path,
+                verbose=verbose,
+                api_key=api_key,
+            )
+        except MaxToolRoundsError as exc:
+            log(f"\n=== IMPLEMENTER ABORTED (rebuttal round {debate_round + 1}): {exc} ===")
+            log("Aborting run — implementer hit tool-round cap during rebuttal; work is incomplete.")
+            return False
         log(f"[implementer] {impl_text[:300]}...")
         shared_history = impl_history[1:]  # updated shared context
 
@@ -222,13 +233,18 @@ def orchestrate_groom(
 
     # -- Phase 1: Grooming ----------------------------------------------------
     log("\n=== GROOMER ===")
-    groom_text, groom_history = A.run(
-        GROOMER,
-        [{"role": "user", "content": groomer_task}],
-        cwd=repo_path,
-        verbose=verbose,
-        api_key=api_key,
-    )
+    try:
+        groom_text, groom_history = A.run(
+            GROOMER,
+            [{"role": "user", "content": groomer_task}],
+            cwd=repo_path,
+            verbose=verbose,
+            api_key=api_key,
+        )
+    except MaxToolRoundsError as exc:
+        log(f"\n=== GROOMER ABORTED: {exc} ===")
+        log("Aborting run — groomer hit tool-round cap; grooming is incomplete.")
+        return False
     log(f"[groomer] {groom_text[:300]}...")
 
     # Shared context for reviewers (without the groomer system prompt)
@@ -291,13 +307,18 @@ def orchestrate_groom(
             When done, end with: GROOMING_COMPLETE
         """).strip()
 
-        groom_text, groom_history = A.run(
-            GROOMER,
-            shared_history + [{"role": "user", "content": rebuttal_prompt}],
-            cwd=repo_path,
-            verbose=verbose,
-            api_key=api_key,
-        )
+        try:
+            groom_text, groom_history = A.run(
+                GROOMER,
+                shared_history + [{"role": "user", "content": rebuttal_prompt}],
+                cwd=repo_path,
+                verbose=verbose,
+                api_key=api_key,
+            )
+        except MaxToolRoundsError as exc:
+            log(f"\n=== GROOMER ABORTED (rebuttal round {debate_round + 1}): {exc} ===")
+            log("Aborting run — groomer hit tool-round cap during rebuttal; grooming is incomplete.")
+            return False
         log(f"[groomer] {groom_text[:300]}...")
         shared_history = groom_history[1:]  # updated shared context
 
