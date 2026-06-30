@@ -5,6 +5,25 @@ from openai import OpenAI
 from orchestrator.config import LITELLM_BASE_URL, get_api_key
 import orchestrator.tools as T
 
+
+class MaxToolRoundsError(Exception):
+    """Raised when an agent exhausts its max_tool_rounds budget without
+    producing a final text response.
+
+    This is an orchestrator-level failure: it means the agent's work is
+    incomplete.  Callers must NOT pass the partial result to downstream
+    agents (e.g. reviewers) as if it were finished work.
+    """
+
+    def __init__(self, persona_name: str, max_tool_rounds: int, history: list[dict]):
+        self.persona_name = persona_name
+        self.max_tool_rounds = max_tool_rounds
+        self.history = history
+        super().__init__(
+            f"ERROR: {persona_name} hit max_tool_rounds ({max_tool_rounds}) without finishing"
+        )
+
+
 def _client(api_key: str | None = None) -> OpenAI:
     return OpenAI(base_url=LITELLM_BASE_URL, api_key=get_api_key(api_key))
 
@@ -19,6 +38,12 @@ def run(
     """
     Run a persona against a message history.
     Returns (final_text, updated_messages_including_system).
+
+    Raises:
+        MaxToolRoundsError: if the agent exhausts ``max_tool_rounds`` without
+            producing a final (non-tool-call) response.  Callers must treat
+            this as an orchestrator-level failure and must NOT pass the
+            partial result to downstream agents.
 
     Args:
         persona:         Persona dict (name, model, system prompt).
@@ -74,4 +99,4 @@ def run(
                 "content": result,
             })
 
-    return f"ERROR: hit max_tool_rounds ({max_tool_rounds}) without finishing", history
+    raise MaxToolRoundsError(persona["name"], max_tool_rounds, history)
