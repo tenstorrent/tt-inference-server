@@ -5,8 +5,8 @@
 """LLM benchmark caller — select a perf-tool driver and run the sweep.
 
 Bridges ``test_module`` to ``llm_module`` for the standard LLM performance
-benchmark. The ``--tools`` value picks one driver; the sweep is
-``BENCHMARK_CONFIGS`` matrix; the run is delegated to the existing
+benchmark. The ``--tools`` value picks one driver; the sweep is built from
+the resolved runtime model spec; the run is delegated to the existing
 ``run_llm_performance`` orchestrator, which forwards the resulting Blocks to
 ``workflow_module`` for the unified report.
 """

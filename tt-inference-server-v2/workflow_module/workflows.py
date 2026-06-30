@@ -200,8 +200,8 @@ class BenchmarksWorkflow(WorkflowExecution):
 
         Delegates to :func:`test_module.llm_tests.llm_benchmark_tests.run_llm_bench`,
         which selects the perf-tool driver from ``opts.tools``, builds the
-        ``BENCHMARK_CONFIGS`` sweep, runs it, and forwards the resulting
-        Blocks to the accumulator. Imported from the leaf submodule so the
+        runtime model-spec sweep, runs it, and forwards the resulting Blocks
+        to the accumulator. Imported from the leaf submodule so the
         media runner imports stay untouched.
         """
         from test_module.llm_tests.llm_benchmark_tests import run_llm_bench

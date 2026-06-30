@@ -4,12 +4,30 @@
 
 """Tests for the LLM benchmark caller: driver selection + sweep wiring."""
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from workflows.model_spec import MODEL_SPECS
+from workflows.workflow_types import DeviceTypes
+
 from test_module.llm_tests import llm_benchmark_tests as lbt
+
+
+def _find_model_spec(*, model_name: str, device: DeviceTypes, impl_name: str):
+    for spec in MODEL_SPECS.values():
+        if (
+            spec.model_name == model_name
+            and spec.device_type == device
+            and spec.impl.impl_name == impl_name
+        ):
+            return spec
+    raise AssertionError(
+        f"Could not find model spec for model={model_name!r}, "
+        f"device={device.name}, impl={impl_name!r}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -55,6 +73,53 @@ def test_run_llm_bench_short_circuits_on_empty_sweep(monkeypatch):
     assert result.blocks == []
     assert result.ok is False
     assert called["run"] is False
+
+
+def test_run_llm_bench_builds_real_runtime_spec_sweep(monkeypatch, tmp_path):
+    """Exercise the real v2 LLM config path without running a benchmark."""
+    source_spec = _find_model_spec(
+        model_name="Qwen3-8B",
+        device=DeviceTypes.N150,
+        impl_name="tt-transformers",
+    )
+    runtime_spec = replace(
+        source_spec,
+        device_model_spec=replace(
+            source_spec.device_model_spec,
+            max_context=256,
+            max_concurrency=32,
+        ),
+    )
+
+    seen = {}
+
+    def _capture(ctx, *, driver, configs, auth_token=""):
+        seen["driver"] = driver.name
+        seen["configs"] = configs
+        from llm_module.runner import RunnerResult
+
+        return RunnerResult(return_codes=[0])
+
+    monkeypatch.setattr(lbt, "run_llm_performance", _capture)
+
+    ctx = SimpleNamespace(
+        model_spec=runtime_spec,
+        device=runtime_spec.device_type,
+        runtime_config=SimpleNamespace(limit_samples_mode=None),
+        output_path=str(tmp_path),
+    )
+    result = lbt.run_llm_bench(
+        ctx,
+        tools="vllm",
+        venv_python=Path("/tmp/venv/bin/python"),
+    )
+
+    assert result.ok is True
+    assert seen["driver"] == "vllm"
+    assert any(
+        cfg.isl == 128 and cfg.osl == 128 and cfg.max_concurrency == 1
+        for cfg in seen["configs"]
+    )
 
 
 def test_guidellm_uses_scenarios_not_sweep(monkeypatch, tmp_path):
