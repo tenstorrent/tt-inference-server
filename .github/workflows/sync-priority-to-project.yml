@@ -21,9 +21,6 @@ jobs:
           ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
           EVENT_ACTION: ${{ github.event.action }}
           CHANGED_LABEL: ${{ github.event.label.name }}
-          LABEL_LOW: priority:low
-          LABEL_MEDIUM: priority:medium
-          LABEL_HIGH: priority:high
         run: |
           set -euo pipefail
 
@@ -57,7 +54,6 @@ jobs:
             exit 1
           fi
 
-          # case-insensitive match so minor capitalisation drift doesn't break the workflow
           priority_field=$(echo "$project_meta" \
             | jq -r '
               .data.organization.projectV2.fields.nodes[]
@@ -68,9 +64,12 @@ jobs:
 
           if [[ -z "$priority_field_id" || "$priority_field_id" == "null" ]]; then
             echo "ERROR: Could not find a Priority single-select field on project $PROJECT_NUMBER" >&2
+            echo "Available fields:" >&2
+            echo "$project_meta" | jq -r '.data.organization.projectV2.fields.nodes[].name // empty' >&2
             exit 1
           fi
 
+          # Priority field uses org-standard values: P0 (urgent) / P1 (high) / P2 (medium) / P3 (low)
           option_id_for() {
             local wanted="$1"
             echo "$priority_field" \
@@ -81,20 +80,20 @@ jobs:
                 '
           }
 
-          low_option_id=$(option_id_for "low")
-          medium_option_id=$(option_id_for "medium")
-          high_option_id=$(option_id_for "high")
+          p1_option_id=$(option_id_for "p1")
+          p2_option_id=$(option_id_for "p2")
+          p3_option_id=$(option_id_for "p3")
 
-          for pair in "Low:$low_option_id" "Medium:$medium_option_id" "High:$high_option_id"; do
-            label_name="${pair%%:*}"
-            opt_id="${pair##*:}"
-            if [[ -z "$opt_id" || "$opt_id" == "null" ]]; then
-              echo "ERROR: Could not find option '$label_name' in Priority field — check project field configuration" >&2
-              exit 1
-            fi
-          done
+          if [[ -z "$p1_option_id" || "$p1_option_id" == "null" || \
+                -z "$p2_option_id" || "$p2_option_id" == "null" || \
+                -z "$p3_option_id" || "$p3_option_id" == "null" ]]; then
+            echo "ERROR: Could not find P1/P2/P3 options in Priority field" >&2
+            echo "Available options:" >&2
+            echo "$priority_field" | jq -r '.options[].name' >&2
+            exit 1
+          fi
 
-          # addProjectV2ItemById is idempotent: returns the existing item ID if already tracked
+          # addProjectV2ItemById is idempotent: returns existing item ID if already tracked
           item_id=$(gh api graphql -f query='
             mutation($project: ID!, $item: ID!) {
               addProjectV2ItemById(input: { projectId: $project, contentId: $item }) {
@@ -111,11 +110,11 @@ jobs:
 
           if [[ "$EVENT_ACTION" == "labeled" ]]; then
             case "$CHANGED_LABEL" in
-              "$LABEL_LOW")    target_option_id="$low_option_id"    ;;
-              "$LABEL_MEDIUM") target_option_id="$medium_option_id" ;;
-              "$LABEL_HIGH")   target_option_id="$high_option_id"   ;;
+              "priority:high")   target_option_id="$p1_option_id" ;;
+              "priority:medium") target_option_id="$p2_option_id" ;;
+              "priority:low")    target_option_id="$p3_option_id" ;;
               *)
-                echo "Label '$CHANGED_LABEL' is not a priority label — nothing to do."
+                echo "Label '$CHANGED_LABEL' is not a mapped priority label — nothing to do."
                 exit 0
                 ;;
             esac
@@ -139,7 +138,6 @@ jobs:
             echo "Set Priority to '$CHANGED_LABEL' for issue #${{ github.event.issue.number }}"
 
           elif [[ "$EVENT_ACTION" == "unlabeled" ]]; then
-            # Query live rather than trusting the event payload, which only carries the removed label
             remaining=$(gh api \
               "/repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/labels" \
               --jq '[.[].name | select(startswith("priority:"))] | length')
