@@ -9,9 +9,10 @@ Intended to diagnose runner OOM / "self-hosted runner lost communication"
 failures during long evals (e.g. mmlu_pro). No hard psutil dependency —
 parses /proc and uses shutil.disk_usage; psutil is used only if importable.
 
-Off by default; enable via env:
-    EVAL_RESMON=1            enable (default off)
-    EVAL_RESMON_INTERVAL=60  seconds between samples (default 120)
+Hardcoded ON at 180s sampling on this branch (resmon_en) for CI memory
+profiling; set EVAL_RESMON=0 to disable.
+    EVAL_RESMON=0            disable
+    EVAL_RESMON_INTERVAL=60  seconds between samples (default 180)
     EVAL_RESMON_TOPN=5       number of top RSS processes to list (default 5)
 
 Self-contained and side-effect-free until start_resource_monitor() is called,
@@ -161,11 +162,14 @@ def start_resource_monitor(
     global _started
     if _started:
         return
-    if os.environ.get("EVAL_RESMON", "0") != "1":
+    # NOTE: this branch (resmon_en) HARDCODES RESMON on by default (env default
+    # "1") for CI memory profiling, since the dispatch has no env field. Set
+    # EVAL_RESMON=0 to disable.
+    if os.environ.get("EVAL_RESMON", "1") != "1":
         return
     log = logger or logging.getLogger(__name__)
     try:
-        interval = max(5, int(os.environ.get("EVAL_RESMON_INTERVAL", "120")))
+        interval = max(5, int(os.environ.get("EVAL_RESMON_INTERVAL", "180")))
     except ValueError:
         interval = 120
     try:
