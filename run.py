@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 Usage:
-  python run.py [--api-key KEY] [--mode {pr,groom}] <repo_path> "<task description>"
+  python run.py [--api-key KEY] [--mode {pr,groom}] [--run-dir DIR] <repo_path> "<task description>"
 
 Examples:
   python run.py ~/code/myrepo "add rate limiting to the /login endpoint"
   python run.py --mode groom /repo "triage open issues"
+  python run.py --run-dir /tmp/myrun ~/code/myrepo "add rate limiting to the /login endpoint"
   python run.py --api-key sk-my-key ~/code/myrepo "add rate limiting to the /login endpoint"
 
 Modes:
@@ -19,17 +20,32 @@ API key resolution order (highest priority first):
   2. TT_CHAT_API_KEY environment variable
   3. Key file at /workspace/global/.litellm.key
 
+Run directory (--run-dir or ORCHESTRATOR_RUN_DIR env var):
+  When set, run.py writes status.json to this directory so that external
+  pollers (nohup+polling pattern) can track progress without blocking on
+  the process. The file contains {"status": "running"|"done"|"failed",
+  "pr_url": "...", "error": "..."}.
+
 Security note: passing the key via --api-key will expose it in the process
 listing (e.g. `ps aux`) and in shell history. Prefer the TT_CHAT_API_KEY
 environment variable or the key file for non-interactive / CI use.
 """
 
-import sys, os, argparse
+import sys, os, argparse, json
 # Use abspath so this works regardless of how the script is invoked
 # (bare filename, relative path, or absolute path).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from orchestrator import orchestrate, orchestrate_groom
+
+
+def write_status(run_dir, status, **kwargs):
+    if not run_dir:
+        return
+    data = {"status": status, **kwargs}
+    path = os.path.join(run_dir, "status.json")
+    with open(path, "w") as f:
+        json.dump(data, f)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -63,6 +79,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--run-dir",
+        metavar="DIR",
+        default=None,
+        help=(
+            "Directory to write status.json into during the run. "
+            "Enables the nohup+polling pattern: start the process detached and "
+            "poll status.json until status != 'running'. "
+            "Falls back to the ORCHESTRATOR_RUN_DIR environment variable."
+        ),
+    )
+    parser.add_argument(
         "repo_path",
         help="Path to the target git repository.",
     )
@@ -77,29 +104,46 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
 
+    run_dir = args.run_dir or os.environ.get("ORCHESTRATOR_RUN_DIR")
+    if run_dir:
+        run_dir = os.path.abspath(run_dir)
+        os.makedirs(run_dir, exist_ok=True)
+
     repo_path = os.path.abspath(args.repo_path)
 
     if not os.path.isdir(os.path.join(repo_path, ".git")):
         print(f"ERROR: {repo_path} is not a git repo")
+        write_status(run_dir, "failed", error="not a git repo")
         sys.exit(1)
 
-    if args.mode == "groom":
-        success = orchestrate_groom(
-            args.task,
-            repo_path,
-            max_debate_rounds=3,
-            verbose=True,
-            api_key=args.api_key,
-        )
+    write_status(run_dir, "running")
+
+    try:
+        if args.mode == "groom":
+            success = orchestrate_groom(
+                args.task,
+                repo_path,
+                max_debate_rounds=3,
+                verbose=True,
+                api_key=args.api_key,
+            )
+        else:
+            success = orchestrate(
+                args.task,
+                repo_path,
+                max_debate_rounds=3,
+                verbose=True,
+                api_key=args.api_key,
+            )
+    except Exception as e:
+        write_status(run_dir, "failed", error=str(e))
+        raise
+
+    if success:
+        # Extract PR URL from stdout if orchestrate() printed one
+        write_status(run_dir, "done")
     else:
-        # Default: pr mode
-        success = orchestrate(
-            args.task,
-            repo_path,
-            max_debate_rounds=3,
-            verbose=True,
-            api_key=args.api_key,
-        )
+        write_status(run_dir, "failed", error="orchestrator returned failure")
 
     sys.exit(0 if success else 1)
 
