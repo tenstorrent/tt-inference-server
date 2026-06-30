@@ -5,6 +5,12 @@ from openai import OpenAI
 from orchestrator.config import LITELLM_BASE_URL, get_api_key
 import orchestrator.tools as T
 
+# Default hard cap on tool-call iterations.  This is a safety rail, not a
+# cost-control mechanism — cost is better managed at the token/dollar level.
+# Callers can lower it for simple tasks or raise it for complex ones by
+# passing max_tool_rounds explicitly to run().
+DEFAULT_MAX_TOOL_ROUNDS = 100
+
 
 class MaxToolRoundsError(Exception):
     """Raised when an agent exhausts its max_tool_rounds budget without
@@ -31,7 +37,7 @@ def run(
     persona: dict,
     messages: list[dict],
     cwd: str | None = None,
-    max_tool_rounds: int = 40,
+    max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
     verbose: bool = True,
     api_key: str | None = None,
 ) -> tuple[str, list[dict]]:
@@ -50,6 +56,9 @@ def run(
         messages:        Conversation history to send to the model.
         cwd:             Working directory for tool calls.
         max_tool_rounds: Hard cap on tool-call iterations before giving up.
+                         Defaults to DEFAULT_MAX_TOOL_ROUNDS (100).  Pass a
+                         lower value for simple tasks, a higher value for
+                         complex ones.
         verbose:         Print tool-call activity to stdout.
         api_key:         Optional LiteLLM API key.  Falls back to the
                          ``TT_CHAT_API_KEY`` env-var and then the key file

@@ -22,7 +22,7 @@ from orchestrator.personas import (
     GROOMER, GROOM_REVIEWERS,
 )
 import orchestrator.agent as A
-from orchestrator.agent import MaxToolRoundsError
+from orchestrator.agent import MaxToolRoundsError, DEFAULT_MAX_TOOL_ROUNDS
 
 
 def _extract_verdict(text: str) -> tuple[bool, str]:
@@ -47,6 +47,7 @@ def orchestrate(
     task: str,
     repo_path: str,
     max_debate_rounds: int = 3,
+    max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
     verbose: bool = True,
     api_key: str | None = None,
 ) -> bool:
@@ -56,6 +57,10 @@ def orchestrate(
         task:               Natural-language description of the work to do.
         repo_path:          Absolute path to the target git repository.
         max_debate_rounds:  Maximum implementer <-> reviewer debate iterations.
+        max_tool_rounds:    Hard cap on tool-call iterations per agent call.
+                            Defaults to DEFAULT_MAX_TOOL_ROUNDS (100).  Pass a
+                            lower value for simple tasks, a higher value for
+                            complex ones.
         verbose:            Stream progress to stdout.
         api_key:            Optional LiteLLM API key.  Falls back to the
                             ``TT_CHAT_API_KEY`` env-var and then the key file
@@ -73,6 +78,7 @@ def orchestrate(
             IMPLEMENTER,
             [{"role": "user", "content": task}],
             cwd=repo_path,
+            max_tool_rounds=max_tool_rounds,
             verbose=verbose,
             api_key=api_key,
         )
@@ -106,6 +112,7 @@ def orchestrate(
                 reviewer,
                 shared_history + [{"role": "user", "content": prompt}],
                 cwd=repo_path,
+                max_tool_rounds=max_tool_rounds,
                 verbose=verbose,
                 api_key=api_key,
             )
@@ -144,6 +151,7 @@ def orchestrate(
                 IMPLEMENTER,
                 shared_history + [{"role": "user", "content": rebuttal_prompt}],
                 cwd=repo_path,
+                max_tool_rounds=max_tool_rounds,
                 verbose=verbose,
                 api_key=api_key,
             )
@@ -185,6 +193,7 @@ def orchestrate_groom(
     task: str,
     repo_path: str,
     max_debate_rounds: int = 3,
+    max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
     verbose: bool = True,
     api_key: str | None = None,
 ) -> bool:
@@ -204,6 +213,10 @@ def orchestrate_groom(
                             ``gh`` CLI commands are executed in this directory
                             so that they pick up the correct GitHub remote.
         max_debate_rounds:  Maximum groomer <-> reviewer debate iterations.
+        max_tool_rounds:    Hard cap on tool-call iterations per agent call.
+                            Defaults to DEFAULT_MAX_TOOL_ROUNDS (100).  Pass a
+                            lower value for simple tasks, a higher value for
+                            complex ones.
         verbose:            Stream progress to stdout.
         api_key:            Optional LiteLLM API key.  Falls back to the
                             ``TT_CHAT_API_KEY`` env-var and then the key file
@@ -238,6 +251,7 @@ def orchestrate_groom(
             GROOMER,
             [{"role": "user", "content": groomer_task}],
             cwd=repo_path,
+            max_tool_rounds=max_tool_rounds,
             verbose=verbose,
             api_key=api_key,
         )
@@ -273,6 +287,7 @@ def orchestrate_groom(
                 reviewer,
                 shared_history + [{"role": "user", "content": prompt}],
                 cwd=repo_path,
+                max_tool_rounds=max_tool_rounds,
                 verbose=verbose,
                 api_key=api_key,
             )
@@ -312,6 +327,7 @@ def orchestrate_groom(
                 GROOMER,
                 shared_history + [{"role": "user", "content": rebuttal_prompt}],
                 cwd=repo_path,
+                max_tool_rounds=max_tool_rounds,
                 verbose=verbose,
                 api_key=api_key,
             )
