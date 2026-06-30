@@ -52,7 +52,7 @@ def orchestrate(
 
     def log(msg: str):
         if verbose:
-            print(msg)
+            print(msg, flush=True)
 
     # -- Phase 1: Implementation ----------------------------------------------
     log("\n=== IMPLEMENTER ===")
