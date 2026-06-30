@@ -10,13 +10,26 @@ Debate-and-consensus multi-agent orchestrator for automated code changes.
 4. Repeat up to `max_debate_rounds` (default 3)
 5. If consensus → PR opened.  If not → exits non-zero with objection summary.
 
-## Setup
+## Prerequisites
+
+### Python packages
 
 ```bash
-pip install openai
+pip install -r requirements.txt
 ```
 
-The key is read from `/workspace/global/.litellm.key` or `$TT_CHAT_API_KEY`.
+### System dependencies
+
+| Tool | Purpose | Install |
+|------|---------|---------|
+| `git` | Version control | `apt install git` / `brew install git` |
+| `gh` | Opening GitHub pull requests (`create_pr` tool) | [cli.github.com](https://cli.github.com) — `apt install gh` / `brew install gh` |
+
+> **Note:** `gh` must be authenticated before use (`gh auth login`). The
+> `pip install -r requirements.txt` step does **not** install `gh`; it is a
+> separate system-level binary.
+
+The API key is read from `/workspace/global/.litellm.key` or `$TT_CHAT_API_KEY`.
 
 ## Usage
 
