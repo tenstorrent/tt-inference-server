@@ -819,6 +819,8 @@ target_include_directories(mock_remote_kv_manager_test PRIVATE
 add_executable(session_manager_test
     tests/integration/sessions/session_manager_test.cpp
     src/domain/session.cpp
+    src/domain/prefix_index.cpp
+    src/domain/response_id_index.cpp
     src/services/session_manager.cpp
     src/metrics/metrics.cpp
 )
@@ -891,6 +893,8 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/session_resolution.cpp
     src/services/memory_services/memory_manager.cpp
     src/domain/session.cpp
+    src/domain/prefix_index.cpp
+    src/domain/response_id_index.cpp
     src/runtime/worker/worker_manager.cpp
     src/runtime/worker/process_liveness.cpp
     src/runtime/worker/single_process_worker.cpp
@@ -1092,6 +1096,8 @@ target_link_libraries(tokenizer_benchmark PRIVATE llm_runner_lib)
 add_executable(session_manager_benchmark
     benchmarks/session_manager_benchmark.cpp
     src/domain/session.cpp
+    src/domain/prefix_index.cpp
+    src/domain/response_id_index.cpp
     src/services/session_manager.cpp
     src/metrics/metrics.cpp
 )
@@ -1278,6 +1284,8 @@ set(SOURCES
     src/api/info_controller.cpp
     src/api/openapi.cpp
     src/services/llm_service.cpp
+    src/domain/prefix_index.cpp
+    src/domain/response_id_index.cpp
     src/services/session_manager.cpp
     src/services/session_resolution.cpp
     src/domain/session.cpp
