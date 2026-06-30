@@ -70,14 +70,32 @@ jobs:
             exit 1
           fi
 
-          echo "DEBUG field JSON: $(echo "$priority_field" | jq -c .)"
-          echo "DEBUG all fields raw: $(echo "$project_meta" | jq -c '.data.organization.projectV2.fields.nodes')"
+          # Try to get options via direct node query (org-level custom fields don't return options
+          # via the project→fields path; need to query the field node directly)
+          priority_options=$(gh api graphql -f query='
+            query($fieldId: ID!) {
+              node(id: $fieldId) {
+                ... on ProjectV2SingleSelectField {
+                  options {
+                    id
+                    name
+                  }
+                }
+              }
+            }
+          ' -f fieldId="$priority_field_id" | jq '.data.node.options')
+
+          echo "DEBUG options via node query: $priority_options"
+
+          # Also try gh project field-list as a fallback
+          echo "DEBUG gh project field-list output:"
+          gh project field-list "$PROJECT_NUMBER" --owner "$ORG" --format json 2>&1 | head -c 2000 || true
 
           option_id_for() {
             local wanted="$1"
-            echo "$priority_field" \
+            echo "$priority_options" \
               | jq -r --arg w "$wanted" '
-                  .options[]
+                  .[]
                   | select((.name | ascii_downcase) == ($w | ascii_downcase))
                   | .id
                 '
@@ -90,8 +108,8 @@ jobs:
           if [[ -z "$p1_option_id" || "$p1_option_id" == "null" || \
                 -z "$p2_option_id" || "$p2_option_id" == "null" || \
                 -z "$p3_option_id" || "$p3_option_id" == "null" ]]; then
-            echo "ERROR: Could not find P1/P2/P3 options in Priority field" >&2
-            echo "priority_field JSON: $(echo "$priority_field" | jq -c .)" >&2
+            echo "ERROR: Could not find P1/P2/P3 options via any method" >&2
+            echo "options via node query: $(echo "$priority_options" | jq -c .)" >&2
             exit 1
           fi
 
