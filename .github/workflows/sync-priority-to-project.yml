@@ -54,27 +54,24 @@ jobs:
             exit 1
           fi
 
+          # Extract the Priority single-select field as a single JSON object
           priority_field=$(echo "$project_meta" \
-            | jq -r '
-              .data.organization.projectV2.fields.nodes[]
-              | select((.name // "") | ascii_downcase == "priority")
-            ')
+            | jq 'first(
+                .data.organization.projectV2.fields.nodes[]
+                | select((.name // "") | ascii_downcase == "priority")
+              )')
 
-          priority_field_id=$(echo "$priority_field" | jq -r '.id')
+          priority_field_id=$(echo "$priority_field" | jq -r '.id // empty')
 
           if [[ -z "$priority_field_id" || "$priority_field_id" == "null" ]]; then
             echo "ERROR: Could not find a Priority single-select field on project $PROJECT_NUMBER" >&2
-            echo "Available fields:" >&2
-            echo "$project_meta" | jq -r '.data.organization.projectV2.fields.nodes[].name // empty' >&2
+            echo "Available fields (raw JSON):" >&2
+            echo "$project_meta" | jq '.data.organization.projectV2.fields.nodes' >&2
             exit 1
           fi
 
-          echo "DEBUG: Priority field id=$priority_field_id"
-          echo "DEBUG: Priority field options:"
-          echo "$priority_field" | jq -r '.options[] | "  \(.id) \(.name)"' || echo "  (jq failed on priority_field)"
-          echo "DEBUG: priority_field raw (first 500 chars): ${priority_field:0:500}"
+          echo "DEBUG field JSON: $(echo "$priority_field" | jq -c .)"
 
-          # Priority field uses org-standard values: P0 (urgent) / P1 (high) / P2 (medium) / P3 (low)
           option_id_for() {
             local wanted="$1"
             echo "$priority_field" \
@@ -93,10 +90,7 @@ jobs:
                 -z "$p2_option_id" || "$p2_option_id" == "null" || \
                 -z "$p3_option_id" || "$p3_option_id" == "null" ]]; then
             echo "ERROR: Could not find P1/P2/P3 options in Priority field" >&2
-            echo "Available options (names):" >&2
-            echo "$priority_field" | jq -r '.options[].name' >&2
-            echo "Available options (full JSON):" >&2
-            echo "$priority_field" | jq '.options' >&2
+            echo "priority_field JSON: $(echo "$priority_field" | jq -c .)" >&2
             exit 1
           fi
 
