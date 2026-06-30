@@ -90,6 +90,8 @@ class DynamoEndpoint {
   std::unique_ptr<DynamoServer> server_;
   std::thread keepalive_thread_;
   std::unique_ptr<trantor::EventLoopThreadPool> loop_pool_;
+  std::shared_ptr<std::string> local_prefill_id_ =
+      std::make_shared<std::string>();
   std::atomic<bool> running_{false};
   std::unique_ptr<DiscoveryRegistration> discovery_;
 };
