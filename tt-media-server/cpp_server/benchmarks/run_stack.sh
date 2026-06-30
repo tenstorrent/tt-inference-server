@@ -116,7 +116,7 @@ worker_dynamo_env() {
     echo "DYNAMO_DISCOVERY_BACKEND=etcd"
     echo "DYNAMO_ETCD_ENDPOINTS=${ETCD_ENDPOINTS}"
     echo "DYNAMO_NAMESPACE=default"
-    echo "DYNAMO_COMPONENT=backend"
+    echo "DYNAMO_COMPONENT=decode"
     echo "DYNAMO_ENDPOINT_NAME=generate"
     echo "DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED}"
 }

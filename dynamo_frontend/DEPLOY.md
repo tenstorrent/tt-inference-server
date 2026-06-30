@@ -136,8 +136,8 @@ Inspect what the worker registered:
 
 ```bash
 docker exec etcd etcdctl get --prefix --keys-only v1/
-# v1/instances/default/backend/generate/<hex>
-# v1/mdc/default/backend/generate/<hex>
+# v1/instances/default/decode/generate/<hex>
+# v1/mdc/default/decode/generate/<hex>
 ```
 
 If you enabled `--prefill-gateway`, verify that Prometheus sees it:
@@ -169,7 +169,7 @@ Healthy gateway routing requires one decode connection and at least one
 registered prefill worker.
 - `**/v1/models` is empty** — frontend and worker aren't talking to the same etcd.
 Check `docker exec dynamo-frontend curl -s http://etcd:2379/version` and that
-both use namespace `default` / component `backend` / endpoint `generate`.
+both use namespace `default` / component `decode` / endpoint `generate`.
 - **Frontend 404s the model** (`huggingface.co/api/models//home/...`) — the
 frontend image is missing the baked tokenizer tree at
 `/home/container_app_user/app/server/cpp_server/tokenizers/<hf-model-id>/`.
