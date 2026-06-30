@@ -814,4 +814,23 @@ bool dynamoNativePrefillHandoffEnabled() {
                  defaults::DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED);
 }
 
+/**
+ * Mooncake KV Migration configuration.
+ */
+unsigned kvMigrationTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("KV_MIGRATION_TIMEOUT_MS", defaults::KV_MIGRATION_TIMEOUT_MS));
+}
+
+unsigned kvMigrationSweepIntervalMs() {
+  return static_cast<unsigned>(
+      envUlong("KV_MIGRATION_SWEEP_INTERVAL_MS",
+               defaults::KV_MIGRATION_SWEEP_INTERVAL_MS));
+}
+
+unsigned kvMigrationDrainPollMs() {
+  return static_cast<unsigned>(envUlong("KV_MIGRATION_DRAIN_POLL_MS",
+                                        defaults::KV_MIGRATION_DRAIN_POLL_MS));
+}
+
 }  // namespace tt::config

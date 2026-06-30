@@ -61,6 +61,11 @@ constexpr const char* KAFKA_GROUP_ID = "migration-workers";
 constexpr const char* KAFKA_MIGRATION_REQUEST_TOPIC = "kv-migration-requests";
 constexpr const char* KAFKA_MIGRATION_ACK_TOPIC = "kv-migration-acks";
 
+// Mooncake KV Migration configuration.
+constexpr unsigned KV_MIGRATION_TIMEOUT_MS = 60000;
+constexpr unsigned KV_MIGRATION_SWEEP_INTERVAL_MS = 5000;
+constexpr unsigned KV_MIGRATION_DRAIN_POLL_MS = 100;
+
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 
 constexpr const char* SPEC_DECODE_MODE = "none";
@@ -79,14 +84,14 @@ constexpr uint32_t MODEL_NUM_LAYERS = 61;
 constexpr uint32_t PREFILL_CHUNK_SIZE = 5120;
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 128;
-constexpr unsigned WARMUP_TIMEOUT_MS = 120000;
+constexpr unsigned WARMUP_TIMEOUT_MS = 150000;
 /**
  * Max time (ms) the runner may go without producing a model output while at
  * least one request is in flight before it self-terminates the worker
  * process. Self-terminating lets the infrastructure monitoring stack notice
  * the crash and restart the server instead of hanging silently.
  */
-constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 120000;
+constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 150000;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 constexpr const char* WIRE_FORMAT = "blaze";
