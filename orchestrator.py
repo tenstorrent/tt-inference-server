@@ -14,14 +14,21 @@ from personas import IMPLEMENTER, REVIEWERS
 import agent as A
 
 def _extract_verdict(text: str) -> tuple[bool, str]:
-    """Returns (approved, objection_text)."""
-    upper = text.upper()
-    if "APPROVED" in upper and "OBJECTION" not in upper:
-        return True, ""
-    for line in text.splitlines():
-        if line.strip().upper().startswith("OBJECTION"):
+    """Returns (approved, objection_text).
+
+    Scans from the bottom up so that a reviewer who says
+    'my previous OBJECTION is resolved — APPROVED' counts as approved.
+    """
+    for line in reversed(text.splitlines()):
+        stripped = line.strip().upper()
+        if stripped == "APPROVED" or stripped.startswith("APPROVED"):
+            return True, ""
+        if stripped.startswith("OBJECTION"):
             return False, line.strip()
-    return False, text[-500:]  # fallback: last 500 chars
+    # No explicit verdict line found — check if APPROVED appears anywhere at end
+    if "APPROVED" in text[-300:].upper():
+        return True, ""
+    return False, text[-500:]
 
 
 def orchestrate(
