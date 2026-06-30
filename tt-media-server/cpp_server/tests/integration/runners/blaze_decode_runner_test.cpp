@@ -9,6 +9,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "../integration_test_helpers.hpp"
@@ -22,14 +23,25 @@ namespace {
 
 class EnvSetter {
  public:
-  EnvSetter(const char* key, const char* value) {
-    this->key = key;
-    setenv(this->key, value, 1);
+  EnvSetter(const std::string& key, const std::string& value)
+    : key(key)
+  {
+    if (const char* old = std::getenv(key.c_str())) {
+      oldValue = old;
+    }
+    setenv(key.c_str(), value.c_str(), 1);
   }
-  ~EnvSetter() { unsetenv(key); }
+  ~EnvSetter() {
+    if (oldValue.has_value()) {
+      setenv(key.c_str(), oldValue.value().c_str(), 1);
+    } else {
+      unsetenv(key.c_str());
+    }
+  }
 
  private:
-  const char* key;
+  std::string key;
+  std::optional<std::string> oldValue;
 };
 
 constexpr uint64_t MOCK_PIPELINE_TOKEN_ID = 12345u;
