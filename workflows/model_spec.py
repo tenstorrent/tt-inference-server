@@ -36,8 +36,14 @@ MODEL_SPECS_SCHEMA_VERSION = "0.1.0"
 
 
 def generate_docker_tag(
-    version: str, tt_metal_commit: str, vllm_commit: Optional[str]
+    version: Optional[str],
+    tt_metal_commit: Optional[str],
+    vllm_commit: Optional[str],
 ) -> str:
+    if version is None or tt_metal_commit is None:
+        raise ValueError(
+            "Cannot generate docker tag: version and tt_metal_commit are required"
+        )
     max_tag_len = 12
     if vllm_commit:
         return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
@@ -45,9 +51,17 @@ def generate_docker_tag(
         return f"{version}-{tt_metal_commit[:max_tag_len]}"
 
 
+def generate_code_link(
+    repo_url: str, tt_metal_commit: Optional[str], code_path: str
+) -> str:
+    if tt_metal_commit is None:
+        raise ValueError("Cannot generate code link: tt_metal_commit is None")
+    return f"{repo_url}/tree/{tt_metal_commit}/{code_path}"
+
+
 def generate_default_docker_link(
-    version: str,
-    tt_metal_commit: str,
+    version: Optional[str],
+    tt_metal_commit: Optional[str],
     vllm_commit: Optional[str],
     inference_engine: str = "",
     multihost: bool = False,
@@ -271,6 +285,14 @@ tt_vllm_plugin_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
     code_path="tt_vllm_plugin",
 )
+# Distinct impl for forge SDXL so its model_id does not collide with the media
+# SDXL spec (which uses tt_transformers_impl) on shared Blackhole devices.
+sdxl_forge_impl = ImplSpec(
+    impl_id="sdxl_forge",
+    impl_name="sdxl-forge",
+    repo_url="https://github.com/tenstorrent/tt-inference-server",
+    code_path="tt-media-server/tt_model_runners/forge_runners/sdxl_forge_runner.py",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
@@ -283,6 +305,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "speecht5_tts": speecht5_impl,
     "forge_vllm_plugin": forge_vllm_plugin_impl,
     "tt_vllm_plugin": tt_vllm_plugin_impl,
+    "sdxl_forge": sdxl_forge_impl,
 }
 
 
@@ -421,12 +444,12 @@ class ModelSpec:
     model_name: str
     inference_engine: InferenceEngine
     device_type: DeviceTypes  # Single device, not a set
-    tt_metal_commit: str
     device_model_spec: DeviceModelSpec
 
     # Optional specification fields (WITH DEFAULTS)
     system_requirements: Optional[SystemRequirements] = None
     env_vars: Dict[str, str] = field(default_factory=dict)
+    tt_metal_commit: Optional[str] = None
     vllm_commit: Optional[str] = None
     hf_weights_repo: Optional[str] = (
         None  # HF repo to download weights from (defaults to hf_model_repo)
@@ -436,7 +459,7 @@ class ModelSpec:
     min_ram_gb: Optional[int] = None
     model_type: Optional[ModelType] = ModelType.LLM
     repacked: int = 0
-    version: str = VERSION
+    version: Optional[str] = None
     docker_image: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
     code_link: Optional[str] = None
@@ -528,8 +551,13 @@ class ModelSpec:
             # assume fp16 equivalent weights, add 0.5x overhead buffer
             object.__setattr__(self, "min_ram_gb", self.param_count * 2.5)
 
-        # Generate default docker image if not provided
-        if not self.docker_image:
+        # Generate default docker image if not provided. Synthesis needs
+        # version + tt_metal_commit; dev specs omit both, so skip and leave docker_image=None
+        if (
+            not self.docker_image
+            and self.version is not None
+            and self.tt_metal_commit is not None
+        ):
             # TODO: Use ubuntu version to interpolate this string
             _default_docker_link = generate_default_docker_link(
                 self.version,
@@ -540,12 +568,14 @@ class ModelSpec:
             )
             object.__setattr__(self, "docker_image", _default_docker_link)
 
-        # Generate code link
-        if not self.code_link:
+        # Generate code link. Needs tt_metal_commit; skip when absent (dev specs).
+        if not self.code_link and self.tt_metal_commit is not None:
             object.__setattr__(
                 self,
                 "code_link",
-                f"{self.impl.repo_url}/tree/{self.tt_metal_commit}/{self.impl.code_path}",
+                generate_code_link(
+                    self.impl.repo_url, self.tt_metal_commit, self.impl.code_path
+                ),
             )
 
         data_parallel = self.device_model_spec.vllm_args.get("data_parallel_size")
@@ -877,26 +907,22 @@ class ModelSpecTemplate:
     # Required fields (NO DEFAULTS) - must come first
     weights: List[str]  # List of HF model repos to create specs for
     impl: ImplSpec
-    tt_metal_commit: str
     inference_engine: InferenceEngine
     device_model_specs: List[DeviceModelSpec]
 
     # Optional template fields (WITH DEFAULTS) - must come after required fields
     system_requirements: Optional[SystemRequirements] = None
-    vllm_commit: Optional[str] = None
     status: str = ModelStatusTypes.EXPERIMENTAL
     env_vars: Dict[str, str] = field(default_factory=dict)
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
     repacked: int = 0
-    version: str = VERSION
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
-    docker_image: Optional[str] = None
     # True when the catalog explicitly pinned the image via `version` or
-    # `docker_image`. When neither is set, the docker tag is synthesized from the
-    # repo-wide VERSION + commits rather than a real published image, so these
-    # specs are excluded from IMAGE_PINNED_MODEL_SPECS (the list the helm chart
-    # generator consumes). Set by _build_template from YAML key presence;
-    # defaults True for directly constructed templates so they are never dropped.
+    # `docker_image` (prod templates always do; dev never does). When neither is
+    # set, no docker tag is synthesized, so these specs are excluded from
+    # IMAGE_PINNED_MODEL_SPECS (the list the helm chart generator consumes).
+    # Set by _build_template from YAML key presence; defaults True for directly
+    # constructed templates so they are never dropped.
     image_pinned: bool = True
     model_type: Optional[ModelType] = ModelType.LLM
     min_disk_gb: Optional[int] = None
@@ -994,14 +1020,16 @@ class ModelSpecTemplate:
                     system_requirements=device_model_spec.system_requirements
                     if device_model_spec.system_requirements
                     else self.system_requirements,
-                    tt_metal_commit=self.tt_metal_commit,
-                    vllm_commit=self.vllm_commit,
+                    # Release pins live only on ProdModelSpecTemplate; dev (base)
+                    # templates omit them, so read via getattr (None for dev).
+                    tt_metal_commit=getattr(self, "tt_metal_commit", None),
+                    vllm_commit=getattr(self, "vllm_commit", None),
                     hf_weights_repo=self.hf_weights_repo,
                     # Template fields
                     env_vars=self.env_vars,
                     repacked=self.repacked,
-                    version=self.version,
-                    docker_image=self.docker_image,
+                    version=getattr(self, "version", None),
+                    docker_image=getattr(self, "docker_image", None),
                     status=self.status,
                     override_tt_config=device_model_spec.override_tt_config,
                     supported_modalities=self.supported_modalities,
@@ -1015,6 +1043,22 @@ class ModelSpecTemplate:
 
                 specs.append(spec)
         return specs
+
+
+@dataclass(frozen=True, kw_only=True)
+class ProdModelSpecTemplate(ModelSpecTemplate):
+    """Prod catalog template: carries the release pins the dev base omits.
+
+    ``version`` and ``tt_metal_commit`` are required (a prod YAML missing either
+    fails to construct); ``vllm_commit`` and ``docker_image`` are optional
+    (FORGE/MEDIA specs have no vllm_commit; most specs synthesize their image).
+    Construction enforces the prod contract directly — no separate field check.
+    """
+
+    tt_metal_commit: str
+    version: str
+    vllm_commit: Optional[str] = None
+    docker_image: Optional[str] = None
 
 
 # Catalog data lives in workflows/model_specs/catalog.yaml.
@@ -1053,7 +1097,15 @@ def _build_device_model_spec(data: Dict) -> "DeviceModelSpec":
     return DeviceModelSpec(**kwargs)
 
 
-def _build_template(data: Dict) -> "ModelSpecTemplate":
+def _build_template(data: Dict, env: str = "prod") -> "ModelSpecTemplate":
+    """Build a template from a raw catalog dict.
+
+    ``env`` selects the dataclass and thus the field contract: "prod" builds a
+    ProdModelSpecTemplate (version + tt_metal_commit required), anything else
+    builds the dev base ModelSpecTemplate (which has no pin fields, so a dev
+    entry that sets one fails to construct). Construction errors are re-raised
+    with the offending weights for a readable, catalog-scoped message.
+    """
     kwargs = dict(data)
     impl_id = kwargs["impl"]
     if impl_id not in _IMPL_REGISTRY:
@@ -1079,7 +1131,12 @@ def _build_template(data: Dict) -> "ModelSpecTemplate":
     kwargs["image_pinned"] = (
         data.get("version") is not None or data.get("docker_image") is not None
     )
-    return ModelSpecTemplate(**kwargs)
+    cls = ProdModelSpecTemplate if env == "prod" else ModelSpecTemplate
+    try:
+        return cls(**kwargs)
+    except TypeError as exc:
+        weights = data.get("weights", ["<unknown>"])
+        raise ValueError(f"{env} template {weights}: {exc}") from exc
 
 
 def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
@@ -1087,7 +1144,8 @@ def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
         data = yaml.safe_load(f)
     if not data or "templates" not in data:
         raise ValueError(f"YAML file {path} is empty or missing 'templates' key")
-    return [_build_template(t) for t in data["templates"]]
+    env = path.parent.name
+    return [_build_template(t, env) for t in data["templates"]]
 
 
 _MODEL_SPECS_DIR = get_repo_root_path() / "workflows" / "model_specs"

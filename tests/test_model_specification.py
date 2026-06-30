@@ -17,6 +17,7 @@ from workflows.model_spec import (
     KnownIssue,
     ModelSpec,
     ModelSpecTemplate,
+    ProdModelSpecTemplate,
     VersionRequirement,
     export_model_specs_json,
     get_model_spec_map,
@@ -65,8 +66,9 @@ class TestModelSpecTemplateSystem:
 
     def test_template_creation_and_expansion(self, sample_impl):
         """Test template creation and expansion."""
-        template = ModelSpecTemplate(
+        template = ProdModelSpecTemplate(
             impl=sample_impl,
+            version="0.0.0",
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
             inference_engine=InferenceEngine.VLLM.value,
@@ -122,8 +124,9 @@ class TestModelSpecTemplateSystem:
                 reason="GH#2550 - eval harness crash",
             ),
         ]
-        template = ModelSpecTemplate(
+        template = ProdModelSpecTemplate(
             impl=sample_impl,
+            version="0.0.0",
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
             inference_engine=InferenceEngine.VLLM.value,
@@ -147,11 +150,9 @@ class TestModelSpecTemplateSystem:
         assert expanded_issues[1].task_name is None
 
     def test_template_defaults(self, sample_impl):
-        """Test template creation with defaults."""
+        """The dev base template carries no release pins at all."""
         template = ModelSpecTemplate(
             impl=sample_impl,
-            tt_metal_commit="v1.0.0",
-            vllm_commit="abc123",
             inference_engine=InferenceEngine.VLLM.value,
             device_model_specs=[
                 DeviceModelSpec(
@@ -163,60 +164,66 @@ class TestModelSpecTemplateSystem:
             weights=["test/model"],
         )
         assert template.repacked == 0
-        assert template.version == VERSION
         assert template.status == ModelStatusTypes.EXPERIMENTAL
-        assert template.docker_image is None
+        # The base (dev) template has no pin fields; they live on
+        # ProdModelSpecTemplate only.
+        assert not hasattr(template, "version")
+        assert not hasattr(template, "tt_metal_commit")
+        assert not hasattr(template, "docker_image")
         # Directly-constructed templates default to pinned so they are never
         # dropped from IMAGE_PINNED_MODEL_SPECS.
         assert template.image_pinned is True
 
+    def test_prod_template_requires_version_and_tt_metal_commit(self, sample_impl):
+        """ProdModelSpecTemplate enforces the release pins at construction."""
+        kwargs = dict(
+            impl=sample_impl,
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150, max_concurrency=1, max_context=1024
+                )
+            ],
+            weights=["test/model"],
+        )
+        with pytest.raises(TypeError):
+            ProdModelSpecTemplate(**kwargs)  # missing version + tt_metal_commit
+        prod = ProdModelSpecTemplate(version="0.1.0", tt_metal_commit="abc", **kwargs)
+        assert prod.version == "0.1.0"
+        assert prod.tt_metal_commit == "abc"
+        assert prod.vllm_commit is None  # optional
+
     def test_build_template_sets_image_pinned_from_yaml_keys(self):
-        """A catalog entry "pins" its image only when it sets `version` or
-        `docker_image`; with neither, image_pinned is False so the spec is
-        excluded from IMAGE_PINNED_MODEL_SPECS."""
+        """image_pinned reflects whether the entry sets `version` or `docker_image`:
+        prod templates (which require version) are pinned; dev templates are not."""
         from workflows.model_spec import _IMPL_REGISTRY, _build_template
 
         base = {
             "weights": ["acme/Foo-7B"],
             "impl": next(iter(_IMPL_REGISTRY)),
-            "tt_metal_commit": "abc1234",
             "inference_engine": "VLLM",
             "device_model_specs": [
                 {"device": "N150", "max_concurrency": 16, "max_context": 8192}
             ],
         }
 
-        assert _build_template(dict(base)).image_pinned is False
-        assert _build_template({**base, "version": "0.10.0"}).image_pinned is True
+        # dev: no pins → not image-pinned
+        assert _build_template(dict(base), env="dev").image_pinned is False
+        # prod: version is required and present → image-pinned
+        prod = {**base, "version": "0.10.0", "tt_metal_commit": "abc1234"}
+        assert _build_template(prod, env="prod").image_pinned is True
         assert (
-            _build_template({**base, "docker_image": "ghcr.io/x/y:1.0"}).image_pinned
+            _build_template(
+                {**prod, "docker_image": "ghcr.io/x/y:1.0"}, env="prod"
+            ).image_pinned
             is True
         )
 
-    def test_image_pinned_model_specs_excludes_unpinned_entries(self):
-        """The helm-facing list drops entries that pin no image, but they stay
-        in MODEL_SPECS for every other consumer."""
-        from workflows.model_spec import IMAGE_PINNED_MODEL_SPECS, MODEL_SPECS
-
-        pinned_ids = {s.model_id for s in IMAGE_PINNED_MODEL_SPECS}
-        excluded = {
-            (MODEL_SPECS[mid].model_name, MODEL_SPECS[mid].device_type.name.lower())
-            for mid in set(MODEL_SPECS) - pinned_ids
-        }
-        assert excluded == {
-            ("gpt-oss-120b", "p300x2"),
-            ("Mistral-Small-3.1-24B-Instruct-2503", "t3k"),
-            ("bge-m3", "n150"),
-            ("bge-m3", "n300"),
-            ("bge-m3", "t3k"),
-            ("bge-m3", "galaxy"),
-        }
-        assert len(IMAGE_PINNED_MODEL_SPECS) < len(MODEL_SPECS)
-
     def test_system_requirement_template_level(self, sample_impl):
         """Test that SystemRequirements propagate correctly from templates and device specs."""
-        template1 = ModelSpecTemplate(
+        template1 = ProdModelSpecTemplate(
             impl=sample_impl,
+            version="0.0.0",
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
             inference_engine=InferenceEngine.VLLM.value,
@@ -249,8 +256,9 @@ class TestModelSpecTemplateSystem:
         assert specs1[0].system_requirements.kmd.mode == VersionMode.STRICT
 
     def test_system_requirements_device_model_spec_level(self, sample_impl):
-        template2 = ModelSpecTemplate(
+        template2 = ProdModelSpecTemplate(
             impl=sample_impl,
+            version="0.0.0",
             tt_metal_commit="v1.1.0",
             vllm_commit="abc123",
             inference_engine=InferenceEngine.VLLM.value,
@@ -283,8 +291,9 @@ class TestModelSpecTemplateSystem:
         assert specs2[0].system_requirements.kmd.mode == VersionMode.SUGGESTED
 
     def test_system_requirements_both_levels(self, sample_impl):
-        template3 = ModelSpecTemplate(
+        template3 = ProdModelSpecTemplate(
             impl=sample_impl,
+            version="0.0.0",
             tt_metal_commit="v1.2.0",
             vllm_commit="abc123",
             inference_engine=InferenceEngine.VLLM.value,
@@ -328,8 +337,9 @@ class TestModelSpecTemplateSystem:
 
     def test_metadata_per_weight(self, sample_impl):
         """Test that metadata is correctly assigned per weight during expansion."""
-        template = ModelSpecTemplate(
+        template = ProdModelSpecTemplate(
             impl=sample_impl,
+            version="0.0.0",
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
             inference_engine=InferenceEngine.VLLM.value,
@@ -359,8 +369,9 @@ class TestModelSpecTemplateSystem:
 
     def test_metadata_defaults_empty(self, sample_impl):
         """Test that metadata defaults to empty dict when not provided."""
-        template = ModelSpecTemplate(
+        template = ProdModelSpecTemplate(
             impl=sample_impl,
+            version="0.0.0",
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
             inference_engine=InferenceEngine.VLLM.value,
@@ -380,8 +391,9 @@ class TestModelSpecTemplateSystem:
 
     def test_metadata_partial_weights(self, sample_impl):
         """Test that weights without metadata entries get empty dict."""
-        template = ModelSpecTemplate(
+        template = ProdModelSpecTemplate(
             impl=sample_impl,
+            version="0.0.0",
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
             inference_engine=InferenceEngine.VLLM.value,
@@ -408,8 +420,9 @@ class TestModelSpecTemplateSystem:
     def test_metadata_invalid_key_raises(self, sample_impl):
         """Test that metadata with keys not in weights raises an error."""
         with pytest.raises(AssertionError, match="These keys do not exist as weights"):
-            ModelSpecTemplate(
+            ProdModelSpecTemplate(
                 impl=sample_impl,
+                version="0.0.0",
                 tt_metal_commit="v1.0.0",
                 vllm_commit="abc123",
                 inference_engine=InferenceEngine.VLLM.value,
@@ -441,6 +454,7 @@ class TestModelSpecSystem:
             model_name="TestModel-7B",
             tt_metal_commit="v1.0.0",
             vllm_commit="abc123",
+            version="0.10.0",
             inference_engine=InferenceEngine.VLLM.value,
             device_model_spec=sample_device_model_spec,
         )
@@ -623,8 +637,9 @@ class TestSystemIntegration:
     def test_model_spec_map_generation(self, sample_impl):
         """Test spec map generation from templates."""
         templates = [
-            ModelSpecTemplate(
+            ProdModelSpecTemplate(
                 impl=sample_impl,
+                version="0.0.0",
                 tt_metal_commit="v1.0.0",
                 vllm_commit="abc123",
                 inference_engine=InferenceEngine.VLLM.value,

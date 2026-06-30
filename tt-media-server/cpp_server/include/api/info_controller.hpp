@@ -11,7 +11,7 @@ namespace tt::api {
  * GET /info
  *
  * Returns the build identity of the running server: tt-inference-server
- * version + commit, tt-blaze commit, and tt-metal commit.
+ * version + commit, tt-llm-engine commit, and tt-metal commit.
  * No authentication required (listed in the security filter bypass list).
  */
 class InfoController : public drogon::HttpController<InfoController> {

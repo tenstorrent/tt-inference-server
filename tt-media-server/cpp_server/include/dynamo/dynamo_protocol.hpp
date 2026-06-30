@@ -23,10 +23,19 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+namespace trantor {
+class EventLoop;
+class TcpServer;
+class TcpClient;
+class TcpConnection;
+class MsgBuffer;
+}  // namespace trantor
 
 namespace tt::dynamo {
 
@@ -140,6 +149,22 @@ TcpStreamConnectionInfo parse_connection_info(const ConnectionInfo& info);
 // Streaming response chunk produced by the generate handler.
 // ---------------------------------------------------------------------------
 
+/// Optional token-accounting the worker reports to the frontend on the final
+/// chunk. Serialized as the OpenAI/async-openai `CompletionUsage` shape, which
+/// the Dynamo frontend reads from `BackendOutput.completion_usage` to populate
+/// the response `usage` block (prompt_tokens_details /
+/// completion_tokens_details).
+struct DynamoUsage {
+  int prompt_tokens = 0;
+  int completion_tokens = 0;
+  int total_tokens = 0;
+  /// -> usage.prompt_tokens_details.cached_tokens (prefix-cache reuse)
+  std::optional<int> cached_tokens;
+  /// -> usage.completion_tokens_details.reasoning_tokens (<think>…</think>
+  /// span)
+  std::optional<int> reasoning_tokens;
+};
+
 struct TokenChunk {
   std::vector<int> token_ids;
   std::optional<std::string> finish_reason;
@@ -148,6 +173,12 @@ struct TokenChunk {
   std::optional<std::string> error;
   /// HTTP status code to return when error is set (default: 500).
   std::optional<uint16_t> error_code;
+  /// Populated on the final chunk only; serialized as `completion_usage`.
+  std::optional<DynamoUsage> completion_usage;
+  /// When non-null, serialized as `engine_data`; the frontend surfaces it on
+  /// the response `nvext.engine_data` when the client requests it via
+  /// `nvext.extra_fields: ["engine_data"]`.
+  Json::Value engine_data;
 };
 
 /// Encode a TokenChunk as a NetworkStreamWrapper<Annotated<T>> JSON body.
@@ -182,6 +213,9 @@ struct GenerateRequest {
   std::optional<float> presence_penalty;
   std::optional<float> repetition_penalty;
 
+  // Opaque passthrough from the request's top-level `mm_processor_kwargs`.
+  Json::Value mm_processor_kwargs;
+
   Json::Value raw;  // Full parsed JSON body, for any field we don't yet map.
 };
 
@@ -192,13 +226,65 @@ GenerateRequest parse_generate_request(const std::vector<uint8_t>& body_bytes);
 // ---------------------------------------------------------------------------
 
 /**
- * Generate handler: invoked once per inbound request. Push tokens via
- * `send_chunk`; the server framework calls the call-home response stream and
- * the trailing sentinels for you.
+ * Generate handler: invoked once per inbound request on the io loop. The
+ * handler owns the call-home response stream (a DynamoStreamWriter) for the
+ * supplied connection info and returns without blocking.
  */
-using GenerateHandler =
-    std::function<void(const GenerateRequest& request,
-                       std::function<bool(const TokenChunk&)> send_chunk)>;
+using GenerateHandler = std::function<void(
+    const GenerateRequest& request, const TcpStreamConnectionInfo& connInfo)>;
+
+/**
+ * Owns the outbound call-home connection for a single request and streams
+ * framed response chunks to the frontend without blocking the caller.
+ *
+ * Mirrors the HTTP StreamingResponseWriter: token callbacks (on the LLMService
+ * consumer thread) only `queueInLoop` onto the loop that owns the connection;
+ * every socket write happens on that loop. A self-reference taken once the
+ * connection is established keeps the writer (and its buffered sentinels) alive
+ * until the peer closes, so a graceful shutdown is never truncated by the
+ * TcpClient's abortive destructor.
+ */
+class DynamoStreamWriter
+    : public std::enable_shared_from_this<DynamoStreamWriter> {
+ public:
+  static std::shared_ptr<DynamoStreamWriter> create(
+      trantor::EventLoop* loop, TcpStreamConnectionInfo connInfo,
+      std::string requestId, std::function<void()> onDisconnect);
+
+  /// Dial the frontend's call-home address. Non-blocking.
+  void connect();
+
+  /// Queue a chunk for delivery. Returns false once the stream is terminal
+  /// (error frame sent or peer gone), signalling the caller to stop.
+  bool sendChunk(const TokenChunk& chunk);
+
+  /// Queue the trailing sentinels and close. No-op once terminal.
+  void finalize();
+
+ private:
+  DynamoStreamWriter(trantor::EventLoop* loop, TcpStreamConnectionInfo connInfo,
+                     std::string requestId, std::function<void()> onDisconnect);
+
+  void onConnState(const std::shared_ptr<trantor::TcpConnection>& conn);
+  void ensurePrologue();
+  void writeOrBuffer(std::string bytes);
+  void closeStream();
+
+  trantor::EventLoop* loop_;
+  TcpStreamConnectionInfo conn_info_;
+  std::string request_id_;
+  std::function<void()> on_disconnect_;
+
+  std::shared_ptr<trantor::TcpClient> client_;
+  // The members below are touched only on `loop_`.
+  std::shared_ptr<trantor::TcpConnection> conn_;
+  std::shared_ptr<DynamoStreamWriter> self_guard_;
+  std::vector<std::string> early_buffer_;
+  bool connected_ = false;
+  bool prologue_sent_ = false;
+  bool closed_ = false;
+  std::atomic<bool> done_{false};
+};
 
 struct ServerConfig {
   std::string bind_host = "0.0.0.0";
@@ -214,21 +300,22 @@ struct ServerConfig {
 
 class DynamoServer {
  public:
-  DynamoServer(ServerConfig config, GenerateHandler handler);
+  DynamoServer(ServerConfig config, GenerateHandler handler,
+               std::vector<trantor::EventLoop*> ioLoops);
   ~DynamoServer();
 
   DynamoServer(const DynamoServer&) = delete;
   DynamoServer& operator=(const DynamoServer&) = delete;
 
-  /// Start listening. Blocks the calling thread; intended to run in its own
-  /// thread.
-  void run();
+  /// Bind the listener on the supplied io loops and start serving.
+  /// Non-blocking: the loops are driven by their own threads.
+  void start();
 
-  /// Stop the accept loop and close the listen socket. Safe to call from any
-  /// thread.
+  /// Stop the listener and force-close live connections. Safe to call from
+  /// any thread.
   void shutdown();
 
-  /// Bound port (valid after `run()` has bound, or 0 when not bound yet).
+  /// Bound port (valid after `start()`).
   uint16_t port() const { return actual_port_; }
 
   const ServerConfig& config() const { return config_; }
@@ -236,17 +323,15 @@ class DynamoServer {
  private:
   ServerConfig config_;
   GenerateHandler handler_;
-  int listen_fd_ = -1;
+  std::vector<trantor::EventLoop*> io_loops_;
+  std::unique_ptr<trantor::TcpServer> tcp_server_;
   uint16_t actual_port_ = 0;
   std::atomic<bool> running_{false};
 
-  void handle_connection(int client_fd);
-  bool read_exact(int fd, std::vector<uint8_t>& buf, size_t n);
-  bool read_request(int fd, TcpRequestMessage& msg);
-  void process_request(int fd, const TcpRequestMessage& msg);
-  void stream_response(const TcpStreamConnectionInfo& conn_info,
-                       const std::string& request_id,
-                       const GenerateRequest& gen_req);
+  void onMessage(const std::shared_ptr<trantor::TcpConnection>& conn,
+                 trantor::MsgBuffer* buf);
+  void process_request(const std::shared_ptr<trantor::TcpConnection>& conn,
+                       const TcpRequestMessage& msg);
 };
 
 }  // namespace tt::dynamo

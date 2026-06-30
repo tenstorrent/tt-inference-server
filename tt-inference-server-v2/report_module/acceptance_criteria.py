@@ -69,16 +69,47 @@ def acceptance_criteria_check(
     return len(blockers) == 0, blockers, categories
 
 
+ACCEPTANCE_EXPORT_KEYS = (
+    "acceptance_criteria",
+    "acceptance_blockers",
+    "acceptance_criteria_metadata",
+    "acceptance_summary_markdown",
+)
+
+
+def build_acceptance_export(
+    accepted: bool,
+    blockers: Mapping[str, str],
+    categories: List[CategoryResult],
+    model_status: str | None = None,
+) -> Dict[str, Any]:
+    return {
+        "acceptance_criteria": accepted,
+        "acceptance_blockers": dict(blockers),
+        "acceptance_criteria_metadata": {
+            "enforcement_result": STATUS_PASS if accepted else STATUS_FAIL,
+            "model_status": model_status or "",
+            "categories": [category.to_dict() for category in categories],
+        },
+        "acceptance_summary_markdown": format_acceptance_summary_markdown(
+            accepted, blockers, categories, model_status
+        ),
+    }
+
+
 def format_acceptance_summary_markdown(
     accepted: bool,
     blockers: Mapping[str, str],
     categories: List[CategoryResult],
+    model_status: str | None = None,
 ) -> str:
     lines = [
         "### Acceptance Criteria",
         "",
-        f"- Overall status: `{STATUS_PASS if accepted else STATUS_FAIL}`",
+        f"- Acceptance status: `{STATUS_PASS if accepted else STATUS_FAIL}`",
     ]
+    if model_status:
+        lines.append(f"- Model status: `{model_status}`")
     for category in categories:
         lines.append(f"- {category.name}: `{category.status}` ({_detail(category)})")
 
@@ -339,7 +370,9 @@ def _check_state(check_value: Any) -> str:
 
 __all__ = [
     "acceptance_criteria_check",
+    "build_acceptance_export",
     "format_acceptance_summary_markdown",
+    "ACCEPTANCE_EXPORT_KEYS",
     "CategoryResult",
     "KIND_BENCHMARKS",
     "KIND_EVALS",

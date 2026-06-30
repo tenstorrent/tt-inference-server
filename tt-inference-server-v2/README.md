@@ -18,6 +18,47 @@ the inference server on `localhost:8000`, accumulates per-test `Block`s into a
 single `ReportSchema`, applies acceptance criteria, and writes a markdown +
 JSON report into `output/<model>_<device>_<workflow>/`.
 
+## Repeated benchmark runs (`--repeat`)
+
+To characterise run-to-run variance, repeat a workflow N times and emit one
+aggregated summary report on top of the per-run reports:
+
+```bash
+python tt-inference-server-v2/run.py \
+    --model stable-diffusion-xl-base-1.0 \
+    --workflow benchmarks \
+    --device n150 \
+    --repeat 10
+```
+
+Each run keeps its own report; the summary is written alongside them:
+
+```
+workflow_logs/reports_output/<workflow>/<model>_<device>_<workflow>/
+├── run_01/report_<id>.{md,json}
+├── run_02/report_<id>.{md,json}
+├── ...
+├── run_10/report_<id>.{md,json}
+└── summary/report_summary_<id>.{md,json}
+```
+
+The summary aggregates every per-run `benchmarks` block into per-metric
+statistics (n, mean, median, stdev, min, max, p50/p90/p99, and coefficient of
+variation) and re-runs the acceptance criteria on the aggregated means.
+`--repeat 1` (the default) is unchanged: a single report, no `run_NN/`
+subfolder, no summary.
+
+When `--repeat > 1`, a failed run (e.g. a transient HTTP error mid-benchmark)
+is logged and skipped rather than aborting the whole sweep — the summary is
+still produced over the runs that succeeded. If *no* run produces a report the
+summary step fails (`rc=1`).
+
+Implementation: the pure stats core lives in `report_module/summary.py`; the
+disk-driven aggregation + `SummaryCommand` live in
+`workflow_module/summary_report.py`. The summary is built by reading each run's
+`report_<id>.json` back off disk (runs are independent processes, so the
+in-memory accumulator can't be shared across them).
+
 ## Architecture at a glance
 
 ```
@@ -165,11 +206,12 @@ Renderer-agnostic schema and a registry-based renderer.
 ### `llm_module/`
 
 Work in progress — do not use yet, except for the **prefix-caching benchmark**
-which is end-to-end on v2 today (see "Prefix-caching benchmark" below). The
-directory also holds early scaffolding for a driver/parser abstraction over the
-other LLM perf tools (GuideLLM, GenAIPerf, InferenceMax, vllm-bench); those
-aren't wired up yet and LLM benchmarking still happens through v1 for
-everything except prefix caching.
+and the **speculative-decoding benchmark** which are end-to-end on v2 today
+(see the matching sections below). The directory also holds early scaffolding
+for a driver/parser abstraction over the other LLM perf tools (GuideLLM,
+GenAIPerf, InferenceMax, vllm-bench); those aren't wired up yet and LLM
+benchmarking still happens through v1 for everything except prefix caching and
+spec decode.
 
 ## Prefix-caching benchmark
 
@@ -220,6 +262,47 @@ scrapes into `server_metrics_export.jsonl`; on Tenstorrent hardware the
 `tt-vllm-plugin` currently disables prefix caching, so the hit-rate column
 renders as `null` until that's lifted (validation work was done against a
 reference GPU vLLM).
+
+## Speculative-decoding benchmark
+
+Run the AIPerf SPEED-Bench spec-decode sweep directly against an already-up
+vLLM-compatible server (no v1 entry point involved). The workflow is
+`benchmarks`; the spec-decode flag swaps the default media-task dispatch for
+the sweep defined in [`llm_module/spec_decode/runs.py`](llm_module/spec_decode/runs.py):
+all 11 SPEED-Bench qualitative categories at concurrency 1 plus a 1k–32k ISL
+throughput sweep at concurrency 1/16/64.
+
+Server-side speculative config is out of scope — it belongs to whoever
+launched the server, before the benchmark starts. Each run scrapes the vLLM
+`vllm:spec_decode_*` Prometheus counters before/after every AIPerf invocation,
+so acceptance rate and mean accepted length are per-run deltas. Note the TT
+backend (`tt-vllm-plugin`) does not support speculative decoding yet, so a
+spec-enabled target currently requires a reference GPU vLLM.
+
+`run.py` must run inside the dedicated `V2_SPEC_DECODE` venv (aiperf >= 0.8 for
+the SPEED-Bench dataset plugins — its pillow requirement conflicts with the
+shared `constraints.txt` pin, hence the separate venv). Use the thin launcher
+`run_spec_decode.py`, which selects/creates that venv (requirements in
+[`requirements/v2-spec-decode.txt`](../requirements/v2-spec-decode.txt)) and
+re-execs `run.py` inside it:
+
+```bash
+python tt-inference-server-v2/run_spec_decode.py \
+    --model Llama-3.1-8B-Instruct \
+    --runtime-model-spec-json [spec_decode_runtime_spec.json] \
+    --workflow benchmarks \
+    --device gpu \
+    --service-port 8000 \
+    --spec-decode \
+    --spec-decode-preset [ci | full]
+```
+
+Each AIPerf run emits a `Block(kind="aiperf_spec_decode")`, which the report
+generator collapses into a per-run Markdown table (latency percentiles,
+throughput, acceptance metrics) via the renderer registered in
+[`report_module/spec_decode_renderer.py`](report_module/spec_decode_renderer.py).
+An acceptance rate of `0.000` means the target server is not actually running
+with speculative decoding enabled.
 
 ## Agentic evals
 

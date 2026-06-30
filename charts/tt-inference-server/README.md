@@ -257,6 +257,7 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `gemma-3-4b-it` | p150 |
 | `gemma-3-4b-it` | t3k |
 | `gpt-oss-120b` | galaxy |
+| `gpt-oss-120b` | p300x2 |
 | `gpt-oss-120b` | t3k |
 | `gpt-oss-20b` | galaxy |
 | `gpt-oss-20b` | galaxy_t3k |
@@ -309,6 +310,7 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `Wan2.2-T2V-A14B-Diffusers` | p150x8 |
 | `Wan2.2-T2V-A14B-Diffusers` | p300x2 |
 | `Wan2.2-T2V-A14B-Diffusers` | t3k |
+| `Z-Image-Turbo` | p300x2 |
 | `bge-large-en-v1.5` | galaxy |
 | `bge-large-en-v1.5` | n150 |
 | `bge-large-en-v1.5` | n300 |
@@ -398,12 +400,16 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `resnet-50` | n300 |
 | `segformer` | n150 |
 | `segformer` | n300 |
+| `stable-diffusion-xl-base-1.0` | p150x8 |
+| `stable-diffusion-xl-base-1.0` | p300x2 |
 | `unet` | n150 |
 | `unet` | n300 |
 | `vit` | n150 |
 | `vit` | n300 |
 | `vovnet` | n150 |
 | `vovnet` | n300 |
+| `yolox_nano` | n150 |
+| `yolox_nano` | p150 |
 
 To add a new model, add an entry under `models.<name>.<engine>.<device>` in `values.yaml`, where `<engine>` is one of `vllm`, `media`, or `forge`, and the device block contains an `impls.<impl-id>` entry with `image.repository` and `image.tag`.
 

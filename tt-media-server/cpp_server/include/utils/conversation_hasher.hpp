@@ -180,8 +180,8 @@ std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens,
  * excluded from the hash computation but their count is tracked. The markers
  * themselves are also excluded from both the hash and the count.
  *
- * Uses the same state machine logic as ReasoningParser::processToken() to
- * classify tokens as thinking or non-thinking.
+ * Uses the same marker state machine as session tracking to classify tokens as
+ * thinking or non-thinking.
  *
  * @param tokens Token-id sequence to hash.
  * @param thinkStartId Token ID for <|begin_think|> (kNoThinkTokenId to disable)

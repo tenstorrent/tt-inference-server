@@ -186,8 +186,8 @@ std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens,
 std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
     std::span<const int> tokens, int64_t thinkStartId, int64_t thinkEndId,
     uint64_t parentHash, uint32_t parentThinkCount) {
-  const bool filterThinking = (thinkStartId != tokenizers::kNoThinkTokenId &&
-                               thinkEndId != tokenizers::kNoThinkTokenId);
+  const bool filterThinking = (thinkStartId != tokenizers::kNoTokenId &&
+                               thinkEndId != tokenizers::kNoTokenId);
   const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
   const size_t blockSize = tt::config::kvCacheBlockSize();
 
@@ -205,7 +205,7 @@ std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
 
   for (int token : tokens) {
     if (filterThinking) {
-      // Mirror ReasoningParser::processToken() state machine
+      // Mirror the session-side think marker state machine.
       if (token == static_cast<int>(thinkStartId)) {
         inThinking = true;
         continue;  // Skip marker, don't count

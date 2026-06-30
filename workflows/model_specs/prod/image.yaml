@@ -1,5 +1,5 @@
 # Model spec catalog: Image templates.
-# Edit this file to add or modify a Image model spec.
+# Do not edit manually. This file is updated through the automated release process.
 # Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
 templates:
 # =============================================================================
@@ -32,23 +32,7 @@ templates:
       max_context: 65536  # 64 * 1024
       default_impl: true
     - device: GALAXY
-      max_concurrency: 32
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-    - device: P150
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-    - device: P300X2
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-    - device: P150X4
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-    - device: P150X8
-      max_concurrency: 1
+      max_concurrency: 16
       max_context: 65536  # 64 * 1024
       default_impl: true
   status: COMPLETE
@@ -100,29 +84,13 @@ templates:
       max_concurrency: 32
       max_context: 65536  # 64 * 1024
       default_impl: true
-    - device: P150
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-    - device: P300X2
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-    - device: P150X4
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-    - device: P150X8
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
   status: COMPLETE
 
 - weights:
     - black-forest-labs/FLUX.1-dev
     - black-forest-labs/FLUX.1-schnell
-  version: "0.14.0"
-  tt_metal_commit: 80180b9
+  version: "0.10.0"
+  tt_metal_commit: 555f240
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
@@ -141,15 +109,58 @@ templates:
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
-    - device: P300X2
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
     - device: P150X4
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
+  status: COMPLETE
+
+- weights:
+    - black-forest-labs/FLUX.1-dev
+    - black-forest-labs/FLUX.1-schnell
+  version: "0.10.1"
+  tt_metal_commit: 555f240
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
     - device: P150X8
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+
+- weights:
+    - black-forest-labs/FLUX.1-dev
+  version: "0.17.0"
+  tt_metal_commit: "8c48a10"
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 55000000
+  status: COMPLETE
+
+- weights:
+    - black-forest-labs/FLUX.1-schnell
+  version: "0.10.1"
+  tt_metal_commit: 555f240
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P300X2
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
@@ -203,5 +214,21 @@ templates:
     - device: GALAXY
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: FUNCTIONAL
+- weights:
+    - Tongyi-MAI/Z-Image-Turbo
+  version: "0.17.0"
+  tt_metal_commit: "8c48a10"
+  impl: tt_transformers
+  min_disk_gb: 30
+  min_ram_gb: 16
+  model_type: IMAGE
+  inference_engine: MEDIA
+  hf_weights_repo: Tongyi-MAI/Z-Image-Turbo
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 65536
       default_impl: true
   status: FUNCTIONAL

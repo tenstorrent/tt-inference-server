@@ -86,6 +86,29 @@ class Settings(BaseSettings):
     # 4×32 Galaxy mesh can take tens of minutes. Set higher on slower stacks.
     sp_warmup_timeout_seconds: float = 6000.0
 
+    # Canary monitor settings (see health_monitoring/).
+    canary_enabled: bool = True
+    # When False, monitor observes only (logs/metrics); set True to gate /health with 503.
+    canary_gate_readiness: bool = False
+    # Seconds of idle before a probe fires.
+    canary_wait_seconds: float = 5.0
+    # Per-probe round-trip deadline; a timeout counts as one miss.
+    canary_probe_timeout_seconds: float = 3.0
+    # Monitor loop cadence.
+    canary_tick_seconds: float = 1.0
+    # Consecutive misses before the model is declared Dead.
+    canary_dead_misses: int = 3
+    # Startup grace period after is_ready before the first probe fires.
+    # For multihost pipelines set this >= sp_warmup_timeout_seconds.
+    canary_startup_grace_seconds: float = 30.0
+    # When True, every Nth probe replays the compiled warmup forward to certify device liveness.
+    # Off by default: consumes device cycles and requires the warmup shape to avoid recompiles.
+    canary_deep_probe_enabled: bool = False
+    # Run a deep probe every Nth idle probe; the rest are cheap host collectives.
+    canary_deep_every_n: int = 3
+    # Deadline for deep probes; must be much larger than canary_probe_timeout_seconds.
+    canary_deep_probe_timeout_seconds: float = 60.0
+
     # Job management settings
     max_jobs: int = 10000
     job_cleanup_interval_seconds: int = 300
@@ -184,6 +207,20 @@ class Settings(BaseSettings):
                     supported_model = getattr(SupportedModels, model_name.name, None)
                     if supported_model:
                         self.model_weights_path = supported_model.value
+
+        # Honor a pre-mounted weights dir (e.g. --host-hf-cache / --host-weights-dir
+        # bind mount), the same way the vLLM server does, so the media runner loads
+        # weights locally instead of re-downloading by repo id. (#4107)
+        model_weights_dir = os.environ.get("MODEL_WEIGHTS_DIR")
+        if (
+            model_weights_dir
+            and os.path.isdir(model_weights_dir)
+            and any(os.scandir(model_weights_dir))
+        ):
+            self.model_weights_path = model_weights_dir
+            logger.info(
+                f"Using pre-mounted weights from MODEL_WEIGHTS_DIR: {model_weights_dir}"
+            )
 
         # use throttling overrides until we confirm is no-throttling a stable approach
         self._set_throttling_overrides()

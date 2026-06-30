@@ -148,6 +148,18 @@ RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
   if (modelType == "llama") {
     return {nullptr, nullptr};
   }
+  if (modelType == "gpt_oss") {
+    return {"gpt_oss", "harmony"};
+  }
+  if (modelType == "minimax_m2") {
+    return {"basic", "minimax_m2"};
+  }
+  if (modelType == "glm_moe_dsa") {
+    return {"glm45", "glm47"};
+  }
+  if (modelType == "deepseek_v4") {
+    return {"deepseek_v4", "deepseek_v4"};
+  }
   // deepseek_v3 and unknown types default to DeepSeek R1 reasoning.
   return {"deepseek_r1", nullptr};
 }
@@ -187,6 +199,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   const std::string tokenizerConfigPath =
       c.model_path + "/tokenizer_config.json";
   const std::string chatTemplatePath = c.model_path + "/chat_template.jinja";
+  const std::string genConfigPath = c.model_path + "/generation_config.json";
 
   Json::Value modelInfo(Json::objectValue);
   Json::Value hfConfig(Json::objectValue);
@@ -194,6 +207,19 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   hfConfig["checksum"] = fileChecksum(configPath);
   modelInfo["hf_config_json"] = std::move(hfConfig);
   card["model_info"] = std::move(modelInfo);
+
+  // generation_config.json carries eos_token_id / sampling defaults. Models
+  // like MiniMax omit eos_token_id from config.json, and the frontend hard-
+  // fails to load them without it. Publish it only when present so models that
+  // carry eos_token_id in config.json (DeepSeek, gpt-oss) are unaffected.
+  if (std::filesystem::exists(genConfigPath)) {
+    Json::Value genConfig(Json::objectValue);
+    Json::Value hfGenConfig(Json::objectValue);
+    hfGenConfig["path"] = genConfigPath;
+    hfGenConfig["checksum"] = fileChecksum(genConfigPath);
+    genConfig["hf_generation_config_json"] = std::move(hfGenConfig);
+    card["gen_config"] = std::move(genConfig);
+  }
 
   Json::Value tokenizer(Json::objectValue);
   Json::Value tokFile(Json::objectValue);
@@ -242,7 +268,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   runtime["max_num_batched_tokens"] = Json::Value::null;
   const RuntimeParsers parsers = runtimeParsersForModelPath(c.model_path);
   setRuntimeParserField(runtime, "reasoning_parser", parsers.reasoning);
-  runtime["tool_call_parser"] = Json::Value::null;
+  setRuntimeParserField(runtime, "tool_call_parser", parsers.tool_call);
   runtime["exclude_tools_when_tool_choice_none"] = true;
   runtime["data_parallel_start_rank"] = 0;
   runtime["data_parallel_size"] = 1;

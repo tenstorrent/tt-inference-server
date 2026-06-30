@@ -17,7 +17,7 @@
 #include <utility>
 
 #include "api/error_response.hpp"
-#include "services/base_service.hpp"
+#include "services/request_pipeline.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/thread_pool.hpp"

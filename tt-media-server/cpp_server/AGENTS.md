@@ -42,6 +42,33 @@ Logs default to `info`. For debug logs:
 TT_LOG_LEVEL=debug ./build/tt_media_server_cpp -p <PORT>
 ```
 
+### Log line identity
+
+Every log line is prefixed with the process role so that mixed
+decode/prefill/worker logs in a shared aggregator can be filtered by role
+without relying on separate tee files:
+
+```
+[2026-06-03 20:55:07.660] [decode] [info] ...
+[2026-06-03 20:55:07.881] [decode-worker0] [info] ...
+```
+
+The role is `LLM_MODE` (`decode` / `prefill` / `regular`) for the LLM service,
+the service name (`image` / `embedding`) otherwise. Forked worker subprocesses
+append `-worker<index>` (e.g. `decode-worker0`) so they stay distinguishable
+from the HTTP node. Controlled by `LLM_MODE`.
+
+## C++ Naming
+
+For new or edited C++ identifiers, prefer camel-style names such as `taskId`,
+`socketManager`, and `registrationHashes`. Avoid introducing snake_case or
+trailing-underscore names for implementation variables, members, methods, and
+local structs unless matching an existing external API or third-party type.
+
+Keep externally visible strings and schema keys stable unless the task is
+explicitly a contract change. This includes JSON fields, metric labels, protocol
+tag strings, environment variable names, and persisted/wire string values.
+
 ## Test
 
 **Unit + integration tests:**
@@ -51,7 +78,7 @@ cd build && ctest --output-on-failure
 ```
 
 **Canonical integration test:**
-[`tests/main_integration_test.cpp`](tests/main_integration_test.cpp) — gray-box round-trip
+[`tests/integration/server/main_integration_test.cpp`](tests/integration/server/main_integration_test.cpp) — gray-box round-trip
 of the controller against a mocked worker. Start with
 `HappyPath_RequestToMemoryToTaskToResponse` to understand the suite.
 

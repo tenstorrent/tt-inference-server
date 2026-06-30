@@ -15,6 +15,8 @@ class WorkflowType(IntEnum):
     SERVER = auto()
     RELEASE = auto()
     SPEC_TESTS = auto()
+    AGENTIC = auto()
+    SERVING_BENCH = auto()
 
     @classmethod
     def from_string(cls, name: str):
@@ -34,6 +36,10 @@ class WorkflowVenvType(IntEnum):
     REPORTS_RUN_SCRIPT = auto()
     V2_RUN_SCRIPT = auto()
     V2_PREFIX_CACHE = auto()
+    V2_LLM_VLLM = auto()
+    V2_LLM_GUIDELLM = auto()
+    V2_LLM_AIPERF = auto()
+    V2_SPEC_DECODE = auto()
     EVALS_COMMON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()
@@ -45,9 +51,8 @@ class WorkflowVenvType(IntEnum):
     BENCHMARKS_EMBEDDING = auto()
     BENCHMARKS_VIDEO = auto()
     BENCHMARKS_VLLM = auto()
+    BENCHMARKS_VLLM_FORGE = auto()
     BENCHMARKS_GENAI_PERF = auto()
-    BENCHMARKS_AIPERF = auto()
-    BENCHMARKS_GUIDELLM = auto()
     HF_SETUP = auto()
     SERVER = auto()
     TT_SMI = auto()

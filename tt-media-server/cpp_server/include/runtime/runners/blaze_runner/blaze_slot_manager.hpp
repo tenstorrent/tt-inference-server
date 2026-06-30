@@ -3,8 +3,10 @@
 
 #pragma once
 #include <cassert>
+#include <chrono>
 #include <cstdint>
 #include <optional>
+#include <sstream>
 #include <unordered_map>
 #include <vector>
 
@@ -23,6 +25,27 @@ class SlotManager {
 
   SlotContext& getSlotContext(uint32_t slotId) { return slots[slotId]; }
 
+  std::string dumpSlotStates() const {
+    std::stringstream ss;
+    for (size_t i = 0; i < slots.size(); ++i) {
+      ss << "Slot " << i << ": " << toString(slots[i].state)
+         << " (taskId=" << slots[i].taskId.value_or(-1) << ")\n";
+      ss << " pendingAckRequestId=" << slots[i].pendingAckRequestId.value_or(-1)
+         << "\n";
+      ss << " deferredEvict="
+         << (slots[i].deferredEvict.has_value() ? "true" : "false") << "\n";
+      ss << " deferredContinue="
+         << (slots[i].deferredContinue ? "true" : "false") << "\n";
+      ss << " currentPosition=" << slots[i].currentPosition << "\n";
+      ss << " ignoreEos=" << slots[i].ignoreEos << "\n";
+      ss << " specAcceptsAtStart=" << slots[i].specAcceptsAtStart << "\n";
+      ss << " specRejectsAtStart=" << slots[i].specRejectsAtStart << "\n";
+      ss << " tokensGenerated=" << slots[i].tokensGenerated << "\n";
+      ss << "----------------------------------------\n";
+    }
+    return ss.str();
+  }
+
   void clearSlotContext(uint32_t slotId) {
     auto& slot = slots[slotId];
     if (slot.taskId) taskToSlot.erase(*slot.taskId);
@@ -31,6 +54,7 @@ class SlotManager {
     slot.specAcceptsAtStart = 0;
     slot.specRejectsAtStart = 0;
     slot.tokensGenerated = 0;
+    slot.currentPosition = 0;
     slot.pendingAckRequestId.reset();
     slot.deferredEvict.reset();
     slot.deferredContinue.reset();
@@ -72,6 +96,7 @@ class SlotManager {
     if (state == SlotState::RUNNING) runningCount++;
     if (slots[slotId].state == SlotState::RUNNING) runningCount--;
     slots[slotId].setState(state);
+    slots[slotId].lastProgressTime = std::chrono::steady_clock::now();
   }
 
   void setSlotAsIdle(uint32_t slotId) {
@@ -85,6 +110,8 @@ class SlotManager {
     slotContext.pendingAckRequestId.reset();
     setSlotState(slotId, SlotState::IDLE);
   }
+
+  const std::vector<SlotContext>& getSlots() const { return slots; }
 
  private:
   std::vector<SlotContext> slots;

@@ -9,8 +9,6 @@ templates:
 - weights:
     - stabilityai/stable-diffusion-xl-base-1.0
     - stabilityai/stable-diffusion-xl-base-1.0-img-2-img
-  version: "0.11.1"
-  tt_metal_commit: bac8b34
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
@@ -35,6 +33,10 @@ templates:
       max_concurrency: 32
       max_context: 65536  # 64 * 1024
       default_impl: true
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32
+      max_context: 65536  # 64 * 1024
+      default_impl: true
     - device: P150
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
@@ -54,9 +56,36 @@ templates:
   status: COMPLETE
 
 - weights:
+    - stabilityai/stable-diffusion-xl-base-1.0
+  impl: sdxl_forge
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: FORGE
+  status: EXPERIMENTAL
+  env_vars:
+    # stable-diffusion-xl-base-1.0 maps to both TT_SDXL_TRACE and TT_XLA_SDXL;
+    # pin the forge runner explicitly or settings auto-detect falls back to the
+    # (tt-metal-only) trace runner, which isn't in the forge image.
+    MODEL_RUNNER: "tt-xla-sdxl"
+    TTXLA_SDXL_FULL_ON_DEVICE: "true"
+  hf_weights_repo: stabilityai/stable-diffusion-xl-base-1.0
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: false
+      # Single N150 lacks DRAM for UNet+VAE+text-encoders all on device (OOMs in
+      # warmup). Run UNet-only on device (VAE/CLIP on CPU) — verified ~16s/image.
+      env_vars:
+        TTXLA_SDXL_FULL_ON_DEVICE: "false"
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: false
+
+- weights:
     - stabilityai/stable-diffusion-3.5-large
-  version: "0.9.0"
-  tt_metal_commit: c180ef7
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
@@ -75,12 +104,9 @@ templates:
 
 - weights:
     - diffusers/stable-diffusion-xl-1.0-inpainting-0.1
-  version: "0.12.0"
-  tt_metal_commit: fbbbd2d
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
-  docker_image: "ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd"
   model_type: IMAGE
   inference_engine: MEDIA
   device_model_specs:
@@ -121,8 +147,6 @@ templates:
 - weights:
     - black-forest-labs/FLUX.1-dev
     - black-forest-labs/FLUX.1-schnell
-  version: "0.14.0"
-  tt_metal_commit: 80180b9
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
@@ -141,14 +165,21 @@ templates:
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
-    - device: P300X2
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
     - device: P150X4
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
+  status: COMPLETE
+
+- weights:
+    - black-forest-labs/FLUX.1-dev
+    - black-forest-labs/FLUX.1-schnell
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
     - device: P150X8
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
@@ -156,9 +187,39 @@ templates:
   status: COMPLETE
 
 - weights:
+    - black-forest-labs/FLUX.1-dev
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 55000000
+  status: COMPLETE
+
+- weights:
+    - black-forest-labs/FLUX.1-schnell
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 55000000
+  status: COMPLETE
+
+- weights:
     - Motif-Technologies/Motif-Image-6B-Preview
-  version: "0.9.0"
-  tt_metal_commit: c180ef7
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
@@ -186,22 +247,35 @@ templates:
 - weights:
     - Qwen/Qwen-Image
     - Qwen/Qwen-Image-2512
-  version: "0.9.0"
-  tt_metal_commit: be88351
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
   model_type: IMAGE
   inference_engine: MEDIA
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
   device_model_specs:
     - device: T3K
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
-      env_vars:
-        TT_DIT_CACHE_DIR: /tmp/TT_DIT_CACHE
     - device: GALAXY
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: FUNCTIONAL
+
+- weights:
+    - Tongyi-MAI/Z-Image-Turbo
+  impl: tt_transformers
+  min_disk_gb: 30
+  min_ram_gb: 16
+  model_type: IMAGE
+  inference_engine: MEDIA
+  hf_weights_repo: Tongyi-MAI/Z-Image-Turbo
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 65536
       default_impl: true
   status: FUNCTIONAL

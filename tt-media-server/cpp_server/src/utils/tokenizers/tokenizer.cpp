@@ -200,8 +200,20 @@ std::string tokenizerDirForModel(config::ModelType model) {
   switch (model) {
     case config::ModelType::KIMI_K2_6:
       return "moonshotai/Kimi-K2.6";
+    case config::ModelType::KIMI_K2_7_CODE:
+      return "moonshotai/Kimi-K2.7-Code";
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return "meta-llama/Llama-3.1-8B-Instruct";
+    case config::ModelType::GPT_OSS_120B:
+      return "openai/gpt-oss-120b";
+    case config::ModelType::MINIMAX_M2_7:
+      return "MiniMaxAI/MiniMax-M2.7";
+    case config::ModelType::GLM_5_1:
+      return "zai-org/GLM-5.1";
+    case config::ModelType::GLM_5_2:
+      return "zai-org/GLM-5.2";
+    case config::ModelType::DEEPSEEK_V4_PRO:
+      return "deepseek-ai/DeepSeek-V4-Pro";
     case config::ModelType::DEEPSEEK_R1_0528:
     default:
       return "deepseek-ai/DeepSeek-R1-0528";
@@ -214,11 +226,21 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return std::make_unique<LlamaTokenizer>(path);
     case config::ModelType::KIMI_K2_6:
-      // Kimi K2.6 uses model-specific files, but currently shares the same
-      // chat-template/tool-call behavior as DeepSeek until a dedicated
+    case config::ModelType::KIMI_K2_7_CODE:
+      // Kimi K2.6 / K2.7-Code use model-specific files, but currently share the
+      // same chat-template/tool-call behavior as DeepSeek until a dedicated
       // Kimi tokenizer implementation is added.
       return std::make_unique<DeepseekTokenizer>(path);
+    case config::ModelType::GPT_OSS_120B:
+    case config::ModelType::MINIMAX_M2_7:
+    case config::ModelType::GLM_5_1:
+    case config::ModelType::GLM_5_2:
+      // These load their own model-specific files but currently reuse the
+      // DeepSeek chat-template/tool-call behavior until a dedicated tokenizer
+      // implementation is added.
+      return std::make_unique<DeepseekTokenizer>(path);
     case config::ModelType::DEEPSEEK_R1_0528:
+    case config::ModelType::DEEPSEEK_V4_PRO:
     default:
       return std::make_unique<DeepseekTokenizer>(path);
   }
@@ -243,6 +265,7 @@ const StaticTokenizerInfo& deepseekR1Info() {
   static const StaticTokenizerInfo kInfo{
       /*modelName=*/"deepseek-ai/DeepSeek-R1-0528",
       /*stopTokenIds=*/{1},
+      /*eosTokenId=*/1,
       /*assistantHeaderSequence=*/{128804},
       /*thinkStartTokenId=*/128798,
       /*thinkEndTokenId=*/128799,
@@ -254,6 +277,7 @@ const StaticTokenizerInfo& llama31Info() {
   static const StaticTokenizerInfo kInfo{
       /*modelName=*/"meta-llama/Llama-3.1-8B-Instruct",
       /*stopTokenIds=*/{128001, 128008, 128009},
+      /*eosTokenId=*/128001,
       /*assistantHeaderSequence=*/{128006, 78191, 128007, 271},
   };
   return kInfo;
@@ -263,7 +287,109 @@ const StaticTokenizerInfo& kimiK26Info() {
   static const StaticTokenizerInfo kInfo{
       /*modelName=*/"moonshotai/Kimi-K2.6",
       /*stopTokenIds=*/{163586},
+      /*eosTokenId=*/163585,
       /*assistantHeaderSequence=*/{163588},
+      /*thinkStartTokenId=*/163606,  // <think>
+      /*thinkEndTokenId=*/163607,    // </think>
+  };
+  return kInfo;
+}
+
+// IDs verified against the fetched Kimi-K2.7-Code tokenizer; identical layout
+// to Kimi-K2.6 (config.json eos_token_id 163586 <|im_end|>, [EOS] 163585,
+// <|im_assistant|> 163588, <think>/</think> 163606/163607). model_type is
+// "kimi_k25", so discovery reuses the existing kimi_k25 parser branch.
+const StaticTokenizerInfo& kimiK27CodeInfo() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"moonshotai/Kimi-K2.7-Code",
+      /*stopTokenIds=*/{163586},
+      /*eosTokenId=*/163585,
+      /*assistantHeaderSequence=*/{163588},
+      /*thinkStartTokenId=*/163606,  // <think>
+      /*thinkEndTokenId=*/163607,    // </think>
+  };
+  return kInfo;
+}
+
+// IDs verified against the fetched o200k_harmony tokenizer. gpt-oss uses the
+// Harmony channel format rather than <think> tags, so no think tokens; the
+// assistant turn ends on <|return|> (200002) and a tool call on <|call|>
+// (200012). assistantHeaderSequence is left empty (the Harmony header is
+// multi-token and handled by the chat template, not a fixed prefix here).
+const StaticTokenizerInfo& gptOss120bInfo() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"openai/gpt-oss-120b",
+      // generation_config.json eos_token_id: [200002, 199999, 200012] =
+      // <|return|> (final turn), <|endoftext|>, <|call|> (tool call).
+      /*stopTokenIds=*/{199999, 200012},
+      /*eosTokenId=*/200002,  // <|return|> (primary, per config.json)
+      /*assistantHeaderSequence=*/{},
+  };
+  return kInfo;
+}
+
+// IDs verified against the fetched MiniMax-M2.7 tokenizer.
+const StaticTokenizerInfo& minimaxM27Info() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"MiniMaxAI/MiniMax-M2.7",
+      /*stopTokenIds=*/{},
+      /*eosTokenId=*/200020,  // [e~[
+      /*assistantHeaderSequence=*/{},
+      /*thinkStartTokenId=*/200050,  // <think>
+      /*thinkEndTokenId=*/200051,    // </think>
+  };
+  return kInfo;
+}
+
+// IDs verified against the fetched GLM-5.1 tokenizer (added_tokens in
+// tokenizer.json). Identical special-token layout to GLM-5.2: same eos set
+// [154820, 154827, 154829] and <think>/</think> 154841/154842, and the same
+// glm_moe_dsa model_type (so discovery reuses the glm45/glm47 parser branch).
+const StaticTokenizerInfo& glm51Info() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"zai-org/GLM-5.1",
+      // config.json / generation_config.json eos_token_id:
+      // [154820, 154827, 154829] = <|endoftext|>, <|user|>, <|observation|>.
+      /*stopTokenIds=*/{154827, 154829},
+      /*eosTokenId=*/154820,  // <|endoftext|> (primary; also pad + tokenizer
+                              // eos)
+      /*assistantHeaderSequence=*/{},
+      /*thinkStartTokenId=*/154841,  // <think>
+      /*thinkEndTokenId=*/154842,    // </think>
+  };
+  return kInfo;
+}
+
+// IDs verified against the fetched GLM-5.2 tokenizer (added_tokens in
+// tokenizer.json). GLM uses <think>...</think> reasoning and <tool_call>/
+// <arg_key>/<arg_value> tool calls.
+const StaticTokenizerInfo& glm52Info() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"zai-org/GLM-5.2",
+      // config.json / generation_config.json eos_token_id:
+      // [154820, 154827, 154829] = <|endoftext|>, <|user|>, <|observation|>.
+      /*stopTokenIds=*/{154827, 154829},
+      /*eosTokenId=*/154820,  // <|endoftext|> (primary; also pad + tokenizer
+                              // eos)
+      /*assistantHeaderSequence=*/{},
+      /*thinkStartTokenId=*/154841,  // <think>
+      /*thinkEndTokenId=*/154842,    // </think>
+  };
+  return kInfo;
+}
+
+// IDs verified against the fetched DeepSeek-V4-Pro tokenizer (added_tokens in
+// tokenizer.json). Same DeepSeek-R1 special-token layout (eos 1, assistant
+// header 128804) but the <think>/</think> ids differ from R1-0528
+// (128821/128822 vs 128798/128799), so it needs its own static info.
+const StaticTokenizerInfo& deepseekV4ProInfo() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"deepseek-ai/DeepSeek-V4-Pro",
+      /*stopTokenIds=*/{1},
+      /*eosTokenId=*/1,  // <｜end▁of▁sentence｜> (config + generation_config)
+      /*assistantHeaderSequence=*/{128804},  // <｜Assistant｜>
+      /*thinkStartTokenId=*/128821,          // <think>
+      /*thinkEndTokenId=*/128822,            // </think>
   };
   return kInfo;
 }
@@ -278,6 +404,18 @@ const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
       return llama31Info();
     case config::ModelType::KIMI_K2_6:
       return kimiK26Info();
+    case config::ModelType::KIMI_K2_7_CODE:
+      return kimiK27CodeInfo();
+    case config::ModelType::GPT_OSS_120B:
+      return gptOss120bInfo();
+    case config::ModelType::MINIMAX_M2_7:
+      return minimaxM27Info();
+    case config::ModelType::GLM_5_1:
+      return glm51Info();
+    case config::ModelType::GLM_5_2:
+      return glm52Info();
+    case config::ModelType::DEEPSEEK_V4_PRO:
+      return deepseekV4ProInfo();
   }
   throw std::invalid_argument(
       "tokenizers::staticInfoFor: no static info registered for ModelType " +

@@ -56,6 +56,7 @@
             "n300": "Tests for N300 device (2 chips)",
             "t3k": "Tests for T3K device (4 chips)",
             "galaxy": "Tests for Galaxy device (32 chips)",
+            "blackhole_galaxy": "Tests for Blackhole Galaxy device (32 P150 chips)",
             "p150": "Tests for P150 device (1 chip)",
             "p150x4": "Tests for P150x4 device (4 chips)",
             "p150x8": "Tests for P150x8 device (8 chips)",
@@ -166,6 +167,7 @@
             "category": "AUDIO",
             "compatible_devices": [
                 "n150",
+                "p150",
                 "t3k",
                 "galaxy"
             ]
@@ -178,7 +180,8 @@
             "compatible_devices": [
                 "n150",
                 "t3k",
-                "galaxy"
+                "galaxy",
+                "blackhole_galaxy"
             ]
         },
         "wan": {
@@ -312,6 +315,15 @@
                 "p300x2"
             ]
         },
+        "z_image_turbo": {
+            "weights": [
+                "Z-Image-Turbo"
+            ],
+            "category": "IMAGE",
+            "compatible_devices": [
+                "p300x2"
+            ]
+        },
         "bge": {
             "weights": [
                 "bge-large-en-v1.5"
@@ -361,6 +373,10 @@
             "liveness_retry_attempts": 120
         },
         "galaxy": {
+            "num_of_devices": 32,
+            "liveness_retry_attempts": 220
+        },
+        "blackhole_galaxy": {
             "num_of_devices": 32,
             "liveness_retry_attempts": 220
         },

@@ -34,28 +34,38 @@ constexpr size_t MAX_QUEUE_SIZE = 1000;
 constexpr const char* SCHEDULING_POLICY =
     "prefill_first";  // "prefill_first" or "max_occupancy"
 constexpr const char* LLM_DEVICE_BACKEND =
-    "mock_pipeline";  // "mock", "mock_pipeline", "pipeline", "llama"
-constexpr const bool ENABLE_ACCUMULATED_STREAMING = false;
-constexpr size_t MAX_ACCUMULATED_TOKENS = 5;
+    "mock_pipeline";  // "mock", "mock_pipeline", "pipeline_manager", "llama"
 constexpr size_t MAX_IN_FLIGHT_COUNT = 32;
 constexpr size_t MAX_SESSIONS_COUNT = 128;
 constexpr unsigned SESSION_EVICTION_RATE = 90;
 constexpr size_t SESSION_EVICTION_COUNT = 10;
 constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 1000;
 constexpr size_t MAX_CONTEXT_LENGTH = 65536;  // 64k
-constexpr size_t MAX_ISL = 51200;             // 50k (max input sequence length)
+constexpr size_t MAX_ISL = 256000;  // 2000k (max input sequence length)
+constexpr size_t MIN_TOKENS_TO_COPY =
+    1024;  // min matched tokens to justify slot copy
 constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
 constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
-constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 80;
+constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 40;
 constexpr bool USE_FAST_MODE = false;
+constexpr bool ENABLE_MIGRATION = false;
+constexpr const char* MIGRATION_CMD_QUEUE_NAME = "mig_ep0_cmd";
+constexpr const char* MIGRATION_TABLE_QUEUE_NAME = "mig_ep0_table";
+constexpr const char* MIGRATION_RESP_QUEUE_NAME = "mig_ep0_resp";
+constexpr uint32_t MIGRATION_PREFILL_ENDPOINT_ID = 0;
+constexpr uint32_t MIGRATION_DECODE_ENDPOINT_ID = 1;
+constexpr const char* PREFILL_ACK_CHANNEL_NAME = "tt_prefill_layer_acks";
 constexpr const char* KAFKA_BROKERS = "localhost:9092";
 constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";
 constexpr const char* KAFKA_GROUP_ID = "migration-workers";
+constexpr const char* KAFKA_MIGRATION_REQUEST_TOPIC = "kv-migration-requests";
+constexpr const char* KAFKA_MIGRATION_ACK_TOPIC = "kv-migration-acks";
 
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
-constexpr unsigned PREFILL_TIMEOUT_MS = 20000;
 
-constexpr const char* BLAZE_SOCKET_DESCRIPTOR_PREFIX = "deepseek";
+constexpr const char* SPEC_DECODE_MODE = "none";
+constexpr size_t MTP_LEVEL = 1;
+
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
 constexpr const char* TT_RESULT_QUEUE = "tt_results";
 constexpr const char* TT_CANCEL_QUEUE = "tt_cancels";
@@ -65,19 +75,21 @@ constexpr const char* TT_WARMUP_SIGNALS_QUEUE = "tt_warmup_signals";
 constexpr const char* TT_MEMORY_REQUEST_QUEUE = "tt_mem_requests";
 constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
 constexpr const char* TT_WORKER_METRICS_SHM = "/tt_worker_metrics";
+constexpr uint32_t MODEL_NUM_LAYERS = 61;
+constexpr uint32_t PREFILL_CHUNK_SIZE = 5120;
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 128;
-constexpr bool USE_DEEPSEEK_MD_FORMAT = false;
-constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
+constexpr unsigned WARMUP_TIMEOUT_MS = 150000;
 /**
  * Max time (ms) the runner may go without producing a model output while at
  * least one request is in flight before it self-terminates the worker
  * process. Self-terminating lets the infrastructure monitoring stack notice
  * the crash and restart the server instead of hanging silently.
  */
-constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 60000;
+constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 150000;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
+constexpr const char* WIRE_FORMAT = "blaze";
 
 constexpr const char* SERVER_HOST = "0.0.0.0";
 constexpr uint16_t SERVER_PORT = 8000;
@@ -123,7 +135,7 @@ constexpr const char* DYNAMO_COMPONENT = "backend";
 constexpr const char* DYNAMO_ENDPOINT_NAME = "generate";
 
 // Discovery: etcd endpoint for Dynamo's KVStoreDiscovery.
-constexpr const char* DYNAMO_ETCD_ENDPOINTS = "http://localhost:2379";
+constexpr const char* DYNAMO_ETCD_ENDPOINTS = "http://etcd:2379/";
 // Lease TTL for instance + MDC entries in etcd. The keep-alive thread
 // refreshes the lease at half this interval so a missed tick doesn't trip
 // the reaper.

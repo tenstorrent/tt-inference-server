@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 _MODEL_DIFF_PARAM_OVERRIDES = {
     "FLUX.1-dev": {"seed": 0},
     "FLUX.1-schnell": {"seed": 0},
+    "Motif-Image-6B-Preview": {"seed": 0},
 }
 default_payload = {
     "prompt": "A beautiful sunset over a mountain landscape with vibrant colors",
@@ -115,7 +116,7 @@ class ImageGenerationParamTest(BaseTest):
     TASK_TYPE = "image"
 
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/v1/images/generations"
+        self.url = f"{self.base_url}/v1/images/generations"
         logger.info(f"Targets: {self.targets}")
 
         model = self.targets.get("model", "")

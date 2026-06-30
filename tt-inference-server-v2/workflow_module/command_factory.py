@@ -11,16 +11,30 @@ import logging
 import os
 import shlex
 import sys
-from typing import List, Optional, Sequence
+from pathlib import Path
+from typing import List, Optional
 
 from workflows.model_spec import get_runtime_model_spec
 from workflows.runtime_config import RuntimeConfig
 from workflows.workflow_types import DeviceTypes
 
+from utils.url_helpers import resolve_deploy_url
+
 from test_module import MediaContext
 
-from .commands import Command, WorkflowCommand
-from .execution import OrchestratorMetadata, PrefixCacheOptions
+from .commands import Command, SummaryCommand, WorkflowCommand
+from .execution import (
+    LLMBenchOptions,
+    LLMEvalOptions,
+    OrchestratorMetadata,
+    PrefixCacheOptions,
+    ServingBenchOptions,
+    SpecDecodeOptions,
+)
+
+# Workflows whose LLM path runs the standard-eval / perf-benchmark child.
+_LLM_BENCH_WORKFLOWS = frozenset({"benchmarks", "release"})
+_LLM_EVAL_WORKFLOWS = frozenset({"evals", "release"})
 
 logger = logging.getLogger(__name__)
 
@@ -34,20 +48,56 @@ class CommandFactory:
 
     @staticmethod
     def build(args: argparse.Namespace) -> List[Command]:
-        ctx = _build_context(args)
         metadata = _build_orchestrator_metadata(args)
-        commands: List[Command] = [
-            WorkflowCommand(
-                ctx=ctx,
-                workflow_name=args.workflow,
-                orchestrator_metadata=metadata,
-                num_prompts=args.num_prompts,
-            ),
-        ]
-        return commands
+        repeat = max(1, int(getattr(args, "repeat", 1) or 1))
+        if repeat == 1:
+            return [_workflow_command(args, _build_context(args), metadata)]
+        return _build_repeated_commands(args, metadata, repeat)
 
 
-def _build_context(args: argparse.Namespace) -> MediaContext:
+def _workflow_command(
+    args: argparse.Namespace,
+    ctx: MediaContext,
+    metadata: OrchestratorMetadata,
+    *,
+    continue_on_failure: bool = False,
+) -> WorkflowCommand:
+    return WorkflowCommand(
+        ctx=ctx,
+        workflow_name=args.workflow,
+        orchestrator_metadata=metadata,
+        num_prompts=args.num_prompts,
+        continue_on_failure=continue_on_failure,
+    )
+
+
+def _build_repeated_commands(
+    args: argparse.Namespace,
+    metadata: OrchestratorMetadata,
+    repeat: int,
+) -> List[Command]:
+    """N per-run workflows into ``run_NN/`` subfolders + a final summary."""
+    leaf = f"{args.model}_{args.device}_{args.workflow}"
+    container = Path(args.output_dir) / leaf
+    commands: List[Command] = []
+    for run_index in range(1, repeat + 1):
+        run_output = container / f"run_{run_index:02d}" / leaf
+        ctx = _build_context(args, output_path=run_output)
+        commands.append(
+            _workflow_command(args, ctx, metadata, continue_on_failure=True)
+        )
+    commands.append(
+        SummaryCommand(
+            container_dir=container,
+            summary_output_dir=container / "summary",
+        )
+    )
+    return commands
+
+
+def _build_context(
+    args: argparse.Namespace, output_path: Optional[Path] = None
+) -> MediaContext:
     model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
     model_spec.cli_args["device"] = args.device
     if args.num_prompts is not None:
@@ -56,7 +106,9 @@ def _build_context(args: argparse.Namespace) -> MediaContext:
     device = DeviceTypes.from_string(args.device)
     runtime_config = _load_runtime_config(args.runtime_model_spec_json)
 
-    output_path = args.output_dir / f"{args.model}_{args.device}_{args.workflow}"
+    if output_path is None:
+        output_path = args.output_dir / f"{args.model}_{args.device}_{args.workflow}"
+    output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 
     eval_cfg = _resolve_eval_config(args.model)
@@ -70,7 +122,25 @@ def _build_context(args: argparse.Namespace) -> MediaContext:
         service_port=args.service_port,
         spec_tests_num_prompts_cap=args.num_prompts,
         runtime_config=runtime_config,
+        server_url=_resolve_server_url(args, runtime_config),
     )
+
+
+def _resolve_server_url(
+    args: argparse.Namespace, runtime_config: Optional[RuntimeConfig]
+) -> str:
+    """Pick the inference-server URL to target an already-running server.
+
+    Prefers the explicit ``--server-url`` CLI flag, then delegates to the
+    shared :func:`resolve_deploy_url` (``RuntimeConfig.server_url`` propagated
+    through the v2 bridge, then the ``DEPLOY_URL`` env var, then the localhost
+    default). This routes v2 through the same single source of truth as every
+    v1 workflow rather than re-deriving the precedence here.
+    """
+    explicit = getattr(args, "server_url", None)
+    if explicit:
+        return explicit
+    return resolve_deploy_url(runtime_config)
 
 
 def _resolve_eval_config(model_name: str):
@@ -90,12 +160,70 @@ def _resolve_eval_config(model_name: str):
 
 def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetadata:
     runtime_config = _load_runtime_config(args.runtime_model_spec_json)
+    server_mode = _resolve_server_mode(args, runtime_config)
     return OrchestratorMetadata(
-        server_mode=_resolve_server_mode(args, runtime_config),
-        run_command=_capture_run_command(),
+        server_mode=server_mode,
+        run_command=_resolve_run_command(),
         runtime_model_spec_json=args.runtime_model_spec_json,
         prefix_cache=_build_prefix_cache_options(args),
+        spec_decode=_build_spec_decode_options(args),
+        serving_bench=_build_serving_bench_options(args),
+        llm_bench=_build_llm_bench_options(args),
+        llm_eval=_build_llm_eval_options(args),
     )
+
+
+def _build_llm_bench_options(args: argparse.Namespace) -> Optional[LLMBenchOptions]:
+    """Translate ``--tools`` into ``LLMBenchOptions`` for the LLM perf benchmark.
+
+    Built for ``--workflow benchmarks`` and ``--workflow release`` (whose
+    benchmark child runs the same sweep). The prefix-cache / spec-decode
+    variants have their own options and are excluded.
+    """
+    if getattr(args, "workflow", None) not in _LLM_BENCH_WORKFLOWS:
+        return None
+    if getattr(args, "prefix_cache", False):
+        return None
+    if getattr(args, "spec_decode", False):
+        return None
+    return LLMBenchOptions(
+        tools=getattr(args, "tools", None) or "vllm",
+        auth_token=_mint_jwt_if_secret(getattr(args, "jwt_secret", None)),
+        venv_python=_release_bench_venv_python(args),
+    )
+
+
+def _release_bench_venv_python(args: argparse.Namespace) -> Optional[str]:
+    """Tool-venv interpreter for the release benchmark child.
+
+    A standalone benchmarks run is already inside the tool venv (run_llm_bench.py
+    re-execs there), so its driver uses ``sys.executable`` — return ``None``.
+    A release run executes in the V2_RUN_SCRIPT venv, so pin the default
+    perf-tool venv (V2_LLM_VLLM); the v2 bridge provisions it before run.py.
+    """
+    if getattr(args, "workflow", None) != "release":
+        return None
+    from workflows.workflow_types import WorkflowVenvType
+    from workflows.workflow_venvs import VENV_CONFIGS
+
+    return str(VENV_CONFIGS[WorkflowVenvType.V2_LLM_VLLM].venv_python)
+
+
+def _build_llm_eval_options(args: argparse.Namespace) -> Optional[LLMEvalOptions]:
+    """Bearer-token plumbing for the LLM standard-eval child (evals/release)."""
+    if getattr(args, "workflow", None) not in _LLM_EVAL_WORKFLOWS:
+        return None
+    return LLMEvalOptions(
+        auth_token=_mint_jwt_if_secret(getattr(args, "jwt_secret", None)),
+    )
+
+
+def _build_serving_bench_options(
+    args: argparse.Namespace,
+) -> Optional[ServingBenchOptions]:
+    if getattr(args, "workflow", None) != "serving_bench":
+        return None
+    return ServingBenchOptions(suites=getattr(args, "serving_bench_suites", None))
 
 
 def _build_prefix_cache_options(
@@ -117,6 +245,25 @@ def _build_prefix_cache_options(
         request_rate=args.prefix_cache_request_rate,
         scenarios_json=args.prefix_cache_scenarios_json,
         trace_path=args.prefix_cache_trace,
+        auth_token=_mint_jwt_if_secret(args.jwt_secret),
+    )
+
+
+def _build_spec_decode_options(
+    args: argparse.Namespace,
+) -> Optional[SpecDecodeOptions]:
+    """Translate the ``--spec-decode*`` CLI flags into ``SpecDecodeOptions``.
+
+    Returns ``None`` (the default) for every non-spec-decode run, leaving
+    ``BenchmarksWorkflow`` on its normal media-task dispatch. The flags are
+    only present when ``run.py`` registered them, so ``getattr`` guards keep
+    this safe for the image-model entry path that never adds them.
+    """
+    if not getattr(args, "spec_decode", False):
+        return None
+    return SpecDecodeOptions(
+        preset=args.spec_decode_preset,
+        warmup_requests=args.spec_decode_warmup_requests,
         auth_token=_mint_jwt_if_secret(args.jwt_secret),
     )
 
@@ -173,9 +320,15 @@ def _resolve_server_mode(
     return "docker" if args.docker_server else "API"
 
 
-def _capture_run_command(argv: Optional[Sequence[str]] = None) -> str:
-    parts = list(sys.argv if argv is None else argv)
-    return "python " + shlex.join(parts)
+_V1_RUN_COMMAND_ENV = "TT_V1_RUN_COMMAND"
+
+
+def _resolve_run_command() -> str:
+    """Resolve the ``run_command`` recorded in the report metadata."""
+    propagated = os.environ.get(_V1_RUN_COMMAND_ENV)
+    if propagated:
+        return propagated
+    return "python " + shlex.join(sys.argv)
 
 
 __all__ = ["CommandFactory"]

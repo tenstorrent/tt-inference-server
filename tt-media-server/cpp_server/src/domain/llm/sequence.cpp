@@ -35,7 +35,10 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
                    std::optional<uint32_t> prefillSlotId, bool continuation,
                    bool disaggregated,
                    std::unique_ptr<SamplingParams> inputSamplingParams,
-                   std::optional<uint32_t> kvPositionId)
+                   std::optional<uint32_t> kvPositionId, int decodePositionId,
+                   int decodeSkipTokens, std::optional<uint64_t> migrationId,
+                   bool startsInThinking,
+                   std::optional<uint32_t> migrationStartPosition)
     : taskId(taskId),
       status(SequenceStatus::WAITING),
       tokenIds(std::move(inputTokenIds)),
@@ -46,7 +49,12 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
       kvCacheSlot(slotId.value_or(tt::domain::INVALID_SLOT_ID)),
       prefillKvCacheSlot(prefillSlotId.value_or(tt::domain::INVALID_SLOT_ID)),
       continuation(continuation),
-      disaggregated(disaggregated) {
+      disaggregated(disaggregated),
+      decodePositionId(decodePositionId),
+      decodeSkipTokens(decodeSkipTokens),
+      migrationId(migrationId),
+      migrationStartPosition(std::move(migrationStartPosition)),
+      startsInThinking_(startsInThinking) {
   if (!tokenIds.empty()) {
     lastToken = tokenIds.back();
   }
@@ -110,6 +118,30 @@ void Sequence::serialize(std::ostream& os) const {
     os.write(reinterpret_cast<const char*>(&kvPositionIdValue),
              sizeof(uint32_t));
   }
+  os.write(reinterpret_cast<const char*>(&decodePositionId),
+           sizeof(decodePositionId));
+  os.write(reinterpret_cast<const char*>(&decodeSkipTokens),
+           sizeof(decodeSkipTokens));
+  uint8_t hasMigrationId = migrationId.has_value() ? 1 : 0;
+  os.write(reinterpret_cast<const char*>(&hasMigrationId),
+           sizeof(hasMigrationId));
+  if (hasMigrationId) {
+    uint64_t migrationIdValue = migrationId.value();
+    os.write(reinterpret_cast<const char*>(&migrationIdValue),
+             sizeof(migrationIdValue));
+  }
+  uint8_t startsInThinkingFlag = startsInThinking_ ? 1 : 0;
+  os.write(reinterpret_cast<const char*>(&startsInThinkingFlag),
+           sizeof(startsInThinkingFlag));
+  uint8_t hasMigrationStartPosition =
+      migrationStartPosition.has_value() ? 1 : 0;
+  os.write(reinterpret_cast<const char*>(&hasMigrationStartPosition),
+           sizeof(hasMigrationStartPosition));
+  if (hasMigrationStartPosition) {
+    uint32_t migrationStartPositionValue = migrationStartPosition.value();
+    os.write(reinterpret_cast<const char*>(&migrationStartPositionValue),
+             sizeof(migrationStartPositionValue));
+  }
 }
 
 Sequence Sequence::deserialize(std::istream& is) {
@@ -160,7 +192,33 @@ Sequence Sequence::deserialize(std::istream& is) {
   } else {
     seq.kvPositionId = std::nullopt;
   }
+  is.read(reinterpret_cast<char*>(&seq.decodePositionId),
+          sizeof(seq.decodePositionId));
+  is.read(reinterpret_cast<char*>(&seq.decodeSkipTokens),
+          sizeof(seq.decodeSkipTokens));
+  uint8_t hasMigrationId = 0;
+  is.read(reinterpret_cast<char*>(&hasMigrationId), sizeof(hasMigrationId));
+  if (hasMigrationId) {
+    seq.migrationId = std::make_optional<uint64_t>(0);
+    is.read(reinterpret_cast<char*>(&(*seq.migrationId)),
+            sizeof(*seq.migrationId));
+  } else {
+    seq.migrationId = std::nullopt;
+  }
+  uint8_t startsInThinkingFlag = 0;
+  is.read(reinterpret_cast<char*>(&startsInThinkingFlag),
+          sizeof(startsInThinkingFlag));
+  seq.startsInThinking_ = startsInThinkingFlag != 0;
+  uint8_t hasMigrationStartPosition = 0;
+  is.read(reinterpret_cast<char*>(&hasMigrationStartPosition),
+          sizeof(hasMigrationStartPosition));
+  if (hasMigrationStartPosition) {
+    seq.migrationStartPosition = std::make_optional<uint32_t>(0);
+    is.read(reinterpret_cast<char*>(&(*seq.migrationStartPosition)),
+            sizeof(*seq.migrationStartPosition));
+  } else {
+    seq.migrationStartPosition = std::nullopt;
+  }
   return seq;
 }
-
 }  // namespace tt::domain::llm

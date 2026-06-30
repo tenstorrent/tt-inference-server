@@ -43,6 +43,27 @@ std::string envString(const char* name, const std::string& defaultValue) {
   return v ? std::string(v) : defaultValue;
 }
 
+std::string resolveBlazeSocketDescriptorPrefix() {
+  switch (modelType()) {
+    case ModelType::DEEPSEEK_R1_0528:
+      return "deepseek";
+    case ModelType::LLAMA_3_1_8B_INSTRUCT:
+      return "llama";
+    case ModelType::KIMI_K2_6:
+    case ModelType::KIMI_K2_7_CODE:
+      return "kimi";
+    case ModelType::GPT_OSS_120B:
+      return "gpt-oss";
+    case ModelType::MINIMAX_M2_7:
+      return "minimax";
+    case ModelType::GLM_5_1:
+    case ModelType::GLM_5_2:
+      return "glm";
+    case ModelType::DEEPSEEK_V4_PRO:
+      return "deepseek";
+  }
+}
+
 /** Read env string and convert to lowercase for case-insensitive parsing. */
 std::string envStringLower(const char* name, const std::string& defaultValue) {
   return toLower(envString(name, defaultValue));
@@ -213,9 +234,8 @@ std::string visibleDevicesForWorker(size_t workerIndex) {
 }
 
 std::string blazeSocketDescriptorPrefix() {
-  static const std::string cached =
-      envString("BLAZE_SOCKET_DESCRIPTOR_PREFIX",
-                defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX);
+  static const std::string cached = envString(
+      "BLAZE_SOCKET_DESCRIPTOR_PREFIX", resolveBlazeSocketDescriptorPrefix());
   return cached;
 }
 
@@ -224,7 +244,7 @@ unsigned pmConnectTimeoutMs() {
       envUlong("PM_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
 }
 
-size_t dsMaxUsers() {
+size_t pmMaxUsers() {
   return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
 }
 
@@ -238,13 +258,12 @@ unsigned outputHangTimeoutMs() {
       envUlong("OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
 }
 
-bool useDeepseekMdFormat() {
-  return static_cast<bool>(
-      envUlong("USE_DEEPSEEK_MD_FORMAT", defaults::USE_DEEPSEEK_MD_FORMAT));
-}
-
 std::string ttTaskQueueName() {
   return envString("TT_TASK_QUEUE", defaults::TT_TASK_QUEUE);
+}
+
+std::string wireFormat() {
+  return envString("WIRE_FORMAT", defaults::WIRE_FORMAT);
 }
 
 std::string ttResultQueueName() {
@@ -266,6 +285,14 @@ std::string ttMediaResultQueueName() {
 std::string ttWarmupSignalsQueueName() {
   return envString("TT_WARMUP_SIGNALS_QUEUE",
                    defaults::TT_WARMUP_SIGNALS_QUEUE);
+}
+
+uint32_t modelNumLayers() {
+  return envUlong("MODEL_NUM_LAYERS", defaults::MODEL_NUM_LAYERS);
+}
+
+uint32_t prefillChunkSize() {
+  return envUlong("PREFILL_CHUNK_SIZE", defaults::PREFILL_CHUNK_SIZE);
 }
 
 std::string ttMemoryRequestQueueName() {
@@ -293,20 +320,6 @@ size_t memoryQueueCapacity() {
   return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
 }
 
-int shmSlots() {
-  return static_cast<int>(envUlong("SHM_SLOTS", defaults::SHM_SLOTS));
-}
-
-int prefillMaxTokenIds() {
-  return static_cast<int>(
-      envUlong("PREFILL_MAX_TOKEN_IDS", defaults::PREFILL_MAX_TOKEN_IDS));
-}
-
-int decodeMaxTokenIds() {
-  return static_cast<int>(
-      envUlong("DECODE_MAX_TOKEN_IDS", defaults::DECODE_MAX_TOKEN_IDS));
-}
-
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;
@@ -314,10 +327,7 @@ LLMConfig llmEngineConfig() {
     cfg.max_in_flight_count = maxInFlightCount();
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
-    if (backend == "prefill") {
-      cfg.runner_type = ModelRunnerType::PREFILL;
-      cfg.max_in_flight_count = 1;
-    } else if (backend == "llama") {
+    if (backend == "llama") {
       cfg.kvcache_block_size = 32;
       cfg.max_num_batched_tokens = 16384;
       cfg.runner_type = ModelRunnerType::LLAMA;
@@ -400,6 +410,7 @@ void readMediaRunnerConfig(MediaRunnerConfigBase& cfg) {
   cfg.max_batch_size = static_cast<size_t>(envUlong("MAX_BATCH_SIZE", 1));
   cfg.device_mesh_shape = parseMeshShape(envString("DEVICE_MESH_SHAPE", "1,1"));
   cfg.is_galaxy = envBool("IS_GALAXY", false);
+  cfg.device = envStringLower("DEVICE", "");
   cfg.model_weights_path = envString("MODEL_WEIGHTS_PATH", "");
   cfg.weights_distribution_timeout_seconds = static_cast<unsigned>(
       envUlong("WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS", 1800));
@@ -458,8 +469,14 @@ ModelType modelType() {
     // Derive model type from MODEL env var
     std::string m = envString("MODEL", defaults::MODEL);
     if (m == "moonshotai/Kimi-K2.6") return ModelType::KIMI_K2_6;
+    if (m == "moonshotai/Kimi-K2.7-Code") return ModelType::KIMI_K2_7_CODE;
     if (m == "meta-llama/Llama-3.1-8B-Instruct")
       return ModelType::LLAMA_3_1_8B_INSTRUCT;
+    if (m == "openai/gpt-oss-120b") return ModelType::GPT_OSS_120B;
+    if (m == "MiniMaxAI/MiniMax-M2.7") return ModelType::MINIMAX_M2_7;
+    if (m == "zai-org/GLM-5.1") return ModelType::GLM_5_1;
+    if (m == "zai-org/GLM-5.2") return ModelType::GLM_5_2;
+    if (m == "deepseek-ai/DeepSeek-V4-Pro") return ModelType::DEEPSEEK_V4_PRO;
     return ModelType::DEEPSEEK_R1_0528;
   }();
   return cached;
@@ -469,6 +486,24 @@ Model model() {
   static const Model cached =
       modelFromString(envString("MODEL", defaults::MODEL));
   return cached;
+}
+
+bool sampleOnlyInReasoning() {
+  switch (modelType()) {
+    // DeepSeek samples only inside the reasoning phase; argmax otherwise.
+    case ModelType::DEEPSEEK_R1_0528:
+      return true;
+    case ModelType::LLAMA_3_1_8B_INSTRUCT:
+    case ModelType::KIMI_K2_6:
+    case ModelType::KIMI_K2_7_CODE:
+    case ModelType::GPT_OSS_120B:
+    case ModelType::MINIMAX_M2_7:
+    case ModelType::GLM_5_1:
+    case ModelType::GLM_5_2:
+    case ModelType::DEEPSEEK_V4_PRO:
+      return false;
+  }
+  return false;
 }
 
 LLMMode llmMode() {
@@ -493,16 +528,6 @@ std::string socketHost() {
   static const std::string cached =
       envString("SOCKET_HOST", defaults::SOCKET_HOST);
   return cached;
-}
-
-bool enableAccumulatedStreaming() {
-  return envUlong("ENABLE_ACCUMULATED_STREAMING",
-                  defaults::ENABLE_ACCUMULATED_STREAMING);
-}
-
-size_t maxAccumulatedTokens() {
-  return static_cast<size_t>(
-      envUlong("MAX_ACCUMULATED_TOKENS", defaults::MAX_ACCUMULATED_TOKENS));
 }
 
 uint16_t socketPort() {
@@ -540,6 +565,19 @@ std::string prefillServerId() {
     return getHostname() + ":" + std::to_string(socketPort());
   }();
   return cached;
+}
+
+std::string logInstanceTag(int workerIndex) {
+  // Role distinguishes the node: LLM_MODE for the LLM service, else the service
+  // name. Worker subprocesses keep the base role and append their index, so a
+  // merged log still separates "decode" vs "prefill" nodes and their
+  // "decode-worker0" / "prefill-worker0" workers.
+  std::string role = isLlmService() ? std::string(toString(llmMode()))
+                                    : std::string(toString(modelService()));
+  if (workerIndex >= 0) {
+    role += "-worker" + std::to_string(workerIndex);
+  }
+  return role;
 }
 
 uint32_t prefillMaxInFlight() {
@@ -598,6 +636,12 @@ size_t maxISL() {
   return cached;
 }
 
+size_t minTokensToCopy() {
+  static const size_t cached = static_cast<size_t>(
+      envUlong("MIN_TOKENS_TO_COPY", defaults::MIN_TOKENS_TO_COPY));
+  return cached;
+}
+
 size_t kvCacheBlockSize() {
   static const size_t cached = []() {
     return kvCacheSizeFromEnv("KV_CACHE_BLOCK_SIZE",
@@ -631,6 +675,30 @@ bool useFastMode() {
   return envUlong("USE_FAST_MODE", defaults::USE_FAST_MODE);
 }
 
+bool enableMigration() {
+  return envBool("ENABLE_MIGRATION", defaults::ENABLE_MIGRATION);
+}
+
+std::string migrationCmdQueueName() {
+  return envString("MIGRATION_CMD_QUEUE_NAME",
+                   defaults::MIGRATION_CMD_QUEUE_NAME);
+}
+
+std::string migrationTableQueueName() {
+  return envString("MIGRATION_TABLE_QUEUE_NAME",
+                   defaults::MIGRATION_TABLE_QUEUE_NAME);
+}
+
+std::string migrationRespQueueName() {
+  return envString("MIGRATION_RESP_QUEUE_NAME",
+                   defaults::MIGRATION_RESP_QUEUE_NAME);
+}
+
+std::string prefillAckChannelName() {
+  return envString("PREFILL_ACK_CHANNEL_NAME",
+                   defaults::PREFILL_ACK_CHANNEL_NAME);
+}
+
 std::string kafkaBrokers() {
   return envString("KAFKA_BROKERS", defaults::KAFKA_BROKERS);
 }
@@ -640,6 +708,27 @@ std::string kafkaOffloadTopicName() {
                    defaults::KAFKA_OFFLOAD_TOPIC_NAME);
 }
 
+std::string kafkaMigrationRequestTopic() {
+  return envString("KAFKA_MIGRATION_REQUEST_TOPIC",
+                   defaults::KAFKA_MIGRATION_REQUEST_TOPIC);
+}
+
+std::string kafkaMigrationAckTopic() {
+  return envString("KAFKA_MIGRATION_ACK_TOPIC",
+                   defaults::KAFKA_MIGRATION_ACK_TOPIC);
+}
+
+uint32_t migrationPrefillEndpointId() {
+  return static_cast<uint32_t>(
+      envUlong("MIGRATION_PREFILL_ENDPOINT_ID",
+               defaults::MIGRATION_PREFILL_ENDPOINT_ID));
+}
+
+uint32_t migrationDecodeEndpointId() {
+  return static_cast<uint32_t>(envUlong(
+      "MIGRATION_DECODE_ENDPOINT_ID", defaults::MIGRATION_DECODE_ENDPOINT_ID));
+}
+
 std::string kafkaGroupId() {
   return envString("KAFKA_GROUP_ID", defaults::KAFKA_GROUP_ID);
 }
@@ -647,11 +736,6 @@ unsigned sessionAllocationMaxRetries() {
   return static_cast<unsigned>(
       envUlong("SESSION_ALLOCATION_MAX_RETRIES",
                defaults::SESSION_ALLOCATION_MAX_RETRIES));
-}
-
-unsigned prefillTimeoutMs() {
-  return static_cast<unsigned>(
-      envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
 }
 
 bool dynamoEndpointEnabled() {
@@ -674,6 +758,18 @@ std::string dynamoEtcdEndpoints() {
     return v;
   }
   return defaults::DYNAMO_ETCD_ENDPOINTS;
+}
+
+std::string specDecodeMode() {
+  return envString("SPEC_DECODE_MODE", defaults::SPEC_DECODE_MODE);
+}
+
+size_t mtpLevel() {
+  auto val = static_cast<size_t>(envUlong("MTP_LEVEL", defaults::MTP_LEVEL));
+  if (val > 4) {
+    throw std::runtime_error("MTP_LEVEL must be <= 4");
+  }
+  return val;
 }
 
 int64_t dynamoEtcdLeaseTtlSecs() {

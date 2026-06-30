@@ -7,6 +7,8 @@
 #include <optional>
 #include <string>
 
+#include "messaging/i_kafka_consumer.hpp"
+
 namespace tt::messaging {
 
 struct KafkaConsumerConfig {
@@ -15,10 +17,10 @@ struct KafkaConsumerConfig {
   std::string group_id;
 };
 
-class KafkaConsumer {
+class KafkaConsumer : public IKafkaConsumer {
  public:
   explicit KafkaConsumer(KafkaConsumerConfig config);
-  ~KafkaConsumer();
+  ~KafkaConsumer() override;
 
   KafkaConsumer(const KafkaConsumer&) = delete;
   KafkaConsumer& operator=(const KafkaConsumer&) = delete;
@@ -41,7 +43,7 @@ class KafkaConsumer {
    * @note This method must be called regularly (at least every few seconds) to
    *       maintain the consumer's liveness in the consumer group.
    */
-  std::optional<std::string> receive(int timeoutMs);
+  std::optional<std::string> receive(int timeoutMs) override;
 
  private:
   struct Impl;
