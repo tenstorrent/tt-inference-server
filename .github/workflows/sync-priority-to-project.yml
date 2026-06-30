@@ -71,6 +71,7 @@ jobs:
           fi
 
           echo "DEBUG field JSON: $(echo "$priority_field" | jq -c .)"
+          echo "DEBUG all fields raw: $(echo "$project_meta" | jq -c '.data.organization.projectV2.fields.nodes')"
 
           option_id_for() {
             local wanted="$1"
