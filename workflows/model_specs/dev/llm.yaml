@@ -1115,3 +1115,85 @@ templates:
   metadata:
     Qwen/Qwen2.5-Coder-32B-Instruct:
       tool_call_parser_name: hermes
+
+# =============================================================================
+# Gemma 4 family - GPU reference specs (bring-your-own vLLM server; see
+# docs/gpu_workflows.md). Used to collect GPU reference eval scores for
+# GPQA-Diamond, Terminal-Bench 2.0, and SWE-Bench Verified.
+# tt_metal_commit 2521a03 == tt-metal release v0.72.0 (> 0.12); it only feeds
+# docker-tag synthesis and is unused on the GPU bring-your-own-server path.
+# =============================================================================
+- weights:
+    - google/gemma-4-31B-it
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL (94GB, bf16 KV) caps servable ctx at ~205K (KV cache = 210,605 tokens)
+      default_impl: true
+  status: EXPERIMENTAL
+  metadata:
+    google/gemma-4-31B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
+- weights:
+    - google/gemma-4-26B-A4B-it
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  metadata:
+    google/gemma-4-26B-A4B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
+- weights:
+    - google/gemma-4-12B-it
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  metadata:
+    google/gemma-4-12B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
+- weights:
+    - google/gemma-4-E4B-it
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  metadata:
+    google/gemma-4-E4B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
+- weights:
+    - google/gemma-4-E2B-it
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  metadata:
+    google/gemma-4-E2B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4

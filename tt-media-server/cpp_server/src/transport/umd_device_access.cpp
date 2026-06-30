@@ -10,41 +10,43 @@
 #ifdef USE_METAL_CPP_LIB
 #include <cstdint>
 #include <exception>
-#include <span>
 
-#include "tt-metalium/allocator.hpp"
-#include "tt-metalium/hal_types.hpp"
-#include "tt-metalium/host_api.hpp"
-#include "tt-metalium/tt_metal.hpp"
+// Coexistence device access: the disaggregation UmdDevice opens the chip via
+// the raw UMD Cluster WITHOUT start_device(), so it takes no CHIP_IN_USE flock
+// and builds no dispatch firmware — letting the migration worker share the chip
+// with a live inference engine. (Replaces the old tt_metal::CreateDevice path,
+// which took exclusive chip ownership and JIT-built dispatch kernels.)
+#include "device_io.hpp"
 #endif
 
 namespace tt::transport {
 
 #ifdef USE_METAL_CPP_LIB
 
-// Real UMD backend: owns a tt-metal IDevice and stages bytes between a host
-// buffer and a DRAM channel via tt_metal's ReadFromDeviceDRAMChannel /
-// WriteToDeviceDRAMChannel. A NocAddr's local_addr is passed through as the
-// channel-local byte offset (no rebasing here — keeping a firmware-reserved
-// low-DRAM region clear is a higher-level concern, as in the migration layer's
+namespace {
+namespace dis = tt::tt_metal::experimental::disaggregation::detail;
+}  // namespace
+
+// Real coexistence UMD backend: owns a disaggregation UmdDevice, which opens
+// the chip via the raw UMD Cluster WITHOUT start_device() — no CHIP_IN_USE
+// flock, no dispatch firmware — so it coexists with a live inference engine on
+// the same chip. A NocAddr's channel selects the Metal dram_view; local_addr is
+// the intra-view byte offset (no rebasing here, as in the migration layer's
 // UmdDeviceReader/Writer).
 struct UmdDeviceAccess::Impl {
   int deviceId = 0;
-  tt::tt_metal::IDevice* device = nullptr;
+  std::unique_ptr<dis::UmdDevice> device;
 };
 
 UmdDeviceAccess::UmdDeviceAccess(int deviceId)
     : impl_(std::make_unique<Impl>()) {
   impl_->deviceId = deviceId;
   try {
-    impl_->device = tt::tt_metal::CreateDevice(deviceId);
-    const uint64_t dramBase =
-        impl_->device->allocator()->get_base_allocator_addr(
-            tt::tt_metal::HalMemType::DRAM);
+    impl_->device = dis::UmdDevice::open(deviceId);
     TT_LOG_INFO(
-        "[UmdDeviceAccess] opened deviceId={} ({} DRAM channels, "
-        "allocatable_base=0x{:x})",
-        deviceId, impl_->device->num_dram_channels(), dramBase);
+        "[UmdDeviceAccess] opened deviceId={} ({} DRAM channels) via "
+        "coexistence UMD (no start_device/flock)",
+        deviceId, impl_->device->num_dram_channels());
   } catch (const std::exception& e) {
     impl_->device = nullptr;
     TT_LOG_ERROR(
@@ -54,17 +56,7 @@ UmdDeviceAccess::UmdDeviceAccess(int deviceId)
   }
 }
 
-UmdDeviceAccess::~UmdDeviceAccess() {
-  if (impl_ && impl_->device != nullptr) {
-    try {
-      tt::tt_metal::CloseDevice(impl_->device);
-    } catch (const std::exception& e) {
-      TT_LOG_ERROR("[UmdDeviceAccess] CloseDevice(deviceId={}) failed: {}",
-                   impl_->deviceId, e.what());
-    }
-    impl_->device = nullptr;
-  }
-}
+UmdDeviceAccess::~UmdDeviceAccess() = default;
 
 UmdDeviceAccess::UmdDeviceAccess(UmdDeviceAccess&&) noexcept = default;
 
@@ -84,11 +76,16 @@ bool UmdDeviceAccess::read(NocAddr addr, std::size_t size, void* hostBuffer) {
     TT_LOG_ERROR("[UmdDeviceAccess] read with null hostBuffer (size={})", size);
     return false;
   }
+  if (size > UINT32_MAX) {
+    TT_LOG_ERROR("[UmdDeviceAccess] read size {} exceeds UMD 32-bit limit",
+                 size);
+    return false;
+  }
   try {
-    std::span<uint8_t> dst(static_cast<uint8_t*>(hostBuffer), size);
-    return tt::tt_metal::detail::ReadFromDeviceDRAMChannel(
-        impl_->device, static_cast<int>(nocChannel(addr)), nocLocalAddr(addr),
-        dst);
+    impl_->device->read_dram(static_cast<uint32_t>(nocChannel(addr)),
+                             nocLocalAddr(addr), static_cast<uint32_t>(size),
+                             hostBuffer);
+    return true;
   } catch (const std::exception& e) {
     TT_LOG_ERROR(
         "[UmdDeviceAccess] read(channel={}, local_addr={}, size={}) failed: {}",
@@ -112,11 +109,22 @@ bool UmdDeviceAccess::write(NocAddr addr, const void* hostBuffer,
                  size);
     return false;
   }
+  if (size > UINT32_MAX) {
+    TT_LOG_ERROR("[UmdDeviceAccess] write size {} exceeds UMD 32-bit limit",
+                 size);
+    return false;
+  }
   try {
-    std::span<const uint8_t> src(static_cast<const uint8_t*>(hostBuffer), size);
-    return tt::tt_metal::detail::WriteToDeviceDRAMChannel(
-        impl_->device, static_cast<int>(nocChannel(addr)), nocLocalAddr(addr),
-        src);
+    impl_->device->write_dram(static_cast<uint32_t>(nocChannel(addr)),
+                              nocLocalAddr(addr), static_cast<uint32_t>(size),
+                              hostBuffer);
+    // write_dram() issues posted, Relaxed-ordered TLB writes that are not
+    // guaranteed visible when it returns. Barrier so the bytes are committed
+    // before we report completion (the receiver's drain consumer reads them).
+    // TODO(perf): the receiver drains many chunks per slot; a single flush()
+    // after all writes (vs a barrier per chunk) is a future optimization.
+    impl_->device->dram_barrier();
+    return true;
   } catch (const std::exception& e) {
     TT_LOG_ERROR(
         "[UmdDeviceAccess] write(channel={}, local_addr={}, size={}) failed: "

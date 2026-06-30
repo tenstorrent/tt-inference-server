@@ -50,6 +50,7 @@ class TcpSocketTransport : public ISocketTransport,
 
   bool sendRawData(std::span<const uint8_t> data) override;
   std::vector<uint8_t> receiveRawData() override;
+  ReceiveResult tryReceiveMessage() override;
 
   void setConnectionLostCallback(std::function<void()> callback) override;
   void setConnectionEstablishedCallback(
@@ -58,13 +59,13 @@ class TcpSocketTransport : public ISocketTransport,
                            std::chrono::milliseconds maxDelay) override;
 
  private:
-  enum class ReceiveResult { COMPLETE, NO_DATA, DISCONNECTED };
+  enum class ReadResult { COMPLETE, NO_DATA, DISCONNECTED };
 
   void serverLoop(std::stop_token stopToken);
   void clientLoop(std::stop_token stopToken);
   bool sendAll(int fd, const void* buffer, size_t size);
-  ReceiveResult receiveExact(int fd, uint8_t* buffer, size_t size,
-                             int maxRetries, bool returnIfNoInitialData);
+  ReadResult receiveExact(int fd, uint8_t* buffer, size_t size, int maxRetries,
+                          bool returnIfNoInitialData);
 
   std::string host;
   uint16_t port;
