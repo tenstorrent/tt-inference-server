@@ -34,7 +34,7 @@ struct PrefixIndexEntry {
 class PrefixIndex {
  public:
   std::vector<Candidate> findCandidates(
-      const std::vector<utils::BlockHashInfo>& blcokInfos);
+      const std::vector<utils::BlockHashInfo>& blockInfos);
   void registerPrefixHash(const std::string& sessionId,
                           const std::vector<utils::BlockHashInfo>& blockInfos);
   void remove(const std::string& sessionId, uint64_t keyHash);
