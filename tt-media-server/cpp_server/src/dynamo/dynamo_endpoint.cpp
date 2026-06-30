@@ -225,6 +225,19 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       writer->connect();
 
       if (tt::config::dynamoNativePrefillHandoffEnabled()) {
+        if (!tt::config::dynamoNativePrefillMockKvTransferEnabled()) {
+          TokenChunk err;
+          err.error =
+              "cpp_server Dynamo native prefill reached real prefill "
+              "completion, but KV transfer completion is not wired yet. Set "
+              "DYNAMO_NATIVE_PREFILL_MOCK_KV_TRANSFER_ENABLED=1 only for "
+              "mock/control-plane testing.";
+          err.error_code = 501;
+          writer->sendChunk(err);
+          writer->finalize();
+          return;
+        }
+
         if (!disaggregation) {
           TokenChunk err;
           err.error =
@@ -236,6 +249,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           return;
         }
 
+        TT_LOG_WARN(
+            "[DynamoEndpoint] Using mock KV-transfer readiness for native "
+            "prefill handoff; this is for control-plane testing only");
         const uint32_t taskId = tt::utils::TaskIDGenerator::generate();
         auto prefillRequest = buildNativePrefillRequest(dynReq, taskId);
         disaggregation->handlePrefillRequest(

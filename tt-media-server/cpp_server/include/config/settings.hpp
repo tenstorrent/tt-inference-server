@@ -362,6 +362,11 @@ std::string dynamoWorkerRole();
  * DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED. Default: false. */
 bool dynamoNativePrefillHandoffEnabled();
 
+/** Test-only bypass for native Dynamo handoff before real KV transfer is
+ * integrated. From DYNAMO_NATIVE_PREFILL_MOCK_KV_TRANSFER_ENABLED. Default:
+ * false. */
+bool dynamoNativePrefillMockKvTransferEnabled();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();

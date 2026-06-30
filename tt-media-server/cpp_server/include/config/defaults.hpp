@@ -140,6 +140,7 @@ constexpr const char* DYNAMO_COMPONENT = "decode";
 constexpr const char* DYNAMO_ENDPOINT_NAME = "generate";
 constexpr const char* DYNAMO_WORKER_ROLE = "auto";
 constexpr bool DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED = false;
+constexpr bool DYNAMO_NATIVE_PREFILL_MOCK_KV_TRANSFER_ENABLED = false;
 
 // Discovery: etcd endpoint for Dynamo's KVStoreDiscovery.
 constexpr const char* DYNAMO_ETCD_ENDPOINTS = "http://etcd:2379/";

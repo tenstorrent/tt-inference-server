@@ -12,7 +12,6 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 #include "config/settings.hpp"
@@ -316,6 +315,8 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   runtime["stable_routing_id"] = c.instance_id_hex;
   runtime["native_prefill_handoff_enabled"] =
       tt::config::dynamoNativePrefillHandoffEnabled();
+  runtime["native_prefill_mock_kv_transfer_enabled"] =
+      tt::config::dynamoNativePrefillMockKvTransferEnabled();
   runtime["selected_prefill_id"] =
       c.component + "/" + c.endpoint + "/" + c.instance_id_hex;
   runtime["max_inflight_requests"] =
