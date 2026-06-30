@@ -454,8 +454,14 @@ void DynamoStreamWriter::connect() {
                   self->request_id_);
       if (!self->done_.exchange(true) && self->on_disconnect_)
         self->on_disconnect_();
+      if (self->self_guard_)
+        self->loop_->queueInLoop([g = std::move(self->self_guard_)]() {});
     }
   });
+  // Keep the writer and TcpClient alive while connect is in flight. Some
+  // handlers can buffer and finalize their whole response before the async
+  // call-home connection opens.
+  self_guard_ = shared_from_this();
   client_->connect();
 }
 
@@ -464,10 +470,6 @@ void DynamoStreamWriter::onConnState(const trantor::TcpConnectionPtr& conn) {
     conn->setTcpNoDelay(true);
     conn_ = conn;
     connected_ = true;
-    // Stay alive until the peer closes so a graceful shutdown is not truncated
-    // by ~TcpClient's forceClose once the pipeline callbacks are released.
-    self_guard_ = shared_from_this();
-
     Json::Value handshake(Json::objectValue);
     handshake["subject"] = conn_info_.subject;
     handshake["stream_type"] = "response";

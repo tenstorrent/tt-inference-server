@@ -187,7 +187,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
 
       if (tt::config::dynamoNativePrefillHandoffEnabled()) {
         TokenChunk handoff;
-        handoff.finish_reason = "prefill_handoff";
+        // Dynamo validates finish_reason against its standard stop reasons;
+        // the TT-specific handoff signal lives in disaggregated_params below.
+        handoff.finish_reason = "stop";
         const auto migrationId = tt::utils::MigrationIDGenerator::generate();
         const auto nativeHandoff = buildMetadataOnlyNativePrefillHandoff(
             requestId, migrationId,

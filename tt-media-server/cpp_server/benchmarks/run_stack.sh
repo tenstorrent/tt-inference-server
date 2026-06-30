@@ -19,7 +19,8 @@
 #
 # Optional native handoff control-plane spike:
 #   DYNAMO_REGISTER_PREFILL=1 DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=1 ./run_stack.sh up
-# Enables the prefill endpoint to return TT handoff metadata in engine_data.
+# Enables the prefill endpoint to return TT handoff metadata in
+# disaggregated_params.kv_transfer_params.
 # Decode still requires Mooncake migration status=complete before continuing.
 #
 # Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; frontend -> /tmp/tt_frontend.log.
@@ -212,8 +213,10 @@ verify_prefill_discovery() {
     [[ -n "${output}" ]] || die "no Dynamo prefill MDC keys found under ${prefix}"
 
     printf '%s\n' "${output}"
-    printf '%s\n' "${output}" | grep -q '"worker_role":"prefill"' ||
-        die "prefill MDC found, but worker_role=prefill was not present"
+    printf '%s\n' "${output}" | grep -q '"worker_type":"prefill"' ||
+        die "prefill MDC found, but worker_type=prefill was not present"
+    printf '%s\n' "${output}" | grep -q '"needs":\[\["decode"\]\]' ||
+        die 'prefill MDC found, but needs=[["decode"]] was not present'
     printf '%s\n' "${output}" | grep -q '"model_type":"Prefill"' ||
         die "prefill MDC found, but model_type=Prefill was not present"
     log "prefill discovery registration verified"
