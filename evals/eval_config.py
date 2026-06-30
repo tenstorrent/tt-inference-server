@@ -401,172 +401,6 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
-            # Standard lm-eval tasks aligned to the benchmarks Qwen officially
-            # reports for Qwen3.6-27B (text domain only — the vision benchmarks
-            # MMMU/MathVista/etc. are off-path here). published_score values are
-            # the card's thinking-mode numbers; lm-eval methodology can differ
-            # from Qwen's internal harness, so gpu_reference_score (a GPU lm-eval
-            # run on the HF weights) is the true apples-to-apples target and is
-            # still TODO. These run in EVALS_COMMON (the lm-eval venv), not the
-            # agentic venv. IFEval is intentionally omitted — the card does not
-            # report it for this model.
-            EvalTask(
-                task_name="r1_gpqa_diamond",
-                max_concurrent=16,
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                score=EvalTaskScore(
-                    # GPQA Diamond, thinking mode (card: 87.8).
-                    published_score=87.8,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
-                    # TODO_EVAL_SCORE: needs a GPU reference lm-eval run on the HF
-                    # weights (independent of the TT device hang).
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_length": 65536,
-                },
-                # gen_kwargs per Qwen3.6-27B thinking-mode best practices.
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 32768,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 0.6,
-                    "top_k": 20,
-                    "top_p": 0.95,
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                score=EvalTaskScore(
-                    # MMLU-Pro, thinking mode (card: 86.2).
-                    published_score=86.2,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
-                    # TODO_EVAL_SCORE: needs a GPU reference lm-eval run on the HF
-                    # weights (independent of the TT device hang).
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_length": 65536,
-                },
-                # gen_kwargs kept consistent with the Qwen3-32B "best practices"
-                # reasoning params used elsewhere in this file.
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 32768,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 0.6,
-                    "top_k": 20,
-                    "top_p": 0.95,
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
-            EvalTask(
-                task_name="livecodebench",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                score=EvalTaskScore(
-                    # LiveCodeBench v6, thinking mode (card: 83.9). TODO confirm
-                    # the harness livecodebench task targets v6 to match this.
-                    published_score=83.9,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
-                    # TODO_EVAL_SCORE: needs a GPU reference lm-eval run on the HF
-                    # weights (independent of the TT device hang).
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "acc,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_length": 65536,
-                    "timeout": "3600",
-                },
-                # gen_kwargs per Qwen3.6-27B thinking-mode best practices.
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 32768,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 0.6,
-                    "top_k": 20,
-                    "top_p": 0.95,
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.5,
-                    EvalLimitMode.SMOKE_TEST: 0.05,
-                },
-            ),
-            EvalTask(
-                task_name="r1_aime24",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                score=EvalTaskScore(
-                    # Math-reasoning correctness gate. Qwen reports AIME26 (94.1)
-                    # for this model, NOT AIME24, and the harness ships aime24
-                    # only — so there is no directly comparable published number.
-                    # TODO: add an aime26 task, or compare TT vs GPU reference.
-                    published_score=None,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
-                    # TODO_EVAL_SCORE: needs a GPU reference lm-eval run on the HF
-                    # weights (independent of the TT device hang).
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_length": 65536,
-                    "timeout": "3600",
-                },
-                # gen_kwargs per Qwen3.6-27B thinking-mode best practices.
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 32768,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 0.6,
-                    "top_k": 20,
-                    "top_p": 0.95,
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.5,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
         ],
     ),
     EvalConfig(
@@ -3667,6 +3501,790 @@ _eval_config_list = [
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.1,
                     EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # =========================================================================
+    # Gemma 4 family - GPU reference eval configs.
+    #
+    # Mirrors the Qwen/Qwen3.6-27B agentic block above and adds GPQA-Diamond.
+    # Recipe follows the footnotes of the eval table on the Qwen3.6-27B HF page
+    # (https://huggingface.co/Qwen/Qwen3.6-27B):
+    #   - SWE-Bench: temp=1.0, top_p=0.95.
+    #   - Terminal-Bench 2.0: Terminus-2 harness; temp=1.0, top_p=0.95,
+    #     top_k=20; 3h timeout; 32 CPU / 48 GB RAM.
+    # Published reference scores exist only for Gemma4-31B (the only gemma-4
+    # column in that table); other variants record GPU reference scores only.
+    #
+    # Context window per the Gemma 4 model card
+    # (https://ai.google.dev/gemma/docs/core/model_card_4): the medium models
+    # 31B / 26B-A4B / 12B support 256K tokens; the small E2B / E4B support 128K.
+    # Agentic max_input_tokens + max_output_tokens are sized to fit the model's
+    # native window (the agent sends ~input+output per request); run the vLLM
+    # server with a matching --max-model-len (262144 for 256K models, 131072 for
+    # the E-models). NOTE: only the 31B agentic tasks are bumped to 256K so far;
+    # 26B-A4B / 12B still carry the 128K (96K+32K) placeholder budgets.
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="google/gemma-4-31B-it",
+        tasks=[
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond. This matches the
+                # thinking-mode methodology behind the Qwen3.6-27B table's
+                # "GPQA Diamond" column (model emits reasoning, then a final
+                # answer; the task's own extractor scores exact_match,none).
+                # The gpqa_diamond_generative_n_shot variant is wrong for a
+                # reasoning model: its 5-shot examples demonstrate bare "(C)"
+                # answers, suppressing reasoning (gemma-4 scored only ~53%).
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=84.3,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    # Full 198-sample r1_gpqa_diamond, single run, on an H100
+                    # reference vLLM server (vllm 0.23.1rc1.dev, max-model-len
+                    # 131072) with thinking enabled, temp=1.0/top_p=0.95/
+                    # top_k=20, 124K output budget. 83.33% +/- 2.66 via the
+                    # orchestrated run.py --workflow evals path, 2026-06-16
+                    # (a prior direct lm-eval run scored 82.32% +/- 2.72; both
+                    # CIs cover the published 84.3). (Without thinking the same
+                    # task/sampling scored only 75.76 -- enable_thinking is the
+                    # key: gemma-4's template otherwise injects an empty thought
+                    # channel that suppresses native reasoning.)
+                    gpu_reference_score=83.33,
+                    gpu_reference_score_ref="run.py --workflow evals r1_gpqa_diamond full (198), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-16",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Use the chat endpoint so the server applies the chat template
+                # (and thus --default-chat-template-kwargs '{"enable_thinking":
+                # true}'); client-side apply_chat_template on /v1/completions
+                # would render with the default enable_thinking=false.
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 131072,
+                },
+                # Thinking-mode sampling (Qwen3.6 page, general tasks):
+                # temperature=1.0, top_p=0.95, top_k=20.
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
+                # max_gen_toks must stay strictly below max_length (131072)
+                # minus the prompt (server 400s if output+prompt > ctx);
+                # 124K leaves ~4K headroom for prompt + chat template.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 124 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=42.9,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    # Full terminal-bench-2 (89 tasks), terminus-2, single
+                    # H100 NVL bring-your-own vLLM (gemma-4-31B-it, max-model-len
+                    # 204800, enable_thinking=true), temp=1.0/top_p=0.95/
+                    # top_k=20, 112K in / 80K out, 2026-06-17. 40/89 solved =
+                    # 44.94%, which exceeds the published 42.9. 16 tasks hit
+                    # timeouts (15 AgentTimeoutError at the 3h/task limit + 1
+                    # VerifierTimeoutError) and scored 0, so 44.94 is a floor;
+                    # raising agent_timeout_sec could recover a few.
+                    gpu_reference_score=44.94,
+                    gpu_reference_score_ref="run.py --workflow evals terminal_bench_2 full (89), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-17",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,  # full dataset
+                    override_cpus=32,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            # gemma-4-31B native ctx is 256K (model card), but a
+                            # single H100 NVL (94GB, bf16 KV) only holds a
+                            # 210,605-token KV cache, so a request can't exceed
+                            # ~205K. We serve at --max-model-len 204800 (200K).
+                            # The agent sends ~max_input + max_output per
+                            # request, so keep them under 204800: 112K + 80K =
+                            # 196K (~8K headroom for chat template + tool defs).
+                            # SWE/Terminal prompts rarely approach 200K, so the
+                            # 256K->200K cap should not affect scores.
+                            "max_input_tokens": 112 * 1024,
+                            "max_output_tokens": 80 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 80 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=52.0,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    # Full SWE-bench Verified (500), mini-swe-agent, single
+                    # H100 NVL bring-your-own vLLM (gemma-4-31B-it, max-model-len
+                    # 204800, enable_thinking=true), temp=1.0/top_p=0.95/
+                    # top_k=20, 160K in / 32K out, 2026-06-18. 324/500 resolved
+                    # = 64.80%, which exceeds the published 52.0 (ratio 1.25).
+                    gpu_reference_score=64.80,
+                    gpu_reference_score_ref="run.py --workflow evals swe_bench_verified full (500), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-18",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    max_workers=8,
+                    n_tasks=None,  # full dataset
+                    temperature=1.0,
+                    top_p=0.95,
+                    # gemma-4-31B native ctx is 256K (model card), but a single
+                    # H100 NVL (94GB, bf16 KV) only holds a 210,605-token KV
+                    # cache, so a request can't exceed ~205K. We serve at
+                    # --max-model-len 204800 (200K). mini-swe-agent sends
+                    # ~max_input + max_output per request, so keep under 204800:
+                    # 160K + 32K = 192K (~8K headroom). SWE prompts rarely
+                    # approach 200K, so the 256K->200K cap should not affect
+                    # scores.
+                    max_input_tokens=160 * 1024,
+                    max_output_tokens=32 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 20,
+                        },
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="google/gemma-4-26B-A4B-it",
+        tasks=[
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond (see gemma-4-31B-it
+                # note above). Matches the Qwen3.6-27B table's thinking-mode
+                # "GPQA Diamond" methodology; scores exact_match,none.
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 131072,
+                },
+                # Thinking-mode sampling (Qwen3.6 page, general tasks):
+                # temperature=1.0, top_p=0.95, top_k=20.
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    override_cpus=32,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 96 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    max_workers=8,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=0.95,
+                    # Clamped so max_input + max_output (96K + 32K = 128K) fits gemma-4's 131072 ctx.
+                    max_input_tokens=96 * 1024,
+                    max_output_tokens=32 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 20,
+                        },
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="google/gemma-4-12B-it",
+        tasks=[
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond (see gemma-4-31B-it
+                # note above). Matches the Qwen3.6-27B table's thinking-mode
+                # "GPQA Diamond" methodology; scores exact_match,none.
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 131072,
+                },
+                # Thinking-mode sampling (Qwen3.6 page, general tasks):
+                # temperature=1.0, top_p=0.95, top_k=20.
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    override_cpus=32,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 96 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    max_workers=8,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=0.95,
+                    # Clamped so max_input + max_output (96K + 32K = 128K) fits gemma-4's 131072 ctx.
+                    max_input_tokens=96 * 1024,
+                    max_output_tokens=32 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 20,
+                        },
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="google/gemma-4-E4B-it",
+        tasks=[
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond (see gemma-4-31B-it
+                # note above). Matches the Qwen3.6-27B table's thinking-mode
+                # "GPQA Diamond" methodology; scores exact_match,none.
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 131072,
+                },
+                # Thinking-mode sampling (Qwen3.6 page, general tasks):
+                # temperature=1.0, top_p=0.95, top_k=20.
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    override_cpus=32,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 96 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    max_workers=8,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=0.95,
+                    # Clamped so max_input + max_output (96K + 32K = 128K) fits gemma-4's 131072 ctx.
+                    max_input_tokens=96 * 1024,
+                    max_output_tokens=32 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 20,
+                        },
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="google/gemma-4-E2B-it",
+        tasks=[
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond (see gemma-4-31B-it
+                # note above). Matches the Qwen3.6-27B table's thinking-mode
+                # "GPQA Diamond" methodology; scores exact_match,none.
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 131072,
+                },
+                # Thinking-mode sampling (Qwen3.6 page, general tasks):
+                # temperature=1.0, top_p=0.95, top_k=20.
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    override_cpus=32,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 96 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    max_workers=8,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=0.95,
+                    # Clamped so max_input + max_output (96K + 32K = 128K) fits gemma-4's 131072 ctx.
+                    max_input_tokens=96 * 1024,
+                    max_output_tokens=32 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 20,
+                        },
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
         ],
