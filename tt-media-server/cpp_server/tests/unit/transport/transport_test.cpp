@@ -197,6 +197,27 @@ TEST(MooncakeMigrationWorker, RoleGuardsAndTransportNeedsLiveEngine) {
   EXPECT_FALSE(receiver.transferToReceiver());
 }
 
+// Layer ownership routes a broadcast request to the right shard. An unset span
+// (layer_end == 0) means "owns everything"; a real span is half-open.
+TEST(MooncakeMigrationWorker, OwnsLayerHonoursConfiguredSpan) {
+  auto engine = std::make_shared<MooncakeTransferEngine>(
+      std::make_shared<HostDramStorageBackend>());
+
+  MigrationWorkerConfig unset;  // layer_end defaults to 0
+  MooncakeMigrationWorker ownsAll(unset, engine, nullptr);
+  EXPECT_TRUE(ownsAll.ownsLayer(0));
+  EXPECT_TRUE(ownsAll.ownsLayer(999));
+
+  MigrationWorkerConfig sharded;
+  sharded.layer_start = 4;
+  sharded.layer_end = 8;
+  MooncakeMigrationWorker shard(sharded, engine, nullptr);
+  EXPECT_FALSE(shard.ownsLayer(3));  // below span
+  EXPECT_TRUE(shard.ownsLayer(4));   // inclusive start
+  EXPECT_TRUE(shard.ownsLayer(7));
+  EXPECT_FALSE(shard.ownsLayer(8));  // exclusive end
+}
+
 // ---------------------------------------------------------------------------
 // Discovery + bring-up unit tests (#4294)
 //
