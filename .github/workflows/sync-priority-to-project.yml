@@ -104,7 +104,7 @@ jobs:
           # so we can discover valid option IDs even if this issue has none yet
           echo "DEBUG scanning project items for existing Priority values:"
           gh api graphql -f query='
-            query($project: ID!, $field: ID!) {
+            query($project: ID!) {
               node(id: $project) {
                 ... on ProjectV2 {
                   items(first: 20) {
@@ -121,7 +121,7 @@ jobs:
                 }
               }
             }
-          ' -f project="$project_id" -f field="$priority_field_id" | python3 -c "
+          ' -f project="$project_id" | python3 -c "
           import sys, json
           r = json.load(sys.stdin)
           items = r['data']['node']['items']['nodes']
