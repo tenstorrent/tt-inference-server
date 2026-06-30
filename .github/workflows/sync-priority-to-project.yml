@@ -1,0 +1,187 @@
+name: Sync priority labels to Project Priority field
+
+on:
+  issues:
+    types: [labeled, unlabeled]
+
+permissions:
+  issues: read
+  # projects: write is a project-level permission; the token still needs it
+  # declared here so GitHub exposes it to the workflow.
+  projects: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    # Skip entirely when the changed label is not a priority label.
+    if: startsWith(github.event.label.name, 'priority:')
+
+    steps:
+      - name: Sync priority label to project field
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORG: tenstorrent
+          PROJECT_NUMBER: 354
+          ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
+          EVENT_ACTION: ${{ github.event.action }}
+          # Canonical label names used throughout the script.
+          LABEL_LOW: priority:low
+          LABEL_MEDIUM: priority:medium
+          LABEL_HIGH: priority:high
+        run: |
+          set -euo pipefail
+
+          # ── 1. Resolve project node ID and Priority field metadata ──────────
+          #
+          # We fetch more fields than strictly required so that we can match the
+          # Priority single-select field by name rather than by a hardcoded ID.
+
+          project_meta=$(gh api graphql -f query='
+            query($org: String!, $number: Int!) {
+              organization(login: $org) {
+                projectV2(number: $number) {
+                  id
+                  fields(first: 50) {
+                    nodes {
+                      ... on ProjectV2SingleSelectField {
+                        id
+                        name
+                        options {
+                          id
+                          name
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ' -f org="$ORG" -F number="$PROJECT_NUMBER")
+
+          project_id=$(echo "$project_meta" \
+            | jq -r '.data.organization.projectV2.id')
+
+          # Locate the single-select field whose name is exactly "Priority"
+          # (case-insensitive to be resilient to minor naming variations).
+          priority_field=$(echo "$project_meta" \
+            | jq -r '
+              .data.organization.projectV2.fields.nodes[]
+              | select((.name // "") | ascii_downcase == "priority")
+            ')
+
+          priority_field_id=$(echo "$priority_field" | jq -r '.id')
+
+          if [[ -z "$priority_field_id" || "$priority_field_id" == "null" ]]; then
+            echo "ERROR: Could not find a Priority single-select field on project $PROJECT_NUMBER" >&2
+            exit 1
+          fi
+
+          # Helper: look up an option ID by matching option name case-insensitively.
+          option_id_for() {
+            local wanted="$1"
+            echo "$priority_field" \
+              | jq -r --arg w "$wanted" '
+                  .options[]
+                  | select((.name | ascii_downcase) == ($w | ascii_downcase))
+                  | .id
+                '
+          }
+
+          low_option_id=$(option_id_for "low")
+          medium_option_id=$(option_id_for "medium")
+          high_option_id=$(option_id_for "high")
+
+          # Surface a clear error rather than silently writing a null option ID.
+          for pair in "Low:$low_option_id" "Medium:$medium_option_id" "High:$high_option_id"; do
+            label_name="${pair%%:*}"
+            opt_id="${pair##*:}"
+            if [[ -z "$opt_id" || "$opt_id" == "null" ]]; then
+              echo "ERROR: Could not find option '$label_name' in Priority field — check project field configuration" >&2
+              exit 1
+            fi
+          done
+
+          # ── 2. Ensure the issue is tracked by the project ───────────────────
+          #
+          # addProjectV2ItemById is idempotent: if the issue is already on the
+          # board it returns the existing item ID rather than creating a duplicate.
+
+          item_id=$(gh api graphql -f query='
+            mutation($project: ID!, $item: ID!) {
+              addProjectV2ItemById(input: { projectId: $project, contentId: $item }) {
+                item { id }
+              }
+            }
+          ' -f project="$project_id" -f item="$ISSUE_NODE_ID" \
+            | jq -r '.data.addProjectV2ItemById.item.id')
+
+          if [[ -z "$item_id" || "$item_id" == "null" ]]; then
+            echo "ERROR: Failed to add/locate issue in project" >&2
+            exit 1
+          fi
+
+          # ── 3. Determine desired action ──────────────────────────────────────
+
+          changed_label="${{ github.event.label.name }}"
+
+          if [[ "$EVENT_ACTION" == "labeled" ]]; then
+            # Map the added label to the matching option ID.
+            case "$changed_label" in
+              "$LABEL_LOW")    target_option_id="$low_option_id"    ;;
+              "$LABEL_MEDIUM") target_option_id="$medium_option_id" ;;
+              "$LABEL_HIGH")   target_option_id="$high_option_id"   ;;
+              *)
+                # startsWith filter on the job already guards this, but be safe.
+                echo "Label '$changed_label' is not a priority label — nothing to do."
+                exit 0
+                ;;
+            esac
+
+            gh api graphql -f query='
+              mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId:  $project
+                  itemId:     $item
+                  fieldId:    $field
+                  value:      { singleSelectOptionId: $option }
+                }) {
+                  projectV2Item { id }
+                }
+              }
+            ' -f project="$project_id" \
+              -f item="$item_id" \
+              -f field="$priority_field_id" \
+              -f option="$target_option_id"
+
+            echo "Set Priority to '$changed_label' for issue #${{ github.event.issue.number }}"
+
+          elif [[ "$EVENT_ACTION" == "unlabeled" ]]; then
+            # Fetch the current label set on the issue and check whether any
+            # priority label survives.  We query live rather than trusting the
+            # event payload, which only carries the *removed* label.
+            remaining=$(gh api \
+              "/repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/labels" \
+              --jq '[.[].name | select(startswith("priority:"))] | length')
+
+            if [[ "$remaining" -gt 0 ]]; then
+              echo "Another priority label is still present — leaving Priority field unchanged."
+              exit 0
+            fi
+
+            # Clear the field by passing an explicit null value.
+            gh api graphql -f query='
+              mutation($project: ID!, $item: ID!, $field: ID!) {
+                clearProjectV2ItemFieldValue(input: {
+                  projectId: $project
+                  itemId:    $item
+                  fieldId:   $field
+                }) {
+                  projectV2Item { id }
+                }
+              }
+            ' -f project="$project_id" \
+              -f item="$item_id" \
+              -f field="$priority_field_id"
+
+            echo "Cleared Priority field for issue #${{ github.event.issue.number }} (no priority labels remain)"
+          fi
