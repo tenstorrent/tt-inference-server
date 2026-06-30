@@ -313,7 +313,7 @@ def ensure_weights_available(model_spec: dict) -> Path:
     hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
 
     weights_path.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Ensuring weights from {hf_repo} are present at {weights_path}")
+    logger.info(f"Downloading weights from {hf_repo} to {weights_path}")
     try:
         snapshot_download(repo_id=hf_repo, local_dir=weights_path)
     except Exception as e:
