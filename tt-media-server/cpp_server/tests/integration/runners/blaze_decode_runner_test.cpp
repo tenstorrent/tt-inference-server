@@ -23,9 +23,7 @@ namespace {
 
 class EnvSetter {
  public:
-  EnvSetter(const std::string& key, const std::string& value)
-    : key(key)
-  {
+  EnvSetter(const std::string& key, const std::string& value) : key(key) {
     if (const char* old = std::getenv(key.c_str())) {
       oldValue = old;
     }

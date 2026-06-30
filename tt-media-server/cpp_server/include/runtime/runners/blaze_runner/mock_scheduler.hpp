@@ -158,7 +158,9 @@ class MockPrefillScheduler final : public IPrefillScheduler {
         return core.handleEvictOrStop(request);
       case sch::RequestType::SUBMIT: {
         if (prefillLatency.count() > 0) {
-          std::this_thread::sleep_for(prefillLatency);
+          std::this_thread::sleep_for(
+              prefillLatency *
+              (request.tokens.size() / tt::config::prefillChunkSize() + 1));
         }
         sch::OutputMessage output{};
         output.slot_id = request.slot_id;
@@ -328,7 +330,9 @@ class MockDecodeScheduler final : public IDecodeScheduler {
     job.maxTokens = request.gen.max_new_tokens;
     job.basePosition = request.position_id.value_or(
         static_cast<uint32_t>(request.tokens.size()));
-    job.nextAt = std::chrono::steady_clock::now() + prefillLatency;
+    job.nextAt = std::chrono::steady_clock::now() +
+                 (prefillLatency *
+                  (request.tokens.size() / tt::config::prefillChunkSize() + 1));
     pending.push_back(job);
   }
 

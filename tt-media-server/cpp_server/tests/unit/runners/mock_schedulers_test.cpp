@@ -36,9 +36,7 @@ sch::ISRequest makeSubmit(uint32_t slotId, uint32_t maxNewTokens,
 // don't leak latency config into each other.
 class ScopedEnv {
  public:
-  ScopedEnv(const char* key, const char* value)
-    : key(key)
-  {
+  ScopedEnv(const char* key, const char* value) : key(key) {
     if (const char* old = std::getenv(key)) {
       oldValue = old;
     }
