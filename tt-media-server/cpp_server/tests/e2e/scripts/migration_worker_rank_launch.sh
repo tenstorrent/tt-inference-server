@@ -36,41 +36,44 @@
 # worker getting its role_index'th slice in order; unset/0 => worker owns all).
 set -euo pipefail
 
+# Single exit path for every unrecoverable misconfiguration: log to stderr with
+# a uniform ERROR: prefix and exit 2. Keeps error handling consistent so a
+# worker never limps on in a broken state and surfaces an obscure failure later.
+die() {
+  echo "ERROR: $*" >&2
+  exit 2
+}
+
 NUM_PREFILL="${NUM_PREFILL:-4}"
 NUM_DECODE="${NUM_DECODE:-16}"
 if (( NUM_PREFILL < 1 )); then
-  echo "ERROR: NUM_PREFILL must be >= 1 (got ${NUM_PREFILL})" >&2
-  exit 2
+  die "NUM_PREFILL must be >= 1 (got ${NUM_PREFILL})"
 fi
 readonly TOTAL_WORKERS=$(( NUM_PREFILL + NUM_DECODE ))
 WORKER_ROLE="${WORKER_ROLE:-}"
 
 rank="${OMPI_COMM_WORLD_RANK:-${PMI_RANK:-}}"
 if [[ -z "${rank}" ]]; then
-  echo "ERROR: no MPI rank in environment (OMPI_COMM_WORLD_RANK/PMI_RANK)" >&2
-  exit 2
+  die "no MPI rank in environment (OMPI_COMM_WORLD_RANK/PMI_RANK)"
 fi
 
-: "${WORKER_BIN:?WORKER_BIN must point at bringup_mooncake_worker}"
-: "${METADATA:?METADATA discovery URI required}"
-: "${HOST_DRAM_BYTES:?HOST_DRAM_BYTES required}"
-: "${DISCOVERY_TIMEOUT_SEC:?DISCOVERY_TIMEOUT_SEC required}"
+[[ -n "${WORKER_BIN:-}" ]] || die "WORKER_BIN must point at bringup_mooncake_worker"
+[[ -n "${METADATA:-}" ]] || die "METADATA discovery URI required"
+[[ -n "${HOST_DRAM_BYTES:-}" ]] || die "HOST_DRAM_BYTES required"
+[[ -n "${DISCOVERY_TIMEOUT_SEC:-}" ]] || die "DISCOVERY_TIMEOUT_SEC required"
 
 # Cross-host deployment: every worker must advertise the IP its peers can reach
-# it on, not a loopback. When MC_TCP_BIND_ADDRESS is unset or "auto", resolve
-# this host's primary IP so the Mooncake engine binds a routable interface
-# (auto-detect may otherwise pick docker0/flannel.1).
+# it on, not a loopback. Only unset or "auto" reach here (a concrete value such
+# as the local test's 127.0.0.1 is left untouched), and both mean "resolve a
+# routable IP for me". If detection fails we die rather than fall back to
+# Mooncake auto-detect, which may pick a loopback/docker NIC and break discovery
+# with a far more obscure error later.
 if [[ -z "${MC_TCP_BIND_ADDRESS:-}" || "${MC_TCP_BIND_ADDRESS}" == "auto" ]]; then
   detected_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
-  if [[ -n "${detected_ip}" ]]; then
-    export MC_TCP_BIND_ADDRESS="${detected_ip}"
-  else
-    # No routable IP found: leaving MC_TCP_BIND_ADDRESS unset lets Mooncake
-    # auto-detect, which may pick a loopback/docker NIC and break cross-host
-    # discovery. Warn loudly; the operator can pin it with MIGRATION_NIC.
-    echo "WARNING: could not detect host IP (hostname -I empty); MC_TCP_BIND_ADDRESS unset on $(hostname -s)" >&2
-    unset MC_TCP_BIND_ADDRESS
+  if [[ -z "${detected_ip}" ]]; then
+    die "could not detect a routable host IP (hostname -I empty) on $(hostname -s); set MC_TCP_BIND_ADDRESS or MIGRATION_NIC explicitly"
   fi
+  export MC_TCP_BIND_ADDRESS="${detected_ip}"
 fi
 
 # Divide the global [start, end) layer span into `count` contiguous parts and
@@ -99,8 +102,7 @@ extra_args=()
 case "${WORKER_ROLE}" in
   prefill)
     if (( rank >= NUM_PREFILL )); then
-      echo "ERROR: WORKER_ROLE=prefill rank ${rank} out of range; expected -np ${NUM_PREFILL}." >&2
-      exit 2
+      die "WORKER_ROLE=prefill rank ${rank} out of range; expected -np ${NUM_PREFILL}."
     fi
     role="prefill"
     role_index="${rank}"
@@ -111,8 +113,7 @@ case "${WORKER_ROLE}" in
     ;;
   decode)
     if (( rank >= NUM_DECODE )); then
-      echo "ERROR: WORKER_ROLE=decode rank ${rank} out of range; expected -np ${NUM_DECODE}." >&2
-      exit 2
+      die "WORKER_ROLE=decode rank ${rank} out of range; expected -np ${NUM_DECODE}."
     fi
     role="decode"
     role_index="${rank}"
@@ -121,8 +122,7 @@ case "${WORKER_ROLE}" in
   "")
     # Single-launch mode (existing MooncakeMpiDiscovery).
     if (( rank >= TOTAL_WORKERS )); then
-      echo "ERROR: rank ${rank} out of range; NUM_PREFILL=${NUM_PREFILL} + NUM_DECODE=${NUM_DECODE} = ${TOTAL_WORKERS} workers. Launch mpirun with -np ${TOTAL_WORKERS}." >&2
-      exit 2
+      die "rank ${rank} out of range; NUM_PREFILL=${NUM_PREFILL} + NUM_DECODE=${NUM_DECODE} = ${TOTAL_WORKERS} workers. Launch mpirun with -np ${TOTAL_WORKERS}."
     fi
     if (( rank < NUM_PREFILL )); then
       role="prefill"
@@ -133,8 +133,7 @@ case "${WORKER_ROLE}" in
     fi
     ;;
   *)
-    echo "ERROR: unknown WORKER_ROLE='${WORKER_ROLE}' (expected: prefill, decode, or unset)" >&2
-    exit 2
+    die "unknown WORKER_ROLE='${WORKER_ROLE}' (expected: prefill, decode, or unset)"
     ;;
 esac
 
@@ -159,13 +158,11 @@ layer_args=()
 if [[ -n "${LAYER_END:-}" && "${LAYER_END}" != "0" ]]; then
   layer_start_global="${LAYER_START:-0}"
   if (( LAYER_END <= layer_start_global )); then
-    echo "ERROR: LAYER_END (${LAYER_END}) must exceed LAYER_START (${layer_start_global})" >&2
-    exit 2
+    die "LAYER_END (${LAYER_END}) must exceed LAYER_START (${layer_start_global})"
   fi
   if [[ "${role}" == "prefill" ]]; then shard_count="${NUM_PREFILL}"; else shard_count="${NUM_DECODE}"; fi
   if (( LAYER_END - layer_start_global < shard_count )); then
-    echo "ERROR: cannot shard $(( LAYER_END - layer_start_global )) layer(s) across ${shard_count} ${role} worker(s)" >&2
-    exit 2
+    die "cannot shard $(( LAYER_END - layer_start_global )) layer(s) across ${shard_count} ${role} worker(s)"
   fi
   read -r slice_start slice_end \
     < <(computeLayerSlice "${layer_start_global}" "${LAYER_END}" "${shard_count}" "${role_index}")
