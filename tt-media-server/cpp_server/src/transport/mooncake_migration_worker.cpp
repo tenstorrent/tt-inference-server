@@ -23,7 +23,8 @@ MooncakeMigrationWorker::MooncakeMigrationWorker(
     std::shared_ptr<PeerDiscoveryService> discovery)
     : config_(std::move(config)),
       engine_(std::move(engine)),
-      discovery_(std::move(discovery)) {}
+      discovery_(std::move(discovery)),
+      health_(std::make_shared<WorkerHealth>(config_.segment_name)) {}
 
 MooncakeMigrationWorker::~MooncakeMigrationWorker() { teardown(); }
 
@@ -84,6 +85,10 @@ bool MooncakeMigrationWorker::bringUp(const std::atomic<bool>& cancelToken) {
     return false;
   }
   peers_ = std::move(*resolved);
+
+  // Bring-up done (engine up, segment published, all peers discovered): flip
+  // the worker Ready. Readiness is a one-time gate on our OWN bring-up
+  health_->setLifecycle(WorkerLifecycle::Ready);
   return true;
 }
 
@@ -111,6 +116,7 @@ void MooncakeMigrationWorker::run(const std::atomic<bool>& stopRequested) {
 // Reverse-order teardown: stop being discoverable before the engine drops, so
 // no in-flight peer write lands on memory we've freed. Idempotent.
 void MooncakeMigrationWorker::teardown() {
+  health_->setLifecycle(WorkerLifecycle::ShuttingDown);
   // exchange() makes this idempotent even if two threads race here: only the
   // caller that flips true->false performs the single unregister.
   if (memoryRegistered_.exchange(false) && engine_) {
@@ -175,28 +181,45 @@ bool MooncakeMigrationWorker::transferToReceiver() {
   bool ok = engine_->storage()->readInto(config_.device_addr, staging_.size(),
                                          staging_.data());
   if (ok) {
-    const SegmentHandle peer = engine_->openSegment(config_.peer_segment_name);
-    if (peer == kInvalidSegment) {
-      TT_LOG_ERROR(
-          "[MooncakeMigrationWorker] transferToReceiver: openSegment({}) "
-          "failed",
-          config_.peer_segment_name);
-      ok = false;
-    } else {
-      TransferRequest request;
-      request.op = TransferOp::Write;
-      request.local_addr = staging_.data();
-      request.target = peer;
-      request.target_offset = 0;
-      request.length = staging_.size();
-      const TransferStatus status = engine_->submitAndWait(request);
-      ok = status.state == TransferState::Completed;
-    }
+    ok = pushStagedToPeer();
   }
 
   // Best-effort unregister; the transfer result stands regardless.
   engine_->unregisterLocalMemory(staging_.data());
   return ok;
+}
+
+// Push staging_ to the peer, fire-and-forget. The migration is a single try: if
+// it fails (peer down, or a stale cached descriptor after the peer restarted on
+// a fresh dynamic port — a TCP sender caches the descriptor at openSegment()
+// time), THIS request fails and the failure propagates.
+bool MooncakeMigrationWorker::pushStagedToPeer() {
+  const std::string& peer = config_.peer_segment_name;
+  const SegmentHandle handle = engine_->openSegment(peer);
+  if (handle != kInvalidSegment && submitStaged(handle)) return true;
+
+  health_->onTransferFailure();
+  TT_LOG_WARN(
+      "[MooncakeMigrationWorker] transferToReceiver: transfer to peer '{}' "
+      "failed; force-refreshing its descriptor for the next request",
+      peer);
+
+  // Re-resolve for next time only; this request still fails.
+  health_->onReresolveAttempt();
+  if (engine_->refreshSegment(peer) == kInvalidSegment) {
+    health_->onReresolveFailure();
+  }
+  return false;
+}
+
+bool MooncakeMigrationWorker::submitStaged(SegmentHandle peer) {
+  TransferRequest request;
+  request.op = TransferOp::Write;
+  request.local_addr = staging_.data();
+  request.target = peer;
+  request.target_offset = 0;
+  request.length = staging_.size();
+  return engine_->submitAndWait(request).state == TransferState::Completed;
 }
 
 // Step 3 (receiver): read this galaxy's device DRAM (where the transfer landed)
