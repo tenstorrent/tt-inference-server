@@ -135,9 +135,6 @@ class LLMPipeline {
   std::shared_ptr<SessionManager> sessionManager() const {
     return sessionManager_;
   }
-  std::shared_ptr<DisaggregationService> disaggregationService() const {
-    return disaggregationService_;
-  }
 
  private:
   bool shouldDoPrefillOnDecode(

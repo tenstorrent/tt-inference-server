@@ -319,6 +319,11 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
       tt::config::dynamoNativePrefillMockKvTransferEnabled();
   runtime["selected_prefill_id"] =
       c.component + "/" + c.endpoint + "/" + c.instance_id_hex;
+  runtime["prefill_routing_policy"] = "tt_threshold";
+  runtime["prefill_on_decode_max_tokens"] =
+      static_cast<Json::UInt64>(tt::config::maxTokensToPrefillOnDecode());
+  runtime["prefill_on_decode_threshold_source"] =
+      "MAX_TOKENS_TO_PREFILL_ON_DECODE";
   runtime["max_inflight_requests"] =
       static_cast<Json::UInt64>(tt::config::pmMaxUsers());
   runtime["capacity_signal_source"] = "cpp_server_static_pm_max_users";

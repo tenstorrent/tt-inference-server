@@ -56,6 +56,14 @@ PREFILL_LOG="/tmp/tt_prefill.log"
 log() { printf '[run_stack] %s\n' "$*"; }
 die() { printf '[run_stack] %s\n' "$*" >&2; exit 1; }
 
+port_in_use() {
+    local port="$1"
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltn 2>/dev/null | grep -qE ":${port}[[:space:]]" && return 0
+    fi
+    (echo >"/dev/tcp/127.0.0.1/${port}") >/dev/null 2>&1
+}
+
 teardown() {
     log "tearing down"
     set +e                            # cleanup is best-effort; never abort on a dead pid
@@ -64,8 +72,8 @@ teardown() {
     # also sweep stray workers/frontend (orphaned --worker children, prior runs)
     for p in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
         [[ "$p" == "$$" ]] && continue
-        local c; c=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null) || continue
-        case "$c" in *"${BIN}"*|*"-m dynamo.frontend"*) pids="$pids $p" ;; esac
+        local c; c=$(tr '\0' ' ' 2>/dev/null < "/proc/$p/cmdline") || continue
+        case "$c" in *"tt_media_server_cpp"*|*"-m dynamo.frontend"*) pids="$pids $p" ;; esac
     done
     pids="$(echo "${pids}" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -u | tr '\n' ' ')"
     if [[ -n "${pids// }" ]]; then
@@ -85,7 +93,9 @@ teardown() {
     rm -f /dev/shm/tt_* 2>/dev/null || true
     # block until our ports are actually released (avoids relaunch bind races)
     for _ in $(seq 1 30); do
-        ss -ltn 2>/dev/null | grep -qE ":(${HTTP_PORT}|${SERVER_PORT}|${PREFILL_PORT}|${SOCKET_PORT})[[:space:]]" || break
+        port_in_use "${HTTP_PORT}" || port_in_use "${SERVER_PORT}" ||
+            port_in_use "${PREFILL_PORT}" || port_in_use "${SOCKET_PORT}" ||
+            break
         sleep 0.5
     done
     set -e
@@ -142,6 +152,8 @@ start_frontend() {
         DYN_DISCOVERY_BACKEND=etcd ETCD_ENDPOINTS="${ETCD_ENDPOINTS}" \
         DYN_REQUEST_PLANE=tcp DYN_EVENT_PLANE=zmq \
         DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
+        TT_NATIVE_PREFILL_POLICY="${TT_NATIVE_PREFILL_POLICY:-threshold}" \
+        TT_PREFILL_ON_DECODE_MAX_TOKENS="${TT_PREFILL_ON_DECODE_MAX_TOKENS:-${MAX_TOKENS_TO_PREFILL_ON_DECODE}}" \
         "${DYN_VENV}/bin/python3" -m dynamo.frontend \
             --http-port "${HTTP_PORT}" \
             --model-name "${MODEL_NAME}" \

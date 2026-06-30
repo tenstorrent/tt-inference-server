@@ -26,10 +26,7 @@
 #include "domain/llm/llm_response.hpp"
 #include "dynamo/native_prefill_handoff.hpp"
 #include "domain/session.hpp"
-#include "services/disaggregation_service.hpp"
 #include "services/llm_pipeline.hpp"
-#include "sockets/socket_messages.hpp"
-#include "utils/conversation_hasher.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
@@ -103,41 +100,6 @@ TokenChunk toTokenChunk(const tt::domain::llm::LLMStreamChunk& chunk,
   return out;
 }
 
-tt::sockets::PrefillRequestMessage buildNativePrefillRequest(
-    const GenerateRequest& dyn, uint32_t taskId) {
-  tt::sockets::PrefillRequestMessage message(taskId);
-  const auto routingInfo =
-      tt::utils::computePrefixCachingInfoFromTokens(dyn.token_ids);
-  message.registrationHashes = routingInfo.hashes();
-  message.tokenIds.assign(dyn.token_ids.begin(), dyn.token_ids.end());
-  message.maxTokens = dyn.max_tokens;
-  message.temperature = dyn.temperature;
-  message.topP = dyn.top_p;
-  message.topK = dyn.top_k;
-  // Dynamo-native prefill does not have a decode-side slot reserved yet. The
-  // handoff carries migration metadata after prefill/KV transfer completes.
-  message.slotId = std::nullopt;
-  message.decodePositionId = 0;
-  message.decodeSkipTokens = 0;
-  return message;
-}
-
-NativePrefillHandoff nativePrefillHandoffFromResult(
-    const tt::sockets::PrefillResultMessage& result,
-    const std::string& requestId, const std::string& localPrefillId) {
-  auto handoff = buildMetadataOnlyNativePrefillHandoff(
-      requestId, result.migrationId, static_cast<uint32_t>(result.tokenIds.size()),
-      localPrefillId);
-  handoff.status = "complete";
-  handoff.cached_tokens = result.cachedTokens;
-  handoff.cache_matched_tokens =
-      result.cachedTokens > 0
-          ? std::make_optional(static_cast<uint32_t>(result.cachedTokens))
-          : std::nullopt;
-  handoff.decode_slot_id = result.slotId;
-  return handoff;
-}
-
 /// Resolve the cpp_server tokenizers/<model>/ directory for the active
 /// tokenizer. `tokenizerPath()` returns an absolute tokenizer file path
 /// (`tokenizer.json` or `tiktoken.model`), so we strip the filename to get the
@@ -208,11 +170,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
   trantor::EventLoopThreadPool* pool = loop_pool_.get();
 
   if (options_.worker_role == DiscoveryWorkerRole::PREFILL) {
-    auto disaggregation = pipeline->disaggregationService();
     auto localPrefillId = local_prefill_id_;
-    return [pool, disaggregation, localPrefillId](
-               const GenerateRequest& dynReq,
-               const TcpStreamConnectionInfo& connInfo) {
+    return [pool, localPrefillId](const GenerateRequest& dynReq,
+                                  const TcpStreamConnectionInfo& connInfo) {
       const std::string requestId =
           dynReq.raw.get("request_id", "").asString();
       TT_LOG_INFO(
@@ -238,50 +198,24 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           return;
         }
 
-        if (!disaggregation) {
-          TokenChunk err;
-          err.error =
-              "cpp_server Dynamo prefill endpoint has no disaggregation "
-              "service configured";
-          err.error_code = 503;
-          writer->sendChunk(err);
-          writer->finalize();
-          return;
-        }
-
         TT_LOG_WARN(
             "[DynamoEndpoint] Using mock KV-transfer readiness for native "
             "prefill handoff; this is for control-plane testing only");
-        const uint32_t taskId = tt::utils::TaskIDGenerator::generate();
-        auto prefillRequest = buildNativePrefillRequest(dynReq, taskId);
-        disaggregation->handlePrefillRequest(
-            prefillRequest,
-            [writer, requestId,
-             localPrefillId](const tt::sockets::PrefillResultMessage& result) {
-              if (result.error) {
-                TokenChunk err;
-                err.error = result.generatedText.empty()
-                                ? "native Dynamo prefill failed"
-                                : result.generatedText;
-                err.error_code = 500;
-                writer->sendChunk(err);
-                writer->finalize();
-                return;
-              }
+        const std::string selectedPrefillId =
+            localPrefillId && !localPrefillId->empty()
+                ? *localPrefillId
+                : std::string{"prefill/generate"};
+        auto handoff = buildMetadataOnlyNativePrefillHandoff(
+            requestId, tt::utils::MigrationIDGenerator::generate(),
+            static_cast<uint32_t>(dynReq.token_ids.size()), selectedPrefillId);
+        handoff.status = "mock_kv_transfer_complete";
 
-              const std::string selectedPrefillId =
-                  localPrefillId && !localPrefillId->empty()
-                      ? *localPrefillId
-                      : std::string{"prefill/generate"};
-              auto handoff = nativePrefillHandoffFromResult(
-                  result, requestId, selectedPrefillId);
-              TokenChunk out;
-              out.finish_reason = "stop";
-              out.disaggregated_params =
-                  nativePrefillHandoffToDisaggregatedParams(handoff);
-              writer->sendChunk(out);
-              writer->finalize();
-            });
+        TokenChunk out;
+        out.finish_reason = "stop";
+        out.disaggregated_params =
+            nativePrefillHandoffToDisaggregatedParams(handoff);
+        writer->sendChunk(out);
+        writer->finalize();
         return;
       }
 
