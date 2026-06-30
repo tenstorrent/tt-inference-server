@@ -1,17 +1,28 @@
 """
 Debate-and-consensus orchestrator.
 
-Flow:
+Flow (PR mode):
   1. Implementer makes changes
   2. All reviewers audit in parallel (sequentially for now, easy to thread later)
   3. If any objections -> debate round: implementer rebuts/revises, reviewers re-evaluate
   4. Repeat up to max_debate_rounds
   5. If consensus -> create PR.  If not -> dump state and exit non-zero.
+
+Flow (groom mode):
+  1. Groomer reads open issues (passed as context) and applies labels / comments / closures
+  2. All groom-reviewers audit the proposed actions in parallel
+  3. If any objections -> debate round: groomer revises, reviewers re-evaluate
+  4. Repeat up to max_debate_rounds
+  5. If consensus -> report success.  If not -> dump state and exit non-zero.
 """
 
 import textwrap
-from orchestrator.personas import IMPLEMENTER, REVIEWERS
+from orchestrator.personas import (
+    IMPLEMENTER, REVIEWERS,
+    GROOMER, GROOM_REVIEWERS,
+)
 import orchestrator.agent as A
+
 
 def _extract_verdict(text: str) -> tuple[bool, str]:
     """Returns (approved, objection_text).
@@ -157,3 +168,145 @@ def orchestrate(
     result = create_pr(task[:72], pr_body, branch, cwd=repo_path)
     log(result)
     return "github.com" in result or "pull" in result.lower()
+
+
+def orchestrate_groom(
+    task: str,
+    repo_path: str,
+    max_debate_rounds: int = 3,
+    verbose: bool = True,
+    api_key: str | None = None,
+) -> bool:
+    """Run backlog grooming via the GROOMER + GROOM_REVIEWERS debate loop.
+
+    Unlike ``orchestrate``, this mode does not create a PR.  Instead the
+    GROOMER applies issue management actions (label, comment, close) directly
+    via the ``gh`` CLI tools, and the GROOM_REVIEWERS challenge those
+    decisions.  If consensus is reached the function returns ``True``; if the
+    debate loop exhausts ``max_debate_rounds`` without consensus it returns
+    ``False``.
+
+    Args:
+        task:               Natural-language description of the grooming goal
+                            (e.g. "triage open issues and assign priorities").
+        repo_path:          Absolute path to the target git repository.  The
+                            ``gh`` CLI commands are executed in this directory
+                            so that they pick up the correct GitHub remote.
+        max_debate_rounds:  Maximum groomer <-> reviewer debate iterations.
+        verbose:            Stream progress to stdout.
+        api_key:            Optional LiteLLM API key.  Falls back to the
+                            ``TT_CHAT_API_KEY`` env-var and then the key file
+                            when None.
+    """
+
+    def log(msg: str):
+        if verbose:
+            print(msg, flush=True)
+
+    # -- Fetch open issues to give the groomer rich context up-front ----------
+    from orchestrator.tools import list_issues as _list_issues
+    log("\n=== FETCHING OPEN ISSUES ===")
+    issues_json = _list_issues(state="open", limit=200, cwd=repo_path)
+    log(f"[context] fetched issue list ({len(issues_json)} chars)")
+
+    groomer_task = textwrap.dedent(f"""
+        {task}
+
+        Here is the current list of open issues in JSON format:
+        {issues_json}
+
+        Analyse each issue and apply the appropriate labels, comments, and
+        closures (for confirmed duplicates or out-of-scope items).
+        When you have finished processing all issues end with: GROOMING_COMPLETE
+    """).strip()
+
+    # -- Phase 1: Grooming ----------------------------------------------------
+    log("\n=== GROOMER ===")
+    groom_text, groom_history = A.run(
+        GROOMER,
+        [{"role": "user", "content": groomer_task}],
+        cwd=repo_path,
+        verbose=verbose,
+        api_key=api_key,
+    )
+    log(f"[groomer] {groom_text[:300]}...")
+
+    # Shared context for reviewers (without the groomer system prompt)
+    shared_history = groom_history[1:]
+
+    # -- Phase 2 + 3: Review / debate loop ------------------------------------
+    verdicts: dict[str, tuple[bool, str]] = {}
+
+    for debate_round in range(max_debate_rounds + 1):
+        if debate_round == 0:
+            log("\n=== INITIAL GROOM REVIEW ===")
+        else:
+            log(f"\n=== GROOM DEBATE ROUND {debate_round} ===")
+
+        verdicts = {}
+        reviewer_histories: dict[str, list[dict]] = {}
+
+        for reviewer in GROOM_REVIEWERS:
+            log(f"\n-- {reviewer['name']} --")
+            prompt = (
+                "Please review the groomer's proposed actions and give your verdict."
+                if debate_round == 0
+                else "The groomer has revised their actions. Please re-evaluate your previous objections."
+            )
+            review_text, rev_history = A.run(
+                reviewer,
+                shared_history + [{"role": "user", "content": prompt}],
+                cwd=repo_path,
+                verbose=verbose,
+                api_key=api_key,
+            )
+            log(f"[{reviewer['name']}] {review_text[:300]}")
+            approved, objection = _extract_verdict(review_text)
+            verdicts[reviewer["name"]] = (approved, objection)
+            reviewer_histories[reviewer["name"]] = rev_history
+
+        objectors = {name: obj for name, (ok, obj) in verdicts.items() if not ok}
+
+        if not objectors:
+            log("\n=== GROOM CONSENSUS REACHED ===")
+            break
+
+        if debate_round == max_debate_rounds:
+            log("\n=== GROOM FAILED TO REACH CONSENSUS ===")
+            for name, obj in objectors.items():
+                log(f"  {name}: {obj}")
+            return False
+
+        # Groomer responds to reviewer objections
+        log(f"\n-- groomer rebuttal (round {debate_round + 1}) --")
+        objection_summary = "\n".join(
+            f"- {name}: {obj}" for name, obj in objectors.items()
+        )
+        rebuttal_prompt = textwrap.dedent(f"""
+            The following reviewers have objections to your grooming decisions:
+            {objection_summary}
+
+            Address each concern by revising your labels/comments/closures or
+            explaining why the original decision is correct.
+            When done, end with: GROOMING_COMPLETE
+        """).strip()
+
+        groom_text, groom_history = A.run(
+            GROOMER,
+            shared_history + [{"role": "user", "content": rebuttal_prompt}],
+            cwd=repo_path,
+            verbose=verbose,
+            api_key=api_key,
+        )
+        log(f"[groomer] {groom_text[:300]}...")
+        shared_history = groom_history[1:]  # updated shared context
+
+    # -- Phase 4: Report grooming summary -------------------------------------
+    log("\n=== GROOMING COMPLETE ===")
+    review_summary = "\n".join(
+        f"  {name}: {'approved' if ok else obj}"
+        for name, (ok, obj) in verdicts.items()
+    )
+    log(f"Review summary:\n{review_summary}")
+    log(f"\nGroomer final summary:\n{groom_text[:1000]}")
+    return True
