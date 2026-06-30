@@ -48,6 +48,8 @@ LAYER_END=0
 BUILD_DIR="./build"
 WORKER_BIN=""
 DISCOVERY_PORT=8080
+# Mirrors bringup_mooncake_worker's K_DEFAULT_HOST_DRAM_BYTES (4 GiB). Kept in
+# sync by hand; the worker also clamps/validates this against physical RAM.
 HOST_DRAM_BYTES=$((4 * 1024 * 1024 * 1024))
 DISCOVERY_TIMEOUT_SEC=60
 KAFKA_BROKERS="kafka:9092"

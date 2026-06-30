@@ -62,6 +62,12 @@ if [[ -z "${MC_TCP_BIND_ADDRESS:-}" || "${MC_TCP_BIND_ADDRESS}" == "auto" ]]; th
   detected_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   if [[ -n "${detected_ip}" ]]; then
     export MC_TCP_BIND_ADDRESS="${detected_ip}"
+  else
+    # No routable IP found: leaving MC_TCP_BIND_ADDRESS unset lets Mooncake
+    # auto-detect, which may pick a loopback/docker NIC and break cross-host
+    # discovery. Warn loudly; the operator can pin it with MIGRATION_NIC.
+    echo "WARNING: could not detect host IP (hostname -I empty); MC_TCP_BIND_ADDRESS unset on $(hostname -s)" >&2
+    unset MC_TCP_BIND_ADDRESS
   fi
 fi
 
