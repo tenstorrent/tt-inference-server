@@ -266,6 +266,26 @@ def assign_issue(number: int, cwd: str | None = None) -> str:
     argv = ["issue", "edit", str(int(number)), "--add-assignee", "@me"]
     return _gh(argv, cwd=cwd)
 
+
+def set_issue_field(number: int, field_id: int, value: str, cwd: str | None = None) -> str:
+    # PATCH on the issue URL with X-GitHub-Api-Version is the working form per the repo workflow.
+    import tempfile, pathlib
+    body = f'{{"issue_field_values":[{{"field_id":{int(field_id)},"value":{json.dumps(value)}}}]}}'
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        f.write(body)
+        tmp_path = f.name
+    try:
+        argv = [
+            "api",
+            f"repos/{{owner}}/{{repo}}/issues/{int(number)}",
+            "--method", "PATCH",
+            "-H", "X-GitHub-Api-Version: 2026-03-10",
+            "--input", tmp_path,
+        ]
+        return _gh(argv, cwd=cwd)
+    finally:
+        pathlib.Path(tmp_path).unlink(missing_ok=True)
+
 # -- dispatch -----------------------------------------------------------------
 
 IMPL = {
@@ -284,7 +304,8 @@ IMPL = {
     "get_issue":     lambda args, cwd: get_issue(args["number"], cwd),
     "comment_issue": lambda args, cwd: comment_issue(args["number"], args["body"], cwd),
     "label_issue":   lambda args, cwd: label_issue(args["number"], args["labels"], cwd),
-    "close_issue":   lambda args, cwd: close_issue(args["number"], args.get("reason", ""), cwd),
+    "close_issue":       lambda args, cwd: close_issue(args["number"], args.get("reason", ""), cwd),
+    "set_issue_field":   lambda args, cwd: set_issue_field(args["number"], args["field_id"], args["value"], cwd),
 }
 
 def execute(name: str, arguments: dict, cwd: str | None = None) -> str:
@@ -488,6 +509,39 @@ DEFS = [
                     },
                 },
                 "required": ["number"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_issue_field",
+            "description": (
+                "Set an org-level issue field value on a GitHub issue via the REST API. "
+                "Use field_id 8891 for Priority (values: P0, P1, P2, P3) and "
+                "field_id 8894 for Effort (values: High, Medium, Low)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "number": {
+                        "type": "integer",
+                        "description": "The issue number.",
+                    },
+                    "field_id": {
+                        "type": "integer",
+                        "description": "The issue field ID (8891 = Priority, 8894 = Effort).",
+                    },
+                    "value": {
+                        "type": "string",
+                        "description": (
+                            "The field value to set. "
+                            "Priority options: P0, P1, P2, P3. "
+                            "Effort options: High, Medium, Low."
+                        ),
+                    },
+                },
+                "required": ["number", "field_id", "value"],
             },
         },
     },
