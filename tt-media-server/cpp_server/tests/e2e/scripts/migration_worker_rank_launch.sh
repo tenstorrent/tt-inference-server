@@ -31,7 +31,9 @@
 # 4), NUM_DECODE (default 16), KAFKA_GROUP_ID_PREFIX (default
 # `migration-workers-prefill`; one-group-per-rank suffix is appended),
 # MC_TCP_BIND_ADDRESS (unset/"auto" => detect this host's primary IP),
-# LAYER_START / LAYER_END (static KV layer span passed to every worker).
+# LAYER_START / LAYER_END (global model layer span; divided into NUM_PREFILL
+# contiguous slices for prefill workers and NUM_DECODE for decode workers, each
+# worker getting its role_index'th slice in order; unset/0 => worker owns all).
 set -euo pipefail
 
 NUM_PREFILL="${NUM_PREFILL:-4}"
@@ -71,13 +73,25 @@ if [[ -z "${MC_TCP_BIND_ADDRESS:-}" || "${MC_TCP_BIND_ADDRESS}" == "auto" ]]; th
   fi
 fi
 
-# Optional static KV layer span, set per worker by the deploy launcher. Passed
-# through only when LAYER_END is a real range (non-empty, non-zero); otherwise
-# the worker stays layer-agnostic.
-layer_args=()
-if [[ -n "${LAYER_END:-}" && "${LAYER_END}" != "0" ]]; then
-  layer_args+=(--layer-start "${LAYER_START:-0}" --layer-end "${LAYER_END}")
-fi
+# Divide the global [start, end) layer span into `count` contiguous parts and
+# echo "<sliceStart> <sliceEnd>" for part `index` (0-based). The remainder goes
+# to the lowest-indexed parts, so the slices tile the range exactly — no gaps
+# (which would hang a request) and no overlaps (which would double-ack).
+computeLayerSlice() {
+  local start="$1" end="$2" count="$3" index="$4"
+  local total=$(( end - start ))
+  local base=$(( total / count ))
+  local rem=$(( total % count ))
+  local off size
+  if (( index < rem )); then
+    off=$(( index * (base + 1) ))
+    size=$(( base + 1 ))
+  else
+    off=$(( rem * (base + 1) + (index - rem) * base ))
+    size="${base}"
+  fi
+  echo "$(( start + off )) $(( start + off + size ))"
+}
 
 # Resolve (role, role-local index) from rank under whichever launch mode is
 # active, then defer the topology computation to the shared block below.
@@ -135,6 +149,27 @@ if [[ "${role}" == "prefill" ]]; then
 else
   name="decode-${role_index}"
   peer_args+=(--peer "prefill-$(( role_index % NUM_PREFILL ))")
+fi
+
+# Per-rank KV layer slice. When a global span is configured, split it into one
+# contiguous slice per worker of this role (NUM_PREFILL slices for prefill,
+# NUM_DECODE for decode) and hand this worker its role_index'th slice, in order.
+# Unset/zero LAYER_END leaves the worker layer-agnostic (owns all layers).
+layer_args=()
+if [[ -n "${LAYER_END:-}" && "${LAYER_END}" != "0" ]]; then
+  layer_start_global="${LAYER_START:-0}"
+  if (( LAYER_END <= layer_start_global )); then
+    echo "ERROR: LAYER_END (${LAYER_END}) must exceed LAYER_START (${layer_start_global})" >&2
+    exit 2
+  fi
+  if [[ "${role}" == "prefill" ]]; then shard_count="${NUM_PREFILL}"; else shard_count="${NUM_DECODE}"; fi
+  if (( LAYER_END - layer_start_global < shard_count )); then
+    echo "ERROR: cannot shard $(( LAYER_END - layer_start_global )) layer(s) across ${shard_count} ${role} worker(s)" >&2
+    exit 2
+  fi
+  read -r slice_start slice_end \
+    < <(computeLayerSlice "${layer_start_global}" "${LAYER_END}" "${shard_count}" "${role_index}")
+  layer_args+=(--layer-start "${slice_start}" --layer-end "${slice_end}")
 fi
 
 # ${peer_args[@]+...} keeps `set -u` happy when a prefill ends up with no peers.
