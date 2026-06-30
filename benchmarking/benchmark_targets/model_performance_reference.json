@@ -271,6 +271,64 @@
             }
         ]
     },
+    "Qwen3.6-27B": {
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "_placeholder": true,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": -1.0,
+                        "tput_user": -1.0,
+                        "tput": -1.0
+                    }
+                }
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "_placeholder": true,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": -1.0,
+                        "tput_user": -1.0,
+                        "tput": -1.0
+                    }
+                }
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "_placeholder": true,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": -1.0,
+                        "tput_user": -1.0,
+                        "tput": -1.0
+                    }
+                }
+            }
+        ]
+    },
     "Mistral-Small-3.1-24B-Instruct-2503": {
         "t3k": [
             {
