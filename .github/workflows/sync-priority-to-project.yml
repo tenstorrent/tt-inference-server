@@ -69,6 +69,11 @@ jobs:
             exit 1
           fi
 
+          echo "DEBUG: Priority field id=$priority_field_id"
+          echo "DEBUG: Priority field options:"
+          echo "$priority_field" | jq -r '.options[] | "  \(.id) \(.name)"' || echo "  (jq failed on priority_field)"
+          echo "DEBUG: priority_field raw (first 500 chars): ${priority_field:0:500}"
+
           # Priority field uses org-standard values: P0 (urgent) / P1 (high) / P2 (medium) / P3 (low)
           option_id_for() {
             local wanted="$1"
@@ -88,8 +93,10 @@ jobs:
                 -z "$p2_option_id" || "$p2_option_id" == "null" || \
                 -z "$p3_option_id" || "$p3_option_id" == "null" ]]; then
             echo "ERROR: Could not find P1/P2/P3 options in Priority field" >&2
-            echo "Available options:" >&2
+            echo "Available options (names):" >&2
             echo "$priority_field" | jq -r '.options[].name' >&2
+            echo "Available options (full JSON):" >&2
+            echo "$priority_field" | jq '.options' >&2
             exit 1
           fi
 
