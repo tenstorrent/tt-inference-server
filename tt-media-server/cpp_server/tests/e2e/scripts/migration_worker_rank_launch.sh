@@ -29,7 +29,9 @@
 # Required env: WORKER_BIN, METADATA, HOST_DRAM_BYTES, DISCOVERY_TIMEOUT_SEC.
 # Optional env: WORKER_ROLE (selects split-launch mode), NUM_PREFILL (default
 # 4), NUM_DECODE (default 16), KAFKA_GROUP_ID_PREFIX (default
-# `migration-workers-prefill`; one-group-per-rank suffix is appended).
+# `migration-workers-prefill`; one-group-per-rank suffix is appended),
+# MC_TCP_BIND_ADDRESS (unset/"auto" => detect this host's primary IP),
+# LAYER_START / LAYER_END (static KV layer span passed to every worker).
 set -euo pipefail
 
 NUM_PREFILL="${NUM_PREFILL:-4}"
@@ -51,6 +53,25 @@ fi
 : "${METADATA:?METADATA discovery URI required}"
 : "${HOST_DRAM_BYTES:?HOST_DRAM_BYTES required}"
 : "${DISCOVERY_TIMEOUT_SEC:?DISCOVERY_TIMEOUT_SEC required}"
+
+# Cross-host deployment: every worker must advertise the IP its peers can reach
+# it on, not a loopback. When MC_TCP_BIND_ADDRESS is unset or "auto", resolve
+# this host's primary IP so the Mooncake engine binds a routable interface
+# (auto-detect may otherwise pick docker0/flannel.1).
+if [[ -z "${MC_TCP_BIND_ADDRESS:-}" || "${MC_TCP_BIND_ADDRESS}" == "auto" ]]; then
+  detected_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  if [[ -n "${detected_ip}" ]]; then
+    export MC_TCP_BIND_ADDRESS="${detected_ip}"
+  fi
+fi
+
+# Optional static KV layer span, set per worker by the deploy launcher. Passed
+# through only when LAYER_END is a real range (non-empty, non-zero); otherwise
+# the worker stays layer-agnostic.
+layer_args=()
+if [[ -n "${LAYER_END:-}" && "${LAYER_END}" != "0" ]]; then
+  layer_args+=(--layer-start "${LAYER_START:-0}" --layer-end "${LAYER_END}")
+fi
 
 # Resolve (role, role-local index) from rank under whichever launch mode is
 # active, then defer the topology computation to the shared block below.
@@ -117,4 +138,5 @@ exec "${WORKER_BIN}" \
   ${peer_args[@]+"${peer_args[@]}"} \
   --host-dram-bytes "${HOST_DRAM_BYTES}" \
   --discovery-timeout-sec "${DISCOVERY_TIMEOUT_SEC}" \
+  ${layer_args[@]+"${layer_args[@]}"} \
   ${extra_args[@]+"${extra_args[@]}"}
