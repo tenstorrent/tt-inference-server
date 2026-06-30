@@ -205,6 +205,20 @@ def main():
 
     write_status(run_dir, "running")
 
+    # Poison the push URL so the implementer agent cannot push directly.
+    # The orchestrator restores it immediately before its own git push.
+    _poison = subprocess.run(
+        ["git", "remote", "set-url", "--push", "origin", "DISABLED"],
+        cwd=repo_path,
+        capture_output=True,
+    )
+    if _poison.returncode == 0:
+        print("[run] remote push URL set to DISABLED", flush=True)
+    else:
+        # No 'origin' remote (e.g. offline dev env) — push is already impossible.
+        print("[run] WARNING: could not poison push URL (no origin remote?); "
+              "push will remain as-is", flush=True)
+
     # Self-assign the issue before any agent work begins so the project board
     # shows this issue as in-progress.  This is best-effort; failures are
     # printed as warnings and do not abort the run.
