@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
+from evals.eval_config import accept_eval_score, resolve_eval_reference
 from report_module.schema import Block
 from workflows.workflow_types import ReportCheckTypes
 
@@ -24,10 +25,14 @@ class AgenticEvalParser(LLMResultParser):
         task_name: str,
         score: Any = None,
         result_path: Optional[Path] = None,
+        limit_mode: Any = None,
     ) -> None:
         self.task_name = task_name
         self.score = score
         self.result_path = result_path
+        # EvalLimitMode (or None). Under --ci-mode the accuracy check compares
+        # against the task's CI-subset reference instead of the full-set one.
+        self.limit_mode = limit_mode
 
     def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
         metrics = extract_harbor_metrics(raw)
@@ -35,11 +40,14 @@ class AgenticEvalParser(LLMResultParser):
         if device:
             targets["device"] = device
         if self.score is not None:
+            ref = resolve_eval_reference(self.score, self.limit_mode)
             targets.update(
                 {
-                    "tolerance": self.score.tolerance,
+                    "tolerance": ref["tolerance"],
                     "published_score": self.score.published_score,
                     "published_score_ref": self.score.published_score_ref,
+                    "gpu_reference_score": ref["reference_score"],
+                    "gpu_reference_score_ref": ref["reference_ref"],
                 }
             )
         if self.result_path is not None:
@@ -53,7 +61,9 @@ class AgenticEvalParser(LLMResultParser):
             targets=targets,
             data={
                 "success": True,
-                "accuracy_check": compute_accuracy_check(metrics, self.score),
+                "accuracy_check": compute_accuracy_check(
+                    metrics, self.score, self.limit_mode
+                ),
                 **metrics,
             },
         )
@@ -78,18 +88,32 @@ def extract_harbor_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
     return metrics
 
 
-def compute_accuracy_check(metrics: Mapping[str, Any], score: Any = None) -> int:
-    """Map accuracy to the report check convention: NA=1, PASS=2, FAIL=3."""
+def compute_accuracy_check(
+    metrics: Mapping[str, Any], score: Any = None, limit_mode: Any = None
+) -> int:
+    """Map accuracy to the report check convention: NA=1, PASS=2, FAIL=3.
+
+    Under a limit mode (--ci-mode / --limit-samples-mode) with a matching
+    ``mode_reference_scores`` entry, compares against the subset reference using
+    the sample-count-aware check (n_trials = subset size), which gives tiny
+    agentic subsets the right leniency without a hand-tuned margin.
+    """
 
     accuracy = metrics.get("accuracy")
     if accuracy is None or score is None:
         return ReportCheckTypes.NA
     accuracy = _normalize_accuracy_to_percent(accuracy)
-    target = score.gpu_reference_score or score.published_score
-    tol = score.tolerance or 0.05
-    if accuracy >= target * (1 - tol):
-        return ReportCheckTypes.PASS
-    return ReportCheckTypes.FAIL
+    ref = resolve_eval_reference(score, limit_mode)
+    n_total = metrics.get("n_trials")
+    passed = accept_eval_score(ref, accuracy, n_total=n_total)
+    if passed is None:
+        # No gpu reference; fall back to published score ratio.
+        published = getattr(score, "published_score", None)
+        if not published:
+            return ReportCheckTypes.NA
+        tol = ref["tolerance"] or 0.05
+        passed = accuracy >= published * (1 - tol)
+    return ReportCheckTypes.PASS if passed else ReportCheckTypes.FAIL
 
 
 def _normalize_accuracy_to_percent(accuracy: Any) -> Any:
