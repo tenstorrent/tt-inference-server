@@ -686,6 +686,19 @@ def main():
     logger.info(f"TT-Inference SHA: {tt_inference_server_sha[:12]}")
     logger.info(format_cli_args_summary(runtime_config))
 
+    # Host-resource monitor for the WHOLE run. run.py is the long-lived
+    # orchestrator and RESMON watches host-wide memory/RSS, so a single monitor
+    # here covers every release phase (evals -> benchmarks -> spec_tests ->
+    # tests -> reports), not just evals. Its kill switch aborts the whole flow
+    # cleanly before the runner OOMs, so the CI step finalizes and uploads logs.
+    # Failure-isolated; opt-in / kill threshold via EVAL_RESMON* env.
+    try:
+        from evals.resource_monitor import start_resource_monitor
+
+        start_resource_monitor(logger, output_path=str(log_path))
+    except Exception as e:
+        logger.info(f"[RESMON] could not start resource monitor: {e!r}")
+
     # Write runtime model spec + runtime config for subprocess scripts
     json_fpath = runtime_config.to_json(
         model_spec, run_timestamp, model_id, runtime_model_spec_dir

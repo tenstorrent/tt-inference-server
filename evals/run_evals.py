@@ -834,15 +834,10 @@ def main():
     setup_workflow_script_logger(logger)
     logger.info(f"Running {__file__} ...")
 
-    # Periodic host-resource logging (memory / RSS / disk) to diagnose runner
-    # OOM / lost-communication failures during long evals. Off by default;
-    # enable with EVAL_RESMON=1. See evals/resource_monitor.py.
-    try:
-        from evals.resource_monitor import start_resource_monitor
-
-        start_resource_monitor(logger)
-    except Exception as e:
-        logger.info(f"[RESMON] could not start resource monitor: {e!r}")
+    # NOTE: the host-resource monitor (RESMON) is started once in the top-level
+    # run.py orchestrator, which is alive for the whole run and watches host-wide
+    # memory -- so it already covers this evals subprocess. Starting it here too
+    # would just double the sampling + kill switch. See evals/resource_monitor.py.
 
     args = parse_args()
     model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
