@@ -249,6 +249,10 @@ class FakeTransferEngine : public ITransferEngine {
     return attempt > it->second ? static_cast<SegmentHandle>(attempt)
                                 : kInvalidSegment;
   }
+  SegmentHandle refreshSegment(const std::string& name) override {
+    callLog.emplace_back("refresh:" + name);
+    return static_cast<SegmentHandle>(1);
+  }
   TransferStatus submitAndWait(const TransferRequest&) override {
     return {TransferState::Completed, 0};
   }
