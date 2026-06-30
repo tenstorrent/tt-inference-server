@@ -36,6 +36,23 @@ class TestConfig:
 
 
 _test_config_list = [
+    # Functional spec-test: basic chat-completions smoke test against the served
+    # model (single short BASE_PROMPT in test_vllm_chat_completions.py). Mirrors
+    # the Qwen3-32B entry below.
+    # TODO(qwen36): nothing has run on device yet — the model hangs in the GDN
+    # linear-attention prefill kernel (model-owner bug), so this entry is wired
+    # but UNVALIDATED. Re-confirm task list / add response-API task once the
+    # prefill hang is fixed.
+    TestConfig(
+        hf_model_repo="Qwen/Qwen3.6-27B",
+        tasks=[
+            TestTask(
+                task_name="vllm_chat_completions",
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
+                test_args=("s", "v"),
+            ),
+        ],
+    ),
     TestConfig(
         hf_model_repo="Qwen/Qwen3-32B",
         tasks=[
