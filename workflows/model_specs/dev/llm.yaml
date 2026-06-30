@@ -235,13 +235,14 @@ templates:
         HF_MODEL: Qwen/Qwen3.6-27B
         MESH_DEVICE: "(1, 4)"
         # TODO change to relative path for real deployment, this is only for --local-server
-        TT_MESH_GRAPH_DESC_PATH: "/home/ttuser/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+        TT_MESH_GRAPH_DESC_PATH: "/home/lingjunw/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
         # TODO remove later to default if it is truly a hang
         TT_METAL_OPERATION_TIMEOUT_SECONDS: "120.0"
       override_tt_config:
         fabric_config: FABRIC_1D  # cross-device collectives for TP
         trace_region_size: 402653184  # 384 MB; prefill chunk trace needs ~187 MB (128 MB crashed)
   status: EXPERIMENTAL
+  has_builtin_warmup: true  # run model's own warmup so small prefill buckets get pre-compiled (issue #48536)
   metadata:
     Qwen/Qwen3.6-27B:
       reasoning_parser_name: qwen3
