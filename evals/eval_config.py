@@ -401,6 +401,172 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
+            # Standard lm-eval tasks aligned to the benchmarks Qwen officially
+            # reports for Qwen3.6-27B (text domain only — the vision benchmarks
+            # MMMU/MathVista/etc. are off-path here). published_score values are
+            # the card's thinking-mode numbers; lm-eval methodology can differ
+            # from Qwen's internal harness, so gpu_reference_score (a GPU lm-eval
+            # run on the HF weights) is the true apples-to-apples target and is
+            # still TODO. These run in EVALS_COMMON (the lm-eval venv), not the
+            # agentic venv. IFEval is intentionally omitted — the card does not
+            # report it for this model.
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                max_concurrent=16,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    # GPQA Diamond, thinking mode (card: 87.8).
+                    published_score=87.8,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    # TODO_EVAL_SCORE: needs a GPU reference lm-eval run on the HF
+                    # weights (independent of the TT device hang).
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 65536,
+                },
+                # gen_kwargs per Qwen3.6-27B thinking-mode best practices.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    # MMLU-Pro, thinking mode (card: 86.2).
+                    published_score=86.2,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    # TODO_EVAL_SCORE: needs a GPU reference lm-eval run on the HF
+                    # weights (independent of the TT device hang).
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 65536,
+                },
+                # gen_kwargs kept consistent with the Qwen3-32B "best practices"
+                # reasoning params used elsewhere in this file.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="livecodebench",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    # LiveCodeBench v6, thinking mode (card: 83.9). TODO confirm
+                    # the harness livecodebench task targets v6 to match this.
+                    published_score=83.9,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    # TODO_EVAL_SCORE: needs a GPU reference lm-eval run on the HF
+                    # weights (independent of the TT device hang).
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                # gen_kwargs per Qwen3.6-27B thinking-mode best practices.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            EvalTask(
+                task_name="r1_aime24",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    # Math-reasoning correctness gate. Qwen reports AIME26 (94.1)
+                    # for this model, NOT AIME24, and the harness ships aime24
+                    # only — so there is no directly comparable published number.
+                    # TODO: add an aime26 task, or compare TT vs GPU reference.
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    # TODO_EVAL_SCORE: needs a GPU reference lm-eval run on the HF
+                    # weights (independent of the TT device hang).
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                # gen_kwargs per Qwen3.6-27B thinking-mode best practices.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
         ],
     ),
     EvalConfig(
