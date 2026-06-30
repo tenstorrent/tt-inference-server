@@ -9,6 +9,7 @@
 `gpt-oss-120b` is also supported on hardware:
 
 - [WH Galaxy](gpt-oss-120b_galaxy.md)
+- [BH QuietBox 2](gpt-oss-120b_p300x2.md)
 
 ## Quickstart - Deploy gpt-oss-120b Inference Server on WH LoudBox/QuietBox
 
@@ -26,7 +27,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_gpt-oss-120b:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.12.0-805f43d-a45c614 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a \
   --model gpt-oss-120b \
   --tt-device t3k
 ```
@@ -46,7 +47,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🛠️ Experimental |
 | Max Batch Size | 1 |
 | Max Context Length | 16384 |
-| Implementation Code | [gpt-oss](https://github.com/tenstorrent/tt-metal/tree/805f43d/models/demos/gpt_oss) |
-| tt-metal Commit | `805f43d` |
-| vLLM Commit | `a45c614` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.12.0-805f43d-a45c614` |
+| Implementation Code | [gpt-oss](https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/demos/gpt_oss) |
+| tt-metal Commit | `8c48a10` |
+| vLLM Commit | `f52987a` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a` |

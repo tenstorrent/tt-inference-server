@@ -11,7 +11,7 @@
 namespace tt::worker {
 
 /**
- * Seam that hides the byte-moving implementation from KvMigrationWorker.
+ * Interface that hides the byte-moving implementation from KvMigrationWorker.
  *
  * The worker hands every parsed MigrationRequest to an executor and is
  * otherwise indifferent to how the bytes actually move. Production wires

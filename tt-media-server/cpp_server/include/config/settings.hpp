@@ -228,10 +228,6 @@ uint32_t modelNumLayers();
  * defaults::PREFILL_CHUNK_SIZE. */
 uint32_t prefillChunkSize();
 
-/** Migrate full KV from MIGRATE_FULL_KV. Default:
- * defaults::MIGRATE_FULL_KV. */
-bool migrateFullKV();
-
 /** Enable migration from ENABLE_MIGRATION. Default:
  * defaults::ENABLE_MIGRATION. */
 bool enableMigration();
@@ -373,5 +369,23 @@ RunnerConfig workerRunnerConfig(size_t workerIndex);
 
 /** Model from MODEL. Default: defaults::MODEL. */
 Model model();
+
+// ---------------------------------------------------------------------------
+// Mooncake KV Migration configuration.
+// ---------------------------------------------------------------------------
+/** Max age (ms) of an IN_PROGRESS KV migration before the sweeper marks it
+ * FAILED. From KV_MIGRATION_TIMEOUT_MS. Default:
+ * defaults::KV_MIGRATION_TIMEOUT_MS. */
+unsigned kvMigrationTimeoutMs();
+
+/** How often (ms) the RemoteKVManagerImpl drain thread runs its timeout sweep.
+ * From KV_MIGRATION_SWEEP_INTERVAL_MS. Default:
+ * defaults::KV_MIGRATION_SWEEP_INTERVAL_MS. */
+unsigned kvMigrationSweepIntervalMs();
+
+/** Per-iteration Kafka poll timeout (ms) for the RemoteKVManagerImpl drain
+ * loop. From KV_MIGRATION_DRAIN_POLL_MS. Default:
+ * defaults::KV_MIGRATION_DRAIN_POLL_MS. */
+unsigned kvMigrationDrainPollMs();
 
 }  // namespace tt::config
