@@ -39,7 +39,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from migration_e2e.acks import count_acks, produce_migration_request  # noqa: E402
 from migration_e2e.config import load_config  # noqa: E402
 from migration_e2e.metadata_server import start_metadata_server  # noqa: E402
-from migration_e2e.preflight import PreflightError, preflight  # noqa: E402
+from migration_e2e.preflight import TestEnvironmentError, verify_test_environment  # noqa: E402
 from migration_e2e.workers import (  # noqa: E402
     launch_role,
     sweep_stragglers,
@@ -50,8 +50,8 @@ from migration_e2e.workers import (  # noqa: E402
 def main() -> int:
     cfg = load_config()
     try:
-        preflight(cfg)
-    except PreflightError as exc:
+        verify_test_environment(cfg)
+    except TestEnvironmentError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
@@ -62,7 +62,7 @@ def main() -> int:
 
         try:
             meta_proc, metadata_uri = start_metadata_server(cfg)
-        except PreflightError as exc:
+        except TestEnvironmentError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 1
         if meta_proc is not None:
