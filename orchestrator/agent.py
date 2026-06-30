@@ -12,7 +12,7 @@ def run(
     persona: dict,
     messages: list[dict],
     cwd: str | None = None,
-    max_tool_rounds: int = 20,
+    max_tool_rounds: int = 40,
     verbose: bool = True,
     api_key: str | None = None,
 ) -> tuple[str, list[dict]]:
