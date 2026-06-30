@@ -86,32 +86,64 @@ def _vllm_tt_metal_dev_mounts(
     mounts: List[str] = []
     # As of the vLLM dev bump (9d88cd5) we use vLLM dev's native platform.py
     # (which registers the Gemma4 architectures and adds the hybrid-KV HMA opt-in)
-    # and tt-metal's native generator_vllm.py. We therefore no longer bind-mount
-    # gemma4_platform_vllm_3334377.py or gemma4_generator_vllm_9970093.py (both
-    # pinned to older APIs that would revert that newer logic). Only the reasoning
-    # parser, still missing upstream, is mounted.
-    gemma4_reasoning_parser = (
-        repo_root_path
-        / "vllm-tt-metal/patches/gemma4_reasoning_parser_vllm_3334377.py"
+    # and tt-metal's native generator_vllm.py, so those are no longer mounted.
+    # The Gemma4 reasoning parser now ships inside the vllm-tt-plugin
+    # (tenstorrent/vllm #431), which registers it under "gemma4" from its
+    # vllm.general_plugins entry point, so it is no longer mounted or baked.
+
+    # TEMP (async-scheduling verification): bind-mount the host tt-metal
+    # generator_vllm.py so the running container picks up the
+    # supports_async_decode=True change without an image rebuild. Remove once
+    # the image is rebuilt at the branch commit.
+    gemma4_generator_vllm = Path(
+        "/home/dwadhwani/tt-metal/models/demos/gemma4/tt/generator_vllm.py"
     )
-    gemma4_reasoning_init = (
-        repo_root_path
-        / "vllm-tt-metal/patches/gemma4_reasoning_init_vllm_3334377.py"
-    )
-    if gemma4_reasoning_parser.is_file() and gemma4_reasoning_init.is_file():
-        reasoning_dir = f"{user_home_path}/vllm/vllm/reasoning"
+    if gemma4_generator_vllm.is_file():
         mounts.extend(
             [
                 "--mount",
-                f"type=bind,src={gemma4_reasoning_parser},dst={reasoning_dir}/gemma4_reasoning_parser.py",
-                "--mount",
-                f"type=bind,src={gemma4_reasoning_init},dst={reasoning_dir}/__init__.py",
+                f"type=bind,src={gemma4_generator_vllm},"
+                f"dst={user_home_path}/tt-metal/models/demos/gemma4/tt/generator_vllm.py",
             ]
         )
         logger.info(
-            "Dev mode: mounting Gemma4 reasoning parser patches from "
-            f"{gemma4_reasoning_parser} and {gemma4_reasoning_init}"
+            "Dev mode: mounting host Gemma4 generator_vllm.py from "
+            f"{gemma4_generator_vllm} (async-scheduling verification)"
         )
+
+    # TEMP (hybrid-off KV experiment): bind-mount a patched vllm-tt-plugin
+    # model_runner.py that unwraps UniformTypeKVCacheSpecs (emitted when Gemma4
+    # disables hybrid KV groups and all layers use FullAttentionSpec with
+    # heterogeneous head shapes) into per-layer KV allocation. Remove once the
+    # image is rebuilt with this fix.
+    gemma4_model_runner = (
+        repo_root_path / "vllm-tt-metal/patches/gemma4_model_runner_9d88cd5.py"
+    )
+    if gemma4_model_runner.is_file():
+        mounts.extend(
+            [
+                "--mount",
+                f"type=bind,src={gemma4_model_runner},"
+                f"dst={user_home_path}/vllm/plugins/vllm-tt-plugin/src/vllm_tt_plugin/model_runner.py",
+            ]
+        )
+        logger.info(
+            "Dev mode: mounting patched vllm-tt-plugin model_runner.py from "
+            f"{gemma4_model_runner} (UniformTypeKVCacheSpecs unwrap)"
+        )
+
+    # TEMP (hang triage): bind-mount the container log dir to the host so the
+    # on-timeout tt-triage dump (/home/container_app_user/logs/tt-triage-*.log)
+    # survives the --rm container teardown. Remove once the hang is diagnosed.
+    triage_host_dir = repo_root_path / "workflow_logs" / "triage_capture"
+    triage_host_dir.mkdir(parents=True, exist_ok=True)
+    mounts.extend(
+        [
+            "--mount",
+            f"type=bind,src={triage_host_dir},dst={user_home_path}/logs",
+        ]
+    )
+    logger.info(f"Dev mode: mounting triage capture dir {triage_host_dir} -> {user_home_path}/logs")
 
     return mounts
 
