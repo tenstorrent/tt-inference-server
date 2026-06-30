@@ -90,6 +90,11 @@ struct WorkerConfig {
   std::size_t host_dram_bytes = K_DEFAULT_HOST_DRAM_BYTES;
   int discovery_timeout_sec = K_DEFAULT_DISCOVERY_TIMEOUT_SEC;
   TransportProtocol protocol = TransportProtocol::Tcp;
+  // Half-open span of KV cache layers this worker is responsible for:
+  // [layer_start, layer_end). layer_end == 0 means "unset" (no layers
+  // assigned). The deploy launcher sets these per worker.
+  std::size_t layer_start = 0;
+  std::size_t layer_end = 0;
   // When false (--no-kafka), the worker brings Mooncake up and then idles
   // until SIGTERM without ever creating Kafka clients. Used for receiver
   // roles in a prefill→decode topology.
@@ -118,6 +123,8 @@ void usage() {
          "  [--host-dram-bytes N]  pool size, page-aligned (default 4 GiB)\n"
          "  [--protocol tcp|rdma]  transport (default tcp)\n"
          "  [--discovery-timeout-sec S] (default 30)\n"
+         "  [--layer-start N]      first KV layer this worker owns (default 0)\n"
+         "  [--layer-end M]        one past last KV layer (exclusive; 0=unset)\n"
          "  [--no-kafka]           skip Kafka clients; idle after bring-up\n"
          "\n"
          "Multi-NIC hosts: set MC_TCP_BIND_ADDRESS to the IP peers connect "
@@ -248,6 +255,22 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
       }
       continue;
     }
+    if (a == "--layer-start" && next(v)) {
+      std::string perr;
+      if (!parseSizeBytes(v, cfg.layer_start, perr)) {
+        std::cerr << "--layer-start invalid ('" << v << "'): " << perr << "\n";
+        return false;
+      }
+      continue;
+    }
+    if (a == "--layer-end" && next(v)) {
+      std::string perr;
+      if (!parseSizeBytes(v, cfg.layer_end, perr)) {
+        std::cerr << "--layer-end invalid ('" << v << "'): " << perr << "\n";
+        return false;
+      }
+      continue;
+    }
     if (a == "--no-kafka") {
       cfg.kafka_enabled = false;
       continue;
@@ -257,6 +280,12 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
   }
   if (cfg.metadata_uri.empty() || cfg.name.empty() || cfg.peers.empty()) {
     std::cerr << "--metadata, --name and at least one --peer are required\n";
+    return false;
+  }
+  if (cfg.layer_end != 0 && cfg.layer_end <= cfg.layer_start) {
+    std::cerr << "--layer-end (" << cfg.layer_end
+              << ") must be greater than --layer-start (" << cfg.layer_start
+              << ")\n";
     return false;
   }
   std::string err;
@@ -278,6 +307,8 @@ MigrationWorkerConfig toWorkerConfig(const WorkerConfig& cli) {
   cfg.protocol = cli.protocol;
   cfg.host_dram_bytes = cli.host_dram_bytes;
   cfg.peer_segment_names = cli.peers;
+  cfg.layer_start = static_cast<uint32_t>(cli.layer_start);
+  cfg.layer_end = static_cast<uint32_t>(cli.layer_end);
   return cfg;
 }
 
@@ -308,16 +339,25 @@ KafkaConfig loadKafkaConfig() {
   };
 }
 
-// Parse + log one migration request, then publish a SUCCESSFUL ack. `worker`
-// is the future dispatch point (writeTensorOnSender / transferToReceiver /
-// verifyTensorOnReceiver); today it's unused and only ensures the call site
-// won't change when the data plane is wired.
+// Parse one migration request, drop it unless this worker owns the request's
+// layer, then publish a SUCCESSFUL ack. `worker` is also the future dispatch
+// point for the data plane (writeTensorOnSender / transferToReceiver /
+// verifyTensorOnReceiver) once it is wired.
 void handleMigrationRequest(const std::string& raw,
-                            [[maybe_unused]] MooncakeMigrationWorker& worker,
+                            MooncakeMigrationWorker& worker,
                             tt::messaging::IKafkaProducer& ackProducer) {
   const auto parsed = tt::messaging::parseMigrationRequest(raw);
   if (!parsed.has_value()) {
     TT_LOG_WARN("[bringup] dropping unparseable request: {}", raw);
+    return;
+  }
+
+  // A single request is broadcast to every worker in the role (one consumer
+  // group each); only the worker owning this layer acts on it. Others skip
+  // silently — no ack — so a sharded fleet produces exactly one ack per layer.
+  if (!worker.ownsLayer(parsed->layer_id)) {
+    TT_LOG_DEBUG("[bringup] skipping migration_id={}: layer {} not owned",
+                 parsed->migration_id, parsed->layer_id);
     return;
   }
 
@@ -415,6 +455,9 @@ int main(int argc, char** argv) {
     TT_LOG_ERROR("[bringup] '{}' bring-up failed", cli.name);
     return 1;
   }
+
+  TT_LOG_INFO("[bringup] '{}' owns KV layers [{}, {})", cli.name,
+              cli.layer_start, cli.layer_end);
 
   if (!cli.kafka_enabled) {
     TT_LOG_INFO(
