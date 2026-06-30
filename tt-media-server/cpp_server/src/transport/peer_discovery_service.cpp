@@ -120,7 +120,7 @@ void PeerDiscoveryService::sweepUnresolved(
   for (const auto& name : wanted) {
     if (resolved.count(name)) continue;
     const SegmentHandle handle = engine.openSegment(name);
-    if (handle == kInvalidSegment) continue;
+    if (handle == K_INVALID_SEGMENT) continue;
     resolved.emplace(name, handle);
     TT_LOG_DEBUG("[PeerDiscoveryService] resolved '{}' ({}/{})", name,
                  resolved.size(), wanted.size());
