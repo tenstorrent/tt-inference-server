@@ -161,7 +161,13 @@ templates:
   device_model_specs:
     - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
       max_concurrency: 1
-      max_context: 131072  # 128 * 1024
+      # Hybrid-off DRAM ceiling on QB2: with hybrid KV groups disabled every one
+      # of the 60 layers allocates a full-length KV buffer, so the largest pool
+      # that fits in DRAM (and leaves prefill scratch headroom) is ~49K, not 131K.
+      # Drives max_model_len + max_num_batched_tokens; the matching KV-pool size is
+      # set via GEMMA4_MAX_TOKENS_ALL_USERS below. Servable prompt tops out at the
+      # 32768 power-of-2 prefill bucket (next bucket, 65536, exceeds this pool).
+      max_context: 49152  # 48 * 1024
       default_impl: true
       env_vars:
         # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
@@ -170,6 +176,11 @@ templates:
         # logits; the default p150_x4 descriptor (selected from MESH_DEVICE) is correct.
         MESH_DEVICE: "P150x4"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
+        # Size the hybrid-off all-user KV pool to fit QB2 DRAM. The container
+        # sizes the pool from Gemma4ForCausalLM.get_max_tokens_all_users, which
+        # honors this env override (value kept here, gated by device + model,
+        # rather than hardcoded in tt-metal).
+        GEMMA4_MAX_TOKENS_ALL_USERS: "49152"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 200000000
