@@ -40,7 +40,7 @@ listing (e.g. `ps aux`) and in shell history. Prefer the TT_CHAT_API_KEY
 environment variable or the key file for non-interactive / CI use.
 """
 
-import sys, os, argparse, json
+import sys, os, argparse, json, re, subprocess
 # Use abspath so this works regardless of how the script is invoked
 # (bare filename, relative path, or absolute path).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -55,6 +55,72 @@ def write_status(run_dir, status, **kwargs):
     path = os.path.join(run_dir, "status.json")
     with open(path, "w") as f:
         json.dump(data, f)
+
+
+def parse_issue_number(task: str) -> int | None:
+    """Return the first GitHub issue number found in *task*, or None.
+
+    Matches the pattern ``#<digits>`` anywhere in the task string, e.g.::
+
+        "Fix issue #18: orchestrator should self-assign"  ->  18
+        "Fix issue #3: ..."                               ->  3
+        "triage open issues"                              ->  None
+
+    Only the first match is used — each run handles a single issue.
+
+    >>> parse_issue_number("Fix issue #18: self-assign on start")
+    18
+    >>> parse_issue_number("triage open issues") is None
+    True
+    """
+    m = re.search(r"#(\d+)", task)
+    return int(m.group(1)) if m else None
+
+
+def assign_issue_if_present(task: str, repo_path: str) -> None:
+    """Self-assign the GitHub issue referenced in *task*, if any.
+
+    Parses the first ``#<N>`` token from *task* and runs::
+
+        gh issue edit <N> --add-assignee @me
+
+    using ``shell=False`` (direct ``execve``) so no shell metacharacter
+    quoting is needed and injection via a crafted task string is not
+    possible.  The command is executed inside *repo_path* so that ``gh``
+    can infer the repository from the git remote.
+
+    If no issue number is found in *task*, this function is a no-op.
+
+    Failures are printed as warnings but **do not abort the run** — the
+    self-assignment is a best-effort visibility hint, not a correctness
+    gate.  A failed assignment means the project board does not show the
+    issue as in-progress, but the implementation work continues normally.
+    """
+    number = parse_issue_number(task)
+    if number is None:
+        return
+
+    print(f"[run] self-assigning issue #{number} to @me", flush=True)
+    try:
+        result = subprocess.run(
+            ["gh", "issue", "edit", str(number), "--add-assignee", "@me"],
+            shell=False,          # no shell — argv tokens are passed verbatim
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=repo_path,
+        )
+        output = (result.stdout + result.stderr).strip()
+        if result.returncode == 0:
+            print(f"[run] issue #{number} assigned: {output or 'ok'}", flush=True)
+        else:
+            print(
+                f"[run] WARNING: could not assign issue #{number} "
+                f"(exit {result.returncode}): {output}",
+                flush=True,
+            )
+    except Exception as exc:
+        print(f"[run] WARNING: assign_issue_if_present failed: {exc}", flush=True)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -138,6 +204,11 @@ def main():
         sys.exit(1)
 
     write_status(run_dir, "running")
+
+    # Self-assign the issue before any agent work begins so the project board
+    # shows this issue as in-progress.  This is best-effort; failures are
+    # printed as warnings and do not abort the run.
+    assign_issue_if_present(args.task, repo_path)
 
     try:
         if args.mode == "groom":

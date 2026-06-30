@@ -244,6 +244,28 @@ def close_issue(number: int, reason: str = "", cwd: str | None = None) -> str:
     results.append(_gh(["issue", "close", str(int(number))], cwd=cwd))
     return "\n".join(results)
 
+
+def assign_issue(number: int, cwd: str | None = None) -> str:
+    """Self-assign a GitHub issue to the authenticated user (@me).
+
+    Uses gh issue edit <number> --add-assignee @me so that the project
+    board immediately reflects that this issue is being worked on.  @me
+    is resolved by the gh CLI to the currently authenticated GitHub user
+    (the BrAIn GitHub App / afuller-TT).
+
+    Args:
+        number: The issue number.  Cast to int to prevent non-numeric
+                injection.
+        cwd:    Working directory for the gh command (must be inside the
+                target repository so gh can infer the repo).
+
+    Returns:
+        Output of the gh command (empty string on success, error text on
+        failure).
+    """
+    argv = ["issue", "edit", str(int(number)), "--add-assignee", "@me"]
+    return _gh(argv, cwd=cwd)
+
 # -- dispatch -----------------------------------------------------------------
 
 IMPL = {
