@@ -62,6 +62,8 @@ std::string resolveBlazeSocketDescriptorPrefix() {
     case ModelType::DEEPSEEK_V4_PRO:
       return "deepseek";
   }
+  throw std::runtime_error(
+      "Unhandled MODEL_TYPE while resolving BLAZE_SOCKET_DESCRIPTOR_PREFIX");
 }
 
 /** Read env string and convert to lowercase for case-insensitive parsing. */
