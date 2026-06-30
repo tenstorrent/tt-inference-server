@@ -675,11 +675,13 @@ def apply_local_hf_model_vllm_args(model_spec_json: dict, vllm_args: dict) -> di
 def preflight_check_gemma4_transformers(model_spec_json: dict) -> None:
     """Fail fast if this container's transformers can't parse a Gemma 4 model.
 
-    Gemma 4 (``gemma4_unified`` arch) requires transformers 5.x, installed into
-    the image only when it is built with ``INSTALL_GEMMA4_REQUIREMENTS=1`` (which
-    pulls tt-metal's ``models/demos/gemma4/requirements.txt``). When that step is
-    skipped, vLLM's ``ModelConfig`` validation raises ``model type gemma4_unified
-    but Transformers does not recognize this architecture`` - but only after the
+    Gemma 4 (``gemma4_unified`` arch) requires transformers 5.x. As of tt-metal
+    #47817 this is pinned repo-wide in ``tt_metal/python_env/requirements-dev.txt``
+    (transformers == 5.10.2) and installed by ``create_venv.sh`` during the image
+    build, so no Gemma4-specific requirements step is needed. If an image is built
+    from an older tt-metal commit (or with a vLLM that downgrades transformers to
+    4.x), vLLM's ``ModelConfig`` validation raises ``model type gemma4_unified but
+    Transformers does not recognize this architecture`` - but only after the
     engine starts, so CI burns the full health-check timeout (~1h) before
     failing. Detecting it here exits in seconds with an actionable message.
 
@@ -730,12 +732,11 @@ def preflight_check_gemma4_transformers(model_spec_json: dict) -> None:
         raise SystemExit(
             "❌ Preflight failed: this container's transformers "
             f"({transformers_version}) does not recognize the Gemma 4 "
-            f"architecture (model_type={model_type!r}) for {hf_model_repo}. The "
-            "inference-server image was built without "
-            "INSTALL_GEMMA4_REQUIREMENTS=1 (transformers 5.x from tt-metal "
-            "models/demos/gemma4/requirements.txt). Rebuild the image with Gemma 4 "
-            "requirements enabled (build_single_docker.sh auto-detects this from "
-            "the tt-metal/vLLM commit combo, or pass --install-gemma4-requirements)."
+            f"architecture (model_type={model_type!r}) for {hf_model_repo}. "
+            "Gemma 4 needs transformers 5.x, which tt-metal pins repo-wide in "
+            "tt_metal/python_env/requirements-dev.txt (== 5.10.2) as of #47817. "
+            "Rebuild the image from a tt-metal commit that includes that pin, and "
+            "ensure the vLLM commit does not downgrade transformers below 5.x."
         )
 
     logger.info(

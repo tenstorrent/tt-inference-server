@@ -14,7 +14,6 @@ FROM ${TT_METAL_DOCKERFILE_URL} AS builder
 ARG TT_METAL_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_COMMIT_SHA_OR_TAG
 ARG TT_SMI_COMMIT_SHA_OR_TAG=v3.1.1
-ARG INSTALL_GEMMA4_REQUIREMENTS=0
 ARG CONTAINER_APP_UID=1000
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CONTAINER_APP_USERNAME=container_app_user
@@ -100,14 +99,19 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} 
     && if [ -d plugins/vllm-tt-plugin ]; then uv pip install --index-strategy unsafe-best-match -e 'plugins/vllm-tt-plugin[runtime]' --extra-index-url https://download.pytorch.org/whl/cpu; fi \
     && rm -rf ${vllm_dir}/.git"
 
-# Optional Gemma 4 deps (transformers 5.x). Installed after vLLM so they override 4.x pins.
-ARG INSTALL_GEMMA4_REQUIREMENTS=0
-RUN /bin/bash -c "if [ \"${INSTALL_GEMMA4_REQUIREMENTS}\" = \"1\" ]; then \
-    source ${PYTHON_ENV_DIR}/bin/activate \
-    && gemma4_reqs='${TT_METAL_HOME}/models/demos/gemma4/requirements.txt' \
-    && if [ ! -f \"\${gemma4_reqs}\" ]; then echo \"INSTALL_GEMMA4_REQUIREMENTS=1 but \${gemma4_reqs} not found\" >&2; exit 1; fi \
-    && uv pip install -r \"\${gemma4_reqs}\"; \
-    fi"
+# Gemma 4 Python deps (transformers 5.10.2, sentencepiece) are no longer installed
+# via a separate step. This requires BOTH of these upstream changes (so build from
+# a tt-metal commit >= #47817 AND a tenstorrent/vLLM commit >= #428):
+#   * tt-metal #47817: transformers == 5.10.2 + sentencepiece are pinned repo-wide
+#     in tt_metal/python_env/requirements-dev.txt, installed by create_venv.sh
+#     above (the old models/demos/gemma4/requirements.txt then only carried a
+#     redundant sentencepiece pin already covered by the base requirements).
+#   * tenstorrent/vLLM #428: the runtime constraint was relaxed from
+#     ">= 4.56.0, < 5" to ">= 5.5.3" (aligning with upstream), so installing vLLM
+#     no longer downgrades transformers to 4.x. Before #428 the "< 5" cap is what
+#     made the post-vLLM gemma4 re-install necessary in the first place.
+# On older combos (e.g. a4967d5f39d + 9d88cd5) both conditions fail, so that step
+# must NOT be dropped there; rebuild only against #47817 + #428 (or newer).
 
 # Build tt-smi in separate venv to avoid conflicts with tt-metal venv
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/tt-smi.git ${TT_SMI_DIR} \
@@ -204,40 +208,13 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
 
-# Bake the Gemma 4 reasoning parser into the image so it runs correctly WITHOUT
-# --dev-mode (which otherwise bind-mounts these from the host repo, see
-# workflows/run_docker_server.py::_vllm_tt_metal_dev_mounts). Gated on
-# INSTALL_GEMMA4_REQUIREMENTS so non-Gemma images built from this Dockerfile are
-# untouched.
-#
-# NOTE: As of the vLLM dev bump (9d88cd5) we NO LONGER override platform.py.
-# vLLM dev now registers the Gemma4 architectures natively (Gemma4ForCausalLM ->
-# models.demos.gemma4.tt.generator_vllm:Gemma4ForCausalLM) AND adds the hybrid-KV
-# HMA opt-in for Gemma3/4; our old gemma4_platform_vllm_3334377.py was pinned to
-# 3334377 and would *revert* that newer logic, so it is intentionally not applied.
-# Only the reasoning parser is still missing upstream, so we bake it plus the
-# __init__.py that registers it (the __init__ is byte-identical to dev's modulo the
-# added "gemma4" entry, so the overwrite is safe against the pinned commit).
-#
-# We also NO LONGER override models/demos/gemma4/tt/generator_vllm.py; tt-metal
-# ships a native vLLM bridge that we use as-is. The legacy generator/platform
-# patch files are kept in vllm-tt-metal/patches/ for reference only.
-ARG INSTALL_GEMMA4_REQUIREMENTS=0
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
-    "vllm-tt-metal/patches" "${APP_DIR}/patches"
-RUN /bin/bash -c "if [ \"${INSTALL_GEMMA4_REQUIREMENTS}\" = \"1\" ]; then \
-    set -e; \
-    p='${APP_DIR}/patches'; \
-    rparser='${vllm_dir}/vllm/reasoning/gemma4_reasoning_parser.py'; \
-    rinit='${vllm_dir}/vllm/reasoning/__init__.py'; \
-    for f in gemma4_reasoning_parser_vllm_3334377.py gemma4_reasoning_init_vllm_3334377.py; do \
-        if [ ! -f \"\${p}/\${f}\" ]; then echo \"Missing Gemma4 patch: \${p}/\${f}\" >&2; exit 1; fi; \
-    done; \
-    cp \"\${p}/gemma4_reasoning_parser_vllm_3334377.py\" \"\${rparser}\"; \
-    cp \"\${p}/gemma4_reasoning_init_vllm_3334377.py\" \"\${rinit}\"; \
-    chown ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \"\${rparser}\" \"\${rinit}\"; \
-    echo '✅ Baked Gemma4 reasoning parser into image (native platform.py + generator_vllm.py)'; \
-    else echo 'Skipping Gemma4 patch bake (INSTALL_GEMMA4_REQUIREMENTS != 1)'; fi"
+# NOTE: Gemma 4 no longer needs any image-time patching. vLLM dev registers the
+# Gemma4 architectures natively (Gemma4ForCausalLM ->
+# models.demos.gemma4.tt.generator_vllm:Gemma4ForCausalLM) with the hybrid-KV HMA
+# opt-in, tt-metal ships the native generator_vllm bridge, and the Gemma4
+# reasoning parser ships inside the vllm-tt-plugin (tenstorrent/vllm #431), which
+# registers it from its vllm.general_plugins entry point. There is therefore no
+# reasoning-parser bake step (and no BAKE_GEMMA4_REASONING_PARSER build arg).
 
 # Fix venv symlinks after copy and install additional app requirements
 RUN cd ${PYTHON_ENV_DIR}/bin \

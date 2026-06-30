@@ -407,7 +407,6 @@ def process_sha_combination(args_tuple):
         dry_run,
         stdout_only,
         dry_run_build_duration,
-        install_gemma4_requirements,
     ) = args_tuple
 
     # Set up individual logging for this combination
@@ -423,9 +422,6 @@ def process_sha_combination(args_tuple):
         process_logger.info(f"tt_metal_commit: {tt_metal_commit}")
         process_logger.info(f"vllm_commit: {vllm_commit}")
         process_logger.info(f"ubuntu_version: {ubuntu_version}")
-        process_logger.info(
-            f"INSTALL_GEMMA4_REQUIREMENTS={1 if install_gemma4_requirements else 0}"
-        )
         if log_file:
             process_logger.info(f"Log file: {log_file}")
         else:
@@ -567,7 +563,6 @@ def process_sha_combination(args_tuple):
                         vllm_commit,
                         container_app_uid,
                         process_logger,
-                        install_gemma4_requirements=install_gemma4_requirements,
                     )
                     image_status["dev"]["build_succeeded"] = True
                 except Exception as e:
@@ -1108,7 +1103,6 @@ def build_dev_image(
     vllm_commit,
     container_app_uid,
     logger,
-    install_gemma4_requirements=False,
 ):
     """
     Build the dev Docker image from the Dockerfile.
@@ -1119,7 +1113,6 @@ def build_dev_image(
         vllm_commit: VLLM commit hash
         container_app_uid: Container application UID
         logger: Logger instance
-        install_gemma4_requirements: Install tt-metal Gemma 4 requirements (transformers 5.x)
     """
     repo_root = get_repo_root_path()
     dev_image_tag = image_tags["dev"]
@@ -1130,9 +1123,6 @@ def build_dev_image(
     logger.info(f"Generated model specs JSON at: {model_specs_json_path}")
 
     logger.info(f"Building dev image: {dev_image_tag}")
-    logger.info(
-        f"INSTALL_GEMMA4_REQUIREMENTS={1 if install_gemma4_requirements else 0}"
-    )
 
     build_command = [
         "docker",
@@ -1147,8 +1137,6 @@ def build_dev_image(
         f"TT_VLLM_COMMIT_SHA_OR_TAG={vllm_commit}",
         "--build-arg",
         f"CONTAINER_APP_UID={container_app_uid}",
-        "--build-arg",
-        f"INSTALL_GEMMA4_REQUIREMENTS={1 if install_gemma4_requirements else 0}",
         "-f",
         "vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile",
         ".",
@@ -1213,87 +1201,6 @@ def push_image(image_tag, logger):
     push_command = ["docker", "push", image_tag]
     run_command_with_logging(push_command, logger=logger, check=True)
     logger.info(f"Successfully pushed image: {image_tag}")
-
-
-GEMMA4_HF_REPO_PREFIX = "google/gemma-4-"
-
-
-def _commit_prefix(commit):
-    return (commit or "").strip().lower()[:7]
-
-
-def _commits_match(commit_a, commit_b):
-    return _commit_prefix(commit_a) == _commit_prefix(commit_b)
-
-
-def model_config_requires_gemma4_requirements(config):
-    hf_repo = (config.hf_model_repo or "").lower()
-    model_name = (config.model_name or "").lower()
-    return hf_repo.startswith(GEMMA4_HF_REPO_PREFIX) or model_name.startswith(
-        "gemma-4-"
-    )
-
-
-def combination_requires_gemma4_requirements(
-    model_configs, tt_metal_commit, vllm_commit
-):
-    for config in model_configs.values():
-        if config.vllm_commit is None:
-            continue
-        if not _commits_match(config.tt_metal_commit, tt_metal_commit):
-            continue
-        if not _commits_match(config.vllm_commit, vllm_commit):
-            continue
-        if model_config_requires_gemma4_requirements(config):
-            return True
-    return False
-
-
-def resolve_install_gemma4_requirements(
-    model_configs,
-    tt_metal_commit,
-    vllm_commit,
-    force_install_gemma4_requirements=False,
-):
-    if force_install_gemma4_requirements:
-        return True
-    return combination_requires_gemma4_requirements(
-        model_configs, tt_metal_commit, vllm_commit
-    )
-
-
-def commit_combo_requires_gemma4_requirements(tt_metal_commit, vllm_commit):
-    """Return True if any catalog maps this commit combo to a Gemma 4 model.
-
-    Scans every catalog environment (prod + dev) instead of only the env loaded
-    into MODEL_SPECS, so single-image builds (build_single_docker.sh) resolve
-    INSTALL_GEMMA4_REQUIREMENTS the same way the release/nightly path does -
-    regardless of MODEL_SPECS_ENV. Gemma 4 needs transformers 5.x from tt-metal's
-    models/demos/gemma4/requirements.txt; without it vLLM ModelConfig validation
-    fails at runtime with "model type gemma4_unified but Transformers does not
-    recognize this architecture".
-    """
-    from workflows.model_spec import (
-        _CATALOG_FILES,
-        _MODEL_SPECS_DIR,
-        _VALID_MODEL_SPECS_ENVS,
-        get_model_spec_map,
-        load_templates_from_yaml,
-    )
-
-    for env in _VALID_MODEL_SPECS_ENVS:
-        env_dir = _MODEL_SPECS_DIR / env
-        templates = []
-        for fname in _CATALOG_FILES:
-            catalog_path = env_dir / fname
-            if catalog_path.exists():
-                templates.extend(load_templates_from_yaml(catalog_path))
-        model_configs = get_model_spec_map(templates)
-        if combination_requires_gemma4_requirements(
-            model_configs, tt_metal_commit, vllm_commit
-        ):
-            return True
-    return False
 
 
 def list_image_combinations(model_configs, build_metal_commit=None):
@@ -1443,7 +1350,6 @@ def build_docker_images(
     memory_per_build_gb=MEMORY_PER_BUILD_GB,
     disk_per_build_gb=DISK_PER_BUILD_GB,
     dry_run_build_duration=DRY_RUN_BUILD_DURATION_SECONDS,
-    force_install_gemma4_requirements=False,
 ):
     """
     Builds all Docker images required by the provided ModelConfigs.
@@ -1462,7 +1368,6 @@ def build_docker_images(
         memory_per_build_gb: GB of RAM required per concurrent build
         disk_per_build_gb: GB of disk required per concurrent build
         dry_run_build_duration: Seconds each mock build sleeps in dry-run mode
-        force_install_gemma4_requirements: Always pass INSTALL_GEMMA4_REQUIREMENTS=1
     """
     container_app_uid = 1000
     validate_inputs(ubuntu_version, container_app_uid)
@@ -1498,12 +1403,6 @@ def build_docker_images(
             dry_run,
             stdout_only,
             dry_run_build_duration,
-            resolve_install_gemma4_requirements(
-                model_configs,
-                tt_metal_commit,
-                vllm_commit,
-                force_install_gemma4_requirements=force_install_gemma4_requirements,
-            ),
         )
         for tt_metal_commit, vllm_commit in unique_sha_combinations
     ]
@@ -1694,14 +1593,6 @@ if __name__ == "__main__":
         default=DISK_PER_BUILD_GB,
         help=f"GB of disk required per concurrent build (default: {DISK_PER_BUILD_GB})",
     )
-    parser.add_argument(
-        "--install-gemma4-requirements",
-        action="store_true",
-        help=(
-            "Pass INSTALL_GEMMA4_REQUIREMENTS=1 for all builds in this run. "
-            "By default, enabled only for commit combos that include Gemma 4 vLLM models."
-        ),
-    )
     args = parser.parse_args()
     logger.info(f"ubuntu_version: {args.ubuntu_version}")
     logger.info(f"build_metal_commit: {args.build_metal_commit}")
@@ -1716,9 +1607,6 @@ if __name__ == "__main__":
     logger.info(f"stdout_only: {args.stdout_only}")
     logger.info(f"memory_per_build: {args.memory_per_build}")
     logger.info(f"disk_per_build: {args.disk_per_build}")
-    logger.info(
-        f"install_gemma4_requirements: {args.install_gemma4_requirements}"
-    )
 
     build_docker_images(
         MODEL_SPECS,
@@ -1735,5 +1623,4 @@ if __name__ == "__main__":
         memory_per_build_gb=args.memory_per_build,
         disk_per_build_gb=args.disk_per_build,
         dry_run_build_duration=args.dry_run_build_duration,
-        force_install_gemma4_requirements=args.install_gemma4_requirements,
     )

@@ -75,9 +75,6 @@ CONTAINER_APP_UID=1000
 TT_METAL_COMMIT_SHA_OR_TAG=v0.56.0-rc6
 TT_VLLM_COMMIT_SHA_OR_TAG=b9564bf364e95a3850619fc7b2ed968cc71e30b7
 TAG_SUFFIX=""
-# "auto" => resolve from the tt-metal/vLLM commit combo (see below).
-# Explicit overrides: --install-gemma4-requirements (1) / --no-gemma4-requirements (0).
-INSTALL_GEMMA4_REQUIREMENTS="auto"
 IMAGE_REPO="ghcr.io/tenstorrent/tt-inference-server"
 # ------------------------------------------------------------------------------
 # Process CLI options
@@ -99,12 +96,6 @@ while [ $# -gt 0 ]; do
             ;;
         --release)
             release=true
-            ;;
-        --install-gemma4-requirements)
-            INSTALL_GEMMA4_REQUIREMENTS=1
-            ;;
-        --no-gemma4-requirements)
-            INSTALL_GEMMA4_REQUIREMENTS=0
             ;;
         --tt-metal-commit)
             if [ $# -lt 2 ]; then
@@ -182,35 +173,6 @@ else
     echo "CONTAINER_APP_UID=${CONTAINER_APP_UID} is not a number or outside expected range of 1000 to 59999."
 fi
 cd "$repo_root"
-
-# Auto-detect whether this tt-metal/vLLM commit combo serves a Gemma 4 model.
-# Gemma 4 (gemma4_unified arch) needs transformers 5.x from tt-metal's
-# models/demos/gemma4/requirements.txt; without it vLLM ModelConfig validation
-# fails at runtime with "model type gemma4_unified but Transformers does not
-# recognize this architecture". Callers like tt-shield only pass the commits
-# (not the flag), so resolve it here unless explicitly overridden. Mirrors the
-# release/nightly auto-detection in build_docker_images.py.
-if [ "${INSTALL_GEMMA4_REQUIREMENTS}" = "auto" ]; then
-    echo "Auto-detecting INSTALL_GEMMA4_REQUIREMENTS from tt-metal=${TT_METAL_COMMIT_SHA_OR_TAG} vllm=${TT_VLLM_COMMIT_SHA_OR_TAG} ..."
-    if resolved_gemma4=$(python3 -c "
-import sys
-from pathlib import Path
-project_root = Path('${repo_root}')
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-from scripts.build_docker_images import commit_combo_requires_gemma4_requirements
-needed = commit_combo_requires_gemma4_requirements(
-    '${TT_METAL_COMMIT_SHA_OR_TAG}', '${TT_VLLM_COMMIT_SHA_OR_TAG}'
-)
-print('1' if needed else '0')
-" 2>/dev/null | tail -n 1) && [[ "${resolved_gemma4}" =~ ^[01]$ ]]; then
-        INSTALL_GEMMA4_REQUIREMENTS="${resolved_gemma4}"
-        echo "Resolved INSTALL_GEMMA4_REQUIREMENTS=${INSTALL_GEMMA4_REQUIREMENTS}"
-    else
-        echo "⚠️ Could not auto-detect Gemma 4 requirements; defaulting to 0. Pass --install-gemma4-requirements to force."
-        INSTALL_GEMMA4_REQUIREMENTS=0
-    fi
-fi
 
 # build image vars
 UBUNTU_VERSION="${UBUNTU_VERSION}"
@@ -318,7 +280,6 @@ generate_model_specs_json()
         --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
         --build-arg TT_VLLM_COMMIT_SHA_OR_TAG="${TT_VLLM_COMMIT_SHA_OR_TAG}" \
         --build-arg CONTAINER_APP_UID="${CONTAINER_APP_UID}" \
-        --build-arg INSTALL_GEMMA4_REQUIREMENTS="${INSTALL_GEMMA4_REQUIREMENTS}" \
         . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile
 
         echo "✅ built image: ${dev_image_tag}"
