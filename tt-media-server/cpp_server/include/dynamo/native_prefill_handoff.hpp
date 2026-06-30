@@ -50,9 +50,6 @@ struct NativePrefillHandoff {
   uint32_t mooncake_layer_end = 0;
   uint32_t mooncake_position_begin = 0;
   uint32_t mooncake_position_end = 0;
-  std::string mooncake_status = "not_started";
-  std::string mooncake_depends_on =
-      "Mooncake KV migration PR #4325 / issues #4173, #4184, #4268";
 };
 
 NativePrefillHandoff buildMetadataOnlyNativePrefillHandoff(

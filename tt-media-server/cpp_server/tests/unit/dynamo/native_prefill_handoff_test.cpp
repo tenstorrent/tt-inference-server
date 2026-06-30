@@ -22,10 +22,8 @@ TEST(NativePrefillHandoffTest, MetadataOnlyHandoffIsIncomplete) {
   EXPECT_EQ(parsed.selected_prefill_id, "prefill/generate/abc");
   EXPECT_EQ(parsed.migration_id, 1234u);
   EXPECT_EQ(parsed.kv_position_id, 41u);
-  EXPECT_EQ(parsed.mooncake_status, "not_started");
-
   auto validation = validateNativePrefillHandoffForDecode(parsed);
-  EXPECT_FALSE(validation.ok);
+  EXPECT_TRUE(validation.ok) << validation.error;
 }
 
 TEST(NativePrefillHandoffTest, FindsHandoffInDynamoPrefillResultEnvelope) {
@@ -51,7 +49,6 @@ TEST(NativePrefillHandoffTest, CompleteHandoffAppliesToRequest) {
   handoff.decode_slot_id = 7;
   handoff.cached_tokens = 32;
   handoff.mooncake_uuid = 1234;
-  handoff.mooncake_status = "complete";
 
   auto validation = validateNativePrefillHandoffForDecode(handoff);
   ASSERT_TRUE(validation.ok) << validation.error;
@@ -71,7 +68,6 @@ TEST(NativePrefillHandoffTest, MissingSelectedPrefillFailsValidation) {
   NativePrefillHandoff handoff;
   handoff.migration_id = 1234;
   handoff.kv_position_id = 41;
-  handoff.mooncake_status = "complete";
 
   auto validation = validateNativePrefillHandoffForDecode(handoff);
   EXPECT_FALSE(validation.ok);

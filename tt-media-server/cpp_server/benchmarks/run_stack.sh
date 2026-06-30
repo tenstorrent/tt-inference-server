@@ -21,7 +21,8 @@
 #   DYNAMO_REGISTER_PREFILL=1 DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=1 ./run_stack.sh up
 # Enables the prefill endpoint to return TT handoff metadata in
 # disaggregated_params.kv_transfer_params.
-# Decode still requires Mooncake migration status=complete before continuing.
+# The handoff itself is the synchronization point and must only be emitted
+# after prefill and KV transfer are complete.
 #
 # Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; frontend -> /tmp/tt_frontend.log.
 

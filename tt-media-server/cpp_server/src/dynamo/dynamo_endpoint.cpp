@@ -170,10 +170,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
   trantor::EventLoopThreadPool* pool = loop_pool_.get();
 
   if (options_.worker_role == DiscoveryWorkerRole::PREFILL) {
-    const std::string localPrefillId =
-        options_.component + "/" + options_.endpoint;
-    return [pool, localPrefillId](const GenerateRequest& dynReq,
-                                  const TcpStreamConnectionInfo& connInfo) {
+    return [pool](const GenerateRequest& dynReq,
+                  const TcpStreamConnectionInfo& connInfo) {
       const std::string requestId =
           dynReq.raw.get("request_id", "").asString();
       TT_LOG_INFO(
@@ -186,20 +184,13 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       writer->connect();
 
       if (tt::config::dynamoNativePrefillHandoffEnabled()) {
-        TokenChunk handoff;
-        // Dynamo validates finish_reason against its standard stop reasons;
-        // the TT-specific handoff signal lives in disaggregated_params below.
-        handoff.finish_reason = "stop";
-        const auto migrationId = tt::utils::MigrationIDGenerator::generate();
-        const auto nativeHandoff = buildMetadataOnlyNativePrefillHandoff(
-            requestId, migrationId,
-            static_cast<uint32_t>(dynReq.token_ids.size()), localPrefillId);
-        handoff.disaggregated_params =
-            nativePrefillHandoffToDisaggregatedParams(nativeHandoff);
-        // Debug mirror only; Dynamo's native prefill/decode handoff reads
-        // disaggregated_params.
-        handoff.engine_data = nativePrefillHandoffToEngineData(nativeHandoff);
-        writer->sendChunk(handoff);
+        TokenChunk err;
+        err.error =
+            "cpp_server Dynamo prefill endpoint is registered, but native "
+            "prefill execution is not implemented yet; tt_prefill_handoff "
+            "must be emitted only after prefill and KV transfer are complete";
+        err.error_code = 501;
+        writer->sendChunk(err);
         writer->finalize();
         return;
       }
@@ -305,9 +296,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       applyNativePrefillHandoffToRequest(handoff, *req);
       TT_LOG_INFO(
           "[DynamoEndpoint] Native prefill handoff accepted taskId={} "
-          "selected_prefill_id={} migrationId={} mooncake_status={}",
-          req->task_id, handoff.selected_prefill_id, *req->migrationId,
-          handoff.mooncake_status);
+          "selected_prefill_id={} migrationId={}",
+          req->task_id, handoff.selected_prefill_id, *req->migrationId);
     }
 
     // Reject requests whose prompt exceeds the maximum input sequence length.

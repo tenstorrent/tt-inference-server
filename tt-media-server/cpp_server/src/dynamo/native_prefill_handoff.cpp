@@ -4,7 +4,6 @@
 #include "dynamo/native_prefill_handoff.hpp"
 
 #include <limits>
-#include <stdexcept>
 #include <utility>
 
 namespace tt::dynamo {
@@ -124,8 +123,6 @@ Json::Value nativePrefillHandoffToJson(const NativePrefillHandoff& handoff) {
   mooncake["layer_end"] = handoff.mooncake_layer_end;
   mooncake["position_begin"] = handoff.mooncake_position_begin;
   mooncake["position_end"] = handoff.mooncake_position_end;
-  mooncake["status"] = handoff.mooncake_status;
-  mooncake["depends_on"] = handoff.mooncake_depends_on;
   out["mooncake_migration"] = std::move(mooncake);
 
   return out;
@@ -247,8 +244,6 @@ NativePrefillHandoff parseNativePrefillHandoff(const Json::Value& json) {
         jsonUInt32(mooncake, "position_begin").value_or(0);
     handoff.mooncake_position_end =
         jsonUInt32(mooncake, "position_end").value_or(0);
-    handoff.mooncake_status = mooncake.get("status", "").asString();
-    handoff.mooncake_depends_on = mooncake.get("depends_on", "").asString();
   }
 
   return handoff;
@@ -264,11 +259,6 @@ NativePrefillHandoffValidation validateNativePrefillHandoffForDecode(
   }
   if (!handoff.kv_position_id.has_value()) {
     return {false, "Dynamo native prefill handoff requires kv_position_id"};
-  }
-  if (handoff.mooncake_status != "complete") {
-    return {false,
-            "Dynamo native prefill handoff is present, but Mooncake migration "
-            "is not complete"};
   }
   if (handoff.mooncake_uuid.has_value() &&
       handoff.mooncake_uuid != handoff.migration_id) {
