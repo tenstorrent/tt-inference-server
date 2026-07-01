@@ -223,7 +223,7 @@ def _check_evals(schema: ReportSchema) -> CategoryResult:
 
         state = _check_state(check_value)
         if state == STATUS_FAIL:
-            blockers[block_key] = f"Accuracy check failed (value={check_value!r})"
+            blockers[block_key] = "Accuracy check failed."
             failed += 1
         elif state == STATUS_NA:
             na += 1
