@@ -165,3 +165,81 @@ class TestPRBodySections:
         fixes_idx = body.find("## Fixes")
         fixes_content = body[fixes_idx:]
         assert "N/A" in fixes_content
+
+
+# ---------------------------------------------------------------------------
+# issue #81: sentinel stripping and column-0 Fixes line
+# ---------------------------------------------------------------------------
+
+class TestIssue81SentinelAndColumn0:
+    """Verifies the two fixes from issue #81."""
+
+    def _run_orchestrate(self, task: str, impl_response: str) -> str:
+        import orchestrator.orchestrator as orch_mod
+
+        captured = {}
+
+        def fake_create_pr(title, body, branch, cwd=None):
+            captured["body"] = body
+            return "https://github.com/org/repo/pull/99"
+
+        call_count = {"n": 0}
+
+        def fake_agent_run(persona, messages, **kwargs):
+            # First call is the implementer; subsequent calls are reviewers.
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return impl_response, [
+                    {"role": "system", "content": "sys"},
+                    {"role": "user", "content": "hi"},
+                    {"role": "assistant", "content": impl_response},
+                ]
+            return "APPROVED", [
+                {"role": "system", "content": "sys"},
+                {"role": "user", "content": "hi"},
+            ]
+
+        with (
+            patch.object(orch_mod.A, "run", side_effect=fake_agent_run),
+            patch("orchestrator.tools.create_pr", side_effect=fake_create_pr),
+        ):
+            orch_mod.orchestrate(task, repo_path="/fake/repo", verbose=False)
+
+        return captured.get("body", "")
+
+    def test_sentinel_stripped_from_pr_body(self):
+        impl = "Made the change.\nIMPLEMENTATION_COMPLETE"
+        body = self._run_orchestrate("Fix issue #81: sentinel test", impl)
+        assert "IMPLEMENTATION_COMPLETE" not in body
+
+    def test_sentinel_mid_text_stripped(self):
+        impl = "IMPLEMENTATION_COMPLETE\nSome trailing text"
+        body = self._run_orchestrate("Fix issue #81: sentinel mid", impl)
+        assert "IMPLEMENTATION_COMPLETE" not in body
+
+    def test_fixes_line_at_column_0(self):
+        # Any leading whitespace causes GitHub to render it as a code block.
+        impl = "Did the work.\nIMPLEMENTATION_COMPLETE"
+        body = self._run_orchestrate("Fix issue #81: column-0 check", impl)
+        for line in body.splitlines():
+            if "Fixes #" in line:
+                assert line == line.lstrip(), (
+                    f"'Fixes #N' line has leading whitespace: {line!r}"
+                )
+
+    def test_fixes_line_not_indented(self):
+        impl = "Some impl.\nIMPLEMENTATION_COMPLETE"
+        body = self._run_orchestrate("Fix issue #81: indentation check", impl)
+        fixes_line = next(
+            (l for l in body.splitlines() if l.strip().startswith("Fixes #")), None
+        )
+        assert fixes_line is not None, "Fixes #N line missing from PR body"
+        assert not fixes_line.startswith(" "), (
+            f"Fixes line is indented: {fixes_line!r}"
+        )
+
+    def test_impl_without_sentinel_still_works(self):
+        impl = "Refactored the module."
+        body = self._run_orchestrate("Fix issue #81: no sentinel", impl)
+        assert "Refactored the module." in body
+        assert "Fixes #81" in body

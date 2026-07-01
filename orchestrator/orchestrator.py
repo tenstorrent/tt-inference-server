@@ -217,6 +217,13 @@ def orchestrate(
         f"- **{name}**: {'approved' if ok else obj}"
         for name, (ok, obj) in verdicts.items()
     )
+    # Sentinels are column-0 tokens that break textwrap.dedent's common-indent
+    # calculation, and they have no business appearing in a public PR body.
+    _SENTINELS = ("IMPLEMENTATION_COMPLETE",)
+    clean_impl = impl_text
+    for _s in _SENTINELS:
+        clean_impl = clean_impl.replace(_s, "").strip()
+
     issue_number = _parse_issue_number(task)
     fixes_line = f"Fixes #{issue_number}" if issue_number is not None else "N/A"
     pr_body = textwrap.dedent(f"""
@@ -224,7 +231,7 @@ def orchestrate(
         {task}
 
         ## Changes
-        {impl_text[:1000]}
+        {clean_impl[:1000]}
 
         ## Testing
         {review_summary}
@@ -232,8 +239,9 @@ def orchestrate(
         _Opened by multi-agent orchestrator._
 
         ## Fixes
-        {fixes_line}
     """).strip()
+    # Append at column 0 so GitHub's closing-reference scanner finds it.
+    pr_body += f"\n{fixes_line}"
 
     from orchestrator.tools import create_pr
     import time
