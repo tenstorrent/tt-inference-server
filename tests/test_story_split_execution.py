@@ -196,7 +196,7 @@ class TestAddSubIssueFunction:
         assert "--method" in argv
         assert argv[argv.index("--method") + 1] == "POST"
 
-    def test_passes_child_number(self):
+    def test_passes_child_number_with_typed_flag(self):
         from orchestrator import tools as tools_mod
 
         with patch.object(tools_mod, "_gh", return_value="{}") as mock_gh:
@@ -204,8 +204,11 @@ class TestAddSubIssueFunction:
 
         args, _ = mock_gh.call_args
         argv = args[0]
-        # child number must appear in the -f field argument
-        field_args = [argv[i + 1] for i, a in enumerate(argv) if a == "-f"]
+        # -F (typed field) coerces the value to a JSON integer; -f (raw string) would
+        # produce a type-mismatch error because the API expects an integer not a string.
+        assert "-F" in argv
+        assert "-f" not in argv
+        field_args = [argv[i + 1] for i, a in enumerate(argv) if a == "-F"]
         assert any("20" in fa for fa in field_args)
 
     def test_numeric_injection_rejected(self):

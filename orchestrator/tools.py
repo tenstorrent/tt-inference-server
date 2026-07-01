@@ -330,7 +330,7 @@ def add_sub_issue(parent_number: int, child_number: int, cwd: str | None = None)
         f"repos/{{owner}}/{{repo}}/issues/{int(parent_number)}/sub_issues",
         "--method", "POST",
         "-H", "X-GitHub-Api-Version: 2022-11-28",
-        "-f", f"sub_issue_id={int(child_number)}",
+        "-F", f"sub_issue_id={int(child_number)}",
     ]
     return _gh(argv, cwd=cwd)
 
@@ -644,7 +644,7 @@ DEFS = [
         "function": {
             "name": "create_issue",
             "description": (
-                "Create a new GitHub issue and return its URL and number. "
+                "Create a new GitHub issue and return its URL. "
                 "Used by the groomer to create sub-issues when splitting a needs-split issue."
             ),
             "parameters": {
