@@ -673,7 +673,7 @@ DEFS = [
             "name": "add_sub_issue",
             "description": (
                 "Link a child issue to a parent issue via the GitHub sub-issues API. "
-                "The child_number must be the integer issue number returned by create_issue."
+                "The child_number must be the integer issue number (parse it from the URL returned by create_issue, e.g. the trailing digits of https://github.com/org/repo/issues/42)."
             ),
             "parameters": {
                 "type": "object",
