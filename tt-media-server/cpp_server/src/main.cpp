@@ -67,7 +67,8 @@ bool probePort(const std::string& host, uint16_t port) {
 void signalHandler(int signal) {
   // First signal: request a graceful shutdown. Subsequent signal: the graceful
   // path is stuck (e.g. a thread join that never completes), so force-exit with
-  // the conventional 128+signal code rather than leaving the user mashing Ctrl+C.
+  // the conventional 128+signal code rather than leaving the user mashing
+  // Ctrl+C.
   bool firstSignal = (gSignalCount == 0);
   gSignalCount = 1;
   if (firstSignal) {
