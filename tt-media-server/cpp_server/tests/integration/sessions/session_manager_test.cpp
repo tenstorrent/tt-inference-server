@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "services/session_manager.hpp"
+#include "services/session_lease.hpp"
 
 #include <gtest/gtest.h>
 #include <trantor/net/EventLoop.h>
@@ -35,6 +36,79 @@ inline std::string createSessionWithSlot(
     tt::services::SessionManager& manager, trantor::EventLoop* loop,
     uint32_t slotId, const std::vector<tt::utils::BlockHashInfo>& blockInfos) {
   return createTestSession(manager, loop, slotId, blockInfos);
+}
+
+// ---------------------------------------------------------------------------
+// SessionLease interface (implemented by SessionManager)
+// ---------------------------------------------------------------------------
+
+TEST(SessionLease, TryMarkInFlight_MarksSessionAndReturnsSlot) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 11u);
+  ASSERT_FALSE(sessionId.empty());
+
+  std::function<void()> cancelFn;
+  auto result = manager.tryMarkInFlight(sessionId, cancelFn);
+  EXPECT_EQ(result.outcome, tt::services::MarkInFlightOutcome::Marked);
+  EXPECT_EQ(result.slotId, 11u);
+
+  manager.getSession(sessionId)->release();
+}
+
+TEST(SessionLease, TryMarkInFlight_BusyWhenAlreadyInFlight) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 12u);
+  ASSERT_FALSE(sessionId.empty());
+
+  std::function<void()> cancelFn;
+  ASSERT_EQ(manager.tryMarkInFlight(sessionId, cancelFn).outcome,
+            tt::services::MarkInFlightOutcome::Marked);
+
+  auto busy = manager.tryMarkInFlight(sessionId, cancelFn);
+  EXPECT_EQ(busy.outcome, tt::services::MarkInFlightOutcome::Busy);
+
+  manager.getSession(sessionId)->release();
+}
+
+TEST(SessionLease, TryMarkInFlight_StaleWhenKeyHashMismatch) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 13u);
+  ASSERT_FALSE(sessionId.empty());
+
+  std::function<void()> cancelFn;
+  auto result = manager.tryMarkInFlight(sessionId, cancelFn, 999u, nullptr);
+  EXPECT_EQ(result.outcome, tt::services::MarkInFlightOutcome::Stale);
+}
+
+TEST(SessionLease, GetAndSetSessionHash) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 14u);
+  ASSERT_FALSE(sessionId.empty());
+
+  EXPECT_TRUE(manager.getSessionHash(sessionId).has_value());
+  EXPECT_TRUE(manager.setSessionHash(sessionId, 42u));
+  EXPECT_EQ(manager.getSessionHash(sessionId), 42u);
+}
+
+TEST(SessionLease, SetSessionResponseId) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 15u);
+  ASSERT_FALSE(sessionId.empty());
+
+  ASSERT_TRUE(manager.setSessionResponseId(sessionId, "resp-lease"));
+  auto session = manager.getSession(sessionId);
+  ASSERT_TRUE(session);
+  EXPECT_EQ(session->getResponseId(), "resp-lease");
 }
 
 // ---------------------------------------------------------------------------
