@@ -16,7 +16,7 @@ Flow (groom mode):
   5. If consensus -> report success.  If not -> dump state and exit non-zero.
 """
 
-import re, textwrap
+import copy, re, textwrap
 from orchestrator.personas import (
     IMPLEMENTER, REVIEWERS, ACCEPTANCE_REVIEWER,
     GROOMER, GROOM_REVIEWERS,
@@ -29,6 +29,12 @@ from orchestrator.agent import MaxToolRoundsError, DEFAULT_MAX_TOOL_ROUNDS
 # create_issue, add_sub_issue, remove_label are groomer-only: the implementer creates code, not issues.
 _IMPLEMENTER_EXCLUDED_TOOLS = {"close_issue", "create_issue", "add_sub_issue", "remove_label"}
 
+
+def _apply_persona_override(persona: dict, override: dict) -> dict:
+    """Return a deep copy of persona with override fields merged in."""
+    result = copy.deepcopy(persona)
+    result.update(override)
+    return result
 
 
 def _parse_issue_number(task: str) -> int | None:
@@ -96,32 +102,38 @@ def orchestrate(
     max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
     verbose: bool = True,
     api_key: str | None = None,
+    implementer_override: dict | None = None,
+    reviewer_override: dict | None = None,
 ) -> bool:
     """Returns True on success (PR opened), False on failure.
 
     Args:
-        task:               Natural-language description of the work to do.
-        repo_path:          Absolute path to the target git repository.
-        max_debate_rounds:  Maximum implementer <-> reviewer debate iterations.
-        max_tool_rounds:    Hard cap on tool-call iterations per agent call.
-                            Defaults to DEFAULT_MAX_TOOL_ROUNDS (100).  Pass a
-                            lower value for simple tasks, a higher value for
-                            complex ones.
-        verbose:            Stream progress to stdout.
-        api_key:            Optional LiteLLM API key.  Falls back to the
-                            ``TT_CHAT_API_KEY`` env-var and then the key file
-                            when None.
+        task:                   Natural-language description of the work to do.
+        repo_path:              Absolute path to the target git repository.
+        max_debate_rounds:      Maximum implementer <-> reviewer debate iterations.
+        max_tool_rounds:        Hard cap on tool-call iterations per agent call.
+        verbose:                Stream progress to stdout.
+        api_key:                Optional LiteLLM API key.
+        implementer_override:   Dict of fields to merge into the IMPLEMENTER persona
+                                (e.g. {"model": "...", "provider": "..."}).
+        reviewer_override:      Dict of fields to merge into every reviewer persona.
     """
 
     def log(msg: str):
         if verbose:
             print(msg, flush=True)
 
+    # Apply CLI overrides on top of persona defaults without mutating the originals.
+    implementer = _apply_persona_override(IMPLEMENTER, implementer_override or {})
+    reviewers = [
+        _apply_persona_override(r, reviewer_override or {}) for r in REVIEWERS
+    ]
+
     # -- Phase 1: Implementation ----------------------------------------------
     log("\n=== IMPLEMENTER ===")
     try:
         impl_text, impl_history = A.run(
-            IMPLEMENTER,
+            implementer,
             [{"role": "user", "content": task}],
             cwd=repo_path,
             max_tool_rounds=max_tool_rounds,
@@ -148,7 +160,7 @@ def orchestrate(
         verdicts: dict[str, tuple[bool, str]] = {}
         reviewer_histories: dict[str, list[dict]] = {}
 
-        for reviewer in REVIEWERS:
+        for reviewer in reviewers:
             log(f"\n-- {reviewer['name']} --")
             prompt = (
                 "Please review the implementation and give your verdict."
@@ -197,7 +209,7 @@ def orchestrate(
 
         try:
             impl_text, impl_history = A.run(
-                IMPLEMENTER,
+                implementer,
                 shared_history + [{"role": "user", "content": rebuttal_prompt}],
                 cwd=repo_path,
                 max_tool_rounds=max_tool_rounds,
