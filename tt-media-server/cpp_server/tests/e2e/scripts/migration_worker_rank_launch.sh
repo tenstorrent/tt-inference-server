@@ -31,8 +31,9 @@
 # 4), NUM_DECODE (default 16), KAFKA_GROUP_ID_PREFIX (default
 # `migration-workers-prefill`; one-group-per-rank suffix is appended),
 # MC_TCP_BIND_ADDRESS (unset/"auto" => detect this host's primary IP),
-# LAYER_START / LAYER_END (global model layer span; divided into NUM_PREFILL
-# contiguous slices for prefill workers and NUM_DECODE for decode workers, each
+# LAYER_START / LAYER_END (global model layer span, real count. The count is
+# padded up to the next power of two (e.g. DeepSeek's 61 -> 64) then divided
+# into NUM_PREFILL contiguous slices for prefill and NUM_DECODE for decode, each
 # worker getting its role_index'th slice in order; unset/0 => worker owns all).
 set -euo pipefail
 
@@ -94,6 +95,15 @@ computeLayerSlice() {
     size="${base}"
   fi
   echo "$(( start + off )) $(( start + off + size ))"
+}
+
+# Smallest power of two >= n (returns n unchanged when it is already one). Used
+# to pad a model's real layer count up to an aligned size before slicing, so
+# every worker gets an equal span (DeepSeek's 61 -> 64).
+nextPowerOfTwo() {
+  local n="$1" p=1
+  while (( p < n )); do p=$(( p * 2 )); done
+  echo "$p"
 }
 
 # Resolve (role, role-local index) from rank under whichever launch mode is
@@ -161,11 +171,24 @@ if [[ -n "${LAYER_END:-}" && "${LAYER_END}" != "0" ]]; then
     die "LAYER_END (${LAYER_END}) must exceed LAYER_START (${layer_start_global})"
   fi
   if [[ "${role}" == "prefill" ]]; then shard_count="${NUM_PREFILL}"; else shard_count="${NUM_DECODE}"; fi
-  if (( LAYER_END - layer_start_global < shard_count )); then
-    die "cannot shard $(( LAYER_END - layer_start_global )) layer(s) across ${shard_count} ${role} worker(s)"
+
+  # Pad the real layer count up to the next power of two before slicing so every
+  # worker gets an equal, aligned span. The pad is global and deterministic, so
+  # prefill and decode agree on the same layer space regardless of their worker
+  # counts. Padded layers beyond the real count (e.g. 61,62,63) never receive a
+  # request, so they are inert.
+  raw_count=$(( LAYER_END - layer_start_global ))
+  padded_count="$(nextPowerOfTwo "${raw_count}")"
+  padded_end=$(( layer_start_global + padded_count ))
+  if (( padded_count != raw_count )); then
+    echo "[rank-launch] padding layer count ${raw_count} -> ${padded_count} for even division on $(hostname -s)" >&2
+  fi
+
+  if (( padded_count < shard_count )); then
+    die "cannot shard ${padded_count} padded layer(s) across ${shard_count} ${role} worker(s)"
   fi
   read -r slice_start slice_end \
-    < <(computeLayerSlice "${layer_start_global}" "${LAYER_END}" "${shard_count}" "${role_index}")
+    < <(computeLayerSlice "${layer_start_global}" "${padded_end}" "${shard_count}" "${role_index}")
   layer_args+=(--layer-start "${slice_start}" --layer-end "${slice_end}")
 fi
 

@@ -14,10 +14,11 @@
 #      resolve); rank-0 masters exchange their KV chunk address table.
 #   4. Prefill workers connect to Kafka (request/ack); decode workers run with
 #      --no-kafka.
-#   5. The global KV layer range (--layer-start/--layer-end) is divided into one
+#   5. The global KV layer count (--layer-start/--layer-end) is padded up to the
+#      next power of two (e.g. DeepSeek's 61 -> 64) and divided into one
 #      contiguous slice per worker — NUM_PREFILL slices across prefill workers,
-#      NUM_DECODE across decode — so each worker owns a distinct layer span, then
-#      enters its busy loop, held up until this script is stopped.
+#      NUM_DECODE across decode — so each worker owns a distinct, aligned layer
+#      span, then enters its busy loop, held up until this script is stopped.
 #
 # Kafka is NOT deployed here — the cluster's broker is assumed already running
 # (point at it with --kafka-brokers, default kafka:9092).
@@ -70,9 +71,11 @@ Required:
 
 Options:
   --layer-start N          global model KV layer range start (default ${LAYER_START})
-  --layer-end M            global range end (exclusive). The [start, end) span is
-                           divided into NUM_PREFILL contiguous slices for prefill
-                           and NUM_DECODE for decode, one per worker in rank order
+  --layer-end M            global range end (exclusive), the model's REAL layer
+                           count. The count is padded up to the next power of two
+                           (e.g. DeepSeek's 61 -> 64) then divided into
+                           NUM_PREFILL contiguous slices for prefill and
+                           NUM_DECODE for decode, one per worker in rank order
                            (0=unset, default ${LAYER_END}, every worker owns all)
   --build-dir PATH         cpp_server build dir (default ${BUILD_DIR})
   --worker-bin PATH        worker binary (default <build-dir>/bringup_mooncake_worker)
