@@ -132,7 +132,8 @@ inline sch::GenerationParams makeGenerationParams(
       .ignore_eos = seq.getSamplingParams().ignore_eos,
       .sampling = userSampling,
       .reasoning_sampling = userSampling,
-      .disaggregated_decode = tt::config::enableMigration() && seq.isDisaggregated(),
+      .disaggregated_decode =
+          tt::config::enableMigration() && seq.isDisaggregated(),
       .starts_in_thinking = seq.getStartsInThinking(),
       .stop_tokens = seq.getSamplingParams().stop_token_ids,
   };
