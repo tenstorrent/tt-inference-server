@@ -3333,6 +3333,311 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            # ----------------------------------------------------------------
+            # Reference accuracy evals requested in
+            # https://github.com/tenstorrent/tt-inference-server/issues/4176
+            # (GPQA-Diamond, Terminal-Bench-2.0, SWE-Bench Verified). Full
+            # dataset is used for the default RELEASE run; SMOKE/CI_NIGHTLY are
+            # downsampled. Token budgets are clamped to this device's served
+            # envelope: hybrid-off KV pool caps max_model_len at 49152 and the
+            # power-of-two prefill bucketing caps any single prefill at 32768,
+            # so agentic input budgets stay <= 24k (pads to the 32768 bucket)
+            # and prompt + output stays < 49152. Concurrency is held at 1 since
+            # the 49152-token pool is shared across the batch.
+            # published_score / gpu_reference_score are left None until the
+            # gemma-4 reference numbers (Google report + first TT run) land.
+            # ----------------------------------------------------------------
+            EvalTask(
+                task_name="gpqa_diamond_cot_zeroshot",
+                # Chat API so the gemma-4 reasoning parser strips the thinking
+                # channel server-side; flexible-extract then reads the answer
+                # letter. (r1_gpqa_diamond keys off DeepSeek </think> tags that
+                # gemma-4 does not emit, so it is not usable here.)
+                use_chat_api=True,
+                max_concurrent=16,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "timeout": "7200",
+                },
+                # gemma-family sampling defaults (temp 1.0 / top_k 64 / top_p
+                # 0.95). GPQA prompts run ~2.4k tokens; 32768 reasoning budget
+                # leaves >14k headroom under the 49152 ceiling.
+                gen_kwargs={
+                    "stream": "false",
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 64,
+                    "top_p": 0.95,
+                    "max_gen_toks": 32 * 1024,
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.006,
+                    EvalLimitMode.CI_NIGHTLY: 0.035,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=1,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            # Single-prefill bucket ceiling is 32768; keep input
+                            # under it and leave room for output within 49152.
+                            "max_input_tokens": 24 * 1024,
+                            "max_output_tokens": 16 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 16 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 64,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=1,
+                    max_workers=1,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=0.95,
+                    # Input pads to the 32768 prefill bucket; output kept small
+                    # so input + output stays under the 49152 ceiling.
+                    max_input_tokens=24 * 1024,
+                    max_output_tokens=12 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 64,
+                        },
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="google/gemma-4-12b-it",
+        tasks=[
+            # ----------------------------------------------------------------
+            # Reference accuracy evals requested in
+            # https://github.com/tenstorrent/tt-inference-server/issues/4176
+            # (GPQA-Diamond, Terminal-Bench-2.0, SWE-Bench Verified). 12B
+            # advertises 131072 but only serves reliably up to ~64k input on
+            # P300X2 (hybrid-KV-off): 64k passes cleanly while ~100k+ intermittently
+            # trips the eager-prefill fabric deadlock (tenstorrent/tt-metal#48289,
+            # see docs/gemma4_12b_benchmarks.md). Agentic input is therefore capped
+            # at 64k (pads to the 65536 prefill bucket, the largest validated one)
+            # and GPQA reasoning stays well under it. published_score /
+            # gpu_reference_score are left None until the gemma-4 reference
+            # numbers land.
+            # ----------------------------------------------------------------
+            EvalTask(
+                task_name="gpqa_diamond_cot_zeroshot",
+                use_chat_api=True,
+                max_concurrent=16,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "timeout": "7200",
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 64,
+                    "top_p": 0.95,
+                    "max_gen_toks": 32 * 1024,
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.006,
+                    EvalLimitMode.CI_NIGHTLY: 0.035,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=2,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 64 * 1024,
+                            "max_output_tokens": 24 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 24 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 64,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=2,
+                    max_workers=4,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=0.95,
+                    max_input_tokens=64 * 1024,
+                    max_output_tokens=16 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 64,
+                        },
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
         ],
     ),
 ]
