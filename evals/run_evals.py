@@ -55,34 +55,6 @@ def _get_limit_mode(runtime_config: Optional[RuntimeConfig]) -> Optional[EvalLim
     return EvalLimitMode.from_string(runtime_config.limit_samples_mode)
 
 
-def _exclude_agentic_eval_tasks(eval_config: EvalConfig) -> EvalConfig:
-    """Drop EVALS_AGENTIC tasks from the evals workflow.
-
-    Agentic tasks are owned by the dedicated ``agentic`` workflow (v2 bridge),
-    which runs them with the correct environment/verifier env vars and writes a
-    Harbor ``result.json`` that the report step merges in. The standalone evals
-    workflow (and the release evals step, which runs through this same script)
-    must not run them.
-    """
-    agentic = [
-        t
-        for t in eval_config.tasks
-        if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
-    ]
-    if not agentic:
-        return eval_config
-    kept = [
-        t
-        for t in eval_config.tasks
-        if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
-    ]
-    logger.info(
-        "Excluding agentic task(s) from evals workflow (run via --workflow agentic): %s",
-        [t.task_name for t in agentic],
-    )
-    return EvalConfig(hf_model_repo=eval_config.hf_model_repo, tasks=kept)
-
-
 def _select_eval_config(
     eval_config: EvalConfig, runtime_config: Optional[RuntimeConfig]
 ) -> EvalConfig:
@@ -255,7 +227,6 @@ def main():
         message = f"No evaluation tasks defined for model: {model_spec.model_name}"
         raise ValueError(message)
     eval_config = EVAL_CONFIGS[model_spec.model_name]
-    eval_config = _exclude_agentic_eval_tasks(eval_config)
     eval_config = _select_eval_config(eval_config, runtime_config)
 
     deploy_url = resolve_deploy_url(runtime_config)
