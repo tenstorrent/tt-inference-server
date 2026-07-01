@@ -33,9 +33,11 @@
 #include "ipc/in_memory/in_memory_result_queue.hpp"
 #include "ipc/in_memory/in_memory_task_queue.hpp"
 #include "ipc/interface/result_queue.hpp"
+#ifdef ENABLE_BLAZE
 #include "runtime/runners/blaze_runner/blaze_decode_runner.hpp"
 #include "runtime/runners/blaze_runner/blaze_prefill_runner.hpp"
 #include "runtime/runners/blaze_runner/blaze_scheduler_factory.hpp"
+#endif
 #include "services/memory_services/memory_manager.hpp"
 #include "services/session_manager.hpp"
 #include "utils/conversation_hasher.hpp"
@@ -233,6 +235,7 @@ void runConcurrently(F&& f, int numThreads = 2) {
 // Base runner test harness
 // ---------------------------------------------------------------------------
 
+#ifdef ENABLE_BLAZE
 // Base harness for testing Blaze runners (prefill and decode).
 // Manages IPC queues, memory manager, and runner lifecycle.
 template <typename RunnerType>
@@ -368,5 +371,6 @@ class RunnerTestHarness {
   std::exception_ptr runnerError_;
   bool isShutdown_ = false;
 };
+#endif  // ENABLE_BLAZE
 
 }  // namespace tt::test
