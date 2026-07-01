@@ -76,6 +76,10 @@ common=(--mode "${MODE}" --slot "${SLOT}"
         --timeout-sec "${TIMEOUT_SEC}")
 [[ "${SEED_VERIFY}" == "1" ]] && common+=(--seed-verify)
 [[ -n "${DEVICE_MAP}" ]] && common+=(--device-map "${DEVICE_MAP}")
+# Prefill host tag (sender only; must match the prefill .pb's fabric_node_host
+# for real tables). Receiver's tag is DECODE_HOST / the PEERS tags.
+PREFILL_HOST="${PREFILL_HOST:-}"
+prefill_flag=(); [[ -n "${PREFILL_HOST}" ]] && prefill_flag=(--prefill-host "${PREFILL_HOST}")
 
 result() {  # $1 = rc
   echo "----------------------------------------"
@@ -108,7 +112,7 @@ if [[ "${ROLE}" == "sender" ]]; then
   [[ "${TRIGGER}" == "kafka" ]] && send_extra+=(--trigger kafka --kafka-brokers "${KAFKA_BROKERS}")
   echo "Sender -> ${n} decode host(s) (table=${TABLE}, trigger=${TRIGGER})..."
   "${BIN}" --role sender --mooncake-name "${SEND_NAME}" --table "${TABLE}" \
-    "${common[@]}" "${peer_flags[@]}" "${send_extra[@]}"
+    "${common[@]}" "${prefill_flag[@]}" "${peer_flags[@]}" "${send_extra[@]}"
   result $?
 fi
 
@@ -142,7 +146,7 @@ send_extra=()
 [[ "${TRIGGER}" == "kafka" ]] && send_extra+=(--trigger kafka --kafka-brokers "${KAFKA_BROKERS}")
 echo "Launching sender -> ${n} decode host(s) (table=${TABLE}, trigger=${TRIGGER})..."
 "${BIN}" --role sender --mooncake-name "${SEND_NAME}" --table "${TABLE}" \
-  "${common[@]}" "${peer_flags[@]}" "${send_extra[@]}"
+  "${common[@]}" "${prefill_flag[@]}" "${peer_flags[@]}" "${send_extra[@]}"
 send_rc=$?
 
 all_ok=1

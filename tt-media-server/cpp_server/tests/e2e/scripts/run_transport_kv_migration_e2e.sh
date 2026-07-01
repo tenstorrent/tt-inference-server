@@ -74,6 +74,11 @@ TIMEOUT_SEC="${TIMEOUT_SEC:-60}"
 SEED_VERIFY="${SEED_VERIFY:-1}"
 # Device mode item-1 chip map ('mesh chip umd_chip_id' per line); optional.
 DEVICE_MAP="${DEVICE_MAP:-}"
+# Host tags in the tables. For real .pb these MUST match the tables'
+# fabric_node_host (else the request resolves to no chunks). builtin defaults
+# to prefill/decode. Leave empty to use the binary's defaults.
+PREFILL_HOST="${PREFILL_HOST:-}"
+DECODE_HOST="${DECODE_HOST:-}"
 
 case "${ROLE}" in both|receiver|sender) ;; *)
   echo "ERROR: ROLE must be both|receiver|sender (got '${ROLE}')" >&2; exit 2 ;;
@@ -94,6 +99,8 @@ req=(--slot "${SLOT}" --layer-begin "${LAYER_BEGIN}" --layer-end "${LAYER_END}"
      --timeout-sec "${TIMEOUT_SEC}")
 [[ "${SEED_VERIFY}" == "1" ]] && req+=(--seed-verify)
 [[ -n "${DEVICE_MAP}" ]] && req+=(--device-map "${DEVICE_MAP}")
+[[ -n "${PREFILL_HOST}" ]] && req+=(--prefill-host "${PREFILL_HOST}")
+[[ -n "${DECODE_HOST}" ]] && req+=(--decode-host "${DECODE_HOST}")
 
 send_extra=()
 [[ -n "${DECODE_TABLE}" ]] && send_extra=(--decode-table "${DECODE_TABLE}")

@@ -254,14 +254,20 @@ live model on the same chips; set `SEED_VERIFY=0` if you must.)
 Prefill on galaxy A (`PREFILL_IP`), decode on galaxy B (`DECODE_IP`). Find the
 IPs with `hostname -I` on each host (see §5).
 
-**Terminal 1 — on the DECODE host (galaxy B), start FIRST** (it binds the
-control port + advertises its Mooncake segment):
+For real tables you must pass the **host tags** that match the tables'
+`fabric_node_host` (`PREFILL_HOST`, `DECODE_HOST`) — else the request resolves to
+no chunks. Get them from whoever produced the `.pb` (or dump with the adapter
+test). Pick a `LAYER_*` range whose chunks live on that one decode host.
+
+**Terminal 1 — on the DECODE host (galaxy B), start FIRST** (binds the control
+port + advertises its Mooncake segment):
 ```bash
 cd tt-media-server/cpp_server
 export TT_METAL_HOME="$PWD/tt-llm-engine/tt-metal"
 ROLE=receiver MODE=device \
-  TABLE=/path/decoder.pb \
+  TABLE=/path/decoder.pb DECODE_HOST=<decode-tag> \
   RECV_NAME="${DECODE_IP}:17777" CONTROL_PORT=18650 \
+  LAYER_BEGIN=0 LAYER_END=1 POS_BEGIN=0 POS_END=3424 \
   bash tests/e2e/scripts/run_transport_kv_migration_e2e.sh
 ```
 
@@ -271,13 +277,16 @@ cd tt-media-server/cpp_server
 export TT_METAL_HOME="$PWD/tt-llm-engine/tt-metal"
 ROLE=sender MODE=device \
   TABLE=/path/prefill.pb DECODE_TABLE=/path/decoder.pb \
+  PREFILL_HOST=<prefill-tag> DECODE_HOST=<decode-tag> \
   SEND_NAME="${PREFILL_IP}:17778" \
   CONTROL_HOST="${DECODE_IP}" CONTROL_PORT=18650 \
+  LAYER_BEGIN=0 LAYER_END=1 POS_BEGIN=0 POS_END=3424 \
   bash tests/e2e/scripts/run_transport_kv_migration_e2e.sh
 ```
-The decode host prints `verification: PASS` (+ `serve_total`); the prefill host
+No Kafka involved — the single-host script uses the direct (CLI) trigger. The
+decode host prints `verification: PASS` (+ `serve_total`); the prefill host
 prints `[migration] sender: … migrate_total=…`. Both must say `RESULT: PASS`.
-Pick a request range so the chunks land on the one decode host (see §7.7 / §10).
+The `LAYER_*`/`POS_*`/`SLOT` values MUST be identical on both commands.
 
 ### 7.6 N galaxies, 1→N (HW) — turnkey `ROLE` split
 
