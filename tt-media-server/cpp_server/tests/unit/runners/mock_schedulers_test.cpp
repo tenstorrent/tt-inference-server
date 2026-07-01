@@ -4,7 +4,6 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
-#include <cstdlib>
 #include <thread>
 #include <vector>
 
@@ -31,32 +30,6 @@ sch::ISRequest makeSubmit(uint32_t slotId, uint32_t maxNewTokens,
   req.gen.max_new_tokens = maxNewTokens;
   return req;
 }
-
-// RAII env override; restores the prior (unset) state on scope exit so tests
-// don't leak latency config into each other.
-class ScopedEnv {
- public:
-  ScopedEnv(const char* key, const char* value) : key(key) {
-    if (const char* old = std::getenv(key)) {
-      oldValue = old;
-    }
-    setenv(this->key.c_str(), value, 1);
-  }
-  ~ScopedEnv() {
-    if (oldValue.has_value()) {
-      setenv(key.c_str(), oldValue.value().c_str(), 1);
-    } else {
-      unsetenv(key.c_str());
-    }
-  }
-
-  ScopedEnv(const ScopedEnv&) = delete;
-  ScopedEnv& operator=(const ScopedEnv&) = delete;
-
- private:
-  std::string key;
-  std::optional<std::string> oldValue;
-};
 
 // Block (with a short poll loop) until an output is available or `timeout`
 // elapses. The async emitter thread produces tokens on its own schedule, so
@@ -90,8 +63,9 @@ uint32_t drainOutputs(MockDecodeScheduler& scheduler, uint32_t expected) {
 // `maxNewTokens`, and returns the wall-clock time from push_request to the
 // final output. `tokenCount` receives how many outputs were produced.
 std::chrono::microseconds timeDecode(uint32_t maxNewTokens, size_t promptLen,
-                                     uint32_t& tokenCount) {
-  MockDecodeScheduler scheduler(4);
+                                     uint32_t& tokenCount,
+                                     MockDecodeSchedulerConfig cfg) {
+  MockDecodeScheduler scheduler(4, std::move(cfg));
   scheduler.start();
   EXPECT_TRUE(scheduler.push_request(makeAllocate(1)));
   sch::SchedulerResponse alloc{};
@@ -126,12 +100,9 @@ TEST(MockSchedulerTest, PrefillSubmitCompletesWithNoDecodeTokens) {
 }
 
 TEST(MockSchedulerTest, DecodeSubmitEmitsMaxNewTokens) {
-  // Keep this test fast: skip the default 100ms prefill stall and the
-  // ~2.8ms decode spacing.
-  ScopedEnv prefillLatency("MOCK_PREFILL_CHUNK_LATENCY_MS", "0");
-  ScopedEnv tokenLatency("MOCK_DECODE_TOKEN_LATENCY_US", "0");
-
-  MockDecodeScheduler scheduler(4);
+  // Keep this test fast: default-constructed config is already zero-latency,
+  // which is exactly what we want here (no prefill stall, no decode spacing).
+  MockDecodeScheduler scheduler(4, MockDecodeSchedulerConfig{});
   scheduler.start();
 
   ASSERT_TRUE(scheduler.push_request(makeAllocate(1)));
@@ -150,10 +121,7 @@ TEST(MockSchedulerTest, DecodeSubmitEmitsMaxNewTokens) {
 }
 
 TEST(MockSchedulerTest, DecodeSubmitWithZeroMaxNewTokensCompletesImmediately) {
-  ScopedEnv prefillLatency("MOCK_PREFILL_CHUNK_LATENCY_MS", "0");
-  ScopedEnv tokenLatency("MOCK_DECODE_TOKEN_LATENCY_US", "0");
-
-  MockDecodeScheduler scheduler(4);
+  MockDecodeScheduler scheduler(4, MockDecodeSchedulerConfig{});
   scheduler.start();
 
   ASSERT_TRUE(scheduler.push_request(makeAllocate(1)));
@@ -183,10 +151,7 @@ TEST(MockSchedulerTest, DecodeSubmitWithZeroMaxNewTokensCompletesImmediately) {
 // "unexpected token for IDLE slot" assert (or, if the slot was re-allocated
 // first, silently misattributing the token to a new task).
 TEST(MockSchedulerTest, EvictPurgesQueuedAndPendingOutputsForSlot) {
-  ScopedEnv prefillLatency("MOCK_PREFILL_CHUNK_LATENCY_MS", "0");
-  ScopedEnv tokenLatency("MOCK_DECODE_TOKEN_LATENCY_US", "0");
-
-  MockDecodeScheduler scheduler(4);
+  MockDecodeScheduler scheduler(4, MockDecodeSchedulerConfig{});
   scheduler.start();
 
   // Two slots: we'll evict A and make sure B is unaffected.
@@ -259,20 +224,22 @@ TEST(MockSchedulerTest, PrefillRejectsContinue) {
 // (~22.7k tok/s) -- independent of prompt length. The mock reproduces this by
 // spacing tokens at a fixed decodeTokenLatency, so the observed rate must
 // depend only on that spacing, never on the number of input (prompt) tokens.
-// (Set MOCK_DECODE_TOKEN_LATENCY_US=44 to emit at the real ~22.7k tok/s; here a
+// (Set decodeTokenLatency to 44us to emit at the real ~22.7k tok/s; here a
 // larger spacing keeps the test fast while exercising the same invariant.)
 TEST(MockSchedulerTest, DecodeThroughputIsFlatAndInputIndependent) {
   constexpr unsigned kTokenLatencyUs = 1000;
   constexpr uint32_t kMaxNewTokens = 50;
-  ScopedEnv prefillLatency("MOCK_PREFILL_CHUNK_LATENCY_MS", "0");
-  ScopedEnv tokenLatency("MOCK_DECODE_TOKEN_LATENCY_US", "1000");
+  const MockDecodeSchedulerConfig cfg{
+      .prefillLatency = std::chrono::milliseconds(0),
+      .decodeTokenLatency = std::chrono::microseconds(kTokenLatencyUs),
+  };
 
   uint32_t shortCount = 0;
   uint32_t longCount = 0;
   const auto shortPrompt =
-      timeDecode(kMaxNewTokens, /*promptLen=*/4, shortCount);
+      timeDecode(kMaxNewTokens, /*promptLen=*/4, shortCount, cfg);
   const auto longPrompt =
-      timeDecode(kMaxNewTokens, /*promptLen=*/8192, longCount);
+      timeDecode(kMaxNewTokens, /*promptLen=*/8192, longCount, cfg);
 
   // Output count is governed solely by max_new_tokens; a 2048x larger prompt
   // yields exactly the same number of tokens.

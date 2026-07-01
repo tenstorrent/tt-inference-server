@@ -12,13 +12,25 @@
 #include <thread>
 #include <vector>
 
-#include "config/settings.hpp"
 #include "runtime/runners/blaze_runner/scheduler_interface.hpp"
 
 namespace tt::runners::blaze {
-namespace detail {
 
 namespace sch = tt_llm_engine::scheduler;
+
+struct MockPrefillSchedulerConfig {
+  std::chrono::milliseconds prefillLatency{0};
+  uint32_t prefillChunkSize = 128;
+};
+
+struct MockDecodeSchedulerConfig {
+  std::chrono::milliseconds prefillLatency{0};
+  uint32_t prefillChunkSize = 128;
+  uint32_t decodeTokenId = 0;
+  std::chrono::microseconds decodeTokenLatency{0};
+};
+
+namespace detail {
 
 // Shared slot pool + response/output queues for mock schedulers.
 class MockSchedulerCore {
@@ -133,14 +145,11 @@ class MockSchedulerCore {
 
 }  // namespace detail
 
-namespace sch = tt_llm_engine::scheduler;
-
 class MockPrefillScheduler final : public IPrefillScheduler {
  public:
-  explicit MockPrefillScheduler(uint32_t maxUsers)
-      : core(maxUsers),
-        prefillLatency(
-            std::chrono::milliseconds(tt::config::mockPrefillLatencyMs())) {}
+  explicit MockPrefillScheduler(uint32_t maxUsers,
+                                MockPrefillSchedulerConfig cfg = {})
+      : core(maxUsers), cfg(std::move(cfg)) {}
 
   void start() override { core.start(); }
   void stop() override { core.stop(); }
@@ -157,10 +166,10 @@ class MockPrefillScheduler final : public IPrefillScheduler {
       case sch::RequestType::STOP:
         return core.handleEvictOrStop(request);
       case sch::RequestType::SUBMIT: {
-        if (prefillLatency.count() > 0) {
+        if (cfg.prefillLatency.count() > 0) {
           std::this_thread::sleep_for(
-              prefillLatency *
-              (request.tokens.size() / tt::config::prefillChunkSize() + 1));
+              cfg.prefillLatency *
+              (request.tokens.size() / cfg.prefillChunkSize + 1));
         }
         sch::OutputMessage output{};
         output.slot_id = request.slot_id;
@@ -192,7 +201,7 @@ class MockPrefillScheduler final : public IPrefillScheduler {
 
  private:
   detail::MockSchedulerCore core;
-  std::chrono::milliseconds prefillLatency;
+  MockPrefillSchedulerConfig cfg;
 };
 
 // Asynchronous mock decode scheduler.
@@ -209,14 +218,9 @@ class MockPrefillScheduler final : public IPrefillScheduler {
 // mirroring real hardware: once a slot is yanked, no further tokens come out.
 class MockDecodeScheduler final : public IDecodeScheduler {
  public:
-  explicit MockDecodeScheduler(uint32_t maxUsers)
-      : core(maxUsers),
-        decodeTokenId(tt::config::mockDecodeTokenId()),
-        prefillLatency(
-            std::chrono::milliseconds(tt::config::mockPrefillLatencyMs())),
-        decodeTokenLatency(
-            std::chrono::microseconds(tt::config::mockDecodeTokenLatencyUs())) {
-  }
+  explicit MockDecodeScheduler(uint32_t maxUsers,
+                               MockDecodeSchedulerConfig cfg = {})
+      : core(maxUsers), cfg(std::move(cfg)) {}
 
   ~MockDecodeScheduler() override { stop(); }
 
@@ -331,8 +335,8 @@ class MockDecodeScheduler final : public IDecodeScheduler {
     job.basePosition = request.position_id.value_or(
         static_cast<uint32_t>(request.tokens.size()));
     job.nextAt = std::chrono::steady_clock::now() +
-                 (prefillLatency *
-                  (request.tokens.size() / tt::config::prefillChunkSize() + 1));
+                 (cfg.prefillLatency *
+                  (request.tokens.size() / cfg.prefillChunkSize + 1));
     pending.push_back(job);
   }
 
@@ -363,7 +367,7 @@ class MockDecodeScheduler final : public IDecodeScheduler {
           const bool isLast = (it->emitted + 1 == it->maxTokens);
           core.pushOutput(sch::OutputMessage{
               .slot_id = it->slotId,
-              .token_id = decodeTokenId,
+              .token_id = cfg.decodeTokenId,
               .is_complete = isLast,
               .tokens_generated = it->emitted + 1,
               .position_id = it->basePosition + it->emitted,
@@ -374,7 +378,7 @@ class MockDecodeScheduler final : public IDecodeScheduler {
             it = pending.erase(it);
             continue;
           }
-          it->nextAt = now + decodeTokenLatency;
+          it->nextAt = now + cfg.decodeTokenLatency;
         }
         if (it->nextAt < nextDeadline) {
           nextDeadline = it->nextAt;
@@ -396,9 +400,7 @@ class MockDecodeScheduler final : public IDecodeScheduler {
   }
 
   detail::MockSchedulerCore core;
-  uint32_t decodeTokenId;
-  std::chrono::milliseconds prefillLatency;
-  std::chrono::microseconds decodeTokenLatency;
+  MockDecodeSchedulerConfig cfg;
 
   std::mutex mutex;
   std::condition_variable cv;
