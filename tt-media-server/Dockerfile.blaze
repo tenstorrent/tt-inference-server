@@ -3,23 +3,18 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 # ==============================================================================
-# Slim Dockerfile.blaze (v2 split)
+# Slim Dockerfile.blaze
 # ------------------------------------------------------------------------------
 # Consumes a prebuilt tt-llm-engine image and compiles cpp_server on top.
 #
 # Required build args:
-#   TT_LLM_ENGINE_IMAGE                   — full image reference, e.g.
-#                                           ghcr.io/tenstorrent/tt-llm-engine/blaze:<sha>
-#                                           (sentinel default triggers a clear
-#                                           "manifest unknown" if the caller forgets)
+#   TT_LLM_ENGINE_IMAGE  — full image reference, e.g. ghcr.io/tenstorrent/tt-llm-engine/blaze:<sha>
 #   TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG — stamped into /info for debugging
 #
 # Runtime auth: docker login to ghcr.io with read access on tt-llm-engine/blaze.
 # ==============================================================================
 
-# IMPORTANT: TT_LLM_ENGINE_IMAGE MUST be passed via --build-arg. The
-# sentinel default below produces a clear "manifest unknown" error if the
-# caller forgets — better than a cryptic "invalid reference format".
+# IMPORTANT: TT_LLM_ENGINE_IMAGE MUST be passed via --build-arg
 ARG TT_LLM_ENGINE_IMAGE=ghcr.io/tenstorrent/tt-llm-engine/blaze:MUST_PASS_TT_LLM_ENGINE_IMAGE_AT_BUILD_TIME
 
 # ==============================================================================
