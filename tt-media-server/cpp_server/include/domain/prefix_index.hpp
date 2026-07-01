@@ -33,7 +33,11 @@ struct PrefixIndexEntry {
 
 class PrefixIndex {
  public:
-  std::vector<PrefixIndexEntry> getEntriesForKey(uint64_t keyHash) const;
+  template <typename Func>
+  bool visitEntriesForKey(uint64_t keyHash, Func&& func) const {
+    return prefixIndex.visit(keyHash, std::forward<Func>(func));
+  }
+
   void registerPrefixHash(const std::string& sessionId,
                           const std::vector<utils::BlockHashInfo>& blockInfos);
   void remove(const std::string& sessionId, uint64_t keyHash);
