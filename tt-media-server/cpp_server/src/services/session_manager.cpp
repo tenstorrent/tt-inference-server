@@ -8,6 +8,7 @@
 #include <thread>
 
 #include "config/settings.hpp"
+#include "domain/block_matcher.hpp"
 #include "domain/manage_memory.hpp"
 #include "metrics/metrics.hpp"
 #include "utils/id_generator.hpp"
@@ -569,10 +570,12 @@ SessionManager::tryAcquireByPrefixHash(
   }
 
   const uint64_t keyHash = blockInfos.front().hash;
-  const size_t firstBlockTokens = tt::config::kvCacheFirstBlockSize();
-  const size_t blockTokens = tt::config::kvCacheBlockSize();
 
-  std::vector<Candidate> candidates = prefixIndex.findCandidates(blockInfos);
+  const std::vector<domain::PrefixIndexEntry> entries =
+      prefixIndex.getEntriesForKey(keyHash);
+  std::vector<Candidate> candidates =
+      domain::BlockMatcher::buildCandidates(blockInfos, entries);
+  domain::BlockMatcher::sortCandidates(candidates);
 
   if (candidates.empty()) {
     TT_LOG_DEBUG("[SessionManager] tryAcquireByPrefixHash: keyHash={} miss",
@@ -588,28 +591,26 @@ SessionManager::tryAcquireByPrefixHash(
   const float threshold = tt::config::prefixCacheHitThreshold();
   bool anyBusy = false;
   for (const auto& candidate : candidates) {
-    // Check if match percentage meets threshold (skip if below).
-    if (threshold > 0.0f) {
-      float matchPercent =
-          (candidate.matchedBlocks * 100.0f) / candidate.sessionBlocks;
-      if (matchPercent < threshold) {
+    if (!domain::BlockMatcher::passesHitThreshold(candidate, threshold)) {
+      if (threshold > 0.0f) {
+        const float matchPercent = (candidate.matchedBlocks * 100.0f) /
+                                   static_cast<float>(candidate.sessionBlocks);
         TT_LOG_INFO(
             "[SessionManager] Prefix cache candidate rejected: "
             "matchedBlocks={} sessionBlocks={} matchPercent={:.1f}% < "
             "threshold={:.1f}%",
             candidate.matchedBlocks, candidate.sessionBlocks, matchPercent,
             threshold);
-        continue;
       }
+      continue;
     }
 
     std::optional<AcquiredSession> acquired;
     bool busy = false;
     bool stale = false;
 
-    // Compute matched tokens: first block + (matchedBlocks-1) subsequent.
-    uint32_t matchedTokens = static_cast<uint32_t>(
-        firstBlockTokens + (candidate.matchedBlocks - 1) * blockTokens);
+    const uint32_t matchedTokens =
+        domain::BlockMatcher::blocksToTokens(candidate.matchedBlocks);
 
     bool found = sessions.modify(
         candidate.sessionId, [&](std::shared_ptr<domain::Session>& s) {
@@ -662,73 +663,6 @@ SessionManager::tryAcquireByPrefixHash(
   return AcquiredSession{false, {}, 0, 0, 0, std::move(candidates)};
 }
 
-namespace {
-// Inverse of the firstBlock + (n-1)*block token layout. Matched/resident token
-// counts are always block-aligned, so this round-trips exactly.
-uint32_t tokensToBlocks(uint32_t tokens, size_t firstBlockSize,
-                        size_t blockSize) {
-  if (tokens == 0) return 0;
-  if (tokens <= firstBlockSize || blockSize == 0) return 1;
-  return static_cast<uint32_t>(1 + (tokens - firstBlockSize + blockSize - 1) /
-                                       blockSize);
-}
-}  // namespace
-
-std::optional<SessionManager::Candidate> SessionManager::findASlotToCopyFrom(
-    const std::vector<Candidate>& candidates) const {
-  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
-  const size_t blockSize = tt::config::kvCacheBlockSize();
-  const size_t minTokens = tt::config::minTokensToCopy();
-
-  for (const auto& candidate : candidates) {
-    if (candidate.matchedBlocks == 0) continue;
-
-    // Cap the copy at the source's resident prefix. The match may extend into
-    // blocks the source has registered but not yet prefilled (a brand-new
-    // session, or the new tail of an in-flight extension/rewind turn); copying
-    // those would read uncomputed or stale KV. committedBlocks() is the only
-    // portion guaranteed resident.
-    uint32_t residentBlocks = 0;
-    sessions.modify(candidate.sessionId,
-                    [&residentBlocks](std::shared_ptr<domain::Session>& s) {
-                      residentBlocks = s->committedBlocks();
-                    });
-    const size_t usableBlocks =
-        std::min<size_t>(candidate.matchedBlocks, residentBlocks);
-    if (usableBlocks == 0) {
-      TT_LOG_DEBUG(
-          "[SessionManager] findASlotToCopyFrom: candidate sessionId={} has no "
-          "resident KV (matchedBlocks={}, committedBlocks={}), skipping",
-          candidate.sessionId, candidate.matchedBlocks, residentBlocks);
-      continue;
-    }
-
-    const size_t usableTokens =
-        firstBlockSize +
-        (usableBlocks > 1 ? (usableBlocks - 1) * blockSize : 0);
-
-    if (usableTokens >= minTokens) {
-      TT_LOG_DEBUG(
-          "[SessionManager] findASlotToCopyFrom: candidate sessionId={} "
-          "matchedBlocks={} committedBlocks={} usableBlocks={} usableTokens={} "
-          ">= minTokensToCopy={}",
-          candidate.sessionId, candidate.matchedBlocks, residentBlocks,
-          usableBlocks, usableTokens, minTokens);
-      // Return the candidate capped to its resident prefix so the copy plan
-      // copies exactly the computed KV and the caller prefills the rest.
-      Candidate capped = candidate;
-      capped.matchedBlocks = usableBlocks;
-      return capped;
-    }
-  }
-
-  TT_LOG_DEBUG(
-      "[SessionManager] findASlotToCopyFrom: no candidate meets threshold "
-      "(minTokensToCopy={}, candidates={})",
-      minTokens, candidates.size());
-  return std::nullopt;
-}
-
 void SessionManager::setResidentPrefixBlocks(const std::string& sessionId,
                                              uint32_t residentBlocks) {
   bool found = sessions.modify(
@@ -745,8 +679,7 @@ void SessionManager::setResidentPrefixBlocks(const std::string& sessionId,
 void SessionManager::shrinkResidentPrefixToMatchedTokens(
     const std::string& sessionId, uint32_t matchedTokens) {
   const uint32_t matchedBlocks =
-      tokensToBlocks(matchedTokens, tt::config::kvCacheFirstBlockSize(),
-                     tt::config::kvCacheBlockSize());
+      domain::BlockMatcher::tokensToBlocks(matchedTokens);
   sessions.modify(sessionId,
                   [matchedBlocks](std::shared_ptr<domain::Session>& s) {
                     s->shrinkCommittedBlocks(matchedBlocks);
@@ -924,18 +857,16 @@ std::pair<uint32_t, uint32_t> SessionManager::computeMatchedTokens(
     return {0, 0};
   }
 
-  const size_t firstBlockTokens = tt::config::kvCacheFirstBlockSize();
-  const size_t blockTokens = tt::config::kvCacheBlockSize();
-
+  const std::vector<domain::PrefixIndexEntry> entries =
+      prefixIndex.getEntriesForKey(blockInfos.front().hash);
   const auto [matchedBlocks, thinkTokens] =
-      prefixIndex.computeMatchedBlocks(sessionId, blockInfos);
+      domain::BlockMatcher::computeMatchedBlocksForSession(sessionId, blockInfos,
+                                                           entries);
 
   if (matchedBlocks == 0) {
     return {0, 0};
   }
-  uint32_t matchedTokens = static_cast<uint32_t>(
-      firstBlockTokens + (matchedBlocks - 1) * blockTokens);
-  return {matchedTokens, thinkTokens};
+  return {domain::BlockMatcher::blocksToTokens(matchedBlocks), thinkTokens};
 }
 
 void SessionManager::clearSessionBlockThinkTokens(
