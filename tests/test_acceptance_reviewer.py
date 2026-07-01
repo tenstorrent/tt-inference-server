@@ -431,3 +431,133 @@ class TestAcceptanceReviewerReceivesMaxToolRounds:
 
         orch.orchestrate(TASK, "/fake/repo", max_tool_rounds=17, verbose=False)
         assert captured.get("max_tool_rounds") == 17
+
+
+# ---------------------------------------------------------------------------
+# _extract_verdict: finding forces reject (issue #34)
+# ---------------------------------------------------------------------------
+
+class TestExtractVerdictFindingForcesReject:
+    """FINDING: is a third verdict branch in the bottom-up scan.
+
+    Bottom-up means the latest verdict wins, preserving the invariant that a
+    reviewer can quote an old FINDING: and then write APPROVED to lift it.
+    A FINDING: only rejects when it is the last verdict token — i.e. it appears
+    after (below) any APPROVED in the text.
+    """
+
+    def test_finding_as_final_verdict_is_rejected(self):
+        # FINDING: is the last verdict line (starts the line) -> rejected
+        from orchestrator.orchestrator import _extract_verdict
+        text = "Looks mostly fine.\nAPPROVED\nFINDING: SQL injection at db.py:42"
+        approved, objection = _extract_verdict(text)
+        assert approved is False
+        assert "FINDING" in objection.upper()
+
+    def test_finding_only_no_approved_is_rejected(self):
+        # No APPROVED at all; FINDING: alone -> rejected
+        from orchestrator.orchestrator import _extract_verdict
+        text = "FINDING: missing input validation (low severity)"
+        approved, _ = _extract_verdict(text)
+        assert approved is False
+
+    def test_finding_returns_finding_line_as_objection(self):
+        from orchestrator.orchestrator import _extract_verdict
+        finding_line = "FINDING: missing auth check at api.py:10"
+        text = f"Analysis complete.\n{finding_line}"
+        _, objection = _extract_verdict(text)
+        assert objection == finding_line
+
+    def test_approved_after_finding_wins(self):
+        # APPROVED appears after FINDING: in text -> bottom-up hits APPROVED first -> approve.
+        # This is the re-review case: reviewer quotes an old finding then approves.
+        from orchestrator.orchestrator import _extract_verdict
+        text = "FINDING: null dereference (previous round)\nImplementer fixed it.\nAPPROVED"
+        approved, _ = _extract_verdict(text)
+        assert approved is True
+
+    def test_no_finding_approved_still_passes(self):
+        from orchestrator.orchestrator import _extract_verdict
+        text = "Code looks correct. No issues found.\nAPPROVED"
+        approved, _ = _extract_verdict(text)
+        assert approved is True
+
+    def test_objection_without_finding_still_rejected(self):
+        from orchestrator.orchestrator import _extract_verdict
+        text = "There is a null dereference risk.\nOBJECTION: null dereference at util.py:5"
+        approved, objection = _extract_verdict(text)
+        assert approved is False
+        assert "OBJECTION" in objection.upper()
+
+    def test_finding_case_insensitive(self):
+        from orchestrator.orchestrator import _extract_verdict
+        text = "finding: path traversal in file loader"
+        approved, _ = _extract_verdict(text)
+        assert approved is False
+
+    def test_finding_after_approved_forces_reject(self):
+        # Reviewer writes APPROVED then adds a finding below it -> finding wins
+        from orchestrator.orchestrator import _extract_verdict
+        text = (
+            "The implementation looks good overall.\n"
+            "APPROVED\n"
+            "FINDING: unvalidated redirect at login.py:88 (low severity, noted for triage)"
+        )
+        approved, _ = _extract_verdict(text)
+        assert approved is False
+
+    def test_multiple_findings_returns_bottommost(self):
+        # Bottom-up scan returns the last FINDING: in the text (closest to end)
+        from orchestrator.orchestrator import _extract_verdict
+        text = "FINDING: issue A\nFINDING: issue B"
+        approved, objection = _extract_verdict(text)
+        assert approved is False
+        assert "issue B" in objection
+
+    def test_approved_with_no_concerns_passes(self):
+        from orchestrator.orchestrator import _extract_verdict
+        for text in ["APPROVED", "Everything is correct.\nAPPROVED", "APPROVED\n"]:
+            approved, _ = _extract_verdict(text)
+            assert approved is True, f"Expected True for: {text!r}"
+
+
+# ---------------------------------------------------------------------------
+# Reviewer system prompts: findings must force OBJECTION (issue #34)
+# ---------------------------------------------------------------------------
+
+class TestReviewerPromptsRequireObjectionForFindings:
+
+    def test_security_reviewer_prompt_forbids_approved_with_finding(self):
+        from orchestrator.personas import SECURITY_REVIEWER
+        system = SECURITY_REVIEWER["system"].lower()
+        # Must tell the reviewer that any finding requires OBJECTION
+        assert "objection" in system
+        assert any(phrase in system for phrase in [
+            "any finding", "regardless of severity", "zero unresolved",
+        ])
+
+    def test_correctness_reviewer_prompt_forbids_approved_with_finding(self):
+        from orchestrator.personas import CORRECTNESS_REVIEWER
+        system = CORRECTNESS_REVIEWER["system"].lower()
+        assert "objection" in system
+        assert any(phrase in system for phrase in [
+            "any concern", "regardless of severity", "zero unresolved",
+        ])
+
+    def test_security_reviewer_prompt_mentions_severity_in_objection_text(self):
+        from orchestrator.personas import SECURITY_REVIEWER
+        system = SECURITY_REVIEWER["system"].lower()
+        # Severity should be mentioned as belonging in OBJECTION text, not vote
+        assert "severity" in system
+
+    def test_correctness_reviewer_prompt_mentions_severity_in_objection_text(self):
+        from orchestrator.personas import CORRECTNESS_REVIEWER
+        system = CORRECTNESS_REVIEWER["system"].lower()
+        assert "severity" in system
+
+    def test_acceptance_reviewer_prompt_unchanged_wrt_approved_criteria(self):
+        """Acceptance reviewer already requires zero unmet criteria for APPROVED."""
+        from orchestrator.personas import ACCEPTANCE_REVIEWER
+        system = ACCEPTANCE_REVIEWER["system"].lower()
+        assert "approved" in system
+        assert "objection" in system
