@@ -44,6 +44,7 @@
             },
             "release": {
               "devices": [
+                "P150",
                 "P300X2"
               ]
             }
@@ -270,11 +271,6 @@
               "devices": [
                 "GALAXY"
               ]
-            },
-            "release": {
-              "devices": [
-                "P300X2"
-              ]
             }
           }
         },
@@ -377,11 +373,6 @@
             "P300X2",
             "T3K"
           ]
-        },
-        "release": {
-          "devices": [
-            "P300X2"
-          ]
         }
       }
     },
@@ -429,11 +420,6 @@
             "P300X2",
             "P150X4",
             "T3K"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P300X2"
           ]
         }
       }
@@ -521,12 +507,6 @@
             "P300X2",
             "T3K"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P300X2"
-          ]
         }
       }
     },
@@ -558,6 +538,11 @@
           "devices": [
             "P150"
           ]
+        },
+        "release": {
+          "devices": [
+            "P150"
+          ]
         }
       }
     },
@@ -581,11 +566,6 @@
         "nightly": {
           "devices": [
             "P150",
-            "GALAXY"
-          ]
-        },
-        "release": {
-          "devices": [
             "GALAXY"
           ]
         }
@@ -726,11 +706,6 @@
             "P150"
           ]
         },
-        "release": {
-          "devices": [
-            "GALAXY"
-          ]
-        },
         "weekly": {
           "devices": [
             "GALAXY"
@@ -742,11 +717,6 @@
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
-          "devices": [
-            "P300X2"
-          ]
-        },
-        "release": {
           "devices": [
             "P300X2"
           ]

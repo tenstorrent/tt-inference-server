@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Build the LLM benchmark sweep from ``BENCHMARK_CONFIGS``."""
+"""Build the LLM benchmark sweep from the model spec."""
 
 from __future__ import annotations
 
@@ -28,18 +28,12 @@ def get_llm_configs(
     ``limit_samples_mode`` honours v1's smoke-test selection when set.
     """
     from benchmarking.benchmark_config import (
-        BENCHMARK_CONFIGS,
+        get_benchmark_config,
         select_smoke_test_benchmark_config,
     )
     from workflows.workflow_types import EvalLimitMode
 
-    model_id = model_spec.model_id
-    benchmark_config = BENCHMARK_CONFIGS.get(model_id)
-    if benchmark_config is None:
-        raise ValueError(
-            f"No benchmark sweep defined for model_id={model_id!r} in "
-            "BENCHMARK_CONFIGS. The model must have a v1 benchmark config."
-        )
+    benchmark_config = get_benchmark_config(model_spec)
 
     if (
         limit_samples_mode
@@ -54,7 +48,7 @@ def get_llm_configs(
         available = sorted(getattr(dev, "name", str(dev)) for dev in configured_devices)
         raise ValueError(
             f"No benchmark params for device={getattr(device, 'name', device)!r} "
-            f"in BENCHMARK_CONFIGS[{model_id!r}]. Configured devices: {available}."
+            f"for model_id={model_spec.model_id!r}. Configured devices: {available}."
         )
 
     configs: List[LLMRunConfig] = []
@@ -81,7 +75,7 @@ def get_llm_configs(
     if not configs:
         logger.warning(
             "No text benchmark params for model_id=%s on device=%s",
-            model_id,
+            model_spec.model_id,
             getattr(device, "name", device),
         )
     return configs

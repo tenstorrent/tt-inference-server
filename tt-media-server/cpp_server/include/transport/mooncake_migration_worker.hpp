@@ -20,8 +20,8 @@ class PeerDiscoveryService;
 
 /// Which side of the galaxy-to-galaxy transfer this worker plays.
 enum class MigrationRole : uint8_t {
-  Sender,    ///< Writes the tensor and pushes it through the transfer engine.
-  Receiver,  ///< Receives the tensor and verifies it.
+  SENDER,    ///< Writes the tensor and pushes it through the transfer engine.
+  RECEIVER,  ///< Receives the tensor and verifies it.
 };
 
 /**
@@ -32,7 +32,7 @@ enum class MigrationRole : uint8_t {
  * region of device DRAM identified by NocAddr.
  */
 struct MigrationWorkerConfig {
-  MigrationRole role = MigrationRole::Sender;
+  MigrationRole role = MigrationRole::SENDER;
   std::string peer_segment_name;  ///< Receiver's advertised segment.
   NocAddr device_addr = 0;        ///< Device-DRAM location of the tensor.
   std::size_t tensor_bytes = 0;   ///< Tensor size to move/verify.
@@ -40,7 +40,7 @@ struct MigrationWorkerConfig {
   // --- #4294 production bring-up (driven by bringUp()) ---
   std::string metadata_uri;  ///< Discovery service the engine connects to.
   std::string segment_name;  ///< This worker's own advertised logical name.
-  TransportProtocol protocol = TransportProtocol::Tcp;
+  TransportProtocol protocol = TransportProtocol::TCP;
   std::size_t host_dram_bytes = 0;  ///< Pool the worker registers/publishes.
 
   /// Peers this worker discovers on bring-up. Each entry is a logical segment

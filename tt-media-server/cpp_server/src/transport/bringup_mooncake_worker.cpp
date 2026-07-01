@@ -70,7 +70,7 @@ constexpr std::size_t K_RAM_HEADROOM_BYTES = 1ULL << 30;       // 1 GiB
 constexpr int K_DEFAULT_DISCOVERY_TIMEOUT_SEC = 30;
 constexpr int K_DISCOVERY_POLL_INTERVAL_MS = 1000;
 // Kafka poll timeout also paces the heartbeat granularity: receive() blocks for
-// up to K_KAFKA_POLL_MS, which is short enough that g_stopRequested is honored
+// up to K_KAFKA_POLL_MS, which is short enough that gStopRequested is honored
 // promptly and the heartbeat fires within K_KAFKA_POLL_MS of K_HEARTBEAT_SEC.
 constexpr int K_KAFKA_POLL_MS = 100;
 constexpr int K_HEARTBEAT_SEC = 30;
@@ -89,7 +89,7 @@ struct WorkerConfig {
   std::vector<std::string> peers;  ///< Peers to discover on bring-up.
   std::size_t host_dram_bytes = K_DEFAULT_HOST_DRAM_BYTES;
   int discovery_timeout_sec = K_DEFAULT_DISCOVERY_TIMEOUT_SEC;
-  TransportProtocol protocol = TransportProtocol::Tcp;
+  TransportProtocol protocol = TransportProtocol::TCP;
   // Half-open span of KV cache layers this worker is responsible for:
   // [layer_start, layer_end). layer_end == 0 means "unset" (no layers
   // assigned). The deploy launcher sets these per worker. uint32_t to match
@@ -102,15 +102,15 @@ struct WorkerConfig {
   bool kafka_enabled = true;
 };
 
-std::atomic<bool> g_stopRequested{false};
+std::atomic<bool> gStopRequested{false};
 
 // Touched from a signal handler, so it must be lock-free: [support.signal]
 // permits a handler to access a lock-free atomic (not just sig_atomic_t).
 static_assert(std::atomic<bool>::is_always_lock_free,
-              "g_stopRequested must be lock-free to be signal-safe");
+              "gStopRequested must be lock-free to be signal-safe");
 
 void onSignal(int /*signum*/) {
-  g_stopRequested.store(true, std::memory_order_relaxed);
+  gStopRequested.store(true, std::memory_order_relaxed);
 }
 
 void usage() {
@@ -159,11 +159,11 @@ bool validateHostDramBytes(std::size_t bytes, std::string& err) {
 
 bool parseProtocol(const std::string& value, TransportProtocol& out) {
   if (value == "tcp") {
-    out = TransportProtocol::Tcp;
+    out = TransportProtocol::TCP;
     return true;
   }
   if (value == "rdma") {
-    out = TransportProtocol::Rdma;
+    out = TransportProtocol::RDMA;
     return true;
   }
   return false;
@@ -480,7 +480,7 @@ int main(int argc, char** argv) {
 
   // Pass the stop flag into bring-up too, so a SIGTERM/SIGINT during discovery
   // aborts promptly instead of blocking until the discovery timeout.
-  if (!worker.bringUp(g_stopRequested)) {
+  if (!worker.bringUp(gStopRequested)) {
     TT_LOG_ERROR("[bringup] '{}' bring-up failed", cli.name);
     return 1;
   }
@@ -497,7 +497,7 @@ int main(int argc, char** argv) {
     TT_LOG_INFO(
         "[bringup] '{}' READY ({} peers); Kafka disabled — entering idle loop",
         cli.name, worker.peers().size());
-    runIdleLoop(cli.name, worker, g_stopRequested);
+    runIdleLoop(cli.name, worker, gStopRequested);
     TT_LOG_INFO("[bringup] '{}' stopping", cli.name);
     return 0;
   }
@@ -521,7 +521,7 @@ int main(int argc, char** argv) {
   }};
 
   runMigrationLoop(cli.name, worker, requestConsumer, ackProducer,
-                   g_stopRequested);
+                   gStopRequested);
 
   TT_LOG_INFO("[bringup] '{}' stopping", cli.name);
   // Stack-scope destructors run in reverse: Kafka clients close (the producer

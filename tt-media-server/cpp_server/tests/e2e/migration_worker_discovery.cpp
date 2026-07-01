@@ -119,7 +119,7 @@ std::shared_ptr<MooncakeTransferEngine> makeEngine(const Options& o) {
   EngineConfig cfg;
   cfg.metadata_uri = o.metadata;
   cfg.local_server_name = o.name;
-  cfg.protocol = TransportProtocol::Tcp;
+  cfg.protocol = TransportProtocol::TCP;
   if (!engine->init(cfg)) return nullptr;
   return engine;
 }
@@ -159,18 +159,18 @@ int runSender(const Options& o) {
   // port, which we never learn or pass.
   std::cout << "[sender] discovering peer '" << o.peer
             << "' via metadata service...\n";
-  SegmentHandle peer = kInvalidSegment;
+  SegmentHandle peer = K_INVALID_SEGMENT;
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(o.timeout_sec);
-  while (peer == kInvalidSegment &&
+  while (peer == K_INVALID_SEGMENT &&
          std::chrono::steady_clock::now() < deadline) {
     peer = engine->openSegment(o.peer);
-    if (peer == kInvalidSegment) {
+    if (peer == K_INVALID_SEGMENT) {
       std::this_thread::sleep_for(
           std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
     }
   }
-  if (peer == kInvalidSegment) {
+  if (peer == K_INVALID_SEGMENT) {
     std::cerr << "[sender] openSegment(" << o.peer
               << ") failed (receiver not discoverable within timeout)\n";
     engine->unregisterLocalMemory(staging.data());
@@ -179,12 +179,12 @@ int runSender(const Options& o) {
   std::cout << "[sender] discovered peer '" << o.peer << "'\n";
 
   TransferRequest tensorReq;
-  tensorReq.op = TransferOp::Write;
+  tensorReq.op = TransferOp::WRITE;
   tensorReq.local_addr = staging.data();
   tensorReq.target = peer;
   tensorReq.target_offset = 0;
   tensorReq.length = o.bytes;
-  if (engine->submitAndWait(tensorReq).state != TransferState::Completed) {
+  if (engine->submitAndWait(tensorReq).state != TransferState::COMPLETED) {
     std::cerr << "[sender] tensor transfer failed\n";
     engine->unregisterLocalMemory(staging.data());
     return 1;
@@ -192,12 +192,12 @@ int runSender(const Options& o) {
 
   staging[o.bytes] = K_DONE_FLAG;
   TransferRequest flagReq;
-  flagReq.op = TransferOp::Write;
+  flagReq.op = TransferOp::WRITE;
   flagReq.local_addr = staging.data() + o.bytes;
   flagReq.target = peer;
   flagReq.target_offset = o.bytes;
   flagReq.length = 1;
-  if (engine->submitAndWait(flagReq).state != TransferState::Completed) {
+  if (engine->submitAndWait(flagReq).state != TransferState::COMPLETED) {
     std::cerr << "[sender] flag transfer failed\n";
     engine->unregisterLocalMemory(staging.data());
     return 1;
@@ -250,7 +250,7 @@ int runReceiver(const Options& o) {
   }
 
   MigrationWorkerConfig wcfg;
-  wcfg.role = MigrationRole::Receiver;
+  wcfg.role = MigrationRole::RECEIVER;
   wcfg.device_addr = dstAddr;
   wcfg.tensor_bytes = o.bytes;
   // Discovery is unused here — this PoC drives the data-plane spike directly.
