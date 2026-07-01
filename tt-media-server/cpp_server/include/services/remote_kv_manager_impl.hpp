@@ -13,6 +13,7 @@
 
 #include "messaging/i_kafka_consumer.hpp"
 #include "messaging/i_kafka_producer.hpp"
+#include "messaging/migration_message.hpp"
 #include "services/remote_kv_manager.hpp"
 
 namespace tt::services {
@@ -46,6 +47,14 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
    *   timeout sweep. Default 5s.
    * @param drainPollMs           Per-iteration poll timeout passed to the
    *   consumer. Default 100ms.
+   * @param downloadRequestProducer  Kafka producer for Mooncake-store
+   *   download requests. Optional; if null, downloadFromStore() rolls
+   *   straight to FAILED.
+   * @param downloadAckConsumer   Kafka consumer for download acks, with a
+   *   unique group.id. Optional; if null, downloads stay IN_PROGRESS
+   *   until the sweeper times them out.
+   * @param offloadRequestProducer  Kafka producer for offload requests.
+   *   Optional; offload is fire-and-forget, no ack consumer needed.
    */
   RemoteKVManagerImpl(
       std::unique_ptr<tt::messaging::IKafkaProducer> requestProducer,
@@ -53,7 +62,13 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
       std::size_t migrationWorkerPoolSize,
       std::chrono::milliseconds timeout = std::chrono::seconds(60),
       std::chrono::milliseconds sweepInterval = std::chrono::seconds(5),
-      int drainPollMs = 100);
+      int drainPollMs = 100,
+      std::unique_ptr<tt::messaging::IKafkaProducer> downloadRequestProducer =
+          nullptr,
+      std::unique_ptr<tt::messaging::IKafkaConsumer> downloadAckConsumer =
+          nullptr,
+      std::unique_ptr<tt::messaging::IKafkaProducer> offloadRequestProducer =
+          nullptr);
 
   ~RemoteKVManagerImpl() override;
 
@@ -74,6 +89,8 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
   void drainLoop();
   // Caller must hold mtx.
   void sweepLocked(std::chrono::steady_clock::time_point now);
+  // Takes the lock internally.
+  void applyDownloadAck(const tt::messaging::DownloadResponseMessage& ack);
 
   struct MigrationState {
     MigrationStatus status;
@@ -84,10 +101,14 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
     MigrationStatus status;
     std::vector<uint64_t> downloadedBlockHashes;
     std::chrono::steady_clock::time_point submittedAt;
+    std::size_t successfulAcksReceived{0};
   };
 
   std::unique_ptr<tt::messaging::IKafkaProducer> requestProducer;
   std::unique_ptr<tt::messaging::IKafkaConsumer> ackConsumer;
+  std::unique_ptr<tt::messaging::IKafkaProducer> downloadRequestProducer;
+  std::unique_ptr<tt::messaging::IKafkaConsumer> downloadAckConsumer;
+  std::unique_ptr<tt::messaging::IKafkaProducer> offloadRequestProducer;
   std::size_t migrationWorkerPoolSize;
   std::chrono::milliseconds timeout;
   std::chrono::milliseconds sweepInterval;

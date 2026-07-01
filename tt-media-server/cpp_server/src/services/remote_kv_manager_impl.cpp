@@ -15,9 +15,15 @@ RemoteKVManagerImpl::RemoteKVManagerImpl(
     std::unique_ptr<tt::messaging::IKafkaProducer> requestProducer,
     std::unique_ptr<tt::messaging::IKafkaConsumer> ackConsumer,
     std::size_t migrationWorkerPoolSize, std::chrono::milliseconds timeout,
-    std::chrono::milliseconds sweepInterval, int drainPollMs)
+    std::chrono::milliseconds sweepInterval, int drainPollMs,
+    std::unique_ptr<tt::messaging::IKafkaProducer> downloadRequestProducer,
+    std::unique_ptr<tt::messaging::IKafkaConsumer> downloadAckConsumer,
+    std::unique_ptr<tt::messaging::IKafkaProducer> offloadRequestProducer)
     : requestProducer(std::move(requestProducer)),
       ackConsumer(std::move(ackConsumer)),
+      downloadRequestProducer(std::move(downloadRequestProducer)),
+      downloadAckConsumer(std::move(downloadAckConsumer)),
+      offloadRequestProducer(std::move(offloadRequestProducer)),
       migrationWorkerPoolSize(migrationWorkerPoolSize),
       timeout(timeout),
       sweepInterval(sweepInterval),
@@ -31,6 +37,21 @@ RemoteKVManagerImpl::RemoteKVManagerImpl(
     TT_LOG_ERROR(
         "[RemoteKVManagerImpl] null ackConsumer; statuses will never "
         "transition out of IN_PROGRESS via ack");
+  }
+  if (!this->downloadRequestProducer) {
+    TT_LOG_WARN(
+        "[RemoteKVManagerImpl] null downloadRequestProducer; "
+        "downloadFromStore() will roll straight to FAILED");
+  }
+  if (!this->downloadAckConsumer) {
+    TT_LOG_WARN(
+        "[RemoteKVManagerImpl] null downloadAckConsumer; downloads will "
+        "only reach terminal state via the timeout sweeper");
+  }
+  if (!this->offloadRequestProducer) {
+    TT_LOG_WARN(
+        "[RemoteKVManagerImpl] null offloadRequestProducer; "
+        "offloadToStore() will silently drop payloads");
   }
   if (this->migrationWorkerPoolSize == 0) {
     TT_LOG_WARN(
@@ -129,9 +150,10 @@ uint64_t RemoteKVManagerImpl::downloadFromStore(
 
   {
     std::lock_guard<std::mutex> lock(mtx);
-    auto [it, inserted] =
-        downloads.emplace(id, DownloadState{MigrationStatus::IN_PROGRESS,
-                                            /*downloadedBlockHashes=*/{}, now});
+    auto [it, inserted] = downloads.emplace(
+        id, DownloadState{MigrationStatus::IN_PROGRESS,
+                          /*downloadedBlockHashes=*/{}, now,
+                          /*successfulAcksReceived=*/0});
     if (!inserted) {
       TT_LOG_WARN(
           "[RemoteKVManagerImpl] id collision on download transfer_id={}; "
@@ -141,10 +163,39 @@ uint64_t RemoteKVManagerImpl::downloadFromStore(
     }
   }
 
-  TT_LOG_INFO(
-      "[RemoteKVManagerImpl] downloadFromStore (no-op) transfer_id={} "
-      "dst_slot={} blocks={} pool={}",
-      id, request.dstSlot, request.blocks.size(), migrationWorkerPoolSize);
+  tt::messaging::DownloadRequestMessage msg{
+      .id = id,
+      .dst_slot = request.dstSlot,
+      .blocks = request.blocks,
+  };
+  const std::string payload = tt::messaging::serialize(msg);
+
+  bool sent = false;
+  std::string err;
+  if (downloadRequestProducer) {
+    sent = downloadRequestProducer->send(payload, &err);
+  } else {
+    err = "no downloadRequestProducer";
+  }
+
+  if (!sent) {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto it = downloads.find(id);
+    if (it != downloads.end() &&
+        it->second.status == MigrationStatus::IN_PROGRESS) {
+      it->second.status = MigrationStatus::FAILED;
+      it->second.downloadedBlockHashes.clear();
+    }
+    TT_LOG_ERROR(
+        "[RemoteKVManagerImpl] downloadRequestProducer.send failed for "
+        "transfer_id={}: {}",
+        id, err);
+  } else {
+    TT_LOG_INFO(
+        "[RemoteKVManagerImpl] downloadFromStore published transfer_id={} "
+        "dst_slot={} blocks={} pool={}",
+        id, request.dstSlot, request.blocks.size(), migrationWorkerPoolSize);
+  }
   return id;
 }
 
@@ -160,10 +211,30 @@ DownloadKVResult RemoteKVManagerImpl::getDownloadResult(
 
 uint64_t RemoteKVManagerImpl::offloadToStore(const OffloadKVRequest& request) {
   const uint64_t id = tt::utils::MigrationIDGenerator::generate();
-  TT_LOG_INFO(
-      "[RemoteKVManagerImpl] offloadToStore (no-op, fire-and-forget) "
-      "src_slot={} blocks={}",
-      request.srcSlot, request.blocks.size());
+
+  const tt::messaging::OffloadRequestMessage msg{
+      .id = id,
+      .src_slot = request.srcSlot,
+      .blocks = request.blocks,
+  };
+  const std::string payload = tt::messaging::serialize(msg);
+
+  std::string err;
+  const bool sent =
+      offloadRequestProducer && offloadRequestProducer->send(payload, &err);
+
+  if (!sent) {
+    TT_LOG_ERROR(
+        "[RemoteKVManagerImpl] offloadRequestProducer.send failed for "
+        "transfer_id={}: {}",
+        id,
+        offloadRequestProducer ? err : std::string("no offloadRequestProducer"));
+  } else {
+    TT_LOG_INFO(
+        "[RemoteKVManagerImpl] offloadToStore published transfer_id={} "
+        "src_slot={} blocks={}",
+        id, request.srcSlot, request.blocks.size());
+  }
   return id;
 }
 
@@ -177,9 +248,12 @@ void RemoteKVManagerImpl::drainLoop() {
   TT_LOG_INFO("[RemoteKVManagerImpl] drain loop entered");
 
   while (running.load(std::memory_order_relaxed)) {
+    bool didWork = false;
+
     if (ackConsumer) {
       auto msg = ackConsumer->receive(drainPollMs);
       if (msg.has_value()) {
+        didWork = true;
         auto parsed = tt::messaging::parseMigrationResponse(*msg);
         if (!parsed.has_value()) {
           TT_LOG_WARN(
@@ -203,9 +277,30 @@ void RemoteKVManagerImpl::drainLoop() {
           }
         }
       }
-    } else {
-      // No consumer: still respect the poll cadence so the loop doesn't spin.
+    }
+
+    if (downloadAckConsumer) {
+      auto msg = downloadAckConsumer->receive(drainPollMs);
+      if (msg.has_value()) {
+        didWork = true;
+        auto parsed = tt::messaging::parseDownloadResponse(*msg);
+        if (!parsed.has_value()) {
+          TT_LOG_WARN(
+              "[RemoteKVManagerImpl] dropping unparseable download-ack "
+              "payload: {}",
+              *msg);
+        } else {
+          applyDownloadAck(*parsed);
+        }
+      }
+    }
+
+    if (!ackConsumer && !downloadAckConsumer) {
+      // Nothing to poll on -- respect the cadence so the loop doesn't spin.
       std::this_thread::sleep_for(std::chrono::milliseconds(drainPollMs));
+    } else if (!didWork) {
+      // Nothing arrived; already blocked in receive() for drainPollMs, so no
+      // extra sleep needed.
     }
 
     const auto now = std::chrono::steady_clock::now();
@@ -217,6 +312,62 @@ void RemoteKVManagerImpl::drainLoop() {
   }
 
   TT_LOG_INFO("[RemoteKVManagerImpl] drain loop exited");
+}
+
+void RemoteKVManagerImpl::applyDownloadAck(
+    const tt::messaging::DownloadResponseMessage& ack) {
+  std::lock_guard<std::mutex> lock(mtx);
+  auto it = downloads.find(ack.id);
+  if (it == downloads.end()) {
+    TT_LOG_WARN(
+        "[RemoteKVManagerImpl] ack for unknown transfer_id={}; ignoring",
+        ack.id);
+    return;
+  }
+
+  auto& state = it->second;
+  if (state.status != MigrationStatus::IN_PROGRESS) {
+    TT_LOG_DEBUG(
+        "[RemoteKVManagerImpl] ack for already-terminal transfer_id={}, "
+        "status={}; ignoring",
+        ack.id, static_cast<int>(state.status));
+    return;
+  }
+
+  if (ack.status == MigrationStatus::FAILED) {
+    state.status = MigrationStatus::FAILED;
+    state.downloadedBlockHashes.clear();
+    return;
+  }
+
+  if (ack.status != MigrationStatus::SUCCESSFUL) {
+    TT_LOG_WARN(
+        "[RemoteKVManagerImpl] unexpected download ack status={} for "
+        "transfer_id={}; ignoring",
+        static_cast<int>(ack.status), ack.id);
+    return;
+  }
+
+  if (state.successfulAcksReceived == 0) {
+    state.downloadedBlockHashes = ack.downloaded_block_hashes;
+  } else {
+    // Contiguous-prefix intersection with the running set: any first
+    // divergence truncates the usable prefix (see DownloadKVResult
+    // docstring's worker-hole worked example).
+    std::size_t common = 0;
+    while (common < state.downloadedBlockHashes.size() &&
+           common < ack.downloaded_block_hashes.size() &&
+           state.downloadedBlockHashes[common] ==
+               ack.downloaded_block_hashes[common]) {
+      ++common;
+    }
+    state.downloadedBlockHashes.resize(common);
+  }
+  ++state.successfulAcksReceived;
+
+  if (state.successfulAcksReceived >= migrationWorkerPoolSize) {
+    state.status = MigrationStatus::SUCCESSFUL;
+  }
 }
 
 void RemoteKVManagerImpl::sweepLocked(

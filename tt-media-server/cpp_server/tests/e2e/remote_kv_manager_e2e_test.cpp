@@ -26,6 +26,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "messaging/kafka_consumer.hpp"
 #include "messaging/kafka_producer.hpp"
@@ -177,6 +178,174 @@ class MockMigrationWorker {
 };
 
 // ---------------------------------------------------------------------------
+// MockDownloadWorker
+// ---------------------------------------------------------------------------
+//
+// Same shape as MockMigrationWorker but wired to the download topics and
+// answers with DownloadResponseMessage. `downloadedBlockHashes` is echoed
+// verbatim into the ack so scenarios can assert the hashes propagate back
+// through RemoteKVManagerImpl to getDownloadResult().
+class MockDownloadWorker {
+ public:
+  struct Behavior {
+    MigrationStatus replyStatus{MigrationStatus::SUCCESSFUL};
+    std::chrono::milliseconds replyDelay{0};
+    bool dropRequest{false};
+    std::vector<uint64_t> downloadedBlockHashes{};
+  };
+
+  MockDownloadWorker(const std::string& brokers,
+                     const std::string& requestTopic,
+                     const std::string& ackTopic, const std::string& groupId) {
+    requestConsumer = std::make_unique<tt::messaging::KafkaConsumer>(
+        tt::messaging::KafkaConsumerConfig{
+            .brokers = brokers, .topic = requestTopic, .group_id = groupId});
+    ackProducer = std::make_unique<tt::messaging::KafkaProducer>(
+        tt::messaging::KafkaProducerConfig{.brokers = brokers,
+                                           .topic = ackTopic});
+  }
+
+  ~MockDownloadWorker() { stop(); }
+
+  MockDownloadWorker(const MockDownloadWorker&) = delete;
+  MockDownloadWorker& operator=(const MockDownloadWorker&) = delete;
+
+  void setBehavior(Behavior b) {
+    std::lock_guard<std::mutex> lock(mtx);
+    behavior = std::move(b);
+  }
+
+  Behavior getBehavior() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return behavior;
+  }
+
+  void start() {
+    bool expected = false;
+    if (!running.compare_exchange_strong(expected, true)) return;
+    thread = std::thread([this] { run(); });
+  }
+
+  void stop() {
+    bool expected = true;
+    if (!running.compare_exchange_strong(expected, false)) return;
+    if (thread.joinable()) thread.join();
+  }
+
+  std::size_t requestsReceived() const {
+    return received.load(std::memory_order_relaxed);
+  }
+
+ private:
+  void run() {
+    while (running.load(std::memory_order_relaxed)) {
+      auto raw = requestConsumer->receive(50);
+      if (!raw.has_value()) continue;
+
+      auto parsed = tt::messaging::parseDownloadRequest(*raw);
+      if (!parsed.has_value()) continue;
+
+      received.fetch_add(1, std::memory_order_relaxed);
+
+      const Behavior b = getBehavior();
+      if (b.dropRequest) continue;
+
+      if (b.replyDelay.count() > 0) {
+        std::this_thread::sleep_for(b.replyDelay);
+      }
+
+      const tt::messaging::DownloadResponseMessage response{
+          .id = parsed->id,
+          .status = b.replyStatus,
+          .downloaded_block_hashes =
+              b.replyStatus == MigrationStatus::SUCCESSFUL
+                  ? b.downloadedBlockHashes
+                  : std::vector<uint64_t>{},
+      };
+      const std::string payload = tt::messaging::serialize(response);
+      std::string err;
+      ackProducer->send(payload, &err);
+    }
+  }
+
+  std::unique_ptr<tt::messaging::KafkaConsumer> requestConsumer;
+  std::unique_ptr<tt::messaging::KafkaProducer> ackProducer;
+  std::atomic<bool> running{false};
+  std::thread thread;
+  mutable std::mutex mtx;
+  Behavior behavior;
+  std::atomic<std::size_t> received{0};
+};
+
+// ---------------------------------------------------------------------------
+// MockOffloadWorker
+// ---------------------------------------------------------------------------
+//
+// Offload is fire-and-forget from the manager's side, so this mock only
+// needs a request consumer -- it counts / records what showed up on the
+// wire. No ack producer, no scriptable reply.
+class MockOffloadWorker {
+ public:
+  MockOffloadWorker(const std::string& brokers,
+                    const std::string& requestTopic,
+                    const std::string& groupId) {
+    requestConsumer = std::make_unique<tt::messaging::KafkaConsumer>(
+        tt::messaging::KafkaConsumerConfig{
+            .brokers = brokers, .topic = requestTopic, .group_id = groupId});
+  }
+
+  ~MockOffloadWorker() { stop(); }
+
+  MockOffloadWorker(const MockOffloadWorker&) = delete;
+  MockOffloadWorker& operator=(const MockOffloadWorker&) = delete;
+
+  void start() {
+    bool expected = false;
+    if (!running.compare_exchange_strong(expected, true)) return;
+    thread = std::thread([this] { run(); });
+  }
+
+  void stop() {
+    bool expected = true;
+    if (!running.compare_exchange_strong(expected, false)) return;
+    if (thread.joinable()) thread.join();
+  }
+
+  std::size_t requestsReceived() const {
+    return received.load(std::memory_order_relaxed);
+  }
+
+  std::vector<tt::messaging::OffloadRequestMessage> takeReceived() {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto out = std::move(receivedMessages);
+    receivedMessages.clear();
+    return out;
+  }
+
+ private:
+  void run() {
+    while (running.load(std::memory_order_relaxed)) {
+      auto raw = requestConsumer->receive(50);
+      if (!raw.has_value()) continue;
+
+      auto parsed = tt::messaging::parseOffloadRequest(*raw);
+      if (!parsed.has_value()) continue;
+
+      received.fetch_add(1, std::memory_order_relaxed);
+      std::lock_guard<std::mutex> lock(mtx);
+      receivedMessages.push_back(std::move(*parsed));
+    }
+  }
+
+  std::unique_ptr<tt::messaging::KafkaConsumer> requestConsumer;
+  std::atomic<bool> running{false};
+  std::thread thread;
+  mutable std::mutex mtx;
+  std::vector<tt::messaging::OffloadRequestMessage> receivedMessages;
+  std::atomic<std::size_t> received{0};
+};
+
+// ---------------------------------------------------------------------------
 // Fixture
 // ---------------------------------------------------------------------------
 
@@ -195,8 +364,13 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
     const auto suffix = uniqueSuffix();
     requestTopic = "e2e-kv-req-" + suffix;
     ackTopic = "e2e-kv-ack-" + suffix;
+    downloadRequestTopic = "e2e-kv-dl-req-" + suffix;
+    downloadAckTopic = "e2e-kv-dl-ack-" + suffix;
+    offloadRequestTopic = "e2e-kv-of-req-" + suffix;
     clientGroup = "e2e-client-" + suffix;
     workerGroup = "e2e-worker-" + suffix;
+    downloadWorkerGroup = "e2e-dl-worker-" + suffix;
+    offloadWorkerGroup = "e2e-of-worker-" + suffix;
   }
 
   std::unique_ptr<RemoteKVManagerImpl> makeManager(
@@ -207,15 +381,38 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
     auto consumer = std::make_unique<tt::messaging::KafkaConsumer>(
         tt::messaging::KafkaConsumerConfig{
             .brokers = brokers, .topic = ackTopic, .group_id = clientGroup});
+    auto downloadProducer = std::make_unique<tt::messaging::KafkaProducer>(
+        tt::messaging::KafkaProducerConfig{.brokers = brokers,
+                                           .topic = downloadRequestTopic});
+    auto downloadConsumer = std::make_unique<tt::messaging::KafkaConsumer>(
+        tt::messaging::KafkaConsumerConfig{.brokers = brokers,
+                                           .topic = downloadAckTopic,
+                                           .group_id = clientGroup + "-dl"});
+    auto offloadProducer = std::make_unique<tt::messaging::KafkaProducer>(
+        tt::messaging::KafkaProducerConfig{.brokers = brokers,
+                                           .topic = offloadRequestTopic});
     return std::make_unique<RemoteKVManagerImpl>(
         std::move(producer), std::move(consumer),
         /*migrationWorkerPoolSize=*/1, timeout,
-        /*sweepInterval=*/200ms, /*drainPollMs=*/50);
+        /*sweepInterval=*/200ms, /*drainPollMs=*/50,
+        std::move(downloadProducer), std::move(downloadConsumer),
+        std::move(offloadProducer));
   }
 
   std::unique_ptr<MockMigrationWorker> makeWorker() {
     return std::make_unique<MockMigrationWorker>(brokers, requestTopic,
                                                  ackTopic, workerGroup);
+  }
+
+  std::unique_ptr<MockDownloadWorker> makeDownloadWorker() {
+    return std::make_unique<MockDownloadWorker>(brokers, downloadRequestTopic,
+                                                downloadAckTopic,
+                                                downloadWorkerGroup);
+  }
+
+  std::unique_ptr<MockOffloadWorker> makeOffloadWorker() {
+    return std::make_unique<MockOffloadWorker>(brokers, offloadRequestTopic,
+                                               offloadWorkerGroup);
   }
 
   static MigrationRequest sampleRequest() {
@@ -226,11 +423,41 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
                             .position_end = 128};
   }
 
+  static DownloadKVRequest sampleDownloadRequest() {
+    return DownloadKVRequest{
+        .dstSlot = 4,
+        .blocks =
+            {
+                KVCacheBlockRef{
+                    .blockHash = 0xAAAAAAAA, .positionId = 0, .tokenCount = 32},
+                KVCacheBlockRef{.blockHash = 0xBBBBBBBB,
+                                .positionId = 32,
+                                .tokenCount = 32},
+            },
+    };
+  }
+
+  static OffloadKVRequest sampleOffloadRequest() {
+    return OffloadKVRequest{
+        .srcSlot = 7,
+        .blocks =
+            {
+                KVCacheBlockRef{
+                    .blockHash = 0xC0FFEE, .positionId = 0, .tokenCount = 32},
+            },
+    };
+  }
+
   std::string brokers;
   std::string requestTopic;
   std::string ackTopic;
+  std::string downloadRequestTopic;
+  std::string downloadAckTopic;
+  std::string offloadRequestTopic;
   std::string clientGroup;
   std::string workerGroup;
+  std::string downloadWorkerGroup;
+  std::string offloadWorkerGroup;
 };
 
 // ---------------------------------------------------------------------------
@@ -333,6 +560,137 @@ TEST_F(RemoteKVManagerE2ETest, WorkerReplyFailedPropagates) {
       << "ms";
 
   EXPECT_EQ(worker->requestsReceived(), 1u);
+
+  worker->stop();
+}
+
+// ---------------------------------------------------------------------------
+// Download scenarios
+// ---------------------------------------------------------------------------
+
+TEST_F(RemoteKVManagerE2ETest, DownloadSucceedsAndHashesPropagate) {
+  auto manager = makeManager();
+  auto worker = makeDownloadWorker();
+  const std::vector<uint64_t> expectedHashes{0xAAAAAAAA, 0xBBBBBBBB};
+  worker->setBehavior({
+      .replyStatus = MigrationStatus::SUCCESSFUL,
+      .replyDelay = 500ms,
+      .downloadedBlockHashes = expectedHashes,
+  });
+  worker->start();
+
+  std::this_thread::sleep_for(KAFKA_GROUP_JOIN_WARMUP);
+
+  const uint64_t id = manager->downloadFromStore(sampleDownloadRequest());
+  ASSERT_NE(id, 0u);
+  EXPECT_EQ(manager->getDownloadResult(id).status,
+            MigrationStatus::IN_PROGRESS);
+
+  ASSERT_TRUE(waitFor(
+      [&] {
+        return manager->getDownloadResult(id).status ==
+               MigrationStatus::SUCCESSFUL;
+      },
+      POLL_DEADLINE))
+      << "download did not reach SUCCESSFUL within " << POLL_DEADLINE.count()
+      << "ms";
+
+  const auto result = manager->getDownloadResult(id);
+  EXPECT_EQ(result.status, MigrationStatus::SUCCESSFUL);
+  EXPECT_EQ(result.downloadedBlockHashes, expectedHashes);
+  EXPECT_EQ(worker->requestsReceived(), 1u);
+
+  worker->stop();
+}
+
+TEST_F(RemoteKVManagerE2ETest, DownloadDroppedFailsViaTimeoutSweeper) {
+  constexpr auto managerTimeout = 1s;
+  auto manager = makeManager(managerTimeout);
+  auto worker = makeDownloadWorker();
+  worker->setBehavior({.dropRequest = true});
+  worker->start();
+
+  std::this_thread::sleep_for(KAFKA_GROUP_JOIN_WARMUP);
+
+  const uint64_t id = manager->downloadFromStore(sampleDownloadRequest());
+  ASSERT_NE(id, 0u);
+
+  ASSERT_TRUE(waitFor(
+      [&] {
+        return manager->getDownloadResult(id).status ==
+               MigrationStatus::FAILED;
+      },
+      POLL_DEADLINE))
+      << "sweeper never marked the dropped download FAILED within "
+      << POLL_DEADLINE.count() << "ms";
+
+  EXPECT_TRUE(manager->getDownloadResult(id).downloadedBlockHashes.empty());
+  EXPECT_EQ(worker->requestsReceived(), 1u);
+
+  worker->stop();
+}
+
+TEST_F(RemoteKVManagerE2ETest, DownloadReplyFailedPropagates) {
+  auto manager = makeManager();
+  auto worker = makeDownloadWorker();
+  worker->setBehavior({
+      .replyStatus = MigrationStatus::FAILED,
+      .replyDelay = 0ms,
+  });
+  worker->start();
+
+  std::this_thread::sleep_for(KAFKA_GROUP_JOIN_WARMUP);
+
+  const uint64_t id = manager->downloadFromStore(sampleDownloadRequest());
+  ASSERT_NE(id, 0u);
+
+  ASSERT_TRUE(waitFor(
+      [&] {
+        return manager->getDownloadResult(id).status ==
+               MigrationStatus::FAILED;
+      },
+      POLL_DEADLINE))
+      << "FAILED download-ack did not propagate within "
+      << POLL_DEADLINE.count() << "ms";
+
+  EXPECT_TRUE(manager->getDownloadResult(id).downloadedBlockHashes.empty());
+  EXPECT_EQ(worker->requestsReceived(), 1u);
+
+  worker->stop();
+}
+
+// ---------------------------------------------------------------------------
+// Offload scenarios
+// ---------------------------------------------------------------------------
+
+TEST_F(RemoteKVManagerE2ETest, OffloadIsFireAndForget) {
+  auto manager = makeManager();
+  auto worker = makeOffloadWorker();
+  worker->start();
+
+  std::this_thread::sleep_for(KAFKA_GROUP_JOIN_WARMUP);
+
+  const auto req = sampleOffloadRequest();
+  const uint64_t id = manager->offloadToStore(req);
+  ASSERT_NE(id, 0u);
+
+  // Fire-and-forget: manager keeps no per-submission state, so status is
+  // UNKNOWN by design.
+  EXPECT_EQ(manager->getOffloadStatus(id), MigrationStatus::UNKNOWN);
+
+  // The mock, however, should observe exactly one request landing on the
+  // offload topic within the poll deadline.
+  ASSERT_TRUE(waitFor([&] { return worker->requestsReceived() == 1u; },
+                      POLL_DEADLINE))
+      << "offload request never landed on the wire within "
+      << POLL_DEADLINE.count() << "ms";
+
+  const auto received = worker->takeReceived();
+  ASSERT_EQ(received.size(), 1u);
+  EXPECT_EQ(received[0].id, id);
+  EXPECT_EQ(received[0].src_slot, req.srcSlot);
+  ASSERT_EQ(received[0].blocks.size(), req.blocks.size());
+  EXPECT_EQ(received[0].blocks[0].blockHash, req.blocks[0].blockHash);
 
   worker->stop();
 }
