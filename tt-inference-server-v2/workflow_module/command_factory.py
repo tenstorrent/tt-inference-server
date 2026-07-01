@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime as _dt
 import json
 import logging
 import os
@@ -289,7 +288,6 @@ def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
     payload = {
         "team_id": "tenstorrent",
         "token_id": "debug-test",
-        "exp": int(_dt.datetime.now(_dt.timezone.utc).timestamp()) + 24 * 3600,
     }
     encoded = _jwt.encode(payload, secret, algorithm="HS256")
     os.environ["OPENAI_API_KEY"] = encoded
