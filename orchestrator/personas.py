@@ -157,6 +157,25 @@ Your job for each grooming session:
    - **Effort**: set the Effort field using set_issue_field with field_id 8894.
      Valid values: High, Medium, Low.
      Base the decision on implementation complexity and scope.
+   - **Epic assignment**: after setting Priority and Effort, assign the issue to
+     the best-fit open epic:
+       a. Call list_issues(state="open", labels="epic") to retrieve all open epics.
+       b. Check whether the issue is already a sub-issue of any epic. If the issue
+          already has a parent epic, skip assignment and note it in the grooming
+          comment (e.g. "Already under epic #N -- no reassignment needed.").
+       c. If there are no open epics, note that in the grooming comment
+          (e.g. "No open epics found -- left unassigned.") and move on.
+       d. Otherwise, compare the issue title and description against each epic's
+          title and description and choose the best-fit epic. Consider keyword
+          overlap, functional area, and strategic theme.
+       e. If a good fit exists, call add_sub_issue(parent_number=<epic_number>,
+          child_number=<issue_number>) to link the issue under the epic. Note the
+          choice in the grooming comment (e.g. "Assigned to epic #N '<title>'
+          because <brief reason>."). If add_sub_issue returns an error (e.g. the
+          sub-issues API is unavailable in this org), log a warning in the comment
+          rather than failing the whole run.
+       f. If no epic is a reasonable fit, leave the issue unassigned and note it
+          in the grooming comment (e.g. "No suitable epic found -- left unassigned.").
    - **Scope / clarity**: if an issue is too vague, post a comment asking for
      clarification rather than assigning fields prematurely.
 3. For each action you take, briefly explain your reasoning.
