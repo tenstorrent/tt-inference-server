@@ -122,6 +122,55 @@ stampCachedPromptTokens(
       };
 }
 
+void populateRequestFromContinuationHit(
+    tt::domain::llm::LLMRequest& req,
+    const SessionManager::AcquiredSession& acquired,
+    const tt::utils::PrefixCachingInfo& routingInfo,
+    const std::shared_ptr<SessionManager>& sessionManager,
+    bool responseIdPath) {
+  req.slotId = acquired.slotId;
+  req.session = sessionManager->getSession(acquired.sessionId);
+  req.sessionId = acquired.sessionId;
+  req.continuation = true;
+
+  const uint32_t matchedTokens = acquired.numberOfMatchedTokens;
+  const uint32_t thinkTokens = acquired.accumulatedThinkTokens;
+  req.kv_position_id = matchedTokens + thinkTokens;
+  req.accumulated_think_tokens = static_cast<int>(thinkTokens);
+
+  if (auto* promptTokens = std::get_if<std::vector<int>>(&req.prompt)) {
+    if (responseIdPath) {
+      session_resolution::applyDeltaPrompt(req, matchedTokens,
+                                           {.skipUnlessRegularMode = true,
+                                            .setKvPositionId = false,
+                                            .logPrefix = {}});
+      req.session->initTokenAccumulator(
+          *promptTokens, routingInfo.blocks,
+          [mgr = sessionManager](
+              const std::string& sessionId,
+              const std::vector<tt::utils::BlockHashInfo>& blocks) {
+            mgr->registerPrefixHash(sessionId, blocks);
+          });
+    } else {
+      std::vector<int> fullPrompt = *promptTokens;
+      session_resolution::applyDeltaPrompt(req, matchedTokens,
+                                           {.skipUnlessRegularMode = true,
+                                            .setKvPositionId = false,
+                                            .logPrefix = {}});
+      if (!fullPrompt.empty()) {
+        req.session->initTokenAccumulator(
+            std::move(fullPrompt), /*initialBlocks=*/{},
+            [mgr = sessionManager](
+                const std::string& sessionId,
+                const std::vector<tt::utils::BlockHashInfo>& blocks) {
+              mgr->registerPrefixHash(sessionId, blocks);
+            },
+            /*parentThinkCount=*/thinkTokens);
+      }
+    }
+  }
+}
+
 }  // namespace
 
 void LLMPipeline::resolveSession(
@@ -153,173 +202,92 @@ void LLMPipeline::resolveSession(
   TT_LOG_INFO("[LLMPipeline] Routing taskId={} blocks={}", req->task_id,
               routingInfo.blocks.size());
 
-  // Layer 1a: Responses API continuation. When the previous_response_id is
-  // supplied, we route by that id instead of the content-prefix
-  // hash (parallel to the prefixIndex path below). The token delta is still
-  // computed by the hasher so we only prefill the new turn.
   const bool useResponseId =
       req->previousResponseId.has_value() && !req->previousResponseId->empty();
-  if (useResponseId) {
-    try {
-      const auto tAcquireStart = std::chrono::steady_clock::now();
-      auto acquired = sessionManager_->tryAcquireByResponseId(
-          *req->previousResponseId, cancelFn);
-      const auto acquireUs =
-          std::chrono::duration_cast<std::chrono::microseconds>(
-              std::chrono::steady_clock::now() - tAcquireStart)
-              .count();
-      TT_LOG_INFO(
-          "[SessionTimer] taskId={} tryAcquireByResponseId_us={} hit={}",
-          req->task_id, acquireUs, acquired.has_value());
 
-      if (acquired.has_value()) {
-        tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(true);
+  std::optional<SessionManager::AcquiredSession> prefixMiss;
+  try {
+    const auto tAcquireStart = std::chrono::steady_clock::now();
+    const auto resolveResult = sessionManager_->tryResolve(
+        req->previousResponseId, routingInfo.blocks, cancelFn);
+    const auto acquireUs =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - tAcquireStart)
+            .count();
+    TT_LOG_INFO(
+        "[SessionTimer] taskId={} tryResolve_us={} outcome={}",
+        req->task_id, acquireUs,
+        resolveResult.outcome == PrefixCacheResolveOutcome::Hit ? "hit"
+                                                                : "miss");
+
+    if (resolveResult.outcome == PrefixCacheResolveOutcome::Hit) {
+      const auto& acquired = resolveResult.acquired;
+      tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(true);
+      if (useResponseId) {
         TT_LOG_INFO(
             "[LLMPipeline] Response-id HIT taskId={} prevId={} sessionId={} "
             "slotId={}",
-            req->task_id, *req->previousResponseId, acquired->sessionId,
-            acquired->slotId);
-        req->slotId = acquired->slotId;
-        req->session = sessionManager_->getSession(acquired->sessionId);
-        req->sessionId = acquired->sessionId;
-        req->continuation = true;
-
-        auto [matchedTokens, thinkTokens] =
-            sessionManager_->computeMatchedTokens(acquired->sessionId,
-                                                  routingInfo.blocks);
-        // kv_position_id is the first free KV index: matched prompt tokens plus
-        // the think tokens already resident in the cache. The delta prompt is
-        // trimmed by the same matched count, so kv_position_id stays equal to
-        // the absolute position of the first token handed to the worker.
-        req->kv_position_id = matchedTokens + thinkTokens;
-        session_resolution::applyDeltaPrompt(*req, matchedTokens,
-                                             {.skipUnlessRegularMode = true,
-                                              .setKvPositionId = false,
-                                              .logPrefix = {}});
-        TT_LOG_INFO(
-            "[LLMPipeline] Response-id delta taskId={} matchedTokens={} "
-            "thinkTokens={} deltaTokens={}",
-            req->task_id, matchedTokens, thinkTokens, req->prompt_tokens_count);
-
-        if (auto* deltaTokens = std::get_if<std::vector<int>>(&req->prompt)) {
-          req->session->initTokenAccumulator(
-              *deltaTokens, routingInfo.blocks,
-              [mgr = sessionManager_](
-                  const std::string& sessionId,
-                  const std::vector<tt::utils::BlockHashInfo>& blocks) {
-                mgr->registerPrefixHash(sessionId, blocks);
-              });
-        }
-        sessionManager_->registerPrefixHash(acquired->sessionId,
-                                            routingInfo.blocks);
-        // Eagerly drop any resident tail past the common prefix: this turn's
-        // new/diverged blocks are not computed yet. The full prefix is marked
-        // resident again at stream end (finalizeAndRegisterHashes).
-        sessionManager_->shrinkResidentPrefixToMatchedTokens(
-            acquired->sessionId, matchedTokens);
-        if (req->responseId.has_value()) {
-          sessionManager_->updateResponseId(*req->previousResponseId,
-                                            *req->responseId);
-        }
-        info.validSessionFound = true;
-        info.registrationHashes = routingInfo.hashes();
-        onResolved(info);
-        return;
-      }
-
-      tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(false);
-      TT_LOG_INFO(
-          "[LLMPipeline] Response-id MISS taskId={} prevId={} → allocating "
-          "new session",
-          req->task_id, *req->previousResponseId);
-    } catch (const services::SessionInFlightException& e) {
-      TT_LOG_WARN("[LLMPipeline] Session busy for prevId={}: {}",
-                  *req->previousResponseId, e.what());
-      onError({SessionErrorType::RATE_LIMIT, e.what()});
-      return;
-    }
-  }
-
-  // Layer 1b: Prefix-cache routing. Skipped when we routed by response id.
-  std::optional<SessionManager::AcquiredSession> acquired;
-  if (!useResponseId && !routingInfo.blocks.empty()) {
-    try {
-      const auto tAcquireStart = std::chrono::steady_clock::now();
-
-      acquired =
-          sessionManager_->tryAcquireByPrefixHash(routingInfo.blocks, cancelFn);
-
-      const auto acquireUs =
-          std::chrono::duration_cast<std::chrono::microseconds>(
-              std::chrono::steady_clock::now() - tAcquireStart)
-              .count();
-      TT_LOG_INFO(
-          "[SessionTimer] taskId={} tryAcquireByPrefixHash_us={} hit={}",
-          req->task_id, acquireUs, acquired.has_value());
-
-      if (acquired.has_value() && acquired->sessionFound) {
-        tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(true);
+            req->task_id, *req->previousResponseId, acquired.sessionId,
+            acquired.slotId);
+      } else {
         TT_LOG_INFO(
             "[LLMPipeline] Prefix cache HIT taskId={} sessionId={} "
             "slotId={} matchedTokens={} thinkTokens={}",
-            req->task_id, acquired->sessionId, acquired->slotId,
-            acquired->numberOfMatchedTokens, acquired->accumulatedThinkTokens);
-        req->slotId = acquired->slotId;
-        req->session = sessionManager_->getSession(acquired->sessionId);
-        req->sessionId = acquired->sessionId;
-        req->continuation = true;
-        // kv_position_id is the first free KV index: it accounts for both the
-        // matched non-thinking tokens and the thinking tokens (resident in the
-        // cache but absent from the hash). The delta prompt is trimmed by the
-        // same matched count so kv_position_id stays equal to the absolute
-        // position of the first token handed to the worker.
-        const uint32_t matchedTokens = acquired->numberOfMatchedTokens;
-        req->kv_position_id = matchedTokens + acquired->accumulatedThinkTokens;
-        req->accumulated_think_tokens =
-            static_cast<int>(acquired->accumulatedThinkTokens);
-
-        std::vector<int> fullPrompt;
-        if (auto* p = std::get_if<std::vector<int>>(&req->prompt)) {
-          fullPrompt = *p;
-        }
-        session_resolution::applyDeltaPrompt(*req, matchedTokens,
-                                             {.skipUnlessRegularMode = true,
-                                              .setKvPositionId = false,
-                                              .logPrefix = {}});
-
-        if (!fullPrompt.empty()) {
-          req->session->initTokenAccumulator(
-              std::move(fullPrompt), /*initialBlocks=*/{},
-              [mgr = sessionManager_](
-                  const std::string& sessionId,
-                  const std::vector<tt::utils::BlockHashInfo>& blocks) {
-                mgr->registerPrefixHash(sessionId, blocks);
-              },
-              /*parentThinkCount=*/acquired->accumulatedThinkTokens);
-        }
-        sessionManager_->registerPrefixHash(acquired->sessionId,
-                                            routingInfo.blocks);
-        // Eagerly drop any resident tail past the common prefix: this turn's
-        // new/diverged blocks are not computed yet. The full prefix is marked
-        // resident again at stream end (finalizeAndRegisterHashes).
-        sessionManager_->shrinkResidentPrefixToMatchedTokens(
-            acquired->sessionId, acquired->numberOfMatchedTokens);
-        info.validSessionFound = true;
-        info.registrationHashes = routingInfo.hashes();
-        onResolved(info);
-        return;
+            req->task_id, acquired.sessionId, acquired.slotId,
+            acquired.numberOfMatchedTokens, acquired.accumulatedThinkTokens);
       }
 
-      tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(false);
+      populateRequestFromContinuationHit(*req, acquired, routingInfo,
+                                         sessionManager_, useResponseId);
+
       TT_LOG_INFO(
-          "[LLMPipeline] Prefix cache MISS taskId={} blocks={} → allocating "
-          "new session",
-          req->task_id, routingInfo.blocks.size());
-    } catch (const services::SessionInFlightException& e) {
-      TT_LOG_WARN("[LLMPipeline] All sessions busy: {}", e.what());
-      onError({SessionErrorType::RATE_LIMIT, e.what()});
+          "[LLMPipeline] Continuation delta taskId={} matchedTokens={} "
+          "thinkTokens={} deltaTokens={}",
+          req->task_id, acquired.numberOfMatchedTokens,
+          acquired.accumulatedThinkTokens, req->prompt_tokens_count);
+
+      ContinuationCommit commit;
+      commit.sessionId = acquired.sessionId;
+      commit.blocks = routingInfo.blocks;
+      commit.matchedTokens = acquired.numberOfMatchedTokens;
+      if (useResponseId && req->responseId.has_value()) {
+        commit.previousResponseId = req->previousResponseId;
+        commit.responseId = req->responseId;
+      }
+      sessionManager_->commitContinuation(commit);
+
+      info.validSessionFound = true;
+      info.registrationHashes = routingInfo.hashes();
+      onResolved(info);
       return;
     }
+
+    tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(false);
+    if (resolveResult.outcome == PrefixCacheResolveOutcome::Miss &&
+        !resolveResult.acquired.candidatesList.empty()) {
+      prefixMiss = resolveResult.acquired;
+    }
+
+    if (useResponseId) {
+      TT_LOG_INFO(
+          "[LLMPipeline] Response-id MISS taskId={} prevId={} -> allocating "
+          "new session",
+          req->task_id, *req->previousResponseId);
+    } else if (!routingInfo.blocks.empty()) {
+      TT_LOG_INFO(
+          "[LLMPipeline] Prefix cache MISS taskId={} blocks={} -> allocating "
+          "new session",
+          req->task_id, routingInfo.blocks.size());
+    }
+  } catch (const services::SessionInFlightException& e) {
+    if (useResponseId) {
+      TT_LOG_WARN("[LLMPipeline] Session busy for prevId={}: {}",
+                  *req->previousResponseId, e.what());
+    } else {
+      TT_LOG_WARN("[LLMPipeline] All sessions busy: {}", e.what());
+    }
+    onError({SessionErrorType::RATE_LIMIT, e.what()});
+    return;
   }
 
   if (routingInfo.blocks.empty()) {
@@ -330,9 +298,9 @@ void LLMPipeline::resolveSession(
 
   // Layer 2: Allocate a new session. Async — onCompletion runs on `loop`.
   // Before allocating, check if there's a candidate slot worth copying from.
-  auto copyPlan = acquired.has_value()
+  auto copyPlan = prefixMiss.has_value()
                       ? session_resolution::prepareSlotCopy(
-                            *sessionManager_, acquired->candidatesList,
+                            *sessionManager_, prefixMiss->candidatesList,
                             req->task_id, "[LLMPipeline]")
                       : std::nullopt;
 

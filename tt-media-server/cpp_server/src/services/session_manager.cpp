@@ -655,6 +655,18 @@ SessionManager::tryAcquireByResponseId(const std::string& previousResponseId,
                                                    std::move(cancelFn));
 }
 
+PrefixCacheResolveResult SessionManager::tryResolve(
+    const std::optional<std::string>& previousResponseId,
+    const std::vector<utils::BlockHashInfo>& blockInfos,
+    std::function<void()> cancelFn) {
+  return prefixCacheRouter->tryResolve(previousResponseId, blockInfos,
+                                       std::move(cancelFn));
+}
+
+void SessionManager::commitContinuation(const ContinuationCommit& commit) {
+  prefixCacheRouter->commitContinuation(commit);
+}
+
 void SessionManager::registerResponseId(const std::string& sessionId,
                                         const std::string& responseId) {
   prefixCacheRouter->registerResponseId(sessionId, responseId);

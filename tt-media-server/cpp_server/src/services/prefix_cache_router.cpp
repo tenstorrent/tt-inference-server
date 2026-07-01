@@ -164,6 +164,45 @@ PrefixCacheRouter::tryAcquireByResponseId(const std::string& previousResponseId,
   return std::nullopt;
 }
 
+PrefixCacheResolveResult PrefixCacheRouter::tryResolve(
+    const std::optional<std::string>& previousResponseId,
+    const std::vector<utils::BlockHashInfo>& blockInfos,
+    std::function<void()> cancelFn) {
+  if (previousResponseId.has_value() && !previousResponseId->empty()) {
+    auto acquired = tryAcquireByResponseId(*previousResponseId, cancelFn);
+    if (acquired.has_value() && acquired->sessionFound) {
+      const auto [matchedTokens, thinkTokens] =
+          computeMatchedTokens(acquired->sessionId, blockInfos);
+      acquired->numberOfMatchedTokens = matchedTokens;
+      acquired->accumulatedThinkTokens = thinkTokens;
+      return {PrefixCacheResolveOutcome::Hit, std::move(*acquired)};
+    }
+    return {PrefixCacheResolveOutcome::Miss, {}};
+  }
+
+  if (blockInfos.empty()) {
+    return {PrefixCacheResolveOutcome::Miss, {}};
+  }
+
+  auto acquired = tryAcquireByPrefixHash(blockInfos, cancelFn);
+  if (acquired.has_value() && acquired->sessionFound) {
+    return {PrefixCacheResolveOutcome::Hit, std::move(*acquired)};
+  }
+  if (acquired.has_value()) {
+    return {PrefixCacheResolveOutcome::Miss, std::move(*acquired)};
+  }
+  return {PrefixCacheResolveOutcome::Miss, {}};
+}
+
+void PrefixCacheRouter::commitContinuation(const ContinuationCommit& commit) {
+  registerPrefixHash(commit.sessionId, commit.blocks);
+  lease.shrinkResidentPrefixToMatchedTokens(commit.sessionId,
+                                            commit.matchedTokens);
+  if (commit.previousResponseId.has_value() && commit.responseId.has_value()) {
+    updateResponseId(*commit.previousResponseId, *commit.responseId);
+  }
+}
+
 void PrefixCacheRouter::registerPrefixHash(
     const std::string& sessionId,
     const std::vector<utils::BlockHashInfo>& blockInfos) {
