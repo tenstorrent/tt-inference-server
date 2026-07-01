@@ -42,6 +42,7 @@
 namespace {
 
 volatile std::sig_atomic_t gShutdownRequested = 0;
+volatile std::sig_atomic_t gSignalCount = 0;
 
 // Returns true if the port is available, false if already in use.
 bool probePort(const std::string& host, uint16_t port) {
@@ -64,9 +65,20 @@ bool probePort(const std::string& host, uint16_t port) {
 }
 
 void signalHandler(int signal) {
-  TT_LOG_WARN("\n[Main] Received signal {}, initiating shutdown...", signal);
-  gShutdownRequested = 1;
-  drogon::app().quit();
+  // First signal: request a graceful shutdown. Subsequent signal: the graceful
+  // path is stuck (e.g. a thread join that never completes), so force-exit with
+  // the conventional 128+signal code rather than leaving the user mashing Ctrl+C.
+  bool firstSignal = (gSignalCount == 0);
+  gSignalCount = 1;
+  if (firstSignal) {
+    TT_LOG_WARN("\n[Main] Received signal {}, initiating shutdown...", signal);
+    gShutdownRequested = 1;
+    drogon::app().quit();
+    return;
+  }
+  TT_LOG_WARN("\n[Main] Received signal {} again; forcing exit", signal);
+  std::signal(signal, SIG_DFL);
+  std::raise(signal);
 }
 
 /** Map the runtime ModelService to the metrics layout this binary's runner
