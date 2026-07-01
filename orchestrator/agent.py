@@ -2,7 +2,7 @@
 
 import json
 from openai import OpenAI
-from orchestrator.config import LITELLM_BASE_URL, get_api_key
+from orchestrator.config import PROVIDER_REGISTRY, get_api_key
 import orchestrator.tools as T
 
 # Default hard cap on tool-call iterations.  This is a safety rail, not a
@@ -33,8 +33,20 @@ class MaxToolRoundsError(Exception):
         )
 
 
-def _client(api_key: str | None = None) -> OpenAI:
-    return OpenAI(base_url=LITELLM_BASE_URL, api_key=get_api_key(api_key))
+def _client(provider: str, api_key: str | None = None) -> OpenAI:
+    if provider not in PROVIDER_REGISTRY:
+        raise ValueError(
+            f"Unknown provider {provider!r}. Valid providers: {sorted(PROVIDER_REGISTRY)}"
+        )
+    entry = PROVIDER_REGISTRY[provider]
+    if provider == "litellm":
+        key = get_api_key(api_key)
+    else:
+        # Non-litellm providers use their own key resolution; api_key override
+        # is not supported because the CLI --api-key flag targets LiteLLM only.
+        key = entry["get_key"]()
+    return OpenAI(base_url=entry["base_url"], api_key=key)
+
 
 def run(
     persona: dict,
@@ -45,7 +57,8 @@ def run(
     api_key: str | None = None,
     exclude_tools: set[str] | None = None,
 ) -> tuple[str, list[dict]]:
-    client = _client(api_key)
+    provider = persona.get("provider", "litellm")
+    client = _client(provider, api_key)
     history = [{"role": "system", "content": persona["system"]}] + messages
 
     blocked = _ORCHESTRATOR_ONLY | (exclude_tools or set())
