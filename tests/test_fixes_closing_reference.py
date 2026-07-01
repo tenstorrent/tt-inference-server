@@ -97,14 +97,71 @@ class TestFixesClosingReference:
         assert any(line.strip() == "Fixes #41" for line in lines)
 
     def test_fixes_reference_at_end_of_body(self):
-        """The closing keyword must appear after the review summary, not buried mid-body."""
+        # Fixes line must appear after the ## Testing section, not buried mid-body.
         body = self._run_orchestrate("Fix issue #41: closing reference")
         fixes_pos = body.rfind("Fixes #41")
-        review_pos = body.find("## Review summary")
-        assert fixes_pos > review_pos
+        testing_pos = body.find("## Testing")
+        assert fixes_pos > testing_pos
 
     def test_first_issue_number_used_when_multiple_hashes(self):
         """Only the first #N in the task is used."""
         body = self._run_orchestrate("Fix #10 which also relates to #20")
         assert "Fixes #10" in body
         assert "Fixes #20" not in body
+
+
+# ---------------------------------------------------------------------------
+# PR body structure — sections matching the PR template (issue #53)
+# ---------------------------------------------------------------------------
+
+class TestPRBodySections:
+    def _run_orchestrate(self, task: str) -> str:
+        import orchestrator.orchestrator as orch_mod
+
+        captured = {}
+
+        def fake_create_pr(title, body, branch, cwd=None):
+            captured["body"] = body
+            return "https://github.com/org/repo/pull/99"
+
+        def fake_agent_run(persona, messages, **kwargs):
+            return "APPROVED", [
+                {"role": "system", "content": "sys"},
+                {"role": "user", "content": "hi"},
+            ]
+
+        with (
+            patch.object(orch_mod.A, "run", side_effect=fake_agent_run),
+            patch("orchestrator.tools.create_pr", side_effect=fake_create_pr),
+        ):
+            orch_mod.orchestrate(task, repo_path="/fake/repo", verbose=False)
+
+        return captured.get("body", "")
+
+    def test_summary_section_present(self):
+        body = self._run_orchestrate("Fix issue #53: add PR template")
+        assert "## Summary" in body
+
+    def test_changes_section_present(self):
+        body = self._run_orchestrate("Fix issue #53: add PR template")
+        assert "## Changes" in body
+
+    def test_testing_section_present(self):
+        body = self._run_orchestrate("Fix issue #53: add PR template")
+        assert "## Testing" in body
+
+    def test_fixes_section_present(self):
+        body = self._run_orchestrate("Fix issue #53: add PR template")
+        assert "## Fixes" in body
+
+    def test_section_order(self):
+        body = self._run_orchestrate("Fix issue #53: add PR template")
+        positions = [body.find(s) for s in ["## Summary", "## Changes", "## Testing", "## Fixes"]]
+        assert positions == sorted(positions), "Sections are out of order"
+
+    def test_fixes_section_na_when_no_issue(self):
+        body = self._run_orchestrate("triage open issues and apply labels")
+        assert "## Fixes" in body
+        fixes_idx = body.find("## Fixes")
+        fixes_content = body[fixes_idx:]
+        assert "N/A" in fixes_content

@@ -211,22 +211,23 @@ def orchestrate(
         f"- **{name}**: {'approved' if ok else obj}"
         for name, (ok, obj) in verdicts.items()
     )
+    issue_number = _parse_issue_number(task)
+    fixes_line = f"Fixes #{issue_number}" if issue_number is not None else "N/A"
     pr_body = textwrap.dedent(f"""
-        ## Task
+        ## Summary
         {task}
 
-        ## Implementation summary
+        ## Changes
         {impl_text[:1000]}
 
-        ## Review summary
+        ## Testing
         {review_summary}
 
         _Opened by multi-agent orchestrator._
-    """).strip()
 
-    issue_number = _parse_issue_number(task)
-    if issue_number is not None:
-        pr_body += f"\n\nFixes #{issue_number}"
+        ## Fixes
+        {fixes_line}
+    """).strip()
 
     from orchestrator.tools import create_pr
     import time

@@ -398,7 +398,16 @@ DEFS = [
                 "type": "object",
                 "properties": {
                     "title":  {"type": "string", "description": "PR title"},
-                    "body":   {"type": "string", "description": "PR description (markdown)"},
+                    "body":   {
+                        "type": "string",
+                        "description": (
+                            "PR description in markdown. Must follow this exact structure:\n"
+                            "## Summary\n<what and why>\n\n"
+                            "## Changes\n<files/components changed and how>\n\n"
+                            "## Testing\n<how the change was tested>\n\n"
+                            "## Fixes\nFixes #N  (or N/A if no issue number)"
+                        ),
+                    },
                     "branch": {"type": "string", "description": "New branch name, e.g. ai/fix-login-validation"},
                 },
                 "required": ["title", "body", "branch"],
