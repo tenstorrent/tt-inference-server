@@ -655,14 +655,14 @@ SessionManager::tryAcquireByResponseId(const std::string& previousResponseId,
                                                    std::move(cancelFn));
 }
 
-void SessionManager::initResponseId(const std::string& sessionId,
-                                    const std::string& responseId) {
-  prefixCacheRouter->initResponseId(sessionId, responseId);
+void SessionManager::registerResponseId(const std::string& sessionId,
+                                        const std::string& responseId) {
+  prefixCacheRouter->registerResponseId(sessionId, responseId);
 }
 
-void SessionManager::registerResponseId(const std::string& previousResponseId,
-                                        const std::string& responseId) {
-  prefixCacheRouter->registerResponseId(previousResponseId, responseId);
+void SessionManager::updateResponseId(const std::string& previousResponseId,
+                                      const std::string& responseId) {
+  prefixCacheRouter->updateResponseId(previousResponseId, responseId);
 }
 
 std::pair<uint32_t, uint32_t> SessionManager::computeMatchedTokens(

@@ -470,8 +470,8 @@ TEST(SessionManagerConcurrency,
 // ---------------------------------------------------------------------------
 // Response-id continuation tests
 //
-// These cover the OpenAI Responses API routing path: initResponseId stores
-// a session under a response id for the first time, registerResponseId re-keys
+// These cover the OpenAI Responses API routing path: registerResponseId stores
+// a session under a response id for the first time, updateResponseId re-keys
 // from one id to another, and tryAcquireByResponseId resolves that id back to
 // the session/slot. The prefix delta is derived from block matching
 // (computeMatchedTokens), not stored in the response-id index.
@@ -484,7 +484,7 @@ TEST(SessionManagerResponseId, RegisterThenAcquire_ReturnsSessionAndSlot) {
   auto sessionId = createSessionWithSlot(manager, lf.loop, 50u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.initResponseId(sessionId, "resp-1");
+  manager.registerResponseId(sessionId, "resp-1");
 
   auto acquired = manager.tryAcquireByResponseId("resp-1", nullptr);
   ASSERT_TRUE(acquired.has_value());
@@ -514,7 +514,7 @@ TEST(SessionManagerResponseId, RegisterEmptyId_IsNoOp) {
   auto sessionId = createSessionWithSlot(manager, lf.loop, 51u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.initResponseId(sessionId, "");
+  manager.registerResponseId(sessionId, "");
 
   auto session = manager.getSession(sessionId);
   ASSERT_TRUE(session);
@@ -528,8 +528,8 @@ TEST(SessionManagerResponseId, ReKey_MovesSessionToNewId) {
   auto sessionId = createSessionWithSlot(manager, lf.loop, 52u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.initResponseId(sessionId, "resp-1");
-  manager.registerResponseId("resp-1", "resp-2");
+  manager.registerResponseId(sessionId, "resp-1");
+  manager.updateResponseId("resp-1", "resp-2");
 
   // The previous turn's id no longer resolves once re-keyed.
   EXPECT_FALSE(manager.tryAcquireByResponseId("resp-1", nullptr).has_value());
@@ -549,7 +549,7 @@ TEST(SessionManagerResponseId, AcquireMarksInFlight_SecondAcquireThrows) {
   auto sessionId = createSessionWithSlot(manager, lf.loop, 53u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.initResponseId(sessionId, "resp-1");
+  manager.registerResponseId(sessionId, "resp-1");
 
   auto acquired = manager.tryAcquireByResponseId("resp-1", nullptr);
   ASSERT_TRUE(acquired.has_value());
@@ -568,7 +568,7 @@ TEST(SessionManagerResponseId, AcquireAfterRelease_Succeeds) {
   auto sessionId = createSessionWithSlot(manager, lf.loop, 54u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.initResponseId(sessionId, "resp-1");
+  manager.registerResponseId(sessionId, "resp-1");
 
   auto first = manager.tryAcquireByResponseId("resp-1", nullptr);
   ASSERT_TRUE(first.has_value());
@@ -587,7 +587,7 @@ TEST(SessionManagerResponseId, CloseSession_RemovesFromResponseIdIndex) {
   auto sessionId = createSessionWithSlot(manager, lf.loop, 56u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.initResponseId(sessionId, "resp-1");
+  manager.registerResponseId(sessionId, "resp-1");
   ASSERT_EQ(manager.closeSession(sessionId),
             tt::services::CloseSessionResult::SUCCESS);
 
@@ -602,7 +602,7 @@ TEST(SessionManagerResponseId, CloseWhileAcquired_FiresCancelFn) {
   auto sessionId = createSessionWithSlot(manager, lf.loop, 57u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.initResponseId(sessionId, "resp-1");
+  manager.registerResponseId(sessionId, "resp-1");
 
   std::atomic<bool> cancelCalled{false};
   auto acquired = manager.tryAcquireByResponseId(
@@ -624,14 +624,14 @@ TEST(SessionManagerResponseId, TwoTurnContinuation_ReKeysAcrossIds) {
   auto sessionId = createSessionWithSlot(manager, lf.loop, 58u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.initResponseId(sessionId, "r1");
+  manager.registerResponseId(sessionId, "r1");
 
   // Turn 2: arrives with previous_response_id="r1".
   auto t2 = manager.tryAcquireByResponseId("r1", nullptr);
   ASSERT_TRUE(t2.has_value());
   EXPECT_EQ(t2->sessionId, sessionId);
   // Re-key under turn 2's own id.
-  manager.registerResponseId("r1", "r2");
+  manager.updateResponseId("r1", "r2");
   manager.getSession(sessionId)->release();
 
   // Turn 3: arrives with previous_response_id="r2".
@@ -666,7 +666,7 @@ TEST(SessionManagerResponseId,
       << "prefixCacheIndex should have been populated by createSession";
 
   // Register the session under response id "r1" and prefix hash.
-  manager.initResponseId(sessionId, "r1");
+  manager.registerResponseId(sessionId, "r1");
 
   manager.registerPrefixHash(sessionId, turn1Blocks);
   // --- Turn 2: arrive via previous_response_id="r1" ---
@@ -691,7 +691,7 @@ TEST(SessionManagerResponseId,
       {400, 0},  // new block from turn 2's output
   };
   manager.registerPrefixHash(sessionId, turn2Blocks);
-  manager.registerResponseId("r1", "r2");
+  manager.updateResponseId("r1", "r2");
   manager.getSession(sessionId)->release();
 
   // The prefix index should now match all 4 blocks.

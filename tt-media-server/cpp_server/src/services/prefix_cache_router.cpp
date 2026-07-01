@@ -206,23 +206,23 @@ void PrefixCacheRouter::registerPrefixHash(
   }
 }
 
-void PrefixCacheRouter::initResponseId(const std::string& sessionId,
-                                       const std::string& responseId) {
+void PrefixCacheRouter::registerResponseId(const std::string& sessionId,
+                                           const std::string& responseId) {
   if (responseId.empty()) {
     return;
   }
-  TT_LOG_INFO("[PrefixCacheRouter] initResponseId: sessionId={}, id={}",
+  TT_LOG_INFO("[PrefixCacheRouter] registerResponseId: sessionId={}, id={}",
               sessionId, responseId);
 
   if (!lease.setSessionResponseId(sessionId, responseId)) {
-    TT_LOG_WARN("[PrefixCacheRouter] initResponseId: sessionId={} not found",
+    TT_LOG_WARN("[PrefixCacheRouter] registerResponseId: sessionId={} not found",
                 sessionId);
     return;
   }
-  responseIdIndex.init(responseId, sessionId);
+  responseIdIndex.registerId(responseId, sessionId);
 }
 
-void PrefixCacheRouter::registerResponseId(
+void PrefixCacheRouter::updateResponseId(
     const std::string& previousResponseId, const std::string& responseId) {
   if (previousResponseId.empty() || responseId.empty()) {
     return;
@@ -232,23 +232,21 @@ void PrefixCacheRouter::registerResponseId(
   }
 
   const auto sessionIdOpt =
-      responseIdIndex.rekey(previousResponseId, responseId);
+      responseIdIndex.updateId(previousResponseId, responseId);
   if (!sessionIdOpt.has_value()) {
     TT_LOG_WARN(
-        "[PrefixCacheRouter] registerResponseId: previousId={} not in index",
+        "[PrefixCacheRouter] updateResponseId: previousId={} not in index",
         previousResponseId);
     return;
   }
   const std::string sessionId = *sessionIdOpt;
   TT_LOG_INFO(
-      "[PrefixCacheRouter] registerResponseId: re-keying sessionId={} from "
-      "id={} to id={}",
+      "[PrefixCacheRouter] updateResponseId: sessionId={} from id={} to id={}",
       sessionId, previousResponseId, responseId);
 
   if (!lease.setSessionResponseId(sessionId, responseId)) {
-    TT_LOG_WARN(
-        "[PrefixCacheRouter] registerResponseId: sessionId={} not found",
-        sessionId);
+    TT_LOG_WARN("[PrefixCacheRouter] updateResponseId: sessionId={} not found",
+                sessionId);
     return;
   }
 }

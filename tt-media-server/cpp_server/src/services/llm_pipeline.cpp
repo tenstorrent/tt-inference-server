@@ -218,8 +218,8 @@ void LLMPipeline::resolveSession(
         sessionManager_->shrinkResidentPrefixToMatchedTokens(
             acquired->sessionId, matchedTokens);
         if (req->responseId.has_value()) {
-          sessionManager_->registerResponseId(*req->previousResponseId,
-                                              *req->responseId);
+          sessionManager_->updateResponseId(*req->previousResponseId,
+                                            *req->responseId);
         }
         info.validSessionFound = true;
         info.registrationHashes = routingInfo.hashes();
@@ -393,7 +393,7 @@ void LLMPipeline::resolveSession(
         // Register under this turn's response id (when present) so the
         // next request's previous_response_id resolves to this session/slot.
         if (req->responseId.has_value()) {
-          mgr->initResponseId(session.getSessionId(), *req->responseId);
+          mgr->registerResponseId(session.getSessionId(), *req->responseId);
         }
 
         std::vector<int> fullPrompt;

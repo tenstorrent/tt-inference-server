@@ -13,16 +13,16 @@ std::optional<std::string> ResponseIdIndex::lookup(
   return responseIdIndex.get(id);
 }
 
-void ResponseIdIndex::init(const std::string& id,
-                           const std::string& sessionId) {
+void ResponseIdIndex::registerId(const std::string& id,
+                                 const std::string& sessionId) {
   if (id.empty()) {
     return;
   }
   responseIdIndex.insert(id, sessionId);
 }
 
-std::optional<std::string> ResponseIdIndex::rekey(const std::string& prevId,
-                                                  const std::string& newId) {
+std::optional<std::string> ResponseIdIndex::updateId(const std::string& prevId,
+                                                     const std::string& newId) {
   if (prevId.empty() || newId.empty() || prevId == newId) {
     return std::nullopt;
   }

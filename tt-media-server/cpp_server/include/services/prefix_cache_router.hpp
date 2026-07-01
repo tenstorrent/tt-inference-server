@@ -45,11 +45,11 @@ class PrefixCacheRouter {
   void registerPrefixHash(const std::string& sessionId,
                           const std::vector<utils::BlockHashInfo>& blockInfos);
 
-  void initResponseId(const std::string& sessionId,
-                      const std::string& responseId);
-
-  void registerResponseId(const std::string& previousResponseId,
+  void registerResponseId(const std::string& sessionId,
                           const std::string& responseId);
+
+  void updateResponseId(const std::string& previousResponseId,
+                        const std::string& responseId);
 
   std::pair<uint32_t, uint32_t> computeMatchedTokens(
       const std::string& sessionId,

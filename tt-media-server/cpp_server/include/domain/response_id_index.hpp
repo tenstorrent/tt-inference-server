@@ -12,9 +12,9 @@ namespace tt::domain {
 class ResponseIdIndex {
  public:
   std::optional<std::string> lookup(const std::string& id) const;
-  void init(const std::string& id, const std::string& sessionId);
-  std::optional<std::string> rekey(const std::string& prevId,
-                                   const std::string& newId);
+  void registerId(const std::string& id, const std::string& sessionId);
+  std::optional<std::string> updateId(const std::string& prevId,
+                                      const std::string& newId);
   void removeIf(const std::string& sessionId, const std::string& id);
 
  private:

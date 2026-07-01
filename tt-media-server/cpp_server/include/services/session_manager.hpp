@@ -142,16 +142,16 @@ class SessionManager : public SessionLease {
   /**
    * First-time registration: associate a brand-new session with a response id.
    */
-  void initResponseId(const std::string& sessionId,
-                      const std::string& responseId);
+  void registerResponseId(const std::string& sessionId,
+                          const std::string& responseId);
 
   /**
-   * Re-key an existing response-id index entry. Looks up the session currently
+   * Update the response-id index entry. Looks up the session currently
    * registered under `previousResponseId`, removes that entry, and inserts a
    * new entry under `responseId`. No-op when either id is empty.
    */
-  void registerResponseId(const std::string& previousResponseId,
-                          const std::string& responseId);
+  void updateResponseId(const std::string& previousResponseId,
+                        const std::string& responseId);
 
   /**
    * Compute how many tokens of `blockInfos` are already cached for `sessionId`
