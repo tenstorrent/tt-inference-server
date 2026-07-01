@@ -26,15 +26,6 @@ bool remainingHashesMatch(const std::list<RemainingBlockInfo>& a,
 
 }  // namespace
 
-std::vector<PrefixIndexEntry> PrefixIndex::getEntriesForKey(
-    uint64_t keyHash) const {
-  const auto entries = prefixIndex.get(keyHash);
-  if (!entries.has_value()) {
-    return {};
-  }
-  return *entries;
-}
-
 void PrefixIndex::registerPrefixHash(
     const std::string& sessionId,
     const std::vector<utils::BlockHashInfo>& blockInfos) {

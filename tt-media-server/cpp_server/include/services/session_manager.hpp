@@ -140,6 +140,21 @@ class SessionManager : public SessionLease {
       const std::string& previousResponseId, std::function<void()> cancelFn);
 
   /**
+   * Unified prefix-cache routing: response-id first, then prefix hash.
+   * Throws SessionInFlightException when a response-id session is busy.
+   */
+  PrefixCacheResolveResult tryResolve(
+      const std::optional<std::string>& previousResponseId,
+      const std::vector<utils::BlockHashInfo>& blockInfos,
+      std::function<void()> cancelFn);
+
+  /**
+   * Post-hit registration: prefix index, resident-prefix shrink, response-id
+   * re-key (when both ids are set on the commit).
+   */
+  void commitContinuation(const ContinuationCommit& commit);
+
+  /**
    * First-time registration: associate a brand-new session with a response id.
    */
   void registerResponseId(const std::string& sessionId,
@@ -186,7 +201,7 @@ class SessionManager : public SessionLease {
    * a prefix-cache / response-id continuation HIT.
    */
   void shrinkResidentPrefixToMatchedTokens(const std::string& sessionId,
-                                           uint32_t matchedTokens);
+                                           uint32_t matchedTokens) override;
 
  private:
   struct PendingAllocation {

@@ -35,6 +35,19 @@ class ConcurrentMap {
     return std::nullopt;
   }
 
+  // Read-only lookup under the map lock. Prefer over get() on hot paths where
+  // Value is large and copying would dominate latency.
+  template <typename Func>
+  bool visit(const Key& key, Func&& func) const {
+    std::lock_guard lock(mutex);
+    auto it = map_.find(key);
+    if (it == map_.end()) {
+      return false;
+    }
+    func(it->second);
+    return true;
+  }
+
   void erase(const Key& key) {
     std::lock_guard lock(mutex);
     map_.erase(key);

@@ -25,13 +25,14 @@ PrefixCacheRouter::tryAcquireByPrefixHash(
 
   const uint64_t keyHash = blockInfos.front().hash;
 
-  const std::vector<domain::PrefixIndexEntry> entries =
-      prefixIndex.getEntriesForKey(keyHash);
-  std::vector<Candidate> candidates =
-      domain::BlockMatcher::buildCandidates(blockInfos, entries);
+  std::vector<Candidate> candidates;
+  const bool hasEntries = prefixIndex.visitEntriesForKey(
+      keyHash, [&](const std::vector<domain::PrefixIndexEntry>& entries) {
+        candidates = domain::BlockMatcher::buildCandidates(blockInfos, entries);
+      });
   domain::BlockMatcher::sortCandidates(candidates);
 
-  if (candidates.empty()) {
+  if (!hasEntries || candidates.empty()) {
     TT_LOG_DEBUG("[PrefixCacheRouter] tryAcquireByPrefixHash: keyHash={} miss",
                  keyHash);
     return std::nullopt;
@@ -164,6 +165,45 @@ PrefixCacheRouter::tryAcquireByResponseId(const std::string& previousResponseId,
   return std::nullopt;
 }
 
+PrefixCacheResolveResult PrefixCacheRouter::tryResolve(
+    const std::optional<std::string>& previousResponseId,
+    const std::vector<utils::BlockHashInfo>& blockInfos,
+    std::function<void()> cancelFn) {
+  if (previousResponseId.has_value() && !previousResponseId->empty()) {
+    auto acquired = tryAcquireByResponseId(*previousResponseId, cancelFn);
+    if (acquired.has_value() && acquired->sessionFound) {
+      const auto [matchedTokens, thinkTokens] =
+          computeMatchedTokens(acquired->sessionId, blockInfos);
+      acquired->numberOfMatchedTokens = matchedTokens;
+      acquired->accumulatedThinkTokens = thinkTokens;
+      return {PrefixCacheResolveOutcome::Hit, std::move(*acquired)};
+    }
+    return {PrefixCacheResolveOutcome::Miss, {}};
+  }
+
+  if (blockInfos.empty()) {
+    return {PrefixCacheResolveOutcome::Miss, {}};
+  }
+
+  auto acquired = tryAcquireByPrefixHash(blockInfos, cancelFn);
+  if (acquired.has_value() && acquired->sessionFound) {
+    return {PrefixCacheResolveOutcome::Hit, std::move(*acquired)};
+  }
+  if (acquired.has_value()) {
+    return {PrefixCacheResolveOutcome::Miss, std::move(*acquired)};
+  }
+  return {PrefixCacheResolveOutcome::Miss, {}};
+}
+
+void PrefixCacheRouter::commitContinuation(const ContinuationCommit& commit) {
+  registerPrefixHash(commit.sessionId, commit.blocks);
+  lease.shrinkResidentPrefixToMatchedTokens(commit.sessionId,
+                                            commit.matchedTokens);
+  if (commit.previousResponseId.has_value() && commit.responseId.has_value()) {
+    updateResponseId(*commit.previousResponseId, *commit.responseId);
+  }
+}
+
 void PrefixCacheRouter::registerPrefixHash(
     const std::string& sessionId,
     const std::vector<utils::BlockHashInfo>& blockInfos) {
@@ -215,15 +255,16 @@ void PrefixCacheRouter::registerResponseId(const std::string& sessionId,
               sessionId, responseId);
 
   if (!lease.setSessionResponseId(sessionId, responseId)) {
-    TT_LOG_WARN("[PrefixCacheRouter] registerResponseId: sessionId={} not found",
-                sessionId);
+    TT_LOG_WARN(
+        "[PrefixCacheRouter] registerResponseId: sessionId={} not found",
+        sessionId);
     return;
   }
   responseIdIndex.registerId(responseId, sessionId);
 }
 
-void PrefixCacheRouter::updateResponseId(
-    const std::string& previousResponseId, const std::string& responseId) {
+void PrefixCacheRouter::updateResponseId(const std::string& previousResponseId,
+                                         const std::string& responseId) {
   if (previousResponseId.empty() || responseId.empty()) {
     return;
   }
@@ -258,11 +299,15 @@ std::pair<uint32_t, uint32_t> PrefixCacheRouter::computeMatchedTokens(
     return {0, 0};
   }
 
-  const std::vector<domain::PrefixIndexEntry> entries =
-      prefixIndex.getEntriesForKey(blockInfos.front().hash);
-  const auto [matchedBlocks, thinkTokens] =
-      domain::BlockMatcher::computeMatchedBlocksForSession(sessionId,
-                                                           blockInfos, entries);
+  std::size_t matchedBlocks = 0;
+  std::uint32_t thinkTokens = 0;
+  prefixIndex.visitEntriesForKey(
+      blockInfos.front().hash,
+      [&](const std::vector<domain::PrefixIndexEntry>& entries) {
+        std::tie(matchedBlocks, thinkTokens) =
+            domain::BlockMatcher::computeMatchedBlocksForSession(
+                sessionId, blockInfos, entries);
+      });
 
   if (matchedBlocks == 0) {
     return {0, 0};

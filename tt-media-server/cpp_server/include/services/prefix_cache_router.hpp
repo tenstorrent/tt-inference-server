@@ -25,6 +25,24 @@ struct PrefixCacheAcquireResult {
   std::vector<domain::Candidate> candidatesList;
 };
 
+enum class PrefixCacheResolveOutcome {
+  Hit,
+  Miss,
+};
+
+struct PrefixCacheResolveResult {
+  PrefixCacheResolveOutcome outcome = PrefixCacheResolveOutcome::Miss;
+  PrefixCacheAcquireResult acquired;
+};
+
+struct ContinuationCommit {
+  std::string sessionId;
+  std::vector<utils::BlockHashInfo> blocks;
+  uint32_t matchedTokens = 0;
+  std::optional<std::string> previousResponseId;
+  std::optional<std::string> responseId;
+};
+
 class PrefixCacheRouter {
  public:
   using Candidate = domain::Candidate;
@@ -41,6 +59,22 @@ class PrefixCacheRouter {
 
   std::optional<AcquireResult> tryAcquireByResponseId(
       const std::string& previousResponseId, std::function<void()> cancelFn);
+
+  /**
+   * Unified routing: response-id lookup first (when set), else prefix-hash
+   * lookup. Throws SessionInFlightException when a response-id session is busy.
+   */
+  PrefixCacheResolveResult tryResolve(
+      const std::optional<std::string>& previousResponseId,
+      const std::vector<utils::BlockHashInfo>& blockInfos,
+      std::function<void()> cancelFn);
+
+  /**
+   * Post-hit index and session updates after the caller applies the delta
+   * prompt. Registers the prefix, shrinks resident KV to the matched prefix,
+   * and re-keys the response id when both ids are provided.
+   */
+  void commitContinuation(const ContinuationCommit& commit);
 
   void registerPrefixHash(const std::string& sessionId,
                           const std::vector<utils::BlockHashInfo>& blockInfos);
