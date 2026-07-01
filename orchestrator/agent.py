@@ -65,12 +65,15 @@ def run(
     agent_tools = [t for t in T.DEFS if t["function"]["name"] not in blocked]
 
     for round_num in range(max_tool_rounds):
-        response = client.chat.completions.create(
+        kwargs = dict(
             model=persona["model"],
             messages=history,
             tools=agent_tools,
             tool_choice="auto",
         )
+        if "max_tokens" in persona:
+            kwargs["max_tokens"] = persona["max_tokens"]
+        response = client.chat.completions.create(**kwargs)
         msg = response.choices[0].message
 
         # Append assistant turn (convert to dict safely)
