@@ -18,47 +18,24 @@
 #include <unordered_set>
 #include <vector>
 
-#include "domain/prefix_index.hpp"
-#include "domain/response_id_index.hpp"
-#include "domain/session.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
+#include "services/prefix_cache_router.hpp"
+#include "services/session_lease.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/concurrent_queue.hpp"
 #include "utils/conversation_hasher.hpp"
 
 namespace tt::services {
 
-// Base exception for session errors that should return 429 (rate limit)
-class SessionRateLimitException : public std::runtime_error {
- public:
-  using std::runtime_error::runtime_error;
-};
-
-class SessionInFlightException : public SessionRateLimitException {
- public:
-  SessionInFlightException()
-      : SessionRateLimitException(
-            "Session already has a request in flight. Multiple concurrent "
-            "requests per session are not supported.") {}
-};
-
 enum class CloseSessionResult {
   SUCCESS,
   NOT_FOUND,
 };
 
-class SessionManager {
+class SessionManager : public SessionLease {
  public:
   using Candidate = domain::Candidate;
-  // Result of tryAcquireByPrefixHash: the session's UUID and pre-assigned slot.
-  struct AcquiredSession {
-    bool sessionFound;
-    std::string sessionId;
-    uint32_t slotId;
-    uint32_t numberOfMatchedTokens = 0;
-    uint32_t accumulatedThinkTokens = 0;  // Think tokens at matched block
-    std::vector<Candidate> candidatesList;
-  };
+  using AcquiredSession = PrefixCacheAcquireResult;
 
   SessionManager();
   ~SessionManager();
@@ -88,12 +65,24 @@ class SessionManager {
   // Thread-safe: holds the ConcurrentMap lock during the state transition.
   void releaseInFlight(const std::string& sessionId);
 
-  std::shared_ptr<domain::Session> getSession(const std::string& sessionId);
+  std::shared_ptr<domain::Session> getSession(
+      const std::string& sessionId) override;
   size_t getActiveSessionCount() const;
 
-  // Lock/unlock a slot to prevent eviction.
+  // SessionLease — narrow API for prefix-cache routing components.
+  MarkInFlightResult tryMarkInFlight(
+      const std::string& sessionId, std::function<void()>& cancelFn,
+      std::optional<uint64_t> expectedKeyHash = std::nullopt,
+      const std::string* expectedResponseId = nullptr) override;
+  std::optional<uint64_t> getSessionHash(
+      const std::string& sessionId) const override;
+  bool setSessionHash(const std::string& sessionId, uint64_t keyHash) override;
+  bool setSessionResponseId(const std::string& sessionId,
+                            const std::string& responseId) override;
+  void unlockSlot(uint32_t slotId) override;
+
+  // Lock a slot to prevent eviction.
   void lockSlot(uint32_t slotId);
-  void unlockSlot(uint32_t slotId);
 
   /**
    * Try to find a session whose registered prefix hash matches one of the
@@ -153,16 +142,16 @@ class SessionManager {
   /**
    * First-time registration: associate a brand-new session with a response id.
    */
-  void initResponseId(const std::string& sessionId,
-                      const std::string& responseId);
+  void registerResponseId(const std::string& sessionId,
+                          const std::string& responseId);
 
   /**
-   * Re-key an existing response-id index entry. Looks up the session currently
+   * Update the response-id index entry. Looks up the session currently
    * registered under `previousResponseId`, removes that entry, and inserts a
    * new entry under `responseId`. No-op when either id is empty.
    */
-  void registerResponseId(const std::string& previousResponseId,
-                          const std::string& responseId);
+  void updateResponseId(const std::string& previousResponseId,
+                        const std::string& responseId);
 
   /**
    * Compute how many tokens of `blockInfos` are already cached for `sessionId`
@@ -228,11 +217,10 @@ class SessionManager {
   void handleMemoryResult(const domain::ManageMemoryResult& result);
   void updateSessionCountMetric();
 
+  mutable std::unique_ptr<PrefixCacheRouter> prefixCacheRouter;
+
   mutable utils::ConcurrentMap<std::string, std::shared_ptr<domain::Session>>
       sessions;
-
-  domain::PrefixIndex prefixIndex;
-  domain::ResponseIdIndex responseIdIndex;
 
   std::unique_ptr<ipc::boost::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::boost::MemoryResultQueue> memoryResultQueue;
