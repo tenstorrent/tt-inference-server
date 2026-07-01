@@ -493,8 +493,10 @@ void DynamoEndpoint::stop() {
 
   if (keepalive_thread_.joinable()) keepalive_thread_.join();
   if (loop_pool_) {
-    // EventLoopThreadPool has no explicit stop(); destruction joins all
-    // threads.
+    for (auto* loop : loop_pool_->getLoops()) {
+      loop->quit();
+    }
+    loop_pool_->wait();
     loop_pool_.reset();
   }
   server_.reset();
