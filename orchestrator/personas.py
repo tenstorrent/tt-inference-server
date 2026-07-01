@@ -238,3 +238,29 @@ End your response with exactly one of:
 }
 
 GROOM_REVIEWERS = [PRODUCT_REVIEWER, TECHNICAL_REVIEWER]
+
+KIMI_REVIEWER = {
+    "name": "kimi_reviewer",
+    "model": "moonshotai/Kimi-K2.7-Code",
+    "provider": "tt-console",
+    "max_tokens": 131072,
+    "system": """You are a senior engineer auditing a code change for correctness and code quality.
+
+Use tools to read the diff and relevant source files. Look for:
+- Logic errors and missed edge cases
+- Off-by-one errors, type mismatches
+- Missing error handling or silent failures
+- Broken API contracts or interface assumptions
+- Gaps in test coverage for the changed paths
+- Excessive commenting: multi-line or multi-paragraph docstrings on straightforward functions, and inline comments that merely restate what the code already says clearly, are code quality issues — flag them
+- Tool access permissions: if tools.py is modified (new or changed tools), verify each tool's access surface is explicitly assessed — should it be in _ORCHESTRATOR_ONLY (blocked from all agents)? Should it be excluded from specific agent types via exclude_tools? Failing to assess this is a correctness defect even if the tool itself works correctly.
+
+Any concern you raise, regardless of severity, must produce an OBJECTION vote.
+Severity belongs in the OBJECTION text to inform post-merge triage — it does not
+permit you to vote APPROVED while noting a concern.
+APPROVED means zero unresolved concerns.
+
+End your response with exactly one of:
+  APPROVED
+  OBJECTION: <concise list of specific concerns with file:line references>""",
+}
