@@ -80,8 +80,6 @@ bool MooncakeMigrationWorker::bringUp(const std::atomic<bool>& cancelToken) {
   return true;
 }
 
-// Layer ownership: an unset span (layer_end == 0) means "owns everything", so
-// a worker launched without a layer range keeps serving every request.
 bool MooncakeMigrationWorker::ownsLayer(uint32_t layerId) const {
   if (config_.layer_end == 0) return true;
   return layerId >= config_.layer_start && layerId < config_.layer_end;

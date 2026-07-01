@@ -49,10 +49,8 @@ struct MigrationWorkerConfig {
   /// here — this config only names the peers (the *what*).
   std::vector<std::string> peer_segment_names;
 
-  /// Half-open span of KV cache layers this worker is responsible for:
-  /// [layer_start, layer_end). layer_end == 0 means "unset" — the worker owns
-  /// every layer (no sharding). Used by ownsLayer() to route requests when a
-  /// single request is broadcast to every worker in the role.
+  /// KV layer span [layer_start, layer_end) this worker owns; layer_end == 0
+  /// means unset → owns every layer. See ownsLayer().
   uint32_t layer_start = 0;
   uint32_t layer_end = 0;
 };
@@ -104,10 +102,8 @@ class MooncakeMigrationWorker {
   /// Segment handles for the peers resolved during bringUp() (name -> handle).
   const std::map<std::string, SegmentHandle>& peers() const { return peers_; }
 
-  /// Whether this worker is responsible for @p layerId, i.e. layerId falls in
-  /// its configured [layer_start, layer_end) span. An unset span (layer_end ==
-  /// 0) means the worker owns every layer, so this returns true for any id —
-  /// preserving the non-sharded behaviour when no layer range was given.
+  /// True if @p layerId is in this worker's [layer_start, layer_end) span; an
+  /// unset span (layer_end == 0) owns every layer, so always returns true.
   bool ownsLayer(uint32_t layerId) const;
 
   /// Step 1 (sender): write a known tensor into this galaxy's device DRAM.

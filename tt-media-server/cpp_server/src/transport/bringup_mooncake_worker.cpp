@@ -90,10 +90,8 @@ struct WorkerConfig {
   std::size_t host_dram_bytes = K_DEFAULT_HOST_DRAM_BYTES;
   int discovery_timeout_sec = K_DEFAULT_DISCOVERY_TIMEOUT_SEC;
   TransportProtocol protocol = TransportProtocol::TCP;
-  // Half-open span of KV cache layers this worker is responsible for:
-  // [layer_start, layer_end). layer_end == 0 means "unset" (no layers
-  // assigned). The deploy launcher sets these per worker. uint32_t to match
-  // MigrationRequestMessage::layer_id (no truncation when mapped to config).
+  // KV layer span [layer_start, layer_end); 0 == unset. uint32_t matches
+  // MigrationRequestMessage::layer_id so no truncation when mapped to config.
   uint32_t layer_start = 0;
   uint32_t layer_end = 0;
   // When false (--no-kafka), the worker brings Mooncake up and then idles
@@ -124,8 +122,10 @@ void usage() {
          "  [--host-dram-bytes N]  pool size, page-aligned (default 4 GiB)\n"
          "  [--protocol tcp|rdma]  transport (default tcp)\n"
          "  [--discovery-timeout-sec S] (default 30)\n"
-         "  [--layer-start N]      first KV layer this worker owns (default 0)\n"
-         "  [--layer-end M]        one past last KV layer (exclusive; 0=unset)\n"
+         "  [--layer-start N]      first KV layer this worker owns (default "
+         "0)\n"
+         "  [--layer-end M]        one past last KV layer (exclusive; "
+         "0=unset)\n"
          "  [--no-kafka]           skip Kafka clients; idle after bring-up\n"
          "  [-h|--help]            show this help and exit\n"
          "\n"
@@ -194,9 +194,8 @@ bool parseSizeBytes(const std::string& value, std::size_t& out,
   return true;
 }
 
-// Strict unsigned 32-bit parse for layer indices (not sizes). The WHOLE token
-// must be a plain non-negative integer that fits in uint32_t — a value beyond
-// the range fails loud instead of silently wrapping when stored as a layer id.
+// Strict uint32 parse: whole token must fit in uint32_t, else fail loud
+// instead of silently wrapping when stored as a layer id.
 bool parseUint32(const std::string& value, uint32_t& out, std::string& err) {
   if (value.empty() || value.front() == '-') {
     err = "must be a non-negative integer";
