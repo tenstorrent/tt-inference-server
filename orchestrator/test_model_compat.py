@@ -86,7 +86,7 @@ def check_tool_call(client: OpenAI, model: str) -> bool:
         model=model,
         messages=messages,
         tools=[bash_exec_def],
-        tool_choice="auto",
+        tool_choice="required",
     )
 
     msg = response.choices[0].message
