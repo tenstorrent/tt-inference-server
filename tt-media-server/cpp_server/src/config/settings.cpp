@@ -320,6 +320,26 @@ size_t memoryQueueCapacity() {
   return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
 }
 
+bool useMockScheduler() {
+  return envBool("MOCK_USE_SCHEDULER", defaults::MOCK_USE_SCHEDULER);
+}
+
+unsigned mockPrefillLatencyMs() {
+  return static_cast<unsigned>(
+      envUlong("MOCK_PREFILL_CHUNK_LATENCY_MS",
+               defaults::MOCK_PREFILL_CHUNK_LATENCY_MS));
+}
+
+unsigned mockDecodeTokenLatencyUs() {
+  return static_cast<unsigned>(envUlong(
+      "MOCK_DECODE_TOKEN_LATENCY_US", defaults::MOCK_DECODE_TOKEN_LATENCY_US));
+}
+
+uint32_t mockDecodeTokenId() {
+  return static_cast<uint32_t>(
+      envUlong("MOCK_DECODE_TOKEN_ID", defaults::MOCK_DECODE_TOKEN_ID));
+}
+
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;
