@@ -48,11 +48,28 @@ constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
 constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
 constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 40;
 constexpr bool USE_FAST_MODE = false;
+constexpr bool ENABLE_MIGRATION = false;
+constexpr const char* MIGRATION_CMD_QUEUE_NAME = "mig_ep0_cmd";
+constexpr const char* MIGRATION_TABLE_QUEUE_NAME = "mig_ep0_table";
+constexpr const char* MIGRATION_RESP_QUEUE_NAME = "mig_ep0_resp";
+constexpr uint32_t MIGRATION_PREFILL_ENDPOINT_ID = 0;
+constexpr uint32_t MIGRATION_DECODE_ENDPOINT_ID = 1;
+constexpr const char* PREFILL_ACK_CHANNEL_NAME = "tt_prefill_layer_acks";
 constexpr const char* KAFKA_BROKERS = "localhost:9092";
 constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";
 constexpr const char* KAFKA_GROUP_ID = "migration-workers";
+constexpr const char* KAFKA_MIGRATION_REQUEST_TOPIC = "kv-migration-requests";
+constexpr const char* KAFKA_MIGRATION_ACK_TOPIC = "kv-migration-acks";
+
+// Mooncake KV Migration configuration.
+constexpr unsigned KV_MIGRATION_TIMEOUT_MS = 60000;
+constexpr unsigned KV_MIGRATION_SWEEP_INTERVAL_MS = 5000;
+constexpr unsigned KV_MIGRATION_DRAIN_POLL_MS = 100;
 
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
+
+constexpr const char* SPEC_DECODE_MODE = "none";
+constexpr size_t MTP_LEVEL = 1;
 
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
 constexpr const char* TT_RESULT_QUEUE = "tt_results";
@@ -63,18 +80,18 @@ constexpr const char* TT_WARMUP_SIGNALS_QUEUE = "tt_warmup_signals";
 constexpr const char* TT_MEMORY_REQUEST_QUEUE = "tt_mem_requests";
 constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
 constexpr const char* TT_WORKER_METRICS_SHM = "/tt_worker_metrics";
-constexpr const char* PREFILL_NUM_LAYERS = "61";
-constexpr const char* PREFILL_CHUNK_SIZE = "5120";
+constexpr uint32_t MODEL_NUM_LAYERS = 61;
+constexpr uint32_t PREFILL_CHUNK_SIZE = 5120;
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 128;
-constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
+constexpr unsigned WARMUP_TIMEOUT_MS = 150000;
 /**
  * Max time (ms) the runner may go without producing a model output while at
  * least one request is in flight before it self-terminates the worker
  * process. Self-terminating lets the infrastructure monitoring stack notice
  * the crash and restart the server instead of hanging silently.
  */
-constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 60000;
+constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 150000;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 constexpr const char* WIRE_FORMAT = "blaze";

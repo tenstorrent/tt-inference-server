@@ -60,6 +60,7 @@ constexpr MockContentTokens K_KIMI_CONTENT = {
 MockContentTokens mockContentTokensFor(tt::config::ModelType model) {
   switch (model) {
     case tt::config::ModelType::KIMI_K2_6:
+    case tt::config::ModelType::KIMI_K2_7_CODE:
       return K_KIMI_CONTENT;
     case tt::config::ModelType::DEEPSEEK_R1_0528:
     case tt::config::ModelType::LLAMA_3_1_8B_INSTRUCT:

@@ -42,8 +42,9 @@ namespace tt::test {
 // This is model-agnostic on purpose. With a reasoning model whose chat template
 // injects <think> markers into the prompt history (e.g. Kimi), the exact
 // non-think matched-token count is not recoverable from the Sequence alone
-// (kv_position_id == matched_tokens-1 + accumulated_think_tokens, and the think
-// component is not separately exposed). So instead of asserting an exact count
+// (kv_position_id == matched_tokens + accumulated_think_tokens, the first free
+// KV index, and the think component is not separately exposed). So instead of
+// asserting an exact count
 // we assert the invariant the prefix-cache must uphold and that the multiturn
 // bug violated: the matched prefix never resets or plateaus — it advances by a
 // whole block every turn. The earlier bug registered corrupt blocks past the
@@ -85,8 +86,9 @@ inline void verifyMultiTurnPrefixGrowth(
 
       if (!havePrev) {
         // First continuation: the opener formed at least one block, so the
-        // matched prefix (kvPos+1 tokens) covers at least one block.
-        EXPECT_GE(kvPos + 1, blockSize)
+        // matched prefix (kvPos tokens, the first free KV index) covers at
+        // least one block.
+        EXPECT_GE(kvPos, blockSize)
             << "turn " << turn
             << ": first continuation should match >= 1 block";
       } else {

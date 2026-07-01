@@ -41,7 +41,7 @@ class UmdDeviceAccess {
   /**
    * @brief Open the UMD device with the given chip/device id.
    */
-  explicit UmdDeviceAccess(int device_id = 0);
+  explicit UmdDeviceAccess(int deviceId = 0);
   ~UmdDeviceAccess();
 
   UmdDeviceAccess(const UmdDeviceAccess&) = delete;

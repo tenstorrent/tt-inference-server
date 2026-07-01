@@ -84,6 +84,21 @@ class Session {
   bool isPrepared() const { return state_ == SessionState::PREPARED; }
   SessionState getState() const { return state_; }
 
+  // Number of leading prefix blocks whose KV is actually resident on this
+  // session's slot — the only portion that is safe to copy from. This is the
+  // source of truth for slot-copy: it grows lazily (a turn's blocks count only
+  // once that turn's prefill has completed) and shrinks eagerly (a divergent
+  // "rewind" turn drops the now-stale tail before it is overwritten). A
+  // brand-new session whose first prefill is still running has 0 resident
+  // blocks even though its prefix is already in the index for discovery, so it
+  // cannot be used as a copy source.
+  uint32_t committedBlocks() const { return committed_blocks_; }
+  void setCommittedBlocks(uint32_t blocks) { committed_blocks_ = blocks; }
+  // Eager shrink to the still-valid common prefix on a rewind/extension turn.
+  void shrinkCommittedBlocks(uint32_t blocks) {
+    if (blocks < committed_blocks_) committed_blocks_ = blocks;
+  }
+
   void setCancelFn(std::function<void()> fn) { cancelFn_ = std::move(fn); }
   std::function<void()> takeCancelFn() {
     return std::exchange(cancelFn_, nullptr);
@@ -165,6 +180,8 @@ class Session {
                              // close/evict can remove the matching index entry.
   uint32_t slot_id_;
   SessionState state_{SessionState::IDLE};
+  uint32_t committed_blocks_{
+      0};  // resident prefix block count (see committedBlocks)
   std::chrono::system_clock::time_point last_activity_time_;
   std::function<void()> cancelFn_;
   std::function<void()>

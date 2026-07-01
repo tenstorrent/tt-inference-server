@@ -108,6 +108,33 @@ class ServingBenchOptions:
 
 
 @dataclass(frozen=True)
+class LLMBenchOptions:
+    """LLM performance-benchmark knobs forwarded to ``BenchmarksWorkflow``.
+
+    ``tools`` value selecting the perf-tool driver
+    (``vllm`` / ``aiperf`` / ``genai`` / ``guidellm``).
+    ``auth_token`` is the bearer token (minted JWT) sent to the server.
+    ``venv_python`` pins the interpreter whose ``bin/`` holds the perf-tool
+    binary; set for the ``release`` path, where ``run.py`` runs in the
+    V2_RUN_SCRIPT venv rather than the tool venv (a standalone benchmarks run
+    is already inside the tool venv via run_llm_bench.py, so it stays ``None``).
+    Threaded through ``OrchestratorMetadata`` so ``run.py`` stays decoupled
+    from ``llm_module``.
+    """
+
+    tools: str = "vllm"
+    auth_token: str = ""
+    venv_python: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class LLMEvalOptions:
+    """Standard-eval knobs forwarded to ``EvalsWorkflow`` for LLM models."""
+
+    auth_token: str = ""
+
+
+@dataclass(frozen=True)
 class OrchestratorMetadata:
     """Top-level metadata the per-task runners can't see themselves.
 
@@ -121,6 +148,8 @@ class OrchestratorMetadata:
     prefix_cache: Optional[PrefixCacheOptions] = None
     spec_decode: Optional[SpecDecodeOptions] = None
     serving_bench: Optional[ServingBenchOptions] = None
+    llm_bench: Optional[LLMBenchOptions] = None
+    llm_eval: Optional[LLMEvalOptions] = None
 
 
 class WorkflowExecution(ABC):
@@ -307,6 +336,8 @@ class WorkflowExecution(ABC):
 
 __all__ = [
     "ServingBenchOptions",
+    "LLMBenchOptions",
+    "LLMEvalOptions",
     "OrchestratorMetadata",
     "PrefixCacheOptions",
     "SpecDecodeOptions",
