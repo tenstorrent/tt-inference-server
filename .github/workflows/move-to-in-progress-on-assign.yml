@@ -1,0 +1,110 @@
+name: Move issue to In Progress on assignment
+
+on:
+  issues:
+    types: [assigned]
+
+permissions:
+  issues: read
+
+jobs:
+  move-to-in-progress:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+    steps:
+      - name: Resolve project field and option IDs
+        id: ids
+        env:
+          ORG: ${{ github.repository_owner }}
+        run: |
+          # Fetch Status field ID and the In Progress option ID from project #354.
+          response=$(gh api graphql -f query='
+            query($org: String!, $num: Int!) {
+              organization(login: $org) {
+                projectV2(number: $num) {
+                  id
+                  fields(first: 50) {
+                    nodes {
+                      ... on ProjectV2SingleSelectField {
+                        id
+                        name
+                        options { id name }
+                      }
+                    }
+                  }
+                }
+              }
+            }' -f org="$ORG" -F num=354)
+
+          project_id=$(echo "$response" | jq -r '.data.organization.projectV2.id')
+          field_id=$(echo "$response" | jq -r '
+            .data.organization.projectV2.fields.nodes[]
+            | select(.name != null and (.name | ascii_downcase) == "status")
+            | .id')
+          option_id=$(echo "$response" | jq -r '
+            .data.organization.projectV2.fields.nodes[]
+            | select(.name != null and (.name | ascii_downcase) == "status")
+            | .options[]
+            | select(.name == "In Progress")
+            | .id')
+
+          echo "project_id=$project_id" >> "$GITHUB_OUTPUT"
+          echo "field_id=$field_id"     >> "$GITHUB_OUTPUT"
+          echo "option_id=$option_id"   >> "$GITHUB_OUTPUT"
+
+      - name: Find project item for this issue
+        id: item
+        env:
+          ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
+          PROJECT_ID: ${{ steps.ids.outputs.project_id }}
+        run: |
+          # Issues can belong to multiple projects; filter to the one we own.
+          item_id=$(gh api graphql -f query='
+            query($issue: ID!) {
+              node(id: $issue) {
+                ... on Issue {
+                  projectItems(first: 20) {
+                    nodes {
+                      id
+                      project { id }
+                    }
+                  }
+                }
+              }
+            }' -f issue="$ISSUE_NODE_ID" \
+            | jq -r --arg pid "$PROJECT_ID" '
+                .data.node.projectItems.nodes[]
+                | select(.project.id == $pid)
+                | .id')
+
+          if [[ -z "$item_id" ]]; then
+            echo "Issue is not yet tracked by project #354 - skipping (auto-add handles this separately)."
+            echo "item_id=" >> "$GITHUB_OUTPUT"
+          else
+            echo "item_id=$item_id" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set Status to In Progress
+        if: steps.item.outputs.item_id != ''
+        env:
+          PROJECT_ID: ${{ steps.ids.outputs.project_id }}
+          ITEM_ID: ${{ steps.item.outputs.item_id }}
+          FIELD_ID: ${{ steps.ids.outputs.field_id }}
+          OPTION_ID: ${{ steps.ids.outputs.option_id }}
+        run: |
+          gh api graphql -f query='
+            mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
+              updateProjectV2ItemFieldValue(input: {
+                projectId: $project
+                itemId:    $item
+                fieldId:   $field
+                value:     { singleSelectOptionId: $option }
+              }) {
+                projectV2Item { id }
+              }
+            }' \
+            -f project="$PROJECT_ID" \
+            -f item="$ITEM_ID"       \
+            -f field="$FIELD_ID"     \
+            -f option="$OPTION_ID"
