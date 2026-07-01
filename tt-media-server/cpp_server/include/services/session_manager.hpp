@@ -200,9 +200,8 @@ class SessionManager : public SessionLease {
    * before the slot overwrites it; on a pure extension it is a no-op. Called on
    * a prefix-cache / response-id continuation HIT.
    */
-  void shrinkResidentPrefixToMatchedTokens(
-      const std::string& sessionId,
-      uint32_t matchedTokens) override;
+  void shrinkResidentPrefixToMatchedTokens(const std::string& sessionId,
+                                           uint32_t matchedTokens) override;
 
  private:
   struct PendingAllocation {

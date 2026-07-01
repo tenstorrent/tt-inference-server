@@ -214,11 +214,11 @@ void LLMPipeline::resolveSession(
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - tAcquireStart)
             .count();
-    TT_LOG_INFO(
-        "[SessionTimer] taskId={} tryResolve_us={} outcome={}",
-        req->task_id, acquireUs,
-        resolveResult.outcome == PrefixCacheResolveOutcome::Hit ? "hit"
-                                                                : "miss");
+    TT_LOG_INFO("[SessionTimer] taskId={} tryResolve_us={} outcome={}",
+                req->task_id, acquireUs,
+                resolveResult.outcome == PrefixCacheResolveOutcome::Hit
+                    ? "hit"
+                    : "miss");
 
     if (resolveResult.outcome == PrefixCacheResolveOutcome::Hit) {
       const auto& acquired = resolveResult.acquired;

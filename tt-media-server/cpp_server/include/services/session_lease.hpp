@@ -64,8 +64,8 @@ class SessionLease {
   virtual bool setSessionResponseId(const std::string& sessionId,
                                     const std::string& responseId) = 0;
 
-  virtual void shrinkResidentPrefixToMatchedTokens(
-      const std::string& sessionId, uint32_t matchedTokens) = 0;
+  virtual void shrinkResidentPrefixToMatchedTokens(const std::string& sessionId,
+                                                   uint32_t matchedTokens) = 0;
 
   virtual void unlockSlot(uint32_t slotId) = 0;
 };
