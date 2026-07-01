@@ -115,9 +115,12 @@ MigrationRequest makeRequest(uint32_t src = 1, uint32_t dst = 2) {
   return MigrationRequest{
       .src_slot = src,
       .dst_slot = dst,
-      .layer_id = 3,
-      .position_start = 0,
-      .position_end = 128,
+      .layer_begin = 3,
+      .layer_end = 4,
+      .src_position_begin = 0,
+      .src_position_end = 128,
+      .dst_position_begin = 0,
+      .dst_position_end = 128,
   };
 }
 
@@ -183,9 +186,12 @@ TEST(RemoteKVManagerImplTest, MigratePublishesRequestPayload) {
   EXPECT_EQ(parsed->migration_id, id);
   EXPECT_EQ(parsed->src_slot, request.src_slot);
   EXPECT_EQ(parsed->dst_slot, request.dst_slot);
-  EXPECT_EQ(parsed->layer_id, request.layer_id);
-  EXPECT_EQ(parsed->position_start, request.position_start);
-  EXPECT_EQ(parsed->position_end, request.position_end);
+  EXPECT_EQ(parsed->layer_begin, request.layer_begin);
+  EXPECT_EQ(parsed->layer_end, request.layer_end);
+  EXPECT_EQ(parsed->src_position_begin, request.src_position_begin);
+  EXPECT_EQ(parsed->src_position_end, request.src_position_end);
+  EXPECT_EQ(parsed->dst_position_begin, request.dst_position_begin);
+  EXPECT_EQ(parsed->dst_position_end, request.dst_position_end);
 }
 
 TEST(RemoteKVManagerImplTest, MultipleMigratesGetDistinctIds) {

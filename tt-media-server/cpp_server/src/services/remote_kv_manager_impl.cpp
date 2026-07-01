@@ -99,9 +99,12 @@ uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
       .migration_id = id,
       .src_slot = request.src_slot,
       .dst_slot = request.dst_slot,
-      .layer_id = request.layer_id,
-      .position_start = request.position_start,
-      .position_end = request.position_end,
+      .layer_begin = request.layer_begin,
+      .layer_end = request.layer_end,
+      .src_position_begin = request.src_position_begin,
+      .src_position_end = request.src_position_end,
+      .dst_position_begin = request.dst_position_begin,
+      .dst_position_end = request.dst_position_end,
   };
   const std::string payload = tt::messaging::serialize(msg);
 

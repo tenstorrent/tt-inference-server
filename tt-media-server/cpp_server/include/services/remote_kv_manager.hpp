@@ -21,12 +21,28 @@ struct Migration {
   MigrationStatus status;
 };
 
+/**
+ * What to migrate, prefill (src) -> decode (dst). Mirrors
+ * tt::transport::MigrationRequest field-for-field so the scheduler-facing
+ * surface, the Kafka wire message, and the data plane all speak one shape and
+ * no request-shape translation is needed.
+ *
+ * The migration is asymmetric: a layer maps 1:1 (the layer range is shared),
+ * but the slot and the token-position range may differ between sides (a
+ * position shift / cross-slot move). The two position ranges must cover the
+ * same number of chunks. Layer/position ranges are half-open [begin, end). A
+ * symmetric whole-slot migration is src_slot==dst_slot and src positions==dst
+ * positions.
+ */
 struct MigrationRequest {
   uint32_t src_slot;
   uint32_t dst_slot;
-  uint32_t layer_id;
-  uint32_t position_start;
-  uint32_t position_end;
+  uint32_t layer_begin;
+  uint32_t layer_end;
+  uint32_t src_position_begin;
+  uint32_t src_position_end;
+  uint32_t dst_position_begin;
+  uint32_t dst_position_end;
 };
 
 /**

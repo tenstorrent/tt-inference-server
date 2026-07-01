@@ -610,6 +610,20 @@ add_library(transport_lib
     src/transport/mooncake_kv_receiver.cpp
     src/transport/kv_migration_orchestrator.cpp
     src/transport/kv_migration_multi_host_sender.cpp
+    # The real IMigrationExecutor: bridges the Kafka trigger (tt::worker /
+    # tt::services, header-only here) to the multi-host data plane.
+    src/transport/mooncake_migration_executor.cpp
+    # Endpoint wiring: resolution -> live control channels (prefill connector +
+    # decode receiver server). Socket transport is injected, so no src/sockets
+    # link dependency leaks into transport_lib.
+    src/transport/kv_migration_endpoints.cpp
+    # Step-7 table provisioning: load a worker's own .pb + exchange tables over
+    # the control channel (the prefill side obtains the decode table).
+    src/transport/kv_table_provisioning.cpp
+    # Engine -> worker handoff: the engine (authority) ships the device-built
+    # table + device map (FabricNode -> ASIC id) to the worker. Our own contract,
+    # not the disaggregation shmem client.
+    src/transport/engine_table_handoff.cpp
     src/utils/logger.cpp
 )
 target_include_directories(transport_lib PUBLIC
@@ -838,6 +852,16 @@ if(TARGET transfer_engine)
     target_link_libraries(transport_kv_migration_e2e PRIVATE transport_lib GTest::gtest)
     target_include_directories(transport_kv_migration_e2e PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    # --trigger kafka: drive the migration through the unified worker's data path
+    # (KvMigrationWorker + MooncakeMigrationExecutor). Only when Kafka is built;
+    # the default cli trigger links none of it.
+    if(KAFKA_ENABLED)
+        target_link_libraries(transport_kv_migration_e2e PRIVATE
+            messaging kv_migration_worker)
+        target_compile_definitions(transport_kv_migration_e2e PRIVATE
+            TT_E2E_WITH_KAFKA)
+        message(STATUS "transport_kv_migration_e2e: Kafka trigger ENABLED")
+    endif()
     message(STATUS "transport_kv_migration_e2e: ENABLED (real KV migration harness)")
 endif()
 
@@ -906,6 +930,52 @@ target_link_libraries(kv_migration_orchestrator_test PRIVATE transport_lib GTest
 target_include_directories(kv_migration_orchestrator_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
+# Mooncake-backed IMigrationExecutor: async dispatch, exactly-once terminal
+# callback, services->transport request passthrough, and (via the orchestrator
+# loopback in the same suite) driving the real multi-host data plane.
+add_executable(mooncake_migration_executor_test
+    tests/unit/transport/mooncake_migration_executor_test.cpp)
+target_link_libraries(mooncake_migration_executor_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(mooncake_migration_executor_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Endpoint wiring: control-channel connector (prefill) + receiver server (decode)
+# over a loopback fake transport, end to end through the multi-host data plane.
+add_executable(kv_migration_endpoints_test
+    tests/unit/transport/kv_migration_endpoints_test.cpp)
+target_link_libraries(kv_migration_endpoints_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(kv_migration_endpoints_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Table provisioning (step 7): load .pb + exchange tables over the control
+# channel. The wire-exchange tests run in every config (fake blobs); the
+# real-table load+exchange test SKIPs unless ENABLE_KV_TABLE is on and the .pb
+# files are present (KV_TABLE_PREFILL_PB / KV_TABLE_DECODE_PB env override the
+# repo-root defaults).
+add_executable(kv_table_provisioning_test
+    tests/unit/transport/kv_table_provisioning_test.cpp)
+target_link_libraries(kv_table_provisioning_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(kv_table_provisioning_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_definitions(kv_table_provisioning_test PRIVATE
+    KV_TABLE_PREFILL_PB_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/../../prefill_kv_chunk_table.pb"
+    KV_TABLE_DECODE_PB_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/../../decoder_kv_table.pb")
+
+# Engine->worker table+devmap handoff: serialize/parse + send/receive over a
+# loopback fake; the real-table case (gated on ENABLE_KV_TABLE + .pb present)
+# hands a real table through the socket source.
+add_executable(engine_table_handoff_test
+    tests/unit/transport/engine_table_handoff_test.cpp)
+target_link_libraries(engine_table_handoff_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(engine_table_handoff_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_definitions(engine_table_handoff_test PRIVATE
+    KV_TABLE_DECODE_PB_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/../../decoder_kv_table.pb")
 
 # Real-table adapter test: loads an actual serialized KvChunkAddressTable (.pb)
 # and checks real NoC addresses resolve. Only built when ENABLE_KV_TABLE=ON
@@ -1292,6 +1362,10 @@ gtest_discover_tests(kv_table_adapter_test)
 gtest_discover_tests(kv_control_channel_test)
 gtest_discover_tests(mooncake_kv_migration_test)
 gtest_discover_tests(kv_migration_orchestrator_test)
+gtest_discover_tests(mooncake_migration_executor_test)
+gtest_discover_tests(kv_migration_endpoints_test)
+gtest_discover_tests(kv_table_provisioning_test)
+gtest_discover_tests(engine_table_handoff_test)
 if(ENABLE_KV_TABLE)
     gtest_discover_tests(kv_chunk_address_table_adapter_test)
 endif()
@@ -1466,6 +1540,31 @@ if(KAFKA_ENABLED)
         target_include_directories(bringup_mooncake_worker PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include)
         message(STATUS "bringup_mooncake_worker: ENABLED (#4294 production worker)")
+
+        # Unified Kafka->migration worker: one --role prefill|decode binary that
+        # drives the real data plane on a Kafka trigger (supersedes
+        # bringup_mooncake_worker's log-only loop and tt_kv_migration_consumer's
+        # stub executor). Compiles tcp_socket_transport.cpp directly for the
+        # control channels (the connector + receiver server take an injected
+        # ISocketTransport, so transport_lib stays socket-decoupled).
+        add_executable(mooncake_kv_migration_worker
+            src/mooncake_kv_migration_worker_main.cpp
+            src/sockets/tcp_socket_transport.cpp)
+        target_link_libraries(mooncake_kv_migration_worker PRIVATE
+            transport_lib
+            messaging
+            kv_migration_worker)
+        target_include_directories(mooncake_kv_migration_worker PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        if(USE_EXTERNAL_FMT)
+            target_link_libraries(mooncake_kv_migration_worker PRIVATE
+                spdlog::spdlog fmt::fmt)
+        else()
+            target_link_libraries(mooncake_kv_migration_worker PRIVATE spdlog::spdlog)
+        endif()
+        target_compile_options(mooncake_kv_migration_worker PRIVATE
+            -Wall -Wextra -Wpedantic)
+        message(STATUS "mooncake_kv_migration_worker: ENABLED (unified Kafka->migration worker)")
 
         # MPI discovery e2e test: launches 4 prefill + 16 decode
         # bringup_mooncake_worker processes on one host and checks every worker

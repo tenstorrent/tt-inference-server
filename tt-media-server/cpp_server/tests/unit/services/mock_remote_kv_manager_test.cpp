@@ -19,9 +19,12 @@ MigrationRequest makeRequest(uint32_t src = 1, uint32_t dst = 2,
   return MigrationRequest{
       .src_slot = src,
       .dst_slot = dst,
-      .layer_id = layer,
-      .position_start = start,
-      .position_end = end,
+      .layer_begin = layer,
+      .layer_end = layer + 1,
+      .src_position_begin = start,
+      .src_position_end = end,
+      .dst_position_begin = start,
+      .dst_position_end = end,
   };
 }
 
@@ -168,9 +171,12 @@ TEST(MockRemoteKVManager, GetRequestReturnsOriginalRequest) {
   ASSERT_TRUE(out.has_value());
   EXPECT_EQ(out->src_slot, in.src_slot);
   EXPECT_EQ(out->dst_slot, in.dst_slot);
-  EXPECT_EQ(out->layer_id, in.layer_id);
-  EXPECT_EQ(out->position_start, in.position_start);
-  EXPECT_EQ(out->position_end, in.position_end);
+  EXPECT_EQ(out->layer_begin, in.layer_begin);
+  EXPECT_EQ(out->layer_end, in.layer_end);
+  EXPECT_EQ(out->src_position_begin, in.src_position_begin);
+  EXPECT_EQ(out->src_position_end, in.src_position_end);
+  EXPECT_EQ(out->dst_position_begin, in.dst_position_begin);
+  EXPECT_EQ(out->dst_position_end, in.dst_position_end);
 }
 
 TEST(MockRemoteKVManager, GetRequestUnknownIdReturnsNullopt) {

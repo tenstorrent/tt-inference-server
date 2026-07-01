@@ -68,6 +68,12 @@ SLOT="${SLOT:-5}"
 LAYER_BEGIN="${LAYER_BEGIN:-0}"; LAYER_END="${LAYER_END:-2}"
 POS_BEGIN="${POS_BEGIN:-0}";     POS_END="${POS_END:-128}"
 TIMEOUT_SEC="${TIMEOUT_SEC:-60}"
+# Seed a dummy blob at the source + byte-verify the destination. Auto for
+# builtin; needed to verify a real table with no model loaded. Set 0 to skip
+# (real-table run against a live model, where the device already holds real KV).
+SEED_VERIFY="${SEED_VERIFY:-1}"
+# Device mode item-1 chip map ('mesh chip umd_chip_id' per line); optional.
+DEVICE_MAP="${DEVICE_MAP:-}"
 
 case "${ROLE}" in both|receiver|sender) ;; *)
   echo "ERROR: ROLE must be both|receiver|sender (got '${ROLE}')" >&2; exit 2 ;;
@@ -86,6 +92,8 @@ req=(--slot "${SLOT}" --layer-begin "${LAYER_BEGIN}" --layer-end "${LAYER_END}"
      --pos-begin "${POS_BEGIN}" --pos-end "${POS_END}"
      --mode "${MODE}" --table "${TABLE}" --control-port "${CONTROL_PORT}"
      --timeout-sec "${TIMEOUT_SEC}")
+[[ "${SEED_VERIFY}" == "1" ]] && req+=(--seed-verify)
+[[ -n "${DEVICE_MAP}" ]] && req+=(--device-map "${DEVICE_MAP}")
 
 send_extra=()
 [[ -n "${DECODE_TABLE}" ]] && send_extra=(--decode-table "${DECODE_TABLE}")

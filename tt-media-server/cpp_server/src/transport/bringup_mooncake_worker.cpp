@@ -322,10 +322,12 @@ void handleMigrationRequest(const std::string& raw,
   }
 
   TT_LOG_INFO(
-      "[bringup] migration_id={} src_slot={} dst_slot={} layer_id={} "
-      "positions=[{}..{}]",
+      "[bringup] migration_id={} src_slot={} dst_slot={} layers=[{}..{}) "
+      "src_pos=[{}..{}) dst_pos=[{}..{})",
       parsed->migration_id, parsed->src_slot, parsed->dst_slot,
-      parsed->layer_id, parsed->position_start, parsed->position_end);
+      parsed->layer_begin, parsed->layer_end, parsed->src_position_begin,
+      parsed->src_position_end, parsed->dst_position_begin,
+      parsed->dst_position_end);
 
   const tt::messaging::MigrationResponseMessage ack{
       .migration_id = parsed->migration_id,

@@ -4,6 +4,7 @@
 #include "transport/kv_migration_orchestrator.hpp"
 
 #include "transport/kv_control_message.hpp"
+#include "transport/kv_table_provisioning.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::transport {
@@ -41,18 +42,7 @@ KvMigrationSender::KvMigrationSender(KvControlChannel& channel,
 
 std::optional<std::vector<uint8_t>> KvMigrationSender::exchangeTables(
     const std::vector<uint8_t>& localTableBlob) {
-  KvControlMessage out;
-  out.type = KvControlType::TABLE_EXCHANGE;
-  out.role = 0;  // prefill/sender
-  out.table_blob = localTableBlob;
-  if (!channel_.send(out)) return std::nullopt;
-
-  const auto peer = channel_.receive();
-  if (!peer || peer->type != KvControlType::TABLE_EXCHANGE) {
-    TT_LOG_ERROR("[KvMigrationSender] exchangeTables: bad/absent peer table");
-    return std::nullopt;
-  }
-  return peer->table_blob;
+  return exchangeTableBlob(channel_, TableExchangeRole::Sender, localTableBlob);
 }
 
 bool KvMigrationSender::migrate(uint64_t uuid,
@@ -119,17 +109,8 @@ KvMigrationReceiver::KvMigrationReceiver(KvControlChannel& channel,
 
 std::optional<std::vector<uint8_t>> KvMigrationReceiver::exchangeTables(
     const std::vector<uint8_t>& localTableBlob) {
-  const auto peer = channel_.receive();
-  if (!peer || peer->type != KvControlType::TABLE_EXCHANGE) {
-    TT_LOG_ERROR("[KvMigrationReceiver] exchangeTables: bad/absent peer table");
-    return std::nullopt;
-  }
-  KvControlMessage out;
-  out.type = KvControlType::TABLE_EXCHANGE;
-  out.role = 1;  // decode/receiver
-  out.table_blob = localTableBlob;
-  if (!channel_.send(out)) return std::nullopt;
-  return peer->table_blob;
+  return exchangeTableBlob(channel_, TableExchangeRole::Receiver,
+                           localTableBlob);
 }
 
 bool KvMigrationReceiver::serveOne() {

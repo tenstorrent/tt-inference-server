@@ -132,9 +132,12 @@ class RemoteKVManagerKafkaTest : public ::testing::Test {
     return MigrationRequest{
         .src_slot = src,
         .dst_slot = dst,
-        .layer_id = 3,
-        .position_start = 0,
-        .position_end = 128,
+        .layer_begin = 3,
+        .layer_end = 4,
+        .src_position_begin = 0,
+        .src_position_end = 128,
+        .dst_position_begin = 0,
+        .dst_position_end = 128,
     };
   }
 
