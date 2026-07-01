@@ -466,6 +466,7 @@ if(ENABLE_BLAZE)
     list(APPEND LLM_RUNNER_LIB_SOURCES
         src/runtime/runners/blaze_runner/blaze_decode_runner.cpp
         src/runtime/runners/blaze_runner/blaze_prefill_runner.cpp
+        src/runtime/runners/blaze_runner/blaze_scheduler_factory.cpp
     )
     message(STATUS "llm_runner_lib: including tt-llm-engine-dependent sources (ENABLE_BLAZE=ON)")
 endif()
@@ -957,6 +958,14 @@ if(ENABLE_BLAZE)
     target_include_directories(blaze_prefill_runner_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
+
+    add_executable(mock_schedulers_test
+        tests/unit/runners/mock_schedulers_test.cpp
+    )
+    target_link_libraries(mock_schedulers_test PRIVATE llm_runner_lib GTest::gtest_main)
+    target_include_directories(mock_schedulers_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
 endif()
 
 add_executable(sequence_test tests/unit/model/sequence_test.cpp)
@@ -1302,6 +1311,7 @@ endif()
 if(ENABLE_BLAZE)
     gtest_discover_tests(blaze_decode_runner_test)
     gtest_discover_tests(blaze_prefill_runner_test)
+    gtest_discover_tests(mock_schedulers_test)
 endif()
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)

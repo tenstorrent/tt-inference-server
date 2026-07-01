@@ -1,5 +1,28 @@
 # Dev Container From A Terminal
 
+This directory contains a mechanism to create development environment and enable development on bare-metal Tenstorrent machines where we do not have `sudo` access.
+
+The mechanism is based on a enriched `docker run` command, to map the right ports and install the right dependencies.
+
+If you prefer starting from scratch, you can use:
+```bash
+mkdir $HOME/docker-workspace
+
+docker run -it \
+    --device=/dev/tenstorrent \
+    -v /dev/shm:/dev/shm \
+    --ipc=host \
+    -v "$SSH_AUTH_SOCK:/ssh-agent" \
+    -e SSH_AUTH_SOCK=/ssh-agent \
+    -v "$HOME/.ssh:/home/user/.ssh:ro" \
+    --mount source=/dev/hugepages-1G,target=/dev/hugepages-1G,type=bind \
+    --mount source="$HOME/docker-workspace",target="/home/workspace",type=bind \
+    --entrypoint /bin/bash \
+    ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest
+```
+
+## Setup
+
 Cursor starts this container automatically when the repository is opened from (example):
 
 ```bash
