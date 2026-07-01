@@ -18,6 +18,29 @@ pip install openai
 
 The key is read from `/workspace/global/.litellm.key` or `$TT_CHAT_API_KEY`.
 
+## Providers and models
+
+The orchestrator supports two providers:
+
+| Provider | Config | Key source |
+|---|---|---|
+| `litellm` (default) | `LITELLM_BASE_URL` in `config.py` | `TT_CHAT_API_KEY` env or `/workspace/global/.litellm.key` |
+| `tt-console` | `TT_CONSOLE_BASE_URL` in `config.py` | `TT_CONSOLE_API_KEY` env or `~/.tt-console.key` |
+
+Each persona defaults to a specific model/provider:
+
+| Role | Model | Provider |
+|---|---|---|
+| Implementer | `moonshotai/Kimi-K2.7-Code` | `tt-console` |
+| Security reviewer | `deepseek-ai/DeepSeek-R1-0528` | `tt-console` |
+| Correctness reviewer | `deepseek-ai/DeepSeek-R1-0528` | `tt-console` |
+| Acceptance reviewer | `Qwen/Qwen3-32B` | `tt-console` |
+| Groomer | `anthropic/claude-sonnet-4-6` | `litellm` |
+| Product reviewer | `anthropic/claude-sonnet-4-6` | `litellm` |
+| Technical reviewer | `anthropic/claude-sonnet-4-6` | `litellm` |
+
+To change a persona's model, edit its `"model"` and `"provider"` fields in `orchestrator/personas.py`.
+
 ## Usage
 
 ```bash
@@ -36,16 +59,7 @@ and shell history. Prefer `TT_CHAT_API_KEY` or the key file for CI / non-interac
 
 ## Adding personas
 
-Edit `orchestrator/personas.py` — each persona is a dict with `name`, `model`, and `system`.
-To use a different model for one persona (e.g. Kimi when it lands):
-
-```python
-SECURITY_REVIEWER = {
-    "name": "security_reviewer",
-    "model": "kimi/kimi-k2",   # swap here
-    "system": "...",
-}
-```
+Edit `orchestrator/personas.py` — each persona is a dict with `name`, `model`, `provider`, and `system`. Omit `provider` to default to `litellm`.
 
 ## Repository layout
 
