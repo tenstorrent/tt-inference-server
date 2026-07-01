@@ -38,6 +38,35 @@ import sys
 import time
 from typing import Any
 
+
+def _reexec_into_venv_if_needed() -> None:
+    """If confluent_kafka is missing, re-exec under cpp_server/.venv (or
+    $MIGRATION_CLI_VENV) — the venv scripts/setup-migration-cli.sh creates. Lets
+    `python scripts/migration_cli.py …` work without activating the venv."""
+    try:
+        import confluent_kafka  # noqa: F401
+        return
+    except ImportError:
+        pass
+    cpp_server_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    candidates = []
+    explicit = os.environ.get("MIGRATION_CLI_VENV")
+    if explicit:
+        candidates.append(os.path.join(explicit, "bin", "python"))
+    candidates.append(os.path.join(cpp_server_dir, ".venv", "bin", "python"))
+    for python in candidates:
+        if os.access(python, os.X_OK) and os.path.abspath(python) != os.path.abspath(sys.executable):
+            os.execv(python, [python, *sys.argv])
+    sys.stderr.write(
+        "ERROR: confluent_kafka is not importable. Create the venv first:\n"
+        "  bash scripts/setup-migration-cli.sh\n"
+        "(or set MIGRATION_CLI_VENV=<venv-with-confluent-kafka>)\n"
+    )
+    sys.exit(2)
+
+
+_reexec_into_venv_if_needed()
+
 from confluent_kafka import (
     ConsumerGroupTopicPartitions,
     Consumer,
