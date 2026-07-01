@@ -1,17 +1,14 @@
 """Single-agent loop: run a persona until it produces a text response."""
 
 import json
+import re
 import time
+from datetime import datetime, timezone
 import openai
 from openai import OpenAI
 from orchestrator.config import PROVIDER_REGISTRY, get_api_key
 import orchestrator.tools as T
 
-_TRANSIENT_ERRORS = (
-    openai.InternalServerError,
-    openai.APIConnectionError,
-    openai.RateLimitError,
-)
 _BACKOFF_SECONDS = [2, 4, 8, 16, 32]
 
 # Default hard cap on tool-call iterations.  This is a safety rail, not a
@@ -82,13 +79,38 @@ def run(
         )
         if "max_tokens" in persona:
             kwargs["max_tokens"] = persona["max_tokens"]
-        for attempt, wait in enumerate([0] + _BACKOFF_SECONDS, start=0):
-            if wait:
-                time.sleep(wait)
+        for attempt in range(len(_BACKOFF_SECONDS) + 1):
             try:
                 response = client.chat.completions.create(**kwargs)
                 break
-            except _TRANSIENT_ERRORS as e:
+            except openai.RateLimitError as e:
+                if attempt >= len(_BACKOFF_SECONDS):
+                    raise
+                reset_time = None
+                m = re.search(r"Limit resets at:\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+)", str(e))
+                if m:
+                    try:
+                        reset_time = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S %Z").replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        reset_time = None
+                if reset_time is not None:
+                    sleep_secs = max(0, (reset_time - datetime.now(timezone.utc)).total_seconds()) + 5
+                    if verbose:
+                        print(
+                            f"  [{persona['name']}] rate limit (attempt {attempt + 1}/5):"
+                            f" reset at {reset_time.strftime('%Y-%m-%d %H:%M:%S UTC')};"
+                            f" sleeping {sleep_secs:.1f}s"
+                        )
+                    time.sleep(sleep_secs)
+                else:
+                    next_wait = _BACKOFF_SECONDS[attempt]
+                    if verbose:
+                        print(
+                            f"  [{persona['name']}] rate limit (attempt {attempt + 1}/5):"
+                            f" unknown reset time (using backoff); retrying in {next_wait}s"
+                        )
+                    time.sleep(next_wait)
+            except (openai.InternalServerError, openai.APIConnectionError) as e:
                 if attempt >= len(_BACKOFF_SECONDS):
                     raise
                 next_wait = _BACKOFF_SECONDS[attempt]
@@ -97,6 +119,7 @@ def run(
                         f"  [{persona['name']}] transient error (attempt {attempt + 1}/5):"
                         f" {e}; retrying in {next_wait}s"
                     )
+                time.sleep(next_wait)
         else:
             raise RuntimeError("retry loop exited without response")
         msg = response.choices[0].message
