@@ -5,32 +5,16 @@
 # ==============================================================================
 # Slim Dockerfile.blaze (v2 split)
 # ------------------------------------------------------------------------------
-# Consumes a prebuilt tt-llm-engine image (built and published by
-# tenstorrent/tt-llm-engine's CI) and only compiles the tt-media-server
-# cpp_server on top. Replaces the previous "clone tt-llm-engine + build
-# tt-metal + build engine + build cpp_server" monolithic flow, which
-# rebuilt tt-metal and tt-llm-engine on every blaze build even when nothing
-# upstream had changed.
-#
-# Pinning model:
-#   The caller passes the FULL engine image reference as a build-arg, e.g.
-#     --build-arg TT_LLM_ENGINE_IMAGE=ghcr.io/tenstorrent/tt-llm-engine/blaze:a018a2d6b270
-#   This Dockerfile does not derive or compute the tag — the operator
-#   picks the exact image (by sha, short-sha, or :latest) at dispatch
-#   time. Source of truth = whatever the caller passes.
+# Consumes a prebuilt tt-llm-engine image and compiles cpp_server on top.
 #
 # Required build args:
-#   TT_LLM_ENGINE_IMAGE                   — full image reference for the
-#                                           prebuilt engine image
-#                                           (required; FROM fails with
-#                                           "manifest unknown" if not set
-#                                           because the sentinel default
-#                                           below isn't a valid tag)
+#   TT_LLM_ENGINE_IMAGE                   — full image reference, e.g.
+#                                           ghcr.io/tenstorrent/tt-llm-engine/blaze:<sha>
+#                                           (sentinel default triggers a clear
+#                                           "manifest unknown" if the caller forgets)
 #   TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG — stamped into /info for debugging
 #
-# Required runtime auth (on the docker build host):
-#   docker login ghcr.io with a token that has read access on
-#   ghcr.io/tenstorrent/tt-llm-engine/blaze.
+# Runtime auth: docker login to ghcr.io with read access on tt-llm-engine/blaze.
 # ==============================================================================
 
 # IMPORTANT: TT_LLM_ENGINE_IMAGE MUST be passed via --build-arg. The
@@ -93,9 +77,7 @@ ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build_Release/lib:${TT_METAL_HOME}/build/li
 #   3. .../tt-metal/build_Release/_deps/nlohmann_json-build     → find_dependency(nlohmann_json) [transitive from tt-metalium-config]
 ENV CMAKE_PREFIX_PATH=/opt/tt-llm-engine:${TT_METAL_HOME}/build_Release/lib/cmake:${TT_METAL_HOME}/build_Release/_deps/nlohmann_json-build
 
-# System deps for the cpp_server build itself (Drogon + tokenizers-cpp + misc).
-# The heavy engine-build deps (protobuf-compiler, libprotobuf-dev) are no
-# longer needed because tt-llm-engine is consumed prebuilt.
+# System deps for the cpp_server build (Drogon + tokenizers-cpp + misc).
 RUN apt-get update && apt-get install -y \
     gosu \
     libgl1 \
@@ -138,7 +120,7 @@ RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
 WORKDIR ${HOME_DIR}
 
-# ----- tt-media-server source (tt-inference-server's own code) -----
+# ----- tt-media-server source -----
 WORKDIR ${APP_DIR}
 COPY "tt-media-server" "${APP_DIR}/server"
 COPY VERSION ${APP_DIR}/VERSION
@@ -162,15 +144,9 @@ RUN export CARGO_HOME=${HOME_DIR}/.cargo \
     && rustup default stable
 
 # ----- Pull prebuilt tt-llm-engine + tt-metal from the engine image -----
-# Replaces the entire `git clone tt-llm-engine + git submodule update +
-# build_metal.sh + create_venv.sh + setup.sh --ds-full` chunk of the
-# original Dockerfile.blaze. Everything that step used to produce in
-# ~25-30 min is delivered in seconds as image layers.
-#
-# Note: no separate COPY of /root/.local/share/uv needed — the engine
-# image uses `create_venv.sh --bundle-python`, so the Python interpreter
-# is deep-copied into tt-metal/python_env/ rather than symlinked to the
-# uv store. Mirrors PR #4019 ("Fix Docker images").
+# No separate uv-store COPY needed: the engine image was built with
+# `create_venv.sh --bundle-python`, so the interpreter is deep-copied into
+# tt-metal/python_env/ rather than symlinked to /root/.local/share/uv.
 COPY --from=engine /opt/tt-llm-engine     /opt/tt-llm-engine
 COPY --from=engine /opt/tt-llm-engine-src /opt/tt-llm-engine-src
 
@@ -189,9 +165,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 COPY "tt-media-server/run_cpp.sh" "${APP_DIR}/server/run_cpp.sh"
 RUN chmod +x ${APP_DIR}/server/run_cpp.sh
 
-# Cleanup build-only directories before COPY to runtime stage.
-# Much smaller scope than the old Dockerfile.blaze since we no longer
-# have a tt-metal/.cpmcache or tt-llm-engine tree under ${APP_DIR}.
+# Cleanup build-only directories before the cross-stage COPY.
 RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/.cargo \
     && rm -rf ${HOME_DIR}/.cache
@@ -262,19 +236,10 @@ RUN set -eux; \
 # ==============================================================================
 # STRIP cpp_server BUILD ARTIFACTS - drop ~2 GB of build-time-only state
 # ==============================================================================
-# Verified by readelf -d + ldd on tt_media_server_cpp:
-#   RUNPATH = $ORIGIN/tt-llm-engine:/opt/tt-llm-engine-src/tt-metal/build_Release/lib:/opt/tt-llm-engine/lib
-#   All NEEDED .so deps resolve from system paths + the two engine prefixes
-#   above. NOTHING inside cpp_server/build/ is on the runtime lookup path.
-# What we delete and why:
-#   - build/CMakeFiles/ (342 MB)     CMake build-graph bookkeeping
-#   - build/_deps/      (795 MB)     FetchContent source/build intermediates
-#                                    incl. Rust proc-macro .so files (compile-time only)
-#   - build/{CMakeCache.txt, build.ninja, *.cmake, compile_commands.json, ...}
-#                                    cmake/ninja generator state
-#   - top-level *_test, test_*, *_benchmark (~810 MB)  CTest binaries, not run in prod
-#   - top-level *.a (libllm_runner_lib.a, 26 MB)       link-time only; already in binary
-#   - dangling cpp_server/compile_commands.json symlink
+# Verified via readelf -d + ldd: nothing inside cpp_server/build/ is on
+# tt_media_server_cpp's RUNPATH — all .so deps resolve from system paths and
+# the two engine prefixes. Delete CMake bookkeeping (CMakeFiles/, _deps/,
+# *.cmake), top-level test/benchmark binaries, and static archives.
 # Safety gates at the bottom: binary must still exist + ldd must still resolve.
 RUN set -eux; \
     BUILD="${APP_DIR}/server/cpp_server/build"; \
@@ -305,9 +270,6 @@ RUN set -eux; \
 
 # ==============================================================================
 # RUNTIME STAGE - final lightweight image
-# ==============================================================================
-# Same shape as before; path expectations changed (TT_METAL_HOME under /opt,
-# LD_LIBRARY_PATH points at the engine artifact dirs).
 # ==============================================================================
 # FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS runtime
 FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-light-amd64:latest AS runtime
@@ -353,11 +315,8 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user ${HOME_DIR}
 
-# Engine artifacts - COPY straight from the engine image so the runtime
-# image's /opt tree is byte-identical to engine's final stage, no detour
-# through builder. The venv inside tt-metal/python_env/ is self-contained
-# (--bundle-python was used at venv creation), so no separate COPY of
-# /root/.local/share/uv is needed.
+# Engine artifacts — COPY straight from the engine image (not via builder)
+# so the runtime /opt tree is byte-identical to the engine's final stage.
 COPY --from=engine /opt/tt-llm-engine     /opt/tt-llm-engine
 COPY --from=engine /opt/tt-llm-engine-src /opt/tt-llm-engine-src
 
