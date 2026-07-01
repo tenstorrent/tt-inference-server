@@ -2,7 +2,11 @@
 """
 Usage:
   python run.py [--api-key KEY] [--mode {pr,groom}] [--run-dir DIR]
-                [--max-tool-rounds N] <repo_path> "<task description>"
+                [--max-tool-rounds N]
+                [--implementer-model MODEL] [--implementer-provider PROVIDER]
+                [--implementer-max-tokens N]
+                [--reviewer-model MODEL] [--reviewer-provider PROVIDER]
+                <repo_path> "<task description>"
 
 Examples:
   python run.py ~/code/myrepo "add rate limiting to the /login endpoint"
@@ -11,6 +15,10 @@ Examples:
   python run.py --api-key sk-my-key ~/code/myrepo "add rate limiting to the /login endpoint"
   python run.py --max-tool-rounds 20 ~/code/myrepo "fix this one-line typo"
   python run.py --max-tool-rounds 200 ~/code/myrepo "refactor the entire auth module"
+  python run.py --implementer-model moonshotai/Kimi-K2 --implementer-provider tt-console \\
+                ~/code/myrepo "fix issue #42"
+  python run.py --reviewer-model anthropic/claude-sonnet-4-6 --reviewer-provider litellm \\
+                ~/code/myrepo "fix issue #42"
 
 Modes:
   pr    (default) Implement a code change, debate with reviewers, and open a
@@ -35,6 +43,12 @@ Max tool rounds (--max-tool-rounds):
   mechanism.  Use a lower value for simple single-file tasks and a higher
   value for large multi-file refactors.
 
+Model/provider overrides (--implementer-* / --reviewer-*):
+  Override only the model, provider, or max_tokens for the implementer or all
+  reviewers.  All other persona settings (system prompt, etc.) are preserved.
+  When --implementer-provider tt-console is given without --implementer-max-tokens,
+  max_tokens defaults to 32768 (matching the benchmark runner convention).
+
 Security note: passing the key via --api-key will expose it in the process
 listing (e.g. `ps aux`) and in shell history. Prefer the TT_CHAT_API_KEY
 environment variable or the key file for non-interactive / CI use.
@@ -48,6 +62,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from orchestrator import orchestrate, orchestrate_groom, DEFAULT_MAX_TOOL_ROUNDS
 from orchestrator.config import validate_provider_keys
 from orchestrator.personas import ALL_PERSONAS, GROOM_REVIEWERS, GROOMER
+
+_TT_CONSOLE_DEFAULT_MAX_TOKENS = 32768
 
 
 def write_status(run_dir, status, **kwargs):
@@ -125,6 +141,29 @@ def assign_issue_if_present(task: str, repo_path: str) -> None:
         print(f"[run] WARNING: assign_issue_if_present failed: {exc}", flush=True)
 
 
+def build_implementer_override(args) -> dict:
+    override = {}
+    if args.implementer_model:
+        override["model"] = args.implementer_model
+    if args.implementer_provider:
+        override["provider"] = args.implementer_provider
+    if args.implementer_max_tokens is not None:
+        override["max_tokens"] = args.implementer_max_tokens
+    elif args.implementer_provider == "tt-console":
+        # tt-console has a tighter context window; mirror the benchmark default.
+        override["max_tokens"] = _TT_CONSOLE_DEFAULT_MAX_TOKENS
+    return override
+
+
+def build_reviewer_override(args) -> dict:
+    override = {}
+    if args.reviewer_model:
+        override["model"] = args.reviewer_model
+    if args.reviewer_provider:
+        override["provider"] = args.reviewer_provider
+    return override
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="run.py",
@@ -179,6 +218,46 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--implementer-model",
+        metavar="MODEL",
+        default=None,
+        dest="implementer_model",
+        help="Override the implementer persona's model (e.g. moonshotai/Kimi-K2).",
+    )
+    parser.add_argument(
+        "--implementer-provider",
+        metavar="PROVIDER",
+        default=None,
+        dest="implementer_provider",
+        help="Override the implementer persona's provider (e.g. tt-console, litellm).",
+    )
+    parser.add_argument(
+        "--implementer-max-tokens",
+        metavar="N",
+        type=int,
+        default=None,
+        dest="implementer_max_tokens",
+        help=(
+            "Override max_tokens for the implementer. "
+            f"Defaults to {_TT_CONSOLE_DEFAULT_MAX_TOKENS} when --implementer-provider tt-console "
+            "is set and this flag is omitted."
+        ),
+    )
+    parser.add_argument(
+        "--reviewer-model",
+        metavar="MODEL",
+        default=None,
+        dest="reviewer_model",
+        help="Override the model for all reviewer personas.",
+    )
+    parser.add_argument(
+        "--reviewer-provider",
+        metavar="PROVIDER",
+        default=None,
+        dest="reviewer_provider",
+        help="Override the provider for all reviewer personas (e.g. tt-console, litellm).",
+    )
+    parser.add_argument(
         "repo_path",
         help="Path to the target git repository.",
     )
@@ -207,8 +286,20 @@ def main():
 
     write_status(run_dir, "running")
 
-    # Validate provider keys before any agent work begins.
-    personas_in_use = ([GROOMER] + GROOM_REVIEWERS) if args.mode == "groom" else ALL_PERSONAS
+    implementer_override = build_implementer_override(args)
+    reviewer_override = build_reviewer_override(args)
+
+    # Collect the effective provider set (persona defaults + any CLI overrides)
+    # so we can validate keys before any agent work begins.
+    if args.mode == "groom":
+        personas_in_use = [GROOMER] + GROOM_REVIEWERS
+    else:
+        from orchestrator.personas import IMPLEMENTER, REVIEWERS
+        import copy
+        effective_implementer = {**IMPLEMENTER, **implementer_override}
+        effective_reviewers = [{**r, **reviewer_override} for r in REVIEWERS]
+        personas_in_use = [effective_implementer] + effective_reviewers
+
     required_providers = {p.get("provider", "litellm") for p in personas_in_use}
     try:
         validate_provider_keys(required_providers)
@@ -254,6 +345,8 @@ def main():
                 max_tool_rounds=args.max_tool_rounds,
                 verbose=True,
                 api_key=args.api_key,
+                implementer_override=implementer_override or None,
+                reviewer_override=reviewer_override or None,
             )
     except Exception as e:
         write_status(run_dir, "failed", error=str(e))
