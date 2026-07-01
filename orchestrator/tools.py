@@ -241,6 +241,14 @@ def label_issue(number: int, labels: str, cwd: str | None = None) -> str:
     return _gh(argv, cwd=cwd)
 
 
+def ensure_label(name: str, color: str = "e4e669", description: str = "", cwd: str | None = None) -> str:
+    # gh label create is idempotent when --force is passed; no separate existence check needed.
+    argv = ["label", "create", name, "--color", color, "--force"]
+    if description:
+        argv += ["--description", description]
+    return _gh(argv, cwd=cwd)
+
+
 def close_issue(number: int, reason: str = "", cwd: str | None = None) -> str:
     """Close a GitHub issue, optionally leaving a closing comment first.
 
@@ -318,6 +326,7 @@ IMPL = {
     "get_issue":     lambda args, cwd: get_issue(args["number"], cwd),
     "comment_issue": lambda args, cwd: comment_issue(args["number"], args["body"], cwd),
     "label_issue":   lambda args, cwd: label_issue(args["number"], args["labels"], cwd),
+    "ensure_label":  lambda args, cwd: ensure_label(args["name"], args.get("color", "e4e669"), args.get("description", ""), cwd),
     "close_issue":       lambda args, cwd: close_issue(args["number"], args.get("reason", ""), cwd),
     "set_issue_field":   lambda args, cwd: set_issue_field(args["number"], args["field_id"], args["value"], cwd),
 }
@@ -532,6 +541,34 @@ DEFS = [
                     },
                 },
                 "required": ["number"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ensure_label",
+            "description": (
+                "Create a label in the GitHub repo if it does not already exist. "
+                "Safe to call even when the label already exists (idempotent)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Label name, e.g. \"needs-split\".",
+                    },
+                    "color": {
+                        "type": "string",
+                        "description": "Hex color without the leading #, e.g. \"e4e669\". Defaults to yellow.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Short description of the label (optional).",
+                    },
+                },
+                "required": ["name"],
             },
         },
     },
