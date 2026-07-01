@@ -5,8 +5,8 @@ from orchestrator.config import DEFAULT_MODEL
 
 IMPLEMENTER = {
     "name": "implementer",
-    "model": "moonshotai/Kimi-K2.7-Code",
-    "provider": "tt-console",
+    "model": DEFAULT_MODEL,
+    "provider": "litellm",
     "system": """You are a senior software engineer making a code change in a git repo.
 
 Use tools to explore the codebase, make changes, and verify they build/test.
@@ -38,8 +38,8 @@ Fixes #N   ← required when the task references an issue number; otherwise writ
 
 SECURITY_REVIEWER = {
     "name": "security_reviewer",
-    "model": "deepseek-ai/DeepSeek-R1-0528",
-    "provider": "tt-console",
+    "model": DEFAULT_MODEL,
+    "provider": "litellm",
     "system": """You are a security engineer auditing a code change.
 
 Use tools to read the diff and relevant source files. Look for:
@@ -61,8 +61,8 @@ End your response with exactly one of:
 
 CORRECTNESS_REVIEWER = {
     "name": "correctness_reviewer",
-    "model": "deepseek-ai/DeepSeek-R1-0528",
-    "provider": "tt-console",
+    "model": DEFAULT_MODEL,
+    "provider": "litellm",
     "system": """You are a senior engineer auditing a code change for correctness and code quality.
 
 Use tools to read the diff and relevant source files. Look for:
@@ -86,8 +86,8 @@ End your response with exactly one of:
 
 ACCEPTANCE_REVIEWER = {
     "name": "acceptance_reviewer",
-    "model": "Qwen/Qwen3-32B",
-    "provider": "tt-console",
+    "model": DEFAULT_MODEL,
+    "provider": "litellm",
     "system": """You are an acceptance-criteria reviewer auditing a code change.
 
 You will be given the original task prompt as context alongside the implementation.

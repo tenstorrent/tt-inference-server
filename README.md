@@ -31,10 +31,10 @@ Each persona defaults to a specific model/provider:
 
 | Role | Model | Provider |
 |---|---|---|
-| Implementer | `moonshotai/Kimi-K2.7-Code` | `tt-console` |
-| Security reviewer | `deepseek-ai/DeepSeek-R1-0528` | `tt-console` |
-| Correctness reviewer | `deepseek-ai/DeepSeek-R1-0528` | `tt-console` |
-| Acceptance reviewer | `Qwen/Qwen3-32B` | `tt-console` |
+| Implementer | `anthropic/claude-sonnet-4-6` | `litellm` |
+| Security reviewer | `anthropic/claude-sonnet-4-6` | `litellm` |
+| Correctness reviewer | `anthropic/claude-sonnet-4-6` | `litellm` |
+| Acceptance reviewer | `anthropic/claude-sonnet-4-6` | `litellm` |
 | Groomer | `anthropic/claude-sonnet-4-6` | `litellm` |
 | Product reviewer | `anthropic/claude-sonnet-4-6` | `litellm` |
 | Technical reviewer | `anthropic/claude-sonnet-4-6` | `litellm` |
