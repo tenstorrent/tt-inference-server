@@ -282,7 +282,7 @@ def assign_issue(number: int, cwd: str | None = None) -> str:
 
 
 def set_issue_field(number: int, field_id: int, value: str, cwd: str | None = None) -> str:
-    # PATCH on the issue URL with X-GitHub-Api-Version is the working form per the repo workflow.
+    # POST to the dedicated subpath updates only the specified field; PATCH on the issue URL clears all others.
     import tempfile, pathlib
     body = f'{{"issue_field_values":[{{"field_id":{int(field_id)},"value":{json.dumps(value)}}}]}}'
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -291,9 +291,9 @@ def set_issue_field(number: int, field_id: int, value: str, cwd: str | None = No
     try:
         argv = [
             "api",
-            f"repos/{{owner}}/{{repo}}/issues/{int(number)}",
-            "--method", "PATCH",
-            "-H", "X-GitHub-Api-Version: 2026-03-10",
+            f"repos/{{owner}}/{{repo}}/issues/{int(number)}/issue-field-values",
+            "--method", "POST",
+            "-H", "X-GitHub-Api-Version: 2022-11-28",
             "--input", tmp_path,
         ]
         return _gh(argv, cwd=cwd)

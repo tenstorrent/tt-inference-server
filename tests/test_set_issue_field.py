@@ -9,7 +9,7 @@ class TestSetIssueFieldFunction:
         from orchestrator.tools import set_issue_field
         assert callable(set_issue_field)
 
-    def test_uses_patch_method(self):
+    def test_uses_post_method(self):
         from orchestrator import tools as tools_mod
 
         with patch.object(tools_mod, "_gh", return_value="") as mock_gh:
@@ -18,9 +18,9 @@ class TestSetIssueFieldFunction:
         args, _ = mock_gh.call_args
         argv = args[0]
         assert "--method" in argv
-        assert argv[argv.index("--method") + 1] == "PATCH"
+        assert argv[argv.index("--method") + 1] == "POST"
 
-    def test_targets_issue_url_not_field_values_subpath(self):
+    def test_targets_issue_field_values_subpath(self):
         from orchestrator import tools as tools_mod
 
         with patch.object(tools_mod, "_gh", return_value="") as mock_gh:
@@ -29,8 +29,7 @@ class TestSetIssueFieldFunction:
         args, _ = mock_gh.call_args
         argv = args[0]
         url = argv[1]
-        assert url.endswith("/issues/7")
-        assert "issue-field-values" not in url
+        assert url.endswith("/issues/7/issue-field-values")
 
     def test_includes_api_version_header(self):
         from orchestrator import tools as tools_mod
@@ -41,7 +40,7 @@ class TestSetIssueFieldFunction:
         args, _ = mock_gh.call_args
         argv = args[0]
         assert "-H" in argv
-        assert argv[argv.index("-H") + 1] == "X-GitHub-Api-Version: 2026-03-10"
+        assert argv[argv.index("-H") + 1] == "X-GitHub-Api-Version: 2022-11-28"
 
     def test_request_body_contains_field_id_and_value(self):
         from orchestrator import tools as tools_mod
@@ -72,7 +71,7 @@ class TestSetIssueFieldFunction:
 
         args, _ = mock_gh.call_args
         argv = args[0]
-        assert argv[1].endswith("/issues/99")
+        assert argv[1].endswith("/issues/99/issue-field-values")
 
     def test_field_id_cast_to_int_in_body(self):
         from orchestrator import tools as tools_mod
