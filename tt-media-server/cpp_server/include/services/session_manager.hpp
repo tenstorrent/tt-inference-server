@@ -18,9 +18,9 @@
 #include <unordered_set>
 #include <vector>
 
+#include "ipc/boost/boost_memory_queue.hpp"
 #include "services/prefix_cache_router.hpp"
 #include "services/session_lease.hpp"
-#include "ipc/boost/boost_memory_queue.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/concurrent_queue.hpp"
 #include "utils/conversation_hasher.hpp"
@@ -76,8 +76,7 @@ class SessionManager : public SessionLease {
       const std::string* expectedResponseId = nullptr) override;
   std::optional<uint64_t> getSessionHash(
       const std::string& sessionId) const override;
-  bool setSessionHash(const std::string& sessionId,
-                      uint64_t keyHash) override;
+  bool setSessionHash(const std::string& sessionId, uint64_t keyHash) override;
   bool setSessionResponseId(const std::string& sessionId,
                             const std::string& responseId) override;
   void unlockSlot(uint32_t slotId) override;

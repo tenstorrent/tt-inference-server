@@ -2,7 +2,6 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "services/session_manager.hpp"
-#include "services/session_lease.hpp"
 
 #include <gtest/gtest.h>
 #include <trantor/net/EventLoop.h>
@@ -14,6 +13,7 @@
 
 #include "../integration_test_helpers.hpp"
 #include "domain/session.hpp"
+#include "services/session_lease.hpp"
 #include "utils/conversation_hasher.hpp"
 
 namespace {

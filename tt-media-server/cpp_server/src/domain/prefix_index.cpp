@@ -46,7 +46,7 @@ void PrefixIndex::registerPrefixHash(
 
   const bool exists =
       prefixIndex.modify(keyHash, [&sessionId, &remaining, keyThinkCount](
-                                        std::vector<PrefixIndexEntry>& entries) {
+                                      std::vector<PrefixIndexEntry>& entries) {
         for (auto it = entries.begin(); it != entries.end();) {
           it->sessionIds.remove(sessionId);
           if (it->sessionIds.empty()) {
@@ -77,7 +77,7 @@ void PrefixIndex::remove(const std::string& sessionId, uint64_t keyHash) {
 
   bool becameEmpty = false;
   prefixIndex.modify(keyHash, [&sessionId, &becameEmpty](
-                                   std::vector<PrefixIndexEntry>& entries) {
+                                  std::vector<PrefixIndexEntry>& entries) {
     for (auto& entry : entries) {
       auto& ids = entry.sessionIds;
       ids.erase(std::remove(ids.begin(), ids.end(), sessionId), ids.end());

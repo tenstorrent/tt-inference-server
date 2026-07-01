@@ -201,8 +201,8 @@ MarkInFlightResult SessionManager::tryMarkInFlight(
     const std::string* expectedResponseId) {
   MarkInFlightResult result;
 
-  bool found = sessions.modify(
-      sessionId, [&](std::shared_ptr<domain::Session>& s) {
+  bool found =
+      sessions.modify(sessionId, [&](std::shared_ptr<domain::Session>& s) {
         if (expectedKeyHash.has_value() && s->getHash() != *expectedKeyHash) {
           result.outcome = MarkInFlightOutcome::Stale;
           return;
@@ -243,17 +243,16 @@ std::optional<uint64_t> SessionManager::getSessionHash(
 bool SessionManager::setSessionHash(const std::string& sessionId,
                                     uint64_t keyHash) {
   return sessions.modify(
-      sessionId, [keyHash](std::shared_ptr<domain::Session>& s) {
-        s->setHash(keyHash);
-      });
+      sessionId,
+      [keyHash](std::shared_ptr<domain::Session>& s) { s->setHash(keyHash); });
 }
 
 bool SessionManager::setSessionResponseId(const std::string& sessionId,
                                           const std::string& responseId) {
-  return sessions.modify(
-      sessionId, [&responseId](std::shared_ptr<domain::Session>& s) {
-        s->setResponseId(responseId);
-      });
+  return sessions.modify(sessionId,
+                         [&responseId](std::shared_ptr<domain::Session>& s) {
+                           s->setResponseId(responseId);
+                         });
 }
 
 std::shared_ptr<domain::Session> SessionManager::getSession(
@@ -653,7 +652,7 @@ std::optional<SessionManager::AcquiredSession>
 SessionManager::tryAcquireByResponseId(const std::string& previousResponseId,
                                        std::function<void()> cancelFn) {
   return prefixCacheRouter->tryAcquireByResponseId(previousResponseId,
-                                                     std::move(cancelFn));
+                                                   std::move(cancelFn));
 }
 
 void SessionManager::initResponseId(const std::string& sessionId,

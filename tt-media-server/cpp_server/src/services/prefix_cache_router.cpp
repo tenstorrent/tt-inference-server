@@ -75,9 +75,9 @@ PrefixCacheRouter::tryAcquireByPrefixHash(
     }
 
     if (markResult.outcome == MarkInFlightOutcome::Marked) {
-      acquired = AcquireResult{
-          true,          candidate.sessionId,   markResult.slotId,
-          matchedTokens, candidate.thinkTokens, {}};
+      acquired =
+          AcquireResult{true,          candidate.sessionId,   markResult.slotId,
+                        matchedTokens, candidate.thinkTokens, {}};
     } else {
       busy = true;
     }
@@ -130,7 +130,7 @@ PrefixCacheRouter::tryAcquireByResponseId(const std::string& previousResponseId,
 
   std::optional<AcquireResult> acquired;
   auto markResult = lease.tryMarkInFlight(sessionId, cancelFn, std::nullopt,
-                                           &previousResponseId);
+                                          &previousResponseId);
 
   if (markResult.outcome == MarkInFlightOutcome::Stale ||
       markResult.outcome == MarkInFlightOutcome::NotFound) {
@@ -178,8 +178,9 @@ void PrefixCacheRouter::registerPrefixHash(
 
   const auto oldHash = lease.getSessionHash(sessionId);
   if (!lease.setSessionHash(sessionId, keyHash)) {
-    TT_LOG_WARN("[PrefixCacheRouter] registerPrefixHash: sessionId={} not found",
-                sessionId);
+    TT_LOG_WARN(
+        "[PrefixCacheRouter] registerPrefixHash: sessionId={} not found",
+        sessionId);
     return;
   }
 
@@ -262,8 +263,8 @@ std::pair<uint32_t, uint32_t> PrefixCacheRouter::computeMatchedTokens(
   const std::vector<domain::PrefixIndexEntry> entries =
       prefixIndex.getEntriesForKey(blockInfos.front().hash);
   const auto [matchedBlocks, thinkTokens] =
-      domain::BlockMatcher::computeMatchedBlocksForSession(sessionId, blockInfos,
-                                                           entries);
+      domain::BlockMatcher::computeMatchedBlocksForSession(sessionId,
+                                                           blockInfos, entries);
 
   if (matchedBlocks == 0) {
     return {0, 0};

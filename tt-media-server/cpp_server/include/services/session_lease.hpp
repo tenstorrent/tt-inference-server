@@ -45,7 +45,8 @@ class SessionLease {
   virtual ~SessionLease() = default;
 
   // Atomically validate (when expected* are set), mark the session in-flight,
-  // and register cancelFn. cancelFn is moved only on Marked; unchanged otherwise.
+  // and register cancelFn. cancelFn is moved only on Marked; unchanged
+  // otherwise.
   virtual MarkInFlightResult tryMarkInFlight(
       const std::string& sessionId, std::function<void()>& cancelFn,
       std::optional<uint64_t> expectedKeyHash = std::nullopt,

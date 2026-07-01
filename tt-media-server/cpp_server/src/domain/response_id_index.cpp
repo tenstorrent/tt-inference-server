@@ -5,7 +5,8 @@
 
 namespace tt::domain {
 
-std::optional<std::string> ResponseIdIndex::lookup(const std::string& id) const {
+std::optional<std::string> ResponseIdIndex::lookup(
+    const std::string& id) const {
   if (id.empty()) {
     return std::nullopt;
   }
