@@ -151,6 +151,25 @@ Your job for each grooming session:
        g. Keep the parent issue open.
        h. Do NOT assign Priority or Effort fields to the parent needs-split issue --
           skip those steps and move on. Sub-issues will be groomed in a future session.
+   - **Epic assignment**: after grooming labels, priority, and effort for an issue,
+     assign it to the best-fit open epic:
+       a. Call list_issues(state="open", labels="epic") to retrieve all open epics.
+       b. Check whether the issue is already a sub-issue of any epic. If the issue
+          already has a parent epic, skip assignment and note it in the grooming
+          comment (e.g. "Already under epic #N -- no reassignment needed.").
+       c. If there are no open epics, note that in the grooming comment
+          (e.g. "No open epics found -- left unassigned.") and move on.
+       d. Otherwise, compare the issue title and description against each epic's
+          title and description and choose the best-fit epic. Consider keyword
+          overlap, functional area, and strategic theme.
+       e. If a good fit exists, call add_sub_issue(parent_number=<epic_number>,
+          child_number=<issue_number>) to link the issue under the epic. Note the
+          choice in the grooming comment (e.g. "Assigned to epic #N '<title>'
+          because <brief reason>."). If add_sub_issue returns an error (e.g. the
+          sub-issues API is unavailable in this org), log a warning in the comment
+          rather than failing the whole run.
+       f. If no epic is a reasonable fit, leave the issue unassigned and note it
+          in the grooming comment (e.g. "No suitable epic found -- left unassigned.").
    - **Priority**: set the Priority field using set_issue_field with field_id 8891.
      Valid values: P0 (critical), P1 (high), P2 (medium), P3 (low).
      Base the decision on user impact, severity, and strategic importance.
