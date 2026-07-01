@@ -12,6 +12,7 @@
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
+#include "runtime/runners/blaze_runner/mock_scheduler.hpp"
 #include "runtime/runners/blaze_runner/scheduler_interface.hpp"
 #include "scheduler/decode/mock_migration_client.hpp"
 #ifdef ENABLE_BLAZE_MIGRATION
@@ -309,6 +310,29 @@ inline pl::CounterChannelConfig makePrefillAckChannelConfig(
     default:
       throw std::runtime_error("Invalid blaze prefill runner type");
   }
+}
+
+// Builders for the mock scheduler config structs. Same shape as the pipeline
+// builders above (env/settings -> plain-data config): the callers in
+// blaze_scheduler_factory.cpp have already branched on MOCK_PIPELINE +
+// useMockScheduler, so these deliberately take no arguments.
+inline MockPrefillSchedulerConfig makeMockPrefillSchedulerConfig() {
+  return MockPrefillSchedulerConfig{
+      .prefillLatency =
+          std::chrono::milliseconds(tt::config::mockPrefillLatencyMs()),
+      .prefillChunkSize = tt::config::prefillChunkSize(),
+  };
+}
+
+inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig() {
+  return MockDecodeSchedulerConfig{
+      .prefillLatency =
+          std::chrono::milliseconds(tt::config::mockPrefillLatencyMs()),
+      .prefillChunkSize = tt::config::prefillChunkSize(),
+      .decodeTokenId = tt::config::mockDecodeTokenId(),
+      .decodeTokenLatency =
+          std::chrono::microseconds(tt::config::mockDecodeTokenLatencyUs()),
+  };
 }
 
 inline std::unique_ptr<sch::MigrationClientInterface>

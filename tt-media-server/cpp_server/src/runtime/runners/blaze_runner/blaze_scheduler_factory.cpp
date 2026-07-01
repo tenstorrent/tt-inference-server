@@ -3,7 +3,6 @@
 
 #include "runtime/runners/blaze_runner/blaze_scheduler_factory.hpp"
 
-#include <chrono>
 #include <memory>
 #include <utility>
 
@@ -81,14 +80,7 @@ std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
     TT_LOG_INFO(
         "makeDecodeScheduler: using MockDecodeScheduler (single-threaded)");
     return std::make_unique<MockDecodeScheduler>(
-        maxUsers, MockDecodeSchedulerConfig{
-                      .prefillLatency = std::chrono::milliseconds(
-                          tt::config::mockPrefillLatencyMs()),
-                      .prefillChunkSize = tt::config::prefillChunkSize(),
-                      .decodeTokenId = tt::config::mockDecodeTokenId(),
-                      .decodeTokenLatency = std::chrono::microseconds(
-                          tt::config::mockDecodeTokenLatencyUs()),
-                  });
+        maxUsers, utils::makeMockDecodeSchedulerConfig());
   }
 
   TT_LOG_INFO(
@@ -131,11 +123,7 @@ std::unique_ptr<IPrefillScheduler> makePrefillScheduler(
     TT_LOG_INFO(
         "makePrefillScheduler: using MockPrefillScheduler (single-threaded)");
     return std::make_unique<MockPrefillScheduler>(
-        maxUsers, MockPrefillSchedulerConfig{
-                      .prefillLatency = std::chrono::milliseconds(
-                          tt::config::mockPrefillLatencyMs()),
-                      .prefillChunkSize = tt::config::prefillChunkSize(),
-                  });
+        maxUsers, utils::makeMockPrefillSchedulerConfig());
   }
 
   TT_LOG_INFO(
