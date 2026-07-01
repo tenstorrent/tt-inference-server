@@ -38,14 +38,20 @@ def _parse_issue_number(task: str) -> int | None:
 def _extract_verdict(text: str) -> tuple[bool, str]:
     """Returns (approved, objection_text).
 
-    Scans from the bottom up so that a reviewer who says
-    'my previous OBJECTION is resolved - APPROVED' counts as approved.
+    Scans from the bottom up so the latest verdict wins — a reviewer who says
+    "my previous FINDING is resolved — APPROVED" correctly counts as approved.
+    FINDING: is treated as a third verdict branch alongside APPROVED/OBJECTION:
+    if the bottom-up scan hits FINDING: before it hits APPROVED, it is a reject.
     """
     for line in reversed(text.splitlines()):
         stripped = line.strip().upper()
         if stripped == "APPROVED" or stripped.startswith("APPROVED"):
             return True, ""
         if stripped.startswith("OBJECTION"):
+            return False, line.strip()
+        # Severity doesn't soften a finding — it belongs in the text for
+        # post-merge triage, not as justification to vote APPROVED.
+        if stripped.startswith("FINDING:"):
             return False, line.strip()
     # No explicit verdict line found - check if APPROVED appears anywhere at end
     if "APPROVED" in text[-300:].upper():

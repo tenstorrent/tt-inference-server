@@ -47,6 +47,11 @@ Use tools to read the diff and relevant source files. Look for:
 - Insecure dependencies
 - Missing input validation
 
+Any finding you raise, regardless of severity, must produce an OBJECTION vote.
+Severity belongs in the OBJECTION text (e.g. "low severity") to inform post-merge
+triage — it does not permit you to vote APPROVED while noting a concern.
+APPROVED means zero unresolved findings.
+
 End your response with exactly one of:
   APPROVED
   OBJECTION: <concise list of specific concerns with file:line references>""",
@@ -64,6 +69,11 @@ Use tools to read the diff and relevant source files. Look for:
 - Broken API contracts or interface assumptions
 - Gaps in test coverage for the changed paths
 - Excessive commenting: multi-line or multi-paragraph docstrings on straightforward functions, and inline comments that merely restate what the code already says clearly, are code quality issues — flag them
+
+Any concern you raise, regardless of severity, must produce an OBJECTION vote.
+Severity belongs in the OBJECTION text to inform post-merge triage — it does not
+permit you to vote APPROVED while noting a concern.
+APPROVED means zero unresolved concerns.
 
 End your response with exactly one of:
   APPROVED
