@@ -722,6 +722,39 @@ def populate_model_spec_cli_args(model_spec, runtime_config):
     model_spec.cli_args.update(cli_args)
 
 
+def _maybe_force_forge_llm_smoke(args, model_spec):
+    """HACK (temporary): force smoke-level evals + benchmarks for forge/media
+    LLM runs instead of the full nightly sweep.
+
+    Forge LLM release/evals/benchmarks currently take hours of nightly-scale
+    evals + an 11-point benchmark sweep. While the forge LLM pipeline is being
+    stabilized we only want a fast smoke pass (first eval task, ~3 samples;
+    smoke benchmark config, no concurrency sweeps). This overrides
+    ``args.limit_samples_mode`` before ``RuntimeConfig.from_args`` so the mode
+    serializes into the runtime spec JSON and reaches the v2 engine (which has
+    no --limit-samples-mode flag and reads it only from that JSON).
+
+    Remove this once forge LLM nightly is re-enabled.
+    """
+    if getattr(args, "workflow", None) not in ("release", "evals", "benchmarks"):
+        return
+    engine = getattr(model_spec, "inference_engine", None)
+    engine = engine.value if hasattr(engine, "value") else engine
+    if engine not in (InferenceEngine.FORGE.value, InferenceEngine.MEDIA.value):
+        return
+    model_type = getattr(model_spec, "model_type", None)
+    if getattr(model_type, "name", str(model_type)) != "LLM":
+        return
+    if args.limit_samples_mode != "smoke_test":
+        logger.warning(
+            "HACK: forcing --limit-samples-mode=smoke_test for forge/media LLM "
+            "%s (was %r).",
+            getattr(args, "model", "?"),
+            args.limit_samples_mode,
+        )
+        args.limit_samples_mode = "smoke_test"
+
+
 def resolve_runtime(args):
     """Atomically build RuntimeConfig and resolve ModelSpec.
 
@@ -738,6 +771,7 @@ def resolve_runtime(args):
             f"{args.runtime_model_spec_json}"
         )
         model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+        _maybe_force_forge_llm_smoke(args, model_spec)
         runtime_config = RuntimeConfig.from_args(args)
     else:
         model_spec, resolved_impl, resolved_engine = get_runtime_model_spec(
@@ -746,6 +780,7 @@ def resolve_runtime(args):
             engine=args.engine,
             impl=args.impl,
         )
+        _maybe_force_forge_llm_smoke(args, model_spec)
         runtime_config = RuntimeConfig.from_args(
             args, impl=resolved_impl, engine=resolved_engine
         )
