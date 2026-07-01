@@ -1,9 +1,18 @@
 """Single-agent loop: run a persona until it produces a text response."""
 
 import json
+import time
+import openai
 from openai import OpenAI
 from orchestrator.config import PROVIDER_REGISTRY, get_api_key
 import orchestrator.tools as T
+
+_TRANSIENT_ERRORS = (
+    openai.InternalServerError,
+    openai.APIConnectionError,
+    openai.RateLimitError,
+)
+_BACKOFF_SECONDS = [2, 4, 8, 16, 32]
 
 # Default hard cap on tool-call iterations.  This is a safety rail, not a
 # cost-control mechanism — cost is better managed at the token/dollar level.
@@ -73,7 +82,23 @@ def run(
         )
         if "max_tokens" in persona:
             kwargs["max_tokens"] = persona["max_tokens"]
-        response = client.chat.completions.create(**kwargs)
+        for attempt, wait in enumerate([0] + _BACKOFF_SECONDS, start=0):
+            if wait:
+                time.sleep(wait)
+            try:
+                response = client.chat.completions.create(**kwargs)
+                break
+            except _TRANSIENT_ERRORS as e:
+                if attempt >= len(_BACKOFF_SECONDS):
+                    raise
+                next_wait = _BACKOFF_SECONDS[attempt]
+                if verbose:
+                    print(
+                        f"  [{persona['name']}] transient error (attempt {attempt + 1}/5):"
+                        f" {e}; retrying in {next_wait}s"
+                    )
+        else:
+            raise RuntimeError("retry loop exited without response")
         msg = response.choices[0].message
 
         # Append assistant turn (convert to dict safely)
