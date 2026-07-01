@@ -9,7 +9,7 @@ class TestSetIssueFieldFunction:
         from orchestrator.tools import set_issue_field
         assert callable(set_issue_field)
 
-    def test_uses_patch_method(self):
+    def test_uses_post_method(self):
         from orchestrator import tools as tools_mod
 
         with patch.object(tools_mod, "_gh", return_value="") as mock_gh:
