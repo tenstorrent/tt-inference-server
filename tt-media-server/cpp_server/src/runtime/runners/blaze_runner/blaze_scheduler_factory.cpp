@@ -81,15 +81,14 @@ std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
     TT_LOG_INFO(
         "makeDecodeScheduler: using MockDecodeScheduler (single-threaded)");
     return std::make_unique<MockDecodeScheduler>(
-        maxUsers,
-        MockDecodeSchedulerConfig{
-            .prefillLatency = std::chrono::milliseconds(
-                tt::config::mockPrefillLatencyMs()),
-            .prefillChunkSize = tt::config::prefillChunkSize(),
-            .decodeTokenId = tt::config::mockDecodeTokenId(),
-            .decodeTokenLatency = std::chrono::microseconds(
-                tt::config::mockDecodeTokenLatencyUs()),
-        });
+        maxUsers, MockDecodeSchedulerConfig{
+                      .prefillLatency = std::chrono::milliseconds(
+                          tt::config::mockPrefillLatencyMs()),
+                      .prefillChunkSize = tt::config::prefillChunkSize(),
+                      .decodeTokenId = tt::config::mockDecodeTokenId(),
+                      .decodeTokenLatency = std::chrono::microseconds(
+                          tt::config::mockDecodeTokenLatencyUs()),
+                  });
   }
 
   TT_LOG_INFO(
@@ -132,12 +131,11 @@ std::unique_ptr<IPrefillScheduler> makePrefillScheduler(
     TT_LOG_INFO(
         "makePrefillScheduler: using MockPrefillScheduler (single-threaded)");
     return std::make_unique<MockPrefillScheduler>(
-        maxUsers,
-        MockPrefillSchedulerConfig{
-            .prefillLatency = std::chrono::milliseconds(
-                tt::config::mockPrefillLatencyMs()),
-            .prefillChunkSize = tt::config::prefillChunkSize(),
-        });
+        maxUsers, MockPrefillSchedulerConfig{
+                      .prefillLatency = std::chrono::milliseconds(
+                          tt::config::mockPrefillLatencyMs()),
+                      .prefillChunkSize = tt::config::prefillChunkSize(),
+                  });
   }
 
   TT_LOG_INFO(
