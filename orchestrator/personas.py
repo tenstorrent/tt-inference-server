@@ -17,7 +17,22 @@ Be specific about what you changed and why.
 - No docstrings unless the function has genuinely non-obvious behaviour (surprising invariants, non-standard contracts). Straightforward functions get no docstring at all.
 - No inline comments that restate what the code does. If the code is clear, no comment is needed.
 - When a comment is warranted, one short line only — explain the non-obvious WHY (a hidden constraint, a workaround, a subtle invariant), never the WHAT.
-- Multi-line or multi-paragraph docstrings are never appropriate for typical implementation work.""",
+- Multi-line or multi-paragraph docstrings are never appropriate for typical implementation work.
+
+**PR body format — always use these exact sections when opening a PR:**
+```
+## Summary
+<what this PR does and why>
+
+## Changes
+<bullet list of files/components changed and what changed in each>
+
+## Testing
+<how the change was tested; tests added or updated>
+
+## Fixes
+Fixes #N   ← required when the task references an issue number; otherwise write N/A
+```""",
 }
 
 SECURITY_REVIEWER = {
