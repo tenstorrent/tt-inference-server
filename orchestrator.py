@@ -9,9 +9,15 @@ Flow:
   5. If consensus → create PR.  If not → dump state and exit non-zero.
 """
 
-import sys, textwrap
+import re, sys, textwrap
 from personas import IMPLEMENTER, REVIEWERS
 import agent as A
+
+
+def _parse_issue_number(task: str) -> int | None:
+    # Mirrors run.parse_issue_number; kept local to avoid circular imports.
+    m = re.search(r"#(\d+)", task)
+    return int(m.group(1)) if m else None
 
 def _extract_verdict(text: str) -> tuple[bool, str]:
     """Returns (approved, objection_text).
@@ -137,8 +143,12 @@ def orchestrate(
         _Opened by multi-agent orchestrator._
     """).strip()
 
+    issue_number = _parse_issue_number(task)
+    if issue_number is not None:
+        pr_body += f"\n\nFixes #{issue_number}"
+
     from tools import create_pr
-    import re, time
+    import time
     branch = "ai/" + re.sub(r"[^a-z0-9]+", "-", task[:50].lower()).strip("-") + f"-{int(time.time())}"
     result = create_pr(task[:72], pr_body, branch, cwd=repo_path)
     log(result)
