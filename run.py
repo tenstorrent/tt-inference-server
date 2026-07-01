@@ -46,6 +46,8 @@ import sys, os, argparse, json, re, subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from orchestrator import orchestrate, orchestrate_groom, DEFAULT_MAX_TOOL_ROUNDS
+from orchestrator.config import validate_provider_keys
+from orchestrator.personas import ALL_PERSONAS, GROOM_REVIEWERS, GROOMER
 
 
 def write_status(run_dir, status, **kwargs):
@@ -204,6 +206,16 @@ def main():
         sys.exit(1)
 
     write_status(run_dir, "running")
+
+    # Validate provider keys before any agent work begins.
+    personas_in_use = ([GROOMER] + GROOM_REVIEWERS) if args.mode == "groom" else ALL_PERSONAS
+    required_providers = {p.get("provider", "litellm") for p in personas_in_use}
+    try:
+        validate_provider_keys(required_providers)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", flush=True)
+        write_status(run_dir, "failed", error=str(exc))
+        sys.exit(1)
 
     # Poison the push URL so the implementer agent cannot push directly.
     # The orchestrator restores it immediately before its own git push.
