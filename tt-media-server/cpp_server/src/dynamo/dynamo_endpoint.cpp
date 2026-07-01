@@ -482,6 +482,7 @@ void DynamoEndpoint::stop() {
   if (!running_.exchange(false)) {
     return;
   }
+  TT_LOG_INFO("[DynamoEndpoint] Shutting down");
   if (server_) {
     server_->shutdown();
   }
