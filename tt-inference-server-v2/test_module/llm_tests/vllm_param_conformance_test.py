@@ -128,7 +128,9 @@ class VLLMParamConformanceTest(BaseTest):
         # A nonzero return code is expected when conformance tests fail — those
         # failures are captured in the report. Only a missing report means the
         # run itself broke (e.g. missing fixtures / server unreachable).
-        report_path = Path(output_dir) / f"parameter_report_{self.REPORT_TASK_NAME}.json"
+        report_path = (
+            Path(output_dir) / f"parameter_report_{self.REPORT_TASK_NAME}.json"
+        )
         if not report_path.exists():
             tail = (stdout or b"").decode(errors="replace")[-2000:]
             raise RuntimeError(
