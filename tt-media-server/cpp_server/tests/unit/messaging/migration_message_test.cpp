@@ -304,7 +304,7 @@ OffloadRequestMessage makeOffloadRequest(std::vector<KVCacheBlockRef> blocks) {
 
 DownloadResponseMessage makeDownloadResponse(MigrationStatus status) {
   return DownloadResponseMessage{
-      .id = 99, .status = status, .usable_prefix_count = 5};
+      .id = 99, .status = status, .downloaded_block_hashes = {1, 2, 3}};
 }
 
 OffloadResponseMessage makeOffloadResponse(MigrationStatus status) {
@@ -409,7 +409,7 @@ TEST_P(DownloadResponseStatusWire, RoundTripPreservesAllFields) {
   ASSERT_TRUE(out.has_value());
   EXPECT_EQ(out->id, in.id);
   EXPECT_EQ(out->status, in.status);
-  EXPECT_EQ(out->usable_prefix_count, in.usable_prefix_count);
+  EXPECT_EQ(out->downloaded_block_hashes, in.downloaded_block_hashes);
 }
 
 INSTANTIATE_TEST_SUITE_P(AllStatuses, DownloadResponseStatusWire,
@@ -426,21 +426,33 @@ TEST(DownloadResponseMessageWire, SerializeEmitsExpectedFields) {
   ASSERT_TRUE(root.isObject());
   EXPECT_TRUE(root.isMember("id"));
   EXPECT_TRUE(root.isMember("status"));
-  EXPECT_TRUE(root.isMember("usable_prefix_count"));
+  EXPECT_TRUE(root.isMember("downloaded_block_hashes"));
   ASSERT_TRUE(root["status"].isString());
   EXPECT_EQ(root["status"].asString(), "SUCCESSFUL");
+  ASSERT_TRUE(root["downloaded_block_hashes"].isArray());
+  EXPECT_EQ(root["downloaded_block_hashes"].size(), 3u);
   EXPECT_EQ(root.size(), 3u);
 }
 
 TEST(DownloadResponseMessageWire, HandlesMaxValues) {
   auto in = makeDownloadResponse(MigrationStatus::SUCCESSFUL);
   in.id = std::numeric_limits<uint64_t>::max();
-  in.usable_prefix_count = std::numeric_limits<uint32_t>::max();
+  in.downloaded_block_hashes = {std::numeric_limits<uint64_t>::max(), 0,
+                                std::numeric_limits<uint64_t>::max()};
 
   const auto out = parseDownloadResponse(serialize(in));
   ASSERT_TRUE(out.has_value());
   EXPECT_EQ(out->id, std::numeric_limits<uint64_t>::max());
-  EXPECT_EQ(out->usable_prefix_count, std::numeric_limits<uint32_t>::max());
+  EXPECT_EQ(out->downloaded_block_hashes, in.downloaded_block_hashes);
+}
+
+TEST(DownloadResponseMessageWire, HandlesEmptyBlockHashes) {
+  auto in = makeDownloadResponse(MigrationStatus::SUCCESSFUL);
+  in.downloaded_block_hashes.clear();
+
+  const auto out = parseDownloadResponse(serialize(in));
+  ASSERT_TRUE(out.has_value());
+  EXPECT_TRUE(out->downloaded_block_hashes.empty());
 }
 
 TEST(DownloadResponseMessageParse, RejectsMalformedJson) {
@@ -451,10 +463,10 @@ TEST(DownloadResponseMessageParse, RejectsMalformedJson) {
 TEST(DownloadResponseMessageParse, RejectsMissingFields) {
   EXPECT_FALSE(
       parseDownloadResponse(
-          R"({"status": "SUCCESSFUL", "usable_prefix_count": 0})")
+          R"({"status": "SUCCESSFUL", "downloaded_block_hashes": []})")
           .has_value());
   EXPECT_FALSE(
-      parseDownloadResponse(R"({"id": 1, "usable_prefix_count": 0})")
+      parseDownloadResponse(R"({"id": 1, "downloaded_block_hashes": []})")
           .has_value());
   EXPECT_FALSE(
       parseDownloadResponse(R"({"id": 1, "status": "SUCCESSFUL"})").has_value());
@@ -463,22 +475,30 @@ TEST(DownloadResponseMessageParse, RejectsMissingFields) {
 TEST(DownloadResponseMessageParse, RejectsWrongFieldTypes) {
   EXPECT_FALSE(
       parseDownloadResponse(
-          R"({"id": "x", "status": "SUCCESSFUL", "usable_prefix_count": 0})")
+          R"({"id": "x", "status": "SUCCESSFUL", "downloaded_block_hashes": []})")
           .has_value());
   EXPECT_FALSE(
       parseDownloadResponse(
-          R"({"id": 1, "status": 0, "usable_prefix_count": 0})")
+          R"({"id": 1, "status": 0, "downloaded_block_hashes": []})")
           .has_value());
   EXPECT_FALSE(
       parseDownloadResponse(
-          R"({"id": 1, "status": "SUCCESSFUL", "usable_prefix_count": "x"})")
+          R"({"id": 1, "status": "SUCCESSFUL", "downloaded_block_hashes": "x"})")
+          .has_value());
+  EXPECT_FALSE(
+      parseDownloadResponse(
+          R"({"id": 1, "status": "SUCCESSFUL", "downloaded_block_hashes": {}})")
+          .has_value());
+  EXPECT_FALSE(
+      parseDownloadResponse(
+          R"({"id": 1, "status": "SUCCESSFUL", "downloaded_block_hashes": [1, "x"]})")
           .has_value());
 }
 
 TEST(DownloadResponseMessageParse, RejectsUnknownStatusString) {
   EXPECT_FALSE(
       parseDownloadResponse(
-          R"({"id": 1, "status": "MAYBE_SUCCESSFUL", "usable_prefix_count": 0})")
+          R"({"id": 1, "status": "MAYBE_SUCCESSFUL", "downloaded_block_hashes": []})")
           .has_value());
 }
 

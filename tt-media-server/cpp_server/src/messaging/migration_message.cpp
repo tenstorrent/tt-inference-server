@@ -106,7 +106,10 @@ std::string serialize(const DownloadResponseMessage& drm) {
   Json::Value root;
   root["id"] = static_cast<Json::UInt64>(drm.id);
   root["status"] = std::string(toWire(drm.status));
-  root["usable_prefix_count"] = drm.usable_prefix_count;
+  root["downloaded_block_hashes"] = Json::arrayValue;
+  for (const auto& hash : drm.downloaded_block_hashes) {
+    root["downloaded_block_hashes"].append(static_cast<Json::UInt64>(hash));
+  }
 
   return write(root);
 }
@@ -165,9 +168,19 @@ std::optional<DownloadResponseMessage> parseDownloadResponse(
   if (!parse(json, root)) return std::nullopt;
   if (!root.isMember("id") || !root["id"].isIntegral() ||
       !root.isMember("status") || !root["status"].isString() ||
-      !root.isMember("usable_prefix_count") || !root["usable_prefix_count"].isIntegral()) {
+      !root.isMember("downloaded_block_hashes") ||
+      !root["downloaded_block_hashes"].isArray()) {
     TT_LOG_ERROR("[migration_message] Response missing required fields");
     return std::nullopt;
+  }
+
+  for (const auto& hash : root["downloaded_block_hashes"]) {
+    if (!hash.isIntegral()) {
+      TT_LOG_ERROR(
+          "[migration_message] downloaded_block_hashes contains non-integral "
+          "entry");
+      return std::nullopt;
+    }
   }
 
   auto status = fromWire(root["status"].asString());
@@ -180,7 +193,10 @@ std::optional<DownloadResponseMessage> parseDownloadResponse(
   DownloadResponseMessage out{};
   out.id = root["id"].asUInt64();
   out.status = *status;
-  out.usable_prefix_count = root["usable_prefix_count"].asUInt();
+  out.downloaded_block_hashes.reserve(root["downloaded_block_hashes"].size());
+  for (const auto& hash : root["downloaded_block_hashes"]) {
+    out.downloaded_block_hashes.push_back(hash.asUInt64());
+  }
 
   return out;
 }

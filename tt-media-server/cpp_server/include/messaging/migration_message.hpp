@@ -34,7 +34,7 @@ struct DownloadRequestMessage {
 struct DownloadResponseMessage {
   uint64_t id;
   tt::services::MigrationStatus status;
-  uint32_t usable_prefix_count;
+  std::vector<uint64_t> downloaded_block_hashes;
 };
 
 struct OffloadRequestMessage {
