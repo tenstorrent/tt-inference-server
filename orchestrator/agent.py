@@ -11,6 +11,9 @@ import orchestrator.tools as T
 # passing max_tool_rounds explicitly to run().
 DEFAULT_MAX_TOOL_ROUNDS = 100
 
+# Tools the orchestrator calls directly; agents must never invoke them.
+_ORCHESTRATOR_ONLY = frozenset({"create_pr"})
+
 
 class MaxToolRoundsError(Exception):
     """Raised when an agent exhausts its max_tool_rounds budget without
@@ -40,36 +43,15 @@ def run(
     max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
     verbose: bool = True,
     api_key: str | None = None,
+    exclude_tools: set[str] | None = None,
 ) -> tuple[str, list[dict]]:
-    """
-    Run a persona against a message history.
-    Returns (final_text, updated_messages_including_system).
-
-    Raises:
-        MaxToolRoundsError: if the agent exhausts ``max_tool_rounds`` without
-            producing a final (non-tool-call) response.  Callers must treat
-            this as an orchestrator-level failure and must NOT pass the
-            partial result to downstream agents.
-
-    Args:
-        persona:         Persona dict (name, model, system prompt).
-        messages:        Conversation history to send to the model.
-        cwd:             Working directory for tool calls.
-        max_tool_rounds: Hard cap on tool-call iterations before giving up.
-                         Defaults to DEFAULT_MAX_TOOL_ROUNDS (100).  Pass a
-                         lower value for simple tasks, a higher value for
-                         complex ones.
-        verbose:         Print tool-call activity to stdout.
-        api_key:         Optional LiteLLM API key.  Falls back to the
-                         ``TT_CHAT_API_KEY`` env-var and then the key file
-                         when None.
-    """
     client = _client(api_key)
     history = [{"role": "system", "content": persona["system"]}] + messages
 
+    blocked = _ORCHESTRATOR_ONLY | (exclude_tools or set())
+    agent_tools = [t for t in T.DEFS if t["function"]["name"] not in blocked]
+
     for round_num in range(max_tool_rounds):
-        # create_pr is orchestrator-only — agents must not call it directly
-        agent_tools = [t for t in T.DEFS if t["function"]["name"] != "create_pr"]
         response = client.chat.completions.create(
             model=persona["model"],
             messages=history,
@@ -92,7 +74,6 @@ def run(
         history.append(assistant_entry)
 
         if not msg.tool_calls:
-            # Done - return the text response
             return msg.content or "", history
 
         # Execute each tool call and append results

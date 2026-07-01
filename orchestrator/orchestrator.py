@@ -24,6 +24,10 @@ from orchestrator.personas import (
 import orchestrator.agent as A
 from orchestrator.agent import MaxToolRoundsError, DEFAULT_MAX_TOOL_ROUNDS
 
+# close_issue is only valid for the groomer (closing duplicates). The
+# implementer must not close issues — that happens via Closes #N at merge time.
+_IMPLEMENTER_EXCLUDED_TOOLS = {"close_issue"}
+
 
 def _extract_verdict(text: str) -> tuple[bool, str]:
     """Returns (approved, objection_text).
@@ -110,6 +114,7 @@ def orchestrate(
             max_tool_rounds=max_tool_rounds,
             verbose=verbose,
             api_key=api_key,
+            exclude_tools=_IMPLEMENTER_EXCLUDED_TOOLS,
         )
     except MaxToolRoundsError as exc:
         log(f"\n=== IMPLEMENTER ABORTED: {exc} ===")
@@ -145,6 +150,7 @@ def orchestrate(
                 max_tool_rounds=max_tool_rounds,
                 verbose=verbose,
                 api_key=api_key,
+                exclude_tools=_IMPLEMENTER_EXCLUDED_TOOLS,
             )
             log(f"[{reviewer['name']}] {review_text[:300]}")
             approved, objection = _extract_verdict(review_text)
@@ -184,6 +190,7 @@ def orchestrate(
                 max_tool_rounds=max_tool_rounds,
                 verbose=verbose,
                 api_key=api_key,
+                exclude_tools=_IMPLEMENTER_EXCLUDED_TOOLS,
             )
         except MaxToolRoundsError as exc:
             log(f"\n=== IMPLEMENTER ABORTED (rebuttal round {debate_round + 1}): {exc} ===")
