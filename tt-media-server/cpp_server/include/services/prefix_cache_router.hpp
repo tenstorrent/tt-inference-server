@@ -16,7 +16,6 @@
 
 namespace tt::services {
 
-// Result of prefix-cache / response-id acquisition.
 struct PrefixCacheAcquireResult {
   bool sessionFound = false;
   std::string sessionId;
@@ -26,8 +25,6 @@ struct PrefixCacheAcquireResult {
   std::vector<domain::Candidate> candidatesList;
 };
 
-// Single component for prefix-cache routing: owns prefix + response-id indices
-// and coordinates session acquisition through SessionLease.
 class PrefixCacheRouter {
  public:
   using Candidate = domain::Candidate;
@@ -58,17 +55,13 @@ class PrefixCacheRouter {
       const std::string& sessionId,
       const std::vector<utils::BlockHashInfo>& blockInfos);
 
-  std::optional<Candidate> findASlotToCopyFrom(
-      const std::vector<Candidate>& candidates);
-
   void clearSessionBlockThinkTokens(const std::string& sessionId);
 
-  // Remove session from both indices (close / evict).
   void onSessionClosed(const std::string& sessionId, uint64_t keyHash,
                        const std::string& responseId);
 
  private:
-  SessionLease& lease_;
+  SessionLease& lease;
   domain::PrefixIndex prefixIndex;
   domain::ResponseIdIndex responseIdIndex;
 };

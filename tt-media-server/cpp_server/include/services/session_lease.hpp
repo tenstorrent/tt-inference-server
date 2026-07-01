@@ -28,13 +28,11 @@ class SessionInFlightException : public SessionRateLimitException {
             "requests per session are not supported.") {}
 };
 
-// Outcome of tryMarkInFlight. Callers decide how to react (e.g. prune a stale
-// index entry, try the next prefix-cache candidate, or map Busy to HTTP 429).
 enum class MarkInFlightOutcome {
-  Marked,     // Session marked in-flight; slotId is valid.
-  Busy,       // Session exists but already serving a request.
-  Stale,      // Session exists but failed key-hash or response-id validation.
-  NotFound,   // No session under sessionId.
+  Marked,
+  Busy,
+  Stale,
+  NotFound,
 };
 
 struct MarkInFlightResult {
@@ -42,9 +40,6 @@ struct MarkInFlightResult {
   uint32_t slotId = domain::INVALID_SLOT_ID;
 };
 
-// Narrow boundary between prefix-cache routing and session lifecycle.
-// PrefixCacheRouter depends on this interface instead of SessionManager
-// internals so index lookup stays separate from slot/eviction orchestration.
 class SessionLease {
  public:
   virtual ~SessionLease() = default;

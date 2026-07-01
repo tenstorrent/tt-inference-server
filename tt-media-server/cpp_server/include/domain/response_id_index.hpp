@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #pragma once
+
 #include <optional>
 #include <string>
 
 #include "utils/concurrent_map.hpp"
+
 namespace tt::domain {
+
 class ResponseIdIndex {
  public:
-  std::optional<std::string> lookup(const std::string& id);
+  std::optional<std::string> lookup(const std::string& id) const;
   void init(const std::string& id, const std::string& sessionId);
   std::optional<std::string> rekey(const std::string& prevId,
                                    const std::string& newId);
@@ -17,4 +20,5 @@ class ResponseIdIndex {
  private:
   utils::ConcurrentMap<std::string, std::string> responseIdIndex;
 };
+
 }  // namespace tt::domain
