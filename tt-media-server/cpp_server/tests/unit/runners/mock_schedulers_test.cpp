@@ -128,7 +128,7 @@ TEST(MockSchedulerTest, PrefillSubmitCompletesWithNoDecodeTokens) {
 TEST(MockSchedulerTest, DecodeSubmitEmitsMaxNewTokens) {
   // Keep this test fast: skip the default 100ms prefill stall and the
   // ~2.8ms decode spacing.
-  ScopedEnv prefillLatency("MOCK_PREFILL_LATENCY_MS", "0");
+  ScopedEnv prefillLatency("MOCK_PREFILL_CHUNK_LATENCY_MS", "0");
   ScopedEnv tokenLatency("MOCK_DECODE_TOKEN_LATENCY_US", "0");
 
   MockDecodeScheduler scheduler(4);
@@ -150,7 +150,7 @@ TEST(MockSchedulerTest, DecodeSubmitEmitsMaxNewTokens) {
 }
 
 TEST(MockSchedulerTest, DecodeSubmitWithZeroMaxNewTokensCompletesImmediately) {
-  ScopedEnv prefillLatency("MOCK_PREFILL_LATENCY_MS", "0");
+  ScopedEnv prefillLatency("MOCK_PREFILL_CHUNK_LATENCY_MS", "0");
   ScopedEnv tokenLatency("MOCK_DECODE_TOKEN_LATENCY_US", "0");
 
   MockDecodeScheduler scheduler(4);
@@ -183,7 +183,7 @@ TEST(MockSchedulerTest, DecodeSubmitWithZeroMaxNewTokensCompletesImmediately) {
 // "unexpected token for IDLE slot" assert (or, if the slot was re-allocated
 // first, silently misattributing the token to a new task).
 TEST(MockSchedulerTest, EvictPurgesQueuedAndPendingOutputsForSlot) {
-  ScopedEnv prefillLatency("MOCK_PREFILL_LATENCY_MS", "0");
+  ScopedEnv prefillLatency("MOCK_PREFILL_CHUNK_LATENCY_MS", "0");
   ScopedEnv tokenLatency("MOCK_DECODE_TOKEN_LATENCY_US", "0");
 
   MockDecodeScheduler scheduler(4);
@@ -264,7 +264,7 @@ TEST(MockSchedulerTest, PrefillRejectsContinue) {
 TEST(MockSchedulerTest, DecodeThroughputIsFlatAndInputIndependent) {
   constexpr unsigned kTokenLatencyUs = 1000;
   constexpr uint32_t kMaxNewTokens = 50;
-  ScopedEnv prefillLatency("MOCK_PREFILL_LATENCY_MS", "0");
+  ScopedEnv prefillLatency("MOCK_PREFILL_CHUNK_LATENCY_MS", "0");
   ScopedEnv tokenLatency("MOCK_DECODE_TOKEN_LATENCY_US", "1000");
 
   uint32_t shortCount = 0;

@@ -359,8 +359,9 @@ std::string dynamoEndpointName();
  * From MOCK_USE_SCHEDULER. Default: defaults::MOCK_USE_SCHEDULER. */
 bool useMockScheduler();
 
-/** Prefill completion latency for MockSchedulers. From MOCK_PREFILL_LATENCY_MS.
- * Default: defaults::MOCK_PREFILL_LATENCY_MS. */
+/** Prefill completion latency for MockSchedulers. From
+ * MOCK_PREFILL_CHUNK_LATENCY_MS. Default:
+ * defaults::MOCK_PREFILL_CHUNK_LATENCY_MS. */
 unsigned mockPrefillLatencyMs();
 
 /** Per-decode-token spacing for MockSchedulers. From

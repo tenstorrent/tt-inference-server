@@ -394,7 +394,7 @@ TEST(BlazeDecodeRunnerIntegrationTest,
 
 TEST(BlazeDecodeRunnerIntegrationTest, MockSchedulerFlatTokenStream) {
   EnvSetter mockUseScheduler("MOCK_USE_SCHEDULER", "1");
-  EnvSetter mockPrefillLatencyMs("MOCK_PREFILL_LATENCY_MS", "0");
+  EnvSetter mockPrefillLatencyMs("MOCK_PREFILL_CHUNK_LATENCY_MS", "0");
   EnvSetter mockDecodeTokenLatencyUs("MOCK_DECODE_TOKEN_LATENCY_US", "0");
 
   BlazeDecodeRunnerHarness harness;

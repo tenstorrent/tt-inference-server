@@ -18,6 +18,7 @@
 #include <numeric>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -32,6 +33,9 @@
 #include "ipc/in_memory/in_memory_result_queue.hpp"
 #include "ipc/in_memory/in_memory_task_queue.hpp"
 #include "ipc/interface/result_queue.hpp"
+#include "runtime/runners/blaze_runner/blaze_decode_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_prefill_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_scheduler_factory.hpp"
 #include "services/memory_services/memory_manager.hpp"
 #include "services/session_manager.hpp"
 #include "utils/conversation_hasher.hpp"
@@ -313,9 +317,21 @@ class RunnerTestHarness {
     auto memoryManager = std::make_unique<services::MemoryManager>(
         memoryRequestQueue_, memoryResultQueue_);
 
-    runner_ =
-        std::make_unique<RunnerType>(config_, &resultQueue_, &taskQueue_,
-                                     &cancelQueue_, std::move(memoryManager));
+    if constexpr (std::is_same_v<RunnerType,
+                                 runners::blaze::BlazeDecodeRunner>) {
+      runner_ = std::make_unique<RunnerType>(
+          config_, runners::blaze::makeDecodeScheduler(config_), &resultQueue_,
+          &taskQueue_, &cancelQueue_, std::move(memoryManager));
+    } else if constexpr (std::is_same_v<RunnerType,
+                                        runners::blaze::BlazePrefillRunner>) {
+      runner_ = std::make_unique<RunnerType>(
+          config_, runners::blaze::makePrefillScheduler(config_), &resultQueue_,
+          &taskQueue_, &cancelQueue_, std::move(memoryManager));
+    } else {
+      static_assert(sizeof(RunnerType) == 0,
+                    "RunnerTestHarness only supports Blaze decode/prefill "
+                    "runners");
+    }
 
     runnerThread_ = std::thread([this]() {
       try {

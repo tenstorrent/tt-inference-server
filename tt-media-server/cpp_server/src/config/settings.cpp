@@ -326,7 +326,8 @@ bool useMockScheduler() {
 
 unsigned mockPrefillLatencyMs() {
   return static_cast<unsigned>(
-      envUlong("MOCK_PREFILL_LATENCY_MS", defaults::MOCK_PREFILL_LATENCY_MS));
+      envUlong("MOCK_PREFILL_CHUNK_LATENCY_MS",
+               defaults::MOCK_PREFILL_CHUNK_LATENCY_MS));
 }
 
 unsigned mockDecodeTokenLatencyUs() {

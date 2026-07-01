@@ -28,8 +28,10 @@ namespace ps = tt_llm_engine::scheduler::prefill;
 class BlazePrefillRunner : public IRunner {
  public:
   BlazePrefillRunner(
-      const tt::config::LLMConfig& config, ipc::IResultQueue* resultQueue,
-      tt::ipc::ITaskQueue* taskQueue, tt::ipc::ICancelQueue* cancelQueue,
+      const tt::config::LLMConfig& config,
+      std::unique_ptr<IPrefillScheduler> prefillScheduler,
+      ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
+      tt::ipc::ICancelQueue* cancelQueue,
       std::unique_ptr<tt::services::MemoryManager> memoryManager = nullptr);
   ~BlazePrefillRunner() override;
 
