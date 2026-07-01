@@ -156,7 +156,7 @@ templates:
     - google/gemma-4-31b-it
   impl: tt_transformers
   tt_metal_commit: "a4967d5f39d"  # tt-metal PR #47556 — hybrid KV + prefill trace fix (shared image)
-  vllm_commit: "9d88cd5"  # tenstorrent/vllm dev tip (incl. #421 hybrid-KV per-model max tokens)
+  vllm_commit: "38fd25cb"  # tenstorrent/vllm dev; incl. #431 (reasoning+tool parsers now in vllm-tt-plugin, bake dropped) + #421 hybrid-KV per-model max tokens. Requires a rebuilt image (docker_image tag is derived from this commit).
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
@@ -196,16 +196,30 @@ templates:
   metadata:
     google/gemma-4-31b-it:
       reasoning_parser_name: gemma4
+      # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; inert
+      # until --enable-auto-tool-choice is passed (e.g. via --vllm-override-args).
+      tool_call_parser_name: gemma4
 
 - weights:
     - google/gemma-4-12b-it
   impl: tt_transformers
   tt_metal_commit: "a4967d5f39d"  # tt-metal PR #47556 — hybrid KV + prefill trace fix (shared image)
-  vllm_commit: "9d88cd5"  # tenstorrent/vllm dev tip (incl. #421 hybrid-KV per-model max tokens)
+  vllm_commit: "38fd25cb"  # tenstorrent/vllm dev; incl. #431 (reasoning+tool parsers now in vllm-tt-plugin, bake dropped) + #421 hybrid-KV per-model max tokens. Requires a rebuilt image (docker_image tag is derived from this commit).
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
       max_concurrency: 1
+      # 12B (unlike 31B) is NOT pool-capped: hybrid-off, its ~131K all-user KV
+      # pool fits QB2 DRAM, so no GEMMA4_MAX_TOKENS_ALL_USERS override is set and
+      # the pool == the largest prefill bucket (131072). That means the
+      # page-table "negative dimension" fault (which bites 31B because its 49152
+      # pool is smaller than the 65536 bucket) cannot occur here — every prefill
+      # bucket <= 131072 fits. The pool must also stay this large to leave block
+      # headroom for decode above a 64K-input (65536-bucket) prompt. The only
+      # real limit is the >64K eager-prefill fabric hang (tt-metal#48289), which
+      # is guarded at the eval layer (max_input_tokens = 64K, pads to the 65536
+      # bucket — the largest validated one). Hence max_context stays 131072
+      # rather than a hard 65536 cap, which would zero out decode room at 64K in.
       max_context: 131072  # 128 * 1024
       default_impl: true
       env_vars:
@@ -228,6 +242,9 @@ templates:
   metadata:
     google/gemma-4-12b-it:
       reasoning_parser_name: gemma4
+      # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; inert
+      # until --enable-auto-tool-choice is passed (e.g. via --vllm-override-args).
+      tool_call_parser_name: gemma4
 
 - weights:
     - Qwen/Qwen3-8B
