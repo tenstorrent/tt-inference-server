@@ -26,7 +26,8 @@ from orchestrator.agent import MaxToolRoundsError, DEFAULT_MAX_TOOL_ROUNDS
 
 # close_issue is only valid for the groomer (closing duplicates). The
 # implementer must not close issues — that happens via Closes #N at merge time.
-_IMPLEMENTER_EXCLUDED_TOOLS = {"close_issue"}
+# create_issue, add_sub_issue, remove_label are groomer-only: the implementer creates code, not issues.
+_IMPLEMENTER_EXCLUDED_TOOLS = {"close_issue", "create_issue", "add_sub_issue", "remove_label"}
 
 
 
