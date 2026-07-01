@@ -155,7 +155,7 @@ def check_reviewer_verdict(client: OpenAI, model: str) -> bool:
         {"role": "user", "content": f"Please review this diff:\n\n{diff}"},
     ]
 
-    response = client.chat.completions.create(model=model, messages=messages)
+    response = client.chat.completions.create(model=model, messages=messages, max_tokens=4096)
 
     text = response.choices[0].message.content or ""
     verdict_present = bool(re.search(r"\bAPPROVED\b|\bOBJECTION\b", text, re.IGNORECASE))
