@@ -36,6 +36,7 @@ parser = argparse.ArgumentParser(description="Run the synthetic benchmark.")
 parser.add_argument("--model", required=True)
 parser.add_argument("--provider", required=True)
 parser.add_argument("--api-key", dest="api_key", default=None)
+parser.add_argument("--max-tokens", dest="max_tokens", type=int, default=8192)
 args = parser.parse_args()
 
 # ---------------------------------------------------------------------------
@@ -47,7 +48,7 @@ def _make_implementer(model: str, provider: str) -> dict:
     p["model"] = model
     p["provider"] = provider
     if provider == "tt-console":
-        p["max_tokens"] = 131072
+        p["max_tokens"] = args.max_tokens
     return p
 
 
@@ -56,7 +57,7 @@ def _make_reviewer(model: str, provider: str) -> dict:
     p["model"] = model
     p["provider"] = provider
     if provider == "tt-console":
-        p["max_tokens"] = 131072
+        p["max_tokens"] = args.max_tokens
     # Tell the reviewer the diff is self-contained so it doesn't loop on tool calls.
     p["system"] = (
         p["system"]
