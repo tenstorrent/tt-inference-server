@@ -8,6 +8,7 @@
 #include <thread>
 
 #include "config/settings.hpp"
+#include "domain/block_matcher.hpp"
 #include "domain/manage_memory.hpp"
 #include "metrics/metrics.hpp"
 #include "utils/id_generator.hpp"
@@ -615,21 +616,6 @@ SessionManager::tryAcquireByPrefixHash(
                                                    std::move(cancelFn));
 }
 
-std::optional<SessionManager::Candidate> SessionManager::findASlotToCopyFrom(
-    const std::vector<Candidate>& candidates) const {
-  return prefixCacheRouter->findASlotToCopyFrom(candidates);
-}
-
-namespace {
-uint32_t tokensToBlocks(uint32_t tokens, size_t firstBlockSize,
-                        size_t blockSize) {
-  if (tokens == 0) return 0;
-  if (tokens <= firstBlockSize || blockSize == 0) return 1;
-  return static_cast<uint32_t>(1 + (tokens - firstBlockSize + blockSize - 1) /
-                                       blockSize);
-}
-}  // namespace
-
 void SessionManager::setResidentPrefixBlocks(const std::string& sessionId,
                                              uint32_t residentBlocks) {
   bool found = sessions.modify(
@@ -646,8 +632,7 @@ void SessionManager::setResidentPrefixBlocks(const std::string& sessionId,
 void SessionManager::shrinkResidentPrefixToMatchedTokens(
     const std::string& sessionId, uint32_t matchedTokens) {
   const uint32_t matchedBlocks =
-      tokensToBlocks(matchedTokens, tt::config::kvCacheFirstBlockSize(),
-                     tt::config::kvCacheBlockSize());
+      domain::BlockMatcher::tokensToBlocks(matchedTokens);
   sessions.modify(sessionId,
                   [matchedBlocks](std::shared_ptr<domain::Session>& s) {
                     s->shrinkCommittedBlocks(matchedBlocks);

@@ -3,7 +3,7 @@
 
 #include "services/session_resolution.hpp"
 
-#include "config/settings.hpp"
+#include "domain/block_matcher.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services::session_resolution {
@@ -16,7 +16,14 @@ std::optional<SlotCopyPlan> prepareSlotCopy(
     return std::nullopt;
   }
 
-  auto copyCandidate = sessionManager.findASlotToCopyFrom(candidates);
+  auto copyCandidate = domain::BlockMatcher::findSlotToCopyFrom(
+      candidates, [&sessionManager](const std::string& sessionId) {
+        uint32_t committedBlocks = 0;
+        if (auto session = sessionManager.getSession(sessionId)) {
+          committedBlocks = session->committedBlocks();
+        }
+        return committedBlocks;
+      });
   if (!copyCandidate.has_value()) {
     return std::nullopt;
   }
@@ -29,12 +36,8 @@ std::optional<SlotCopyPlan> prepareSlotCopy(
 
   sessionManager.lockSlot(sourceSlot);
 
-  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
-  const size_t blockSize = tt::config::kvCacheBlockSize();
-  const uint32_t matchedTokens = static_cast<uint32_t>(
-      firstBlockSize + (copyCandidate->matchedBlocks > 1
-                            ? (copyCandidate->matchedBlocks - 1) * blockSize
-                            : 0));
+  const uint32_t matchedTokens =
+      domain::BlockMatcher::blocksToTokens(copyCandidate->matchedBlocks);
 
   TT_LOG_INFO(
       "{} Found slot to copy from: slotId={} matchedTokens={} for taskId={}",

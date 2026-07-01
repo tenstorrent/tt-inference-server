@@ -4,6 +4,7 @@
 #include "services/prefix_cache_router.hpp"
 
 #include "config/settings.hpp"
+#include "domain/block_matcher.hpp"
 #include "metrics/metrics.hpp"
 #include "utils/logger.hpp"
 
@@ -23,10 +24,12 @@ PrefixCacheRouter::tryAcquireByPrefixHash(
   }
 
   const uint64_t keyHash = blockInfos.front().hash;
-  const size_t firstBlockTokens = tt::config::kvCacheFirstBlockSize();
-  const size_t blockTokens = tt::config::kvCacheBlockSize();
 
-  std::vector<Candidate> candidates = prefixIndex.findCandidates(blockInfos);
+  const std::vector<domain::PrefixIndexEntry> entries =
+      prefixIndex.getEntriesForKey(keyHash);
+  std::vector<Candidate> candidates =
+      domain::BlockMatcher::buildCandidates(blockInfos, entries);
+  domain::BlockMatcher::sortCandidates(candidates);
 
   if (candidates.empty()) {
     TT_LOG_DEBUG("[PrefixCacheRouter] tryAcquireByPrefixHash: keyHash={} miss",
@@ -42,25 +45,25 @@ PrefixCacheRouter::tryAcquireByPrefixHash(
   const float threshold = tt::config::prefixCacheHitThreshold();
   bool anyBusy = false;
   for (const auto& candidate : candidates) {
-    if (threshold > 0.0f) {
-      float matchPercent =
-          (candidate.matchedBlocks * 100.0f) / candidate.sessionBlocks;
-      if (matchPercent < threshold) {
+    if (!domain::BlockMatcher::passesHitThreshold(candidate, threshold)) {
+      if (threshold > 0.0f) {
+        const float matchPercent = (candidate.matchedBlocks * 100.0f) /
+                                   static_cast<float>(candidate.sessionBlocks);
         TT_LOG_INFO(
             "[PrefixCacheRouter] Prefix cache candidate rejected: "
             "matchedBlocks={} sessionBlocks={} matchPercent={:.1f}% < "
             "threshold={:.1f}%",
             candidate.matchedBlocks, candidate.sessionBlocks, matchPercent,
             threshold);
-        continue;
       }
+      continue;
     }
 
     std::optional<AcquireResult> acquired;
     bool busy = false;
 
-    uint32_t matchedTokens = static_cast<uint32_t>(
-        firstBlockTokens + (candidate.matchedBlocks - 1) * blockTokens);
+    const uint32_t matchedTokens =
+        domain::BlockMatcher::blocksToTokens(candidate.matchedBlocks);
 
     auto markResult =
         lease_.tryMarkInFlight(candidate.sessionId, cancelFn, keyHash, nullptr);
@@ -256,67 +259,28 @@ std::pair<uint32_t, uint32_t> PrefixCacheRouter::computeMatchedTokens(
     return {0, 0};
   }
 
-  const size_t firstBlockTokens = tt::config::kvCacheFirstBlockSize();
-  const size_t blockTokens = tt::config::kvCacheBlockSize();
-
+  const std::vector<domain::PrefixIndexEntry> entries =
+      prefixIndex.getEntriesForKey(blockInfos.front().hash);
   const auto [matchedBlocks, thinkTokens] =
-      prefixIndex.computeMatchedBlocks(sessionId, blockInfos);
+      domain::BlockMatcher::computeMatchedBlocksForSession(sessionId, blockInfos,
+                                                           entries);
 
   if (matchedBlocks == 0) {
     return {0, 0};
   }
-  uint32_t matchedTokens = static_cast<uint32_t>(
-      firstBlockTokens + (matchedBlocks - 1) * blockTokens);
-  return {matchedTokens, thinkTokens};
+  return {domain::BlockMatcher::blocksToTokens(matchedBlocks), thinkTokens};
 }
 
 std::optional<PrefixCacheRouter::Candidate>
 PrefixCacheRouter::findASlotToCopyFrom(
     const std::vector<Candidate>& candidates) {
-  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
-  const size_t blockSize = tt::config::kvCacheBlockSize();
-  const size_t minTokens = tt::config::minTokensToCopy();
-
-  for (const auto& candidate : candidates) {
-    if (candidate.matchedBlocks == 0) continue;
-
-    uint32_t residentBlocks = 0;
-    if (auto session = lease_.getSession(candidate.sessionId)) {
-      residentBlocks = session->committedBlocks();
-    }
-
-    const size_t usableBlocks =
-        std::min<size_t>(candidate.matchedBlocks, residentBlocks);
-    if (usableBlocks == 0) {
-      TT_LOG_DEBUG(
-          "[PrefixCacheRouter] findASlotToCopyFrom: candidate sessionId={} "
-          "has no resident KV (matchedBlocks={}, committedBlocks={}), skipping",
-          candidate.sessionId, candidate.matchedBlocks, residentBlocks);
-      continue;
-    }
-
-    const size_t usableTokens =
-        firstBlockSize +
-        (usableBlocks > 1 ? (usableBlocks - 1) * blockSize : 0);
-
-    if (usableTokens >= minTokens) {
-      TT_LOG_DEBUG(
-          "[PrefixCacheRouter] findASlotToCopyFrom: candidate sessionId={} "
-          "matchedBlocks={} committedBlocks={} usableBlocks={} usableTokens={} "
-          ">= minTokensToCopy={}",
-          candidate.sessionId, candidate.matchedBlocks, residentBlocks,
-          usableBlocks, usableTokens, minTokens);
-      Candidate capped = candidate;
-      capped.matchedBlocks = usableBlocks;
-      return capped;
-    }
-  }
-
-  TT_LOG_DEBUG(
-      "[PrefixCacheRouter] findASlotToCopyFrom: no candidate meets threshold "
-      "(minTokensToCopy={}, candidates={})",
-      minTokens, candidates.size());
-  return std::nullopt;
+  return domain::BlockMatcher::findSlotToCopyFrom(
+      candidates, [this](const std::string& sessionId) {
+        if (auto session = lease_.getSession(sessionId)) {
+          return session->committedBlocks();
+        }
+        return 0u;
+      });
 }
 
 void PrefixCacheRouter::clearSessionBlockThinkTokens(
