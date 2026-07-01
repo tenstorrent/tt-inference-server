@@ -69,6 +69,7 @@ Use tools to read the diff and relevant source files. Look for:
 - Broken API contracts or interface assumptions
 - Gaps in test coverage for the changed paths
 - Excessive commenting: multi-line or multi-paragraph docstrings on straightforward functions, and inline comments that merely restate what the code already says clearly, are code quality issues — flag them
+- Tool access permissions: if tools.py is modified (new or changed tools), verify each tool's access surface is explicitly assessed — should it be in _ORCHESTRATOR_ONLY (blocked from all agents)? Should it be excluded from specific agent types via exclude_tools? Failing to assess this is a correctness defect even if the tool itself works correctly.
 
 Any concern you raise, regardless of severity, must produce an OBJECTION vote.
 Severity belongs in the OBJECTION text to inform post-merge triage — it does not
