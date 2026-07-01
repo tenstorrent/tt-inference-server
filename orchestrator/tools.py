@@ -308,6 +308,37 @@ def set_issue_field(number: int, field_id: int, value: str, cwd: str | None = No
     finally:
         pathlib.Path(tmp_path).unlink(missing_ok=True)
 
+
+def create_issue(title: str, body: str, labels: str = "", cwd: str | None = None) -> str:
+    import tempfile, pathlib
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        f.write(body)
+        tmp_path = f.name
+    try:
+        argv = ["issue", "create", "--title", title, "--body-file", tmp_path]
+        for label in [l.strip() for l in labels.split(",") if l.strip()]:
+            argv += ["--label", label]
+        return _gh(argv, cwd=cwd)
+    finally:
+        pathlib.Path(tmp_path).unlink(missing_ok=True)
+
+
+def add_sub_issue(parent_number: int, child_number: int, cwd: str | None = None) -> str:
+    # GitHub sub-issues API: POST /repos/{owner}/{repo}/issues/{issue_number}/sub_issues
+    argv = [
+        "api",
+        f"repos/{{owner}}/{{repo}}/issues/{int(parent_number)}/sub_issues",
+        "--method", "POST",
+        "-H", "X-GitHub-Api-Version: 2022-11-28",
+        "-f", f"sub_issue_id={int(child_number)}",
+    ]
+    return _gh(argv, cwd=cwd)
+
+
+def remove_label(number: int, label: str, cwd: str | None = None) -> str:
+    argv = ["issue", "edit", str(int(number)), "--remove-label", label]
+    return _gh(argv, cwd=cwd)
+
 # -- dispatch -----------------------------------------------------------------
 
 IMPL = {
@@ -329,6 +360,9 @@ IMPL = {
     "ensure_label":  lambda args, cwd: ensure_label(args["name"], args.get("color", "e4e669"), args.get("description", ""), cwd),
     "close_issue":       lambda args, cwd: close_issue(args["number"], args.get("reason", ""), cwd),
     "set_issue_field":   lambda args, cwd: set_issue_field(args["number"], args["field_id"], args["value"], cwd),
+    "create_issue":      lambda args, cwd: create_issue(args["title"], args["body"], args.get("labels", ""), cwd),
+    "add_sub_issue":     lambda args, cwd: add_sub_issue(args["parent_number"], args["child_number"], cwd),
+    "remove_label":      lambda args, cwd: remove_label(args["number"], args["label"], cwd),
 }
 
 def execute(name: str, arguments: dict, cwd: str | None = None) -> str:
@@ -602,6 +636,79 @@ DEFS = [
                     },
                 },
                 "required": ["number", "field_id", "value"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_issue",
+            "description": (
+                "Create a new GitHub issue and return its URL and number. "
+                "Used by the groomer to create sub-issues when splitting a needs-split issue."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Issue title.",
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Issue body in markdown.",
+                    },
+                    "labels": {
+                        "type": "string",
+                        "description": "Comma-separated label names to apply (optional).",
+                    },
+                },
+                "required": ["title", "body"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_sub_issue",
+            "description": (
+                "Link a child issue to a parent issue via the GitHub sub-issues API. "
+                "The child_number must be the integer issue number returned by create_issue."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "parent_number": {
+                        "type": "integer",
+                        "description": "The parent issue number.",
+                    },
+                    "child_number": {
+                        "type": "integer",
+                        "description": "The child (sub-issue) issue number.",
+                    },
+                },
+                "required": ["parent_number", "child_number"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remove_label",
+            "description": "Remove a single label from a GitHub issue.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "number": {
+                        "type": "integer",
+                        "description": "The issue number.",
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "The label name to remove.",
+                    },
+                },
+                "required": ["number", "label"],
             },
         },
     },
