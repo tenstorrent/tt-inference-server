@@ -24,7 +24,7 @@ def get_api_key(api_key: str | None = None) -> str:
 
 def get_tt_console_api_key() -> str:
     if "TT_CONSOLE_API_KEY" in os.environ:
-        return os.environ["TT_CONSOLE_API_KEY"]
+        return os.environ["TT_CONSOLE_API_KEY"].strip()
     try:
         with open(_TT_CONSOLE_KEY_FILE) as f:
             return f.read().strip()
