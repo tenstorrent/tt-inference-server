@@ -103,8 +103,8 @@ std::uint32_t BlockMatcher::tokensToBlocks(std::uint32_t tokens) {
   if (tokens <= firstBlockSize || blockSize == 0) {
     return 1;
   }
-  return static_cast<std::uint32_t>(1 + (tokens - firstBlockSize + blockSize - 1) /
-                                       blockSize);
+  return static_cast<std::uint32_t>(
+      1 + (tokens - firstBlockSize + blockSize - 1) / blockSize);
 }
 
 std::pair<std::size_t, std::uint32_t>

@@ -860,8 +860,8 @@ std::pair<uint32_t, uint32_t> SessionManager::computeMatchedTokens(
   const std::vector<domain::PrefixIndexEntry> entries =
       prefixIndex.getEntriesForKey(blockInfos.front().hash);
   const auto [matchedBlocks, thinkTokens] =
-      domain::BlockMatcher::computeMatchedBlocksForSession(sessionId, blockInfos,
-                                                           entries);
+      domain::BlockMatcher::computeMatchedBlocksForSession(sessionId,
+                                                           blockInfos, entries);
 
   if (matchedBlocks == 0) {
     return {0, 0};
