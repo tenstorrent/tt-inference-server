@@ -112,7 +112,8 @@ uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
   return id;
 }
 
-MigrationStatus RemoteKVManagerImpl::getStatus(uint64_t migrationId) const {
+MigrationStatus RemoteKVManagerImpl::getMigrationStatus(
+    uint64_t migrationId) const {
   std::lock_guard<std::mutex> lock(mtx);
   auto it = migrations.find(migrationId);
   if (it == migrations.end()) {
@@ -128,9 +129,9 @@ uint64_t RemoteKVManagerImpl::downloadFromStore(
 
   {
     std::lock_guard<std::mutex> lock(mtx);
-    auto [it, inserted] = downloads.emplace(
-        id, DownloadState{KVTransferStatus::IN_PROGRESS,
-                          /*usablePrefixCount=*/0, now});
+    auto [it, inserted] =
+        downloads.emplace(id, DownloadState{MigrationStatus::IN_PROGRESS,
+                                            /*downloadedBlockHashes=*/{}, now});
     if (!inserted) {
       TT_LOG_WARN(
           "[RemoteKVManagerImpl] id collision on download transfer_id={}; "
@@ -147,21 +148,29 @@ uint64_t RemoteKVManagerImpl::downloadFromStore(
   return id;
 }
 
-KVTransferResult RemoteKVManagerImpl::getDownloadResult(
+DownloadKVResult RemoteKVManagerImpl::getDownloadResult(
     uint64_t transferId) const {
   std::lock_guard<std::mutex> lock(mtx);
   auto it = downloads.find(transferId);
   if (it == downloads.end()) {
-    return KVTransferResult{KVTransferStatus::UNKNOWN, 0};
+    return DownloadKVResult{MigrationStatus::UNKNOWN, {}};
   }
-  return KVTransferResult{it->second.status, it->second.usablePrefixCount};
+  return DownloadKVResult{it->second.status, it->second.downloadedBlockHashes};
 }
 
-void RemoteKVManagerImpl::offloadToStore(const OffloadKVRequest& request) {
+uint64_t RemoteKVManagerImpl::offloadToStore(const OffloadKVRequest& request) {
+  const uint64_t id = tt::utils::MigrationIDGenerator::generate();
   TT_LOG_INFO(
       "[RemoteKVManagerImpl] offloadToStore (no-op, fire-and-forget) "
       "src_slot={} blocks={}",
       request.srcSlot, request.blocks.size());
+  return id;
+}
+
+MigrationStatus RemoteKVManagerImpl::getOffloadStatus(
+    uint64_t /*transferId*/) const {
+  // Offloads are fire-and-forget: no per-submission state is retained.
+  return MigrationStatus::UNKNOWN;
 }
 
 void RemoteKVManagerImpl::drainLoop() {
@@ -231,10 +240,10 @@ void RemoteKVManagerImpl::sweepLocked(
 
   size_t timedOutDownloads = 0;
   for (auto& [id, state] : downloads) {
-    if (state.status == KVTransferStatus::IN_PROGRESS &&
+    if (state.status == MigrationStatus::IN_PROGRESS &&
         now - state.submittedAt >= timeout) {
-      state.status = KVTransferStatus::FAILED;
-      state.usablePrefixCount = 0;
+      state.status = MigrationStatus::FAILED;
+      state.downloadedBlockHashes.clear();
       ++timedOutDownloads;
       TT_LOG_WARN(
           "[RemoteKVManagerImpl] download transfer_id={} timed out after {}ms; "

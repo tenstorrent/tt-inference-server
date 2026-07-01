@@ -61,12 +61,14 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
   RemoteKVManagerImpl& operator=(const RemoteKVManagerImpl&) = delete;
 
   [[nodiscard]] uint64_t migrate(const MigrationRequest& request) override;
-  MigrationStatus getStatus(uint64_t migrationId) const override;
+  MigrationStatus getMigrationStatus(uint64_t migrationId) const override;
 
   [[nodiscard]] uint64_t downloadFromStore(
       const DownloadKVRequest& request) override;
-  KVTransferResult getDownloadResult(uint64_t transferId) const override;
-  void offloadToStore(const OffloadKVRequest& request) override;
+  DownloadKVResult getDownloadResult(uint64_t transferId) const override;
+  [[nodiscard]] uint64_t offloadToStore(
+      const OffloadKVRequest& request) override;
+  MigrationStatus getOffloadStatus(uint64_t transferId) const override;
 
  private:
   void drainLoop();
@@ -79,8 +81,8 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
   };
 
   struct DownloadState {
-    KVTransferStatus status;
-    uint32_t usablePrefixCount;
+    MigrationStatus status;
+    std::vector<uint64_t> downloadedBlockHashes;
     std::chrono::steady_clock::time_point submittedAt;
   };
 

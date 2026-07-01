@@ -86,6 +86,153 @@ std::string serialize(const MigrationResponseMessage& mrm) {
   return write(root);
 }
 
+std::string serialize(const DownloadRequestMessage& drm) {
+  Json::Value root;
+  root["id"] = static_cast<Json::UInt64>(drm.id);
+  root["dst_slot"] = drm.dst_slot;
+  root["blocks"] = Json::arrayValue;
+  for (const auto& block : drm.blocks) {
+    Json::Value blockRoot;
+    blockRoot["block_hash"] = static_cast<Json::UInt64>(block.blockHash);
+    blockRoot["position_id"] = block.positionId;
+    blockRoot["token_count"] = static_cast<Json::UInt>(block.tokenCount);
+    root["blocks"].append(blockRoot);
+  }
+
+  return write(root);
+}
+
+std::string serialize(const DownloadResponseMessage& drm) {
+  Json::Value root;
+  root["id"] = static_cast<Json::UInt64>(drm.id);
+  root["status"] = std::string(toWire(drm.status));
+  root["usable_prefix_count"] = drm.usable_prefix_count;
+
+  return write(root);
+}
+
+std::string serialize(const OffloadRequestMessage& orm) {
+  Json::Value root;
+  root["id"] = static_cast<Json::UInt64>(orm.id);
+  root["src_slot"] = orm.src_slot;
+  root["blocks"] = Json::arrayValue;
+  for (const auto& block : orm.blocks) {
+    Json::Value blockRoot;
+    blockRoot["block_hash"] = static_cast<Json::UInt64>(block.blockHash);
+    blockRoot["position_id"] = block.positionId;
+    blockRoot["token_count"] = static_cast<Json::UInt>(block.tokenCount);
+    root["blocks"].append(blockRoot);
+  }
+
+  return write(root);
+}
+
+std::string serialize(const OffloadResponseMessage& orm) {
+  Json::Value root;
+  root["id"] = static_cast<Json::UInt64>(orm.id);
+  root["status"] = std::string(toWire(orm.status));
+
+  return write(root);
+}
+
+std::optional<DownloadRequestMessage> parseDownloadRequest(
+    const std::string& json) {
+  Json::Value root;
+  if (!parse(json, root)) return std::nullopt;
+  if (!root.isMember("id") || !root["id"].isIntegral() ||
+      !root.isMember("dst_slot") || !root["dst_slot"].isIntegral() ||
+      !root.isMember("blocks") || !root["blocks"].isArray()) {
+    TT_LOG_ERROR("[migration_message] Request missing required fields");
+    return std::nullopt;
+  }
+
+  DownloadRequestMessage out{};
+  out.id = root["id"].asUInt64();
+  out.dst_slot = root["dst_slot"].asUInt();
+  for (const auto& block : root["blocks"]) {
+    out.blocks.push_back(tt::services::KVCacheBlockRef{
+        .blockHash = block["block_hash"].asUInt64(),
+        .positionId = block["position_id"].asUInt(),
+        .tokenCount = block["token_count"].asUInt()});
+  }
+
+  return out;
+}
+
+std::optional<DownloadResponseMessage> parseDownloadResponse(
+    const std::string& json) {
+  Json::Value root;
+  if (!parse(json, root)) return std::nullopt;
+  if (!root.isMember("id") || !root["id"].isIntegral() ||
+      !root.isMember("status") || !root["status"].isString() ||
+      !root.isMember("usable_prefix_count") || !root["usable_prefix_count"].isIntegral()) {
+    TT_LOG_ERROR("[migration_message] Response missing required fields");
+    return std::nullopt;
+  }
+
+  auto status = fromWire(root["status"].asString());
+  if (!status.has_value()) {
+    TT_LOG_ERROR("[migration_message] Unknown status string: {}",
+                 root["status"].asString());
+    return std::nullopt;
+  }
+
+  DownloadResponseMessage out{};
+  out.id = root["id"].asUInt64();
+  out.status = *status;
+  out.usable_prefix_count = root["usable_prefix_count"].asUInt();
+
+  return out;
+}
+
+std::optional<OffloadRequestMessage> parseOffloadRequest(
+    const std::string& json) {
+  Json::Value root;
+  if (!parse(json, root)) return std::nullopt;
+  if (!root.isMember("id") || !root["id"].isIntegral() ||
+      !root.isMember("src_slot") || !root["src_slot"].isIntegral() ||
+      !root.isMember("blocks") || !root["blocks"].isArray()) {
+    TT_LOG_ERROR("[migration_message] Request missing required fields");
+    return std::nullopt;
+  }
+
+  OffloadRequestMessage out{};
+  out.id = root["id"].asUInt64();
+  out.src_slot = root["src_slot"].asUInt();
+  for (const auto& block : root["blocks"]) {
+    out.blocks.push_back(tt::services::KVCacheBlockRef{
+        .blockHash = block["block_hash"].asUInt64(),
+        .positionId = block["position_id"].asUInt(),
+        .tokenCount = block["token_count"].asUInt()});
+  }
+
+  return out;
+}
+
+std::optional<OffloadResponseMessage> parseOffloadResponse(
+    const std::string& json) {
+  Json::Value root;
+  if (!parse(json, root)) return std::nullopt;
+  if (!root.isMember("id") || !root["id"].isIntegral() ||
+      !root.isMember("status") || !root["status"].isString()) {
+    TT_LOG_ERROR("[migration_message] Response missing required fields");
+    return std::nullopt;
+  }
+
+  auto status = fromWire(root["status"].asString());
+  if (!status.has_value()) {
+    TT_LOG_ERROR("[migration_message] Unknown status string: {}",
+                 root["status"].asString());
+    return std::nullopt;
+  }
+
+  OffloadResponseMessage out{};
+  out.id = root["id"].asUInt64();
+  out.status = *status;
+
+  return out;
+}
+
 std::optional<MigrationRequestMessage> parseMigrationRequest(
     const std::string& json) {
   Json::Value root;
@@ -133,4 +280,5 @@ std::optional<MigrationResponseMessage> parseMigrationResponse(
 
   return out;
 }
+
 }  // namespace tt::messaging

@@ -166,7 +166,7 @@ TEST(RemoteKVManagerImplTest, MigrateReturnsNonZeroIdAndStartsInProgress) {
   const uint64_t id = mgr->migrate(makeRequest());
 
   EXPECT_NE(id, 0u);
-  EXPECT_EQ(mgr->getStatus(id), MigrationStatus::IN_PROGRESS);
+  EXPECT_EQ(mgr->getMigrationStatus(id), MigrationStatus::IN_PROGRESS);
 }
 
 TEST(RemoteKVManagerImplTest, MigratePublishesRequestPayload) {
@@ -213,7 +213,7 @@ TEST(RemoteKVManagerImplTest, AckSuccessfulTransitionsStatus) {
   consumer->push(makeAck(id, MigrationStatus::SUCCESSFUL));
 
   ASSERT_TRUE(waitFor(
-      [&] { return mgr->getStatus(id) == MigrationStatus::SUCCESSFUL; }));
+      [&] { return mgr->getMigrationStatus(id) == MigrationStatus::SUCCESSFUL; }));
 }
 
 TEST(RemoteKVManagerImplTest, AckFailedTransitionsStatus) {
@@ -226,7 +226,7 @@ TEST(RemoteKVManagerImplTest, AckFailedTransitionsStatus) {
   consumer->push(makeAck(id, MigrationStatus::FAILED));
 
   ASSERT_TRUE(
-      waitFor([&] { return mgr->getStatus(id) == MigrationStatus::FAILED; }));
+      waitFor([&] { return mgr->getMigrationStatus(id) == MigrationStatus::FAILED; }));
 }
 
 TEST(RemoteKVManagerImplTest, GetStatusUnknownIdReturnsUnknown) {
@@ -234,7 +234,7 @@ TEST(RemoteKVManagerImplTest, GetStatusUnknownIdReturnsUnknown) {
   auto consumer = std::make_unique<FakeConsumer>();
   auto mgr = makeManager(std::move(producer), std::move(consumer));
 
-  EXPECT_EQ(mgr->getStatus(/*never-issued=*/0xDEADBEEFCAFEBABEull),
+  EXPECT_EQ(mgr->getMigrationStatus(/*never-issued=*/0xDEADBEEFCAFEBABEull),
             MigrationStatus::UNKNOWN);
 }
 
@@ -246,7 +246,7 @@ TEST(RemoteKVManagerImplTest, AckForUnknownIdDoesNotCreateEntry) {
 
   consumer->push(makeAck(/*id=*/12345, MigrationStatus::SUCCESSFUL));
   std::this_thread::sleep_for(50ms);
-  EXPECT_EQ(mgr->getStatus(12345), MigrationStatus::UNKNOWN);
+  EXPECT_EQ(mgr->getMigrationStatus(12345), MigrationStatus::UNKNOWN);
 }
 
 TEST(RemoteKVManagerImplTest, MalformedAckIsDropped) {
@@ -263,7 +263,7 @@ TEST(RemoteKVManagerImplTest, MalformedAckIsDropped) {
   // confirm it lands.
   consumer->push(makeAck(id, MigrationStatus::SUCCESSFUL));
   ASSERT_TRUE(waitFor(
-      [&] { return mgr->getStatus(id) == MigrationStatus::SUCCESSFUL; }));
+      [&] { return mgr->getMigrationStatus(id) == MigrationStatus::SUCCESSFUL; }));
 }
 
 TEST(RemoteKVManagerImplTest, SecondAckDoesNotOverwriteTerminalStatus) {
@@ -275,11 +275,11 @@ TEST(RemoteKVManagerImplTest, SecondAckDoesNotOverwriteTerminalStatus) {
   const uint64_t id = mgr->migrate(makeRequest());
   consumer->push(makeAck(id, MigrationStatus::SUCCESSFUL));
   ASSERT_TRUE(waitFor(
-      [&] { return mgr->getStatus(id) == MigrationStatus::SUCCESSFUL; }));
+      [&] { return mgr->getMigrationStatus(id) == MigrationStatus::SUCCESSFUL; }));
 
   consumer->push(makeAck(id, MigrationStatus::FAILED));
   std::this_thread::sleep_for(50ms);
-  EXPECT_EQ(mgr->getStatus(id), MigrationStatus::SUCCESSFUL);
+  EXPECT_EQ(mgr->getMigrationStatus(id), MigrationStatus::SUCCESSFUL);
 }
 
 TEST(RemoteKVManagerImplTest, TimeoutSweeperFlipsStaleMigrationsToFailed) {
@@ -289,10 +289,10 @@ TEST(RemoteKVManagerImplTest, TimeoutSweeperFlipsStaleMigrationsToFailed) {
                          /*timeout=*/50ms, /*sweep=*/10ms);
 
   const uint64_t id = mgr->migrate(makeRequest());
-  EXPECT_EQ(mgr->getStatus(id), MigrationStatus::IN_PROGRESS);
+  EXPECT_EQ(mgr->getMigrationStatus(id), MigrationStatus::IN_PROGRESS);
 
   ASSERT_TRUE(
-      waitFor([&] { return mgr->getStatus(id) == MigrationStatus::FAILED; },
+      waitFor([&] { return mgr->getMigrationStatus(id) == MigrationStatus::FAILED; },
               /*timeout=*/1s));
 }
 
@@ -306,11 +306,11 @@ TEST(RemoteKVManagerImplTest, AckBeforeTimeoutWins) {
   const uint64_t id = mgr->migrate(makeRequest());
   consumer->push(makeAck(id, MigrationStatus::SUCCESSFUL));
   ASSERT_TRUE(waitFor(
-      [&] { return mgr->getStatus(id) == MigrationStatus::SUCCESSFUL; }));
+      [&] { return mgr->getMigrationStatus(id) == MigrationStatus::SUCCESSFUL; }));
 
   // Wait beyond the timeout: terminal SUCCESSFUL must NOT be flipped.
   std::this_thread::sleep_for(700ms);
-  EXPECT_EQ(mgr->getStatus(id), MigrationStatus::SUCCESSFUL);
+  EXPECT_EQ(mgr->getMigrationStatus(id), MigrationStatus::SUCCESSFUL);
 }
 
 TEST(RemoteKVManagerImplTest, SendFailureMarksMigrationFailedImmediately) {
@@ -321,7 +321,7 @@ TEST(RemoteKVManagerImplTest, SendFailureMarksMigrationFailedImmediately) {
   auto mgr = makeManager(std::move(producerOwned), std::move(consumer));
 
   const uint64_t id = mgr->migrate(makeRequest());
-  EXPECT_EQ(mgr->getStatus(id), MigrationStatus::FAILED);
+  EXPECT_EQ(mgr->getMigrationStatus(id), MigrationStatus::FAILED);
 }
 
 TEST(RemoteKVManagerImplTest, ConcurrentMigratesAreThreadSafe) {
@@ -349,7 +349,7 @@ TEST(RemoteKVManagerImplTest, ConcurrentMigratesAreThreadSafe) {
             static_cast<size_t>(kThreads * kPerThread));
   for (const auto& ids : idsPerThread) {
     for (uint64_t id : ids) {
-      EXPECT_EQ(mgr->getStatus(id), MigrationStatus::IN_PROGRESS);
+      EXPECT_EQ(mgr->getMigrationStatus(id), MigrationStatus::IN_PROGRESS);
     }
   }
 }
@@ -364,7 +364,7 @@ TEST(RemoteKVManagerImplTest, PolymorphicViaIRemoteKVManager) {
   const uint64_t id = mgr->migrate(makeRequest());
   consumer->push(makeAck(id, MigrationStatus::SUCCESSFUL));
   ASSERT_TRUE(waitFor(
-      [&] { return mgr->getStatus(id) == MigrationStatus::SUCCESSFUL; }));
+      [&] { return mgr->getMigrationStatus(id) == MigrationStatus::SUCCESSFUL; }));
 }
 
 TEST(RemoteKVManagerImplTest, DestructorJoinsCleanlyWithPendingMigrations) {

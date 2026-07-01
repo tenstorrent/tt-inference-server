@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <ctime>
+#include <chrono>
 #include <vector>
 
 namespace tt::services {
@@ -18,7 +19,7 @@ enum class MigrationStatus {
 
 struct Migration {
   uint64_t migration_id;
-  std::time_t time_created;
+  std::chrono::steady_clock::time_point time_created;
   MigrationStatus status;
 };
 
@@ -58,13 +59,6 @@ struct OffloadKVRequest {
   std::vector<KVCacheBlockRef> blocks;
 };
 
-enum class KVTransferStatus {
-  UNKNOWN,
-  IN_PROGRESS,
-  COMPLETED,  ///< All workers reported; usablePrefixCount is final.
-  FAILED,     ///< Operation could not run to completion; usablePrefixCount=0.
-};
-
 /**
  * Result of a download, polled via getDownloadResult().
  *
@@ -80,9 +74,9 @@ enum class KVTransferStatus {
  *   worker 3 got: A B C D E F          per-worker prefix = 6
  *   usablePrefixCount = min(6, 5, 3, 6) = 3
  */
-struct KVTransferResult {
-  KVTransferStatus status;
-  uint32_t usablePrefixCount;
+struct DownloadKVResult {
+  MigrationStatus status;
+  std::vector<uint64_t> downloadedBlockHashes;
 };
 
 /**
@@ -112,7 +106,7 @@ class IRemoteKVManager {
    * Returns MigrationStatus::UNKNOWN if the id was never issued by
    * migrate() or has been garbage-collected.
    */
-  virtual MigrationStatus getStatus(uint64_t migrationId) const = 0;
+  virtual MigrationStatus getMigrationStatus(uint64_t migrationId) const = 0;
 
   /**
    * Returns immediately with a fresh id; poll with getDownloadResult().
@@ -127,13 +121,19 @@ class IRemoteKVManager {
    * Returns {KVTransferStatus::UNKNOWN, 0} if the id was never issued or
    * has been garbage-collected.
    */
-  virtual KVTransferResult getDownloadResult(uint64_t transferId) const = 0;
+  virtual DownloadKVResult getDownloadResult(uint64_t transferId) const = 0;
 
   /**
    * Fire-and-forget. The impl does not retain per-submission state and
    * there is no getOffloadResult().
    */
-  virtual void offloadToStore(const OffloadKVRequest& request) = 0;
+  [[nodiscard]] virtual uint64_t offloadToStore(const OffloadKVRequest& request) = 0;
+
+  /**
+   * Returns OffloadStatus::UNKNOWN if the id was never issued or
+   * has been garbage-collected.
+   */
+  virtual MigrationStatus getOffloadStatus(uint64_t transferId) const = 0;
 };
 
 }  // namespace tt::services
