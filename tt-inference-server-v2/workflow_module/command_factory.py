@@ -306,8 +306,8 @@ def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
             "will be minted. Install pyjwt to enable JWT-protected servers."
         )
         return ""
-    # get_encoded_api_key's payload has only token_id and team_id; exp is
-    # removed so this minted key byte-matches the server's precomputed key.
+    # Keep only team_id and token_id (drop exp) so this minted key matches the
+    # payload used by get_encoded_api_key in the other location.
     payload = {
         "team_id": "tenstorrent",
         "token_id": "debug-test",
