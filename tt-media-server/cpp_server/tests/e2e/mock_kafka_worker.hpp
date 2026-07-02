@@ -52,12 +52,16 @@ class MockKafkaWorker {
 
   MockKafkaWorker(const std::string& brokers, const std::string& requestTopic,
                   const std::string& ackTopic, const std::string& groupId,
-                  RequestParser parser, ResponseBuilder responder)
+                  RequestParser parser, ResponseBuilder responder,
+                  std::optional<int32_t> partition = std::nullopt)
       : parseRequest{std::move(parser)},
-        buildResponse{std::move(responder)} {
+        buildResponse{std::move(responder)},
+        producePartition{partition} {
     requestConsumer = std::make_unique<tt::messaging::KafkaConsumer>(
-        tt::messaging::KafkaConsumerConfig{
-            .brokers = brokers, .topic = requestTopic, .group_id = groupId});
+        tt::messaging::KafkaConsumerConfig{.brokers = brokers,
+                                           .topic = requestTopic,
+                                           .group_id = groupId,
+                                           .partition = partition});
     ackProducer = std::make_unique<tt::messaging::KafkaProducer>(
         tt::messaging::KafkaProducerConfig{.brokers = brokers,
                                            .topic = ackTopic});
@@ -125,12 +129,17 @@ class MockKafkaWorker {
 
       const std::string payload = buildResponse(*id, b);
       std::string err;
-      ackProducer->send(payload, &err);
+      if (producePartition.has_value()) {
+        ackProducer->send(payload, *producePartition, &err);
+      } else {
+        ackProducer->send(payload, &err);
+      }
     }
   }
 
   RequestParser parseRequest;
   ResponseBuilder buildResponse;
+  std::optional<int32_t> producePartition;
   std::unique_ptr<tt::messaging::KafkaConsumer> requestConsumer;
   std::unique_ptr<tt::messaging::KafkaProducer> ackProducer;
   std::atomic<bool> running{false};

@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -33,6 +34,13 @@ namespace tt::services {
  */
 class RemoteKVManagerImpl : public IRemoteKVManager {
  public:
+  /**
+   * Maps a MigrationRequest's layer_id to the Kafka partition that owns
+   * that layer's work. Returning a negative value falls back to the
+   * broker-picked partition (i.e. legacy un-partitioned behavior).
+   */
+  using LayerToPartition = std::function<int32_t(uint32_t layerId)>;
+
   /**
    * @param requestProducer       Kafka producer wired to the migration-
    *   request topic. Ownership is taken.
@@ -70,7 +78,8 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
       std::unique_ptr<tt::messaging::IKafkaProducer> offloadRequestProducer =
           nullptr,
       std::unique_ptr<tt::messaging::IKafkaConsumer> offloadAckConsumer =
-          nullptr);
+          nullptr,
+      LayerToPartition layerToPartition = nullptr);
 
   ~RemoteKVManagerImpl() override;
 
@@ -117,6 +126,7 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
   std::unique_ptr<tt::messaging::IKafkaConsumer> downloadAckConsumer;
   std::unique_ptr<tt::messaging::IKafkaProducer> offloadRequestProducer;
   std::unique_ptr<tt::messaging::IKafkaConsumer> offloadAckConsumer;
+  LayerToPartition layerToPartition;
   std::size_t migrationWorkerPoolSize;
   std::chrono::milliseconds timeout;
   std::chrono::milliseconds sweepInterval;

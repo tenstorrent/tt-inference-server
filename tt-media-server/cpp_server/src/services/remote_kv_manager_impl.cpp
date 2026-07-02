@@ -19,13 +19,15 @@ RemoteKVManagerImpl::RemoteKVManagerImpl(
     std::unique_ptr<tt::messaging::IKafkaProducer> downloadRequestProducer,
     std::unique_ptr<tt::messaging::IKafkaConsumer> downloadAckConsumer,
     std::unique_ptr<tt::messaging::IKafkaProducer> offloadRequestProducer,
-    std::unique_ptr<tt::messaging::IKafkaConsumer> offloadAckConsumer)
+    std::unique_ptr<tt::messaging::IKafkaConsumer> offloadAckConsumer,
+    LayerToPartition layerToPartition)
     : requestProducer(std::move(requestProducer)),
       ackConsumer(std::move(ackConsumer)),
       downloadRequestProducer(std::move(downloadRequestProducer)),
       downloadAckConsumer(std::move(downloadAckConsumer)),
       offloadRequestProducer(std::move(offloadRequestProducer)),
       offloadAckConsumer(std::move(offloadAckConsumer)),
+      layerToPartition(std::move(layerToPartition)),
       migrationWorkerPoolSize(migrationWorkerPoolSize),
       timeout(timeout),
       sweepInterval(sweepInterval),
@@ -118,7 +120,13 @@ uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
   bool sent = false;
   std::string err;
   if (requestProducer) {
-    sent = requestProducer->send(payload, &err);
+    if (layerToPartition) {
+      const int32_t partition = layerToPartition(request.layer_id);
+      sent = partition >= 0 ? requestProducer->send(payload, partition, &err)
+                            : requestProducer->send(payload, &err);
+    } else {
+      sent = requestProducer->send(payload, &err);
+    }
   } else {
     err = "no producer";
   }

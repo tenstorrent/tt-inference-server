@@ -38,9 +38,15 @@ using tt::messaging::serialize;
 class FakeProducer : public IKafkaProducer {
  public:
   bool send(std::string_view payload, std::string* errorMessage) override {
+    return send(payload, /*partition=*/-1, errorMessage);
+  }
+
+  bool send(std::string_view payload, int32_t partition,
+            std::string* errorMessage) override {
     {
       std::lock_guard<std::mutex> lock(mtx);
       payloads.emplace_back(payload);
+      partitions.push_back(partition);
     }
     if (!shouldSucceed.load(std::memory_order_relaxed)) {
       if (errorMessage) {
@@ -53,6 +59,11 @@ class FakeProducer : public IKafkaProducer {
 
   bool flush(int /*timeoutMs*/, std::string* /*errorMessage*/) override {
     return true;
+  }
+
+  std::vector<int32_t> getPartitions() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return partitions;
   }
 
   std::vector<std::string> getPayloads() const {
@@ -72,6 +83,7 @@ class FakeProducer : public IKafkaProducer {
  private:
   mutable std::mutex mtx;
   std::vector<std::string> payloads;
+  std::vector<int32_t> partitions;
   std::atomic<bool> shouldSucceed{true};
 };
 

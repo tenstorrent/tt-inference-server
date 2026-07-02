@@ -31,6 +31,7 @@
 
 #include "messaging/kafka_consumer.hpp"
 #include "messaging/kafka_producer.hpp"
+#include "messaging/utils/kafka_utils.hpp"
 #include "mock_kafka_worker.hpp"
 #include "services/remote_kv_manager.hpp"
 #include "services/remote_kv_manager_impl.hpp"
@@ -115,7 +116,8 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
 
   std::unique_ptr<RemoteKVManagerImpl> makeManager(
       std::chrono::milliseconds timeout = 30s,
-      std::size_t migrationWorkerPoolSize = 1) {
+      std::size_t migrationWorkerPoolSize = 1,
+      RemoteKVManagerImpl::LayerToPartition layerToPartition = nullptr) {
     auto producer = std::make_unique<tt::messaging::KafkaProducer>(
         tt::messaging::KafkaProducerConfig{.brokers = brokers,
                                            .topic = requestTopic});
@@ -141,7 +143,19 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
         timeout,
         /*sweepInterval=*/200ms, /*drainPollMs=*/50,
         std::move(downloadProducer), std::move(downloadConsumer),
-        std::move(offloadProducer), std::move(offloadConsumer));
+        std::move(offloadProducer), std::move(offloadConsumer),
+        std::move(layerToPartition));
+  }
+
+  // Ensure migration req + ack topics exist with the requested partition
+  // count. Kafka's default auto-creation gives topics one partition; call
+  // this before instantiating a manager or workers that expect to pin to
+  // specific partitions.
+  bool ensureMigrationTopicsWithPartitions(int32_t numPartitions) {
+    return tt::messaging::kafka_utils::createTopicWithPartitions(
+               brokers, requestTopic, numPartitions) &&
+           tt::messaging::kafka_utils::createTopicWithPartitions(
+               brokers, ackTopic, numPartitions);
   }
 
   std::unique_ptr<MockKafkaWorker> makeWorker() {
@@ -162,6 +176,28 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
           brokers, requestTopic, ackTopic,
           workerGroup + "-" + std::to_string(i), migrationParser(),
           migrationResponder());
+      worker->setBehavior(std::move(behaviors[i]));
+      worker->start();
+      workers.push_back(std::move(worker));
+    }
+    return workers;
+  }
+
+  // Spin up N migration workers, each pinned via rd_kafka_assign() to
+  // partition k on both the request and ack topics. Requires the topics
+  // to already have >= behaviors.size() partitions
+  // (see ensureMigrationTopicsWithPartitions).
+  std::vector<std::unique_ptr<MockKafkaWorker>>
+  makePartitionedMigrationWorkerPool(
+      std::vector<MockKafkaWorker::Behavior> behaviors) {
+    std::vector<std::unique_ptr<MockKafkaWorker>> workers;
+    workers.reserve(behaviors.size());
+    for (std::size_t i = 0; i < behaviors.size(); ++i) {
+      const auto partition = static_cast<int32_t>(i);
+      auto worker = std::make_unique<MockKafkaWorker>(
+          brokers, requestTopic, ackTopic,
+          workerGroup + "-p" + std::to_string(partition), migrationParser(),
+          migrationResponder(), partition);
       worker->setBehavior(std::move(behaviors[i]));
       worker->start();
       workers.push_back(std::move(worker));
@@ -331,47 +367,76 @@ TEST_F(RemoteKVManagerE2ETest, WorkerReplyFailedPropagates) {
   worker->stop();
 }
 
-TEST_F(RemoteKVManagerE2ETest, MigrateSucceedsOnlyAfterAllPoolWorkersAck) {
-  constexpr std::size_t poolSize = 4;
-  auto manager = makeManager(/*timeout=*/30s, poolSize);
+// Migrations are unicast, not fan-out: each request carries a single
+// layer_id and only the worker that owns that layer should process it.
+// This test wires a layer_id -> partition map (contiguous ranges of
+// layers, one per worker) into the manager, pins N workers to N
+// partitions via rd_kafka_assign(), and verifies:
+//   1) the layer's owner receives the request exactly once,
+//   2) no other worker sees it,
+//   3) the owner's ack flips status to SUCCESSFUL.
+TEST_F(RemoteKVManagerE2ETest, MigrateRoutesRequestToOwnerPartition) {
+  constexpr int32_t numWorkers = 4;
+  // Test-local constant so numLayers / numWorkers divides evenly,
+  // independent of the MODEL_NUM_LAYERS default (61) which does not.
+  constexpr uint32_t numLayers = 64;
+  constexpr uint32_t layersPerWorker = numLayers / numWorkers;
+  const auto layerOwner = [](uint32_t layerId) -> int32_t {
+    return static_cast<int32_t>(layerId / layersPerWorker);
+  };
 
-  // Worker 0 replies immediately, the rest sleep 1s -- gives us a window
-  // where only 1/poolSize acks have landed at the manager.
-  auto workers = makeMigrationWorkerPool({
-      {.replyStatus = MigrationStatus::SUCCESSFUL, .replyDelay = 0ms},
-      {.replyStatus = MigrationStatus::SUCCESSFUL, .replyDelay = 1s},
-      {.replyStatus = MigrationStatus::SUCCESSFUL, .replyDelay = 1s},
-      {.replyStatus = MigrationStatus::SUCCESSFUL, .replyDelay = 1s},
+  ASSERT_TRUE(ensureMigrationTopicsWithPartitions(numWorkers))
+      << "failed to create migration req/ack topics with " << numWorkers
+      << " partitions";
+
+  auto manager =
+      makeManager(/*timeout=*/30s, /*migrationWorkerPoolSize=*/1, layerOwner);
+
+  auto workers = makePartitionedMigrationWorkerPool({
+      {.replyStatus = MigrationStatus::SUCCESSFUL},
+      {.replyStatus = MigrationStatus::SUCCESSFUL},
+      {.replyStatus = MigrationStatus::SUCCESSFUL},
+      {.replyStatus = MigrationStatus::SUCCESSFUL},
   });
-  ASSERT_EQ(workers.size(), poolSize);
+  ASSERT_EQ(workers.size(), static_cast<std::size_t>(numWorkers));
 
   std::this_thread::sleep_for(KAFKA_GROUP_JOIN_WARMUP);
 
-  const uint64_t id = manager->migrate(sampleRequest());
+  // Layer 20 sits in worker 1's range (16..31).
+  constexpr uint32_t targetLayer = 20;
+  constexpr int32_t expectedOwner = 1;
+  ASSERT_EQ(layerOwner(targetLayer), expectedOwner);
+
+  auto req = sampleRequest();
+  req.layer_id = targetLayer;
+  const uint64_t id = manager->migrate(req);
   ASSERT_NE(id, 0u);
-
-  ASSERT_TRUE(waitFor([&] { return workers[0]->requestsReceived() == 1u; },
-                      POLL_DEADLINE))
-      << "worker 0 never consumed the request";
-
-  std::this_thread::sleep_for(400ms);
-
-  EXPECT_EQ(manager->getMigrationStatus(id), MigrationStatus::IN_PROGRESS)
-      << "manager marked migration SUCCESSFUL after only 1/" << poolSize
-      << " workers ack'd (missing per-migration ack quorum tracking)";
 
   ASSERT_TRUE(waitFor(
       [&] {
         return manager->getMigrationStatus(id) == MigrationStatus::SUCCESSFUL;
       },
       POLL_DEADLINE))
-      << "migration did not reach SUCCESSFUL after all " << poolSize
-      << " workers ack'd within " << POLL_DEADLINE.count() << "ms";
+      << "routed migration did not reach SUCCESSFUL within "
+      << POLL_DEADLINE.count() << "ms";
 
-  for (auto& w : workers) {
-    EXPECT_EQ(w->requestsReceived(), 1u);
-    w->stop();
+  EXPECT_EQ(workers[expectedOwner]->requestsReceived(), 1u)
+      << "owner worker " << expectedOwner << " did not receive the request";
+  for (int32_t k = 0; k < numWorkers; ++k) {
+    if (k == expectedOwner) continue;
+    EXPECT_EQ(workers[k]->requestsReceived(), 0u)
+        << "worker " << k << " received a request for layer " << targetLayer
+        << " it does not own";
   }
+
+  const auto raw = workers[expectedOwner]->takeReceivedRaw();
+  ASSERT_EQ(raw.size(), 1u);
+  const auto parsed = tt::messaging::parseMigrationRequest(raw[0]);
+  ASSERT_TRUE(parsed.has_value());
+  EXPECT_EQ(parsed->layer_id, targetLayer);
+  EXPECT_EQ(parsed->migration_id, id);
+
+  for (auto& w : workers) w->stop();
 }
 
 // ---------------------------------------------------------------------------
