@@ -238,12 +238,14 @@ templates:
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 268435456
+  # EXPERIMENTAL: no target performance has been set yet, so we can't classify
+  # this as FUNCTIONAL, COMPLETE, or top-perf.
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
     Qwen/Qwen3.6-27B:
       reasoning_parser_name: qwen3
-      tool_call_parser_name: hermes
+      tool_call_parser_name: qwen3_coder
 
 - weights:
     - Qwen/Qwen3-32B
