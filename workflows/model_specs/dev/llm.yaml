@@ -237,7 +237,7 @@ templates:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
       override_tt_config:
         fabric_config: FABRIC_1D
-        # Magic number; follows nightly:
+        # Magic number; follows vllm nightly:
         # https://github.com/tenstorrent/tt-metal/actions/runs/28493777891/job/84457052459#step:10:1
         trace_region_size: 268435456
   # EXPERIMENTAL: no target performance has been set yet, so we can't classify
