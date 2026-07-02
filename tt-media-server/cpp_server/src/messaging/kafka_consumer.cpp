@@ -58,8 +58,7 @@ KafkaConsumer::KafkaConsumer(KafkaConsumerConfig config)
 
   rd_kafka_topic_partition_list_t* partitionList =
       rd_kafka_topic_partition_list_new(1);
-  const int32_t partition =
-      config.partition.value_or(RD_KAFKA_PARTITION_UA);
+  const int32_t partition = config.partition.value_or(RD_KAFKA_PARTITION_UA);
   rd_kafka_topic_partition_list_add(partitionList, config.topic.c_str(),
                                     partition);
   rd_kafka_resp_err_t err = RD_KAFKA_RESP_ERR_NO_ERROR;
@@ -71,10 +70,10 @@ KafkaConsumer::KafkaConsumer(KafkaConsumerConfig config)
   rd_kafka_topic_partition_list_destroy(partitionList);
 
   if (err) {
-    TT_LOG_ERROR("[Kafka] {} failed: {}",
-                 config.partition.has_value() ? "rd_kafka_assign"
-                                              : "rd_kafka_subscribe",
-                 rd_kafka_err2str(err));
+    TT_LOG_ERROR(
+        "[Kafka] {} failed: {}",
+        config.partition.has_value() ? "rd_kafka_assign" : "rd_kafka_subscribe",
+        rd_kafka_err2str(err));
     rd_kafka_destroy(kafkaHandle);
     return;
   }

@@ -162,7 +162,9 @@ TEST_F(RemoteKVManagerKafkaTest, MigrateRoundTripCompletes) {
   EXPECT_EQ(manager->getMigrationStatus(id), MigrationStatus::IN_PROGRESS);
 
   ASSERT_TRUE(waitFor(
-      [&] { return manager->getMigrationStatus(id) == MigrationStatus::SUCCESSFUL; },
+      [&] {
+        return manager->getMigrationStatus(id) == MigrationStatus::SUCCESSFUL;
+      },
       COMPLETION_TIMEOUT))
       << "migration did not complete within " << COMPLETION_TIMEOUT.count()
       << "ms; check broker, topic auto-creation, and consumer-group warmup";
@@ -211,9 +213,11 @@ TEST_F(RemoteKVManagerKafkaTest, ConfiguredFailureStatusPropagates) {
 
   const uint64_t id = manager->migrate(sampleRequest());
 
-  ASSERT_TRUE(
-      waitFor([&] { return manager->getMigrationStatus(id) == MigrationStatus::FAILED; },
-              COMPLETION_TIMEOUT))
+  ASSERT_TRUE(waitFor(
+      [&] {
+        return manager->getMigrationStatus(id) == MigrationStatus::FAILED;
+      },
+      COMPLETION_TIMEOUT))
       << "FAILED ack did not arrive within " << COMPLETION_TIMEOUT.count()
       << "ms";
 

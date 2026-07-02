@@ -90,11 +90,14 @@ TEST(MockRemoteKVManager, SetPollsBeforeResolutionDelaysTransition) {
   mgr.setPollsBeforeResolution(3);
 
   const auto id = mgr.migrate(makeRequest());
-  EXPECT_EQ(mgr.getMigrationStatus(id), MigrationStatus::IN_PROGRESS);  // poll 1
-  EXPECT_EQ(mgr.getMigrationStatus(id), MigrationStatus::IN_PROGRESS);  // poll 2
+  EXPECT_EQ(mgr.getMigrationStatus(id),
+            MigrationStatus::IN_PROGRESS);  // poll 1
+  EXPECT_EQ(mgr.getMigrationStatus(id),
+            MigrationStatus::IN_PROGRESS);  // poll 2
   EXPECT_EQ(mgr.getMigrationStatus(id),
             MigrationStatus::SUCCESSFUL);  // poll 3 -> terminal
-  EXPECT_EQ(mgr.getMigrationStatus(id), MigrationStatus::SUCCESSFUL);  // stays put
+  EXPECT_EQ(mgr.getMigrationStatus(id),
+            MigrationStatus::SUCCESSFUL);  // stays put
 }
 
 TEST(MockRemoteKVManager, SetPollsBeforeResolutionDoesNotAffectExisting) {
@@ -115,8 +118,10 @@ TEST(MockRemoteKVManager, SetPollsBeforeResolutionRespectsDefaultStatus) {
   mgr.setPollsBeforeResolution(2);
 
   const auto id = mgr.migrate(makeRequest());
-  EXPECT_EQ(mgr.getMigrationStatus(id), MigrationStatus::IN_PROGRESS);  // poll 1
-  EXPECT_EQ(mgr.getMigrationStatus(id), MigrationStatus::FAILED);  // poll 2 -> terminal
+  EXPECT_EQ(mgr.getMigrationStatus(id),
+            MigrationStatus::IN_PROGRESS);  // poll 1
+  EXPECT_EQ(mgr.getMigrationStatus(id),
+            MigrationStatus::FAILED);  // poll 2 -> terminal
 }
 
 // ---------------------------------------------------------------------------

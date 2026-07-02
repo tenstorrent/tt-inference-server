@@ -239,6 +239,5 @@ TEST(MigrationResponseMessageParse, RejectsUnknownStatusString) {
                    .has_value());
 }
 
-
 }  // namespace
 }  // namespace tt::messaging
