@@ -287,7 +287,13 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
 
   Json::Value runtime(Json::objectValue);
   runtime["total_kv_blocks"] = Json::Value::null;
-  runtime["max_num_seqs"] = Json::Value::null;
+  if (c.worker_role == DiscoveryWorkerRole::PREFILL &&
+      tt::config::prefillMaxInFlight() > 0) {
+    runtime["max_num_seqs"] =
+        static_cast<Json::UInt64>(tt::config::prefillMaxInFlight());
+  } else {
+    runtime["max_num_seqs"] = Json::Value::null;
+  }
   runtime["max_num_batched_tokens"] = Json::Value::null;
   const RuntimeParsers parsers = runtimeParsersForModelPath(c.model_path);
   setRuntimeParserField(runtime, "reasoning_parser", parsers.reasoning);

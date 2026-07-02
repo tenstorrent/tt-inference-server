@@ -199,16 +199,19 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           "tokens={}",
           requestId.empty() ? "?" : requestId, dynReq.token_ids.size());
 
-      auto writer = DynamoStreamWriter::create(pool->getNextLoop(), connInfo,
-                                               requestId, []() {});
-      writer->connect();
-
       if (tt::config::dynamoNativePrefillHandoffEnabled()) {
+        auto prefillMessage = buildPrefillRequestMessage(dynReq);
+        auto writer = DynamoStreamWriter::create(
+            pool->getNextLoop(), connInfo, requestId,
+            [pipeline, taskId = prefillMessage.taskId]() {
+              pipeline->abortRequest(taskId);
+            });
+        writer->connect();
+
         const std::string selectedPrefillId =
             localPrefillId && !localPrefillId->empty()
                 ? *localPrefillId
                 : std::string{"prefill/generate"};
-        auto prefillMessage = buildPrefillRequestMessage(dynReq);
         TT_LOG_INFO(
             "[DynamoEndpoint] Executing Dynamo prefill via "
             "PrefillRequestMessage taskId={} selected_prefill_id={} "
@@ -250,6 +253,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
         return;
       }
 
+      auto writer = DynamoStreamWriter::create(pool->getNextLoop(), connInfo,
+                                               requestId, []() {});
+      writer->connect();
       TokenChunk err;
       err.error =
           "cpp_server Dynamo prefill endpoint is registered for discovery "
@@ -416,9 +422,13 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           handoff.migrationId.value_or(0), handoff.kvPositionId.value_or(0),
           handoff.tokenCount, handoff.cachedTokens);
       try {
-        pipeline->handlePrefillResult(
-            dynamoPrefillHandoffToPrefillResult(req->task_id, handoff),
-            sendPipelineChunk);
+        auto prefillResult =
+            dynamoPrefillHandoffToPrefillResult(req->task_id, handoff);
+        // The prefill leg is a Dynamo-internal probe that asks for one token to
+        // synchronize the handoff. Continue decode using the original client's
+        // generation budget from this request.
+        prefillResult.remainingTokens = dynReq.max_tokens;
+        pipeline->handlePrefillResult(prefillResult, sendPipelineChunk);
       } catch (const std::exception& e) {
         TT_LOG_ERROR("[DynamoEndpoint] handlePrefillResult failed: {}",
                      e.what());

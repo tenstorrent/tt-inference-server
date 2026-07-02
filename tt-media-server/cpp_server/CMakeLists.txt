@@ -1204,6 +1204,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/service_container.cpp
     src/services/disaggregation_service.cpp
     src/services/llm_pipeline.cpp
+    src/dynamo/etcd_client.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/tcp_socket_transport.cpp

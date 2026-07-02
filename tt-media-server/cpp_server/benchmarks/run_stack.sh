@@ -24,6 +24,10 @@
 # The handoff itself is the synchronization point and must only be emitted
 # after prefill and KV transfer are complete.
 #
+# Multi-prefill local routing smoke:
+#   PREFILL_REPLICAS=2 DYNAMO_REGISTER_PREFILL=1 \
+#   DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=1 ./run_stack.sh up
+#
 # Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; frontend -> /tmp/tt_frontend.log.
 
 set -euo pipefail
@@ -41,10 +45,12 @@ MODEL_NAME="${MODEL_NAME:-tt-cpp-server}"
 HTTP_PORT="${HTTP_PORT:-8080}"
 SERVER_PORT="${SERVER_PORT:-8001}"       # decode/regular REST + dynamo endpoint
 PREFILL_PORT="${PREFILL_PORT:-8002}"     # prefill REST
+PREFILL_REPLICAS="${PREFILL_REPLICAS:-1}"
 SOCKET_PORT="${SOCKET_PORT:-9000}"       # decode<->prefill inter-server socket
 MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
 DYNAMO_REGISTER_PREFILL="${DYNAMO_REGISTER_PREFILL:-0}"
 DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED="${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED:-0}"
+LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND:-mock}"
 ETCD_NAME="${ETCD_NAME:-etcd}"
 PIDFILE="/tmp/tt_stack.pids"
 
@@ -92,9 +98,14 @@ teardown() {
     rm -f /dev/shm/tt_* 2>/dev/null || true
     # block until our ports are actually released (avoids relaunch bind races)
     for _ in $(seq 1 30); do
-        port_in_use "${HTTP_PORT}" || port_in_use "${SERVER_PORT}" ||
-            port_in_use "${PREFILL_PORT}" || port_in_use "${SOCKET_PORT}" ||
-            break
+        local busy=0
+        port_in_use "${HTTP_PORT}" && busy=1
+        port_in_use "${SERVER_PORT}" && busy=1
+        port_in_use "${SOCKET_PORT}" && busy=1
+        for idx in $(seq 1 "${PREFILL_REPLICAS}"); do
+            port_in_use "$((PREFILL_PORT + idx - 1))" && busy=1
+        done
+        [[ "${busy}" -eq 0 ]] && break
         sleep 0.5
     done
     set -e
@@ -149,7 +160,6 @@ start_frontend() {
         DYN_DISCOVERY_BACKEND=etcd ETCD_ENDPOINTS="${ETCD_ENDPOINTS}" \
         DYN_REQUEST_PLANE=tcp DYN_EVENT_PLANE=zmq \
         DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
-        DYN_NATIVE_PREFILL_POLICY="${DYN_NATIVE_PREFILL_POLICY:-threshold}" \
         DYN_PREFILL_ON_DECODE_MAX_TOKENS="${DYN_PREFILL_ON_DECODE_MAX_TOKENS:-${MAX_TOKENS_TO_PREFILL_ON_DECODE}}" \
         "${DYN_VENV}/bin/python3" -m dynamo.frontend \
             --http-port "${HTTP_PORT}" \
@@ -185,10 +195,10 @@ up() {
     : > "${PIDFILE}"
     ensure_etcd
 
-    log "decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
+    log "decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT} replicas=${PREFILL_REPLICAS}"
     start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
         $(worker_dynamo_env) \
-        LLM_MODE=decode LLM_DEVICE_BACKEND=mock \
+        LLM_MODE=decode LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND}" \
         SOCKET_TRANSPORT=tcp SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
         MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE}"
     sleep 3
@@ -201,17 +211,27 @@ up() {
         log "prefill Dynamo discovery registration enabled"
         readarray -t prefill_dynamo_env < <(prefill_dynamo_env)
     fi
-    start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
-        "${prefill_dynamo_env[@]}" \
-        LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
-        SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
-        TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
-        TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
-        TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill
+    for idx in $(seq 1 "${PREFILL_REPLICAS}"); do
+        local port=$((PREFILL_PORT + idx - 1))
+        local suffix=""
+        local log_file="${PREFILL_LOG}"
+        if [[ "${idx}" -gt 1 ]]; then
+            suffix="${idx}"
+            log_file="/tmp/tt_prefill${idx}.log"
+        fi
+        start_worker "${log_file}" "${port}" \
+            "${prefill_dynamo_env[@]}" \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND}" \
+            SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
+            PREFILL_SERVER_ID="prefill${suffix:-1}" \
+            TT_MEMORY_REQUEST_QUEUE="tt_mem_requests_prefill${suffix}" \
+            TT_MEMORY_RESULT_QUEUE="tt_mem_results_prefill${suffix}" \
+            TT_WORKER_METRICS_SHM="/tt_worker_metrics_prefill${suffix}"
+    done
     sleep 2
     start_frontend
     wait_ready
-    log "decode log: ${DECODE_LOG}  prefill log: ${PREFILL_LOG}"
+    log "decode log: ${DECODE_LOG}  prefill logs: /tmp/tt_prefill*.log"
     log "frontend: http://127.0.0.1:${HTTP_PORT}  (model id: ${MODEL})"
     log "pids: $(tr '\n' ' ' < "${PIDFILE}")"
 }
@@ -226,6 +246,10 @@ verify_prefill_discovery() {
     [[ -n "${output}" ]] || die "no Dynamo prefill MDC keys found under ${prefix}"
 
     printf '%s\n' "${output}"
+    local count
+    count="$(printf '%s\n' "${output}" | grep -c '"worker_type":"prefill"' || true)"
+    [[ "${count}" -ge "${PREFILL_REPLICAS}" ]] ||
+        die "expected at least ${PREFILL_REPLICAS} prefill MDC entries, found ${count}"
     printf '%s\n' "${output}" | grep -q '"worker_type":"prefill"' ||
         die "prefill MDC found, but worker_type=prefill was not present"
     printf '%s\n' "${output}" | grep -q '"needs":\[\["decode"\]\]' ||
