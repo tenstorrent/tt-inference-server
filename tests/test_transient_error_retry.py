@@ -5,6 +5,7 @@ Verifies that:
 - _BACKOFF_SECONDS covers ~10 retries capped at 5 minutes each.
 - InternalServerError and APIConnectionError are both retried.
 - Each retry log line includes elapsed time and the total attempt count.
+- Retry log lines emit only the exception type name, not the raw body.
 - After exhausting all retries the original exception is re-raised.
 """
 
@@ -128,3 +129,26 @@ class TestRetryLogging:
         out = capsys.readouterr().out
         assert "elapsed" in out
         assert f"/{len(_BACKOFF_SECONDS) + 1}" in out
+
+    @patch("orchestrator.agent.T.DEFS", [])
+    @patch("orchestrator.agent.time.sleep")
+    @patch("orchestrator.agent._client")
+    def test_log_uses_type_name_not_raw_exception_body(
+        self, mock_client_factory, mock_sleep, capsys
+    ):
+        # 5xx response bodies can contain internal infrastructure details;
+        # log only the type name to avoid leaking them to stdout.
+        client = MagicMock()
+        mock_client_factory.return_value = client
+        secret_body = "SUPER_SECRET_TOKEN_xyz"
+        err = openai.InternalServerError(
+            message=secret_body, response=MagicMock(), body={}
+        )
+        client.chat.completions.create.side_effect = [err, _make_response()]
+
+        from orchestrator.agent import run
+        run(_persona(), [{"role": "user", "content": "hi"}], verbose=True)
+
+        out = capsys.readouterr().out
+        assert "InternalServerError" in out
+        assert secret_body not in out

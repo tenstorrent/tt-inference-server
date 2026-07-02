@@ -132,10 +132,12 @@ def run(
                 next_wait = _BACKOFF_SECONDS[attempt]
                 if verbose:
                     elapsed = time.monotonic() - _attempt_start
+                    # Log only the exception type — the full str(e) may contain
+                    # raw HTTP response bodies with internal infrastructure details.
                     print(
                         f"  [{persona['name']}] transient error (attempt {attempt + 1}/{_max_attempts},"
                         f" elapsed {elapsed:.0f}s):"
-                        f" {e}; retrying in {next_wait}s"
+                        f" {type(e).__name__}; retrying in {next_wait}s"
                     )
                 time.sleep(next_wait)
         else:
@@ -203,7 +205,7 @@ def run(
             history.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
-                "content": str(result),
+                "content": result,
             })
 
     raise MaxToolRoundsError(persona["name"], max_tool_rounds, history)
