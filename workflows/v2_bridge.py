@@ -54,6 +54,7 @@ _V2_ROUTED_MODELS = frozenset(
         "stable-diffusion-3.5-large",
         "FLUX.1-dev",
         "FLUX.1-schnell",
+        "FLUX.2-dev",
         "Motif-Image-6B-Preview",
         "whisper-large-v3",
         "distil-large-v3",
