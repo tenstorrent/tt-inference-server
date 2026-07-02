@@ -37,6 +37,12 @@
             "Wan2.2-T2V-A14B-Diffusers",
             "Wan2.2-I2V-A14B-Diffusers",
             "mochi-1-preview"
+        ],
+        "LLM": [
+            "Qwen3-32B",
+            "Llama-3.1-8B-Instruct",
+            "Llama-3.3-70B-Instruct",
+            "gpt-oss-20b"
         ]
     },
     "available_markers": {
@@ -356,6 +362,68 @@
             "compatible_devices": [
                 "n150",
                 "p150"
+            ]
+        },
+        "gpt_oss_20b": {
+            "id_name": "gpt-oss-20b",
+            "weights": [
+                "gpt-oss-20b"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "t3k",
+                "galaxy_t3k",
+                "galaxy"
+            ]
+        },
+        "qwen3_32b": {
+            "id_name": "qwen3-32b",
+            "weights": [
+                "Qwen3-32B"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "galaxy",
+                "t3k",
+                "galaxy_t3k",
+                "p150x8",
+                "p300x2"
+            ]
+        },
+        "llama_70b_family": {
+            "id_name": "llama-70b",
+            "weights": [
+                "Llama-3.3-70B-Instruct"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "galaxy",
+                "t3k",
+                "galaxy_t3k",
+                "p150x4",
+                "p150x8",
+                "p300x2"
+            ]
+        },
+        "llama_3_1_8b": {
+            "id_name": "llama-3.1-8b",
+            "weights": [
+                "Llama-3.1-8B-Instruct"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "n150",
+                "n300",
+                "t3k",
+                "gpu",
+                "p100",
+                "p150",
+                "p150x4",
+                "p150x8",
+                "p300",
+                "p300x2",
+                "galaxy",
+                "galaxy_t3k"
             ]
         }
     },
@@ -747,6 +815,36 @@
                 "test_timeout": 3600,
                 "retry_attempts": 1,
                 "retry_delay": 60,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "VLLMParamConformanceTest": {
+            "module": "test_module.llm_tests.vllm_param_conformance_test",
+            "markers": [
+                "param",
+                "e2e",
+                "slow"
+            ],
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 0,
+                "retry_delay": 10,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "VLLMResponsesParamConformanceTest": {
+            "module": "test_module.llm_tests.vllm_param_conformance_test",
+            "markers": [
+                "param",
+                "e2e",
+                "slow"
+            ],
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 0,
+                "retry_delay": 10,
                 "break_on_failure": false,
                 "mock_mode": false
             }

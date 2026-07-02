@@ -644,7 +644,7 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     find_library(_KV_TRACY_LIB tracy    PATHS "${_TTM_BUILD}/lib"                 NO_DEFAULT_PATH)
     find_library(_KV_YAML_LIB  yaml-cpp PATHS "${_TTM_BUILD}/_deps/yaml-cpp-build" NO_DEFAULT_PATH)
 
-    if(_TTM_BUILD AND _KV_UMD_LIB AND _KV_TTSTL_LIB AND _KV_TRACY_LIB AND _KV_YAML_LIB)
+    if(_TTM_BUILD AND _KV_UMD_LIB AND _KV_TTSTL_LIB AND _KV_TRACY_LIB AND _KV_YAML_LIB AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration/src/worker/device_io.cpp")
         target_compile_definitions(transport_lib PUBLIC USE_METAL_CPP_LIB)
         target_include_directories(transport_lib PUBLIC ${TT_METAL_INCLUDE_DIRS})
 
@@ -1093,6 +1093,7 @@ add_executable(session_manager_test
     tests/integration/sessions/session_manager_test.cpp
     src/domain/session.cpp
     src/domain/prefix_index.cpp
+    src/domain/block_matcher.cpp
     src/domain/response_id_index.cpp
     src/services/session_manager.cpp
     src/metrics/metrics.cpp
@@ -1167,6 +1168,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/memory_services/memory_manager.cpp
     src/domain/session.cpp
     src/domain/prefix_index.cpp
+    src/domain/block_matcher.cpp
     src/domain/response_id_index.cpp
     src/runtime/worker/worker_manager.cpp
     src/runtime/worker/process_liveness.cpp
@@ -1384,6 +1386,7 @@ add_executable(session_manager_benchmark
     benchmarks/session_manager_benchmark.cpp
     src/domain/session.cpp
     src/domain/prefix_index.cpp
+    src/domain/block_matcher.cpp
     src/domain/response_id_index.cpp
     src/services/session_manager.cpp
     src/metrics/metrics.cpp
@@ -1572,6 +1575,7 @@ set(SOURCES
     src/api/openapi.cpp
     src/services/llm_service.cpp
     src/domain/prefix_index.cpp
+    src/domain/block_matcher.cpp
     src/domain/response_id_index.cpp
     src/services/session_manager.cpp
     src/services/session_resolution.cpp
