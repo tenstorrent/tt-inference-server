@@ -34,46 +34,13 @@ std::list<RemainingBlockInfo> buildRemainingBlocks(
 }
 }  // namespace
 
-std::vector<Candidate> PrefixIndex::findCandidates(
-    const std::vector<utils::BlockHashInfo>& blockInfos) {
-  std::vector<Candidate> candidates;
-
-  if (blockInfos.empty()) return candidates;
-
-  const uint64_t keyHash = blockInfos.front().hash;
-
-  const std::list<RemainingBlockInfo> callerRemaining =
-      buildRemainingBlocks(blockInfos);
-
-  prefixIndex.modify(keyHash, [&](std::vector<PrefixIndexEntry>& entries) {
-    for (const auto& entry : entries) {
-      size_t matched = 0;
-
-      uint32_t lastMatchedThinkCount = entry.keyBlockThinkTokens;
-      auto callerIt = callerRemaining.begin();
-      auto entryIt = entry.remainingBlocks.begin();
-      while (callerIt != callerRemaining.end() &&
-             entryIt != entry.remainingBlocks.end() &&
-             callerIt->hash == entryIt->hash) {
-        lastMatchedThinkCount = entryIt->accumulatedThinkTokens;
-        ++matched;
-        ++callerIt;
-        ++entryIt;
-      }
-      const size_t totalMatched = 1 + matched;
-      const size_t sessionTotal = 1 + entry.remainingBlocks.size();
-      for (const auto& sid : entry.sessionIds) {
-        candidates.push_back(
-            {sid, totalMatched, sessionTotal, lastMatchedThinkCount});
-      }
-    }
-  });
-
-  std::sort(candidates.begin(), candidates.end(),
-            [](const Candidate& a, const Candidate& b) {
-              return a.matchedBlocks > b.matchedBlocks;
-            });
-  return candidates;
+std::vector<PrefixIndexEntry> PrefixIndex::getEntriesForKey(
+    uint64_t keyHash) const {
+  const auto entries = prefixIndex.get(keyHash);
+  if (!entries.has_value()) {
+    return {};
+  }
+  return *entries;
 }
 
 void PrefixIndex::registerPrefixHash(
@@ -132,44 +99,7 @@ void PrefixIndex::remove(const std::string& sessionId, uint64_t keyHash) {
     prefixIndex.erase(keyHash);
   }
 }
-std::pair<size_t, uint32_t> PrefixIndex::computeMatchedBlocks(
-    const std::string& sessionId,
-    const std::vector<utils::BlockHashInfo>& blockInfos) {
-  if (blockInfos.empty()) {
-    return {0, 0};
-  }
-  const uint64_t keyHash = blockInfos.front().hash;
-  const std::list<RemainingBlockInfo> callerRemaining =
-      buildRemainingBlocks(blockInfos);
-  size_t matchedBlocks = 0;
-  uint32_t thinkTokens = 0;
-  prefixIndex.modify(keyHash, [&](std::vector<PrefixIndexEntry>& entries) {
-    for (const auto& entry : entries) {
-      const bool hasSession =
-          std::find(entry.sessionIds.begin(), entry.sessionIds.end(),
-                    sessionId) != entry.sessionIds.end();
-      if (!hasSession) continue;
-      size_t matched = 0;
-      uint32_t lastThink = entry.keyBlockThinkTokens;
-      auto callerIt = callerRemaining.begin();
-      auto entryIt = entry.remainingBlocks.begin();
-      while (callerIt != callerRemaining.end() &&
-             entryIt != entry.remainingBlocks.end() &&
-             callerIt->hash == entryIt->hash) {
-        lastThink = entryIt->accumulatedThinkTokens;
-        ++matched;
-        ++callerIt;
-        ++entryIt;
-      }
-      const size_t total = 1 + matched;
-      if (total > matchedBlocks) {
-        matchedBlocks = total;
-        thinkTokens = lastThink;
-      }
-    }
-  });
-  return {matchedBlocks, thinkTokens};
-}
+
 void PrefixIndex::clearThinkTokens(const std::string& sessionId,
                                    uint64_t keyHash) {
   if (keyHash == 0) return;

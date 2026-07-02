@@ -120,9 +120,24 @@ def format_acceptance_summary_markdown(
     lines.append("")
     lines.append("#### Blockers")
     lines.append("")
-    for key, message in blockers.items():
-        lines.append(f"- `{key}`: {message}")
+    lines.extend(_format_blocker_lines(blockers))
     return "\n".join(lines)
+
+
+def _format_blocker_lines(blockers: Mapping[str, str]) -> List[str]:
+    """Render blockers, collapsing entries that share the same message."""
+    grouped: Dict[str, List[str]] = {}
+    for key, message in blockers.items():
+        grouped.setdefault(message, []).append(key)
+
+    lines: List[str] = []
+    for message, keys in grouped.items():
+        if len(keys) == 1:
+            lines.append(f"- `{keys[0]}`: {message}")
+            continue
+        lines.append(f"- {message} ({len(keys)} blocks)")
+        lines.extend(f"  - `{key}`" for key in keys)
+    return lines
 
 
 def _detail(category: CategoryResult) -> str:
@@ -223,7 +238,7 @@ def _check_evals(schema: ReportSchema) -> CategoryResult:
 
         state = _check_state(check_value)
         if state == STATUS_FAIL:
-            blockers[block_key] = f"Accuracy check failed (value={check_value!r})"
+            blockers[block_key] = "Accuracy check failed."
             failed += 1
         elif state == STATUS_NA:
             na += 1

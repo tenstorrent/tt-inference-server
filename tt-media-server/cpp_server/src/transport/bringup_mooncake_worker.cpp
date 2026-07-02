@@ -90,6 +90,10 @@ struct WorkerConfig {
   std::size_t host_dram_bytes = K_DEFAULT_HOST_DRAM_BYTES;
   int discovery_timeout_sec = K_DEFAULT_DISCOVERY_TIMEOUT_SEC;
   TransportProtocol protocol = TransportProtocol::TCP;
+  // KV layer span [layer_start, layer_end); 0 == unset. uint32_t matches
+  // MigrationRequestMessage::layer_id so no truncation when mapped to config.
+  uint32_t layer_start = 0;
+  uint32_t layer_end = 0;
   // When false (--no-kafka), the worker brings Mooncake up and then idles
   // until SIGTERM without ever creating Kafka clients. Used for receiver
   // roles in a prefill→decode topology.
@@ -118,7 +122,12 @@ void usage() {
          "  [--host-dram-bytes N]  pool size, page-aligned (default 4 GiB)\n"
          "  [--protocol tcp|rdma]  transport (default tcp)\n"
          "  [--discovery-timeout-sec S] (default 30)\n"
+         "  [--layer-start N]      first KV layer this worker owns (default "
+         "0)\n"
+         "  [--layer-end M]        one past last KV layer (exclusive; "
+         "0=unset)\n"
          "  [--no-kafka]           skip Kafka clients; idle after bring-up\n"
+         "  [-h|--help]            show this help and exit\n"
          "\n"
          "Multi-NIC hosts: set MC_TCP_BIND_ADDRESS to the IP peers connect "
          "to.\n";
@@ -185,6 +194,28 @@ bool parseSizeBytes(const std::string& value, std::size_t& out,
   return true;
 }
 
+// Strict uint32 parse: whole token must fit in uint32_t, else fail loud
+// instead of silently wrapping when stored as a layer id.
+bool parseUint32(const std::string& value, uint32_t& out, std::string& err) {
+  if (value.empty() || value.front() == '-') {
+    err = "must be a non-negative integer";
+    return false;
+  }
+  errno = 0;
+  char* end = nullptr;
+  const unsigned long long parsed = std::strtoull(value.c_str(), &end, 10);
+  if (errno == ERANGE || parsed > std::numeric_limits<uint32_t>::max()) {
+    err = "must fit in a 32-bit unsigned integer";
+    return false;
+  }
+  if (end == value.c_str() || *end != '\0') {
+    err = "must be a plain integer";
+    return false;
+  }
+  out = static_cast<uint32_t>(parsed);
+  return true;
+}
+
 // Strict positive-int parse: the WHOLE token must parse and be > 0. atoi would
 // turn "abc" (and an explicit "0") into 0, which means "give up discovery
 // immediately" — so an invalid value silently broke bring-up (#4294 bug).
@@ -221,6 +252,10 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
       dst = argv[++i];
       return true;
     };
+    if (a == "-h" || a == "--help") {
+      usage();
+      std::exit(0);
+    }
     std::string v;
     if (a == "--metadata" && next(cfg.metadata_uri)) continue;
     if (a == "--name" && next(cfg.name)) continue;
@@ -248,6 +283,22 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
       }
       continue;
     }
+    if (a == "--layer-start" && next(v)) {
+      std::string perr;
+      if (!parseUint32(v, cfg.layer_start, perr)) {
+        std::cerr << "--layer-start invalid ('" << v << "'): " << perr << "\n";
+        return false;
+      }
+      continue;
+    }
+    if (a == "--layer-end" && next(v)) {
+      std::string perr;
+      if (!parseUint32(v, cfg.layer_end, perr)) {
+        std::cerr << "--layer-end invalid ('" << v << "'): " << perr << "\n";
+        return false;
+      }
+      continue;
+    }
     if (a == "--no-kafka") {
       cfg.kafka_enabled = false;
       continue;
@@ -257,6 +308,12 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
   }
   if (cfg.metadata_uri.empty() || cfg.name.empty() || cfg.peers.empty()) {
     std::cerr << "--metadata, --name and at least one --peer are required\n";
+    return false;
+  }
+  if (cfg.layer_end != 0 && cfg.layer_end <= cfg.layer_start) {
+    std::cerr << "--layer-end (" << cfg.layer_end
+              << ") must be greater than --layer-start (" << cfg.layer_start
+              << ")\n";
     return false;
   }
   std::string err;
@@ -278,6 +335,8 @@ MigrationWorkerConfig toWorkerConfig(const WorkerConfig& cli) {
   cfg.protocol = cli.protocol;
   cfg.host_dram_bytes = cli.host_dram_bytes;
   cfg.peer_segment_names = cli.peers;
+  cfg.layer_start = cli.layer_start;
+  cfg.layer_end = cli.layer_end;
   return cfg;
 }
 
@@ -308,16 +367,25 @@ KafkaConfig loadKafkaConfig() {
   };
 }
 
-// Parse + log one migration request, then publish a SUCCESSFUL ack. `worker`
-// is the future dispatch point (writeTensorOnSender / transferToReceiver /
-// verifyTensorOnReceiver); today it's unused and only ensures the call site
-// won't change when the data plane is wired.
+// Parse one migration request, drop it unless this worker owns the request's
+// layer, then publish a SUCCESSFUL ack. `worker` is also the future dispatch
+// point for the data plane (writeTensorOnSender / transferToReceiver /
+// verifyTensorOnReceiver) once it is wired.
 void handleMigrationRequest(const std::string& raw,
-                            [[maybe_unused]] MooncakeMigrationWorker& worker,
+                            MooncakeMigrationWorker& worker,
                             tt::messaging::IKafkaProducer& ackProducer) {
   const auto parsed = tt::messaging::parseMigrationRequest(raw);
   if (!parsed.has_value()) {
     TT_LOG_WARN("[bringup] dropping unparseable request: {}", raw);
+    return;
+  }
+
+  // A single request is broadcast to every worker in the role (one consumer
+  // group each); only the worker owning this layer acts on it. Others skip
+  // silently — no ack — so a sharded fleet produces exactly one ack per layer.
+  if (!worker.ownsLayer(parsed->layer_id)) {
+    TT_LOG_DEBUG("[bringup] skipping migration_id={}: layer {} not owned",
+                 parsed->migration_id, parsed->layer_id);
     return;
   }
 
@@ -414,6 +482,14 @@ int main(int argc, char** argv) {
   if (!worker.bringUp(gStopRequested)) {
     TT_LOG_ERROR("[bringup] '{}' bring-up failed", cli.name);
     return 1;
+  }
+
+  if (cli.layer_end == 0) {
+    TT_LOG_INFO("[bringup] '{}' owns all KV layers (no span configured)",
+                cli.name);
+  } else {
+    TT_LOG_INFO("[bringup] '{}' owns KV layers [{}, {})", cli.name,
+                cli.layer_start, cli.layer_end);
   }
 
   if (!cli.kafka_enabled) {
