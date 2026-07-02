@@ -64,7 +64,7 @@ class VLLMForgeRunner(BaseDeviceRunner):
             enable_chunked_prefill=False,
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
             additional_config={
-                "enable_const_eval": True,
+                "enable_const_eval": False,  # BISECT #4471: test whether const-eval baking is what serializes the SDPA mask into the >2GB flatbuffer
                 "min_context_len": self.settings.vllm.min_context_length,
                 "experimental_weight_dtype": "bfp_bf8",
                 "cpu_sampling": cpu_sampling,
