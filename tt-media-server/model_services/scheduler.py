@@ -124,7 +124,7 @@ class Scheduler:
 
     def check_is_model_ready(self) -> bool:
         if self.is_ready is not True:
-            raise HTTPException(405, "Model is not ready")
+            raise HTTPException(503, "Model is not ready: warming up")
 
         # Check if at least one worker is ready
         ready_workers = [

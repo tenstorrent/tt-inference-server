@@ -151,7 +151,7 @@ class TestScheduler:
         with pytest.raises(Exception) as exc_info:
             scheduler.check_is_model_ready()
 
-        assert "405" in str(exc_info.value) or "Model is not ready" in str(
+        assert "503" in str(exc_info.value) or "Model is not ready" in str(
             exc_info.value
         )
 
@@ -201,7 +201,7 @@ class TestScheduler:
         with pytest.raises(Exception) as exc_info:
             scheduler.process_request(mock_request)
 
-        assert "405" in str(exc_info.value) or "Model is not ready" in str(
+        assert "503" in str(exc_info.value) or "Model is not ready" in str(
             exc_info.value
         )
 
