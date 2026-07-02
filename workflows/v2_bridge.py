@@ -58,6 +58,8 @@ _V2_ROUTED_MODELS = frozenset(
         "whisper-large-v3",
         "distil-large-v3",
         "Z-Image-Turbo",
+        "Wan2.2-T2V-A14B-Diffusers",
+        "Wan2.2-I2V-A14B-Diffusers",
     }
 )
 

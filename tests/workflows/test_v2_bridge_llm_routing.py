@@ -141,6 +141,18 @@ def test_non_routed_media_benchmarks_stays_on_v1():
     assert v2_bridge.can_route_to_v2(spec, rc) is False
 
 
+@pytest.mark.parametrize(
+    "model_name",
+    ["Wan2.2-T2V-A14B-Diffusers", "Wan2.2-I2V-A14B-Diffusers"],
+)
+@pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
+def test_wan_video_routes_to_v2(model_name, workflow):
+    spec, rc = _spec(ModelType.VIDEO, name=model_name), _rc(workflow=workflow)
+    assert v2_bridge._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is False
+    assert v2_bridge.is_v2_routed_model(spec) is True
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
+
+
 def test_build_llm_bench_cmd_forwards_tools_and_jwt():
     v2_dir = Path(__file__).resolve().parents[2] / "tt-inference-server-v2"
     cmd = v2_bridge._build_llm_bench_cmd(
