@@ -77,6 +77,29 @@ class TestMalformedToolJson:
     @patch("orchestrator.agent.T.execute", return_value="ok")
     @patch("orchestrator.agent.T.DEFS", [{"function": {"name": "bash_exec"}}])
     @patch("orchestrator.agent._client")
+    def test_error_result_includes_parse_detail(self, mock_client_factory, mock_execute):
+        # The model needs the specific parse error to understand what went wrong
+        # and produce a corrected tool call on retry.
+        from orchestrator.agent import run
+
+        client = MagicMock()
+        mock_client_factory.return_value = client
+        bad_tc = _make_tool_call("tc1", "bash_exec", "not json at all,,,")
+        client.chat.completions.create.side_effect = [
+            _make_response(content=None, tool_calls=[bad_tc]),
+            _make_response(content="Done.", tool_calls=[]),
+        ]
+
+        _, history = run(_persona(), [{"role": "user", "content": "go"}], max_tool_rounds=5)
+
+        tool_result = next(m for m in history if m.get("role") == "tool")
+        # Must include the JSONDecodeError detail, not just a generic message.
+        assert "could not parse tool arguments as JSON" in tool_result["content"]
+        assert "line 1" in tool_result["content"]
+
+    @patch("orchestrator.agent.T.execute", return_value="ok")
+    @patch("orchestrator.agent.T.DEFS", [{"function": {"name": "bash_exec"}}])
+    @patch("orchestrator.agent._client")
     def test_execute_not_called_on_bad_json(self, mock_client_factory, mock_execute):
         from orchestrator.agent import run
 

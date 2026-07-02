@@ -140,17 +140,17 @@ def run(
         if not msg.tool_calls and not content:
             continue
 
-        # Identify which tool calls have unparseable arguments before storing
-        # history, so we can sanitize them to "{}" — downstream models (e.g.
-        # Anthropic via litellm) reject history entries with malformed JSON
-        # arguments and raise a 400, crashing the reviewer rather than the
-        # implementer (see #146).
-        malformed_ids: set[str] = set()
+        # Pre-scan arguments for parse errors before writing history. We must
+        # store "{}" for any malformed entry so downstream APIs (e.g. Anthropic
+        # via litellm) don't reject the history with a 400 (see #146). We keep
+        # the exception so the exact parse error can still be fed back to the
+        # model (preserving #133 behaviour).
+        parse_errors: dict[str, json.JSONDecodeError] = {}
         for tc in (msg.tool_calls or []):
             try:
                 json.loads(tc.function.arguments)
-            except json.JSONDecodeError:
-                malformed_ids.add(tc.id)
+            except json.JSONDecodeError as exc:
+                parse_errors[tc.id] = exc
 
         # Append assistant turn (convert to dict safely)
         assistant_entry = {"role": "assistant", "content": content}
@@ -162,7 +162,7 @@ def run(
                     "function": {
                         "name": tc.function.name,
                         # Sanitize malformed arguments so history stays valid JSON.
-                        "arguments": "{}" if tc.id in malformed_ids else tc.function.arguments,
+                        "arguments": "{}" if tc.id in parse_errors else tc.function.arguments,
                     },
                 }
                 for tc in msg.tool_calls
@@ -175,16 +175,16 @@ def run(
         # Execute each tool call and append results
         for tc in msg.tool_calls:
             name = tc.function.name
-            if tc.id in malformed_ids:
+            if tc.id in parse_errors:
                 # Surface malformed JSON back to the model so it can retry
                 # rather than crashing the entire run (see #133).
-                exc_text = f"ERROR: could not parse tool arguments as JSON"
+                error_msg = f"ERROR: could not parse tool arguments as JSON: {parse_errors[tc.id]}"
                 if verbose:
-                    print(f"  [{persona['name']}] {exc_text} for {name}")
+                    print(f"  [{persona['name']}] {error_msg}")
                 history.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": exc_text,
+                    "content": error_msg,
                 })
                 continue
             args = json.loads(tc.function.arguments)
