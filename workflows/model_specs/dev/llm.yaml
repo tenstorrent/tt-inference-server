@@ -193,13 +193,19 @@ templates:
         # model's HF generation_config.json; evals override per-request. No
         # override_generation_config here -- it would just restate the HF default.
         # Activate the gemma4 tool_call_parser so tool_choice:"auto" clients
-        # (mini-swe-agent / SWE-Bench) work on a flag-free release run.
+        # (mini-swe-agent / SWE-Bench) work on a flag-free release run. vLLM
+        # requires --tool-call-parser alongside --enable-auto-tool-choice, so it
+        # is passed explicitly here; the gemma4 parser is registered by the
+        # vllm-tt-plugin entry point (tenstorrent/vllm #431).
         enable-auto-tool-choice: true
+        tool-call-parser: gemma4
         # Enable gemma-4 thinking server-side so the r1_gpqa_diamond /
         # terminal-bench-2 / swe-bench-verified evals (methodology matched to
         # tenstorrent/tt-inference-server#4331) get the reasoning channel the
         # chat template otherwise suppresses (gemma-4 scores ~10pts lower w/o it).
+        # --reasoning-parser separates the thought channel into reasoning_content.
         default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -250,13 +256,19 @@ templates:
         # model's HF generation_config.json; evals override per-request. No
         # override_generation_config here -- it would just restate the HF default.
         # Activate the gemma4 tool_call_parser so tool_choice:"auto" clients
-        # (mini-swe-agent / SWE-Bench) work on a flag-free release run.
+        # (mini-swe-agent / SWE-Bench) work on a flag-free release run. vLLM
+        # requires --tool-call-parser alongside --enable-auto-tool-choice, so it
+        # is passed explicitly here; the gemma4 parser is registered by the
+        # vllm-tt-plugin entry point (tenstorrent/vllm #431).
         enable-auto-tool-choice: true
+        tool-call-parser: gemma4
         # Enable gemma-4 thinking server-side so the r1_gpqa_diamond /
         # terminal-bench-2 / swe-bench-verified evals (methodology matched to
         # tenstorrent/tt-inference-server#4331) get the reasoning channel the
         # chat template otherwise suppresses (gemma-4 scores ~10pts lower w/o it).
+        # --reasoning-parser separates the thought channel into reasoning_content.
         default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
