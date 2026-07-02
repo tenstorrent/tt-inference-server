@@ -5,7 +5,6 @@
 import base64
 import json
 import logging
-import os
 import time
 from pathlib import Path
 
@@ -21,9 +20,6 @@ logger = logging.getLogger(__name__)
 
 # Constants
 CNN_MOBILENETV2_RUNNER = "tt-xla-mobilenetv2"
-# Object-detection CNN. Matches ModelRunners.TT_XLA_YOLOX_NANO in
-# tt-media-server/config/constants.py. Unlike the classification CNNs, YOLOX
-# returns detection results, so it gets its own CPU-vs-device consistency eval.
 CNN_YOLOX_NANO_RUNNER = "tt-xla-yolox-nano"
 # Reuse the ImageNet subset prepared by VisionEvalsTest so benchmarks and
 # accuracy evals exercise the model with the exact same inputs.
@@ -33,13 +29,6 @@ IMAGENET_METADATA_FILE = "metadata.json"
 # downloaded, the benchmark sends one request per image found in the dataset
 # (so the request count equals len(metadata), not this constant).
 DEFAULT_DATASET_DOWNLOAD_COUNT = 20
-# Bearer token used to authenticate against the media server. Reads from the
-# same API_KEY env var the server uses, falling back to the legacy default.
-DEFAULT_API_KEY = "your-secret-key"
-
-
-def _auth_header() -> str:
-    return f"Bearer {os.environ.get('API_KEY', DEFAULT_API_KEY)}"
 
 
 class CnnClientStrategy(BaseMediaStrategy):
@@ -96,7 +85,6 @@ class CnnClientStrategy(BaseMediaStrategy):
             benchmark_data["correct"] = yolox_result["correct"]
             benchmark_data["total"] = yolox_result["total"]
             benchmark_data["mismatches_count"] = yolox_result["mismatches_count"]
-            # Keep score context consistent with the other CNNs (mean latency).
             latency_for_perf_check = yolox_result.get("mean_latency")
             benchmark_data["published_score"] = self.all_params.tasks[
                 0
@@ -274,7 +262,7 @@ class CnnClientStrategy(BaseMediaStrategy):
 
         headers = {
             "accept": "application/json",
-            "Authorization": _auth_header(),
+            "Authorization": "Bearer your-secret-key",
             "Content-Type": "application/json",
         }
         payload = {"prompt": image_payload}
@@ -301,7 +289,6 @@ class CnnClientStrategy(BaseMediaStrategy):
             encoded = base64.b64encode(img_fp.read()).decode("ascii")
         headers = {
             "accept": "application/json",
-            "Authorization": _auth_header(),
             "Content-Type": "application/json",
         }
         payload = {"prompt": f"data:image/jpeg;base64,{encoded}"}
