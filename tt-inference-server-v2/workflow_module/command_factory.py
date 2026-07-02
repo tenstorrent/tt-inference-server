@@ -312,6 +312,8 @@ def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
     # any extra claim (e.g. "exp") produces a different signature and a 401 on
     # every request. Keep this to {team_id, token_id} only, matching the server
     # and the in-container reference client (example_requests_client.py).
+    # Keep only team_id and token_id (drop exp) so this minted key matches the
+    # payload used by get_encoded_api_key.
     payload = {
         "team_id": "tenstorrent",
         "token_id": "debug-test",

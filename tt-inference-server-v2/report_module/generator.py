@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 
 _METADATA_RENDERING_KEYS = frozenset(ACCEPTANCE_EXPORT_KEYS)
 
+_EVALS_KIND = "evals"
+_CONSOLIDATED_EVALS_TITLE = "Accuracy Evaluations"
+
 
 @dataclass(frozen=True)
 class GenerateResult:
@@ -52,6 +55,7 @@ class ReportGenerator:
         out_dir.mkdir(parents=True, exist_ok=True)
 
         render_sections = _collapse_same_heading_blocks(normalized.sections)
+        render_sections = _consolidate_eval_blocks(render_sections)
         section_markdowns = [
             self._render_block(block, normalized.metadata) for block in render_sections
         ]
@@ -260,6 +264,35 @@ def generate_report(
 ) -> GenerateResult:
     """Convenience functional wrapper around :class:`ReportGenerator`."""
     return ReportGenerator(file_saver=file_saver).generate(schema, output_dir)
+
+
+def _consolidate_eval_blocks(sections: List[Block]) -> List[Block]:
+    """Merge every ``evals`` block into one consolidated table block."""
+    eval_blocks = [block for block in sections if block.kind == _EVALS_KIND]
+    if len(eval_blocks) <= 1:
+        return sections
+
+    records: List[Dict[str, Any]] = []
+    for block in eval_blocks:
+        records.extend(renderers._extract_records(block))
+    merged = Block(
+        kind=_EVALS_KIND,
+        title=_CONSOLIDATED_EVALS_TITLE,
+        task_type=None,
+        id=eval_blocks[0].id,
+        targets={},
+        data={"records": records},
+    )
+
+    out: List[Block] = []
+    inserted = False
+    for block in sections:
+        if block.kind != _EVALS_KIND:
+            out.append(block)
+        elif not inserted:
+            out.append(merged)
+            inserted = True
+    return out
 
 
 def _collapse_same_heading_blocks(sections: List[Block]) -> List[Block]:

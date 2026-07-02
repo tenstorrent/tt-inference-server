@@ -644,7 +644,7 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     find_library(_KV_TRACY_LIB tracy    PATHS "${_TTM_BUILD}/lib"                 NO_DEFAULT_PATH)
     find_library(_KV_YAML_LIB  yaml-cpp PATHS "${_TTM_BUILD}/_deps/yaml-cpp-build" NO_DEFAULT_PATH)
 
-    if(_TTM_BUILD AND _KV_UMD_LIB AND _KV_TTSTL_LIB AND _KV_TRACY_LIB AND _KV_YAML_LIB)
+    if(_TTM_BUILD AND _KV_UMD_LIB AND _KV_TTSTL_LIB AND _KV_TRACY_LIB AND _KV_YAML_LIB AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration/src/worker/device_io.cpp")
         target_compile_definitions(transport_lib PUBLIC USE_METAL_CPP_LIB)
         target_include_directories(transport_lib PUBLIC ${TT_METAL_INCLUDE_DIRS})
 
@@ -1080,8 +1080,9 @@ target_include_directories(mock_remote_kv_manager_test PRIVATE
 add_executable(session_manager_test
     tests/integration/sessions/session_manager_test.cpp
     src/domain/session.cpp
-    src/domain/prefix_index.cpp
-    src/domain/response_id_index.cpp
+    src/domain/prefix_cache/prefix_index.cpp
+    src/domain/prefix_cache/block_matcher.cpp
+    src/domain/prefix_cache/response_id_index.cpp
     src/services/session_manager.cpp
     src/metrics/metrics.cpp
 )
@@ -1154,8 +1155,9 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/session_resolution.cpp
     src/services/memory_services/memory_manager.cpp
     src/domain/session.cpp
-    src/domain/prefix_index.cpp
-    src/domain/response_id_index.cpp
+    src/domain/prefix_cache/prefix_index.cpp
+    src/domain/prefix_cache/block_matcher.cpp
+    src/domain/prefix_cache/response_id_index.cpp
     src/runtime/worker/worker_manager.cpp
     src/runtime/worker/process_liveness.cpp
     src/runtime/worker/single_process_worker.cpp
@@ -1190,9 +1192,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/llm_pipeline.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
-    src/sockets/tcp_socket_transport.cpp
     src/sockets/zmq_socket_transport.cpp
-    src/sockets/socket_transport_factory.cpp
 )
 
 add_executable(main_integration_test
@@ -1371,8 +1371,9 @@ target_link_libraries(tokenizer_benchmark PRIVATE llm_runner_lib)
 add_executable(session_manager_benchmark
     benchmarks/session_manager_benchmark.cpp
     src/domain/session.cpp
-    src/domain/prefix_index.cpp
-    src/domain/response_id_index.cpp
+    src/domain/prefix_cache/prefix_index.cpp
+    src/domain/prefix_cache/block_matcher.cpp
+    src/domain/prefix_cache/response_id_index.cpp
     src/services/session_manager.cpp
     src/metrics/metrics.cpp
 )
@@ -1559,8 +1560,9 @@ set(SOURCES
     src/api/info_controller.cpp
     src/api/openapi.cpp
     src/services/llm_service.cpp
-    src/domain/prefix_index.cpp
-    src/domain/response_id_index.cpp
+    src/domain/prefix_cache/prefix_index.cpp
+    src/domain/prefix_cache/block_matcher.cpp
+    src/domain/prefix_cache/response_id_index.cpp
     src/services/session_manager.cpp
     src/services/session_resolution.cpp
     src/domain/session.cpp
@@ -1589,9 +1591,7 @@ set(SOURCES
     src/services/disaggregation_service.cpp
     src/services/llm_pipeline.cpp
     src/sockets/socket_manager.cpp
-    src/sockets/tcp_socket_transport.cpp
     src/sockets/zmq_socket_transport.cpp
-    src/sockets/socket_transport_factory.cpp
     src/sockets/inter_server_service.cpp
     src/metrics/metrics.cpp
     src/api/metrics_controller.cpp

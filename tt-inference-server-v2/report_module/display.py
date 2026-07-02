@@ -112,6 +112,12 @@ DISPLAY_NAMES: Dict[str, str] = {
     "model_ready": "Model Ready",
     "runner_in_use": "Runner",
     "child_result": "Child Result",
+    # vLLM parameter-conformance tables
+    "test_case": "Test Case",
+    "parametrization": "Parametrization",
+    "summary": "Summary",
+    "message": "Message",
+    "endpoint_url": "Endpoint URL",
     # Common envelope
     "name": "Name",
     "success": "Success",
