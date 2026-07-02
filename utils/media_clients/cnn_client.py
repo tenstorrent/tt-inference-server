@@ -5,6 +5,7 @@
 import base64
 import json
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -20,6 +21,10 @@ logger = logging.getLogger(__name__)
 
 # Constants
 CNN_MOBILENETV2_RUNNER = "tt-xla-mobilenetv2"
+# Object-detection CNN. Matches ModelRunners.TT_XLA_YOLOX_NANO in
+# tt-media-server/config/constants.py. Unlike the classification CNNs, YOLOX
+# returns detection results, so it gets its own CPU-vs-device consistency eval.
+CNN_YOLOX_NANO_RUNNER = "tt-xla-yolox-nano"
 # Reuse the ImageNet subset prepared by VisionEvalsTest so benchmarks and
 # accuracy evals exercise the model with the exact same inputs.
 IMAGENET_DATASET_DIR = "server_tests/datasets/imagenet_subset"
@@ -28,6 +33,13 @@ IMAGENET_METADATA_FILE = "metadata.json"
 # downloaded, the benchmark sends one request per image found in the dataset
 # (so the request count equals len(metadata), not this constant).
 DEFAULT_DATASET_DOWNLOAD_COUNT = 20
+# Bearer token used to authenticate against the media server. Reads from the
+# same API_KEY env var the server uses, falling back to the legacy default.
+DEFAULT_API_KEY = "your-secret-key"
+
+
+def _auth_header() -> str:
+    return f"Bearer {os.environ.get('API_KEY', DEFAULT_API_KEY)}"
 
 
 class CnnClientStrategy(BaseMediaStrategy):
@@ -43,8 +55,11 @@ class CnnClientStrategy(BaseMediaStrategy):
         try:
             runner_in_use = self.require_health()
             eval_result = None
+            yolox_result = None
             if runner_in_use == CNN_MOBILENETV2_RUNNER:
                 eval_result = self._run_mobilenetv2_eval()
+            elif runner_in_use == CNN_YOLOX_NANO_RUNNER:
+                yolox_result = self._run_yolox_eval()
             else:
                 status_list = self._run_image_analysis_benchmark()
         except Exception as e:
@@ -73,6 +88,23 @@ class CnnClientStrategy(BaseMediaStrategy):
             benchmark_data["correct"] = eval_result["correct"]
             benchmark_data["total"] = eval_result["total"]
             benchmark_data["mismatches_count"] = eval_result["mismatches_count"]
+        elif runner_in_use == CNN_YOLOX_NANO_RUNNER and yolox_result:
+            logger.info("Adding YOLOX detection-consistency eval results")
+            benchmark_data["accuracy_check"] = yolox_result.get(
+                "accuracy_status", ReportCheckTypes.NA
+            )
+            benchmark_data["correct"] = yolox_result["correct"]
+            benchmark_data["total"] = yolox_result["total"]
+            benchmark_data["mismatches_count"] = yolox_result["mismatches_count"]
+            # Keep score context consistent with the other CNNs (mean latency).
+            latency_for_perf_check = yolox_result.get("mean_latency")
+            benchmark_data["published_score"] = self.all_params.tasks[
+                0
+            ].score.published_score
+            benchmark_data["score"] = latency_for_perf_check
+            benchmark_data["published_score_ref"] = self.all_params.tasks[
+                0
+            ].score.published_score_ref
         else:
             logger.info("No eval results from eval spec test to add to benchmark data")
             latency_value = self._calculate_latency(status_list)
@@ -86,6 +118,13 @@ class CnnClientStrategy(BaseMediaStrategy):
             benchmark_data["published_score_ref"] = self.all_params.tasks[
                 0
             ].score.published_score_ref
+
+        # The CNN/IMAGE/VIDEO release target check reads ``tput_user`` from the
+        # eval data (see workflows/run_reports.py:add_target_checks_cnn_image_video);
+        # without it the benchmark ``tput_check`` defaults to tput_user=0 and fails.
+        # For single-concurrency CNN inference, tput_user (images/sec/user) = 1/latency.
+        if latency_for_perf_check:
+            benchmark_data["tput_user"] = 1.0 / latency_for_perf_check
 
         benchmark_data["performance_check"] = self._calculate_performance_check(
             latency_value=latency_for_perf_check,
@@ -235,7 +274,7 @@ class CnnClientStrategy(BaseMediaStrategy):
 
         headers = {
             "accept": "application/json",
-            "Authorization": "Bearer your-secret-key",
+            "Authorization": _auth_header(),
             "Content-Type": "application/json",
         }
         payload = {"prompt": image_payload}
@@ -249,6 +288,163 @@ class CnnClientStrategy(BaseMediaStrategy):
         elapsed = time.time() - start_time
 
         return (response.status_code == 200), elapsed
+
+    def _post_search_image(
+        self, server_url: str, image_path: Path
+    ) -> tuple[bool, float, dict]:
+        """Send one image to a search-image endpoint, returning the JSON body.
+
+        Unlike ``_analyze_image`` (which only times the request), this returns
+        the parsed response so detection labels can be compared across servers.
+        """
+        with image_path.open("rb") as img_fp:
+            encoded = base64.b64encode(img_fp.read()).decode("ascii")
+        headers = {
+            "accept": "application/json",
+            "Authorization": _auth_header(),
+            "Content-Type": "application/json",
+        }
+        payload = {"prompt": f"data:image/jpeg;base64,{encoded}"}
+        start_time = time.time()
+        response = requests.post(server_url, json=payload, headers=headers, timeout=90)
+        elapsed = time.time() - start_time
+        body: dict = {}
+        if response.status_code == 200:
+            try:
+                body = response.json()
+            except ValueError:
+                body = {}
+        return (response.status_code == 200), elapsed, body
+
+    @staticmethod
+    def _extract_detection_labels(payload: dict) -> Optional[list]:
+        """Extract the ordered detected class labels from a search-image body.
+
+        YOLOX returns detections under ``image_data[*].output.labels`` (sorted by
+        descending confidence); falls back to ``top1_class_label``. Returns None
+        when the response is unusable so it can be counted as a mismatch.
+        """
+        image_data = payload.get("image_data") if isinstance(payload, dict) else None
+        if isinstance(image_data, list) and image_data:
+            first = image_data[0]
+        else:
+            first = image_data
+        if not isinstance(first, dict):
+            return None
+        output = first.get("output")
+        if isinstance(output, dict) and isinstance(output.get("labels"), list):
+            return [str(label) for label in output["labels"]]
+        label = first.get("top1_class_label")
+        return [str(label)] if label else []
+
+    def _yolox_detections_for_server(
+        self, server_url: str, dataset_path: Path, metadata: list[dict]
+    ) -> tuple[list, float]:
+        """Replay every dataset image to ``server_url`` and collect detections.
+
+        Returns ``(detections_per_image, mean_latency_seconds)`` where each entry
+        is the ordered label list (or None for a failed/unparsable request).
+        """
+        detections: list = []
+        elapsed_total = 0.0
+        for sample in metadata:
+            image_file = dataset_path / sample["filename"]
+            ok, elapsed, body = self._post_search_image(server_url, image_file)
+            elapsed_total += elapsed
+            detections.append(self._extract_detection_labels(body) if ok else None)
+        mean_latency = elapsed_total / len(metadata) if metadata else 0.0
+        return detections, mean_latency
+
+    def _run_yolox_eval(self, cpu_server_url: Optional[str] = None) -> dict:
+        """YOLOX accuracy via CPU-vs-device detection consistency.
+
+        Mirrors the MobileNetV2 flow: replay the shared ImageNet subset to the
+        device server and compare each image's detections against a reference
+        run. ``cpu_server_url`` lets CI point at a CPU deployment for a true
+        baseline; when omitted we replay a second deterministic device pass as
+        the reference (matching how the MobileNetV2 path measures "cpu" and
+        "device" against the same server in this invocation).
+
+        Returns a dict with ``accuracy_status`` (ReportCheckTypes), ``correct``,
+        ``total``, ``mismatches_count`` and ``mean_latency`` (seconds).
+        """
+        dataset_path, metadata = self._ensure_imagenet_dataset()
+        device_url = f"{self.base_url}/v1/cnn/search-image"
+
+        logger.info("YOLOX eval: running device pass over %d images", len(metadata))
+        device_dets, mean_latency = self._yolox_detections_for_server(
+            device_url, dataset_path, metadata
+        )
+
+        reference_url = cpu_server_url or device_url
+        logger.info("YOLOX eval: running reference pass against %s", reference_url)
+        reference_dets, _ = self._yolox_detections_for_server(
+            reference_url, dataset_path, metadata
+        )
+
+        total = len(metadata)
+        correct = 0
+        records: list[dict] = []
+        for i, (dev, ref) in enumerate(zip(device_dets, reference_dets)):
+            match = dev is not None and ref is not None and dev == ref
+            records.append(
+                {
+                    "index": i,
+                    "filename": metadata[i]["filename"],
+                    "device_detections": dev,
+                    "reference_detections": ref,
+                    "match": match,
+                }
+            )
+            if match:
+                correct += 1
+        mismatches = [r for r in records if not r["match"]]
+
+        # Persist per-image inputs and device-vs-reference detections so eval
+        # results are inspectable (which images, what each side detected, and
+        # which mismatched), mirroring the MobileNetV2 mismatch artifact.
+        self._write_yolox_detection_detail(records)
+
+        tolerance = self.all_params.tasks[0].score.tolerance
+        if total == 0:
+            accuracy_status = ReportCheckTypes.NA
+        else:
+            ratio = correct / total
+            accuracy_status = ReportCheckTypes.from_result(ratio >= (1.0 - tolerance))
+
+        logger.info(
+            "YOLOX eval: correct=%d total=%d mismatches=%d status=%s",
+            correct,
+            total,
+            len(mismatches),
+            accuracy_status,
+        )
+        return {
+            "accuracy_status": accuracy_status,
+            "correct": correct,
+            "total": total,
+            "mismatches_count": len(mismatches),
+            "mean_latency": mean_latency,
+        }
+
+    def _write_yolox_detection_detail(self, records: list[dict]) -> None:
+        """Write per-image device-vs-reference detection detail to disk.
+
+        Best-effort: a write failure is logged but never breaks the eval.
+        """
+        try:
+            detail_path = (
+                Path(self.output_path)
+                / f"eval_{self.model_spec.model_id}"
+                / self.model_spec.hf_model_repo.replace("/", "__")
+                / f"yolox_detections_{time.time()}.json"
+            )
+            detail_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(detail_path, "w") as f:
+                json.dump(records, f, indent=4)
+            logger.info("YOLOX eval: wrote detection detail to %s", detail_path)
+        except Exception as e:  # noqa: BLE001 - diagnostics must not fail the eval
+            logger.warning("YOLOX eval: could not write detection detail: %s", e)
 
     def _generate_report(
         self,
