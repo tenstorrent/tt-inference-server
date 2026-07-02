@@ -174,6 +174,46 @@ MODEL_HIGHLIGHTS: Dict[ModelType, Tuple[str, ...]] = {
 }
 
 
+def _bh_llama8b_prefill_chunk_commands(
+    model_name: str, device: DeviceTypes
+) -> List[str]:
+    """Working launch commands for Llama-3.1-8B on single-chip Blackhole (P100/P150).
+
+    On these devices the default quickstart commands crash on startup with the tt-metal
+    commit currently pinned for these pages (55fd115), so they are replaced with a flow
+    that sets MAX_PREFILL_CHUNK_SIZE and caps max_model_len. Remove this entry once the
+    pinned commit is updated. See tenstorrent/tt-metal#28835.
+    """
+    device_arg = device.name.lower()
+    return [
+        "Create a `.env` file in the repo root with the following before launching:",
+        "",
+        "```bash",
+        "HF_TOKEN=<replace-with-your-hugging-face-token>",
+        "JWT_SECRET=<replace-with-random-secret>",
+        "MAX_PREFILL_CHUNK_SIZE=2",
+        "```",
+        "",
+        "**via run.py command**",
+        "",
+        "```bash",
+        f"python3 run.py --model {model_name} --device {device_arg} --workflow server "
+        "--docker-server \\",
+        "  --vllm-override-args '{\"max_model_len\": 1024}'",
+        "```",
+    ]
+
+
+# Per-(model, device) working-command overrides for the quickstart section. When an
+# entry exists, its builder REPLACES the default docker run / run.py commands (which
+# would otherwise crash on that device). Keep entries scoped to the specific
+# model+device combinations they apply to.
+DEVICE_MODEL_QUICKSTART_OVERRIDES: Dict[Tuple[str, DeviceTypes], "callable"] = {
+    ("Llama-3.1-8B", DeviceTypes.P100): _bh_llama8b_prefill_chunk_commands,
+    ("Llama-3.1-8B", DeviceTypes.P150): _bh_llama8b_prefill_chunk_commands,
+}
+
+
 def get_unique_hardware_page_groups() -> List[HardwarePageGroup]:
     """Get unique HardwarePageGroup instances in consistent order."""
     seen = set()
@@ -564,8 +604,16 @@ def generate_model_page_group_page(
             )
             lines.append("")
 
-        # docker run command (skip for multihost - requires special deployment)
-        if target_template.inference_engine == InferenceEngine.VLLM.value:
+        # Working-command override: when present, it replaces the default docker run /
+        # run.py commands, which would otherwise crash on this device.
+        override_builder = DEVICE_MODEL_QUICKSTART_OVERRIDES.get((model_name, device))
+
+        # docker run command (skip for multihost - requires special deployment, and skip
+        # when an override provides the working commands for this model+device)
+        if (
+            not override_builder
+            and target_template.inference_engine == InferenceEngine.VLLM.value
+        ):
             is_multihost = device.is_multihost()
             if is_multihost:
                 # Multihost requires Controller/Worker architecture, link to guide
@@ -605,15 +653,18 @@ def generate_model_page_group_page(
                 lines.append("```")
                 lines.append("")
 
-        # run.py command
-        lines.append("**via run.py command**")
-        lines.append("")
+        # run.py command (or the working-command override for this model+device)
         device_arg = device.name.lower()
-        lines.append("```bash")
-        lines.append(
-            f"python3 run.py --model {model_name} --device {device_arg} --workflow server --docker-server"
-        )
-        lines.append("```")
+        if override_builder:
+            lines.extend(override_builder(model_name, device))
+        else:
+            lines.append("**via run.py command**")
+            lines.append("")
+            lines.append("```bash")
+            lines.append(
+                f"python3 run.py --model {model_name} --device {device_arg} --workflow server --docker-server"
+            )
+            lines.append("```")
         if idx == 0:
             lines.append(
                 "For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide."
