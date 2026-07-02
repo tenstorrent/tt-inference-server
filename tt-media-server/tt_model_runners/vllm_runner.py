@@ -53,7 +53,11 @@ class VLLMForgeRunner(BaseDeviceRunner):
         #     tt::runtime::ttnn::operations::trace::run; b16/16K won't compile).
         #   - trace-capture needs extra DRAM scratch — validate fit on 7B+ models
         #     before enabling.
-        optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
+        # EXPERIMENT (issue #4471): default opt_level=1 to test whether the optimizer
+        # elides the >2GB flatbuffer overflow from the materialized SDPA causal mask
+        # (tt-mlir #8596). Watch for the old opt>=1 MemoryLayoutPropagation abort
+        # (tt-xla#4990) — that was the 1.2.0 wheel; this checks 1.3.0.
+        optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "true").lower() == "true"
         enable_trace = os.getenv("ENABLE_TRACE", "false").lower() == "true"
         engine_args = AsyncEngineArgs(
