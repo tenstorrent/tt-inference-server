@@ -16,7 +16,12 @@
 
 vllm==0.13.0
 torch
-datasets
+# datasets/pyarrow pinned to a compatible pair: bare `datasets` lets the solve
+# land on a datasets<->pyarrow combo that crashes eval data loading with
+# `AttributeError: module 'pyarrow' has no attribute 'PyExtensionType'`. These
+# mirror the fix in #4428; drop this pin when rebasing onto main after it merges.
+datasets==5.0.0
+pyarrow==24.0.0
 aiohttp
 requests
 pyjwt
