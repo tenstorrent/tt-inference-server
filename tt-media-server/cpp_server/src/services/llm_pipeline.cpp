@@ -519,14 +519,14 @@ void LLMPipeline::dispatchGeneration(
       if (!request.migrationId.has_value() ||
           !request.kv_position_id.has_value()) {
         throw std::runtime_error(
-            "Dynamo native prefill handoff requires migrationId and "
+            "Dynamo prefill handoff requires migrationId and "
             "kv_position_id");
       }
       if (request.dynamoNativePrefillDecodeSlotId.has_value() &&
           request.slotId.has_value() &&
           *request.dynamoNativePrefillDecodeSlotId != *request.slotId) {
         throw std::runtime_error(
-            "Dynamo native prefill handoff decode slot does not match the "
+            "Dynamo prefill handoff decode slot does not match the "
             "resolved session slot");
       }
       if (auto* tokens = std::get_if<std::vector<int>>(&request.prompt);
@@ -537,7 +537,7 @@ void LLMPipeline::dispatchGeneration(
       }
       request.disaggregated = true;
       TT_LOG_INFO(
-          "[LLMPipeline] Using Dynamo-native prefill handoff taskId={} "
+          "[LLMPipeline] Using Dynamo prefill handoff taskId={} "
           "migrationId={} kv_position_id={}",
           request.task_id, *request.migrationId, *request.kv_position_id);
       service_->submitStreamingRequest(

@@ -990,15 +990,15 @@ target_link_libraries(tokenizer_test PRIVATE llm_runner_lib GTest::gtest_main)
 add_executable(conversation_hasher_test tests/unit/model/conversation_hasher_test.cpp)
 target_link_libraries(conversation_hasher_test PRIVATE llm_runner_lib GTest::gtest_main)
 
-add_executable(native_prefill_handoff_test
-    tests/unit/dynamo/native_prefill_handoff_test.cpp
-    src/dynamo/native_prefill_handoff.cpp
+add_executable(dynamo_prefill_handoff_test
+    tests/unit/dynamo/dynamo_prefill_handoff_test.cpp
+    src/dynamo/dynamo_prefill_handoff.cpp
 )
-target_link_libraries(native_prefill_handoff_test PRIVATE
+target_link_libraries(dynamo_prefill_handoff_test PRIVATE
     JsonCpp::JsonCpp
     GTest::gtest_main
 )
-target_include_directories(native_prefill_handoff_test PRIVATE
+target_include_directories(dynamo_prefill_handoff_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -1618,7 +1618,7 @@ set(SOURCES
     src/dynamo/dynamo_protocol.cpp
     src/dynamo/discovery.cpp
     src/dynamo/etcd_client.cpp
-    src/dynamo/native_prefill_handoff.cpp
+    src/dynamo/dynamo_prefill_handoff.cpp
     src/dynamo/dynamo_endpoint.cpp
 )
 

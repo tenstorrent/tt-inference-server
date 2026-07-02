@@ -358,14 +358,14 @@ std::string dynamoEndpointName();
  * auto, decode, prefill. auto derives from LLM_MODE. */
 std::string dynamoWorkerRole();
 
-/** Enable the experimental Dynamo-native prefill handoff control plane. From
+/** Enable the experimental Dynamo prefill handoff control plane. From
  * DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED. Default: false. */
 bool dynamoNativePrefillHandoffEnabled();
 
-/** Test-only bypass for native Dynamo handoff before real KV transfer is
- * integrated. From DYNAMO_NATIVE_PREFILL_MOCK_KV_TRANSFER_ENABLED. Default:
- * false. */
-bool dynamoNativePrefillMockKvTransferEnabled();
+/** Test-only bypass for native Dynamo handoff before real prefill-side
+ * completion is integrated. From
+ * DYNAMO_NATIVE_PREFILL_MOCK_HANDOFF_READY_ENABLED. Default: false. */
+bool dynamoNativePrefillMockHandoffReadyEnabled();
 
 /** When true and LLM_DEVICE_BACKEND=mock_pipeline, Blaze runners use
  * single-threaded MockSchedulers instead of tt-llm-engine schedulers.

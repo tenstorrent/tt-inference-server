@@ -836,9 +836,10 @@ bool dynamoNativePrefillHandoffEnabled() {
                  defaults::DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED);
 }
 
-bool dynamoNativePrefillMockKvTransferEnabled() {
-  return envBool("DYNAMO_NATIVE_PREFILL_MOCK_KV_TRANSFER_ENABLED",
-                 defaults::DYNAMO_NATIVE_PREFILL_MOCK_KV_TRANSFER_ENABLED);
+bool dynamoNativePrefillMockHandoffReadyEnabled() {
+  return envBool(
+      "DYNAMO_NATIVE_PREFILL_MOCK_HANDOFF_READY_ENABLED",
+      defaults::DYNAMO_NATIVE_PREFILL_MOCK_HANDOFF_READY_ENABLED);
 }
 
 /**

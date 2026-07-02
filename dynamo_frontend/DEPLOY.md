@@ -176,7 +176,7 @@ Healthy gateway routing requires one decode connection and at least one
 registered prefill worker.
 - `**/v1/models` is empty** — frontend and worker aren't talking to the same etcd.
 Check `docker exec dynamo-frontend curl -s http://etcd:2379/version` and that
-both use namespace `default` / component `decode` / endpoint `generate`.
+both use namespace `default` / component `backend` / endpoint `generate`.
 - **Frontend 404s the model** (`huggingface.co/api/models//home/...`) — the
 frontend image is missing the baked tokenizer tree at
 `/home/container_app_user/app/server/cpp_server/tokenizers/<hf-model-id>/`.

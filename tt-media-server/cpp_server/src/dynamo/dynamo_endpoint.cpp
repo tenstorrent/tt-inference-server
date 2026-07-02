@@ -24,7 +24,7 @@
 #include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
-#include "dynamo/native_prefill_handoff.hpp"
+#include "dynamo/dynamo_prefill_handoff.hpp"
 #include "domain/session.hpp"
 #include "services/llm_pipeline.hpp"
 #include "utils/id_generator.hpp"
@@ -176,7 +176,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       const std::string requestId =
           dynReq.raw.get("request_id", "").asString();
       TT_LOG_INFO(
-          "[DynamoEndpoint] Native prefill request received id={} "
+          "[DynamoEndpoint] Dynamo prefill request received id={} "
           "tokens={}",
           requestId.empty() ? "?" : requestId, dynReq.token_ids.size());
 
@@ -185,12 +185,12 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       writer->connect();
 
       if (tt::config::dynamoNativePrefillHandoffEnabled()) {
-        if (!tt::config::dynamoNativePrefillMockKvTransferEnabled()) {
+        if (!tt::config::dynamoNativePrefillMockHandoffReadyEnabled()) {
           TokenChunk err;
           err.error =
-              "cpp_server Dynamo native prefill reached real prefill "
-              "completion, but KV transfer completion is not wired yet. Set "
-              "DYNAMO_NATIVE_PREFILL_MOCK_KV_TRANSFER_ENABLED=1 only for "
+              "cpp_server Dynamo prefill handoff is not wired to real "
+              "prefill-side completion yet. Set "
+              "DYNAMO_NATIVE_PREFILL_MOCK_HANDOFF_READY_ENABLED=1 only for "
               "mock/control-plane testing.";
           err.error_code = 501;
           writer->sendChunk(err);
@@ -199,17 +199,17 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
         }
 
         TT_LOG_WARN(
-            "[DynamoEndpoint] Using mock KV-transfer readiness for native "
+            "[DynamoEndpoint] Using mock handoff readiness for Dynamo "
             "prefill handoff; this is for control-plane testing only");
         const std::string selectedPrefillId =
             localPrefillId && !localPrefillId->empty()
                 ? *localPrefillId
                 : std::string{"prefill/generate"};
-        auto handoff = buildMetadataOnlyNativePrefillHandoff(
+        auto handoff = buildMetadataOnlyDynamoPrefillHandoff(
             tt::utils::MigrationIDGenerator::generate(),
             static_cast<uint32_t>(dynReq.token_ids.size()), selectedPrefillId);
         TT_LOG_INFO(
-            "[DynamoEndpoint] Emitting native prefill handoff "
+            "[DynamoEndpoint] Emitting Dynamo prefill handoff "
             "selected_prefill_id={} migrationId={} token_count={} "
             "kv_position_id={} routing_reason={}",
             handoff.selectedPrefillId, *handoff.migrationId,
@@ -218,7 +218,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
         TokenChunk out;
         out.finish_reason = "stop";
         out.disaggregated_params =
-            nativePrefillHandoffToDisaggregatedParams(handoff);
+            dynamoPrefillHandoffToDisaggregatedParams(handoff);
         writer->sendChunk(out);
         writer->finalize();
         return;
@@ -301,22 +301,22 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
     };
 
     if (const Json::Value* handoffJson =
-            findNativePrefillHandoffJson(dynReq.raw)) {
+            findDynamoPrefillHandoffJson(dynReq.raw)) {
       if (!tt::config::dynamoNativePrefillHandoffEnabled()) {
         TokenChunk err;
         err.error =
-            "Dynamo native prefill handoff metadata was provided, but "
+            "Dynamo prefill handoff metadata was provided, but "
             "DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED is not enabled";
         err.error_code = 501;
         sendChunk(err);
         signalDone();
         return;
       }
-      auto handoff = parseNativePrefillHandoff(*handoffJson);
-      auto validation = validateNativePrefillHandoffForDecode(handoff);
+      auto handoff = parseDynamoPrefillHandoff(*handoffJson);
+      auto validation = validateDynamoPrefillHandoffForDecode(handoff);
       if (!validation.ok) {
         TT_LOG_WARN(
-            "[DynamoEndpoint] Native prefill handoff rejected taskId={} "
+            "[DynamoEndpoint] Dynamo prefill handoff rejected taskId={} "
             "selected_prefill_id={} error={}",
             req->task_id, handoff.selectedPrefillId, validation.error);
         TokenChunk err;
@@ -326,9 +326,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
         signalDone();
         return;
       }
-      applyNativePrefillHandoffToRequest(handoff, *req);
+      applyDynamoPrefillHandoffToRequest(handoff, *req);
       TT_LOG_INFO(
-          "[DynamoEndpoint] Native prefill handoff accepted taskId={} "
+          "[DynamoEndpoint] Dynamo prefill handoff accepted taskId={} "
           "selected_prefill_id={} routing_reason={} migrationId={} "
           "kv_position_id={} token_count={} cached_tokens={}",
           req->task_id, handoff.selectedPrefillId, handoff.routingReason,

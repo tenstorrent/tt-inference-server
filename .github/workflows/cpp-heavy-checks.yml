@@ -1261,10 +1261,10 @@ jobs:
 
       - name: Verify both backends registered in etcd
         # cpp_server's etcd discovery writes one instance + one MDC entry per
-        # decode backend under v1/instances/<ns>/<component>/<endpoint>/<id_hex>
+        # backend under v1/instances/<ns>/<component>/<endpoint>/<id_hex>
         # (see tt-media-server/cpp_server/src/dynamo/discovery.cpp).
         # With NAMESPACE/COMPONENT/ENDPOINT defaulted to
-        # default/backend/generate, expect >=2 distinct instance keys.
+        # default/backend/generate, expect ≥2 distinct instance keys.
         run: |
           KEYS=$(etcdctl --endpoints=http://127.0.0.1:2379 \
             get --prefix --keys-only "v1/instances/default/backend/generate/")
@@ -1272,10 +1272,10 @@ jobs:
           echo "$KEYS"
           COUNT=$(printf '%s\n' "$KEYS" | grep -c "v1/instances/default/backend/generate/" || true)
           if [ "$COUNT" -lt 2 ]; then
-            echo "::error::Expected ≥2 decode registrations in etcd, got $COUNT"
+            echo "::error::Expected ≥2 backend registrations in etcd, got $COUNT"
             exit 1
           fi
-          echo "✅ $COUNT cpp_server decode backends registered in etcd"
+          echo "✅ $COUNT cpp_server backends registered in etcd"
 
       - name: Run vllm bench serve against the Dynamo frontend
         env:
