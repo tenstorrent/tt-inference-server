@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import List
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from llm_module import (
     DriverContext,
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 def _select_agentic_tasks(ctx: MediaContext) -> list:
-    """Return EVALS_AGENTIC tasks; raise loudly if mixed with non-agentic."""
+    """Return only EVALS_AGENTIC tasks for the dedicated agentic workflow."""
     tasks = getattr(ctx.all_params, "tasks", []) or []
     agentic = [
         t for t in tasks if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
@@ -38,12 +38,10 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
     non_agentic = [
         t for t in tasks if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
     ]
-    if agentic and non_agentic:
-        raise RuntimeError(
-            f"v2 agentic runner only supports EVALS_AGENTIC tasks. "
-            f"Got non-agentic tasks: {[t.task_name for t in non_agentic]}. "
-            f"Either port those to v2, remove {ctx.model_spec.model_name!r} from "
-            f"_V2_ROUTED_MODELS, or use --eval-samples to select agentic tasks only."
+    if non_agentic:
+        logger.info(
+            "Skipping non-agentic eval task(s) in v2 agentic workflow: %s",
+            [t.task_name for t in non_agentic],
         )
     return agentic
 
@@ -73,8 +71,13 @@ def _require_openai_server(ctx: MediaContext) -> None:
     """Check the OpenAI-compatible server path used by agentic harnesses."""
 
     url = f"{ctx.base_url}/v1/models"
+    headers = {"Accept-Encoding": "identity"}
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    request = Request(url, headers=headers)
     try:
-        with urlopen(url, timeout=30) as response:
+        with urlopen(request, timeout=30) as response:
             if response.status != 200:
                 raise RuntimeError(
                     f"Expected status 200 from {url}, got {response.status}"
