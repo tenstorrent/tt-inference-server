@@ -209,6 +209,13 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
             requestId, tt::utils::MigrationIDGenerator::generate(),
             static_cast<uint32_t>(dynReq.token_ids.size()), selectedPrefillId);
         handoff.status = "mock_kv_transfer_complete";
+        TT_LOG_INFO(
+            "[DynamoEndpoint] Emitting native prefill handoff status={} "
+            "selected_prefill_id={} migrationId={} token_count={} "
+            "kv_position_id={} routing_reason={}",
+            handoff.status, handoff.selected_prefill_id, *handoff.migration_id,
+            handoff.token_count, *handoff.kv_position_id,
+            handoff.routing_reason);
 
         TokenChunk out;
         out.finish_reason = "stop";
@@ -310,6 +317,11 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       auto handoff = parseNativePrefillHandoff(*handoffJson);
       auto validation = validateNativePrefillHandoffForDecode(handoff);
       if (!validation.ok) {
+        TT_LOG_WARN(
+            "[DynamoEndpoint] Native prefill handoff rejected taskId={} "
+            "selected_prefill_id={} status={} error={}",
+            req->task_id, handoff.selected_prefill_id, handoff.status,
+            validation.error);
         TokenChunk err;
         err.error = validation.error;
         err.error_code = 501;
@@ -320,8 +332,11 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       applyNativePrefillHandoffToRequest(handoff, *req);
       TT_LOG_INFO(
           "[DynamoEndpoint] Native prefill handoff accepted taskId={} "
-          "selected_prefill_id={} migrationId={}",
-          req->task_id, handoff.selected_prefill_id, *req->migrationId);
+          "selected_prefill_id={} status={} routing_reason={} migrationId={} "
+          "kv_position_id={} token_count={} cached_tokens={}",
+          req->task_id, handoff.selected_prefill_id, handoff.status,
+          handoff.routing_reason, *req->migrationId, *req->kv_position_id,
+          handoff.token_count, handoff.cached_tokens);
     }
 
     // Reject requests whose prompt exceeds the maximum input sequence length.
