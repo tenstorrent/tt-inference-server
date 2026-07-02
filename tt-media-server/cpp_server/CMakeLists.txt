@@ -1193,6 +1193,10 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/sockets/tcp_socket_transport.cpp
     src/sockets/zmq_socket_transport.cpp
     src/sockets/socket_transport_factory.cpp
+    src/dynamo/dynamo_endpoint.cpp
+    src/dynamo/dynamo_protocol.cpp
+    src/dynamo/discovery.cpp
+    src/dynamo/etcd_client.cpp
 )
 
 add_executable(main_integration_test
@@ -1207,6 +1211,7 @@ target_link_libraries(main_integration_test PRIVATE
     pybind11::embed
     stb_image_write
     xxhash_lib
+    blake3
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(main_integration_test PRIVATE PkgConfig::ZMQ)
@@ -1234,6 +1239,7 @@ target_link_libraries(prefill_integration_test PRIVATE
     pybind11::embed
     stb_image_write
     xxhash_lib
+    blake3
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(prefill_integration_test PRIVATE PkgConfig::ZMQ)
@@ -1261,6 +1267,7 @@ target_link_libraries(disaggregated_e2e_test PRIVATE
     pybind11::embed
     stb_image_write
     xxhash_lib
+    blake3
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(disaggregated_e2e_test PRIVATE PkgConfig::ZMQ)
@@ -1293,7 +1300,7 @@ endif()
 # Integration tests boot the full server stack and share ports/resources.
 # Prevent parallel execution via RESOURCE_LOCK.
 set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2ETest PROPERTIES
-    TIMEOUT 120
+    TIMEOUT 300
     RESOURCE_LOCK integration_server
 )
 gtest_discover_tests(scheduler_test)
