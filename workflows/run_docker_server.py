@@ -144,7 +144,9 @@ def _vllm_tt_metal_dev_mounts(
             f"type=bind,src={triage_host_dir},dst={user_home_path}/logs",
         ]
     )
-    logger.info(f"Dev mode: mounting triage capture dir {triage_host_dir} -> {user_home_path}/logs")
+    logger.info(
+        f"Dev mode: mounting triage capture dir {triage_host_dir} -> {user_home_path}/logs"
+    )
 
     return mounts
 

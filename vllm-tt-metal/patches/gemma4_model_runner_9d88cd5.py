@@ -505,9 +505,9 @@ class TTModelRunner:
             # to its own spec, so ``tensor_idx == layer_idx`` (matching the
             # uniform single-group convention above).
             assert isinstance(spec, UniformTypeKVCacheSpecs)
-            per_layer: list[
-                tuple[tuple[int, int, int, int], Any, int] | None
-            ] = [None] * num_layers
+            per_layer: list[tuple[tuple[int, int, int, int], Any, int] | None] = [
+                None
+            ] * num_layers
             for layer_name, layer_spec in spec.kv_cache_specs.items():
                 assert isinstance(layer_spec, AttentionSpec)
                 idx = _parse_layer_index(layer_name)

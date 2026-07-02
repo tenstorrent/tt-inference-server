@@ -134,7 +134,7 @@ def test_coherence_verbatim_echo(report_test, api_client, request):
             "role": "user",
             "content": (
                 "Repeat the following sentence exactly, with no extra words, "
-                f'no quotes, and no commentary: {sentence}'
+                f"no quotes, and no commentary: {sentence}"
             ),
         }
     ]

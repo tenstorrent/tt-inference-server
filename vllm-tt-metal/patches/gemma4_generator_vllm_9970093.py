@@ -8,7 +8,10 @@ import torch
 import ttnn
 from models.demos.gemma4.tt.common import create_tt_model
 from models.tt_transformers.tt.generator import create_submeshes
-from models.tt_transformers.tt.generator_vllm import HybridAttentionForCausalLM, allocate_vllm_kv_cache
+from models.tt_transformers.tt.generator_vllm import (
+    HybridAttentionForCausalLM,
+    allocate_vllm_kv_cache,
+)
 
 
 class _Gemma4VllmOptimizations:
@@ -65,7 +68,9 @@ class Gemma4ForCausalLM(HybridAttentionForCausalLM):
         # forward-side padding logic doesn't need to re-read the environment
         # on every step. Defaults to on; flip ``GEMMA4_BOUNDED_SLIDING_KV_CACHE=0``
         # to fall back to the legacy unbounded path through the paged ops.
-        self._bounded_sliding_kv_cache = os.environ.get("GEMMA4_BOUNDED_SLIDING_KV_CACHE", "1") != "0"
+        self._bounded_sliding_kv_cache = (
+            os.environ.get("GEMMA4_BOUNDED_SLIDING_KV_CACHE", "1") != "0"
+        )
 
     def _get_prefill_user_page_table(
         self,
@@ -129,7 +134,9 @@ class Gemma4ForCausalLM(HybridAttentionForCausalLM):
         max_head_dim = max(head_dims)
         effective_block_size = cache_block_size * cache_head_dim // max_head_dim
 
-        target_prefill_len = prefill_seq_len if prefill_seq_len is not None else prefill_len
+        target_prefill_len = (
+            prefill_seq_len if prefill_seq_len is not None else prefill_len
+        )
         num_blocks = num_blocks_in_seq(target_prefill_len, effective_block_size)
         # Bounded sliding-window cache: ``paged_fill_cache`` /
         # ``paged_update_cache`` with ``cache_position_modulo`` set require
@@ -142,14 +149,20 @@ class Gemma4ForCausalLM(HybridAttentionForCausalLM):
         # read produce an obvious out-of-range block ID rather than
         # silently clobbering block 0.
         if self._bounded_sliding_kv_cache:
-            text_config = getattr(self.model[0].hf_config, "text_config", self.model[0].hf_config)
+            text_config = getattr(
+                self.model[0].hf_config, "text_config", self.model[0].hf_config
+            )
             sliding_window = getattr(text_config, "sliding_window", None)
             if sliding_window is not None and effective_block_size > 0:
-                min_blocks_for_bounded = num_blocks_in_seq(sliding_window, effective_block_size)
+                min_blocks_for_bounded = num_blocks_in_seq(
+                    sliding_window, effective_block_size
+                )
                 if min_blocks_for_bounded > num_blocks:
                     num_blocks = min_blocks_for_bounded
         if page_table.shape[1] < num_blocks:
-            padding = torch.ones(1, num_blocks - page_table.shape[1], dtype=torch.int32) * -1
+            padding = (
+                torch.ones(1, num_blocks - page_table.shape[1], dtype=torch.int32) * -1
+            )
             page_table = torch.cat([page_table, padding], dim=1)
         return page_table[:, :num_blocks]
 
@@ -227,13 +240,17 @@ class Gemma4ForCausalLM(HybridAttentionForCausalLM):
             "prefill_forward / decode_forward, not through this method."
         )
 
-    def forward(self, input_ids, positions, **kwargs):  # pragma: no cover - protocol shim
+    def forward(
+        self, input_ids, positions, **kwargs
+    ):  # pragma: no cover - protocol shim
         raise NotImplementedError(
             "Gemma4ForCausalLM is a TT bridge; the TT runner invokes "
             "prefill_forward / decode_forward, not forward()."
         )
 
-    def compute_logits(self, hidden_states, **kwargs):  # pragma: no cover - protocol shim
+    def compute_logits(
+        self, hidden_states, **kwargs
+    ):  # pragma: no cover - protocol shim
         raise NotImplementedError(
             "Gemma4ForCausalLM is a TT bridge; logits are produced on TT "
             "and surfaced through prefill_forward / decode_forward."
@@ -264,8 +281,12 @@ class Gemma4ForCausalLM(HybridAttentionForCausalLM):
         sliding_kv_heads = text_config.num_key_value_heads
         sliding_head_dim = text_config.head_dim
         sliding_window = getattr(text_config, "sliding_window", None)
-        full_kv_heads = getattr(text_config, "num_global_key_value_heads", None) or sliding_kv_heads
-        full_head_dim = getattr(text_config, "global_head_dim", None) or sliding_head_dim
+        full_kv_heads = (
+            getattr(text_config, "num_global_key_value_heads", None) or sliding_kv_heads
+        )
+        full_head_dim = (
+            getattr(text_config, "global_head_dim", None) or sliding_head_dim
+        )
 
         tp = parallel_config.tensor_parallel_size
         sliding_kv_heads_per_dev = sliding_kv_heads // tp
@@ -337,7 +358,9 @@ class Gemma4ForCausalLM(HybridAttentionForCausalLM):
         # path that actually receives bounded buffers from vLLM. Env-var
         # override ``GEMMA4_BOUNDED_SLIDING_KV_CACHE=0`` lets the legacy
         # unbounded path back in if a regression appears.
-        bounded_sliding_kv_cache = os.environ.get("GEMMA4_BOUNDED_SLIDING_KV_CACHE", "1") != "0"
+        bounded_sliding_kv_cache = (
+            os.environ.get("GEMMA4_BOUNDED_SLIDING_KV_CACHE", "1") != "0"
+        )
 
         model_args = []
         model = []
@@ -376,8 +399,12 @@ class Gemma4ForCausalLM(HybridAttentionForCausalLM):
         return self.model_args[0].weight_cache_path(ttnn.bfloat16)
 
     def prefill_forward(self, *args, page_tables_per_layer=None, **kwargs):
-        page_tables_per_layer = self._build_per_layer_page_tables(page_tables_per_layer, kwargs.get("page_table"))
-        page_tables_per_layer = self._pad_sliding_page_tables_for_bounded(page_tables_per_layer, kwargs.get("kv_cache"))
+        page_tables_per_layer = self._build_per_layer_page_tables(
+            page_tables_per_layer, kwargs.get("page_table")
+        )
+        page_tables_per_layer = self._pad_sliding_page_tables_for_bounded(
+            page_tables_per_layer, kwargs.get("kv_cache")
+        )
         per_submesh = self._chunk_page_tables_per_dp(page_tables_per_layer)
         # Push the per-layer block IDs into the persistent device buffers
         # *before* entering ``Generator.prefill_forward_text`` — that path
@@ -392,8 +419,12 @@ class Gemma4ForCausalLM(HybridAttentionForCausalLM):
             return super().prefill_forward_text(**kwargs)
 
     def decode_forward(self, *args, page_tables_per_layer=None, **kwargs):
-        page_tables_per_layer = self._build_per_layer_page_tables(page_tables_per_layer, kwargs.get("page_table"))
-        page_tables_per_layer = self._pad_sliding_page_tables_for_bounded(page_tables_per_layer, kwargs.get("kv_cache"))
+        page_tables_per_layer = self._build_per_layer_page_tables(
+            page_tables_per_layer, kwargs.get("page_table")
+        )
+        page_tables_per_layer = self._pad_sliding_page_tables_for_bounded(
+            page_tables_per_layer, kwargs.get("kv_cache")
+        )
         per_submesh = self._chunk_page_tables_per_dp(page_tables_per_layer)
         if per_submesh is not None:
             for m, pt_for_submesh in zip(self.model, per_submesh):
@@ -406,7 +437,9 @@ class Gemma4ForCausalLM(HybridAttentionForCausalLM):
             # (commit 72217c1af4f, 2026-03-26); calling the old name now
             # raises AttributeError as soon as decode warmup runs. Use
             # the same skip pattern as the GptOssForCausalLM sibling.
-            return super(HybridAttentionForCausalLM, self).decode_forward(*args, **kwargs)
+            return super(HybridAttentionForCausalLM, self).decode_forward(
+                *args, **kwargs
+            )
 
     def warmup_model_decode(self, *args, **kwargs):
         """Pre-allocate per-layer page-table buffers before decode trace capture.
@@ -428,7 +461,9 @@ class Gemma4ForCausalLM(HybridAttentionForCausalLM):
         if max_batch_size == 1 and len(args) >= 3:
             max_batch_size = args[2]
         if num_blocks is not None:
-            legacy_pt = torch.zeros(int(max_batch_size), int(num_blocks), dtype=torch.int32)
+            legacy_pt = torch.zeros(
+                int(max_batch_size), int(num_blocks), dtype=torch.int32
+            )
             warmup_pt = self._build_per_layer_page_tables(None, legacy_pt)
             per_submesh = self._chunk_page_tables_per_dp(warmup_pt)
             if per_submesh is not None:
@@ -487,7 +522,9 @@ class Gemma4ForCausalLM(HybridAttentionForCausalLM):
         """
         kv_cache = super().allocate_kv_cache_per_layer(per_layer_specs)
         for submesh_idx, submesh_kv in enumerate(kv_cache):
-            kv_shared_map = getattr(self.model[submesh_idx], "kv_shared_layer_map", None)
+            kv_shared_map = getattr(
+                self.model[submesh_idx], "kv_shared_layer_map", None
+            )
             if not kv_shared_map:
                 continue
             for layer_idx, source_idx in kv_shared_map.items():
@@ -513,7 +550,9 @@ class Gemma4ForCausalLM(HybridAttentionForCausalLM):
            aliasing the buffer alone leaves the shared layer reading
            a different layer's slot of the shared HMA tensor.
         """
-        page_tables_per_layer = self._ensure_page_tables_per_layer(page_tables_per_layer, legacy_page_table)
+        page_tables_per_layer = self._ensure_page_tables_per_layer(
+            page_tables_per_layer, legacy_page_table
+        )
         return self._apply_kv_share_to_per_layer_page_tables(page_tables_per_layer)
 
     def _apply_kv_share_to_per_layer_page_tables(self, page_tables_per_layer):
