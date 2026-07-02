@@ -236,8 +236,7 @@ class TestAgenticDriverConfigMapping:
         )
 
         assert (
-            cfg.agent_import_path
-            == "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent"
+            cfg.agent_import_path == "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent"
         )
         assert cfg.environment_env == {"TAU2_USER_MODEL": "openai/Qwen"}
         assert cfg.verifier_env == {"TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen"}
