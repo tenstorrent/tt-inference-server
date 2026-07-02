@@ -21,6 +21,21 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
         self.max_batch_size = self.settings.max_batch_size
         return self.ttnn_device
 
+    def health_check(self, deep: bool = False) -> bool:
+        if self.ttnn_device is None:
+            self.logger.warning(
+                f"Device {self.device_id}: health_check called before set_device()"
+            )
+            return False
+        try:
+            self.ttnn_device.get_num_devices()
+            return True
+        except Exception as e:
+            self.logger.warning(
+                f"Device {self.device_id}: health_check device ping failed: {e}"
+            )
+            return False
+
     def close_device(self):
         try:
             self.logger.info(f"Device {self.device_id}: Closing mesh device...")
