@@ -36,23 +36,23 @@ class VLLMForgeRunner(BaseDeviceRunner):
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading VLLM model...")
         prompt = "Hello, it's me"
-        # Tunable per-run via env vars. Defaults are 1.2.0-safe:
-        # optimization_level=0 (required for the 1.2.0 wheel — opt>=1 aborts in
-        # the tt-mlir MemoryLayoutPropagation pass; see tt-xla#4990),
-        # cpu_sampling enabled. ENABLE_TRACE is off-by-default and gated on
-        # opt_level=0; replaying the decode graph works around the 1.2.0
-        # decode regression (+16-89% aggregate tok/s validated across the 5
-        # forge LLM P150 specs at b4/16K).
-        # Caveats for ENABLE_TRACE:
-        #   - vllm_tt's TTConfig rejects enable_trace=True + opt>=1 + cpu_sampling=False
-        #     (only safe at optimization_level=0).
-        #   - crashes at high batch (b16 hits a RuntimeError in
-        #     tt::runtime::ttnn::operations::trace::run; b16/16K won't compile).
-        #   - trace-capture needs extra DRAM scratch — validate fit on 7B+ models
-        #     before enabling.
-        optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
-        cpu_sampling = os.getenv("CPU_SAMPLING", "true").lower() == "true"
-        enable_trace = os.getenv("ENABLE_TRACE", "false").lower() == "true"
+        # Tunable per-run via env vars. Defaults mirror the TP forge runners:
+        # opt=1, on-device sampling (cpu_sampling=False), trace on.
+        # optimization_level=1 is required for meaningful max_model_len: at opt=0 the
+        # fused SDPA fails layout validation and falls back to the tt-mlir #8596
+        # decomposition, which materializes the [seq x seq] causal mask as a dense
+        # constant and overflows the 2GB TTNN flatbuffer (issue #4471; 1K fits, 16K
+        # aborts). At opt=1 SDPA stays fused. ENABLE_TRACE replays the decode graph
+        # (dominant perf lever); on-device sampling adds more on top. The old #4570
+        # guard on trace+opt>=1+cpu_sampling=False is fixed/removed in this wheel.
+        # Caveats:
+        #   - device sampling can't honor SamplingParams(seed=...): validate_request
+        #     rejects seeded requests; set CPU_SAMPLING=true for those.
+        #   - trace crashes at high batch (b16: RuntimeError in trace::run; b16/16K
+        #     won't compile) and needs extra DRAM scratch — validate fit on 7B+.
+        optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
+        cpu_sampling = os.getenv("CPU_SAMPLING", "false").lower() == "true"
+        enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
