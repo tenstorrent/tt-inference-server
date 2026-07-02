@@ -33,8 +33,6 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_VLLM_SERVER_PORT = "8000"
-GEMMA4_HF_REPO_PREFIX = "google/gemma-4-"
-GEMMA4_UNIFIED_HF_REPOS = frozenset({"google/gemma-4-12b-it"})
 
 
 def parse_args():
@@ -612,147 +610,6 @@ def start_trace_capture(
     )
 
 
-def _is_gemma4_hf_repo(hf_model_repo: str) -> bool:
-    return hf_model_repo.startswith(GEMMA4_HF_REPO_PREFIX)
-
-
-def _is_gemma4_unified_hf_repo(hf_model_repo: str) -> bool:
-    return hf_model_repo in GEMMA4_UNIFIED_HF_REPOS
-
-
-def apply_model_metadata_vllm_args(model_spec_json: dict, vllm_args: dict) -> dict:
-    """Promote model-spec metadata fields into vLLM CLI args when unset."""
-    metadata = model_spec_json.get("metadata") or {}
-    if not metadata:
-        return vllm_args
-
-    updated_vllm_args = dict(vllm_args)
-    metadata_to_vllm_arg = {
-        "reasoning_parser_name": "reasoning_parser",
-        "tool_call_parser_name": "tool_call_parser",
-    }
-    for metadata_key, vllm_arg_key in metadata_to_vllm_arg.items():
-        metadata_value = metadata.get(metadata_key)
-        if metadata_value and vllm_arg_key not in updated_vllm_args:
-            updated_vllm_args[vllm_arg_key] = metadata_value
-    return updated_vllm_args
-
-
-def apply_local_hf_model_vllm_args(model_spec_json: dict, vllm_args: dict) -> dict:
-    """Ensure Gemma4 vLLM args keep the HF repo id for TT plugin registration.
-
-    ``model_setup()`` symlinks cached weights and sets ``HF_MODEL``; the Gemma4
-    bridge reads that env var in ``initialize_vllm_model`` for safetensor
-    loading. vLLM's ``--model`` must stay as the HuggingFace repo id so the TT
-    plugin resolves the Gemma4 bridge — remapping to a local path breaks
-    architecture lookup.
-
-    Unified checkpoints (e.g. ``google/gemma-4-12b-it``) keep their native
-    ``Gemma4UnifiedForConditionalGeneration`` arch. Dev-mode vLLM patches
-    register ``TTGemma4UnifiedForConditionalGeneration`` and the ``gemma4``
-    reasoning parser in all worker processes.
-    """
-    hf_model_repo = model_spec_json.get("hf_model_repo", "")
-    if not _is_gemma4_hf_repo(hf_model_repo):
-        return apply_model_metadata_vllm_args(model_spec_json, vllm_args)
-
-    local_weights_path = os.getenv("HF_MODEL")
-    if not local_weights_path:
-        logger.warning(
-            "Gemma4 model requires HF_MODEL for local weight loading, but HF_MODEL "
-            "is not set; the bridge may reload via AutoModelForCausalLM instead of "
-            "safetensors"
-        )
-
-    updated_vllm_args = apply_model_metadata_vllm_args(model_spec_json, vllm_args)
-    if not updated_vllm_args.get("served-model-name"):
-        updated_vllm_args["served-model-name"] = hf_model_repo
-    if _is_gemma4_unified_hf_repo(hf_model_repo):
-        logger.info(
-            f"Using native Gemma4 unified architecture for {hf_model_repo}; "
-            "registered bridge + gemma4 reasoning parser will handle chat output"
-        )
-    if local_weights_path:
-        logger.info(
-            f"Gemma4 weights will load from HF_MODEL={local_weights_path}; "
-            f"vLLM --model stays as {updated_vllm_args.get('model')}"
-        )
-    return updated_vllm_args
-
-
-def preflight_check_gemma4_transformers(model_spec_json: dict) -> None:
-    """Fail fast if this container's transformers can't parse a Gemma 4 model.
-
-    Gemma 4 (``gemma4_unified`` arch) requires transformers 5.x. As of tt-metal
-    #47817 this is pinned repo-wide in ``tt_metal/python_env/requirements-dev.txt``
-    (transformers == 5.10.2) and installed by ``create_venv.sh`` during the image
-    build, so no Gemma4-specific requirements step is needed. If an image is built
-    from an older tt-metal commit (or with a vLLM that downgrades transformers to
-    4.x), vLLM's ``ModelConfig`` validation raises ``model type gemma4_unified but
-    Transformers does not recognize this architecture`` - but only after the
-    engine starts, so CI burns the full health-check timeout (~1h) before
-    failing. Detecting it here exits in seconds with an actionable message.
-
-    The check reads the local config.json (set up by ``model_setup`` via
-    ``HF_MODEL``) and confirms its ``model_type`` is registered in transformers,
-    mirroring exactly what vLLM triggers - without network access, an HF token,
-    or executing any remote model code. If the config can't be inspected (e.g.
-    multihost weights on shared storage), the preflight is skipped rather than
-    failing spuriously.
-    """
-    hf_model_repo = model_spec_json.get("hf_model_repo", "")
-    if not _is_gemma4_hf_repo(hf_model_repo):
-        return
-
-    local_weights_path = os.getenv("HF_MODEL")
-    if not local_weights_path:
-        logger.warning(
-            "Skipping Gemma 4 transformers preflight: HF_MODEL is not set, cannot "
-            "inspect config.json locally."
-        )
-        return
-
-    config_path = Path(local_weights_path) / "config.json"
-    if not config_path.exists():
-        logger.warning(
-            f"Skipping Gemma 4 transformers preflight: {config_path} not found."
-        )
-        return
-
-    try:
-        import transformers
-        from transformers.models.auto.configuration_auto import CONFIG_MAPPING
-
-        transformers_version = getattr(transformers, "__version__", "unknown")
-        with open(config_path) as config_file:
-            model_type = json.load(config_file).get("model_type")
-    except Exception as exc:  # noqa: BLE001 - preflight must never crash the server
-        logger.warning(f"Skipping Gemma 4 transformers preflight: {exc}")
-        return
-
-    if not model_type:
-        logger.warning(
-            f"Skipping Gemma 4 transformers preflight: no model_type in {config_path}."
-        )
-        return
-
-    if model_type not in CONFIG_MAPPING:
-        raise SystemExit(
-            "❌ Preflight failed: this container's transformers "
-            f"({transformers_version}) does not recognize the Gemma 4 "
-            f"architecture (model_type={model_type!r}) for {hf_model_repo}. "
-            "Gemma 4 needs transformers 5.x, which tt-metal pins repo-wide in "
-            "tt_metal/python_env/requirements-dev.txt (== 5.10.2) as of #47817. "
-            "Rebuild the image from a tt-metal commit that includes that pin, and "
-            "ensure the vLLM commit does not downgrade transformers below 5.x."
-        )
-
-    logger.info(
-        f"Gemma 4 transformers preflight OK: transformers {transformers_version} "
-        f"recognizes model_type={model_type!r} for {hf_model_repo}."
-    )
-
-
 def _normalize_vllm_arg_name(arg_name: str) -> str:
     return arg_name.lstrip("-").split("=", 1)[0].replace("-", "_")
 
@@ -907,13 +764,7 @@ def main():
     set_metal_timeout_env_vars()
     set_runtime_env_vars(model_spec)
     runtime_settings(model_spec, no_auth=args.no_auth)
-
-    # Fail fast (before the long trace-capture warmup / health wait) if the image
-    # lacks transformers support for this Gemma 4 model.
-    preflight_check_gemma4_transformers(model_spec)
-
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
-    default_vllm_args = apply_local_hf_model_vllm_args(model_spec, default_vllm_args)
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
 
     # Step 5: Start trace capture if needed
