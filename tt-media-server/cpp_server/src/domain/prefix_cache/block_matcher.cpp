@@ -7,8 +7,8 @@
 #include <list>
 
 #include "config/settings.hpp"
-#include "utils/logger.hpp"
 #include "domain/prefix_cache/helpers.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::domain::prefix_cache {
 
@@ -190,4 +190,4 @@ std::optional<Candidate> BlockMatcher::findSlotToCopyFrom(
   return std::nullopt;
 }
 
-}  // namespace tt::domain
+}  // namespace tt::domain::prefix_cache

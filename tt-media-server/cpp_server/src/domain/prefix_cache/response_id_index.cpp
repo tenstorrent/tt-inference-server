@@ -58,4 +58,4 @@ void ResponseIdIndex::removeIf(const std::string& sessionId,
     responseIdIndex.erase(id);
   }
 }
-}  // namespace tt::domain
+}  // namespace tt::domain::prefix_cache

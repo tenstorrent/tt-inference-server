@@ -118,4 +118,4 @@ void PrefixIndex::clearThinkTokens(const std::string& sessionId,
       });
 }
 
-}  // namespace tt::domain
+}  // namespace tt::domain::prefix_cache

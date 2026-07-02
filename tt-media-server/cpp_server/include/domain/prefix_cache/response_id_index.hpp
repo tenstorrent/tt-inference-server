@@ -17,4 +17,4 @@ class ResponseIdIndex {
  private:
   utils::ConcurrentMap<std::string, std::string> responseIdIndex;
 };
-}  // namespace tt::domain
+}  // namespace tt::domain::prefix_cache

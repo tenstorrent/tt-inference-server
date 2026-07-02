@@ -8,8 +8,8 @@
 #include <thread>
 
 #include "config/settings.hpp"
-#include "domain/prefix_cache/block_matcher.hpp"
 #include "domain/manage_memory.hpp"
+#include "domain/prefix_cache/block_matcher.hpp"
 #include "metrics/metrics.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
@@ -609,7 +609,8 @@ SessionManager::tryAcquireByPrefixHash(
     bool stale = false;
 
     const uint32_t matchedTokens =
-        domain::prefix_cache::BlockMatcher::blocksToTokens(candidate.matchedBlocks);
+        domain::prefix_cache::BlockMatcher::blocksToTokens(
+            candidate.matchedBlocks);
 
     bool found = sessions.modify(
         candidate.sessionId, [&](std::shared_ptr<domain::Session>& s) {
@@ -859,13 +860,14 @@ std::pair<uint32_t, uint32_t> SessionManager::computeMatchedTokens(
   const std::vector<domain::prefix_cache::PrefixIndexEntry> entries =
       prefixIndex.getEntriesForKey(blockInfos.front().hash);
   const auto [matchedBlocks, thinkTokens] =
-      domain::prefix_cache::BlockMatcher::computeMatchedBlocksForSession(sessionId,
-                                                           blockInfos, entries);
+      domain::prefix_cache::BlockMatcher::computeMatchedBlocksForSession(
+          sessionId, blockInfos, entries);
 
   if (matchedBlocks == 0) {
     return {0, 0};
   }
-  return {domain::prefix_cache::BlockMatcher::blocksToTokens(matchedBlocks), thinkTokens};
+  return {domain::prefix_cache::BlockMatcher::blocksToTokens(matchedBlocks),
+          thinkTokens};
 }
 
 void SessionManager::clearSessionBlockThinkTokens(

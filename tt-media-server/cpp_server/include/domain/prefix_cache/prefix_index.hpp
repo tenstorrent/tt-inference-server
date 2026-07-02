@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-#include "utils/concurrent_map.hpp"
 #include "helpers.hpp"
+#include "utils/concurrent_map.hpp"
 #include "utils/conversation_hasher.hpp"
 
 namespace tt::domain::prefix_cache {
@@ -25,4 +25,4 @@ class PrefixIndex {
   utils::ConcurrentMap<uint64_t, std::vector<PrefixIndexEntry>> prefixIndex;
 };
 
-}  // namespace tt::domain
+}  // namespace tt::domain::prefix_cache

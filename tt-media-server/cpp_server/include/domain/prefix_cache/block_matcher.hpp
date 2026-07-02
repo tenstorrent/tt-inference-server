@@ -11,9 +11,8 @@
 #include <utility>
 #include <vector>
 
-
-#include "utils/conversation_hasher.hpp"
 #include "helpers.hpp"
+#include "utils/conversation_hasher.hpp"
 
 namespace tt::domain::prefix_cache {
 
@@ -46,4 +45,4 @@ class BlockMatcher {
       std::function<uint32_t(const std::string& sessionId)> getCommittedBlocks);
 };
 
-}  // namespace tt::domain
+}  // namespace tt::domain::prefix_cache

@@ -33,7 +33,8 @@ std::optional<SlotCopyPlan> prepareSlotCopy(
   sessionManager.lockSlot(sourceSlot);
 
   const uint32_t matchedTokens =
-      domain::prefix_cache::BlockMatcher::blocksToTokens(copyCandidate->matchedBlocks);
+      domain::prefix_cache::BlockMatcher::blocksToTokens(
+          copyCandidate->matchedBlocks);
 
   TT_LOG_INFO(
       "{} Found slot to copy from: slotId={} matchedTokens={} for taskId={}",
