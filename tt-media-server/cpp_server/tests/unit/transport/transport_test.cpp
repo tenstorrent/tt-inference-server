@@ -197,6 +197,22 @@ TEST(MooncakeMigrationWorker, RoleGuardsAndTransportNeedsLiveEngine) {
   EXPECT_FALSE(receiver.transferToReceiver());
 }
 
+TEST(MooncakeMigrationWorker, OwnsLayerHonorsConfiguredSpan) {
+  MigrationWorkerConfig unset;
+  MooncakeMigrationWorker ownsAll(unset, nullptr, nullptr);
+  EXPECT_TRUE(ownsAll.ownsLayer(0));
+  EXPECT_TRUE(ownsAll.ownsLayer(999));
+
+  MigrationWorkerConfig sharded;
+  sharded.layer_start = 4;
+  sharded.layer_end = 8;
+  MooncakeMigrationWorker shard(sharded, nullptr, nullptr);
+  EXPECT_FALSE(shard.ownsLayer(3));
+  EXPECT_TRUE(shard.ownsLayer(4));
+  EXPECT_TRUE(shard.ownsLayer(7));
+  EXPECT_FALSE(shard.ownsLayer(8));
+}
+
 // ---------------------------------------------------------------------------
 // Discovery + bring-up unit tests (#4294)
 //

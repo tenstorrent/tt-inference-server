@@ -18,8 +18,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include "domain/prefix_index.hpp"
-#include "domain/response_id_index.hpp"
+#include "domain/prefix_cache/prefix_index.hpp"
+#include "domain/prefix_cache/response_id_index.hpp"
 #include "domain/session.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "utils/concurrent_map.hpp"
@@ -49,7 +49,7 @@ enum class CloseSessionResult {
 
 class SessionManager {
  public:
-  using Candidate = domain::Candidate;
+  using Candidate = domain::prefix_cache::Candidate;
   // Result of tryAcquireByPrefixHash: the session's UUID and pre-assigned slot.
   struct AcquiredSession {
     bool sessionFound;
@@ -77,6 +77,7 @@ class SessionManager {
   CloseSessionResult closeSession(const std::string& sessionId);
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
   uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
+  uint32_t getCommittedBlocks(const std::string& sessionId) const;
 
   // Marks the session in-flight and registers the cancel function atomically.
   // The cancel function is invoked if closeSession is called while in-flight.
@@ -119,17 +120,6 @@ class SessionManager {
   std::optional<AcquiredSession> tryAcquireByPrefixHash(
       const std::vector<utils::BlockHashInfo>& blockInfos,
       std::function<void()> cancelFn);
-
-  /**
-   * Given a list of candidates, find one whose matched token count exceeds
-   * the MIN_TOKENS_TO_COPY threshold. Matched tokens = firstBlockSize for
-   * the first block + kvCacheBlockSize for each subsequent matched block.
-   * Candidates are assumed sorted by matchedBlocks descending.
-   *
-   * @return The best qualifying candidate, or std::nullopt if none qualifies.
-   */
-  std::optional<Candidate> findASlotToCopyFrom(
-      const std::vector<Candidate>& candidates) const;
 
   /**
    * Route future lookups to this session by registering the given block infos.
@@ -242,8 +232,8 @@ class SessionManager {
   mutable utils::ConcurrentMap<std::string, std::shared_ptr<domain::Session>>
       sessions;
 
-  domain::PrefixIndex prefixIndex;
-  domain::ResponseIdIndex responseIdIndex;
+  domain::prefix_cache::PrefixIndex prefixIndex;
+  domain::prefix_cache::ResponseIdIndex responseIdIndex;
 
   std::unique_ptr<ipc::boost::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::boost::MemoryResultQueue> memoryResultQueue;
