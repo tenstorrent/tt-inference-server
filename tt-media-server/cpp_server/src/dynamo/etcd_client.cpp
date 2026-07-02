@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "dynamo/etcd_client.hpp"
+#include "dynamo/etcd_url.hpp"
 
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -61,53 +62,9 @@ std::string base64Encode(const std::string& in) {
 }
 
 // ---------------------------------------------------------------------------
-// URL parsing: accept "http://host:port" optionally with trailing "/" and
-// optionally a comma-separated list (we keep the first endpoint).
+// URL parsing for etcd endpoints lives in include/dynamo/etcd_url.hpp so the
+// DynamoEndpoint advertise-host detection can share it (see parseEtcdUrl).
 // ---------------------------------------------------------------------------
-
-struct ParsedUrl {
-  std::string host;
-  int port;
-};
-
-ParsedUrl parseEtcdUrl(const std::string& urlList) {
-  std::string url = urlList;
-  if (auto comma = url.find(','); comma != std::string::npos) {
-    url = url.substr(0, comma);
-  }
-  // strip leading whitespace
-  while (!url.empty() &&
-         std::isspace(static_cast<unsigned char>(url.front()))) {
-    url.erase(url.begin());
-  }
-  if (url.rfind("https://", 0) == 0) {
-    throw EtcdError(
-        "EtcdClient: HTTPS endpoints are not supported (use a TLS-terminating "
-        "sidecar)");
-  }
-  if (url.rfind("http://", 0) == 0) {
-    url.erase(0, 7);
-  }
-  if (auto slash = url.find('/'); slash != std::string::npos) {
-    url.resize(slash);
-  }
-  ParsedUrl out;
-  if (auto colon = url.find(':'); colon != std::string::npos) {
-    out.host = url.substr(0, colon);
-    try {
-      out.port = std::stoi(url.substr(colon + 1));
-    } catch (...) {
-      throw EtcdError("EtcdClient: invalid port in endpoint '" + urlList + "'");
-    }
-  } else {
-    out.host = url;
-    out.port = 2379;
-  }
-  if (out.host.empty()) {
-    throw EtcdError("EtcdClient: empty host in endpoint '" + urlList + "'");
-  }
-  return out;
-}
 
 // ---------------------------------------------------------------------------
 // Tiny blocking HTTP/1.1 client. Connect with a deadline (so etcd-not-running
