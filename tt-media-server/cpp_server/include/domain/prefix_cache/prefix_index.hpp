@@ -9,28 +9,10 @@
 #include <vector>
 
 #include "utils/concurrent_map.hpp"
+#include "helpers.hpp"
 #include "utils/conversation_hasher.hpp"
 
-namespace tt::domain {
-
-struct Candidate {
-  std::string sessionId;
-  size_t matchedBlocks;
-  size_t sessionBlocks;
-  uint32_t thinkTokens;
-};
-
-struct RemainingBlockInfo {
-  uint64_t hash;
-  uint32_t accumulatedThinkTokens;
-};
-
-struct PrefixIndexEntry {
-  std::list<std::string> sessionIds;
-  std::list<RemainingBlockInfo> remainingBlocks;
-  uint32_t keyBlockThinkTokens = 0;
-};
-
+namespace tt::domain::prefix_cache {
 class PrefixIndex {
  public:
   std::vector<PrefixIndexEntry> getEntriesForKey(uint64_t keyHash) const;

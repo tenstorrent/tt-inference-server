@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "domain/block_matcher.hpp"
+#include "domain/prefix_cache/block_matcher.hpp"
 
 #include <algorithm>
+#include <list>
 
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
+#include "domain/prefix_cache/helpers.hpp"
 
-namespace tt::domain {
+namespace tt::domain::prefix_cache {
 
 std::list<RemainingBlockInfo> BlockMatcher::buildCallerRemaining(
     const std::vector<tt::utils::BlockHashInfo>& blockInfos) {
@@ -25,14 +27,14 @@ MatchedTokens BlockMatcher::countMatchedTokens(
     const std::list<RemainingBlockInfo>& entryRemaining,
     std::uint32_t keyBlockThinkTokens) {
   MatchedTokens result;
-  result.matchedThinkingTokens = keyBlockThinkTokens;
+  result.matchedThinkTokens = keyBlockThinkTokens;
 
   auto callerIt = callerRemaining.begin();
   auto entryIt = entryRemaining.begin();
   while (callerIt != callerRemaining.end() && entryIt != entryRemaining.end() &&
          callerIt->hash == entryIt->hash) {
-    result.matchedThinkingTokens = entryIt->accumulatedThinkTokens;
-    ++result.matchedRemainingBlocks;
+    result.matchedThinkTokens = entryIt->accumulatedThinkTokens;
+    ++result.matchedBlocks;
     ++callerIt;
     ++entryIt;
   }
@@ -53,12 +55,12 @@ std::vector<Candidate> BlockMatcher::buildCandidates(
   for (const auto& entry : entries) {
     const MatchedTokens match = countMatchedTokens(
         callerRemaining, entry.remainingBlocks, entry.keyBlockThinkTokens);
-    const std::size_t totalMatched = 1 + match.matchedRemainingBlocks;
+    const std::size_t totalMatched = 1 + match.matchedBlocks;
     const std::size_t sessionTotal = 1 + entry.remainingBlocks.size();
 
     for (const auto& sessionId : entry.sessionIds) {
       candidates.push_back(
-          {sessionId, totalMatched, sessionTotal, match.matchedThinkingTokens});
+          {sessionId, totalMatched, sessionTotal, match.matchedThinkTokens});
     }
   }
   return candidates;
@@ -137,10 +139,10 @@ BlockMatcher::computeMatchedBlocksForSession(
 
     const MatchedTokens match = countMatchedTokens(
         callerRemaining, entry.remainingBlocks, entry.keyBlockThinkTokens);
-    const std::size_t totalMatched = 1 + match.matchedRemainingBlocks;
+    const std::size_t totalMatched = 1 + match.matchedBlocks;
     if (totalMatched > bestMatchedBlocks) {
       bestMatchedBlocks = totalMatched;
-      bestThinkTokens = match.matchedThinkingTokens;
+      bestThinkTokens = match.matchedThinkTokens;
     }
   }
   return {bestMatchedBlocks, bestThinkTokens};

@@ -5,7 +5,7 @@
 #include <string>
 
 #include "utils/concurrent_map.hpp"
-namespace tt::domain {
+namespace tt::domain::prefix_cache {
 class ResponseIdIndex {
  public:
   std::optional<std::string> lookup(const std::string& id);

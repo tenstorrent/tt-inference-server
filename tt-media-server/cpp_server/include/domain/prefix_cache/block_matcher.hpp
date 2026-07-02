@@ -11,15 +11,11 @@
 #include <utility>
 #include <vector>
 
-#include "domain/prefix_index.hpp"
+
 #include "utils/conversation_hasher.hpp"
+#include "helpers.hpp"
 
-namespace tt::domain {
-
-struct MatchedTokens {
-  std::size_t matchedRemainingBlocks = 0;
-  uint32_t matchedThinkingTokens = 0;
-};
+namespace tt::domain::prefix_cache {
 
 class BlockMatcher {
  public:
