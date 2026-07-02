@@ -18,12 +18,14 @@ RemoteKVManagerImpl::RemoteKVManagerImpl(
     std::chrono::milliseconds sweepInterval, int drainPollMs,
     std::unique_ptr<tt::messaging::IKafkaProducer> downloadRequestProducer,
     std::unique_ptr<tt::messaging::IKafkaConsumer> downloadAckConsumer,
-    std::unique_ptr<tt::messaging::IKafkaProducer> offloadRequestProducer)
+    std::unique_ptr<tt::messaging::IKafkaProducer> offloadRequestProducer,
+    std::unique_ptr<tt::messaging::IKafkaConsumer> offloadAckConsumer)
     : requestProducer(std::move(requestProducer)),
       ackConsumer(std::move(ackConsumer)),
       downloadRequestProducer(std::move(downloadRequestProducer)),
       downloadAckConsumer(std::move(downloadAckConsumer)),
       offloadRequestProducer(std::move(offloadRequestProducer)),
+      offloadAckConsumer(std::move(offloadAckConsumer)),
       migrationWorkerPoolSize(migrationWorkerPoolSize),
       timeout(timeout),
       sweepInterval(sweepInterval),
@@ -52,6 +54,11 @@ RemoteKVManagerImpl::RemoteKVManagerImpl(
     TT_LOG_WARN(
         "[RemoteKVManagerImpl] null offloadRequestProducer; "
         "offloadToStore() will silently drop payloads");
+  }
+  if (!this->offloadAckConsumer) {
+    TT_LOG_WARN(
+        "[RemoteKVManagerImpl] null offloadAckConsumer; offloads will "
+        "only reach terminal state via the timeout sweeper");
   }
   if (this->migrationWorkerPoolSize == 0) {
     TT_LOG_WARN(
@@ -454,6 +461,23 @@ void RemoteKVManagerImpl::sweepLocked(
   if (timedOutDownloads > 0) {
     TT_LOG_INFO("[RemoteKVManagerImpl] sweeper timed out {} download(s)",
                 timedOutDownloads);
+  }
+
+  size_t timedOutOffloads = 0;
+  for (auto& [id, state] : offloads) {
+    if (state.status == MigrationStatus::IN_PROGRESS &&
+        now - state.submittedAt >= timeout) {
+      state.status = MigrationStatus::FAILED;
+      ++timedOutOffloads;
+      TT_LOG_WARN(
+          "[RemoteKVManagerImpl] offload transfer_id={} timed out after {}ms; "
+          "marked FAILED",
+          id, timeout.count());
+    }
+  }
+  if (timedOutOffloads > 0) {
+    TT_LOG_INFO("[RemoteKVManagerImpl] sweeper timed out {} offload(s)",
+                timedOutOffloads);
   }
 }
 
