@@ -206,16 +206,14 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                 ? *localPrefillId
                 : std::string{"prefill/generate"};
         auto handoff = buildMetadataOnlyNativePrefillHandoff(
-            requestId, tt::utils::MigrationIDGenerator::generate(),
+            tt::utils::MigrationIDGenerator::generate(),
             static_cast<uint32_t>(dynReq.token_ids.size()), selectedPrefillId);
-        handoff.status = "mock_kv_transfer_complete";
         TT_LOG_INFO(
-            "[DynamoEndpoint] Emitting native prefill handoff status={} "
+            "[DynamoEndpoint] Emitting native prefill handoff "
             "selected_prefill_id={} migrationId={} token_count={} "
             "kv_position_id={} routing_reason={}",
-            handoff.status, handoff.selected_prefill_id, *handoff.migration_id,
-            handoff.token_count, *handoff.kv_position_id,
-            handoff.routing_reason);
+            handoff.selectedPrefillId, *handoff.migrationId,
+            handoff.tokenCount, *handoff.kvPositionId, handoff.routingReason);
 
         TokenChunk out;
         out.finish_reason = "stop";
@@ -319,9 +317,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       if (!validation.ok) {
         TT_LOG_WARN(
             "[DynamoEndpoint] Native prefill handoff rejected taskId={} "
-            "selected_prefill_id={} status={} error={}",
-            req->task_id, handoff.selected_prefill_id, handoff.status,
-            validation.error);
+            "selected_prefill_id={} error={}",
+            req->task_id, handoff.selectedPrefillId, validation.error);
         TokenChunk err;
         err.error = validation.error;
         err.error_code = 501;
@@ -332,11 +329,11 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       applyNativePrefillHandoffToRequest(handoff, *req);
       TT_LOG_INFO(
           "[DynamoEndpoint] Native prefill handoff accepted taskId={} "
-          "selected_prefill_id={} status={} routing_reason={} migrationId={} "
+          "selected_prefill_id={} routing_reason={} migrationId={} "
           "kv_position_id={} token_count={} cached_tokens={}",
-          req->task_id, handoff.selected_prefill_id, handoff.status,
-          handoff.routing_reason, *req->migrationId, *req->kv_position_id,
-          handoff.token_count, handoff.cached_tokens);
+          req->task_id, handoff.selectedPrefillId, handoff.routingReason,
+          *req->migrationId, *req->kv_position_id, handoff.tokenCount,
+          handoff.cachedTokens);
     }
 
     // Reject requests whose prompt exceeds the maximum input sequence length.

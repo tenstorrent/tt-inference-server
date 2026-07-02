@@ -164,9 +164,9 @@ struct LLMRequest : BaseRequest {
   // Experimental Dynamo-native prefill handoff. When true, Dynamo has already
   // routed prefill before decode; decode should continue from migrationId /
   // kv_position_id and must not re-enter the socket PrefillGateway path.
-  bool dynamo_native_prefill_handoff = false;
-  std::optional<uint32_t> dynamo_native_prefill_decode_slot_id;
-  std::optional<int> dynamo_native_prefill_cached_tokens;
+  bool dynamoNativePrefillHandoff = false;
+  std::optional<uint32_t> dynamoNativePrefillDecodeSlotId;
+  std::optional<int> dynamoNativePrefillCachedTokens;
 
   // Structured output constraint
   std::optional<ResponseFormat> response_format;

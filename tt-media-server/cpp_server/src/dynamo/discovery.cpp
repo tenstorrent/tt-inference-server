@@ -110,28 +110,13 @@ const char* workerRoleName(DiscoveryWorkerRole role) {
   return "decode";
 }
 
-const char* modelTypeName(DiscoveryWorkerRole role) {
-  switch (role) {
-    case DiscoveryWorkerRole::PREFILL:
-      return "Prefill";
-    case DiscoveryWorkerRole::DECODE:
-      return "Chat";
-  }
-  return "Chat";
-}
-
 Json::Value needsForWorkerRole(DiscoveryWorkerRole role) {
   Json::Value needs(Json::arrayValue);
-  Json::Value alternative(Json::arrayValue);
-  switch (role) {
-    case DiscoveryWorkerRole::PREFILL:
-      alternative.append("decode");
-      break;
-    case DiscoveryWorkerRole::DECODE:
-      alternative.append("prefill");
-      break;
+  if (role == DiscoveryWorkerRole::PREFILL) {
+    Json::Value alternative(Json::arrayValue);
+    alternative.append("decode");
+    needs.append(std::move(alternative));
   }
-  needs.append(std::move(alternative));
   return needs;
 }
 
@@ -294,7 +279,8 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
       static_cast<int>(tt::config::kvCacheBlockSize());
   card["migration_limit"] =
       tt::config::dynamoNativePrefillHandoffEnabled() ? 1 : 0;
-  card["model_type"] = modelTypeName(c.worker_role);
+  card["model_type"] =
+      c.worker_role == DiscoveryWorkerRole::PREFILL ? "Prefill" : "Chat";
   card["model_input"] = "Tokens";
   card["worker_type"] = workerRoleName(c.worker_role);
   card["needs"] = needsForWorkerRole(c.worker_role);
@@ -311,23 +297,6 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   runtime["data_parallel_size"] = 1;
   runtime["enable_local_indexer"] = true;
   runtime["enable_eagle"] = false;
-  runtime["worker_role"] = workerRoleName(c.worker_role);
-  runtime["stable_routing_id"] = c.instance_id_hex;
-  runtime["native_prefill_handoff_enabled"] =
-      tt::config::dynamoNativePrefillHandoffEnabled();
-  runtime["native_prefill_mock_kv_transfer_enabled"] =
-      tt::config::dynamoNativePrefillMockKvTransferEnabled();
-  runtime["selected_prefill_id"] =
-      c.component + "/" + c.endpoint + "/" + c.instance_id_hex;
-  runtime["prefill_routing_policy"] = "tt_threshold";
-  runtime["prefill_on_decode_max_tokens"] =
-      static_cast<Json::UInt64>(tt::config::maxTokensToPrefillOnDecode());
-  runtime["prefill_on_decode_threshold_source"] =
-      "MAX_TOKENS_TO_PREFILL_ON_DECODE";
-  runtime["max_inflight_requests"] =
-      static_cast<Json::UInt64>(tt::config::pmMaxUsers());
-  runtime["capacity_signal_source"] = "cpp_server_static_pm_max_users";
-  runtime["cache_overlap_signal_source"] = Json::Value::null;
   card["runtime_config"] = std::move(runtime);
 
   card["media_decoder"] = Json::Value::null;
