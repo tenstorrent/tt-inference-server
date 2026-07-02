@@ -160,6 +160,9 @@ templates:
         sample_on_device_mode: decode_only
       vllm_args:
         override_generation_config: '{"temperature": 1.0, "top_k": 64, "top_p": 0.95}'
+        # Activate the gemma4 tool_call_parser so tool_choice:"auto" clients
+        # (mini-swe-agent / SWE-Bench) work on a flag-free release run.
+        enable-auto-tool-choice: true
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -167,8 +170,8 @@ templates:
   metadata:
     google/gemma-4-12b-it:
       reasoning_parser_name: gemma4
-      # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; inert
-      # until --enable-auto-tool-choice is passed (e.g. via --vllm-override-args).
+      # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; activated
+      # by enable-auto-tool-choice in vllm_args above.
       tool_call_parser_name: gemma4
 
 - weights:
@@ -208,6 +211,9 @@ templates:
         sample_on_device_mode: decode_only
       vllm_args:
         override_generation_config: '{"temperature": 1.0, "top_k": 64, "top_p": 0.95}'
+        # Activate the gemma4 tool_call_parser so tool_choice:"auto" clients
+        # (mini-swe-agent / SWE-Bench) work on a flag-free release run.
+        enable-auto-tool-choice: true
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -215,8 +221,8 @@ templates:
   metadata:
     google/gemma-4-31b-it:
       reasoning_parser_name: gemma4
-      # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; inert
-      # until --enable-auto-tool-choice is passed (e.g. via --vllm-override-args).
+      # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; activated
+      # by enable-auto-tool-choice in vllm_args above.
       tool_call_parser_name: gemma4
 
 - weights:
