@@ -4,11 +4,14 @@
 // End-to-end test for RemoteKVManagerImpl against a real Kafka broker.
 //
 // Uses the production RemoteKVManagerImpl (real KafkaProducer / KafkaConsumer
-// + real JSON messaging) on one side, and a controllable MockMigrationWorker
-// on the other side. The mock consumes request messages via a real
+// + real JSON messaging) on one side, and a controllable MockKafkaWorker on
+// the other side. The mock consumes request messages via a real
 // KafkaConsumer and publishes acks via a real KafkaProducer; its reply
 // behavior (status, delay, drop) is scriptable at runtime so tests can drive
-// the manager through success / failure / timeout scenarios.
+// the manager through success / failure / timeout scenarios. One mock
+// instance is bound to one (request, ack) topic pair via a pair of
+// path-specific callables that parse the request and build the response --
+// migration / download / offload share the same class.
 //
 // Requires the dev Kafka broker to be up (scripts/dev-kafka.sh up). The
 // broker address defaults to "kafka:9092" (docker network DNS) and can be
@@ -21,8 +24,10 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -83,120 +88,40 @@ bool waitFor(Pred pred, std::chrono::milliseconds timeout) {
 }
 
 // ---------------------------------------------------------------------------
-// MockMigrationWorker
+// MockKafkaWorker
 // ---------------------------------------------------------------------------
 //
-// Real-Kafka-backed drop-in for tt::worker::KvMigrationWorker whose reply
-// behavior is scriptable at runtime. Each received MigrationRequestMessage is
-// answered with a MigrationResponseMessage carrying the currently configured
-// status, after the configured delay -- unless `dropRequest` is set, in which
-// case the request is silently swallowed to simulate a worker crash / lost
-// ack (i.e. force the manager's timeout sweeper to fire).
-class MockMigrationWorker {
+// Real-Kafka-backed drop-in for tt::worker::KvMigrationWorker (and its
+// download / offload counterparts) whose reply behavior is scriptable at
+// runtime. Path-specific parsing and response building are supplied at
+// construction time as callables, so migration / download / offload share
+// this one class rather than three near-identical copies.
+//
+// Received request payloads are kept as raw JSON in an internal log so
+// tests that need to assert on wire content can parse them themselves.
+class MockKafkaWorker {
  public:
   struct Behavior {
     MigrationStatus replyStatus{MigrationStatus::SUCCESSFUL};
     std::chrono::milliseconds replyDelay{0};
     bool dropRequest{false};
-  };
-
-  MockMigrationWorker(const std::string& brokers,
-                      const std::string& requestTopic,
-                      const std::string& ackTopic, const std::string& groupId) {
-    requestConsumer = std::make_unique<tt::messaging::KafkaConsumer>(
-        tt::messaging::KafkaConsumerConfig{
-            .brokers = brokers, .topic = requestTopic, .group_id = groupId});
-    ackProducer = std::make_unique<tt::messaging::KafkaProducer>(
-        tt::messaging::KafkaProducerConfig{.brokers = brokers,
-                                           .topic = ackTopic});
-  }
-
-  ~MockMigrationWorker() { stop(); }
-
-  MockMigrationWorker(const MockMigrationWorker&) = delete;
-  MockMigrationWorker& operator=(const MockMigrationWorker&) = delete;
-
-  void setBehavior(Behavior b) {
-    std::lock_guard<std::mutex> lock(mtx);
-    behavior = b;
-  }
-
-  Behavior getBehavior() const {
-    std::lock_guard<std::mutex> lock(mtx);
-    return behavior;
-  }
-
-  void start() {
-    bool expected = false;
-    if (!running.compare_exchange_strong(expected, true)) return;
-    thread = std::thread([this] { run(); });
-  }
-
-  void stop() {
-    bool expected = true;
-    if (!running.compare_exchange_strong(expected, false)) return;
-    if (thread.joinable()) thread.join();
-  }
-
-  std::size_t requestsReceived() const {
-    return received.load(std::memory_order_relaxed);
-  }
-
- private:
-  void run() {
-    while (running.load(std::memory_order_relaxed)) {
-      auto raw = requestConsumer->receive(50);
-      if (!raw.has_value()) continue;
-
-      auto parsed = tt::messaging::parseMigrationRequest(*raw);
-      if (!parsed.has_value()) continue;
-
-      received.fetch_add(1, std::memory_order_relaxed);
-
-      const Behavior b = getBehavior();
-      if (b.dropRequest) continue;
-
-      if (b.replyDelay.count() > 0) {
-        std::this_thread::sleep_for(b.replyDelay);
-      }
-
-      const tt::messaging::MigrationResponseMessage response{
-          .migration_id = parsed->migration_id, .status = b.replyStatus};
-      const std::string payload = tt::messaging::serialize(response);
-      std::string err;
-      ackProducer->send(payload, &err);
-    }
-  }
-
-  std::unique_ptr<tt::messaging::KafkaConsumer> requestConsumer;
-  std::unique_ptr<tt::messaging::KafkaProducer> ackProducer;
-  std::atomic<bool> running{false};
-  std::thread thread;
-  mutable std::mutex mtx;
-  Behavior behavior;
-  std::atomic<std::size_t> received{0};
-};
-
-// ---------------------------------------------------------------------------
-// MockDownloadWorker
-// ---------------------------------------------------------------------------
-//
-// Same shape as MockMigrationWorker but wired to the download topics and
-// answers with DownloadResponseMessage. `downloadedBlockHashes` is echoed
-// verbatim into the ack so scenarios can assert the hashes propagate back
-// through RemoteKVManagerImpl to getDownloadResult().
-class MockDownloadWorker {
- public:
-  struct Behavior {
-    MigrationStatus replyStatus{MigrationStatus::SUCCESSFUL};
-    std::chrono::milliseconds replyDelay{0};
-    bool dropRequest{false};
+    // Only downloads populate this; ignored by parsers that don't echo hashes.
     std::vector<uint64_t> downloadedBlockHashes{};
   };
 
-  MockDownloadWorker(const std::string& brokers,
-                     const std::string& requestTopic,
-                     const std::string& ackTopic, const std::string& groupId) {
+  // Parse a raw request payload. Return the request's id on success, nullopt
+  // on parse failure (the message is dropped without acking).
+  using RequestParser =
+      std::function<std::optional<uint64_t>(const std::string& raw)>;
+  // Build the response payload for a given (id, behavior) pair.
+  using ResponseBuilder =
+      std::function<std::string(uint64_t id, const Behavior& behavior)>;
+
+  MockKafkaWorker(const std::string& brokers, const std::string& requestTopic,
+                  const std::string& ackTopic, const std::string& groupId,
+                  RequestParser parser, ResponseBuilder responder)
+      : parseRequest{std::move(parser)},
+        buildResponse{std::move(responder)} {
     requestConsumer = std::make_unique<tt::messaging::KafkaConsumer>(
         tt::messaging::KafkaConsumerConfig{
             .brokers = brokers, .topic = requestTopic, .group_id = groupId});
@@ -205,10 +130,10 @@ class MockDownloadWorker {
                                            .topic = ackTopic});
   }
 
-  ~MockDownloadWorker() { stop(); }
+  ~MockKafkaWorker() { stop(); }
 
-  MockDownloadWorker(const MockDownloadWorker&) = delete;
-  MockDownloadWorker& operator=(const MockDownloadWorker&) = delete;
+  MockKafkaWorker(const MockKafkaWorker&) = delete;
+  MockKafkaWorker& operator=(const MockKafkaWorker&) = delete;
 
   void setBehavior(Behavior b) {
     std::lock_guard<std::mutex> lock(mtx);
@@ -236,109 +161,10 @@ class MockDownloadWorker {
     return received.load(std::memory_order_relaxed);
   }
 
- private:
-  void run() {
-    while (running.load(std::memory_order_relaxed)) {
-      auto raw = requestConsumer->receive(50);
-      if (!raw.has_value()) continue;
-
-      auto parsed = tt::messaging::parseDownloadRequest(*raw);
-      if (!parsed.has_value()) continue;
-
-      received.fetch_add(1, std::memory_order_relaxed);
-
-      const Behavior b = getBehavior();
-      if (b.dropRequest) continue;
-
-      if (b.replyDelay.count() > 0) {
-        std::this_thread::sleep_for(b.replyDelay);
-      }
-
-      const tt::messaging::DownloadResponseMessage response{
-          .id = parsed->id,
-          .status = b.replyStatus,
-          .downloaded_block_hashes =
-              b.replyStatus == MigrationStatus::SUCCESSFUL
-                  ? b.downloadedBlockHashes
-                  : std::vector<uint64_t>{},
-      };
-      const std::string payload = tt::messaging::serialize(response);
-      std::string err;
-      ackProducer->send(payload, &err);
-    }
-  }
-
-  std::unique_ptr<tt::messaging::KafkaConsumer> requestConsumer;
-  std::unique_ptr<tt::messaging::KafkaProducer> ackProducer;
-  std::atomic<bool> running{false};
-  std::thread thread;
-  mutable std::mutex mtx;
-  Behavior behavior;
-  std::atomic<std::size_t> received{0};
-};
-
-// ---------------------------------------------------------------------------
-// MockOffloadWorker
-// ---------------------------------------------------------------------------
-//
-// Same shape as MockMigrationWorker but wired to the offload topics. Each
-// received OffloadRequestMessage is answered with an OffloadResponseMessage
-// echoing the migration id and the currently configured status/delay.
-// `dropRequest` swallows the request to simulate a lost ack.
-class MockOffloadWorker {
- public:
-  struct Behavior {
-    MigrationStatus replyStatus{MigrationStatus::SUCCESSFUL};
-    std::chrono::milliseconds replyDelay{0};
-    bool dropRequest{false};
-  };
-
-  MockOffloadWorker(const std::string& brokers,
-                    const std::string& requestTopic,
-                    const std::string& ackTopic, const std::string& groupId) {
-    requestConsumer = std::make_unique<tt::messaging::KafkaConsumer>(
-        tt::messaging::KafkaConsumerConfig{
-            .brokers = brokers, .topic = requestTopic, .group_id = groupId});
-    ackProducer = std::make_unique<tt::messaging::KafkaProducer>(
-        tt::messaging::KafkaProducerConfig{.brokers = brokers,
-                                           .topic = ackTopic});
-  }
-
-  ~MockOffloadWorker() { stop(); }
-
-  MockOffloadWorker(const MockOffloadWorker&) = delete;
-  MockOffloadWorker& operator=(const MockOffloadWorker&) = delete;
-
-  void setBehavior(Behavior b) {
+  std::vector<std::string> takeReceivedRaw() {
     std::lock_guard<std::mutex> lock(mtx);
-    behavior = b;
-  }
-
-  Behavior getBehavior() const {
-    std::lock_guard<std::mutex> lock(mtx);
-    return behavior;
-  }
-
-  void start() {
-    bool expected = false;
-    if (!running.compare_exchange_strong(expected, true)) return;
-    thread = std::thread([this] { run(); });
-  }
-
-  void stop() {
-    bool expected = true;
-    if (!running.compare_exchange_strong(expected, false)) return;
-    if (thread.joinable()) thread.join();
-  }
-
-  std::size_t requestsReceived() const {
-    return received.load(std::memory_order_relaxed);
-  }
-
-  std::vector<tt::messaging::OffloadRequestMessage> takeReceived() {
-    std::lock_guard<std::mutex> lock(mtx);
-    auto out = std::move(receivedMessages);
-    receivedMessages.clear();
+    auto out = std::move(receivedRaw);
+    receivedRaw.clear();
     return out;
   }
 
@@ -348,14 +174,13 @@ class MockOffloadWorker {
       auto raw = requestConsumer->receive(50);
       if (!raw.has_value()) continue;
 
-      auto parsed = tt::messaging::parseOffloadRequest(*raw);
-      if (!parsed.has_value()) continue;
+      auto id = parseRequest(*raw);
+      if (!id.has_value()) continue;
 
       received.fetch_add(1, std::memory_order_relaxed);
-      const uint64_t id = parsed->id;
       {
         std::lock_guard<std::mutex> lock(mtx);
-        receivedMessages.push_back(std::move(*parsed));
+        receivedRaw.push_back(*raw);
       }
 
       const Behavior b = getBehavior();
@@ -365,23 +190,77 @@ class MockOffloadWorker {
         std::this_thread::sleep_for(b.replyDelay);
       }
 
-      const tt::messaging::OffloadResponseMessage response{
-          .id = id, .status = b.replyStatus};
-      const std::string payload = tt::messaging::serialize(response);
+      const std::string payload = buildResponse(*id, b);
       std::string err;
       ackProducer->send(payload, &err);
     }
   }
 
+  RequestParser parseRequest;
+  ResponseBuilder buildResponse;
   std::unique_ptr<tt::messaging::KafkaConsumer> requestConsumer;
   std::unique_ptr<tt::messaging::KafkaProducer> ackProducer;
   std::atomic<bool> running{false};
   std::thread thread;
   mutable std::mutex mtx;
   Behavior behavior;
-  std::vector<tt::messaging::OffloadRequestMessage> receivedMessages;
+  std::vector<std::string> receivedRaw;
   std::atomic<std::size_t> received{0};
 };
+
+// ---------------------------------------------------------------------------
+// Path-specific parser / responder factories
+// ---------------------------------------------------------------------------
+
+inline MockKafkaWorker::RequestParser migrationParser() {
+  return [](const std::string& raw) -> std::optional<uint64_t> {
+    auto parsed = tt::messaging::parseMigrationRequest(raw);
+    if (!parsed.has_value()) return std::nullopt;
+    return parsed->migration_id;
+  };
+}
+
+inline MockKafkaWorker::ResponseBuilder migrationResponder() {
+  return [](uint64_t id, const MockKafkaWorker::Behavior& b) {
+    return tt::messaging::serialize(tt::messaging::MigrationResponseMessage{
+        .migration_id = id, .status = b.replyStatus});
+  };
+}
+
+inline MockKafkaWorker::RequestParser downloadParser() {
+  return [](const std::string& raw) -> std::optional<uint64_t> {
+    auto parsed = tt::messaging::parseDownloadRequest(raw);
+    if (!parsed.has_value()) return std::nullopt;
+    return parsed->id;
+  };
+}
+
+inline MockKafkaWorker::ResponseBuilder downloadResponder() {
+  return [](uint64_t id, const MockKafkaWorker::Behavior& b) {
+    return tt::messaging::serialize(tt::messaging::DownloadResponseMessage{
+        .id = id,
+        .status = b.replyStatus,
+        .downloaded_block_hashes = b.replyStatus == MigrationStatus::SUCCESSFUL
+                                       ? b.downloadedBlockHashes
+                                       : std::vector<uint64_t>{},
+    });
+  };
+}
+
+inline MockKafkaWorker::RequestParser offloadParser() {
+  return [](const std::string& raw) -> std::optional<uint64_t> {
+    auto parsed = tt::messaging::parseOffloadRequest(raw);
+    if (!parsed.has_value()) return std::nullopt;
+    return parsed->id;
+  };
+}
+
+inline MockKafkaWorker::ResponseBuilder offloadResponder() {
+  return [](uint64_t id, const MockKafkaWorker::Behavior& b) {
+    return tt::messaging::serialize(tt::messaging::OffloadResponseMessage{
+        .id = id, .status = b.replyStatus});
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -442,20 +321,22 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
         std::move(offloadProducer), std::move(offloadConsumer));
   }
 
-  std::unique_ptr<MockMigrationWorker> makeWorker() {
-    return std::make_unique<MockMigrationWorker>(brokers, requestTopic,
-                                                 ackTopic, workerGroup);
+  std::unique_ptr<MockKafkaWorker> makeWorker() {
+    return std::make_unique<MockKafkaWorker>(brokers, requestTopic, ackTopic,
+                                             workerGroup, migrationParser(),
+                                             migrationResponder());
   }
 
-  std::unique_ptr<MockDownloadWorker> makeDownloadWorker() {
-    return std::make_unique<MockDownloadWorker>(brokers, downloadRequestTopic,
-                                                downloadAckTopic,
-                                                downloadWorkerGroup);
+  std::unique_ptr<MockKafkaWorker> makeDownloadWorker() {
+    return std::make_unique<MockKafkaWorker>(
+        brokers, downloadRequestTopic, downloadAckTopic, downloadWorkerGroup,
+        downloadParser(), downloadResponder());
   }
 
-  std::unique_ptr<MockOffloadWorker> makeOffloadWorker() {
-    return std::make_unique<MockOffloadWorker>(
-        brokers, offloadRequestTopic, offloadAckTopic, offloadWorkerGroup);
+  std::unique_ptr<MockKafkaWorker> makeOffloadWorker() {
+    return std::make_unique<MockKafkaWorker>(
+        brokers, offloadRequestTopic, offloadAckTopic, offloadWorkerGroup,
+        offloadParser(), offloadResponder());
   }
 
   static MigrationRequest sampleRequest() {
@@ -744,12 +625,14 @@ TEST_F(RemoteKVManagerE2ETest, OffloadSucceedsAfterOneSecondDelay) {
 
   EXPECT_EQ(worker->requestsReceived(), 1u);
 
-  const auto received = worker->takeReceived();
-  ASSERT_EQ(received.size(), 1u);
-  EXPECT_EQ(received[0].id, id);
-  EXPECT_EQ(received[0].src_slot, req.srcSlot);
-  ASSERT_EQ(received[0].blocks.size(), req.blocks.size());
-  EXPECT_EQ(received[0].blocks[0].blockHash, req.blocks[0].blockHash);
+  const auto rawReceived = worker->takeReceivedRaw();
+  ASSERT_EQ(rawReceived.size(), 1u);
+  const auto parsed = tt::messaging::parseOffloadRequest(rawReceived[0]);
+  ASSERT_TRUE(parsed.has_value());
+  EXPECT_EQ(parsed->id, id);
+  EXPECT_EQ(parsed->src_slot, req.srcSlot);
+  ASSERT_EQ(parsed->blocks.size(), req.blocks.size());
+  EXPECT_EQ(parsed->blocks[0].blockHash, req.blocks[0].blockHash);
 
   worker->stop();
 }
