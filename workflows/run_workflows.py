@@ -134,9 +134,7 @@ def run_single_workflow(model_spec, runtime_config, json_fpath):
         )
 
         if _is_llm_benchmark_run(workflow_type, model_spec, runtime_config):
-            return run_v2_llm_benchmark_workflow(
-                model_spec, runtime_config, json_fpath
-            )
+            return run_v2_llm_benchmark_workflow(model_spec, runtime_config, json_fpath)
 
     manager = WorkflowSetup(model_spec, runtime_config, json_fpath)
     manager.setup_workflow()

@@ -32,9 +32,7 @@ def _make_ctx(model_type, *, agentic=False):
     ctx.output_path = "/tmp/test_output"
     tasks = []
     if agentic:
-        tasks.append(
-            SimpleNamespace(workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC)
-        )
+        tasks.append(SimpleNamespace(workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC))
     ctx.all_params = SimpleNamespace(tasks=tasks)
     return ctx
 

@@ -217,9 +217,7 @@ def _patch_eval_configs(monkeypatch, *, agentic):
     from workflows.workflow_types import WorkflowVenvType
     import evals.eval_config as eval_config
 
-    venv = (
-        WorkflowVenvType.EVALS_AGENTIC if agentic else WorkflowVenvType.EVALS_COMMON
-    )
+    venv = WorkflowVenvType.EVALS_AGENTIC if agentic else WorkflowVenvType.EVALS_COMMON
     cfg = SimpleNamespace(tasks=[SimpleNamespace(workflow_venv_type=venv)])
     monkeypatch.setattr(
         eval_config, "EVAL_CONFIGS", {"Llama-3.1-8B-Instruct": cfg}, raising=False
@@ -246,12 +244,12 @@ def test_release_dispatches_only_engine(monkeypatch, tmp_path):
     calls = []
 
     monkeypatch.setattr(
-        v2_bridge, "run_command", lambda cmd, logger=None, env=None: calls.append(cmd) or 0
+        v2_bridge,
+        "run_command",
+        lambda cmd, logger=None, env=None: calls.append(cmd) or 0,
     )
     monkeypatch.setattr(v2_bridge, "_ensure_v2_venv", lambda ms: Path("/fake/python"))
-    monkeypatch.setattr(
-        v2_bridge, "_ensure_v2_dependency_venvs", lambda *a, **k: None
-    )
+    monkeypatch.setattr(v2_bridge, "_ensure_v2_dependency_venvs", lambda *a, **k: None)
     monkeypatch.setattr(
         v2_bridge, "get_default_workflow_root_log_dir", lambda: tmp_path
     )
@@ -287,12 +285,12 @@ def test_release_forwards_prefix_cache_and_spec_decode_flags(monkeypatch, tmp_pa
     calls = []
 
     monkeypatch.setattr(
-        v2_bridge, "run_command", lambda cmd, logger=None, env=None: calls.append(cmd) or 0
+        v2_bridge,
+        "run_command",
+        lambda cmd, logger=None, env=None: calls.append(cmd) or 0,
     )
     monkeypatch.setattr(v2_bridge, "_ensure_v2_venv", lambda ms: Path("/fake/python"))
-    monkeypatch.setattr(
-        v2_bridge, "_ensure_v2_dependency_venvs", lambda *a, **k: None
-    )
+    monkeypatch.setattr(v2_bridge, "_ensure_v2_dependency_venvs", lambda *a, **k: None)
     monkeypatch.setattr(
         v2_bridge, "get_default_workflow_root_log_dir", lambda: tmp_path
     )

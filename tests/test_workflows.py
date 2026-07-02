@@ -258,7 +258,8 @@ class TestWorkflowExecution:
         ), patch(
             # Kimi-K2.6 has server tests configured; isolate this test to
             # the benchmarks-delegation behavior by dropping the TESTS step.
-            "workflows.run_workflows.TEST_CONFIGS", {}
+            "workflows.run_workflows.TEST_CONFIGS",
+            {},
         ), patch(
             "workflows.v2_bridge.run_v2_llm_benchmark_workflow",
             return_value=WorkflowResult(workflow_name="benchmarks", return_code=0),

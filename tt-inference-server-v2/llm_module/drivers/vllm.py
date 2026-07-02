@@ -31,10 +31,7 @@ logger = logging.getLogger(__name__)
 
 def _resolve_auth_token(server: ServerConnection) -> str:
     return (
-        server.auth_token
-        or os.getenv("OPENAI_API_KEY")
-        or os.getenv("API_KEY")
-        or ""
+        server.auth_token or os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY") or ""
     )
 
 
@@ -99,10 +96,12 @@ def build_vllm_bench_serve_argv(
             headers.append(f"Authorization=Bearer {auth_token}")
     else:
         cmd.extend(["--host", server.host, "--port", str(server.service_port)])
-        cmd.extend([
-            "--extra-body",
-            json.dumps({"truncate_prompt_tokens": str(config.isl)}),
-        ])
+        cmd.extend(
+            [
+                "--extra-body",
+                json.dumps({"truncate_prompt_tokens": str(config.isl)}),
+            ]
+        )
 
     # vllm bench serve defines --header with nargs="*"; pass all headers on one flag.
     cmd.extend(["--header", *headers])

@@ -429,15 +429,12 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     vllm_files = glob(f"{benchmarks_output_dir}/{vllm_pattern}")
     # v2 LLM benchmarks write under reports_output/benchmarks/**/llm/ with
     # hf-repo-based filenames; include them in the v1 release report path.
-    v2_llm_glob = (
-        f"{get_default_workflow_root_log_dir()}/reports_output/benchmarks/**/llm/benchmark_*.json"
-    )
+    v2_llm_glob = f"{get_default_workflow_root_log_dir()}/reports_output/benchmarks/**/llm/benchmark_*.json"
     hf_model_token = model_spec.hf_model_repo.replace("/", "__")
     v2_llm_files = [
         path
         for path in glob(v2_llm_glob, recursive=True)
-        if hf_model_token in Path(path).name
-        or model_spec.model_name in Path(path).name
+        if hf_model_token in Path(path).name or model_spec.model_name in Path(path).name
     ]
     if v2_llm_files:
         logger.info(

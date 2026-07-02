@@ -412,7 +412,7 @@ _LM_EVAL_CHAT_STREAM_SENTINEL = "# === TT patch: chat-completions SSE streaming 
 # choice["message"]["content"], so streamed chat responses raised
 # KeyError: 'message'. This makes streaming handle both shapes, and teaches the
 # synchronous model_call() path to consume SSE (stock sync path had none).
-_LM_EVAL_CHAT_STREAM_PATCH = '''
+_LM_EVAL_CHAT_STREAM_PATCH = """
 
 # === TT patch: chat-completions SSE streaming ===
 # Applied post-install by workflows.workflow_venvs.patch_evals_common_chat_streaming.
@@ -531,7 +531,7 @@ def _tt_model_call(self, messages, *, generate: bool = True, gen_kwargs: dict = 
 TemplateAPI._consume_sse_stream = _tt_consume_sse_stream
 TemplateAPI.model_call = _tt_model_call
 # === end TT patch ===
-'''
+"""
 
 
 def patch_evals_common_chat_streaming(
