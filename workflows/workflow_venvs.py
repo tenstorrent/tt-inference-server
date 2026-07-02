@@ -427,6 +427,11 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.V2_LLM_VLLM,
         requirements_file="v2-llm-vllm.txt",
+        # Same Gemma-4 tokenizer fix as BENCHMARKS_VLLM: force transformers 5.x
+        # past vllm's declared `transformers<5` cap so `vllm bench serve` can
+        # tokenize prompts (4.x raises "'list' object has no attribute 'keys'"
+        # on gemma-4's list-valued extra_special_tokens). Reuses the same file.
+        overrides_file="benchmarks-vllm-overrides.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),
