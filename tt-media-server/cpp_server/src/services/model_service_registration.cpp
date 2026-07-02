@@ -68,6 +68,9 @@ void registerLLM() {
   runners.registerIpcRunner(config::ModelService::LLM,
                             config::ModelRunnerType::MOCK_PIPELINE,
                             blazeFactory);
+  runners.registerIpcRunner(config::ModelService::LLM,
+                            config::ModelRunnerType::MOCK_SCHEDULER,
+                            blazeFactory);
 #endif
 
   auto& routes = api::RouteRegistry::instance();

@@ -350,11 +350,6 @@ std::string dynamoComponent();
  * defaults::DYNAMO_ENDPOINT_NAME. */
 std::string dynamoEndpointName();
 
-/** When true and LLM_DEVICE_BACKEND=mock_pipeline, Blaze runners use
- * single-threaded MockSchedulers instead of tt-llm-engine schedulers.
- * From MOCK_USE_SCHEDULER. Default: defaults::MOCK_USE_SCHEDULER. */
-bool useMockScheduler();
-
 /** Prefill completion latency for MockSchedulers. From
  * MOCK_PREFILL_CHUNK_LATENCY_MS. Default:
  * defaults::MOCK_PREFILL_CHUNK_LATENCY_MS. */

@@ -315,8 +315,8 @@ inline pl::CounterChannelConfig makePrefillAckChannelConfig(
 
 // Builders for the mock scheduler config structs. Same shape as the pipeline
 // builders above (env/settings -> plain-data config): the callers in
-// blaze_scheduler_factory.cpp have already branched on MOCK_PIPELINE +
-// useMockScheduler, so these deliberately take no arguments.
+// blaze_scheduler_factory.cpp have already branched on MOCK_SCHEDULER, so
+// these deliberately take no arguments.
 inline MockPrefillSchedulerConfig makeMockPrefillSchedulerConfig() {
   return MockPrefillSchedulerConfig{
       .prefillLatency =
