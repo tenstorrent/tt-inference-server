@@ -320,10 +320,6 @@ size_t memoryQueueCapacity() {
   return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
 }
 
-bool useMockScheduler() {
-  return envBool("MOCK_USE_SCHEDULER", defaults::MOCK_USE_SCHEDULER);
-}
-
 unsigned mockPrefillLatencyMs() {
   return static_cast<unsigned>(
       envUlong("MOCK_PREFILL_CHUNK_LATENCY_MS",
@@ -355,6 +351,8 @@ LLMConfig llmEngineConfig() {
       cfg.runner_type = ModelRunnerType::MOCK;
     } else if (backend == "mock_pipeline") {
       cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
+    } else if (backend == "mock_scheduler") {
+      cfg.runner_type = ModelRunnerType::MOCK_SCHEDULER;
     } else if (backend == "pipeline_manager") {
       cfg.runner_type = ModelRunnerType::PIPELINE_MANAGER;
     } else {
