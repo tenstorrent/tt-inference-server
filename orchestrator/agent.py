@@ -135,8 +135,7 @@ def generate_pr_body(
     for attempt in range(_max_attempts):
         try:
             response = client.chat.completions.create(**kwargs)
-            text = _strip_think(response.choices[0].message.content or "")
-            return text.strip()
+            break
         except openai.RateLimitError as e:
             if attempt >= len(_BACKOFF_SECONDS):
                 raise
@@ -158,6 +157,7 @@ def generate_pr_body(
             time.sleep(_BACKOFF_SECONDS[attempt])
     else:
         raise RuntimeError("generate_pr_body: retry loop exited without response")
+    return _strip_think(response.choices[0].message.content or "").strip()
 
 
 def run(
