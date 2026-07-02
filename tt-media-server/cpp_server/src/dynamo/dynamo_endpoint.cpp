@@ -2,12 +2,10 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "dynamo/dynamo_endpoint.hpp"
-#include "dynamo/etcd_url.hpp"
 
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 #include <net/if.h>
-#include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <trantor/net/EventLoop.h>
@@ -30,6 +28,7 @@
 #include "services/llm_pipeline.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
+#include "utils/net.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::dynamo {
@@ -111,6 +110,10 @@ std::string detectModelPath() {
   return std::filesystem::path(tokJson).parent_path().string();
 }
 
+// IPv4 socket / address helpers (parseUrl, sourceIpForRoute, RAII guards, ...)
+// live in include/utils/net.hpp — see detectAdvertiseHost for the route-based
+// advertise-host detection built on top of them.
+
 }  // namespace
 
 DynamoEndpoint::DynamoEndpoint(std::shared_ptr<services::LLMPipeline> pipeline,
@@ -136,59 +139,26 @@ DynamoEndpoint::~DynamoEndpoint() { stop(); }
 std::string DynamoEndpoint::detectAdvertiseHost(
     const std::string& etcdEndpoints) const {
   if (const char* env = std::getenv("DYN_TCP_RPC_HOST")) {
-    TT_LOG_INFO(
-        "[DynamoEndpoint] advertise host from DYN_TCP_RPC_HOST={}", env);
+    TT_LOG_INFO("[DynamoEndpoint] advertise host from DYN_TCP_RPC_HOST={}",
+                env);
     return env;
   }
 
-  // Route-based detection: the source IP the kernel picks to reach etcd is,
-  // by construction, on the same L2 network as etcd — which is the network
-  // the Dynamo frontend (co-located with etcd on dynamo-net) can dial back.
-  // We discover it without sending any packets by `connect()`ing a UDP
-  // socket to etcd's address: that only resolves the route and pins the
-  // source address, which we then read via getsockname(). This survives
-  // Docker IPAM re-IPs and picks the right interface when the host is
-  // attached to several bridges (e.g. devcontainer on both docker0 and
-  // dynamo-net). Assumes etcd and the frontend share a network — the same
-  // assumption Dynamo's discovery model already relies on.
+  // Route-based detection: ask the kernel which local IP it would use to reach
+  // etcd. That IP is, by construction, on the same network as etcd — which is
+  // the network the Dynamo frontend (co-located with etcd on dynamo-net) can
+  // dial back. `sourceIpForRoute` does the UDP-connect dance internally and
+  // returns empty on any failure, so we just fall through to the heuristic.
   if (!etcdEndpoints.empty()) {
     try {
-      const ParsedUrl url = parseEtcdUrl(etcdEndpoints);
-
-      struct addrinfo hints{};
-      hints.ai_family = AF_INET;       // IPv4-only (transport is IPv4 today)
-      hints.ai_socktype = SOCK_DGRAM;
-      struct addrinfo* res = nullptr;
-      if (::getaddrinfo(url.host.c_str(), /*service=*/nullptr, &hints, &res) ==
-              0 &&
-          res != nullptr) {
-        int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
-        if (fd >= 0) {
-          if (::connect(fd, res->ai_addr, res->ai_addrlen) == 0) {
-            struct sockaddr_in local{};
-            socklen_t len = sizeof(local);
-            if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local), &len) ==
-                0) {
-              char buf[INET_ADDRSTRLEN] = {0};
-              if (::inet_ntop(AF_INET, &local.sin_addr, buf, sizeof(buf)) !=
-                  nullptr) {
-                std::string ip(buf);
-                ::close(fd);
-                ::freeaddrinfo(res);
-                if (!ip.empty() && ip != "0.0.0.0") {
-                  TT_LOG_INFO(
-                      "[DynamoEndpoint] advertise host from route to etcd "
-                      "({}:{}): {}",
-                      url.host, url.port, ip);
-                  return ip;
-                }
-              }
-            }
-          }
-          ::close(fd);
-        }
+      const auto url = tt::utils::net::parseUrl(etcdEndpoints);
+      std::string ip = tt::utils::net::sourceIpForRoute(url.host);
+      if (!ip.empty()) {
+        TT_LOG_INFO(
+            "[DynamoEndpoint] advertise host from route to etcd ({}:{}): {}",
+            url.host, url.port, ip);
+        return ip;
       }
-      if (res != nullptr) ::freeaddrinfo(res);
     } catch (const std::exception& e) {
       TT_LOG_DEBUG(
           "[DynamoEndpoint] route-based advertise detection failed: {}",

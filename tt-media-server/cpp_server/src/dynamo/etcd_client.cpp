@@ -2,7 +2,6 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "dynamo/etcd_client.hpp"
-#include "dynamo/etcd_url.hpp"
 
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -17,6 +16,8 @@
 #include <cstring>
 #include <sstream>
 #include <string>
+
+#include "utils/net.hpp"
 
 namespace tt::dynamo {
 
@@ -62,8 +63,8 @@ std::string base64Encode(const std::string& in) {
 }
 
 // ---------------------------------------------------------------------------
-// URL parsing for etcd endpoints lives in include/dynamo/etcd_url.hpp so the
-// DynamoEndpoint advertise-host detection can share it (see parseEtcdUrl).
+// URL parsing for etcd endpoints lives in include/utils/net.hpp (parseUrl) so
+// the DynamoEndpoint advertise-host detection can share it.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -381,7 +382,7 @@ std::string serialize(const Json::Value& v) {
 
 EtcdClient::EtcdClient(const std::string& endpoint, int timeoutMs)
     : timeout_ms_(timeoutMs) {
-  auto parsed = parseEtcdUrl(endpoint);
+  auto parsed = tt::utils::net::parseUrl(endpoint);
   host_ = parsed.host;
   port_ = parsed.port;
 }
