@@ -326,9 +326,24 @@ unsigned mockPrefillLatencyMs() {
                defaults::MOCK_PREFILL_CHUNK_LATENCY_MS));
 }
 
-unsigned mockDecodeTokenLatencyUs() {
-  return static_cast<unsigned>(envUlong(
-      "MOCK_DECODE_TOKEN_LATENCY_US", defaults::MOCK_DECODE_TOKEN_LATENCY_US));
+unsigned mockStageLatencyUs() {
+  return static_cast<unsigned>(
+      envUlong("MOCK_STAGE_LATENCY_US", defaults::MOCK_STAGE_LATENCY_US));
+}
+
+uint32_t mockPipelineStages() {
+  return static_cast<uint32_t>(
+      envUlong("MOCK_PIPELINE_STAGES", defaults::MOCK_PIPELINE_STAGES));
+}
+
+uint32_t mockDecodeJitterPct() {
+  return static_cast<uint32_t>(
+      envUlong("MOCK_DECODE_JITTER_PCT", defaults::MOCK_DECODE_JITTER_PCT));
+}
+
+unsigned mockPrefillComputeMs() {
+  return static_cast<unsigned>(
+      envUlong("MOCK_PREFILL_COMPUTE_MS", defaults::MOCK_PREFILL_COMPUTE_MS));
 }
 
 uint32_t mockDecodeTokenId() {
