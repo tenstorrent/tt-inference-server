@@ -134,7 +134,11 @@ templates:
     - device: P300X2
       max_concurrency: 16
       max_context: 4096
-      default_impl: true
+      # gemma-4-31b-it on P300X2 also has a tt_transformers/vLLM spec (llm.yaml,
+      # this model's Model Readiness path); that one is the default impl. Both
+      # can't be default_impl or determine_server_type raises "Multiple default
+      # impls". This EXPERIMENTAL forge path stays selectable via explicit impl.
+      default_impl: false
       eval_max_retries: 1
       env_vars:
         MAX_MODEL_LENGTH: "4096"
