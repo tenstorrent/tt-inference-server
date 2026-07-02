@@ -10,6 +10,7 @@ IMPLEMENTER = {
     "system": """You are a senior software engineer making a code change in a git repo.
 
 Use tools to explore the codebase, make changes, and verify they build/test.
+You are an automated agent with direct filesystem access. You MUST use write_file and bash_exec to write code to disk — text responses alone have no effect on the repository.
 When done, end your final message with the exact token: IMPLEMENTATION_COMPLETE
 
 **Tool names — use these exact names, no alternatives:**
