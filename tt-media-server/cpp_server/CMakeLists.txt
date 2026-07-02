@@ -863,6 +863,25 @@ if(TARGET transfer_engine)
         message(STATUS "transport_kv_migration_e2e: Kafka trigger ENABLED")
     endif()
     message(STATUS "transport_kv_migration_e2e: ENABLED (real KV migration harness)")
+
+    # Standalone seed/verify helper for the production mooncake_kv_migration_
+    # worker (which moves real KV and does no seed/verify of its own). --mode
+    # seed writes the known pattern into prefill source DRAM before a migration;
+    # --mode verify reads decode dest DRAM back after and compares. Reuses the
+    # real tables + device map + the harness's pattern, so it byte-checks a
+    # Kafka-triggered worker migration. Links only transport_lib.
+    add_executable(kv_seed_verify
+        tests/e2e/kv_seed_verify.cpp)
+    target_link_libraries(kv_seed_verify PRIVATE transport_lib)
+    target_include_directories(kv_seed_verify PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    if(USE_EXTERNAL_FMT)
+        target_link_libraries(kv_seed_verify PRIVATE spdlog::spdlog fmt::fmt)
+    else()
+        target_link_libraries(kv_seed_verify PRIVATE spdlog::spdlog)
+    endif()
+    target_compile_options(kv_seed_verify PRIVATE -Wall -Wextra -Wpedantic)
+    message(STATUS "kv_seed_verify: ENABLED (seed/verify helper for unified worker)")
 endif()
 
 # Unit tests (link llm_runner_lib)

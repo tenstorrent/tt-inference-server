@@ -19,9 +19,10 @@
 //
 // Table source: loadKvTableFile for now (the .pb path); the engine→worker
 // handoff (engine_table_handoff) swaps in behind the same IKvTable once the
-// engine implements the producer. Device IO: MultiDeviceUmd; the FabricNode→ASIC
-// chip resolution still uses the placeholder (device & 0xFFFF) until the device
-// map is wired in (Phase 4b).
+// engine implements the producer. Device IO: MultiDeviceUmd; FabricNode→ASIC
+// chip resolution comes from an optional --device-map file (the same contract
+// the engine will hand over), falling back to the placeholder (device &
+// 0xFFFF) for a single-mesh host when no map is given.
 
 #include <unistd.h>
 
@@ -30,6 +31,7 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -42,6 +44,7 @@
 #include "messaging/kafka_producer.hpp"
 #include "runtime/worker/kv_migration_worker.hpp"
 #include "sockets/tcp_socket_transport.hpp"
+#include "transport/device_map.hpp"  // DeviceMap (FabricNode -> UMD chip)
 #include "transport/host_dram_storage_backend.hpp"
 #include "transport/kv_migration_endpoints.hpp"
 #include "transport/kv_migration_multi_host_sender.hpp"
@@ -79,6 +82,8 @@ struct WorkerConfig {
   std::string metadata_uri;  // Mooncake metadata service (or P2PHANDSHAKE).
   std::string name;          // this worker's Mooncake server/segment name.
   std::string host;          // this node's host tag in the table.
+  std::string device_map_path;  // FabricNode->UMD chip map (both roles); empty
+                                // => placeholder (device & 0xFFFF).
 
   // prefill:
   std::string prefill_table_path;
@@ -98,6 +103,8 @@ void usage() {
          "  prefill: --prefill-table P.pb --decode-table D.pb "
          "--peer-control NAME=host:port (repeatable)\n"
          "  decode:  --table D.pb --control-port N [--segment NAME]\n"
+         "  both:    [--device-map FILE]  ('mesh chip umd' per line; needed "
+         "when this host's table spans multiple meshes)\n"
          "  Kafka (prefill) via env: KAFKA_BROKERS, "
          "KAFKA_MIGRATION_REQUEST_TOPIC, KAFKA_MIGRATION_ACK_TOPIC, "
          "KAFKA_GROUP_ID\n";
@@ -147,6 +154,7 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
     if (a == "--prefill-table" && next(cfg.prefill_table_path)) continue;
     if (a == "--decode-table" && next(cfg.decode_table_path)) continue;
     if (a == "--table" && next(cfg.table_path)) continue;
+    if (a == "--device-map" && next(cfg.device_map_path)) continue;
     if (a == "--segment" && next(cfg.segment)) continue;
     if (a == "--control-port" && next(v)) {
       try {
@@ -187,7 +195,10 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
     std::cerr << "decode needs --table and --control-port\n";
     return false;
   }
-  if (cfg.segment.empty()) cfg.segment = cfg.name;
+  // NB: segment defaults to the engine's real local server name at runtime
+  // (runDecode), not cfg.name — under P2PHANDSHAKE the RPC port is auto-assigned
+  // so engine->localServerName() != cfg.name, and the sender must open the
+  // engine's actual segment. Only an explicit --segment overrides it.
   return true;
 }
 
@@ -205,15 +216,39 @@ std::shared_ptr<MooncakeTransferEngine> makeEngine(const WorkerConfig& cfg) {
   return engine;
 }
 
-// One UmdDeviceAccess per device this host owns in `table`. Chip resolution is
-// the Phase-4b seam: today it uses the encodeDevice low bits (placeholder, as in
-// the e2e harness); the device map from engine_table_handoff plugs in here.
+// Load a 'mesh chip umd' device map (the same format the e2e harness uses).
+// Empty path => empty map => buildDeviceIo falls back to the placeholder.
+DeviceMap loadDeviceMapFile(const std::string& path) {
+  DeviceMap dm;
+  if (path.empty()) return dm;
+  std::ifstream f(path);
+  if (!f.good()) {
+    TT_LOG_WARN("[worker] cannot open --device-map {}; using placeholder chip ids",
+                path);
+    return dm;
+  }
+  uint32_t mesh = 0, chip = 0;
+  uint64_t umd = 0;
+  while (f >> mesh >> chip >> umd) dm.set(FabricNode{mesh, chip}, umd);
+  TT_LOG_INFO("[worker] device-map: {} entries from {}", dm.size(), path);
+  return dm;
+}
+
+// One UmdDeviceAccess per device this host owns in `table`. Chip resolution uses
+// `device_map` (the Phase-4b seam the engine fills; the file-based map is the
+// same contract) and falls back to the encodeDevice low bits (placeholder, as
+// in the e2e harness) for any device the map doesn't cover. The placeholder is
+// only correct when the host's table is single-mesh; a multi-mesh host (its KV
+// aliases chip ids across meshes) needs the map or its replicas collide.
 std::unique_ptr<MultiDeviceUmd> buildDeviceIo(const IKvTable& table,
-                                              const std::string& host) {
+                                              const std::string& host,
+                                              const DeviceMap& device_map) {
   auto umd = std::make_unique<MultiDeviceUmd>();
   for (const auto& loc : allHostLocations(table, host)) {
     if (!umd->hasDevice(loc.device)) {
-      const int chip = static_cast<int>(loc.device & 0xFFFFu);
+      const auto mapped = device_map.umdChip(loc.device);
+      const int chip = mapped ? static_cast<int>(*mapped)
+                              : static_cast<int>(loc.device & 0xFFFFu);
       umd->addDevice(loc.device, std::make_shared<UmdDeviceAccess>(chip));
     }
   }
@@ -246,7 +281,8 @@ int runPrefill(const WorkerConfig& cfg) {
     return 1;
   }
 
-  auto device = buildDeviceIo(*prefill->table, cfg.host);
+  const DeviceMap device_map = loadDeviceMapFile(cfg.device_map_path);
+  auto device = buildDeviceIo(*prefill->table, cfg.host, device_map);
 
   // Open one control channel per decode host (static resolution for now; the
   // map is the seam a discovery service fills later).
@@ -299,14 +335,20 @@ int runDecode(const WorkerConfig& cfg) {
     return 1;
   }
 
-  auto device = buildDeviceIo(*decode->table, cfg.host);
+  const DeviceMap device_map = loadDeviceMapFile(cfg.device_map_path);
+  auto device = buildDeviceIo(*decode->table, cfg.host, device_map);
 
+  // The sender opens the engine's actual segment (its live local server name);
+  // under P2PHANDSHAKE that's an auto-assigned endpoint, not cfg.name. An
+  // explicit --segment overrides (e.g. a metadata-server deployment).
+  const std::string segment =
+      cfg.segment.empty() ? engine->localServerName() : cfg.segment;
   // The mirror is registered as the Mooncake segment inside MooncakeKvReceiver.
   MooncakeKvReceiver receiver(engine, *device, decode->table, cfg.host,
-                              cfg.segment);
+                              segment);
   if (!receiver.registered()) {
     TT_LOG_ERROR("[worker] decode '{}' failed to register mirror segment '{}'",
-                 cfg.name, cfg.segment);
+                 cfg.name, segment);
     return 1;
   }
 
@@ -318,7 +360,7 @@ int runDecode(const WorkerConfig& cfg) {
     return 1;
   }
   TT_LOG_INFO("[worker] decode '{}' READY: segment={} control_port={}", cfg.name,
-              cfg.segment, cfg.control_port);
+              segment, cfg.control_port);
   while (!gStop.load()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(K_IDLE_POLL_MS));
   }
