@@ -132,7 +132,6 @@ def generate_pr_body(
         kwargs["max_tokens"] = implementer["max_tokens"]
 
     _max_attempts = len(_BACKOFF_SECONDS) + 1
-    _attempt_start = time.monotonic()
     for attempt in range(_max_attempts):
         try:
             response = client.chat.completions.create(**kwargs)
