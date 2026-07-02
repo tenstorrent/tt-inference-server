@@ -4,6 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+LOG_PREFIX="deploy"
+source "${REPO_ROOT}/scripts/lib_dynamo_stack.sh"
+
 # Fixed names/ports (not CLI-configurable).
 NETWORK_NAME="dynamo-net"
 ETCD_NAME="etcd"
@@ -31,7 +34,7 @@ PREFILL_GATEWAY_SOCKET_TRANSPORT="${PREFILL_GATEWAY_SOCKET_TRANSPORT:-zmq}"
 PREFILL_WORKER_PORT="${PREFILL_WORKER_PORT:-8001}"
 
 # Image defaults (override with the matching flag if needed).
-ETCD_IMAGE="quay.io/coreos/etcd:v3.5.13"
+# ETCD_IMAGE default comes from scripts/lib_dynamo_stack.sh.
 WORKER_IMAGE="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-blaze:ef76035_20260605_091948"
 FRONTEND_IMAGE="ghcr.io/tenstorrent/tt-shield/tt-dynamo-frontend:ef76035_20260605_091917"
 
@@ -50,9 +53,6 @@ PREFILL_GATEWAY_ENABLED=0
 PREFILL_GATEWAY_STARTED=0
 PREFILL_WORKER_STARTED=0
 PREFILL_GATEWAY_PREFILLS=()
-
-log() { printf '[deploy] %s\n' "$*"; }
-die() { printf '[deploy] %s\n' "$*" >&2; exit 1; }
 
 port_in_use() {
     local port="$1"
@@ -213,17 +213,9 @@ docker network inspect "$NETWORK_NAME" >/dev/null 2>&1 \
 
 # ── etcd ──────────────────────────────────────────────────────────────────
 log "starting etcd ($ETCD_IMAGE)"
-docker run -d --name "$ETCD_NAME" --network "$NETWORK_NAME" -p 2379:2379 \
-    "$ETCD_IMAGE" /usr/local/bin/etcd --name dyn-etcd \
-        --advertise-client-urls http://0.0.0.0:2379 \
-        --listen-client-urls http://0.0.0.0:2379 >/dev/null
-
+start_etcd "$ETCD_NAME" "$NETWORK_NAME"
 log "waiting for etcd"
-for _ in $(seq 1 30); do
-    docker exec "$ETCD_NAME" etcdctl endpoint health >/dev/null 2>&1 && { ETCD_OK=1; break; }
-    sleep 1
-done
-[[ -n "${ETCD_OK:-}" ]] || { docker logs --tail 50 "$ETCD_NAME" >&2 || true; die "etcd never became healthy"; }
+wait_etcd_healthy "$ETCD_NAME"
 log "etcd healthy"
 
 if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
@@ -313,10 +305,7 @@ fi
 log "starting worker ($WORKER_IMAGE)"
 docker run -d --name "$WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
     "${DEVICE_ARGS[@]}" "${LOCAL_BUILD_MOUNT[@]}" "${WORKER_ENTRYPOINT[@]}" \
-    -e DYNAMO_ENDPOINT_ENABLED=1 \
-    -e DYNAMO_DISCOVERY_BACKEND=etcd \
-    -e DYNAMO_ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
-    -e DYNAMO_NAMESPACE=default -e DYNAMO_COMPONENT=backend -e DYNAMO_ENDPOINT_NAME=generate \
+    $(dynamo_worker_env "http://${ETCD_NAME}:2379" docker) \
     -e SERVER_MODE=cpp \
     -e MODEL="$HF_MODEL_ID" \
     -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \

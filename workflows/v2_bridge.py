@@ -36,6 +36,7 @@ _V2_WORKFLOW_NAMES = {
     WorkflowType.RELEASE: "release",
     WorkflowType.AGENTIC: "agentic",
     WorkflowType.SERVING_BENCH: "serving_bench",
+    WorkflowType.PREFILL_DECODE: "prefill_decode",
 }
 
 _V2_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
@@ -106,11 +107,17 @@ def _is_llm_eval_run(wf, model_spec) -> bool:
 
 def can_route_to_v2(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
-    # Agentic evals, serving-bench benchmark suites, and the prefix-cache /
-    # spec-decode benchmarks are v2-only features with no v1 driver. They route
-    # to v2 for ANY model (not just the image/audio set in _V2_ROUTED_MODELS).
+    # Agentic evals, serving-bench benchmark suites, the prefill/decode smoke
+    # suite, and the prefix-cache / spec-decode benchmarks are v2-only features
+    # with no v1 driver. They route to v2 for ANY model (not just the image/audio
+    # set in _V2_ROUTED_MODELS). prefill_decode additionally owns its own stack.
     if (
-        wf in (WorkflowType.AGENTIC, WorkflowType.SERVING_BENCH)
+        wf
+        in (
+            WorkflowType.AGENTIC,
+            WorkflowType.SERVING_BENCH,
+            WorkflowType.PREFILL_DECODE,
+        )
         or _is_prefix_cache_run(wf, runtime_config)
         or _is_spec_decode_run(wf, runtime_config)
     ):
@@ -211,6 +218,12 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
 
     env = os.environ.copy()
     env["TT_V1_RUN_COMMAND"] = "python " + shlex.join(sys.argv)
+    # --served-model picks the model the prefill_decode mock stack serves,
+    # independent of the catalog --model. The smoke runner reads $MODEL (an
+    # explicit value wins over the --model-derived default), so forward it here.
+    served_model = getattr(runtime_config, "served_model", None)
+    if served_model:
+        env["MODEL"] = served_model
 
     logger.info(
         "Delegating workflow %r to v2 engine via %s.", v2_workflow, delegate_desc

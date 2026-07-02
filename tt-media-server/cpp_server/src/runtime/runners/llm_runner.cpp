@@ -30,9 +30,31 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     : config(config), resultQueue(resultQueue), cancelQueue(cancelQueue) {
   scheduler = makeScheduler(config, taskQueue, tt::config::maxInFlightCount());
 
-  if (tt::config::llmMode() != config::LLMMode::PREFILL_ONLY) {
+  // The mock memoryLoop grants every allocation trivially (slotId=0, no
+  // device). Run it whenever this worker services its own allocations: always
+  // outside PREFILL_ONLY, and ALSO in PREFILL_ONLY on a mock backend —
+  // otherwise an offloaded (disaggregated) prefill request hangs forever on an
+  // unserviced allocation queue. Real prefill backends manage KV memory
+  // elsewhere, so this stays scoped to the mock runner.
+  const bool isMockBackend =
+      config.runner_type == config::ModelRunnerType::MOCK;
+  const bool prefillOnly =
+      tt::config::llmMode() == config::LLMMode::PREFILL_ONLY;
+  if (!prefillOnly) {
     memoryManager = std::make_unique<services::MemoryManager>();
     memoryThread = std::thread([this] { memoryLoop(); });
+  } else if (isMockBackend) {
+    // The disaggregated mock stack relies on this loop, but its memory queues
+    // are created by the SessionManager. Unit tests construct the runner with
+    // no SessionManager, so the queues are absent — tolerate that and skip the
+    // loop rather than failing construction.
+    try {
+      memoryManager = std::make_unique<services::MemoryManager>();
+      memoryThread = std::thread([this] { memoryLoop(); });
+    } catch (const std::exception& e) {
+      TT_LOG_WARN("[LLMRunner] Mock prefill-only memory loop disabled: {}",
+                  e.what());
+    }
   }
 
   try {
