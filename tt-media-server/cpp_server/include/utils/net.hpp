@@ -60,16 +60,16 @@ inline ParsedUrl parseUrl(const std::string& endpointList) {
     try {
       out.port = std::stoi(url.substr(colon + 1));
     } catch (...) {
-      throw std::runtime_error(
-          "net::parseUrl: invalid port in endpoint '" + endpointList + "'");
+      throw std::runtime_error("net::parseUrl: invalid port in endpoint '" +
+                               endpointList + "'");
     }
   } else {
     out.host = url;
     out.port = 2379;
   }
   if (out.host.empty()) {
-    throw std::runtime_error(
-        "net::parseUrl: empty host in endpoint '" + endpointList + "'");
+    throw std::runtime_error("net::parseUrl: empty host in endpoint '" +
+                             endpointList + "'");
   }
   return out;
 }
@@ -105,13 +105,12 @@ inline struct addrinfo* fetchAddrInfo(const std::string& host) {
   hints.ai_family = AF_INET;       // IPv4-only
   hints.ai_socktype = SOCK_DGRAM;  // UDP
   struct addrinfo* res = nullptr;
-  
+
   // Fires up DNS resolver to resolve the hostname to an IP address.
   int rc = ::getaddrinfo(host.c_str(), /*service=*/nullptr, &hints, &res);
   if (rc != 0) {
-    throw std::runtime_error(
-        "net::fetchAddrInfo: getaddrinfo failed for '" + host + "': " +
-        gai_strerror(rc));
+    throw std::runtime_error("net::fetchAddrInfo: getaddrinfo failed for '" +
+                             host + "': " + gai_strerror(rc));
   }
   return res;
 }
@@ -145,8 +144,8 @@ inline std::string localIpFromSocket(int fd) {
   struct sockaddr_in local{};
   socklen_t len = sizeof(local);
 
-  // get the local address of the socket. Kernel figures out which local IP to use when connecting to the etcd.
-  // This IP will be dynamo-net one
+  // get the local address of the socket. Kernel figures out which local IP to
+  // use when connecting to the etcd. This IP will be dynamo-net one
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local), &len) != 0) {
     throw std::runtime_error(
         std::string("net::localIpFromSocket: getsockname failed: ") +
@@ -163,15 +162,16 @@ inline std::string localIpFromSocket(int fd) {
 
 /// High-level: return the source IP the kernel would use to route to `host`
 /// (a hostname or literal IP). Sends no packets — uses the UDP-connect trick:
-/// `fetchAddrInfo` → `openUdpSocket` → `connectUdpSocket` → `localIpFromSocket`.
-/// Returns an empty string on any failure (DNS, socket, route) so callers can
-/// fall back to a heuristic without handling exceptions.
+/// `fetchAddrInfo` → `openUdpSocket` → `connectUdpSocket` →
+/// `localIpFromSocket`. Returns an empty string on any failure (DNS, socket,
+/// route) so callers can fall back to a heuristic without handling exceptions.
 inline std::string sourceIpForRoute(const std::string& host) {
   try {
     AddrInfoGuard res(fetchAddrInfo(host));
     FdGuard fd(openUdpSocket());
 
-    // connect our socket to the etcd address. Kernel figures out our source IP to reach etcd
+    // connect our socket to the etcd address. Kernel figures out our source IP
+    // to reach etcd
     connectUdpSocket(fd.fd, res.get());
 
     // now figure out which source IP was it...
