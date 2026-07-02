@@ -155,8 +155,9 @@ templates:
 - weights:
     - google/gemma-4-31b-it
   impl: tt_transformers
-  tt_metal_commit: "a4967d5f39d"  # tt-metal PR #47556 — hybrid KV + prefill trace fix (shared image)
-  vllm_commit: "375df057"  # tenstorrent/vllm dev HEAD; incl. #431 (reasoning+tool parsers in vllm-tt-plugin, bake dropped) + #421 hybrid-KV per-model max tokens + #433 (plugin no longer clobbers the tt-metal vllm env, so no Dockerfile reinstall hack needed). Requires a rebuilt image (docker_image tag is derived from this commit).
+  # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
+  # them; only prod specs carry commits). The image is supplied at runtime via
+  # --override-docker-image; the prod gemma4 specs pin the build commits.
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
@@ -211,8 +212,9 @@ templates:
 - weights:
     - google/gemma-4-12b-it
   impl: tt_transformers
-  tt_metal_commit: "a4967d5f39d"  # tt-metal PR #47556 — hybrid KV + prefill trace fix (shared image)
-  vllm_commit: "375df057"  # tenstorrent/vllm dev HEAD; incl. #431 (reasoning+tool parsers in vllm-tt-plugin, bake dropped) + #421 hybrid-KV per-model max tokens + #433 (plugin no longer clobbers the tt-metal vllm env, so no Dockerfile reinstall hack needed). Requires a rebuilt image (docker_image tag is derived from this commit).
+  # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
+  # them; only prod specs carry commits). The image is supplied at runtime via
+  # --override-docker-image; the prod gemma4 specs pin the build commits.
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
