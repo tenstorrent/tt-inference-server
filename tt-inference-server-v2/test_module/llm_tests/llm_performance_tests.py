@@ -29,6 +29,7 @@ from llm_module import (
     LLMDriver,
     LLMPerformanceRunner,
     LLMRunConfig,
+    RemoteOpenAIController,
     ServerConnection,
     ServerController,
 )
@@ -58,22 +59,30 @@ def run_llm_performance(
     ``auth_token`` is sent to the inference server (e.g. a minted JWT
     exported as the bearer token); empty string disables auth.
     """
+    server_base_url = ctx.server_url if ctx.remote_server else ctx.server_host
     server = ServerConnection(
-        base_url=ctx.server_host,
+        base_url=server_base_url,
         service_port=ctx.server_port,
         model=ctx.model_spec.hf_model_repo,
         auth_token=auth_token,
+        is_remote=ctx.remote_server,
     )
     output_dir = Path(ctx.output_path) / output_subdir
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
     context = DriverContext(output_dir=output_dir, device=device_label)
 
     if server_controller is None:
-        server_controller = HttpServerController(
-            base_url=ctx.server_host,
-            service_port=ctx.server_port,
-            auth_token=auth_token,
-        )
+        if ctx.remote_server:
+            server_controller = RemoteOpenAIController(
+                base_url=server.url_with_port,
+                auth_token=auth_token,
+            )
+        else:
+            server_controller = HttpServerController(
+                base_url=ctx.server_host,
+                service_port=ctx.server_port,
+                auth_token=auth_token,
+            )
 
     runner = LLMPerformanceRunner(
         driver=driver,
