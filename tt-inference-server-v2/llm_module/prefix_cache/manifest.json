@@ -2,6 +2,14 @@
   "_comment": [
     "Opinionated prefix-caching benchmark scenarios run by --tools aiperf --prefix-cache.",
     "Each scenario produces multiple runs (cartesian product of concurrencies x arrivals x isl_profiles).",
+    "Presets:",
+    "  - ci            : tiny regression sweep.",
+    "  - full          : comprehensive serving-validation sweep.",
+    "  - highcache_50k : customer trillion-scale shape -- 50K shared (cacheable) prefix",
+    "                    + 5K new ISL + 500 OSL at concurrency 32. Steady-state KV-cache",
+    "                    hit-rate target ~90.9% = 50000/(50000+5000). Pairs shared_system",
+    "                    (100% reuse) with a matched zero-prefix baseline so the report",
+    "                    isolates the TTFT (P50/P90/P99) uplift from prefix caching.",
     "Scenarios:",
     "  - shared_system  : single shared system prompt (100% prefix reuse).",
     "  - prefix_pool    : pool of N distinct prefixes; reuse_ratio = request_count / N.",
@@ -122,6 +130,37 @@
             {"pattern": "poisson"},
             {"pattern": "gamma", "smoothness": 0.5}
           ]
+        },
+        "baseline": {
+          "arrival_patterns": [{"pattern": "constant"}]
+        }
+      }
+    },
+    "highcache_50k": {
+      "_comment": [
+        "Customer specific shape: 50K shared (cacheable) prefix +",
+        "5K new ISL + 500 OSL at concurrency 32 (one SC16 decode unit).",
+        "shared_system_prompt_length=50000 is sent as an identical system message",
+        "across every session (100% prefix reuse), so once warm the per-session KV",
+        "cache hit-rate is 50000/(50000+5000) = ~90.9% (>= the customer's 90% target).",
+        "isl_mean=5000 is the *new* per-request input; total ISL/request ~= 55000.",
+        "The matched zero-prefix baseline (same 5K ISL / 500 OSL / c32) isolates the",
+        "TTFT P50/P90/P99 uplift attributable to prefix caching.",
+        "request_count=256 (8 waves of 32) gives usable TTFT percentiles incl. a rough",
+        "P99; bump it for a tighter P99. Scrape the worker tt_prefix_cache_* counters",
+        "with --prefix-cache-metrics-url to populate the hit-rate column."
+      ],
+      "request_count": 256,
+      "concurrencies": [32],
+      "isl_profiles": [
+        {"name": "new5k", "isl_mean": 5000, "isl_stddev": 0}
+      ],
+      "osl_mean": 500,
+      "osl_stddev": 0,
+      "scenarios": {
+        "shared_system": {
+          "shared_system_prompt_length": 50000,
+          "arrival_patterns": [{"pattern": "constant"}]
         },
         "baseline": {
           "arrival_patterns": [{"pattern": "constant"}]
