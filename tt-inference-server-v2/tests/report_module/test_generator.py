@@ -15,9 +15,17 @@ from report_module.generator import (
     ReportGenerator,
     _coerce_schema,
     _collapse_same_heading_blocks,
+    _consolidate_eval_blocks,
     generate_report,
 )
 from report_module.schema import Block, ReportSchema
+
+
+def _eval_block(task: str, **data) -> Block:
+    payload = {"task_name": task, "tolerance": 0.05, **data}
+    return Block(
+        kind="evals", task_type="llm", title=f"LLM Eval — {task}", data=payload
+    )
 
 
 def _schema(*blocks: Block) -> ReportSchema:
@@ -59,6 +67,30 @@ class TestCollapseSameHeadingBlocks:
         assert len(_collapse_same_heading_blocks([a, b])) == 2
 
 
+class TestConsolidateEvalBlocks:
+    def test_multiple_evals_merge_into_one_block(self):
+        sections = [_eval_block("a", score=1.0), _eval_block("b", score=2.0)]
+        merged = _consolidate_eval_blocks(sections)
+        assert len(merged) == 1
+        assert merged[0].title == "Accuracy Evaluations"
+        assert merged[0].task_type is None
+        records = merged[0].data["records"]
+        assert [r["task_name"] for r in records] == ["a", "b"]
+
+    def test_single_eval_block_is_left_unchanged(self):
+        sections = [_eval_block("a", score=1.0)]
+        assert _consolidate_eval_blocks(sections) is sections
+
+    def test_non_eval_blocks_are_preserved_in_order(self):
+        head = Block(kind="benchmarks", title="B", data={"records": [{"x": 1}]})
+        tail = Block(kind="spec_tests", title="S", data={"records": [{"y": 2}]})
+        merged = _consolidate_eval_blocks(
+            [head, _eval_block("a"), _eval_block("b"), tail]
+        )
+        assert [b.kind for b in merged] == ["benchmarks", "evals", "spec_tests"]
+        assert merged[1].title == "Accuracy Evaluations"
+
+
 class TestGenerate:
     def test_writes_markdown_and_json(self, tmp_path: Path):
         result = generate_report(
@@ -74,6 +106,21 @@ class TestGenerate:
     def test_release_header_carries_model_and_device(self, tmp_path: Path):
         result = ReportGenerator().generate(_schema(), tmp_path)
         assert "Tenstorrent Model Release Summary: m on n300" in result.markdown
+
+    def test_evals_render_as_single_table_with_note(self, tmp_path: Path):
+        result = ReportGenerator().generate(
+            _schema(
+                _eval_block("meta_ifeval", gpu_reference_score=81.38, accuracy_check=2),
+                _eval_block("longbench_code_e", score=0.0, accuracy_check=3),
+            ),
+            tmp_path,
+        )
+        md = result.markdown
+        assert md.count("### Accuracy Evaluations for m on n300") == 1
+        assert "LLM Eval — meta_ifeval" not in md
+        assert "Note: The ratio to published scores" in md
+        # Both tasks live in the one consolidated table.
+        assert "meta_ifeval" in md and "longbench_code_e" in md
 
     def test_acceptance_criteria_promoted_to_top_level_json(self, tmp_path: Path):
         schema = ReportSchema(
