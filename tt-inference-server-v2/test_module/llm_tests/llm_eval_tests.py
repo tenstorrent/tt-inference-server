@@ -26,7 +26,7 @@ from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
-_WAIT_HEALTHY_TIMEOUT_S = 1200.0
+_WAIT_HEALTHY_TIMEOUT_S = 3600.0
 
 
 def _device_label(ctx: MediaContext) -> str:
