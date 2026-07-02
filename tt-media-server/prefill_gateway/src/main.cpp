@@ -300,8 +300,7 @@ int main(int argc, char** argv) {
   }
 
   auto healthProvider = [&registry, &decodeSm]() {
-    return buildGatewayHealthStatus(registry, "zmq",
-                                    decodeSm.isConnected());
+    return buildGatewayHealthStatus(registry, "zmq", decodeSm.isConnected());
   };
   if (!metricsServer.start(cfg.metricsPort)) {
     TT_LOG_ERROR("[Gateway] Failed to start metrics endpoint on port {}",
@@ -335,16 +334,16 @@ int main(int argc, char** argv) {
       [&zmqPrefillRouter](
           const std::string& serverId,
           const tt::sockets::PrefillRequestMessage& msg) -> bool {
-    return zmqPrefillRouter.sendObject(
-        serverId, tt::sockets::tags::PREFILL_REQUEST, msg);
+    return zmqPrefillRouter.sendObject(serverId,
+                                       tt::sockets::tags::PREFILL_REQUEST, msg);
   };
 
   senders.sendCancelToPrefill =
       [&zmqPrefillRouter](
           const std::string& serverId,
           const tt::sockets::CancelPrefillMessage& msg) -> bool {
-    return zmqPrefillRouter.sendObject(
-        serverId, tt::sockets::tags::CANCEL_PREFILL, msg);
+    return zmqPrefillRouter.sendObject(serverId,
+                                       tt::sockets::tags::CANCEL_PREFILL, msg);
   };
 
   senders.sendResultToDecode =
@@ -400,67 +399,65 @@ int main(int argc, char** argv) {
   decodeSm.start();
 
   const auto prefillStaleTimeout = cfg.prefillStaleTimeout;
-  std::jthread watchdogThread(
-      [&registry, &zmqPrefillRouter,
-       prefillStaleTimeout](std::stop_token stopToken) {
+  std::jthread watchdogThread([&registry, &zmqPrefillRouter,
+                               prefillStaleTimeout](std::stop_token stopToken) {
+    while (!stopToken.stop_requested()) {
+      for (const auto& serverId :
+           zmqPrefillRouter.takeStaleServers(prefillStaleTimeout)) {
+        TT_LOG_WARN("[Gateway] Prefill '{}' registration timed out", serverId);
+        registry.markDown(serverId);
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+  });
+}
+
+std::jthread requestTimeoutThread;
+if (cfg.requestTimeout.count() > 0) {
+  requestTimeoutThread =
+      std::jthread([&dispatcherPtr](std::stop_token stopToken) {
         while (!stopToken.stop_requested()) {
-          for (const auto& serverId :
-               zmqPrefillRouter.takeStaleServers(prefillStaleTimeout)) {
-            TT_LOG_WARN("[Gateway] Prefill '{}' registration timed out",
-                        serverId);
-            registry.markDown(serverId);
-          }
+          dispatcherPtr->onRequestTimeouts();
           std::this_thread::sleep_for(std::chrono::milliseconds(500));
-          }
-        });
-  }
-
-  std::jthread requestTimeoutThread;
-  if (cfg.requestTimeout.count() > 0) {
-    requestTimeoutThread =
-        std::jthread([&dispatcherPtr](std::stop_token stopToken) {
-          while (!stopToken.stop_requested()) {
-            dispatcherPtr->onRequestTimeouts();
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-          }
-        });
-  }
-
-  std::jthread metricsSnapshotThread(
-      [&registry, &metrics](std::stop_token stopToken) {
-        while (!stopToken.stop_requested()) {
-          const auto snapshots = buildPrefillMetrics(registry);
-          size_t cachedBlocks = 0;
-          for (const auto& snapshot : snapshots) {
-            cachedBlocks += snapshot.cachedBlocks;
-          }
-          metrics.setPrefillSnapshots(snapshots);
-          metrics.setRoutingTableSize(cachedBlocks);
-          std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
       });
+}
 
-  TT_LOG_INFO("[Gateway] Running. Send SIGINT/SIGTERM to stop.");
-
-  std::signal(SIGINT, signalHandler);
-  std::signal(SIGTERM, signalHandler);
-
-  while (!gStop) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+std::jthread metricsSnapshotThread([&registry,
+                                    &metrics](std::stop_token stopToken) {
+  while (!stopToken.stop_requested()) {
+    const auto snapshots = buildPrefillMetrics(registry);
+    size_t cachedBlocks = 0;
+    for (const auto& snapshot : snapshots) {
+      cachedBlocks += snapshot.cachedBlocks;
+    }
+    metrics.setPrefillSnapshots(snapshots);
+    metrics.setRoutingTableSize(cachedBlocks);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   }
+});
 
-  TT_LOG_INFO("[Gateway] Shutting down…");
-  requestTimeoutThread.request_stop();
-  if (requestTimeoutThread.joinable()) requestTimeoutThread.join();
-  metricsSnapshotThread.request_stop();
-  if (metricsSnapshotThread.joinable()) metricsSnapshotThread.join();
-  watchdogThread.request_stop();
-  if (watchdogThread.joinable()) watchdogThread.join();
-  decodeSm.stop();
-  zmqPrefillRouter.stop();
-  healthServer.stop();
-  metricsServer.stop();
-  TT_LOG_INFO("[Gateway] Stopped.");
+TT_LOG_INFO("[Gateway] Running. Send SIGINT/SIGTERM to stop.");
 
-  return 0;
+std::signal(SIGINT, signalHandler);
+std::signal(SIGTERM, signalHandler);
+
+while (!gStop) {
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+}
+
+TT_LOG_INFO("[Gateway] Shutting down…");
+requestTimeoutThread.request_stop();
+if (requestTimeoutThread.joinable()) requestTimeoutThread.join();
+metricsSnapshotThread.request_stop();
+if (metricsSnapshotThread.joinable()) metricsSnapshotThread.join();
+watchdogThread.request_stop();
+if (watchdogThread.joinable()) watchdogThread.join();
+decodeSm.stop();
+zmqPrefillRouter.stop();
+healthServer.stop();
+metricsServer.stop();
+TT_LOG_INFO("[Gateway] Stopped.");
+
+return 0;
 }
