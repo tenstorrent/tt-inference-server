@@ -588,20 +588,9 @@ SessionManager::tryAcquireByPrefixHash(
       "keyHash={}, best match={} blocks",
       candidates.size(), keyHash, candidates.front().matchedBlocks);
 
-  const float threshold = tt::config::prefixCacheHitThreshold();
   bool anyBusy = false;
   for (const auto& candidate : candidates) {
-    if (!domain::BlockMatcher::passesHitThreshold(candidate, threshold)) {
-      if (threshold > 0.0f) {
-        const float matchPercent = (candidate.matchedBlocks * 100.0f) /
-                                   static_cast<float>(candidate.sessionBlocks);
-        TT_LOG_INFO(
-            "[SessionManager] Prefix cache candidate rejected: "
-            "matchedBlocks={} sessionBlocks={} matchPercent={:.1f}% < "
-            "threshold={:.1f}%",
-            candidate.matchedBlocks, candidate.sessionBlocks, matchPercent,
-            threshold);
-      }
+    if (!domain::BlockMatcher::passesHitThreshold(candidate)) {
       continue;
     }
 
