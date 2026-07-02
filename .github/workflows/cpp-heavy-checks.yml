@@ -652,7 +652,6 @@ jobs:
           fi
 
   cpp-server-gateway-split:
-    if: ${{ inputs.run_split_tests }}
     name: C++ Server Gateway Split Test
     # Self-hosted: this job launches a PrefillGateway plus 3-4 cpp_server
     # processes (each -t 4) concurrently. On a 4-core GitHub runner that
