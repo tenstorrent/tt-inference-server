@@ -38,10 +38,11 @@ Run directory (--run-dir or ORCHESTRATOR_RUN_DIR env var):
   "pr_url": "...", "error": "..."}.
 
 Max tool rounds (--max-tool-rounds):
-  Hard cap on tool-call iterations per agent call.  The default (100) is
-  intentionally generous because the cap is a safety rail, not a cost-control
-  mechanism.  Use a lower value for simple single-file tasks and a higher
-  value for large multi-file refactors.
+  Hard cap on tool-call iterations per agent call.  When omitted, a
+  per-provider default is used: tt-console defaults to 80 (models like
+  Kimi-K2 burn 20-30 rounds in exploration alone), litellm defaults to 40.
+  Use a lower value for simple single-file tasks and a higher value for
+  large multi-file refactors.
 
 Model/provider overrides (--implementer-* / --reviewer-*):
   Override only the model, provider, or max_tokens for the implementer or all
@@ -60,7 +61,7 @@ import sys, os, argparse, json, re, subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from orchestrator import orchestrate, orchestrate_groom, DEFAULT_MAX_TOOL_ROUNDS
-from orchestrator.config import validate_provider_keys
+from orchestrator.config import validate_provider_keys, PROVIDER_MAX_TOOL_ROUNDS
 from orchestrator.personas import ALL_PERSONAS, GROOM_REVIEWERS, GROOMER
 
 _TT_CONSOLE_DEFAULT_MAX_TOKENS = 32768
@@ -164,6 +165,20 @@ def build_reviewer_override(args) -> dict:
     return override
 
 
+def resolve_max_tool_rounds(args) -> int:
+    """Return the effective max_tool_rounds for this run.
+
+    Priority: explicit --max-tool-rounds > provider default > DEFAULT_MAX_TOOL_ROUNDS.
+    The provider default applies when --implementer-provider is given without
+    --max-tool-rounds, letting callers skip the flag when switching providers.
+    """
+    if args.max_tool_rounds is not None:
+        return args.max_tool_rounds
+    if args.implementer_provider is not None:
+        return PROVIDER_MAX_TOOL_ROUNDS.get(args.implementer_provider, DEFAULT_MAX_TOOL_ROUNDS)
+    return DEFAULT_MAX_TOOL_ROUNDS
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="run.py",
@@ -198,6 +213,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--run-dir",
         metavar="DIR",
         default=None,
+        dest="run_dir",
         help=(
             "Directory to write status.json into during the run. "
             "Enables the nohup+polling pattern: start the process detached and "
@@ -209,9 +225,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-tool-rounds",
         metavar="N",
         type=int,
-        default=DEFAULT_MAX_TOOL_ROUNDS,
+        default=None,
         help=(
-            f"Hard cap on tool-call iterations per agent call (default: {DEFAULT_MAX_TOOL_ROUNDS}). "
+            "Hard cap on tool-call iterations per agent call. "
+            "When omitted, a per-provider default is used: "
+            f"tt-console defaults to {PROVIDER_MAX_TOOL_ROUNDS['tt-console']}, "
+            f"litellm defaults to {PROVIDER_MAX_TOOL_ROUNDS['litellm']}. "
             "Lower this for simple single-file tasks; raise it for large "
             "multi-file refactors.  The cap is a safety rail — cost is better "
             "controlled at the token/dollar level."
@@ -288,6 +307,7 @@ def main():
 
     implementer_override = build_implementer_override(args)
     reviewer_override = build_reviewer_override(args)
+    max_tool_rounds = resolve_max_tool_rounds(args)
 
     # Collect the effective provider set (persona defaults + any CLI overrides)
     # so we can validate keys before any agent work begins.
@@ -333,7 +353,7 @@ def main():
                 args.task,
                 repo_path,
                 max_debate_rounds=3,
-                max_tool_rounds=args.max_tool_rounds,
+                max_tool_rounds=max_tool_rounds,
                 verbose=True,
                 api_key=args.api_key,
             )
@@ -342,7 +362,7 @@ def main():
                 args.task,
                 repo_path,
                 max_debate_rounds=3,
-                max_tool_rounds=args.max_tool_rounds,
+                max_tool_rounds=max_tool_rounds,
                 verbose=True,
                 api_key=args.api_key,
                 implementer_override=implementer_override or None,
@@ -357,7 +377,6 @@ def main():
         write_status(run_dir, "done")
     else:
         write_status(run_dir, "failed", error="orchestrator returned failure")
-
     sys.exit(0 if success else 1)
 
 

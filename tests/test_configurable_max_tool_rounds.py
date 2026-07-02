@@ -283,12 +283,14 @@ class TestRunPyCLI:
         assert hasattr(args, "max_tool_rounds")
 
     def test_default_is_100(self):
-        """--max-tool-rounds must default to DEFAULT_MAX_TOOL_ROUNDS (100)."""
+        """When omitted with no provider, resolved max_tool_rounds equals DEFAULT_MAX_TOOL_ROUNDS."""
         from orchestrator import DEFAULT_MAX_TOOL_ROUNDS
         mod = self._load_run_module()
         parser = mod.build_parser()
         args = parser.parse_args(["/fake/repo", "some task"])
-        assert args.max_tool_rounds == DEFAULT_MAX_TOOL_ROUNDS
+        # Raw parse result is None; resolution is deferred to resolve_max_tool_rounds().
+        assert args.max_tool_rounds is None
+        assert mod.resolve_max_tool_rounds(args) == DEFAULT_MAX_TOOL_ROUNDS
 
     def test_custom_value_parsed(self):
         """--max-tool-rounds N must be parsed as integer N."""
@@ -358,3 +360,139 @@ class TestRunPyCLI:
             mod.main()
         assert exc_info.value.code == 0
         assert captured["max_tool_rounds"] == 50
+
+
+# ---------------------------------------------------------------------------
+# Per-provider defaults (issue #158)
+# ---------------------------------------------------------------------------
+
+class TestProviderMaxToolRoundsDefaults:
+    def test_provider_defaults_exist_in_config(self):
+        """PROVIDER_MAX_TOOL_ROUNDS must be importable from config."""
+        from orchestrator.config import PROVIDER_MAX_TOOL_ROUNDS
+        assert "litellm" in PROVIDER_MAX_TOOL_ROUNDS
+        assert "tt-console" in PROVIDER_MAX_TOOL_ROUNDS
+
+    def test_litellm_default_is_40(self):
+        from orchestrator.config import PROVIDER_MAX_TOOL_ROUNDS
+        assert PROVIDER_MAX_TOOL_ROUNDS["litellm"] == 40
+
+    def test_tt_console_default_is_80(self):
+        from orchestrator.config import PROVIDER_MAX_TOOL_ROUNDS
+        assert PROVIDER_MAX_TOOL_ROUNDS["tt-console"] == 80
+
+
+class TestResolveMaxToolRounds:
+    def _load_run_module(self):
+        import importlib.util, os
+        run_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "run.py",
+        )
+        spec = importlib.util.spec_from_file_location("run_module", run_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def _args(self, max_tool_rounds=None, implementer_provider=None):
+        import argparse
+        ns = argparse.Namespace(
+            max_tool_rounds=max_tool_rounds,
+            implementer_provider=implementer_provider,
+        )
+        return ns
+
+    def test_explicit_flag_takes_precedence_over_provider_default(self):
+        mod = self._load_run_module()
+        args = self._args(max_tool_rounds=99, implementer_provider="tt-console")
+        assert mod.resolve_max_tool_rounds(args) == 99
+
+    def test_tt_console_provider_without_flag_returns_80(self):
+        mod = self._load_run_module()
+        args = self._args(implementer_provider="tt-console")
+        assert mod.resolve_max_tool_rounds(args) == 80
+
+    def test_litellm_provider_without_flag_returns_40(self):
+        mod = self._load_run_module()
+        args = self._args(implementer_provider="litellm")
+        assert mod.resolve_max_tool_rounds(args) == 40
+
+    def test_no_provider_no_flag_returns_global_default(self):
+        mod = self._load_run_module()
+        from orchestrator import DEFAULT_MAX_TOOL_ROUNDS
+        args = self._args()
+        assert mod.resolve_max_tool_rounds(args) == DEFAULT_MAX_TOOL_ROUNDS
+
+    def test_unknown_provider_without_flag_falls_back_to_global_default(self):
+        mod = self._load_run_module()
+        from orchestrator import DEFAULT_MAX_TOOL_ROUNDS
+        args = self._args(implementer_provider="some-future-provider")
+        assert mod.resolve_max_tool_rounds(args) == DEFAULT_MAX_TOOL_ROUNDS
+
+    def test_cli_no_flag_defaults_to_none_before_resolution(self):
+        """--max-tool-rounds must parse as None when omitted (resolution happens in main)."""
+        mod = self._load_run_module()
+        parser = mod.build_parser()
+        args = parser.parse_args(["/fake/repo", "task"])
+        assert args.max_tool_rounds is None
+
+    def test_tt_console_provider_applies_80_in_main(self, monkeypatch, tmp_path):
+        """When --implementer-provider tt-console is passed without --max-tool-rounds,
+        main() must call orchestrate() with max_tool_rounds=80."""
+        import sys
+        mod = self._load_run_module()
+
+        captured = {}
+
+        def fake_orchestrate(task, repo_path, **kwargs):
+            captured["max_tool_rounds"] = kwargs.get("max_tool_rounds")
+            return True
+
+        fake_repo = tmp_path / "repo"
+        fake_repo.mkdir()
+        (fake_repo / ".git").mkdir()
+
+        monkeypatch.setattr(mod, "orchestrate", fake_orchestrate)
+        monkeypatch.setattr(mod, "orchestrate_groom", lambda *a, **kw: True)
+        # Skip key validation so the test doesn't need real credentials.
+        monkeypatch.setattr(mod, "validate_provider_keys", lambda providers: None)
+        monkeypatch.setattr(
+            sys, "argv",
+            ["run.py", "--implementer-provider", "tt-console",
+             str(fake_repo), "fix issue #42"],
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            mod.main()
+        assert exc_info.value.code == 0
+        assert captured["max_tool_rounds"] == 80
+
+    def test_explicit_flag_overrides_tt_console_default_in_main(self, monkeypatch, tmp_path):
+        """An explicit --max-tool-rounds must win over the tt-console provider default."""
+        import sys
+        mod = self._load_run_module()
+
+        captured = {}
+
+        def fake_orchestrate(task, repo_path, **kwargs):
+            captured["max_tool_rounds"] = kwargs.get("max_tool_rounds")
+            return True
+
+        fake_repo = tmp_path / "repo"
+        fake_repo.mkdir()
+        (fake_repo / ".git").mkdir()
+
+        monkeypatch.setattr(mod, "orchestrate", fake_orchestrate)
+        monkeypatch.setattr(mod, "orchestrate_groom", lambda *a, **kw: True)
+        monkeypatch.setattr(mod, "validate_provider_keys", lambda providers: None)
+        monkeypatch.setattr(
+            sys, "argv",
+            ["run.py", "--implementer-provider", "tt-console",
+             "--max-tool-rounds", "120",
+             str(fake_repo), "big refactor"],
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            mod.main()
+        assert exc_info.value.code == 0
+        assert captured["max_tool_rounds"] == 120

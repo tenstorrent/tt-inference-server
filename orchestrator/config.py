@@ -50,6 +50,13 @@ PROVIDER_REGISTRY: dict[str, dict] = {
     },
 }
 
+# Per-provider max_tool_rounds defaults.  tt-console hosts models (e.g. Kimi-K2)
+# that burn 20-30 tool calls in exploration alone, so they need a higher budget.
+PROVIDER_MAX_TOOL_ROUNDS: dict[str, int] = {
+    "litellm": 40,
+    "tt-console": 80,
+}
+
 
 def validate_provider_keys(providers: set[str]) -> None:
     """Raise ValueError at startup for any provider whose key is absent."""
