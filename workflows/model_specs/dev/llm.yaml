@@ -237,6 +237,7 @@ templates:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
       vllm_args:
         async_scheduling: true
+        enable_auto_tool_choice: True
         reasoning_parser_name: qwen3
         tool_call_parser_name: qwen3_coder
       override_tt_config:
