@@ -150,10 +150,10 @@ uint64_t RemoteKVManagerImpl::downloadFromStore(
 
   {
     std::lock_guard<std::mutex> lock(mtx);
-    auto [it, inserted] = downloads.emplace(
-        id, DownloadState{MigrationStatus::IN_PROGRESS,
-                          /*downloadedBlockHashes=*/{}, now,
-                          /*successfulAcksReceived=*/0});
+    auto [it, inserted] =
+        downloads.emplace(id, DownloadState{MigrationStatus::IN_PROGRESS,
+                                            /*downloadedBlockHashes=*/{}, now,
+                                            /*successfulAcksReceived=*/0});
     if (!inserted) {
       TT_LOG_WARN(
           "[RemoteKVManagerImpl] id collision on download transfer_id={}; "
@@ -211,6 +211,20 @@ DownloadKVResult RemoteKVManagerImpl::getDownloadResult(
 
 uint64_t RemoteKVManagerImpl::offloadToStore(const OffloadKVRequest& request) {
   const uint64_t id = tt::utils::MigrationIDGenerator::generate();
+  const auto now = std::chrono::steady_clock::now();
+
+  {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto [it, inserted] =
+        offloads.emplace(id, OffloadState{MigrationStatus::IN_PROGRESS, now});
+    if (!inserted) {
+      TT_LOG_WARN(
+          "[RemoteKVManagerImpl] id collision on offload transfer_id={}; "
+          "returning existing record (status={})",
+          id, static_cast<int>(it->second.status));
+      return id;
+    }
+  }
 
   const tt::messaging::OffloadRequestMessage msg{
       .id = id,
@@ -228,7 +242,8 @@ uint64_t RemoteKVManagerImpl::offloadToStore(const OffloadKVRequest& request) {
         "[RemoteKVManagerImpl] offloadRequestProducer.send failed for "
         "transfer_id={}: {}",
         id,
-        offloadRequestProducer ? err : std::string("no offloadRequestProducer"));
+        offloadRequestProducer ? err
+                               : std::string("no offloadRequestProducer"));
   } else {
     TT_LOG_INFO(
         "[RemoteKVManagerImpl] offloadToStore published transfer_id={} "
@@ -239,9 +254,13 @@ uint64_t RemoteKVManagerImpl::offloadToStore(const OffloadKVRequest& request) {
 }
 
 MigrationStatus RemoteKVManagerImpl::getOffloadStatus(
-    uint64_t /*transferId*/) const {
-  // Offloads are fire-and-forget: no per-submission state is retained.
-  return MigrationStatus::UNKNOWN;
+    uint64_t transferId) const {
+  std::lock_guard<std::mutex> lock(mtx);
+  auto it = offloads.find(transferId);
+  if (it == offloads.end()) {
+    return MigrationStatus::UNKNOWN;
+  }
+  return it->second.status;
 }
 
 void RemoteKVManagerImpl::drainLoop() {
@@ -295,7 +314,37 @@ void RemoteKVManagerImpl::drainLoop() {
       }
     }
 
-    if (!ackConsumer && !downloadAckConsumer) {
+    if (offloadAckConsumer) {
+      auto msg = offloadAckConsumer->receive(drainPollMs);
+      if (msg.has_value()) {
+        didWork = true;
+        auto parsed = tt::messaging::parseOffloadResponse(*msg);
+        if (!parsed.has_value()) {
+          TT_LOG_WARN(
+              "[RemoteKVManagerImpl] dropping unparseable offload-ack payload: "
+              "{}",
+              *msg);
+        } else {
+          std::lock_guard<std::mutex> lock(mtx);
+          auto it = offloads.find(parsed->id);
+          if (it == offloads.end()) {
+            TT_LOG_WARN(
+                "[RemoteKVManagerImpl] ack for unknown offload transfer_id={}; "
+                "ignoring",
+                parsed->id);
+          } else if (it->second.status != MigrationStatus::IN_PROGRESS) {
+            TT_LOG_DEBUG(
+                "[RemoteKVManagerImpl] ack for already-terminal offload "
+                "transfer_id={}, status={}; ignoring",
+                parsed->id, static_cast<int>(it->second.status));
+          } else {
+            it->second.status = parsed->status;
+          }
+        }
+      }
+    }
+
+    if (!ackConsumer && !downloadAckConsumer && !offloadAckConsumer) {
       // Nothing to poll on -- respect the cadence so the loop doesn't spin.
       std::this_thread::sleep_for(std::chrono::milliseconds(drainPollMs));
     } else if (!didWork) {

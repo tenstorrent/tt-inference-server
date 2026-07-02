@@ -68,6 +68,8 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
       std::unique_ptr<tt::messaging::IKafkaConsumer> downloadAckConsumer =
           nullptr,
       std::unique_ptr<tt::messaging::IKafkaProducer> offloadRequestProducer =
+          nullptr,
+      std::unique_ptr<tt::messaging::IKafkaConsumer> offloadAckConsumer =
           nullptr);
 
   ~RemoteKVManagerImpl() override;
@@ -104,19 +106,28 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
     std::size_t successfulAcksReceived{0};
   };
 
+  struct OffloadState {
+    MigrationStatus status;
+    std::chrono::steady_clock::time_point submittedAt;
+  };
+
   std::unique_ptr<tt::messaging::IKafkaProducer> requestProducer;
   std::unique_ptr<tt::messaging::IKafkaConsumer> ackConsumer;
   std::unique_ptr<tt::messaging::IKafkaProducer> downloadRequestProducer;
   std::unique_ptr<tt::messaging::IKafkaConsumer> downloadAckConsumer;
   std::unique_ptr<tt::messaging::IKafkaProducer> offloadRequestProducer;
+  std::unique_ptr<tt::messaging::IKafkaConsumer> offloadAckConsumer;
   std::size_t migrationWorkerPoolSize;
   std::chrono::milliseconds timeout;
   std::chrono::milliseconds sweepInterval;
   int drainPollMs;
 
+  // All state is protected by this mutex.
+  // This is temporary solution until performance becomes a priority.
   mutable std::mutex mtx;
   std::unordered_map<uint64_t, MigrationState> migrations;
   std::unordered_map<uint64_t, DownloadState> downloads;
+  std::unordered_map<uint64_t, OffloadState> offloads;
 
   std::atomic<bool> running{false};
   std::thread drainThread;

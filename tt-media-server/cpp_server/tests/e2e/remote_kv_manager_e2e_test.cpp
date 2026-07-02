@@ -281,23 +281,43 @@ class MockDownloadWorker {
 // MockOffloadWorker
 // ---------------------------------------------------------------------------
 //
-// Offload is fire-and-forget from the manager's side, so this mock only
-// needs a request consumer -- it counts / records what showed up on the
-// wire. No ack producer, no scriptable reply.
+// Same shape as MockMigrationWorker but wired to the offload topics. Each
+// received OffloadRequestMessage is answered with an OffloadResponseMessage
+// echoing the migration id and the currently configured status/delay.
+// `dropRequest` swallows the request to simulate a lost ack.
 class MockOffloadWorker {
  public:
+  struct Behavior {
+    MigrationStatus replyStatus{MigrationStatus::SUCCESSFUL};
+    std::chrono::milliseconds replyDelay{0};
+    bool dropRequest{false};
+  };
+
   MockOffloadWorker(const std::string& brokers,
                     const std::string& requestTopic,
-                    const std::string& groupId) {
+                    const std::string& ackTopic, const std::string& groupId) {
     requestConsumer = std::make_unique<tt::messaging::KafkaConsumer>(
         tt::messaging::KafkaConsumerConfig{
             .brokers = brokers, .topic = requestTopic, .group_id = groupId});
+    ackProducer = std::make_unique<tt::messaging::KafkaProducer>(
+        tt::messaging::KafkaProducerConfig{.brokers = brokers,
+                                           .topic = ackTopic});
   }
 
   ~MockOffloadWorker() { stop(); }
 
   MockOffloadWorker(const MockOffloadWorker&) = delete;
   MockOffloadWorker& operator=(const MockOffloadWorker&) = delete;
+
+  void setBehavior(Behavior b) {
+    std::lock_guard<std::mutex> lock(mtx);
+    behavior = b;
+  }
+
+  Behavior getBehavior() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return behavior;
+  }
 
   void start() {
     bool expected = false;
@@ -332,15 +352,33 @@ class MockOffloadWorker {
       if (!parsed.has_value()) continue;
 
       received.fetch_add(1, std::memory_order_relaxed);
-      std::lock_guard<std::mutex> lock(mtx);
-      receivedMessages.push_back(std::move(*parsed));
+      const uint64_t id = parsed->id;
+      {
+        std::lock_guard<std::mutex> lock(mtx);
+        receivedMessages.push_back(std::move(*parsed));
+      }
+
+      const Behavior b = getBehavior();
+      if (b.dropRequest) continue;
+
+      if (b.replyDelay.count() > 0) {
+        std::this_thread::sleep_for(b.replyDelay);
+      }
+
+      const tt::messaging::OffloadResponseMessage response{
+          .id = id, .status = b.replyStatus};
+      const std::string payload = tt::messaging::serialize(response);
+      std::string err;
+      ackProducer->send(payload, &err);
     }
   }
 
   std::unique_ptr<tt::messaging::KafkaConsumer> requestConsumer;
+  std::unique_ptr<tt::messaging::KafkaProducer> ackProducer;
   std::atomic<bool> running{false};
   std::thread thread;
   mutable std::mutex mtx;
+  Behavior behavior;
   std::vector<tt::messaging::OffloadRequestMessage> receivedMessages;
   std::atomic<std::size_t> received{0};
 };
@@ -367,6 +405,7 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
     downloadRequestTopic = "e2e-kv-dl-req-" + suffix;
     downloadAckTopic = "e2e-kv-dl-ack-" + suffix;
     offloadRequestTopic = "e2e-kv-of-req-" + suffix;
+    offloadAckTopic = "e2e-kv-of-ack-" + suffix;
     clientGroup = "e2e-client-" + suffix;
     workerGroup = "e2e-worker-" + suffix;
     downloadWorkerGroup = "e2e-dl-worker-" + suffix;
@@ -391,12 +430,16 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
     auto offloadProducer = std::make_unique<tt::messaging::KafkaProducer>(
         tt::messaging::KafkaProducerConfig{.brokers = brokers,
                                            .topic = offloadRequestTopic});
+    auto offloadConsumer = std::make_unique<tt::messaging::KafkaConsumer>(
+        tt::messaging::KafkaConsumerConfig{.brokers = brokers,
+                                           .topic = offloadAckTopic,
+                                           .group_id = clientGroup + "-of"});
     return std::make_unique<RemoteKVManagerImpl>(
         std::move(producer), std::move(consumer),
         /*migrationWorkerPoolSize=*/1, timeout,
         /*sweepInterval=*/200ms, /*drainPollMs=*/50,
         std::move(downloadProducer), std::move(downloadConsumer),
-        std::move(offloadProducer));
+        std::move(offloadProducer), std::move(offloadConsumer));
   }
 
   std::unique_ptr<MockMigrationWorker> makeWorker() {
@@ -411,8 +454,8 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
   }
 
   std::unique_ptr<MockOffloadWorker> makeOffloadWorker() {
-    return std::make_unique<MockOffloadWorker>(brokers, offloadRequestTopic,
-                                               offloadWorkerGroup);
+    return std::make_unique<MockOffloadWorker>(
+        brokers, offloadRequestTopic, offloadAckTopic, offloadWorkerGroup);
   }
 
   static MigrationRequest sampleRequest() {
@@ -454,6 +497,7 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
   std::string downloadRequestTopic;
   std::string downloadAckTopic;
   std::string offloadRequestTopic;
+  std::string offloadAckTopic;
   std::string clientGroup;
   std::string workerGroup;
   std::string downloadWorkerGroup;
@@ -663,27 +707,42 @@ TEST_F(RemoteKVManagerE2ETest, DownloadReplyFailedPropagates) {
 // Offload scenarios
 // ---------------------------------------------------------------------------
 
-TEST_F(RemoteKVManagerE2ETest, OffloadIsFireAndForget) {
+TEST_F(RemoteKVManagerE2ETest, OffloadSucceedsAfterOneSecondDelay) {
   auto manager = makeManager();
   auto worker = makeOffloadWorker();
+  worker->setBehavior({
+      .replyStatus = MigrationStatus::SUCCESSFUL,
+      .replyDelay = 1s,
+  });
   worker->start();
 
   std::this_thread::sleep_for(KAFKA_GROUP_JOIN_WARMUP);
 
   const auto req = sampleOffloadRequest();
+  const auto issuedAt = std::chrono::steady_clock::now();
   const uint64_t id = manager->offloadToStore(req);
   ASSERT_NE(id, 0u);
 
-  // Fire-and-forget: manager keeps no per-submission state, so status is
-  // UNKNOWN by design.
-  EXPECT_EQ(manager->getOffloadStatus(id), MigrationStatus::UNKNOWN);
+  // While the mock still sleeps its 1s reply delay the manager should
+  // report IN_PROGRESS (offload is no longer fire-and-forget).
+  EXPECT_EQ(manager->getOffloadStatus(id), MigrationStatus::IN_PROGRESS);
+  std::this_thread::sleep_for(POLL_INTERVAL);
+  EXPECT_EQ(manager->getOffloadStatus(id), MigrationStatus::IN_PROGRESS);
 
-  // The mock, however, should observe exactly one request landing on the
-  // offload topic within the poll deadline.
-  ASSERT_TRUE(waitFor([&] { return worker->requestsReceived() == 1u; },
-                      POLL_DEADLINE))
-      << "offload request never landed on the wire within "
-      << POLL_DEADLINE.count() << "ms";
+  ASSERT_TRUE(waitFor(
+      [&] {
+        return manager->getOffloadStatus(id) == MigrationStatus::SUCCESSFUL;
+      },
+      POLL_DEADLINE))
+      << "offload did not reach SUCCESSFUL within " << POLL_DEADLINE.count()
+      << "ms";
+
+  const auto elapsed = std::chrono::steady_clock::now() - issuedAt;
+  EXPECT_GE(elapsed, 900ms)
+      << "manager transitioned to SUCCESSFUL before the mock's 1s delay -- "
+         "delay was not honored";
+
+  EXPECT_EQ(worker->requestsReceived(), 1u);
 
   const auto received = worker->takeReceived();
   ASSERT_EQ(received.size(), 1u);
@@ -691,6 +750,31 @@ TEST_F(RemoteKVManagerE2ETest, OffloadIsFireAndForget) {
   EXPECT_EQ(received[0].src_slot, req.srcSlot);
   ASSERT_EQ(received[0].blocks.size(), req.blocks.size());
   EXPECT_EQ(received[0].blocks[0].blockHash, req.blocks[0].blockHash);
+
+  worker->stop();
+}
+
+TEST_F(RemoteKVManagerE2ETest, OffloadReplyFailedPropagates) {
+  auto manager = makeManager();
+  auto worker = makeOffloadWorker();
+  worker->setBehavior({
+      .replyStatus = MigrationStatus::FAILED,
+      .replyDelay = 0ms,
+  });
+  worker->start();
+
+  std::this_thread::sleep_for(KAFKA_GROUP_JOIN_WARMUP);
+
+  const uint64_t id = manager->offloadToStore(sampleOffloadRequest());
+  ASSERT_NE(id, 0u);
+
+  ASSERT_TRUE(waitFor(
+      [&] { return manager->getOffloadStatus(id) == MigrationStatus::FAILED; },
+      POLL_DEADLINE))
+      << "FAILED offload-ack did not propagate within "
+      << POLL_DEADLINE.count() << "ms";
+
+  EXPECT_EQ(worker->requestsReceived(), 1u);
 
   worker->stop();
 }
