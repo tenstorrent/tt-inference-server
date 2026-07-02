@@ -69,6 +69,12 @@ timing metrics are emitted; override it if you need a different router.
 `LLM_DEVICE_BACKEND` is also read from the environment and can be overridden
 with `--llm-device-backend`.
 
+Native prefill threshold policy is exposed through
+`DYN_PREFILL_ON_DECODE_MAX_TOKENS` (defaulting to
+`MAX_TOKENS_TO_PREFILL_ON_DECODE` or `1000`). cpp_server also advertises the same
+threshold in its MDC `runtime_config`. ai-dynamo 1.2.0.post1 does not consume the
+native prefill threshold env directly yet.
+
 Monitoring uses `tt-media-server/monitoring/docker-compose.yml`, attached to
 `dynamo-net` via `TT_NET=dynamo-net`. By default Prometheus scrapes
 `dynamo-frontend:8000` so Dynamo frontend metrics are available immediately.

@@ -20,6 +20,11 @@
 
 namespace tt::dynamo {
 
+enum class DiscoveryWorkerRole {
+  DECODE,
+  PREFILL,
+};
+
 struct DiscoveryConfig {
   /// Single etcd HTTP endpoint or comma-separated list (only the first is
   /// dialed today). Use `http://<host>:2379`; HTTPS is unsupported.
@@ -33,6 +38,7 @@ struct DiscoveryConfig {
   std::string namespace_name = "default";
   std::string component = "backend";
   std::string endpoint = "generate";
+  DiscoveryWorkerRole worker_role = DiscoveryWorkerRole::DECODE;
   std::string instance_id_hex;
   uint64_t instance_id = 0;
   /// "host:port/instance_id_hex/endpoint" — the address Dynamo dials to send

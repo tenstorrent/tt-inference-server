@@ -123,3 +123,24 @@ TEST(DynamoProtocolTest, FinalDataChunkCanCarryStopFinishReason) {
   ASSERT_TRUE(wrapper["data"]["data"]["token_ids"].isArray());
   EXPECT_EQ(wrapper["data"]["data"]["token_ids"][0].asInt(), 123);
 }
+
+TEST(DynamoProtocolTest, DataChunkCarriesDisaggregatedParams) {
+  tt::dynamo::TokenChunk chunk;
+  chunk.finish_reason = "stop";
+  chunk.disaggregated_params["tt_prefill_handoff"]["selected_prefill_id"] =
+      "prefill/generate/abc";
+  chunk.disaggregated_params["tt_prefill_handoff"]["migration_id"] =
+      Json::UInt64(1234);
+
+  const Json::Value wrapper = parseJson(tt::dynamo::encode_stream_chunk(chunk));
+
+  ASSERT_TRUE(wrapper["data"].isObject());
+  ASSERT_TRUE(wrapper["data"]["data"].isObject());
+  const Json::Value& output = wrapper["data"]["data"];
+  ASSERT_TRUE(output["disaggregated_params"].isObject());
+  const Json::Value& handoff =
+      output["disaggregated_params"]["tt_prefill_handoff"];
+  ASSERT_TRUE(handoff.isObject());
+  EXPECT_EQ(handoff["selected_prefill_id"].asString(), "prefill/generate/abc");
+  EXPECT_EQ(handoff["migration_id"].asUInt64(), 1234u);
+}

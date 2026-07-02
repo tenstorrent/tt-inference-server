@@ -8,7 +8,25 @@
 # locally-built mock binary. See benchmarks/test_prefill_decode.py.
 #
 #   ./run_stack.sh up                      # disaggregated: decode + prefill split
+#   ./run_stack.sh verify-prefill-discovery # inspect Dynamo prefill etcd keys
 #   ./run_stack.sh down                    # tear everything down
+#
+# Optional discovery spike:
+#   DYNAMO_REGISTER_PREFILL=1 ./run_stack.sh up
+# Registers the prefill worker with Dynamo as default/prefill/generate. The
+# prefill Dynamo endpoint is a discovery stub only; real prefill traffic still
+# uses the cpp_server inter-server socket / PrefillGateway path.
+#
+# Optional native handoff control-plane spike:
+#   DYNAMO_REGISTER_PREFILL=1 DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=1 ./run_stack.sh up
+# Enables the prefill endpoint to return TT handoff metadata in
+# disaggregated_params.
+# The handoff itself is the synchronization point and must only be emitted
+# after prefill and KV transfer are complete.
+#
+# Multi-prefill local routing smoke:
+#   PREFILL_REPLICAS=2 DYNAMO_REGISTER_PREFILL=1 \
+#   DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=1 ./run_stack.sh up
 #
 # Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; frontend -> /tmp/tt_frontend.log.
 
@@ -27,8 +45,12 @@ MODEL_NAME="${MODEL_NAME:-tt-cpp-server}"
 HTTP_PORT="${HTTP_PORT:-8080}"
 SERVER_PORT="${SERVER_PORT:-8001}"       # decode/regular REST + dynamo endpoint
 PREFILL_PORT="${PREFILL_PORT:-8002}"     # prefill REST
+PREFILL_REPLICAS="${PREFILL_REPLICAS:-1}"
 SOCKET_PORT="${SOCKET_PORT:-9000}"       # decode<->prefill inter-server socket
 MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
+DYNAMO_REGISTER_PREFILL="${DYNAMO_REGISTER_PREFILL:-0}"
+DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED="${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED:-0}"
+LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND:-mock}"
 ETCD_NAME="${ETCD_NAME:-etcd}"
 PIDFILE="/tmp/tt_stack.pids"
 
@@ -39,6 +61,14 @@ PREFILL_LOG="/tmp/tt_prefill.log"
 log() { printf '[run_stack] %s\n' "$*"; }
 die() { printf '[run_stack] %s\n' "$*" >&2; exit 1; }
 
+port_in_use() {
+    local port="$1"
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltn 2>/dev/null | grep -qE ":${port}[[:space:]]" && return 0
+    fi
+    (echo >"/dev/tcp/127.0.0.1/${port}") >/dev/null 2>&1
+}
+
 teardown() {
     log "tearing down"
     set +e                            # cleanup is best-effort; never abort on a dead pid
@@ -47,8 +77,8 @@ teardown() {
     # also sweep stray workers/frontend (orphaned --worker children, prior runs)
     for p in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
         [[ "$p" == "$$" ]] && continue
-        local c; c=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null) || continue
-        case "$c" in *"${BIN}"*|*"-m dynamo.frontend"*) pids="$pids $p" ;; esac
+        local c; c=$(tr '\0' ' ' 2>/dev/null < "/proc/$p/cmdline") || continue
+        case "$c" in *"tt_media_server_cpp"*|*"-m dynamo.frontend"*) pids="$pids $p" ;; esac
     done
     pids="$(echo "${pids}" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -u | tr '\n' ' ')"
     if [[ -n "${pids// }" ]]; then
@@ -68,7 +98,14 @@ teardown() {
     rm -f /dev/shm/tt_* 2>/dev/null || true
     # block until our ports are actually released (avoids relaunch bind races)
     for _ in $(seq 1 30); do
-        ss -ltn 2>/dev/null | grep -qE ":(${HTTP_PORT}|${SERVER_PORT}|${PREFILL_PORT}|${SOCKET_PORT})[[:space:]]" || break
+        local busy=0
+        port_in_use "${HTTP_PORT}" && busy=1
+        port_in_use "${SERVER_PORT}" && busy=1
+        port_in_use "${SOCKET_PORT}" && busy=1
+        for idx in $(seq 1 "${PREFILL_REPLICAS}"); do
+            port_in_use "$((PREFILL_PORT + idx - 1))" && busy=1
+        done
+        [[ "${busy}" -eq 0 ]] && break
         sleep 0.5
     done
     set -e
@@ -93,14 +130,27 @@ ensure_etcd() {
 }
 
 # dynamo registration env shared by the regular/decode worker (the one the
-# frontend discovers). The prefill worker does NOT register.
+# frontend discovers for normal requests).
 worker_dynamo_env() {
     echo "DYNAMO_ENDPOINT_ENABLED=1"
+    echo "DYNAMO_WORKER_ROLE=decode"
     echo "DYNAMO_DISCOVERY_BACKEND=etcd"
     echo "DYNAMO_ETCD_ENDPOINTS=${ETCD_ENDPOINTS}"
     echo "DYNAMO_NAMESPACE=default"
     echo "DYNAMO_COMPONENT=backend"
     echo "DYNAMO_ENDPOINT_NAME=generate"
+    echo "DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED}"
+}
+
+prefill_dynamo_env() {
+    echo "DYNAMO_ENDPOINT_ENABLED=1"
+    echo "DYNAMO_WORKER_ROLE=prefill"
+    echo "DYNAMO_DISCOVERY_BACKEND=etcd"
+    echo "DYNAMO_ETCD_ENDPOINTS=${ETCD_ENDPOINTS}"
+    echo "DYNAMO_NAMESPACE=default"
+    echo "DYNAMO_COMPONENT=prefill"
+    echo "DYNAMO_ENDPOINT_NAME=generate"
+    echo "DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED}"
 }
 
 start_frontend() {
@@ -110,6 +160,7 @@ start_frontend() {
         DYN_DISCOVERY_BACKEND=etcd ETCD_ENDPOINTS="${ETCD_ENDPOINTS}" \
         DYN_REQUEST_PLANE=tcp DYN_EVENT_PLANE=zmq \
         DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
+        DYN_PREFILL_ON_DECODE_MAX_TOKENS="${DYN_PREFILL_ON_DECODE_MAX_TOKENS:-${MAX_TOKENS_TO_PREFILL_ON_DECODE}}" \
         "${DYN_VENV}/bin/python3" -m dynamo.frontend \
             --http-port "${HTTP_PORT}" \
             --model-name "${MODEL_NAME}" \
@@ -144,10 +195,10 @@ up() {
     : > "${PIDFILE}"
     ensure_etcd
 
-    log "decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
+    log "decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT} replicas=${PREFILL_REPLICAS}"
     start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
         $(worker_dynamo_env) \
-        LLM_MODE=decode LLM_DEVICE_BACKEND=mock \
+        LLM_MODE=decode LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND}" \
         SOCKET_TRANSPORT=tcp SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
         MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE}"
     sleep 3
@@ -155,25 +206,65 @@ up() {
     # co-located on one host, and these default to fixed names
     # (tt_mem_requests/_results, /tt_worker_metrics) — sharing them makes the
     # prefill worker's KV allocation requests race the decode worker's and hang.
-    start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
-        LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
-        SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
-        TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
-        TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
-        TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill
+    local prefill_dynamo_env=()
+    if [[ "${DYNAMO_REGISTER_PREFILL}" == "1" ]]; then
+        log "prefill Dynamo discovery registration enabled"
+        readarray -t prefill_dynamo_env < <(prefill_dynamo_env)
+    fi
+    for idx in $(seq 1 "${PREFILL_REPLICAS}"); do
+        local port=$((PREFILL_PORT + idx - 1))
+        local suffix=""
+        local log_file="${PREFILL_LOG}"
+        if [[ "${idx}" -gt 1 ]]; then
+            suffix="${idx}"
+            log_file="/tmp/tt_prefill${idx}.log"
+        fi
+        start_worker "${log_file}" "${port}" \
+            "${prefill_dynamo_env[@]}" \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND}" \
+            SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
+            PREFILL_SERVER_ID="prefill${suffix:-1}" \
+            TT_MEMORY_REQUEST_QUEUE="tt_mem_requests_prefill${suffix}" \
+            TT_MEMORY_RESULT_QUEUE="tt_mem_results_prefill${suffix}" \
+            TT_WORKER_METRICS_SHM="/tt_worker_metrics_prefill${suffix}"
+    done
     sleep 2
     start_frontend
     wait_ready
-    log "decode log: ${DECODE_LOG}  prefill log: ${PREFILL_LOG}"
+    log "decode log: ${DECODE_LOG}  prefill logs: /tmp/tt_prefill*.log"
     log "frontend: http://127.0.0.1:${HTTP_PORT}  (model id: ${MODEL})"
     log "pids: $(tr '\n' ' ' < "${PIDFILE}")"
 }
 
-[[ $# -eq 1 ]] || { echo "usage: $0 up | down" >&2; exit 1; }
+verify_prefill_discovery() {
+    docker ps --format '{{.Names}}' | grep -qx "${ETCD_NAME}" || die "${ETCD_NAME} container is not running"
+
+    local prefix="v1/mdc/default/prefill/generate"
+    log "checking etcd prefix ${prefix}"
+    local output
+    output="$(docker exec "${ETCD_NAME}" etcdctl get --prefix "${prefix}")"
+    [[ -n "${output}" ]] || die "no Dynamo prefill MDC keys found under ${prefix}"
+
+    printf '%s\n' "${output}"
+    local count
+    count="$(printf '%s\n' "${output}" | grep -c '"worker_type":"prefill"' || true)"
+    [[ "${count}" -ge "${PREFILL_REPLICAS}" ]] ||
+        die "expected at least ${PREFILL_REPLICAS} prefill MDC entries, found ${count}"
+    printf '%s\n' "${output}" | grep -q '"worker_type":"prefill"' ||
+        die "prefill MDC found, but worker_type=prefill was not present"
+    printf '%s\n' "${output}" | grep -q '"needs":\[\["decode"\]\]' ||
+        die 'prefill MDC found, but needs=[["decode"]] was not present'
+    printf '%s\n' "${output}" | grep -q '"model_type":"Prefill"' ||
+        die "prefill MDC found, but model_type=Prefill was not present"
+    log "prefill discovery registration verified"
+}
+
+[[ $# -eq 1 ]] || { echo "usage: $0 up | verify-prefill-discovery | down" >&2; exit 1; }
 CMD="$1"
 
 case "${CMD}" in
-    up)   up ;;
-    down) teardown ;;
+    up)                         up ;;
+    verify-prefill-discovery)   verify_prefill_discovery ;;
+    down)                       teardown ;;
     *)    die "unknown command: ${CMD}" ;;
 esac

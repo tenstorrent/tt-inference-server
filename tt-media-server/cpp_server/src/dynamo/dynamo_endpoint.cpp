@@ -12,6 +12,7 @@
 #include <trantor/net/EventLoopThreadPool.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -24,8 +25,11 @@
 #include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
+#include "dynamo/dynamo_prefill_handoff.hpp"
 #include "domain/session.hpp"
 #include "services/llm_pipeline.hpp"
+#include "sockets/socket_messages.hpp"
+#include "utils/conversation_hasher.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
@@ -78,6 +82,21 @@ std::shared_ptr<tt::domain::llm::LLMRequest> buildLLMRequest(
   if (!currentId.empty()) req->responseId = currentId;
 
   return req;
+}
+
+tt::sockets::PrefillRequestMessage buildPrefillRequestMessage(
+    const GenerateRequest& dyn) {
+  auto message = tt::sockets::PrefillRequestMessage(
+      tt::utils::TaskIDGenerator::generate());
+  std::vector<int> tokenIds(dyn.token_ids.begin(), dyn.token_ids.end());
+  message.registrationHashes =
+      tt::utils::computePrefixCachingInfoFromTokens(tokenIds).hashes();
+  message.tokenIds.assign(dyn.token_ids.begin(), dyn.token_ids.end());
+  message.maxTokens = dyn.max_tokens;
+  message.temperature = dyn.temperature;
+  message.topP = dyn.top_p;
+  message.topK = dyn.top_k;
+  return message;
 }
 
 /// Translate one streaming chunk from the pipeline into a Dynamo TokenChunk.
@@ -168,6 +187,85 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
   auto pipeline = pipeline_;
   trantor::EventLoopThreadPool* pool = loop_pool_.get();
 
+  if (options_.worker_role == DiscoveryWorkerRole::PREFILL) {
+    auto localPrefillId = local_prefill_id_;
+    return [pipeline, pool, localPrefillId](
+               const GenerateRequest& dynReq,
+               const TcpStreamConnectionInfo& connInfo) {
+      const std::string requestId =
+          dynReq.raw.get("request_id", "").asString();
+      TT_LOG_INFO(
+          "[DynamoEndpoint] Dynamo prefill request received id={} "
+          "tokens={}",
+          requestId.empty() ? "?" : requestId, dynReq.token_ids.size());
+
+      if (tt::config::dynamoNativePrefillHandoffEnabled()) {
+        auto prefillMessage = buildPrefillRequestMessage(dynReq);
+        auto writer = DynamoStreamWriter::create(
+            pool->getNextLoop(), connInfo, requestId,
+            [pipeline, taskId = prefillMessage.taskId]() {
+              pipeline->abortRequest(taskId);
+            });
+        writer->connect();
+
+        const std::string selectedPrefillId =
+            localPrefillId && !localPrefillId->empty()
+                ? *localPrefillId
+                : std::string{"prefill/generate"};
+        TT_LOG_INFO(
+            "[DynamoEndpoint] Executing Dynamo prefill via "
+            "PrefillRequestMessage taskId={} selected_prefill_id={} "
+            "tokens={} registration_hashes={}",
+            prefillMessage.taskId, selectedPrefillId,
+            prefillMessage.tokenIds.size(),
+            prefillMessage.registrationHashes.size());
+        try {
+          pipeline->handlePrefillRequest(
+              prefillMessage,
+              [writer, selectedPrefillId](
+                  const tt::sockets::PrefillResultMessage& result) {
+                auto handoff =
+                    dynamoPrefillHandoffFromPrefillResult(result,
+                                                          selectedPrefillId);
+                TT_LOG_INFO(
+                    "[DynamoEndpoint] Emitting Dynamo prefill handoff "
+                    "selected_prefill_id={} migrationId={} token_count={} "
+                    "kv_position_id={} cached_tokens={} error={}",
+                    handoff.selectedPrefillId,
+                    handoff.migrationId.value_or(0), handoff.tokenCount,
+                    handoff.kvPositionId.value_or(0), handoff.cachedTokens,
+                    handoff.error);
+
+                TokenChunk out;
+                out.finish_reason = "stop";
+                out.disaggregated_params =
+                    dynamoPrefillHandoffToDisaggregatedParams(handoff);
+                writer->sendChunk(out);
+                writer->finalize();
+              });
+        } catch (const std::exception& e) {
+          TokenChunk err;
+          err.error = e.what();
+          err.error_code = 501;
+          writer->sendChunk(err);
+          writer->finalize();
+        }
+        return;
+      }
+
+      auto writer = DynamoStreamWriter::create(pool->getNextLoop(), connInfo,
+                                               requestId, []() {});
+      writer->connect();
+      TokenChunk err;
+      err.error =
+          "cpp_server Dynamo prefill endpoint is registered for discovery "
+          "only; native prefill execution is not implemented in this spike";
+      err.error_code = 501;
+      writer->sendChunk(err);
+      writer->finalize();
+    };
+  }
+
   return [pipeline, pool](const GenerateRequest& dynReq,
                           const TcpStreamConnectionInfo& connInfo) {
     using SteadyClock = std::chrono::steady_clock;
@@ -233,6 +331,111 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       sendChunk(err);
       signalDone();
     };
+
+    auto sendPipelineChunk =
+        [pipeline, req, sendChunk, signalDone, firstChunkSeen, usage](
+            const tt::domain::llm::LLMStreamChunk& chunk, bool isFinal) {
+          bool expected = false;
+          if (firstChunkSeen->compare_exchange_strong(expected, true)) {
+            TT_LOG_INFO("[DynamoLatency] id={} stage=first_chunk_via_handoff",
+                        req->responseId.value_or("?"));
+          }
+
+          if (chunk.cached_prompt_tokens.has_value()) {
+            usage->cachedTokens = *chunk.cached_prompt_tokens;
+          }
+
+          if (!chunk.choices.empty() && chunk.choices[0].token_id) {
+            const int tid = static_cast<int>(*chunk.choices[0].token_id);
+            const auto kNo = tt::utils::tokenizers::kNoTokenId;
+            usage->completion += 1;
+            if (usage->thinkStart != kNo && tid == usage->thinkStart) {
+              usage->inReasoning = true;
+            }
+            if (usage->inReasoning) usage->reasoning += 1;
+            if (usage->thinkEnd != kNo && tid == usage->thinkEnd) {
+              usage->inReasoning = false;
+            }
+          }
+
+          TokenChunk out = toTokenChunk(chunk, isFinal);
+          if (isFinal) {
+            DynamoUsage du;
+            du.prompt_tokens = req->full_prompt_tokens_count;
+            du.completion_tokens = usage->completion;
+            du.total_tokens = du.prompt_tokens + du.completion_tokens;
+            du.cached_tokens = std::max(0, usage->cachedTokens);
+            const auto kNo = tt::utils::tokenizers::kNoTokenId;
+            if (usage->thinkStart != kNo || usage->thinkEnd != kNo) {
+              du.reasoning_tokens = usage->reasoning;
+            }
+            out.completion_usage = du;
+          } else if (out.token_ids.empty()) {
+            return;
+          }
+
+          const bool sent = sendChunk(out);
+          if (isFinal) {
+            signalDone();
+            return;
+          }
+          if (!sent) {
+            TT_LOG_WARN(
+                "[DynamoEndpoint] downstream send failed for task {}; "
+                "aborting generation",
+                req->task_id);
+            pipeline->abortRequest(req->task_id);
+          }
+        };
+
+    if (const Json::Value* handoffJson =
+            findDynamoPrefillHandoffJson(dynReq.raw)) {
+      if (!tt::config::dynamoNativePrefillHandoffEnabled()) {
+        TokenChunk err;
+        err.error =
+            "Dynamo prefill handoff metadata was provided, but "
+            "DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED is not enabled";
+        err.error_code = 501;
+        sendChunk(err);
+        signalDone();
+        return;
+      }
+      auto handoff = parseDynamoPrefillHandoff(*handoffJson);
+      auto validation = validateDynamoPrefillHandoffForDecode(handoff);
+      if (!validation.ok) {
+        TT_LOG_WARN(
+            "[DynamoEndpoint] Dynamo prefill handoff rejected taskId={} "
+            "selected_prefill_id={} error={}",
+            req->task_id, handoff.selectedPrefillId, validation.error);
+        TokenChunk err;
+        err.error = validation.error;
+        err.error_code = 501;
+        sendChunk(err);
+        signalDone();
+        return;
+      }
+      TT_LOG_INFO(
+          "[DynamoEndpoint] Dynamo prefill handoff accepted taskId={} "
+          "selected_prefill_id={} routing_reason={} migrationId={} "
+          "kv_position_id={} token_count={} cached_tokens={}",
+          req->task_id, handoff.selectedPrefillId, handoff.routingReason,
+          handoff.migrationId.value_or(0), handoff.kvPositionId.value_or(0),
+          handoff.tokenCount, handoff.cachedTokens);
+      try {
+        auto prefillResult =
+            dynamoPrefillHandoffToPrefillResult(req->task_id, handoff);
+        // The prefill leg is a Dynamo-internal probe that asks for one token to
+        // synchronize the handoff. Continue decode using the original client's
+        // generation budget from this request.
+        prefillResult.remainingTokens = dynReq.max_tokens;
+        pipeline->handlePrefillResult(prefillResult, sendPipelineChunk);
+      } catch (const std::exception& e) {
+        TT_LOG_ERROR("[DynamoEndpoint] handlePrefillResult failed: {}",
+                     e.what());
+        sendErrorAndDone();
+      }
+      return;
+    }
 
     // Reject requests whose prompt exceeds the maximum input sequence length.
     const size_t maxInputSeqLen = tt::config::maxISL();
@@ -433,6 +636,9 @@ void DynamoEndpoint::start() {
   // port is available immediately afterwards.
   server_ = std::make_unique<DynamoServer>(sc, makeGenerateHandler(),
                                            loop_pool_->getLoops());
+  *local_prefill_id_ = server_->config().component + "/" +
+                       server_->config().endpoint + "/" +
+                       server_->config().instance_id_hex;
   server_->start();
   if (server_->port() == 0) {
     running_ = false;
@@ -445,6 +651,7 @@ void DynamoEndpoint::start() {
   dc.namespace_name = options_.namespace_name;
   dc.component = options_.component;
   dc.endpoint = options_.endpoint;
+  dc.worker_role = options_.worker_role;
   dc.instance_id = server_->config().instance_id;
   dc.instance_id_hex = server_->config().instance_id_hex;
   // Dynamo's TCP dialer parses `IP:port/endpoint_name`: the left half
@@ -461,8 +668,10 @@ void DynamoEndpoint::start() {
 
   TT_LOG_INFO(
       "[DynamoEndpoint] Ready: bind={}:{} advertise={} model={} "
-      "discovery=etcd({})",
+      "role={} discovery=etcd({})",
       options_.bind_host, server_->port(), dc.tcp_address, dc.model_name,
+      options_.worker_role == DiscoveryWorkerRole::PREFILL ? "prefill"
+                                                           : "decode",
       dc.etcd_endpoints);
 
   // Refresh the registration periodically so a frontend that prunes stale

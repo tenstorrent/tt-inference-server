@@ -3,7 +3,16 @@
 
 #include "services/disaggregation_service.hpp"
 
+#include <json/json.h>
+
+#include <exception>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
+#include "dynamo/etcd_client.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
@@ -28,6 +37,61 @@ std::vector<uint64_t> blockHashes(
     hashes.push_back(block.hash);
   }
   return hashes;
+}
+
+std::string compactJson(const Json::Value& value) {
+  Json::StreamWriterBuilder writer;
+  writer["indentation"] = "";
+  writer["emitUTF8"] = true;
+  return Json::writeString(writer, value);
+}
+
+std::string sanitizeCacheKeyPart(std::string value) {
+  for (char& ch : value) {
+    const bool ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+                    (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' ||
+                    ch == '.';
+    if (!ok) ch = '-';
+  }
+  return value.empty() ? "unknown" : value;
+}
+
+void publishDynamoPrefillCacheBlocks(const std::vector<uint64_t>& blockHashes) {
+  if (!tt::config::dynamoEndpointEnabled() || blockHashes.empty()) {
+    return;
+  }
+
+  Json::Value event(Json::objectValue);
+  event["event_type"] = "blocks_added";
+  event["namespace"] = tt::config::dynamoNamespace();
+  event["component"] = tt::config::dynamoComponent();
+  event["endpoint"] = tt::config::dynamoEndpointName();
+  event["server_id"] = tt::config::prefillServerId();
+
+  Json::Value blocks(Json::arrayValue);
+  for (uint64_t hash : blockHashes) {
+    blocks.append(Json::Value(static_cast<Json::UInt64>(hash)));
+  }
+  event["block_hashes"] = std::move(blocks);
+
+  const std::string key =
+      "v1/tt/prefill_cache/" + tt::config::dynamoNamespace() + "/" +
+      sanitizeCacheKeyPart(tt::config::dynamoComponent()) + "/" +
+      sanitizeCacheKeyPart(tt::config::dynamoEndpointName()) + "/" +
+      sanitizeCacheKeyPart(tt::config::prefillServerId());
+  try {
+    tt::dynamo::EtcdClient client(tt::config::dynamoEtcdEndpoints());
+    client.put(key, compactJson(event));
+    TT_LOG_DEBUG(
+        "[DisaggregationService] Published Dynamo prefill cache blocks "
+        "serverId={} blocks={}",
+        tt::config::prefillServerId(), blockHashes.size());
+  } catch (const std::exception& e) {
+    TT_LOG_WARN(
+        "[DisaggregationService] Failed to publish Dynamo prefill cache "
+        "blocks: {}",
+        e.what());
+  }
 }
 
 }  // namespace
@@ -55,66 +119,7 @@ void DisaggregationService::setupSocketHandlers() {
             return;
           }
           streamCallbacks.erase(message.taskId);
-
-          if (message.error) {
-            TT_LOG_ERROR(
-                "[DisaggregationService] Prefill error received for task {}, "
-                "propagating error to client",
-                message.taskId);
-            const auto reason =
-                tt::sockets::errorReasonFromPrefillResult(message);
-            callback.value()(makeErrorChunk(message.taskId,
-                                            reason == LLMErrorReason::TIMEOUT
-                                                ? "prefill timeout"
-                                                : "prefill error",
-                                            reason),
-                             /*isFinal=*/true);
-            return;
-          }
-
-          auto response = LLMStreamChunk(message.taskId);
-          LLMChoice choice;
-          choice.text = message.generatedText;
-          response.choices.push_back(std::move(choice));
-          // Surface the prefill server's prefix-cache reuse count to the
-          // transport's usage accounting (prompt_tokens_details.cached_tokens).
-          response.cached_prompt_tokens = message.cachedTokens;
-
-          callback.value()(response, false);
-
-          bool continueDecode = !message.tokenIds.empty() &&
-                                (!message.remainingTokens.has_value() ||
-                                 message.remainingTokens.value() > 0);
-          if (continueDecode) {
-            auto request = LLMRequest(message.taskId);
-            request.disaggregated = true;
-            request.migrationId = message.migrationId;
-            // Intentional exception to the first-free-index convention: the
-            // prefill-generated token is NOT migrated, so decode's first step
-            // reprocesses the last prompt token. That token already occupies
-            // KV index size-1, so decode resumes there rather than at the next
-            // free slot, and the prompt is just that single trailing token.
-            request.kv_position_id =
-                static_cast<uint32_t>(message.tokenIds.size() - 1);
-            request.prompt.emplace<std::vector<int>>(message.tokenIds.end() - 1,
-                                                     message.tokenIds.end());
-            request.max_tokens = message.remainingTokens;
-            request.slotId = message.slotId;
-            // Restore the sampling subset echoed back from the prefill server.
-            request.temperature = message.temperature;
-            request.top_p = message.topP;
-            request.top_k = message.topK;
-            request.fast_mode = message.fastMode;
-            llmService->submitStreamingRequest(request, callback.value());
-          } else {
-            auto finalResponse = LLMStreamChunk(message.taskId);
-            LLMChoice finalChoice;
-            finalChoice.text = "";
-            finalChoice.index = 0;
-            finalChoice.finish_reason = "stop";
-            finalResponse.choices.push_back(std::move(finalChoice));
-            callback.value()(finalResponse, true);
-          }
+          handlePrefillResult(message, callback.value());
         });
 
     socketService->setConnectionLostCallback([this]() {
@@ -146,174 +151,10 @@ void DisaggregationService::setupSocketHandlers() {
 
     socketService->onPrefillRequested(
         [this](const tt::sockets::PrefillRequestMessage& message) {
-          auto request = std::make_shared<LLMRequest>(message.taskId);
-          request->max_tokens = 1;
-          request->temperature = message.temperature;
-          request->top_p = message.topP;
-          request->top_k = message.topK;
-          request->fast_mode = message.fastMode;
-
-          TT_LOG_DEBUG(
-              "[DisaggregationService] Prefill request taskId={} "
-              "registration_hashes={}",
-              message.taskId, message.registrationHashes.size());
-
-          auto maxTokens = message.maxTokens;
-
-          request->prompt.emplace<std::vector<int>>(message.tokenIds.begin(),
-                                                    message.tokenIds.end());
-          auto slotId = message.slotId;
-          request->slotId = slotId;
-          request->decode_position_id = message.decodePositionId;
-          request->decode_skip_tokens = message.decodeSkipTokens;
-
-          // Generate a unique migration ID for correlating this prefill with
-          // its result on the decode side.
-          request->migrationId = tt::utils::MigrationIDGenerator::generate();
-          TT_LOG_DEBUG(
-              "[DisaggregationService] Assigned migrationId={} for taskId={}",
-              request->migrationId.value_or(0), message.taskId);
-
-          // Resolve prefix cache asynchronously: on HIT sets prefillSlotId
-          // and trims prompt, on MISS allocates a new session first.
-          resolvePrefillSession(
-              request, message.registrationHashes,
-              [this, request, message, maxTokens, slotId]() {
-                // Tokens the prefill server served from its KV cache
-                // (prefix-cache reuse) = prompt tokens trimmed off by
-                // resolvePrefillSession (full prompt - remaining delta).
-                const size_t fullPromptTokens = message.tokenIds.size();
-                const size_t trimmedPromptTokens =
-                    std::get<std::vector<int>>(request->prompt).size();
-                // Cached (reused) prompt tokens = the leading prefix this
-                // prefill did NOT recompute = what resolvePrefillSession
-                // trimmed off its own prefix-cache hit (fullPrompt - remaining
-                // delta).
-                //
-                // Only the prefill-side trim counts: the prefill runner trims
-                // and recomputes purely by its own prefix match, so any prefix
-                // the decode node reports (decode_skip_tokens) but that prefill
-                // does not have gets recomputed here — it is not cached.
-                // Folding decode_skip_tokens in (e.g. via max) would
-                // over-report cached_tokens by exactly the tokens prefill
-                // re-prefilled.
-                const int cachedTokens = static_cast<int>(
-                    fullPromptTokens >= trimmedPromptTokens
-                        ? fullPromptTokens - trimmedPromptTokens
-                        : 0);
-                request->migrationStartPosition =
-                    request->decode_skip_tokens < cachedTokens
-                        ? 0u
-                        : static_cast<uint32_t>(cachedTokens);
-                TT_LOG_DEBUG(
-                    "[DisaggregationService] taskId={} "
-                    "migrationStartPosition={} prefillMatchedTokens={} "
-                    "decodeSkipTokens={}",
-                    message.taskId, *request->migrationStartPosition,
-                    cachedTokens, request->decode_skip_tokens);
-                // Capture the resolved sessionId by value:
-                // submitStreamingRequest hands the request to the pipeline, so
-                // request->sessionId is no longer reliable by the time this
-                // async callback fires.
-                const std::string prefillSessionId =
-                    request->sessionId.value_or("");
-                if (!request->migrationId.has_value() ||
-                    request->migrationId.value() == 0) {
-                  TT_LOG_ERROR(
-                      "[DisaggregationService] migrationId is unset for "
-                      "taskId={} — prefill result will not correlate with KV "
-                      "transfer",
-                      message.taskId);
-                  throw std::runtime_error(
-                      "[DisaggregationService] migrationId must be set before "
-                      "submitting prefill request for taskId=" +
-                      std::to_string(message.taskId));
-                }
-                const uint64_t migrationId = request->migrationId.value();
-                llmService->submitStreamingRequest(
-                    *request,
-                    [this, prefillSessionId, message, maxTokens, slotId,
-                     cachedTokens, migrationId](const LLMStreamChunk& response,
-                                                bool /*isFinal*/) {
-                      auto prefillResult =
-                          tt::sockets::PrefillResultMessage(message.taskId);
-                      prefillResult.slotId = slotId;
-                      prefillResult.temperature = message.temperature;
-                      prefillResult.topP = message.topP;
-                      prefillResult.topK = message.topK;
-                      prefillResult.fastMode = message.fastMode;
-                      prefillResult.cachedTokens = cachedTokens;
-                      prefillResult.migrationId = migrationId;
-
-                      const auto finishReason =
-                          response.choices.empty()
-                              ? std::optional<std::string>{}
-                              : response.choices.back().finish_reason;
-                      const bool isError =
-                          finishReason.has_value() &&
-                          isErrorFinishReason(finishReason.value());
-                      if (isError) {
-                        TT_LOG_WARN(
-                            "[DisaggregationService] Prefill error for task "
-                            "{}, propagating to decode server",
-                            message.taskId);
-                        prefillResult.error = true;
-                        const auto reason =
-                            errorReasonFromFinishReason(finishReason.value());
-                        prefillResult.generatedText =
-                            tt::sockets::prefillErrorTextForReason(
-                                reason, response.error.value_or("error"));
-                      } else {
-                        prefillResult.remainingTokens =
-                            maxTokens.has_value() ? std::optional<int>(std::max(
-                                                        0, maxTokens.value()))
-                                                  : std::nullopt;
-                        prefillResult.tokenIds.insert(
-                            prefillResult.tokenIds.end(),
-                            message.tokenIds.begin(), message.tokenIds.end());
-                        prefillResult.generatedText =
-                            response.choices.back().text;
-                      }
-
-                      socketService->sendPrefillResult(prefillResult);
-
-                      // Release the prefill session's in-flight hold now that
-                      // this one-shot prefill (max_tokens=1) is done. Unlike
-                      // the decode/HTTP transports, the prefill path has no
-                      // stream-end release, so without this the session stays
-                      // IN_FLIGHT forever — and evictOldSessions only reclaims
-                      // IDLE sessions, so the prefill pool fills with
-                      // un-evictable sessions and allocation eventually fails.
-                      // Releasing to IDLE-but-cached also lets the next turn's
-                      // prefix cache match it. clearInFlight() is idempotent.
-                      if (!prefillSessionId.empty() && sessionManager) {
-                        // The prefill computed the whole prompt prefix, so all
-                        // of its blocks are now resident and safe to copy from.
-                        // (Prefill is one-shot, so there is no stream-end
-                        // finalize to mark residency as on the decode path.)
-                        if (!isError) {
-                          sessionManager->setResidentPrefixBlocks(
-                              prefillSessionId,
-                              static_cast<uint32_t>(
-                                  message.registrationHashes.size()));
-                        }
-                        sessionManager->releaseInFlight(prefillSessionId);
-                      }
-                    });
-              },
-              [this, message, slotId](std::string_view error) {
-                TT_LOG_WARN(
-                    "[DisaggregationService] Session resolution failed for "
-                    "taskId={}: {}",
-                    message.taskId, error);
-                auto prefillResult =
-                    tt::sockets::PrefillResultMessage(message.taskId);
-                prefillResult.slotId = slotId;
-                prefillResult.error = true;
-                prefillResult.generatedText =
-                    tt::sockets::prefillErrorTextForReason(
-                        LLMErrorReason::GENERIC, std::string(error));
-                socketService->sendPrefillResult(prefillResult);
+          handlePrefillRequest(
+              message,
+              [this](const tt::sockets::PrefillResultMessage& result) {
+                socketService->sendPrefillResult(result);
               });
         });
 
@@ -321,6 +162,289 @@ void DisaggregationService::setupSocketHandlers() {
         [this](const tt::sockets::CancelPrefillMessage& message) {
           llmService->abortRequest(message.taskId);
         });
+  }
+}
+
+void DisaggregationService::handlePrefillRequest(
+    const tt::sockets::PrefillRequestMessage& message,
+    PrefillResultCallback onResult) {
+  auto resultCallback =
+      std::make_shared<PrefillResultCallback>(std::move(onResult));
+  auto request = std::make_shared<LLMRequest>(message.taskId);
+  request->max_tokens = 1;
+  request->temperature = message.temperature;
+  request->top_p = message.topP;
+  request->top_k = message.topK;
+  request->fast_mode = message.fastMode;
+
+  TT_LOG_DEBUG(
+      "[DisaggregationService] Prefill request taskId={} "
+      "registration_hashes={}",
+      message.taskId, message.registrationHashes.size());
+
+  auto maxTokens = message.maxTokens;
+
+  request->prompt.emplace<std::vector<int>>(message.tokenIds.begin(),
+                                            message.tokenIds.end());
+  auto slotId = message.slotId;
+  request->slotId = slotId;
+  request->decode_position_id = message.decodePositionId;
+  request->decode_skip_tokens = message.decodeSkipTokens;
+
+  // Generate a unique migration ID for correlating this prefill with its
+  // result on the decode side.
+  request->migrationId = tt::utils::MigrationIDGenerator::generate();
+  TT_LOG_DEBUG("[DisaggregationService] Assigned migrationId={} for taskId={}",
+               request->migrationId.value_or(0), message.taskId);
+
+  // Resolve prefix cache asynchronously: on HIT sets prefillSlotId and trims
+  // prompt, on MISS allocates a new session first.
+  resolvePrefillSession(
+      request, message.registrationHashes,
+      [this, request, message, maxTokens, slotId, resultCallback]() {
+        // Tokens the prefill server served from its KV cache (prefix-cache
+        // reuse) = prompt tokens trimmed off by resolvePrefillSession.
+        const size_t fullPromptTokens = message.tokenIds.size();
+        const size_t trimmedPromptTokens =
+            std::get<std::vector<int>>(request->prompt).size();
+        // Only the prefill-side trim counts: the prefill runner trims and
+        // recomputes purely by its own prefix match.
+        const int cachedTokens = static_cast<int>(
+            fullPromptTokens >= trimmedPromptTokens
+                ? fullPromptTokens - trimmedPromptTokens
+                : 0);
+        request->migrationStartPosition =
+            request->decode_skip_tokens < cachedTokens
+                ? 0u
+                : static_cast<uint32_t>(cachedTokens);
+        TT_LOG_DEBUG(
+            "[DisaggregationService] taskId={} migrationStartPosition={} "
+            "prefillMatchedTokens={} decodeSkipTokens={}",
+            message.taskId, *request->migrationStartPosition, cachedTokens,
+            request->decode_skip_tokens);
+
+        // Capture the resolved sessionId by value: submitStreamingRequest hands
+        // the request to the pipeline, so request->sessionId is no longer
+        // reliable by the time this async callback fires.
+        const std::string prefillSessionId = request->sessionId.value_or("");
+        if (!request->migrationId.has_value() ||
+            request->migrationId.value() == 0) {
+          TT_LOG_ERROR(
+              "[DisaggregationService] migrationId is unset for taskId={} — "
+              "prefill result will not correlate with KV transfer",
+              message.taskId);
+          throw std::runtime_error(
+              "[DisaggregationService] migrationId must be set before "
+              "submitting prefill request for taskId=" +
+              std::to_string(message.taskId));
+        }
+        const uint64_t migrationId = request->migrationId.value();
+        llmService->submitStreamingRequest(
+            *request,
+            [this, prefillSessionId, message, maxTokens, slotId, cachedTokens,
+             migrationId, resultCallback](const LLMStreamChunk& response,
+                                          bool /*isFinal*/) {
+              auto prefillResult =
+                  tt::sockets::PrefillResultMessage(message.taskId);
+              prefillResult.slotId = slotId;
+              prefillResult.temperature = message.temperature;
+              prefillResult.topP = message.topP;
+              prefillResult.topK = message.topK;
+              prefillResult.fastMode = message.fastMode;
+              prefillResult.cachedTokens = cachedTokens;
+              prefillResult.migrationId = migrationId;
+
+              const auto finishReason =
+                  response.choices.empty()
+                      ? std::optional<std::string>{}
+                      : response.choices.back().finish_reason;
+              const bool isError = finishReason.has_value() &&
+                                   isErrorFinishReason(finishReason.value());
+              if (isError) {
+                TT_LOG_WARN(
+                    "[DisaggregationService] Prefill error for task {}, "
+                    "propagating to requester",
+                    message.taskId);
+                prefillResult.error = true;
+                const auto reason =
+                    errorReasonFromFinishReason(finishReason.value());
+                prefillResult.generatedText =
+                    tt::sockets::prefillErrorTextForReason(
+                        reason, response.error.value_or("error"));
+              } else {
+                prefillResult.remainingTokens =
+                    maxTokens.has_value()
+                        ? std::optional<int>(std::max(0, maxTokens.value()))
+                        : std::nullopt;
+                prefillResult.tokenIds.insert(prefillResult.tokenIds.end(),
+                                              message.tokenIds.begin(),
+                                              message.tokenIds.end());
+                prefillResult.generatedText = response.choices.back().text;
+              }
+
+              (*resultCallback)(prefillResult);
+
+              // Release the prefill session's in-flight hold now that this
+              // one-shot prefill (max_tokens=1) is done. Unlike decode/HTTP
+              // transports, the prefill path has no stream-end release.
+              if (!prefillSessionId.empty() && sessionManager) {
+                // The prefill computed the whole prompt prefix, so all of its
+                // blocks are now resident and safe to copy from.
+                if (!isError) {
+                  sessionManager->setResidentPrefixBlocks(
+                      prefillSessionId,
+                      static_cast<uint32_t>(message.registrationHashes.size()));
+                }
+                sessionManager->releaseInFlight(prefillSessionId);
+              }
+            });
+      },
+      [message, slotId, resultCallback](std::string_view error) {
+        TT_LOG_WARN(
+            "[DisaggregationService] Session resolution failed for taskId={}: "
+            "{}",
+            message.taskId, error);
+        auto prefillResult = tt::sockets::PrefillResultMessage(message.taskId);
+        prefillResult.slotId = slotId;
+        prefillResult.error = true;
+        prefillResult.generatedText = tt::sockets::prefillErrorTextForReason(
+            LLMErrorReason::GENERIC, std::string(error));
+        (*resultCallback)(prefillResult);
+      });
+}
+
+void DisaggregationService::handlePrefillResult(
+    const tt::sockets::PrefillResultMessage& message,
+    const StreamCallback& callback) {
+  TT_LOG_INFO(
+      "[DisaggregationService] Prefill result received taskId={} error={} "
+      "tokens={} remaining={} migrationId={}",
+      message.taskId, message.error, message.tokenIds.size(),
+      message.remainingTokens.has_value()
+          ? std::to_string(message.remainingTokens.value())
+          : "none",
+      message.migrationId);
+  if (message.error) {
+    TT_LOG_ERROR(
+        "[DisaggregationService] Prefill error received for task {}, "
+        "propagating error to client",
+        message.taskId);
+    const auto reason = tt::sockets::errorReasonFromPrefillResult(message);
+    callback(makeErrorChunk(message.taskId,
+                            reason == LLMErrorReason::TIMEOUT
+                                ? "prefill timeout"
+                                : "prefill error",
+                            reason),
+             /*isFinal=*/true);
+    return;
+  }
+
+  auto response = LLMStreamChunk(message.taskId);
+  LLMChoice choice;
+  choice.text = message.generatedText;
+  response.choices.push_back(std::move(choice));
+  // Surface the prefill server's prefix-cache reuse count to the transport's
+  // usage accounting (prompt_tokens_details.cached_tokens).
+  response.cached_prompt_tokens = message.cachedTokens;
+
+  callback(response, false);
+
+  bool continueDecode = !message.tokenIds.empty() &&
+                        (!message.remainingTokens.has_value() ||
+                         message.remainingTokens.value() > 0);
+  if (continueDecode) {
+    auto request = std::make_shared<LLMRequest>(message.taskId);
+    request->disaggregated = true;
+    request->migrationId = message.migrationId;
+    // Intentional exception to the first-free-index convention: the
+    // prefill-generated token is NOT migrated, so decode's first step
+    // reprocesses the last prompt token. That token already occupies
+    // KV index size-1, so decode resumes there rather than at the next
+    // free slot, and the prompt is just that single trailing token.
+    request->kv_position_id =
+        static_cast<uint32_t>(message.tokenIds.size() - 1);
+    request->prompt.emplace<std::vector<int>>(message.tokenIds.end() - 1,
+                                              message.tokenIds.end());
+    request->max_tokens = message.remainingTokens;
+    request->slotId = message.slotId;
+    // Restore the sampling subset echoed back from the prefill server.
+    request->temperature = message.temperature;
+    request->top_p = message.topP;
+    request->top_k = message.topK;
+    request->fast_mode = message.fastMode;
+
+    auto submitContinuation =
+        [this, callback](std::shared_ptr<LLMRequest> continuationRequest,
+                         std::shared_ptr<tt::domain::Session> sessionPtr) {
+          auto releaseOnFinal =
+              [callback, sessionPtr](const LLMStreamChunk& chunk,
+                                      bool isFinal) {
+                if (sessionPtr && !chunk.choices.empty() &&
+                    chunk.choices[0].token_id) {
+                  sessionPtr->addGeneratedToken(
+                      static_cast<int>(*chunk.choices[0].token_id));
+                }
+                if (isFinal && sessionPtr) {
+                  sessionPtr->finalizeAndRegisterHashes();
+                  sessionPtr->release();
+                }
+                callback(chunk, isFinal);
+              };
+          llmService->submitStreamingRequest(*continuationRequest,
+                                             releaseOnFinal);
+        };
+
+    if (request->slotId.has_value()) {
+      submitContinuation(request, nullptr);
+      return;
+    }
+
+    if (!sessionManager) {
+      TT_LOG_ERROR(
+          "[DisaggregationService] No session manager configured; cannot "
+          "allocate decode slot for Dynamo prefill continuation taskId={}",
+          message.taskId);
+      callback(makeErrorChunk(message.taskId, "prefill error",
+                              LLMErrorReason::GENERIC),
+               /*isFinal=*/true);
+      return;
+    }
+
+    sessionManager->createSession(
+        [this, request, submitContinuation](const tt::domain::Session& session) {
+          const auto sessionId = session.getSessionId();
+          request->sessionId = sessionId;
+          request->slotId = sessionManager->acquireInFlight(
+              sessionId, [this, taskId = request->task_id]() {
+                llmService->abortRequest(taskId);
+              });
+          request->session = sessionManager->getSession(sessionId);
+          TT_LOG_INFO(
+              "[DisaggregationService] Allocated decode slot for Dynamo "
+              "prefill continuation taskId={} sessionId={} slotId={}",
+              request->task_id, sessionId,
+              request->slotId.has_value() ? std::to_string(*request->slotId)
+                                          : "none");
+          submitContinuation(request, request->session);
+        },
+        [message, callback](std::string_view error) {
+          TT_LOG_WARN(
+              "[DisaggregationService] Decode slot allocation failed for "
+              "Dynamo prefill continuation taskId={}: {}",
+              message.taskId, error);
+          callback(makeErrorChunk(message.taskId, "prefill error",
+                                  LLMErrorReason::GENERIC),
+                   /*isFinal=*/true);
+        },
+        eventLoopThread.getLoop());
+  } else {
+    auto finalResponse = LLMStreamChunk(message.taskId);
+    LLMChoice finalChoice;
+    finalChoice.text = "";
+    finalChoice.index = 0;
+    finalChoice.finish_reason = "stop";
+    finalResponse.choices.push_back(std::move(finalChoice));
+    callback(finalResponse, true);
   }
 }
 
@@ -352,7 +476,16 @@ void DisaggregationService::resolvePrefillSession(
   // Think token counts are 0 since prefill server doesn't track them.
   auto blockInfos = utils::hashesToBlockInfos(routingHashes);
 
-  auto acquired = sessionManager->tryAcquireByPrefixHash(blockInfos, nullptr);
+  std::optional<SessionManager::AcquiredSession> acquired;
+  try {
+    acquired = sessionManager->tryAcquireByPrefixHash(blockInfos, nullptr);
+  } catch (const SessionInFlightException& e) {
+    TT_LOG_INFO(
+        "[DisaggregationService] Prefill prefix cache candidate is in flight "
+        "for taskId={}; allocating a fresh session: {}",
+        request->task_id, e.what());
+    acquired = std::nullopt;
+  }
 
   if (acquired.has_value() && acquired->sessionFound) {
     TT_LOG_INFO(
@@ -376,7 +509,9 @@ void DisaggregationService::resolvePrefillSession(
     // resident again when this prefill completes (see prefill result callback).
     sessionManager->shrinkResidentPrefixToMatchedTokens(
         acquired->sessionId, acquired->numberOfMatchedTokens);
-    socketService->sendPrefillCacheBlocksAdded(blockHashes(blockInfos));
+    auto hashes = blockHashes(blockInfos);
+    socketService->sendPrefillCacheBlocksAdded(hashes);
+    publishDynamoPrefillCacheBlocks(hashes);
     onResolved();
   } else {
     // Check if there's a candidate slot worth copying from.
@@ -407,11 +542,13 @@ void DisaggregationService::resolvePrefillSession(
               "[DisaggregationService] New session allocated taskId={} "
               "sessionId={} slotId={}",
               request->task_id, session.getSessionId(), session.getSlotId());
-          sm->registerPrefixHash(session.getSessionId(), infos);
-          socketService->sendPrefillCacheBlocksAdded(blockHashes(infos));
           request->sessionId = session.getSessionId();
           request->prefillSlotId =
               sm->acquireInFlight(session.getSessionId(), nullptr);
+          sm->registerPrefixHash(session.getSessionId(), infos);
+          auto hashes = blockHashes(infos);
+          socketService->sendPrefillCacheBlocksAdded(hashes);
+          publishDynamoPrefillCacheBlocks(hashes);
 
           // If copying, set continuation and kv_position_id on the request.
           if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {

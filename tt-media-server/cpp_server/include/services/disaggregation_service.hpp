@@ -19,6 +19,8 @@ namespace tt::sockets {
 
 using namespace tt::domain::llm;
 class InterServerService;
+struct PrefillRequestMessage;
+struct PrefillResultMessage;
 }  // namespace tt::sockets
 
 namespace tt::services {
@@ -30,6 +32,8 @@ class SessionManager;
 
 class DisaggregationService {
   using StreamCallback = std::function<void(const LLMStreamChunk&, bool)>;
+  using PrefillResultCallback =
+      std::function<void(const tt::sockets::PrefillResultMessage&)>;
 
  public:
   DisaggregationService(
@@ -44,6 +48,10 @@ class DisaggregationService {
   void handleStreamingRequest(LLMRequest& request,
                               const std::vector<uint64_t>& registrationHashes,
                               const StreamCallback& callback);
+  void handlePrefillRequest(const tt::sockets::PrefillRequestMessage& message,
+                            PrefillResultCallback onResult);
+  void handlePrefillResult(const tt::sockets::PrefillResultMessage& message,
+                           const StreamCallback& callback);
   void abortRequest(uint32_t taskId);
 
   /// Resolve a prefill-side session via prefix-cache lookup.

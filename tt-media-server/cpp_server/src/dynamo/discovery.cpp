@@ -12,7 +12,6 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 #include "config/settings.hpp"
@@ -99,6 +98,26 @@ std::string serializeJson(const Json::Value& v) {
 std::string instanceKey(const DiscoveryConfig& c) {
   return c.namespace_name + "/" + c.component + "/" + c.endpoint + "/" +
          c.instance_id_hex;
+}
+
+const char* workerRoleName(DiscoveryWorkerRole role) {
+  switch (role) {
+    case DiscoveryWorkerRole::PREFILL:
+      return "prefill";
+    case DiscoveryWorkerRole::DECODE:
+      return "decode";
+  }
+  return "decode";
+}
+
+Json::Value needsForWorkerRole(DiscoveryWorkerRole role) {
+  Json::Value needs(Json::arrayValue);
+  if (role == DiscoveryWorkerRole::PREFILL) {
+    Json::Value alternative(Json::arrayValue);
+    alternative.append("decode");
+    needs.append(std::move(alternative));
+  }
+  return needs;
 }
 
 /// Build the instance JSON document the frontend dials over (transport.tcp).
@@ -258,13 +277,23 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   card["context_length"] = K_CONTEXT_LENGTH;
   card["kv_cache_block_size"] =
       static_cast<int>(tt::config::kvCacheBlockSize());
-  card["migration_limit"] = 0;
-  card["model_type"] = "Chat";
+  card["migration_limit"] =
+      tt::config::dynamoNativePrefillHandoffEnabled() ? 1 : 0;
+  card["model_type"] =
+      c.worker_role == DiscoveryWorkerRole::PREFILL ? "Prefill" : "Chat";
   card["model_input"] = "Tokens";
+  card["worker_type"] = workerRoleName(c.worker_role);
+  card["needs"] = needsForWorkerRole(c.worker_role);
 
   Json::Value runtime(Json::objectValue);
   runtime["total_kv_blocks"] = Json::Value::null;
-  runtime["max_num_seqs"] = Json::Value::null;
+  if (c.worker_role == DiscoveryWorkerRole::PREFILL &&
+      tt::config::prefillMaxInFlight() > 0) {
+    runtime["max_num_seqs"] =
+        static_cast<Json::UInt64>(tt::config::prefillMaxInFlight());
+  } else {
+    runtime["max_num_seqs"] = Json::Value::null;
+  }
   runtime["max_num_batched_tokens"] = Json::Value::null;
   const RuntimeParsers parsers = runtimeParsersForModelPath(c.model_path);
   setRuntimeParserField(runtime, "reasoning_parser", parsers.reasoning);
@@ -306,8 +335,9 @@ class EtcdDiscoveryRegistration : public DiscoveryRegistration {
     }
     publishKeys();
     TT_LOG_INFO(
-        "[DynamoDiscovery/etcd] Registered key={} model={} endpoints={}",
-        instanceKey(cfg), cfg.model_name, cfg.etcd_endpoints);
+        "[DynamoDiscovery/etcd] Registered key={} model={} role={} endpoints={}",
+        instanceKey(cfg), cfg.model_name, workerRoleName(cfg.worker_role),
+        cfg.etcd_endpoints);
   }
 
   void keepAlive() override {

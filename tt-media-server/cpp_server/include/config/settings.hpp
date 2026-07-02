@@ -350,6 +350,14 @@ std::string dynamoComponent();
  * defaults::DYNAMO_ENDPOINT_NAME. */
 std::string dynamoEndpointName();
 
+/** Dynamo worker role for discovery. From DYNAMO_WORKER_ROLE. Values:
+ * auto, decode, prefill. auto derives from LLM_MODE. */
+std::string dynamoWorkerRole();
+
+/** Enable the experimental Dynamo prefill handoff control plane. From
+ * DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED. Default: false. */
+bool dynamoNativePrefillHandoffEnabled();
+
 /** When true and LLM_DEVICE_BACKEND=mock_pipeline, Blaze runners use
  * single-threaded MockSchedulers instead of tt-llm-engine schedulers.
  * From MOCK_USE_SCHEDULER. Default: defaults::MOCK_USE_SCHEDULER. */

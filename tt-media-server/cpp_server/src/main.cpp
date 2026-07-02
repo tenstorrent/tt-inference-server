@@ -380,6 +380,9 @@ int main(int argc, char* argv[]) {
       opts.namespace_name = tt::config::dynamoNamespace();
       opts.component = tt::config::dynamoComponent();
       opts.endpoint = tt::config::dynamoEndpointName();
+      opts.worker_role = tt::config::dynamoWorkerRole() == "prefill"
+                             ? tt::dynamo::DiscoveryWorkerRole::PREFILL
+                             : tt::dynamo::DiscoveryWorkerRole::DECODE;
       opts.etcd_endpoints = tt::config::dynamoEtcdEndpoints();
       opts.etcd_lease_ttl_secs = tt::config::dynamoEtcdLeaseTtlSecs();
 
