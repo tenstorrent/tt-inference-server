@@ -115,8 +115,12 @@ std::optional<std::vector<uint8_t>> KvMigrationReceiver::exchangeTables(
 
 bool KvMigrationReceiver::serveOne() {
   const auto msg = channel_.receive();
-  if (!msg) return false;  // channel closed
+  if (!msg) return false;  // channel closed or timed out
+  return handle(*msg);
+}
 
+bool KvMigrationReceiver::handle(const KvControlMessage& in) {
+  const KvControlMessage* msg = &in;
   switch (msg->type) {
     case KvControlType::BEGIN_MIGRATION: {
       const auto segment = receiver_.prepareMirror(sliceOf(*msg), msg->uuid);
@@ -159,7 +163,22 @@ bool KvMigrationReceiver::serveOne() {
 }
 
 void KvMigrationReceiver::run() {
-  while (serveOne()) {
+  // A long-lived decode server: the control channel is opened when the peer
+  // (prefill worker) starts, but BeginMigration only arrives when a request is
+  // triggered — an unbounded idle gap. Treat a receive timeout as "keep
+  // waiting" and stop only on a real close (or a failed reply). serveOne()'s
+  // timeout-as-close semantics are wrong here, so run() uses the tri-state.
+  for (;;) {
+    KvControlMessage msg;
+    switch (channel_.receiveMessage(msg)) {
+      case KvControlChannel::ReceiveOutcome::Closed:
+        return;
+      case KvControlChannel::ReceiveOutcome::TimedOut:
+        continue;  // idle between requests — wait for the next one
+      case KvControlChannel::ReceiveOutcome::Message:
+        if (!handle(msg)) return;
+        break;
+    }
   }
 }
 
