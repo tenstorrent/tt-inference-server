@@ -5,6 +5,7 @@
 
 #include <cstring>
 
+#include "sockets/zmq_socket_transport.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {
@@ -31,13 +32,13 @@ void SocketManager::applyPendingSettings() {
 }
 
 bool SocketManager::initializeAsServer(uint16_t port) {
-  transport = createSocketTransport();
+  transport = std::make_unique<ZmqSocketTransport>();
   applyPendingSettings();
   return transport->initializeAsServer(port);
 }
 
 bool SocketManager::initializeAsClient(const std::string& host, uint16_t port) {
-  transport = createSocketTransport();
+  transport = std::make_unique<ZmqSocketTransport>();
   applyPendingSettings();
   return transport->initializeAsClient(host, port);
 }
