@@ -11,6 +11,9 @@ def bash_exec(command: str, cwd: str | None = None) -> str:
 def read_file(path: str, cwd: str | None = None) -> str:
     if cwd and not os.path.isabs(path):
         path = os.path.join(cwd, path)
+        # Reject ../sequences that escape the target repo root.
+        if not os.path.realpath(path).startswith(os.path.realpath(cwd) + os.sep):
+            return f"ERROR: path traversal outside cwd denied"
     try:
         with open(path) as f:
             content = f.read()
@@ -21,6 +24,9 @@ def read_file(path: str, cwd: str | None = None) -> str:
 def write_file(path: str, content: str, cwd: str | None = None) -> str:
     if cwd and not os.path.isabs(path):
         path = os.path.join(cwd, path)
+        # Reject ../sequences that escape the target repo root.
+        if not os.path.realpath(path).startswith(os.path.realpath(cwd) + os.sep):
+            return f"ERROR: path traversal outside cwd denied"
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w") as f:
         f.write(content)

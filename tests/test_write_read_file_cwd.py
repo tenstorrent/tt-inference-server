@@ -44,3 +44,34 @@ def test_execute_read_file_passes_cwd(tmp_path):
     (tmp_path / "in.txt").write_text("from execute")
     result = execute("read_file", {"path": "in.txt"}, cwd=str(tmp_path))
     assert result == "from execute"
+
+
+# -- path traversal rejection -------------------------------------------------
+
+def test_write_file_traversal_rejected(tmp_path):
+    result = write_file("../../etc/passwd", "evil", cwd=str(tmp_path))
+    assert result.startswith("ERROR: path traversal outside cwd denied")
+    assert not os.path.exists("/etc/passwd_evil")  # just a sanity guard
+
+
+def test_read_file_traversal_rejected(tmp_path):
+    result = read_file("../../etc/hostname", cwd=str(tmp_path))
+    assert result.startswith("ERROR: path traversal outside cwd denied")
+
+
+def test_write_file_traversal_via_nested_path_rejected(tmp_path):
+    result = write_file("a/b/../../../etc/passwd", "evil", cwd=str(tmp_path))
+    assert result.startswith("ERROR: path traversal outside cwd denied")
+
+
+def test_write_file_subdirectory_allowed(tmp_path):
+    result = write_file("a/b/c.txt", "ok", cwd=str(tmp_path))
+    assert "wrote" in result
+    assert (tmp_path / "a" / "b" / "c.txt").read_text() == "ok"
+
+
+def test_write_file_dotdot_that_stays_inside_allowed(tmp_path):
+    (tmp_path / "sub").mkdir()
+    result = write_file("sub/../file.txt", "ok", cwd=str(tmp_path))
+    assert "wrote" in result
+    assert (tmp_path / "file.txt").read_text() == "ok"
