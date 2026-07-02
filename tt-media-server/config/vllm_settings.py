@@ -10,10 +10,21 @@ from pydantic import BaseModel
 
 class VLLMSettings(BaseModel):
     model: str = SupportedModels.QWEN_3_4B.value
-    min_context_length: int = 32
+    min_context_length: int = 128
     max_model_length: int = int(os.environ.get("MAX_MODEL_LENGTH", 4096))
     max_num_seqs: int = int(os.environ.get("MAX_NUM_SEQS", 1))
-    max_num_batched_tokens: int = max_model_length * max_num_seqs
+    # With chunked prefill (PREFILL_CHUNK_SIZE set), the batched-token budget only
+    # needs batch * chunk rather than batch * full-context, freeing device memory
+    # for KV cache. Falls back to batch * full-context when unset.
+    _prefill_chunk_size_env = os.environ.get("PREFILL_CHUNK_SIZE", "").strip()
+    prefill_chunk_size: int = (
+        int(_prefill_chunk_size_env) if _prefill_chunk_size_env else 0
+    )
+    max_num_batched_tokens: int = (
+        max_num_seqs * prefill_chunk_size
+        if prefill_chunk_size
+        else max_model_length * max_num_seqs
+    )
     # Fraction of TT-device memory allocated for model weights + KV cache.
     # Env-driven so it can be flipped per-run without rebuilding the image.
     # README documents the GPU_MEMORY_UTILIZATION knob (bare, not VLLM__-
