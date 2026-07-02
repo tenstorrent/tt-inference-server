@@ -43,10 +43,7 @@ def _synthetic_run() -> PrefixCacheRun:
 
 class TestNormalizeMetricsUrl:
     def test_bare_host_port_gets_scheme_and_metrics_path(self):
-        assert (
-            _normalize_metrics_url("worker-a:9000")
-            == "http://worker-a:9000/metrics"
-        )
+        assert _normalize_metrics_url("worker-a:9000") == "http://worker-a:9000/metrics"
 
     def test_existing_path_is_preserved(self):
         assert (
