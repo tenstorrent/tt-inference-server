@@ -26,7 +26,8 @@ _THINK_RE = re.compile(r"<think>.*?</think>|</think>", re.DOTALL)
 
 
 def _strip_think(text: str) -> str:
-    return _THINK_RE.sub("", text).strip()
+    # Replace with a space so adjacent words around a mid-sentence block aren't concatenated.
+    return _THINK_RE.sub(" ", text).strip()
 
 
 class MaxToolRoundsError(Exception):
@@ -134,6 +135,11 @@ def run(
 
         content = _strip_think(msg.content or "")
 
+        # Skip pure-reasoning responses without adding anything to history;
+        # the model hasn't actually responded yet.
+        if not msg.tool_calls and not content:
+            continue
+
         # Append assistant turn (convert to dict safely)
         assistant_entry = {"role": "assistant", "content": content}
         if msg.tool_calls:
@@ -148,10 +154,6 @@ def run(
         history.append(assistant_entry)
 
         if not msg.tool_calls:
-            # Re-invoke when the only content was reasoning tokens; the model
-            # hasn't actually responded yet.
-            if not content:
-                continue
             return content, history
 
         # Execute each tool call and append results

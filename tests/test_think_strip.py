@@ -3,16 +3,7 @@ Tests for issue #134: <think>...</think> blocks emitted by reasoning models
 must be stripped before the harness decides whether the turn is complete.
 """
 
-import pytest
 from unittest.mock import patch, MagicMock
-
-
-def _make_tool_call(tc_id: str, name: str, arguments: str = "{}"):
-    tc = MagicMock()
-    tc.id = tc_id
-    tc.function.name = name
-    tc.function.arguments = arguments
-    return tc
 
 
 def _make_response(content=None, tool_calls=None):
@@ -35,7 +26,6 @@ class TestStripThink:
     @patch("orchestrator.agent.T.DEFS", [{"function": {"name": "bash"}}])
     @patch("orchestrator.agent._client")
     def test_think_block_stripped_from_returned_content(self, mock_client_factory):
-        """Returned text must have <think>…</think> removed."""
         from orchestrator.agent import run
 
         client = MagicMock()
@@ -51,7 +41,6 @@ class TestStripThink:
     @patch("orchestrator.agent.T.DEFS", [{"function": {"name": "bash"}}])
     @patch("orchestrator.agent._client")
     def test_bare_close_tag_stripped(self, mock_client_factory):
-        """A bare </think> with no opening tag must be stripped."""
         from orchestrator.agent import run
 
         client = MagicMock()
@@ -67,14 +56,10 @@ class TestStripThink:
     @patch("orchestrator.agent.T.DEFS", [{"function": {"name": "bash"}}])
     @patch("orchestrator.agent._client")
     def test_only_think_content_causes_reinvocation(self, mock_client_factory):
-        """When stripped content is empty (only <think> tokens), the model is
-        re-invoked rather than treating the empty string as completion."""
         from orchestrator.agent import run
 
         client = MagicMock()
         mock_client_factory.return_value = client
-        # First response: only a think block (model mid-reasoning)
-        # Second response: real answer
         client.chat.completions.create.side_effect = [
             _make_response(content="<think>still thinking…</think>", tool_calls=[]),
             _make_response(content="Done.", tool_calls=[]),
@@ -87,7 +72,6 @@ class TestStripThink:
     @patch("orchestrator.agent.T.DEFS", [{"function": {"name": "bash"}}])
     @patch("orchestrator.agent._client")
     def test_bare_close_tag_only_causes_reinvocation(self, mock_client_factory):
-        """A message consisting solely of </think> must trigger re-invocation."""
         from orchestrator.agent import run
 
         client = MagicMock()
@@ -104,7 +88,6 @@ class TestStripThink:
     @patch("orchestrator.agent.T.DEFS", [{"function": {"name": "bash"}}])
     @patch("orchestrator.agent._client")
     def test_multiline_think_block_stripped(self, mock_client_factory):
-        """Multi-line <think> blocks (DOTALL) must be fully removed."""
         from orchestrator.agent import run
 
         client = MagicMock()
@@ -120,7 +103,6 @@ class TestStripThink:
     @patch("orchestrator.agent.T.DEFS", [{"function": {"name": "bash"}}])
     @patch("orchestrator.agent._client")
     def test_stripped_content_stored_in_history(self, mock_client_factory):
-        """History must store the stripped content, not the raw think-block text."""
         from orchestrator.agent import run
 
         client = MagicMock()
@@ -135,3 +117,38 @@ class TestStripThink:
         assert len(assistant_msgs) == 1
         assert assistant_msgs[0]["content"] == "Public answer."
         assert "<think>" not in assistant_msgs[0]["content"]
+
+    @patch("orchestrator.agent.T.DEFS", [{"function": {"name": "bash"}}])
+    @patch("orchestrator.agent._client")
+    def test_reinvocation_leaves_no_empty_assistant_entry(self, mock_client_factory):
+        # An empty assistant entry in history causes API 400s on strict providers.
+        from orchestrator.agent import run
+
+        client = MagicMock()
+        mock_client_factory.return_value = client
+        client.chat.completions.create.side_effect = [
+            _make_response(content="<think>reasoning</think>", tool_calls=[]),
+            _make_response(content="Real answer.", tool_calls=[]),
+        ]
+
+        _, history = run(_persona(), [{"role": "user", "content": "hi"}], max_tool_rounds=5)
+        assistant_msgs = [m for m in history if m["role"] == "assistant"]
+        assert all(m["content"] for m in assistant_msgs), (
+            "empty assistant entry found in history"
+        )
+
+    @patch("orchestrator.agent.T.DEFS", [{"function": {"name": "bash"}}])
+    @patch("orchestrator.agent._client")
+    def test_mid_sentence_think_block_preserves_word_boundary(self, mock_client_factory):
+        # Replacing with "" would concatenate adjacent words; replace with " " instead.
+        from orchestrator.agent import run
+
+        client = MagicMock()
+        mock_client_factory.return_value = client
+        client.chat.completions.create.return_value = _make_response(
+            content="word<think>x</think>word",
+            tool_calls=[],
+        )
+
+        text, _ = run(_persona(), [{"role": "user", "content": "hi"}])
+        assert text == "word word"
