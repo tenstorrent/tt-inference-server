@@ -307,7 +307,7 @@ def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
         )
         return ""
     # Keep only team_id and token_id (drop exp) so this minted key matches the
-    # payload used by get_encoded_api_key in the other location.
+    # payload used by get_encoded_api_key.
     payload = {
         "team_id": "tenstorrent",
         "token_id": "debug-test",
