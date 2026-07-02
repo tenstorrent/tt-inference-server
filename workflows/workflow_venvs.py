@@ -425,6 +425,7 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_VLLM,
         requirements_file="benchmarks-vllm.txt",
+        overrides_file="benchmarks-vllm-overrides.txt",
         extra_dirs=("work_dir",),
         python_version="3.11",
         setup_function=fetch_structured_output_scripts,

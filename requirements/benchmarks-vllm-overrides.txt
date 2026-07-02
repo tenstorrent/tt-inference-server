@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# uv --override file for the BENCHMARKS_VLLM venv.
+#
+# vllm==0.13.0 declares `transformers<5,>=4.56.0`, but newer tokenizers (e.g.
+# Gemma 4, whose tokenizer_config.json stores `extra_special_tokens` as a list
+# that only transformers 5.x parses) raise
+#   AttributeError: 'list' object has no attribute 'keys'
+# under transformers 4.x, which makes every `vllm bench serve` invocation fail
+# during prompt tokenization. transformers 5.x needs torch>=2.5 (for
+# torch.distributed.tensor.device_mesh); the venv's torch already satisfies
+# that. `vllm bench serve` is a client (tokenizer + HTTP), so it runs fine with
+# transformers 5.x despite vllm's declared cap — this override forces that.
+transformers>=5.10.2,<6
