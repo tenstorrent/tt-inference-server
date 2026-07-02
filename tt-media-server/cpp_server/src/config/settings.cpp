@@ -320,19 +320,30 @@ size_t memoryQueueCapacity() {
   return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
 }
 
-bool useMockScheduler() {
-  return envBool("MOCK_USE_SCHEDULER", defaults::MOCK_USE_SCHEDULER);
-}
-
 unsigned mockPrefillLatencyMs() {
   return static_cast<unsigned>(
       envUlong("MOCK_PREFILL_CHUNK_LATENCY_MS",
                defaults::MOCK_PREFILL_CHUNK_LATENCY_MS));
 }
 
-unsigned mockDecodeTokenLatencyUs() {
-  return static_cast<unsigned>(envUlong(
-      "MOCK_DECODE_TOKEN_LATENCY_US", defaults::MOCK_DECODE_TOKEN_LATENCY_US));
+unsigned mockStageLatencyUs() {
+  return static_cast<unsigned>(
+      envUlong("MOCK_STAGE_LATENCY_US", defaults::MOCK_STAGE_LATENCY_US));
+}
+
+uint32_t mockPipelineStages() {
+  return static_cast<uint32_t>(
+      envUlong("MOCK_PIPELINE_STAGES", defaults::MOCK_PIPELINE_STAGES));
+}
+
+uint32_t mockDecodeJitterPct() {
+  return static_cast<uint32_t>(
+      envUlong("MOCK_DECODE_JITTER_PCT", defaults::MOCK_DECODE_JITTER_PCT));
+}
+
+unsigned mockPrefillComputeMs() {
+  return static_cast<unsigned>(
+      envUlong("MOCK_PREFILL_COMPUTE_MS", defaults::MOCK_PREFILL_COMPUTE_MS));
 }
 
 uint32_t mockDecodeTokenId() {
@@ -355,6 +366,8 @@ LLMConfig llmEngineConfig() {
       cfg.runner_type = ModelRunnerType::MOCK;
     } else if (backend == "mock_pipeline") {
       cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
+    } else if (backend == "mock_scheduler") {
+      cfg.runner_type = ModelRunnerType::MOCK_SCHEDULER;
     } else if (backend == "pipeline_manager") {
       cfg.runner_type = ModelRunnerType::PIPELINE_MANAGER;
     } else {
