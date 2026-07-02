@@ -64,12 +64,12 @@ if [ -n "${ROUTER_MODE:-}" ]; then
     ROUTER_MODE_FLAG="--router-mode ${ROUTER_MODE}"
 fi
 
-# TT native prefill routing policy contract. ai-dynamo 1.2.0.post1 does not
+# Native prefill routing policy contract. ai-dynamo 1.2.0.post1 does not
 # consume this env directly yet; C++ workers also advertise the same threshold
 # in their MDC runtime_config so a Dynamo router patch has a stable input.
-TT_NATIVE_PREFILL_POLICY="${TT_NATIVE_PREFILL_POLICY:-threshold}"
-TT_PREFILL_ON_DECODE_MAX_TOKENS="${TT_PREFILL_ON_DECODE_MAX_TOKENS:-1000}"
-export TT_NATIVE_PREFILL_POLICY TT_PREFILL_ON_DECODE_MAX_TOKENS
+DYN_NATIVE_PREFILL_POLICY="${DYN_NATIVE_PREFILL_POLICY:-threshold}"
+DYN_PREFILL_ON_DECODE_MAX_TOKENS="${DYN_PREFILL_ON_DECODE_MAX_TOKENS:-1000}"
+export DYN_NATIVE_PREFILL_POLICY DYN_PREFILL_ON_DECODE_MAX_TOKENS
 
 echo "[entrypoint] Starting Dynamo frontend on port $HTTP_PORT..."
 echo "  DYN_DISCOVERY_BACKEND=$DYN_DISCOVERY_BACKEND"
@@ -88,8 +88,8 @@ echo "  DYN_TOKENIZER=$DYN_TOKENIZER"
 echo "  RUST_LOG=${RUST_LOG:-<unset>}"
 echo "  DEBUG_PERF_FLAG=$DEBUG_PERF_FLAG"
 echo "  ROUTER_MODE=${ROUTER_MODE:-<default>}"
-echo "  TT_NATIVE_PREFILL_POLICY=$TT_NATIVE_PREFILL_POLICY"
-echo "  TT_PREFILL_ON_DECODE_MAX_TOKENS=$TT_PREFILL_ON_DECODE_MAX_TOKENS"
+echo "  DYN_NATIVE_PREFILL_POLICY=$DYN_NATIVE_PREFILL_POLICY"
+echo "  DYN_PREFILL_ON_DECODE_MAX_TOKENS=$DYN_PREFILL_ON_DECODE_MAX_TOKENS"
 
 exec python -m dynamo.frontend \
     --http-port "$HTTP_PORT" \

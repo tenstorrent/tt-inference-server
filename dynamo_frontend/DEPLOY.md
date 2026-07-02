@@ -70,12 +70,11 @@ timing metrics are emitted; override it if you need a different router.
 with `--llm-device-backend`.
 
 Native prefill threshold policy is exposed through
-`TT_NATIVE_PREFILL_POLICY=threshold` and
-`TT_PREFILL_ON_DECODE_MAX_TOKENS` (defaulting to
-`MAX_TOKENS_TO_PREFILL_ON_DECODE` or `1000`). These are currently a TT policy
-contract for Dynamo router work: cpp_server also advertises the same threshold in
-its MDC `runtime_config`. ai-dynamo 1.2.0.post1 does not consume the TT threshold
-env directly yet.
+`DYN_NATIVE_PREFILL_POLICY=threshold` and
+`DYN_PREFILL_ON_DECODE_MAX_TOKENS` (defaulting to
+`MAX_TOKENS_TO_PREFILL_ON_DECODE` or `1000`). cpp_server also advertises the same
+threshold in its MDC `runtime_config`. ai-dynamo 1.2.0.post1 does not consume the
+native prefill threshold env directly yet.
 
 Monitoring uses `tt-media-server/monitoring/docker-compose.yml`, attached to
 `dynamo-net` via `TT_NET=dynamo-net`. By default Prometheus scrapes

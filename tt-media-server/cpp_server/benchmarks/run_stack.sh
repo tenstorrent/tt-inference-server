@@ -152,8 +152,8 @@ start_frontend() {
         DYN_DISCOVERY_BACKEND=etcd ETCD_ENDPOINTS="${ETCD_ENDPOINTS}" \
         DYN_REQUEST_PLANE=tcp DYN_EVENT_PLANE=zmq \
         DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
-        TT_NATIVE_PREFILL_POLICY="${TT_NATIVE_PREFILL_POLICY:-threshold}" \
-        TT_PREFILL_ON_DECODE_MAX_TOKENS="${TT_PREFILL_ON_DECODE_MAX_TOKENS:-${MAX_TOKENS_TO_PREFILL_ON_DECODE}}" \
+        DYN_NATIVE_PREFILL_POLICY="${DYN_NATIVE_PREFILL_POLICY:-threshold}" \
+        DYN_PREFILL_ON_DECODE_MAX_TOKENS="${DYN_PREFILL_ON_DECODE_MAX_TOKENS:-${MAX_TOKENS_TO_PREFILL_ON_DECODE}}" \
         "${DYN_VENV}/bin/python3" -m dynamo.frontend \
             --http-port "${HTTP_PORT}" \
             --model-name "${MODEL_NAME}" \

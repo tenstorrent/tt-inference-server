@@ -39,8 +39,8 @@ the worker, etcd, and the frontend are on the same network.
 | `ETCD_ENDPOINTS` | `http://etcd:2379` | Comma-separated etcd v3 client URLs |
 | `DYN_REQUEST_PLANE` | `tcp` | Request plane transport (`tcp` or `nats`) |
 | `DYN_EVENT_PLANE` | `zmq` | Event plane transport (`zmq` or `nats`) |
-| `TT_NATIVE_PREFILL_POLICY` | `threshold` | TT native prefill routing policy contract for future Dynamo router support |
-| `TT_PREFILL_ON_DECODE_MAX_TOKENS` | `1000` | Threshold matching cpp_server `MAX_TOKENS_TO_PREFILL_ON_DECODE`; logged/exported but not consumed by ai-dynamo 1.2.0.post1 |
+| `DYN_NATIVE_PREFILL_POLICY` | `threshold` | Native prefill routing policy contract for Dynamo router support |
+| `DYN_PREFILL_ON_DECODE_MAX_TOKENS` | `1000` | Threshold matching cpp_server `MAX_TOKENS_TO_PREFILL_ON_DECODE`; logged/exported for Dynamo router support |
 
 ## Notes
 
