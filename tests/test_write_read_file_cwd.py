@@ -9,10 +9,20 @@ def test_write_file_relative_path_uses_cwd(tmp_path):
     assert (tmp_path / "subdir" / "hello.txt").read_text() == "content"
 
 
-def test_write_file_absolute_path_ignores_cwd(tmp_path):
+def test_write_file_absolute_path_inside_cwd_allowed(tmp_path):
     target = tmp_path / "abs.txt"
-    write_file(str(target), "abs-content", cwd="/some/other/dir")
+    write_file(str(target), "abs-content", cwd=str(tmp_path))
     assert target.read_text() == "abs-content"
+
+
+def test_write_file_absolute_path_outside_cwd_denied(tmp_path):
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside")
+    result = write_file(str(outside.absolute()), "evil", cwd=str(cwd))
+    assert result.startswith("ERROR: path traversal outside cwd denied")
+    assert not (cwd / "outside.txt").exists()
 
 
 def test_write_file_no_cwd_uses_process_cwd(tmp_path, monkeypatch):
@@ -27,11 +37,20 @@ def test_read_file_relative_path_uses_cwd(tmp_path):
     assert result == "hello"
 
 
-def test_read_file_absolute_path_ignores_cwd(tmp_path):
+def test_read_file_absolute_path_inside_cwd_allowed(tmp_path):
     target = tmp_path / "abs_read.txt"
     target.write_text("world")
-    result = read_file(str(target), cwd="/some/other/dir")
+    result = read_file(str(target), cwd=str(tmp_path))
     assert result == "world"
+
+
+def test_read_file_absolute_path_outside_cwd_denied(tmp_path):
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside")
+    result = read_file(str(outside.absolute()), cwd=str(cwd))
+    assert result.startswith("ERROR: path traversal outside cwd denied")
 
 
 def test_execute_write_file_passes_cwd(tmp_path):
@@ -75,3 +94,28 @@ def test_write_file_dotdot_that_stays_inside_allowed(tmp_path):
     result = write_file("sub/../file.txt", "ok", cwd=str(tmp_path))
     assert "wrote" in result
     assert (tmp_path / "file.txt").read_text() == "ok"
+
+def test_read_file_symlink_escape_rejected(tmp_path):
+    # A symlink inside cwd pointing outside must not allow reading the target.
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    outside = tmp_path / "secret.txt"
+    outside.write_text("secret")
+    link = cwd / "link"
+    link.symlink_to(outside)
+    result = read_file(str(link), cwd=str(cwd))
+    assert result.startswith("ERROR: path traversal outside cwd denied")
+
+
+def test_write_file_symlink_escape_rejected(tmp_path):
+    # A symlink inside cwd pointing outside must not allow overwriting the target.
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    outside = tmp_path / "target.txt"
+    outside.write_text("original")
+    link = cwd / "evil-link"
+    link.symlink_to(outside)
+    result = write_file(str(link), "pwned", cwd=str(cwd))
+    assert result.startswith("ERROR: path traversal outside cwd denied")
+    assert outside.read_text() == "original"
+

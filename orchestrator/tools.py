@@ -8,29 +8,39 @@ def bash_exec(command: str, cwd: str | None = None) -> str:
     out = r.stdout + r.stderr
     return out[:8000] if len(out) > 8000 else out  # guard against huge output
 
+def _resolve_checked(path: str, cwd: str | None) -> tuple[str, bool]:
+    # Resolve path against cwd and reject anything that escapes it.
+    if cwd is None:
+        return path, True
+    target = os.path.join(cwd, path)
+    real_cwd = os.path.realpath(cwd)
+    real_target = os.path.realpath(target)
+    if real_target != real_cwd and not real_target.startswith(real_cwd + os.sep):
+        return f"ERROR: path traversal outside cwd denied", False
+    return target, True
+
+
 def read_file(path: str, cwd: str | None = None) -> str:
-    if cwd and not os.path.isabs(path):
-        path = os.path.join(cwd, path)
-        # Reject ../sequences that escape the target repo root.
-        if not os.path.realpath(path).startswith(os.path.realpath(cwd) + os.sep):
-            return f"ERROR: path traversal outside cwd denied"
+    resolved, ok = _resolve_checked(path, cwd)
+    if not ok:
+        return resolved
     try:
-        with open(path) as f:
+        with open(resolved) as f:
             content = f.read()
         return content[:8000] if len(content) > 8000 else content
     except Exception as e:
         return f"ERROR: {e}"
 
+
 def write_file(path: str, content: str, cwd: str | None = None) -> str:
-    if cwd and not os.path.isabs(path):
-        path = os.path.join(cwd, path)
-        # Reject ../sequences that escape the target repo root.
-        if not os.path.realpath(path).startswith(os.path.realpath(cwd) + os.sep):
-            return f"ERROR: path traversal outside cwd denied"
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, "w") as f:
+    resolved, ok = _resolve_checked(path, cwd)
+    if not ok:
+        return resolved
+    os.makedirs(os.path.dirname(os.path.abspath(resolved)), exist_ok=True)
+    with open(resolved, "w") as f:
         f.write(content)
-    return f"wrote {len(content)} chars to {path}"
+    return f"wrote {len(content)} chars to {resolved}"
+
 
 def git_status(cwd: str | None = None) -> str:
     return bash_exec("git status --short && git log --oneline -5", cwd=cwd)
