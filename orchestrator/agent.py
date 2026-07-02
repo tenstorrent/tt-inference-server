@@ -9,7 +9,7 @@ from openai import OpenAI
 from orchestrator.config import PROVIDER_REGISTRY, get_api_key
 import orchestrator.tools as T
 
-_BACKOFF_SECONDS = [2, 4, 8, 16, 32]
+_BACKOFF_SECONDS = [5, 15, 30, 60, 120, 300, 300, 300, 300, 300]
 
 # Default hard cap on tool-call iterations.  This is a safety rail, not a
 # cost-control mechanism — cost is better managed at the token/dollar level.
@@ -79,6 +79,8 @@ def run(
     blocked = _ORCHESTRATOR_ONLY | (exclude_tools or set())
     agent_tools = [t for t in T.DEFS if t["function"]["name"] not in blocked]
 
+    _max_attempts = len(_BACKOFF_SECONDS) + 1
+
     for round_num in range(max_tool_rounds):
         kwargs = dict(
             model=persona["model"],
@@ -88,7 +90,8 @@ def run(
         )
         if "max_tokens" in persona:
             kwargs["max_tokens"] = persona["max_tokens"]
-        for attempt in range(len(_BACKOFF_SECONDS) + 1):
+        _attempt_start = time.monotonic()
+        for attempt in range(_max_attempts):
             try:
                 response = client.chat.completions.create(**kwargs)
                 break
@@ -105,8 +108,10 @@ def run(
                 if reset_time is not None:
                     sleep_secs = max(0, (reset_time - datetime.now(timezone.utc)).total_seconds()) + 5
                     if verbose:
+                        elapsed = time.monotonic() - _attempt_start
                         print(
-                            f"  [{persona['name']}] rate limit (attempt {attempt + 1}/5):"
+                            f"  [{persona['name']}] rate limit (attempt {attempt + 1}/{_max_attempts},"
+                            f" elapsed {elapsed:.0f}s):"
                             f" reset at {reset_time.strftime('%Y-%m-%d %H:%M:%S UTC')};"
                             f" sleeping {sleep_secs:.1f}s"
                         )
@@ -114,8 +119,10 @@ def run(
                 else:
                     next_wait = _BACKOFF_SECONDS[attempt]
                     if verbose:
+                        elapsed = time.monotonic() - _attempt_start
                         print(
-                            f"  [{persona['name']}] rate limit (attempt {attempt + 1}/5):"
+                            f"  [{persona['name']}] rate limit (attempt {attempt + 1}/{_max_attempts},"
+                            f" elapsed {elapsed:.0f}s):"
                             f" unknown reset time (using backoff); retrying in {next_wait}s"
                         )
                     time.sleep(next_wait)
@@ -124,9 +131,13 @@ def run(
                     raise
                 next_wait = _BACKOFF_SECONDS[attempt]
                 if verbose:
+                    elapsed = time.monotonic() - _attempt_start
+                    # Log only the exception type — the full str(e) may contain
+                    # raw HTTP response bodies with internal infrastructure details.
                     print(
-                        f"  [{persona['name']}] transient error (attempt {attempt + 1}/5):"
-                        f" {e}; retrying in {next_wait}s"
+                        f"  [{persona['name']}] transient error (attempt {attempt + 1}/{_max_attempts},"
+                        f" elapsed {elapsed:.0f}s):"
+                        f" {type(e).__name__}; retrying in {next_wait}s"
                     )
                 time.sleep(next_wait)
         else:
