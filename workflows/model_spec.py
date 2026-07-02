@@ -287,9 +287,6 @@ sdxl_forge_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server",
     code_path="tt-media-server/tt_model_runners/forge_runners/sdxl_forge_runner.py",
 )
-# Text-only Qwen3.5/3.6 bringup on Blackhole; the real demo code lives under
-# models/demos/blackhole/qwen36 (served via the vLLM plugin's
-# Qwen3_5ForConditionalGeneration registration), not models/tt_transformers.
 qwen36_blackhole_impl = ImplSpec(
     impl_id="qwen36_blackhole",
     impl_name="qwen36-blackhole",
