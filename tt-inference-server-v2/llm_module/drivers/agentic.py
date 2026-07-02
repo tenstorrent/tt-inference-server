@@ -194,6 +194,9 @@ def build_terminal_bench_config(
         exclude_task_names=cfg.exclude_task_names,
         quiet=cfg.quiet,
         yes=cfg.yes,
+        agent_import_path=cfg.agent_import_path,
+        environment_env=cfg.environment_env,
+        verifier_env=cfg.verifier_env,
     )
 
 

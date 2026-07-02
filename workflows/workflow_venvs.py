@@ -135,9 +135,16 @@ def setup_evals_agentic(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
 ) -> bool:
-    """Hook for EVALS_AGENTIC: clone SWE-agent and install it as editable.
+    """Hook for EVALS_AGENTIC: clone + editable-install SWE-agent and Harbor.
 
-    Other deps (harbor, mini-swe-agent, epoch SWE-bench) are in requirements/evals-agentic.txt.
+    Other deps (mini-swe-agent, epoch SWE-bench) are in requirements/evals-agentic.txt.
+
+    Harbor is cloned and installed editable (rather than from PyPI) so its
+    top-level ``adapters/`` directory is available on disk. The adapters are not
+    part of the Harbor wheel and live outside ``src/`` (e.g.
+    ``adapters/tau3-bench/tau3_llm_agent.py``), so we also drop a ``.pth`` file
+    pointing at the repo root to make ``adapters.<name>...`` importable via
+    ``agent_import_path``.
     """
     sweagent_dir = venv_config.venv_path / "SWE-agent"
     if not sweagent_dir.exists():
@@ -153,7 +160,52 @@ def setup_evals_agentic(
         f"-e {sweagent_dir}",
         logger=logger,
     )
-    return return_code == 0
+    if return_code != 0:
+        return False
+
+    # Pin to the Harbor release we validate against; keep in sync with the
+    # version the adapters (e.g. tau3-bench) were generated/tested with.
+    harbor_dir = venv_config.venv_path / "harbor"
+    harbor_tag = "v0.6.5"
+    if not harbor_dir.exists():
+        clone_return_code = run_command(
+            "git clone --depth 1 --branch "
+            f"{harbor_tag} https://github.com/harbor-framework/harbor.git {harbor_dir}",
+            logger=logger,
+        )
+        if clone_return_code != 0:
+            return False
+
+    return_code = run_command(
+        f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
+        f"-e {harbor_dir}",
+        logger=logger,
+    )
+    if return_code != 0:
+        return False
+
+    # Expose Harbor's top-level adapters/ (outside src/, not in the wheel) so
+    # agent_import_path values like "adapters.tau3-bench.tau3_llm_agent:..." resolve.
+    return _write_harbor_adapters_pth(venv_config, harbor_dir)
+
+
+def _write_harbor_adapters_pth(
+    venv_config: VenvConfig,  # noqa: F821
+    harbor_dir: Path,
+) -> bool:
+    site_packages = next(
+        (venv_config.venv_path / "lib").glob("python*/site-packages"), None
+    )
+    if site_packages is None:
+        logger.error(
+            "Could not locate site-packages under %s to write harbor-adapters.pth",
+            venv_config.venv_path,
+        )
+        return False
+    pth_file = site_packages / "harbor-adapters.pth"
+    pth_file.write_text(f"{harbor_dir}\n")
+    logger.info("Wrote %s pointing to %s", pth_file, harbor_dir)
+    return True
 
 
 def check_docker_available(
