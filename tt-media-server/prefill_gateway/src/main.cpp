@@ -14,7 +14,6 @@
 #include <thread>
 #include <vector>
 
-#include "gateway/affinity_cache.hpp"
 #include "gateway/dispatcher.hpp"
 #include "gateway/gateway_health.hpp"
 #include "gateway/gateway_health_server.hpp"
@@ -270,14 +269,14 @@ std::vector<tt::gateway::GatewayPrefillMetricSnapshot> buildPrefillMetrics(
   const auto now = std::chrono::steady_clock::now();
   std::vector<tt::gateway::GatewayPrefillMetricSnapshot> out;
   for (const auto& snapshot : registry.snapshot()) {
-    double heartbeatAgeSeconds = 0.0;
-    if (snapshot.last_heartbeat != std::chrono::steady_clock::time_point{}) {
-      heartbeatAgeSeconds =
-          std::chrono::duration<double>(now - snapshot.last_heartbeat).count();
+    double registrationAgeSeconds = 0.0;
+    if (snapshot.lastHeartbeat != std::chrono::steady_clock::time_point{}) {
+      registrationAgeSeconds =
+          std::chrono::duration<double>(now - snapshot.lastHeartbeat).count();
     }
-    out.push_back({snapshot.server_id, snapshot.healthy,
-                   snapshot.accepting_tasks, snapshot.in_flight,
-                   snapshot.cached_blocks, heartbeatAgeSeconds});
+    out.push_back({snapshot.serverId, snapshot.healthy, snapshot.acceptingTasks,
+                   snapshot.inFlight, snapshot.cachedBlocks,
+                   registrationAgeSeconds});
   }
   return out;
 }
@@ -319,7 +318,6 @@ int main(int argc, char** argv) {
   tt::gateway::GatewayHealthServer healthServer;
 
   tt::gateway::PrefillRegistry registry;
-  tt::gateway::AffinityCache affinity;
 
   // Decode-facing: gateway listens, decode dials in (only 1 decode connection).
   tt::sockets::SocketManager decodeSm;
@@ -382,7 +380,8 @@ int main(int argc, char** argv) {
           const std::string& serverId,
           const tt::sockets::PrefillRequestMessage& msg) -> bool {
     if (useZmqPrefillRouter) {
-      return zmqPrefillRouter.sendObject(serverId, "prefill_request", msg);
+      return zmqPrefillRouter.sendObject(
+          serverId, tt::sockets::tags::PREFILL_REQUEST, msg);
     }
 
     auto* sm = registry.getSocketManager(serverId);
@@ -391,7 +390,7 @@ int main(int argc, char** argv) {
                   serverId);
       return false;
     }
-    return sm->sendObject("prefill_request", msg);
+    return sm->sendObject(tt::sockets::tags::PREFILL_REQUEST, msg);
   };
 
   senders.sendCancelToPrefill =
@@ -412,21 +411,16 @@ int main(int argc, char** argv) {
     return sm->sendObject(tt::sockets::tags::CANCEL_PREFILL, msg);
   };
 
-  senders.sendAssignmentToDecode =
-      [&decodeSm](const tt::sockets::PrefillAssignmentMessage& msg) -> bool {
-    return decodeSm.sendObject(tt::sockets::tags::PREFILL_ASSIGNMENT, msg);
-  };
-
   senders.sendResultToDecode =
       [&decodeSm](const tt::sockets::PrefillResultMessage& msg) -> bool {
-    return decodeSm.sendObject("prefill_result", msg);
+    return decodeSm.sendObject(tt::sockets::tags::PREFILL_RESULT, msg);
   };
 
   tt::gateway::Dispatcher::Options dispatcherOptions{
       cfg.requestTimeout, cfg.timeoutWindow, cfg.timeoutCooldown,
       cfg.timeoutThreshold};
   dispatcherPtr = std::make_unique<tt::gateway::Dispatcher>(
-      registry, affinity, std::move(senders), dispatcherOptions);
+      registry, std::move(senders), dispatcherOptions);
 
   registry.setOnPrefillDown([&dispatcherPtr](const std::string& id) {
     dispatcherPtr->onPrefillDown(id);
@@ -441,7 +435,7 @@ int main(int argc, char** argv) {
   }
 
   decodeSm.registerHandler<tt::sockets::PrefillRequestMessage>(
-      "prefill_request",
+      tt::sockets::tags::PREFILL_REQUEST,
       [&dispatcherPtr](const tt::sockets::PrefillRequestMessage& msg) {
         dispatcherPtr->onPrefillRequest(msg);
       });
@@ -476,16 +470,19 @@ int main(int argc, char** argv) {
   decodeSm.start();
 
   constexpr auto probeIntervalMs = std::chrono::milliseconds(1000);
-  std::jthread proberThread(
-      [&prefillSms, probeIntervalMs](std::stop_token stopToken) {
-        while (!stopToken.stop_requested()) {
-          for (auto& sm : prefillSms) {
-            sm->sendObject(tt::sockets::tags::REGISTRATION_PROBE,
-                           tt::sockets::RegistrationProbeMessage{});
+  std::jthread proberThread;
+  if (!useZmqPrefillRouter) {
+    proberThread =
+        std::jthread([&prefillSms, probeIntervalMs](std::stop_token stopToken) {
+          while (!stopToken.stop_requested()) {
+            for (auto& sm : prefillSms) {
+              sm->sendObject(tt::sockets::tags::REGISTRATION_PROBE,
+                             tt::sockets::RegistrationProbeMessage{});
+            }
+            std::this_thread::sleep_for(probeIntervalMs);
           }
-          std::this_thread::sleep_for(probeIntervalMs);
-        }
-      });
+        });
+  }
 
   const auto prefillStaleTimeout = cfg.prefillStaleTimeout;
   std::jthread watchdogThread;
@@ -517,10 +514,15 @@ int main(int argc, char** argv) {
   }
 
   std::jthread metricsSnapshotThread(
-      [&registry, &affinity, &metrics](std::stop_token stopToken) {
+      [&registry, &metrics](std::stop_token stopToken) {
         while (!stopToken.stop_requested()) {
-          metrics.setPrefillSnapshots(buildPrefillMetrics(registry));
-          metrics.setRoutingTableSize(affinity.size());
+          const auto snapshots = buildPrefillMetrics(registry);
+          size_t cachedBlocks = 0;
+          for (const auto& snapshot : snapshots) {
+            cachedBlocks += snapshot.cachedBlocks;
+          }
+          metrics.setPrefillSnapshots(snapshots);
+          metrics.setRoutingTableSize(cachedBlocks);
           std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
       });

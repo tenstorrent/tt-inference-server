@@ -9,20 +9,22 @@ namespace tt::gateway {
 
 namespace {
 
-bool isEligible(const PrefillSnapshot& p) {
-  if (!p.healthy) return false;
-  if (!p.accepting_tasks) return false;
-  if (p.max_in_flight > 0 && p.in_flight >= p.max_in_flight) return false;
-  return true;
-}
+struct Candidate {
+  const PrefillSnapshot* prefill = nullptr;
+  size_t prefixMatchDepth = 0;
 
-const PrefillSnapshot* findById(const std::vector<PrefillSnapshot>& prefills,
-                                const std::string& serverId) {
-  auto it = std::ranges::find_if(prefills, [&](const PrefillSnapshot& p) {
-    return p.server_id == serverId;
-  });
-  return it == prefills.end() ? nullptr : &*it;
-}
+  bool isBetterThan(const Candidate& other) const {
+    if (prefixMatchDepth != other.prefixMatchDepth) {
+      return prefixMatchDepth > other.prefixMatchDepth;
+    }
+    return prefill->inFlight < other.prefill->inFlight;
+  }
+
+  bool isTiedWith(const Candidate& other) const {
+    return prefixMatchDepth == other.prefixMatchDepth &&
+           prefill->inFlight == other.prefill->inFlight;
+  }
+};
 
 }  // namespace
 
@@ -30,19 +32,18 @@ PrefillEligibilitySummary summarizePrefillEligibility(
     const std::vector<PrefillSnapshot>& prefills) {
   auto healthy = [](const PrefillSnapshot& prefill) { return prefill.healthy; };
   auto accepting = [](const PrefillSnapshot& prefill) {
-    return prefill.healthy && prefill.accepting_tasks;
+    return prefill.healthy && prefill.acceptingTasks;
   };
   auto capacityAvailable = [](const PrefillSnapshot& prefill) {
-    return prefill.healthy && prefill.accepting_tasks &&
-           (prefill.max_in_flight == 0 ||
-            prefill.in_flight < prefill.max_in_flight);
+    return prefill.healthy && prefill.acceptingTasks &&
+           (prefill.maxInFlight == 0 || prefill.inFlight < prefill.maxInFlight);
   };
 
   PrefillEligibilitySummary summary;
   summary.total = prefills.size();
   summary.healthy = std::ranges::count_if(prefills, healthy);
   summary.accepting = std::ranges::count_if(prefills, accepting);
-  summary.capacity_available =
+  summary.capacityAvailable =
       std::ranges::count_if(prefills, capacityAvailable);
   return summary;
 }
@@ -51,8 +52,6 @@ std::string_view routingReasonName(PrefillRoutingReason reason) {
   switch (reason) {
     case PrefillRoutingReason::PrefixMatch:
       return "prefix_match";
-    case PrefillRoutingReason::StickyFallback:
-      return "sticky_fallback";
     case PrefillRoutingReason::LeastInflight:
       return "least_inflight";
     case PrefillRoutingReason::RoundRobin:
@@ -64,49 +63,46 @@ std::string_view routingReasonName(PrefillRoutingReason reason) {
 }
 
 PrefillSelection selectPrefill(const std::vector<PrefillSnapshot>& prefills,
-                               size_t registrationHash,
-                               const std::optional<std::string>& stickyTarget,
                                size_t& roundRobinCursor) {
-  const bool hasStickyHint = registrationHash != 0 && stickyTarget.has_value();
-  if (hasStickyHint) {
-    const PrefillSnapshot* hit = findById(prefills, *stickyTarget);
-    if (hit && isEligible(*hit)) {
-      return {*stickyTarget, PrefillRoutingReason::PrefixMatch};
+  std::vector<Candidate> bestCandidates;
+  bestCandidates.reserve(prefills.size());
+
+  for (const auto& p : prefills) {
+    if (!p.isEligible()) {
+      continue;
+    }
+
+    Candidate candidate{&p, p.prefixMatchDepth};
+    if (bestCandidates.empty() ||
+        candidate.isBetterThan(bestCandidates.front())) {
+      bestCandidates = {candidate};
+      continue;
+    }
+    if (candidate.isTiedWith(bestCandidates.front())) {
+      bestCandidates.push_back(candidate);
     }
   }
 
-  std::vector<const PrefillSnapshot*> eligible;
-  eligible.reserve(prefills.size());
-  for (const auto& p : prefills) {
-    if (isEligible(p)) eligible.push_back(&p);
-  }
-
-  if (eligible.empty()) {
+  if (bestCandidates.empty()) {
     return {std::nullopt, PrefillRoutingReason::NoEligiblePrefill};
   }
 
-  const auto minInFlight =
-      (*std::ranges::min_element(eligible, {}, [](const PrefillSnapshot* p) {
-        return p->in_flight;
-      }))->in_flight;
-
-  std::vector<const PrefillSnapshot*> leastLoaded;
-  leastLoaded.reserve(eligible.size());
-  for (const auto* p : eligible) {
-    if (p->in_flight == minInFlight) leastLoaded.push_back(p);
+  const bool hasPrefixMatch = bestCandidates.front().prefixMatchDepth > 0;
+  if (bestCandidates.size() == 1) {
+    const auto& selected = bestCandidates.front();
+    return {selected.prefill->serverId,
+            hasPrefixMatch ? PrefillRoutingReason::PrefixMatch
+                           : PrefillRoutingReason::LeastInflight,
+            selected.prefixMatchDepth};
   }
 
-  if (leastLoaded.size() == 1) {
-    return {leastLoaded.front()->server_id,
-            hasStickyHint ? PrefillRoutingReason::StickyFallback
-                          : PrefillRoutingReason::LeastInflight};
-  }
-
-  const size_t pickIndex = roundRobinCursor % leastLoaded.size();
+  const size_t pickIndex = roundRobinCursor % bestCandidates.size();
   ++roundRobinCursor;
-  return {leastLoaded[pickIndex]->server_id,
-          hasStickyHint ? PrefillRoutingReason::StickyFallback
-                        : PrefillRoutingReason::RoundRobin};
+  const auto& selected = bestCandidates[pickIndex];
+  return {selected.prefill->serverId,
+          hasPrefixMatch ? PrefillRoutingReason::PrefixMatch
+                         : PrefillRoutingReason::RoundRobin,
+          selected.prefixMatchDepth};
 }
 
 }  // namespace tt::gateway

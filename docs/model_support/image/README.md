@@ -17,3 +17,4 @@ Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 | [stable-diffusion-xl-1.0-inpainting-0.1](stable-diffusion-xl-1.0-inpainting-0.1_galaxy.md) | [🟢 Complete](stable-diffusion-xl-1.0-inpainting-0.1_galaxy.md) | - | - | - | [🟢 Complete](stable-diffusion-xl-1.0-inpainting-0.1_t3k.md) | [🟢 Complete](stable-diffusion-xl-1.0-inpainting-0.1_n150.md) | [🟢 Complete](stable-diffusion-xl-1.0-inpainting-0.1_n300.md) |
 | [stable-diffusion-xl-base-1.0](stable-diffusion-xl-base-1.0_galaxy.md) | [🟢 Complete](stable-diffusion-xl-base-1.0_galaxy.md) | - | - | - | [🟢 Complete](stable-diffusion-xl-base-1.0_t3k.md) | [🟢 Complete](stable-diffusion-xl-base-1.0_n150.md) | [🟢 Complete](stable-diffusion-xl-base-1.0_n300.md) |
 | [Qwen-Image](Qwen-Image_galaxy.md) | [🟡 Functional](Qwen-Image_galaxy.md) | - | - | - | [🟡 Functional](Qwen-Image_t3k.md) | - | - |
+| [Z-Image-Turbo](Z-Image-Turbo_p300x2.md) | - | - | - | [🟡 Functional](Z-Image-Turbo_p300x2.md) | - | - | - |

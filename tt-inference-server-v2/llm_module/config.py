@@ -57,12 +57,13 @@ class ServerConnection:
     @property
     def host(self) -> str:
         """Bare hostname (no scheme/port), for drivers that take ``--host``."""
-        from urllib.parse import urlparse
+        from utils.url_helpers import resolve_host_port
 
         normalized = self.base_url.rstrip("/")
         if "://" not in normalized:
             normalized = f"http://{normalized}"
-        return urlparse(normalized).hostname or "localhost"
+        host, _ = resolve_host_port(normalized, self.service_port)
+        return host
 
 
 @dataclass(frozen=True)

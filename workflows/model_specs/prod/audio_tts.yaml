@@ -1,5 +1,5 @@
 # Model spec catalog: Audio / TTS templates.
-# Edit this file to add or modify a Audio / TTS model spec.
+# Do not edit manually. This file is updated through the automated release process.
 # Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
 templates:
 # =============================================================================
@@ -8,8 +8,8 @@ templates:
 - weights:
     - openai/whisper-large-v3
     - distil-whisper/distil-large-v3
-  version: "0.11.1"
-  tt_metal_commit: "bac8b34"
+  version: "0.17.0"
+  tt_metal_commit: "8c48a10"
   impl: whisper
   min_disk_gb: 15
   min_ram_gb: 6

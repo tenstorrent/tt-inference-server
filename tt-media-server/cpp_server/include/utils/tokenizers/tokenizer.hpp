@@ -16,7 +16,6 @@
 
 #include "config/types.hpp"
 #include "domain/llm/chat_message.hpp"
-#include "domain/tool_calls/tool.hpp"
 
 namespace tt::utils::tokenizers {
 
@@ -129,10 +128,7 @@ class Tokenizer {
    */
   virtual std::string applyChatTemplate(
       const std::vector<tt::domain::llm::ChatMessage>& messages,
-      bool addGenerationPrompt = true,
-      const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools =
-          std::nullopt,
-      bool enableReasoning = true,
+      bool addGenerationPrompt = true, bool enableReasoning = true,
       bool skipApplyChatTemplate = false) const = 0;
 
   /**
@@ -192,9 +188,9 @@ std::string tokenizerDirForModel(config::ModelType model);
 
 /**
  * Active tokenizer for the calling thread, auto-initialized from
- * LLM_DEVICE_BACKEND on first access (per thread). Each thread gets its own
- * instance so encode/decode are race-free without locking. The reference is
- * only valid on the calling thread; do not capture it for cross-thread use.
+ * MODEL on first access (per thread). Each thread gets its own instance so
+ * encode/decode are race-free without locking. The reference is only valid on
+ * the calling thread; do not capture it for cross-thread use.
  *
  * Instantiation parses tokenizer.json synchronously and is expensive on
  * large vocabs. For model-level constants used on the request hot path

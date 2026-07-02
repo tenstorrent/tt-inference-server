@@ -46,7 +46,7 @@ tests/ @tenstorrent/tt-inference-server-codeowners
 
 # scripts
 scripts/* @tstescoTT @tenstorrent/tt-inference-server-codeowners
-scripts/release/* @vmaksimovicTT @tstescoTT @bgoelTT
+scripts/release/* @vmaksimovicTT @tstescoTT @bgoelTT @vcankovicTT @acvejicTTs
 
 # github actions
 .github/CODEOWNERS @tstescoTT @bgoelTT @idjuricTT @dmadicTT @fivanovicTT @ztorlakTT
@@ -54,7 +54,7 @@ scripts/release/* @vmaksimovicTT @tstescoTT @bgoelTT
 
 # docs
 docs/ @tenstorrent/tt-inference-server-codeowners
-README.md @tstescoTT @bgoelTT @idjuricTT
+/README.md @tstescoTT @bgoelTT @idjuricTT
 
 # dynamo_frontend
 dynamo_frontend/ @idjuricTT @ljovanovicTT @lmuravljovTT @vpetrovicTT @ztorlakTT

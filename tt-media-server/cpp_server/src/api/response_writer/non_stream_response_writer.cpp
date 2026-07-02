@@ -10,7 +10,6 @@
 #include "api/error_response.hpp"
 #include "domain/llm/chat_completion_response.hpp"
 #include "domain/llm/llm_response.hpp"
-#include "utils/logger.hpp"
 
 namespace tt::api {
 
@@ -52,43 +51,7 @@ void NonStreamResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
   if (chunk.choices.empty()) return;
 
   const auto& choice = chunk.choices[0];
-  if (choice.reasoning.has_value()) {
-    accumulatedReasoning << choice.reasoning.value();
-  }
   accumulatedAnswer << choice.text;
-
-  // Accumulate tool call data from streaming deltas
-  if (choice.tool_calls.has_value()) {
-    const auto& toolCallsJson = choice.tool_calls.value();
-    if (toolCallsJson.isArray()) {
-      for (const auto& toolCallDelta : toolCallsJson) {
-        if (!toolCallDelta.isMember("index")) continue;
-
-        int index = toolCallDelta["index"].asInt();
-
-        // Ensure vector is large enough
-        while (static_cast<int>(accumulatedToolCalls.size()) <= index) {
-          accumulatedToolCalls.emplace_back();
-        }
-
-        auto& accumulated = accumulatedToolCalls[index];
-
-        // Capture id and name on first delta (TOOL_CALL_START)
-        if (toolCallDelta.isMember("id")) {
-          accumulated.id = toolCallDelta["id"].asString();
-        }
-        if (toolCallDelta.isMember("function")) {
-          const auto& func = toolCallDelta["function"];
-          if (func.isMember("name") && !func["name"].asString().empty()) {
-            accumulated.name = func["name"].asString();
-          }
-          if (func.isMember("arguments")) {
-            accumulated.arguments << func["arguments"].asString();
-          }
-        }
-      }
-    }
-  }
 
   noteToken(choice);
 
@@ -107,37 +70,9 @@ void NonStreamResponseWriter::finalize() {
 
   LLMChoice choice;
   choice.index = 0;
-  choice.reasoning =
-      accumulatedReasoning.tellp() == 0
-          ? std::nullopt
-          : std::optional<std::string>(accumulatedReasoning.str());
 
-  // Build tool_calls if any were accumulated
-  if (!accumulatedToolCalls.empty()) {
-    Json::Value toolCallsArray(Json::arrayValue);
-    for (const auto& tc : accumulatedToolCalls) {
-      if (tc.id.empty() && tc.name.empty()) continue;
-
-      Json::Value toolCall;
-      toolCall["id"] = tc.id;
-      toolCall["type"] = "function";
-      toolCall["function"]["name"] = tc.name;
-      toolCall["function"]["arguments"] = tc.arguments.str();
-      toolCallsArray.append(toolCall);
-    }
-
-    if (!toolCallsArray.empty()) {
-      choice.tool_calls = toolCallsArray;
-      choice.text = "";
-      choice.finish_reason = "tool_calls";
-    } else {
-      choice.text = accumulatedAnswer.str();
-      choice.finish_reason = finishReason;
-    }
-  } else {
-    choice.text = accumulatedAnswer.str();
-    choice.finish_reason = finishReason;
-  }
+  choice.text = accumulatedAnswer.str();
+  choice.finish_reason = finishReason;
 
   llmResponse.choices.push_back(std::move(choice));
   llmResponse.usage = buildUsage();

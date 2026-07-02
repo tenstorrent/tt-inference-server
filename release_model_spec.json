@@ -1,6 +1,6 @@
 {
   "schema_version": "0.1.0",
-  "release_version": "0.15.0",
+  "release_version": "0.17.0",
   "model_specs": {
     "openai/gpt-oss-20b": {
       "T3K": {
@@ -17,7 +17,6 @@
             "model_name": "gpt-oss-20b",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "e867533",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 1,
@@ -102,6 +101,7 @@
               "VLLM_ENABLE_RESPONSES_API_STORE": 1,
               "VLLM_GPT_OSS_HARMONY_SYSTEM_INSTRUCTIONS": 1
             },
+            "tt_metal_commit": "e867533",
             "vllm_commit": "8f36910",
             "hf_weights_repo": "openai/gpt-oss-20b",
             "param_count": 20,
@@ -142,7 +142,6 @@
             "model_name": "gpt-oss-20b",
             "inference_engine": "vLLM",
             "device_type": "GALAXY_T3K",
-            "tt_metal_commit": "e867533",
             "device_model_spec": {
               "device": "GALAXY_T3K",
               "max_concurrency": 1,
@@ -184,6 +183,7 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "e867533",
             "vllm_commit": "8f36910",
             "hf_weights_repo": "openai/gpt-oss-20b",
             "param_count": 20,
@@ -224,7 +224,6 @@
             "model_name": "gpt-oss-20b",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "e867533",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 128,
@@ -304,6 +303,7 @@
               "MESH_DEVICE": "(4, 8)",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "e867533",
             "vllm_commit": "8f36910",
             "hf_weights_repo": "openai/gpt-oss-20b",
             "param_count": 20,
@@ -346,7 +346,6 @@
             "model_name": "gpt-oss-120b",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "805f43d",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 1,
@@ -429,17 +428,18 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
-            "vllm_commit": "a45c614",
+            "tt_metal_commit": "8c48a10",
+            "vllm_commit": "f52987a",
             "hf_weights_repo": "openai/gpt-oss-120b",
             "param_count": 120,
             "min_disk_gb": 260,
             "min_ram_gb": 300.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.12.0-805f43d-a45c614",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/805f43d/models/demos/gpt_oss",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/demos/gpt_oss",
             "override_tt_config": {
               "trace_region_size": 134217728
             },
@@ -471,7 +471,6 @@
             "model_name": "gpt-oss-120b",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "805f43d",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 32,
@@ -542,7 +541,18 @@
               },
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
-              "known_issues": [],
+              "known_issues": [
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently.",
+                  "task_name": "aime25"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently.",
+                  "task_name": "gpqa_diamond_cot_zeroshot"
+                }
+              ],
               "eval_max_retries": null
             },
             "system_requirements": null,
@@ -556,17 +566,18 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 2
             },
-            "vllm_commit": "a45c614",
+            "tt_metal_commit": "8c48a10",
+            "vllm_commit": "f52987a",
             "hf_weights_repo": "openai/gpt-oss-120b",
             "param_count": 120,
             "min_disk_gb": 260,
             "min_ram_gb": 300.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.12.0-805f43d-a45c614",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/805f43d/models/demos/gpt_oss",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/demos/gpt_oss",
             "override_tt_config": {
               "sample_on_device_mode": "all",
               "trace_region_size": 134217728
@@ -575,6 +586,144 @@
               "text"
             ],
             "subdevice_type": "T3K",
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": true,
+            "metadata": {
+              "reasoning_parser_name": "openai_gptoss",
+              "tool_call_parser_name": "openai"
+            },
+            "cli_args": {}
+          }
+        }
+      },
+      "P300X2": {
+        "vLLM": {
+          "gpt_oss": {
+            "model_id": "id_gpt-oss_gpt-oss-120b_p300x2",
+            "impl": {
+              "impl_id": "gpt_oss",
+              "impl_name": "gpt-oss",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/demos/gpt_oss"
+            },
+            "hf_model_repo": "openai/gpt-oss-120b",
+            "model_name": "gpt-oss-120b",
+            "inference_engine": "vLLM",
+            "device_type": "P300X2",
+            "device_model_spec": {
+              "device": "P300X2",
+              "max_concurrency": 1,
+              "max_context": 131072,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [
+                {
+                  "isl": 128,
+                  "osl": 128,
+                  "max_concurrency": 1,
+                  "num_prompts": 8,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 510.0,
+                      "tput_user": 2.7,
+                      "tput": 2.7,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 102.0,
+                      "tput_user": 13.5,
+                      "tput": 13.5,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 51.0,
+                      "tput_user": 27.0,
+                      "tput": 27.0,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                }
+              ],
+              "vllm_args": {
+                "model": "openai/gpt-oss-120b",
+                "block_size": "64",
+                "max_model_len": "131072",
+                "max_num_seqs": "1",
+                "max_num_batched_tokens": "131072",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {\"trace_region_size\": 58000000, \"sample_on_device_mode\": \"decode_only\"}}"
+              },
+              "override_tt_config": {
+                "trace_region_size": 58000000,
+                "sample_on_device_mode": "decode_only"
+              },
+              "env_vars": {
+                "MESH_DEVICE": "(1, 4)",
+                "ARCH_NAME": "blackhole",
+                "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+              },
+              "tensor_cache_timeout": 5400.0,
+              "system_requirements": null,
+              "known_issues": [
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently.",
+                  "task_name": "aime25"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently.",
+                  "task_name": "gpqa_diamond_cot_zeroshot"
+                }
+              ],
+              "eval_max_retries": null
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "VLLM_CONFIGURE_LOGGING": "1",
+              "VLLM_RPC_TIMEOUT": "900000",
+              "VLLM_TARGET_DEVICE": "tt",
+              "TORCHDYNAMO_DISABLE": "1",
+              "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+              "MESH_DEVICE": "(1, 4)",
+              "ARCH_NAME": "blackhole",
+              "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+            },
+            "tt_metal_commit": "8c48a10",
+            "vllm_commit": "f52987a",
+            "hf_weights_repo": "openai/gpt-oss-120b",
+            "param_count": 120,
+            "min_disk_gb": 260,
+            "min_ram_gb": 300.0,
+            "model_type": "LLM",
+            "repacked": 0,
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/demos/gpt_oss",
+            "override_tt_config": {
+              "trace_region_size": 58000000,
+              "sample_on_device_mode": "decode_only"
+            },
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
             "metadata": {
@@ -601,7 +750,6 @@
             "model_name": "AFM-4.5B",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "ae65ee5",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 32,
@@ -641,6 +789,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "ae65ee5",
             "vllm_commit": "35f023f",
             "hf_weights_repo": "arcee-ai/AFM-4.5B",
             "param_count": 4,
@@ -678,7 +827,6 @@
             "model_name": "AFM-4.5B",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "ae65ee5",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -718,6 +866,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "ae65ee5",
             "vllm_commit": "35f023f",
             "hf_weights_repo": "arcee-ai/AFM-4.5B",
             "param_count": 4,
@@ -757,7 +906,6 @@
             "model_name": "gemma-3-1b-it",
             "inference_engine": "vLLM",
             "device_type": "N150",
-            "tt_metal_commit": "c254ee3",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 32,
@@ -797,6 +945,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "c254ee3",
             "vllm_commit": "c4f2327",
             "hf_weights_repo": "google/gemma-3-1b-it",
             "param_count": 1,
@@ -839,7 +988,6 @@
             "model_name": "Qwen3-8B",
             "inference_engine": "vLLM",
             "device_type": "N150",
-            "tt_metal_commit": "e0e0500",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 32,
@@ -862,19 +1010,19 @@
                     "functional": {
                       "ttft_ms": 510.0,
                       "tput_user": 2.1,
-                      "tput": 65.2,
+                      "tput": 2.1,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 102.0,
                       "tput_user": 10.5,
-                      "tput": 326.0,
+                      "tput": 10.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 51.0,
                       "tput_user": 21.0,
-                      "tput": 652.0,
+                      "tput": 21.0,
                       "tolerance": 0.0
                     }
                   },
@@ -919,6 +1067,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "e0e0500",
             "vllm_commit": "409b1cd",
             "hf_weights_repo": "Qwen/Qwen3-8B",
             "param_count": 8,
@@ -961,7 +1110,6 @@
             "model_name": "Qwen3-8B",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "e0e0500",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 32,
@@ -984,19 +1132,19 @@
                     "functional": {
                       "ttft_ms": 420.0,
                       "tput_user": 4.1000000000000005,
-                      "tput": 130.3,
+                      "tput": 4.1000000000000005,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 84.0,
                       "tput_user": 20.5,
-                      "tput": 651.5,
+                      "tput": 20.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 42.0,
                       "tput_user": 41.0,
-                      "tput": 1303.0,
+                      "tput": 41.0,
                       "tolerance": 0.0
                     }
                   },
@@ -1043,6 +1191,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "e0e0500",
             "vllm_commit": "409b1cd",
             "hf_weights_repo": "Qwen/Qwen3-8B",
             "param_count": 8,
@@ -1085,7 +1234,6 @@
             "model_name": "Qwen3-8B",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "e0e0500",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -1108,19 +1256,19 @@
                     "functional": {
                       "ttft_ms": 220.0,
                       "tput_user": 8.1,
-                      "tput": 521.2,
+                      "tput": 8.1,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 44.0,
                       "tput_user": 40.5,
-                      "tput": 2606.0,
+                      "tput": 40.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 22.0,
                       "tput_user": 81.0,
-                      "tput": 5212.0,
+                      "tput": 81.0,
                       "tolerance": 0.0
                     }
                   },
@@ -1165,6 +1313,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "e0e0500",
             "vllm_commit": "409b1cd",
             "hf_weights_repo": "Qwen/Qwen3-8B",
             "param_count": 8,
@@ -1205,7 +1354,6 @@
             "model_name": "Qwen3-8B",
             "inference_engine": "vLLM",
             "device_type": "GALAXY_T3K",
-            "tt_metal_commit": "e0e0500",
             "device_model_spec": {
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
@@ -1250,6 +1398,7 @@
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "e0e0500",
             "vllm_commit": "409b1cd",
             "hf_weights_repo": "Qwen/Qwen3-8B",
             "param_count": 8,
@@ -1292,7 +1441,6 @@
             "model_name": "Qwen3-8B",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "e0e0500",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 128,
@@ -1315,19 +1463,19 @@
                     "functional": {
                       "ttft_ms": 120.0,
                       "tput_user": 60.0,
-                      "tput": 2084.8,
+                      "tput": 60.0,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 24.0,
                       "tput_user": 300.0,
-                      "tput": 10424.0,
+                      "tput": 300.0,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 12.0,
                       "tput_user": 600.0,
-                      "tput": 20848.0,
+                      "tput": 600.0,
                       "tolerance": 0.0
                     }
                   },
@@ -1372,6 +1520,7 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
             },
+            "tt_metal_commit": "e0e0500",
             "vllm_commit": "409b1cd",
             "hf_weights_repo": "Qwen/Qwen3-8B",
             "param_count": 8,
@@ -1412,7 +1561,6 @@
             "model_name": "Qwen3-8B",
             "inference_engine": "vLLM",
             "device_type": "P300",
-            "tt_metal_commit": "e867533",
             "device_model_spec": {
               "device": "P300",
               "max_concurrency": 32,
@@ -1458,6 +1606,7 @@
               "MESH_DEVICE": "P300",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "e867533",
             "vllm_commit": "22be241",
             "hf_weights_repo": "Qwen/Qwen3-8B",
             "param_count": 8,
@@ -1500,7 +1649,6 @@
             "model_name": "Qwen3-32B",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 32,
@@ -1596,6 +1744,7 @@
               "ARCH_NAME": "wormhole_b0",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
             },
+            "tt_metal_commit": "bac8b34",
             "vllm_commit": "7c6685a",
             "hf_weights_repo": "Qwen/Qwen3-32B",
             "param_count": 32,
@@ -1638,7 +1787,6 @@
             "model_name": "Qwen3-32B",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "e95ffa5",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 128,
@@ -1723,6 +1871,7 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
             },
+            "tt_metal_commit": "e95ffa5",
             "vllm_commit": "48eba14",
             "hf_weights_repo": "Qwen/Qwen3-32B",
             "param_count": 32,
@@ -1766,7 +1915,6 @@
             "model_name": "Qwen3-32B",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "e95ffa5",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -1849,6 +1997,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "e95ffa5",
             "vllm_commit": "48eba14",
             "hf_weights_repo": "Qwen/Qwen3-32B",
             "param_count": 32,
@@ -1891,7 +2040,6 @@
             "model_name": "Qwen3-32B",
             "inference_engine": "vLLM",
             "device_type": "GALAXY_T3K",
-            "tt_metal_commit": "e95ffa5",
             "device_model_spec": {
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
@@ -1937,6 +2085,7 @@
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "e95ffa5",
             "vllm_commit": "48eba14",
             "hf_weights_repo": "Qwen/Qwen3-32B",
             "param_count": 32,
@@ -1979,7 +2128,6 @@
             "model_name": "Qwen3-32B",
             "inference_engine": "vLLM",
             "device_type": "P150X8",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X8",
               "max_concurrency": 32,
@@ -2028,6 +2176,7 @@
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": "22be241",
             "hf_weights_repo": "Qwen/Qwen3-32B",
             "param_count": 32,
@@ -2070,7 +2219,6 @@
             "model_name": "Qwen3-32B",
             "inference_engine": "vLLM",
             "device_type": "P300X2",
-            "tt_metal_commit": "80180b9",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 32,
@@ -2160,17 +2308,18 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "vllm_commit": "7678b70",
+            "tt_metal_commit": "8c48a10",
+            "vllm_commit": "f52987a",
             "hf_weights_repo": "Qwen/Qwen3-32B",
             "param_count": 32,
             "min_disk_gb": 84,
             "min_ram_gb": 80.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.14.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.14.0-80180b9-7678b70",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/80180b9/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 402653184
             },
@@ -2204,7 +2353,6 @@
             "model_name": "Mistral-7B-Instruct-v0.3",
             "inference_engine": "vLLM",
             "device_type": "N150",
-            "tt_metal_commit": "9b67e09",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 32,
@@ -2283,6 +2431,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "9b67e09",
             "vllm_commit": "a91b644",
             "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3",
             "param_count": 7,
@@ -2320,7 +2469,6 @@
             "model_name": "Mistral-7B-Instruct-v0.3",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "9b67e09",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 32,
@@ -2360,6 +2508,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "9b67e09",
             "vllm_commit": "a91b644",
             "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3",
             "param_count": 7,
@@ -2397,7 +2546,6 @@
             "model_name": "Mistral-7B-Instruct-v0.3",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "9b67e09",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -2437,6 +2585,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "9b67e09",
             "vllm_commit": "a91b644",
             "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3",
             "param_count": 7,
@@ -2476,7 +2625,6 @@
             "model_name": "QwQ-32B",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "e95ffa5",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -2557,6 +2705,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "e95ffa5",
             "vllm_commit": "48eba14",
             "hf_weights_repo": "Qwen/QwQ-32B",
             "param_count": 32,
@@ -2597,7 +2746,6 @@
             "model_name": "QwQ-32B",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "e95ffa5",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 128,
@@ -2680,6 +2828,7 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
             },
+            "tt_metal_commit": "e95ffa5",
             "vllm_commit": "48eba14",
             "hf_weights_repo": "Qwen/QwQ-32B",
             "param_count": 32,
@@ -2722,7 +2871,6 @@
             "model_name": "QwQ-32B",
             "inference_engine": "vLLM",
             "device_type": "GALAXY_T3K",
-            "tt_metal_commit": "e95ffa5",
             "device_model_spec": {
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
@@ -2768,6 +2916,7 @@
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "e95ffa5",
             "vllm_commit": "48eba14",
             "hf_weights_repo": "Qwen/QwQ-32B",
             "param_count": 32,
@@ -2812,7 +2961,6 @@
             "model_name": "Qwen2.5-72B",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "13f44c5",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -2936,6 +3084,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "13f44c5",
             "vllm_commit": "0edd242",
             "hf_weights_repo": "Qwen/Qwen2.5-72B",
             "param_count": 72,
@@ -2977,7 +3126,6 @@
             "model_name": "Qwen2.5-72B",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "13f44c5",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 128,
@@ -3101,6 +3249,7 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
             },
+            "tt_metal_commit": "13f44c5",
             "vllm_commit": "0edd242",
             "hf_weights_repo": "Qwen/Qwen2.5-72B",
             "param_count": 72,
@@ -3142,7 +3291,6 @@
             "model_name": "Qwen2.5-72B",
             "inference_engine": "vLLM",
             "device_type": "GALAXY_T3K",
-            "tt_metal_commit": "13f44c5",
             "device_model_spec": {
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
@@ -3190,6 +3338,7 @@
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "13f44c5",
             "vllm_commit": "0edd242",
             "hf_weights_repo": "Qwen/Qwen2.5-72B",
             "param_count": 72,
@@ -3234,7 +3383,6 @@
             "model_name": "Qwen2.5-72B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "13f44c5",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -3358,6 +3506,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "13f44c5",
             "vllm_commit": "0edd242",
             "hf_weights_repo": "Qwen/Qwen2.5-72B-Instruct",
             "param_count": 72,
@@ -3399,7 +3548,6 @@
             "model_name": "Qwen2.5-72B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "13f44c5",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 128,
@@ -3523,6 +3671,7 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
             },
+            "tt_metal_commit": "13f44c5",
             "vllm_commit": "0edd242",
             "hf_weights_repo": "Qwen/Qwen2.5-72B-Instruct",
             "param_count": 72,
@@ -3564,7 +3713,6 @@
             "model_name": "Qwen2.5-72B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "GALAXY_T3K",
-            "tt_metal_commit": "13f44c5",
             "device_model_spec": {
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
@@ -3612,6 +3760,7 @@
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "13f44c5",
             "vllm_commit": "0edd242",
             "hf_weights_repo": "Qwen/Qwen2.5-72B-Instruct",
             "param_count": 72,
@@ -3656,7 +3805,6 @@
             "model_name": "Qwen2.5-7B",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "5b5db8a",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 32,
@@ -3739,6 +3887,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "5b5db8a",
             "vllm_commit": "e771fff",
             "hf_weights_repo": "Qwen/Qwen2.5-7B",
             "param_count": 7,
@@ -3780,7 +3929,6 @@
             "model_name": "Qwen2.5-7B",
             "inference_engine": "vLLM",
             "device_type": "N150X4",
-            "tt_metal_commit": "5b5db8a",
             "device_model_spec": {
               "device": "N150X4",
               "max_concurrency": 32,
@@ -3818,6 +3966,7 @@
               "MESH_DEVICE": "N150x4",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "5b5db8a",
             "vllm_commit": "e771fff",
             "hf_weights_repo": "Qwen/Qwen2.5-7B",
             "param_count": 7,
@@ -3859,7 +4008,6 @@
             "model_name": "Qwen2.5-7B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "5b5db8a",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 32,
@@ -3942,6 +4090,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "5b5db8a",
             "vllm_commit": "e771fff",
             "hf_weights_repo": "Qwen/Qwen2.5-7B-Instruct",
             "param_count": 7,
@@ -3983,7 +4132,6 @@
             "model_name": "Qwen2.5-7B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "N150X4",
-            "tt_metal_commit": "5b5db8a",
             "device_model_spec": {
               "device": "N150X4",
               "max_concurrency": 32,
@@ -4021,6 +4169,7 @@
               "MESH_DEVICE": "N150x4",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "5b5db8a",
             "vllm_commit": "e771fff",
             "hf_weights_repo": "Qwen/Qwen2.5-7B-Instruct",
             "param_count": 7,
@@ -4062,7 +4211,6 @@
             "model_name": "Llama-3.3-70B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "e867533",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 32,
@@ -4156,6 +4304,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "e867533",
             "vllm_commit": "8f36910",
             "hf_weights_repo": "meta-llama/Llama-3.3-70B-Instruct",
             "param_count": 70,
@@ -4201,7 +4350,6 @@
             "model_name": "Llama-3.3-70B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "750ca54",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -4296,6 +4444,7 @@
               "MAX_PREFILL_CHUNK_SIZE": "32",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
             },
+            "tt_metal_commit": "750ca54",
             "vllm_commit": "38dee8c",
             "hf_weights_repo": "meta-llama/Llama-3.3-70B-Instruct",
             "param_count": 70,
@@ -4337,7 +4486,6 @@
             "model_name": "Llama-3.3-70B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "P150X4",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X4",
               "max_concurrency": 32,
@@ -4435,6 +4583,7 @@
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": "22be241",
             "hf_weights_repo": "meta-llama/Llama-3.3-70B-Instruct",
             "param_count": 70,
@@ -4476,7 +4625,6 @@
             "model_name": "Llama-3.3-70B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "P150X8",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X8",
               "max_concurrency": 32,
@@ -4574,6 +4722,7 @@
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": "22be241",
             "hf_weights_repo": "meta-llama/Llama-3.3-70B-Instruct",
             "param_count": 70,
@@ -4615,7 +4764,6 @@
             "model_name": "Llama-3.3-70B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 32,
@@ -4683,7 +4831,13 @@
               },
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
-              "known_issues": [],
+              "known_issues": [
+                {
+                  "workflow_type": "TESTS",
+                  "reason": "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888.",
+                  "task_name": "test_penalties"
+                }
+              ],
               "eval_max_retries": null
             },
             "system_requirements": {
@@ -4704,17 +4858,18 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "vllm_commit": "22be241",
+            "tt_metal_commit": "669d59e",
+            "vllm_commit": "3334377",
             "hf_weights_repo": "meta-llama/Llama-3.3-70B-Instruct",
             "param_count": 70,
             "min_disk_gb": 160,
             "min_ram_gb": 175.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241",
+            "version": "0.16.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.16.0-669d59e-3334377",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/669d59e/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 402653184
             },
@@ -4723,7 +4878,7 @@
             ],
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
-            "has_builtin_warmup": false,
+            "has_builtin_warmup": true,
             "metadata": {
               "tool_call_parser_name": "llama3_json"
             },
@@ -4745,7 +4900,6 @@
             "model_name": "Llama-3.3-70B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "GALAXY_T3K",
-            "tt_metal_commit": "v0.62.0-rc33",
             "device_model_spec": {
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
@@ -4803,6 +4957,7 @@
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "v0.62.0-rc33",
             "vllm_commit": "e7c329b",
             "hf_weights_repo": "meta-llama/Llama-3.3-70B-Instruct",
             "param_count": 70,
@@ -4846,7 +5001,6 @@
             "model_name": "Llama-3.1-70B",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "e867533",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 32,
@@ -4940,6 +5094,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "e867533",
             "vllm_commit": "8f36910",
             "hf_weights_repo": "meta-llama/Llama-3.1-70B",
             "param_count": 70,
@@ -4985,7 +5140,6 @@
             "model_name": "Llama-3.1-70B",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "750ca54",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -5080,6 +5234,7 @@
               "MAX_PREFILL_CHUNK_SIZE": "32",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
             },
+            "tt_metal_commit": "750ca54",
             "vllm_commit": "38dee8c",
             "hf_weights_repo": "meta-llama/Llama-3.1-70B",
             "param_count": 70,
@@ -5121,7 +5276,6 @@
             "model_name": "Llama-3.1-70B",
             "inference_engine": "vLLM",
             "device_type": "P150X4",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X4",
               "max_concurrency": 32,
@@ -5219,6 +5373,7 @@
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": "22be241",
             "hf_weights_repo": "meta-llama/Llama-3.1-70B",
             "param_count": 70,
@@ -5260,7 +5415,6 @@
             "model_name": "Llama-3.1-70B",
             "inference_engine": "vLLM",
             "device_type": "P150X8",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X8",
               "max_concurrency": 32,
@@ -5358,6 +5512,7 @@
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": "22be241",
             "hf_weights_repo": "meta-llama/Llama-3.1-70B",
             "param_count": 70,
@@ -5399,7 +5554,6 @@
             "model_name": "Llama-3.1-70B",
             "inference_engine": "vLLM",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 32,
@@ -5467,7 +5621,13 @@
               },
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
-              "known_issues": [],
+              "known_issues": [
+                {
+                  "workflow_type": "TESTS",
+                  "reason": "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888.",
+                  "task_name": "test_penalties"
+                }
+              ],
               "eval_max_retries": null
             },
             "system_requirements": {
@@ -5488,17 +5648,18 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "vllm_commit": "22be241",
+            "tt_metal_commit": "669d59e",
+            "vllm_commit": "3334377",
             "hf_weights_repo": "meta-llama/Llama-3.1-70B",
             "param_count": 70,
             "min_disk_gb": 160,
             "min_ram_gb": 175.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241",
+            "version": "0.16.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.16.0-669d59e-3334377",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/669d59e/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 402653184
             },
@@ -5507,7 +5668,7 @@
             ],
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
-            "has_builtin_warmup": false,
+            "has_builtin_warmup": true,
             "metadata": {
               "tool_call_parser_name": "llama3_json"
             },
@@ -5529,7 +5690,6 @@
             "model_name": "Llama-3.1-70B",
             "inference_engine": "vLLM",
             "device_type": "GALAXY_T3K",
-            "tt_metal_commit": "v0.62.0-rc33",
             "device_model_spec": {
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
@@ -5587,6 +5747,7 @@
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "v0.62.0-rc33",
             "vllm_commit": "e7c329b",
             "hf_weights_repo": "meta-llama/Llama-3.1-70B",
             "param_count": 70,
@@ -5630,7 +5791,6 @@
             "model_name": "Llama-3.1-70B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "e867533",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 32,
@@ -5724,6 +5884,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "e867533",
             "vllm_commit": "8f36910",
             "hf_weights_repo": "meta-llama/Llama-3.1-70B-Instruct",
             "param_count": 70,
@@ -5769,7 +5930,6 @@
             "model_name": "Llama-3.1-70B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "750ca54",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -5864,6 +6024,7 @@
               "MAX_PREFILL_CHUNK_SIZE": "32",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
             },
+            "tt_metal_commit": "750ca54",
             "vllm_commit": "38dee8c",
             "hf_weights_repo": "meta-llama/Llama-3.1-70B-Instruct",
             "param_count": 70,
@@ -5905,7 +6066,6 @@
             "model_name": "Llama-3.1-70B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "P150X4",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X4",
               "max_concurrency": 32,
@@ -6003,6 +6163,7 @@
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": "22be241",
             "hf_weights_repo": "meta-llama/Llama-3.1-70B-Instruct",
             "param_count": 70,
@@ -6044,7 +6205,6 @@
             "model_name": "Llama-3.1-70B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "P150X8",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X8",
               "max_concurrency": 32,
@@ -6142,6 +6302,7 @@
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": "22be241",
             "hf_weights_repo": "meta-llama/Llama-3.1-70B-Instruct",
             "param_count": 70,
@@ -6183,7 +6344,6 @@
             "model_name": "Llama-3.1-70B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 32,
@@ -6251,7 +6411,13 @@
               },
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
-              "known_issues": [],
+              "known_issues": [
+                {
+                  "workflow_type": "TESTS",
+                  "reason": "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888.",
+                  "task_name": "test_penalties"
+                }
+              ],
               "eval_max_retries": null
             },
             "system_requirements": {
@@ -6272,17 +6438,18 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "vllm_commit": "22be241",
+            "tt_metal_commit": "669d59e",
+            "vllm_commit": "3334377",
             "hf_weights_repo": "meta-llama/Llama-3.1-70B-Instruct",
             "param_count": 70,
             "min_disk_gb": 160,
             "min_ram_gb": 175.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241",
+            "version": "0.16.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.16.0-669d59e-3334377",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/669d59e/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 402653184
             },
@@ -6291,7 +6458,7 @@
             ],
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
-            "has_builtin_warmup": false,
+            "has_builtin_warmup": true,
             "metadata": {
               "tool_call_parser_name": "llama3_json"
             },
@@ -6313,7 +6480,6 @@
             "model_name": "Llama-3.1-70B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "GALAXY_T3K",
-            "tt_metal_commit": "v0.62.0-rc33",
             "device_model_spec": {
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
@@ -6371,6 +6537,7 @@
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "v0.62.0-rc33",
             "vllm_commit": "e7c329b",
             "hf_weights_repo": "meta-llama/Llama-3.1-70B-Instruct",
             "param_count": 70,
@@ -6414,7 +6581,6 @@
             "model_name": "DeepSeek-R1-Distill-Llama-70B",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "e867533",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 32,
@@ -6508,6 +6674,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "e867533",
             "vllm_commit": "8f36910",
             "hf_weights_repo": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
             "param_count": 70,
@@ -6554,7 +6721,6 @@
             "model_name": "DeepSeek-R1-Distill-Llama-70B",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "750ca54",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -6649,6 +6815,7 @@
               "MAX_PREFILL_CHUNK_SIZE": "32",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
             },
+            "tt_metal_commit": "750ca54",
             "vllm_commit": "38dee8c",
             "hf_weights_repo": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
             "param_count": 70,
@@ -6691,7 +6858,6 @@
             "model_name": "DeepSeek-R1-Distill-Llama-70B",
             "inference_engine": "vLLM",
             "device_type": "P150X4",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X4",
               "max_concurrency": 32,
@@ -6789,6 +6955,7 @@
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": "22be241",
             "hf_weights_repo": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
             "param_count": 70,
@@ -6831,7 +6998,6 @@
             "model_name": "DeepSeek-R1-Distill-Llama-70B",
             "inference_engine": "vLLM",
             "device_type": "P150X8",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X8",
               "max_concurrency": 32,
@@ -6929,6 +7095,7 @@
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": "22be241",
             "hf_weights_repo": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
             "param_count": 70,
@@ -6971,7 +7138,6 @@
             "model_name": "DeepSeek-R1-Distill-Llama-70B",
             "inference_engine": "vLLM",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 32,
@@ -7039,7 +7205,13 @@
               },
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
-              "known_issues": [],
+              "known_issues": [
+                {
+                  "workflow_type": "TESTS",
+                  "reason": "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888.",
+                  "task_name": "test_penalties"
+                }
+              ],
               "eval_max_retries": null
             },
             "system_requirements": {
@@ -7060,17 +7232,18 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "vllm_commit": "22be241",
+            "tt_metal_commit": "669d59e",
+            "vllm_commit": "3334377",
             "hf_weights_repo": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
             "param_count": 70,
             "min_disk_gb": 160,
             "min_ram_gb": 175.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241",
+            "version": "0.16.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.16.0-669d59e-3334377",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/669d59e/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 402653184
             },
@@ -7079,7 +7252,7 @@
             ],
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
-            "has_builtin_warmup": false,
+            "has_builtin_warmup": true,
             "metadata": {
               "reasoning_parser_name": "deepseek_r1",
               "tool_call_parser_name": "deepseek_v3"
@@ -7102,7 +7275,6 @@
             "model_name": "DeepSeek-R1-Distill-Llama-70B",
             "inference_engine": "vLLM",
             "device_type": "GALAXY_T3K",
-            "tt_metal_commit": "v0.62.0-rc33",
             "device_model_spec": {
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
@@ -7160,6 +7332,7 @@
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "v0.62.0-rc33",
             "vllm_commit": "e7c329b",
             "hf_weights_repo": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
             "param_count": 70,
@@ -7204,7 +7377,6 @@
             "model_name": "DeepSeek-R1-0528",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "805f43d",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 256,
@@ -7241,6 +7413,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "805f43d",
             "vllm_commit": "a45c614",
             "hf_weights_repo": "deepseek-ai/DeepSeek-R1-0528",
             "param_count": null,
@@ -7281,7 +7454,6 @@
             "model_name": "DeepSeek-R1-0528",
             "inference_engine": "vLLM",
             "device_type": "DUAL_GALAXY",
-            "tt_metal_commit": "805f43d",
             "device_model_spec": {
               "device": "DUAL_GALAXY",
               "max_concurrency": 256,
@@ -7325,6 +7497,7 @@
               "TORCHDYNAMO_DISABLE": "1",
               "MESH_DEVICE": "(8,8)"
             },
+            "tt_metal_commit": "805f43d",
             "vllm_commit": "a45c614",
             "hf_weights_repo": "deepseek-ai/DeepSeek-R1-0528",
             "param_count": null,
@@ -7373,7 +7546,6 @@
             "model_name": "DeepSeek-R1-0528",
             "inference_engine": "vLLM",
             "device_type": "QUAD_GALAXY",
-            "tt_metal_commit": "805f43d",
             "device_model_spec": {
               "device": "QUAD_GALAXY",
               "max_concurrency": 512,
@@ -7417,6 +7589,7 @@
               "TORCHDYNAMO_DISABLE": "1",
               "MESH_DEVICE": "(8,16)"
             },
+            "tt_metal_commit": "805f43d",
             "vllm_commit": "a45c614",
             "hf_weights_repo": "deepseek-ai/DeepSeek-R1-0528",
             "param_count": null,
@@ -7467,7 +7640,6 @@
             "model_name": "Llama-3.2-1B",
             "inference_engine": "vLLM",
             "device_type": "N150",
-            "tt_metal_commit": "84b4c53",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 32,
@@ -7546,6 +7718,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "84b4c53",
             "vllm_commit": "222ee06",
             "hf_weights_repo": "meta-llama/Llama-3.2-1B",
             "param_count": 1,
@@ -7585,7 +7758,6 @@
             "model_name": "Llama-3.2-1B",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "84b4c53",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 32,
@@ -7666,6 +7838,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "84b4c53",
             "vllm_commit": "222ee06",
             "hf_weights_repo": "meta-llama/Llama-3.2-1B",
             "param_count": 1,
@@ -7705,7 +7878,6 @@
             "model_name": "Llama-3.2-1B",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "84b4c53",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -7786,6 +7958,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "84b4c53",
             "vllm_commit": "222ee06",
             "hf_weights_repo": "meta-llama/Llama-3.2-1B",
             "param_count": 1,
@@ -7827,7 +8000,6 @@
             "model_name": "Llama-3.2-1B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "N150",
-            "tt_metal_commit": "84b4c53",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 32,
@@ -7906,6 +8078,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "84b4c53",
             "vllm_commit": "222ee06",
             "hf_weights_repo": "meta-llama/Llama-3.2-1B-Instruct",
             "param_count": 1,
@@ -7945,7 +8118,6 @@
             "model_name": "Llama-3.2-1B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "84b4c53",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 32,
@@ -8026,6 +8198,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "84b4c53",
             "vllm_commit": "222ee06",
             "hf_weights_repo": "meta-llama/Llama-3.2-1B-Instruct",
             "param_count": 1,
@@ -8065,7 +8238,6 @@
             "model_name": "Llama-3.2-1B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "84b4c53",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -8146,6 +8318,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "84b4c53",
             "vllm_commit": "222ee06",
             "hf_weights_repo": "meta-llama/Llama-3.2-1B-Instruct",
             "param_count": 1,
@@ -8187,7 +8360,6 @@
             "model_name": "Llama-3.2-3B",
             "inference_engine": "vLLM",
             "device_type": "N150",
-            "tt_metal_commit": "20edc39",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 32,
@@ -8267,6 +8439,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "20edc39",
             "vllm_commit": "03cb300",
             "hf_weights_repo": "meta-llama/Llama-3.2-3B",
             "param_count": 3,
@@ -8306,7 +8479,6 @@
             "model_name": "Llama-3.2-3B",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "2496be4",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -8386,6 +8558,7 @@
               "VLLM__MAX_MODEL_LENGTH": "2048",
               "VLLM__MIN_MODEL_LENGTH": "32"
             },
+            "tt_metal_commit": "2496be4",
             "vllm_commit": null,
             "hf_weights_repo": "meta-llama/Llama-3.2-3B",
             "param_count": 3,
@@ -8423,7 +8596,6 @@
             "model_name": "Llama-3.2-3B",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "20edc39",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 32,
@@ -8503,6 +8675,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "20edc39",
             "vllm_commit": "03cb300",
             "hf_weights_repo": "meta-llama/Llama-3.2-3B",
             "param_count": 3,
@@ -8540,7 +8713,6 @@
             "model_name": "Llama-3.2-3B",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "2496be4",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -8622,6 +8794,7 @@
               "VLLM__MAX_MODEL_LENGTH": "2048",
               "VLLM__MIN_MODEL_LENGTH": "32"
             },
+            "tt_metal_commit": "2496be4",
             "vllm_commit": null,
             "hf_weights_repo": "meta-llama/Llama-3.2-3B",
             "param_count": 3,
@@ -8659,7 +8832,6 @@
             "model_name": "Llama-3.2-3B",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "20edc39",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -8739,6 +8911,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "20edc39",
             "vllm_commit": "03cb300",
             "hf_weights_repo": "meta-llama/Llama-3.2-3B",
             "param_count": 3,
@@ -8780,7 +8953,6 @@
             "model_name": "Llama-3.2-3B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "N150",
-            "tt_metal_commit": "20edc39",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 32,
@@ -8860,6 +9032,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "20edc39",
             "vllm_commit": "03cb300",
             "hf_weights_repo": "meta-llama/Llama-3.2-3B-Instruct",
             "param_count": 3,
@@ -8901,7 +9074,6 @@
             "model_name": "Llama-3.2-3B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "20edc39",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 32,
@@ -8981,6 +9153,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "20edc39",
             "vllm_commit": "03cb300",
             "hf_weights_repo": "meta-llama/Llama-3.2-3B-Instruct",
             "param_count": 3,
@@ -9020,7 +9193,6 @@
             "model_name": "Llama-3.2-3B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "20edc39",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -9100,6 +9272,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "20edc39",
             "vllm_commit": "03cb300",
             "hf_weights_repo": "meta-llama/Llama-3.2-3B-Instruct",
             "param_count": 3,
@@ -9141,7 +9314,6 @@
             "model_name": "Llama-3.1-8B",
             "inference_engine": "vLLM",
             "device_type": "N150",
-            "tt_metal_commit": "25305db",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 32,
@@ -9221,6 +9393,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "25305db",
             "vllm_commit": "6e67d2d",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
@@ -9262,7 +9435,6 @@
             "model_name": "Llama-3.1-8B",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "25305db",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 32,
@@ -9344,6 +9516,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "25305db",
             "vllm_commit": "6e67d2d",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
@@ -9385,7 +9558,6 @@
             "model_name": "Llama-3.1-8B",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "25305db",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -9507,6 +9679,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "25305db",
             "vllm_commit": "6e67d2d",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
@@ -9548,13 +9721,12 @@
             "model_name": "Llama-3.1-8B",
             "inference_engine": "vLLM",
             "device_type": "GPU",
-            "tt_metal_commit": "25305db",
             "device_model_spec": {
               "device": "GPU",
               "max_concurrency": 32,
               "max_context": 131072,
               "perf_targets_map": {},
-              "default_impl": false,
+              "default_impl": true,
               "perf_reference": [],
               "vllm_args": {
                 "model": "meta-llama/Llama-3.1-8B",
@@ -9583,6 +9755,7 @@
               "TORCHDYNAMO_DISABLE": "1",
               "MESH_DEVICE": "GPU"
             },
+            "tt_metal_commit": "25305db",
             "vllm_commit": "6e67d2d",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
@@ -9622,7 +9795,6 @@
             "model_name": "Llama-3.1-8B",
             "inference_engine": "vLLM",
             "device_type": "P100",
-            "tt_metal_commit": "55fd115",
             "device_model_spec": {
               "device": "P100",
               "max_concurrency": 32,
@@ -9702,6 +9874,7 @@
               "MESH_DEVICE": "P100",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "55fd115",
             "vllm_commit": "aa4ae1e",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
@@ -9743,7 +9916,6 @@
             "model_name": "Llama-3.1-8B",
             "inference_engine": "vLLM",
             "device_type": "P150",
-            "tt_metal_commit": "55fd115",
             "device_model_spec": {
               "device": "P150",
               "max_concurrency": 32,
@@ -9821,6 +9993,7 @@
               "MESH_DEVICE": "P150",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "55fd115",
             "vllm_commit": "aa4ae1e",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
@@ -9860,7 +10033,6 @@
             "model_name": "Llama-3.1-8B",
             "inference_engine": "vLLM",
             "device_type": "P150X4",
-            "tt_metal_commit": "55fd115",
             "device_model_spec": {
               "device": "P150X4",
               "max_concurrency": 128,
@@ -9941,6 +10113,7 @@
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "55fd115",
             "vllm_commit": "aa4ae1e",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
@@ -9983,7 +10156,6 @@
             "model_name": "Llama-3.1-8B",
             "inference_engine": "vLLM",
             "device_type": "P150X8",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X8",
               "max_concurrency": 256,
@@ -10073,6 +10245,7 @@
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": "22be241",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
@@ -10114,7 +10287,6 @@
             "model_name": "Llama-3.1-8B",
             "inference_engine": "vLLM",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 32,
@@ -10183,7 +10355,33 @@
               },
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
-              "known_issues": [],
+              "known_issues": [
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "meta_ifeval measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610.",
+                  "task_name": "meta_ifeval"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "meta_gpqa_cot measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610.",
+                  "task_name": "meta_gpqa_cot"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_code_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_code_e"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_fewshot_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_fewshot_e"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_summarization_e measured score is ~94% which does not satisfy the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_summarization_e"
+                }
+              ],
               "eval_max_retries": null
             },
             "system_requirements": {
@@ -10204,17 +10402,18 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "vllm_commit": "22be241",
+            "tt_metal_commit": "8c48a10",
+            "vllm_commit": "f52987a",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
             "min_disk_gb": 36,
             "min_ram_gb": 20.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers",
             "override_tt_config": {
               "sample_on_device_mode": "decode_only",
               "trace_region_size": 155000000
@@ -10246,7 +10445,6 @@
             "model_name": "Llama-3.1-8B",
             "inference_engine": "vLLM",
             "device_type": "P300",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P300",
               "max_concurrency": 32,
@@ -10295,17 +10493,18 @@
               "MESH_DEVICE": "P300",
               "ARCH_NAME": "blackhole"
             },
-            "vllm_commit": "22be241",
+            "tt_metal_commit": "8c48a10",
+            "vllm_commit": "f52987a",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
             "min_disk_gb": 36,
             "min_ram_gb": 20.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers",
             "override_tt_config": {
               "sample_on_device_mode": "decode_only",
               "trace_region_size": 56000000
@@ -10337,7 +10536,6 @@
             "model_name": "Llama-3.1-8B",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 128,
@@ -10470,6 +10668,7 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
             },
+            "tt_metal_commit": "bac8b34",
             "vllm_commit": "7c6685a",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
@@ -10512,7 +10711,6 @@
             "model_name": "Llama-3.1-8B",
             "inference_engine": "vLLM",
             "device_type": "GALAXY_T3K",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
@@ -10568,6 +10766,7 @@
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
               "TT_MM_THROTTLE_PERF": 5
             },
+            "tt_metal_commit": "bac8b34",
             "vllm_commit": "7c6685a",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
@@ -10611,7 +10810,6 @@
             "model_name": "Llama-3.1-8B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "N150",
-            "tt_metal_commit": "25305db",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 32,
@@ -10691,6 +10889,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "25305db",
             "vllm_commit": "6e67d2d",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
@@ -10732,7 +10931,6 @@
             "model_name": "Llama-3.1-8B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "25305db",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 32,
@@ -10814,6 +11012,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "25305db",
             "vllm_commit": "6e67d2d",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
@@ -10855,7 +11054,6 @@
             "model_name": "Llama-3.1-8B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "25305db",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -10977,6 +11175,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "25305db",
             "vllm_commit": "6e67d2d",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
@@ -11018,13 +11217,12 @@
             "model_name": "Llama-3.1-8B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "GPU",
-            "tt_metal_commit": "25305db",
             "device_model_spec": {
               "device": "GPU",
               "max_concurrency": 32,
               "max_context": 131072,
               "perf_targets_map": {},
-              "default_impl": false,
+              "default_impl": true,
               "perf_reference": [],
               "vllm_args": {
                 "model": "meta-llama/Llama-3.1-8B-Instruct",
@@ -11053,6 +11251,7 @@
               "TORCHDYNAMO_DISABLE": "1",
               "MESH_DEVICE": "GPU"
             },
+            "tt_metal_commit": "25305db",
             "vllm_commit": "6e67d2d",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
@@ -11092,7 +11291,6 @@
             "model_name": "Llama-3.1-8B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "P100",
-            "tt_metal_commit": "55fd115",
             "device_model_spec": {
               "device": "P100",
               "max_concurrency": 32,
@@ -11172,6 +11370,7 @@
               "MESH_DEVICE": "P100",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "55fd115",
             "vllm_commit": "aa4ae1e",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
@@ -11213,7 +11412,6 @@
             "model_name": "Llama-3.1-8B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "P150",
-            "tt_metal_commit": "55fd115",
             "device_model_spec": {
               "device": "P150",
               "max_concurrency": 32,
@@ -11291,6 +11489,7 @@
               "MESH_DEVICE": "P150",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "55fd115",
             "vllm_commit": "aa4ae1e",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
@@ -11330,7 +11529,6 @@
             "model_name": "Llama-3.1-8B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "P150X4",
-            "tt_metal_commit": "55fd115",
             "device_model_spec": {
               "device": "P150X4",
               "max_concurrency": 128,
@@ -11411,6 +11609,7 @@
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "55fd115",
             "vllm_commit": "aa4ae1e",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
@@ -11453,7 +11652,6 @@
             "model_name": "Llama-3.1-8B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "P150X8",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X8",
               "max_concurrency": 256,
@@ -11543,6 +11741,7 @@
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": "22be241",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
@@ -11584,7 +11783,6 @@
             "model_name": "Llama-3.1-8B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 32,
@@ -11653,7 +11851,33 @@
               },
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
-              "known_issues": [],
+              "known_issues": [
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "meta_ifeval measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610.",
+                  "task_name": "meta_ifeval"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "meta_gpqa_cot measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610.",
+                  "task_name": "meta_gpqa_cot"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_code_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_code_e"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_fewshot_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_fewshot_e"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_summarization_e measured score is ~94% which does not satisfy the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_summarization_e"
+                }
+              ],
               "eval_max_retries": null
             },
             "system_requirements": {
@@ -11674,17 +11898,18 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "vllm_commit": "22be241",
+            "tt_metal_commit": "8c48a10",
+            "vllm_commit": "f52987a",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
             "min_disk_gb": 36,
             "min_ram_gb": 20.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers",
             "override_tt_config": {
               "sample_on_device_mode": "decode_only",
               "trace_region_size": 155000000
@@ -11716,7 +11941,6 @@
             "model_name": "Llama-3.1-8B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "P300",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P300",
               "max_concurrency": 32,
@@ -11765,17 +11989,18 @@
               "MESH_DEVICE": "P300",
               "ARCH_NAME": "blackhole"
             },
-            "vllm_commit": "22be241",
+            "tt_metal_commit": "8c48a10",
+            "vllm_commit": "f52987a",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
             "min_disk_gb": 36,
             "min_ram_gb": 20.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers",
             "override_tt_config": {
               "sample_on_device_mode": "decode_only",
               "trace_region_size": 56000000
@@ -11807,7 +12032,6 @@
             "model_name": "Llama-3.1-8B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 128,
@@ -11940,6 +12164,7 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
             },
+            "tt_metal_commit": "bac8b34",
             "vllm_commit": "7c6685a",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
@@ -11982,7 +12207,6 @@
             "model_name": "Llama-3.1-8B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "GALAXY_T3K",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
@@ -12038,6 +12262,7 @@
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
               "TT_MM_THROTTLE_PERF": 5
             },
+            "tt_metal_commit": "bac8b34",
             "vllm_commit": "7c6685a",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
@@ -12081,7 +12306,6 @@
             "model_name": "Qwen2.5-Coder-32B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "17a5973",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -12164,6 +12388,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "17a5973",
             "vllm_commit": "aa4ae1e",
             "hf_weights_repo": "Qwen/Qwen2.5-Coder-32B-Instruct",
             "param_count": 32,
@@ -12205,7 +12430,6 @@
             "model_name": "Qwen2.5-Coder-32B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "GALAXY_T3K",
-            "tt_metal_commit": "17a5973",
             "device_model_spec": {
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
@@ -12251,6 +12475,7 @@
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "17a5973",
             "vllm_commit": "aa4ae1e",
             "hf_weights_repo": "Qwen/Qwen2.5-Coder-32B-Instruct",
             "param_count": 32,
@@ -12294,7 +12519,6 @@
             "model_name": "gemma-3-4b-it",
             "inference_engine": "vLLM",
             "device_type": "N150",
-            "tt_metal_commit": "c254ee3",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 32,
@@ -12377,6 +12601,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "c254ee3",
             "vllm_commit": "c4f2327",
             "hf_weights_repo": "google/gemma-3-4b-it",
             "param_count": 4,
@@ -12418,7 +12643,6 @@
             "model_name": "gemma-3-4b-it",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "c254ee3",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 32,
@@ -12503,6 +12727,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "c254ee3",
             "vllm_commit": "c4f2327",
             "hf_weights_repo": "google/gemma-3-4b-it",
             "param_count": 4,
@@ -12546,7 +12771,6 @@
             "model_name": "medgemma-4b-it",
             "inference_engine": "vLLM",
             "device_type": "N150",
-            "tt_metal_commit": "c254ee3",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 32,
@@ -12629,6 +12853,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "c254ee3",
             "vllm_commit": "c4f2327",
             "hf_weights_repo": "google/medgemma-4b-it",
             "param_count": 4,
@@ -12670,7 +12895,6 @@
             "model_name": "medgemma-4b-it",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "c254ee3",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 32,
@@ -12755,6 +12979,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "c254ee3",
             "vllm_commit": "c4f2327",
             "hf_weights_repo": "google/medgemma-4b-it",
             "param_count": 4,
@@ -12798,7 +13023,6 @@
             "model_name": "gemma-3-27b-it",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "0b10c51",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -12884,6 +13108,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "0b10c51",
             "vllm_commit": "3499ffa",
             "hf_weights_repo": "google/gemma-3-27b-it",
             "param_count": 27,
@@ -12926,7 +13151,6 @@
             "model_name": "gemma-3-27b-it",
             "inference_engine": "vLLM",
             "device_type": "GALAXY_T3K",
-            "tt_metal_commit": "0b10c51",
             "device_model_spec": {
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
@@ -12975,6 +13199,7 @@
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "0b10c51",
             "vllm_commit": "3499ffa",
             "hf_weights_repo": "google/gemma-3-27b-it",
             "param_count": 27,
@@ -13017,7 +13242,6 @@
             "model_name": "gemma-3-27b-it",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "0b10c51",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 32,
@@ -13104,6 +13328,7 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
             },
+            "tt_metal_commit": "0b10c51",
             "vllm_commit": "3499ffa",
             "hf_weights_repo": "google/gemma-3-27b-it",
             "param_count": 27,
@@ -13148,7 +13373,6 @@
             "model_name": "medgemma-27b-it",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "0b10c51",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -13234,6 +13458,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "0b10c51",
             "vllm_commit": "3499ffa",
             "hf_weights_repo": "google/medgemma-27b-it",
             "param_count": 27,
@@ -13276,7 +13501,6 @@
             "model_name": "medgemma-27b-it",
             "inference_engine": "vLLM",
             "device_type": "GALAXY_T3K",
-            "tt_metal_commit": "0b10c51",
             "device_model_spec": {
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
@@ -13325,6 +13549,7 @@
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "0b10c51",
             "vllm_commit": "3499ffa",
             "hf_weights_repo": "google/medgemma-27b-it",
             "param_count": 27,
@@ -13367,7 +13592,6 @@
             "model_name": "medgemma-27b-it",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "0b10c51",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 32,
@@ -13454,6 +13678,7 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
             },
+            "tt_metal_commit": "0b10c51",
             "vllm_commit": "3499ffa",
             "hf_weights_repo": "google/medgemma-27b-it",
             "param_count": 27,
@@ -13498,7 +13723,6 @@
             "model_name": "Qwen3-VL-32B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "80180b9",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -13580,6 +13804,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "80180b9",
             "vllm_commit": "7678b70",
             "hf_weights_repo": "Qwen/Qwen3-VL-32B-Instruct",
             "param_count": 32,
@@ -13620,7 +13845,6 @@
             "model_name": "Qwen2.5-VL-3B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "N150",
-            "tt_metal_commit": "c18569e",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 32,
@@ -13699,6 +13923,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "c18569e",
             "vllm_commit": "b2894d3",
             "hf_weights_repo": "Qwen/Qwen2.5-VL-3B-Instruct",
             "param_count": 3,
@@ -13739,7 +13964,6 @@
             "model_name": "Qwen2.5-VL-3B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "c18569e",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 32,
@@ -13820,6 +14044,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "c18569e",
             "vllm_commit": "b2894d3",
             "hf_weights_repo": "Qwen/Qwen2.5-VL-3B-Instruct",
             "param_count": 3,
@@ -13862,7 +14087,6 @@
             "model_name": "Qwen2.5-VL-7B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "N150",
-            "tt_metal_commit": "c18569e",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 32,
@@ -13941,6 +14165,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "c18569e",
             "vllm_commit": "b2894d3",
             "hf_weights_repo": "Qwen/Qwen2.5-VL-7B-Instruct",
             "param_count": 7,
@@ -13981,7 +14206,6 @@
             "model_name": "Qwen2.5-VL-7B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "c18569e",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 32,
@@ -14065,6 +14289,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "c18569e",
             "vllm_commit": "b2894d3",
             "hf_weights_repo": "Qwen/Qwen2.5-VL-7B-Instruct",
             "param_count": 7,
@@ -14109,7 +14334,6 @@
             "model_name": "Qwen2.5-VL-32B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "c18569e",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -14191,6 +14415,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "c18569e",
             "vllm_commit": "b2894d3",
             "hf_weights_repo": "Qwen/Qwen2.5-VL-32B-Instruct",
             "param_count": 32,
@@ -14233,7 +14458,6 @@
             "model_name": "Qwen2.5-VL-72B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "c18569e",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -14317,6 +14541,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "c18569e",
             "vllm_commit": "b2894d3",
             "hf_weights_repo": "Qwen/Qwen2.5-VL-72B-Instruct",
             "param_count": 72,
@@ -14361,7 +14586,6 @@
             "model_name": "Llama-3.2-11B-Vision",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "v0.61.1-rc1",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 16,
@@ -14441,6 +14665,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "v0.61.1-rc1",
             "vllm_commit": "5cbc982",
             "hf_weights_repo": "meta-llama/Llama-3.2-11B-Vision",
             "param_count": 11,
@@ -14479,7 +14704,6 @@
             "model_name": "Llama-3.2-11B-Vision",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "v0.61.1-rc1",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 16,
@@ -14559,6 +14783,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "v0.61.1-rc1",
             "vllm_commit": "5cbc982",
             "hf_weights_repo": "meta-llama/Llama-3.2-11B-Vision",
             "param_count": 11,
@@ -14599,7 +14824,6 @@
             "model_name": "Llama-3.2-11B-Vision-Instruct",
             "inference_engine": "vLLM",
             "device_type": "N300",
-            "tt_metal_commit": "v0.61.1-rc1",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 16,
@@ -14679,6 +14903,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "v0.61.1-rc1",
             "vllm_commit": "5cbc982",
             "hf_weights_repo": "meta-llama/Llama-3.2-11B-Vision-Instruct",
             "param_count": 11,
@@ -14717,7 +14942,6 @@
             "model_name": "Llama-3.2-11B-Vision-Instruct",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "v0.61.1-rc1",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 16,
@@ -14797,6 +15021,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "v0.61.1-rc1",
             "vllm_commit": "5cbc982",
             "hf_weights_repo": "meta-llama/Llama-3.2-11B-Vision-Instruct",
             "param_count": 11,
@@ -14837,7 +15062,6 @@
             "model_name": "Llama-3.2-90B-Vision",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "v0.61.1-rc1",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -14919,6 +15143,7 @@
               "ARCH_NAME": "wormhole_b0",
               "MAX_PREFILL_CHUNK_SIZE": 16
             },
+            "tt_metal_commit": "v0.61.1-rc1",
             "vllm_commit": "5cbc982",
             "hf_weights_repo": "meta-llama/Llama-3.2-90B-Vision",
             "param_count": 90,
@@ -14959,7 +15184,6 @@
             "model_name": "Llama-3.2-90B-Vision-Instruct",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "v0.61.1-rc1",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -15041,6 +15265,7 @@
               "ARCH_NAME": "wormhole_b0",
               "MAX_PREFILL_CHUNK_SIZE": 16
             },
+            "tt_metal_commit": "v0.61.1-rc1",
             "vllm_commit": "5cbc982",
             "hf_weights_repo": "meta-llama/Llama-3.2-90B-Vision-Instruct",
             "param_count": 90,
@@ -15081,7 +15306,6 @@
             "model_name": "mochi-1-preview",
             "inference_engine": "media",
             "device_type": "T3K",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 1,
@@ -15157,6 +15381,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "genmo/mochi-1-preview",
             "param_count": null,
@@ -15194,7 +15419,6 @@
             "model_name": "mochi-1-preview",
             "inference_engine": "media",
             "device_type": "GALAXY",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 1,
@@ -15268,6 +15492,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "genmo/mochi-1-preview",
             "param_count": null,
@@ -15305,7 +15530,6 @@
             "model_name": "mochi-1-preview",
             "inference_engine": "media",
             "device_type": "P150X4",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X4",
               "max_concurrency": 1,
@@ -15381,6 +15605,7 @@
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "genmo/mochi-1-preview",
             "param_count": null,
@@ -15420,7 +15645,6 @@
             "model_name": "mochi-1-preview",
             "inference_engine": "media",
             "device_type": "P150X8",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X8",
               "max_concurrency": 1,
@@ -15496,6 +15720,7 @@
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "genmo/mochi-1-preview",
             "param_count": null,
@@ -15535,7 +15760,6 @@
             "model_name": "mochi-1-preview",
             "inference_engine": "media",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 1,
@@ -15611,6 +15835,7 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "genmo/mochi-1-preview",
             "param_count": null,
@@ -15652,7 +15877,6 @@
             "model_name": "Wan2.2-T2V-A14B-Diffusers",
             "inference_engine": "media",
             "device_type": "T3K",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 1,
@@ -15728,6 +15952,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
             "param_count": 14,
@@ -15765,7 +15990,6 @@
             "model_name": "Wan2.2-T2V-A14B-Diffusers",
             "inference_engine": "media",
             "device_type": "GALAXY",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 1,
@@ -15839,6 +16063,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
             "param_count": 14,
@@ -15876,7 +16101,6 @@
             "model_name": "Wan2.2-T2V-A14B-Diffusers",
             "inference_engine": "media",
             "device_type": "P150X4",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X4",
               "max_concurrency": 1,
@@ -15952,6 +16176,7 @@
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
             "param_count": 14,
@@ -15991,7 +16216,6 @@
             "model_name": "Wan2.2-T2V-A14B-Diffusers",
             "inference_engine": "media",
             "device_type": "P150X8",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X8",
               "max_concurrency": 1,
@@ -16067,6 +16291,7 @@
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
             "param_count": 14,
@@ -16106,7 +16331,6 @@
             "model_name": "Wan2.2-T2V-A14B-Diffusers",
             "inference_engine": "media",
             "device_type": "P300X2",
-            "tt_metal_commit": "80180b9",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 1,
@@ -16179,9 +16403,11 @@
             },
             "system_requirements": null,
             "env_vars": {
+              "TT_DIT_CACHE_DIR": "/home/container_app_user/cache_root/tt_dit_cache",
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "8c48a10",
             "vllm_commit": null,
             "hf_weights_repo": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
             "param_count": 14,
@@ -16189,10 +16415,10 @@
             "min_ram_gb": 32,
             "model_type": "VIDEO",
             "repacked": 0,
-            "version": "0.14.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.14.0-80180b9",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.17.0-8c48a10",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/80180b9/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 30000000
             },
@@ -16223,7 +16449,6 @@
             "model_name": "stable-diffusion-xl-base-1.0",
             "inference_engine": "media",
             "device_type": "N150",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -16297,6 +16522,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "bac8b34",
             "vllm_commit": null,
             "hf_weights_repo": "stabilityai/stable-diffusion-xl-base-1.0",
             "param_count": null,
@@ -16334,7 +16560,6 @@
             "model_name": "stable-diffusion-xl-base-1.0",
             "inference_engine": "media",
             "device_type": "N300",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -16410,6 +16635,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "bac8b34",
             "vllm_commit": null,
             "hf_weights_repo": "stabilityai/stable-diffusion-xl-base-1.0",
             "param_count": null,
@@ -16447,7 +16673,6 @@
             "model_name": "stable-diffusion-xl-base-1.0",
             "inference_engine": "media",
             "device_type": "T3K",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 4,
@@ -16523,6 +16748,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "bac8b34",
             "vllm_commit": null,
             "hf_weights_repo": "stabilityai/stable-diffusion-xl-base-1.0",
             "param_count": null,
@@ -16560,7 +16786,6 @@
             "model_name": "stable-diffusion-xl-base-1.0",
             "inference_engine": "media",
             "device_type": "GALAXY",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 16,
@@ -16634,6 +16859,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "bac8b34",
             "vllm_commit": null,
             "hf_weights_repo": "stabilityai/stable-diffusion-xl-base-1.0",
             "param_count": null,
@@ -16673,7 +16899,6 @@
             "model_name": "stable-diffusion-xl-base-1.0-img-2-img",
             "inference_engine": "media",
             "device_type": "N150",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -16747,6 +16972,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "bac8b34",
             "vllm_commit": null,
             "hf_weights_repo": "stabilityai/stable-diffusion-xl-base-1.0",
             "param_count": null,
@@ -16784,7 +17010,6 @@
             "model_name": "stable-diffusion-xl-base-1.0-img-2-img",
             "inference_engine": "media",
             "device_type": "N300",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -16860,6 +17085,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "bac8b34",
             "vllm_commit": null,
             "hf_weights_repo": "stabilityai/stable-diffusion-xl-base-1.0",
             "param_count": null,
@@ -16897,7 +17123,6 @@
             "model_name": "stable-diffusion-xl-base-1.0-img-2-img",
             "inference_engine": "media",
             "device_type": "T3K",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 4,
@@ -16973,6 +17198,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "bac8b34",
             "vllm_commit": null,
             "hf_weights_repo": "stabilityai/stable-diffusion-xl-base-1.0",
             "param_count": null,
@@ -17010,7 +17236,6 @@
             "model_name": "stable-diffusion-xl-base-1.0-img-2-img",
             "inference_engine": "media",
             "device_type": "GALAXY",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 16,
@@ -17084,6 +17309,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "bac8b34",
             "vllm_commit": null,
             "hf_weights_repo": "stabilityai/stable-diffusion-xl-base-1.0",
             "param_count": null,
@@ -17123,7 +17349,6 @@
             "model_name": "stable-diffusion-3.5-large",
             "inference_engine": "media",
             "device_type": "T3K",
-            "tt_metal_commit": "c180ef7",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 1,
@@ -17199,6 +17424,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "c180ef7",
             "vllm_commit": null,
             "hf_weights_repo": "stabilityai/stable-diffusion-3.5-large",
             "param_count": null,
@@ -17236,7 +17462,6 @@
             "model_name": "stable-diffusion-3.5-large",
             "inference_engine": "media",
             "device_type": "GALAXY",
-            "tt_metal_commit": "c180ef7",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 1,
@@ -17310,6 +17535,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "c180ef7",
             "vllm_commit": null,
             "hf_weights_repo": "stabilityai/stable-diffusion-3.5-large",
             "param_count": null,
@@ -17349,7 +17575,6 @@
             "model_name": "stable-diffusion-xl-1.0-inpainting-0.1",
             "inference_engine": "media",
             "device_type": "N150",
-            "tt_metal_commit": "fbbbd2d",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -17423,6 +17648,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "fbbbd2d",
             "vllm_commit": null,
             "hf_weights_repo": "diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
             "param_count": null,
@@ -17460,7 +17686,6 @@
             "model_name": "stable-diffusion-xl-1.0-inpainting-0.1",
             "inference_engine": "media",
             "device_type": "N300",
-            "tt_metal_commit": "fbbbd2d",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -17536,6 +17761,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "fbbbd2d",
             "vllm_commit": null,
             "hf_weights_repo": "diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
             "param_count": null,
@@ -17573,7 +17799,6 @@
             "model_name": "stable-diffusion-xl-1.0-inpainting-0.1",
             "inference_engine": "media",
             "device_type": "T3K",
-            "tt_metal_commit": "fbbbd2d",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 4,
@@ -17649,6 +17874,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "fbbbd2d",
             "vllm_commit": null,
             "hf_weights_repo": "diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
             "param_count": null,
@@ -17686,7 +17912,6 @@
             "model_name": "stable-diffusion-xl-1.0-inpainting-0.1",
             "inference_engine": "media",
             "device_type": "GALAXY",
-            "tt_metal_commit": "fbbbd2d",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 32,
@@ -17760,6 +17985,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "fbbbd2d",
             "vllm_commit": null,
             "hf_weights_repo": "diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
             "param_count": null,
@@ -17799,7 +18025,6 @@
             "model_name": "FLUX.1-dev",
             "inference_engine": "media",
             "device_type": "T3K",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 1,
@@ -17875,6 +18100,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "black-forest-labs/FLUX.1-dev",
             "param_count": null,
@@ -17912,7 +18138,6 @@
             "model_name": "FLUX.1-dev",
             "inference_engine": "media",
             "device_type": "GALAXY",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 1,
@@ -17986,6 +18211,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "black-forest-labs/FLUX.1-dev",
             "param_count": null,
@@ -18023,7 +18249,6 @@
             "model_name": "FLUX.1-dev",
             "inference_engine": "media",
             "device_type": "P300",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P300",
               "max_concurrency": 1,
@@ -18097,6 +18322,7 @@
               "MESH_DEVICE": "P300",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "black-forest-labs/FLUX.1-dev",
             "param_count": null,
@@ -18134,7 +18360,6 @@
             "model_name": "FLUX.1-dev",
             "inference_engine": "media",
             "device_type": "P150X4",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X4",
               "max_concurrency": 1,
@@ -18208,6 +18433,7 @@
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "black-forest-labs/FLUX.1-dev",
             "param_count": null,
@@ -18245,7 +18471,6 @@
             "model_name": "FLUX.1-dev",
             "inference_engine": "media",
             "device_type": "P150X8",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X8",
               "max_concurrency": 1,
@@ -18319,6 +18544,7 @@
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "black-forest-labs/FLUX.1-dev",
             "param_count": null,
@@ -18356,7 +18582,6 @@
             "model_name": "FLUX.1-dev",
             "inference_engine": "media",
             "device_type": "P300X2",
-            "tt_metal_commit": "80180b9",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 1,
@@ -18413,9 +18638,11 @@
                 "max_num_batched_tokens": "65536",
                 "max-log-len": "32",
                 "seed": "9472",
-                "additional_config": "{\"tt\": {}}"
+                "additional_config": "{\"tt\": {\"trace_region_size\": 55000000}}"
               },
-              "override_tt_config": {},
+              "override_tt_config": {
+                "trace_region_size": 55000000
+              },
               "env_vars": {
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
@@ -18430,6 +18657,7 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "8c48a10",
             "vllm_commit": null,
             "hf_weights_repo": "black-forest-labs/FLUX.1-dev",
             "param_count": null,
@@ -18437,11 +18665,13 @@
             "min_ram_gb": 6,
             "model_type": "IMAGE",
             "repacked": 0,
-            "version": "0.14.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.14.0-80180b9",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.17.0-8c48a10",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/80180b9/models/tt_transformers",
-            "override_tt_config": {},
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers",
+            "override_tt_config": {
+              "trace_region_size": 55000000
+            },
             "supported_modalities": [
               "text"
             ],
@@ -18469,7 +18699,6 @@
             "model_name": "FLUX.1-schnell",
             "inference_engine": "media",
             "device_type": "T3K",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 1,
@@ -18545,6 +18774,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "black-forest-labs/FLUX.1-schnell",
             "param_count": null,
@@ -18582,7 +18812,6 @@
             "model_name": "FLUX.1-schnell",
             "inference_engine": "media",
             "device_type": "GALAXY",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 1,
@@ -18656,6 +18885,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "black-forest-labs/FLUX.1-schnell",
             "param_count": null,
@@ -18693,7 +18923,6 @@
             "model_name": "FLUX.1-schnell",
             "inference_engine": "media",
             "device_type": "P300",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P300",
               "max_concurrency": 1,
@@ -18767,6 +18996,7 @@
               "MESH_DEVICE": "P300",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "black-forest-labs/FLUX.1-schnell",
             "param_count": null,
@@ -18804,7 +19034,6 @@
             "model_name": "FLUX.1-schnell",
             "inference_engine": "media",
             "device_type": "P150X4",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X4",
               "max_concurrency": 1,
@@ -18878,6 +19107,7 @@
               "MESH_DEVICE": "P150x4",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "black-forest-labs/FLUX.1-schnell",
             "param_count": null,
@@ -18915,7 +19145,6 @@
             "model_name": "FLUX.1-schnell",
             "inference_engine": "media",
             "device_type": "P150X8",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P150X8",
               "max_concurrency": 1,
@@ -18989,6 +19218,7 @@
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "black-forest-labs/FLUX.1-schnell",
             "param_count": null,
@@ -19026,7 +19256,6 @@
             "model_name": "FLUX.1-schnell",
             "inference_engine": "media",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 1,
@@ -19100,6 +19329,7 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "black-forest-labs/FLUX.1-schnell",
             "param_count": null,
@@ -19139,7 +19369,6 @@
             "model_name": "Motif-Image-6B-Preview",
             "inference_engine": "media",
             "device_type": "T3K",
-            "tt_metal_commit": "c180ef7",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 1,
@@ -19215,6 +19444,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "c180ef7",
             "vllm_commit": null,
             "hf_weights_repo": "Motif-Technologies/Motif-Image-6B-Preview",
             "param_count": 6,
@@ -19252,7 +19482,6 @@
             "model_name": "Motif-Image-6B-Preview",
             "inference_engine": "media",
             "device_type": "GALAXY",
-            "tt_metal_commit": "c180ef7",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 1,
@@ -19326,6 +19555,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "c180ef7",
             "vllm_commit": null,
             "hf_weights_repo": "Motif-Technologies/Motif-Image-6B-Preview",
             "param_count": 6,
@@ -19363,7 +19593,6 @@
             "model_name": "Motif-Image-6B-Preview",
             "inference_engine": "media",
             "device_type": "P150X8",
-            "tt_metal_commit": "c180ef7",
             "device_model_spec": {
               "device": "P150X8",
               "max_concurrency": 1,
@@ -19437,6 +19666,7 @@
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "c180ef7",
             "vllm_commit": null,
             "hf_weights_repo": "Motif-Technologies/Motif-Image-6B-Preview",
             "param_count": 6,
@@ -19474,7 +19704,6 @@
             "model_name": "Motif-Image-6B-Preview",
             "inference_engine": "media",
             "device_type": "P300X2",
-            "tt_metal_commit": "c180ef7",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 1,
@@ -19507,6 +19736,7 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
+            "tt_metal_commit": "c180ef7",
             "vllm_commit": null,
             "hf_weights_repo": "Motif-Technologies/Motif-Image-6B-Preview",
             "param_count": 6,
@@ -19546,7 +19776,6 @@
             "model_name": "Qwen-Image",
             "inference_engine": "media",
             "device_type": "T3K",
-            "tt_metal_commit": "be88351",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 1,
@@ -19583,6 +19812,7 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_DIT_CACHE_DIR": "/tmp/TT_DIT_CACHE"
             },
+            "tt_metal_commit": "be88351",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen-Image",
             "param_count": null,
@@ -19620,7 +19850,6 @@
             "model_name": "Qwen-Image",
             "inference_engine": "media",
             "device_type": "GALAXY",
-            "tt_metal_commit": "be88351",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 1,
@@ -19653,6 +19882,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "be88351",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen-Image",
             "param_count": null,
@@ -19692,7 +19922,6 @@
             "model_name": "Qwen-Image-2512",
             "inference_engine": "media",
             "device_type": "T3K",
-            "tt_metal_commit": "be88351",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 1,
@@ -19729,6 +19958,7 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_DIT_CACHE_DIR": "/tmp/TT_DIT_CACHE"
             },
+            "tt_metal_commit": "be88351",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen-Image-2512",
             "param_count": null,
@@ -19766,7 +19996,6 @@
             "model_name": "Qwen-Image-2512",
             "inference_engine": "media",
             "device_type": "GALAXY",
-            "tt_metal_commit": "be88351",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 1,
@@ -19799,6 +20028,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "be88351",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen-Image-2512",
             "param_count": null,
@@ -19810,6 +20040,119 @@
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-be88351",
             "status": "FUNCTIONAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/be88351/models/tt_transformers",
+            "override_tt_config": {},
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": false,
+            "metadata": {},
+            "cli_args": {}
+          }
+        }
+      }
+    },
+    "Tongyi-MAI/Z-Image-Turbo": {
+      "P300X2": {
+        "media": {
+          "tt_transformers": {
+            "model_id": "id_tt-transformers_Z-Image-Turbo_p300x2",
+            "impl": {
+              "impl_id": "tt_transformers",
+              "impl_name": "tt-transformers",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/tt_transformers"
+            },
+            "hf_model_repo": "Tongyi-MAI/Z-Image-Turbo",
+            "model_name": "Z-Image-Turbo",
+            "inference_engine": "media",
+            "device_type": "P300X2",
+            "device_model_spec": {
+              "device": "P300X2",
+              "max_concurrency": 1,
+              "max_context": 65536,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [
+                {
+                  "isl": null,
+                  "osl": null,
+                  "max_concurrency": 1,
+                  "num_prompts": null,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "image",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 120000.0,
+                      "tput_user": 0.0083,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 24000.0,
+                      "tput_user": 0.0415,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 12000.0,
+                      "tput_user": 0.083,
+                      "tput": null,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                }
+              ],
+              "vllm_args": {
+                "model": "Tongyi-MAI/Z-Image-Turbo",
+                "block_size": "64",
+                "max_model_len": "65536",
+                "max_num_seqs": "1",
+                "max_num_batched_tokens": "65536",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "MESH_DEVICE": "P300x2",
+                "ARCH_NAME": "blackhole"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "MESH_DEVICE": "P300x2",
+              "ARCH_NAME": "blackhole"
+            },
+            "tt_metal_commit": "8c48a10",
+            "vllm_commit": null,
+            "hf_weights_repo": "Tongyi-MAI/Z-Image-Turbo",
+            "param_count": null,
+            "min_disk_gb": 30,
+            "min_ram_gb": 16,
+            "model_type": "IMAGE",
+            "repacked": 0,
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.17.0-8c48a10",
+            "status": "FUNCTIONAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -19838,7 +20181,6 @@
             "model_name": "whisper-large-v3",
             "inference_engine": "media",
             "device_type": "N150",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -19912,6 +20254,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "8c48a10",
             "vllm_commit": null,
             "hf_weights_repo": "openai/whisper-large-v3",
             "param_count": null,
@@ -19919,10 +20262,10 @@
             "min_ram_gb": 6,
             "model_type": "AUDIO",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.17.0-8c48a10",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/demos/whisper",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -19949,7 +20292,6 @@
             "model_name": "whisper-large-v3",
             "inference_engine": "media",
             "device_type": "N300",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -19984,6 +20326,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "8c48a10",
             "vllm_commit": null,
             "hf_weights_repo": "openai/whisper-large-v3",
             "param_count": null,
@@ -19991,10 +20334,10 @@
             "min_ram_gb": 6,
             "model_type": "AUDIO",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.17.0-8c48a10",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/demos/whisper",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -20021,7 +20364,6 @@
             "model_name": "whisper-large-v3",
             "inference_engine": "media",
             "device_type": "GALAXY",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 32,
@@ -20095,6 +20437,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "8c48a10",
             "vllm_commit": null,
             "hf_weights_repo": "openai/whisper-large-v3",
             "param_count": null,
@@ -20102,10 +20445,10 @@
             "min_ram_gb": 6,
             "model_type": "AUDIO",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.17.0-8c48a10",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/demos/whisper",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -20132,7 +20475,6 @@
             "model_name": "whisper-large-v3",
             "inference_engine": "media",
             "device_type": "T3K",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 4,
@@ -20208,6 +20550,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "8c48a10",
             "vllm_commit": null,
             "hf_weights_repo": "openai/whisper-large-v3",
             "param_count": null,
@@ -20215,10 +20558,10 @@
             "min_ram_gb": 6,
             "model_type": "AUDIO",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.17.0-8c48a10",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/demos/whisper",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -20245,7 +20588,6 @@
             "model_name": "whisper-large-v3",
             "inference_engine": "media",
             "device_type": "P150",
-            "tt_metal_commit": "25891d3",
             "device_model_spec": {
               "device": "P150",
               "max_concurrency": 1,
@@ -20321,6 +20663,7 @@
               "ARCH_NAME": "blackhole",
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "25891d3",
             "vllm_commit": null,
             "hf_weights_repo": "openai/whisper-large-v3",
             "param_count": null,
@@ -20358,7 +20701,6 @@
             "model_name": "whisper-large-v3",
             "inference_engine": "media",
             "device_type": "P300X2",
-            "tt_metal_commit": "25891d3",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 4,
@@ -20434,6 +20776,7 @@
               "ARCH_NAME": "blackhole",
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "25891d3",
             "vllm_commit": null,
             "hf_weights_repo": "openai/whisper-large-v3",
             "param_count": null,
@@ -20473,7 +20816,6 @@
             "model_name": "distil-large-v3",
             "inference_engine": "media",
             "device_type": "N150",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -20547,6 +20889,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "8c48a10",
             "vllm_commit": null,
             "hf_weights_repo": "distil-whisper/distil-large-v3",
             "param_count": null,
@@ -20554,10 +20897,10 @@
             "min_ram_gb": 6,
             "model_type": "AUDIO",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.17.0-8c48a10",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/demos/whisper",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -20584,7 +20927,6 @@
             "model_name": "distil-large-v3",
             "inference_engine": "media",
             "device_type": "N300",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -20619,6 +20961,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "8c48a10",
             "vllm_commit": null,
             "hf_weights_repo": "distil-whisper/distil-large-v3",
             "param_count": null,
@@ -20626,10 +20969,10 @@
             "min_ram_gb": 6,
             "model_type": "AUDIO",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.17.0-8c48a10",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/demos/whisper",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -20656,7 +20999,6 @@
             "model_name": "distil-large-v3",
             "inference_engine": "media",
             "device_type": "GALAXY",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 32,
@@ -20730,6 +21072,7 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "8c48a10",
             "vllm_commit": null,
             "hf_weights_repo": "distil-whisper/distil-large-v3",
             "param_count": null,
@@ -20737,10 +21080,10 @@
             "min_ram_gb": 6,
             "model_type": "AUDIO",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.17.0-8c48a10",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/demos/whisper",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -20767,7 +21110,6 @@
             "model_name": "distil-large-v3",
             "inference_engine": "media",
             "device_type": "T3K",
-            "tt_metal_commit": "bac8b34",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 4,
@@ -20843,6 +21185,7 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "8c48a10",
             "vllm_commit": null,
             "hf_weights_repo": "distil-whisper/distil-large-v3",
             "param_count": null,
@@ -20850,10 +21193,10 @@
             "min_ram_gb": 6,
             "model_type": "AUDIO",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34",
+            "version": "0.17.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.17.0-8c48a10",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/demos/whisper",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -20880,7 +21223,6 @@
             "model_name": "distil-large-v3",
             "inference_engine": "media",
             "device_type": "P150",
-            "tt_metal_commit": "25891d3",
             "device_model_spec": {
               "device": "P150",
               "max_concurrency": 1,
@@ -20956,6 +21298,7 @@
               "ARCH_NAME": "blackhole",
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "25891d3",
             "vllm_commit": null,
             "hf_weights_repo": "distil-whisper/distil-large-v3",
             "param_count": null,
@@ -20993,7 +21336,6 @@
             "model_name": "distil-large-v3",
             "inference_engine": "media",
             "device_type": "P300X2",
-            "tt_metal_commit": "25891d3",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 4,
@@ -21069,6 +21411,7 @@
               "ARCH_NAME": "blackhole",
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "25891d3",
             "vllm_commit": null,
             "hf_weights_repo": "distil-whisper/distil-large-v3",
             "param_count": null,
@@ -21108,7 +21451,6 @@
             "model_name": "speecht5_tts",
             "inference_engine": "media",
             "device_type": "N150",
-            "tt_metal_commit": "a9b09e0",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -21182,6 +21524,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "a9b09e0",
             "vllm_commit": null,
             "hf_weights_repo": "microsoft/speecht5_tts",
             "param_count": null,
@@ -21219,7 +21562,6 @@
             "model_name": "speecht5_tts",
             "inference_engine": "media",
             "device_type": "N300",
-            "tt_metal_commit": "a9b09e0",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -21295,6 +21637,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "a9b09e0",
             "vllm_commit": null,
             "hf_weights_repo": "microsoft/speecht5_tts",
             "param_count": null,
@@ -21332,7 +21675,6 @@
             "model_name": "speecht5_tts",
             "inference_engine": "media",
             "device_type": "P150",
-            "tt_metal_commit": "25891d3",
             "device_model_spec": {
               "device": "P150",
               "max_concurrency": 1,
@@ -21367,6 +21709,7 @@
               "ARCH_NAME": "blackhole",
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "25891d3",
             "vllm_commit": null,
             "hf_weights_repo": "microsoft/speecht5_tts",
             "param_count": null,
@@ -21404,7 +21747,6 @@
             "model_name": "speecht5_tts",
             "inference_engine": "media",
             "device_type": "P300X2",
-            "tt_metal_commit": "25891d3",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 4,
@@ -21439,6 +21781,7 @@
               "ARCH_NAME": "blackhole",
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
             },
+            "tt_metal_commit": "25891d3",
             "vllm_commit": null,
             "hf_weights_repo": "microsoft/speecht5_tts",
             "param_count": null,
@@ -21478,7 +21821,6 @@
             "model_name": "bge-large-en-v1.5",
             "inference_engine": "media",
             "device_type": "N150",
-            "tt_metal_commit": "65718bb",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -21564,6 +21906,7 @@
               "MAX_BATCH_SIZE": "8",
               "DEFAULT_THROTTLE_LEVEL": "0"
             },
+            "tt_metal_commit": "65718bb",
             "vllm_commit": null,
             "hf_weights_repo": "BAAI/bge-large-en-v1.5",
             "param_count": null,
@@ -21601,7 +21944,6 @@
             "model_name": "bge-large-en-v1.5",
             "inference_engine": "media",
             "device_type": "N300",
-            "tt_metal_commit": "65718bb",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -21689,6 +22031,7 @@
               "MAX_BATCH_SIZE": "16",
               "DEFAULT_THROTTLE_LEVEL": "0"
             },
+            "tt_metal_commit": "65718bb",
             "vllm_commit": null,
             "hf_weights_repo": "BAAI/bge-large-en-v1.5",
             "param_count": null,
@@ -21726,7 +22069,6 @@
             "model_name": "bge-large-en-v1.5",
             "inference_engine": "media",
             "device_type": "T3K",
-            "tt_metal_commit": "65718bb",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 4,
@@ -21814,6 +22156,7 @@
               "MAX_BATCH_SIZE": "16",
               "DEFAULT_THROTTLE_LEVEL": "0"
             },
+            "tt_metal_commit": "65718bb",
             "vllm_commit": null,
             "hf_weights_repo": "BAAI/bge-large-en-v1.5",
             "param_count": null,
@@ -21851,7 +22194,6 @@
             "model_name": "bge-large-en-v1.5",
             "inference_engine": "media",
             "device_type": "GALAXY",
-            "tt_metal_commit": "65718bb",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 32,
@@ -21939,6 +22281,7 @@
               "DEFAULT_THROTTLE_LEVEL": "0",
               "TT_METAL_INSPECTOR_RPC": "0"
             },
+            "tt_metal_commit": "65718bb",
             "vllm_commit": null,
             "hf_weights_repo": "BAAI/bge-large-en-v1.5",
             "param_count": null,
@@ -21978,7 +22321,6 @@
             "model_name": "Qwen3-Embedding-8B",
             "inference_engine": "media",
             "device_type": "N150",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -22060,6 +22402,7 @@
               "VLLM__MIN_CONTEXT_LENGTH": "32",
               "VLLM__MAX_NUM_SEQS": "1"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen3-Embedding-8B",
             "param_count": 8,
@@ -22097,7 +22440,6 @@
             "model_name": "Qwen3-Embedding-8B",
             "inference_engine": "media",
             "device_type": "N300",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -22181,6 +22523,7 @@
               "VLLM__MIN_CONTEXT_LENGTH": "32",
               "VLLM__MAX_NUM_SEQS": "2"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen3-Embedding-8B",
             "param_count": 8,
@@ -22218,7 +22561,6 @@
             "model_name": "Qwen3-Embedding-8B",
             "inference_engine": "media",
             "device_type": "T3K",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 4,
@@ -22302,6 +22644,7 @@
               "VLLM__MIN_CONTEXT_LENGTH": "32",
               "VLLM__MAX_NUM_SEQS": "2"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen3-Embedding-8B",
             "param_count": 8,
@@ -22339,7 +22682,6 @@
             "model_name": "Qwen3-Embedding-8B",
             "inference_engine": "media",
             "device_type": "GALAXY",
-            "tt_metal_commit": "555f240",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 32,
@@ -22421,6 +22763,7 @@
               "VLLM__MIN_CONTEXT_LENGTH": "32",
               "VLLM__MAX_NUM_SEQS": "1"
             },
+            "tt_metal_commit": "555f240",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen3-Embedding-8B",
             "param_count": 8,
@@ -22460,7 +22803,6 @@
             "model_name": "Qwen3-Embedding-4B",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "2496be4",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -22546,6 +22888,7 @@
               "MAX_BATCH_SIZE": "1",
               "DEFAULT_THROTTLE_LEVEL": "0"
             },
+            "tt_metal_commit": "2496be4",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen3-Embedding-4B",
             "param_count": 4,
@@ -22583,7 +22926,6 @@
             "model_name": "Qwen3-Embedding-4B",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "2496be4",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -22671,6 +23013,7 @@
               "MAX_BATCH_SIZE": "1",
               "DEFAULT_THROTTLE_LEVEL": "0"
             },
+            "tt_metal_commit": "2496be4",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen3-Embedding-4B",
             "param_count": 4,
@@ -22708,7 +23051,6 @@
             "model_name": "Qwen3-Embedding-4B",
             "inference_engine": "forge",
             "device_type": "T3K",
-            "tt_metal_commit": "2496be4",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 4,
@@ -22796,6 +23138,7 @@
               "MAX_BATCH_SIZE": "1",
               "DEFAULT_THROTTLE_LEVEL": "0"
             },
+            "tt_metal_commit": "2496be4",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen3-Embedding-4B",
             "param_count": 4,
@@ -22833,7 +23176,6 @@
             "model_name": "Qwen3-Embedding-4B",
             "inference_engine": "forge",
             "device_type": "GALAXY",
-            "tt_metal_commit": "2496be4",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 32,
@@ -22919,6 +23261,7 @@
               "MAX_BATCH_SIZE": "1",
               "DEFAULT_THROTTLE_LEVEL": "0"
             },
+            "tt_metal_commit": "2496be4",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen3-Embedding-4B",
             "param_count": 4,
@@ -22958,7 +23301,6 @@
             "model_name": "Qwen3-4B",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "2496be4",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -22981,19 +23323,19 @@
                     "functional": {
                       "ttft_ms": 270.0,
                       "tput_user": 4.2,
-                      "tput": 129.3,
+                      "tput": 4.2,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 54.0,
                       "tput_user": 21.0,
-                      "tput": 646.5,
+                      "tput": 21.0,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 27.0,
                       "tput_user": 42.0,
-                      "tput": 1293.0,
+                      "tput": 42.0,
                       "tolerance": 0.0
                     }
                   },
@@ -23038,6 +23380,7 @@
               "VLLM__MAX_MODEL_LENGTH": "2048",
               "VLLM__MIN_MODEL_LENGTH": "32"
             },
+            "tt_metal_commit": "2496be4",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen3-4B",
             "param_count": 4,
@@ -23075,7 +23418,6 @@
             "model_name": "Qwen3-4B",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "2496be4",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -23098,19 +23440,19 @@
                     "functional": {
                       "ttft_ms": 260.0,
                       "tput_user": 8.200000000000001,
-                      "tput": 258.6,
+                      "tput": 8.200000000000001,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 52.0,
                       "tput_user": 41.0,
-                      "tput": 1293.0,
+                      "tput": 41.0,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 26.0,
                       "tput_user": 82.0,
-                      "tput": 2586.0,
+                      "tput": 82.0,
                       "tolerance": 0.0
                     }
                   },
@@ -23157,6 +23499,7 @@
               "VLLM__MAX_MODEL_LENGTH": "2048",
               "VLLM__MIN_MODEL_LENGTH": "32"
             },
+            "tt_metal_commit": "2496be4",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen3-4B",
             "param_count": 4,
@@ -23196,7 +23539,6 @@
             "model_name": "resnet-50",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -23270,6 +23612,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "079a2c2",
             "vllm_commit": null,
             "hf_weights_repo": "resnet-50",
             "param_count": null,
@@ -23307,7 +23650,6 @@
             "model_name": "resnet-50",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -23383,6 +23725,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "079a2c2",
             "vllm_commit": null,
             "hf_weights_repo": "resnet-50",
             "param_count": null,
@@ -23422,7 +23765,6 @@
             "model_name": "vovnet",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -23496,6 +23838,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "079a2c2",
             "vllm_commit": null,
             "hf_weights_repo": "vovnet",
             "param_count": null,
@@ -23533,7 +23876,6 @@
             "model_name": "vovnet",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -23609,6 +23951,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "079a2c2",
             "vllm_commit": null,
             "hf_weights_repo": "vovnet",
             "param_count": null,
@@ -23648,7 +23991,6 @@
             "model_name": "mobilenetv2",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -23722,6 +24064,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "079a2c2",
             "vllm_commit": null,
             "hf_weights_repo": "mobilenetv2",
             "param_count": null,
@@ -23759,7 +24102,6 @@
             "model_name": "mobilenetv2",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -23835,6 +24177,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "079a2c2",
             "vllm_commit": null,
             "hf_weights_repo": "mobilenetv2",
             "param_count": null,
@@ -23874,7 +24217,6 @@
             "model_name": "efficientnet",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "2496be4",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -23948,6 +24290,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "2496be4",
             "vllm_commit": null,
             "hf_weights_repo": "efficientnet",
             "param_count": null,
@@ -23985,7 +24328,6 @@
             "model_name": "efficientnet",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "2496be4",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -24061,6 +24403,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "2496be4",
             "vllm_commit": null,
             "hf_weights_repo": "efficientnet",
             "param_count": null,
@@ -24100,7 +24443,6 @@
             "model_name": "segformer",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -24174,6 +24516,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "079a2c2",
             "vllm_commit": null,
             "hf_weights_repo": "segformer",
             "param_count": null,
@@ -24211,7 +24554,6 @@
             "model_name": "segformer",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -24287,6 +24629,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "079a2c2",
             "vllm_commit": null,
             "hf_weights_repo": "segformer",
             "param_count": null,
@@ -24326,7 +24669,6 @@
             "model_name": "vit",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -24400,6 +24742,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "079a2c2",
             "vllm_commit": null,
             "hf_weights_repo": "vit",
             "param_count": null,
@@ -24437,7 +24780,6 @@
             "model_name": "vit",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -24513,6 +24855,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "079a2c2",
             "vllm_commit": null,
             "hf_weights_repo": "vit",
             "param_count": null,
@@ -24552,7 +24895,6 @@
             "model_name": "unet",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "2496be4",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -24626,6 +24968,7 @@
               "MESH_DEVICE": "N150",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "2496be4",
             "vllm_commit": null,
             "hf_weights_repo": "unet",
             "param_count": null,
@@ -24663,7 +25006,6 @@
             "model_name": "unet",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "2496be4",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -24739,6 +25081,7 @@
               "MESH_DEVICE": "N300",
               "ARCH_NAME": "wormhole_b0"
             },
+            "tt_metal_commit": "2496be4",
             "vllm_commit": null,
             "hf_weights_repo": "unet",
             "param_count": null,

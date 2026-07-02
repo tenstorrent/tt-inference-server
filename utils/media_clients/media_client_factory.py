@@ -9,7 +9,6 @@ from typing import Dict, Type
 from .base_strategy_interface import BaseMediaStrategy
 from .cnn_client import CnnClientStrategy
 from .embedding_client import EmbeddingClientStrategy
-from .image_client import ImageClientStrategy
 from .tts_client import TtsClientStrategy
 from .video_client import VideoClientStrategy
 
@@ -17,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 STRATEGY_MAP: Dict[str, Type[BaseMediaStrategy]] = {
     "CNN": CnnClientStrategy,
-    "IMAGE": ImageClientStrategy,
     "EMBEDDING": EmbeddingClientStrategy,
     "TEXT_TO_SPEECH": TtsClientStrategy,
     "VIDEO": VideoClientStrategy,

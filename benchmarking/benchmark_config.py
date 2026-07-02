@@ -6,14 +6,28 @@ import os
 from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Tuple
 
-from workflows.model_spec import MODEL_SPECS
 from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import (
     BenchmarkTaskType,
     DeviceTypes,
+    InferenceEngine,
     ModelType,
     WorkflowVenvType,
 )
+
+
+# Forge models need a newer vllm client that can load their tokenizers; other
+# engines use the shared client.
+_VLLM_BENCHMARK_VENV_BY_ENGINE = {
+    InferenceEngine.FORGE.value: WorkflowVenvType.BENCHMARKS_VLLM_FORGE,
+}
+
+
+def select_vllm_benchmark_venv(model_spec) -> WorkflowVenvType:
+    """Pick the vllm benchmark client venv for ``model_spec``."""
+    return _VLLM_BENCHMARK_VENV_BY_ENGINE.get(
+        model_spec.inference_engine, WorkflowVenvType.BENCHMARKS_VLLM
+    )
 
 
 @dataclass(frozen=True)
@@ -524,19 +538,22 @@ def cap_benchmark_params(
     return params
 
 
-# define benchmark configs for each model and each device configuration
-# uses:
-# 1. BENCHMARK_ISL_OSL_PAIRS
-# 2. ISL_OSL_IMAGE_RESOLUTION_PAIRS
-# num_prompts is set dynamically based on OSL because that mostly sets how long the benchmark takes
-BENCHMARK_CONFIGS = {}
-for model_id, model_spec in MODEL_SPECS.items():
+def build_benchmark_config(model_spec) -> BenchmarkConfig:
+    """Build benchmark tasks directly from a resolved model spec.
+
+    Runtime model specs supplied through ``--runtime-model-spec-json`` may not be
+    present in import-time ``MODEL_SPECS``. They still carry the same
+    ``device_model_spec`` fields needed to generate benchmark tasks.
+    """
+
     # Since each ModelConfig now represents a single device, use that device and its max_concurrency
     device = model_spec.device_type
     model_max_concurrency = model_spec.device_model_spec.max_concurrency
     max_context = model_spec.device_model_spec.max_context
     max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
     perf_reference = model_spec.device_model_spec.perf_reference
+
+    vllm_benchmark_venv = select_vllm_benchmark_venv(model_spec)
 
     # Apply capping to each perf reference entry (including vision tokens for VLM models)
     capped_perf_reference = [
@@ -555,7 +572,8 @@ for model_id, model_spec in MODEL_SPECS.items():
         perf_ref_task = BenchmarkTaskCNN(param_map={device: capped_perf_reference})
     elif model_spec.model_type == ModelType.EMBEDDING:
         perf_ref_task = BenchmarkTaskEmbedding(
-            param_map={device: capped_perf_reference}
+            param_map={device: capped_perf_reference},
+            workflow_venv_type=vllm_benchmark_venv,
         )
     elif model_spec.model_type == ModelType.VIDEO:
         perf_ref_task = BenchmarkTaskVideo(param_map={device: capped_perf_reference})
@@ -566,7 +584,10 @@ for model_id, model_spec in MODEL_SPECS.items():
     elif model_spec.model_type == ModelType.AUDIO:
         perf_ref_task = BenchmarkTaskAudio(param_map={device: capped_perf_reference})
     else:
-        perf_ref_task = BenchmarkTask(param_map={device: capped_perf_reference})
+        perf_ref_task = BenchmarkTask(
+            param_map={device: capped_perf_reference},
+            workflow_venv_type=vllm_benchmark_venv,
+        )
 
     tasks = [perf_ref_task]
     # optionally skip the benchmark sweeps and only run the perf reference targets
@@ -582,7 +603,8 @@ for model_id, model_spec in MODEL_SPECS.items():
             )
         elif model_spec.model_type == ModelType.EMBEDDING:
             benchmark_task_runs = BenchmarkTaskEmbedding(
-                param_map={device: [BenchmarkTaskParams()]}
+                param_map={device: [BenchmarkTaskParams()]},
+                workflow_venv_type=vllm_benchmark_venv,
             )
         elif model_spec.model_type == ModelType.VIDEO:
             benchmark_task_runs = BenchmarkTaskVideo(
@@ -643,7 +665,8 @@ for model_id, model_spec in MODEL_SPECS.items():
                         if "image" in model_spec.supported_modalities
                         else []
                     )
-                }
+                },
+                workflow_venv_type=vllm_benchmark_venv,
             )
 
         tasks.append(benchmark_task_runs)
@@ -665,8 +688,20 @@ for model_id, model_spec in MODEL_SPECS.items():
                         )
                         for dataset, ratio in STRUCTURED_OUTPUT_PAIRS
                     ]
-                }
+                },
+                workflow_venv_type=vllm_benchmark_venv,
             )
         )
 
-    BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(model_id=model_id, tasks=tasks)
+    return BenchmarkConfig(model_id=model_spec.model_id, tasks=tasks)
+
+
+def get_benchmark_config(model_spec) -> BenchmarkConfig:
+    """Build benchmark tasks from the resolved model spec.
+
+    ``--runtime-model-spec-json`` is already resolved into ``model_spec`` before
+    this helper runs. Do not consult the import-time catalog here: the runtime
+    JSON must override even when its ``model_id`` collides with a built-in spec.
+    """
+
+    return build_benchmark_config(model_spec)

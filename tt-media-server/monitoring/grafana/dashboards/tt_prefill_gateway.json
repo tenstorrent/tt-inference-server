@@ -298,7 +298,7 @@
       },
       "targets": [
         {
-          "expr": "tt_prefill_last_heartbeat_age_seconds",
+          "expr": "tt_prefill_last_registration_age_seconds",
           "legendFormat": "{{server_id}}",
           "refId": "A"
         }

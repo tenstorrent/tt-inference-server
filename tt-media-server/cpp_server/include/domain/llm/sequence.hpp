@@ -43,7 +43,10 @@ class Sequence {
            std::optional<uint32_t> prefillSlotId, bool continuation,
            bool disaggregated, std::unique_ptr<SamplingParams> samplingParams,
            std::optional<uint32_t> kvPositionId = std::nullopt,
-           int decodePositionId = 0, int decodeSkipTokens = 0);
+           int decodePositionId = 0, int decodeSkipTokens = 0,
+           std::optional<uint64_t> migrationId = std::nullopt,
+           bool startsInThinking = false,
+           std::optional<uint32_t> migrationStartPosition = std::nullopt);
 
   void serialize(std::ostream& os) const;
   static Sequence deserialize(std::istream& is);
@@ -94,6 +97,13 @@ class Sequence {
   const std::vector<int>& getBlockTable() const { return blockTable; }
   std::vector<int>& getMutableBlockTable() { return blockTable; }
 
+  std::optional<uint32_t> getMigrationStartPosition() const {
+    return migrationStartPosition;
+  }
+  void setMigrationStartPosition(uint32_t position) {
+    migrationStartPosition = position;
+  }
+
   const SamplingParams& getSamplingParams() const { return *samplingParams; }
   SamplingParams& getMutableSamplingParams() { return *samplingParams; }
   void setSamplingParams(std::unique_ptr<SamplingParams> p) {
@@ -115,6 +125,12 @@ class Sequence {
   int getDecodeSkipTokens() const { return decodeSkipTokens; }
   void setDecodeSkipTokens(int n) { decodeSkipTokens = n; }
 
+  std::optional<uint64_t> getMigrationId() const { return migrationId; }
+  void setMigrationId(uint64_t id) { migrationId = id; }
+
+  bool getStartsInThinking() const { return startsInThinking_; }
+  void setStartsInThinking(bool v) { startsInThinking_ = v; }
+
  private:
   SequenceStatus status = SequenceStatus::WAITING;
   std::vector<int64_t> tokenIds;
@@ -133,6 +149,11 @@ class Sequence {
   // Reused prefix length excluding accumulated think tokens, forwarded from the
   // decode server. Stored only; not yet consumed by the runner.
   int decodeSkipTokens = 0;
+  // Unique 64-bit ID correlating this sequence with a prefill migration.
+  std::optional<uint64_t> migrationId;
+  std::optional<uint32_t> migrationStartPosition;
+  // Upstream-derived: prompt begins inside an unclosed think block.
+  bool startsInThinking_ = false;
 };
 
 }  // namespace tt::domain::llm

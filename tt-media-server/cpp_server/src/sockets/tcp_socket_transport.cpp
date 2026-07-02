@@ -110,121 +110,121 @@ void configureSocket(int socketFd) {
 TcpSocketTransport::~TcpSocketTransport() { stop(); }
 
 bool TcpSocketTransport::initializeAsServer(uint16_t port) {
-  mode_ = Mode::SERVER;
-  port_ = port;
+  mode = Mode::SERVER;
+  this->port = port;
 
-  serverSocket_ = createTcpSocket();
-  if (!serverSocket_) {
+  serverSocket = createTcpSocket();
+  if (!serverSocket) {
     TT_LOG_ERROR("[TcpSocketTransport] Failed to create server socket: {}",
                  strerror(errno));
     return false;
   }
 
   int opt = 1;
-  if (setsockopt(serverSocket_.get(), SOL_SOCKET, SO_REUSEADDR, &opt,
+  if (setsockopt(serverSocket.get(), SOL_SOCKET, SO_REUSEADDR, &opt,
                  sizeof(opt)) < 0) {
     TT_LOG_ERROR("[TcpSocketTransport] Failed to set SO_REUSEADDR: {}",
                  strerror(errno));
-    serverSocket_.reset();
+    serverSocket.reset();
     return false;
   }
 
   struct sockaddr_in address;
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = INADDR_ANY;
-  address.sin_port = htons(port_);
+  address.sin_port = htons(port);
 
-  if (bind(serverSocket_.get(), (struct sockaddr*)&address, sizeof(address)) <
+  if (bind(serverSocket.get(), (struct sockaddr*)&address, sizeof(address)) <
       0) {
-    TT_LOG_ERROR("[TcpSocketTransport] Failed to bind to port {}: {}", port_,
+    TT_LOG_ERROR("[TcpSocketTransport] Failed to bind to port {}: {}", port,
                  strerror(errno));
-    serverSocket_.reset();
+    serverSocket.reset();
     return false;
   }
 
-  if (listen(serverSocket_.get(), 1) < 0) {
+  if (listen(serverSocket.get(), 1) < 0) {
     TT_LOG_ERROR("[TcpSocketTransport] Failed to listen: {}", strerror(errno));
-    serverSocket_.reset();
+    serverSocket.reset();
     return false;
   }
 
-  TT_LOG_INFO("[TcpSocketTransport] Server initialized on port {}", port_);
+  TT_LOG_INFO("[TcpSocketTransport] Server initialized on port {}", port);
   return true;
 }
 
 bool TcpSocketTransport::initializeAsClient(const std::string& host,
                                             uint16_t port) {
-  mode_ = Mode::CLIENT;
-  host_ = host;
-  port_ = port;
+  mode = Mode::CLIENT;
+  this->host = host;
+  this->port = port;
 
   TT_LOG_INFO("[TcpSocketTransport] Client initialized to connect to {}:{}",
-              host_, port_);
+              host, port);
   return true;
 }
 
 void TcpSocketTransport::start() {
-  if (running_) {
+  if (running) {
     return;
   }
 
-  running_ = true;
+  running = true;
 
-  if (mode_ == Mode::SERVER) {
-    connectionThread_ = std::jthread(
+  if (mode == Mode::SERVER) {
+    connectionThread = std::jthread(
         [this](std::stop_token stopToken) { serverLoop(stopToken); });
   } else {
-    connectionThread_ = std::jthread(
+    connectionThread = std::jthread(
         [this](std::stop_token stopToken) { clientLoop(stopToken); });
   }
 }
 
 void TcpSocketTransport::stop() {
-  if (!running_) {
+  if (!running) {
     return;
   }
 
-  running_ = false;
-  connected_ = false;
+  running = false;
+  connected = false;
 
   {
-    std::lock_guard<std::mutex> lock(socketMutex_);
-    int fd = peerSocket_.load(std::memory_order_acquire);
+    std::lock_guard<std::mutex> lock(socketMutex);
+    int fd = peerSocket.load(std::memory_order_acquire);
     if (fd >= 0) {
       ::shutdown(fd, SHUT_RDWR);
     }
-    peerSocket_.store(-1, std::memory_order_release);
+    peerSocket.store(-1, std::memory_order_release);
   }
 
-  if (serverSocket_) {
-    ::shutdown(serverSocket_.get(), SHUT_RDWR);
+  if (serverSocket) {
+    ::shutdown(serverSocket.get(), SHUT_RDWR);
   }
 
-  if (connectionThread_.joinable()) {
-    connectionThread_.request_stop();
-    connectionThread_.join();
+  if (connectionThread.joinable()) {
+    connectionThread.request_stop();
+    connectionThread.join();
   }
 
   {
-    std::lock_guard<std::mutex> lock(socketMutex_);
-    clientSocket_.reset();
-    serverSocket_.reset();
+    std::lock_guard<std::mutex> lock(socketMutex);
+    clientSocket.reset();
+    serverSocket.reset();
   }
 
   TT_LOG_INFO("[TcpSocketTransport] Stopped");
 }
 
 void TcpSocketTransport::serverLoop(std::stop_token stopToken) {
-  while (running_ && !stopToken.stop_requested()) {
+  while (running && !stopToken.stop_requested()) {
     TT_LOG_INFO("[TcpSocketTransport] Waiting for client connection...");
 
     struct sockaddr_in clientAddr;
     socklen_t clientLen = sizeof(clientAddr);
 
     tt::utils::ScopedFd accepted =
-        acceptClient(serverSocket_.get(), &clientAddr, &clientLen);
+        acceptClient(serverSocket.get(), &clientAddr, &clientLen);
     if (!accepted) {
-      if (running_ && !stopToken.stop_requested()) {
+      if (running && !stopToken.stop_requested()) {
         TT_LOG_ERROR("[TcpSocketTransport] Accept failed: {}", strerror(errno));
       }
       break;
@@ -232,20 +232,20 @@ void TcpSocketTransport::serverLoop(std::stop_token stopToken) {
 
     configureSocket(accepted.get());
 
-    peerSocket_.store(accepted.get(), std::memory_order_release);
-    connected_ = true;
+    peerSocket.store(accepted.get(), std::memory_order_release);
+    connected = true;
 
     TT_LOG_INFO("[TcpSocketTransport] Client connected from {}:{}",
                 inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
     notifyConnectionEstablished();
 
-    while (running_ && connected_ && !stopToken.stop_requested()) {
+    while (running && connected && !stopToken.stop_requested()) {
       std::this_thread::sleep_for(CONNECTION_POLL_INTERVAL);
     }
 
     {
-      std::lock_guard<std::mutex> lock(socketMutex_);
-      peerSocket_.store(-1, std::memory_order_release);
+      std::lock_guard<std::mutex> lock(socketMutex);
+      peerSocket.store(-1, std::memory_order_release);
       accepted.reset();
     }
     markDisconnected();
@@ -256,15 +256,15 @@ void TcpSocketTransport::serverLoop(std::stop_token stopToken) {
 }
 
 void TcpSocketTransport::clientLoop(std::stop_token stopToken) {
-  auto delay = reconnectInitialDelay_;
+  auto delay = reconnectInitialDelay;
   auto backoff = [&]() {
     std::this_thread::sleep_for(delay);
-    delay = std::min(delay * 2, reconnectMaxDelay_);
+    delay = std::min(delay * 2, reconnectMaxDelay);
   };
 
-  while (running_ && !stopToken.stop_requested()) {
-    clientSocket_ = createTcpSocket();
-    if (!clientSocket_) {
+  while (running && !stopToken.stop_requested()) {
+    clientSocket = createTcpSocket();
+    if (!clientSocket) {
       TT_LOG_ERROR("[TcpSocketTransport] Failed to create client socket: {}",
                    strerror(errno));
       backoff();
@@ -273,45 +273,45 @@ void TcpSocketTransport::clientLoop(std::stop_token stopToken) {
 
     struct sockaddr_in serverAddr;
     serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(port_);
+    serverAddr.sin_port = htons(port);
 
-    if (inet_pton(AF_INET, host_.c_str(), &serverAddr.sin_addr) <= 0) {
-      TT_LOG_ERROR("[TcpSocketTransport] Invalid address: {}", host_);
-      clientSocket_.reset();
+    if (inet_pton(AF_INET, host.c_str(), &serverAddr.sin_addr) <= 0) {
+      TT_LOG_ERROR("[TcpSocketTransport] Invalid address: {}", host);
+      clientSocket.reset();
       backoff();
       continue;
     }
 
     TT_LOG_INFO(
         "[TcpSocketTransport] Attempting to connect to {}:{} (backoff {}ms)",
-        host_, port_, delay.count());
+        host, port, delay.count());
 
-    if (connect(clientSocket_.get(), (struct sockaddr*)&serverAddr,
+    if (connect(clientSocket.get(), (struct sockaddr*)&serverAddr,
                 sizeof(serverAddr)) < 0) {
       TT_LOG_ERROR("[TcpSocketTransport] Connection failed: {}",
                    strerror(errno));
-      clientSocket_.reset();
+      clientSocket.reset();
       backoff();
       continue;
     }
 
-    configureSocket(clientSocket_.get());
+    configureSocket(clientSocket.get());
 
-    peerSocket_.store(clientSocket_.get(), std::memory_order_release);
-    connected_ = true;
-    delay = reconnectInitialDelay_;  // reset on success
+    peerSocket.store(clientSocket.get(), std::memory_order_release);
+    connected = true;
+    delay = reconnectInitialDelay;  // reset on success
 
     TT_LOG_INFO("[TcpSocketTransport] Connected to server");
     notifyConnectionEstablished();
 
-    while (running_ && connected_ && !stopToken.stop_requested()) {
+    while (running && connected && !stopToken.stop_requested()) {
       std::this_thread::sleep_for(CONNECTION_POLL_INTERVAL);
     }
 
     {
-      std::lock_guard<std::mutex> lock(socketMutex_);
-      peerSocket_.store(-1, std::memory_order_release);
-      clientSocket_.reset();
+      std::lock_guard<std::mutex> lock(socketMutex);
+      peerSocket.store(-1, std::memory_order_release);
+      clientSocket.reset();
     }
     markDisconnected();
     notifyConnectionLost();
@@ -321,10 +321,10 @@ void TcpSocketTransport::clientLoop(std::stop_token stopToken) {
 }
 
 bool TcpSocketTransport::sendRawData(std::span<const uint8_t> data) {
-  std::lock_guard<std::mutex> lock(socketMutex_);
-  if (!connected_) return false;
+  std::lock_guard<std::mutex> lock(socketMutex);
+  if (!connected) return false;
 
-  int fd = peerSocket_.load(std::memory_order_acquire);
+  int fd = peerSocket.load(std::memory_order_acquire);
   if (fd < 0) return false;
 
   uint32_t size = static_cast<uint32_t>(data.size());
@@ -365,43 +365,50 @@ bool TcpSocketTransport::sendAll(int fd, const void* buffer, size_t size) {
 }
 
 std::vector<uint8_t> TcpSocketTransport::receiveRawData() {
-  std::lock_guard<std::mutex> lock(socketMutex_);
-  if (!connected_) return {};
+  // Flatten the tri-state to the legacy empty-buffer contract: both NO_DATA and
+  // CLOSED come back empty. Callers that need the distinction (the KV-migration
+  // control channel) use tryReceiveMessage() instead.
+  return std::move(tryReceiveMessage().data);
+}
 
-  int fd = peerSocket_.load(std::memory_order_acquire);
-  if (fd < 0) return {};
+ReceiveResult TcpSocketTransport::tryReceiveMessage() {
+  std::lock_guard<std::mutex> lock(socketMutex);
+  if (!connected) return {ReceiveStatus::CLOSED, {}};
+
+  int fd = peerSocket.load(std::memory_order_acquire);
+  if (fd < 0) return {ReceiveStatus::CLOSED, {}};
 
   uint32_t netSize = 0;
   auto headerStatus =
       receiveExact(fd, reinterpret_cast<uint8_t*>(&netSize), sizeof(netSize),
                    MAX_HEADER_RETRIES, /*returnIfNoInitialData=*/true);
-  if (headerStatus == ReceiveResult::NO_DATA) {
-    return {};
+  if (headerStatus == ReadResult::NO_DATA) {
+    return {ReceiveStatus::NO_DATA, {}};
   }
-  if (headerStatus == ReceiveResult::DISCONNECTED) {
+  if (headerStatus == ReadResult::DISCONNECTED) {
     markDisconnected();
-    return {};
+    return {ReceiveStatus::CLOSED, {}};
   }
 
   uint32_t size = ntohl(netSize);
   if (size == 0 || size > MAX_MESSAGE_SIZE_BYTES) {
     markDisconnected();
-    return {};
+    return {ReceiveStatus::CLOSED, {}};
   }
 
   std::vector<uint8_t> data(size);
   auto payloadStatus =
       receiveExact(fd, data.data(), data.size(), MAX_PAYLOAD_RETRIES,
                    /*returnIfNoInitialData=*/false);
-  if (payloadStatus != ReceiveResult::COMPLETE) {
+  if (payloadStatus != ReadResult::COMPLETE) {
     markDisconnected();
-    return {};
+    return {ReceiveStatus::CLOSED, {}};
   }
 
-  return data;
+  return {ReceiveStatus::DATA, std::move(data)};
 }
 
-TcpSocketTransport::ReceiveResult TcpSocketTransport::receiveExact(
+TcpSocketTransport::ReadResult TcpSocketTransport::receiveExact(
     int fd, uint8_t* buffer, size_t size, int maxRetries,
     bool returnIfNoInitialData) {
   size_t receivedTotal = 0;
@@ -420,25 +427,27 @@ TcpSocketTransport::ReceiveResult TcpSocketTransport::receiveExact(
     }
 
     if (received == 0 || !wouldBlock()) {
-      return ReceiveResult::DISCONNECTED;
+      return ReadResult::DISCONNECTED;
     }
 
     if (receivedTotal == 0 && returnIfNoInitialData) {
-      return ReceiveResult::NO_DATA;
+      return ReadResult::NO_DATA;
     }
 
     if (++retries > maxRetries) {
-      return ReceiveResult::DISCONNECTED;
+      return ReadResult::DISCONNECTED;
     }
     std::this_thread::sleep_for(RETRY_SLEEP);
   }
 
-  return ReceiveResult::COMPLETE;
+  return ReadResult::COMPLETE;
 }
 
 bool TcpSocketTransport::isConnected() const { return isConnectedState(); }
 
-std::string TcpSocketTransport::getStatus() const { return getStatusString(); }
+std::string TcpSocketTransport::getStatus() const {
+  return getStatusString(isConnectedState());
+}
 
 void TcpSocketTransport::setConnectionLostCallback(
     std::function<void()> callback) {

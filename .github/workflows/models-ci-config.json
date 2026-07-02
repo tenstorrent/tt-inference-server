@@ -44,7 +44,6 @@
             },
             "release": {
               "devices": [
-                "GALAXY",
                 "P150",
                 "P300X2"
               ]
@@ -137,11 +136,6 @@
         "weekly": {
           "devices": [
             "GALAXY"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P300X2"
           ]
         }
       }
@@ -277,11 +271,6 @@
               "devices": [
                 "GALAXY"
               ]
-            },
-            "release": {
-              "devices": [
-                "P300X2"
-              ]
             }
           }
         },
@@ -357,11 +346,6 @@
             "GALAXY",
             "N150"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
-          ]
         }
       }
     },
@@ -413,11 +397,6 @@
           "devices": [
             "GALAXY",
             "N150"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
           ]
         }
       }
@@ -528,12 +507,6 @@
             "P300X2",
             "T3K"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P300X2"
-          ]
         }
       }
     },
@@ -558,6 +531,21 @@
         }
       }
     },
+    "yolox_nano": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P150"
+          ]
+        },
+        "release": {
+          "devices": [
+            "P150"
+          ]
+        }
+      }
+    },
     "mochi-1-preview": {
       "inference_engine": "MEDIA",
       "ci": {
@@ -569,11 +557,6 @@
             "P300X2",
             "T3K"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
-          ]
         }
       }
     },
@@ -583,13 +566,7 @@
         "nightly": {
           "devices": [
             "P150",
-            "P300X2"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P150",
-            "P300X2"
+            "GALAXY"
           ]
         }
       }
@@ -621,12 +598,6 @@
           "devices": [
             "N150",
             "N300",
-            "P150",
-            "P300X2"
-          ]
-        },
-        "release": {
-          "devices": [
             "P150",
             "P300X2"
           ]
@@ -674,11 +645,6 @@
                   "throttle-perf": "5"
                 }
               }
-            },
-            "release": {
-              "devices": [
-                "GALAXY"
-              ]
             }
           }
         },
@@ -688,7 +654,12 @@
             "nightly": {
               "devices": [
                 "N150"
-              ]
+              ],
+              "device-args": {
+                "N150": {
+                  "additional-args": "--impl sdxl-forge"
+                }
+              }
             }
           }
         }
@@ -732,19 +703,12 @@
             "GALAXY",
             "BH_GALAXY",
             "N150",
-            "P150",
-            "P300X2"
+            "P150"
           ]
         },
         "weekly": {
           "devices": [
             "GALAXY"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P150",
-            "P300X2"
           ]
         }
       }

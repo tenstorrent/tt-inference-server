@@ -14,7 +14,6 @@
 
 #include "api/response_writer/response_writer.hpp"
 #include "api/stream_event_formatter.hpp"
-#include "utils/concurrent_queue.hpp"
 
 namespace tt::api {
 
@@ -24,10 +23,8 @@ namespace tt::api {
  *
  * Sends an OpenAI-compatible chunked stream whose wire format is decided by a
  * `StreamEventFormatter` strategy. Defaults to `ChatCompletionEventFormatter`
- * (chat.completion.chunk + `data: [DONE]`); `/v1/responses` passes a
- * `ResponsesEventFormatter` to emit `response.created`, ...,
- * `response.completed` events instead. Forwards client-disconnect detection
- * back to the LLM/disaggregation services via abort callbacks.
+ * (chat.completion.chunk + `data: [DONE]`). Forwards client-disconnect
+ * detection back to the LLM/disaggregation services via abort callbacks.
  */
 class StreamingResponseWriter : public ResponseWriter {
  public:
@@ -39,9 +36,8 @@ class StreamingResponseWriter : public ResponseWriter {
       trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage);
 
   /**
-   * Strategy factory: caller supplies the SSE formatter (chat-completion vs
-   * Responses API). When `formatter` is null, falls back to
-   * `ChatCompletionEventFormatter`.
+   * Strategy factory: caller supplies the SSE formatter. When `formatter` is
+   * null, falls back to `ChatCompletionEventFormatter`.
    */
   static std::shared_ptr<StreamingResponseWriter> create(
       trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage,
@@ -67,7 +63,6 @@ class StreamingResponseWriter : public ResponseWriter {
 
   void sendSse(const std::string& sse,
                std::function<void()> onDisconnect = nullptr);
-  void flushAccumulated();
   void startHeartbeat();
   void stopHeartbeat();
 
@@ -79,7 +74,6 @@ class StreamingResponseWriter : public ResponseWriter {
       std::make_shared<drogon::ResponseStreamPtr>();
   std::shared_ptr<std::vector<std::string>> earlyBuffer =
       std::make_shared<std::vector<std::string>>();
-  std::shared_ptr<tt::utils::ConcurrentQueue<std::string>> sseBatchQueue;
   trantor::TimerId heartbeatTimerId = trantor::InvalidTimerId;
 
   std::atomic<bool> firstContentChunk{true};

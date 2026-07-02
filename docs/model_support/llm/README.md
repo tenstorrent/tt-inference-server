@@ -26,7 +26,7 @@ Models with EXPERIMENTAL status are under active development and may have stabil
 
 | Model Name | [Dual WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [Quad WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [BH LoudBox](https://tenstorrent.com/hardware/tt-loudbox) | [BH 4xP150](https://tenstorrent.com/hardware/tt-quietbox) | [BH QuietBox 2](https://tenstorrent.com/hardware/tt-quietbox) | [P100](https://tenstorrent.com/hardware/blackhole) | [P150](https://tenstorrent.com/hardware/blackhole) | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) | [N150](https://tenstorrent.com/hardware/wormhole) | [N300](https://tenstorrent.com/hardware/wormhole) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| [gpt-oss-120b](gpt-oss-120b_galaxy.md) | - | - | [🛠️ Experimental](gpt-oss-120b_galaxy.md) | - | - | - | - | - | [🛠️ Experimental](gpt-oss-120b_t3k.md) | - | - |
+| [gpt-oss-120b](gpt-oss-120b_galaxy.md) | - | - | [🛠️ Experimental](gpt-oss-120b_galaxy.md) | - | - | [🛠️ Experimental](gpt-oss-120b_p300x2.md) | - | - | [🛠️ Experimental](gpt-oss-120b_t3k.md) | - | - |
 | [gpt-oss-20b](gpt-oss-20b_galaxy.md) | - | - | [🛠️ Experimental](gpt-oss-20b_galaxy.md) | - | - | - | - | - | [🛠️ Experimental](gpt-oss-20b_t3k.md) | - | - |
 | [AFM-4.5B](AFM-4.5B_t3k.md) | - | - | - | - | - | - | - | - | [🛠️ Experimental](AFM-4.5B_t3k.md) | - | [🛠️ Experimental](AFM-4.5B_n300.md) |
 | [DeepSeek-R1-0528](DeepSeek-R1-0528_dual_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_dual_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_quad_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_galaxy.md) | - | - | - | - | - | - | - | - |

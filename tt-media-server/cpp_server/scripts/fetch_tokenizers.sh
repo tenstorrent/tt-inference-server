@@ -86,15 +86,28 @@ download_hf_file() {
 #   requires_auth       - "true" if gated model requiring HF_TOKEN
 #   placeholder_config  - Fallback config.json content if HF fetch fails
 #   tokenizer_type      - "json" (default) for tokenizer.json, "tiktoken" for tiktoken.model
+#   needs_chat_template - "true" if the model ships its chat template as a
+#                         separate chat_template.jinja (rather than inline in
+#                         tokenizer_config.json). Required by the Dynamo
+#                         frontend's PromptFormatter. (tiktoken always fetches
+#                         it regardless of this flag.)
+#
+# generation_config.json (eos_token_id / sampling defaults) is fetched
+# best-effort for EVERY model — it's optional (a 404 is non-fatal) since not
+# all models ship it and config.json may already carry eos_token_id. When
+# present, discovery.cpp publishes it in the MDC so the frontend gets the full
+# eos set (e.g. gpt-oss's <|call|>, MiniMax's only eos).
 download_tokenizer() {
     local model_name="$1"
     local hf_repo="$2"
     local requires_auth="$3"
     local placeholder_config="${4:-}"
     local tokenizer_type="${5:-json}"
+    local needs_chat_template="${6:-false}"
 
     local model_dir="${TOKENIZER_DIR}/${model_name}"
     local model_config="${model_dir}/config.json"
+    local gen_config="${model_dir}/generation_config.json"
 
     # Determine required files based on tokenizer type
     local required_files=("tokenizer_config.json")
@@ -102,9 +115,31 @@ download_tokenizer() {
         required_files+=("tiktoken.model" "chat_template.jinja")
     else
         required_files+=("tokenizer.json")
+        if [ "${needs_chat_template}" = "true" ]; then
+            required_files+=("chat_template.jinja")
+        fi
     fi
 
-    # Check if all required files exist
+    # Skip gated models without auth token (covers all downloads below).
+    if [ "${requires_auth}" = "true" ] && [ -z "${HF_TOKEN_RESOLVED}" ]; then
+        echo "  Skipping ${model_name} (gated model — set HF_TOKEN to download)."
+        return 0
+    fi
+
+    mkdir -p "${model_dir}"
+
+    # Best-effort generation_config.json (optional, every model).
+    if [ ! -f "${gen_config}" ]; then
+        if download_hf_file "${gen_config}" "${hf_repo}/generation_config.json" \
+                "${requires_auth}" "${model_name}" >/dev/null 2>&1; then
+            echo "  ${model_name}/generation_config.json downloaded"
+        else
+            rm -f "${gen_config}"
+            echo "  note: no generation_config.json for ${model_name} (optional; skipped)"
+        fi
+    fi
+
+    # Fast path: tokenizer essentials + config already present.
     local all_exist=true
     for f in "${required_files[@]}"; do
         if [ ! -f "${model_dir}/${f}" ]; then
@@ -117,13 +152,6 @@ download_tokenizer() {
         return 0
     fi
 
-    # Skip gated models without auth token
-    if [ "${requires_auth}" = "true" ] && [ -z "${HF_TOKEN_RESOLVED}" ]; then
-        echo "  Skipping ${model_name} (gated model — set HF_TOKEN to download)."
-        return 0
-    fi
-
-    mkdir -p "${model_dir}"
     echo "Downloading ${model_name} tokenizer..."
 
     # Download required tokenizer files
@@ -175,5 +203,89 @@ download_tokenizer \
     "false" \
     '{"model_type":"kimi_k25","architectures":["KimiK25ForConditionalGeneration"]}' \
     "tiktoken"
+
+# Kimi K2.7-Code (public tiktoken tokenizer + jinja chat template; no
+# tokenizer.json on HF). Same kimi_k25 tokenizer layout as Kimi-K2.6, so it
+# reuses the kimi_k25 -> {kimi_k25, kimi_k2} parser branch in discovery.cpp.
+download_tokenizer \
+    "moonshotai/Kimi-K2.7-Code" \
+    "https://huggingface.co/moonshotai/Kimi-K2.7-Code/resolve/main" \
+    "false" \
+    '{"model_type":"kimi_k25","architectures":["KimiK25ForConditionalGeneration"]}' \
+    "tiktoken"
+
+# GPT-OSS 120B (public, no auth)
+# generation_config.json (fetched best-effort for all models) is important here:
+# config.json declares only eos_token_id=200002, but the full stop set lives in
+# generation_config.json's eos_token_id array [200002, 199999, 200012]
+# (<|return|>, <|endoftext|>, <|call|>) — without it the frontend never stops on
+# a tool call (<|call|>).
+download_tokenizer \
+    "openai/gpt-oss-120b" \
+    "https://huggingface.co/openai/gpt-oss-120b/resolve/main" \
+    "false" \
+    '{"model_type":"gpt_oss","architectures":["GptOssForCausalLM"]}' \
+    "json" \
+    "true"
+
+# MiniMax M2 (public, no auth)
+download_tokenizer \
+    "MiniMaxAI/MiniMax-M2.7" \
+    "https://huggingface.co/MiniMaxAI/MiniMax-M2.7/resolve/main" \
+    "false" \
+    '{"model_type":"minimax_m2","architectures":["MiniMaxM2ForCausalLM"]}' \
+    "json" \
+    "true"
+
+# GLM-5.1 (public, no auth). Same glm_moe_dsa tokenizer/family as GLM-5.2
+# (same eos set + <think>/</think> ids), so it reuses the glm45/glm47 parser
+# branch in discovery.cpp. Ships its chat template as a separate
+# chat_template.jinja, so needs_chat_template is "true".
+download_tokenizer \
+    "zai-org/GLM-5.1" \
+    "https://huggingface.co/zai-org/GLM-5.1/resolve/main" \
+    "false" \
+    '{"model_type":"glm_moe_dsa","architectures":["GlmMoeDsaForCausalLM"]}' \
+    "json" \
+    "true"
+
+# GLM-5.2 (public, no auth). Ships its chat template as a separate
+# chat_template.jinja (not inline in tokenizer_config.json), so needs_chat_template
+# is "true". config.json carries the full eos set, but generation_config.json is
+# fetched best-effort like every model. model_type "glm_moe_dsa" maps to the
+# glm45 (reasoning) + glm47 (tool-call) Dynamo parsers in discovery.cpp.
+download_tokenizer \
+    "zai-org/GLM-5.2" \
+    "https://huggingface.co/zai-org/GLM-5.2/resolve/main" \
+    "false" \
+    '{"model_type":"glm_moe_dsa","architectures":["GlmMoeDsaForCausalLM"]}' \
+    "json" \
+    "true"
+
+# The Dynamo frontend renders chat templates with minijinja, which rejects
+# Jinja2's `.0` numeric-index syntax (parses `0.` as a float -> "unexpected
+# float"). GLM-5.1 and GLM-5.2 templates index `m.content.0`; rewrite to
+# `m.content[0]`, accepted by both minijinja and Python Jinja2. Without this the
+# frontend fails to load the model:
+# "PromptFormatter.from_mdc: syntax error: unexpected float".
+for GLM_TMPL in "${TOKENIZER_DIR}/zai-org/GLM-5.1/chat_template.jinja" \
+                "${TOKENIZER_DIR}/zai-org/GLM-5.2/chat_template.jinja"; do
+    if [ -f "${GLM_TMPL}" ] && grep -q 'm\.content\.0' "${GLM_TMPL}"; then
+        sed -i 's/m\.content\.0/m.content[0]/g' "${GLM_TMPL}"
+        echo "  patched ${GLM_TMPL#"${TOKENIZER_DIR}/"} for minijinja (.0 -> [0])"
+    fi
+done
+
+# DeepSeek-V4-Pro (public, no auth). DeepSeek-R1 family tokenizer (tokenizer.json,
+# eos <｜end▁of▁sentence｜>). NOTE: this repo ships NO chat template — neither
+# inline in tokenizer_config.json nor a separate chat_template.jinja — so
+# needs_chat_template stays "false" (a "true" would fail on the 404). model_type
+# "deepseek_v4" maps to the deepseek_v4 reasoning + tool-call parsers in
+# discovery.cpp.
+download_tokenizer \
+    "deepseek-ai/DeepSeek-V4-Pro" \
+    "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/resolve/main" \
+    "false" \
+    '{"model_type":"deepseek_v4","architectures":["DeepseekV4ForCausalLM"]}'
 
 echo ""

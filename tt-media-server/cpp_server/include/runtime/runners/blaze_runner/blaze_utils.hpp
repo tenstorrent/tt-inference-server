@@ -3,17 +3,53 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
+#include <optional>
+#include <string>
 
+#include "config/runner_config.hpp"
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
+#include "runtime/runners/blaze_runner/mock_scheduler.hpp"
+#include "runtime/runners/blaze_runner/scheduler_interface.hpp"
+#include "scheduler/decode/mock_migration_client.hpp"
+#ifdef ENABLE_BLAZE_MIGRATION
+#include "scheduler/migration_layer_client_adapter.hpp"
+#endif
+#include "scheduler/mock_migration_client.hpp"
 #include "tt_llm_engine/pipeline/channel_configs.hpp"
 #include "tt_llm_engine/pipeline/prefill_pipeline_config.hpp"
-#include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
+#include "tt_llm_engine/scheduler/migration_client_interface.hpp"
 #include "tt_llm_engine/scheduler/prefill/prefill_types.hpp"
 #include "utils/logger.hpp"
+
+namespace {
+
+const char* requestTypeToString(tt_llm_engine::scheduler::RequestType type) {
+  switch (type) {
+    case tt_llm_engine::scheduler::RequestType::ALLOCATE:
+      return "ALLOCATE";
+    case tt_llm_engine::scheduler::RequestType::SUBMIT:
+      return "SUBMIT";
+    case tt_llm_engine::scheduler::RequestType::CONTINUE:
+      return "CONTINUE";
+    case tt_llm_engine::scheduler::RequestType::EVICT:
+      return "EVICT";
+    case tt_llm_engine::scheduler::RequestType::STOP:
+      return "STOP";
+  }
+  return "UNKNOWN";
+}
+
+template <typename T>
+std::string formatOptional(const std::optional<T>& value) {
+  return value.has_value() ? std::to_string(*value) : "none";
+}
+
+}  // namespace
 
 namespace tt::runners::blaze::utils {
 
@@ -21,11 +57,44 @@ namespace sch = tt_llm_engine::scheduler;
 namespace ds = sch::decode;
 namespace ps = sch::prefill;
 
-inline sch::ISRequest makeAllocateRequest(uint32_t requestId) {
-  return {.type = ds::RequestType::ALLOCATE,
-          .request_id = requestId,
-          .tokens = {},
-          .gen = {}};
+inline void logISRequest(const sch::ISRequest& req) {
+  const sch::GenerationParams& gen = req.gen;
+  TT_LOG_DEBUG(
+      "ISRequest type={} request_id={} slot_id={} token_count={} "
+      "position_id={} dest_slot_id={} migration_uuid={} "
+      "migration_start_position={} migrate_from_slot={} "
+      "gen.max_new_tokens={} gen.spec_decode={} gen.ignore_eos={} "
+      "gen.sampling.temp={} gen.sampling.top_p={} gen.sampling.top_k={} "
+      "gen.reasoning_sampling.temp={} gen.reasoning_sampling.top_p={} "
+      "gen.reasoning_sampling.top_k={} gen.disaggregated_decode={} "
+      "gen.starts_in_thinking={} gen.await_kv_migration={} gen.prefill_only={} "
+      "gen.relaxed_acceptance_threshold={} gen.stop_token_count={}",
+      requestTypeToString(req.type), req.request_id, req.slot_id,
+      req.tokens.size(), formatOptional(req.position_id),
+      formatOptional(req.dest_slot_id), formatOptional(req.migration_uuid),
+      formatOptional(req.migration_start_position),
+      formatOptional(req.migrate_from_slot), gen.max_new_tokens,
+      gen.spec_decode, gen.ignore_eos, gen.sampling.temperature,
+      gen.sampling.top_p, gen.sampling.top_k,
+      gen.reasoning_sampling.temperature, gen.reasoning_sampling.top_p,
+      gen.reasoning_sampling.top_k, gen.disaggregated_decode,
+      gen.starts_in_thinking, gen.await_kv_migration, gen.prefill_only,
+      gen.relaxed_acceptance_threshold, gen.stop_tokens.size());
+}
+
+inline sch::ISRequest makeAllocateRequest(
+    uint32_t requestId,
+    std::optional<uint32_t> migrateFromSlot = std::nullopt) {
+  auto req = sch::ISRequest{
+      .type = ds::RequestType::ALLOCATE,
+      .request_id = requestId,
+      .tokens = {},
+      .gen = {},
+  };
+  if (tt::config::enableMigration() and migrateFromSlot.has_value()) {
+    req.migrate_from_slot = *migrateFromSlot;
+  }
+  return req;
 }
 
 inline sch::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {
@@ -33,7 +102,9 @@ inline sch::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {
           .request_id = requestId,
           .slot_id = slotId,
           .tokens = {},
-          .gen = {}};
+          .gen = {},
+          .position_id = std::nullopt,
+          .dest_slot_id = std::nullopt};
 }
 
 inline sch::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
@@ -41,28 +112,52 @@ inline sch::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
           .request_id = requestId,
           .slot_id = slotId,
           .tokens = {},
-          .gen = {}};
+          .gen = {},
+          .position_id = std::nullopt,
+          .dest_slot_id = std::nullopt};
 }
 
 inline sch::GenerationParams makeGenerationParams(
     const tt::domain::llm::Sequence& seq) {
+  const sch::PhaseSamplingParams userSampling{
+      .temperature = seq.getSamplingParams().temperature,
+      .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
+      .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
+  };
   return {
       .max_new_tokens =
           static_cast<uint32_t>(seq.getSamplingParams().max_tokens.value_or(
               static_cast<int>(tt::config::maxContextLength()))),
       .spec_decode = seq.getSamplingParams().fast_mode,
       .ignore_eos = seq.getSamplingParams().ignore_eos,
-      .temperature = seq.getSamplingParams().temperature,
-      .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
-      .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
-      .disaggregated_decode = seq.isDisaggregated(),
-      .stop_tokens = seq.getSamplingParams().stop_token_ids};
+      .sampling = userSampling,
+      .reasoning_sampling = userSampling,
+      .disaggregated_decode =
+          tt::config::enableMigration() && seq.isDisaggregated(),
+      .starts_in_thinking = seq.getStartsInThinking(),
+      .stop_tokens = seq.getSamplingParams().stop_token_ids,
+  };
+}
+
+inline void postProcessSamplingParams(sch::GenerationParams& params) {
+  if (tt::config::sampleOnlyInReasoning()) {
+    // We argmax outside the reasoning phase
+    params.sampling = sch::PhaseSamplingParams{
+        .temperature = 1.0f, .top_p = 1.0f, .top_k = 1};
+  }
 }
 
 inline void fillSequenceFields(sch::ISRequest& req,
                                const tt::domain::llm::Sequence& seq) {
   req.tokens.assign(seq.getTokenIds().begin(), seq.getTokenIds().end());
   req.gen = makeGenerationParams(seq);
+  if (seq.getKVPositionId().has_value()) {  // override position id
+    req.position_id = *seq.getKVPositionId();
+  }
+  postProcessSamplingParams(req.gen);
+  if (tt::config::enableMigration()) {
+    req.migration_uuid = seq.getMigrationId();
+  }
 }
 
 inline sch::ISRequest makeSubmitRequest(
@@ -71,8 +166,12 @@ inline sch::ISRequest makeSubmitRequest(
   sch::ISRequest req{};
   req.type = ds::RequestType::SUBMIT;
   req.slot_id = slotId;
-  req.dest_slot_id = destSlotId;
+  if (tt::config::enableMigration()) {
+    req.migration_start_position = seq.getMigrationStartPosition();
+    req.dest_slot_id = destSlotId;
+  }
   fillSequenceFields(req, seq);
+  logISRequest(req);
   return req;
 }
 
@@ -82,20 +181,19 @@ inline sch::ISRequest makeContinueRequest(
   sch::ISRequest req{};
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
-  req.dest_slot_id = destSlotId;
-  fillSequenceFields(req, seq);
-  if (seq.getKVPositionId().has_value()) {  // override position id
-    req.position_id = *seq.getKVPositionId();
+  if (tt::config::enableMigration()) {
+    req.dest_slot_id = destSlotId;
   }
+  fillSequenceFields(req, seq);
   return req;
 }
 
 // Populates per-run fields on `slot` from `seq`. Snapshots the slot's spec
 // counters at this moment so handleOutput can later report per-turn deltas.
-// Does not touch state machine / metrics / task binding — caller's job.
+// Does not touch state machine / metrics / task binding - caller's job.
 inline void initSlotForRun(SlotContext& slot,
                            const tt::domain::llm::Sequence& seq,
-                           ds::DecodeScheduler& sched) {
+                           IDecodeScheduler& sched) {
   slot.ignoreEos = seq.getSamplingParams().ignore_eos;
   slot.specAcceptsAtStart = sched.get_spec_accepts(slot.slotId);
   slot.specRejectsAtStart = sched.get_spec_rejects(slot.slotId);
@@ -103,9 +201,7 @@ inline void initSlotForRun(SlotContext& slot,
   slot.tokensGenerated = 0;
 }
 
-// Populates per-run fields on `slot` from `seq`. Snapshots the slot's spec
-// counters at this moment so handleOutput can later report per-turn deltas.
-// Does not touch state machine / metrics / task binding — caller's job.
+// Prefill overload: no spec-decode counters to snapshot.
 inline void initSlotForRun(SlotContext& slot,
                            const tt::domain::llm::Sequence& seq) {
   slot.ignoreEos = seq.getSamplingParams().ignore_eos;
@@ -120,7 +216,7 @@ struct SpecDelta {
 
 // Computes the (accepts, rejects) deltas relative to slot start and logs the
 // per-turn acceptance summary.
-inline SpecDelta computeAndLogSpecDelta(ds::DecodeScheduler& sched,
+inline SpecDelta computeAndLogSpecDelta(IDecodeScheduler& sched,
                                         const SlotContext& slot,
                                         const ds::OutputMessage& output,
                                         uint32_t taskId) {
@@ -194,7 +290,9 @@ inline pl::PrefillPipelineConfig makePrefillPipelineConfig(
           .service_id = tt::config::blazeSocketDescriptorPrefix(),
           .connect_timeout_ms = tt::config::pmConnectTimeoutMs()};
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
-      return pl::PrefillMockConfig{.auto_layer_acks = true};
+      return pl::PrefillMockConfig{
+          .auto_layer_acks = true,
+          .chunk_latency = std::chrono::milliseconds(100)};
     default:
       throw std::runtime_error("Invalid blaze prefill runner type");
   }
@@ -205,14 +303,84 @@ inline pl::CounterChannelConfig makePrefillAckChannelConfig(
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
       return pl::InterProcessCounterChannelConfig{
-          .shm_name = "/tt_prefill_layer_acks_" +
-                      tt::config::blazeSocketDescriptorPrefix(),
-          .connect_timeout_ms = 60000,
+          .shm_name = tt::config::prefillAckChannelName(),
+          .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       };
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return pl::SingleProcessCounterChannelConfig{};
     default:
       throw std::runtime_error("Invalid blaze prefill runner type");
+  }
+}
+
+// Builders for the mock scheduler config structs. Same shape as the pipeline
+// builders above (env/settings -> plain-data config): the callers in
+// blaze_scheduler_factory.cpp have already branched on MOCK_PIPELINE +
+// useMockScheduler, so these deliberately take no arguments.
+inline MockPrefillSchedulerConfig makeMockPrefillSchedulerConfig() {
+  return MockPrefillSchedulerConfig{
+      .prefillLatency =
+          std::chrono::milliseconds(tt::config::mockPrefillLatencyMs()),
+      .prefillChunkSize = tt::config::prefillChunkSize(),
+  };
+}
+
+inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig() {
+  return MockDecodeSchedulerConfig{
+      .prefillLatency =
+          std::chrono::milliseconds(tt::config::mockPrefillLatencyMs()),
+      .prefillChunkSize = tt::config::prefillChunkSize(),
+      .decodeTokenId = tt::config::mockDecodeTokenId(),
+      .decodeTokenLatency =
+          std::chrono::microseconds(tt::config::mockDecodeTokenLatencyUs()),
+  };
+}
+
+inline std::unique_ptr<sch::MigrationClientInterface>
+makeMigrationClientInterface(const tt::config::LLMConfig& config) {
+  if (!tt::config::enableMigration()) {
+    return nullptr;
+  }
+  switch (config.runner_type) {
+    case tt::config::ModelRunnerType::PIPELINE_MANAGER:
+#ifdef ENABLE_BLAZE_MIGRATION
+      return std::make_unique<sch::MigrationLayerClientAdapter>(
+          tt::config::migrationCmdQueueName(),
+          tt::config::migrationTableQueueName(),
+          tt::config::migrationRespQueueName());
+#else
+      throw std::runtime_error(
+          "LLM_DEVICE_BACKEND=pipeline_manager requires a build with "
+          "--blaze-with-migration");
+#endif
+    case tt::config::ModelRunnerType::MOCK_PIPELINE:
+      return std::make_unique<sch::MockMigrationClient>();
+    default:
+      throw std::runtime_error("Invalid blaze decode runner type");
+  }
+}
+
+inline std::unique_ptr<sch::MigrationClientInterface>
+makeDecodeMigrationClientInterface(const tt::config::LLMConfig& config) {
+  if (!tt::config::enableMigration()) {
+    return nullptr;
+  }
+  switch (config.runner_type) {
+    case tt::config::ModelRunnerType::PIPELINE_MANAGER:
+#ifdef ENABLE_BLAZE_MIGRATION
+      return std::make_unique<sch::MigrationLayerClientAdapter>(
+          tt::config::migrationCmdQueueName(),
+          tt::config::migrationTableQueueName(),
+          tt::config::migrationRespQueueName());
+#else
+      throw std::runtime_error(
+          "LLM_DEVICE_BACKEND=pipeline_manager requires a build with "
+          "--blaze-with-migration");
+#endif
+    case tt::config::ModelRunnerType::MOCK_PIPELINE:
+      return std::make_unique<ds::MockMigrationClient>();
+    default:
+      throw std::runtime_error("Invalid blaze decode runner type");
   }
 }
 

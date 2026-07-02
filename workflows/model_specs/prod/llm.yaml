@@ -1,5 +1,5 @@
 # Model spec catalog: LLM templates.
-# Edit this file to add or modify a LLM model spec.
+# Do not edit manually. This file is updated through the automated release process.
 # Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
 templates:
 # =============================================================================
@@ -45,10 +45,10 @@ templates:
 
 - weights:
     - openai/gpt-oss-120b
+  version: "0.17.0"
+  tt_metal_commit: "8c48a10"
+  vllm_commit: "f52987a"
   impl: gpt_oss
-  version: "0.12.0"
-  tt_metal_commit: 805f43d
-  vllm_commit: a45c614
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
@@ -73,6 +73,13 @@ templates:
       override_tt_config:
         sample_on_device_mode: all
         trace_region_size: 134217728  # 128 MB; vLLM default 50 MB is too small for long prefill
+      known_issues:
+        - workflow_type: EVALS
+          task_name: aime25
+          reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
+        - workflow_type: EVALS
+          task_name: gpqa_diamond_cot_zeroshot
+          reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -405,6 +412,9 @@ templates:
 
 - weights:
     - Qwen/Qwen3-32B
+  version: "0.17.0"
+  tt_metal_commit: "8c48a10"
+  vllm_commit: "f52987a"
   impl: tt_transformers
   system_requirements:
     firmware:
@@ -413,9 +423,6 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.14.0"
-  tt_metal_commit: 80180b9
-  vllm_commit: 7678b70
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
@@ -768,9 +775,9 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.10.1"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
+  version: "0.16.0"
+  tt_metal_commit: 669d59e
+  vllm_commit: "3334377"
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
@@ -780,7 +787,12 @@ templates:
       tensor_cache_timeout: 5400.0
       override_tt_config:
         trace_region_size: 402653184  # 384 * 1024 * 1024
+      known_issues:
+        - workflow_type: TESTS
+          task_name: test_penalties
+          reason: "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888."
   status: FUNCTIONAL
+  has_builtin_warmup: true
   metadata:
     meta-llama/Llama-3.3-70B-Instruct:
       tool_call_parser_name: llama3_json
@@ -925,7 +937,7 @@ templates:
     - device: GPU
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
-      default_impl: false
+      default_impl: true
   status: COMPLETE
   metadata:
     meta-llama/Llama-3.1-8B:
@@ -1016,6 +1028,9 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
     - meta-llama/Llama-3.1-8B-Instruct
+  version: "0.17.0"
+  tt_metal_commit: "8c48a10"
+  vllm_commit: "f52987a"
   impl: tt_transformers
   system_requirements:
     firmware:
@@ -1024,9 +1039,6 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.10.1"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
@@ -1036,6 +1048,22 @@ templates:
       override_tt_config:
         sample_on_device_mode: decode_only
         trace_region_size: 155000000
+      known_issues:
+        - workflow_type: EVALS
+          task_name: meta_ifeval
+          reason: "meta_ifeval measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
+        - workflow_type: EVALS
+          task_name: meta_gpqa_cot
+          reason: "meta_gpqa_cot measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
+        - workflow_type: EVALS
+          task_name: longbench_code_e
+          reason: "longbench_code_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_fewshot_e
+          reason: "longbench_fewshot_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_summarization_e
+          reason: "longbench_summarization_e measured score is ~94% which does not satisfy the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
     - device: P300
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
@@ -1124,3 +1152,37 @@ templates:
   metadata:
     Qwen/Qwen2.5-Coder-32B-Instruct:
       tool_call_parser_name: hermes
+- weights:
+    - openai/gpt-oss-120b
+  version: "0.17.0"
+  tt_metal_commit: "8c48a10"
+  vllm_commit: "f52987a"
+  impl: gpt_oss
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      env_vars:
+        MESH_DEVICE: "(1, 4)"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+      override_tt_config:
+        trace_region_size: 58000000
+        sample_on_device_mode: decode_only
+      known_issues:
+        - workflow_type: EVALS
+          task_name: aime25
+          reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
+        - workflow_type: EVALS
+          task_name: gpqa_diamond_cot_zeroshot
+          reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    openai/gpt-oss-120b:
+      reasoning_parser_name: openai_gptoss
+      tool_call_parser_name: openai
