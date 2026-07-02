@@ -463,10 +463,17 @@ def generate_docker_run_command(
                 setup_config.container_tt_metal_cache_dir / device_cache_dir
             )
         # CI: persist tt-triage logs to the cache_root volume via a dedicated var,
-        # leaving TT_METAL_LOGS_PATH (tt-metal's Inspector/watcher logs) on the
-        # writable ephemeral default rather than the host-owned volume. See #4255.
+        # See #4255.
         if runtime_config.ci_mode:
             docker_env_vars["TT_TRIAGE_LOGS_PATH"] = f"{setup_config.cache_root}/logs"
+            # CI runs the container as a non-1000 --user (to match the host
+            # cache volume owner), so the baked TT_METAL_LOGS_PATH
+            # (/home/container_app_user/logs, owned by uid 1000) is not writable:
+            # ttnn.open_mesh_device() fails creating logs/generated/watcher/ and
+            # the engine never boots. Point tt-metal's Inspector/watcher logs at a
+            # world-writable ephemeral dir instead — writable as any uid, and off
+            # the host-owned volume so the high-churn logs don't land there.
+            docker_env_vars["TT_METAL_LOGS_PATH"] = "/tmp/tt_metal_logs"
 
     if (
         model_spec.inference_engine == InferenceEngine.FORGE.value
