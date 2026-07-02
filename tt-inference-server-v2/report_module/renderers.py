@@ -38,9 +38,19 @@ HIDDEN_COLUMNS = frozenset(
 
 GENERIC_KINDS: tuple[str, ...] = (
     "benchmarks",
-    "evals",
     "spec_tests",
     "stress_tests",
+)
+
+EVALS_KIND = "evals"
+
+EVALS_METHODOLOGY_NOTE = (
+    "Note: The ratio to published scores defines if eval ran roughly correctly, "
+    "as the exact methodology of the model publisher cannot always be reproduced. "
+    "For this reason the accuracy check is based first on being equivalent to the "
+    "GPU reference within a +/- tolerance. If a value GPU reference is not "
+    "available, the accuracy check is based on the direct ratio to the published "
+    "score."
 )
 
 _REGISTRY: Dict[str, RendererFn] = {}
@@ -292,6 +302,22 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
         parts.append(f"#### {_humanize_key(key)}\n\n{sub_table}")
 
     return "\n\n".join(parts) if len(parts) > 1 else ""
+
+
+@register(EVALS_KIND)
+def render_evals(block: Block, metadata: Mapping[str, Any]) -> str:
+    """Render eval results as one table followed by the methodology note."""
+    records = _extract_records(block)
+    if not records:
+        return ""
+    model, device = _resolve_model_device(block, metadata, records)
+    heading = _heading(
+        block.kind, model, device, block.title or "", block.task_type or ""
+    )
+    table = _build_table(records)
+    if not table:
+        return ""
+    return f"{heading}\n\n{table}\n\n{EVALS_METHODOLOGY_NOTE}"
 
 
 for _kind in GENERIC_KINDS:

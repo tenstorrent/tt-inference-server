@@ -80,6 +80,11 @@ bool MooncakeMigrationWorker::bringUp(const std::atomic<bool>& cancelToken) {
   return true;
 }
 
+bool MooncakeMigrationWorker::ownsLayer(uint32_t layerId) const {
+  if (config_.layer_end == 0) return true;
+  return layerId >= config_.layer_start && layerId < config_.layer_end;
+}
+
 // Reverse-order teardown: stop being discoverable before the engine drops, so
 // no in-flight peer write lands on memory we've freed. Idempotent.
 void MooncakeMigrationWorker::teardown() {
