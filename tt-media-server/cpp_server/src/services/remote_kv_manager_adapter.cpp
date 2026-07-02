@@ -68,9 +68,9 @@ void RemoteKVManagerAdapter::enqueue_migration_in_burst(
   uint64_t migrationId = kvManager_->migrate(request);
   it->second.migrationIds.push_back(migrationId);
 
-  inFlight_.emplace(
-      migrationId,
-      InFlightMigration{.token = burst, .isBurstMember = true, .burstId = burst});
+  inFlight_.emplace(migrationId, InFlightMigration{.token = burst,
+                                                   .isBurstMember = true,
+                                                   .burstId = burst});
 
   TT_LOG_DEBUG(
       "[RemoteKVManagerAdapter] enqueued migration {} in burst {} "
@@ -115,9 +115,9 @@ MigrationToken RemoteKVManagerAdapter::migrate(
 
   {
     std::lock_guard<std::mutex> lock(mtx_);
-    inFlight_.emplace(migrationId, InFlightMigration{.token = token,
-                                                     .isBurstMember = false,
-                                                     .burstId = 0});
+    inFlight_.emplace(
+        migrationId, InFlightMigration{
+                         .token = token, .isBurstMember = false, .burstId = 0});
   }
 
   TT_LOG_DEBUG(
