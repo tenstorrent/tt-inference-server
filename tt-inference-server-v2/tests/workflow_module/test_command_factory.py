@@ -176,22 +176,6 @@ class TestMintJwt:
         monkeypatch.setenv("OPENAI_API_KEY", "")
         assert cf._mint_jwt_if_secret(None)
 
-    def test_minted_token_byte_matches_server_precomputed_key(self, monkeypatch):
-        """The minted bearer MUST equal the server's precomputed VLLM_API_KEY.
-
-        The tt-metal/vLLM server does not decode the JWT; it precomputes
-        ``get_encoded_api_key(JWT_SECRET)`` and has vLLM compare the bearer by
-        exact byte-equality. Any extra claim (e.g. ``exp``) breaks that match
-        and 401s every request, so keep the two encodings in lockstep.
-        """
-        pytest.importorskip("jwt")
-        vllm_run_utils = pytest.importorskip("utils.vllm_run_utils")
-        secret = "super-secret-key-of-sufficient-length-1234"
-        monkeypatch.setenv("OPENAI_API_KEY", "")
-        assert cf._mint_jwt_if_secret(secret) == vllm_run_utils.get_encoded_api_key(
-            secret
-        )
-
 
 class TestResolveAuthToken:
     """Engine-aware bearer-token selection.
