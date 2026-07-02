@@ -297,48 +297,40 @@ TEST_F(RemoteKVManagerE2ETest, WorkerReplyFailedPropagates) {
   worker->stop();
 }
 
-// Migrations are unicast, not fan-out: each request carries a single
-// layer_id and only the worker that owns that layer should process it.
-// This test wires a layer_id -> partition map (contiguous ranges of
-// layers, one per worker) into the manager, pins N workers to N
-// partitions via rd_kafka_assign(), and verifies:
-//   1) the layer's owner receives the request exactly once,
-//   2) no other worker sees it,
-//   3) the owner's ack flips status to SUCCESSFUL.
-TEST_F(RemoteKVManagerE2ETest, MigrateRoutesRequestToOwnerPartition) {
-  constexpr int32_t numWorkers = 4;
-  // Test-local constant so numLayers / numWorkers divides evenly,
-  // independent of the MODEL_NUM_LAYERS default (61) which does not.
-  constexpr uint32_t numLayers = 64;
-  constexpr uint32_t layersPerWorker = numLayers / numWorkers;
-  const auto layerOwner = [](uint32_t layerId) -> int32_t {
-    return static_cast<int32_t>(layerId / layersPerWorker);
+constexpr int32_t K_PARTITIONED_NUM_WORKERS = 4;
+constexpr uint32_t K_PARTITIONED_NUM_LAYERS = 64;
+constexpr uint32_t K_PARTITIONED_LAYERS_PER_WORKER =
+    K_PARTITIONED_NUM_LAYERS / K_PARTITIONED_NUM_WORKERS;
+constexpr uint32_t K_PARTITIONED_TARGET_LAYER = 20;
+constexpr int32_t K_PARTITIONED_EXPECTED_OWNER = 1;
+
+RemoteKVManagerImpl::LayerToPartition partitionedLayerOwner() {
+  return [](uint32_t layerId) -> int32_t {
+    return static_cast<int32_t>(layerId / K_PARTITIONED_LAYERS_PER_WORKER);
   };
+}
 
-  ASSERT_TRUE(ensureMigrationTopicsWithPartitions(numWorkers))
-      << "failed to create migration req/ack topics with " << numWorkers
-      << " partitions";
+TEST_F(RemoteKVManagerE2ETest, MigrateRoutesRequestToOwnerPartition) {
+  ASSERT_EQ(partitionedLayerOwner()(K_PARTITIONED_TARGET_LAYER),
+            K_PARTITIONED_EXPECTED_OWNER);
+  ASSERT_TRUE(ensureMigrationTopicsWithPartitions(K_PARTITIONED_NUM_WORKERS))
+      << "failed to create migration req/ack topics with "
+      << K_PARTITIONED_NUM_WORKERS << " partitions";
 
-  auto manager =
-      makeManager(/*timeout=*/30s, layerOwner);
-
+  auto manager = makeManager(/*timeout=*/30s, partitionedLayerOwner());
   auto workers = makePartitionedMigrationWorkerPool({
+      {.dropRequest = true},
       {.replyStatus = MigrationStatus::SUCCESSFUL},
-      {.replyStatus = MigrationStatus::SUCCESSFUL},
-      {.replyStatus = MigrationStatus::SUCCESSFUL},
-      {.replyStatus = MigrationStatus::SUCCESSFUL},
+      {.dropRequest = true},
+      {.dropRequest = true},
   });
-  ASSERT_EQ(workers.size(), static_cast<std::size_t>(numWorkers));
+  ASSERT_EQ(workers.size(),
+            static_cast<std::size_t>(K_PARTITIONED_NUM_WORKERS));
 
   std::this_thread::sleep_for(KAFKA_GROUP_JOIN_WARMUP);
 
-  // Layer 20 sits in worker 1's range (16..31).
-  constexpr uint32_t targetLayer = 20;
-  constexpr int32_t expectedOwner = 1;
-  ASSERT_EQ(layerOwner(targetLayer), expectedOwner);
-
   auto req = sampleRequest();
-  req.layer_id = targetLayer;
+  req.layer_id = K_PARTITIONED_TARGET_LAYER;
   const uint64_t id = manager->migrate(req);
   ASSERT_NE(id, 0u);
 
@@ -350,21 +342,112 @@ TEST_F(RemoteKVManagerE2ETest, MigrateRoutesRequestToOwnerPartition) {
       << "routed migration did not reach SUCCESSFUL within "
       << POLL_DEADLINE.count() << "ms";
 
-  EXPECT_EQ(workers[expectedOwner]->requestsReceived(), 1u)
-      << "owner worker " << expectedOwner << " did not receive the request";
-  for (int32_t k = 0; k < numWorkers; ++k) {
-    if (k == expectedOwner) continue;
+  EXPECT_EQ(workers[K_PARTITIONED_EXPECTED_OWNER]->requestsReceived(), 1u)
+      << "owner worker " << K_PARTITIONED_EXPECTED_OWNER
+      << " did not receive the request";
+  for (int32_t k = 0; k < K_PARTITIONED_NUM_WORKERS; ++k) {
+    if (k == K_PARTITIONED_EXPECTED_OWNER) continue;
     EXPECT_EQ(workers[k]->requestsReceived(), 0u)
-        << "worker " << k << " received a request for layer " << targetLayer
-        << " it does not own";
+        << "non-owner worker " << k << " received a request it does not own";
   }
 
-  const auto raw = workers[expectedOwner]->takeReceivedRaw();
+  const auto raw = workers[K_PARTITIONED_EXPECTED_OWNER]->takeReceivedRaw();
   ASSERT_EQ(raw.size(), 1u);
   const auto parsed = tt::messaging::parseMigrationRequest(raw[0]);
   ASSERT_TRUE(parsed.has_value());
-  EXPECT_EQ(parsed->layer_id, targetLayer);
+  EXPECT_EQ(parsed->layer_id, K_PARTITIONED_TARGET_LAYER);
   EXPECT_EQ(parsed->migration_id, id);
+
+  for (auto& w : workers) w->stop();
+}
+
+// Owner-partition worker returns FAILED. Manager must observe FAILED via
+// the ack (not the sweeper), and no non-owner worker should have seen the
+// request.
+TEST_F(RemoteKVManagerE2ETest, PartitionedOwnerReplyFailedPropagates) {
+  ASSERT_EQ(partitionedLayerOwner()(K_PARTITIONED_TARGET_LAYER),
+            K_PARTITIONED_EXPECTED_OWNER);
+  ASSERT_TRUE(ensureMigrationTopicsWithPartitions(K_PARTITIONED_NUM_WORKERS));
+
+  // Timeout deliberately longer than POLL_DEADLINE so a FAILED terminal
+  // observed here proves the ack path -- not the sweeper -- flipped it.
+  auto manager = makeManager(/*timeout=*/30s, partitionedLayerOwner());
+  auto workers = makePartitionedMigrationWorkerPool({
+      {.dropRequest = true},
+      {.replyStatus = MigrationStatus::FAILED},
+      {.dropRequest = true},
+      {.dropRequest = true},
+  });
+  ASSERT_EQ(workers.size(),
+            static_cast<std::size_t>(K_PARTITIONED_NUM_WORKERS));
+
+  std::this_thread::sleep_for(KAFKA_GROUP_JOIN_WARMUP);
+
+  auto req = sampleRequest();
+  req.layer_id = K_PARTITIONED_TARGET_LAYER;
+  const uint64_t id = manager->migrate(req);
+  ASSERT_NE(id, 0u);
+
+  ASSERT_TRUE(waitFor(
+      [&] {
+        return manager->getMigrationStatus(id) == MigrationStatus::FAILED;
+      },
+      POLL_DEADLINE))
+      << "owner-partition FAILED ack did not propagate within "
+      << POLL_DEADLINE.count() << "ms";
+
+  EXPECT_EQ(workers[K_PARTITIONED_EXPECTED_OWNER]->requestsReceived(), 1u);
+  for (int32_t k = 0; k < K_PARTITIONED_NUM_WORKERS; ++k) {
+    if (k == K_PARTITIONED_EXPECTED_OWNER) continue;
+    EXPECT_EQ(workers[k]->requestsReceived(), 0u)
+        << "non-owner worker " << k << " received a request it does not own";
+  }
+
+  for (auto& w : workers) w->stop();
+}
+
+TEST_F(RemoteKVManagerE2ETest, PartitionedOwnerDropFailsViaTimeoutSweeper) {
+  ASSERT_EQ(partitionedLayerOwner()(K_PARTITIONED_TARGET_LAYER),
+            K_PARTITIONED_EXPECTED_OWNER);
+  ASSERT_TRUE(ensureMigrationTopicsWithPartitions(K_PARTITIONED_NUM_WORKERS));
+
+  // Short manager timeout so the sweeper resolves the migration well
+  // inside POLL_DEADLINE.
+  constexpr auto managerTimeout = 1s;
+  auto manager = makeManager(managerTimeout, partitionedLayerOwner());
+  auto workers = makePartitionedMigrationWorkerPool({
+      {.dropRequest = true},
+      {.dropRequest = true},
+      {.dropRequest = true},
+      {.dropRequest = true},
+  });
+  ASSERT_EQ(workers.size(),
+            static_cast<std::size_t>(K_PARTITIONED_NUM_WORKERS));
+
+  std::this_thread::sleep_for(KAFKA_GROUP_JOIN_WARMUP);
+
+  auto req = sampleRequest();
+  req.layer_id = K_PARTITIONED_TARGET_LAYER;
+  const uint64_t id = manager->migrate(req);
+  ASSERT_NE(id, 0u);
+  EXPECT_EQ(manager->getMigrationStatus(id), MigrationStatus::IN_PROGRESS);
+
+  ASSERT_TRUE(waitFor(
+      [&] {
+        return manager->getMigrationStatus(id) == MigrationStatus::FAILED;
+      },
+      POLL_DEADLINE))
+      << "sweeper never marked the dropped partitioned migration FAILED "
+      << "within " << POLL_DEADLINE.count() << "ms";
+
+  // Owner consumed the request off its partition, it just chose not to
+  // ack (worker crashed mid-flight simulation on a specific partition).
+  EXPECT_EQ(workers[K_PARTITIONED_EXPECTED_OWNER]->requestsReceived(), 1u);
+  for (int32_t k = 0; k < K_PARTITIONED_NUM_WORKERS; ++k) {
+    if (k == K_PARTITIONED_EXPECTED_OWNER) continue;
+    EXPECT_EQ(workers[k]->requestsReceived(), 0u)
+        << "non-owner worker " << k << " received a request it does not own";
+  }
 
   for (auto& w : workers) w->stop();
 }
