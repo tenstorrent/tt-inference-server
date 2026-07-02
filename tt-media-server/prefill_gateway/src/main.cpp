@@ -4,7 +4,6 @@
 #include <chrono>
 #include <csignal>
 #include <cstdint>
-#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -242,24 +241,6 @@ std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
   return cfg;
 }
 
-std::string_view socketTransportFromEnv() {
-  const char* value = std::getenv("SOCKET_TRANSPORT");
-  if (value == nullptr || value[0] == '\0') {
-    return tt::sockets::transport_names::ZMQ;
-  }
-  const std::string_view transport(value);
-  if (transport == tt::sockets::transport_names::TCP ||
-      transport == tt::sockets::transport_names::ZMQ) {
-    return transport;
-  }
-  TT_LOG_WARN(
-      "[Gateway] Unknown SOCKET_TRANSPORT='{}'; expected '{}' or '{}'. "
-      "Falling back to ZMQ.",
-      transport, tt::sockets::transport_names::TCP,
-      tt::sockets::transport_names::ZMQ);
-  return tt::sockets::transport_names::ZMQ;
-}
-
 volatile sig_atomic_t gStop = 0;
 
 void signalHandler(int /*sig*/) { gStop = 1; }
@@ -289,29 +270,21 @@ int main(int argc, char** argv) {
   auto cfgOpt = parseArgs(argc, argv);
   if (!cfgOpt) return 1;
   const GatewayConfig& cfg = *cfgOpt;
-  const bool useZmqPrefillRouter =
-      socketTransportFromEnv() == tt::sockets::transport_names::ZMQ;
-  const std::string_view transport = useZmqPrefillRouter ? "zmq" : "tcp";
 
-  if (useZmqPrefillRouter && cfg.prefillBindPort == 0) {
-    std::cerr
-        << "--prefill-bind=HOST:PORT is required for SOCKET_TRANSPORT=zmq\n";
+  if (cfg.prefillBindPort == 0) {
+    std::cerr << "--prefill-bind=HOST:PORT is required\n";
     return 1;
   }
-  if (!useZmqPrefillRouter && cfg.prefills.empty()) {
-    std::cerr << "At least one --prefill is required for TCP mode.\n";
-    return 1;
-  }
-  if (useZmqPrefillRouter && !cfg.prefills.empty()) {
-    TT_LOG_WARN("[Gateway] Ignoring --prefill endpoints in ZMQ ROUTER mode");
+  if (!cfg.prefills.empty()) {
+    TT_LOG_WARN("[Gateway] Ignoring --prefill endpoints (ZMQ ROUTER mode)");
   }
   if (cfg.healthPort != 0 && cfg.healthPort == cfg.metricsPort) {
     std::cerr << "--health-port must be different from --metrics-port.\n";
     return 1;
   }
 
-  TT_LOG_INFO("[Gateway] Starting — decode port={}, transport={}",
-              cfg.decodePort, transport);
+  TT_LOG_INFO("[Gateway] Starting — decode port={}, transport=zmq",
+              cfg.decodePort);
 
   auto& metrics = tt::gateway::GatewayMetrics::instance();
   tt::gateway::GatewayMetricsServer metricsServer(metrics);
@@ -326,8 +299,8 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  auto healthProvider = [&registry, &decodeSm, transport]() {
-    return buildGatewayHealthStatus(registry, transport,
+  auto healthProvider = [&registry, &decodeSm]() {
+    return buildGatewayHealthStatus(registry, "zmq",
                                     decodeSm.isConnected());
   };
   if (!metricsServer.start(cfg.metricsPort)) {
@@ -346,27 +319,10 @@ int main(int argc, char** argv) {
 
   tt::gateway::ZmqPrefillRouter zmqPrefillRouter;
 
-  if (useZmqPrefillRouter &&
-      !zmqPrefillRouter.start(cfg.prefillBindHost, cfg.prefillBindPort)) {
+  if (!zmqPrefillRouter.start(cfg.prefillBindHost, cfg.prefillBindPort)) {
     TT_LOG_ERROR("[Gateway] Failed to bind ZMQ prefill ROUTER on {}:{}",
                  cfg.prefillBindHost, cfg.prefillBindPort);
     return 1;
-  }
-
-  // TCP keeps one independent SocketManager (CLIENT) per endpoint.
-  tt::gateway::PrefillSocketManagers prefillSms;
-  prefillSms.reserve(cfg.prefills.size());
-  if (!useZmqPrefillRouter) {
-    for (const auto& ep : cfg.prefills) {
-      auto sm = std::make_unique<tt::sockets::SocketManager>();
-      sm->setReconnectBackoff(std::chrono::seconds(1), std::chrono::seconds(5));
-      if (!sm->initializeAsClient(ep.host, ep.port)) {
-        TT_LOG_ERROR("[Gateway] Failed to init client socket to {}:{}", ep.host,
-                     ep.port);
-        return 1;
-      }
-      prefillSms.push_back(std::move(sm));
-    }
   }
 
   // Dispatcher takes Senders by value; lambdas below capture references which
@@ -376,39 +332,19 @@ int main(int argc, char** argv) {
   tt::gateway::Dispatcher::Senders senders;
 
   senders.sendRequestToPrefill =
-      [&registry, &zmqPrefillRouter, useZmqPrefillRouter](
+      [&zmqPrefillRouter](
           const std::string& serverId,
           const tt::sockets::PrefillRequestMessage& msg) -> bool {
-    if (useZmqPrefillRouter) {
-      return zmqPrefillRouter.sendObject(
-          serverId, tt::sockets::tags::PREFILL_REQUEST, msg);
-    }
-
-    auto* sm = registry.getSocketManager(serverId);
-    if (!sm) {
-      TT_LOG_WARN("[Gateway] sendRequestToPrefill: no socket for '{}'",
-                  serverId);
-      return false;
-    }
-    return sm->sendObject(tt::sockets::tags::PREFILL_REQUEST, msg);
+    return zmqPrefillRouter.sendObject(
+        serverId, tt::sockets::tags::PREFILL_REQUEST, msg);
   };
 
   senders.sendCancelToPrefill =
-      [&registry, &zmqPrefillRouter, useZmqPrefillRouter](
+      [&zmqPrefillRouter](
           const std::string& serverId,
           const tt::sockets::CancelPrefillMessage& msg) -> bool {
-    if (useZmqPrefillRouter) {
-      return zmqPrefillRouter.sendObject(
-          serverId, tt::sockets::tags::CANCEL_PREFILL, msg);
-    }
-
-    auto* sm = registry.getSocketManager(serverId);
-    if (!sm) {
-      TT_LOG_WARN("[Gateway] sendCancelToPrefill: no socket for '{}'",
-                  serverId);
-      return false;
-    }
-    return sm->sendObject(tt::sockets::tags::CANCEL_PREFILL, msg);
+    return zmqPrefillRouter.sendObject(
+        serverId, tt::sockets::tags::CANCEL_PREFILL, msg);
   };
 
   senders.sendResultToDecode =
@@ -426,13 +362,8 @@ int main(int argc, char** argv) {
     dispatcherPtr->onPrefillDown(id);
   });
 
-  if (useZmqPrefillRouter) {
-    tt::gateway::registerZmqPrefillHandlers(zmqPrefillRouter, registry,
-                                            *dispatcherPtr);
-  } else {
-    tt::gateway::registerTcpPrefillHandlers(prefillSms, registry,
-                                            *dispatcherPtr);
-  }
+  tt::gateway::registerZmqPrefillHandlers(zmqPrefillRouter, registry,
+                                          *dispatcherPtr);
 
   decodeSm.registerHandler<tt::sockets::PrefillRequestMessage>(
       tt::sockets::tags::PREFILL_REQUEST,
@@ -466,38 +397,20 @@ int main(int argc, char** argv) {
     TT_LOG_WARN("[Gateway] Decode disconnected — waiting for reconnect");
   });
 
-  for (auto& sm : prefillSms) sm->start();
   decodeSm.start();
 
-  constexpr auto probeIntervalMs = std::chrono::milliseconds(1000);
-  std::jthread proberThread;
-  if (!useZmqPrefillRouter) {
-    proberThread =
-        std::jthread([&prefillSms, probeIntervalMs](std::stop_token stopToken) {
-          while (!stopToken.stop_requested()) {
-            for (auto& sm : prefillSms) {
-              sm->sendObject(tt::sockets::tags::REGISTRATION_PROBE,
-                             tt::sockets::RegistrationProbeMessage{});
-            }
-            std::this_thread::sleep_for(probeIntervalMs);
-          }
-        });
-  }
-
   const auto prefillStaleTimeout = cfg.prefillStaleTimeout;
-  std::jthread watchdogThread;
-  if (useZmqPrefillRouter) {
-    watchdogThread =
-        std::jthread([&registry, &zmqPrefillRouter,
-                      prefillStaleTimeout](std::stop_token stopToken) {
-          while (!stopToken.stop_requested()) {
-            for (const auto& serverId :
-                 zmqPrefillRouter.takeStaleServers(prefillStaleTimeout)) {
-              TT_LOG_WARN("[Gateway] Prefill '{}' registration timed out",
-                          serverId);
-              registry.markDown(serverId);
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  std::jthread watchdogThread(
+      [&registry, &zmqPrefillRouter,
+       prefillStaleTimeout](std::stop_token stopToken) {
+        while (!stopToken.stop_requested()) {
+          for (const auto& serverId :
+               zmqPrefillRouter.takeStaleServers(prefillStaleTimeout)) {
+            TT_LOG_WARN("[Gateway] Prefill '{}' registration timed out",
+                        serverId);
+            registry.markDown(serverId);
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(500));
           }
         });
   }
@@ -537,8 +450,6 @@ int main(int argc, char** argv) {
   }
 
   TT_LOG_INFO("[Gateway] Shutting down…");
-  proberThread.request_stop();
-  if (proberThread.joinable()) proberThread.join();
   requestTimeoutThread.request_stop();
   if (requestTimeoutThread.joinable()) requestTimeoutThread.join();
   metricsSnapshotThread.request_stop();
@@ -546,7 +457,6 @@ int main(int argc, char** argv) {
   watchdogThread.request_stop();
   if (watchdogThread.joinable()) watchdogThread.join();
   decodeSm.stop();
-  for (auto& sm : prefillSms) sm->stop();
   zmqPrefillRouter.stop();
   healthServer.stop();
   metricsServer.stop();

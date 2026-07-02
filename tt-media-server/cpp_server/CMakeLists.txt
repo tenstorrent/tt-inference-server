@@ -1190,9 +1190,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/llm_pipeline.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
-    src/sockets/tcp_socket_transport.cpp
     src/sockets/zmq_socket_transport.cpp
-    src/sockets/socket_transport_factory.cpp
 )
 
 add_executable(main_integration_test
@@ -1589,9 +1587,7 @@ set(SOURCES
     src/services/disaggregation_service.cpp
     src/services/llm_pipeline.cpp
     src/sockets/socket_manager.cpp
-    src/sockets/tcp_socket_transport.cpp
     src/sockets/zmq_socket_transport.cpp
-    src/sockets/socket_transport_factory.cpp
     src/sockets/inter_server_service.cpp
     src/metrics/metrics.cpp
     src/api/metrics_controller.cpp
