@@ -3480,91 +3480,86 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="google/gemma-4-31b-it",
         tasks=[
+            # ----------------------------------------------------------------
+            # Reference accuracy evals, methodology matched to
+            # tenstorrent/tt-inference-server#4331 (the gemma-4-31B-it GPU
+            # reference block below): r1_gpqa_diamond + Terminal-Bench-2.0 +
+            # SWE-Bench Verified, thinking-mode sampling (temp=1.0 / top_k=20 /
+            # top_p=0.95), scored against the SAME published (Qwen3.6-27B) and
+            # H100 gpu_reference numbers. Thinking is enabled server-side via the
+            # spec's --default-chat-template-kwargs '{"enable_thinking": true}'.
+            #
+            # Token budgets are the ONLY deviation from #4331: QB2 (P300X2) runs
+            # with hybrid KV disabled, which caps max_model_len at 49152 and any
+            # single prefill at the 32768 power-of-two bucket. So agentic input
+            # stays <= 24k (pads to 32768), prompt + output stays < 49152, and
+            # r1_gpqa's reasoning budget is 40k (vs 124k on H100). Not reaching
+            # the H100 reference score is a known, accepted QB2 limitation of
+            # disabling hybrid KV -- the comparison methodology is identical.
+            # ----------------------------------------------------------------
             EvalTask(
-                task_name="ifeval",
+                # R1-style zero-shot reasoning GPQA Diamond (matches the
+                # Qwen3.6-27B thinking-mode "GPQA Diamond" methodology; scores
+                # exact_match,none). Requires enable_thinking server-side.
+                task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    # First TT user of gemma-4-31b-it (no prior TTNN entry) and
-                    # no published gemma-4 reference yet -- fill published_score /
-                    # gpu_reference_score from the first CI_NIGHTLY run.
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=84.3,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    # H100 gemma-4-31B-it reference (GPU reference block below):
+                    # full 198-sample r1_gpqa_diamond w/ enable_thinking, 83.33%
+                    # +/- 2.66. QB2 is expected to score lower: the 49152 ctx
+                    # caps the reasoning budget at 40k (vs 124k) -- an accepted
+                    # hybrid-KV-off limitation, not a methodology change.
+                    gpu_reference_score=83.33,
+                    gpu_reference_score_ref="run.py --workflow evals r1_gpqa_diamond full (198), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-16",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "prompt_level_strict_acc,none",
-                            "inst_level_strict_acc,none",
+                            "exact_match,none",
                         ],
                         "unit": "percent",
                     },
                 ),
-                # Downsampled: first user of the model, trim nightly runtime.
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.1,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
-            # ----------------------------------------------------------------
-            # Reference accuracy evals requested in
-            # https://github.com/tenstorrent/tt-inference-server/issues/4176
-            # (GPQA-Diamond, Terminal-Bench-2.0, SWE-Bench Verified). Full
-            # dataset is used for the default RELEASE run; SMOKE/CI_NIGHTLY are
-            # downsampled. Token budgets are clamped to this device's served
-            # envelope: hybrid-off KV pool caps max_model_len at 49152 and the
-            # power-of-two prefill bucketing caps any single prefill at 32768,
-            # so agentic input budgets stay <= 24k (pads to the 32768 bucket)
-            # and prompt + output stays < 49152. Concurrency is held at 1 since
-            # the 49152-token pool is shared across the batch.
-            # published_score / gpu_reference_score are left None until the
-            # gemma-4 reference numbers (Google report + first TT run) land.
-            # ----------------------------------------------------------------
-            EvalTask(
-                task_name="gpqa_diamond_cot_zeroshot",
-                # Chat API so the gemma-4 reasoning parser strips the thinking
-                # channel server-side; flexible-extract then reads the answer
-                # letter. (r1_gpqa_diamond keys off DeepSeek </think> tags that
-                # gemma-4 does not emit, so it is not usable here.)
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Chat endpoint so the server applies the chat template with
+                # enable_thinking=true (set server-side in the model spec).
                 use_chat_api=True,
-                max_concurrent=16,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,flexible-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
                 model_kwargs={
+                    # QB2 served ceiling (hybrid-KV-off pool). H100 ref: 131072.
+                    "max_length": 49152,
+                    # Long thinking generations must not hit the client read
+                    # timeout (the prior 31B non-uniform-seeding FAIL was a 30s
+                    # timeout, not a defect).
                     "timeout": "7200",
                 },
-                # gemma-family sampling defaults (temp 1.0 / top_k 64 / top_p
-                # 0.95). GPQA prompts run ~2.4k tokens; 32768 reasoning budget
-                # leaves >14k headroom under the 49152 ceiling.
+                # Thinking-mode sampling (Qwen3.6 page): temp=1.0/top_k=20/
+                # top_p=0.95. stream=false is REQUIRED: lm-eval's
+                # local-chat-completions streaming parser raises KeyError
+                # 'message'. max_gen_toks (40k) stays under 49152 minus the
+                # ~2.4k GPQA prompt + chat template.
                 gen_kwargs={
                     "stream": "false",
+                    "max_gen_toks": 40 * 1024,
+                    "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "top_k": 64,
+                    "top_k": 20,
                     "top_p": 0.95,
-                    "max_gen_toks": 32 * 1024,
                 },
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 0.006,
-                    EvalLimitMode.CI_NIGHTLY: 0.035,
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
                 task_name="terminal_bench_2",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    published_score=42.9,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    # H100 gemma-4-31B-it reference: 40/89 = 44.94% w/ enable_thinking.
+                    gpu_reference_score=44.94,
+                    gpu_reference_score_ref="run.py --workflow evals terminal_bench_2 full (89), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-17",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -3574,6 +3569,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
+                    # Concurrency held at 1: the 49152 KV pool is shared per batch.
                     n_concurrent_trials=1,
                     n_attempts=1,
                     n_tasks=89,
@@ -3584,8 +3580,9 @@ _eval_config_list = [
                         "parser_name": "json",
                         "temperature": 1.0,
                         "model_info": {
-                            # Single-prefill bucket ceiling is 32768; keep input
-                            # under it and leave room for output within 49152.
+                            # QB2: single-prefill bucket ceiling is 32768; keep
+                            # input under it and prompt+output under 49152. H100
+                            # ref used 112k/80k.
                             "max_input_tokens": 24 * 1024,
                             "max_output_tokens": 16 * 1024,
                         },
@@ -3594,7 +3591,7 @@ _eval_config_list = [
                             "max_tokens": 16 * 1024,
                             "timeout": 60 * 60,
                             "extra_body": {
-                                "top_k": 64,
+                                "top_k": 20,
                             },
                         },
                     },
@@ -3616,10 +3613,11 @@ _eval_config_list = [
                 task_name="swe_bench_verified",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    published_score=52.0,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    # H100 gemma-4-31B-it reference: 324/500 = 64.80% w/ enable_thinking.
+                    gpu_reference_score=64.80,
+                    gpu_reference_score_ref="run.py --workflow evals swe_bench_verified full (500), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-18",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -3636,13 +3634,14 @@ _eval_config_list = [
                     n_tasks=None,
                     temperature=1.0,
                     top_p=0.95,
-                    # Input pads to the 32768 prefill bucket; output kept small
-                    # so input + output stays under the 49152 ceiling.
+                    # QB2: input pads to the 32768 prefill bucket; output kept
+                    # small so input + output stays under 49152. H100 ref used
+                    # 160k/32k.
                     max_input_tokens=24 * 1024,
                     max_output_tokens=12 * 1024,
                     completion_kwargs={
                         "extra_body": {
-                            "top_k": 64,
+                            "top_k": 20,
                         },
                     },
                     instance_ids_map={
@@ -3665,49 +3664,63 @@ _eval_config_list = [
         hf_model_repo="google/gemma-4-12b-it",
         tasks=[
             # ----------------------------------------------------------------
-            # Reference accuracy evals requested in
-            # https://github.com/tenstorrent/tt-inference-server/issues/4176
-            # (GPQA-Diamond, Terminal-Bench-2.0, SWE-Bench Verified). 12B
-            # advertises 131072 but only serves reliably up to ~64k input on
+            # Reference accuracy evals, methodology matched to
+            # tenstorrent/tt-inference-server#4331 (the gemma-4-12B-it GPU
+            # reference block below): r1_gpqa_diamond + Terminal-Bench-2.0 +
+            # SWE-Bench Verified, thinking-mode sampling (temp=1.0 / top_k=20 /
+            # top_p=0.95). Thinking is enabled server-side via the spec's
+            # --default-chat-template-kwargs '{"enable_thinking": true}'.
+            #
+            # 12B advertises 131072 but only serves reliably up to ~64k input on
             # P300X2 (hybrid-KV-off): 64k passes cleanly while ~100k+ intermittently
             # trips the eager-prefill fabric deadlock (tenstorrent/tt-metal#48289,
             # see docs/gemma4_12b_benchmarks.md). Agentic input is therefore capped
             # at 64k (pads to the 65536 prefill bucket, the largest validated one)
-            # and GPQA reasoning stays well under it. published_score /
-            # gpu_reference_score are left None until the gemma-4 reference
-            # numbers land.
+            # and r1_gpqa reasoning stays well under it. published_score /
+            # gpu_reference_score match #4331's 12B block (no gemma-4 reference
+            # numbers published yet -> None/TBD).
             # ----------------------------------------------------------------
             EvalTask(
-                task_name="gpqa_diamond_cot_zeroshot",
-                use_chat_api=True,
-                max_concurrent=16,
+                # R1-style zero-shot reasoning GPQA Diamond (matches the
+                # Qwen3.6-27B thinking-mode "GPQA Diamond" methodology; scores
+                # exact_match,none). Requires enable_thinking server-side.
+                task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
                     published_score=None,
-                    published_score_ref=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "exact_match,flexible-extract",
+                            "exact_match,none",
                         ],
                         "unit": "percent",
                     },
                 ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
                 model_kwargs={
+                    # QB2 validated 12B envelope (~64k input serves cleanly).
+                    "max_length": 65536,
                     "timeout": "7200",
                 },
+                # Thinking-mode sampling (Qwen3.6 page): temp=1.0/top_k=20/
+                # top_p=0.95. stream=false: lm-eval's streaming chat parser
+                # raises KeyError 'message'. GPQA prompt ~2.4k + 32k reasoning
+                # fits well under 65536.
                 gen_kwargs={
                     "stream": "false",
+                    "max_gen_toks": 32 * 1024,
+                    "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "top_k": 64,
+                    "top_k": 20,
                     "top_p": 0.95,
-                    "max_gen_toks": 32 * 1024,
                 },
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 0.006,
-                    EvalLimitMode.CI_NIGHTLY: 0.035,
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
@@ -3715,9 +3728,9 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=None,
-                    published_score_ref=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -3737,6 +3750,7 @@ _eval_config_list = [
                         "parser_name": "json",
                         "temperature": 1.0,
                         "model_info": {
+                            # QB2 12B: input capped at the 65536 validated bucket.
                             "max_input_tokens": 64 * 1024,
                             "max_output_tokens": 24 * 1024,
                         },
@@ -3745,7 +3759,7 @@ _eval_config_list = [
                             "max_tokens": 24 * 1024,
                             "timeout": 60 * 60,
                             "extra_body": {
-                                "top_k": 64,
+                                "top_k": 20,
                             },
                         },
                     },
@@ -3768,9 +3782,9 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=None,
-                    published_score_ref=None,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -3791,7 +3805,7 @@ _eval_config_list = [
                     max_output_tokens=16 * 1024,
                     completion_kwargs={
                         "extra_body": {
-                            "top_k": 64,
+                            "top_k": 20,
                         },
                     },
                     instance_ids_map={
