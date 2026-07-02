@@ -593,7 +593,6 @@ void DynamoEndpoint::stop() {
   if (!running_.exchange(false)) {
     return;
   }
-
   TT_LOG_INFO("[DynamoEndpoint] Shutting down");
   if (server_) {
     server_->shutdown();
@@ -601,15 +600,18 @@ void DynamoEndpoint::stop() {
   if (discovery_) {
     discovery_->unregisterSelf();
   }
-
-  if (keepalive_thread_.joinable()) keepalive_thread_.join();
-  if (loop_pool_) {
-    // EventLoopThreadPool has no explicit stop(); destruction joins all
-    // threads.
-    loop_pool_.reset();
+  if (keepalive_thread_.joinable()) {
+    keepalive_thread_.join();
   }
   server_.reset();
   discovery_.reset();
+  if (loop_pool_) {
+    for (auto* loop : loop_pool_->getLoops()) {
+      loop->quit();
+    }
+    loop_pool_->wait();
+    loop_pool_.reset();
+  }
 }
 
 }  // namespace tt::dynamo

@@ -367,6 +367,26 @@ bool dynamoNativePrefillHandoffEnabled();
  * false. */
 bool dynamoNativePrefillMockKvTransferEnabled();
 
+/** When true and LLM_DEVICE_BACKEND=mock_pipeline, Blaze runners use
+ * single-threaded MockSchedulers instead of tt-llm-engine schedulers.
+ * From MOCK_USE_SCHEDULER. Default: defaults::MOCK_USE_SCHEDULER. */
+bool useMockScheduler();
+
+/** Prefill completion latency for MockSchedulers. From
+ * MOCK_PREFILL_CHUNK_LATENCY_MS. Default:
+ * defaults::MOCK_PREFILL_CHUNK_LATENCY_MS. */
+unsigned mockPrefillLatencyMs();
+
+/** Per-decode-token spacing for MockSchedulers. From
+ * MOCK_DECODE_TOKEN_LATENCY_US. Default:
+ * defaults::MOCK_DECODE_TOKEN_LATENCY_US.
+ */
+unsigned mockDecodeTokenLatencyUs();
+
+/** Fixed decode token id emitted by MockSchedulers. From MOCK_DECODE_TOKEN_ID.
+ * Default: defaults::MOCK_DECODE_TOKEN_ID. */
+uint32_t mockDecodeTokenId();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();
