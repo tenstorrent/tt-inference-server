@@ -238,8 +238,8 @@ templates:
       vllm_args:
         async_scheduling: true
         enable_auto_tool_choice: true
-        reasoning_parser_name: qwen3
-        tool_call_parser_name: qwen3_coder
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
       override_tt_config:
         fabric_config: FABRIC_1D
         # Magic number; follows vllm nightly:
