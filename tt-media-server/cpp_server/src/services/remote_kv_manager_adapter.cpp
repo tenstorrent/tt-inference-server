@@ -74,12 +74,13 @@ void RemoteKVManagerAdapter::enqueue_migration_in_burst(
 
   TT_LOG_DEBUG(
       "[RemoteKVManagerAdapter] enqueued migration {} in burst {} "
-      "(slot {}→{}, layers [{},{}), pos [{},{}))",
+      "(slot {}->{}, layers [{},{}), pos [{},{}))",
       migrationId, burst, src_slot, dst_slot, layer_start, layer_end_exclusive,
       pos_start, pos_end_exclusive);
 }
 
-MigrationToken RemoteKVManagerAdapter::finish_burst(BurstId burst) {
+RemoteKVManagerAdapter::MigrationToken RemoteKVManagerAdapter::finish_burst(
+    BurstId burst) {
   std::lock_guard<std::mutex> lock(mtx_);
 
   auto it = bursts_.find(burst);
@@ -95,7 +96,7 @@ MigrationToken RemoteKVManagerAdapter::finish_burst(BurstId burst) {
   return burst;
 }
 
-MigrationToken RemoteKVManagerAdapter::migrate(
+RemoteKVManagerAdapter::MigrationToken RemoteKVManagerAdapter::migrate(
     int /*remote_endpoint_id*/, uint32_t src_slot, uint32_t dst_slot,
     uint32_t layer_start, uint32_t layer_end_exclusive, uint32_t pos_start,
     uint32_t pos_end_exclusive) {
@@ -122,7 +123,7 @@ MigrationToken RemoteKVManagerAdapter::migrate(
 
   TT_LOG_DEBUG(
       "[RemoteKVManagerAdapter] migrate: token={}, migrationId={}, "
-      "slot {}→{}, layers [{},{}), pos [{},{}))",
+      "slot {}->{}, layers [{},{}), pos [{},{}))",
       token, migrationId, src_slot, dst_slot, layer_start, layer_end_exclusive,
       pos_start, pos_end_exclusive);
 
