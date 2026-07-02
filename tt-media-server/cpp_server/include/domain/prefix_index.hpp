@@ -33,14 +33,10 @@ struct PrefixIndexEntry {
 
 class PrefixIndex {
  public:
-  std::vector<Candidate> findCandidates(
-      const std::vector<utils::BlockHashInfo>& blockInfos);
+  std::vector<PrefixIndexEntry> getEntriesForKey(uint64_t keyHash) const;
   void registerPrefixHash(const std::string& sessionId,
                           const std::vector<utils::BlockHashInfo>& blockInfos);
   void remove(const std::string& sessionId, uint64_t keyHash);
-  std::pair<size_t, uint32_t> computeMatchedBlocks(
-      const std::string& sessionId,
-      const std::vector<utils::BlockHashInfo>& blockInfos);
   void clearThinkTokens(const std::string& sessionId, uint64_t keyHash);
 
  private:
