@@ -17,7 +17,7 @@ import urllib.error
 import urllib.request
 
 from migration_e2e.config import Config
-from migration_e2e.verify_test_environment import TestEnvironmentError
+from migration_e2e.preflight import PreflightError
 
 
 def probe_metadata(url: str, timeout_sec: float = 2.0) -> bool:
@@ -57,6 +57,6 @@ def start_metadata_server(
             print(f"Metadata service ready at {uri}")
             return proc, uri
         time.sleep(0.5)
-    raise TestEnvironmentError(
+    raise PreflightError(
         f"metadata service not ready at {uri} (port in use? see {cfg.meta_log})"
     )

@@ -20,24 +20,22 @@ from migration_e2e import ACK_TOPIC, REQUEST_TOPIC
 from migration_e2e.config import Config
 
 
-class TestEnvironmentError(RuntimeError):
+class PreflightError(RuntimeError):
     """Environment is not ready to run the test."""
 
 
-def verify_test_environment(cfg: Config) -> None:
+def preflight(cfg: Config) -> None:
     if not cfg.worker_bin.is_file() or not os.access(cfg.worker_bin, os.X_OK):
-        raise TestEnvironmentError(
+        raise PreflightError(
             f"{cfg.worker_bin} not found/executable. "
             "Build it: ./build.sh --blaze --kafka --mooncake"
         )
     if shutil.which("mpirun") is None:
-        raise TestEnvironmentError(
-            "mpirun not found; install Open MPI to run this test."
-        )
+        raise PreflightError("mpirun not found; install Open MPI to run this test.")
     if not cfg.rank_launch_script.is_file():
-        raise TestEnvironmentError(f"rank launcher missing: {cfg.rank_launch_script}")
+        raise PreflightError(f"rank launcher missing: {cfg.rank_launch_script}")
     if not cfg.metadata_server_script.is_file():
-        raise TestEnvironmentError(
+        raise PreflightError(
             f"metadata server script missing: {cfg.metadata_server_script}"
         )
 
@@ -46,14 +44,14 @@ def verify_test_environment(cfg: Config) -> None:
     try:
         metadata = admin.list_topics(timeout=5)
     except KafkaException as exc:
-        raise TestEnvironmentError(
+        raise PreflightError(
             f"Kafka at {cfg.kafka_brokers} not reachable: {exc}. "
             "Hint: bash scripts/dev-kafka.sh up"
         ) from exc
 
     missing = {REQUEST_TOPIC, ACK_TOPIC} - set(metadata.topics)
     if missing:
-        raise TestEnvironmentError(
+        raise PreflightError(
             f"missing Kafka topics: {sorted(missing)}. "
             "Hint: python scripts/migration_cli.py setup"
         )
