@@ -489,9 +489,29 @@
       }
     },
     "gemma-4-31b-it": {
-      "inference_engine": "FORGE",
+      "inference_engine": "vLLM",
       "ci": {
         "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        },
+        "release": {
+          "devices": [
+            "P300X2"
+          ]
+        }
+      }
+    },
+    "gemma-4-12b-it": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        },
+        "release": {
           "devices": [
             "P300X2"
           ]
