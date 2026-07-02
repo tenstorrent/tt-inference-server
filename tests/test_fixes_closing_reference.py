@@ -93,6 +93,25 @@ class TestEnsureFixesLine:
         fixes_line_pos = result.find("Fixes #41")
         assert fixes_line_pos > fixes_section_pos
 
+    def test_na_in_testing_section_is_not_stripped(self):
+        # N/A in ## Testing must survive — only N/A inside ## Fixes is removed.
+        body = "## Summary\nfoo\n\n## Changes\n- x\n\n## Testing\nN/A\n\n## Fixes\nN/A"
+        result = self._fn()(body, None)
+        # The Testing N/A must still be present.
+        testing_idx = result.find("## Testing")
+        fixes_idx = result.find("## Fixes")
+        testing_section = result[testing_idx:fixes_idx]
+        assert "N/A" in testing_section, "N/A in ## Testing was incorrectly stripped"
+
+    def test_na_in_fixes_section_is_replaced_by_correct_number(self):
+        body = "## Summary\nfoo\n\n## Fixes\nN/A"
+        result = self._fn()(body, 42)
+        assert "Fixes #42" in result
+        # The N/A from the old Fixes section must not remain.
+        fixes_idx = result.find("## Fixes")
+        fixes_content = result[fixes_idx:]
+        assert "N/A" not in fixes_content
+
 
 # ---------------------------------------------------------------------------
 # orchestrate() PR body — Fixes #N injection

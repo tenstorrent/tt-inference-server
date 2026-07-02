@@ -188,7 +188,6 @@ class TestGeneratePrBody:
 class TestGetDiff:
     def test_returns_stdout_on_success(self, tmp_path):
         from orchestrator.orchestrator import _get_diff
-        import subprocess
 
         with patch("orchestrator.orchestrator.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="diff content here")
@@ -213,13 +212,31 @@ class TestGetDiff:
 
         assert result == ""
 
-    def test_returns_empty_string_on_exception(self, tmp_path):
+    def test_returns_empty_string_on_oserror(self, tmp_path):
         from orchestrator.orchestrator import _get_diff
 
-        with patch("orchestrator.orchestrator.subprocess.run", side_effect=Exception("no git")):
+        with patch("orchestrator.orchestrator.subprocess.run", side_effect=OSError("git not found")):
             result = _get_diff(str(tmp_path))
 
         assert result == ""
+
+    def test_returns_empty_string_on_timeout(self, tmp_path):
+        import subprocess as sp
+        from orchestrator.orchestrator import _get_diff
+
+        with patch("orchestrator.orchestrator.subprocess.run",
+                   side_effect=sp.TimeoutExpired(cmd=["git"], timeout=30)):
+            result = _get_diff(str(tmp_path))
+
+        assert result == ""
+
+    def test_does_not_swallow_programming_errors(self, tmp_path):
+        # _get_diff must not catch broad Exception — only OS/timeout failures.
+        from orchestrator.orchestrator import _get_diff
+
+        with patch("orchestrator.orchestrator.subprocess.run", side_effect=ValueError("bug")):
+            with pytest.raises(ValueError):
+                _get_diff(str(tmp_path))
 
 
 # ---------------------------------------------------------------------------

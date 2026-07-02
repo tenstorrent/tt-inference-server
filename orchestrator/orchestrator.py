@@ -131,7 +131,7 @@ def _get_diff(repo_path: str) -> str:
             cwd=repo_path,
         )
         return r.stdout if r.returncode == 0 else ""
-    except Exception:
+    except (OSError, subprocess.TimeoutExpired):
         return ""
 
 
@@ -140,16 +140,26 @@ def _ensure_fixes_line(pr_body: str, issue_number: int | None) -> str:
     # scanner always finds exactly the right token at column 0.
     fixes_line = f"Fixes #{issue_number}" if issue_number is not None else "N/A"
 
-    # Strip any existing Fixes-related lines the model may have written.
-    cleaned_lines = [
-        line for line in pr_body.splitlines()
-        if not re.match(r"^\s*(?:Fixes|Closes|Resolves)\s*#\d+", line, re.IGNORECASE)
-        and not re.match(r"^\s*N/A\s*$", line)
-    ]
-    body = "\n".join(cleaned_lines).rstrip()
-
-    # Ensure the ## Fixes section header is present before appending.
-    if "## Fixes" not in body:
+    # Only strip Fixes/Closes/Resolves and bare N/A lines that are inside the
+    # ## Fixes section — not N/A values in ## Testing or other sections.
+    fixes_section_start = pr_body.find("## Fixes")
+    if fixes_section_start != -1:
+        preamble = pr_body[:fixes_section_start]
+        fixes_section = pr_body[fixes_section_start:]
+        # Strip closing-reference tokens and bare N/A from the Fixes section only.
+        cleaned_fixes_lines = [
+            line for line in fixes_section.splitlines()
+            if not re.match(r"^\s*(?:Fixes|Closes|Resolves)\s*#\d+", line, re.IGNORECASE)
+            and not re.match(r"^\s*N/A\s*$", line)
+        ]
+        body = (preamble + "\n".join(cleaned_fixes_lines)).rstrip()
+    else:
+        # No ## Fixes section yet; strip only explicit closing-reference tokens globally.
+        cleaned_lines = [
+            line for line in pr_body.splitlines()
+            if not re.match(r"^\s*(?:Fixes|Closes|Resolves)\s*#\d+", line, re.IGNORECASE)
+        ]
+        body = "\n".join(cleaned_lines).rstrip()
         body += "\n\n## Fixes"
 
     return body + "\n" + fixes_line

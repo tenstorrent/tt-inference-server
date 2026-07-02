@@ -156,8 +156,8 @@ def generate_pr_body(
             if attempt >= len(_BACKOFF_SECONDS):
                 raise
             time.sleep(_BACKOFF_SECONDS[attempt])
-
-    raise RuntimeError("generate_pr_body: retry loop exited without response")
+    else:
+        raise RuntimeError("generate_pr_body: retry loop exited without response")
 
 
 def run(
