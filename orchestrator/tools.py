@@ -8,7 +8,9 @@ def bash_exec(command: str, cwd: str | None = None) -> str:
     out = r.stdout + r.stderr
     return out[:8000] if len(out) > 8000 else out  # guard against huge output
 
-def read_file(path: str) -> str:
+def read_file(path: str, cwd: str | None = None) -> str:
+    if cwd and not os.path.isabs(path):
+        path = os.path.join(cwd, path)
     try:
         with open(path) as f:
             content = f.read()
@@ -16,7 +18,9 @@ def read_file(path: str) -> str:
     except Exception as e:
         return f"ERROR: {e}"
 
-def write_file(path: str, content: str) -> str:
+def write_file(path: str, content: str, cwd: str | None = None) -> str:
+    if cwd and not os.path.isabs(path):
+        path = os.path.join(cwd, path)
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w") as f:
         f.write(content)
@@ -343,8 +347,8 @@ def remove_label(number: int, label: str, cwd: str | None = None) -> str:
 
 IMPL = {
     "bash_exec":     lambda args, cwd: bash_exec(args["command"], cwd),
-    "read_file":     lambda args, cwd: read_file(args["path"]),
-    "write_file":    lambda args, cwd: write_file(args["path"], args["content"]),
+    "read_file":     lambda args, cwd: read_file(args["path"], cwd),
+    "write_file":    lambda args, cwd: write_file(args["path"], args["content"], cwd),
     "git_status":    lambda args, cwd: git_status(cwd),
     "git_diff":      lambda args, cwd: git_diff(cwd),
     "create_pr":     lambda args, cwd: create_pr(args["title"], args["body"], args["branch"], cwd),
