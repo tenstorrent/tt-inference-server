@@ -279,13 +279,11 @@ class CnnClientStrategy(BaseMediaStrategy):
 
     def _post_search_image(
         self, server_url: str, image_path: Path
-    ) -> tuple[bool, float, dict, int]:
+    ) -> tuple[bool, float, dict]:
         """Send one image to a search-image endpoint, returning the JSON body.
 
         Unlike ``_analyze_image`` (which only times the request), this returns
-        the parsed response so detection labels can be compared across servers,
-        plus the HTTP status code so failures are diagnosable. ``status`` is 0
-        when the request could not be sent at all (connection error).
+        the parsed response so detection labels can be compared across servers.
         """
         with image_path.open("rb") as img_fp:
             encoded = base64.b64encode(img_fp.read()).decode("ascii")
@@ -296,13 +294,7 @@ class CnnClientStrategy(BaseMediaStrategy):
         }
         payload = {"prompt": f"data:image/jpeg;base64,{encoded}"}
         start_time = time.time()
-        try:
-            response = requests.post(
-                server_url, json=payload, headers=headers, timeout=90
-            )
-        except requests.RequestException as e:
-            logger.warning("YOLOX eval: request to %s failed: %s", server_url, e)
-            return False, time.time() - start_time, {}, 0
+        response = requests.post(server_url, json=payload, headers=headers, timeout=90)
         elapsed = time.time() - start_time
         body: dict = {}
         if response.status_code == 200:
@@ -310,43 +302,7 @@ class CnnClientStrategy(BaseMediaStrategy):
                 body = response.json()
             except ValueError:
                 body = {}
-        return (response.status_code == 200), elapsed, body, response.status_code
-
-    def _wait_for_cnn_inference_ready(
-        self,
-        server_url: str,
-        image_file: Path,
-        max_attempts: int = 18,
-        delay: float = 10.0,
-    ) -> bool:
-        """Poll the search-image endpoint until it returns a usable detection.
-
-        ``require_health`` only gates on ``/tt-liveness``, which can report
-        ready before the forge model is actually serving inference (the model
-        has no built-in warmup). Scoring against a not-yet-ready model yields
-        fast non-200 responses and spurious mismatches, so warm up here first.
-        """
-        for attempt in range(1, max_attempts + 1):
-            ok, elapsed, body, status = self._post_search_image(server_url, image_file)
-            if ok and self._extract_detection_labels(body) is not None:
-                logger.info(
-                    "YOLOX eval: inference-ready after %d warmup attempt(s) (%.3fs)",
-                    attempt,
-                    elapsed,
-                )
-                return True
-            logger.info(
-                "YOLOX eval: warmup %d/%d not ready (status=%s, %.4fs)",
-                attempt,
-                max_attempts,
-                status,
-                elapsed,
-            )
-            time.sleep(delay)
-        logger.warning(
-            "YOLOX eval: server not inference-ready after %d attempts", max_attempts
-        )
-        return False
+        return (response.status_code == 200), elapsed, body
 
     @staticmethod
     def _extract_detection_labels(payload: dict) -> Optional[list]:
@@ -370,44 +326,22 @@ class CnnClientStrategy(BaseMediaStrategy):
         return [str(label)] if label else []
 
     def _yolox_detections_for_server(
-        self,
-        server_url: str,
-        dataset_path: Path,
-        metadata: list[dict],
-        retries: int = 2,
-        retry_delay: float = 5.0,
-    ) -> tuple[list, float, list]:
+        self, server_url: str, dataset_path: Path, metadata: list[dict]
+    ) -> tuple[list, float]:
         """Replay every dataset image to ``server_url`` and collect detections.
 
-        Each request is retried a few times on failure so a transient non-200
-        (e.g. a model still warming up) does not get scored as a mismatch.
-
-        Returns ``(detections_per_image, mean_latency_seconds, statuses)`` where
-        each detection entry is the ordered label list (or None for a
-        failed/unparsable request), and ``mean_latency`` is averaged over
-        successful requests only so throughput reflects real inference.
+        Returns ``(detections_per_image, mean_latency_seconds)`` where each entry
+        is the ordered label list (or None for a failed/unparsable request).
         """
         detections: list = []
-        statuses: list = []
-        latencies: list = []
+        elapsed_total = 0.0
         for sample in metadata:
             image_file = dataset_path / sample["filename"]
-            labels, elapsed, status = None, 0.0, 0
-            for attempt in range(retries + 1):
-                ok, elapsed, body, status = self._post_search_image(
-                    server_url, image_file
-                )
-                if ok:
-                    labels = self._extract_detection_labels(body)
-                    break
-                if attempt < retries:
-                    time.sleep(retry_delay)
-            detections.append(labels)
-            statuses.append(status)
-            if labels is not None:
-                latencies.append(elapsed)
-        mean_latency = sum(latencies) / len(latencies) if latencies else 0.0
-        return detections, mean_latency, statuses
+            ok, elapsed, body = self._post_search_image(server_url, image_file)
+            elapsed_total += elapsed
+            detections.append(self._extract_detection_labels(body) if ok else None)
+        mean_latency = elapsed_total / len(metadata) if metadata else 0.0
+        return detections, mean_latency
 
     def _run_yolox_eval(self, cpu_server_url: Optional[str] = None) -> dict:
         """YOLOX accuracy via CPU-vs-device detection consistency.
@@ -424,37 +358,19 @@ class CnnClientStrategy(BaseMediaStrategy):
         """
         dataset_path, metadata = self._ensure_imagenet_dataset()
         device_url = f"{self.base_url}/v1/cnn/search-image"
-        total = len(metadata)
 
-        # In the release workflow evals run *before* benchmarks, so the eval can
-        # hit the server right after the coarse /tt-liveness gate flips ready but
-        # before the forge model is actually serving inference. Warm up until we
-        # get a real detection so we don't score a cold model.
-        if total and not self._wait_for_cnn_inference_ready(
-            device_url, dataset_path / metadata[0]["filename"]
-        ):
-            logger.warning(
-                "YOLOX eval: server never became inference-ready; reporting NA."
-            )
-            return {
-                "accuracy_status": ReportCheckTypes.NA,
-                "correct": 0,
-                "total": total,
-                "mismatches_count": total,
-                "mean_latency": 0.0,
-            }
-
-        logger.info("YOLOX eval: running device pass over %d images", total)
-        device_dets, mean_latency, device_statuses = self._yolox_detections_for_server(
+        logger.info("YOLOX eval: running device pass over %d images", len(metadata))
+        device_dets, mean_latency = self._yolox_detections_for_server(
             device_url, dataset_path, metadata
         )
 
         reference_url = cpu_server_url or device_url
         logger.info("YOLOX eval: running reference pass against %s", reference_url)
-        reference_dets, _, _ = self._yolox_detections_for_server(
+        reference_dets, _ = self._yolox_detections_for_server(
             reference_url, dataset_path, metadata
         )
 
+        total = len(metadata)
         correct = 0
         records: list[dict] = []
         for i, (dev, ref) in enumerate(zip(device_dets, reference_dets)):
@@ -465,7 +381,6 @@ class CnnClientStrategy(BaseMediaStrategy):
                     "filename": metadata[i]["filename"],
                     "device_detections": dev,
                     "reference_detections": ref,
-                    "device_status": device_statuses[i],
                     "match": match,
                 }
             )
@@ -474,35 +389,22 @@ class CnnClientStrategy(BaseMediaStrategy):
         mismatches = [r for r in records if not r["match"]]
 
         # Persist per-image inputs and device-vs-reference detections so eval
-        # results are inspectable (which images, what each side detected, the
-        # HTTP status, and which mismatched), mirroring the MobileNetV2 artifact.
+        # results are inspectable (which images, what each side detected, and
+        # which mismatched), mirroring the MobileNetV2 mismatch artifact.
         self._write_yolox_detection_detail(records)
 
         tolerance = self.all_params.tasks[0].score.tolerance
-        device_failures = sum(1 for d in device_dets if d is None)
         if total == 0:
-            accuracy_status = ReportCheckTypes.NA
-        elif device_failures > total / 2:
-            # Most requests never returned a usable response: this is a serving
-            # problem, not an accuracy result. Report NA (not FAIL) and surface
-            # the status codes so it is diagnosable rather than misleading.
-            logger.warning(
-                "YOLOX eval: %d/%d device requests failed (statuses=%s); reporting NA.",
-                device_failures,
-                total,
-                device_statuses,
-            )
             accuracy_status = ReportCheckTypes.NA
         else:
             ratio = correct / total
             accuracy_status = ReportCheckTypes.from_result(ratio >= (1.0 - tolerance))
 
         logger.info(
-            "YOLOX eval: correct=%d total=%d mismatches=%d failures=%d status=%s",
+            "YOLOX eval: correct=%d total=%d mismatches=%d status=%s",
             correct,
             total,
             len(mismatches),
-            device_failures,
             accuracy_status,
         )
         return {
