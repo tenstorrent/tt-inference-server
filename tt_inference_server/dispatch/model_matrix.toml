@@ -1,0 +1,453 @@
+# model_matrix.toml — Runtime dispatch config
+# Authoritative for the models it LISTS; not a gate on what can run (two-tier resolution, #3):
+#   1. Matrix entry present -> resolve config + capabilities from it (trusted, hw-tuned).
+#   2. No entry (novel model) -> auto-derive from the HF config (the runner's introspection),
+#      gated --unsafe and labeled community. The matrix OVERRIDES auto-detection; it never
+#      removes the ability to run an unlisted model whose weights are introspectable.
+# Resolved once at load_model() time by KernelDispatcher.
+#
+# status field:
+#   "validated"  — tested end-to-end on hardware, PCC verified. Served without warnings.
+#   "community"  — architecture known but correctness unverified. Requires --unsafe to load.
+#
+# Dispatcher validates at load:
+#   1. schema_version matches DISPATCHER_SCHEMA_VERSION
+#   2. n_heads % n_kv_heads == 0 for every entry
+#   3. Every validated entry has n_heads >= 1
+#
+# Behavioral fields (schema v2, #3) — override the runner's HF-config introspection.
+# Each defaults to today's HF-derived value, so an omitted field is a no-op:
+#   norm_type         rmsnorm | layernorm | gemma_rms        (default rmsnorm)
+#   activation        silu | gelu | gelu_tanh | relu2        (default silu)
+#   rotary_pct        1.0 full | 0.25 partial rope           (default 1.0)
+#   attn_bias         qkv + o-proj bias present              (default false)
+#   head_norm         per-head q/k RMSNorm (Qwen3/Gemma3)    (default false)
+#   parallel_residual attn+MLP share pre-norm (GPTNeoX)      (default false)
+#   embed_scale       none | sqrt_hidden (Gemma)             (default none)
+#   attn_backend      ttnn | custom | cpu (#34)              (default ttnn)
+# fast_path / lm_head_ondevice are DERIVED from these by ModelMatrixEntry.capabilities().
+#
+# Granite architectural scaling factors (schema v3, #43). Omit = fall through to the HF
+# config value (no-op for non-Granite); set = OVERRIDES it. Read by runner._scaling_factor():
+#   embedding_multiplier   scales input embeddings
+#   residual_multiplier    scales each sublayer output before its residual add
+#   attention_multiplier   overrides the 1/sqrt(head_dim) attention softmax scale
+#   logits_scaling         divides final logits (no-op for greedy argmax)
+#
+# Do not edit ttl_kernels/configs/ — that is the legacy POC reference only.
+
+schema_version = 3
+
+# ---------------------------------------------------------------------------
+# Llama 3 family (Meta)
+# ---------------------------------------------------------------------------
+
+[[model]]
+name              = "meta-llama/Llama-3-8B-Instruct"
+arch              = "LlamaForCausalLM"
+local_path        = "models/llama3-8b"
+hidden_size       = 4096
+intermediate_size = 14336
+n_layers          = 32
+vocab_size        = 128256
+n_heads           = 32
+n_kv_heads        = 8
+head_dim          = 128
+max_seq           = 2048
+rope_theta        = 500000.0
+swa_window        = -1
+tie_embeddings    = false
+kernels           = ["flash_attn", "rmsnorm"]
+min_hw            = "bh_p150_1card"
+status            = "validated"
+norm_type         = "rmsnorm"
+activation        = "silu"
+rotary_pct        = 1.0
+attn_bias         = false
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "ttnn"
+notes             = "Baseline reference model. GQA 8 KV heads. fast_path eligible."
+
+[[model]]
+name              = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+arch              = "LlamaForCausalLM"
+local_path        = "models/deepseek-ai--DeepSeek-R1-Distill-Llama-8B"
+hidden_size       = 4096
+intermediate_size = 14336
+n_layers          = 32
+vocab_size        = 128256
+n_heads           = 32
+n_kv_heads        = 8
+head_dim          = 128
+max_seq           = 2048
+rope_theta        = 500000.0
+swa_window        = -1
+tie_embeddings    = false
+kernels           = ["flash_attn", "rmsnorm"]
+min_hw            = "bh_p150_1card"
+status            = "validated"
+norm_type         = "rmsnorm"
+activation        = "silu"
+rotary_pct        = 1.0
+attn_bias         = false
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "ttnn"
+notes             = "Llama 3 8B fine-tune. Identical kernel config to llama3-8b. fast_path eligible."
+
+# ---------------------------------------------------------------------------
+# Qwen 2.5 family (Alibaba)
+# ---------------------------------------------------------------------------
+
+[[model]]
+name              = "Qwen/Qwen2.5-7B-Instruct"
+arch              = "Qwen2ForCausalLM"
+local_path        = "models/qwen2.5-7b"
+hidden_size       = 3584
+intermediate_size = 18944
+n_layers          = 28
+vocab_size        = 152064
+n_heads           = 28
+n_kv_heads        = 4
+head_dim          = 128
+max_seq           = 2048
+rope_theta        = 1000000.0
+swa_window        = 131072
+tie_embeddings    = false
+kernels           = ["flash_attn", "rmsnorm"]
+min_hw            = "bh_p150_1card"
+status            = "validated"
+issue             = 22
+norm_type         = "rmsnorm"
+activation        = "silu"
+rotary_pct        = 1.0
+attn_bias         = true
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "custom"
+notes             = "BUG-MISTRAL-01: degenerate output, tracked in #22. swa_window=131072 is effectively full attention at max_seq=2048. Qwen2 has qkv bias (attn_bias=true); GQA group=7 does not divide 32 -> attn_backend=custom, fast_path NOT eligible."
+
+# ---------------------------------------------------------------------------
+# Mistral family (Mistral AI)
+# ---------------------------------------------------------------------------
+
+[[model]]
+name              = "mistralai/Mistral-7B-v0.3"
+arch              = "MistralForCausalLM"
+local_path        = "models/mistral-7b"
+hidden_size       = 4096
+intermediate_size = 14336
+n_layers          = 32
+vocab_size        = 32768
+n_heads           = 32
+n_kv_heads        = 8
+head_dim          = 128
+max_seq           = 2048
+rope_theta        = 1000000.0
+swa_window        = -1
+tie_embeddings    = false
+kernels           = ["flash_attn", "rmsnorm"]
+min_hw            = "bh_p150_1card"
+status            = "validated"
+issue             = 22
+norm_type         = "rmsnorm"
+activation        = "silu"
+rotary_pct        = 1.0
+attn_bias         = false
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "ttnn"
+notes             = "BUG-MISTRAL-01: hidden-state divergence produces degenerate output. v0.3 has no SWA (removed from v0.1) and rope_theta=1e6. fast_path eligible (the #22 bug is numeric, not a path-eligibility issue)."
+
+# ---------------------------------------------------------------------------
+# Gemma 2 family (Google)
+# ---------------------------------------------------------------------------
+
+[[model]]
+name              = "google/gemma-2-2b-it"
+arch              = "Gemma2ForCausalLM"
+local_path        = "models/google-gemma-2-2b-it"
+hidden_size       = 2304
+intermediate_size = 9216
+n_layers          = 26
+vocab_size        = 256000
+n_heads           = 8
+n_kv_heads        = 4
+head_dim          = 256
+max_seq           = 2048
+rope_theta        = 10000.0
+swa_window        = 4096
+tie_embeddings    = true
+kernels           = ["flash_attn", "rmsnorm"]
+min_hw            = "bh_p150_1card"
+status            = "validated"
+issue             = 10
+norm_type         = "gemma_rms"
+activation        = "gelu_tanh"
+rotary_pct        = 1.0
+attn_bias         = false
+head_norm         = false
+parallel_residual = false
+embed_scale       = "sqrt_hidden"
+attn_backend      = "ttnn"
+notes             = "L1 budget borderline due to head_dim=256 (8 tiles). CPU fallback active via #10. 2B variant on disk (not 9B). gemma_rms (4-norm (1+w)) + gelu_tanh + sqrt(hidden) embed scaling -> fast_path NOT eligible (CPU-RoPE + flash_attn path)."
+
+# ---------------------------------------------------------------------------
+# Phi-3.5 family (Microsoft)
+# ---------------------------------------------------------------------------
+
+[[model]]
+name              = "microsoft/Phi-3.5-mini-instruct"
+arch              = "Phi3ForCausalLM"
+local_path        = "models/microsoft-Phi-3.5-mini-instruct"
+hidden_size       = 3072
+intermediate_size = 8192
+n_layers          = 32
+vocab_size        = 32064
+n_heads           = 32
+n_kv_heads        = 32
+head_dim          = 96
+max_seq           = 2048
+rope_theta        = 10000.0
+swa_window        = 262144
+tie_embeddings    = false
+kernels           = ["flash_attn", "rmsnorm"]
+min_hw            = "bh_p150_1card"
+status            = "validated"
+norm_type         = "rmsnorm"
+activation        = "silu"
+rotary_pct        = 1.0
+attn_bias         = false
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "ttnn"
+notes             = "MHA (no GQA, n_kv_heads=n_heads=32). swa_window=262144 is effectively full attention at max_seq=2048. head_dim=96 (3 tiles). fast_path eligible."
+
+# ---------------------------------------------------------------------------
+# OLMo family (AllenAI)
+# ---------------------------------------------------------------------------
+
+[[model]]
+name              = "allenai/OLMo-1B-hf"
+arch              = "OlmoForCausalLM"
+local_path        = "models/allenai-OLMo-1B-hf"
+hidden_size       = 2048
+intermediate_size = 8192
+n_layers          = 16
+vocab_size        = 50304
+n_heads           = 16
+n_kv_heads        = 16
+head_dim          = 128
+max_seq           = 2048
+rope_theta        = 10000.0
+swa_window        = -1
+tie_embeddings    = true
+kernels           = ["flash_attn", "rmsnorm"]
+min_hw            = "bh_p150_1card"
+status            = "validated"
+norm_type         = "rmsnorm"
+activation        = "silu"
+rotary_pct        = 1.0
+attn_bias         = false
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "ttnn"
+notes             = "MHA nh=nkv=16 (group=1), non-parametric LayerNorm runs on the RMSNorm path today (no learned weight/bias) so norm_type=rmsnorm reproduces current behavior. vocab 50304 is tile-aligned. fast_path eligible (nh<32 proportional-pad path)."
+
+# ---------------------------------------------------------------------------
+# NOTE: Falcon-7b absent by design
+# Falcon-7b uses N_heads=71 (prime). _grid_shape(71) has only factorization
+# (1, 71) but y-axis limit is 10, so it cannot map to the 13×10 Tensix grid
+# using 1 core per head. Requires a multi-head-per-core loop kernel or a
+# different dispatch strategy. Track in a dedicated issue before claiming
+# Falcon-7b support.
+# Falcon-rw-1b (N_heads=16, MQA N_kv=1) is a separate model and may be
+# supportable — open a port issue before adding it here.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# GPTNeoX family (EleutherAI)
+# ---------------------------------------------------------------------------
+
+[[model]]
+name              = "EleutherAI/pythia-2.8b"
+arch              = "GPTNeoXForCausalLM"
+local_path        = "models/EleutherAI-pythia-2.8b"
+hidden_size       = 2560
+intermediate_size = 10240
+n_layers          = 32
+vocab_size        = 50304
+n_heads           = 32
+n_kv_heads        = 32
+head_dim          = 80
+max_seq           = 2048
+rope_theta        = 10000.0
+swa_window        = -1
+tie_embeddings    = false
+kernels           = ["flash_attn", "layernorm"]
+min_hw            = "bh_p150_1card"
+status            = "validated"
+issue             = 11
+norm_type         = "layernorm"
+activation        = "gelu"
+rotary_pct        = 0.25
+attn_bias         = true
+head_norm         = false
+parallel_residual = true
+embed_scale       = "none"
+attn_backend      = "custom"
+notes             = "VALIDATED 2026-06-12 (#27). LayerNorm (mean-sub+bias), partial rotary (0.25), parallel residual, and qkv+o-proj+MLP bias all handled correctly. The fix was generic presence-driven bias support (the runner had dropped o-proj/MLP biases). activation='gelu' is exact-erf (GPTNeoX), not the tanh approx. Verified vs HF fp32: 14 exact greedy tokens then a benign near-tie; 80-tok coherent @ 7.79 tok/s, cpu_fallbacks=0. head_dim=80 padded to 96 tiles; layernorm+partial-rope+bias+parallel-residual -> fast_path NOT eligible (CPU-readback baseline)."
+
+# ---------------------------------------------------------------------------
+# BLOOM family (BigScience) — ALiBi (no RoPE), LayerNorm, fused interleaved QKV
+# ---------------------------------------------------------------------------
+
+[[model]]
+name              = "bigscience/bloom-3b"
+arch              = "BloomForCausalLM"
+local_path        = "models/bigscience-bloom-3b"
+hidden_size       = 2560
+intermediate_size = 10240
+n_layers          = 30
+vocab_size        = 250880
+n_heads           = 32
+n_kv_heads        = 32
+head_dim          = 80
+max_seq           = 2048
+rope_theta        = 10000.0
+swa_window        = -1
+tie_embeddings    = true
+kernels           = ["flash_attn", "layernorm"]
+min_hw            = "bh_p150_1card"
+status            = "validated"
+issue             = 9
+norm_type         = "layernorm"
+activation        = "gelu_tanh"
+rotary_pct        = 1.0
+attn_bias         = true
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "cpu"
+notes             = "VALIDATED 2026-06-12 (#9 correctness, #27/#29). BLOOM has NO RoPE — it uses per-head ALiBi positional bias, which the shared-mask flash_attn kernel can't express, so attention runs on a CPU softmax+ALiBi path from the K/V history mirrors (attn_backend=cpu). Also: word_embeddings_layernorm applied after embed, sequential LayerNorm (mean-sub+bias), qkv+o-proj+MLP bias, and tanh-approx BloomGelu (activation=gelu_tanh; BLOOM carries no hidden_act and was mis-derived as silu). Verified vs HF fp32: per-layer cos 0.999+ across all 30 layers; 8 exact greedy tokens; 'capital of France' -> coherent factual completion @ 4.55 tok/s, cpu_fallbacks=0. Hardware-native per-head-mask ALiBi (flash_attn kernel extension) is a perf follow-on. NOT fast-path eligible."
+
+# ---------------------------------------------------------------------------
+# Falcon family (TII) — ALiBi (no RoPE), LayerNorm, fused interleaved QKV.
+# Like BLOOM but ALiBi bias is scaled by 1/sqrt(head_dim) (beta=inv_norm_factor).
+# ---------------------------------------------------------------------------
+
+[[model]]
+name              = "tiiuae/falcon-rw-1b"
+arch              = "FalconForCausalLM"
+local_path        = "models/tiiuae-falcon-rw-1b"
+hidden_size       = 2048
+intermediate_size = 8192
+n_layers          = 24
+vocab_size        = 50304
+n_heads           = 32
+n_kv_heads        = 32
+head_dim          = 64
+max_seq           = 2048
+rope_theta        = 10000.0
+swa_window        = -1
+tie_embeddings    = true
+kernels           = ["flash_attn", "layernorm"]
+min_hw            = "bh_p150_1card"
+status            = "validated"
+issue             = 41
+norm_type         = "layernorm"
+activation        = "gelu"
+rotary_pct        = 1.0
+attn_bias         = true
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "cpu"
+notes             = "VALIDATED 2026-06-12 (#41). Falcon-rw-1b has NO RoPE — per-head ALiBi positional bias on a CPU softmax+ALiBi path (attn_backend=cpu), same as BLOOM. Two bugs fixed: (1) activation mis-derived as silu — Falcon carries no hidden_act and uses exact-erf GELU (FalconMLP nn.GELU); deriver special-cases model_type=='falcon'->'gelu'. (2) ALiBi bias magnitude — unlike BLOOM (beta=1.0), Falcon's HF attention uses beta=inv_norm_factor=1/sqrt(head_dim)=0.125, so the per-head slope bias was ~8x too strong and degenerated output; _attention_cpu_alibi now scales by _alibi_beta. Sequential LayerNorm (mean-sub+bias, parallel_attn=false), fused interleaved query_key_value, qkv+o-proj+MLP bias. NO word_embeddings_layernorm (unlike BLOOM). Verified vs HF fp32: 20/25 exact greedy tokens then a benign bf16 near-tie; 80-tok coherent ('The theory of relativity is a theory of the motion of bodies in the universe...') @ 13.1 tok/s, cpu_fallbacks=0. Base (non-instruct) model so greedy phrase-loops — model behavior, HF loops identically. Hardware-native per-head-mask ALiBi = #40. NOT fast-path eligible."
+
+# ---------------------------------------------------------------------------
+# StarCoder2 family (BigCode)
+# ---------------------------------------------------------------------------
+
+[[model]]
+name              = "bigcode/starcoder2-3b"
+arch              = "Starcoder2ForCausalLM"
+local_path        = "models/bigcode-starcoder2-3b"
+hidden_size       = 3072
+intermediate_size = 12288
+n_layers          = 30
+vocab_size        = 49152
+n_heads           = 24
+n_kv_heads        = 2
+head_dim          = 128
+max_seq           = 2048
+rope_theta        = 1000000.0
+swa_window        = -1
+tie_embeddings    = true
+kernels           = ["flash_attn", "layernorm"]
+min_hw            = "bh_p150_1card"
+status            = "validated"
+norm_type         = "layernorm"
+activation        = "gelu_tanh"
+rotary_pct        = 1.0
+attn_bias         = true
+head_norm         = false
+parallel_residual = false
+embed_scale       = "none"
+attn_backend      = "custom"
+notes             = "VALIDATED 2026-06-12 (#27/#29), fixed alongside GPTNeoX/BLOOM. StarCoder2 has qkv+o-proj+MLP bias, sequential LayerNorm, and gelu_pytorch_tanh — all three were wrong (dropped o-proj/MLP biases, RMSNorm-instead-of-LayerNorm on the sequential branch, exact-erf instead of tanh GELU). Verified COHERENT 2026-06-12: 'def fibonacci(n):' -> correct recursive impl @ 7.11 tok/s, cpu_fallbacks=0. GQA group=12 does not divide 32 -> attn_backend=custom, NOT fast-path eligible."
+
+# ---------------------------------------------------------------------------
+# Granite family (IBM) — Llama-like + architectural scaling factors
+# ---------------------------------------------------------------------------
+
+[[model]]
+name                 = "ibm-granite/granite-3.1-2b-instruct"
+arch                 = "GraniteForCausalLM"
+local_path           = "models/ibm-granite-granite-3.1-2b-instruct"
+hidden_size          = 2048
+intermediate_size    = 8192
+n_layers             = 40
+vocab_size           = 49155
+n_heads              = 32
+n_kv_heads           = 8
+head_dim             = 64
+max_seq              = 2048
+rope_theta           = 5000000.0
+swa_window           = -1
+tie_embeddings       = true
+kernels              = ["flash_attn", "rmsnorm"]
+min_hw               = "bh_p150_1card"
+status               = "validated"
+norm_type            = "rmsnorm"
+activation           = "silu"
+rotary_pct           = 1.0
+attn_bias            = false
+head_norm            = false
+parallel_residual    = false
+embed_scale          = "none"
+attn_backend         = "ttnn"
+embedding_multiplier = 12.0
+residual_multiplier  = 0.22
+attention_multiplier = 0.015625
+logits_scaling       = 8.0
+notes                = "VALIDATED 2026-06-12 (#43). Granite needs four architectural scaling factors plain Llama lacks; the runner applied none, producing garbage. attention_multiplier=0.015625 (=1/64) replaces the default 1/sqrt(64)=0.125 (scores were 8x too large); embedding_multiplier scales embeds 12x; residual_multiplier scales each sublayer output 0.22 before its residual add; logits_scaling divides logits (no-op for greedy argmax). Verified vs HF fp32 greedy: 20/20 exact tokens on BOTH baseline and traced fast path ('The theory of relativity, proposed by Albert Einstein, consists of two parts'), cpu_fallbacks=0. fast_path eligible (rmsnorm, full rope, no head-norm, nh=32 MHA, GQA group=4 | 32)."
+
+# ---------------------------------------------------------------------------
+# Hardware target
+# ---------------------------------------------------------------------------
+
+[hardware]
+card            = "bh_p150"
+tensix_cores    = 120
+l1_budget_bytes = 1_440_000
+pcie_gen        = 5
+device_ids      = [0]
+notes           = "Single Blackhole p150. Multi-card support tracked in #17."
