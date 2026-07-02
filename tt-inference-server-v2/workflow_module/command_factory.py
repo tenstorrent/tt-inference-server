@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime as _dt
 import json
 import logging
 import os
@@ -307,10 +306,18 @@ def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
             "will be minted. Install pyjwt to enable JWT-protected servers."
         )
         return ""
+    # The tt-metal/vLLM server does NOT decode this JWT at request time. In
+    # run_vllm_api_server.py -> handle_secrets() it precomputes a STATIC key
+    # VLLM_API_KEY = get_encoded_api_key(JWT_SECRET), i.e.
+    #   jwt.encode({"team_id": "tenstorrent", "token_id": "debug-test"}, secret,
+    #              algorithm="HS256")
+    # (no exp claim), and vLLM's AuthenticationMiddleware compares the incoming
+    # bearer to that string by exact sha256/compare_digest byte-equality. So the
+    # token minted here MUST be byte-identical to the server's key — any extra
+    # claim (e.g. "exp") changes the encoded string and 401s every request.
     payload = {
         "team_id": "tenstorrent",
         "token_id": "debug-test",
-        "exp": int(_dt.datetime.now(_dt.timezone.utc).timestamp()) + 24 * 3600,
     }
     encoded = _jwt.encode(payload, secret, algorithm="HS256")
     os.environ["OPENAI_API_KEY"] = encoded
