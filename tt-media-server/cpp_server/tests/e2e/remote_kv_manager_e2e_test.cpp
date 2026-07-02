@@ -22,10 +22,12 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdlib>
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "messaging/kafka_consumer.hpp"
 #include "messaging/kafka_producer.hpp"
@@ -112,7 +114,8 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
   }
 
   std::unique_ptr<RemoteKVManagerImpl> makeManager(
-      std::chrono::milliseconds timeout = 30s) {
+      std::chrono::milliseconds timeout = 30s,
+      std::size_t migrationWorkerPoolSize = 1) {
     auto producer = std::make_unique<tt::messaging::KafkaProducer>(
         tt::messaging::KafkaProducerConfig{.brokers = brokers,
                                            .topic = requestTopic});
@@ -134,8 +137,8 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
                                            .topic = offloadAckTopic,
                                            .group_id = clientGroup + "-of"});
     return std::make_unique<RemoteKVManagerImpl>(
-        std::move(producer), std::move(consumer),
-        /*migrationWorkerPoolSize=*/1, timeout,
+        std::move(producer), std::move(consumer), migrationWorkerPoolSize,
+        timeout,
         /*sweepInterval=*/200ms, /*drainPollMs=*/50,
         std::move(downloadProducer), std::move(downloadConsumer),
         std::move(offloadProducer), std::move(offloadConsumer));
@@ -145,6 +148,25 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
     return std::make_unique<MockKafkaWorker>(brokers, requestTopic, ackTopic,
                                              workerGroup, migrationParser(),
                                              migrationResponder());
+  }
+
+  // Spin up N migration workers, each in its own consumer group so all N
+  // fan-out-receive the same request. Behaviors are applied 1:1 by index;
+  // workers are started before returning.
+  std::vector<std::unique_ptr<MockKafkaWorker>> makeMigrationWorkerPool(
+      std::vector<MockKafkaWorker::Behavior> behaviors) {
+    std::vector<std::unique_ptr<MockKafkaWorker>> workers;
+    workers.reserve(behaviors.size());
+    for (std::size_t i = 0; i < behaviors.size(); ++i) {
+      auto worker = std::make_unique<MockKafkaWorker>(
+          brokers, requestTopic, ackTopic,
+          workerGroup + "-" + std::to_string(i), migrationParser(),
+          migrationResponder());
+      worker->setBehavior(std::move(behaviors[i]));
+      worker->start();
+      workers.push_back(std::move(worker));
+    }
+    return workers;
   }
 
   std::unique_ptr<MockKafkaWorker> makeDownloadWorker() {
@@ -309,6 +331,49 @@ TEST_F(RemoteKVManagerE2ETest, WorkerReplyFailedPropagates) {
   worker->stop();
 }
 
+TEST_F(RemoteKVManagerE2ETest, MigrateSucceedsOnlyAfterAllPoolWorkersAck) {
+  constexpr std::size_t poolSize = 4;
+  auto manager = makeManager(/*timeout=*/30s, poolSize);
+
+  // Worker 0 replies immediately, the rest sleep 1s -- gives us a window
+  // where only 1/poolSize acks have landed at the manager.
+  auto workers = makeMigrationWorkerPool({
+      {.replyStatus = MigrationStatus::SUCCESSFUL, .replyDelay = 0ms},
+      {.replyStatus = MigrationStatus::SUCCESSFUL, .replyDelay = 1s},
+      {.replyStatus = MigrationStatus::SUCCESSFUL, .replyDelay = 1s},
+      {.replyStatus = MigrationStatus::SUCCESSFUL, .replyDelay = 1s},
+  });
+  ASSERT_EQ(workers.size(), poolSize);
+
+  std::this_thread::sleep_for(KAFKA_GROUP_JOIN_WARMUP);
+
+  const uint64_t id = manager->migrate(sampleRequest());
+  ASSERT_NE(id, 0u);
+
+  ASSERT_TRUE(waitFor([&] { return workers[0]->requestsReceived() == 1u; },
+                      POLL_DEADLINE))
+      << "worker 0 never consumed the request";
+
+  std::this_thread::sleep_for(400ms);
+
+  EXPECT_EQ(manager->getMigrationStatus(id), MigrationStatus::IN_PROGRESS)
+      << "manager marked migration SUCCESSFUL after only 1/" << poolSize
+      << " workers ack'd (missing per-migration ack quorum tracking)";
+
+  ASSERT_TRUE(waitFor(
+      [&] {
+        return manager->getMigrationStatus(id) == MigrationStatus::SUCCESSFUL;
+      },
+      POLL_DEADLINE))
+      << "migration did not reach SUCCESSFUL after all " << poolSize
+      << " workers ack'd within " << POLL_DEADLINE.count() << "ms";
+
+  for (auto& w : workers) {
+    EXPECT_EQ(w->requestsReceived(), 1u);
+    w->stop();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Download scenarios
 // ---------------------------------------------------------------------------
@@ -362,8 +427,7 @@ TEST_F(RemoteKVManagerE2ETest, DownloadDroppedFailsViaTimeoutSweeper) {
 
   ASSERT_TRUE(waitFor(
       [&] {
-        return manager->getDownloadResult(id).status ==
-               MigrationStatus::FAILED;
+        return manager->getDownloadResult(id).status == MigrationStatus::FAILED;
       },
       POLL_DEADLINE))
       << "sweeper never marked the dropped download FAILED within "
@@ -391,8 +455,7 @@ TEST_F(RemoteKVManagerE2ETest, DownloadReplyFailedPropagates) {
 
   ASSERT_TRUE(waitFor(
       [&] {
-        return manager->getDownloadResult(id).status ==
-               MigrationStatus::FAILED;
+        return manager->getDownloadResult(id).status == MigrationStatus::FAILED;
       },
       POLL_DEADLINE))
       << "FAILED download-ack did not propagate within "
@@ -474,8 +537,8 @@ TEST_F(RemoteKVManagerE2ETest, OffloadReplyFailedPropagates) {
   ASSERT_TRUE(waitFor(
       [&] { return manager->getOffloadStatus(id) == MigrationStatus::FAILED; },
       POLL_DEADLINE))
-      << "FAILED offload-ack did not propagate within "
-      << POLL_DEADLINE.count() << "ms";
+      << "FAILED offload-ack did not propagate within " << POLL_DEADLINE.count()
+      << "ms";
 
   EXPECT_EQ(worker->requestsReceived(), 1u);
 
