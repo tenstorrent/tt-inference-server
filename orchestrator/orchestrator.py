@@ -16,7 +16,7 @@ Flow (groom mode):
   5. If consensus -> report success.  If not -> dump state and exit non-zero.
 """
 
-import copy, re, textwrap
+import copy, re, subprocess, textwrap
 from orchestrator.personas import (
     IMPLEMENTER, REVIEWERS, ACCEPTANCE_REVIEWER,
     GROOMER, GROOM_REVIEWERS,
@@ -119,6 +119,42 @@ def _build_reviewer_messages(
     return shared_history + [{"role": "user", "content": prompt}]
 
 
+def _get_diff(repo_path: str) -> str:
+    # Capture diff of everything committed since main; fall back to empty string.
+    try:
+        r = subprocess.run(
+            ["git", "diff", "main..HEAD"],
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=repo_path,
+        )
+        return r.stdout if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def _ensure_fixes_line(pr_body: str, issue_number: int | None) -> str:
+    # Normalise the LLM-generated Fixes line so GitHub's closing-reference
+    # scanner always finds exactly the right token at column 0.
+    fixes_line = f"Fixes #{issue_number}" if issue_number is not None else "N/A"
+
+    # Strip any existing Fixes-related lines the model may have written.
+    cleaned_lines = [
+        line for line in pr_body.splitlines()
+        if not re.match(r"^\s*(?:Fixes|Closes|Resolves)\s*#\d+", line, re.IGNORECASE)
+        and not re.match(r"^\s*N/A\s*$", line)
+    ]
+    body = "\n".join(cleaned_lines).rstrip()
+
+    # Ensure the ## Fixes section header is present before appending.
+    if "## Fixes" not in body:
+        body += "\n\n## Fixes"
+
+    return body + "\n" + fixes_line
+
+
 def orchestrate(
     task: str,
     repo_path: str,
@@ -191,7 +227,7 @@ def orchestrate(
             prompt = (
                 "Please review the implementation and give your verdict."
                 if debate_round == 0
-                else "The implementer has revised. Please re-evaluate your previous objections."
+                else "The implementer has addressed your concerns. Please re-evaluate your previous objections."
             )
             messages = _build_reviewer_messages(reviewer, shared_history, task, prompt)
             review_text, rev_history = A.run(
@@ -257,35 +293,18 @@ def orchestrate(
 
     # -- Phase 4: Open PR -----------------------------------------------------
     log("\n=== OPENING PR ===")
-    review_summary = "\n".join(
-        f"- **{name}**: {'approved' if ok else obj}"
-        for name, (ok, obj) in verdicts.items()
-    )
-    # Sentinels are column-0 tokens that break textwrap.dedent's common-indent
-    # calculation, and they have no business appearing in a public PR body.
-    _SENTINELS = ("IMPLEMENTATION_COMPLETE",)
-    clean_impl = impl_text
-    for _s in _SENTINELS:
-        clean_impl = clean_impl.replace(_s, "").strip()
+
+    # Generate a clean PR body via a dedicated one-shot LLM call using the
+    # same model/provider as the implementer.  This decouples PR body quality
+    # from the implementer's final turn text, eliminating leaked think-block
+    # content and IMPLEMENTATION_COMPLETE sentinels from PR bodies.
+    diff = _get_diff(repo_path)
+    log("[orchestrator] generating PR body from git diff...")
+    pr_body_raw = A.generate_pr_body(implementer, task, diff, api_key=api_key)
+    log(f"[orchestrator] PR body generated ({len(pr_body_raw)} chars)")
 
     issue_number = _parse_issue_number(task)
-    fixes_line = f"Fixes #{issue_number}" if issue_number is not None else "N/A"
-    pr_body = textwrap.dedent(f"""
-        ## Summary
-        {task}
-
-        ## Changes
-        {clean_impl[:1000]}
-
-        ## Testing
-        {review_summary}
-
-        _Opened by multi-agent orchestrator._
-
-        ## Fixes
-    """).strip()
-    # Append at column 0 so GitHub's closing-reference scanner finds it.
-    pr_body += f"\n{fixes_line}"
+    pr_body = _ensure_fixes_line(pr_body_raw, issue_number)
 
     from orchestrator.tools import create_pr
     import time

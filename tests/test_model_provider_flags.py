@@ -214,6 +214,10 @@ class TestOrchestrateImplementerOverride:
             "orchestrator.tools.create_pr",
             lambda *a, **kw: "https://github.com/fake/pull/1",
         )
+        monkeypatch.setattr(
+            orch.A, "generate_pr_body",
+            lambda *a, **kw: "## Summary\nfake\n\n## Changes\n- x\n\n## Testing\nok\n\n## Fixes\nN/A",
+        )
 
     def test_model_overridden_on_implementer(self, monkeypatch):
         import orchestrator.orchestrator as orch
@@ -309,6 +313,10 @@ class TestOrchestrateReviewerOverride:
         monkeypatch.setattr(
             "orchestrator.tools.create_pr",
             lambda *a, **kw: "https://github.com/fake/pull/1",
+        )
+        monkeypatch.setattr(
+            orch.A, "generate_pr_body",
+            lambda *a, **kw: "## Summary\nfake\n\n## Changes\n- x\n\n## Testing\nok\n\n## Fixes\nN/A",
         )
 
     def test_model_overridden_on_all_reviewers(self, monkeypatch):

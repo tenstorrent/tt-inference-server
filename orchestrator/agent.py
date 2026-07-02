@@ -28,6 +28,29 @@ _THINK_RE = re.compile(r"<think>.*?</think>|</think>", re.DOTALL)
 # can locate and extract the most-recent reasoning block from a returned history.
 REASONING_INJECTION_PREFIX = "[System: Your reasoning from the previous turn:]"
 
+_PR_BODY_SYSTEM = (
+    "You are a technical writer producing a GitHub pull request description. "
+    "Output ONLY the PR body — no preamble, no commentary, no markdown code fences. "
+    "Use exactly these four sections in this order:\n\n"
+    "## Summary\n"
+    "<one short paragraph: what this PR does and why>\n\n"
+    "## Changes\n"
+    "<bullet list of files/components changed and what changed in each>\n\n"
+    "## Testing\n"
+    "<how the change was tested; tests added or updated>\n\n"
+    "## Fixes\n"
+    "Fixes #N   ← use the issue number from the task, or write N/A if there is none"
+)
+
+_PR_BODY_USER_TEMPLATE = """\
+Task description:
+{task}
+
+git diff (main..HEAD):
+{diff}
+
+Write the PR body now."""
+
 
 def _strip_think(text: str) -> str:
     # Replace with a space so adjacent words around a mid-sentence block aren't concatenated.
@@ -80,6 +103,62 @@ def _client(provider: str, api_key: str | None = None) -> OpenAI:
         # is not supported because the CLI --api-key flag targets LiteLLM only.
         key = entry["get_key"]()
     return OpenAI(base_url=entry["base_url"], api_key=key)
+
+
+def generate_pr_body(
+    implementer: dict,
+    task: str,
+    diff: str,
+    api_key: str | None = None,
+) -> str:
+    # No tools — model must produce the body text directly.
+    # Must use the implementer's model+provider, not a hardcoded fallback.
+    provider = implementer.get("provider", "litellm")
+    client = _client(provider, api_key)
+
+    # Diff can be very large; cap it so we don't blow past context limits.
+    diff_truncated = diff[:12_000] + ("\n[diff truncated]" if len(diff) > 12_000 else "")
+
+    messages = [
+        {"role": "system", "content": _PR_BODY_SYSTEM},
+        {
+            "role": "user",
+            "content": _PR_BODY_USER_TEMPLATE.format(task=task, diff=diff_truncated),
+        },
+    ]
+
+    kwargs: dict = dict(model=implementer["model"], messages=messages)
+    if "max_tokens" in implementer:
+        kwargs["max_tokens"] = implementer["max_tokens"]
+
+    _max_attempts = len(_BACKOFF_SECONDS) + 1
+    _attempt_start = time.monotonic()
+    for attempt in range(_max_attempts):
+        try:
+            response = client.chat.completions.create(**kwargs)
+            text = _strip_think(response.choices[0].message.content or "")
+            return text.strip()
+        except openai.RateLimitError as e:
+            if attempt >= len(_BACKOFF_SECONDS):
+                raise
+            reset_time = None
+            m = re.search(r"Limit resets at:\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+)", str(e))
+            if m:
+                try:
+                    reset_time = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S %Z").replace(tzinfo=timezone.utc)
+                except ValueError:
+                    reset_time = None
+            if reset_time is not None:
+                sleep_secs = max(0, (reset_time - datetime.now(timezone.utc)).total_seconds()) + 5
+                time.sleep(sleep_secs)
+            else:
+                time.sleep(_BACKOFF_SECONDS[attempt])
+        except (openai.InternalServerError, openai.APIConnectionError):
+            if attempt >= len(_BACKOFF_SECONDS):
+                raise
+            time.sleep(_BACKOFF_SECONDS[attempt])
+
+    raise RuntimeError("generate_pr_body: retry loop exited without response")
 
 
 def run(
