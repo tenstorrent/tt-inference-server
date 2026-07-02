@@ -186,20 +186,14 @@ IMAGE_VERSION=$(cat VERSION)
 TT_METAL_DOCKERFILE_URL=local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG}
 
 
-dev_image_tag=${IMAGE_REPO}/vllm-tt-metal-src-dev-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}${TAG_SUFFIX:+-${TAG_SUFFIX}}
 release_image_tag=${IMAGE_REPO}/vllm-tt-metal-src-release-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}${TAG_SUFFIX:+-${TAG_SUFFIX}}
 
-# Initialize flags for whether to build each image locally.
-build_dev_image=true
+# Initialize flag for whether to build the release image locally.
 build_release_image=true
 
 if [ "$force_build" = true ]; then
     echo "Force build option provided (--force-build). Skipping remote image checks; all images will be built locally."
 else
-    # Check for the images independently, negating check_image_exists return
-    if check_image_not_exists_remote "${dev_image_tag}" || check_image_not_exists_local "${dev_image_tag}"; then
-        build_dev_image=false
-    fi
     if check_image_not_exists_remote "${release_image_tag}" || check_image_not_exists_local "${release_image_tag}"; then
         build_release_image=false
     fi
@@ -252,9 +246,9 @@ if [ "$build" = true ]; then
         rm -rf "${tt_metal_build_dir}"
     fi
     
-    # build dev image
-    if [ "$build_dev_image" = true ]; then
-        echo "building: ${dev_image_tag}"
+    # build release image
+    if [ "$build_release_image" = true ]; then
+        echo "building: ${release_image_tag}"
         cd "$repo_root"
 
         # Generate model_spec.json before building (COPY'd into image)
@@ -275,25 +269,16 @@ generate_model_specs_json()
         echo "✅ Generated model_spec.json"
 
         docker build \
-        -t ${dev_image_tag} \
+        -t ${release_image_tag} \
         --build-arg TT_METAL_DOCKERFILE_URL="${TT_METAL_DOCKERFILE_URL}" \
         --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
         --build-arg TT_VLLM_COMMIT_SHA_OR_TAG="${TT_VLLM_COMMIT_SHA_OR_TAG}" \
         --build-arg CONTAINER_APP_UID="${CONTAINER_APP_UID}" \
         . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile
 
-        echo "✅ built image: ${dev_image_tag}"
+        echo "✅ built image: ${release_image_tag}"
     else
-        echo "skipping, build_dev_image=${build_dev_image}"
-    fi
-
-    # tag release image (identical to dev image, just different tag)
-    # NOTE: release image is only tagged during release flow
-    if [ "$release" = true ] && [ "$build_release_image" = true ]; then
-        echo "tagging: ${dev_image_tag} -> ${release_image_tag}"
-        docker tag "${dev_image_tag}" "${release_image_tag}"
-    else
-        echo "skipping, build_release_image=${build_release_image} or release=${release}"
+        echo "skipping, build_release_image=${build_release_image}"
     fi
 else
     echo "to build images use (--build)"
@@ -324,20 +309,13 @@ should_push_image() {
 if [ "${push_images}" = true ]; then
     echo "Pushing images to Docker Hub..."
 
-    for tag_var in dev_image_tag release_image_tag; do
-        image_tag="${!tag_var}"
-
-        # Skip release image unless explicitly marked as a release
-        if [ "${tag_var}" = "release_image_tag" ] && [ "${release}" != true ]; then
-            echo "Skipping ${image_tag}, release:=${release}"
-            continue
-        fi
-
-        if should_push_image "${image_tag}"; then
-            echo "Pushing ${image_tag} ..."
-            docker push "${image_tag}"
-        fi
-    done
+    # Skip push unless explicitly marked as a release
+    if [ "${release}" != true ]; then
+        echo "Skipping push for ${release_image_tag}, release:=${release}"
+    elif should_push_image "${release_image_tag}"; then
+        echo "Pushing ${release_image_tag} ..."
+        docker push "${release_image_tag}"
+    fi
 fi
 
 
