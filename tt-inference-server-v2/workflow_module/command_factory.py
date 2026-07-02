@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime as _dt
 import json
 import logging
 import os
@@ -307,10 +306,15 @@ def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
             "will be minted. Install pyjwt to enable JWT-protected servers."
         )
         return ""
+    # NOTE: the payload must match the server's get_encoded_api_key()
+    # (utils/vllm_run_utils.py) byte-for-byte. vLLM sets VLLM_API_KEY to that
+    # token and authorizes by exact string comparison, not JWT validation, so
+    # any extra claim (e.g. "exp") produces a different signature and a 401 on
+    # every request. Keep this to {team_id, token_id} only, matching the server
+    # and the in-container reference client (example_requests_client.py).
     payload = {
         "team_id": "tenstorrent",
         "token_id": "debug-test",
-        "exp": int(_dt.datetime.now(_dt.timezone.utc).timestamp()) + 24 * 3600,
     }
     encoded = _jwt.encode(payload, secret, algorithm="HS256")
     os.environ["OPENAI_API_KEY"] = encoded
