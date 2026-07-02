@@ -20,6 +20,15 @@ DEFAULT_MAX_TOOL_ROUNDS = 100
 # Tools the orchestrator calls directly; agents must never invoke them.
 _ORCHESTRATOR_ONLY = frozenset({"create_pr"})
 
+# Matches complete <think>...</think> blocks and any bare </think> closers
+# left behind by reasoning models that emit unclosed tags.
+_THINK_RE = re.compile(r"<think>.*?</think>|</think>", re.DOTALL)
+
+
+def _strip_think(text: str) -> str:
+    # Replace with a space so adjacent words around a mid-sentence block aren't concatenated.
+    return _THINK_RE.sub(" ", text).strip()
+
 
 class MaxToolRoundsError(Exception):
     """Raised when an agent exhausts its max_tool_rounds budget without
@@ -124,8 +133,15 @@ def run(
             raise RuntimeError("retry loop exited without response")
         msg = response.choices[0].message
 
+        content = _strip_think(msg.content or "")
+
+        # Skip pure-reasoning responses without adding anything to history;
+        # the model hasn't actually responded yet.
+        if not msg.tool_calls and not content:
+            continue
+
         # Append assistant turn (convert to dict safely)
-        assistant_entry = {"role": "assistant", "content": msg.content or ""}
+        assistant_entry = {"role": "assistant", "content": content}
         if msg.tool_calls:
             assistant_entry["tool_calls"] = [
                 {
@@ -138,7 +154,7 @@ def run(
         history.append(assistant_entry)
 
         if not msg.tool_calls:
-            return msg.content or "", history
+            return content, history
 
         # Execute each tool call and append results
         for tc in msg.tool_calls:
