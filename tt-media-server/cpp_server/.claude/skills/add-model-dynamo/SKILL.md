@@ -16,6 +16,7 @@ description: Checklist for onboarding a new LLM to the cpp_server inference back
 | 4 | `src/utils/tokenizers/tokenizer.cpp` | `tokenizerDirForModel`, `createTokenizer` (defaults to `DeepseekTokenizer`), `staticInfoFor` + a `StaticTokenizerInfo` (eos/stop/think token ids) |
 | 5 | `src/dynamo/discovery.cpp` | `runtimeParsersForModelType` (reasoning + tool-call parser ids), `buildMdcJson` (publishes `generation_config.json`) |
 | 6 | deploy + verify | `deploy.sh --hf-model-id <hf-id>`, confirm loads / registers / answers |
+| 7 | **ask the user** | verify the **blaze wire format** works / isn't different for this model (`blaze_runner/blaze_utils.hpp`) |
 
 Reference: [tenstorrent/tt-inference-server#4143](https://github.com/tenstorrent/tt-inference-server/pull/4143) (and the GPT-OSS/MiniMax onboarding commits).
 
@@ -87,3 +88,16 @@ Confirm: `docker logs tt-cpp-worker` shows the new tokenizer loaded and the work
 registered with etcd; a reasoning model reports `reasoning_tokens` in the final-chunk
 usage; tool-call output parses (the `runtimeParsersForModelType` ids are correct);
 and the frontend didn't reject the model for a missing `eos_token_id`.
+
+7. **Verify the blaze wire format.** As a final step, **ask the user to confirm the
+   model's blaze wire format works** — i.e. check whether this model uses a
+   *different* request/response wire format to the blaze engine than the existing
+   models (see `blaze_runner/blaze_utils.hpp`). A new model family can change the
+   tensor/prompt encoding expected by the engine; if so, the model may load and
+   register cleanly yet produce garbage tokens. Don't assume the default works —
+   have the user verify before considering onboarding complete.
+
+## Related skills
+
+For the full deploy + verification flow (bring up the stack, reach the frontend,
+read worker/etcd logs, troubleshoot), see the **`run-dynamo-server`** skill.
