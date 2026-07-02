@@ -1126,6 +1126,7 @@ if(KAFKA_ENABLED)
         src/messaging/kafka_consumer.cpp
         src/messaging/migration_message.cpp
         src/services/remote_kv_manager_impl.cpp
+        src/services/remote_kv_manager_adapter.cpp
         src/utils/logger.cpp
     )
     target_include_directories(messaging PUBLIC
