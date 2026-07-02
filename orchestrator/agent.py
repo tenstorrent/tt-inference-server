@@ -24,10 +24,29 @@ _ORCHESTRATOR_ONLY = frozenset({"create_pr"})
 # left behind by reasoning models that emit unclosed tags.
 _THINK_RE = re.compile(r"<think>.*?</think>|</think>", re.DOTALL)
 
+# Prefix used when injecting prior reasoning into history so orchestrator.py
+# can locate and extract the most-recent reasoning block from a returned history.
+REASONING_INJECTION_PREFIX = "[System: Your reasoning from the previous turn:]"
+
 
 def _strip_think(text: str) -> str:
     # Replace with a space so adjacent words around a mid-sentence block aren't concatenated.
     return _THINK_RE.sub(" ", text).strip()
+
+
+# Truncate reasoning to keep context growth bounded; 8 k chars covers all
+# realistic plans while preventing a runaway model from filling the window.
+_MAX_REASONING_CHARS = 8_000
+
+def _make_reasoning_message(reasoning_content: str) -> dict:
+    # Coerce to str defensively — some provider SDKs return non-string objects.
+    safe = str(reasoning_content)[:_MAX_REASONING_CHARS]
+    body = (
+        f"{REASONING_INJECTION_PREFIX}\n"
+        f"<reasoning>\n{safe}\n</reasoning>\n"
+        "Use this as your plan. Proceed with implementation."
+    )
+    return {"role": "system", "content": body}
 
 
 class MaxToolRoundsError(Exception):
@@ -71,10 +90,16 @@ def run(
     verbose: bool = True,
     api_key: str | None = None,
     exclude_tools: set[str] | None = None,
+    inject_reasoning: bool = False,
+    prior_reasoning: str | None = None,
 ) -> tuple[str, list[dict]]:
     provider = persona.get("provider", "litellm")
     client = _client(provider, api_key)
     history = [{"role": "system", "content": persona["system"]}] + messages
+
+    # Prepend prior-turn reasoning so the model can resume from its plan.
+    if inject_reasoning and prior_reasoning:
+        history.append(_make_reasoning_message(prior_reasoning))
 
     blocked = _ORCHESTRATOR_ONLY | (exclude_tools or set())
     agent_tools = [t for t in T.DEFS if t["function"]["name"] not in blocked]
@@ -207,5 +232,12 @@ def run(
                 "tool_call_id": tc.id,
                 "content": result,
             })
+
+        # Carry forward any reasoning the model emitted so it can resume its plan
+        # on the next tool-call iteration without re-deriving it from scratch.
+        if inject_reasoning:
+            reasoning = getattr(msg, "reasoning_content", None)
+            if reasoning and isinstance(reasoning, (str, bytes, int, float)):
+                history.append(_make_reasoning_message(reasoning))
 
     raise MaxToolRoundsError(persona["name"], max_tool_rounds, history)
