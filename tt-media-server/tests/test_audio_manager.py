@@ -3,19 +3,16 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import io
-import types
 import wave
+from unittest.mock import patch
 
 import numpy as np
 import pytest
-from unittest.mock import patch
 
-# Avoid loading silero_vad/torchaudio (needs libtorchaudio.so in CI). audio_manager
-# only imports them when settings.model_service == AUDIO; patch so that branch is skipped.
-import config.settings
-
-with patch.object(config.settings.settings, "model_service", None):
-    from utils.audio_manager import AudioManager, _installLegacyTorchLoadDefault
+# audio_manager no longer imports torch/whisperx at module load time; those
+# packages live in the separate audio_venv and are only invoked via the
+# subprocess client. We can import freely without any module-load workaround.
+from utils.audio_manager import AudioManager, AudioVenvClient
 
 
 class DummySettings:
@@ -29,7 +26,6 @@ class DummySettings:
     preprocessing_model_weights_path = None
 
 
-@patch("utils.audio_manager.settings", new=DummySettings())
 def generate_dummy_wav_bytes():
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wf:
@@ -40,6 +36,7 @@ def generate_dummy_wav_bytes():
     return buffer.getvalue()
 
 
+@patch("utils.audio_manager.settings", new=DummySettings())
 def test_to_audio_array_base64():
     manager = AudioManager()
     wav_bytes = generate_dummy_wav_bytes()
@@ -102,70 +99,179 @@ def test_normalize_speaker_ids():
     assert norm[2]["speaker"] == "SPEAKER_00"
 
 
-def _makeFakeTorchModule():
-    """Return (fakeTorch, callLog) where fakeTorch.load records its calls."""
-    callLog = []
-
-    def fakeLoad(*args, **kwargs):
-        callLog.append((args, dict(kwargs)))
-        return "loaded"
-
-    return types.SimpleNamespace(load=fakeLoad), callLog
+# ---------------------------------------------------------------------------
+# AudioVenvClient
+# ---------------------------------------------------------------------------
 
 
-def test_install_legacy_torch_load_default_replaces_load():
-    fakeTorch, _ = _makeFakeTorchModule()
-    originalLoad = fakeTorch.load
-    _installLegacyTorchLoadDefault(fakeTorch)
-    assert fakeTorch.load is not originalLoad
-    assert fakeTorch.load.__name__ == "_torchLoadLegacyDefault"
+class _RecordingLogger:
+    """Minimal logger stand-in that just records messages so tests can assert."""
+
+    def __init__(self):
+        self.errors: list[str] = []
+        self.warnings: list[str] = []
+        self.infos: list[str] = []
+
+    def error(self, msg):
+        self.errors.append(msg)
+
+    def warning(self, msg):
+        self.warnings.append(msg)
+
+    def info(self, msg):
+        self.infos.append(msg)
 
 
-def test_install_legacy_torch_load_default_returns_wrapper():
-    fakeTorch, _ = _makeFakeTorchModule()
-    wrapper = _installLegacyTorchLoadDefault(fakeTorch)
-    assert wrapper is fakeTorch.load
+def test_audio_venv_client_assert_available_raises_when_missing(tmp_path):
+    client = AudioVenvClient(
+        logger=_RecordingLogger(),
+        python_executable=str(tmp_path / "does-not-exist"),
+        script_path=tmp_path / "does-not-exist.py",
+    )
+    assert client.is_available() is False
+    with pytest.raises(FileNotFoundError):
+        client.assert_available()
 
 
-def test_legacy_default_forces_false_when_kwarg_missing():
-    fakeTorch, callLog = _makeFakeTorchModule()
-    _installLegacyTorchLoadDefault(fakeTorch)
-    fakeTorch.load("/tmp/model.pt")
-    assert callLog[0][1] == {"weights_only": False}
+def test_audio_venv_client_run_returns_segments_on_success(tmp_path, monkeypatch):
+    logger = _RecordingLogger()
+    fake_python = tmp_path / "python"
+    fake_script = tmp_path / "diarize.py"
+    fake_python.write_text("")
+    fake_script.write_text("")
+
+    expected_segments = [{"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"}]
+
+    def fake_run(cmd, capture_output, text, timeout):
+        # cmd should contain --audio, --output, --mode, and our optional flags
+        assert "--audio" in cmd
+        assert "--output" in cmd
+        assert "--mode" in cmd
+        assert "diarize" in cmd
+        assert "--model-name" in cmd
+        assert "pyannote/test" in cmd
+        assert "--hf-token" in cmd
+        assert "secret" in cmd
+        # Simulate the subprocess writing its JSON response to the output path
+        output_idx = cmd.index("--output") + 1
+        import json as _json
+
+        with open(cmd[output_idx], "w") as f:
+            _json.dump({"status": "success", "segments": expected_segments}, f)
+
+        class _Result:
+            returncode = 0
+            stderr = ""
+
+        return _Result()
+
+    monkeypatch.setattr("utils.audio_manager.subprocess.run", fake_run)
+
+    client = AudioVenvClient(
+        logger=logger,
+        python_executable=str(fake_python),
+        script_path=fake_script,
+    )
+    segments = client.run(
+        mode="diarize",
+        audio_array=np.zeros(16, dtype=np.float32),
+        timeout_seconds=10,
+        model_name="pyannote/test",
+        hf_token="secret",
+    )
+    assert segments == expected_segments
+    assert logger.errors == []
 
 
-def test_legacy_default_forces_false_when_kwarg_is_none():
-    # The actual scenario hit by lightning_fabric._load: it forwards
-    # weights_only=None explicitly, which a plain dict.setdefault() would miss.
-    fakeTorch, callLog = _makeFakeTorchModule()
-    _installLegacyTorchLoadDefault(fakeTorch)
-    fakeTorch.load("/tmp/model.pt", weights_only=None)
-    assert callLog[0][1] == {"weights_only": False}
+def test_audio_venv_client_run_returns_none_on_nonzero_exit(tmp_path, monkeypatch):
+    logger = _RecordingLogger()
+    fake_python = tmp_path / "python"
+    fake_script = tmp_path / "diarize.py"
+    fake_python.write_text("")
+    fake_script.write_text("")
+
+    def fake_run(cmd, capture_output, text, timeout):
+        class _Result:
+            returncode = 1
+            stderr = "boom"
+
+        return _Result()
+
+    monkeypatch.setattr("utils.audio_manager.subprocess.run", fake_run)
+
+    client = AudioVenvClient(
+        logger=logger,
+        python_executable=str(fake_python),
+        script_path=fake_script,
+    )
+    segments = client.run(
+        mode="vad",
+        audio_array=np.zeros(16, dtype=np.float32),
+        timeout_seconds=10,
+    )
+    assert segments is None
+    assert any("boom" in e for e in logger.errors)
 
 
-def test_legacy_default_respects_explicit_true():
-    fakeTorch, callLog = _makeFakeTorchModule()
-    _installLegacyTorchLoadDefault(fakeTorch)
-    fakeTorch.load("/tmp/model.pt", weights_only=True)
-    assert callLog[0][1] == {"weights_only": True}
+def test_audio_venv_client_run_returns_none_on_timeout(tmp_path, monkeypatch):
+    import subprocess as _subprocess
+
+    logger = _RecordingLogger()
+    fake_python = tmp_path / "python"
+    fake_script = tmp_path / "diarize.py"
+    fake_python.write_text("")
+    fake_script.write_text("")
+
+    def fake_run(cmd, capture_output, text, timeout):
+        raise _subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
+
+    monkeypatch.setattr("utils.audio_manager.subprocess.run", fake_run)
+
+    client = AudioVenvClient(
+        logger=logger,
+        python_executable=str(fake_python),
+        script_path=fake_script,
+    )
+    segments = client.run(
+        mode="diarize",
+        audio_array=np.zeros(16, dtype=np.float32),
+        timeout_seconds=1,
+    )
+    assert segments is None
+    assert any("timed out" in e for e in logger.errors)
 
 
-def test_legacy_default_respects_explicit_false():
-    fakeTorch, callLog = _makeFakeTorchModule()
-    _installLegacyTorchLoadDefault(fakeTorch)
-    fakeTorch.load("/tmp/model.pt", weights_only=False)
-    assert callLog[0][1] == {"weights_only": False}
+def test_audio_venv_client_run_returns_none_on_error_payload(tmp_path, monkeypatch):
+    logger = _RecordingLogger()
+    fake_python = tmp_path / "python"
+    fake_script = tmp_path / "diarize.py"
+    fake_python.write_text("")
+    fake_script.write_text("")
 
+    def fake_run(cmd, capture_output, text, timeout):
+        output_idx = cmd.index("--output") + 1
+        import json as _json
 
-def test_legacy_default_forwards_positional_and_extra_kwargs():
-    fakeTorch, callLog = _makeFakeTorchModule()
-    _installLegacyTorchLoadDefault(fakeTorch)
-    fakeTorch.load("/tmp/model.pt", "cpu", map_location="cpu")
-    assert callLog[0][0] == ("/tmp/model.pt", "cpu")
-    assert callLog[0][1] == {"map_location": "cpu", "weights_only": False}
+        with open(cmd[output_idx], "w") as f:
+            _json.dump({"status": "error", "error": "model not found"}, f)
 
+        class _Result:
+            returncode = 0
+            stderr = ""
 
-def test_legacy_default_preserves_return_value():
-    fakeTorch, _ = _makeFakeTorchModule()
-    _installLegacyTorchLoadDefault(fakeTorch)
-    assert fakeTorch.load("/tmp/model.pt") == "loaded"
+        return _Result()
+
+    monkeypatch.setattr("utils.audio_manager.subprocess.run", fake_run)
+
+    client = AudioVenvClient(
+        logger=logger,
+        python_executable=str(fake_python),
+        script_path=fake_script,
+    )
+    segments = client.run(
+        mode="diarize",
+        audio_array=np.zeros(16, dtype=np.float32),
+        timeout_seconds=10,
+    )
+    assert segments is None
+    assert any("model not found" in e for e in logger.errors)
