@@ -27,10 +27,14 @@ _SYS_MSG = [{"role": "system", "content": "s"}]
 
 
 def _stub_create_pr(monkeypatch):
-    """Prevent real git/gh calls by replacing create_pr with a no-op."""
+    """Prevent real git/gh calls by replacing create_pr and generate_pr_body with no-ops."""
     import orchestrator.orchestrator as orch
     import orchestrator.tools as tools_mod
     monkeypatch.setattr(tools_mod, "create_pr", lambda *a, **kw: "https://github.com/fake/pull/1")
+    monkeypatch.setattr(
+        orch.A, "generate_pr_body",
+        lambda *a, **kw: "## Summary\nfake\n\n## Changes\n- x\n\n## Testing\nok\n\n## Fixes\nN/A",
+    )
 
 
 # ---------------------------------------------------------------------------
