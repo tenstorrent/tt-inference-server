@@ -22,7 +22,7 @@ from orchestrator.personas import (
     GROOMER, GROOM_REVIEWERS,
 )
 import orchestrator.agent as A
-from orchestrator.agent import MaxToolRoundsError, DEFAULT_MAX_TOOL_ROUNDS
+from orchestrator.agent import MaxToolRoundsError, DEFAULT_MAX_TOOL_ROUNDS, REASONING_INJECTION_PREFIX
 
 # close_issue is only valid for the groomer (closing duplicates). The
 # implementer must not close issues — that happens via Closes #N at merge time.
@@ -64,6 +64,30 @@ def _extract_verdict(text: str) -> tuple[bool, str]:
     if "APPROVED" in text[-300:].upper():
         return True, ""
     return False, text[-500:]
+
+
+def _extract_last_reasoning(history: list[dict]) -> str | None:
+    # Scan backwards for the most-recent injected reasoning system message.
+    for msg in reversed(history):
+        if msg.get("role") == "system":
+            content = msg.get("content", "")
+            if content.startswith(REASONING_INJECTION_PREFIX):
+                # Strip the wrapper lines; return just the text inside <reasoning>.
+                # Greedy .* matches up to the LAST </reasoning>, so embedded tags in
+                # the content (which have no outer newline+tag to anchor against) are
+                # captured intact rather than truncating at the first occurrence.
+                m = re.search(r"<reasoning>\n(.*)\n</reasoning>", content, re.DOTALL)
+                return m.group(1) if m else None
+    return None
+
+
+def _strip_reasoning_messages(history: list[dict]) -> list[dict]:
+    # Reasoning injection system messages are implementer-internal; strip them
+    # so reviewer A.run() calls never see mid-conversation system roles.
+    return [
+        m for m in history
+        if not (m.get("role") == "system" and m.get("content", "").startswith(REASONING_INJECTION_PREFIX))
+    ]
 
 
 def _build_reviewer_messages(
@@ -140,6 +164,7 @@ def orchestrate(
             verbose=verbose,
             api_key=api_key,
             exclude_tools=_IMPLEMENTER_EXCLUDED_TOOLS,
+            inject_reasoning=True,
         )
     except MaxToolRoundsError as exc:
         log(f"\n=== IMPLEMENTER ABORTED: {exc} ===")
@@ -147,8 +172,9 @@ def orchestrate(
         return False
     log(f"[implementer] {impl_text[:300]}...")
 
-    # Strip the system message; shared context for reviewers starts here
-    shared_history = impl_history[1:]  # drop system prompt
+    # Strip the system prompt and any reasoning injection messages; the latter
+    # are implementer-internal and must not appear in reviewer context.
+    shared_history = _strip_reasoning_messages(impl_history[1:])
 
     # -- Phase 2 + 3: Review / debate loop ------------------------------------
     for debate_round in range(max_debate_rounds + 1):
@@ -207,6 +233,9 @@ def orchestrate(
             When done, end with: IMPLEMENTATION_COMPLETE
         """).strip()
 
+        # Carry any reasoning the implementer produced into the rebuttal turn.
+        last_reasoning = _extract_last_reasoning(impl_history)
+
         try:
             impl_text, impl_history = A.run(
                 implementer,
@@ -216,13 +245,15 @@ def orchestrate(
                 verbose=verbose,
                 api_key=api_key,
                 exclude_tools=_IMPLEMENTER_EXCLUDED_TOOLS,
+                inject_reasoning=True,
+                prior_reasoning=last_reasoning,
             )
         except MaxToolRoundsError as exc:
             log(f"\n=== IMPLEMENTER ABORTED (rebuttal round {debate_round + 1}): {exc} ===")
             log("Aborting run — implementer hit tool-round cap during rebuttal; work is incomplete.")
             return False
         log(f"[implementer] {impl_text[:300]}...")
-        shared_history = impl_history[1:]  # updated shared context
+        shared_history = _strip_reasoning_messages(impl_history[1:])
 
     # -- Phase 4: Open PR -----------------------------------------------------
     log("\n=== OPENING PR ===")
