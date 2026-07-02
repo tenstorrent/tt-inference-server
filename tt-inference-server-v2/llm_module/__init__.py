@@ -22,7 +22,7 @@ from .drivers import (
 )
 from .prefix_cache import PrefixCacheRun, build_runs as build_prefix_cache_runs
 from .runner import LLMPerformanceRunner, RunnerResult
-from .server_control import HttpServerController, ServerController
+from .server_control import HttpServerController, RemoteOpenAIController, ServerController
 from .spec_decode import SpecDecodeRun, build_runs as build_spec_decode_runs
 
 __all__ = [
@@ -53,4 +53,5 @@ __all__ = [
     "RunnerResult",
     "ServerController",
     "HttpServerController",
+    "RemoteOpenAIController",
 ]

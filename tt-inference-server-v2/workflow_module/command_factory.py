@@ -123,6 +123,7 @@ def _build_context(
         spec_tests_num_prompts_cap=args.num_prompts,
         runtime_config=runtime_config,
         server_url=_resolve_server_url(args, runtime_config),
+        remote_server=_is_remote_server(args, runtime_config),
     )
 
 
@@ -141,6 +142,15 @@ def _resolve_server_url(
     if explicit:
         return explicit
     return resolve_deploy_url(runtime_config)
+
+
+def _is_remote_server(
+    args: argparse.Namespace, runtime_config: Optional[RuntimeConfig]
+) -> bool:
+    return bool(
+        getattr(args, "server_url", None)
+        or (runtime_config is not None and getattr(runtime_config, "server_url", None))
+    )
 
 
 def _resolve_eval_config(model_name: str):
@@ -182,9 +192,13 @@ def _build_llm_bench_options(args: argparse.Namespace) -> Optional[LLMBenchOptio
     """
     if getattr(args, "workflow", None) not in _LLM_BENCH_WORKFLOWS:
         return None
-    if getattr(args, "prefix_cache", False):
+    if getattr(args, "workflow", None) == "benchmarks" and getattr(
+        args, "prefix_cache", False
+    ):
         return None
-    if getattr(args, "spec_decode", False):
+    if getattr(args, "workflow", None) == "benchmarks" and getattr(
+        args, "spec_decode", False
+    ):
         return None
     return LLMBenchOptions(
         tools=getattr(args, "tools", None) or "vllm",
@@ -201,12 +215,18 @@ def _release_bench_venv_python(args: argparse.Namespace) -> Optional[str]:
     A release run executes in the V2_RUN_SCRIPT venv, so pin the default
     perf-tool venv (V2_LLM_VLLM); the v2 bridge provisions it before run.py.
     """
+    from workflows.workflow_types import WorkflowVenvType
+
+    return _release_venv_python(args, WorkflowVenvType.V2_LLM_VLLM)
+
+
+def _release_venv_python(args: argparse.Namespace, venv_type) -> Optional[str]:
+    """Interpreter pinned for release children that need a tool venv."""
     if getattr(args, "workflow", None) != "release":
         return None
-    from workflows.workflow_types import WorkflowVenvType
     from workflows.workflow_venvs import VENV_CONFIGS
 
-    return str(VENV_CONFIGS[WorkflowVenvType.V2_LLM_VLLM].venv_python)
+    return str(VENV_CONFIGS[venv_type].venv_python)
 
 
 def _build_llm_eval_options(args: argparse.Namespace) -> Optional[LLMEvalOptions]:
@@ -238,6 +258,8 @@ def _build_prefix_cache_options(
     """
     if not getattr(args, "prefix_cache", False):
         return None
+    from workflows.workflow_types import WorkflowVenvType
+
     return PrefixCacheOptions(
         preset=args.prefix_cache_preset,
         scenarios=args.prefix_cache_scenarios,
@@ -246,6 +268,8 @@ def _build_prefix_cache_options(
         scenarios_json=args.prefix_cache_scenarios_json,
         trace_path=args.prefix_cache_trace,
         auth_token=_resolve_auth_token(args),
+        metrics_urls=tuple(getattr(args, "prefix_cache_metrics_url", None) or ()),
+        venv_python=_release_venv_python(args, WorkflowVenvType.V2_PREFIX_CACHE),
     )
 
 
@@ -261,10 +285,13 @@ def _build_spec_decode_options(
     """
     if not getattr(args, "spec_decode", False):
         return None
+    from workflows.workflow_types import WorkflowVenvType
+
     return SpecDecodeOptions(
         preset=args.spec_decode_preset,
         warmup_requests=args.spec_decode_warmup_requests,
         auth_token=_resolve_auth_token(args),
+        venv_python=_release_venv_python(args, WorkflowVenvType.V2_SPEC_DECODE),
     )
 
 
@@ -288,17 +315,21 @@ def _resolve_auth_token(args: argparse.Namespace) -> str:
 
 
 def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
-    """Mint a ``debug-test`` JWT and export it as ``OPENAI_API_KEY``.
+    """Resolve the bearer token used by OpenAI-compatible benchmark clients.
 
     Looks at the ``--jwt-secret`` arg first, then ``$JWT_SECRET``. When no
-    secret is supplied, returns the empty string (auth disabled). Matches the
-    inference server's expected debug token for JWT auth. Used for the vLLM
+    secret is supplied, falls back to literal ``API_KEY`` / ``OPENAI_API_KEY``
+    for remote console endpoints. Matches the inference server's expected
+    debug token for JWT auth when a secret is present. Used for the vLLM
     (tt-metal) server; forge/media servers go through the literal-key branch
     in :func:`_resolve_auth_token`.
     """
     secret = jwt_secret_arg or os.getenv("JWT_SECRET", "")
     if not secret:
-        return ""
+        literal_key = os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY", "")
+        if literal_key:
+            os.environ["OPENAI_API_KEY"] = literal_key
+        return literal_key
     try:
         import jwt as _jwt
     except ImportError:
