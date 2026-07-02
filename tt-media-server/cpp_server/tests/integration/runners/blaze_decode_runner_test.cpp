@@ -396,7 +396,10 @@ TEST(BlazeDecodeRunnerIntegrationTest,
 
 TEST(BlazeDecodeRunnerIntegrationTest, MockSchedulerFlatTokenStream) {
   EnvSetter mockPrefillLatencyMs("MOCK_PREFILL_CHUNK_LATENCY_MS", "0");
-  EnvSetter mockDecodeTokenLatencyUs("MOCK_DECODE_TOKEN_LATENCY_US", "0");
+  // Zero the per-stage latency: with MOCK_SCHEDULER this drives both the
+  // pipeline-fill (first-token) latency and the derived per-slot decode
+  // cadence, so tokens are emitted with no artificial delay.
+  EnvSetter mockStageLatencyUs("MOCK_STAGE_LATENCY_US", "0");
 
   BlazeDecodeRunnerHarness harness(DEFAULT_STOP_TOKEN_IDS,
                                    config::ModelRunnerType::MOCK_SCHEDULER);
