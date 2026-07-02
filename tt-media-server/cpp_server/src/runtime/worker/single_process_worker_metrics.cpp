@@ -49,7 +49,7 @@ void SingleProcessWorkerMetrics::initialize(int workerId,
   shm_->setPid(workerId, static_cast<int32_t>(getpid()));
 
   // Seed sp_pipeline timestamps so age starts at ~0 instead of since-epoch.
-  if (layout == MetricsLayout::SP_PIPELINE_RUNNER) {
+  if (layout == MetricsLayout::BLAZE_RUNNER) {
     auto now = nowMs();
     shm_->storeScratch(workerId, sp_pipeline::SCRATCH_STEP_EPOCH_MS, now);
     shm_->storeScratch(workerId, sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS,

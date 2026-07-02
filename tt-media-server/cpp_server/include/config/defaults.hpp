@@ -20,7 +20,6 @@ constexpr const char* TT_PYTHON_PATH = "..";
 constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
 constexpr const char* SOCKET_HOST = "localhost";
 constexpr uint16_t SOCKET_PORT = 9000;
-constexpr const char* SOCKET_TRANSPORT = "zmq";  // "tcp" or "zmq"
 
 // PrefillGateway integration. When true, decode connects as CLIENT to the
 // gateway and prefill listens as SERVER for the gateway to dial in.
@@ -145,5 +144,12 @@ constexpr const char* DYNAMO_ETCD_ENDPOINTS = "http://etcd:2379/";
 // refreshes the lease at half this interval so a missed tick doesn't trip
 // the reaper.
 constexpr int64_t DYNAMO_ETCD_LEASE_TTL_SECS = 10;
+
+// MockSchedulers (MOCK_USE_SCHEDULER=1 on mock_pipeline backend).
+constexpr bool MOCK_USE_SCHEDULER = false;
+constexpr unsigned MOCK_PREFILL_CHUNK_LATENCY_MS = 1353;
+constexpr unsigned MOCK_DECODE_TOKEN_LATENCY_US =
+    64 * 44;  // 64 * 44us = 2816us
+constexpr unsigned MOCK_DECODE_TOKEN_ID = 12345;
 
 }  // namespace tt::config::defaults

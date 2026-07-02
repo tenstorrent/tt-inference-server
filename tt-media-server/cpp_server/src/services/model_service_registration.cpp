@@ -29,6 +29,7 @@
 #ifdef ENABLE_BLAZE
 #include "runtime/runners/blaze_runner/blaze_decode_runner.hpp"
 #include "runtime/runners/blaze_runner/blaze_prefill_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_scheduler_factory.hpp"
 #endif
 
 namespace tt::services {
@@ -70,10 +71,12 @@ void registerLLM() {
     const auto& llm = std::get<config::LLMConfig>(cfg);
     if (config::llmMode() != config::LLMMode::PREFILL_ONLY) {
       return std::make_unique<runners::blaze::BlazeDecodeRunner>(
-          llm, resultQueue, taskQueue, cancelQueue);
+          llm, runners::blaze::makeDecodeScheduler(llm), resultQueue, taskQueue,
+          cancelQueue);
     } else {
       return std::make_unique<runners::blaze::BlazePrefillRunner>(
-          llm, resultQueue, taskQueue, cancelQueue);
+          llm, runners::blaze::makePrefillScheduler(llm), resultQueue,
+          taskQueue, cancelQueue);
     }
   };
   runners.registerIpcRunner(config::ModelService::LLM,
