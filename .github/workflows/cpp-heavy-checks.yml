@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       run_split_tests:
-        description: 'Run the prefill/decode split test)'
+        description: 'Run the prefill/decode split test'
         type: boolean
         default: false
 
