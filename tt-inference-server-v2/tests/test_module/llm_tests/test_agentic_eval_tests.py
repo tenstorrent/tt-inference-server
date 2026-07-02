@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -53,6 +54,9 @@ class FakeTerminalBenchConfig:
     quiet: bool = True
     yes: bool = True
     task_names_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
+    agent_import_path: Optional[str] = None
+    environment_env: Dict[str, str] = field(default_factory=dict)
+    verifier_env: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -150,22 +154,30 @@ class TestAgenticParser:
 
         assert block.kind == "evals"
         assert block.task_type == "llm"
+        assert block.title == "LLM Eval — terminal_bench_2"
         assert block.targets["task_name"] == "terminal_bench_2"
-        assert abs(block.data["accuracy"] - 0.62) < 1e-9
-        assert block.data["n_trials"] == 89
-        assert block.data["n_resolved"] == 3
+        assert block.targets["n_trials"] == 89
+        assert block.targets["n_resolved"] == 3
+        assert abs(block.data["score"] - 62.0) < 1e-9
+        assert block.data["task_name"] == "terminal_bench_2"
+        assert block.data["published_score"] == 0.5
+        assert block.data["gpu_reference_score"] == 0.45
+        assert abs(block.data["ratio_to_published"] - (62.0 / 0.5)) < 1e-9
         assert block.data["accuracy_check"] == ReportCheckTypes.PASS
+        assert "success" not in block.data
+        assert "accuracy" not in block.data
 
     def test_failure_block_uses_failing_accuracy_check(self):
         parser = AgenticEvalParser(task_name="terminal_bench_2", score=FakeScore())
         block = parser.failure_block(return_code=7, device="N150")
 
         assert block.kind == "evals"
-        assert block.data == {
-            "success": False,
-            "accuracy_check": 3,
-            "subprocess_rc": 7,
-        }
+        assert block.title == "LLM Eval — terminal_bench_2"
+        assert block.data["task_name"] == "terminal_bench_2"
+        assert block.data["score"] is None
+        assert block.data["accuracy_check"] == ReportCheckTypes.FAIL
+        assert block.data["success"] is False
+        assert block.data["subprocess_rc"] == 7
 
     def test_compute_accuracy_check_boundaries(self):
         score = FakeScore(gpu_reference_score=50.0, tolerance=0.05)
@@ -207,6 +219,28 @@ class TestAgenticDriverConfigMapping:
         assert cfg.jobs_dir == Path("/tmp/out/eval_Qwen__Qwen3.6-27B/agentic")
         assert cfg.model_name == "openai/Qwen/Qwen3.6-27B"
 
+    def test_terminal_bench_config_forwards_harbor_adapter_fields(self):
+        task = _terminal_task()
+        task.agentic_eval_config.agent_import_path = (
+            "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent"
+        )
+        task.agentic_eval_config.environment_env = {"TAU2_USER_MODEL": "openai/Qwen"}
+        task.agentic_eval_config.verifier_env = {
+            "TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen"
+        }
+
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            _driver_context(),
+        )
+
+        assert (
+            cfg.agent_import_path == "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent"
+        )
+        assert cfg.environment_env == {"TAU2_USER_MODEL": "openai/Qwen"}
+        assert cfg.verifier_env == {"TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen"}
+
     def test_swebench_config_uses_limit_mode_instance_ids_and_n_tasks(self):
         task = _swebench_task()
         task.swebench_eval_config.instance_ids_map = {
@@ -243,6 +277,44 @@ class TestTerminalBenchHarness:
             run_cmd.return_value.returncode = 17
 
             assert run_terminal_bench(cfg) == 17
+
+    def test_harbor_config_includes_adapter_and_env_overrides(self, tmp_path):
+        task = _terminal_task()
+        task.agentic_eval_config.agent_timeout_sec = None
+        task.agentic_eval_config.agent_import_path = (
+            "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent"
+        )
+        task.agentic_eval_config.environment_env = {
+            "TAU2_USER_MODEL": "openai/Qwen/Qwen3.6-27B"
+        }
+        task.agentic_eval_config.verifier_env = {
+            "TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen/Qwen3.6-27B"
+        }
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch("llm_module.agentic.terminal_bench.subprocess.run") as run_cmd:
+            run_cmd.return_value.returncode = 17
+
+            assert run_terminal_bench(cfg) == 17
+
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        harbor_config = json.loads(config_path.read_text())
+        assert harbor_config["agents"][0]["import_path"] == (
+            "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent"
+        )
+        assert "name" not in harbor_config["agents"][0]
+        assert harbor_config["environment"]["env"] == {
+            "TAU2_USER_MODEL": "openai/Qwen/Qwen3.6-27B"
+        }
+        assert harbor_config["verifier"]["env"] == {
+            "TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen/Qwen3.6-27B"
+        }
+        run_cmd.assert_called_once()
 
 
 class TestSWEbenchHarness:
@@ -321,7 +393,11 @@ class TestSelectAgenticTasks:
     def test_empty_task_list_returns_empty(self):
         assert _select_agentic_tasks(self._ctx_with_tasks([])) == []
 
-    def test_mixed_tasks_raises(self):
+    def test_mixed_tasks_returns_only_agentic(self):
+        # Mixed standard + agentic EvalConfigs are expected (e.g. a model with
+        # both mmlu and swebench). The agentic workflow selects only the
+        # EVALS_AGENTIC tasks and skips the rest rather than raising, so that
+        # an LLM release can run agentic for such models.
         t_agentic = _terminal_task()
         t_other = _terminal_task(
             task_name="mmlu",
@@ -329,12 +405,7 @@ class TestSelectAgenticTasks:
         )
         ctx = self._ctx_with_tasks([t_agentic, t_other])
 
-        try:
-            _select_agentic_tasks(ctx)
-        except RuntimeError as exc:
-            assert "non-agentic tasks" in str(exc)
-        else:
-            raise AssertionError("Expected mixed agentic task selection to fail")
+        assert _select_agentic_tasks(ctx) == [t_agentic]
 
 
 class TestAgenticBridge:

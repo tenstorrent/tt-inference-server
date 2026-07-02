@@ -36,6 +36,14 @@ class TerminalBenchRunConfig:
     exclude_task_names: list[str] = field(default_factory=list)
     quiet: bool = True
     yes: bool = True
+    agent_import_path: Optional[str] = None
+    environment_env: dict[str, str] = field(default_factory=dict)
+    verifier_env: dict[str, str] = field(default_factory=dict)
+    # Interpreter whose bin/ holds the ``harbor`` CLI. When ``None`` the current
+    # interpreter is used (standalone ``run_agentic.py`` already re-execs into
+    # the EVALS_AGENTIC venv). Set on the release path, where the harness runs
+    # as a child of the V2_RUN_SCRIPT engine and must reach harbor explicitly.
+    venv_python: Optional[Path] = None
 
 
 def _get_agent_kwargs(config: TerminalBenchRunConfig) -> dict[str, Any]:
@@ -70,6 +78,23 @@ def _write_harbor_config(config: TerminalBenchRunConfig) -> Path:
     if config.override_memory_mb is not None:
         environment_config["override_memory_mb"] = config.override_memory_mb
 
+    agent_config: dict[str, Any] = {
+        "model_name": config.model_name,
+        "override_timeout_sec": config.agent_timeout_sec,
+        "kwargs": _get_agent_kwargs(config),
+    }
+    if config.agent_import_path:
+        agent_config["import_path"] = config.agent_import_path
+    else:
+        agent_config["name"] = config.agent
+
+    if config.environment_env:
+        environment_config["env"] = config.environment_env
+
+    verifier_config: dict[str, Any] = {}
+    if config.verifier_env:
+        verifier_config["env"] = config.verifier_env
+
     harbor_config: dict[str, Any] = {
         "job_name": config.task_name,
         "jobs_dir": str(config.jobs_dir),
@@ -77,16 +102,11 @@ def _write_harbor_config(config: TerminalBenchRunConfig) -> Path:
         "n_concurrent_trials": config.n_concurrent_trials,
         "quiet": config.quiet,
         "environment": environment_config,
-        "agents": [
-            {
-                "name": config.agent,
-                "model_name": config.model_name,
-                "override_timeout_sec": config.agent_timeout_sec,
-                "kwargs": _get_agent_kwargs(config),
-            }
-        ],
+        "agents": [agent_config],
         "datasets": [dataset_config],
     }
+    if verifier_config:
+        harbor_config["verifier"] = verifier_config
     if config.timeout_multiplier is not None:
         harbor_config["timeout_multiplier"] = config.timeout_multiplier
     if config.agent_timeout_sec is not None:
@@ -98,6 +118,15 @@ def _write_harbor_config(config: TerminalBenchRunConfig) -> Path:
         json.dump(harbor_config, f, indent=2)
 
     return config_path
+
+
+def _needs_config_file(config: TerminalBenchRunConfig) -> bool:
+    return (
+        config.agent_timeout_sec is not None
+        or config.agent_import_path is not None
+        or bool(config.environment_env)
+        or bool(config.verifier_env)
+    )
 
 
 def _annotate_result_file(result_file: Path) -> None:
@@ -118,9 +147,10 @@ def _annotate_result_file(result_file: Path) -> None:
 
 
 def run(config: TerminalBenchRunConfig) -> int:
-    harbor_exec = Path(sys.executable).parent / "harbor"
+    interpreter = config.venv_python or Path(sys.executable)
+    harbor_exec = Path(interpreter).parent / "harbor"
 
-    if config.agent_timeout_sec is not None:
+    if _needs_config_file(config):
         harbor_config_path = _write_harbor_config(config)
         cmd = [str(harbor_exec), "run", "--config", str(harbor_config_path)]
         if config.yes:
