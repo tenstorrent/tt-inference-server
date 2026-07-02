@@ -140,6 +140,18 @@ def run(
         if not msg.tool_calls and not content:
             continue
 
+        # Identify which tool calls have unparseable arguments before storing
+        # history, so we can sanitize them to "{}" — downstream models (e.g.
+        # Anthropic via litellm) reject history entries with malformed JSON
+        # arguments and raise a 400, crashing the reviewer rather than the
+        # implementer (see #146).
+        malformed_ids: set[str] = set()
+        for tc in (msg.tool_calls or []):
+            try:
+                json.loads(tc.function.arguments)
+            except json.JSONDecodeError:
+                malformed_ids.add(tc.id)
+
         # Append assistant turn (convert to dict safely)
         assistant_entry = {"role": "assistant", "content": content}
         if msg.tool_calls:
@@ -147,7 +159,11 @@ def run(
                 {
                     "id": tc.id,
                     "type": "function",
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    "function": {
+                        "name": tc.function.name,
+                        # Sanitize malformed arguments so history stays valid JSON.
+                        "arguments": "{}" if tc.id in malformed_ids else tc.function.arguments,
+                    },
                 }
                 for tc in msg.tool_calls
             ]
@@ -159,20 +175,19 @@ def run(
         # Execute each tool call and append results
         for tc in msg.tool_calls:
             name = tc.function.name
-            try:
-                args = json.loads(tc.function.arguments)
-            except json.JSONDecodeError as exc:
+            if tc.id in malformed_ids:
                 # Surface malformed JSON back to the model so it can retry
                 # rather than crashing the entire run (see #133).
-                error_msg = f"ERROR: could not parse tool arguments as JSON: {exc}"
+                exc_text = f"ERROR: could not parse tool arguments as JSON"
                 if verbose:
-                    print(f"  [{persona['name']}] {error_msg}")
+                    print(f"  [{persona['name']}] {exc_text} for {name}")
                 history.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": error_msg,
+                    "content": exc_text,
                 })
                 continue
+            args = json.loads(tc.function.arguments)
             if verbose:
                 print(f"  [{persona['name']}] tool: {name}({list(args.keys())})")
             result = T.execute(name, args, cwd=cwd)

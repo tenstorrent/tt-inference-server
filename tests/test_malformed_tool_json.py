@@ -2,8 +2,13 @@
 Tests for issue #133: malformed tool-call JSON from a model must not crash
 agent.run().  Instead the error is fed back to the model as a tool result so
 it can recover, and the loop continues normally.
+
+Also covers issue #146: the stored history entry for a malformed tool call
+must have its arguments replaced with "{}" so downstream models (e.g.
+Anthropic via litellm) do not reject the history with a 400.
 """
 
+import json
 from unittest.mock import patch, MagicMock
 
 
@@ -112,3 +117,31 @@ class TestMalformedToolJson:
         assert len(tool_results) == 2
         assert "ERROR" in tool_results[0]["content"]
         assert tool_results[1]["content"] == "tool output"
+
+    @patch("orchestrator.agent.T.execute", return_value="ok")
+    @patch("orchestrator.agent.T.DEFS", [{"function": {"name": "bash_exec"}}])
+    @patch("orchestrator.agent._client")
+    def test_malformed_arguments_sanitized_to_empty_json_in_history(self, mock_client_factory, mock_execute):
+        # Verifies #146: the assistant history entry must store "{}" for any
+        # tool call whose raw arguments are invalid JSON, so downstream APIs
+        # (e.g. Anthropic via litellm) don't reject the history with a 400.
+        from orchestrator.agent import run
+
+        client = MagicMock()
+        mock_client_factory.return_value = client
+        raw_bad = 'path":"./orchestrator/tools.py","offset":340,"limit":50'
+        bad_tc = _make_tool_call("tc1", "bash_exec", raw_bad)
+        client.chat.completions.create.side_effect = [
+            _make_response(content=None, tool_calls=[bad_tc]),
+            _make_response(content="Done.", tool_calls=[]),
+        ]
+
+        _, history = run(_persona(), [{"role": "user", "content": "go"}], max_tool_rounds=5)
+
+        assistant_entries = [m for m in history if m.get("role") == "assistant" and m.get("tool_calls")]
+        assert len(assistant_entries) == 1
+        stored_args = assistant_entries[0]["tool_calls"][0]["function"]["arguments"]
+        # Must be valid JSON and must NOT contain the raw malformed string.
+        parsed = json.loads(stored_args)
+        assert parsed == {}
+        assert raw_bad not in stored_args
