@@ -159,7 +159,20 @@ def run(
         # Execute each tool call and append results
         for tc in msg.tool_calls:
             name = tc.function.name
-            args = json.loads(tc.function.arguments)
+            try:
+                args = json.loads(tc.function.arguments)
+            except json.JSONDecodeError as exc:
+                # Surface malformed JSON back to the model so it can retry
+                # rather than crashing the entire run (see #133).
+                error_msg = f"ERROR: could not parse tool arguments as JSON: {exc}"
+                if verbose:
+                    print(f"  [{persona['name']}] {error_msg}")
+                history.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": error_msg,
+                })
+                continue
             if verbose:
                 print(f"  [{persona['name']}] tool: {name}({list(args.keys())})")
             result = T.execute(name, args, cwd=cwd)
