@@ -18,11 +18,7 @@ std::optional<SlotCopyPlan> prepareSlotCopy(
 
   auto copyCandidate = domain::BlockMatcher::findSlotToCopyFrom(
       candidates, [&sessionManager](const std::string& sessionId) {
-        uint32_t committedBlocks = 0;
-        if (auto session = sessionManager.getSession(sessionId)) {
-          committedBlocks = session->committedBlocks();
-        }
-        return committedBlocks;
+        return sessionManager.getCommittedBlocks(sessionId);
       });
   if (!copyCandidate.has_value()) {
     return std::nullopt;

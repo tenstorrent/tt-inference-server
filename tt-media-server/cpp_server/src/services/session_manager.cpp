@@ -171,6 +171,16 @@ uint32_t SessionManager::getSlotIdBySessionId(
   return result;
 }
 
+uint32_t SessionManager::getCommittedBlocks(
+    const std::string& sessionId) const {
+  uint32_t committedBlocks = 0;
+  sessions.modify(sessionId,
+                  [&committedBlocks](std::shared_ptr<domain::Session>& s) {
+                    committedBlocks = s->committedBlocks();
+                  });
+  return committedBlocks;
+}
+
 uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
                                          std::function<void()> cancelFn) {
   uint32_t result = tt::domain::INVALID_SLOT_ID;
