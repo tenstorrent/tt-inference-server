@@ -33,18 +33,12 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 def install_requirements(
     venv_config: "VenvConfig",  # noqa: F821
     requirements_file: str,
-    overrides_file: Optional[str] = None,
 ) -> bool:
     """Install pip deps from requirements/<requirements_file> into the venv.
 
     Always passes ``--index-strategy unsafe-best-match`` so per-file
     ``--extra-index-url`` directives resolve against all configured indexes
     (e.g. PyPI + the PyTorch CPU index).
-
-    If ``overrides_file`` is given, it is passed to uv as ``--override`` so we
-    can force a dependency version that conflicts with a package's declared
-    pin (e.g. bumping transformers past vllm's ``transformers<5`` cap so the
-    Gemma-4 tokenizer loads). See https://docs.astral.sh/uv/pip/compile/#overrides.
     """
     requirements_path = REQUIREMENTS_DIR / requirements_file
     if not requirements_path.is_file():
@@ -52,20 +46,10 @@ def install_requirements(
             f"Requirements file not found: {requirements_path}. "
             f"Expected one of the per-venv files under {REQUIREMENTS_DIR}."
         )
-    override_arg = ""
-    if overrides_file is not None:
-        overrides_path = REQUIREMENTS_DIR / overrides_file
-        if not overrides_path.is_file():
-            raise FileNotFoundError(
-                f"Overrides file not found: {overrides_path}. "
-                f"Expected one of the per-venv files under {REQUIREMENTS_DIR}."
-            )
-        override_arg = f"--override {overrides_path} "
     return_code = run_command(
         f"{UV_EXEC} pip install --managed-python "
         f"--python {venv_config.venv_python} "
         f"--index-strategy unsafe-best-match "
-        f"{override_arg}"
         f"-r {requirements_path}",
         logger=logger,
     )
@@ -82,7 +66,6 @@ class VenvConfig:
 
     venv_type: WorkflowVenvType
     requirements_file: Optional[str] = None
-    overrides_file: Optional[str] = None
     extra_dirs: Tuple[str, ...] = field(default_factory=tuple)
     setup_function: Optional[Callable[["VenvConfig", "ModelSpec"], bool]] = None
     name: Optional[str] = None
@@ -135,9 +118,7 @@ class VenvConfig:
                 target.mkdir(parents=True, exist_ok=True)
 
         if self.requirements_file is not None:
-            if not install_requirements(
-                self, self.requirements_file, self.overrides_file
-            ):
+            if not install_requirements(self, self.requirements_file):
                 raise RuntimeError(
                     f"Failed to install requirements for venv {self.venv_type.name} "
                     f"from {self.requirements_file}"
@@ -427,11 +408,6 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.V2_LLM_VLLM,
         requirements_file="v2-llm-vllm.txt",
-        # Same Gemma-4 tokenizer fix as BENCHMARKS_VLLM: force transformers 5.x
-        # past vllm's declared `transformers<5` cap so `vllm bench serve` can
-        # tokenize prompts (4.x raises "'list' object has no attribute 'keys'"
-        # on gemma-4's list-valued extra_special_tokens). Reuses the same file.
-        overrides_file="benchmarks-vllm-overrides.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),
@@ -479,7 +455,6 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_VLLM,
         requirements_file="benchmarks-vllm.txt",
-        overrides_file="benchmarks-vllm-overrides.txt",
         extra_dirs=("work_dir",),
         python_version="3.11",
         setup_function=fetch_structured_output_scripts,

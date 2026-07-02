@@ -77,42 +77,6 @@ _CPP_SDXL_DEVICE_DEFAULTS = {
 }
 
 
-def _vllm_tt_metal_dev_mounts(
-    repo_root_path: Path, user_home_path: str, model_spec
-) -> List[str]:
-    """Bind-mount tt-metal patches pinned to the image's metal commit."""
-    if "gemma-4" not in model_spec.hf_model_repo.lower():
-        return []
-
-    mounts: List[str] = []
-    # NOTE: the old dev-mode patch overrides (generator_vllm.py,
-    # vllm-tt-plugin/model_runner.py, platform.py) are intentionally NOT mounted
-    # anymore. The image (tt-metal a4967d5f39d+ / vLLM 375df057) now bakes the
-    # correct native versions. In particular, mounting the stale
-    # gemma4_model_runner_9d88cd5.py patch broke startup: that 9d88cd5 TTModelRunner
-    # predates the `num_devices` ctor arg, while the baked worker.py (375df057)
-    # passes it -> "TTModelRunner.__init__() got an unexpected keyword argument
-    # 'num_devices'". Since these patch files ship in the repo, the mount also
-    # fired in CI dev-mode. They are obsolete; keep only the triage capture below.
-
-    # bind-mount the container log dir to the host so the
-    # on-timeout tt-triage dump (/home/container_app_user/logs/tt-triage-*.log)
-    # survives the --rm container teardown. Remove once the hang is diagnosed.
-    triage_host_dir = repo_root_path / "workflow_logs" / "triage_capture"
-    triage_host_dir.mkdir(parents=True, exist_ok=True)
-    mounts.extend(
-        [
-            "--mount",
-            f"type=bind,src={triage_host_dir},dst={user_home_path}/logs",
-        ]
-    )
-    logger.info(
-        f"Dev mode: mounting triage capture dir {triage_host_dir} -> {user_home_path}/logs"
-    )
-
-    return mounts
-
-
 def _is_cpp_media_spec(model_spec) -> bool:
     """True if this MEDIA spec should run on the cpp_server backend."""
     defaults = _CPP_SDXL_DEVICE_DEFAULTS.get(model_spec.device_type.name.lower())
@@ -427,17 +391,10 @@ def generate_docker_run_command(
                 setup_config.container_tt_metal_cache_dir / device_cache_dir
             )
         # CI: persist tt-triage logs to the cache_root volume via a dedicated var,
-        # See #4255.
+        # leaving TT_METAL_LOGS_PATH (tt-metal's Inspector/watcher logs) on the
+        # writable ephemeral default rather than the host-owned volume. See #4255.
         if runtime_config.ci_mode:
             docker_env_vars["TT_TRIAGE_LOGS_PATH"] = f"{setup_config.cache_root}/logs"
-            # CI runs the container as a non-1000 --user (to match the host
-            # cache volume owner), so the baked TT_METAL_LOGS_PATH
-            # (/home/container_app_user/logs, owned by uid 1000) is not writable:
-            # ttnn.open_mesh_device() fails creating logs/generated/watcher/ and
-            # the engine never boots. Point tt-metal's Inspector/watcher logs at a
-            # world-writable ephemeral dir instead — writable as any uid, and off
-            # the host-owned volume so the high-churn logs don't land there.
-            docker_env_vars["TT_METAL_LOGS_PATH"] = "/tmp/tt_metal_logs"
 
     if (
         model_spec.inference_engine == InferenceEngine.FORGE.value
@@ -503,9 +460,6 @@ def generate_docker_run_command(
             docker_command += [
                 "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal/src,dst={user_home_path}/app/src",
             ]
-            docker_command += _vllm_tt_metal_dev_mounts(
-                repo_root_path, user_home_path, model_spec
-            )
         # fmt: on
 
     for key, value in docker_env_vars.items():

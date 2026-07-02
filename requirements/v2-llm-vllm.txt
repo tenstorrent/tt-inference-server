@@ -16,10 +16,7 @@
 
 vllm==0.13.0
 torch
-# Pin to match evals-common/evals-meta; unpinned resolved to datasets==2.14.4,
-# whose features.py uses pyarrow.PyExtensionType (removed in pyarrow>=15), so
-# `vllm bench serve` crashed on import against the venv's pyarrow 24.
-datasets==3.1.0
+datasets
 aiohttp
 requests
 pyjwt

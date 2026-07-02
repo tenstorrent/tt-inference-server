@@ -91,11 +91,5 @@ model_spec.json
 default_model_spec.json
 tt-inference-server-v2/run_inf_server_v2.py
 
-# local-only gemma4 working notes (benchmarks / triage writeups), not for remote
-docs/gemma4_12b_benchmarks.md
-docs/gemma4_prefill_fabric_hang_issue.md
-docs/gemma4_vllm_tracking_issue.md
-docs/gemma4_vllm_target_benchmarks.md
-
-# Local-only Gemma4 ops runbook + handoff (not for remote branch)
-docs/gemma4_ops/
+# Local-only agent/working docs (never committed; docs/ is prod/auto-generated)
+agent_docs/

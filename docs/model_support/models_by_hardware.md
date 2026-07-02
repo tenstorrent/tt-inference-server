@@ -79,8 +79,6 @@ This page lists all supported models organized by hardware type.
 | 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p300x2.md) |
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p300x2.md) |
 | 🟡 Functional | LLM | [Qwen3-32B](llm/Qwen3-32B_p300x2.md) |
-| 🛠️ Experimental | LLM | [gemma-4-12b-it](llm/gemma-4-12b-it_p300x2.md) |
-| 🛠️ Experimental | LLM | [gemma-4-31b-it](llm/gemma-4-31b-it_p300x2.md) |
 | 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_p300x2.md) |
 | 🛠️ Experimental | TTS | [speecht5_tts](tts/speecht5_tts_p300x2.md) |
 

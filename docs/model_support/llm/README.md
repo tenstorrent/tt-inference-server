@@ -31,8 +31,6 @@ Models with EXPERIMENTAL status are under active development and may have stabil
 | [AFM-4.5B](AFM-4.5B_t3k.md) | - | - | - | - | - | - | - | - | [🛠️ Experimental](AFM-4.5B_t3k.md) | - | [🛠️ Experimental](AFM-4.5B_n300.md) |
 | [DeepSeek-R1-0528](DeepSeek-R1-0528_dual_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_dual_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_quad_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_galaxy.md) | - | - | - | - | - | - | - | - |
 | [gemma-3-1b-it](gemma-3-1b-it_n150.md) | - | - | - | - | - | - | - | - | - | [🛠️ Experimental](gemma-3-1b-it_n150.md) | - |
-| [gemma-4-12b-it](gemma-4-12b-it_p300x2.md) | - | - | - | - | - | [🛠️ Experimental](gemma-4-12b-it_p300x2.md) | - | - | - | - | - |
-| [gemma-4-31b-it](gemma-4-31b-it_p300x2.md) | - | - | - | - | - | [🛠️ Experimental](gemma-4-31b-it_p300x2.md) | - | - | - | - | - |
 | [Qwen2.5-7B](Qwen2.5-7B_n300.md) | - | - | - | - | - | - | - | - | - | - | [🛠️ Experimental](Qwen2.5-7B_n300.md) |
 | [Qwen2.5-Coder-32B-Instruct](Qwen2.5-Coder-32B-Instruct_galaxy.md) | - | - | [🛠️ Experimental](Qwen2.5-Coder-32B-Instruct_galaxy.md) | - | - | - | - | - | [🛠️ Experimental](Qwen2.5-Coder-32B-Instruct_t3k.md) | - | - |
 | [Qwen3-4B](Qwen3-4B_n150.md) | - | - | - | - | - | - | - | - | - | [🛠️ Experimental](Qwen3-4B_n150.md) | [🛠️ Experimental](Qwen3-4B_n300.md) |
