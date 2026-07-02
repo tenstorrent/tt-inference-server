@@ -18,6 +18,7 @@
 #include "services/session_manager.hpp"
 #include "services/session_resolution.hpp"
 #include "sockets/inter_server_service.hpp"
+#include "sockets/socket_messages.hpp"
 #include "utils/conversation_hasher.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
@@ -515,40 +516,6 @@ void LLMPipeline::dispatchGeneration(
   }
 
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
-    if (request.dynamoNativePrefillHandoff) {
-      if (!request.migrationId.has_value() ||
-          !request.kv_position_id.has_value()) {
-        throw std::runtime_error(
-            "Dynamo prefill handoff requires migrationId and "
-            "kv_position_id");
-      }
-      if (request.dynamoNativePrefillDecodeSlotId.has_value() &&
-          request.slotId.has_value() &&
-          *request.dynamoNativePrefillDecodeSlotId != *request.slotId) {
-        throw std::runtime_error(
-            "Dynamo prefill handoff decode slot does not match the "
-            "resolved session slot");
-      }
-      if (auto* tokens = std::get_if<std::vector<int>>(&request.prompt);
-          tokens != nullptr && tokens->size() > 1) {
-        const int lastToken = tokens->back();
-        request.prompt.emplace<std::vector<int>>(1, lastToken);
-        request.prompt_tokens_count = 1;
-      }
-      request.disaggregated = true;
-      TT_LOG_INFO(
-          "[LLMPipeline] Using Dynamo prefill handoff taskId={} "
-          "migrationId={} kv_position_id={}",
-          request.task_id, *request.migrationId, *request.kv_position_id);
-      service_->submitStreamingRequest(
-          request,
-          stampCachedPromptTokens(cb,
-                                  request.dynamoNativePrefillCachedTokens
-                                      .value_or(0)),
-          /*skipPreProcess=*/true);
-      return;
-    }
-
     if (shouldDoPrefillOnDecode(request)) {
       // If continuation, trim prompt to only the uncached delta before
       // submitting to the local decode device. The trimmed-off prefix is what
@@ -596,6 +563,26 @@ void LLMPipeline::dispatchGeneration(
 
   throw std::runtime_error(
       "LLM Mode must be regular or decode only for chat completions");
+}
+
+void LLMPipeline::handlePrefillRequest(
+    const tt::sockets::PrefillRequestMessage& message,
+    std::function<void(const tt::sockets::PrefillResultMessage&)> onResult)
+    const {
+  if (!disaggregationService_) {
+    throw std::runtime_error("DisaggregationService is not configured");
+  }
+  disaggregationService_->handlePrefillRequest(message, std::move(onResult));
+}
+
+void LLMPipeline::handlePrefillResult(
+    const tt::sockets::PrefillResultMessage& message,
+    const std::function<void(const tt::domain::llm::LLMStreamChunk&, bool)>& cb)
+    const {
+  if (!disaggregationService_) {
+    throw std::runtime_error("DisaggregationService is not configured");
+  }
+  disaggregationService_->handlePrefillResult(message, cb);
 }
 
 void LLMPipeline::abortRequest(uint32_t taskId) const {

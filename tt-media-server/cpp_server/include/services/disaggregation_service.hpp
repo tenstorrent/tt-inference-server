@@ -50,6 +50,8 @@ class DisaggregationService {
                               const StreamCallback& callback);
   void handlePrefillRequest(const tt::sockets::PrefillRequestMessage& message,
                             PrefillResultCallback onResult);
+  void handlePrefillResult(const tt::sockets::PrefillResultMessage& message,
+                           const StreamCallback& callback);
   void abortRequest(uint32_t taskId);
 
   /// Resolve a prefill-side session via prefix-cache lookup.

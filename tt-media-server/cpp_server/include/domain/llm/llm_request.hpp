@@ -161,13 +161,6 @@ struct LLMRequest : BaseRequest {
 
   std::optional<bool> disaggregation_override;
 
-  // Experimental Dynamo prefill handoff. When true, Dynamo has already
-  // routed prefill before decode; decode should continue from migrationId /
-  // kv_position_id and must not re-enter the socket PrefillGateway path.
-  bool dynamoNativePrefillHandoff = false;
-  std::optional<uint32_t> dynamoNativePrefillDecodeSlotId;
-  std::optional<int> dynamoNativePrefillCachedTokens;
-
   // Structured output constraint
   std::optional<ResponseFormat> response_format;
 

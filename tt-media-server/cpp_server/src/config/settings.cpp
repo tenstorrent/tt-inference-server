@@ -836,12 +836,6 @@ bool dynamoNativePrefillHandoffEnabled() {
                  defaults::DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED);
 }
 
-bool dynamoNativePrefillMockHandoffReadyEnabled() {
-  return envBool(
-      "DYNAMO_NATIVE_PREFILL_MOCK_HANDOFF_READY_ENABLED",
-      defaults::DYNAMO_NATIVE_PREFILL_MOCK_HANDOFF_READY_ENABLED);
-}
-
 /**
  * Mooncake KV Migration configuration.
  */

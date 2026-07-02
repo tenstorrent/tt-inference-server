@@ -362,11 +362,6 @@ std::string dynamoWorkerRole();
  * DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED. Default: false. */
 bool dynamoNativePrefillHandoffEnabled();
 
-/** Test-only bypass for native Dynamo handoff before real prefill-side
- * completion is integrated. From
- * DYNAMO_NATIVE_PREFILL_MOCK_HANDOFF_READY_ENABLED. Default: false. */
-bool dynamoNativePrefillMockHandoffReadyEnabled();
-
 /** When true and LLM_DEVICE_BACKEND=mock_pipeline, Blaze runners use
  * single-threaded MockSchedulers instead of tt-llm-engine schedulers.
  * From MOCK_USE_SCHEDULER. Default: defaults::MOCK_USE_SCHEDULER. */

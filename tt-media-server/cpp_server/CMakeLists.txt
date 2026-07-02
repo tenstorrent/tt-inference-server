@@ -996,10 +996,12 @@ add_executable(dynamo_prefill_handoff_test
 )
 target_link_libraries(dynamo_prefill_handoff_test PRIVATE
     JsonCpp::JsonCpp
+    cereal::cereal
     GTest::gtest_main
 )
 target_include_directories(dynamo_prefill_handoff_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cereal_SOURCE_DIR}/include
 )
 
 add_executable(cancel_queue_test tests/unit/data_structures/cancel_queue_test.cpp)

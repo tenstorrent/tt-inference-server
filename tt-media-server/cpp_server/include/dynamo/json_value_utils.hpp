@@ -38,6 +38,29 @@ inline std::optional<uint32_t> optionalUInt32(const Json::Value& obj,
   return static_cast<uint32_t>(*value);
 }
 
+inline std::optional<int> optionalInt(const Json::Value& obj,
+                                      const char* field) {
+  if (!obj.isMember(field) || obj[field].isNull()) return std::nullopt;
+  if (obj[field].isInt()) return obj[field].asInt();
+  if (obj[field].isString()) {
+    try {
+      return std::stoi(obj[field].asString());
+    } catch (const std::exception&) {
+      return std::nullopt;
+    }
+  }
+  return std::nullopt;
+}
+
+inline void setOptional(Json::Value& obj, const char* field,
+                        const std::optional<int>& value) {
+  if (value.has_value()) {
+    obj[field] = *value;
+  } else {
+    obj[field] = Json::Value::null;
+  }
+}
+
 inline void setOptional(Json::Value& obj, const char* field,
                         const std::optional<uint32_t>& value) {
   if (value.has_value()) {

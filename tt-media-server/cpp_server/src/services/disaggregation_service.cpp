@@ -55,66 +55,7 @@ void DisaggregationService::setupSocketHandlers() {
             return;
           }
           streamCallbacks.erase(message.taskId);
-
-          if (message.error) {
-            TT_LOG_ERROR(
-                "[DisaggregationService] Prefill error received for task {}, "
-                "propagating error to client",
-                message.taskId);
-            const auto reason =
-                tt::sockets::errorReasonFromPrefillResult(message);
-            callback.value()(makeErrorChunk(message.taskId,
-                                            reason == LLMErrorReason::TIMEOUT
-                                                ? "prefill timeout"
-                                                : "prefill error",
-                                            reason),
-                             /*isFinal=*/true);
-            return;
-          }
-
-          auto response = LLMStreamChunk(message.taskId);
-          LLMChoice choice;
-          choice.text = message.generatedText;
-          response.choices.push_back(std::move(choice));
-          // Surface the prefill server's prefix-cache reuse count to the
-          // transport's usage accounting (prompt_tokens_details.cached_tokens).
-          response.cached_prompt_tokens = message.cachedTokens;
-
-          callback.value()(response, false);
-
-          bool continueDecode = !message.tokenIds.empty() &&
-                                (!message.remainingTokens.has_value() ||
-                                 message.remainingTokens.value() > 0);
-          if (continueDecode) {
-            auto request = LLMRequest(message.taskId);
-            request.disaggregated = true;
-            request.migrationId = message.migrationId;
-            // Intentional exception to the first-free-index convention: the
-            // prefill-generated token is NOT migrated, so decode's first step
-            // reprocesses the last prompt token. That token already occupies
-            // KV index size-1, so decode resumes there rather than at the next
-            // free slot, and the prompt is just that single trailing token.
-            request.kv_position_id =
-                static_cast<uint32_t>(message.tokenIds.size() - 1);
-            request.prompt.emplace<std::vector<int>>(message.tokenIds.end() - 1,
-                                                     message.tokenIds.end());
-            request.max_tokens = message.remainingTokens;
-            request.slotId = message.slotId;
-            // Restore the sampling subset echoed back from the prefill server.
-            request.temperature = message.temperature;
-            request.top_p = message.topP;
-            request.top_k = message.topK;
-            request.fast_mode = message.fastMode;
-            llmService->submitStreamingRequest(request, callback.value());
-          } else {
-            auto finalResponse = LLMStreamChunk(message.taskId);
-            LLMChoice finalChoice;
-            finalChoice.text = "";
-            finalChoice.index = 0;
-            finalChoice.finish_reason = "stop";
-            finalResponse.choices.push_back(std::move(finalChoice));
-            callback.value()(finalResponse, true);
-          }
+          handlePrefillResult(message, callback.value());
         });
 
     socketService->setConnectionLostCallback([this]() {
@@ -306,6 +247,76 @@ void DisaggregationService::handlePrefillRequest(
             LLMErrorReason::GENERIC, std::string(error));
         (*resultCallback)(prefillResult);
       });
+}
+
+void DisaggregationService::handlePrefillResult(
+    const tt::sockets::PrefillResultMessage& message,
+    const StreamCallback& callback) {
+  TT_LOG_INFO(
+      "[DisaggregationService] Prefill result received taskId={} error={} "
+      "tokens={} remaining={} migrationId={}",
+      message.taskId, message.error, message.tokenIds.size(),
+      message.remainingTokens.has_value()
+          ? std::to_string(message.remainingTokens.value())
+          : "none",
+      message.migrationId);
+  if (message.error) {
+    TT_LOG_ERROR(
+        "[DisaggregationService] Prefill error received for task {}, "
+        "propagating error to client",
+        message.taskId);
+    const auto reason = tt::sockets::errorReasonFromPrefillResult(message);
+    callback(makeErrorChunk(message.taskId,
+                            reason == LLMErrorReason::TIMEOUT
+                                ? "prefill timeout"
+                                : "prefill error",
+                            reason),
+             /*isFinal=*/true);
+    return;
+  }
+
+  auto response = LLMStreamChunk(message.taskId);
+  LLMChoice choice;
+  choice.text = message.generatedText;
+  response.choices.push_back(std::move(choice));
+  // Surface the prefill server's prefix-cache reuse count to the transport's
+  // usage accounting (prompt_tokens_details.cached_tokens).
+  response.cached_prompt_tokens = message.cachedTokens;
+
+  callback(response, false);
+
+  bool continueDecode = !message.tokenIds.empty() &&
+                        (!message.remainingTokens.has_value() ||
+                         message.remainingTokens.value() > 0);
+  if (continueDecode) {
+    auto request = LLMRequest(message.taskId);
+    request.disaggregated = true;
+    request.migrationId = message.migrationId;
+    // Intentional exception to the first-free-index convention: the
+    // prefill-generated token is NOT migrated, so decode's first step
+    // reprocesses the last prompt token. That token already occupies
+    // KV index size-1, so decode resumes there rather than at the next
+    // free slot, and the prompt is just that single trailing token.
+    request.kv_position_id = static_cast<uint32_t>(message.tokenIds.size() - 1);
+    request.prompt.emplace<std::vector<int>>(message.tokenIds.end() - 1,
+                                             message.tokenIds.end());
+    request.max_tokens = message.remainingTokens;
+    request.slotId = message.slotId;
+    // Restore the sampling subset echoed back from the prefill server.
+    request.temperature = message.temperature;
+    request.top_p = message.topP;
+    request.top_k = message.topK;
+    request.fast_mode = message.fastMode;
+    llmService->submitStreamingRequest(request, callback);
+  } else {
+    auto finalResponse = LLMStreamChunk(message.taskId);
+    LLMChoice finalChoice;
+    finalChoice.text = "";
+    finalChoice.index = 0;
+    finalChoice.finish_reason = "stop";
+    finalResponse.choices.push_back(std::move(finalChoice));
+    callback(finalResponse, true);
+  }
 }
 
 DisaggregationService::~DisaggregationService() { stop(); }
