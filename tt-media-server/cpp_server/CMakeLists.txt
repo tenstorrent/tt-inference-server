@@ -644,7 +644,7 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     find_library(_KV_TRACY_LIB tracy    PATHS "${_TTM_BUILD}/lib"                 NO_DEFAULT_PATH)
     find_library(_KV_YAML_LIB  yaml-cpp PATHS "${_TTM_BUILD}/_deps/yaml-cpp-build" NO_DEFAULT_PATH)
 
-    if(_TTM_BUILD AND _KV_UMD_LIB AND _KV_TTSTL_LIB AND _KV_TRACY_LIB AND _KV_YAML_LIB)
+    if(_TTM_BUILD AND _KV_UMD_LIB AND _KV_TTSTL_LIB AND _KV_TRACY_LIB AND _KV_YAML_LIB AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration/src/worker/device_io.cpp")
         target_compile_definitions(transport_lib PUBLIC USE_METAL_CPP_LIB)
         target_include_directories(transport_lib PUBLIC ${TT_METAL_INCLUDE_DIRS})
 
