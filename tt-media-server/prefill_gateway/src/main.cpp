@@ -53,7 +53,7 @@ void printUsage(const char* prog) {
       << "       " << prog << " --decode-port=<PORT> --prefill=<HOST>:<PORT> "
       << "[--prefill=<HOST>:<PORT> ...]  # SOCKET_TRANSPORT=tcp\n\n"
       << "  --decode-port=PORT   Port the gateway listens on for decode.\n"
-      << "  --prefill=HOST:PORT  TCP prefill server to connect to "
+      << "  --prefill=HOST:PORT  ZMQ prefill server to connect to "
          "(repeatable).\n"
       << "  --prefill-bind=HOST:PORT\n"
       << "                        ZMQ ROUTER bind endpoint for prefills "
