@@ -363,6 +363,10 @@ IMPL = {
     "create_issue":      lambda args, cwd: create_issue(args["title"], args["body"], args.get("labels", ""), cwd),
     "add_sub_issue":     lambda args, cwd: add_sub_issue(args["parent_number"], args["child_number"], cwd),
     "remove_label":      lambda args, cwd: remove_label(args["number"], args["label"], cwd),
+    # Aliases for common model hallucinations — redirect to the canonical tool.
+    "bash":    lambda args, cwd: bash_exec(args["command"], cwd),
+    "execute": lambda args, cwd: bash_exec(args["command"], cwd),
+    "run":     lambda args, cwd: bash_exec(args["command"], cwd),
 }
 
 def execute(name: str, arguments: dict, cwd: str | None = None) -> str:

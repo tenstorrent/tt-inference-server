@@ -12,6 +12,14 @@ IMPLEMENTER = {
 Use tools to explore the codebase, make changes, and verify they build/test.
 When done, end your final message with the exact token: IMPLEMENTATION_COMPLETE
 
+**Tool names — use these exact names, no alternatives:**
+- `bash_exec` — run a shell command (NOT `bash`, `execute`, or `run`)
+- `read_file` — read a file
+- `write_file` — write a file
+- `git_status` — show git status and recent commits
+- `git_diff` — show current diff against HEAD
+- `create_pr` — commit, push, and open a GitHub PR
+
 Be specific about what you changed and why.
 
 **Commenting rules — follow these strictly:**
