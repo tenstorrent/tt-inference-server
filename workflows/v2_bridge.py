@@ -60,6 +60,10 @@ _V2_ROUTED_MODELS = frozenset(
         "Z-Image-Turbo",
         "Wan2.2-T2V-A14B-Diffusers",
         "Wan2.2-I2V-A14B-Diffusers",
+        "Wan2.2-I2V-A14B-Prodia",
+        "Wan2.2-I2V-AniSora-V3.2",
+        "Wan2.2-I2V-Distill-LightX2V",
+        "Wan2.2-I2V-LoRA",
     }
 )
 

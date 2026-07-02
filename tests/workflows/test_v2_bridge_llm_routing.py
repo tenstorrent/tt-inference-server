@@ -143,7 +143,14 @@ def test_non_routed_media_benchmarks_stays_on_v1():
 
 @pytest.mark.parametrize(
     "model_name",
-    ["Wan2.2-T2V-A14B-Diffusers", "Wan2.2-I2V-A14B-Diffusers"],
+    [
+        "Wan2.2-T2V-A14B-Diffusers",
+        "Wan2.2-I2V-A14B-Diffusers",
+        "Wan2.2-I2V-A14B-Prodia",
+        "Wan2.2-I2V-AniSora-V3.2",
+        "Wan2.2-I2V-Distill-LightX2V",
+        "Wan2.2-I2V-LoRA",
+    ],
 )
 @pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
 def test_wan_video_routes_to_v2(model_name, workflow):
