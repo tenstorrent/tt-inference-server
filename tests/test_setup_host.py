@@ -889,6 +889,7 @@ class TestSetupHostValidation:
         )
         assert manager.check_setup() is False
 
+
 class TestSetupWeightsHostVolumeResume:
     """setup_weights_huggingface (host-volume branch) must always invoke the
     resumable `hf download` and fall back to existing weights only when the hub
@@ -920,7 +921,8 @@ class TestSetupWeightsHostVolumeResume:
         mock_run.assert_called_once()
 
     def test_falls_back_to_existing_when_hub_unreachable(self, manager):
-        """hf download failure with complete local weights continues instead of raising."""
+        """hf download failure with complete local weights continues instead of
+        raising."""
         with patch.object(manager, "check_model_weights_dir", return_value=True), patch(
             "subprocess.run"
         ) as mock_run:
