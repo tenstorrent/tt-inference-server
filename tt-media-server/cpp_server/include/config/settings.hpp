@@ -354,21 +354,31 @@ std::string dynamoComponent();
  * defaults::DYNAMO_ENDPOINT_NAME. */
 std::string dynamoEndpointName();
 
-/** When true and LLM_DEVICE_BACKEND=mock_pipeline, Blaze runners use
- * single-threaded MockSchedulers instead of tt-llm-engine schedulers.
- * From MOCK_USE_SCHEDULER. Default: defaults::MOCK_USE_SCHEDULER. */
-bool useMockScheduler();
-
 /** Prefill completion latency for MockSchedulers. From
  * MOCK_PREFILL_CHUNK_LATENCY_MS. Default:
  * defaults::MOCK_PREFILL_CHUNK_LATENCY_MS. */
 unsigned mockPrefillLatencyMs();
 
-/** Per-decode-token spacing for MockSchedulers. From
- * MOCK_DECODE_TOKEN_LATENCY_US. Default:
- * defaults::MOCK_DECODE_TOKEN_LATENCY_US.
- */
-unsigned mockDecodeTokenLatencyUs();
+/** Time one token spends in a single pipeline stage, for the
+ * MockDecodeScheduler. defaults::MOCK_STAGE_LATENCY_US. */
+unsigned mockStageLatencyUs();
+
+/** Transformer pipeline depth modeled by the MockDecodeScheduler.
+ * defaults::MOCK_PIPELINE_STAGES. */
+uint32_t mockPipelineStages();
+
+/** Per-decode-token timing jitter for the MockDecodeScheduler, as a percentage
+ * of the token interval (+/-). Desynchronizes slots so identical-length
+ * requests don't finish in lockstep and spike the TTFT tail; mean-preserving,
+ * so throughput and mean TPOT are unaffected.
+ * Default: defaults::MOCK_DECODE_JITTER_PCT. */
+uint32_t mockDecodeJitterPct();
+
+/** Per-chunk prefill compute (ms) added to time-to-first-token by the
+ * MockDecodeScheduler, on top of the pipeline fill. Models the real cost of
+ * running a prompt chunk through the layers
+ * Default: defaults::MOCK_PREFILL_COMPUTE_MS. */
+unsigned mockPrefillComputeMs();
 
 /** Fixed decode token id emitted by MockSchedulers. From MOCK_DECODE_TOKEN_ID.
  * Default: defaults::MOCK_DECODE_TOKEN_ID. */

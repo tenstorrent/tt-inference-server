@@ -315,8 +315,8 @@ inline pl::CounterChannelConfig makePrefillAckChannelConfig(
 
 // Builders for the mock scheduler config structs. Same shape as the pipeline
 // builders above (env/settings -> plain-data config): the callers in
-// blaze_scheduler_factory.cpp have already branched on MOCK_PIPELINE +
-// useMockScheduler, so these deliberately take no arguments.
+// blaze_scheduler_factory.cpp have already branched on MOCK_SCHEDULER, so
+// these deliberately take no arguments.
 inline MockPrefillSchedulerConfig makeMockPrefillSchedulerConfig() {
   return MockPrefillSchedulerConfig{
       .prefillLatency =
@@ -326,13 +326,25 @@ inline MockPrefillSchedulerConfig makeMockPrefillSchedulerConfig() {
 }
 
 inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig() {
+  const uint32_t numStages = tt::config::mockPipelineStages();
+  const auto stageLatency =
+      std::chrono::microseconds(tt::config::mockStageLatencyUs());
+  // Autoregressive decode: one token per full pipeline traversal. Derived
+  // so it can never be set faster than physics allows.
+  const auto decodeTokenLatency = stageLatency * numStages;
   return MockDecodeSchedulerConfig{
-      .prefillLatency =
-          std::chrono::milliseconds(tt::config::mockPrefillLatencyMs()),
+      .numPipelineStages = numStages,
+      .stageLatency = stageLatency,
+      .prefillChunkLatency =
+          std::chrono::milliseconds(tt::config::mockPrefillComputeMs()),
       .prefillChunkSize = tt::config::prefillChunkSize(),
       .decodeTokenId = tt::config::mockDecodeTokenId(),
-      .decodeTokenLatency =
-          std::chrono::microseconds(tt::config::mockDecodeTokenLatencyUs()),
+      .decodeTokenLatency = decodeTokenLatency,
+      // Jitter as a percentage of the token interval, so it scales with the
+      // configured pipeline speed. Breaks the phase-lock that otherwise fattens
+      // the TTFT tail under concurrency.
+      .decodeTokenJitter =
+          (decodeTokenLatency * tt::config::mockDecodeJitterPct()) / 100,
   };
 }
 
