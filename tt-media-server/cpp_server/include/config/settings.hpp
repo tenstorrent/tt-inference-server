@@ -329,6 +329,10 @@ bool dynamoEndpointEnabled();
  * defaults::DYNAMO_BIND_HOST. */
 std::string dynamoBindHost();
 
+/** Bind port for the Dynamo listener. From DYNAMO_BIND_PORT. Default:
+ * defaults::DYNAMO_BIND_PORT (0 = OS-assigned). */
+uint16_t dynamoBindPort();
+
 /** Etcd endpoint(s) the discovery client dials. From DYNAMO_ETCD_ENDPOINTS,
  * falling back to ETCD_ENDPOINTS (the env var Dynamo's own runtime reads).
  * Default: defaults::DYNAMO_ETCD_ENDPOINTS. */
