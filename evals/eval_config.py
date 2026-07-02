@@ -273,7 +273,7 @@ _eval_config_list = [
                     temperature=1.0,
                     top_p=1.0,
                     # max inputs tokens should be increased when we get a chance
-                    max_input_tokens=256* 1024,
+                    max_input_tokens=256 * 1024,
                     max_output_tokens=64 * 1024,
                     # mini_last_n_observations is ommitted for now
                     # mini_last_n_observations=15,
@@ -3466,7 +3466,7 @@ _eval_config_list = [
                 task_name="aime25",
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.05,  # 30 samples * 0.05 ~= 1 sample
-                    EvalLimitMode.CI_NIGHTLY: 0.99,#0.50,  # 30 samples * 0.2 = 6 samples
+                    EvalLimitMode.CI_NIGHTLY: 0.99,  # 0.50,  # 30 samples * 0.2 = 6 samples
                 },
                 score=EvalTaskScore(
                     published_score=92.5,  # AIME 2025 score (without tools)
@@ -3504,7 +3504,7 @@ _eval_config_list = [
                 task_name="gpqa_diamond_cot_zeroshot",
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.006,  # 198 samples * 0.006 ~= 1 sample
-                    EvalLimitMode.CI_NIGHTLY: 0.99,#0.035,  # 198 samples * 0.035 ~= 6 samples
+                    EvalLimitMode.CI_NIGHTLY: 0.99,  # 0.035,  # 198 samples * 0.035 ~= 6 samples
                 },
                 score=EvalTaskScore(
                     published_score=80.1,  # GPQA Diamond score (without tools)
