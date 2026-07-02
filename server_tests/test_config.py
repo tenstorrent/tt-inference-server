@@ -67,7 +67,7 @@ _test_config_list = [
         ],
     ),
     TestConfig(
-        hf_model_repo="google/gemma-4-12b-it",
+        hf_model_repo="google/gemma-4-12B-it",
         tasks=[
             TestTask(
                 task_name="vllm_chat_completions",
@@ -77,7 +77,7 @@ _test_config_list = [
         ],
     ),
     TestConfig(
-        hf_model_repo="google/gemma-4-31b-it",
+        hf_model_repo="google/gemma-4-31B-it",
         tasks=[
             TestTask(
                 task_name="vllm_chat_completions",
