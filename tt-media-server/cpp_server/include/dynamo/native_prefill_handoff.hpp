@@ -33,8 +33,6 @@ NativePrefillHandoff buildMetadataOnlyNativePrefillHandoff(
     const std::string& selectedPrefillId);
 
 Json::Value nativePrefillHandoffToJson(const NativePrefillHandoff& handoff);
-Json::Value nativePrefillHandoffToEngineData(
-    const NativePrefillHandoff& handoff);
 Json::Value nativePrefillHandoffToDisaggregatedParams(
     const NativePrefillHandoff& handoff);
 

@@ -316,7 +316,7 @@ docker run -d --name "$WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
     -e DYNAMO_ENDPOINT_ENABLED=1 \
     -e DYNAMO_DISCOVERY_BACKEND=etcd \
     -e DYNAMO_ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
-    -e DYNAMO_NAMESPACE=default -e DYNAMO_COMPONENT=decode -e DYNAMO_ENDPOINT_NAME=generate \
+    -e DYNAMO_NAMESPACE=default -e DYNAMO_COMPONENT=backend -e DYNAMO_ENDPOINT_NAME=generate \
     -e SERVER_MODE=cpp \
     -e MODEL="$HF_MODEL_ID" \
     -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \

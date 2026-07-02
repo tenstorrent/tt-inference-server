@@ -143,8 +143,8 @@ Inspect what the worker registered:
 
 ```bash
 docker exec etcd etcdctl get --prefix --keys-only v1/
-# v1/instances/default/decode/generate/<hex>
-# v1/mdc/default/decode/generate/<hex>
+# v1/instances/default/backend/generate/<hex>
+# v1/mdc/default/backend/generate/<hex>
 ```
 
 If you enabled `--prefill-gateway`, verify that Prometheus sees it:

@@ -20,7 +20,7 @@
 # Optional native handoff control-plane spike:
 #   DYNAMO_REGISTER_PREFILL=1 DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=1 ./run_stack.sh up
 # Enables the prefill endpoint to return TT handoff metadata in
-# disaggregated_params.kv_transfer_params.
+# disaggregated_params.
 # The handoff itself is the synchronization point and must only be emitted
 # after prefill and KV transfer are complete.
 #
@@ -127,7 +127,7 @@ worker_dynamo_env() {
     echo "DYNAMO_DISCOVERY_BACKEND=etcd"
     echo "DYNAMO_ETCD_ENDPOINTS=${ETCD_ENDPOINTS}"
     echo "DYNAMO_NAMESPACE=default"
-    echo "DYNAMO_COMPONENT=decode"
+    echo "DYNAMO_COMPONENT=backend"
     echo "DYNAMO_ENDPOINT_NAME=generate"
     echo "DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED}"
     echo "DYNAMO_NATIVE_PREFILL_MOCK_KV_TRANSFER_ENABLED=${DYNAMO_NATIVE_PREFILL_MOCK_KV_TRANSFER_ENABLED}"

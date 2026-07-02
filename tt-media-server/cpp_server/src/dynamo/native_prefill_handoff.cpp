@@ -4,7 +4,6 @@
 #include "dynamo/native_prefill_handoff.hpp"
 
 #include <limits>
-#include <utility>
 
 namespace tt::dynamo {
 
@@ -78,20 +77,11 @@ Json::Value nativePrefillHandoffToJson(const NativePrefillHandoff& handoff) {
   return out;
 }
 
-Json::Value nativePrefillHandoffToEngineData(
-    const NativePrefillHandoff& handoff) {
-  Json::Value engineData(Json::objectValue);
-  engineData["tt_prefill_handoff"] = nativePrefillHandoffToJson(handoff);
-  return engineData;
-}
-
 Json::Value nativePrefillHandoffToDisaggregatedParams(
     const NativePrefillHandoff& handoff) {
-  Json::Value kvTransferParams(Json::objectValue);
-  kvTransferParams["tt_prefill_handoff"] = nativePrefillHandoffToJson(handoff);
-
   Json::Value disaggregatedParams(Json::objectValue);
-  disaggregatedParams["kv_transfer_params"] = std::move(kvTransferParams);
+  disaggregatedParams["tt_prefill_handoff"] =
+      nativePrefillHandoffToJson(handoff);
   return disaggregatedParams;
 }
 
@@ -102,15 +92,6 @@ const Json::Value* findNativePrefillHandoffJson(const Json::Value& raw) {
         prefillResult["disaggregated_params"].isObject()) {
       const auto& disaggregatedParams =
           prefillResult["disaggregated_params"];
-      if (disaggregatedParams.isMember("kv_transfer_params") &&
-          disaggregatedParams["kv_transfer_params"].isObject() &&
-          disaggregatedParams["kv_transfer_params"].isMember(
-              "tt_prefill_handoff") &&
-          disaggregatedParams["kv_transfer_params"]["tt_prefill_handoff"]
-              .isObject()) {
-        return &disaggregatedParams["kv_transfer_params"]
-                                    ["tt_prefill_handoff"];
-      }
       if (disaggregatedParams.isMember("tt_prefill_handoff") &&
           disaggregatedParams["tt_prefill_handoff"].isObject()) {
         return &disaggregatedParams["tt_prefill_handoff"];
@@ -120,30 +101,10 @@ const Json::Value* findNativePrefillHandoffJson(const Json::Value& raw) {
   if (raw.isMember("disaggregated_params") &&
       raw["disaggregated_params"].isObject()) {
     const auto& disaggregatedParams = raw["disaggregated_params"];
-    if (disaggregatedParams.isMember("kv_transfer_params") &&
-        disaggregatedParams["kv_transfer_params"].isObject() &&
-        disaggregatedParams["kv_transfer_params"].isMember(
-            "tt_prefill_handoff") &&
-        disaggregatedParams["kv_transfer_params"]["tt_prefill_handoff"]
-            .isObject()) {
-      return &disaggregatedParams["kv_transfer_params"]["tt_prefill_handoff"];
+    if (disaggregatedParams.isMember("tt_prefill_handoff") &&
+        disaggregatedParams["tt_prefill_handoff"].isObject()) {
+      return &disaggregatedParams["tt_prefill_handoff"];
     }
-  }
-  if (raw.isMember("tt_prefill_handoff") &&
-      raw["tt_prefill_handoff"].isObject()) {
-    return &raw["tt_prefill_handoff"];
-  }
-  if (raw.isMember("engine_data") && raw["engine_data"].isObject() &&
-      raw["engine_data"].isMember("tt_prefill_handoff") &&
-      raw["engine_data"]["tt_prefill_handoff"].isObject()) {
-    return &raw["engine_data"]["tt_prefill_handoff"];
-  }
-  if (raw.isMember("nvext") && raw["nvext"].isObject() &&
-      raw["nvext"].isMember("engine_data") &&
-      raw["nvext"]["engine_data"].isObject() &&
-      raw["nvext"]["engine_data"].isMember("tt_prefill_handoff") &&
-      raw["nvext"]["engine_data"]["tt_prefill_handoff"].isObject()) {
-    return &raw["nvext"]["engine_data"]["tt_prefill_handoff"];
   }
   return nullptr;
 }
