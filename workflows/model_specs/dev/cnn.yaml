@@ -22,13 +22,13 @@ templates:
       env_vars:
         MAX_MODEL_LENGTH: "40960"
         MAX_NUM_SEQS: "32"
-        GPU_MEMORY_UTILIZATION: "0.30"
+        GPU_MEMORY_UTILIZATION: "0.5"
         TT_KV_POOL_GB: "32"
         OPTIMIZATION_LEVEL: "1"
         CPU_SAMPLING: "false"
         ENABLE_TRACE: "true"
         KV_CACHE_DTYPE: "bfp_bf8"
-        PREFILL_CHUNK_SIZE: "2048"
+        PREFILL_CHUNK_SIZE: "1024"
         MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
         PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
 
@@ -50,13 +50,13 @@ templates:
       env_vars:
         MAX_MODEL_LENGTH: "65536"
         MAX_NUM_SEQS: "32"
-        GPU_MEMORY_UTILIZATION: "0.30"
+        GPU_MEMORY_UTILIZATION: "0.5"
         TT_KV_POOL_GB: "32"
         OPTIMIZATION_LEVEL: "1"
         CPU_SAMPLING: "false"
         ENABLE_TRACE: "true"
         KV_CACHE_DTYPE: "bfp_bf8"
-        PREFILL_CHUNK_SIZE: "2048"
+        PREFILL_CHUNK_SIZE: "1024"
         MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
         PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
 
@@ -77,13 +77,13 @@ templates:
       env_vars:
         MAX_MODEL_LENGTH: "65536"
         MAX_NUM_SEQS: "32"
-        GPU_MEMORY_UTILIZATION: "0.30"
+        GPU_MEMORY_UTILIZATION: "0.35"
         TT_KV_POOL_GB: "32"
         OPTIMIZATION_LEVEL: "1"
         CPU_SAMPLING: "false"
         ENABLE_TRACE: "true"
         KV_CACHE_DTYPE: "bfp_bf8"
-        PREFILL_CHUNK_SIZE: "2048"
+        PREFILL_CHUNK_SIZE: "1024"
         MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
         PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
 
@@ -104,13 +104,13 @@ templates:
       env_vars:
         MAX_MODEL_LENGTH: "40960"
         MAX_NUM_SEQS: "32"
-        GPU_MEMORY_UTILIZATION: "0.30"
+        GPU_MEMORY_UTILIZATION: "0.35"
         TT_KV_POOL_GB: "32"
         OPTIMIZATION_LEVEL: "1"
         CPU_SAMPLING: "false"
         ENABLE_TRACE: "true"
         KV_CACHE_DTYPE: "bfp_bf8"
-        PREFILL_CHUNK_SIZE: "2048"
+        PREFILL_CHUNK_SIZE: "1024"
         MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
         PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
 
@@ -131,7 +131,7 @@ templates:
       env_vars:
         MAX_MODEL_LENGTH: "32768"
         MAX_NUM_SEQS: "32"
-        GPU_MEMORY_UTILIZATION: "0.30"
+        GPU_MEMORY_UTILIZATION: "0.35"
         TT_KV_POOL_GB: "32"
         OPTIMIZATION_LEVEL: "1"
         CPU_SAMPLING: "false"
