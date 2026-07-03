@@ -444,11 +444,10 @@ _eval_config_list = [
                     },
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-001",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-022",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-050",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-075",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-100",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002",
                         ],
                     },
                 ),
@@ -655,11 +654,10 @@ _eval_config_list = [
                     },
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-001",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-022",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-050",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-075",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-100",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002",
                         ],
                     },
                 ),
