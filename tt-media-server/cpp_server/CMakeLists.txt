@@ -1123,6 +1123,7 @@ add_executable(session_manager_test
     src/domain/prefix_cache/block_matcher.cpp
     src/domain/prefix_cache/response_id_index.cpp
     src/services/session_manager.cpp
+    src/services/prefix_cache_router.cpp
     src/metrics/metrics.cpp
 )
 target_link_libraries(session_manager_test PRIVATE
@@ -1191,6 +1192,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/embedding_service.cpp
     src/services/model_service_registration.cpp
     src/services/session_manager.cpp
+    src/services/prefix_cache_router.cpp
     src/services/session_resolution.cpp
     src/services/memory_services/memory_manager.cpp
     src/domain/session.cpp
@@ -1414,6 +1416,7 @@ add_executable(session_manager_benchmark
     src/domain/prefix_cache/block_matcher.cpp
     src/domain/prefix_cache/response_id_index.cpp
     src/services/session_manager.cpp
+    src/services/prefix_cache_router.cpp
     src/metrics/metrics.cpp
 )
 target_link_libraries(session_manager_benchmark PRIVATE
@@ -1617,6 +1620,7 @@ set(SOURCES
     src/domain/prefix_cache/block_matcher.cpp
     src/domain/prefix_cache/response_id_index.cpp
     src/services/session_manager.cpp
+    src/services/prefix_cache_router.cpp
     src/services/session_resolution.cpp
     src/domain/session.cpp
     src/runtime/worker/single_process_worker.cpp
