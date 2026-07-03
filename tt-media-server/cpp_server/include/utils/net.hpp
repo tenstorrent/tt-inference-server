@@ -98,9 +98,9 @@ struct AddrInfoGuard {
   struct addrinfo* get() const { return res; }
 };
 
-/// Resolve a hostname or literal IPv4 address for UDP via DNS, with the destination
-/// port populated on the returned `sockaddr`. Returns a malloc'd `addrinfo`
-/// list (wrap in `AddrInfoGuard`). Throws on DNS failure.
+/// Resolve a hostname or literal IPv4 address for UDP via DNS, with the
+/// destination port populated on the returned `sockaddr`. Returns a malloc'd
+/// `addrinfo` list (wrap in `AddrInfoGuard`). Throws on DNS failure.
 inline struct addrinfo* fetchAddrInfo(const std::string& host, int port) {
   struct addrinfo hints{};
   hints.ai_family = AF_INET;       // IPv4-only
@@ -130,7 +130,7 @@ inline int openUdpSocket() {
   return fd;
 }
 
-/// "Connect" our UDP socket to `dest`. 
+/// "Connect" our UDP socket to `dest`.
 /// Kernel will auto choose the correct (dynamo-net) source IP to reach `dest`.
 /// Throws on failure.
 inline void connectUdpSocket(int fd, const struct addrinfo* dest) {
@@ -141,8 +141,8 @@ inline void connectUdpSocket(int fd, const struct addrinfo* dest) {
   }
 }
 
-/// Read the socket's source (dynamo-net) IPv4 address as a dotted-quad string. Throws on
-/// failure.
+/// Read the socket's source (dynamo-net) IPv4 address as a dotted-quad string.
+/// Throws on failure.
 inline std::string localIpFromSocket(int fd) {
   struct sockaddr_in local{};
   socklen_t len = sizeof(local);
@@ -165,9 +165,11 @@ inline std::string localIpFromSocket(int fd) {
 
 /*
 We first figure out the etcd address (host:port).
-Then we open a UDP socket and connect it to the etcd address. Kernel will auto choose the correct (dynamo-net) source IP to reach the etcd.
-Then we read the source IP from the socket.
-This is the source IP that we are going to advertise to the etcd. Dynamo will read this IP and use it to route the traffic to our server.
+Then we open a UDP socket and connect it to the etcd address. Kernel will auto
+choose the correct (dynamo-net) source IP to reach the etcd. Then we read the
+source IP from the socket. This is the source IP that we are going to advertise
+to the etcd. Dynamo will read this IP and use it to route the traffic to our
+server.
 */
 inline std::string sourceIpForRoute(const std::string& host, int port) {
   try {
