@@ -204,7 +204,7 @@ _eval_config_list = [
                     },
                 ),
                 agentic_eval_config=TerminalBenchEvalConfig(
-                    dataset="terminal-bench/terminal-bench-2-1",
+                    dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
                     n_concurrent_trials=16,
                     n_attempts=1,
@@ -330,7 +330,7 @@ _eval_config_list = [
                 },
                 gen_kwargs={
                     "max_gen_toks": 200 * 1024,
-                    "until": [],
+                    "until": ["[e~["],
                     "do_sample": "true",
                     "temperature": 1.0,
                     "top_p": 0.95,
