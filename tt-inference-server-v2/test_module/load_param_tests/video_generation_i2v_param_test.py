@@ -356,6 +356,4 @@ def run_video_generation_i2v_param(
             "break_on_failure": False,
         }
     )
-    return VideoGenerationI2VParamTest(
-        test_config, targets or {}, ctx=ctx
-    ).run_tests()
+    return VideoGenerationI2VParamTest(test_config, targets or {}, ctx=ctx).run_tests()
