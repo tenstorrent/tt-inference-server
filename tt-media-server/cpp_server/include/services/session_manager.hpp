@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "ipc/boost/boost_memory_queue.hpp"
+#include "services/prefix_cache_router.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/concurrent_queue.hpp"
 #include "utils/conversation_hasher.hpp"
@@ -38,12 +39,6 @@ class SessionInFlightException : public SessionRateLimitException {
             "Session already has a request in flight. Multiple concurrent "
             "requests per session are not supported.") {}
 };
-
-}  // namespace tt::services
-
-#include "services/prefix_cache_router.hpp"
-
-namespace tt::services {
 
 enum class CloseSessionResult {
   SUCCESS,
