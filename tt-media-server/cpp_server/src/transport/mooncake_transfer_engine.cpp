@@ -25,7 +25,7 @@ namespace {
 
 // Map our transport selector to Mooncake's installTransport proto string.
 const char* protoString(TransportProtocol protocol) {
-  return protocol == TransportProtocol::Rdma ? "rdma" : "tcp";
+  return protocol == TransportProtocol::RDMA ? "rdma" : "tcp";
 }
 
 }  // namespace
@@ -52,7 +52,7 @@ MooncakeTransferEngine& MooncakeTransferEngine::operator=(
     MooncakeTransferEngine&&) noexcept = default;
 
 StorageMedium MooncakeTransferEngine::storageMedium() const {
-  return storage_ ? storage_->medium() : StorageMedium::HostDram;
+  return storage_ ? storage_->medium() : StorageMedium::HOST_DRAM;
 }
 
 std::shared_ptr<IStorageBackend> MooncakeTransferEngine::storage() const {
@@ -141,14 +141,14 @@ SegmentHandle MooncakeTransferEngine::openSegment(
     const std::string& segmentName) {
   if (!impl_->initialized) {
     TT_LOG_ERROR("[MooncakeTransferEngine] openSegment before init");
-    return kInvalidSegment;
+    return K_INVALID_SEGMENT;
   }
   const mooncake::SegmentID id = impl_->engine->openSegment(segmentName);
   // Mooncake returns a negative SegmentID (cast to a huge unsigned) on failure.
   if (static_cast<int64_t>(id) < 0) {
     TT_LOG_ERROR("[MooncakeTransferEngine] openSegment({}) failed",
                  segmentName);
-    return kInvalidSegment;
+    return K_INVALID_SEGMENT;
   }
   return static_cast<SegmentHandle>(id);
 }
@@ -157,7 +157,7 @@ SegmentHandle MooncakeTransferEngine::refreshSegment(
     const std::string& segmentName) {
   if (!impl_->initialized) {
     TT_LOG_ERROR("[MooncakeTransferEngine] refreshSegment before init");
-    return kInvalidSegment;
+    return K_INVALID_SEGMENT;
   }
   const mooncake::SegmentID id = impl_->engine->openSegment(segmentName);
   if (static_cast<int64_t>(id) < 0) {
@@ -165,7 +165,7 @@ SegmentHandle MooncakeTransferEngine::refreshSegment(
         "[MooncakeTransferEngine] refreshSegment({}): openSegment "
         "failed",
         segmentName);
-    return kInvalidSegment;
+    return K_INVALID_SEGMENT;
   }
   // force_update re-fetches the descriptor from the metadata service and
   // overwrites the cached (pre-restart) entry, so the next submit reads the
@@ -179,20 +179,20 @@ SegmentHandle MooncakeTransferEngine::refreshSegment(
         "[MooncakeTransferEngine] refreshSegment({}): no registered buffer "
         "after force-update",
         segmentName);
-    return kInvalidSegment;
+    return K_INVALID_SEGMENT;
   }
   return static_cast<SegmentHandle>(id);
 }
 
 TransferStatus MooncakeTransferEngine::submitAndWait(
     const TransferRequest& request) {
-  TransferStatus result{TransferState::Failed, 0};
+  TransferStatus result{TransferState::FAILED, 0};
 
   if (!impl_->initialized) {
     TT_LOG_ERROR("[MooncakeTransferEngine] submitAndWait before init");
     return result;
   }
-  if (request.target == kInvalidSegment) {
+  if (request.target == K_INVALID_SEGMENT) {
     TT_LOG_ERROR("[MooncakeTransferEngine] submitAndWait with invalid segment");
     return result;
   }
@@ -217,7 +217,7 @@ TransferStatus MooncakeTransferEngine::submitAndWait(
   const mooncake::BatchID batchId = impl_->engine->allocateBatchID(1);
 
   mooncake::TransferRequest entry;
-  entry.opcode = request.op == TransferOp::Read
+  entry.opcode = request.op == TransferOp::READ
                      ? mooncake::TransferRequest::READ
                      : mooncake::TransferRequest::WRITE;
   entry.source = request.local_addr;
@@ -244,7 +244,7 @@ TransferStatus MooncakeTransferEngine::submitAndWait(
       break;
     }
     if (status.s == mooncake::TransferStatusEnum::COMPLETED) {
-      result.state = TransferState::Completed;
+      result.state = TransferState::COMPLETED;
       result.transferred_bytes = status.transferred_bytes;
       break;
     }
@@ -282,7 +282,7 @@ MooncakeTransferEngine& MooncakeTransferEngine::operator=(
     MooncakeTransferEngine&&) noexcept = default;
 
 StorageMedium MooncakeTransferEngine::storageMedium() const {
-  return storage_ ? storage_->medium() : StorageMedium::HostDram;
+  return storage_ ? storage_->medium() : StorageMedium::HOST_DRAM;
 }
 
 std::shared_ptr<IStorageBackend> MooncakeTransferEngine::storage() const {
@@ -296,7 +296,7 @@ bool MooncakeTransferEngine::init(const EngineConfig& config) {
       "[MooncakeTransferEngine] init(metadata_uri={}, local_server_name={}, "
       "protocol={}) unavailable (built without Mooncake)",
       config.metadata_uri, config.local_server_name,
-      config.protocol == TransportProtocol::Rdma ? "rdma" : "tcp");
+      config.protocol == TransportProtocol::RDMA ? "rdma" : "tcp");
   return false;
 }
 
@@ -322,7 +322,7 @@ SegmentHandle MooncakeTransferEngine::openSegment(
       "[MooncakeTransferEngine] openSegment({}) unavailable (built without "
       "Mooncake)",
       segmentName);
-  return kInvalidSegment;
+  return K_INVALID_SEGMENT;
 }
 
 SegmentHandle MooncakeTransferEngine::refreshSegment(
@@ -331,7 +331,7 @@ SegmentHandle MooncakeTransferEngine::refreshSegment(
       "[MooncakeTransferEngine] refreshSegment({}) unavailable (built without "
       "Mooncake)",
       segmentName);
-  return kInvalidSegment;
+  return K_INVALID_SEGMENT;
 }
 
 TransferStatus MooncakeTransferEngine::submitAndWait(
@@ -339,9 +339,9 @@ TransferStatus MooncakeTransferEngine::submitAndWait(
   TT_LOG_WARN(
       "[MooncakeTransferEngine] submitAndWait(op={}, length={}, target={}, "
       "target_offset={}) unavailable (built without Mooncake)",
-      request.op == TransferOp::Read ? "read" : "write", request.length,
+      request.op == TransferOp::READ ? "read" : "write", request.length,
       request.target, request.target_offset);
-  return TransferStatus{TransferState::Failed, 0};
+  return TransferStatus{TransferState::FAILED, 0};
 }
 
 #endif  // TT_TRANSPORT_WITH_MOONCAKE

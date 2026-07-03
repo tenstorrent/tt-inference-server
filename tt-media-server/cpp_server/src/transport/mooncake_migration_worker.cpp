@@ -3,8 +3,6 @@
 
 #include "transport/mooncake_migration_worker.hpp"
 
-#include <chrono>
-#include <thread>
 #include <utility>
 
 #include "transport/i_storage_backend.hpp"
@@ -12,11 +10,6 @@
 #include "utils/logger.hpp"
 
 namespace tt::transport {
-
-namespace {
-constexpr int K_HOLD_POLL_MS = 200;
-constexpr int K_HEARTBEAT_SEC = 30;  // periodic "still alive" log while holding
-}  // namespace
 
 MooncakeMigrationWorker::MooncakeMigrationWorker(
     MigrationWorkerConfig config, std::shared_ptr<ITransferEngine> engine,
@@ -92,25 +85,9 @@ bool MooncakeMigrationWorker::bringUp(const std::atomic<bool>& cancelToken) {
   return true;
 }
 
-// Phase 6: hold until the caller's stop source fires, then tear down.
-void MooncakeMigrationWorker::run(const std::atomic<bool>& stopRequested) {
-  TT_LOG_INFO(
-      "[MooncakeMigrationWorker] '{}' READY; holding until stop ({} peers)",
-      config_.segment_name, peers_.size());
-  const auto start = std::chrono::steady_clock::now();
-  auto nextHeartbeat = start + std::chrono::seconds(K_HEARTBEAT_SEC);
-  while (!stopRequested.load()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(K_HOLD_POLL_MS));
-    const auto now = std::chrono::steady_clock::now();
-    if (now < nextHeartbeat) continue;
-    const auto upSec =
-        std::chrono::duration_cast<std::chrono::seconds>(now - start).count();
-    TT_LOG_INFO("[MooncakeMigrationWorker] '{}' alive — {} peers, up {}s",
-                config_.segment_name, peers_.size(), upSec);
-    nextHeartbeat = now + std::chrono::seconds(K_HEARTBEAT_SEC);
-  }
-  TT_LOG_INFO("[MooncakeMigrationWorker] '{}' stopping", config_.segment_name);
-  teardown();
+bool MooncakeMigrationWorker::ownsLayer(uint32_t layerId) const {
+  if (config_.layer_end == 0) return true;
+  return layerId >= config_.layer_start && layerId < config_.layer_end;
 }
 
 // Reverse-order teardown: stop being discoverable before the engine drops, so
@@ -134,7 +111,7 @@ void MooncakeMigrationWorker::teardown() {
 // backend (UMD for device DRAM).
 bool MooncakeMigrationWorker::writeTensorOnSender(
     const std::vector<uint8_t>& tensor) {
-  if (config_.role != MigrationRole::Sender) {
+  if (config_.role != MigrationRole::SENDER) {
     TT_LOG_ERROR(
         "[MooncakeMigrationWorker] writeTensorOnSender called on a non-sender "
         "worker");
@@ -157,7 +134,7 @@ bool MooncakeMigrationWorker::writeTensorOnSender(
 // buffer, then push it to the receiver's segment over the transport — the
 // bounce-buffer flow from mooncake/poc-transfer-engine/adr-mooncake-backend.md.
 bool MooncakeMigrationWorker::transferToReceiver() {
-  if (config_.role != MigrationRole::Sender) {
+  if (config_.role != MigrationRole::SENDER) {
     TT_LOG_ERROR(
         "[MooncakeMigrationWorker] transferToReceiver called on a non-sender "
         "worker");
@@ -196,7 +173,7 @@ bool MooncakeMigrationWorker::transferToReceiver() {
 bool MooncakeMigrationWorker::pushStagedToPeer() {
   const std::string& peer = config_.peer_segment_name;
   const SegmentHandle handle = engine_->openSegment(peer);
-  if (handle != kInvalidSegment && submitStaged(handle)) return true;
+  if (handle != K_INVALID_SEGMENT && submitStaged(handle)) return true;
 
   health_->onTransferFailure();
   TT_LOG_WARN(
@@ -206,7 +183,7 @@ bool MooncakeMigrationWorker::pushStagedToPeer() {
 
   // Re-resolve for next time only; this request still fails.
   health_->onReresolveAttempt();
-  if (engine_->refreshSegment(peer) == kInvalidSegment) {
+  if (engine_->refreshSegment(peer) == K_INVALID_SEGMENT) {
     health_->onReresolveFailure();
   }
   return false;
@@ -214,19 +191,19 @@ bool MooncakeMigrationWorker::pushStagedToPeer() {
 
 bool MooncakeMigrationWorker::submitStaged(SegmentHandle peer) {
   TransferRequest request;
-  request.op = TransferOp::Write;
+  request.op = TransferOp::WRITE;
   request.local_addr = staging_.data();
   request.target = peer;
   request.target_offset = 0;
   request.length = staging_.size();
-  return engine_->submitAndWait(request).state == TransferState::Completed;
+  return engine_->submitAndWait(request).state == TransferState::COMPLETED;
 }
 
 // Step 3 (receiver): read this galaxy's device DRAM (where the transfer landed)
 // back into a host buffer and byte-compare against the expected tensor.
 bool MooncakeMigrationWorker::verifyTensorOnReceiver(
     const std::vector<uint8_t>& expected) {
-  if (config_.role != MigrationRole::Receiver) {
+  if (config_.role != MigrationRole::RECEIVER) {
     TT_LOG_ERROR(
         "[MooncakeMigrationWorker] verifyTensorOnReceiver called on a "
         "non-receiver worker");

@@ -68,7 +68,7 @@ class ITransferEngine {
 
   /**
    * @brief Resolve a peer's advertised segment by name.
-   * @return a handle, or kInvalidSegment on failure.
+   * @return a handle, or K_INVALID_SEGMENT on failure.
    */
   virtual SegmentHandle openSegment(const std::string& segmentName) = 0;
 
@@ -81,7 +81,7 @@ class ITransferEngine {
    * descriptor on its own retry path, but TCP reads a stale cached descriptor
    * and would keep targeting the dead address. Senders call this after a
    * transfer fails to pick up the peer's current address before retrying.
-   * @return a usable handle, or kInvalidSegment if the peer is unresolvable.
+   * @return a usable handle, or K_INVALID_SEGMENT if the peer is unresolvable.
    */
   virtual SegmentHandle refreshSegment(const std::string& segmentName) = 0;
 

@@ -22,7 +22,10 @@ class VLLMForgeRunner(BaseDeviceRunner):
     # Sampling defaults for Forge LLM inference (overrides global greedy defaults)
     SAMPLING_DEFAULTS = {
         "temperature": 0.6,
-        "repetition_penalty": 1.1,
+        # 1.0 (off) matches every sibling runner (Forge TP, metal) and the repo-wide
+        # _DEFAULT_SAMPLING_PARAMS; the old 1.1 was the lone outlier and drove the
+        # O(N^2) decode regression (#4278). Callers can still opt into 1.1 per request.
+        "repetition_penalty": 1.0,
     }
 
     def __init__(self, device_id: str):
