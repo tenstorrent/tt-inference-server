@@ -63,6 +63,11 @@ class FakeTransferEngine : public ITransferEngine {
     opened[h] = it->second.first;
     return h;
   }
+  // No cached descriptor to invalidate in the fake, so a refresh is just a
+  // re-resolve by name — same contract as the real force-update path.
+  SegmentHandle refreshSegment(const std::string& name) override {
+    return openSegment(name);
+  }
   TransferStatus submitAndWait(const TransferRequest& r) override {
     if (r.op != TransferOp::WRITE) return {TransferState::FAILED, 0};
     const auto it = opened.find(r.target);
