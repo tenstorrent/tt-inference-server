@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "domain/response_id_index.hpp"
+#include "domain/prefix_cache/response_id_index.hpp"
 
-namespace tt::domain {
+#include <optional>
+#include <string>
+
+#include "domain/prefix_cache/helpers.hpp"
+namespace tt::domain::prefix_cache {
 
 std::optional<std::string> ResponseIdIndex::lookup(const std::string& id) {
   if (id.empty()) return std::nullopt;
@@ -54,4 +58,4 @@ void ResponseIdIndex::removeIf(const std::string& sessionId,
     responseIdIndex.erase(id);
   }
 }
-}  // namespace tt::domain
+}  // namespace tt::domain::prefix_cache
