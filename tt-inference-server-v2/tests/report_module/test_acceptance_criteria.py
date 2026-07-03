@@ -21,6 +21,7 @@ from report_module.acceptance_criteria import (
     acceptance_criteria_check,
     build_acceptance_export,
     format_acceptance_summary_markdown,
+    task_failure_blockers,
 )
 from report_module.schema import Block, ReportSchema
 
@@ -49,6 +50,38 @@ def test_category_result_passed_and_to_dict():
         "na": 1,
         "blockers": {},
     }
+
+
+# --- Task failure blockers ------------------------------------------------
+
+
+def test_task_failure_blockers_ignores_successful_tasks():
+    assert (
+        task_failure_blockers([("evaluation", 0, True), ("benchmark", 0, True)]) == {}
+    )
+
+
+def test_task_failure_blockers_flags_crash_with_no_block():
+    blockers = task_failure_blockers([("evaluation", 1, False)])
+    assert set(blockers) == {"task:evaluation"}
+    assert "produced no report block" in blockers["task:evaluation"]
+    assert "exit=1" in blockers["task:evaluation"]
+
+
+def test_task_failure_blockers_flags_failure_with_block():
+    blockers = task_failure_blockers([("spec_tests", 1, True)])
+    assert "after producing a report block" in blockers["task:spec_tests"]
+
+
+def test_task_failure_blocker_fails_acceptance_when_category_is_na():
+    schema = _schema(
+        _bench({"functional": {"ttft_check": 2, "ttft": 100, "ttft_ratio": 0.8}})
+    )
+    accepted, blockers, _ = acceptance_criteria_check(schema)
+    assert accepted is True and blockers == {}
+
+    crash = task_failure_blockers([("evaluation", 1, False)])
+    assert crash and (accepted and not crash) is False
 
 
 # --- Benchmarks -----------------------------------------------------------

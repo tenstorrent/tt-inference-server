@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Tuple
 
 from .schema import Block, ReportSchema
 
@@ -28,6 +28,8 @@ CATEGORY_EVALS = "Evals"
 CATEGORY_SPEC_TESTS = "Spec Tests"
 
 INFRA_TASK_TYPES = frozenset({"health", "infra", "unit", "stability", "integration"})
+
+TASK_BLOCKER_PREFIX = "task"
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,32 @@ def acceptance_criteria_check(
     for category in categories:
         blockers.update(category.blockers)
     return len(blockers) == 0, blockers, categories
+
+
+def task_failure_blockers(
+    outcomes: Iterable[Tuple[str, int, bool]],
+) -> Dict[str, str]:
+    """Blockers for workflow tasks whose process exited non-zero.
+
+    Each outcome is ``(task_type, exit_code, produced_block)``. A task that
+    crashes without emitting a report block is invisible to the block-based category checks above, which treat a
+    missing category as ``NA`` rather than a failure. Surfacing the raw task
+    exit code here keeps the acceptance verdict consistent with the workflow's
+    return code so a crash can never be laundered into a silent ``PASS``.
+    """
+    blockers: Dict[str, str] = {}
+    for task_type, exit_code, produced_block in outcomes:
+        if exit_code == 0:
+            continue
+        detail = (
+            "and produced no report block"
+            if not produced_block
+            else "after producing a report block"
+        )
+        blockers[f"{TASK_BLOCKER_PREFIX}:{task_type}"] = (
+            f"Task '{task_type}' failed (exit={exit_code}) {detail}."
+        )
+    return blockers
 
 
 ACCEPTANCE_EXPORT_KEYS = (
@@ -385,6 +413,7 @@ def _check_state(check_value: Any) -> str:
 
 __all__ = [
     "acceptance_criteria_check",
+    "task_failure_blockers",
     "build_acceptance_export",
     "format_acceptance_summary_markdown",
     "ACCEPTANCE_EXPORT_KEYS",
