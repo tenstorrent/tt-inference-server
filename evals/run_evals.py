@@ -45,7 +45,6 @@ EVAL_TASK_TYPES = [
     ModelType.AUDIO,
     ModelType.EMBEDDING,
     ModelType.TEXT_TO_SPEECH,
-    ModelType.VIDEO,
 ]
 
 

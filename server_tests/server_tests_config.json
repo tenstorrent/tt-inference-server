@@ -33,11 +33,6 @@
         ],
         "TTS": [
             "speecht5_tts"
-        ],
-        "VIDEO": [
-            "Wan2.2-T2V-A14B-Diffusers",
-            "Wan2.2-I2V-A14B-Diffusers",
-            "mochi-1-preview"
         ]
     },
     "available_markers": {
@@ -69,8 +64,7 @@
             "cnn": "CNN model tests",
             "llm": "Large Language Model tests",
             "embedding": "Embedding model tests",
-            "tts": "Text-to-speech model tests",
-            "video": "Video generation model tests"
+            "tts": "Text-to-speech model tests"
         },
         "specific_models": {
             "sdxl": "Stable Diffusion XL tests",
@@ -86,9 +80,6 @@
             "bge": "BGE embedding model tests",
             "qwen3_emb": "Qwen3 embedding model tests",
             "speecht5": "SpeechT5 TTS model tests",
-            "wan": "Wan video generation model tests",
-            "wan_i2v": "Wan image-to-video generation model tests",
-            "mochi": "Mochi video generation model tests",
             "mobilenetv2": "MobileNetV2 CNN model tests",
             "bge_m3": "BGE-M3 embedding model tests"
         }
@@ -181,46 +172,6 @@
                 "n150",
                 "t3k",
                 "galaxy"
-            ]
-        },
-        "wan": {
-            "weights": [
-                "Wan2.2-T2V-A14B-Diffusers"
-            ],
-            "category": "VIDEO",
-            "compatible_devices": [
-                "t3k",
-                "galaxy",
-                "p150x4",
-                "p150x8",
-                "p300x2"
-            ]
-        },
-        "wan_i2v": {
-            "id_name": "wan-i2v",
-            "weights": [
-                "Wan2.2-I2V-A14B-Diffusers"
-            ],
-            "category": "VIDEO",
-            "compatible_devices": [
-                "t3k",
-                "galaxy",
-                "p150x4",
-                "p150x8",
-                "p300x2"
-            ]
-        },
-        "mochi": {
-            "weights": [
-                "mochi-1-preview"
-            ],
-            "category": "VIDEO",
-            "compatible_devices": [
-                "t3k",
-                "galaxy",
-                "p150x4",
-                "p150x8",
-                "p300x2"
             ]
         },
         "sdxl": {
@@ -627,67 +578,6 @@
         "TTSIntegrationTest": {
             "module": "server_tests.test_cases.tts_integration_test",
             "markers": [
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "VideoGenerationLoadTest": {
-            "module": "server_tests.test_cases.video_generation_load_test",
-            "markers": [
-                "load",
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "VideoGenerationParamTest": {
-            "module": "server_tests.test_cases.video_generation_param_test",
-            "markers": [
-                "param",
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "VideoGenerationI2VTest": {
-            "module": "server_tests.test_cases.video_generation_i2v_test",
-            "markers": [
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "VideoGenerationI2VParamTest": {
-            "module": "server_tests.test_cases.video_generation_i2v_param_test",
-            "markers": [
-                "param",
                 "e2e",
                 "slow"
             ],
