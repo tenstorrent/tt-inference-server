@@ -403,9 +403,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
     // How long this request occupied the connection's loop thread synchronously
     // (route + acquire + dispatch/forward). Compare against the gap between
     // consecutive stage=dispatched lines with the same loop_tid: busy_ms ~= gap
-    // means the loop is saturated (ingress-bound here); busy_ms << gap means the
-    // loop sat idle between requests (the stagger is upstream — Dynamo egress /
-    // single worker connection), not lost in this loop.
+    // means the loop is saturated (ingress-bound here); busy_ms << gap means
+    // the loop sat idle between requests (the stagger is upstream — Dynamo
+    // egress / single worker connection), not lost in this loop.
     const auto handlerBusyMs =
         std::chrono::duration_cast<std::chrono::microseconds>(
             SteadyClock::now() - recvT)
