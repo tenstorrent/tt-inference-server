@@ -13,17 +13,20 @@ namespace tt::messaging {
 
 /**
     Payload for a migration message. Consumed by migration worker.
+
+    Range convention: all `_begin` / `_end` pairs are HALF-OPEN, i.e. [begin,
+    end). `end` is exclusive.
 */
 struct MigrationRequestMessage {
   uint64_t migration_id;
   uint32_t src_slot;
   uint32_t dst_slot;
   uint32_t layer_begin;
-  uint32_t layer_end;
+  uint32_t layer_end;  // exclusive
   uint32_t src_position_begin;
-  uint32_t src_position_end;
+  uint32_t src_position_end;  // exclusive
   uint32_t dst_position_begin;
-  uint32_t dst_position_end;
+  uint32_t dst_position_end;  // exclusive
 };
 
 /**
