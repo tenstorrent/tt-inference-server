@@ -7,7 +7,6 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -19,19 +18,6 @@
 #include "utils/conversation_hasher.hpp"
 
 namespace tt::services {
-
-class SessionRateLimitException : public std::runtime_error {
- public:
-  using std::runtime_error::runtime_error;
-};
-
-class SessionInFlightException : public SessionRateLimitException {
- public:
-  SessionInFlightException()
-      : SessionRateLimitException(
-            "Session already has a request in flight. Multiple concurrent "
-            "requests per session are not supported.") {}
-};
 
 enum class MarkInFlightOutcome {
   Marked,
@@ -73,6 +59,8 @@ struct PrefixCacheRouterCallbacks {
   std::function<bool(const std::string& sessionId,
                      const std::string& responseId)>
       setSessionResponseId;
+
+  std::function<void()> onSessionInFlight;
 };
 
 class PrefixCacheRouter {

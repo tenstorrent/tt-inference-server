@@ -149,7 +149,7 @@ PrefixCacheRouter::tryAcquireByResponseId(const std::string& previousResponseId,
         "[PrefixCacheRouter] tryAcquireByResponseId: session under id={} is "
         "in-flight",
         previousResponseId);
-    throw SessionInFlightException();
+    callbacks.onSessionInFlight();
   }
 
   return std::nullopt;

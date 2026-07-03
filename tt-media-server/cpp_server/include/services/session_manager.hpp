@@ -19,10 +19,29 @@
 #include <vector>
 
 #include "ipc/boost/boost_memory_queue.hpp"
-#include "services/prefix_cache_router.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/concurrent_queue.hpp"
 #include "utils/conversation_hasher.hpp"
+
+namespace tt::services {
+
+// Base exception for session errors that should return 429 (rate limit)
+class SessionRateLimitException : public std::runtime_error {
+ public:
+  using std::runtime_error::runtime_error;
+};
+
+class SessionInFlightException : public SessionRateLimitException {
+ public:
+  SessionInFlightException()
+      : SessionRateLimitException(
+            "Session already has a request in flight. Multiple concurrent "
+            "requests per session are not supported.") {}
+};
+
+}  // namespace tt::services
+
+#include "services/prefix_cache_router.hpp"
 
 namespace tt::services {
 

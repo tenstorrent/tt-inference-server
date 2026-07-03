@@ -81,6 +81,7 @@ SessionManager::SessionManager() {
           [this](const std::string& sessionId, const std::string& responseId) {
             return setSessionResponseId(sessionId, responseId);
           },
+      .onSessionInFlight = [] { throw SessionInFlightException(); },
   });
   try {
     memoryRequestQueue = std::make_unique<ipc::boost::MemoryRequestQueue>(
