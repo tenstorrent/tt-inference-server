@@ -379,6 +379,32 @@ python tt-inference-server-v2/run_spec_decode.py \
     --spec-decode-preset [ci | full]
 ```
 
+By default the acceptance counters are scraped from the load target
+(`--service-port`). In a Dynamo deployment that target is the
+spec-decode-unaware frontend, which does not expose/aggregate the worker's
+`vllm:spec_decode_*` counters, so acceptance-rate and mean-accepted-length come
+back `0`/`null` even though decoding is happening on the workers. Point the
+scrape at the actual vLLM worker(s) with `--spec-decode-metrics-url` while load
+keeps hitting the frontend. It accepts a full URL, `host:port`, or
+`host:port/metrics` (`http://` and `/metrics` are added if missing; HTTPS is
+preserved), and is repeatable for multi-worker (KV-routed) deployments — the
+driver snapshots and sums the before/after deltas across every endpoint before
+computing the figures:
+
+```bash
+python tt-inference-server-v2/run_spec_decode.py \
+    --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
+    --service-port 8000 --spec-decode --spec-decode-preset ci \
+    --spec-decode-metrics-url worker-a:9000 \
+    --spec-decode-metrics-url worker-b:9000 \
+    --jwt-secret "$JWT_SECRET"
+```
+
+Acceptance metrics are populated from the `vllm:spec_decode_*` counters, which
+only a vLLM-compatible server exposes; the Tenstorrent `cpp_server` worker does
+not emit spec-decode counters, so these columns are populated only against a
+vLLM reference server for now.
+
 Each AIPerf run emits a `Block(kind="aiperf_spec_decode")`, which the report
 generator collapses into a per-run Markdown table (latency percentiles,
 throughput, acceptance metrics) via the renderer registered in

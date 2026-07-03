@@ -41,13 +41,13 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from ..config import DriverContext, ServerConnection
 from ..spec_decode import SpecDecodeRun
 from ..spec_decode.metrics import (
-    fetch_prometheus_counters,
-    scrape_spec_decode_metrics,
+    scrape_spec_decode_metrics_multi,
+    snapshot_worker_counters,
 )
 from ._subprocess import load_json, run_command
 
@@ -159,11 +159,18 @@ class AIPerfSpecDecodeDriver:
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
         url = server.url_with_port
+        # Where to read the vllm:spec_decode_* acceptance counters. When
+        # --spec-decode-metrics-url is set (Dynamo: load hits the frontend,
+        # but the counters live on the workers), scrape those endpoint(s)
+        # and sum their deltas; otherwise fall back to the load target.
+        metrics_targets = _resolve_metrics_targets(server)
         try:
-            before = fetch_prometheus_counters(url)
+            before_by_url = snapshot_worker_counters(metrics_targets)
         except Exception as exc:  # noqa: BLE001 -- scrape is best-effort
-            logger.warning("Could not snapshot /metrics at %s: %s", url, exc)
-            before = {}
+            logger.warning(
+                "Could not snapshot /metrics at %s: %s", metrics_targets, exc
+            )
+            before_by_url = {}
 
         cmd = _build_aiperf_cmd(
             run=spec_run,
@@ -220,7 +227,9 @@ class AIPerfSpecDecodeDriver:
             )
             return SpecDecodeDriverResult(return_code=1, payload=None, raw_path=None)
 
-        spec_decode_metrics = _scrape_acceptance_metrics(url, before, spec_run)
+        spec_decode_metrics = _scrape_acceptance_metrics(
+            metrics_targets, before_by_url, spec_run
+        )
 
         payload = _build_payload(
             run=spec_run,
@@ -409,23 +418,34 @@ def _parse_aiperf_output(artifact_dir: Path) -> Dict[str, Any]:
     }
 
 
+def _resolve_metrics_targets(server: ServerConnection) -> List[str]:
+    """Pick the ``/metrics`` endpoint(s) to scrape for acceptance counters.
+
+    Worker endpoint(s) from ``--spec-decode-metrics-url`` take precedence so
+    load can keep hitting the (spec-decode-unaware) frontend; when unset we
+    fall back to the load target, preserving the pre-flag behavior.
+    """
+    return list(server.spec_decode_metrics_urls) or [server.url_with_port]
+
+
 def _scrape_acceptance_metrics(
-    url: str,
-    before: Dict[str, float],
+    urls: Sequence[str],
+    before_by_url: Dict[str, Dict[str, float]],
     spec_run: SpecDecodeRun,
 ) -> Optional[Dict[str, Any]]:
     """Delta-scrape the spec-decode counters; ``None`` when unavailable.
 
-    Servers without speculative decoding (or without a ``/metrics``
-    endpoint at all) simply yield no acceptance block — the baseline
-    phase is the common case.
+    Scrapes every endpoint in ``urls`` and sums the per-worker before/after
+    deltas (a single endpoint is just a one-element list). Servers without
+    speculative decoding (or without a ``/metrics`` endpoint at all) simply
+    yield no acceptance block — the baseline phase is the common case.
     """
     try:
-        return scrape_spec_decode_metrics(url, before)
+        return scrape_spec_decode_metrics_multi(urls, before_by_url)
     except Exception as exc:  # noqa: BLE001 -- scrape is best-effort
         logger.warning(
             "Could not scrape /metrics at %s for %s: %s",
-            url,
+            list(urls),
             spec_run.slug,
             exc,
         )

@@ -329,6 +329,7 @@ class BenchmarksWorkflow(WorkflowExecution):
                 preset=opts.preset,
                 warmup_requests=opts.warmup_requests,
                 auth_token=opts.auth_token,
+                metrics_urls=opts.metrics_urls,
                 venv_python=Path(opts.venv_python) if opts.venv_python else None,
             )
         except Exception as e:

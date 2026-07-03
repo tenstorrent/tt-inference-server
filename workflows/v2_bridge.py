@@ -353,6 +353,8 @@ def _forward_spec_decode(cmd, runtime_config) -> None:
     _extend_if_set(
         cmd, "--spec-decode-warmup-requests", runtime_config.spec_decode_warmup_requests
     )
+    for metrics_url in getattr(runtime_config, "spec_decode_metrics_url", None) or []:
+        _extend_if_set(cmd, "--spec-decode-metrics-url", metrics_url)
 
 
 def _build_agentic_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):
@@ -409,6 +411,8 @@ def _build_spec_decode_cmd(v2_dir, model_spec, runtime_config, json_fpath, outpu
     _extend_if_set(
         cmd, "--spec-decode-warmup-requests", runtime_config.spec_decode_warmup_requests
     )
+    for metrics_url in getattr(runtime_config, "spec_decode_metrics_url", None) or []:
+        _extend_if_set(cmd, "--spec-decode-metrics-url", metrics_url)
     _forward_jwt(cmd, runtime_config)
     return cmd
 

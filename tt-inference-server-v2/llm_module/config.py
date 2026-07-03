@@ -55,6 +55,15 @@ class ServerConnection:
     # where the frontend (load target) does not aggregate them. A tuple
     # keeps this frozen dataclass hashable.
     prefix_cache_metrics_urls: Tuple[str, ...] = ()
+    # Extra Prometheus ``/metrics`` endpoints (vLLM workers) that the
+    # spec-decode driver scrapes directly (before/after per run) for the
+    # ``vllm:spec_decode_*`` acceptance counters, independent of the load
+    # target in ``base_url``. In a Dynamo deployment the load target is the
+    # spec-decode-unaware frontend, which does not expose/aggregate these,
+    # so point this at the worker(s). Deltas are summed across all URLs.
+    # Empty falls back to scraping ``url_with_port``. Tuple keeps the frozen
+    # dataclass hashable.
+    spec_decode_metrics_urls: Tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.tokenizer:

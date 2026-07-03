@@ -85,6 +85,7 @@ class RuntimeConfig:
     spec_decode: bool = False
     spec_decode_preset: str = "full"
     spec_decode_warmup_requests: Optional[int] = None
+    spec_decode_metrics_url: Optional[List[str]] = None
 
     # Device configuration
     device_id: Optional[List[int]] = None
@@ -173,6 +174,7 @@ class RuntimeConfig:
             spec_decode_warmup_requests=getattr(
                 args, "spec_decode_warmup_requests", None
             ),
+            spec_decode_metrics_url=getattr(args, "spec_decode_metrics_url", None),
             device_id=args.device_id,
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,

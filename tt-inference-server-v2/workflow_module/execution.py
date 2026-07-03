@@ -103,6 +103,13 @@ class SpecDecodeOptions:
     preset: str = "full"
     warmup_requests: int = 4
     auth_token: str = ""
+    # Worker Prometheus /metrics endpoint(s) holding the
+    # vllm:spec_decode_* acceptance counters, scraped directly (before/after
+    # per run) independent of the load target. In a Dynamo deployment the
+    # load target is the spec-decode-unaware frontend, so point this at the
+    # worker(s); deltas are summed across them. Empty falls back to scraping
+    # the load target (--service-port).
+    metrics_urls: Tuple[str, ...] = ()
     venv_python: Optional[str] = None
 
 

@@ -153,6 +153,7 @@ class TestSpecDecodeOptions:
             spec_decode=True,
             spec_decode_preset="ci",
             spec_decode_warmup_requests=2,
+            spec_decode_metrics_url=["worker-a:9000", "worker-b:9000/metrics"],
             jwt_secret=None,
         )
         opts = cf._build_spec_decode_options(args)
@@ -160,6 +161,24 @@ class TestSpecDecodeOptions:
         assert opts.preset == "ci"
         assert opts.warmup_requests == 2
         assert opts.auth_token == ""
+        # Repeatable --spec-decode-metrics-url -> tuple, forwarded verbatim
+        # (normalization happens later in the driver / metrics scrape).
+        assert opts.metrics_urls == ("worker-a:9000", "worker-b:9000/metrics")
+
+    def test_metrics_urls_default_empty_when_flag_absent(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        # No spec_decode_metrics_url attr at all (image-model entry path).
+        args = Namespace(
+            spec_decode=True,
+            spec_decode_preset="ci",
+            spec_decode_warmup_requests=2,
+            jwt_secret=None,
+        )
+        opts = cf._build_spec_decode_options(args)
+        assert opts is not None
+        assert opts.metrics_urls == ()
 
     def test_release_pins_tool_venv_python(self, monkeypatch):
         monkeypatch.delenv("JWT_SECRET", raising=False)

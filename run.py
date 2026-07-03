@@ -532,6 +532,18 @@ def parse_arguments():
         help="Short chat-completion warmup requests sent before the spec-decode sweep "
         "(v2 default: 4; 0 disables).",
     )
+    spec_decode_group.add_argument(
+        "--spec-decode-metrics-url",
+        type=str,
+        action="append",
+        default=None,
+        metavar="URL",
+        help="Worker /metrics endpoint with the vllm:spec_decode_* acceptance counters "
+        "(load stays on the frontend / --service-port). Accepts a full URL, host:port, "
+        "or host:port/metrics. Repeatable for multi-worker deployments; deltas are "
+        "summed. Without it the scrape hits the spec-decode-unaware frontend and "
+        "acceptance-rate / mean-accepted-length are 0/null.",
+    )
 
     args = parser.parse_args()
 

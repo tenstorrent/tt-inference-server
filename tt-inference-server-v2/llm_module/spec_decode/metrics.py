@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -81,18 +82,55 @@ def parse_prometheus_text(
     return result
 
 
-def fetch_prometheus_counters(
-    base_url: str, *, timeout: float = 10.0
-) -> Dict[str, float]:
-    """GET ``{base_url}/metrics`` and return parsed spec-decode counters."""
+def _normalize_metrics_url(value: str) -> str:
+    """Normalize a worker metrics endpoint to a full ``/metrics`` URL.
+
+    Accepts a full URL, ``host:port``, or ``host:port/metrics`` and
+    returns a fully-qualified URL: prepends ``http://`` when no scheme is
+    present (preserving an explicit ``https://``) and appends ``/metrics``
+    when the URL has no path. A bare hostname (no port) is passed through
+    with a scheme but will only work if the caller actually included a
+    port -- there is no sane default worker metrics port to assume in a
+    Dynamo deployment. Mirrors the prefix-cache helper of the same name.
+    """
+    candidate = value.strip()
+    if "://" not in candidate:
+        candidate = f"http://{candidate}"
+    parsed = urlparse(candidate)
+    if parsed.path in ("", "/"):
+        candidate = f"{candidate.rstrip('/')}/metrics"
+    return candidate
+
+
+def _fetch_and_parse(url: str, *, timeout: float = 10.0) -> Dict[str, float]:
+    """GET ``url`` verbatim and parse the spec-decode counters from it."""
     # Imported here (not module top) so importing llm_module doesn't require
     # requests in venvs that never touch the spec-decode path.
     import requests
 
-    url = base_url.rstrip("/") + "/metrics"
     response = requests.get(url, timeout=timeout)
     response.raise_for_status()
     return parse_prometheus_text(response.text)
+
+
+def fetch_prometheus_counters(
+    base_url: str, *, timeout: float = 10.0
+) -> Dict[str, float]:
+    """GET ``{base_url}/metrics`` and return parsed spec-decode counters."""
+    return _fetch_and_parse(base_url.rstrip("/") + "/metrics", timeout=timeout)
+
+
+def fetch_worker_counters(
+    metrics_url: str, *, timeout: float = 10.0
+) -> Dict[str, float]:
+    """GET a worker ``/metrics`` endpoint (normalized) and parse its counters.
+
+    Unlike :func:`fetch_prometheus_counters`, the input is treated as the
+    metrics endpoint itself (via :func:`_normalize_metrics_url`) rather
+    than a base URL to which ``/metrics`` is appended, so full URLs and
+    ``host:port/metrics`` values are not double-suffixed.
+    """
+    return _fetch_and_parse(_normalize_metrics_url(metrics_url), timeout=timeout)
 
 
 def _sum_by_metric(deltas: Dict[str, float], metric_name: str) -> float:
@@ -122,25 +160,8 @@ def _extract_per_position(deltas: Dict[str, float]) -> Dict[int, float]:
     return per_pos
 
 
-def scrape_spec_decode_metrics(
-    base_url: str, before: Dict[str, float]
-) -> Dict[str, Any]:
-    """Scrape ``/metrics`` and compute deltas vs ``before``.
-
-    Returns a dict with:
-        - ``acceptance_rate``: accepted / draft (0.0 if no draft tokens)
-        - ``accepted_tokens``, ``draft_tokens``: deltas in this window
-        - ``mean_accepted_length``: ``1 + accepted / num_drafts`` (the ``+1``
-          is the bonus token verified by the target model at the end of
-          every draft round — matches vLLM's ``SpecDecodingLogging`` and the
-          ``SpecDecodingProm`` doc convention). ``None`` if the server
-          doesn't expose ``vllm:spec_decode_num_drafts_total``.
-        - ``accepted_per_pos``: sorted list of ``(position, count)`` tuples
-    """
-    after = fetch_prometheus_counters(base_url)
-    all_keys = set(before) | set(after)
-    deltas = {k: after.get(k, 0.0) - before.get(k, 0.0) for k in all_keys}
-
+def _acceptance_from_deltas(deltas: Dict[str, float]) -> Dict[str, Any]:
+    """Compute the acceptance block from already-combined counter deltas."""
     accepted = _sum_by_metric(deltas, ACCEPTED_COUNTER)
     draft = _sum_by_metric(deltas, DRAFT_COUNTER)
     num_drafts = _sum_by_metric(deltas, NUM_DRAFTS_COUNTER)
@@ -161,6 +182,64 @@ def scrape_spec_decode_metrics(
     }
 
 
+def scrape_spec_decode_metrics(
+    base_url: str, before: Dict[str, float]
+) -> Dict[str, Any]:
+    """Scrape ``{base_url}/metrics`` and compute deltas vs ``before``.
+
+    Returns a dict with:
+        - ``acceptance_rate``: accepted / draft (0.0 if no draft tokens)
+        - ``accepted_tokens``, ``draft_tokens``: deltas in this window
+        - ``mean_accepted_length``: ``1 + accepted / num_drafts`` (the ``+1``
+          is the bonus token verified by the target model at the end of
+          every draft round — matches vLLM's ``SpecDecodingLogging`` and the
+          ``SpecDecodingProm`` doc convention). ``None`` if the server
+          doesn't expose ``vllm:spec_decode_num_drafts_total``.
+        - ``accepted_per_pos``: sorted list of ``(position, count)`` tuples
+    """
+    after = fetch_prometheus_counters(base_url)
+    all_keys = set(before) | set(after)
+    deltas = {k: after.get(k, 0.0) - before.get(k, 0.0) for k in all_keys}
+    return _acceptance_from_deltas(deltas)
+
+
+def snapshot_worker_counters(
+    metrics_urls: Sequence[str],
+) -> Dict[str, Dict[str, float]]:
+    """Snapshot each worker ``/metrics`` endpoint, keyed by normalized URL.
+
+    Used to take the ``before`` snapshot ahead of an aiperf run. Each URL
+    is normalized so the ``after`` scrape in
+    :func:`scrape_spec_decode_metrics_multi` lines up on the same keys.
+    """
+    return {
+        _normalize_metrics_url(u): fetch_worker_counters(u) for u in metrics_urls if u
+    }
+
+
+def scrape_spec_decode_metrics_multi(
+    metrics_urls: Sequence[str], before_by_url: Dict[str, Dict[str, float]]
+) -> Dict[str, Any]:
+    """Scrape every worker endpoint and sum the before/after deltas.
+
+    For KV-routed / multi-worker deployments the acceptance counters are
+    partitioned across workers, so we compute each worker's delta against
+    its own ``before`` snapshot and sum them before deriving
+    ``acceptance_rate`` / ``mean_accepted_length`` / per-position figures.
+    Falls back to a single endpoint transparently (one-element list).
+    """
+    combined: Dict[str, float] = {}
+    normalized: List[str] = [_normalize_metrics_url(u) for u in metrics_urls if u]
+    for url in normalized:
+        before = before_by_url.get(url, {})
+        after = fetch_worker_counters(url)
+        for key in set(before) | set(after):
+            combined[key] = combined.get(key, 0.0) + (
+                after.get(key, 0.0) - before.get(key, 0.0)
+            )
+    return _acceptance_from_deltas(combined)
+
+
 __all__ = [
     "ACCEPTED_COUNTER",
     "DRAFT_COUNTER",
@@ -168,6 +247,9 @@ __all__ = [
     "PER_POS_PREFIX",
     "SPEC_DECODE_PREFIX",
     "fetch_prometheus_counters",
+    "fetch_worker_counters",
     "parse_prometheus_text",
     "scrape_spec_decode_metrics",
+    "scrape_spec_decode_metrics_multi",
+    "snapshot_worker_counters",
 ]
