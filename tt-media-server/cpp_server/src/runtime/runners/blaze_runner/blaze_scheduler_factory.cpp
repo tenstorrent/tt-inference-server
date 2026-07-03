@@ -75,7 +75,8 @@ class RealPrefillScheduler final : public IPrefillScheduler {
 std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
     const tt::config::LLMConfig& config) {
   const auto maxUsers = static_cast<uint32_t>(tt::config::pmMaxUsers());
-  if (config.runner_type == tt::config::ModelRunnerType::MOCK_SCHEDULER) {
+  if (config.runner_type == tt::config::ModelRunnerType::MOCK_PIPELINE &&
+      tt::config::useMockScheduler()) {
     TT_LOG_INFO(
         "makeDecodeScheduler: using MockDecodeScheduler (single-threaded)");
     return std::make_unique<MockDecodeScheduler>(
@@ -117,7 +118,8 @@ std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
 std::unique_ptr<IPrefillScheduler> makePrefillScheduler(
     const tt::config::LLMConfig& config) {
   const auto maxUsers = static_cast<uint32_t>(tt::config::pmMaxUsers());
-  if (config.runner_type == tt::config::ModelRunnerType::MOCK_SCHEDULER) {
+  if (config.runner_type == tt::config::ModelRunnerType::MOCK_PIPELINE &&
+      tt::config::useMockScheduler()) {
     TT_LOG_INFO(
         "makePrefillScheduler: using MockPrefillScheduler (single-threaded)");
     return std::make_unique<MockPrefillScheduler>(

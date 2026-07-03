@@ -29,7 +29,6 @@ std::unique_ptr<IModelRunner> makeModelRunner(const Config& config,
     case ModelRunnerType::MOCK:
 #ifndef ENABLE_BLAZE
     case ModelRunnerType::MOCK_PIPELINE:
-    case ModelRunnerType::MOCK_SCHEDULER:
     case ModelRunnerType::PIPELINE_MANAGER:
 #endif
       return makeMockModelRunner(config, std::move(callback));

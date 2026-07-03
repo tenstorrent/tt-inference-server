@@ -110,10 +110,6 @@ std::string detectModelPath() {
   return std::filesystem::path(tokJson).parent_path().string();
 }
 
-// IPv4 socket / address helpers (parseUrl, sourceIpForRoute, RAII guards, ...)
-// live in include/utils/net.hpp — see detectAdvertiseHost for the route-based
-// advertise-host detection built on top of them.
-
 }  // namespace
 
 DynamoEndpoint::DynamoEndpoint(std::shared_ptr<services::LLMPipeline> pipeline,

@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <deque>
 #include <mutex>
-#include <random>
 #include <thread>
 #include <vector>
 
@@ -25,48 +24,10 @@ struct MockPrefillSchedulerConfig {
 };
 
 struct MockDecodeSchedulerConfig {
-  // Depth of the transformer pipeline the mock stands in for. Time-to-first-
-  // token is a pipeline-fill cost, not a per-chunk prefill cost: the prompt
-  // streams through the stages one chunk per stage-time and the first token
-  // pops out once the final chunk clears the last stage.
-  uint32_t numPipelineStages = 1;
-  // Time a single token spends in one pipeline stage. Prefill chunks can stream
-  // through back-to-back (the whole prompt is known up front), so this sets the
-  // pipeline-*fill* latency: one stage-time per chunk plus the pipeline depth.
-  std::chrono::microseconds stageLatency{0};
-  // Prefill compute per chunk, added to time-to-first-token on top of the
-  // fill above. stageLatency is a single token's per-stage cost, but a prefill
-  // chunk pushes thousands of tokens through each stage,
-  // which for a real model dwarfs one token's traversal.
-  // This is the term that makes TTFT realistic (and scale with prompt length,
-  // since it is charged per chunk); it mirrors mock_pipeline's
-  // PrefillMockConfig chunk_latency. 0 keeps TTFT at the bare pipeline-fill
-  // (~stageLatency-scale).
-  std::chrono::milliseconds prefillChunkLatency{0};
+  std::chrono::milliseconds prefillLatency{0};
   uint32_t prefillChunkSize = 128;
   uint32_t decodeTokenId = 0;
-  // Per-slot spacing between decode tokens. Decode is autoregressive - token
-  // N+1 cannot enter the pipeline until token N has traversed all stages - so a
-  // single sequence produces one token per full traversal, i.e.
-  // numPipelineStages * stageLatency (e.g. 64 * 44us = 2816us). The familiar
-  // "one token per stage-time" figure is the aggregate rate once many slots
-  // interleave in the pipeline (numPipelineStages slots busy => one token per
-  // stageLatency across all of them), not a per-slot rate. The config builder
-  // derives this from numPipelineStages * stageLatency; keeping it as its own
-  // field lets tests dial the decode spacing independently of the fill.
   std::chrono::microseconds decodeTokenLatency{0};
-  // Max absolute wobble added to each decode interval, drawn uniformly from
-  // [-decodeTokenJitter, +decodeTokenJitter]. Mean-preserving, so throughput
-  // and mean TPOT are unchanged; its only job is to stop every slot from
-  // ticking in lockstep. Without it, identical-length requests started together
-  // stay phase-locked for the whole run, finish in synchronized clumps, and
-  // spike the TTFT tail as a burst of requests all contend for slots at once.
-  // The jitter accumulates over a generation (a random walk), so completions
-  // drift apart and slots free in a trickle instead of a clump. 0 = perfect
-  // metronome (the phase-locked behaviour). It stands in for the desync a real
-  // system gets for free (variable output lengths, batch effects, scheduling),
-  // which this fixed-length synthetic benchmark lacks.
-  std::chrono::microseconds decodeTokenJitter{0};
 };
 
 namespace detail {
@@ -247,8 +208,7 @@ class MockPrefillScheduler final : public IPrefillScheduler {
 //
 // push_request() returns immediately for SUBMIT/CONTINUE after enqueuing a
 // PendingJob; a single background emitter thread paces token emission per slot
-// at decodeTokenLatency intervals (first token deferred by the pipeline-fill
-// latency computed in enqueueJobLocked).
+// at decodeTokenLatency intervals (first token deferred by prefillLatency).
 // This keeps the runner thread free to service cancels, memory requests, and
 // other slots' outputs while a long generation is in flight - which is the
 // point of having a mock scheduler for bottleneck testing in the first place
@@ -374,12 +334,9 @@ class MockDecodeScheduler final : public IDecodeScheduler {
     job.maxTokens = request.gen.max_new_tokens;
     job.basePosition = request.position_id.value_or(
         static_cast<uint32_t>(request.tokens.size()));
-    const uint32_t numChunks =
-        static_cast<uint32_t>(request.tokens.size()) / cfg.prefillChunkSize + 1;
-    const uint32_t fillStages = numChunks + cfg.numPipelineStages - 1;
     job.nextAt = std::chrono::steady_clock::now() +
-                 cfg.stageLatency * fillStages +
-                 numChunks * cfg.prefillChunkLatency;
+                 (cfg.prefillLatency *
+                  (request.tokens.size() / cfg.prefillChunkSize + 1));
     pending.push_back(job);
   }
 
@@ -390,15 +347,6 @@ class MockDecodeScheduler final : public IDecodeScheduler {
         pending.end());
     // Drop any tokens the emitter already published for this slot
     core.purgeOutputsForSlot(slotId);
-  }
-
-  std::chrono::microseconds sampleJitterLocked() {
-    const int64_t j = cfg.decodeTokenJitter.count();
-    if (j <= 0) {
-      return std::chrono::microseconds{0};
-    }
-    std::uniform_int_distribution<int64_t> dist(-j, j);
-    return std::chrono::microseconds{dist(jitterRng)};
   }
 
   void emitterLoop() {
@@ -430,13 +378,7 @@ class MockDecodeScheduler final : public IDecodeScheduler {
             it = pending.erase(it);
             continue;
           }
-          // Add the mean-zero jitter so slots don't stay phase-locked. Clamp at
-          // zero so an over-large jitter can't schedule a token in the past.
-          auto interval = cfg.decodeTokenLatency + sampleJitterLocked();
-          if (interval < std::chrono::microseconds{0}) {
-            interval = std::chrono::microseconds{0};
-          }
-          it->nextAt = now + interval;
+          it->nextAt = now + cfg.decodeTokenLatency;
         }
         if (it->nextAt < nextDeadline) {
           nextDeadline = it->nextAt;
@@ -465,7 +407,6 @@ class MockDecodeScheduler final : public IDecodeScheduler {
   std::vector<PendingJob> pending;
   bool stopRequested = false;
   std::thread emitter;
-  std::mt19937_64 jitterRng{0xC0FFEEULL};
 };
 
 }  // namespace tt::runners::blaze

@@ -33,8 +33,7 @@ constexpr size_t MAX_QUEUE_SIZE = 1000;
 constexpr const char* SCHEDULING_POLICY =
     "prefill_first";  // "prefill_first" or "max_occupancy"
 constexpr const char* LLM_DEVICE_BACKEND =
-    "mock_pipeline";  // "mock", "mock_pipeline", "mock_scheduler",
-                      // "pipeline_manager", "llama"
+    "mock_pipeline";  // "mock", "mock_pipeline", "pipeline_manager", "llama"
 constexpr size_t MAX_IN_FLIGHT_COUNT = 32;
 constexpr size_t MAX_SESSIONS_COUNT = 128;
 constexpr unsigned SESSION_EVICTION_RATE = 90;
@@ -146,24 +145,11 @@ constexpr const char* DYNAMO_ETCD_ENDPOINTS = "http://etcd:2379/";
 // the reaper.
 constexpr int64_t DYNAMO_ETCD_LEASE_TTL_SECS = 10;
 
+// MockSchedulers (MOCK_USE_SCHEDULER=1 on mock_pipeline backend).
+constexpr bool MOCK_USE_SCHEDULER = false;
 constexpr unsigned MOCK_PREFILL_CHUNK_LATENCY_MS = 1353;
-// A 64-stage pipeline at 44us/stage. First-token (fill) latency is
-// 64 * 44us = 2816us; per-slot decode is a full traversal, also 2816us/token,
-// so 64 interleaved slots retire ~1 token/44us in aggregate (~22.7k tok/s).
-// stageLatency + numPipelineStages are the two fundamental knobs; the decode
-// cadence is derived from them.
-constexpr unsigned MOCK_STAGE_LATENCY_US = 44;
-constexpr uint32_t MOCK_PIPELINE_STAGES = 64;
-// +/-20% per-token jitter. Desyncs the otherwise phase-locked slots so
-// identical-length requests don't finish in clumps and spike the TTFT tail.
-// Mean-preserving (throughput/TPOT unchanged). Set to 0 for a perfect
-// metronome. Tune upward if the tail is still too fat for the workload.
-// This is tested as almost the sweet spot.
-constexpr uint32_t MOCK_DECODE_JITTER_PCT = 20;
-// Per-chunk prefill compute added to time-to-first-token, in ms. 0 leaves TTFT
-// at the bare pipeline fill (~a few ms). Set to ~100ms to match mock_pipeline's
-// PrefillMockConfig chunk_latency, or to the model's measured prefill time.
-constexpr unsigned MOCK_PREFILL_COMPUTE_MS = 100;
+constexpr unsigned MOCK_DECODE_TOKEN_LATENCY_US =
+    64 * 44;  // 64 * 44us = 2816us
 constexpr unsigned MOCK_DECODE_TOKEN_ID = 12345;
 
 }  // namespace tt::config::defaults

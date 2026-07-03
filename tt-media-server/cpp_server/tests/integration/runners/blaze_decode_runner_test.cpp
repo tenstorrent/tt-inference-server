@@ -84,11 +84,9 @@ class BlazeDecodeRunnerHarness
     : public test::RunnerTestHarness<BlazeDecodeRunner> {
  public:
   explicit BlazeDecodeRunnerHarness(
-      std::vector<int64_t> stopTokenIds = DEFAULT_STOP_TOKEN_IDS,
-      config::ModelRunnerType runnerType =
-          config::ModelRunnerType::MOCK_PIPELINE)
-      : test::RunnerTestHarness<BlazeDecodeRunner>(test::makeLLMConfig(
-            128, 8, 0, std::move(stopTokenIds), runnerType)) {}
+      std::vector<int64_t> stopTokenIds = DEFAULT_STOP_TOKEN_IDS)
+      : test::RunnerTestHarness<BlazeDecodeRunner>(
+            test::makeLLMConfig(128, 8, 0, std::move(stopTokenIds))) {}
 };
 
 }  // namespace
@@ -395,14 +393,11 @@ TEST(BlazeDecodeRunnerIntegrationTest,
 }
 
 TEST(BlazeDecodeRunnerIntegrationTest, MockSchedulerFlatTokenStream) {
+  EnvSetter mockUseScheduler("MOCK_USE_SCHEDULER", "1");
   EnvSetter mockPrefillLatencyMs("MOCK_PREFILL_CHUNK_LATENCY_MS", "0");
-  // Zero the per-stage latency: with MOCK_SCHEDULER this drives both the
-  // pipeline-fill (first-token) latency and the derived per-slot decode
-  // cadence, so tokens are emitted with no artificial delay.
-  EnvSetter mockStageLatencyUs("MOCK_STAGE_LATENCY_US", "0");
+  EnvSetter mockDecodeTokenLatencyUs("MOCK_DECODE_TOKEN_LATENCY_US", "0");
 
-  BlazeDecodeRunnerHarness harness(DEFAULT_STOP_TOKEN_IDS,
-                                   config::ModelRunnerType::MOCK_SCHEDULER);
+  BlazeDecodeRunnerHarness harness;
 
   const uint32_t taskId = 5150;
   const auto allocateResponse = harness.allocate(taskId);
