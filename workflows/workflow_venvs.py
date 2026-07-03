@@ -366,6 +366,53 @@ def fetch_structured_output_scripts_forge(
     return _fetch_structured_output_scripts(venv_config, FORGE_VLLM_PIN_VERSION)
 
 
+# EXPERIMENT (removable): the Xnhyacinth/LongBench dataset stores `context`
+# already prefixed with the task instruction (+ separate `question` /
+# `answer_prefix` fields), but the fork's auto-generated doc_to_text re-adds the
+# instruction, so every longbench prompt renders the instruction twice. That
+# doubling drags longbench_summarization_e to ~94% of the GPU reference (just
+# under the 95% gate). Rebuild the two summarization prompts from the dataset's
+# own fields to emit the instruction once. Idempotent; delete this hook (and the
+# setup_function wiring on the EVALS_COMMON VenvConfig) to revert.
+_LONGBENCH_DEDUP_DOC_TO_TEXT = 'doc_to_text: "{{context}}{{question}}{{answer_prefix}}"\n'
+_LONGBENCH_DEDUP_TASKS = ("gov_report_e", "multi_news_e")
+
+
+def setup_evals_common(
+    venv_config: "VenvConfig",
+    model_spec: "ModelSpec",  # noqa: F821
+) -> bool:
+    """Hook for EVALS_COMMON: dedup the doubled instruction in longbench
+    summarization prompts (see comment above). Non-fatal: warns and continues if
+    the installed task YAMLs aren't found so a fork layout change can't break the
+    venv build."""
+    longbench_dirs = list(
+        venv_config.venv_path.glob("lib/python*/site-packages/lm_eval/tasks/longbench")
+    )
+    if not longbench_dirs:
+        logger.warning(
+            "setup_evals_common: longbench task dir not found under %s; "
+            "skipping summarization prompt dedup.",
+            venv_config.venv_path,
+        )
+        return True
+
+    for task in _LONGBENCH_DEDUP_TASKS:
+        yaml_path = longbench_dirs[0] / f"{task}.yaml"
+        if not yaml_path.exists():
+            logger.warning("setup_evals_common: %s not found; skipping.", yaml_path)
+            continue
+        lines = yaml_path.read_text().splitlines(keepends=True)
+        for i, line in enumerate(lines):
+            if line.lstrip().startswith("doc_to_text:"):
+                if lines[i] != _LONGBENCH_DEDUP_DOC_TO_TEXT:
+                    lines[i] = _LONGBENCH_DEDUP_DOC_TO_TEXT
+                    yaml_path.write_text("".join(lines))
+                    logger.info("setup_evals_common: dedup'd doc_to_text in %s", task)
+                break
+    return True
+
+
 _venv_config_list = [
     # Pure pip install
     VenvConfig(
@@ -391,6 +438,9 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_COMMON,
         requirements_file="evals-common.txt",
+        # EXPERIMENT (removable): dedup doubled instruction in longbench
+        # summarization prompts. Remove this line + setup_evals_common to revert.
+        setup_function=setup_evals_common,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION,

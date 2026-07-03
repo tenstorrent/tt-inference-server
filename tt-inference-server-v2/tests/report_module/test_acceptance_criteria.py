@@ -48,6 +48,7 @@ def test_category_result_passed_and_to_dict():
         "failed": 2,
         "na": 1,
         "blockers": {},
+        "waived": {},
     }
 
 
@@ -126,6 +127,40 @@ def test_eval_accuracy_check_pass():
 def test_eval_accuracy_check_fail():
     _, blockers, _ = acceptance_criteria_check(_schema(_eval({"accuracy_check": 3})))
     assert "Accuracy check failed" in blockers["evals:E"]
+
+
+def test_eval_known_issue_waives_blocker():
+    # A failed eval whose task_name matches an EVALS known_issue is demoted to a
+    # non-fatal waiver, so acceptance passes. Works with dict-shaped waivers.
+    schema = _schema(_eval({"task_name": "longbench_code_e", "accuracy_check": 3}))
+    known_issues = [
+        {"workflow_type": "EVALS", "task_name": "longbench_code_e", "reason": "flaky"}
+    ]
+    accepted, blockers, cats = acceptance_criteria_check(schema, known_issues)
+    by_name = {c.name: c for c in cats}
+    assert accepted is True and blockers == {}
+    assert by_name[CATEGORY_EVALS].status == STATUS_PASS
+    assert "evals:E" in by_name[CATEGORY_EVALS].waived
+
+
+def test_eval_known_issue_wrong_task_still_blocks():
+    # Waiver only matches its declared task_name; an unlisted failure blocks.
+    schema = _schema(_eval({"task_name": "longbench_single_e", "accuracy_check": 3}))
+    known_issues = [
+        {"workflow_type": "EVALS", "task_name": "longbench_code_e", "reason": "flaky"}
+    ]
+    accepted, blockers, _ = acceptance_criteria_check(schema, known_issues)
+    assert accepted is False and "evals:E" in blockers
+
+
+def test_eval_known_issue_wrong_workflow_still_blocks():
+    # A BENCHMARKS-scoped waiver must not mask an eval blocker.
+    schema = _schema(_eval({"task_name": "longbench_code_e", "accuracy_check": 3}))
+    known_issues = [
+        {"workflow_type": "BENCHMARKS", "task_name": "longbench_code_e", "reason": "x"}
+    ]
+    accepted, _, _ = acceptance_criteria_check(schema, known_issues)
+    assert accepted is False
 
 
 def test_eval_all_na_is_na_status_not_failure():
