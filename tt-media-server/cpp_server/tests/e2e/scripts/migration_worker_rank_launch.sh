@@ -35,6 +35,9 @@
 # padded up to the next power of two (e.g. DeepSeek's 61 -> 64) then divided
 # into NUM_PREFILL contiguous slices for prefill and NUM_DECODE for decode, each
 # worker getting its role_index'th slice in order; unset/0 => worker owns all).
+# HEALTH_PORT (fixed health port, one-worker-per-host deploy) or
+# HEALTH_PORT_BASE (per-worker port = BASE + global-index, for many workers on
+# one host); unset/0 on both => no health server.
 set -euo pipefail
 
 # Single exit path for every unrecoverable misconfiguration: log to stderr with
@@ -192,6 +195,26 @@ if [[ -n "${LAYER_END:-}" && "${LAYER_END}" != "0" ]]; then
   layer_args+=(--layer-start "${slice_start}" --layer-end "${slice_end}")
 fi
 
+# Optional HTTP health surface (/healthz, /readyz, /metrics). Two modes:
+#   HEALTH_PORT       fixed port passed verbatim — for the cluster deploy, where
+#                     one worker per host means every worker can share a port.
+#   HEALTH_PORT_BASE  per-worker port = BASE + global-index, so many workers on
+#                     ONE host (the single-host MPI harness) don't collide. The
+#                     global-index mirrors single-launch rank ordering:
+#                     prefill-p -> p, decode-d -> NUM_PREFILL + d.
+# HEALTH_PORT wins when both are set; unset/0 => no health server.
+health_args=()
+if [[ -n "${HEALTH_PORT:-}" && "${HEALTH_PORT}" != "0" ]]; then
+  health_args+=(--health-port "${HEALTH_PORT}")
+elif [[ -n "${HEALTH_PORT_BASE:-}" && "${HEALTH_PORT_BASE}" != "0" ]]; then
+  if [[ "${role}" == "prefill" ]]; then
+    health_port=$(( HEALTH_PORT_BASE + role_index ))
+  else
+    health_port=$(( HEALTH_PORT_BASE + NUM_PREFILL + role_index ))
+  fi
+  health_args+=(--health-port "${health_port}")
+fi
+
 # ${peer_args[@]+...} keeps `set -u` happy when a prefill ends up with no peers.
 exec "${WORKER_BIN}" \
   --metadata "${METADATA}" \
@@ -200,4 +223,5 @@ exec "${WORKER_BIN}" \
   --host-dram-bytes "${HOST_DRAM_BYTES}" \
   --discovery-timeout-sec "${DISCOVERY_TIMEOUT_SEC}" \
   ${layer_args[@]+"${layer_args[@]}"} \
+  ${health_args[@]+"${health_args[@]}"} \
   ${extra_args[@]+"${extra_args[@]}"}
