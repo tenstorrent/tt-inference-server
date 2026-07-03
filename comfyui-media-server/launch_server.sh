@@ -39,10 +39,22 @@ exec 2>&1
 echo "Logging to: $LOG_FILE"
 
 # ---------------------------------------------------------------------------
-# Resolve script directory
+# Resolve directories.
+#   SERVER_DIR    — where this server's code lives (this script's directory).
+#   TT_METAL_HOME — a SEPARATE, already-built tt-metal checkout. Since this server
+#                   was relocated out of the tt-metal root, it no longer lives
+#                   inside tt-metal; TT_METAL_HOME MUST come from the environment
+#                   (set by the Docker image, or exported for local dev, e.g.
+#                   `TT_METAL_HOME=/home/you/tt-metal ./launch_server.sh ...`).
 # ---------------------------------------------------------------------------
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export TT_METAL_HOME="$SCRIPT_DIR"
+SERVER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -z "${TT_METAL_HOME:-}" ]; then
+    echo "Error: TT_METAL_HOME is not set."
+    echo "       Point it at a built tt-metal checkout, e.g.:"
+    echo "         TT_METAL_HOME=/path/to/tt-metal ./launch_server.sh --model ${MODEL}"
+    exit 1
+fi
+export TT_METAL_HOME
 
 # ---------------------------------------------------------------------------
 # Activate Python environment
@@ -63,7 +75,7 @@ source "${TT_METAL_HOME}/python_env/bin/activate"
 if ! python -c "import fastapi, uvicorn" 2>/dev/null; then
     echo "Installing server dependencies from requirements-server.txt..."
     VENV_PY="${TT_METAL_HOME}/python_env/bin/python"
-    REQ_FILE="${TT_METAL_HOME}/requirements-server.txt"
+    REQ_FILE="${SERVER_DIR}/requirements-server.txt"
     # python_env is created by uv and has no pip, so install with uv. Fall back to
     # bootstrapping pip via ensurepip only if uv is unavailable.
     UV_BIN="$(command -v uv || echo "${HOME}/.local/bin/uv")"
@@ -78,7 +90,9 @@ fi
 # ---------------------------------------------------------------------------
 # Common environment variables (both models)
 # ---------------------------------------------------------------------------
-export PYTHONPATH="${TT_METAL_HOME}"
+# tt-metal (for `ttnn` / `models.*`) AND this server dir (for `server`,
+# `device_specs`, `utils`, the runners/configs) must both be importable.
+export PYTHONPATH="${TT_METAL_HOME}:${SERVER_DIR}"
 export LD_LIBRARY_PATH="${TT_METAL_HOME}/build/lib:${LD_LIBRARY_PATH}"
 export HF_HOME="${HOME}/.cache/huggingface"
 export TTNN_CONFIG_OVERRIDES='{"enable_model_cache": true, "model_cache_path": "'${HOME}'/.cache/ttnn/models"}'
@@ -248,6 +262,7 @@ done
 echo ""
 echo "Environment configured:"
 echo "  MODEL:           $MODEL"
+echo "  SERVER_DIR:      $SERVER_DIR"
 echo "  TT_METAL_HOME:   $TT_METAL_HOME"
 echo "  PYTHONPATH:      $PYTHONPATH"
 echo "  TT_VISIBLE_DEVICES: $TT_VISIBLE_DEVICES"
@@ -300,4 +315,4 @@ echo "Server will be ready when you see: 'All workers ready. ${MODEL} server is 
 echo "Press Ctrl+C to stop the server."
 echo ""
 
-"${TT_METAL_HOME}/python_env/bin/python" "${TT_METAL_HOME}/server.py" "${PYTHON_ARGS[@]}"
+"${TT_METAL_HOME}/python_env/bin/python" "${SERVER_DIR}/server.py" "${PYTHON_ARGS[@]}"

@@ -11,9 +11,13 @@ of a tt-metal working branch (PR #47510 content, ground truth:
 `tt-metal` branch `samt/standalone-media-20260703`). It consumes tt-metal/ttnn as
 an **installed dependency** — it does not vendor them.
 
-> Status: **scaffold**. The source is dropped in as-is with its original flat
-> import layout. It is not yet wired into `run.py` / `model_spec.json` / Docker,
-> and the launcher still assumes the old root layout (see *Known fixups*).
+> Status: **runnable locally, Docker path drafted.** The launcher is fixed for
+> the relocated layout (external `TT_METAL_HOME`), so it runs directly against a
+> built host tt-metal today — see **[`LOCAL_TESTING.md`](./LOCAL_TESTING.md)**
+> (Path 1). A `Dockerfile` + `docker-entrypoint.sh` for the `run.py --docker-server`
+> path exist but the image hasn't been built/tested on hardware (Path 2). Not yet
+> wired into `model_spec.json`, and `server_manager.py` still auto-launches the
+> old in-tt-metal layout.
 
 ## Why this is separate from `tt-media-server/`
 
@@ -115,18 +119,24 @@ root (`TT_METAL_HOME = <script dir>`). When it becomes the image entrypoint:
   here.
 - Map `run.py`'s `MODEL`/`DEVICE` env → `server.py`'s `--model`/`--board` args.
 
-## Next steps (not done — implementation phase)
+## Status of the work
 
-1. Build the Docker image (extend `tt-media-server/Dockerfile`'s pattern: base on
-   the tt-metal dev image, bake the pinned SHA, `COPY comfyui-media-server`,
-   install `requirements-server.txt`, entrypoint per above).
-2. Prove the dev loop: `run.py … --docker-server --dev-mode
-   --override-docker-image <local image>` brings the server healthy on the
-   published port.
-3. Update `ComfyUI/custom_nodes/tenstorrent_nodes/server_manager.py` to spawn the
-   `run.py … --docker-server` command (pointing at this repo) instead of
-   `launch_server.sh`, keeping the `/health` poll.
-4. Decide the permanent routing (`inference_engine: comfyui` + image repo) vs.
-   staying on the `--override-docker-image` dev path.
-5. Drop the SDXL-only legacy set intentionally excluded here (`sdxl_server.py`,
-   `sdxl_worker.py`, `launch_sdxl_server.sh`, `SDXL_SERVER_README.md`).
+Done:
+- ✅ Relocated launcher (`launch_server.sh`) — external `TT_METAL_HOME`, dual
+  `PYTHONPATH`, runs `server.py` from this dir. Runnable locally now (Path 1).
+- ✅ `Dockerfile` (pinned tt-metal build) + `docker-entrypoint.sh`
+  (`MODEL`/`DEVICE` env → launcher) + `build_image.sh` for the Docker path.
+- ✅ Legacy SDXL-only set excluded from the relocation.
+
+Not done — next steps:
+1. **Build + prove the image**: `./build_image.sh`, then `run.py …
+   --docker-server --dev-mode --override-docker-image comfyui-media-server:dev`
+   healthy on the published port. (Long first build; untested on hardware.)
+2. **Update `ComfyUI/.../server_manager.py`** to spawn the `run.py …
+   --docker-server` command instead of `launch_server.sh`, keeping the `/health`
+   poll.
+3. **Decide permanent routing** (`inference_engine: comfyui` + image repo) vs.
+   staying on the `--override-docker-image` dev path (avoids colliding with
+   `tt-media-server`'s `sdxl`/`wan` names).
+4. **Add `model_spec.json` entries** for the ComfyUI models once routing is
+   decided.
