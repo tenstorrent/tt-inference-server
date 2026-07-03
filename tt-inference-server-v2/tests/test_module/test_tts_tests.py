@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 """Unit coverage for the pure TTS metric helpers used by the eval and
-benchmark runners. """
+benchmark runners."""
 
 from __future__ import annotations
 
@@ -29,7 +29,11 @@ def _status(ttft_ms=None, rtr=None) -> TtsTestStatus:
 
 class TestTtsTtftAverage:
     def test_averages_only_valid_samples(self):
-        statuses = [_status(ttft_ms=100.0), _status(ttft_ms=200.0), _status(ttft_ms=None)]
+        statuses = [
+            _status(ttft_ms=100.0),
+            _status(ttft_ms=200.0),
+            _status(ttft_ms=None),
+        ]
         assert _tts_ttft(statuses) == pytest.approx(150.0)
 
     def test_all_none_returns_none(self):
@@ -55,7 +59,11 @@ class TestTtsGenericAverage:
     """``_tts_avg`` is the benchmark module's generalized averaging helper."""
 
     def test_average_ttft_field(self):
-        statuses = [_status(ttft_ms=100.0), _status(ttft_ms=200.0), _status(ttft_ms=None)]
+        statuses = [
+            _status(ttft_ms=100.0),
+            _status(ttft_ms=200.0),
+            _status(ttft_ms=None),
+        ]
         assert _tts_avg(statuses, "ttft_ms") == pytest.approx(150.0)
 
     def test_average_rtr_field(self):
@@ -78,7 +86,12 @@ class TestTtsTailLatency:
         assert _tts_tail_latency(statuses) == (90.0, 100.0)
 
     def test_none_samples_are_ignored(self):
-        statuses = [_status(ttft_ms=None), _status(ttft_ms=30.0), _status(ttft_ms=10.0), _status(ttft_ms=20.0)]
+        statuses = [
+            _status(ttft_ms=None),
+            _status(ttft_ms=30.0),
+            _status(ttft_ms=10.0),
+            _status(ttft_ms=20.0),
+        ]
         assert _tts_tail_latency(statuses) == (30.0, 30.0)
 
     def test_single_sample(self):
@@ -112,11 +125,15 @@ class TestTtsNumCalls:
 
 class TestTtsTestText:
     def test_prefers_task_text(self):
-        ctx = SimpleNamespace(all_params=SimpleNamespace(tasks=[SimpleNamespace(text="custom text")]))
+        ctx = SimpleNamespace(
+            all_params=SimpleNamespace(tasks=[SimpleNamespace(text="custom text")])
+        )
         assert _tts_test_text(ctx) == "custom text"
 
     def test_falls_back_to_task_name(self):
-        ctx = SimpleNamespace(all_params=SimpleNamespace(tasks=[SimpleNamespace(task_name="my_task")]))
+        ctx = SimpleNamespace(
+            all_params=SimpleNamespace(tasks=[SimpleNamespace(task_name="my_task")])
+        )
         assert _tts_test_text(ctx) == "my_task"
 
     def test_default_when_params_is_list(self):
