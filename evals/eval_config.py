@@ -312,7 +312,7 @@ _eval_config_list = [
                     published_score=87.4,
                     published_score_ref="https://artificialanalysis.ai/models?models=minimax-m2-7",
                     gpu_reference_score=85.35,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4324#issuecomment-4809200160",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
