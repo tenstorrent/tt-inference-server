@@ -5,17 +5,45 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "domain/prefix_cache/helpers.hpp"
 #include "domain/prefix_cache/prefix_index.hpp"
 #include "domain/prefix_cache/response_id_index.hpp"
-#include "services/session_lease.hpp"
+#include "domain/sentinel_values.hpp"
+#include "domain/session.hpp"
 #include "utils/conversation_hasher.hpp"
 
 namespace tt::services {
+
+class SessionRateLimitException : public std::runtime_error {
+ public:
+  using std::runtime_error::runtime_error;
+};
+
+class SessionInFlightException : public SessionRateLimitException {
+ public:
+  SessionInFlightException()
+      : SessionRateLimitException(
+            "Session already has a request in flight. Multiple concurrent "
+            "requests per session are not supported.") {}
+};
+
+enum class MarkInFlightOutcome {
+  Marked,
+  Busy,
+  Stale,
+  NotFound,
+};
+
+struct MarkInFlightResult {
+  MarkInFlightOutcome outcome = MarkInFlightOutcome::NotFound;
+  uint32_t slotId = domain::INVALID_SLOT_ID;
+};
 
 struct PrefixCacheAcquireResult {
   bool sessionFound = false;
@@ -26,12 +54,33 @@ struct PrefixCacheAcquireResult {
   std::vector<domain::prefix_cache::Candidate> candidatesList;
 };
 
+struct PrefixCacheRouterCallbacks {
+  std::function<MarkInFlightResult(
+      const std::string& sessionId, std::function<void()>& cancelFn,
+      std::optional<uint64_t> expectedKeyHash,
+      const std::string* expectedResponseId)>
+      tryMarkInFlight;
+
+  std::function<std::shared_ptr<domain::Session>(const std::string& sessionId)>
+      getSession;
+
+  std::function<std::optional<uint64_t>(const std::string& sessionId)>
+      getSessionHash;
+
+  std::function<bool(const std::string& sessionId, uint64_t keyHash)>
+      setSessionHash;
+
+  std::function<bool(const std::string& sessionId,
+                     const std::string& responseId)>
+      setSessionResponseId;
+};
+
 class PrefixCacheRouter {
  public:
   using Candidate = domain::prefix_cache::Candidate;
   using AcquireResult = PrefixCacheAcquireResult;
 
-  explicit PrefixCacheRouter(SessionLease& lease);
+  explicit PrefixCacheRouter(PrefixCacheRouterCallbacks callbacks);
 
   PrefixCacheRouter(const PrefixCacheRouter&) = delete;
   PrefixCacheRouter& operator=(const PrefixCacheRouter&) = delete;
@@ -62,7 +111,7 @@ class PrefixCacheRouter {
                        const std::string& responseId);
 
  private:
-  SessionLease& lease;
+  PrefixCacheRouterCallbacks callbacks;
   domain::prefix_cache::PrefixIndex prefixIndex;
   domain::prefix_cache::ResponseIdIndex responseIdIndex;
 };

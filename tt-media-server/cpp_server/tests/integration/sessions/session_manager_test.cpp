@@ -13,7 +13,6 @@
 
 #include "../integration_test_helpers.hpp"
 #include "domain/session.hpp"
-#include "services/session_lease.hpp"
 #include "utils/conversation_hasher.hpp"
 
 namespace {
@@ -39,10 +38,10 @@ inline std::string createSessionWithSlot(
 }
 
 // ---------------------------------------------------------------------------
-// SessionLease interface (implemented by SessionManager)
+// tryMarkInFlight
 // ---------------------------------------------------------------------------
 
-TEST(SessionLease, TryMarkInFlight_MarksSessionAndReturnsSlot) {
+TEST(SessionManager, TryMarkInFlight_MarksSessionAndReturnsSlot) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
@@ -57,7 +56,7 @@ TEST(SessionLease, TryMarkInFlight_MarksSessionAndReturnsSlot) {
   manager.getSession(sessionId)->release();
 }
 
-TEST(SessionLease, TryMarkInFlight_BusyWhenAlreadyInFlight) {
+TEST(SessionManager, TryMarkInFlight_BusyWhenAlreadyInFlight) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
@@ -74,7 +73,7 @@ TEST(SessionLease, TryMarkInFlight_BusyWhenAlreadyInFlight) {
   manager.getSession(sessionId)->release();
 }
 
-TEST(SessionLease, TryMarkInFlight_StaleWhenKeyHashMismatch) {
+TEST(SessionManager, TryMarkInFlight_StaleWhenKeyHashMismatch) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
@@ -86,7 +85,7 @@ TEST(SessionLease, TryMarkInFlight_StaleWhenKeyHashMismatch) {
   EXPECT_EQ(result.outcome, tt::services::MarkInFlightOutcome::Stale);
 }
 
-TEST(SessionLease, GetAndSetSessionHash) {
+TEST(SessionManager, GetAndSetSessionHash) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
@@ -98,7 +97,7 @@ TEST(SessionLease, GetAndSetSessionHash) {
   EXPECT_EQ(manager.getSessionHash(sessionId), 42u);
 }
 
-TEST(SessionLease, SetSessionResponseId) {
+TEST(SessionManager, SetSessionResponseId) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 

@@ -20,7 +20,6 @@
 
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "services/prefix_cache_router.hpp"
-#include "services/session_lease.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/concurrent_queue.hpp"
 #include "utils/conversation_hasher.hpp"
@@ -32,7 +31,7 @@ enum class CloseSessionResult {
   NOT_FOUND,
 };
 
-class SessionManager : public SessionLease {
+class SessionManager {
  public:
   using Candidate = domain::prefix_cache::Candidate;
   using AcquiredSession = PrefixCacheAcquireResult;
@@ -66,21 +65,19 @@ class SessionManager : public SessionLease {
   // Thread-safe: holds the ConcurrentMap lock during the state transition.
   void releaseInFlight(const std::string& sessionId);
 
-  std::shared_ptr<domain::Session> getSession(
-      const std::string& sessionId) override;
+  std::shared_ptr<domain::Session> getSession(const std::string& sessionId);
   size_t getActiveSessionCount() const;
 
-  // SessionLease — narrow API for prefix-cache routing components.
   MarkInFlightResult tryMarkInFlight(
       const std::string& sessionId, std::function<void()>& cancelFn,
       std::optional<uint64_t> expectedKeyHash = std::nullopt,
-      const std::string* expectedResponseId = nullptr) override;
+      const std::string* expectedResponseId = nullptr);
   std::optional<uint64_t> getSessionHash(
-      const std::string& sessionId) const override;
-  bool setSessionHash(const std::string& sessionId, uint64_t keyHash) override;
+      const std::string& sessionId) const;
+  bool setSessionHash(const std::string& sessionId, uint64_t keyHash);
   bool setSessionResponseId(const std::string& sessionId,
-                            const std::string& responseId) override;
-  void unlockSlot(uint32_t slotId) override;
+                            const std::string& responseId);
+  void unlockSlot(uint32_t slotId);
 
   // Lock a slot to prevent eviction.
   void lockSlot(uint32_t slotId);

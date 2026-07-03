@@ -10,7 +10,8 @@
 
 namespace tt::services {
 
-PrefixCacheRouter::PrefixCacheRouter(SessionLease& lease) : lease(lease) {}
+PrefixCacheRouter::PrefixCacheRouter(PrefixCacheRouterCallbacks callbacks)
+    : callbacks(std::move(callbacks)) {}
 
 std::optional<PrefixCacheRouter::AcquireResult>
 PrefixCacheRouter::tryAcquireByPrefixHash(
@@ -55,8 +56,8 @@ PrefixCacheRouter::tryAcquireByPrefixHash(
         domain::prefix_cache::BlockMatcher::blocksToTokens(
             candidate.matchedBlocks);
 
-    auto markResult =
-        lease.tryMarkInFlight(candidate.sessionId, cancelFn, keyHash, nullptr);
+    auto markResult = callbacks.tryMarkInFlight(candidate.sessionId, cancelFn,
+                                                keyHash, nullptr);
 
     if (markResult.outcome == MarkInFlightOutcome::Stale ||
         markResult.outcome == MarkInFlightOutcome::NotFound) {
@@ -119,8 +120,8 @@ PrefixCacheRouter::tryAcquireByResponseId(const std::string& previousResponseId,
   const std::string sessionId = *sessionIdOpt;
 
   std::optional<AcquireResult> acquired;
-  auto markResult = lease.tryMarkInFlight(sessionId, cancelFn, std::nullopt,
-                                          &previousResponseId);
+  auto markResult = callbacks.tryMarkInFlight(sessionId, cancelFn, std::nullopt,
+                                              &previousResponseId);
 
   if (markResult.outcome == MarkInFlightOutcome::Stale ||
       markResult.outcome == MarkInFlightOutcome::NotFound) {
@@ -166,8 +167,8 @@ void PrefixCacheRouter::registerPrefixHash(
       "blocks={}, keyThinkCount={}",
       sessionId, keyHash, blockInfos.size(), keyThinkCount);
 
-  const auto oldHash = lease.getSessionHash(sessionId);
-  if (!lease.setSessionHash(sessionId, keyHash)) {
+  const auto oldHash = callbacks.getSessionHash(sessionId);
+  if (!callbacks.setSessionHash(sessionId, keyHash)) {
     TT_LOG_WARN(
         "[PrefixCacheRouter] registerPrefixHash: sessionId={} not found",
         sessionId);
@@ -175,7 +176,7 @@ void PrefixCacheRouter::registerPrefixHash(
   }
 
   uint32_t slotId = tt::domain::INVALID_SLOT_ID;
-  if (auto session = lease.getSession(sessionId)) {
+  if (auto session = callbacks.getSession(sessionId)) {
     slotId = session->getSlotId();
   }
 
@@ -204,7 +205,7 @@ void PrefixCacheRouter::registerResponseId(const std::string& sessionId,
   TT_LOG_INFO("[PrefixCacheRouter] registerResponseId: sessionId={}, id={}",
               sessionId, responseId);
 
-  if (!lease.setSessionResponseId(sessionId, responseId)) {
+  if (!callbacks.setSessionResponseId(sessionId, responseId)) {
     TT_LOG_WARN("[PrefixCacheRouter] registerResponseId: sessionId={} not found",
                 sessionId);
     return;
@@ -234,7 +235,7 @@ void PrefixCacheRouter::updateResponseId(
       "[PrefixCacheRouter] updateResponseId: sessionId={} from id={} to id={}",
       sessionId, previousResponseId, responseId);
 
-  if (!lease.setSessionResponseId(sessionId, responseId)) {
+  if (!callbacks.setSessionResponseId(sessionId, responseId)) {
     TT_LOG_WARN("[PrefixCacheRouter] updateResponseId: sessionId={} not found",
                 sessionId);
     return;
@@ -263,7 +264,7 @@ std::pair<uint32_t, uint32_t> PrefixCacheRouter::computeMatchedTokens(
 
 void PrefixCacheRouter::clearSessionBlockThinkTokens(
     const std::string& sessionId) {
-  const auto keyHash = lease.getSessionHash(sessionId);
+  const auto keyHash = callbacks.getSessionHash(sessionId);
 
   if (!keyHash.has_value()) {
     TT_LOG_WARN(
