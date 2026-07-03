@@ -34,7 +34,7 @@ enum class CloseSessionResult {
 
 class SessionManager : public SessionLease {
  public:
-  using Candidate = domain::Candidate;
+  using Candidate = domain::prefix_cache::Candidate;
   using AcquiredSession = PrefixCacheAcquireResult;
 
   SessionManager();
@@ -54,6 +54,7 @@ class SessionManager : public SessionLease {
   CloseSessionResult closeSession(const std::string& sessionId);
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
   uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
+  uint32_t getCommittedBlocks(const std::string& sessionId) const;
 
   // Marks the session in-flight and registers the cancel function atomically.
   // The cancel function is invoked if closeSession is called while in-flight.

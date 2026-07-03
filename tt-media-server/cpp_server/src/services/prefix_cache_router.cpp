@@ -4,7 +4,7 @@
 #include "services/prefix_cache_router.hpp"
 
 #include "config/settings.hpp"
-#include "domain/block_matcher.hpp"
+#include "domain/prefix_cache/block_matcher.hpp"
 #include "metrics/metrics.hpp"
 #include "utils/logger.hpp"
 
@@ -25,11 +25,11 @@ PrefixCacheRouter::tryAcquireByPrefixHash(
 
   const uint64_t keyHash = blockInfos.front().hash;
 
-  const std::vector<domain::PrefixIndexEntry> entries =
+  const std::vector<domain::prefix_cache::PrefixIndexEntry> entries =
       prefixIndex.getEntriesForKey(keyHash);
   std::vector<Candidate> candidates =
-      domain::BlockMatcher::buildCandidates(blockInfos, entries);
-  domain::BlockMatcher::sortCandidates(candidates);
+      domain::prefix_cache::BlockMatcher::buildCandidates(blockInfos, entries);
+  domain::prefix_cache::BlockMatcher::sortCandidates(candidates);
 
   if (candidates.empty()) {
     TT_LOG_DEBUG("[PrefixCacheRouter] tryAcquireByPrefixHash: keyHash={} miss",
@@ -42,20 +42,9 @@ PrefixCacheRouter::tryAcquireByPrefixHash(
       "keyHash={}, best match={} blocks",
       candidates.size(), keyHash, candidates.front().matchedBlocks);
 
-  const float threshold = tt::config::prefixCacheHitThreshold();
   bool anyBusy = false;
   for (const auto& candidate : candidates) {
-    if (!domain::BlockMatcher::passesHitThreshold(candidate, threshold)) {
-      if (threshold > 0.0f) {
-        const float matchPercent = (candidate.matchedBlocks * 100.0f) /
-                                   static_cast<float>(candidate.sessionBlocks);
-        TT_LOG_INFO(
-            "[PrefixCacheRouter] Prefix cache candidate rejected: "
-            "matchedBlocks={} sessionBlocks={} matchPercent={:.1f}% < "
-            "threshold={:.1f}%",
-            candidate.matchedBlocks, candidate.sessionBlocks, matchPercent,
-            threshold);
-      }
+    if (!domain::prefix_cache::BlockMatcher::passesHitThreshold(candidate)) {
       continue;
     }
 
@@ -63,7 +52,8 @@ PrefixCacheRouter::tryAcquireByPrefixHash(
     bool busy = false;
 
     const uint32_t matchedTokens =
-        domain::BlockMatcher::blocksToTokens(candidate.matchedBlocks);
+        domain::prefix_cache::BlockMatcher::blocksToTokens(
+            candidate.matchedBlocks);
 
     auto markResult =
         lease.tryMarkInFlight(candidate.sessionId, cancelFn, keyHash, nullptr);
@@ -258,16 +248,17 @@ std::pair<uint32_t, uint32_t> PrefixCacheRouter::computeMatchedTokens(
     return {0, 0};
   }
 
-  const std::vector<domain::PrefixIndexEntry> entries =
+  const std::vector<domain::prefix_cache::PrefixIndexEntry> entries =
       prefixIndex.getEntriesForKey(blockInfos.front().hash);
   const auto [matchedBlocks, thinkTokens] =
-      domain::BlockMatcher::computeMatchedBlocksForSession(sessionId,
-                                                           blockInfos, entries);
+      domain::prefix_cache::BlockMatcher::computeMatchedBlocksForSession(
+          sessionId, blockInfos, entries);
 
   if (matchedBlocks == 0) {
     return {0, 0};
   }
-  return {domain::BlockMatcher::blocksToTokens(matchedBlocks), thinkTokens};
+  return {domain::prefix_cache::BlockMatcher::blocksToTokens(matchedBlocks),
+          thinkTokens};
 }
 
 void PrefixCacheRouter::clearSessionBlockThinkTokens(

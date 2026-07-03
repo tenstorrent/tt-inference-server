@@ -7,11 +7,10 @@
 
 #include "utils/concurrent_map.hpp"
 
-namespace tt::domain {
-
+namespace tt::domain::prefix_cache {
 class ResponseIdIndex {
  public:
-  std::optional<std::string> lookup(const std::string& id);
+  std::optional<std::string> lookup(const std::string& id) const;
   void registerId(const std::string& id, const std::string& sessionId);
   std::optional<std::string> updateId(const std::string& prevId,
                                       const std::string& newId);
@@ -20,5 +19,4 @@ class ResponseIdIndex {
  private:
   utils::ConcurrentMap<std::string, std::string> responseIdIndex;
 };
-
-}  // namespace tt::domain
+}  // namespace tt::domain::prefix_cache

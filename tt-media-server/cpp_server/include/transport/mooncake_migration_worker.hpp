@@ -48,6 +48,11 @@ struct MigrationWorkerConfig {
   /// of discovery (timeout, poll interval) lives in PeerDiscoveryService, not
   /// here — this config only names the peers (the *what*).
   std::vector<std::string> peer_segment_names;
+
+  /// KV layer span [layer_start, layer_end) this worker owns; layer_end == 0
+  /// means unset → owns every layer. See ownsLayer().
+  uint32_t layer_start = 0;
+  uint32_t layer_end = 0;
 };
 
 /**
@@ -96,6 +101,10 @@ class MooncakeMigrationWorker {
 
   /// Segment handles for the peers resolved during bringUp() (name -> handle).
   const std::map<std::string, SegmentHandle>& peers() const { return peers_; }
+
+  /// True if @p layerId is in this worker's [layer_start, layer_end) span; an
+  /// unset span (layer_end == 0) owns every layer, so always returns true.
+  bool ownsLayer(uint32_t layerId) const;
 
   /// Step 1 (sender): write a known tensor into this galaxy's device DRAM.
   bool writeTensorOnSender(const std::vector<uint8_t>& tensor);

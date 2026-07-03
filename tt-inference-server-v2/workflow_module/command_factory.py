@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime as _dt
 import json
 import logging
 import os
@@ -16,7 +15,7 @@ from typing import List, Optional
 
 from workflows.model_spec import get_runtime_model_spec
 from workflows.runtime_config import RuntimeConfig
-from workflows.workflow_types import DeviceTypes
+from workflows.workflow_types import DeviceTypes, InferenceEngine
 
 from utils.url_helpers import resolve_deploy_url
 
@@ -188,7 +187,7 @@ def _build_llm_bench_options(args: argparse.Namespace) -> Optional[LLMBenchOptio
         return None
     return LLMBenchOptions(
         tools=getattr(args, "tools", None) or "vllm",
-        auth_token=_mint_jwt_if_secret(getattr(args, "jwt_secret", None)),
+        auth_token=_resolve_auth_token(args),
         venv_python=_release_bench_venv_python(args),
     )
 
@@ -214,7 +213,7 @@ def _build_llm_eval_options(args: argparse.Namespace) -> Optional[LLMEvalOptions
     if getattr(args, "workflow", None) not in _LLM_EVAL_WORKFLOWS:
         return None
     return LLMEvalOptions(
-        auth_token=_mint_jwt_if_secret(getattr(args, "jwt_secret", None)),
+        auth_token=_resolve_auth_token(args),
     )
 
 
@@ -245,7 +244,7 @@ def _build_prefix_cache_options(
         request_rate=args.prefix_cache_request_rate,
         scenarios_json=args.prefix_cache_scenarios_json,
         trace_path=args.prefix_cache_trace,
-        auth_token=_mint_jwt_if_secret(args.jwt_secret),
+        auth_token=_resolve_auth_token(args),
     )
 
 
@@ -264,8 +263,27 @@ def _build_spec_decode_options(
     return SpecDecodeOptions(
         preset=args.spec_decode_preset,
         warmup_requests=args.spec_decode_warmup_requests,
-        auth_token=_mint_jwt_if_secret(args.jwt_secret),
+        auth_token=_resolve_auth_token(args),
     )
+
+
+def _resolve_auth_token(args: argparse.Namespace) -> str:
+    """Resolve the bearer token the eval/benchmark clients send.
+
+    Forge/media servers (tt-media-server) check a *literal* ``Bearer $API_KEY``
+    (default ``your-secret-key``, see ``security/api_key_checker.py``) and do
+    NOT decode JWTs; only the vLLM/tt-metal server validates a JWT. Mirrors the
+    engine branch in v1 ``evals/run_evals.py`` — a JWT sent to a forge/media
+    server 401s. Falls back to the JWT path when the spec can't be resolved.
+    """
+    try:
+        spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+        engine = getattr(spec.inference_engine, "value", spec.inference_engine)
+    except Exception:  # pragma: no cover - defensive
+        engine = None
+    if engine in (InferenceEngine.FORGE.value, InferenceEngine.MEDIA.value):
+        return os.getenv("VLLM_API_KEY") or os.getenv("API_KEY") or "your-secret-key"
+    return _mint_jwt_if_secret(getattr(args, "jwt_secret", None))
 
 
 def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
@@ -273,7 +291,9 @@ def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
 
     Looks at the ``--jwt-secret`` arg first, then ``$JWT_SECRET``. When no
     secret is supplied, returns the empty string (auth disabled). Matches the
-    inference server's expected debug token for JWT auth.
+    inference server's expected debug token for JWT auth. Used for the vLLM
+    (tt-metal) server; forge/media servers go through the literal-key branch
+    in :func:`_resolve_auth_token`.
     """
     secret = jwt_secret_arg or os.getenv("JWT_SECRET", "")
     if not secret:
@@ -286,10 +306,17 @@ def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
             "will be minted. Install pyjwt to enable JWT-protected servers."
         )
         return ""
+    # NOTE: the payload must match the server's get_encoded_api_key()
+    # (utils/vllm_run_utils.py) byte-for-byte. vLLM sets VLLM_API_KEY to that
+    # token and authorizes by exact string comparison, not JWT validation, so
+    # any extra claim (e.g. "exp") produces a different signature and a 401 on
+    # every request. Keep this to {team_id, token_id} only, matching the server
+    # and the in-container reference client (example_requests_client.py).
+    # Keep only team_id and token_id (drop exp) so this minted key matches the
+    # payload used by get_encoded_api_key.
     payload = {
         "team_id": "tenstorrent",
         "token_id": "debug-test",
-        "exp": int(_dt.datetime.now(_dt.timezone.utc).timestamp()) + 24 * 3600,
     }
     encoded = _jwt.encode(payload, secret, algorithm="HS256")
     os.environ["OPENAI_API_KEY"] = encoded

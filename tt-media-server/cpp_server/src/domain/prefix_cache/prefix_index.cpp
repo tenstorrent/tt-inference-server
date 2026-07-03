@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "domain/prefix_index.hpp"
+#include "domain/prefix_cache/prefix_index.hpp"
 
 #include <algorithm>
 
-#include "domain/block_matcher.hpp"
+#include "domain/prefix_cache/block_matcher.hpp"
 
-namespace tt::domain {
+namespace tt::domain::prefix_cache {
 
 namespace {
 
@@ -112,4 +112,4 @@ void PrefixIndex::clearThinkTokens(const std::string& sessionId,
       });
 }
 
-}  // namespace tt::domain
+}  // namespace tt::domain::prefix_cache

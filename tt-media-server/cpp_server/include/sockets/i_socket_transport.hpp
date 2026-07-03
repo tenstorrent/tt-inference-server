@@ -6,21 +6,11 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <span>
 #include <string>
-#include <string_view>
 #include <vector>
 
 namespace tt::sockets {
-
-/**
- * @brief Wire-format names for SOCKET_TRANSPORT.
- */
-namespace transport_names {
-constexpr std::string_view TCP = "tcp";
-constexpr std::string_view ZMQ = "zmq";
-}  // namespace transport_names
 
 /**
  * @brief Outcome of a non-blocking message receive.
@@ -43,11 +33,7 @@ struct ReceiveResult {
 /**
  * @brief Abstract interface for inter-server socket transports.
  *
- * Concrete implementations:
- *   - TcpSocketTransport  (raw POSIX TCP, the original implementation)
- *   - ZmqSocketTransport  (ZeroMQ DEALER/ROUTER over tcp://)
- *
- * Selectable at runtime via the SOCKET_TRANSPORT env var ("tcp" | "zmq").
+ * Implemented by ZmqSocketTransport (ZeroMQ DEALER/ROUTER over tcp://).
  */
 class ISocketTransport {
  public:
@@ -76,9 +62,7 @@ class ISocketTransport {
    *
    * The default delegates to receiveRawData() and can therefore only infer
    * NO_DATA vs CLOSED from isConnected(). Transports that know the difference
-   * natively (TcpSocketTransport) override this to report the real recv()
-   * status directly; that override is the contract the KV-migration control
-   * path relies on.
+   * natively can override this to report the real status directly.
    */
   virtual ReceiveResult tryReceiveMessage() {
     std::vector<uint8_t> bytes = receiveRawData();
@@ -95,10 +79,5 @@ class ISocketTransport {
   virtual void setReconnectBackoff(std::chrono::milliseconds /*initialDelay*/,
                                    std::chrono::milliseconds /*maxDelay*/) {}
 };
-
-/**
- * @brief Factory: creates the transport selected by config.
- */
-std::unique_ptr<ISocketTransport> createSocketTransport();
 
 }  // namespace tt::sockets

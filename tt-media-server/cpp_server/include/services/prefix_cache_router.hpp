@@ -9,8 +9,9 @@
 #include <string>
 #include <vector>
 
-#include "domain/prefix_index.hpp"
-#include "domain/response_id_index.hpp"
+#include "domain/prefix_cache/helpers.hpp"
+#include "domain/prefix_cache/prefix_index.hpp"
+#include "domain/prefix_cache/response_id_index.hpp"
 #include "services/session_lease.hpp"
 #include "utils/conversation_hasher.hpp"
 
@@ -22,12 +23,12 @@ struct PrefixCacheAcquireResult {
   uint32_t slotId = 0;
   uint32_t numberOfMatchedTokens = 0;
   uint32_t accumulatedThinkTokens = 0;
-  std::vector<domain::Candidate> candidatesList;
+  std::vector<domain::prefix_cache::Candidate> candidatesList;
 };
 
 class PrefixCacheRouter {
  public:
-  using Candidate = domain::Candidate;
+  using Candidate = domain::prefix_cache::Candidate;
   using AcquireResult = PrefixCacheAcquireResult;
 
   explicit PrefixCacheRouter(SessionLease& lease);
@@ -62,8 +63,8 @@ class PrefixCacheRouter {
 
  private:
   SessionLease& lease;
-  domain::PrefixIndex prefixIndex;
-  domain::ResponseIdIndex responseIdIndex;
+  domain::prefix_cache::PrefixIndex prefixIndex;
+  domain::prefix_cache::ResponseIdIndex responseIdIndex;
 };
 
 }  // namespace tt::services

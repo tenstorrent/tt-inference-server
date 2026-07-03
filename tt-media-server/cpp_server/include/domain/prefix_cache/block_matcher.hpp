@@ -11,22 +11,17 @@
 #include <utility>
 #include <vector>
 
-#include "domain/prefix_index.hpp"
+#include "helpers.hpp"
 #include "utils/conversation_hasher.hpp"
 
-namespace tt::domain {
-
-struct ConsecutiveMatch {
-  std::size_t matchedRemainingBlocks = 0;
-  uint32_t lastMatchedThinkTokens = 0;
-};
+namespace tt::domain::prefix_cache {
 
 class BlockMatcher {
  public:
   static std::list<RemainingBlockInfo> buildCallerRemaining(
       const std::vector<tt::utils::BlockHashInfo>& blockInfos);
 
-  static ConsecutiveMatch countConsecutiveRemainingMatch(
+  static MatchedTokens countMatchedTokens(
       const std::list<RemainingBlockInfo>& callerRemaining,
       const std::list<RemainingBlockInfo>& entryRemaining,
       std::uint32_t keyBlockThinkTokens);
@@ -36,7 +31,7 @@ class BlockMatcher {
       const std::vector<PrefixIndexEntry>& entries);
 
   static void sortCandidates(std::vector<Candidate>& candidates);
-  static bool passesHitThreshold(const Candidate& candidate, float threshold);
+  static bool passesHitThreshold(const Candidate& candidate);
   static std::uint32_t blocksToTokens(std::size_t matchedBlocks);
   static std::uint32_t tokensToBlocks(std::uint32_t tokens);
 
@@ -50,4 +45,4 @@ class BlockMatcher {
       std::function<uint32_t(const std::string& sessionId)> getCommittedBlocks);
 };
 
-}  // namespace tt::domain
+}  // namespace tt::domain::prefix_cache

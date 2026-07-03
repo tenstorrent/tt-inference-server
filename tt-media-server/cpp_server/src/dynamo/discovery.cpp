@@ -191,7 +191,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   Json::Value card(Json::objectValue);
   card["display_name"] = c.model_name;
   card["slug"] = sanitizeSlug(c.model_name);
-  card["source_path"] = c.model_path;
+  card["source_path"] = c.model_name;
 
   const std::string configPath = c.model_path + "/config.json";
   const std::string tokenizerJsonPath = c.model_path + "/tokenizer.json";

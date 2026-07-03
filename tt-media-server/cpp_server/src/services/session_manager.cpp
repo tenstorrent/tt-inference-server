@@ -8,7 +8,7 @@
 #include <thread>
 
 #include "config/settings.hpp"
-#include "domain/block_matcher.hpp"
+#include "domain/prefix_cache/block_matcher.hpp"
 #include "domain/manage_memory.hpp"
 #include "metrics/metrics.hpp"
 #include "utils/id_generator.hpp"
@@ -170,6 +170,16 @@ uint32_t SessionManager::getSlotIdBySessionId(
       "[SessionManager] getSlotIdBySessionId sessionId={} -> slotId={}",
       sessionId, result);
   return result;
+}
+
+uint32_t SessionManager::getCommittedBlocks(
+    const std::string& sessionId) const {
+  uint32_t committedBlocks = 0;
+  sessions.modify(sessionId,
+                  [&committedBlocks](std::shared_ptr<domain::Session>& s) {
+                    committedBlocks = s->committedBlocks();
+                  });
+  return committedBlocks;
 }
 
 uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
@@ -631,7 +641,7 @@ void SessionManager::setResidentPrefixBlocks(const std::string& sessionId,
 void SessionManager::shrinkResidentPrefixToMatchedTokens(
     const std::string& sessionId, uint32_t matchedTokens) {
   const uint32_t matchedBlocks =
-      domain::BlockMatcher::tokensToBlocks(matchedTokens);
+      domain::prefix_cache::BlockMatcher::tokensToBlocks(matchedTokens);
   sessions.modify(sessionId,
                   [matchedBlocks](std::shared_ptr<domain::Session>& s) {
                     s->shrinkCommittedBlocks(matchedBlocks);

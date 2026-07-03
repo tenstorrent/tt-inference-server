@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "domain/block_matcher.hpp"
+#include "domain/prefix_cache/block_matcher.hpp"
 
 #include <algorithm>
+#include <list>
 
 #include "config/settings.hpp"
+#include "domain/prefix_cache/helpers.hpp"
 #include "utils/logger.hpp"
 
-namespace tt::domain {
+namespace tt::domain::prefix_cache {
 
 std::list<RemainingBlockInfo> BlockMatcher::buildCallerRemaining(
     const std::vector<tt::utils::BlockHashInfo>& blockInfos) {
@@ -20,19 +22,19 @@ std::list<RemainingBlockInfo> BlockMatcher::buildCallerRemaining(
   return remaining;
 }
 
-ConsecutiveMatch BlockMatcher::countConsecutiveRemainingMatch(
+MatchedTokens BlockMatcher::countMatchedTokens(
     const std::list<RemainingBlockInfo>& callerRemaining,
     const std::list<RemainingBlockInfo>& entryRemaining,
     std::uint32_t keyBlockThinkTokens) {
-  ConsecutiveMatch result;
-  result.lastMatchedThinkTokens = keyBlockThinkTokens;
+  MatchedTokens result;
+  result.matchedThinkTokens = keyBlockThinkTokens;
 
   auto callerIt = callerRemaining.begin();
   auto entryIt = entryRemaining.begin();
   while (callerIt != callerRemaining.end() && entryIt != entryRemaining.end() &&
          callerIt->hash == entryIt->hash) {
-    result.lastMatchedThinkTokens = entryIt->accumulatedThinkTokens;
-    ++result.matchedRemainingBlocks;
+    result.matchedThinkTokens = entryIt->accumulatedThinkTokens;
+    ++result.matchedBlocks;
     ++callerIt;
     ++entryIt;
   }
@@ -51,14 +53,14 @@ std::vector<Candidate> BlockMatcher::buildCandidates(
       buildCallerRemaining(blockInfos);
 
   for (const auto& entry : entries) {
-    const ConsecutiveMatch match = countConsecutiveRemainingMatch(
+    const MatchedTokens match = countMatchedTokens(
         callerRemaining, entry.remainingBlocks, entry.keyBlockThinkTokens);
-    const std::size_t totalMatched = 1 + match.matchedRemainingBlocks;
+    const std::size_t totalMatched = 1 + match.matchedBlocks;
     const std::size_t sessionTotal = 1 + entry.remainingBlocks.size();
 
     for (const auto& sessionId : entry.sessionIds) {
-      candidates.push_back({sessionId, totalMatched, sessionTotal,
-                            match.lastMatchedThinkTokens});
+      candidates.push_back(
+          {sessionId, totalMatched, sessionTotal, match.matchedThinkTokens});
     }
   }
   return candidates;
@@ -71,15 +73,21 @@ void BlockMatcher::sortCandidates(std::vector<Candidate>& candidates) {
             });
 }
 
-bool BlockMatcher::passesHitThreshold(const Candidate& candidate,
-                                      float threshold) {
-  if (threshold <= 0.0f) {
-    return true;
-  }
+bool BlockMatcher::passesHitThreshold(const Candidate& candidate) {
+  const float threshold = tt::config::prefixCacheHitThreshold();
 
   const float matchPercent = (candidate.matchedBlocks * 100.0f) /
                              static_cast<float>(candidate.sessionBlocks);
-  return matchPercent >= threshold;
+  bool passesThreshold = matchPercent >= threshold;
+  if (!passesThreshold && threshold > 0.0f) {
+    TT_LOG_INFO(
+        "[BlockMatcher] Prefix cache candidate rejected: "
+        "matchedBlocks={} sessionBlocks={} matchPercent={:.1f}% < "
+        "threshold={:.1f}%",
+        candidate.matchedBlocks, candidate.sessionBlocks, matchPercent,
+        threshold);
+  }
+  return passesThreshold;
 }
 
 std::uint32_t BlockMatcher::blocksToTokens(std::size_t matchedBlocks) {
@@ -129,12 +137,12 @@ BlockMatcher::computeMatchedBlocksForSession(
       continue;
     }
 
-    const ConsecutiveMatch match = countConsecutiveRemainingMatch(
+    const MatchedTokens match = countMatchedTokens(
         callerRemaining, entry.remainingBlocks, entry.keyBlockThinkTokens);
-    const std::size_t totalMatched = 1 + match.matchedRemainingBlocks;
+    const std::size_t totalMatched = 1 + match.matchedBlocks;
     if (totalMatched > bestMatchedBlocks) {
       bestMatchedBlocks = totalMatched;
-      bestThinkTokens = match.lastMatchedThinkTokens;
+      bestThinkTokens = match.matchedThinkTokens;
     }
   }
   return {bestMatchedBlocks, bestThinkTokens};
@@ -182,4 +190,4 @@ std::optional<Candidate> BlockMatcher::findSlotToCopyFrom(
   return std::nullopt;
 }
 
-}  // namespace tt::domain
+}  // namespace tt::domain::prefix_cache

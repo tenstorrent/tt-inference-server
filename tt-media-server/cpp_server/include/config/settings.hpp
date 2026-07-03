@@ -95,10 +95,6 @@ std::string socketHost();
 /** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
 uint16_t socketPort();
 
-/** Socket transport type from SOCKET_TRANSPORT. Values: "tcp", "zmq".
- * Default: defaults::SOCKET_TRANSPORT. */
-std::string socketTransport();
-
 /** Whether the inter-server socket integrates with PrefillGateway. From
  * USE_PREFILL_GATEWAY. */
 bool usePrefillGateway();
@@ -353,6 +349,26 @@ std::string dynamoComponent();
 /** Discovery endpoint key. From DYNAMO_ENDPOINT_NAME. Default:
  * defaults::DYNAMO_ENDPOINT_NAME. */
 std::string dynamoEndpointName();
+
+/** When true and LLM_DEVICE_BACKEND=mock_pipeline, Blaze runners use
+ * single-threaded MockSchedulers instead of tt-llm-engine schedulers.
+ * From MOCK_USE_SCHEDULER. Default: defaults::MOCK_USE_SCHEDULER. */
+bool useMockScheduler();
+
+/** Prefill completion latency for MockSchedulers. From
+ * MOCK_PREFILL_CHUNK_LATENCY_MS. Default:
+ * defaults::MOCK_PREFILL_CHUNK_LATENCY_MS. */
+unsigned mockPrefillLatencyMs();
+
+/** Per-decode-token spacing for MockSchedulers. From
+ * MOCK_DECODE_TOKEN_LATENCY_US. Default:
+ * defaults::MOCK_DECODE_TOKEN_LATENCY_US.
+ */
+unsigned mockDecodeTokenLatencyUs();
+
+/** Fixed decode token id emitted by MockSchedulers. From MOCK_DECODE_TOKEN_ID.
+ * Default: defaults::MOCK_DECODE_TOKEN_ID. */
+uint32_t mockDecodeTokenId();
 
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */

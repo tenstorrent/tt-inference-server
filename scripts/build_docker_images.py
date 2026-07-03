@@ -1098,7 +1098,11 @@ def should_push_image(image_tag, force_push=False):
 
 
 def build_dev_image(
-    image_tags, tt_metal_commit, vllm_commit, container_app_uid, logger
+    image_tags,
+    tt_metal_commit,
+    vllm_commit,
+    container_app_uid,
+    logger,
 ):
     """
     Build the dev Docker image from the Dockerfile.
