@@ -8,14 +8,16 @@
 
 namespace tt::services {
 
-std::unique_ptr<RemoteKVManagerAdapter> MigrationClientFactory::createKafkaClient(
-    const std::string& brokers, const std::string& requestTopic,
-    const std::string& ackTopic, const std::string& groupId,
-    uint32_t layersPerChunk) {
+std::unique_ptr<RemoteKVManagerAdapter>
+MigrationClientFactory::createKafkaClient(const std::string& brokers,
+                                          const std::string& requestTopic,
+                                          const std::string& ackTopic,
+                                          const std::string& groupId,
+                                          uint32_t layersPerChunk) {
   auto producer =
       std::make_unique<tt::messaging::KafkaProducer>(brokers, requestTopic);
-  auto consumer =
-      std::make_unique<tt::messaging::KafkaConsumer>(brokers, ackTopic, groupId);
+  auto consumer = std::make_unique<tt::messaging::KafkaConsumer>(
+      brokers, ackTopic, groupId);
 
   return createKafkaClient(std::move(producer), std::move(consumer),
                            layersPerChunk);

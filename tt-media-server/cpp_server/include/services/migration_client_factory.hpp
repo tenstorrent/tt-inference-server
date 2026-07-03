@@ -5,7 +5,6 @@
 
 #include <memory>
 #include <string>
-
 #include <tt_llm_engine/scheduler/migration_client_interface.hpp>
 
 #include "services/remote_kv_manager_adapter.hpp"
