@@ -428,12 +428,11 @@ void DynamoEndpoint::start() {
   sc.endpoint = options_.endpoint;
   sc.model_name = options_.model_name;
   sc.model_path = options_.model_path;
-  sc.dispatch_pool_threads = tt::config::callbackPoolThreads();
 
   // start() binds and listens on the pool loops synchronously; the resolved
   // port is available immediately afterwards.
   server_ = std::make_unique<DynamoServer>(sc, makeGenerateHandler(),
-                                           loop_pool_->getLoops());
+                                           loop_pool_.get());
   server_->start();
   if (server_->port() == 0) {
     running_ = false;

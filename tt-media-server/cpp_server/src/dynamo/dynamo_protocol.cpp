@@ -8,6 +8,7 @@
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <trantor/net/EventLoop.h>
+#include <trantor/net/EventLoopThreadPool.h>
 #include <trantor/net/InetAddress.h>
 #include <trantor/net/TcpClient.h>
 #include <trantor/net/TcpConnection.h>
@@ -15,14 +16,12 @@
 #include <trantor/utils/MsgBuffer.h>
 #include <unistd.h>
 
-#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <sstream>
 #include <string_view>
-#include <thread>
 #include <utility>
 
 #include "domain/llm/llm_error_reason.hpp"
@@ -418,10 +417,10 @@ std::vector<uint8_t> encode_stream_final() {
 // ---------------------------------------------------------------------------
 
 DynamoServer::DynamoServer(ServerConfig config, GenerateHandler handler,
-                           std::vector<trantor::EventLoop*> ioLoops)
+                           trantor::EventLoopThreadPool* loopPool)
     : config_(std::move(config)),
       handler_(std::move(handler)),
-      io_loops_(std::move(ioLoops)) {
+      loop_pool_(loopPool) {
   if (config_.instance_id == 0) {
     std::srand(static_cast<unsigned>(std::time(nullptr) ^ ::getpid()));
     config_.instance_id = (static_cast<uint64_t>(std::rand()) << 32) |
@@ -432,14 +431,6 @@ DynamoServer::DynamoServer(ServerConfig config, GenerateHandler handler,
     oss << std::hex << config_.instance_id;
     config_.instance_id_hex = oss.str();
   }
-
-  size_t poolThreads = config_.dispatch_pool_threads;
-  if (poolThreads == 0) {
-    const auto hw = std::thread::hardware_concurrency();
-    poolThreads = hw == 0 ? 8u : hw;
-    poolThreads = std::min<size_t>(std::max<size_t>(poolThreads, 4), 32);
-  }
-  dispatch_pool_ = std::make_unique<tt::utils::ThreadPool>(poolThreads);
 }
 
 DynamoServer::~DynamoServer() { shutdown(); }
@@ -497,14 +488,20 @@ void DynamoServer::process_request(const trantor::TcpConnectionPtr& conn,
   auto ack = encode_tcp_response();
   conn->send(reinterpret_cast<const char*>(ack.data()), ack.size());
 
-  dispatch_pool_->submit([this, body = std::move(twoPart.body),
-                          connInfo = std::move(connInfo),
-                          id = ctrl.id]() mutable {
-    GenerateRequest genReq = parse_generate_request(body);
-    TT_LOG_DEBUG(
-        "[DynamoServer] Request id={} input_tokens={} max_tokens={} address={}",
-        id, genReq.token_ids.size(), genReq.max_tokens, connInfo.address);
-    handler_(genReq, connInfo);
+  trantor::EventLoop* loop = loop_pool_->getNextLoop();
+  loop->queueInLoop([this, body = std::move(twoPart.body),
+                     connInfo = std::move(connInfo), id = ctrl.id]() mutable {
+    try {
+      GenerateRequest genReq = parse_generate_request(body);
+      TT_LOG_DEBUG(
+          "[DynamoServer] Request id={} input_tokens={} max_tokens={} "
+          "address={}",
+          id, genReq.token_ids.size(), genReq.max_tokens, connInfo.address);
+      handler_(genReq, connInfo);
+    } catch (const std::exception& e) {
+      TT_LOG_ERROR("[DynamoServer] request dispatch failed id={}: {}", id,
+                   e.what());
+    }
   });
 }
 
@@ -659,15 +656,17 @@ void DynamoStreamWriter::finalize() {
 }
 
 void DynamoServer::start() {
-  if (io_loops_.empty()) {
+  const auto ioLoops =
+      loop_pool_ ? loop_pool_->getLoops() : std::vector<trantor::EventLoop*>{};
+  if (ioLoops.empty()) {
     throw std::runtime_error("DynamoServer: no io loops provided");
   }
 
   running_.store(true);
   trantor::InetAddress addr(config_.bind_host, config_.bind_port);
-  tcp_server_ = std::make_unique<trantor::TcpServer>(io_loops_.front(), addr,
+  tcp_server_ = std::make_unique<trantor::TcpServer>(ioLoops.front(), addr,
                                                      "DynamoServer");
-  tcp_server_->setIoLoops(io_loops_);
+  tcp_server_->setIoLoops(ioLoops);
   // Port 0 is resolved during the acceptor's bind, which happens in the
   // TcpServer constructor — so the assigned port is available synchronously.
   actual_port_ = tcp_server_->address().toPort();

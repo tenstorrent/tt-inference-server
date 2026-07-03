@@ -29,10 +29,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "utils/thread_pool.hpp"
-
 namespace trantor {
 class EventLoop;
+class EventLoopThreadPool;
 class TcpServer;
 class TcpClient;
 class TcpConnection;
@@ -298,13 +297,12 @@ struct ServerConfig {
   std::string model_path;
   std::string instance_id_hex;  // Auto-generated when empty.
   uint64_t instance_id = 0;     // Auto-generated when zero.
-  size_t dispatch_pool_threads = 0;
 };
 
 class DynamoServer {
  public:
   DynamoServer(ServerConfig config, GenerateHandler handler,
-               std::vector<trantor::EventLoop*> ioLoops);
+               trantor::EventLoopThreadPool* loopPool);
   ~DynamoServer();
 
   DynamoServer(const DynamoServer&) = delete;
@@ -326,12 +324,10 @@ class DynamoServer {
  private:
   ServerConfig config_;
   GenerateHandler handler_;
-  std::vector<trantor::EventLoop*> io_loops_;
+  trantor::EventLoopThreadPool* loop_pool_;
   std::unique_ptr<trantor::TcpServer> tcp_server_;
   uint16_t actual_port_ = 0;
   std::atomic<bool> running_{false};
-
-  std::unique_ptr<tt::utils::ThreadPool> dispatch_pool_;
 
   void onMessage(const std::shared_ptr<trantor::TcpConnection>& conn,
                  trantor::MsgBuffer* buf);
