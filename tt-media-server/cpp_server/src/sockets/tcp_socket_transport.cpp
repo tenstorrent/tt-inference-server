@@ -373,10 +373,17 @@ std::vector<uint8_t> TcpSocketTransport::receiveRawData() {
 
 ReceiveResult TcpSocketTransport::tryReceiveMessage() {
   std::lock_guard<std::mutex> lock(socketMutex);
-  if (!connected) return {ReceiveStatus::CLOSED, {}};
-
+  // No active peer. A server still listening (client not accepted yet, or a
+  // previous client dropped), or a client mid-reconnect, is "not ready yet" —
+  // NOT closed: report NO_DATA so a waiting receiver keeps polling rather than
+  // tearing down its serve loop. Only a torn-down transport (stop() cleared
+  // `running`) is truly CLOSED. TcpSocketTransport accepts asynchronously, so a
+  // server has a pre-accept window the e2e's blocking-accept transport lacked.
   int fd = peerSocket.load(std::memory_order_acquire);
-  if (fd < 0) return {ReceiveStatus::CLOSED, {}};
+  if (!connected || fd < 0) {
+    return running ? ReceiveResult{ReceiveStatus::NO_DATA, {}}
+                   : ReceiveResult{ReceiveStatus::CLOSED, {}};
+  }
 
   uint32_t netSize = 0;
   auto headerStatus =
