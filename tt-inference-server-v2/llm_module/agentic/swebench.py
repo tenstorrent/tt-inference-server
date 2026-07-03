@@ -12,6 +12,7 @@ import sys
 import re
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -325,6 +326,57 @@ def _find_harness_report(output_dir: Path, model_name: str, run_id: str) -> Path
     return report_files[0]
 
 
+# Leading timestamp of an agent log line, e.g.
+# ``2026-07-02 02:41:45,703 - minisweagent - INFO - ...``. Also matches the
+# ISO ``T`` separator and dot-milliseconds so both agent backends parse.
+_LOG_TIMESTAMP_RE = re.compile(r"(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}[.,]\d+)")
+
+
+def _parse_log_timestamp(line: str) -> Optional[datetime]:
+    match = _LOG_TIMESTAMP_RE.search(line)
+    if match is None:
+        return None
+    try:
+        return datetime.fromisoformat(
+            match.group(1).replace(",", ".").replace("T", " ")
+        )
+    except ValueError:
+        return None
+
+
+def _agent_log_time_window(
+    output_dir: Path,
+) -> tuple[Optional[datetime], Optional[datetime]]:
+    """Earliest and latest timestamps across the agent log(s) under output_dir.
+
+    SWE-bench's normalized report has no timing, but the mini-swe-agent /
+    SWE-agent logs are timestamped per line (e.g.
+    ``.../mini_sweagent/minisweagent.log``). We take the first timestamp of the
+    run as the start and the last as the finish so the report can derive a mean
+    time per task, mirroring terminal-bench's Harbor timing fields.
+    """
+    earliest: Optional[datetime] = None
+    latest: Optional[datetime] = None
+    for log_path in sorted(Path(output_dir).rglob("*.log")):
+        try:
+            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            ts = _parse_log_timestamp(line)
+            if ts is not None:
+                if earliest is None or ts < earliest:
+                    earliest = ts
+                break
+        for line in reversed(lines):
+            ts = _parse_log_timestamp(line)
+            if ts is not None:
+                if latest is None or ts > latest:
+                    latest = ts
+                break
+    return earliest, latest
+
+
 def normalize_swebench_report(
     harness_report_path: Path,
     result_path: Path,
@@ -402,6 +454,16 @@ def normalize_swebench_report(
         },
         "trial_results": trial_results,
     }
+
+    # Inject start/finish/n_total_trials so the report can compute a mean time
+    # per task, matching terminal-bench's Harbor timing fields. SWE-bench's own
+    # report carries no timing, so derive the window from the agent log.
+    started, finished = _agent_log_time_window(config.output_dir)
+    if started is not None and finished is not None:
+        normalized["started_at"] = started.isoformat()
+        normalized["finished_at"] = finished.isoformat()
+    normalized["n_total_trials"] = submitted_count
+
     result_path.write_text(json.dumps(normalized, indent=2), encoding="utf-8")
     return normalized
 

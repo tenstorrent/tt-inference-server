@@ -20,9 +20,16 @@ from llm_module.drivers.agentic import (
     resolve_n_tasks,
     resolve_task_names,
 )
-from llm_module.agentic.swebench import run as run_swebench
+from llm_module.agentic.swebench import (
+    normalize_swebench_report,
+    run as run_swebench,
+)
 from llm_module.agentic.terminal_bench import run as run_terminal_bench
-from llm_module.parsers.agentic import AgenticEvalParser, compute_accuracy_check
+from llm_module.parsers.agentic import (
+    AgenticEvalParser,
+    compute_accuracy_check,
+    extract_harbor_metrics,
+)
 from test_module.llm_tests.agentic_eval_tests import _select_agentic_tasks
 from workflows.workflow_types import EvalLimitMode, ReportCheckTypes, WorkflowVenvType
 
@@ -166,6 +173,38 @@ class TestAgenticParser:
         assert block.data["accuracy_check"] == ReportCheckTypes.PASS
         assert "success" not in block.data
         assert "accuracy" not in block.data
+
+    def test_mean_seconds_per_task_from_harbor_timing(self):
+        raw = {
+            **HARBOR_RESULT_FIXTURE,
+            "started_at": "2026-06-30T07:00:00.000000",
+            "finished_at": "2026-06-30T08:29:00.000000",
+            "n_total_trials": 89,
+        }
+        block = AgenticEvalParser(
+            task_name="terminal_bench_2", score=FakeScore()
+        ).parse(raw, device="N150")
+
+        # 89 minutes (5340s) across 89 trials -> 60s/task.
+        assert abs(block.data["mean_seconds_per_task"] - 60.0) < 1e-6
+
+    def test_mean_seconds_per_task_falls_back_to_n_trials(self):
+        raw = {
+            **HARBOR_RESULT_FIXTURE,
+            "started_at": "2026-06-30T07:00:00",
+            "finished_at": "2026-06-30T07:01:29",
+        }
+        metrics = extract_harbor_metrics(raw)
+
+        # 89 seconds across the summary's 89 n_trials -> 1s/task.
+        assert abs(metrics["mean_seconds_per_task"] - 1.0) < 1e-6
+
+    def test_mean_seconds_per_task_absent_without_timing(self):
+        block = AgenticEvalParser(
+            task_name="terminal_bench_2", score=FakeScore()
+        ).parse(HARBOR_RESULT_FIXTURE, device="N150")
+
+        assert block.data["mean_seconds_per_task"] is None
 
     def test_failure_block_uses_failing_accuracy_check(self):
         parser = AgenticEvalParser(task_name="terminal_bench_2", score=FakeScore())
@@ -354,6 +393,79 @@ class TestSWEbenchHarness:
             ]
 
             assert run_swebench(cfg) == 31
+
+
+class TestSWEbenchReportNormalization:
+    def test_normalize_injects_timing_from_agent_log(self, tmp_path):
+        cfg = build_swebench_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=2,
+        )
+        log_dir = cfg.output_dir / "mini_sweagent"
+        log_dir.mkdir(parents=True)
+        (log_dir / "minisweagent.log").write_text(
+            "2026-07-02 02:41:45,703 - minisweagent - INFO - Loading dataset...\n"
+            "2026-07-02 12:00:00,000 - minisweagent - INFO - progress\n"
+            "2026-07-03 00:19:59,877 - minisweagent - INFO - done\n",
+            encoding="utf-8",
+        )
+        harness_report = cfg.output_dir / "harness_report.json"
+        harness_report.write_text(
+            json.dumps(
+                {
+                    "submitted_ids": ["a", "b"],
+                    "resolved_ids": ["a"],
+                }
+            ),
+            encoding="utf-8",
+        )
+        result_path = cfg.output_dir / "result.json"
+
+        normalized = normalize_swebench_report(
+            harness_report,
+            result_path,
+            cfg,
+            cfg.output_dir / "predictions.jsonl",
+        )
+
+        assert normalized["n_total_trials"] == 2
+        assert normalized["started_at"].startswith("2026-07-02T02:41:45")
+        assert normalized["finished_at"].startswith("2026-07-03T00:19:59")
+
+        metrics = extract_harbor_metrics(normalized)
+        # ~77894s across 2 tasks; assert the parser derives a positive per-task mean.
+        assert metrics["mean_seconds_per_task"] > 0
+        # Round-trips through result.json for report consumers.
+        persisted = json.loads(result_path.read_text(encoding="utf-8"))
+        assert persisted["n_total_trials"] == 2
+
+    def test_normalize_without_log_still_sets_trial_count(self, tmp_path):
+        cfg = build_swebench_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        cfg.output_dir.mkdir(parents=True)
+        harness_report = cfg.output_dir / "harness_report.json"
+        harness_report.write_text(
+            json.dumps({"submitted_ids": ["a"], "resolved_ids": []}),
+            encoding="utf-8",
+        )
+        result_path = cfg.output_dir / "result.json"
+
+        normalized = normalize_swebench_report(
+            harness_report,
+            result_path,
+            cfg,
+            cfg.output_dir / "predictions.jsonl",
+        )
+
+        assert normalized["n_total_trials"] == 1
+        assert "started_at" not in normalized
+        assert extract_harbor_metrics(normalized).get("mean_seconds_per_task") is None
 
 
 class TestAgenticLimitResolution:
