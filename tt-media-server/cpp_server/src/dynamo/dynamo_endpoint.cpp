@@ -432,7 +432,7 @@ void DynamoEndpoint::start() {
   // start() binds and listens on the pool loops synchronously; the resolved
   // port is available immediately afterwards.
   server_ = std::make_unique<DynamoServer>(sc, makeGenerateHandler(),
-                                           loop_pool_->getLoops());
+                                           loop_pool_.get());
   server_->start();
   if (server_->port() == 0) {
     running_ = false;
@@ -492,6 +492,7 @@ void DynamoEndpoint::stop() {
   if (keepalive_thread_.joinable()) {
     keepalive_thread_.join();
   }
+
   server_.reset();
   discovery_.reset();
   if (loop_pool_) {
