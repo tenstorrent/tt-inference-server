@@ -6,8 +6,8 @@ Lightweight Docker image for the NVIDIA Dynamo frontend, configured to use
 ## Build
 
 ```bash
-cd dynamo_frontend/
-docker build -f Dockerfile.frontend -t dynamo-frontend .
+cd /path/to/tt-inference-server
+docker build -f dynamo_frontend/Dockerfile.frontend -t dynamo-frontend .
 ```
 
 ## Run
@@ -31,10 +31,8 @@ the worker, etcd, and the frontend are on the same network.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MODEL_NAME` | `mock-model` | Model name exposed via `/v1/models` |
-| `MODEL_PATH` | `/app/model` | Path to model config/tokenizer files |
-| `HF_MODEL_ID` | `meta-llama/Llama-3.1-8B-Instruct` | HuggingFace repo to download tokenizer from |
-| `HF_TOKEN` | _(none)_ | HuggingFace token for gated models |
 | `HTTP_PORT` | `8000` | HTTP listen port |
+| `ROUTER_MODE` | `kv` | Dynamo router mode; `kv` activates cache-aware worker selection |
 | `DYN_DISCOVERY_BACKEND` | `etcd` | Discovery backend (`etcd` or `file`) |
 | `ETCD_ENDPOINTS` | `http://etcd:2379` | Comma-separated etcd v3 client URLs |
 | `DYN_REQUEST_PLANE` | `tcp` | Request plane transport (`tcp` or `nats`) |
@@ -47,9 +45,9 @@ the worker, etcd, and the frontend are on the same network.
   must point at the same etcd cluster (same `ETCD_ENDPOINTS`). Workers write
   `v1/instances/...` and `v1/mdc/...` keys under a lease; the frontend reads
   them to discover models and dial the worker's TCP transport.
-- **Tokenizer download**: on first start, the entrypoint downloads
-  `config.json`, `tokenizer.json`, and `tokenizer_config.json` from
-  `HF_MODEL_ID`. Mount a volume at `$MODEL_PATH` to skip.
+- **Tokenizers are baked in**: the image contains the tokenizer tree at the
+  absolute path advertised by cpp_server MDCs. Build with repo-root context so
+  `tt-media-server/cpp_server/scripts/fetch_tokenizers.sh` is available.
 - **owned_by patch**: the build patches the Dynamo binary so `/v1/models`
   returns `"owned_by": "TT Inc"` instead of `"nvidia"`. Replacement must be
   exactly 6 characters.

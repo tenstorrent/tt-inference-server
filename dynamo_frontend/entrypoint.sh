@@ -54,15 +54,11 @@ if [ "${DYN_DEBUG_PERF:-0}" != "0" ]; then
     DEBUG_PERF_FLAG="--dyn-debug-perf"
 fi
 
-# Optional router mode. Default (unset) leaves Dynamo's own default
-# (round-robin). Set ROUTER_MODE to one of round-robin|random|power-of-two|
-# kv|direct|least-loaded|device-aware-weighted. Note: per-request timing
-# fields like nvext.timing.ttft_ms / prefill_time_ms are only populated on
-# the kv-router push path, so ROUTER_MODE=kv is required to surface them.
-ROUTER_MODE_FLAG=""
-if [ -n "${ROUTER_MODE:-}" ]; then
-    ROUTER_MODE_FLAG="--router-mode ${ROUTER_MODE}"
-fi
+# Router mode. KV is the default because it activates Dynamo's KV router
+# (`DefaultWorkerSelector`) for cache-aware worker selection. Override
+# ROUTER_MODE to one of round-robin|random|power-of-two|kv|direct|
+# least-loaded|device-aware-weighted for experiments.
+ROUTER_MODE="${ROUTER_MODE:-kv}"
 
 # Native prefill routing policy contract. ai-dynamo 1.2.0.post1 does not
 # consume this env directly yet; C++ workers also advertise the same threshold
@@ -86,7 +82,7 @@ echo "  RAYON_NUM_THREADS=$RAYON_NUM_THREADS"
 echo "  DYN_TOKENIZER=$DYN_TOKENIZER"
 echo "  RUST_LOG=${RUST_LOG:-<unset>}"
 echo "  DEBUG_PERF_FLAG=$DEBUG_PERF_FLAG"
-echo "  ROUTER_MODE=${ROUTER_MODE:-<default>}"
+echo "  ROUTER_MODE=$ROUTER_MODE"
 echo "  DYN_PREFILL_ON_DECODE_MAX_TOKENS=$DYN_PREFILL_ON_DECODE_MAX_TOKENS"
 
 exec python -m dynamo.frontend \
@@ -94,5 +90,5 @@ exec python -m dynamo.frontend \
     --model-name "$MODEL_NAME" \
     --dyn-chat-processor "$DYN_CHAT_PROCESSOR" \
     --tokenizer "$DYN_TOKENIZER" \
-    $ROUTER_MODE_FLAG \
+    --router-mode "$ROUTER_MODE" \
     $DEBUG_PERF_FLAG

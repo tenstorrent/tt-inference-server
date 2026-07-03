@@ -13,9 +13,9 @@
 #
 # Optional discovery spike:
 #   DYNAMO_REGISTER_PREFILL=1 ./run_stack.sh up
-# Registers the prefill worker with Dynamo as default/prefill/generate. The
-# prefill Dynamo endpoint is a discovery stub only; real prefill traffic still
-# uses the cpp_server inter-server socket / PrefillGateway path.
+# Registers the prefill worker with Dynamo as default/prefill/generate. With
+# native handoff disabled this is discovery-only; with native handoff enabled,
+# Dynamo can route prefill requests to that endpoint.
 #
 # Optional native handoff control-plane spike:
 #   DYNAMO_REGISTER_PREFILL=1 DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=1 ./run_stack.sh up
@@ -43,6 +43,7 @@ export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.43}"
 MODEL="${MODEL:-moonshotai/Kimi-K2.6}"
 MODEL_NAME="${MODEL_NAME:-tt-cpp-server}"
 HTTP_PORT="${HTTP_PORT:-8080}"
+ROUTER_MODE="${ROUTER_MODE:-kv}"
 SERVER_PORT="${SERVER_PORT:-8001}"       # decode/regular REST + dynamo endpoint
 PREFILL_PORT="${PREFILL_PORT:-8002}"     # prefill REST
 PREFILL_REPLICAS="${PREFILL_REPLICAS:-1}"
@@ -163,6 +164,7 @@ start_frontend() {
         DYN_PREFILL_ON_DECODE_MAX_TOKENS="${DYN_PREFILL_ON_DECODE_MAX_TOKENS:-${MAX_TOKENS_TO_PREFILL_ON_DECODE}}" \
         "${DYN_VENV}/bin/python3" -m dynamo.frontend \
             --http-port "${HTTP_PORT}" \
+            --router-mode "${ROUTER_MODE}" \
             --model-name "${MODEL_NAME}" \
             --model-path "${CPP_DIR}/tokenizers/${MODEL}" \
         > "${FRONTEND_LOG}" 2>&1 < /dev/null &
