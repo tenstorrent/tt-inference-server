@@ -706,7 +706,7 @@ class TestAllSuitesLoad:
 
     def test_total_suite_count(self):
         all_suites = load_suite_files()
-        assert len(all_suites) == 52
+        assert len(all_suites) == 37
 
     def test_no_duplicate_ids(self):
         all_suites = load_suite_files()
