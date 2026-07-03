@@ -3,7 +3,8 @@
 
 #pragma once
 
-#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -11,7 +12,6 @@
 #include <string>
 #include <tt_llm_engine/scheduler/migration_client_interface.hpp>
 #include <unordered_map>
-#include <vector>
 
 #include "services/remote_kv_manager.hpp"
 
@@ -20,11 +20,28 @@ namespace tt::services {
 /**
  * Adapter that implements MigrationClientInterface using IRemoteKVManager.
  *
- * This allows PrefillScheduler (which expects MigrationClientInterface) to
- * use our Kafka-backed RemoteKVManager for KV cache migrations.
+ * This allows PrefillScheduler to use our Kafka-backed RemoteKVManager for
+ * KV cache migrations.
  *
- * Threading: poll() should be called from the scheduler's ack_reader_thread.
- * migrate() and burst methods are thread-safe.
+ * IMPORTANT: This adapter only supports the single migrate() path used for
+ * ALLOCATE prefix copies. Burst methods (start_burst,
+ * enqueue_migration_in_burst, finish_burst) throw std::runtime_error. This
+ * client is NOT a drop-in replacement for MigrationLayerClientAdapter in the
+ * general prefill-burst flow. Use MigrationLayerClientAdapter for burst-based
+ * migrations. Throwing from a burst method may terminate the calling thread
+ * (typically ack_reader_thread). This is by design; wiring this adapter into
+ * the burst flow is a programming error and should crash loudly.
+ *
+ * Threading:
+ * - poll() should be called from the scheduler's ack_reader_thread.
+ * - migrate() is thread-safe.
+ * - shutdown(drain=true) must be called from a thread OTHER than the poll()
+ *   owner. The caller must ensure poll() continues to run on its owner thread
+ *   until shutdown returns, otherwise the drain will time out.
+ *
+ * Callback registration: Register all callbacks during setup, before the first
+ * migrate() or poll() call. Callbacks are read without synchronization from
+ * poll() on the owner thread.
  */
 class RemoteKVManagerAdapter
     : public tt_llm_engine::scheduler::MigrationClientInterface {
@@ -38,15 +55,21 @@ class RemoteKVManagerAdapter
   using EndpointDisconnectedEvent =
       tt_llm_engine::scheduler::EndpointDisconnectedEvent;
 
-  explicit RemoteKVManagerAdapter(std::unique_ptr<IRemoteKVManager> kvManager,
-                                  uint32_t layersPerChunk);
+  /**
+   * @param kvManager The underlying KV manager for migrations.
+   * @param shutdownTimeout Max time shutdown(drain=true) waits for in-flight
+   *   migrations to complete. Default 30s.
+   */
+  explicit RemoteKVManagerAdapter(
+      std::unique_ptr<IRemoteKVManager> kvManager,
+      std::chrono::milliseconds shutdownTimeout = std::chrono::seconds(30));
 
   ~RemoteKVManagerAdapter() override = default;
 
   RemoteKVManagerAdapter(const RemoteKVManagerAdapter&) = delete;
   RemoteKVManagerAdapter& operator=(const RemoteKVManagerAdapter&) = delete;
 
-  // --- Burst lifecycle ---
+  // --- Burst lifecycle (NOT SUPPORTED - throws std::runtime_error) ---
   BurstId start_burst(MigrationToken uuid) override;
 
   void enqueue_migration_in_burst(BurstId burst, int remote_endpoint_id,
@@ -69,7 +92,6 @@ class RemoteKVManagerAdapter
   // --- Polling ---
   int poll() override;
 
-  // --- Callbacks ---
   void on_migration_complete(
       std::function<void(const MigrationCompleteEvent&)> cb) override;
 
@@ -94,25 +116,18 @@ class RemoteKVManagerAdapter
   void shutdown(bool drain = true) override;
 
  private:
-  struct BurstState {
-    std::vector<uint64_t> migrationIds;
-    bool finished = false;
-  };
-
   struct InFlightMigration {
     MigrationToken token;
-    bool isBurstMember = false;
-    BurstId burstId = 0;
   };
 
   std::unique_ptr<IRemoteKVManager> kvManager_;
-  uint32_t layersPerChunk_;
 
   mutable std::mutex mtx_;
-  std::atomic<uint64_t> nextToken_{1};
-
-  std::unordered_map<BurstId, BurstState> bursts_;
+  std::condition_variable drainCv_;
   std::unordered_map<uint64_t, InFlightMigration> inFlight_;
+  bool shutdownRequested_{false};
+
+  std::chrono::milliseconds shutdownTimeout_;
 
   std::function<void(const MigrationCompleteEvent&)> onComplete_;
   std::function<void(const MigrationReceivedEvent&)> onReceived_;

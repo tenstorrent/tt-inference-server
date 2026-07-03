@@ -1141,9 +1141,12 @@ if(KAFKA_ENABLED)
 
     # RemoteKVManagerAdapter - bridges IRemoteKVManager to MigrationClientInterface
     # Only built when ENABLE_BLAZE is ON (requires tt-llm-engine headers)
+    # Note: disaggregation/migration/include is needed for migration_client.hpp
+    # which migration_client_interface.hpp includes for event types.
     if(ENABLE_BLAZE)
         add_library(remote_kv_adapter
             src/services/remote_kv_manager_adapter.cpp
+            src/services/migration_client_factory.cpp
         )
         target_include_directories(remote_kv_adapter PUBLIC
             ${CMAKE_CURRENT_SOURCE_DIR}/include

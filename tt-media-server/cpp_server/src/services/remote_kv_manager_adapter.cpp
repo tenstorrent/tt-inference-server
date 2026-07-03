@@ -3,139 +3,85 @@
 
 #include "services/remote_kv_manager_adapter.hpp"
 
-#include <algorithm>
+#include <stdexcept>
 
 #include "utils/logger.hpp"
 
 namespace tt::services {
 
 RemoteKVManagerAdapter::RemoteKVManagerAdapter(
-    std::unique_ptr<IRemoteKVManager> kvManager, uint32_t layersPerChunk)
-    : kvManager_(std::move(kvManager)), layersPerChunk_(layersPerChunk) {
+    std::unique_ptr<IRemoteKVManager> kvManager,
+    std::chrono::milliseconds shutdownTimeout)
+    : kvManager_(std::move(kvManager)), shutdownTimeout_(shutdownTimeout) {
   if (!kvManager_) {
     TT_LOG_ERROR("[RemoteKVManagerAdapter] null kvManager");
   }
 }
 
 RemoteKVManagerAdapter::BurstId RemoteKVManagerAdapter::start_burst(
-    MigrationToken uuid) {
-  std::lock_guard<std::mutex> lock(mtx_);
-
-  if (bursts_.count(uuid)) {
-    TT_LOG_WARN("[RemoteKVManagerAdapter] burst {} already open", uuid);
-    return uuid;
-  }
-
-  bursts_.emplace(uuid, BurstState{});
-  TT_LOG_DEBUG("[RemoteKVManagerAdapter] started burst {}", uuid);
-  return uuid;
+    MigrationToken /*uuid*/) {
+  throw std::runtime_error(
+      "[RemoteKVManagerAdapter] burst methods not supported - use "
+      "MigrationLayerClientAdapter for burst-based migrations");
 }
 
 void RemoteKVManagerAdapter::enqueue_migration_in_burst(
-    BurstId burst, int /*remote_endpoint_id*/, uint32_t src_slot,
-    uint32_t dst_slot, uint32_t layer_start, uint32_t layer_end_exclusive,
-    uint32_t pos_start, uint32_t pos_end_exclusive) {
-  std::lock_guard<std::mutex> lock(mtx_);
-
-  auto it = bursts_.find(burst);
-  if (it == bursts_.end()) {
-    TT_LOG_ERROR(
-        "[RemoteKVManagerAdapter] enqueue_migration_in_burst: burst {} not "
-        "found",
-        burst);
-    return;
-  }
-
-  if (it->second.finished) {
-    TT_LOG_ERROR(
-        "[RemoteKVManagerAdapter] enqueue_migration_in_burst: burst {} already "
-        "finished",
-        burst);
-    return;
-  }
-
-  MigrationRequest request{
-      .src_slot = src_slot,
-      .dst_slot = dst_slot,
-      .layer_begin = layer_start,
-      .layer_end = layer_end_exclusive,
-      .src_position_begin = pos_start,
-      .src_position_end = pos_end_exclusive,
-      .dst_position_begin = pos_start,
-      .dst_position_end = pos_end_exclusive,
-  };
-
-  uint64_t migrationId = kvManager_->migrate(request);
-  it->second.migrationIds.push_back(migrationId);
-
-  inFlight_.emplace(migrationId, InFlightMigration{.token = burst,
-                                                   .isBurstMember = true,
-                                                   .burstId = burst});
-
-  TT_LOG_DEBUG(
-      "[RemoteKVManagerAdapter] enqueued migration {} in burst {} "
-      "(slot {}->{}, layers [{},{}), pos [{},{}))",
-      migrationId, burst, src_slot, dst_slot, layer_start, layer_end_exclusive,
-      pos_start, pos_end_exclusive);
+    BurstId /*burst*/, int /*remote_endpoint_id*/, uint32_t /*src_slot*/,
+    uint32_t /*dst_slot*/, uint32_t /*layer_start*/,
+    uint32_t /*layer_end_exclusive*/, uint32_t /*pos_start*/,
+    uint32_t /*pos_end_exclusive*/) {
+  throw std::runtime_error(
+      "[RemoteKVManagerAdapter] burst methods not supported - use "
+      "MigrationLayerClientAdapter for burst-based migrations");
 }
 
 RemoteKVManagerAdapter::MigrationToken RemoteKVManagerAdapter::finish_burst(
-    BurstId burst) {
-  std::lock_guard<std::mutex> lock(mtx_);
-
-  auto it = bursts_.find(burst);
-  if (it == bursts_.end()) {
-    TT_LOG_ERROR("[RemoteKVManagerAdapter] finish_burst: burst {} not found",
-                 burst);
-    return burst;
-  }
-
-  it->second.finished = true;
-  TT_LOG_DEBUG("[RemoteKVManagerAdapter] finished burst {} with {} migrations",
-               burst, it->second.migrationIds.size());
-  return burst;
+    BurstId /*burst*/) {
+  throw std::runtime_error(
+      "[RemoteKVManagerAdapter] burst methods not supported - use "
+      "MigrationLayerClientAdapter for burst-based migrations");
 }
 
 RemoteKVManagerAdapter::MigrationToken RemoteKVManagerAdapter::migrate(
     int /*remote_endpoint_id*/, uint32_t src_slot, uint32_t dst_slot,
     uint32_t layer_start, uint32_t layer_end_exclusive, uint32_t pos_start,
     uint32_t pos_end_exclusive) {
+  // remote_endpoint_id ignored: Kafka topic routing is not endpoint-specific.
   MigrationRequest request{
       .src_slot = src_slot,
       .dst_slot = dst_slot,
       .layer_begin = layer_start,
       .layer_end = layer_end_exclusive,
+      // ALLOCATE prefix copies: src and dst position ranges are identical.
       .src_position_begin = pos_start,
       .src_position_end = pos_end_exclusive,
       .dst_position_begin = pos_start,
       .dst_position_end = pos_end_exclusive,
   };
 
-  uint64_t migrationId = kvManager_->migrate(request);
-  MigrationToken token = nextToken_.fetch_add(1, std::memory_order_relaxed);
-
-  {
-    std::lock_guard<std::mutex> lock(mtx_);
-    inFlight_.emplace(
-        migrationId, InFlightMigration{
-                         .token = token, .isBurstMember = false, .burstId = 0});
+  std::lock_guard<std::mutex> lock(mtx_);
+  if (shutdownRequested_) {
+    throw std::runtime_error(
+        "[RemoteKVManagerAdapter] migrate() called after shutdown()");
   }
+  uint64_t migrationId = kvManager_->migrate(request);
+  inFlight_.emplace(migrationId, InFlightMigration{.token = migrationId});
 
   TT_LOG_DEBUG(
-      "[RemoteKVManagerAdapter] migrate: token={}, migrationId={}, "
+      "[RemoteKVManagerAdapter] migrate: migrationId={}, "
       "slot {}->{}, layers [{},{}), pos [{},{}))",
-      token, migrationId, src_slot, dst_slot, layer_start, layer_end_exclusive,
+      migrationId, src_slot, dst_slot, layer_start, layer_end_exclusive,
       pos_start, pos_end_exclusive);
 
-  return token;
+  return migrationId;
 }
 
 int RemoteKVManagerAdapter::poll() {
   std::vector<uint64_t> toCheck;
-  std::vector<BurstId> completedBursts;
 
   {
     std::lock_guard<std::mutex> lock(mtx_);
+    toCheck.reserve(inFlight_.size());
     for (const auto& [migrationId, info] : inFlight_) {
       toCheck.push_back(migrationId);
     }
@@ -151,54 +97,33 @@ int RemoteKVManagerAdapter::poll() {
       continue;
     }
 
-    std::lock_guard<std::mutex> lock(mtx_);
-    auto it = inFlight_.find(migrationId);
-    if (it == inFlight_.end()) continue;
+    MigrationToken token;
+    {
+      std::lock_guard<std::mutex> lock(mtx_);
+      auto it = inFlight_.find(migrationId);
+      if (it == inFlight_.end()) continue;
 
-    InFlightMigration info = it->second;
-    inFlight_.erase(it);
+      token = it->second.token;
+      inFlight_.erase(it);
+    }
+    drainCv_.notify_all();
     ++completions;
 
-    if (info.isBurstMember) {
-      auto burstIt = bursts_.find(info.burstId);
-      if (burstIt != bursts_.end()) {
-        auto& ids = burstIt->second.migrationIds;
-        ids.erase(std::remove(ids.begin(), ids.end(), migrationId), ids.end());
-
-        if (status == MigrationStatus::FAILED) {
-          completedBursts.push_back(info.burstId);
-          TT_LOG_WARN(
-              "[RemoteKVManagerAdapter] migration {} in burst {} failed",
-              migrationId, info.burstId);
-        } else if (burstIt->second.finished && ids.empty()) {
-          completedBursts.push_back(info.burstId);
-        }
+    // MigrationComplete and MigrationFailed are mutually exclusive per the
+    // interface contract. Fire onFailed_ for failures, onComplete_ for success.
+    // Fallback: if onFailed_ is not registered, fire onComplete_ with ok=false.
+    if (status == MigrationStatus::SUCCESSFUL) {
+      if (onComplete_) {
+        onComplete_({.token = token, .ok = true});
       }
     } else {
-      if (onComplete_) {
-        MigrationCompleteEvent event{
-            .token = info.token,
-            .ok = (status == MigrationStatus::SUCCESSFUL),
-        };
-        onComplete_(event);
+      // TODO(reason): IRemoteKVManager only reports FAILED with no context.
+      // Add getFailureInfo(id) to expose failure details for retry/quarantine.
+      if (onFailed_) {
+        onFailed_({.token = token, .remote_endpoint_id = -1, .reason = 0});
+      } else if (onComplete_) {
+        onComplete_({.token = token, .ok = false});
       }
-    }
-  }
-
-  for (BurstId burstId : completedBursts) {
-    std::lock_guard<std::mutex> lock(mtx_);
-    auto it = bursts_.find(burstId);
-    if (it == bursts_.end()) continue;
-
-    bool ok = it->second.migrationIds.empty();
-    bursts_.erase(it);
-
-    if (onComplete_) {
-      MigrationCompleteEvent event{
-          .token = burstId,
-          .ok = ok,
-      };
-      onComplete_(event);
     }
   }
 
@@ -238,11 +163,34 @@ void RemoteKVManagerAdapter::connect_to(int /*remote_endpoint_id*/,
 
 void RemoteKVManagerAdapter::wait_ready(int /*timeout_ms*/) {
   // Kafka-based system is ready when producer/consumer are connected
-  // (handled at construction time)
+  // (handled at construction time in RemoteKVManagerImpl)
 }
 
-void RemoteKVManagerAdapter::shutdown(bool /*drain*/) {
-  // IRemoteKVManager handles cleanup in destructor
+void RemoteKVManagerAdapter::shutdown(bool drain) {
+  {
+    std::lock_guard<std::mutex> lock(mtx_);
+    if (shutdownRequested_) {
+      return;
+    }
+    shutdownRequested_ = true;
+  }
+
+  if (!drain) {
+    return;
+  }
+
+  std::unique_lock<std::mutex> lock(mtx_);
+  const auto deadline = std::chrono::steady_clock::now() + shutdownTimeout_;
+
+  while (!inFlight_.empty()) {
+    if (drainCv_.wait_until(lock, deadline) == std::cv_status::timeout) {
+      TT_LOG_WARN(
+          "[RemoteKVManagerAdapter] shutdown timeout with {} migrations "
+          "still in flight",
+          inFlight_.size());
+      break;
+    }
+  }
 }
 
 }  // namespace tt::services
