@@ -299,6 +299,18 @@ class TestFilter:
             return True
         return self._prerequisite_engine in allowed_engines
 
+    def _get_suite_category(self, suite: Dict) -> Optional[str]:
+        """Return the model category (e.g. ``"LLM"``) for ``suite``.
+
+        Derived from the suite's ``weights`` via the model -> category reverse
+        mapping; returns the first category found, or ``None`` if unknown.
+        """
+        for model in suite.get("weights", []):
+            category = self._model_to_category.get(model)
+            if category:
+                return category
+        return None
+
     def _get_prerequisite_for_suite(self, suite: Dict) -> List[Dict]:
         """Get expanded prerequisite tests for a specific suite.
 
@@ -314,6 +326,7 @@ class TestFilter:
         logger.info(
             f"Getting prerequisite tests for suite: {suite.get('id', 'unknown')}"
         )
+        suite_category = self._get_suite_category(suite)
         prereqs = []
         for prereq in self.prerequisite_tests:
             if not self._prerequisite_applies_to_engine(prereq):
@@ -322,6 +335,17 @@ class TestFilter:
                     prereq.get("name", "unknown"),
                     self._prerequisite_engine,
                     prereq.get(ENGINES),
+                )
+                continue
+            # DeviceLivenessTest probes the tt-media-server ``/tt-liveness``
+            # endpoint, which LLM deployments (bare ``vllm serve``) don't expose.
+            # It can never pass there, so skip it for LLM suites — the LLM
+            # eval/benchmark paths already gate on ``/health`` via llm_module.
+            if suite_category == "LLM" and prereq.get("name") == "DeviceLivenessTest":
+                logger.info(
+                    "Skipping DeviceLivenessTest prerequisite for LLM suite %s "
+                    "(bare vLLM has no /tt-liveness route; LLM gates on /health)",
+                    suite.get("id", "unknown"),
                 )
                 continue
             expanded = self._expand_prerequisite_test(prereq, suite)
