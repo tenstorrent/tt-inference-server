@@ -29,6 +29,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "utils/thread_pool.hpp"
+
 namespace trantor {
 class EventLoop;
 class TcpServer;
@@ -296,6 +298,10 @@ struct ServerConfig {
   std::string model_path;
   std::string instance_id_hex;  // Auto-generated when empty.
   uint64_t instance_id = 0;     // Auto-generated when zero.
+  // Threads for the dispatch pool that parses request bodies and invokes the
+  // generate handler off the connection's io loop. 0 = auto (see DynamoServer
+  // ctor).
+  size_t dispatch_pool_threads = 0;
 };
 
 class DynamoServer {
@@ -327,6 +333,14 @@ class DynamoServer {
   std::unique_ptr<trantor::TcpServer> tcp_server_;
   uint16_t actual_port_ = 0;
   std::atomic<bool> running_{false};
+
+  // Parses request bodies (the ~11 ms jsoncpp decode of the 55K-token_ids
+  // array) and runs the generate handler off the connection's io loop, so a
+  // single pipelined connection no longer serializes ingestion on one thread.
+  // Declared last so it is destroyed first — its destructor joins in-flight
+  // tasks (which reference handler_ and the endpoint's loop pool) before those
+  // outlive it. See DynamoEndpoint::stop() for the loop-pool ordering.
+  std::unique_ptr<tt::utils::ThreadPool> dispatch_pool_;
 
   void onMessage(const std::shared_ptr<trantor::TcpConnection>& conn,
                  trantor::MsgBuffer* buf);
