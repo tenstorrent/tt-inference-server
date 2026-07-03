@@ -29,10 +29,10 @@ struct PrefixCacheAcquireResult {
 };
 
 struct PrefixCacheRouterCallbacks {
-  std::function<domain::MarkInFlightResult(const std::string& sessionId,
-                                   std::function<void()>& cancelFn,
-                                   std::optional<uint64_t> expectedKeyHash,
-                                   const std::string* expectedResponseId)>
+  std::function<domain::MarkInFlightResult(
+      const std::string& sessionId, std::function<void()>& cancelFn,
+      std::optional<uint64_t> expectedKeyHash,
+      const std::string* expectedResponseId)>
       tryMarkInFlight;
 
   std::function<std::shared_ptr<domain::Session>(const std::string& sessionId)>
