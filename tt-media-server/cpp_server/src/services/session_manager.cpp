@@ -8,8 +8,8 @@
 #include <thread>
 
 #include "config/settings.hpp"
-#include "domain/prefix_cache/block_matcher.hpp"
 #include "domain/manage_memory.hpp"
+#include "domain/prefix_cache/block_matcher.hpp"
 #include "metrics/metrics.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
@@ -58,31 +58,35 @@ domain::ManageMemoryTask makeDeallocTask(uint32_t slotId) {
 }  // namespace
 
 SessionManager::SessionManager() {
-  prefixCacheRouter = std::make_unique<PrefixCacheRouter>(PrefixCacheRouterCallbacks{
-      .tryMarkInFlight =
-          [this](const std::string& sessionId,
-                 std::function<void()>& cancelFn,
-                 std::optional<uint64_t> expectedKeyHash,
-                 const std::string* expectedResponseId) {
-            return tryMarkInFlight(sessionId, cancelFn, expectedKeyHash,
-                                   expectedResponseId);
-          },
-      .getSession =
-          [this](const std::string& sessionId) { return getSession(sessionId); },
-      .getSessionHash =
-          [this](const std::string& sessionId) {
-            return getSessionHash(sessionId);
-          },
-      .setSessionHash =
-          [this](const std::string& sessionId, uint64_t keyHash) {
-            return setSessionHash(sessionId, keyHash);
-          },
-      .setSessionResponseId =
-          [this](const std::string& sessionId, const std::string& responseId) {
-            return setSessionResponseId(sessionId, responseId);
-          },
-      .onSessionInFlight = [] { throw SessionInFlightException(); },
-  });
+  prefixCacheRouter =
+      std::make_unique<PrefixCacheRouter>(PrefixCacheRouterCallbacks{
+          .tryMarkInFlight =
+              [this](const std::string& sessionId,
+                     std::function<void()>& cancelFn,
+                     std::optional<uint64_t> expectedKeyHash,
+                     const std::string* expectedResponseId) {
+                return tryMarkInFlight(sessionId, cancelFn, expectedKeyHash,
+                                       expectedResponseId);
+              },
+          .getSession =
+              [this](const std::string& sessionId) {
+                return getSession(sessionId);
+              },
+          .getSessionHash =
+              [this](const std::string& sessionId) {
+                return getSessionHash(sessionId);
+              },
+          .setSessionHash =
+              [this](const std::string& sessionId, uint64_t keyHash) {
+                return setSessionHash(sessionId, keyHash);
+              },
+          .setSessionResponseId =
+              [this](const std::string& sessionId,
+                     const std::string& responseId) {
+                return setSessionResponseId(sessionId, responseId);
+              },
+          .onSessionInFlight = [] { throw SessionInFlightException(); },
+      });
   try {
     memoryRequestQueue = std::make_unique<ipc::boost::MemoryRequestQueue>(
         tt::config::ttMemoryRequestQueueName(),

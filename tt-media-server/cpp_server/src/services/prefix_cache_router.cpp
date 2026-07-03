@@ -206,15 +206,16 @@ void PrefixCacheRouter::registerResponseId(const std::string& sessionId,
               sessionId, responseId);
 
   if (!callbacks.setSessionResponseId(sessionId, responseId)) {
-    TT_LOG_WARN("[PrefixCacheRouter] registerResponseId: sessionId={} not found",
-                sessionId);
+    TT_LOG_WARN(
+        "[PrefixCacheRouter] registerResponseId: sessionId={} not found",
+        sessionId);
     return;
   }
   responseIdIndex.registerId(responseId, sessionId);
 }
 
-void PrefixCacheRouter::updateResponseId(
-    const std::string& previousResponseId, const std::string& responseId) {
+void PrefixCacheRouter::updateResponseId(const std::string& previousResponseId,
+                                         const std::string& responseId) {
   if (previousResponseId.empty() || responseId.empty()) {
     return;
   }

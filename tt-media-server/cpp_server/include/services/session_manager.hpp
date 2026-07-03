@@ -91,8 +91,7 @@ class SessionManager {
       const std::string& sessionId, std::function<void()>& cancelFn,
       std::optional<uint64_t> expectedKeyHash = std::nullopt,
       const std::string* expectedResponseId = nullptr);
-  std::optional<uint64_t> getSessionHash(
-      const std::string& sessionId) const;
+  std::optional<uint64_t> getSessionHash(const std::string& sessionId) const;
   bool setSessionHash(const std::string& sessionId, uint64_t keyHash);
   bool setSessionResponseId(const std::string& sessionId,
                             const std::string& responseId);
