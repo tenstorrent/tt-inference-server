@@ -98,16 +98,19 @@ struct AddrInfoGuard {
   struct addrinfo* get() const { return res; }
 };
 
-/// Resolve a hostname or literal IPv4 address for UDP. Returns a malloc'd
-/// `addrinfo` list (wrap in `AddrInfoGuard`). Throws on DNS failure.
-inline struct addrinfo* fetchAddrInfo(const std::string& host) {
+/// Resolve a hostname or literal IPv4 address for UDP via DNS, with the destination
+/// port populated on the returned `sockaddr`. Returns a malloc'd `addrinfo`
+/// list (wrap in `AddrInfoGuard`). Throws on DNS failure.
+inline struct addrinfo* fetchAddrInfo(const std::string& host, int port) {
   struct addrinfo hints{};
   hints.ai_family = AF_INET;       // IPv4-only
   hints.ai_socktype = SOCK_DGRAM;  // UDP
   struct addrinfo* res = nullptr;
 
+  const std::string portStr = std::to_string(port);
+
   // Fires up DNS resolver to resolve the hostname to an IP address.
-  int rc = ::getaddrinfo(host.c_str(), /*service=*/nullptr, &hints, &res);
+  int rc = ::getaddrinfo(host.c_str(), portStr.c_str(), &hints, &res);
   if (rc != 0) {
     throw std::runtime_error("net::fetchAddrInfo: getaddrinfo failed for '" +
                              host + "': " + gai_strerror(rc));
@@ -127,8 +130,8 @@ inline int openUdpSocket() {
   return fd;
 }
 
-/// "Connect" a UDP socket to `dest`. Sends no packets — only resolves the route
-/// and pins the socket's source IP, which `localIpFromSocket` can then read.
+/// "Connect" our UDP socket to `dest`. 
+/// Kernel will auto choose the correct (dynamo-net) source IP to reach `dest`.
 /// Throws on failure.
 inline void connectUdpSocket(int fd, const struct addrinfo* dest) {
   if (::connect(fd, dest->ai_addr, dest->ai_addrlen) != 0) {
@@ -138,7 +141,7 @@ inline void connectUdpSocket(int fd, const struct addrinfo* dest) {
   }
 }
 
-/// Read the socket's local IPv4 address as a dotted-quad string. Throws on
+/// Read the socket's source (dynamo-net) IPv4 address as a dotted-quad string. Throws on
 /// failure.
 inline std::string localIpFromSocket(int fd) {
   struct sockaddr_in local{};
@@ -160,14 +163,15 @@ inline std::string localIpFromSocket(int fd) {
   return buf;
 }
 
-/// High-level: return the source IP the kernel would use to route to `host`
-/// (a hostname or literal IP). Sends no packets — uses the UDP-connect trick:
-/// `fetchAddrInfo` → `openUdpSocket` → `connectUdpSocket` →
-/// `localIpFromSocket`. Returns an empty string on any failure (DNS, socket,
-/// route) so callers can fall back to a heuristic without handling exceptions.
-inline std::string sourceIpForRoute(const std::string& host) {
+/*
+We first figure out the etcd address (host:port).
+Then we open a UDP socket and connect it to the etcd address. Kernel will auto choose the correct (dynamo-net) source IP to reach the etcd.
+Then we read the source IP from the socket.
+This is the source IP that we are going to advertise to the etcd. Dynamo will read this IP and use it to route the traffic to our server.
+*/
+inline std::string sourceIpForRoute(const std::string& host, int port) {
   try {
-    AddrInfoGuard res(fetchAddrInfo(host));
+    AddrInfoGuard res(fetchAddrInfo(host, port));
     FdGuard fd(openUdpSocket());
 
     // connect our socket to the etcd address. Kernel figures out our source IP

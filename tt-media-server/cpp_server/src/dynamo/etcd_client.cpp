@@ -382,7 +382,16 @@ std::string serialize(const Json::Value& v) {
 
 EtcdClient::EtcdClient(const std::string& endpoint, int timeoutMs)
     : timeout_ms_(timeoutMs) {
-  auto parsed = tt::utils::net::parseUrl(endpoint);
+  // parseUrl is a generic utility that throws std::runtime_error; translate at
+  // the EtcdClient boundary so every failure of this client (parse or
+  // transport) surfaces as EtcdError to callers, per the client's contract.
+  tt::utils::net::ParsedUrl parsed;
+  try {
+    parsed = tt::utils::net::parseUrl(endpoint);
+  } catch (const std::exception& e) {
+    throw EtcdError(std::string("EtcdClient: invalid endpoint '") + endpoint +
+                    "': " + e.what());
+  }
   host_ = parsed.host;
   port_ = parsed.port;
 }

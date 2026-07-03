@@ -152,7 +152,7 @@ std::string DynamoEndpoint::detectAdvertiseHost(
   if (!etcdEndpoints.empty()) {
     try {
       const auto url = tt::utils::net::parseUrl(etcdEndpoints);
-      std::string ip = tt::utils::net::sourceIpForRoute(url.host);
+      std::string ip = tt::utils::net::sourceIpForRoute(url.host, url.port);
       if (!ip.empty()) {
         TT_LOG_INFO(
             "[DynamoEndpoint] advertise host from route to etcd ({}:{}): {}",
