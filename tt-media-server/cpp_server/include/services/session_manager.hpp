@@ -18,8 +18,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include "domain/prefix_index.hpp"
-#include "domain/response_id_index.hpp"
+#include "domain/prefix_cache/prefix_index.hpp"
+#include "domain/prefix_cache/response_id_index.hpp"
 #include "domain/session.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "utils/concurrent_map.hpp"
@@ -49,7 +49,7 @@ enum class CloseSessionResult {
 
 class SessionManager {
  public:
-  using Candidate = domain::Candidate;
+  using Candidate = domain::prefix_cache::Candidate;
   // Result of tryAcquireByPrefixHash: the session's UUID and pre-assigned slot.
   struct AcquiredSession {
     bool sessionFound;
@@ -232,8 +232,8 @@ class SessionManager {
   mutable utils::ConcurrentMap<std::string, std::shared_ptr<domain::Session>>
       sessions;
 
-  domain::PrefixIndex prefixIndex;
-  domain::ResponseIdIndex responseIdIndex;
+  domain::prefix_cache::PrefixIndex prefixIndex;
+  domain::prefix_cache::ResponseIdIndex responseIdIndex;
 
   std::unique_ptr<ipc::boost::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::boost::MemoryResultQueue> memoryResultQueue;
