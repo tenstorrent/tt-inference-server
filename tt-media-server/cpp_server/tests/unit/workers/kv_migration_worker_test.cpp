@@ -45,6 +45,11 @@ using tt::services::MigrationStatus;
 class FakeProducer : public IKafkaProducer {
  public:
   bool send(std::string_view payload, std::string* errorMessage) override {
+    return send(payload, /*partition=*/-1, errorMessage);
+  }
+
+  bool send(std::string_view payload, int32_t /*partition*/,
+            std::string* errorMessage) override {
     {
       std::lock_guard<std::mutex> lock(mtx);
       payloads.emplace_back(payload);

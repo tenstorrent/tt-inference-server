@@ -277,7 +277,7 @@ class WorkflowExecution(ABC):
 
         elapsed = time.time() - started
         block_kind = block.kind if block is not None else None
-        if exit_code != 0 or block is None:
+        if exit_code != 0:
             self.logger.error(
                 "❌ task=%s rc=%d block=%s (%.1fs)",
                 task_type.value,
@@ -285,6 +285,10 @@ class WorkflowExecution(ABC):
                 block_kind,
                 elapsed,
             )
+        elif block is None:
+            # Runner intentionally produced no block (e.g. spec_tests found
+            # no matching suites for this model+device)
+            self.logger.info("⏭  task=%s no-op rc=0 (%.1fs)", task_type.value, elapsed)
         else:
             self.logger.info(
                 "✅ task=%s block=%s (%.1fs)", task_type.value, block_kind, elapsed

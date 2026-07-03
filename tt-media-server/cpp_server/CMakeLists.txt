@@ -252,17 +252,36 @@ if(ENABLE_BLAZE_MIGRATION AND NOT ENABLE_BLAZE)
 endif()
 
 if(ENABLE_BLAZE)
-    # tt-llm-engine (Core-only at compile time when TT::Metalium is not in scope;
-    # the Full target adds SocketPipeline support when Metalium is available).
-    set(DS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    # tt-llm-engine has C++11 braced-init narrowing that GCC only warns on, but
-    # the tt-metal clang-20 toolchain rejects as a hard error. Downgrade it to a
-    # warning for the sub-build only; restore our stricter flags afterwards.
-    set(_tt_saved_cxx_flags "${CMAKE_CXX_FLAGS}")
-    string(APPEND CMAKE_CXX_FLAGS " -Wno-c++11-narrowing")
-    add_subdirectory(tt-llm-engine)
-    set(CMAKE_CXX_FLAGS "${_tt_saved_cxx_flags}")
-    message(STATUS "tt-llm-engine: ENABLED")
+    # Prefer a pre-built tt-llm-engine discovered via find_package — this is
+    # the path used by the Docker build, which pulls /opt/tt-llm-engine out
+    # of the tt-llm-engine builder image and sets CMAKE_PREFIX_PATH so the
+    # package is locatable. Fall back to building the in-tree submodule for
+    # local-dev workflows that don't go through Docker.
+    find_package(tt-llm-engine CONFIG QUIET)
+    if(tt-llm-engine_FOUND)
+        message(STATUS "tt-llm-engine: using pre-built package at ${tt-llm-engine_DIR}")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/CMakeLists.txt")
+        # Legacy path — local dev with the submodule checked out under cpp_server/.
+        # The narrowing-warning flag is only needed when we actually compile
+        # tt-llm-engine from source; the find_package path consumes a prebuilt
+        # .so so the warning is irrelevant there.
+        set(DS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        # tt-llm-engine has C++11 braced-init narrowing that GCC only warns on, but
+        # the tt-metal clang-20 toolchain rejects as a hard error. Downgrade it to a
+        # warning for the sub-build only; restore our stricter flags afterwards.
+        set(_tt_saved_cxx_flags "${CMAKE_CXX_FLAGS}")
+        string(APPEND CMAKE_CXX_FLAGS " -Wno-c++11-narrowing")
+        add_subdirectory(tt-llm-engine)
+        set(CMAKE_CXX_FLAGS "${_tt_saved_cxx_flags}")
+        message(STATUS "tt-llm-engine: building from in-tree submodule (legacy path)")
+    else()
+        message(FATAL_ERROR
+            "ENABLE_BLAZE=ON but tt-llm-engine is neither installed "
+            "(find_package failed) nor present in source tree at "
+            "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine. "
+            "Either ensure the prebuilt image's /opt/tt-llm-engine is on "
+            "CMAKE_PREFIX_PATH, or initialize the tt-llm-engine submodule.")
+    endif()
 else()
     message(STATUS "tt-llm-engine: DISABLED (use -DENABLE_BLAZE=ON to enable)")
 endif()
@@ -499,11 +518,31 @@ if(ENABLE_BLAZE)
         message(STATUS "Linking llm_runner_lib against TtLlmEngine::Core")
     endif()
     target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE)
+    # Detect where the tt-llm-engine source tree lives. Two layouts are supported:
+    #   1. Monolithic flow (main's Dockerfile.blaze): cpp_server/tt-llm-engine/ —
+    #      cloned in-tree during the Docker build.
+    #   2. Slim flow (v2 Dockerfile.blaze): /opt/tt-llm-engine-src/ — COPY'd from
+    #      the prebuilt tt-llm-engine image's source tree.
+    # Both layouts expose the same subdirectories (src/, disaggregation/, tt-metal/),
+    # so a single root variable lets every consumer-of-engine-source path adapt.
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/CMakeLists.txt")
+        set(_TT_LLM_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine")
+        message(STATUS "tt-llm-engine source: in-tree at ${_TT_LLM_ENGINE_ROOT}")
+    elseif(EXISTS "/opt/tt-llm-engine-src/CMakeLists.txt")
+        set(_TT_LLM_ENGINE_ROOT "/opt/tt-llm-engine-src")
+        message(STATUS "tt-llm-engine source: slim engine image at ${_TT_LLM_ENGINE_ROOT}")
+    else()
+        message(FATAL_ERROR
+            "ENABLE_BLAZE=ON but tt-llm-engine source not found. Expected either "
+            "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/ (in-tree clone, monolithic flow) "
+            "or /opt/tt-llm-engine-src/ (slim engine image flow).")
+    endif()
+
     # Header-only MigrationClientInterface implementations (MigrationLayerClientAdapter,
     # MockMigrationClient) live under the engine's src tree rather than its public
     # include tree; blaze_utils.hpp instantiates them, so expose that path.
     target_include_directories(llm_runner_lib PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/src)
+        ${_TT_LLM_ENGINE_ROOT}/src)
 
     if(ENABLE_BLAZE_MIGRATION)
         target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE_MIGRATION)
@@ -515,8 +554,8 @@ if(ENABLE_BLAZE)
         # directly into a small static lib and link it in. There is a single concrete
         # implementation (no mock/real .so swap), so static linking is sufficient for
         # both Core and LD_PRELOAD'd Full runs.
-        set(_MIG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration)
-        set(_MIG_TT_STL "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/tt-metal/tt_stl")
+        set(_MIG_DIR ${_TT_LLM_ENGINE_ROOT}/disaggregation/migration)
+        set(_MIG_TT_STL "${_TT_LLM_ENGINE_ROOT}/tt-metal/tt_stl")
         add_library(migration_client STATIC
             ${_MIG_DIR}/src/migration_client.cpp
             ${_MIG_DIR}/src/file_lock_guard.cpp)
@@ -524,7 +563,7 @@ if(ENABLE_BLAZE)
         target_include_directories(migration_client PUBLIC
             ${_MIG_DIR}/include
             ${_MIG_DIR}/src/worker
-            ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/src/common
+            ${_TT_LLM_ENGINE_ROOT}/src/common
             ${TT_METAL_INCLUDE_DIRS}
             ${_MIG_TT_STL})
         target_link_libraries(migration_client PUBLIC spdlog::spdlog PRIVATE rt)
@@ -1084,6 +1123,7 @@ add_executable(session_manager_test
     src/domain/prefix_cache/block_matcher.cpp
     src/domain/prefix_cache/response_id_index.cpp
     src/services/session_manager.cpp
+    src/services/prefix_cache_router.cpp
     src/metrics/metrics.cpp
 )
 target_link_libraries(session_manager_test PRIVATE
@@ -1152,6 +1192,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/embedding_service.cpp
     src/services/model_service_registration.cpp
     src/services/session_manager.cpp
+    src/services/prefix_cache_router.cpp
     src/services/session_resolution.cpp
     src/services/memory_services/memory_manager.cpp
     src/domain/session.cpp
@@ -1375,6 +1416,7 @@ add_executable(session_manager_benchmark
     src/domain/prefix_cache/block_matcher.cpp
     src/domain/prefix_cache/response_id_index.cpp
     src/services/session_manager.cpp
+    src/services/prefix_cache_router.cpp
     src/metrics/metrics.cpp
 )
 target_link_libraries(session_manager_benchmark PRIVATE
@@ -1543,6 +1585,20 @@ if(KAFKA_ENABLED)
     target_include_directories(remote_kv_manager_kafka_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
+
+    # E2E test: real RemoteKVManagerImpl driven against a scriptable
+    # MockMigrationWorker over a real Kafka broker (scripts/dev-kafka.sh up).
+    # Not registered with add_test() -- opt-in, run manually.
+    add_executable(remote_kv_manager_e2e_test
+        tests/e2e/remote_kv_manager_e2e_test.cpp
+    )
+    target_link_libraries(remote_kv_manager_e2e_test PRIVATE
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(remote_kv_manager_e2e_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
 else()
     message(STATUS "Kafka support disabled (use -DKAFKA_ENABLED=ON to enable)")
 endif()
@@ -1564,6 +1620,7 @@ set(SOURCES
     src/domain/prefix_cache/block_matcher.cpp
     src/domain/prefix_cache/response_id_index.cpp
     src/services/session_manager.cpp
+    src/services/prefix_cache_router.cpp
     src/services/session_resolution.cpp
     src/domain/session.cpp
     src/runtime/worker/single_process_worker.cpp
