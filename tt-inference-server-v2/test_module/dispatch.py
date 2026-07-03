@@ -121,13 +121,15 @@ def run_media_task(
 
 
 def _resolve_spec_test_suites(ctx: MediaContext) -> List[dict]:
-    """Return matching expanded suites for ``ctx.model_spec.model_name`` + device."""
+    """Return matching expanded suites for ``ctx.model_spec.model_name`` + device.
+    Prerequisite injection is engine-aware."""
     from .test_categorization_system import TestFilter
 
     return (
         TestFilter()
         .filter_by_model(ctx.model_spec.model_name)
         .filter_by_device(ctx.device.name.lower())
+        .filter_prerequisites_by_engine(ctx.model_spec.inference_engine)
         .get_tests()
     )
 
