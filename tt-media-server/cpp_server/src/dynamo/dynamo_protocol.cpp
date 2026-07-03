@@ -310,22 +310,11 @@ GenerateRequest parse_generate_request(const std::vector<uint8_t>& bodyBytes) {
   const size_t n = bodyBytes.size();
   const std::string_view body(data, n);
 
-  // Fast path. The `token_ids` array can hold tens of thousands of ints, and
-  // jsoncpp allocates a Value node per element (~10 ms for a 55K-token prompt,
-  // measured) — the dominant cost of receiving a request. Scan that array
-  // directly, then let jsoncpp parse a copy of the body with the array elided
-  // (`[]`), so it only builds the small remaining fields. Nothing downstream
-  // reads `token_ids` from `req.raw` (only scalar keys like request_id), so an
-  // empty array there is fine. Any deviation from a flat int array falls
-  // through to the jsoncpp path below, which stays correct.
   size_t arrayStart = 0;
   if (findTokenIdsArray(body, arrayStart)) {
     std::vector<int> ids;
     const size_t arrayEnd = scanIntArray(data, arrayStart, n, ids);
     if (arrayEnd != std::string_view::npos) {
-      // Rebuild the body with the token_ids array replaced by "[]" for jsoncpp.
-      // Everything except this one array is tiny, so this copy is cheap
-      // regardless of where the array sits in the object.
       std::string reduced;
       reduced.reserve(arrayStart + 2 + (n - arrayEnd));
       reduced.append(data, arrayStart);
@@ -444,10 +433,6 @@ DynamoServer::DynamoServer(ServerConfig config, GenerateHandler handler,
     config_.instance_id_hex = oss.str();
   }
 
-  // Dispatch pool: parses request bodies + runs the handler off the io loop.
-  // Auto-size to the hardware concurrency (clamped to [4, 32]) when unset so a
-  // burst of large prompts parses in parallel instead of serializing on one
-  // connection's loop thread.
   size_t poolThreads = config_.dispatch_pool_threads;
   if (poolThreads == 0) {
     const auto hw = std::thread::hardware_concurrency();
@@ -505,29 +490,13 @@ void DynamoServer::onMessage(const trantor::TcpConnectionPtr& conn,
 
 void DynamoServer::process_request(const trantor::TcpConnectionPtr& conn,
                                    const TcpRequestMessage& msg) {
-  // Cheap work stays on the io loop: split the frame and parse the small
-  // control header (address + request id), which are needed to ACK and to
-  // route the call-home stream. The expensive part — parsing the request body,
-  // whose `token_ids` array can be tens of thousands of ints (~11 ms of
-  // jsoncpp for a 55K-token prompt) — is deferred to the dispatch pool below.
   TwoPartMessage twoPart = decode_two_part(msg.payload);
   auto ctrl = parse_control_message(twoPart.header);
   auto connInfo = parse_connection_info(ctrl.connection_info);
 
-  // ACK immediately on the inbound connection. onMessage runs on the
-  // connection's io loop, so ACKs stay in the FIFO order the frontend
-  // pipelined requests in. Sending it before the body parse lets the loop
-  // return to reading the next pipelined request right away instead of
-  // blocking ~11 ms per request on a single connection.
   auto ack = encode_tcp_response();
   conn->send(reinterpret_cast<const char*>(ack.data()), ack.size());
 
-  // Offload the body parse + dispatch off the io loop. The handler creates the
-  // async call-home writer (bound to one of the endpoint's loop-pool loops)
-  // and returns without blocking, and the pipeline is already invoked
-  // concurrently across io loops in the multi-connection case, so running it
-  // from a pool thread is safe. This lets a burst of large prompts parse in
-  // parallel instead of serializing on one connection's io loop.
   dispatch_pool_->submit([this, body = std::move(twoPart.body),
                           connInfo = std::move(connInfo),
                           id = ctrl.id]() mutable {

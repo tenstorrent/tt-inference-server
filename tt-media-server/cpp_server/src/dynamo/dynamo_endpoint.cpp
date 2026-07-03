@@ -399,22 +399,6 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           return cb;
         },
         std::move(handlers), std::move(cancelFn));
-
-    // How long this request occupied the connection's loop thread synchronously
-    // (route + acquire + dispatch/forward). Compare against the gap between
-    // consecutive stage=dispatched lines with the same loop_tid: busy_ms ~= gap
-    // means the loop is saturated (ingress-bound here); busy_ms << gap means
-    // the loop sat idle between requests (the stagger is upstream — Dynamo
-    // egress / single worker connection), not lost in this loop.
-    const auto handlerBusyMs =
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            SteadyClock::now() - recvT)
-            .count() /
-        1000.0;
-    TT_LOG_INFO(
-        "[DynamoLatency] id={} stage=handler_returned busy_ms={:.3f} "
-        "loop_tid={}",
-        probeId.empty() ? "?" : probeId, handlerBusyMs, loopTid);
   };
 }
 
@@ -444,8 +428,6 @@ void DynamoEndpoint::start() {
   sc.endpoint = options_.endpoint;
   sc.model_name = options_.model_name;
   sc.model_path = options_.model_path;
-  // Reuse the callback-pool sizing (auto-scales with workers) for the dispatch
-  // pool that parses request bodies + runs the handler off the io loops.
   sc.dispatch_pool_threads = tt::config::callbackPoolThreads();
 
   // start() binds and listens on the pool loops synchronously; the resolved
@@ -508,14 +490,11 @@ void DynamoEndpoint::stop() {
   if (discovery_) {
     discovery_->unregisterSelf();
   }
-  if (keepalive_thread_.joinable()) keepalive_thread_.join();
+  if (keepalive_thread_.joinable()) {
+    keepalive_thread_.join();
+  }
 
-  // Destroy the server first: its dispatch pool's destructor joins in-flight
-  // parse/handler tasks, which create call-home writers on the loop pool. They
-  // must finish before the loop pool is torn down below, or a late task would
-  // call getNextLoop() on a destroyed pool.
   server_.reset();
-
   discovery_.reset();
   if (loop_pool_) {
     for (auto* loop : loop_pool_->getLoops()) {

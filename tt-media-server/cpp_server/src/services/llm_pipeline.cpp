@@ -3,6 +3,8 @@
 
 #include "services/llm_pipeline.hpp"
 
+#include <trantor/net/EventLoop.h>
+
 #include <chrono>
 #include <functional>
 #include <stdexcept>
@@ -140,6 +142,18 @@ void LLMPipeline::resolveSession(
       "messages={} promptKind={} promptTokens={}",
       req->task_id, req->model.value_or("default"), req->stream,
       req->messages.size(), promptKind, promptTokens);
+
+  // Deliver every resolution/error on `loop`. resolveSession may run on a
+  // non-event-loop thread (e.g. the Dynamo dispatch pool), so all callbacks are
+  // routed onto `loop` here in one place instead of at each call site.
+  // runInLoop runs inline when already on `loop`, so on-loop callers pay no
+  // hop.
+  onResolved = [loop, cb = std::move(onResolved)](SessionInfo resolved) {
+    loop->runInLoop([cb, resolved = std::move(resolved)]() { cb(resolved); });
+  };
+  onError = [loop, cb = std::move(onError)](const SessionError& err) {
+    loop->runInLoop([cb, err]() { cb(err); });
+  };
 
   SessionInfo info;
 
