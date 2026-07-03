@@ -50,7 +50,7 @@ TEST(SessionManager, TryMarkInFlight_MarksSessionAndReturnsSlot) {
 
   std::function<void()> cancelFn;
   auto result = manager.tryMarkInFlight(sessionId, cancelFn);
-  EXPECT_EQ(result.outcome, tt::services::MarkInFlightOutcome::Marked);
+  EXPECT_EQ(result.outcome, tt::domain::MarkInFlightOutcome::Marked);
   EXPECT_EQ(result.slotId, 11u);
 
   manager.getSession(sessionId)->release();
@@ -65,10 +65,10 @@ TEST(SessionManager, TryMarkInFlight_BusyWhenAlreadyInFlight) {
 
   std::function<void()> cancelFn;
   ASSERT_EQ(manager.tryMarkInFlight(sessionId, cancelFn).outcome,
-            tt::services::MarkInFlightOutcome::Marked);
+            tt::domain::MarkInFlightOutcome::Marked);
 
   auto busy = manager.tryMarkInFlight(sessionId, cancelFn);
-  EXPECT_EQ(busy.outcome, tt::services::MarkInFlightOutcome::Busy);
+  EXPECT_EQ(busy.outcome, tt::domain::MarkInFlightOutcome::Busy);
 
   manager.getSession(sessionId)->release();
 }
@@ -82,7 +82,7 @@ TEST(SessionManager, TryMarkInFlight_StaleWhenKeyHashMismatch) {
 
   std::function<void()> cancelFn;
   auto result = manager.tryMarkInFlight(sessionId, cancelFn, 999u, nullptr);
-  EXPECT_EQ(result.outcome, tt::services::MarkInFlightOutcome::Stale);
+  EXPECT_EQ(result.outcome, tt::domain::MarkInFlightOutcome::Stale);
 }
 
 TEST(SessionManager, GetAndSetSessionHash) {

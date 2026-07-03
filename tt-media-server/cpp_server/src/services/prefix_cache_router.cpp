@@ -59,13 +59,13 @@ PrefixCacheRouter::tryAcquireByPrefixHash(
     auto markResult = callbacks.tryMarkInFlight(candidate.sessionId, cancelFn,
                                                 keyHash, nullptr);
 
-    if (markResult.outcome == MarkInFlightOutcome::Stale ||
-        markResult.outcome == MarkInFlightOutcome::NotFound) {
+    if (markResult.outcome == domain::MarkInFlightOutcome::Stale ||
+        markResult.outcome == domain::MarkInFlightOutcome::NotFound) {
       prefixIndex.remove(candidate.sessionId, keyHash);
       continue;
     }
 
-    if (markResult.outcome == MarkInFlightOutcome::Marked) {
+    if (markResult.outcome == domain::MarkInFlightOutcome::Marked) {
       acquired =
           AcquireResult{true,          candidate.sessionId,   markResult.slotId,
                         matchedTokens, candidate.thinkTokens, {}};
@@ -123,13 +123,13 @@ PrefixCacheRouter::tryAcquireByResponseId(const std::string& previousResponseId,
   auto markResult = callbacks.tryMarkInFlight(sessionId, cancelFn, std::nullopt,
                                               &previousResponseId);
 
-  if (markResult.outcome == MarkInFlightOutcome::Stale ||
-      markResult.outcome == MarkInFlightOutcome::NotFound) {
+  if (markResult.outcome == domain::MarkInFlightOutcome::Stale ||
+      markResult.outcome == domain::MarkInFlightOutcome::NotFound) {
     responseIdIndex.removeIf(sessionId, previousResponseId);
     return std::nullopt;
   }
 
-  if (markResult.outcome == MarkInFlightOutcome::Marked) {
+  if (markResult.outcome == domain::MarkInFlightOutcome::Marked) {
     acquired = AcquireResult{};
     acquired->sessionFound = true;
     acquired->sessionId = sessionId;
@@ -144,7 +144,7 @@ PrefixCacheRouter::tryAcquireByResponseId(const std::string& previousResponseId,
     return acquired;
   }
 
-  if (markResult.outcome == MarkInFlightOutcome::Busy) {
+  if (markResult.outcome == domain::MarkInFlightOutcome::Busy) {
     TT_LOG_WARN(
         "[PrefixCacheRouter] tryAcquireByResponseId: session under id={} is "
         "in-flight",

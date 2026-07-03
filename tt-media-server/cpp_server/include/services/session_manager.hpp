@@ -18,6 +18,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "domain/session_manager_structs.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "services/prefix_cache_router.hpp"
 #include "utils/concurrent_map.hpp"
@@ -82,7 +83,7 @@ class SessionManager {
   std::shared_ptr<domain::Session> getSession(const std::string& sessionId);
   size_t getActiveSessionCount() const;
 
-  MarkInFlightResult tryMarkInFlight(
+  domain::MarkInFlightResult tryMarkInFlight(
       const std::string& sessionId, std::function<void()>& cancelFn,
       std::optional<uint64_t> expectedKeyHash = std::nullopt,
       const std::string* expectedResponseId = nullptr);

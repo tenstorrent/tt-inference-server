@@ -214,13 +214,13 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
                                          std::function<void()> cancelFn) {
   auto result = tryMarkInFlight(sessionId, cancelFn);
 
-  if (result.outcome == MarkInFlightOutcome::NotFound) {
+  if (result.outcome == domain::MarkInFlightOutcome::NotFound) {
     TT_LOG_WARN("[SessionManager] acquireSessionSlot: sessionId={} not found",
                 sessionId);
     return tt::domain::INVALID_SLOT_ID;
   }
 
-  if (result.outcome == MarkInFlightOutcome::Busy) {
+  if (result.outcome == domain::MarkInFlightOutcome::Busy) {
     TT_LOG_WARN(
         "[SessionManager] acquireInFlight: sessionId={} already has a "
         "request in flight",
@@ -233,36 +233,36 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
   return result.slotId;
 }
 
-MarkInFlightResult SessionManager::tryMarkInFlight(
+domain::MarkInFlightResult SessionManager::tryMarkInFlight(
     const std::string& sessionId, std::function<void()>& cancelFn,
     std::optional<uint64_t> expectedKeyHash,
     const std::string* expectedResponseId) {
-  MarkInFlightResult result;
+  domain::MarkInFlightResult result;
 
   bool found =
       sessions.modify(sessionId, [&](std::shared_ptr<domain::Session>& s) {
         if (expectedKeyHash.has_value() && s->getHash() != *expectedKeyHash) {
-          result.outcome = MarkInFlightOutcome::Stale;
+          result.outcome = domain::MarkInFlightOutcome::Stale;
           return;
         }
         if (expectedResponseId != nullptr &&
             s->getResponseId() != *expectedResponseId) {
-          result.outcome = MarkInFlightOutcome::Stale;
+          result.outcome = domain::MarkInFlightOutcome::Stale;
           return;
         }
         if (s->isInFlight()) {
-          result.outcome = MarkInFlightOutcome::Busy;
+          result.outcome = domain::MarkInFlightOutcome::Busy;
           return;
         }
         s->updateActivityTime();
         s->markInFlight();
         s->setCancelFn(std::move(cancelFn));
-        result.outcome = MarkInFlightOutcome::Marked;
+        result.outcome = domain::MarkInFlightOutcome::Marked;
         result.slotId = s->getSlotId();
       });
 
   if (!found) {
-    result.outcome = MarkInFlightOutcome::NotFound;
+    result.outcome = domain::MarkInFlightOutcome::NotFound;
   }
 
   return result;

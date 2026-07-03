@@ -13,23 +13,11 @@
 #include "domain/prefix_cache/helpers.hpp"
 #include "domain/prefix_cache/prefix_index.hpp"
 #include "domain/prefix_cache/response_id_index.hpp"
-#include "domain/sentinel_values.hpp"
 #include "domain/session.hpp"
+#include "domain/session_manager_structs.hpp"
 #include "utils/conversation_hasher.hpp"
 
 namespace tt::services {
-
-enum class MarkInFlightOutcome {
-  Marked,
-  Busy,
-  Stale,
-  NotFound,
-};
-
-struct MarkInFlightResult {
-  MarkInFlightOutcome outcome = MarkInFlightOutcome::NotFound;
-  uint32_t slotId = domain::INVALID_SLOT_ID;
-};
 
 struct PrefixCacheAcquireResult {
   bool sessionFound = false;
@@ -41,7 +29,7 @@ struct PrefixCacheAcquireResult {
 };
 
 struct PrefixCacheRouterCallbacks {
-  std::function<MarkInFlightResult(const std::string& sessionId,
+  std::function<domain::MarkInFlightResult(const std::string& sessionId,
                                    std::function<void()>& cancelFn,
                                    std::optional<uint64_t> expectedKeyHash,
                                    const std::string* expectedResponseId)>
