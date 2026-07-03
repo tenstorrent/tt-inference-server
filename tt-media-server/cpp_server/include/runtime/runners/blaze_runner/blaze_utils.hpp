@@ -326,25 +326,16 @@ inline MockPrefillSchedulerConfig makeMockPrefillSchedulerConfig() {
 }
 
 inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig() {
-  const uint32_t numStages = tt::config::mockPipelineStages();
-  const auto stageLatency =
-      std::chrono::microseconds(tt::config::mockStageLatencyUs());
-  // Autoregressive decode: one token per full pipeline traversal. Derived
-  // so it can never be set faster than physics allows.
-  const auto decodeTokenLatency = stageLatency * numStages;
+  // Two fundamental knobs describe the whole shared pipeline: its depth
+  // (numPipelineStages) and per-stage time (stageLatency). Everything else -
+  // the ~22.7k tok/s cap, per-slot decode cadence (a full traversal), and
+  // prefill/decode contention - emerges from the pipeline model itself.
   return MockDecodeSchedulerConfig{
-      .numPipelineStages = numStages,
-      .stageLatency = stageLatency,
-      .prefillChunkLatency =
-          std::chrono::milliseconds(tt::config::mockPrefillComputeMs()),
-      .prefillChunkSize = tt::config::prefillChunkSize(),
+      .numPipelineStages = tt::config::mockPipelineStages(),
+      .stageLatency =
+          std::chrono::microseconds(tt::config::mockStageLatencyUs()),
+      .prefillChunkSize = tt::config::mockPrefillRoundRobinTokens(),
       .decodeTokenId = tt::config::mockDecodeTokenId(),
-      .decodeTokenLatency = decodeTokenLatency,
-      // Jitter as a percentage of the token interval, so it scales with the
-      // configured pipeline speed. Breaks the phase-lock that otherwise fattens
-      // the TTFT tail under concurrency.
-      .decodeTokenJitter =
-          (decodeTokenLatency * tt::config::mockDecodeJitterPct()) / 100,
   };
 }
 

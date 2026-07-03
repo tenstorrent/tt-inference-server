@@ -356,25 +356,20 @@ std::string dynamoEndpointName();
 unsigned mockPrefillLatencyMs();
 
 /** Time one token spends in a single pipeline stage, for the
- * MockDecodeScheduler. defaults::MOCK_STAGE_LATENCY_US. */
+ * MockDecodeScheduler.
+ * defaults::MOCK_STAGE_LATENCY_US. */
 unsigned mockStageLatencyUs();
 
 /** Transformer pipeline depth modeled by the MockDecodeScheduler.
  * defaults::MOCK_PIPELINE_STAGES. */
 uint32_t mockPipelineStages();
 
-/** Per-decode-token timing jitter for the MockDecodeScheduler, as a percentage
- * of the token interval (+/-). Desynchronizes slots so identical-length
- * requests don't finish in lockstep and spike the TTFT tail; mean-preserving,
- * so throughput and mean TPOT are unaffected.
- * Default: defaults::MOCK_DECODE_JITTER_PCT. */
-uint32_t mockDecodeJitterPct();
-
-/** Per-chunk prefill compute (ms) added to time-to-first-token by the
- * MockDecodeScheduler, on top of the pipeline fill. Models the real cost of
- * running a prompt chunk through the layers
- * Default: defaults::MOCK_PREFILL_COMPUTE_MS. */
-unsigned mockPrefillComputeMs();
+/** Round-robin quantum (prompt tokens) for prefill in the MockDecodeScheduler:
+ * a slot injects up to this many tokens before rotating to the next prefilling
+ * slot. Mirrors the real decode scheduler's DEFAULT_CHUNK_SIZE. Affects only
+ * how first-token latency spreads across concurrent slots, not the shared cap.
+ * Default: defaults::MOCK_PREFILL_RR_TOKENS. */
+uint32_t mockPrefillRoundRobinTokens();
 
 /** Fixed decode token id emitted by MockSchedulers. From MOCK_DECODE_TOKEN_ID.
  * Default: defaults::MOCK_DECODE_TOKEN_ID. */

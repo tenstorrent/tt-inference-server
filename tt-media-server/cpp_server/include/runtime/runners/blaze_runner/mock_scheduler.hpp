@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <deque>
 #include <mutex>
-#include <random>
 #include <thread>
 #include <vector>
 
@@ -25,48 +24,19 @@ struct MockPrefillSchedulerConfig {
 };
 
 struct MockDecodeSchedulerConfig {
-  // Depth of the transformer pipeline the mock stands in for. Time-to-first-
-  // token is a pipeline-fill cost, not a per-chunk prefill cost: the prompt
-  // streams through the stages one chunk per stage-time and the first token
-  // pops out once the final chunk clears the last stage.
+  // The transformer pipeline this mock stands in for: `numPipelineStages`
+  // stages of `stageLatency` each. It is a single *shared* resource - it
+  // accepts one token every stageLatency, and each token exits after traversing
+  // all stages (numPipelineStages * stageLatency). BOTH prefill and decode
+  // tokens flow through this one pipeline, so total token throughput (prefill +
+  // decode) is capped at 1 / stageLatency (e.g. 44us -> ~22.7k tok/s) and the
+  // two contend for that single budget - exactly like the hardware pipeline.
   uint32_t numPipelineStages = 1;
-  // Time a single token spends in one pipeline stage. Prefill chunks can stream
-  // through back-to-back (the whole prompt is known up front), so this sets the
-  // pipeline-*fill* latency: one stage-time per chunk plus the pipeline depth.
   std::chrono::microseconds stageLatency{0};
-  // Prefill compute per chunk, added to time-to-first-token on top of the
-  // fill above. stageLatency is a single token's per-stage cost, but a prefill
-  // chunk pushes thousands of tokens through each stage,
-  // which for a real model dwarfs one token's traversal.
-  // This is the term that makes TTFT realistic (and scale with prompt length,
-  // since it is charged per chunk); it mirrors mock_pipeline's
-  // PrefillMockConfig chunk_latency. 0 keeps TTFT at the bare pipeline-fill
-  // (~stageLatency-scale).
-  std::chrono::milliseconds prefillChunkLatency{0};
-  uint32_t prefillChunkSize = 128;
+  // A slot injects up to this many prompt tokens before the scheduler rotates
+  // to the next prefilling slot
+  uint32_t prefillChunkSize = 24;
   uint32_t decodeTokenId = 0;
-  // Per-slot spacing between decode tokens. Decode is autoregressive - token
-  // N+1 cannot enter the pipeline until token N has traversed all stages - so a
-  // single sequence produces one token per full traversal, i.e.
-  // numPipelineStages * stageLatency (e.g. 64 * 44us = 2816us). The familiar
-  // "one token per stage-time" figure is the aggregate rate once many slots
-  // interleave in the pipeline (numPipelineStages slots busy => one token per
-  // stageLatency across all of them), not a per-slot rate. The config builder
-  // derives this from numPipelineStages * stageLatency; keeping it as its own
-  // field lets tests dial the decode spacing independently of the fill.
-  std::chrono::microseconds decodeTokenLatency{0};
-  // Max absolute wobble added to each decode interval, drawn uniformly from
-  // [-decodeTokenJitter, +decodeTokenJitter]. Mean-preserving, so throughput
-  // and mean TPOT are unchanged; its only job is to stop every slot from
-  // ticking in lockstep. Without it, identical-length requests started together
-  // stay phase-locked for the whole run, finish in synchronized clumps, and
-  // spike the TTFT tail as a burst of requests all contend for slots at once.
-  // The jitter accumulates over a generation (a random walk), so completions
-  // drift apart and slots free in a trickle instead of a clump. 0 = perfect
-  // metronome (the phase-locked behaviour). It stands in for the desync a real
-  // system gets for free (variable output lengths, batch effects, scheduling),
-  // which this fixed-length synthetic benchmark lacks.
-  std::chrono::microseconds decodeTokenJitter{0};
 };
 
 namespace detail {
@@ -243,19 +213,25 @@ class MockPrefillScheduler final : public IPrefillScheduler {
   MockPrefillSchedulerConfig cfg;
 };
 
-// Asynchronous mock decode scheduler.
+// Asynchronous mock decode scheduler backed by a single shared pipeline.
 //
-// push_request() returns immediately for SUBMIT/CONTINUE after enqueuing a
-// PendingJob; a single background emitter thread paces token emission per slot
-// at decodeTokenLatency intervals (first token deferred by the pipeline-fill
-// latency computed in enqueueJobLocked).
-// This keeps the runner thread free to service cancels, memory requests, and
-// other slots' outputs while a long generation is in flight - which is the
-// point of having a mock scheduler for bottleneck testing in the first place
-// (a synchronous emitter would just serialize everything on the runner).
+// A single background emitter thread runs a tiny discrete-event simulation of
+// the transformer pipeline: every stageLatency it consumes tokens that have
+// exited, injects one new token, then sleeps to the next event. BOTH prefill
+// and decode tokens are injected into this one pipeline, so:
+//   * total throughput (prefill + decode) is capped at 1 / stageLatency, and
+//     prefill and decode contend for that single budget - just like hardware;
+//   * decode is injected first, prefill fills the spare capacity, so a decode-
+//     saturated pipeline starves prefill;
+//   * a sequence's consecutive decode tokens are one full traversal apart
+//     (autoregressive: token N+1 needs token N's result), while N interleaved
+//     slots produce ~one token per stageLatency in aggregate;
+//   * time-to-first-token = time to inject the whole prompt (round-robin, in
+//     chunks of prefillChunkSize, competing for the shared pipeline) + one
+//     traversal, so it scales with prompt length and with load.
 //
-// EVICT/STOP synchronously drop any pending emission for the affected slot,
-// mirroring real hardware: once a slot is yanked, no further tokens come out.
+// push_request() returns immediately after enqueuing/cancelling. EVICT/STOP
+// synchronously drop the slot's job, its in-flight tokens, and queued outputs.
 class MockDecodeScheduler final : public IDecodeScheduler {
  public:
   explicit MockDecodeScheduler(uint32_t maxUsers,
@@ -274,6 +250,10 @@ class MockDecodeScheduler final : public IDecodeScheduler {
     core.start();
     if (!emitter.joinable()) {
       stopRequested = false;
+      inflight.clear();
+      decodeCursor = 0;
+      prefillCursor = 0;
+      nextInjectAt = std::chrono::steady_clock::now();
       emitter = std::thread([this] { emitterLoop(); });
     }
   }
@@ -286,6 +266,7 @@ class MockDecodeScheduler final : public IDecodeScheduler {
       }
       stopRequested = true;
       pending.clear();
+      inflight.clear();
       core.stop();
     }
     cv.notify_all();
@@ -308,7 +289,9 @@ class MockDecodeScheduler final : public IDecodeScheduler {
           break;
         case sch::RequestType::EVICT:
         case sch::RequestType::STOP:
-          cancelSlotLocked(request.slot_id);
+          cancelSlot(request.slot_id);
+          // pending or in flight work may have been removed, so the
+          // emitter should wake up an recompute.
           wakeEmitter = true;
           result = core.handleEvictOrStop(request);
           break;
@@ -330,7 +313,7 @@ class MockDecodeScheduler final : public IDecodeScheduler {
             terminal.request_id = request.request_id;
             core.pushOutput(terminal);
           } else {
-            enqueueJobLocked(request);
+            enqueueJob(request);
             wakeEmitter = true;
           }
           break;
@@ -362,97 +345,231 @@ class MockDecodeScheduler final : public IDecodeScheduler {
     uint32_t slotId = sch::INVALID_SLOT;
     uint32_t requestId = 0;
     uint32_t maxTokens = 0;
-    uint32_t emitted = 0;
     uint32_t basePosition = 0;
-    std::chrono::steady_clock::time_point nextAt{};
+    uint32_t prefillTokensToBeInjected = 0;
+    uint32_t prefillInjected = 0;
+    uint32_t chunkRemaining = 0;
+    uint32_t outputsEmitted = 0;
+    bool decodeReady = false;
+
+    struct PrefillInjectionState {
+      bool producesOutput = false;
+      bool shouldRotateCursor = false;
+    };
+
+    bool hasPrefillToInject() const {
+      return prefillInjected < prefillTokensToBeInjected;
+    }
+
+    bool hasDecodeToInject() const {
+      return decodeReady && outputsEmitted < maxTokens;
+    }
+
+    void injectDecodeToken() {
+      decodeReady = false;  // token in flight; can't inject next until exit
+    }
+
+    PrefillInjectionState injectPrefillToken(uint32_t prefillChunkSize) {
+      ++prefillInjected;
+      const bool isLastPrefillToken = !hasPrefillToInject();
+      if (chunkRemaining > 0) --chunkRemaining;
+
+      PrefillInjectionState injection{
+          .producesOutput = isLastPrefillToken,
+          .shouldRotateCursor = (chunkRemaining == 0 || isLastPrefillToken),
+      };
+      if (injection.shouldRotateCursor) {
+        chunkRemaining = prefillChunkSize;
+      }
+      return injection;
+    }
   };
 
-  void enqueueJobLocked(const sch::ISRequest& request) {
+  struct InFlight {
+    // One token traversing the pipeline; exits (produces its result) at exitAt.
+    std::chrono::steady_clock::time_point exitAt{};
+    uint32_t slotId = sch::INVALID_SLOT;
+    bool producesOutput = false;  // last prefill token can produce an output,
+                                  // or a decode token, of course
+  };
+
+  std::chrono::microseconds totalLatency() const {
+    return cfg.stageLatency *
+           cfg.numPipelineStages;  // whole-pipeline traversal
+  }
+
+  // Backpressure bound: never more than a full pipeline of tokens in flight.
+  uint32_t maxInFlight() const {
+    return cfg.numPipelineStages == 0 ? 1u : cfg.numPipelineStages;
+  }
+
+  void enqueueJob(const sch::ISRequest& request) {
     PendingJob job;
     job.slotId = request.slot_id;
     job.requestId = request.request_id;
     job.maxTokens = request.gen.max_new_tokens;
     job.basePosition = request.position_id.value_or(
         static_cast<uint32_t>(request.tokens.size()));
-    const uint32_t numChunks =
-        static_cast<uint32_t>(request.tokens.size()) / cfg.prefillChunkSize + 1;
-    const uint32_t fillStages = numChunks + cfg.numPipelineStages - 1;
-    job.nextAt = std::chrono::steady_clock::now() +
-                 cfg.stageLatency * fillStages +
-                 numChunks * cfg.prefillChunkLatency;
+    job.prefillTokensToBeInjected =
+        static_cast<uint32_t>(request.tokens.size());
+    job.chunkRemaining = cfg.prefillChunkSize;
+    // With no prompt tokens there is no prefill to produce the first output, so
+    // the slot may immediately inject its first decode token (cold decode).
+    job.decodeReady = (job.prefillTokensToBeInjected == 0);
     pending.push_back(job);
   }
 
-  void cancelSlotLocked(uint32_t slotId) {
+  void cancelSlot(uint32_t slotId) {
     pending.erase(
         std::remove_if(pending.begin(), pending.end(),
                        [&](const PendingJob& j) { return j.slotId == slotId; }),
         pending.end());
-    // Drop any tokens the emitter already published for this slot
+    inflight.erase(
+        std::remove_if(inflight.begin(), inflight.end(),
+                       [&](const InFlight& f) { return f.slotId == slotId; }),
+        inflight.end());
     core.purgeOutputsForSlot(slotId);
   }
 
-  std::chrono::microseconds sampleJitterLocked() {
-    const int64_t j = cfg.decodeTokenJitter.count();
-    if (j <= 0) {
-      return std::chrono::microseconds{0};
+  PendingJob* findJobBySlot(uint32_t slotId) {
+    for (auto& j : pending) {
+      if (j.slotId == slotId) return &j;
     }
-    std::uniform_int_distribution<int64_t> dist(-j, j);
-    return std::chrono::microseconds{dist(jitterRng)};
+    return nullptr;
+  }
+
+  bool hasInjectableWork() const {
+    for (const auto& j : pending) {
+      if (j.hasPrefillToInject()) return true;
+      if (j.hasDecodeToInject()) return true;
+    }
+    return false;
+  }
+
+  // Consume every token that has exited the pipeline by `now`, emitting an
+  // output for each token that produces one
+  void consumeExitedTokens(std::chrono::steady_clock::time_point now) {
+    while (!inflight.empty() && inflight.front().exitAt <= now) {
+      const InFlight e = inflight.front();
+      inflight.pop_front();
+      if (!e.producesOutput) continue;  // non-last prefill token: drained
+      PendingJob* job = findJobBySlot(
+          e.slotId);  // use raw pointer to mutate job later, safe since we did
+                      // not allocate nothing with new
+      if (!job) continue;  // slot was evicted while this token was in flight
+      ++job->outputsEmitted;
+      const bool isLast = (job->outputsEmitted == job->maxTokens);
+      core.pushOutput(sch::OutputMessage{
+          .slot_id = job->slotId,
+          .token_id = cfg.decodeTokenId,
+          .is_complete = isLast,
+          .tokens_generated = job->outputsEmitted,
+          .position_id = job->basePosition + job->outputsEmitted - 1,
+          .request_id = job->requestId,
+      });
+      if (isLast) {
+        const uint32_t slotId = job->slotId;
+        pending.erase(std::remove_if(pending.begin(), pending.end(),
+                                     [&](const PendingJob& j) {
+                                       return j.slotId == slotId;
+                                     }),
+                      pending.end());
+      } else {
+        job->decodeReady = true;  // its next decode token may now be injected
+      }
+    }
+  }
+
+  // Choose the next token to inject: a decode-ready slot first (round-robin),
+  // then prefill. Prefill round-robin injects up to prefillChunkSize tokens per
+  // slot before rotating. prefillCursor is the ring start index
+  PendingJob* selectNextInjection(bool& producesOutput) {
+    const size_t n = pending.size();
+    for (size_t i = 0; i < n; ++i) {
+      const size_t idx = (decodeCursor + i) % n;
+      PendingJob& j = pending[idx];
+      if (j.hasDecodeToInject()) {
+        j.injectDecodeToken();
+        decodeCursor = (idx + 1) % n;
+        producesOutput = true;
+        return &j;
+      }
+    }
+    for (size_t i = 0; i < n; ++i) {
+      const size_t idx = (prefillCursor + i) % n;
+      PendingJob& j = pending[idx];
+      if (j.hasPrefillToInject()) {
+        const PendingJob::PrefillInjectionState injection =
+            j.injectPrefillToken(cfg.prefillChunkSize);
+        producesOutput = injection.producesOutput;
+        prefillCursor = injection.shouldRotateCursor ? (idx + 1) % n : idx;
+        return &j;
+      }
+    }
+    return nullptr;
+  }
+
+  // Inject every token whose scheduled slot has arrived, into the shared
+  // pipeline.
+  void injectDueTokens(std::chrono::steady_clock::time_point now) {
+    if (nextInjectAt < now &&
+        (inflight.empty() || nextInjectAt + totalLatency() <= now)) {
+      // nextInjectAt is either long overdue so we avoid compensating for time
+      // difference passed, or inflight is empty so no need to inject anything
+      // If we did not set it, we would inject many tokens from old nextInjectAt
+      // time until now, which could be millions of tokens.
+      // This resets this value and we could have a clean start.
+      nextInjectAt = now;
+    }
+    while (inflight.size() < maxInFlight() && nextInjectAt <= now) {
+      if (pending.empty()) {
+        // no pending tokens, so whatever comes next could be immediately
+        // injected starting from now
+        nextInjectAt = now;
+        break;
+      }
+      bool producesOutput = false;
+      PendingJob* chosen = selectNextInjection(producesOutput);
+      if (chosen == nullptr) {
+        nextInjectAt = now;
+        break;
+      }
+      inflight.push_back(InFlight{
+          .exitAt = nextInjectAt + totalLatency(),
+          .slotId = chosen->slotId,
+          .producesOutput = producesOutput,
+      });
+      nextInjectAt += cfg.stageLatency;
+    }
   }
 
   void emitterLoop() {
     std::unique_lock<std::mutex> lock(mutex);
     while (!stopRequested) {
-      if (pending.empty()) {
+      if (pending.empty() && inflight.empty()) {
         cv.wait(lock);
         continue;
       }
 
-      // Snapshot "now" once per tick so a just-rescheduled job (especially
-      // when decodeTokenLatency == 0) doesn't fire again in this iteration.
       const auto now = std::chrono::steady_clock::now();
-      auto nextDeadline = std::chrono::steady_clock::time_point::max();
+      consumeExitedTokens(now);
+      injectDueTokens(now);
 
-      for (auto it = pending.begin(); it != pending.end();) {
-        if (it->nextAt <= now) {
-          const bool isLast = (it->emitted + 1 == it->maxTokens);
-          core.pushOutput(sch::OutputMessage{
-              .slot_id = it->slotId,
-              .token_id = cfg.decodeTokenId,
-              .is_complete = isLast,
-              .tokens_generated = it->emitted + 1,
-              .position_id = it->basePosition + it->emitted,
-              .request_id = it->requestId,
-          });
-          ++it->emitted;
-          if (isLast) {
-            it = pending.erase(it);
-            continue;
-          }
-          // Add the mean-zero jitter so slots don't stay phase-locked. Clamp at
-          // zero so an over-large jitter can't schedule a token in the past.
-          auto interval = cfg.decodeTokenLatency + sampleJitterLocked();
-          if (interval < std::chrono::microseconds{0}) {
-            interval = std::chrono::microseconds{0};
-          }
-          it->nextAt = now + interval;
-        }
-        if (it->nextAt < nextDeadline) {
-          nextDeadline = it->nextAt;
-        }
-        ++it;
+      // Sleep to the next event: the earliest exit, or (if injectable work is
+      // waiting on the rate limiter and the pipeline has room) the next
+      // allowed inject time. cv.wait_until releases the lock so consumers and
+      // push_request can make progress.
+      auto wake = std::chrono::steady_clock::time_point::max();
+      if (!inflight.empty()) {
+        wake = std::min(wake, inflight.front().exitAt);
       }
-
-      // cv.wait_until atomically releases the lock, which lets consumers
-      // (the runner thread polling try_pop_output / try_pop_response, or
-      // push_request handing in a new SUBMIT) grab it. Even when the deadline
-      // is in the past (latency-0 stress mode), the unlock-relock round trip
-      // is a deliberate yield point that keeps the consumer from starving.
-      if (pending.empty()) {
+      if (hasInjectableWork() && inflight.size() < maxInFlight()) {
+        wake = std::min(wake, std::max(now, nextInjectAt));
+      }
+      if (wake == std::chrono::steady_clock::time_point::max()) {
         cv.wait(lock);
       } else {
-        cv.wait_until(lock, nextDeadline);
+        cv.wait_until(lock, wake);
       }
     }
   }
@@ -463,9 +580,15 @@ class MockDecodeScheduler final : public IDecodeScheduler {
   std::mutex mutex;
   std::condition_variable cv;
   std::vector<PendingJob> pending;
+  std::deque<InFlight> inflight;
+  std::chrono::steady_clock::time_point nextInjectAt{};
+  // decode and prefill cursors track the next token to inject for each type:
+  // prefill and decode. These make sure that we continue where we left off in
+  // round robin fashion and to provide some fairness in pending jobs.
+  size_t decodeCursor = 0;
+  size_t prefillCursor = 0;
   bool stopRequested = false;
   std::thread emitter;
-  std::mt19937_64 jitterRng{0xC0FFEEULL};
 };
 
 }  // namespace tt::runners::blaze

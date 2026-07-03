@@ -336,14 +336,9 @@ uint32_t mockPipelineStages() {
       envUlong("MOCK_PIPELINE_STAGES", defaults::MOCK_PIPELINE_STAGES));
 }
 
-uint32_t mockDecodeJitterPct() {
+uint32_t mockPrefillRoundRobinTokens() {
   return static_cast<uint32_t>(
-      envUlong("MOCK_DECODE_JITTER_PCT", defaults::MOCK_DECODE_JITTER_PCT));
-}
-
-unsigned mockPrefillComputeMs() {
-  return static_cast<unsigned>(
-      envUlong("MOCK_PREFILL_COMPUTE_MS", defaults::MOCK_PREFILL_COMPUTE_MS));
+      envUlong("MOCK_PREFILL_RR_TOKENS", defaults::MOCK_PREFILL_RR_TOKENS));
 }
 
 uint32_t mockDecodeTokenId() {
