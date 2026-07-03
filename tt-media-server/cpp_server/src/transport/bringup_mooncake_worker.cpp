@@ -45,6 +45,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -59,6 +60,7 @@
 #include "transport/mooncake_transfer_engine.hpp"
 #include "transport/peer_discovery_service.hpp"
 #include "transport/transfer_types.hpp"
+#include "transport/worker_health_server.hpp"
 #include "utils/logger.hpp"
 
 namespace {
@@ -98,6 +100,10 @@ struct WorkerConfig {
   // until SIGTERM without ever creating Kafka clients. Used for receiver
   // roles in a prefill→decode topology.
   bool kafka_enabled = true;
+  // HTTP health surface (/healthz, /readyz, /metrics). 0 == disabled, so local
+  // runs and the discovery e2e tests stay port-free unless a port is asked for.
+  std::uint16_t health_port = 0;
+  std::string health_host = "0.0.0.0";
 };
 
 std::atomic<bool> gStopRequested{false};
@@ -127,6 +133,10 @@ void usage() {
          "  [--layer-end M]        one past last KV layer (exclusive; "
          "0=unset)\n"
          "  [--no-kafka]           skip Kafka clients; idle after bring-up\n"
+         "  [--health-port N]      serve /healthz /readyz /metrics on N "
+         "(0=off, default off)\n"
+         "  [--health-host HOST]   bind address for the health server "
+         "(default 0.0.0.0)\n"
          "  [-h|--help]            show this help and exit\n"
          "\n"
          "Multi-NIC hosts: set MC_TCP_BIND_ADDRESS to the IP peers connect "
@@ -303,6 +313,19 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
       cfg.kafka_enabled = false;
       continue;
     }
+    if (a == "--health-port" && next(v)) {
+      uint32_t port = 0;
+      std::string perr;
+      if (!parseUint32(v, port, perr) ||
+          port > std::numeric_limits<std::uint16_t>::max()) {
+        std::cerr << "--health-port invalid ('" << v
+                  << "'): must be 0..65535\n";
+        return false;
+      }
+      cfg.health_port = static_cast<std::uint16_t>(port);
+      continue;
+    }
+    if (a == "--health-host" && next(cfg.health_host)) continue;
     std::cerr << "unknown/incomplete arg: " << a << "\n";
     return false;
   }
@@ -476,6 +499,21 @@ int main(int argc, char** argv) {
       K_DISCOVERY_POLL_INTERVAL_MS, cli.discovery_timeout_sec});
   MooncakeMigrationWorker worker{toWorkerConfig(cli), std::move(engine),
                                  std::move(discovery)};
+
+  // Start the health surface BEFORE bring-up: discovery can block for up to
+  // --discovery-timeout-sec, and a k8s liveness probe must succeed during that
+  // window or the pod gets killed mid-bring-up. Readiness stays 503 until
+  // bringUp() flips the worker Ready. Declared after `worker` so it is torn
+  // down first (it borrows the worker's WorkerHealth).
+  std::optional<WorkerHealthServer> healthServer;
+  if (cli.health_port != 0) {
+    healthServer.emplace(*worker.health(), cli.health_host, cli.health_port);
+    if (!healthServer->start()) {
+      TT_LOG_ERROR("[bringup] '{}' health server failed to bind {}:{}",
+                   cli.name, cli.health_host, cli.health_port);
+      return 1;
+    }
+  }
 
   // Pass the stop flag into bring-up too, so a SIGTERM/SIGINT during discovery
   // aborts promptly instead of blocking until the discovery timeout.
