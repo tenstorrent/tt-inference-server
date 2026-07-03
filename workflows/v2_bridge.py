@@ -58,6 +58,16 @@ _V2_ROUTED_MODELS = frozenset(
         "whisper-large-v3",
         "distil-large-v3",
         "Z-Image-Turbo",
+        "resnet-50",
+        "vovnet",
+        "mobilenetv2",
+        "efficientnet",
+        "segformer",
+        "vit",
+        "unet",
+        "bge-large-en-v1.5",
+        "Qwen3-Embedding-8B",
+        "Qwen3-Embedding-4B",
     }
 )
 
