@@ -26,6 +26,7 @@ pillow
 requests
 imageio
 imageio-ffmpeg
+datasets
 # LLM eval/release run in this venv and mint the server bearer token from
 # --jwt-secret (command_factory._mint_jwt_if_secret), so pyjwt must be here.
 pyjwt
