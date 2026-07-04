@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import re
+import time
 
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -17,6 +18,14 @@ from pathlib import Path
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
+# The SWE-bench harness builds/pulls Docker images (a shared base image plus
+# per-instance images) from ghcr.io. Those transfers can fail transiently
+# mid-stream (e.g. ``ChunkedEncodingError: Response ended prematurely`` while
+# pulling ``ghcr.io/epoch-research/swe-bench.base.x86_64``). Retry a few times
+# before giving up; both counts are env-tunable for CI.
+_HARNESS_MAX_ATTEMPTS = 3
+_HARNESS_RETRY_DELAY_SEC = 30
 
 
 @dataclass(frozen=True)
@@ -60,6 +69,46 @@ def _interpreter(config: SWEbenchRunConfig) -> Path:
 def _run_command(cmd: list[str], cwd: Path, env: dict[str, str]) -> int:
     logger.info("Running command: %s", " ".join(cmd))
     return subprocess.run(cmd, cwd=cwd, env=env).returncode
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ[name])
+    except (KeyError, TypeError, ValueError):
+        return default
+
+
+def _run_command_with_retries(
+    cmd: list[str],
+    cwd: Path,
+    env: dict[str, str],
+    *,
+    max_attempts: int = _HARNESS_MAX_ATTEMPTS,
+    retry_delay_sec: float = _HARNESS_RETRY_DELAY_SEC,
+) -> int:
+    """Run ``cmd``, retrying on non-zero exit up to ``max_attempts`` times.
+
+    Intended for the SWE-bench harness step, whose Docker image builds/pulls can
+    fail on transient network/registry errors. The harness caches images that
+    already built and re-scores against the existing predictions, so a retry
+    only rebuilds what failed -- cheap and idempotent, unlike re-running the
+    agent (which would re-invoke the LLM).
+    """
+    attempt = 1
+    while True:
+        rc = _run_command(cmd, cwd=cwd, env=env)
+        if rc == 0 or attempt >= max_attempts:
+            return rc
+        logger.warning(
+            "Command failed (rc=%s) on attempt %s/%s; retrying in %ss: %s",
+            rc,
+            attempt,
+            max_attempts,
+            retry_delay_sec,
+            " ".join(cmd),
+        )
+        time.sleep(retry_delay_sec)
+        attempt += 1
 
 
 def _write_swebench_container_name_patch(output_dir: Path) -> Path:
@@ -524,7 +573,15 @@ def run(config: SWEbenchRunConfig) -> int:
 
     harness_cmd = build_swebench_harness_command(config, predictions_path, run_id)
     env = _add_swebench_container_name_patch_to_env(config.output_dir, env)
-    rc = _run_command(harness_cmd, cwd=config.output_dir, env=env)
+    rc = _run_command_with_retries(
+        harness_cmd,
+        cwd=config.output_dir,
+        env=env,
+        max_attempts=_env_int("SWEBENCH_HARNESS_MAX_ATTEMPTS", _HARNESS_MAX_ATTEMPTS),
+        retry_delay_sec=_env_int(
+            "SWEBENCH_HARNESS_RETRY_DELAY_SEC", _HARNESS_RETRY_DELAY_SEC
+        ),
+    )
     if rc != 0:
         return rc
 
