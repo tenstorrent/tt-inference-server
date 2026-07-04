@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Iterable, Optional, Protocol, Tuple, runtime_checkable
 
 import requests
@@ -103,6 +104,65 @@ class HttpServerController:
             self.health_url,
         )
         return False
+
+    def capture_traces(
+        self,
+        context_lens: Iterable[Tuple[int, int]],
+        timeout: Optional[float] = None,
+    ) -> None:
+        return None
+
+
+@dataclass(frozen=True)
+class RemoteOpenAIController:
+    """Readiness controller for remote OpenAI-compatible endpoints.
+
+    Remote console endpoints do not expose vLLM's ``/health`` route, so use
+    ``/v1/models`` as the readiness probe and skip trace warmup.
+    """
+
+    base_url: str
+    auth_token: str = ""
+
+    @property
+    def api_base_url(self) -> str:
+        base = self.base_url.rstrip("/")
+        if base.endswith("/v1"):
+            return base
+        return f"{base}/v1"
+
+    @property
+    def models_url(self) -> str:
+        return f"{self.api_base_url}/models"
+
+    @property
+    def _headers(self) -> dict:
+        if self.auth_token:
+            return {"Authorization": f"Bearer {self.auth_token}"}
+        return {}
+
+    def get_health(
+        self, timeout: Optional[float] = DEFAULT_POLL_INTERVAL_S
+    ) -> requests.Response:
+        return requests.get(self.models_url, headers=self._headers, timeout=timeout)
+
+    def wait_for_healthy(
+        self, timeout: Optional[float] = None, interval: int = DEFAULT_POLL_INTERVAL_S
+    ) -> bool:
+        from utils.remote_readiness import _wait_for_remote_openai_ready
+
+        effective_timeout = (
+            DEFAULT_WAIT_HEALTHY_TIMEOUT_S if timeout is None else float(timeout)
+        )
+        prompt_client_adapter = SimpleNamespace(
+            headers=self._headers,
+            _get_api_base_url=lambda: self.api_base_url,
+        )
+        return _wait_for_remote_openai_ready(
+            prompt_client_adapter,
+            timeout=effective_timeout,
+            interval=interval,
+        )
 
     def capture_traces(
         self,

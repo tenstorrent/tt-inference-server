@@ -15,7 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
+from urllib.parse import urlparse
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,18 @@ class ServerConnection:
     model: str
     tokenizer: str = ""
     auth_token: str = ""
+    is_remote: bool = False
+    # Allow AIPerf's tokenizer load to execute custom code from the HF Hub
+    # repo (e.g. moonshotai/Kimi-* ships a custom tokenizer). Driven per
+    # model from the spec metadata; off by default for safety.
+    tokenizer_trust_remote_code: bool = False
+    # Extra Prometheus ``/metrics`` endpoints (cpp_server workers) scraped
+    # by AIPerf via ``--server-metrics``, independent of the load target
+    # in ``base_url``. Used by the prefix-cache benchmark to read the
+    # worker-side ``tt_prefix_cache_*`` counters in a Dynamo deployment
+    # where the frontend (load target) does not aggregate them. A tuple
+    # keeps this frozen dataclass hashable.
+    prefix_cache_metrics_urls: Tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.tokenizer:
@@ -52,6 +65,10 @@ class ServerConnection:
         host = self.base_url.rstrip("/")
         if "://" not in host:
             host = f"http://{host}"
+        if self.is_remote:
+            return host
+        if urlparse(host).port is not None:
+            return host
         return f"{host}:{self.service_port}"
 
     @property
