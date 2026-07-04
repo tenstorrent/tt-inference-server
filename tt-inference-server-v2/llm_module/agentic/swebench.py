@@ -12,6 +12,7 @@ import sys
 import re
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -45,6 +46,15 @@ class SWEbenchRunConfig:
     random_delay_multiplier: float
     score_existing_predictions: bool
     instance_ids: list[str] = field(default_factory=list)
+    # Interpreter whose bin/ holds the ``sweagent`` / ``mini-extra`` CLIs and
+    # whose ``-m swebench`` is importable. ``None`` uses the current interpreter
+    # (standalone ``run_agentic.py`` re-execs into the EVALS_AGENTIC venv); set
+    # on the release path where the harness runs as a child of the engine.
+    venv_python: Optional[Path] = None
+
+
+def _interpreter(config: SWEbenchRunConfig) -> Path:
+    return Path(config.venv_python) if config.venv_python else Path(sys.executable)
 
 
 def _run_command(cmd: list[str], cwd: Path, env: dict[str, str]) -> int:
@@ -142,8 +152,9 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
     return config_path
 
 
-def _get_sweagent_source_dir() -> Optional[Path]:
-    source_dir = Path(sys.executable).parent.parent / "SWE-agent"
+def _get_sweagent_source_dir(interpreter: Optional[Path] = None) -> Optional[Path]:
+    base = Path(interpreter) if interpreter else Path(sys.executable)
+    source_dir = base.parent.parent / "SWE-agent"
     return source_dir if source_dir.exists() else None
 
 
@@ -165,8 +176,9 @@ def build_sweagent_command(
     sweagent_config_path: Path,
     sweagent_output_dir: Path,
 ) -> list[str]:
-    sweagent_exec = Path(sys.executable).parent / "sweagent"
-    sweagent_source_dir = _get_sweagent_source_dir()
+    interpreter = _interpreter(config)
+    sweagent_exec = interpreter.parent / "sweagent"
+    sweagent_source_dir = _get_sweagent_source_dir(interpreter)
     base_config_path = _resolve_sweagent_config_path(
         config.sweagent_config, sweagent_source_dir
     )
@@ -201,7 +213,7 @@ def build_mini_sweagent_command(
     mini_config_path: Path,
     mini_output_dir: Path,
 ) -> list[str]:
-    mini_exec = Path(sys.executable).parent / "mini-extra"
+    mini_exec = _interpreter(config).parent / "mini-extra"
     cmd = [
         str(mini_exec),
         "swebench",
@@ -280,7 +292,7 @@ def build_swebench_harness_command(
     run_id: str,
 ) -> list[str]:
     cmd = [
-        sys.executable,
+        str(_interpreter(config)),
         "-m",
         "swebench.harness.run_evaluation",
         "--dataset_name",
@@ -312,6 +324,57 @@ def _find_harness_report(output_dir: Path, model_name: str, run_id: str) -> Path
     if not report_files:
         raise FileNotFoundError(f"No SWE-bench report found for run_id={run_id}")
     return report_files[0]
+
+
+# Leading timestamp of an agent log line, e.g.
+# ``2026-07-02 02:41:45,703 - minisweagent - INFO - ...``. Also matches the
+# ISO ``T`` separator and dot-milliseconds so both agent backends parse.
+_LOG_TIMESTAMP_RE = re.compile(r"(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}[.,]\d+)")
+
+
+def _parse_log_timestamp(line: str) -> Optional[datetime]:
+    match = _LOG_TIMESTAMP_RE.search(line)
+    if match is None:
+        return None
+    try:
+        return datetime.fromisoformat(
+            match.group(1).replace(",", ".").replace("T", " ")
+        )
+    except ValueError:
+        return None
+
+
+def _agent_log_time_window(
+    output_dir: Path,
+) -> tuple[Optional[datetime], Optional[datetime]]:
+    """Earliest and latest timestamps across the agent log(s) under output_dir.
+
+    SWE-bench's normalized report has no timing, but the mini-swe-agent /
+    SWE-agent logs are timestamped per line (e.g.
+    ``.../mini_sweagent/minisweagent.log``). We take the first timestamp of the
+    run as the start and the last as the finish so the report can derive a mean
+    time per task, mirroring terminal-bench's Harbor timing fields.
+    """
+    earliest: Optional[datetime] = None
+    latest: Optional[datetime] = None
+    for log_path in sorted(Path(output_dir).rglob("*.log")):
+        try:
+            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            ts = _parse_log_timestamp(line)
+            if ts is not None:
+                if earliest is None or ts < earliest:
+                    earliest = ts
+                break
+        for line in reversed(lines):
+            ts = _parse_log_timestamp(line)
+            if ts is not None:
+                if latest is None or ts > latest:
+                    latest = ts
+                break
+    return earliest, latest
 
 
 def normalize_swebench_report(
@@ -391,6 +454,16 @@ def normalize_swebench_report(
         },
         "trial_results": trial_results,
     }
+
+    # Inject start/finish/n_total_trials so the report can compute a mean time
+    # per task, matching terminal-bench's Harbor timing fields. SWE-bench's own
+    # report carries no timing, so derive the window from the agent log.
+    started, finished = _agent_log_time_window(config.output_dir)
+    if started is not None and finished is not None:
+        normalized["started_at"] = started.isoformat()
+        normalized["finished_at"] = finished.isoformat()
+    normalized["n_total_trials"] = submitted_count
+
     result_path.write_text(json.dumps(normalized, indent=2), encoding="utf-8")
     return normalized
 
@@ -404,7 +477,7 @@ def run(config: SWEbenchRunConfig) -> int:
     env.setdefault("OPENAI_API_BASE", config.api_base)
     env.setdefault("SWE_AGENT_LOG_STREAM_LEVEL", "INFO")
     env.setdefault("MSWEA_COST_TRACKING", "ignore_errors")
-    sweagent_source_dir = _get_sweagent_source_dir()
+    sweagent_source_dir = _get_sweagent_source_dir(_interpreter(config))
     if sweagent_source_dir is not None:
         env.setdefault("SWE_AGENT_CONFIG_DIR", str(sweagent_source_dir / "config"))
         env.setdefault("SWE_AGENT_TOOLS_DIR", str(sweagent_source_dir / "tools"))
