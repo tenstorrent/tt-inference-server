@@ -250,7 +250,6 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
                 )
                 failures += 1
 
-
     if blocks:
         accept_blocks(blocks, envelope=sweep_envelope(ctx))
     exit_code = 1 if failures else 0

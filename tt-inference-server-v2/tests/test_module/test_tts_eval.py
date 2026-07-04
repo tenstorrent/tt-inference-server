@@ -59,21 +59,27 @@ class TestIntelligibilityScore:
 
 class TestWerAccuracyCheck:
     def test_at_or_below_threshold_passes(self):
-        assert _wer_accuracy_check(0.1, DEFAULT_WER_THRESHOLD, 5) is ReportCheckTypes.PASS
+        assert (
+            _wer_accuracy_check(0.1, DEFAULT_WER_THRESHOLD, 5) is ReportCheckTypes.PASS
+        )
         assert (
             _wer_accuracy_check(DEFAULT_WER_THRESHOLD, DEFAULT_WER_THRESHOLD, 5)
             is ReportCheckTypes.PASS
         )
 
     def test_above_threshold_fails(self):
-        assert _wer_accuracy_check(0.5, DEFAULT_WER_THRESHOLD, 5) is ReportCheckTypes.FAIL
+        assert (
+            _wer_accuracy_check(0.5, DEFAULT_WER_THRESHOLD, 5) is ReportCheckTypes.FAIL
+        )
 
     def test_no_valid_samples_is_na_not_fail(self):
         # avg_wer defaults to 1.0 when nothing transcribed; must not be a FAIL.
         assert _wer_accuracy_check(1.0, DEFAULT_WER_THRESHOLD, 0) is ReportCheckTypes.NA
 
     def test_missing_avg_wer_is_na(self):
-        assert _wer_accuracy_check(None, DEFAULT_WER_THRESHOLD, 5) is ReportCheckTypes.NA
+        assert (
+            _wer_accuracy_check(None, DEFAULT_WER_THRESHOLD, 5) is ReportCheckTypes.NA
+        )
 
 
 class TestMissingQualityDeps:
@@ -104,7 +110,13 @@ class TestTtsEvalBlockShape:
         assert block.data["wer"] == 0.1
         assert block.data["task_name"] == "tts_generation"
         # Latency/target-check fields belong to the benchmark, never the eval.
-        for perf_key in ("target_checks", "performance_check", "rtr", "p90_ttft", "p95_ttft"):
+        for perf_key in (
+            "target_checks",
+            "performance_check",
+            "rtr",
+            "p90_ttft",
+            "p95_ttft",
+        ):
             assert perf_key not in block.data
 
     def test_na_block_records_error_reason(self):
