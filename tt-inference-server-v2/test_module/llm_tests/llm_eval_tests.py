@@ -26,7 +26,10 @@ from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
-_WAIT_HEALTHY_TIMEOUT_S = 1200.0
+# Fallback health-wait budget when the model spec doesn't set one. The per-model
+# value comes from DeviceModelSpec.tensor_cache_timeout (first-compile/warmup for
+# large forge LLMs can exceed 1200s); bump it per model in the model spec.
+_DEFAULT_WAIT_HEALTHY_TIMEOUT_S = 3600.0
 
 
 def _device_label(ctx: MediaContext) -> str:
@@ -300,7 +303,15 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         service_port=ctx.server_port,
         auth_token=auth_token,
     )
-    if not server.wait_for_healthy(timeout=_WAIT_HEALTHY_TIMEOUT_S):
+    health_timeout = (
+        getattr(
+            getattr(ctx.model_spec, "device_model_spec", None),
+            "tensor_cache_timeout",
+            None,
+        )
+        or _DEFAULT_WAIT_HEALTHY_TIMEOUT_S
+    )
+    if not server.wait_for_healthy(timeout=health_timeout):
         logger.error("⛔ inference server not healthy; aborting evals.")
         blocks = [_fail_block(ctx, t, "inference server not healthy") for t in tasks]
         _accept(ctx, blocks)
