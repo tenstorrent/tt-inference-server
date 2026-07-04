@@ -21,6 +21,7 @@ from llm_module.drivers.agentic import (
     resolve_task_names,
 )
 from llm_module.agentic.swebench import (
+    _run_command_with_retries,
     normalize_swebench_report,
     run as run_swebench,
 )
@@ -371,7 +372,12 @@ class TestSWEbenchHarness:
 
             assert run_swebench(cfg) == 23
 
-    def test_harness_failure_returns_nonzero_without_result_file(self, tmp_path):
+    def test_harness_failure_returns_nonzero_without_result_file(
+        self, tmp_path, monkeypatch
+    ):
+        # Pin to a single attempt so this asserts failure propagation, not the
+        # retry behaviour (covered separately below).
+        monkeypatch.setenv("SWEBENCH_HARNESS_MAX_ATTEMPTS", "1")
         task = _swebench_task()
         cfg = build_swebench_config(
             task,
@@ -393,6 +399,85 @@ class TestSWEbenchHarness:
             ]
 
             assert run_swebench(cfg) == 31
+
+    def test_harness_retries_transient_failure(self, tmp_path, monkeypatch):
+        # The harness (docker build/pull) can fail transiently; it should be
+        # retried before the whole task is abandoned. The agent step (rc=0) runs
+        # once, then the harness fails twice before giving up at max_attempts.
+        monkeypatch.setenv("SWEBENCH_HARNESS_MAX_ATTEMPTS", "2")
+        monkeypatch.setattr("llm_module.agentic.swebench.time.sleep", lambda _s: None)
+        task = _swebench_task()
+        cfg = build_swebench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        preds_path = cfg.output_dir / "mini_sweagent" / "preds.json"
+        preds_path.parent.mkdir(parents=True)
+        preds_path.write_text(
+            '{"django__django-11299": {"model_patch": ""}}',
+            encoding="utf-8",
+        )
+
+        with patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            run_cmd.side_effect = [
+                SimpleNamespace(returncode=0),  # agent
+                SimpleNamespace(returncode=1),  # harness attempt 1
+                SimpleNamespace(returncode=1),  # harness attempt 2 (last)
+            ]
+
+            assert run_swebench(cfg) == 1
+            # 1 agent invocation + 2 harness attempts.
+            assert run_cmd.call_count == 3
+
+
+class TestRunCommandWithRetries:
+    def test_returns_immediately_on_success(self, monkeypatch, tmp_path):
+        sleep_calls: list[float] = []
+        monkeypatch.setattr(
+            "llm_module.agentic.swebench.time.sleep", sleep_calls.append
+        )
+        with patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            run_cmd.return_value = SimpleNamespace(returncode=0)
+            rc = _run_command_with_retries(
+                ["echo", "ok"], cwd=tmp_path, env={}, max_attempts=3
+            )
+        assert rc == 0
+        assert run_cmd.call_count == 1
+        assert sleep_calls == []
+
+    def test_retries_until_success(self, monkeypatch, tmp_path):
+        sleep_calls: list[float] = []
+        monkeypatch.setattr(
+            "llm_module.agentic.swebench.time.sleep", sleep_calls.append
+        )
+        with patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            run_cmd.side_effect = [
+                SimpleNamespace(returncode=1),
+                SimpleNamespace(returncode=1),
+                SimpleNamespace(returncode=0),
+            ]
+            rc = _run_command_with_retries(
+                ["echo", "ok"],
+                cwd=tmp_path,
+                env={},
+                max_attempts=5,
+                retry_delay_sec=7,
+            )
+        assert rc == 0
+        assert run_cmd.call_count == 3
+        assert sleep_calls == [7, 7]
+
+    def test_stops_at_max_attempts(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("llm_module.agentic.swebench.time.sleep", lambda _s: None)
+        with patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            run_cmd.return_value = SimpleNamespace(returncode=42)
+            rc = _run_command_with_retries(
+                ["echo", "boom"], cwd=tmp_path, env={}, max_attempts=3
+            )
+        assert rc == 42
+        assert run_cmd.call_count == 3
 
 
 class TestSWEbenchReportNormalization:
