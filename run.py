@@ -435,9 +435,12 @@ def parse_arguments():
     prefix_cache_group.add_argument(
         "--prefix-cache-preset",
         type=str,
-        choices=["ci", "full"],
+        choices=["ci", "full", "highcache_50k"],
         default="full",
-        help="Preset for --prefix-cache (default: full). 'ci' is a short regression sweep.",
+        help="Preset for --prefix-cache (default: full). 'ci' is a short regression sweep; "
+        "'highcache_50k' simulates the customer trillion-scale shape (50K shared/cacheable "
+        "prefix + 5K new ISL + 500 OSL at concurrency 32, ~90.9%% steady-state hit-rate) "
+        "with a matched zero-prefix baseline for TTFT-uplift comparison.",
     )
     prefix_cache_group.add_argument(
         "--prefix-cache-scenarios",
@@ -470,6 +473,17 @@ def parse_arguments():
         type=str,
         default=None,
         help="Path to a mooncake-format JSONL trace file for mooncake_trace scenarios.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-metrics-url",
+        type=str,
+        action="append",
+        default=None,
+        metavar="URL",
+        help="Worker /metrics endpoint with the tt_prefix_cache_* counters, forwarded to "
+        "AIPerf as --server-metrics (load stays on the frontend). Accepts a full URL, "
+        "host:port, or host:port/metrics. Repeatable for multi-worker deployments. "
+        "Without it the scrape hits the prefix-unaware frontend and hit-rate is null.",
     )
     prefix_cache_group.add_argument(
         "--jwt-secret",
@@ -549,15 +563,15 @@ def parse_arguments():
     if args.eval_samples and args.limit_samples_mode:
         parser.error("--eval-samples and --limit-samples-mode are mutually exclusive.")
 
-    if args.prefix_cache and args.workflow != "benchmarks":
+    if args.prefix_cache and args.workflow not in ("benchmarks", "release"):
         parser.error(
-            "--prefix-cache currently requires --workflow benchmarks "
+            "--prefix-cache currently requires --workflow benchmarks or release "
             f"(got --workflow {args.workflow})."
         )
 
-    if args.spec_decode and args.workflow != "benchmarks":
+    if args.spec_decode and args.workflow not in ("benchmarks", "release"):
         parser.error(
-            "--spec-decode currently requires --workflow benchmarks "
+            "--spec-decode currently requires --workflow benchmarks or release "
             f"(got --workflow {args.workflow})."
         )
 
