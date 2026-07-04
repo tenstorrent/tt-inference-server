@@ -18,6 +18,7 @@ import pytest
 
 from report_module.schema import Block
 from test_module import dispatch
+from test_module.task_types import MediaTaskType
 
 
 class _FakeTest:
@@ -44,6 +45,24 @@ def _no_accumulator(monkeypatch):
 
 def _suite(*cases: dict) -> dict:
     return {"id": "suite-1", "test_cases": list(cases)}
+
+
+class TestResolveRunner:
+    """The dispatch tables now hold function *names*, resolved lazily via the
+    package __getattr__ so importing dispatch doesn't drag in every runner's
+    optional deps. Only TTS is exercised here (image evals would need
+    open_clip)."""
+
+    def test_resolves_tts_eval_by_name(self):
+        runner = dispatch._resolve_runner(MediaTaskType.EVALUATION, "TEXT_TO_SPEECH")
+        assert callable(runner) and runner.__name__ == "run_tts_eval"
+
+    def test_resolves_tts_benchmark_by_name(self):
+        runner = dispatch._resolve_runner(MediaTaskType.BENCHMARK, "TEXT_TO_SPEECH")
+        assert callable(runner) and runner.__name__ == "run_tts_benchmark"
+
+    def test_unknown_model_type_returns_none(self):
+        assert dispatch._resolve_runner(MediaTaskType.EVALUATION, "NOPE") is None
 
 
 def test_empty_filter_is_rc0_noop(monkeypatch):

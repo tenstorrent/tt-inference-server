@@ -27,46 +27,63 @@ from report_module.schema import Block
 from workflow_module import accept_blocks
 
 from ._test_common import TestConfig, sweep_envelope
-from .benchmark_tests import (
-    run_audio_benchmark,
-    run_cnn_benchmark,
-    run_embedding_benchmark,
-    run_image_benchmark,
-    run_tts_benchmark,
-    run_video_benchmark,
-)
 from .context import MediaContext
-from .eval_tests import (
-    run_audio_eval,
-    run_cnn_eval,
-    run_embedding_eval,
-    run_image_eval,
-    run_tts_eval,
-    run_video_eval,
-)
 from .task_types import MediaTaskType
 
 logger = logging.getLogger(__name__)
 
 MediaRunner = Callable[[MediaContext], Block]
 
-EVAL_DISPATCH: dict[str, MediaRunner] = {
-    "CNN": run_cnn_eval,
-    "IMAGE": run_image_eval,
-    "AUDIO": run_audio_eval,
-    "EMBEDDING": run_embedding_eval,
-    "TEXT_TO_SPEECH": run_tts_eval,
-    "VIDEO": run_video_eval,
+# model_type.name -> runner function name. Values are resolved lazily by
+# _resolve_runner via the eval_tests / benchmark_tests package __getattr__ so
+# that importing this module does NOT pull in every media runner's optional
+# heavy deps (e.g. image evals -> open_clip). Keyed by ModelType.name.
+EVAL_DISPATCH: dict[str, str] = {
+    "CNN": "run_cnn_eval",
+    "IMAGE": "run_image_eval",
+    "AUDIO": "run_audio_eval",
+    "EMBEDDING": "run_embedding_eval",
+    "TEXT_TO_SPEECH": "run_tts_eval",
+    "VIDEO": "run_video_eval",
 }
 
-BENCHMARK_DISPATCH: dict[str, MediaRunner] = {
-    "CNN": run_cnn_benchmark,
-    "IMAGE": run_image_benchmark,
-    "AUDIO": run_audio_benchmark,
-    "EMBEDDING": run_embedding_benchmark,
-    "TEXT_TO_SPEECH": run_tts_benchmark,
-    "VIDEO": run_video_benchmark,
+BENCHMARK_DISPATCH: dict[str, str] = {
+    "CNN": "run_cnn_benchmark",
+    "IMAGE": "run_image_benchmark",
+    "AUDIO": "run_audio_benchmark",
+    "EMBEDDING": "run_embedding_benchmark",
+    "TEXT_TO_SPEECH": "run_tts_benchmark",
+    "VIDEO": "run_video_benchmark",
 }
+
+
+def _dispatch_table(task_type: MediaTaskType) -> dict[str, str]:
+    if task_type == MediaTaskType.EVALUATION:
+        return EVAL_DISPATCH
+    return BENCHMARK_DISPATCH
+
+
+def _resolve_runner(
+    task_type: MediaTaskType, model_type_name: str
+) -> Optional[MediaRunner]:
+    """Lazily import the runner registered for ``(task_type, model_type)``.
+
+    The import is deferred to call time (rather than module import time) so a
+    workflow that only touches one model type doesn't drag in the optional
+    heavy dependencies of every other runner. Resolution goes through the
+    package ``__getattr__`` (``.eval_tests`` / ``.benchmark_tests``), which
+    imports just the one submodule that defines the function.
+    """
+    func_name = _dispatch_table(task_type).get(model_type_name)
+    if func_name is None:
+        return None
+    package_name = (
+        "eval_tests"
+        if task_type == MediaTaskType.EVALUATION
+        else "benchmark_tests"
+    )
+    package = importlib.import_module(f".{package_name}", __package__)
+    return getattr(package, func_name)
 
 
 def run_media_task(
@@ -97,16 +114,13 @@ def run_media_task(
         ctx.device.name,
     )
 
-    dispatch = (
-        EVAL_DISPATCH if task_type == MediaTaskType.EVALUATION else BENCHMARK_DISPATCH
-    )
-    runner = dispatch.get(model_type_name)
+    runner = _resolve_runner(task_type, model_type_name)
     if runner is None:
         logger.error(
             "No %s runner registered for model_type=%r. Known types: %s",
             task_type.value,
             model_type_name,
-            sorted(dispatch),
+            sorted(_dispatch_table(task_type)),
         )
         return 1, None
 
