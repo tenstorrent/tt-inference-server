@@ -141,7 +141,7 @@ def _format_blocker_lines(blockers: Mapping[str, str]) -> List[str]:
 
 
 def _detail(category: CategoryResult) -> str:
-    if category.status == STATUS_NA:
+    if category.total == 0:
         return "no blocks present"
     parts = [f"{category.passed}/{category.total} passed"]
     if category.failed:

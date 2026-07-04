@@ -12,47 +12,17 @@ from types import SimpleNamespace
 import pytest
 
 from test_module.test_status import TtsTestStatus
-from test_module.eval_tests.tts_eval_tests import (
+from test_module.benchmark_tests.tts_benchmark_tests import (
     DEFAULT_TTS_TEXT,
+    _tts_avg,
     _tts_num_calls,
-    _tts_rtr,
     _tts_tail_latency,
     _tts_test_text,
-    _tts_ttft,
 )
-from test_module.benchmark_tests.tts_benchmark_tests import _tts_avg
 
 
 def _status(ttft_ms=None, rtr=None) -> TtsTestStatus:
     return TtsTestStatus(status=True, elapsed=1.0, ttft_ms=ttft_ms, rtr=rtr)
-
-
-class TestTtsTtftAverage:
-    def test_averages_only_valid_samples(self):
-        statuses = [
-            _status(ttft_ms=100.0),
-            _status(ttft_ms=200.0),
-            _status(ttft_ms=None),
-        ]
-        assert _tts_ttft(statuses) == pytest.approx(150.0)
-
-    def test_all_none_returns_none(self):
-        assert _tts_ttft([_status(ttft_ms=None), _status(ttft_ms=None)]) is None
-
-    def test_empty_returns_none(self):
-        assert _tts_ttft([]) is None
-
-
-class TestTtsRtrAverage:
-    def test_averages_only_valid_samples(self):
-        statuses = [_status(rtr=2.0), _status(rtr=4.0), _status(rtr=None)]
-        assert _tts_rtr(statuses) == pytest.approx(3.0)
-
-    def test_all_none_returns_none(self):
-        assert _tts_rtr([_status(rtr=None)]) is None
-
-    def test_empty_returns_none(self):
-        assert _tts_rtr([]) is None
 
 
 class TestTtsGenericAverage:
