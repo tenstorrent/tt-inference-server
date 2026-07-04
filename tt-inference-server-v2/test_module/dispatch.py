@@ -78,9 +78,7 @@ def _resolve_runner(
     if func_name is None:
         return None
     package_name = (
-        "eval_tests"
-        if task_type == MediaTaskType.EVALUATION
-        else "benchmark_tests"
+        "eval_tests" if task_type == MediaTaskType.EVALUATION else "benchmark_tests"
     )
     package = importlib.import_module(f".{package_name}", __package__)
     return getattr(package, func_name)
