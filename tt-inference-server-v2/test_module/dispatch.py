@@ -27,45 +27,55 @@ from report_module.schema import Block
 from workflow_module import accept_blocks
 
 from ._test_common import TestConfig, sweep_envelope
-from .benchmark_tests import (
-    run_audio_benchmark,
-    run_cnn_benchmark,
-    run_embedding_benchmark,
-    run_image_benchmark,
-    run_tts_benchmark,
-    run_video_benchmark,
-)
 from .context import MediaContext
-from .eval_tests import (
-    run_audio_eval,
-    run_cnn_eval,
-    run_embedding_eval,
-    run_image_eval,
-    run_tts_eval,
-    run_video_eval,
-)
 from .task_types import MediaTaskType
 
 logger = logging.getLogger(__name__)
 
 MediaRunner = Callable[[MediaContext], Block]
 
+# (model_type.name -> (submodule import path, runner function name)). Runners
+# resolve lazily so dispatching one media type never imports the heavy deps
+# (torch, open-clip, datasets, imageio, ...) of the others.
+_EVAL_RUNNERS: dict[str, Tuple[str, str]] = {
+    "CNN": (".eval_tests.cnn_eval_tests", "run_cnn_eval"),
+    "IMAGE": (".eval_tests.image_eval_tests", "run_image_eval"),
+    "AUDIO": (".eval_tests.audio_eval_tests", "run_audio_eval"),
+    "EMBEDDING": (".eval_tests.embedding_eval_tests", "run_embedding_eval"),
+    "TEXT_TO_SPEECH": (".eval_tests.tts_eval_tests", "run_tts_eval"),
+    "VIDEO": (".eval_tests.video_eval_tests", "run_video_eval"),
+}
+
+_BENCHMARK_RUNNERS: dict[str, Tuple[str, str]] = {
+    "CNN": (".benchmark_tests.cnn_benchmark_tests", "run_cnn_benchmark"),
+    "IMAGE": (".benchmark_tests.image_benchmark_tests", "run_image_benchmark"),
+    "AUDIO": (".benchmark_tests.audio_benchmark_tests", "run_audio_benchmark"),
+    "EMBEDDING": (
+        ".benchmark_tests.embedding_benchmark_tests",
+        "run_embedding_benchmark",
+    ),
+    "TEXT_TO_SPEECH": (".benchmark_tests.tts_benchmark_tests", "run_tts_benchmark"),
+    "VIDEO": (".benchmark_tests.video_benchmark_tests", "run_video_benchmark"),
+}
+
+
+def _lazy_media_runner(module_path: str, func_name: str) -> MediaRunner:
+    def _runner(ctx: MediaContext) -> Block:
+        module = importlib.import_module(module_path, __package__)
+        return getattr(module, func_name)(ctx)
+
+    _runner.__name__ = func_name
+    return _runner
+
+
 EVAL_DISPATCH: dict[str, MediaRunner] = {
-    "CNN": run_cnn_eval,
-    "IMAGE": run_image_eval,
-    "AUDIO": run_audio_eval,
-    "EMBEDDING": run_embedding_eval,
-    "TEXT_TO_SPEECH": run_tts_eval,
-    "VIDEO": run_video_eval,
+    model_type: _lazy_media_runner(module_path, func_name)
+    for model_type, (module_path, func_name) in _EVAL_RUNNERS.items()
 }
 
 BENCHMARK_DISPATCH: dict[str, MediaRunner] = {
-    "CNN": run_cnn_benchmark,
-    "IMAGE": run_image_benchmark,
-    "AUDIO": run_audio_benchmark,
-    "EMBEDDING": run_embedding_benchmark,
-    "TEXT_TO_SPEECH": run_tts_benchmark,
-    "VIDEO": run_video_benchmark,
+    model_type: _lazy_media_runner(module_path, func_name)
+    for model_type, (module_path, func_name) in _BENCHMARK_RUNNERS.items()
 }
 
 
