@@ -111,12 +111,13 @@ def _run_command_with_retries(
         attempt += 1
 
 
-def _write_swebench_container_name_patch(output_dir: Path) -> Path:
+def _write_swebench_harness_patch(output_dir: Path) -> Path:
     patch_dir = output_dir / "swebench_harness_patch"
     patch_dir.mkdir(parents=True, exist_ok=True)
     patch_path = patch_dir / "sitecustomize.py"
     patch_path.write_text(
         """
+import logging
 import re
 
 from swebench.harness.test_spec import TestSpec
@@ -132,17 +133,42 @@ def _get_safe_instance_container_name(self, run_id=None):
 
 
 TestSpec.get_instance_container_name = _get_safe_instance_container_name
+
+
+# The epoch-research SWE-bench fork's build_image() pushes every freshly built
+# image to ghcr.io/epoch-research/... as a shared cache. We have no push
+# credentials for that namespace, so the push fails -- often mid-stream with
+# ``ChunkedEncodingError: Response ended prematurely`` -- and, because it runs
+# inside build_image()'s try block, turns a successful local build into a fatal
+# BuildImageError. Make the push best-effort so local builds are kept and used.
+try:
+    from docker.models.images import ImageCollection
+
+    _ORIGINAL_PUSH = ImageCollection.push
+
+    def _best_effort_push(self, *args, **kwargs):
+        try:
+            return _ORIGINAL_PUSH(self, *args, **kwargs)
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger("swebench.harness.docker_build").warning(
+                "Ignoring non-fatal SWE-bench image push failure: %s", exc
+            )
+            return ""
+
+    ImageCollection.push = _best_effort_push
+except Exception:  # noqa: BLE001
+    pass
 """.lstrip(),
         encoding="utf-8",
     )
     return patch_dir
 
 
-def _add_swebench_container_name_patch_to_env(
+def _add_swebench_harness_patch_to_env(
     output_dir: Path, env: dict[str, str]
 ) -> dict[str, str]:
     patched_env = dict(env)
-    patch_dir = _write_swebench_container_name_patch(output_dir)
+    patch_dir = _write_swebench_harness_patch(output_dir)
     python_path = patched_env.get("PYTHONPATH")
     patched_env["PYTHONPATH"] = (
         str(patch_dir) if not python_path else f"{patch_dir}{os.pathsep}{python_path}"
@@ -572,7 +598,7 @@ def run(config: SWEbenchRunConfig) -> int:
         convert_sweagent_preds_to_jsonl(preds_path, predictions_path, config.model_name)
 
     harness_cmd = build_swebench_harness_command(config, predictions_path, run_id)
-    env = _add_swebench_container_name_patch_to_env(config.output_dir, env)
+    env = _add_swebench_harness_patch_to_env(config.output_dir, env)
     rc = _run_command_with_retries(
         harness_cmd,
         cwd=config.output_dir,
