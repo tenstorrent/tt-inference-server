@@ -448,11 +448,6 @@ _venv_config_list = [
     ),
     # Pip install + sub-directory
     VenvConfig(
-        venv_type=WorkflowVenvType.EVALS_VIDEO,
-        requirements_file="evals-video.txt",
-        extra_dirs=("work_dir",),
-    ),
-    VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_VLLM,
         requirements_file="benchmarks-vllm.txt",
         extra_dirs=("work_dir",),

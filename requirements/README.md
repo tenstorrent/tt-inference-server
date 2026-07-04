@@ -14,7 +14,7 @@ requirements/
 ```
 
 File names are kebab-case lowercase mirrors of the `WorkflowVenvType` enum
-member: `EVALS_VIDEO` → `evals-video.txt`, `BENCHMARKS_VLLM` →
+member: `EVALS_AUDIO` → `evals-audio.txt`, `BENCHMARKS_VLLM` →
 `benchmarks-vllm.txt`.
 
 `BENCHMARKS_VIDEO` and `BENCHMARKS_GENAI_PERF` deliberately have no file —
