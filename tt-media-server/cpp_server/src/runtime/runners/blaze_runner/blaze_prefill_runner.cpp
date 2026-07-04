@@ -20,38 +20,23 @@
 #include "utils/logger.hpp"
 
 namespace tt::runners::blaze {
+
 BlazePrefillRunner::BlazePrefillRunner(
-    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
-    tt::ipc::ITaskQueue* taskQueue, tt::ipc::ICancelQueue* stopQueue,
+    const config::LLMConfig& config,
+    std::unique_ptr<IPrefillScheduler> prefillScheduler,
+    ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
+    tt::ipc::ICancelQueue* stopQueue,
     std::unique_ptr<tt::services::MemoryManager> injectedMemoryManager)
     : config(config),
       resultQueue(resultQueue),
       taskQueue(taskQueue),
       stopQueue(stopQueue),
+      prefillScheduler(std::move(prefillScheduler)),
       slotManager(tt::config::pmMaxUsers()),
       lastOutputTime(std::chrono::steady_clock::now()),
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
-  TT_LOG_INFO(
-      "BlazePrefillRunner: Constructing PrefillScheduler with SocketConfig...");
-  auto pipelineConfig = utils::makePrefillPipelineConfig(config);
-  ps::SchedulerParams managerParams{};
-  managerParams.dest_endpoint_id = tt::config::migrationDecodeEndpointId();
-  managerParams.self_endpoint_id = tt::config::migrationPrefillEndpointId();
-  managerParams.layers_per_chunk = tt::config::modelNumLayers();
-  managerParams.chunk_size = tt::config::prefillChunkSize();
-  managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
-  auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
-  auto migrationClientInterface = utils::makeMigrationClientInterface(config);
-  if (tt::config::enableMigration()) {
-    migrationClientInterface->connect_to(
-        tt::config::migrationDecodeEndpointId(), "PUBLISHER", "ds_pd");
-  }
-  prefillScheduler = std::make_unique<ps::PrefillScheduler>(
-      pipelineConfig, ackChannelConfig, managerParams,
-      std::move(migrationClientInterface));
-  TT_LOG_INFO(
-      "BlazePrefillRunner: PrefillScheduler constructed, calling start()...");
-  prefillScheduler->start();
+  assert(this->prefillScheduler != nullptr);
+  this->prefillScheduler->start();
   TT_LOG_INFO(
       "BlazePrefillRunner: PipelineManager started, creating MemoryManager...");
   memoryManager = injectedMemoryManager

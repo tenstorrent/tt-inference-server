@@ -22,7 +22,10 @@ class VLLMForgeRunner(BaseDeviceRunner):
     # Sampling defaults for Forge LLM inference (overrides global greedy defaults)
     SAMPLING_DEFAULTS = {
         "temperature": 0.6,
-        "repetition_penalty": 1.1,
+        # 1.0 (off) matches every sibling runner (Forge TP, metal) and the repo-wide
+        # _DEFAULT_SAMPLING_PARAMS; the old 1.1 was the lone outlier and drove the
+        # O(N^2) decode regression (#4278). Callers can still opt into 1.1 per request.
+        "repetition_penalty": 1.0,
     }
 
     def __init__(self, device_id: str):
@@ -36,23 +39,24 @@ class VLLMForgeRunner(BaseDeviceRunner):
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading VLLM model...")
         prompt = "Hello, it's me"
-        # Tunable per-run via env vars. Defaults are 1.2.0-safe:
-        # optimization_level=0 (required for the 1.2.0 wheel — opt>=1 aborts in
-        # the tt-mlir MemoryLayoutPropagation pass; see tt-xla#4990),
-        # cpu_sampling enabled. ENABLE_TRACE is off-by-default and gated on
-        # opt_level=0; replaying the decode graph works around the 1.2.0
-        # decode regression (+16-89% aggregate tok/s validated across the 5
-        # forge LLM P150 specs at b4/16K).
-        # Caveats for ENABLE_TRACE:
-        #   - vllm_tt's TTConfig rejects enable_trace=True + opt>=1 + cpu_sampling=False
-        #     (only safe at optimization_level=0).
-        #   - crashes at high batch (b16 hits a RuntimeError in
-        #     tt::runtime::ttnn::operations::trace::run; b16/16K won't compile).
-        #   - trace-capture needs extra DRAM scratch — validate fit on 7B+ models
-        #     before enabling.
-        optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
+        # Tunable per-run via env vars. Defaults: opt=1, host-side sampling
+        # (cpu_sampling=True), trace on.
+        # optimization_level=1 is required for meaningful max_model_len: at opt=0 the
+        # fused SDPA fails layout validation and falls back to the tt-mlir #8596
+        # decomposition, which materializes the [seq x seq] causal mask as a dense
+        # constant and overflows the 2GB TTNN flatbuffer (issue #4471; 1K fits, 16K
+        # aborts). At opt=1 SDPA stays fused. cpu_sampling stays True (host-side):
+        # on-device sampling adds device buffers that OOM the b4/16K prefill
+        # activation at trace capture, and is slower at small batch anyway.
+        # ENABLE_TRACE replays the decode graph (perf).
+        # Caveats:
+        #   - device sampling (cpu_sampling=False) OOMs b4/16K and can't honor
+        #     SamplingParams(seed=...); only worthwhile at larger batch.
+        #   - trace crashes at high batch (b16: RuntimeError in trace::run; b16/16K
+        #     won't compile) and needs extra DRAM scratch — validate fit on 7B+.
+        optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "true").lower() == "true"
-        enable_trace = os.getenv("ENABLE_TRACE", "false").lower() == "true"
+        enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,

@@ -178,7 +178,7 @@ struct ResponseIdFixture : benchmark::Fixture {
 
       // Plant a response ID for each session.
       std::string respId = "resp-" + std::to_string(i);
-      manager.initResponseId(sessionId, respId);
+      manager.registerResponseId(sessionId, respId);
       responseIds.push_back(respId);
     }
 

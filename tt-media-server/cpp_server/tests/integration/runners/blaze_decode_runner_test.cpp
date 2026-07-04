@@ -9,6 +9,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "../integration_test_helpers.hpp"
@@ -18,8 +19,28 @@
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::runners::blaze {
-
 namespace {
+
+class EnvSetter {
+ public:
+  EnvSetter(const std::string& key, const std::string& value) : key(key) {
+    if (const char* old = std::getenv(key.c_str())) {
+      oldValue = old;
+    }
+    setenv(key.c_str(), value.c_str(), 1);
+  }
+  ~EnvSetter() {
+    if (oldValue.has_value()) {
+      setenv(key.c_str(), oldValue.value().c_str(), 1);
+    } else {
+      unsetenv(key.c_str());
+    }
+  }
+
+ private:
+  std::string key;
+  std::optional<std::string> oldValue;
+};
 
 constexpr uint64_t MOCK_PIPELINE_TOKEN_ID = 12345u;
 const std::vector<int64_t> DEFAULT_STOP_TOKEN_IDS = {987654321};
@@ -369,6 +390,33 @@ TEST(BlazeDecodeRunnerIntegrationTest,
     EXPECT_EQ(tokenCounts[i], static_cast<size_t>(kMaxTokensPerUser))
         << "Unexpected token count for task_id=" << taskIds[i];
   }
+}
+
+TEST(BlazeDecodeRunnerIntegrationTest, MockSchedulerFlatTokenStream) {
+  EnvSetter mockUseScheduler("MOCK_USE_SCHEDULER", "1");
+  EnvSetter mockPrefillLatencyMs("MOCK_PREFILL_CHUNK_LATENCY_MS", "0");
+  EnvSetter mockDecodeTokenLatencyUs("MOCK_DECODE_TOKEN_LATENCY_US", "0");
+
+  BlazeDecodeRunnerHarness harness;
+
+  const uint32_t taskId = 5150;
+  const auto allocateResponse = harness.allocate(taskId);
+  ASSERT_EQ(allocateResponse.status, domain::ManageMemoryStatus::SUCCESS);
+
+  domain::llm::SamplingParams samplingParams;
+  samplingParams.max_tokens = 3;
+  samplingParams.ignore_eos = true;
+
+  harness.submitSequence(taskId, allocateResponse.slotId, {11, 22, 33},
+                         samplingParams);
+  const auto producedTokens = harness.collectTaskTokensUntilFinal(taskId);
+  harness.assertRunnerHealthy();
+
+  ASSERT_EQ(producedTokens.size(), 3u);
+  for (const auto& token : producedTokens) {
+    EXPECT_EQ(token.token_id, MOCK_PIPELINE_TOKEN_ID);
+  }
+  EXPECT_TRUE(producedTokens.back().isFinal());
 }
 
 }  // namespace tt::runners::blaze

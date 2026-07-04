@@ -197,7 +197,7 @@ int runSender(const Options& o) {
   EngineConfig cfg;
   cfg.metadata_uri = o.metadata;
   cfg.local_server_name = o.local_name;
-  cfg.protocol = TransportProtocol::Tcp;
+  cfg.protocol = TransportProtocol::TCP;
   if (!engine->init(cfg)) {
     std::cerr << "[sender] engine init failed\n";
     return 1;
@@ -220,7 +220,7 @@ int runSender(const Options& o) {
 
   // Step 1: write the known tensor into "sender device DRAM".
   MigrationWorkerConfig wcfg;
-  wcfg.role = MigrationRole::Sender;
+  wcfg.role = MigrationRole::SENDER;
   wcfg.peer_segment_name = peerName;
   wcfg.device_addr = storage.device_addr;
   wcfg.tensor_bytes = o.bytes;
@@ -250,27 +250,27 @@ int runSender(const Options& o) {
 
   // The receiver must be up and have registered its segment first; retry the
   // P2P handshake a few times.
-  SegmentHandle peer = kInvalidSegment;
-  for (int attempt = 0; attempt < o.timeout_sec * 10 && peer == kInvalidSegment;
-       ++attempt) {
+  SegmentHandle peer = K_INVALID_SEGMENT;
+  for (int attempt = 0;
+       attempt < o.timeout_sec * 10 && peer == K_INVALID_SEGMENT; ++attempt) {
     peer = engine->openSegment(peerName);
-    if (peer == kInvalidSegment) {
+    if (peer == K_INVALID_SEGMENT) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
   }
-  if (peer == kInvalidSegment) {
+  if (peer == K_INVALID_SEGMENT) {
     std::cerr << "[sender] openSegment(" << peerName << ") failed\n";
     return 1;
   }
 
   // Transfer the tensor into the receiver's segment at offset 0.
   TransferRequest tensorReq;
-  tensorReq.op = TransferOp::Write;
+  tensorReq.op = TransferOp::WRITE;
   tensorReq.local_addr = staging.data();
   tensorReq.target = peer;
   tensorReq.target_offset = 0;
   tensorReq.length = o.bytes;
-  if (engine->submitAndWait(tensorReq).state != TransferState::Completed) {
+  if (engine->submitAndWait(tensorReq).state != TransferState::COMPLETED) {
     std::cerr << "[sender] tensor transfer failed\n";
     return 1;
   }
@@ -278,12 +278,12 @@ int runSender(const Options& o) {
   // Then the done-flag byte at offset == bytes.
   staging[o.bytes] = K_DONE_FLAG;
   TransferRequest flagReq;
-  flagReq.op = TransferOp::Write;
+  flagReq.op = TransferOp::WRITE;
   flagReq.local_addr = staging.data() + o.bytes;
   flagReq.target = peer;
   flagReq.target_offset = o.bytes;
   flagReq.length = 1;
-  if (engine->submitAndWait(flagReq).state != TransferState::Completed) {
+  if (engine->submitAndWait(flagReq).state != TransferState::COMPLETED) {
     std::cerr << "[sender] flag transfer failed\n";
     return 1;
   }
@@ -301,7 +301,7 @@ int runReceiver(const Options& o) {
   EngineConfig cfg;
   cfg.metadata_uri = o.metadata;
   cfg.local_server_name = o.local_name;
-  cfg.protocol = TransportProtocol::Tcp;
+  cfg.protocol = TransportProtocol::TCP;
   if (!engine->init(cfg)) {
     std::cerr << "[receiver] engine init failed\n";
     return 1;
@@ -358,7 +358,7 @@ int runReceiver(const Options& o) {
 
   // Verify: read device DRAM back and byte-compare against the agreed pattern.
   MigrationWorkerConfig wcfg;
-  wcfg.role = MigrationRole::Receiver;
+  wcfg.role = MigrationRole::RECEIVER;
   wcfg.device_addr = storage.device_addr;
   wcfg.tensor_bytes = o.bytes;
   // Discovery is unused here — this PoC drives the data-plane spike directly.

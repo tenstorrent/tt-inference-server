@@ -153,6 +153,134 @@ templates:
   has_builtin_warmup: true
 
 - weights:
+    - google/gemma-4-31B-it
+  impl: tt_transformers
+  # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
+  # them; only prod specs carry commits). The image is supplied at runtime via
+  # --override-docker-image; the prod gemma4 specs pin the build commits.
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
+      max_concurrency: 1
+      # Hybrid-off DRAM ceiling on QB2: with hybrid KV groups disabled every one
+      # of the 60 layers allocates a full-length KV buffer, so the largest pool
+      # that fits in DRAM (and leaves prefill scratch headroom) is ~49K, not 131K.
+      # Drives max_model_len + max_num_batched_tokens; the matching KV-pool size is
+      # set via GEMMA4_MAX_TOKENS_ALL_USERS below. Servable prompt tops out at the
+      # 32768 power-of-2 prefill bucket (next bucket, 65536, exceeds this pool).
+      max_context: 49152  # 48 * 1024
+      default_impl: true
+      env_vars:
+        # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
+        # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
+        # laid the TP collectives over the wrong fabric links and corrupted decode
+        # logits; the default p150_x4 descriptor (selected from MESH_DEVICE) is correct.
+        MESH_DEVICE: "P150x4"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        # Size the hybrid-off all-user KV pool to fit QB2 DRAM. The container
+        # sizes the pool from Gemma4ForCausalLM.get_max_tokens_all_users, which
+        # honors this env override (value kept here, gated by device + model,
+        # rather than hardcoded in tt-metal).
+        GEMMA4_MAX_TOKENS_ALL_USERS: "49152"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 200000000
+        # On-device decode sampling is required on the TP mesh so token ids
+        # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
+        sample_on_device_mode: decode_only
+      vllm_args:
+        # Sampling params (temp=1.0 / top_k=64 / top_p=0.95) load from the
+        # model's HF generation_config.json; evals override per-request. No
+        # override_generation_config here -- it would just restate the HF default.
+        # Activate the gemma4 tool_call_parser so tool_choice:"auto" clients
+        # (mini-swe-agent / SWE-Bench) work on a flag-free release run. vLLM
+        # requires --tool-call-parser alongside --enable-auto-tool-choice, so it
+        # is passed explicitly here; the gemma4 parser is registered by the
+        # vllm-tt-plugin entry point (tenstorrent/vllm #431).
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        # Enable gemma-4 thinking server-side so the r1_gpqa_diamond /
+        # terminal-bench-2 / swe-bench-verified evals (methodology matched to
+        # tenstorrent/tt-inference-server#4331) get the reasoning channel the
+        # chat template otherwise suppresses (gemma-4 scores ~10pts lower w/o it).
+        # --reasoning-parser separates the thought channel into reasoning_content.
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-31B-it:
+      reasoning_parser_name: gemma4
+      # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; activated
+      # by enable-auto-tool-choice in vllm_args above.
+      tool_call_parser_name: gemma4
+
+- weights:
+    - google/gemma-4-12B-it
+  impl: tt_transformers
+  # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
+  # them; only prod specs carry commits). The image is supplied at runtime via
+  # --override-docker-image; the prod gemma4 specs pin the build commits.
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
+      max_concurrency: 1
+      # 12B (unlike 31B) is NOT pool-capped: hybrid-off, its ~131K all-user KV
+      # pool fits QB2 DRAM, so no GEMMA4_MAX_TOKENS_ALL_USERS override is set and
+      # the pool == the largest prefill bucket (131072). That means the
+      # page-table "negative dimension" fault (which bites 31B because its 49152
+      # pool is smaller than the 65536 bucket) cannot occur here — every prefill
+      # bucket <= 131072 fits. The pool must also stay this large to leave block
+      # headroom for decode above a 64K-input (65536-bucket) prompt. The only
+      # real limit is the >64K eager-prefill fabric hang (tt-metal#48289), which
+      # is guarded at the eval layer (max_input_tokens = 64K, pads to the 65536
+      # bucket — the largest validated one). Hence max_context stays 131072
+      # rather than a hard 65536 cap, which would zero out decode room at 64K in.
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      env_vars:
+        # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
+        # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
+        # laid the TP collectives over the wrong fabric links and corrupted decode
+        # logits; the default p150_x4 descriptor (selected from MESH_DEVICE) is correct.
+        MESH_DEVICE: "P150x4"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 100000000  # match vLLM nightly QB2 Gemma4-12B entry
+        sample_on_device_mode: decode_only
+      vllm_args:
+        # Sampling params (temp=1.0 / top_k=64 / top_p=0.95) load from the
+        # model's HF generation_config.json; evals override per-request. No
+        # override_generation_config here -- it would just restate the HF default.
+        # Activate the gemma4 tool_call_parser so tool_choice:"auto" clients
+        # (mini-swe-agent / SWE-Bench) work on a flag-free release run. vLLM
+        # requires --tool-call-parser alongside --enable-auto-tool-choice, so it
+        # is passed explicitly here; the gemma4 parser is registered by the
+        # vllm-tt-plugin entry point (tenstorrent/vllm #431).
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        # Enable gemma-4 thinking server-side so the r1_gpqa_diamond /
+        # terminal-bench-2 / swe-bench-verified evals (methodology matched to
+        # tenstorrent/tt-inference-server#4331) get the reasoning channel the
+        # chat template otherwise suppresses (gemma-4 scores ~10pts lower w/o it).
+        # --reasoning-parser separates the thought channel into reasoning_content.
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-12B-it:
+      reasoning_parser_name: gemma4
+      # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; activated
+      # by enable-auto-tool-choice in vllm_args above.
+      tool_call_parser_name: gemma4
+
+- weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
   inference_engine: VLLM
@@ -217,6 +345,42 @@ templates:
     Qwen/Qwen3-8B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: hermes
+
+- weights:
+    - Qwen/Qwen3.6-27B
+  impl: qwen36_blackhole
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        HF_MODEL: Qwen/Qwen3.6-27B
+        MESH_DEVICE: "(1, 4)"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+      vllm_args:
+        async_scheduling: true
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        # Magic number; follows vllm nightly:
+        # https://github.com/tenstorrent/tt-metal/actions/runs/28493777891/job/84457052459#step:10:1
+        trace_region_size: 268435456
+  # EXPERIMENTAL: no target performance has been set yet, so we can't classify
+  # this as FUNCTIONAL, COMPLETE, or top-perf.
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.6-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
 
 - weights:
     - Qwen/Qwen3-32B
@@ -907,6 +1071,9 @@ templates:
         - workflow_type: EVALS
           task_name: longbench_summarization_e
           reason: "longbench_summarization_e measured score is ~94% which does not satisfy the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_code_e
+          reason: "longbench_code_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
   status: EXPERIMENTAL
   metadata:
     meta-llama/Llama-3.1-8B:
@@ -1082,3 +1249,85 @@ templates:
   metadata:
     Qwen/Qwen2.5-Coder-32B-Instruct:
       tool_call_parser_name: hermes
+
+# =============================================================================
+# Gemma 4 family - GPU reference specs (bring-your-own vLLM server; see
+# docs/gpu_workflows.md). Used to collect GPU reference eval scores for
+# GPQA-Diamond, Terminal-Bench 2.0, and SWE-Bench Verified.
+# tt_metal_commit 2521a03 == tt-metal release v0.72.0 (> 0.12); it only feeds
+# docker-tag synthesis and is unused on the GPU bring-your-own-server path.
+# =============================================================================
+- weights:
+    - google/gemma-4-31B-it
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL (94GB, bf16 KV) caps servable ctx at ~205K (KV cache = 210,605 tokens)
+      default_impl: true
+  status: EXPERIMENTAL
+  metadata:
+    google/gemma-4-31B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
+- weights:
+    - google/gemma-4-26B-A4B-it
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  metadata:
+    google/gemma-4-26B-A4B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
+- weights:
+    - google/gemma-4-12B-it
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  metadata:
+    google/gemma-4-12B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
+- weights:
+    - google/gemma-4-E4B-it
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  metadata:
+    google/gemma-4-E4B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
+- weights:
+    - google/gemma-4-E2B-it
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  metadata:
+    google/gemma-4-E2B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4

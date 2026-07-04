@@ -9,8 +9,9 @@
 namespace tt::messaging {
 
 /**
- * Polymorphic seam over KafkaConsumer so callers (e.g. RemoteKVManagerImpl)
- * can be unit-tested with an in-process fake instead of a real broker.
+ * Polymorphic interface over KafkaConsumer so callers (e.g.
+ * RemoteKVManagerImpl) can be unit-tested with an in-process fake instead of a
+ * real broker.
  *
  * Production code injects a tt::messaging::KafkaConsumer; tests inject a
  * fake that yields scripted ack messages.
