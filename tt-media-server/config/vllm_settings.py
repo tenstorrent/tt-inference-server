@@ -13,15 +13,16 @@ class VLLMSettings(BaseModel):
     min_context_length: int = 128
     max_model_length: int = int(os.environ.get("MAX_MODEL_LENGTH", 4096))
     max_num_seqs: int = int(os.environ.get("MAX_NUM_SEQS", 1))
-    # With chunked prefill (PREFILL_CHUNK_SIZE set), the batched-token budget only
-    # needs batch * chunk rather than batch * full-context, freeing device memory
-    # for KV cache. Falls back to batch * full-context when unset.
+    # Chunked prefill (PREFILL_CHUNK_SIZE set): budget is batch * chunk, floored at
+    # max_model_length so it clears vLLM's max_num_batched_tokens >= max_model_len
+    # check (we pass enable_chunked_prefill=False). The tt-xla plugin re-derives
+    # batch*chunk after, preserving the KV saving. Else: batch * full-context.
     _prefill_chunk_size_env = os.environ.get("PREFILL_CHUNK_SIZE", "").strip()
     prefill_chunk_size: int = (
         int(_prefill_chunk_size_env) if _prefill_chunk_size_env else 0
     )
     max_num_batched_tokens: int = (
-        max_num_seqs * prefill_chunk_size
+        max(max_num_seqs * prefill_chunk_size, max_model_length)
         if prefill_chunk_size
         else max_model_length * max_num_seqs
     )
