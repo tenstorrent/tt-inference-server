@@ -193,6 +193,9 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
     matches this model+device pair) is treated as a clean no-op: a warning
     is logged and ``(0, None)`` is returned, so a model that has not yet
     been wired into the spec-test config does not fail the whole workflow.
+    A matched suite whose cases are all skipped (disabled/malformed) is the
+    same kind of no-op — it produces no blocks and no failures and returns
+    ``(0, None)`` rather than a spurious ``rc=1``.
     """
     logger.info(
         "Running spec_tests for model=%s, device=%s",
@@ -247,18 +250,17 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
                 )
                 failures += 1
 
-    if not blocks:
-        return 1, None
 
-    accept_blocks(blocks, envelope=sweep_envelope(ctx))
-    exit_code = 0 if failures == 0 else 1
+    if blocks:
+        accept_blocks(blocks, envelope=sweep_envelope(ctx))
+    exit_code = 1 if failures else 0
     logger.info(
         "spec_tests done: %d block(s), %d failure(s) -> exit=%d",
         len(blocks),
         failures,
         exit_code,
     )
-    return exit_code, blocks[-1]
+    return exit_code, (blocks[-1] if blocks else None)
 
 
 __all__ = [
