@@ -1,0 +1,96 @@
+# Handoff: forge b32 conc=32 device-read stall (engine hangs, 0 tokens)
+
+## Summary
+
+Under concurrent load (e.g. 32 concurrent streaming requests), a forge single-chip LLM served via tt-media-server **intermittently wedges**: the vLLM EngineCore stops producing tokens entirely (0 output), streaming requests sit in-flight until the client times out, and the server becomes unresponsive. It is **not** an OOM, **not** a compile, and **not** a config problem — it is a **tt-metal fast-dispatch completion-queue read that never completes**: the host enqueues a device→host readback and blocks in `FDMeshCommandQueue::read_completion_queue` waiting for a completion entry the device never posts. Reproduced live (multiple times) on a warm, healthy Qwen3-8B server with a clean backtrace (below), on the **shipping chunk-1024 / gmu-0.35 production config**. It is an upstream tt-metal / tt-xla runtime bug; not fixable by chunk size or GPU_MEMORY_UTILIZATION.
+
+## Symptom
+
+- conc=32 streaming batch → all 32 requests log `Starting streaming` (32 admitted), then the engine goes idle (`Worker health check: 0 dead workers found` every 30s) with **zero** generation and **0 completions**, until the client aborts at its read timeout.
+- **Low-probability / intermittent**, not reliably triggered: ~20 consecutive conc=64 runs (16 plain + 4 with a mid-stream client kill) passed cleanly, then a later back-to-back run hung. Rough rate ≈ 1 in 20+ runs. Running conc=32/64 `vllm bench serve` back-to-back and just repeating is the repro; a mid-stream client abort is **not** required (the abort-poison hypothesis was tested and disproven — 4/4 abort cycles passed).
+- After the hang the EngineCore process is **alive but blocked** (`Sl` state, not spinning — it is a blocked completion-queue read, not compute). `tt-smi -s` still returns healthy telemetry during the wedge (ARCCLK ticking, `DDR_STATUS 0x55555555`, heartbeat advancing, ~61 W) — so the chip/ARC is alive; only the fast-dispatch completion queue is wedged. Recovery needs `kill -9` the EngineCore + `tt-smi -r`.
+
+## Root cause (captured live via gdb)
+
+The stuck worker thread is blocked reading a tensor **off** the device during executable execution (a `from_device` / `.cpu()` in the graph-execute path), waiting on a fast-dispatch completion-queue entry that never arrives:
+
+```
+xla::PjRtCApiLoadedExecutable::ExecutePortable
+ -> tt::pjrt::FlatbufferLoadedExecutableInstance::execute -> prepareInputTensor
+  -> tt::pjrt::PjrtTensor::ensure_layout -> tt::runtime::toLayout
+   -> tt::runtime::ttnn::LayoutConverter::convertTensorLayout / handleDeviceInputLayoutNoTypecast
+    -> ttnn::operations::core::from_device -> tt::tt_metal::Tensor::cpu -> tt::tt_metal::cpu
+     -> tt::tt_metal::enqueue_read_tensor -> MeshCommandQueueBase::enqueue_read
+      -> MeshCommandQueueBase::enqueue_read_shards_nolock
+       -> FDMeshCommandQueue::finish_nolock -> FDMeshCommandQueue::read_completion_queue
+        -> copy_buffer_data_to_user_space -> copy_completion_queue_data_into_user_space   <-- BLOCKED
+           (buffer_dispatch::copy_completion_queue_data_into_user_space — waiting on a
+            device completion entry that is never posted)
+```
+
+The vLLM main thread is correspondingly parked in `torch_xla XLATensor::ToTensor -> LazyGraphExecutor::DeviceLocker::Barrier` (a `condition_variable::wait`) waiting on that device op. The tt-metal/LLVM compile threadpools are idle (`tf::Executor::_wait_for_task`, `libTTMLIRCompiler`) — confirming this is **not** a compile. The deepest frame (`read_completion_queue` / `copy_completion_queue_data_into_user_space`) is the actionable one: a device→host DMA readback was enqueued but its completion is never signalled.
+
+## Where it was originally found (CI)
+
+tt-shield "On dispatch" (workflow 154042663), forge-vllm-plugin, p150, against branch `kmabee/issue_4496_forge_llm_production_settings.testing` (production-like settings: b32, high seq len, chunked prefill, b1-prefill):
+
+- Qwen3-8B release — FAILED: https://github.com/tenstorrent/tt-shield/actions/runs/28696213435
+- Falcon3-7B-Instruct release — FAILED: https://github.com/tenstorrent/tt-shield/actions/runs/28696216594
+- Llama-3.2-3B-Instruct release — FAILED: https://github.com/tenstorrent/tt-shield/actions/runs/28697131183
+- Qwen3-4B release — PASSED (smaller model, did not trip it): https://github.com/tenstorrent/tt-shield/actions/runs/28697130201
+
+In CI the symptom surfaces as a benchmark **streaming timeout** (per-chunk `request_processing_timeout_seconds`, 3000s) with the model producing no tokens. Reference: an equivalent Falcon3-7B nightly WITHOUT the production settings passed (https://github.com/tenstorrent/tt-shield/actions/runs/28685775494), i.e. the trigger correlates with the higher-concurrency / production config, not the model per se.
+
+## Local reproduction
+
+Environment: QB2 P150 box (chip 0), tt-xla local editable venv, branch `kmabee/llm_integration_july3`. CI wheel equivalent = tt-forge-version `f631d5b1279d0a0f334f0afcc6e4e519bc155461`.
+
+1. Launch the server (from the tt-xla venv, pinned to chip 0, port 8019):
+
+```
+cd /home/kmabee/tt-xla && source venv/activate && \
+/home/kmabee/tt-inference-server/tt-media-server/launch_qwen3_8b_ci.sh
+```
+
+Config it serves (Qwen3-8B forge): b32, max_model_len 40960, PREFILL_CHUNK_SIZE=1024, GPU_MEMORY_UTILIZATION=0.35, opt=1, device sampling, trace, b1-prefill (MIN_NUM_SEQS=1 / PREFILL_BATCH_THRESHOLD=16), bfp8 weights+KV. (The b32/chunk-2048 variant `launch_qwen3_8b_b32_chunk2048.sh` reproduces the same class of hang; it additionally needs gmu<=0.15 to avoid a separate warmup DRAM-OOM.)
+
+2. Wait until a real generate returns text (not just a 200 on /v1/models) so the server is **warm** — otherwise the first large-ISL request pays a one-time cold compile that a short client timeout can misread as a hang (see the false-alarm note below). Then drive conc=32/64 streaming **repeatedly in a loop** — it is ~1 in 20+, so a few runs won't do it; expect to run it ~20–40× back-to-back:
+
+```
+for i in $(seq 1 40); do
+  OPENAI_API_KEY=your-secret-key timeout 400 /home/kmabee/tt-xla/venv/bin/vllm bench serve \
+    --backend openai-chat --endpoint /v1/chat/completions \
+    --model Qwen/Qwen3-8B --host 127.0.0.1 --port 8019 \
+    --dataset-name random --random-input-len 1024 --random-output-len 128 \
+    --max-concurrency 32 --num-prompts 64 \
+    --extra-body '{"truncate_prompt_tokens":"1024","max_tokens":128}' \
+    > /tmp/run_$i.log 2>&1
+  grep -q "Successful requests" /tmp/run_$i.log && echo "run $i PASS" || { echo "run $i HANG"; break; }
+done
+```
+
+Hang = the run makes no progress (0 tokens); the server log shows `Starting streaming` ×32 then only `Worker health check` lines (32 admitted, 0 completed). A completed run prints a normal `Serving Benchmark Result` (e.g. 64/64, ~42s, high TTFT ~33s but no hang).
+
+**False-alarm to exclude:** a *short* client `timeout` (e.g. `timeout 300`) on a **cold** server can abort during the one-time first-request MLIR/kernel compile and look like a hang — that is NOT this bug. The real stall is: server already warm, 0 tokens indefinitely, and the gdb signature below (`read_completion_queue`). Always grep the serve log for `TT_FATAL`/`Out of Memory` first to rule out OOM.
+
+3. When wedged, confirm the root cause: `gdb -p <live EngineCore pid> -batch -ex "thread apply all bt"` (pick the non-zombie `VLLM::EngineCore`) and look for the `read_completion_queue` / `enqueue_read_shards_nolock` / `from_device` chain above; compile threadpools should be idle. Recover with `pkill -9 -f "VLLM::EngineCore"; pkill -9 -f "uvicorn main:app"` then `tt-smi -r` (the FD queue stays wedged until the process is killed + device reset).
+
+## What is ruled out
+
+- Not OOM: no `Out of Memory` / `TT_FATAL` in the serve log at hang time (grep the serve log — do this first).
+- Not compile: compile threadpools idle; no `Compiling graph` / IR at request time with `TTXLA_LOGGER_LEVEL=DEBUG`.
+- Not chunk-size / gmu specific: **confirmed live on the shipping chunk-1024 / gmu-0.35 config** (and also seen on chunk-2048 / gmu-0.15); changing them does not fix it.
+- Once warm and not wedged, the config serves correctly (conc=32/64 completes 64/64 — 20+ clean runs before one hung), so this is a rare runtime concurrency/queue race, not a bad config.
+- Not the v2 refactor: the stall is in the tt-metal serving path (EngineCore), which v2 orchestration does not touch. (Separately, a short client `timeout 300` on a cold server produced *false* hangs earlier — a tooling artifact, not a server/v2 timeout; the server's real request bound is `request_processing_timeout_seconds`=3000s.)
+
+## Suggested next steps for the assignee
+
+- File upstream (tt-metal) with the backtrace above: `FDMeshCommandQueue::read_completion_queue` / `buffer_dispatch::copy_completion_queue_data_into_user_space` blocking forever during a `from_device` readback under concurrent execution — a device→host DMA whose completion entry is never posted. Ask whether the fast-dispatch completion queue can drop/lose a completion (or deadlock) under concurrent in-flight requests. This is the actionable frame; `enqueue_read_shards_nolock` is just the caller.
+- It is a **low-probability race** (~1 in 20+ conc=32/64 runs), independent of a client abort (abort-poison disproven). To characterize: loop the repro many times and correlate with total in-flight count / a specific graph shape; consider a tt-metal-level stress test of concurrent `enqueue_read` if reproducing through vLLM is too slow.
+- Interim mitigation to evaluate (not a fix): cap server concurrency below the failure point, and/or ensure the client/benchmark timeout tolerates it — but the underlying stuck read must be fixed upstream.
+
+## Key artifacts / paths
+
+- Server launchers: `tt-media-server/launch_qwen3_8b_ci.sh`, `tt-media-server/launch_qwen3_8b_b32_chunk2048.sh` (+ `launch_falcon3_7b_ci.sh`).
+- Streaming timeout knob: `tt-media-server/config/constants.py` `request_processing_timeout_seconds` (3000s); per-chunk wait in `model_services/base_service.py`.
+- On a fresh box, run the tt-xla sanity tests first to confirm the stack is healthy (torch add ~20s, vLLM OPT-gen ~2min); a slow/hung warmup usually means the device needs `tt-smi -r`.
