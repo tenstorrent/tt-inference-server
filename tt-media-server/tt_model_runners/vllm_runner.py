@@ -70,6 +70,11 @@ class VLLMForgeRunner(BaseDeviceRunner):
         # (lower TTFT) while decode stays at max_num_seqs. Only passed when set.
         min_num_seqs = os.getenv("MIN_NUM_SEQS")
         prefill_batch_threshold = os.getenv("PREFILL_BATCH_THRESHOLD")
+        # Debug/testing only: truncate the model to N decoder layers (tt-xla
+        # TTConfig.num_hidden_layers). Compiles in ~2 min instead of ~20 and
+        # isolates serving/concurrency behavior from model depth. Only passed
+        # when set, so production runs keep the full model.
+        num_hidden_layers = os.getenv("NUM_HIDDEN_LAYERS")
         additional_config = {
             "enable_const_eval": True,
             "min_context_len": self.settings.vllm.min_context_length,
@@ -87,6 +92,8 @@ class VLLMForgeRunner(BaseDeviceRunner):
             additional_config["min_num_seqs"] = int(min_num_seqs)
         if prefill_batch_threshold:
             additional_config["prefill_batch_threshold"] = int(prefill_batch_threshold)
+        if num_hidden_layers:
+            additional_config["num_hidden_layers"] = int(num_hidden_layers)
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
