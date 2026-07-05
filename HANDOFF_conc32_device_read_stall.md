@@ -4,6 +4,25 @@
 
 Under concurrent load (e.g. 32 concurrent streaming requests), a forge single-chip LLM served via tt-media-server **intermittently wedges**: the vLLM EngineCore stops producing tokens entirely (0 output), streaming requests sit in-flight until the client times out, and the server becomes unresponsive. It is **not** an OOM, **not** a compile, and **not** a config problem — it is a **tt-metal fast-dispatch completion-queue read that never completes**: the host enqueues a device→host readback and blocks in `FDMeshCommandQueue::read_completion_queue` waiting for a completion entry the device never posts. Reproduced live (multiple times) on a warm, healthy Qwen3-8B server with a clean backtrace (below), on the **shipping chunk-1024 / gmu-0.35 production config**. It is an upstream tt-metal / tt-xla runtime bug; not fixable by chunk size or GPU_MEMORY_UTILIZATION.
 
+## Update 2026-07-05 (overnight): reliable repro + trigger localized to the driver
+
+New findings that supersede/sharpen the notes below (all on the local editable tt-xla `kmabee/llm_integration_july3`, no CI):
+
+- **Reliable, not ~1/20, at high concurrency.** Full-model Qwen3-8B via tt-media-server (`launch_qwen3_8b_ci.sh`, conc=64) hung on the **first** conc=64 batch in **2/2** runs. Both gdb-confirmed real stalls (178 threads, **zero active MLIR/lowering frames** — all compile pools parked idle; only thread blocked is the `from_device → copy_completion_queue_data_into_user_space → read_completion_queue` chain). The earlier "~1 in 20+" was at lower/varied concurrency; **hang probability scales with concurrency.**
+- **The trigger is HOW tt-media-server drives the engine, not the model/config/sampling.** Same model / additional_config / device / conc=64, three drivers:
+  | driver | result |
+  |---|---|
+  | tt-media-server (custom `device_worker_dynamic_batch`) | **HANGS reliably** |
+  | stock `vllm serve` (vLLM-native scheduling) | 60 continuous conc=64 runs **clean** |
+  | in-process `AsyncLLMEngine`, synchronized waves | 200 conc=64 waves **clean** |
+  tt-media-server's worker does `task_queue.get_many(max=32)` → fires a **burst** of up to 32 concurrent `engine.generate()` → keeps pulling more *while those run* = **continuous overlapping bursts** of admission. vLLM-native scheduling admits smoothly one-at-a-time; the wave script drains between batches. Leading hypothesis: **bursty simultaneous admission** → many concurrent prefill input-relayout `from_device` readbacks overlapping decode → the completion-queue race.
+- **Additional ruled-out triggers:** `seed=None` and `repetition_penalty=1.0` (the exact hung SamplingParams: `temperature=0.6, top_p=1.0, top_k=0, repetition_penalty=1.0, seed=None, n=1`). Single-layer (`num_hidden_layers=1`) ran 200 conc=64 waves clean → the stall is **model-depth / compute-time sensitive** AND driver-pattern sensitive.
+- **Compile-time note correction:** an earlier ">20 min single-layer compile" observation was a `TTXLA_LOGGER_LEVEL=DEBUG` artifact (full-IR dump per graph, ~20× slowdown). Without DEBUG, single-layer compiles in ~65s. The serving config compiles ~76 graph shapes (`num_tokens{1,128,256,512,1024} × num_reqs{1,32} × all_greedy{T,F} × apply_grammar{T,F} × prefix_chunk{T,F}`).
+- **CI intermittency explained (e.g. Falcon3-7B):** identical dispatches, 1 pass / 3 fail — the pass ran its full ~57min suite (benchmarks + gpqa) without tripping the stall; the 3 fails hit it, produced 0 tokens, never recovered, and dead-hung ~6h until the workflow-timeout cancelled them (`Run tests` step, ~7h, container logs purged in the abort cascade). Same fingerprint as the confirmed Qwen3-8B stall. CI eval/benchmark concurrency sits in the *intermittent* zone; conc=64 is *near-deterministic*.
+
+### Pure-tt-xla repro (goal: no tt-media-server) — status
+A pure-tt-xla reproduction (needed for tt-xla-side debugging) is being pursued via a driver that mimics the dynamic batcher's bursty admission. Scripts + live status: `~/tt-xla/HANG_4521_REPRO_README.md` (`tt_xla_hang_repro.py` HANG_DRIVE=continuous, `serve_forge_qwen3_8b.sh`). Stock `vllm serve` and synchronized-wave in-process do NOT reproduce; the open question is whether the bursty in-process driver does, or whether the tt-media-server multiprocessing-worker/IPC path is required.
+
 ## Symptom
 
 - conc=32 streaming batch → all 32 requests log `Starting streaming` (32 admitted), then the engine goes idle (`Worker health check: 0 dead workers found` every 30s) with **zero** generation and **0 completions**, until the client aborts at its read timeout.
