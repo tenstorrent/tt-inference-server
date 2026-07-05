@@ -27,6 +27,20 @@ logger = logging.getLogger(__name__)
 
 DATASET_DIR = "server_tests/datasets/libritts_subset"
 METADATA_FILE = "metadata.json"
+DEFAULT_DATASET_SPLIT = "test.clean"
+
+LIBRITTS_SPLIT_ALIASES = {
+    "test": "test.clean",
+    "test.clean": "test.clean",
+    "test.other": "test.other",
+    "dev": "dev.clean",
+    "validation": "dev.clean",
+    "dev.clean": "dev.clean",
+    "dev.other": "dev.other",
+    "train": "train.clean.100",
+    "train.clean.100": "train.clean.100",
+    "train.clean.360": "train.clean.360",
+}
 
 headers = {
     "accept": "application/json",
@@ -60,7 +74,7 @@ class TTSQualityTest(BaseTest):
 
         # Configuration
         sample_count = self.targets.get("sample_count", 10)
-        dataset_split = self.targets.get("dataset_split", "test")
+        dataset_split = self.targets.get("dataset_split", DEFAULT_DATASET_SPLIT)
         wer_threshold = self.targets.get("wer_threshold", 0.20)  # 20% WER
         batch_size = self._get_num_concurrent_requests(default=1)
 
@@ -333,10 +347,21 @@ class TTSQualityTest(BaseTest):
 
         return buffer.getvalue()
 
-    def _download_samples(self, count: int = 20, split: str = "test") -> None:
+    @staticmethod
+    def _resolve_split(split: str) -> str:
+        """Map a requested split onto a valid LibriTTS-R split name."""
+        return LIBRITTS_SPLIT_ALIASES.get(split, split)
+
+    def _download_samples(
+        self, count: int = 20, split: str = DEFAULT_DATASET_SPLIT
+    ) -> None:
         """Download samples from LibriTTS-R dataset."""
         if count <= 0:
             raise ValueError("Sample count must be positive.")
+
+        resolved_split = self._resolve_split(split)
+        if resolved_split != split:
+            logger.info(f"Resolved dataset split '{split}' -> '{resolved_split}'")
 
         try:
             import itertools
@@ -344,7 +369,7 @@ class TTSQualityTest(BaseTest):
             from datasets import load_dataset
 
             dataset = load_dataset(
-                "blabble-io/libritts_r", "clean", split=split, streaming=True
+                "blabble-io/libritts_r", "clean", split=resolved_split, streaming=True
             )
 
             dataset_subset = list(itertools.islice(dataset, count))
@@ -365,7 +390,7 @@ class TTSQualityTest(BaseTest):
                         "id": sample_id,
                         "text": text_original,
                         "normalized_text": sample.get("text_normalized", text_original),
-                        "split": split,
+                        "split": resolved_split,
                     }
                 )
 
