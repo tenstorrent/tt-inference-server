@@ -57,8 +57,14 @@ class VLLMForgeRunner(BaseDeviceRunner):
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "true").lower() == "true"
         enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
-        # BFP8 KV cache ("bfp_bf8" halves the KV footprint vs bf16; "" -> bf16).
-        kv_cache_dtype = os.getenv("KV_CACHE_DTYPE", "")
+        # BFP8 KV cache ("bfp_bf8" halves the KV footprint vs bf16; "none" ->
+        # bf16). Must be "none", not "" -- PJRT validates this against
+        # {none, bfp_bf8, bfp_bf4} and rejects "".
+        kv_cache_dtype = os.getenv("KV_CACHE_DTYPE", "none")
+        # Weight dtype for on-device conversion ("bfp_bf8"/"bfp_bf4" quantize;
+        # "" -> bf16, the natural loaded precision). Defaults to "bfp_bf8" to
+        # preserve prior (previously hardcoded) behavior for all models.
+        weight_dtype = os.getenv("WEIGHT_DTYPE", "bfp_bf8")
         # On-device chunked-SDPA prefill chunk size: without it the full-context
         # prefill SDPA buffer OOMs the DRAM banks at 32K/64K. Only passed when set.
         prefill_chunk_size = os.getenv("PREFILL_CHUNK_SIZE")
@@ -70,10 +76,15 @@ class VLLMForgeRunner(BaseDeviceRunner):
         # (lower TTFT) while decode stays at max_num_seqs. Only passed when set.
         min_num_seqs = os.getenv("MIN_NUM_SEQS")
         prefill_batch_threshold = os.getenv("PREFILL_BATCH_THRESHOLD")
+        # Debug/testing only: truncate the model to N decoder layers (tt-xla
+        # TTConfig.num_hidden_layers). Compiles in ~2 min instead of ~20 and
+        # isolates serving/concurrency behavior from model depth. Only passed
+        # when set, so production runs keep the full model.
+        num_hidden_layers = os.getenv("NUM_HIDDEN_LAYERS")
         additional_config = {
             "enable_const_eval": True,
             "min_context_len": self.settings.vllm.min_context_length,
-            "experimental_weight_dtype": "bfp_bf8",
+            "experimental_weight_dtype": weight_dtype,
             "experimental_kv_cache_dtype": kv_cache_dtype,
             "cpu_sampling": cpu_sampling,
             "optimization_level": optimization_level,
@@ -87,6 +98,8 @@ class VLLMForgeRunner(BaseDeviceRunner):
             additional_config["min_num_seqs"] = int(min_num_seqs)
         if prefill_batch_threshold:
             additional_config["prefill_batch_threshold"] = int(prefill_batch_threshold)
+        if num_hidden_layers:
+            additional_config["num_hidden_layers"] = int(num_hidden_layers)
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
