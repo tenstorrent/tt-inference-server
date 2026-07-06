@@ -126,6 +126,13 @@ void LLMPipeline::resolveSession(
               static_cast<int>(result.accumulatedThinkTokens);
         }
 
+        // Capture full prompt before delta trim; finalizeAndRegisterHashes
+        // re-hashes the whole conversation from scratch (initialBlocks empty).
+        std::vector<int> fullPrompt;
+        if (auto* promptTokens = std::get_if<std::vector<int>>(&req->prompt)) {
+          fullPrompt = *promptTokens;
+        }
+
         // Apply delta prompt for continuations
         if (!result.isNewSession && result.matchedTokens > 0) {
           session_resolution::applyDeltaPrompt(*req, result.matchedTokens,
@@ -135,9 +142,9 @@ void LLMPipeline::resolveSession(
         }
 
         // Initialize token accumulator for incremental hash registration
-        if (auto* deltaTokens = std::get_if<std::vector<int>>(&req->prompt)) {
+        if (!fullPrompt.empty()) {
           req->session->initTokenAccumulator(
-              *deltaTokens, result.blocks,
+              std::move(fullPrompt), /*initialBlocks=*/{},
               [mgr](const std::string& sessionId,
                     const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
