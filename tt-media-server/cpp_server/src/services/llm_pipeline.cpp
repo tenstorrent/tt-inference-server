@@ -559,7 +559,8 @@ void LLMPipeline::dispatchGeneration(
           "[LLMPipeline] Using disaggregated prefill for request with "
           "sessionId: {}",
           request.sessionId.value_or("none"));
-      // WARNING - TEMP CHANGE - PREFILL WILL OVERRIDE THINKING TOKENS
+      // Remote prefill receives prompt-token positions without resident think
+      // tokens; the decode side restores the full KV position after handoff.
       uint32_t matchedTokens =
           *request.kv_position_id -
           static_cast<uint32_t>(request.accumulated_think_tokens);
@@ -568,7 +569,6 @@ void LLMPipeline::dispatchGeneration(
         sessionManager_->clearSessionBlockThinkTokens(
             request.session->getSessionId());
       }
-      // WARNING - TEMP CHANGE
       if (tt::config::dynamoDecodeOrchestratesPrefill()) {
         disaggregationService_->handleDynamoStreamingRequest(
             request, sessionInfo.registrationHashes, cb);
