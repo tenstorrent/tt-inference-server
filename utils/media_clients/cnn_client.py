@@ -57,11 +57,10 @@ class CnnClientStrategy(BaseMediaStrategy):
         try:
             runner_in_use = self.require_health()
             eval_result = None
-            yolox_result = None
             if runner_in_use == CNN_MOBILENETV2_RUNNER:
                 eval_result = self._run_mobilenetv2_eval()
             elif runner_in_use == CNN_YOLOX_NANO_RUNNER:
-                yolox_result = self._run_yolox_coco_eval()
+                eval_result = self._run_yolox_coco_eval()
             else:
                 status_list = self._run_image_analysis_benchmark()
         except Exception as e:
@@ -90,23 +89,28 @@ class CnnClientStrategy(BaseMediaStrategy):
             benchmark_data["correct"] = eval_result["correct"]
             benchmark_data["total"] = eval_result["total"]
             benchmark_data["mismatches_count"] = eval_result["mismatches_count"]
-        elif runner_in_use == CNN_YOLOX_NANO_RUNNER and yolox_result:
+        elif runner_in_use == CNN_YOLOX_NANO_RUNNER and eval_result:
             logger.info("Adding YOLOX COCO mAP eval results")
-            benchmark_data["accuracy_check"] = yolox_result.get(
+            benchmark_data["accuracy_check"] = eval_result.get(
                 "accuracy_status", ReportCheckTypes.NA
             )
             # Report mAP (as a percentage) as the eval score against the
             # published COCO mAP (25.8 for yolox_nano).
-            benchmark_data["score"] = yolox_result["mAP_percent"]
-            benchmark_data["mAP"] = yolox_result["mAP_percent"]
-            benchmark_data["num_images"] = yolox_result["num_images"]
+            benchmark_data["score"] = eval_result["mAP_percent"]
+            benchmark_data["mAP"] = eval_result["mAP_percent"]
+            benchmark_data["num_images"] = eval_result["num_images"]
             benchmark_data["published_score"] = self.all_params.tasks[
                 0
             ].score.published_score
             benchmark_data["published_score_ref"] = self.all_params.tasks[
                 0
             ].score.published_score_ref
-            latency_for_perf_check = yolox_result.get("mean_latency")
+            latency_for_perf_check = eval_result.get("mean_latency")
+
+            # For single-concurrency CNN inference, tput_user (images/sec/user) = 1/latency.
+            if latency_for_perf_check:
+                benchmark_data["tput_user"] = 1.0 / latency_for_perf_check
+
         else:
             logger.info("No eval results from eval spec test to add to benchmark data")
             latency_value = self._calculate_latency(status_list)
@@ -120,10 +124,6 @@ class CnnClientStrategy(BaseMediaStrategy):
             benchmark_data["published_score_ref"] = self.all_params.tasks[
                 0
             ].score.published_score_ref
-
-        # For single-concurrency CNN inference, tput_user (images/sec/user) = 1/latency.
-        if latency_for_perf_check:
-            benchmark_data["tput_user"] = 1.0 / latency_for_perf_check
 
         benchmark_data["performance_check"] = self._calculate_performance_check(
             latency_value=latency_for_perf_check,
@@ -482,7 +482,7 @@ class CnnClientStrategy(BaseMediaStrategy):
         return buf.getvalue()
 
     @staticmethod
-    def _bbox_xyxy_to_xywh(bbox) -> Optional[list]:
+    def _corner_to_height_width_format(bbox) -> Optional[list]:
         """Convert an ``[x1,y1,x2,y2]`` box to ``[x,y,w,h]`` floats.
 
         Returns None for a malformed/None box so the caller can skip it (the
@@ -501,11 +501,9 @@ class CnnClientStrategy(BaseMediaStrategy):
     def _run_yolox_coco_eval(self) -> dict:
         """Evaluate the served YOLOX model with COCO mAP over a val2017 subset.
 
-        Streams ``detection-datasets/coco`` (val; ``objects`` is a dict-of-lists
-        with xyxy ``bbox`` and 0..79 ``category``), builds a COCO ground-truth
-        dict from its per-image boxes/categories, runs the served model on each
-        image, and scores predictions with ``pycocotools`` COCOeval. Category
-        ids 0..79 are shared between GT and predictions (canonical COCO order).
+        Orchestrates the two steps: collect GT + server predictions
+        (:meth:`_collect_yolox_coco_predictions`), then score them
+        (:meth:`_score_yolox_coco_predictions`) and derive an accuracy status.
 
         Robust-but-strict: a bad per-sample response is logged and skipped
         rather than crashing the evals workflow, but if nothing could be scored
@@ -515,17 +513,76 @@ class CnnClientStrategy(BaseMediaStrategy):
         Returns ``accuracy_status`` / ``mAP_percent`` / ``num_images`` /
         ``mean_latency``.
         """
-        # Lazy imports: heavy deps only needed for this eval.
-        from datasets import load_dataset
-        from pycocotools.coco import COCO
-        from pycocotools.cocoeval import COCOeval
-
         task = self.all_params.tasks[0]
         published = task.score.published_score
         tolerance = task.score.tolerance
         num_images = int(
             os.environ.get("YOLOX_COCO_NUM_IMAGES", DEFAULT_COCO_NUM_IMAGES)
         )
+
+        images_meta, annotations, predictions, mean_latency = (
+            self._collect_yolox_coco_predictions(num_images)
+        )
+        mAP, scored = self._score_yolox_coco_predictions(
+            images_meta, annotations, predictions
+        )
+
+        mAP_percent = mAP * 100.0
+        if scored and published:
+            accuracy_status = ReportCheckTypes.from_result(
+                mAP_percent >= published * (1.0 - tolerance)
+            )
+        elif scored and not published:
+            # No reference score configured — cannot judge the mAP.
+            accuracy_status = ReportCheckTypes.NA
+        else:
+            # Could not compute a real mAP: the server returned no detection
+            # boxes, ground truth was empty, or COCOeval errored. For a release
+            # gate this is a FAIL, not NA — a serving/plumbing regression must
+            # not pass silently.
+            logger.error(
+                "YOLOX COCO eval: could not score mAP (preds=%d, anns=%d); "
+                "failing accuracy_check (is the server returning boxes?)",
+                len(predictions),
+                len(annotations),
+            )
+            accuracy_status = ReportCheckTypes.FAIL
+
+        logger.info(
+            "YOLOX COCO eval: mAP=%.4f (%.2f%%) images=%d preds=%d anns=%d "
+            "published=%s -> accuracy_status=%s",
+            mAP,
+            mAP_percent,
+            len(images_meta),
+            len(predictions),
+            len(annotations),
+            published,
+            accuracy_status,
+        )
+        return {
+            "accuracy_status": accuracy_status,
+            "mAP_percent": mAP_percent,
+            "num_images": len(images_meta),
+            "mean_latency": mean_latency,
+        }
+
+    def _collect_yolox_coco_predictions(
+        self, num_images: int
+    ) -> tuple[list, list, list, float]:
+        """Stream a COCO val subset, run inference per image, and collect GT +
+        server predictions in COCO format.
+
+        Streams ``detection-datasets/coco`` (val; ``objects`` is a dict-of-lists
+        with xyxy ``bbox`` and 0..79 ``category``). Category ids 0..79 are shared
+        between GT and predictions (canonical COCO order). A bad sample is logged
+        and skipped rather than aborting the run.
+
+        Returns ``(images_meta, annotations, predictions, mean_latency)`` where
+        the first three are COCO-format lists and ``mean_latency`` is the mean
+        per-image request latency in seconds.
+        """
+        # Lazy import: heavy dep only needed for this eval.
+        from datasets import load_dataset
 
         images_meta: list = []
         annotations: list = []
@@ -561,7 +618,7 @@ class CnnClientStrategy(BaseMediaStrategy):
                     categories = objects.get("category") or []
                     bboxes = objects.get("bbox") or []
                     for cat, bbox in zip(categories, bboxes):
-                        xywh = self._bbox_xyxy_to_xywh(bbox)
+                        xywh = self._corner_to_height_width_format(bbox)
                         if xywh is None or cat is None:
                             continue
                         annotations.append(
@@ -587,7 +644,7 @@ class CnnClientStrategy(BaseMediaStrategy):
                         )
                         logged_pred = True
                     for box, score, cls_ind in dets:
-                        xywh = self._bbox_xyxy_to_xywh(box)
+                        xywh = self._corner_to_height_width_format(box)
                         if xywh is None:
                             continue
                         predictions.append(
@@ -606,72 +663,45 @@ class CnnClientStrategy(BaseMediaStrategy):
             logger.exception("YOLOX COCO eval: dataset/inference loop failed")
 
         mean_latency = sum(latencies) / len(latencies) if latencies else 0.0
-        image_ids = [m["id"] for m in images_meta]
+        return images_meta, annotations, predictions, mean_latency
 
-        mAP = 0.0
-        scored = False
-        try:
-            if predictions and annotations:
-                coco_gt = COCO()
-                coco_gt.dataset = {
-                    "images": images_meta,
-                    "annotations": annotations,
-                    "categories": [{"id": c, "name": str(c)} for c in range(80)],
-                }
-                coco_gt.createIndex()
-                coco_dt = coco_gt.loadRes(predictions)
-                coco_eval = COCOeval(coco_gt, coco_dt, "bbox")
-                coco_eval.params.imgIds = image_ids
-                coco_eval.evaluate()
-                coco_eval.accumulate()
-                coco_eval.summarize()
-                mAP = max(float(coco_eval.stats[0]), 0.0)
-                scored = True
-            else:
-                logger.warning(
-                    "YOLOX COCO eval: nothing to score (predictions=%d, "
-                    "annotations=%d) - is the server returning detection boxes?",
-                    len(predictions),
-                    len(annotations),
-                )
-        except Exception:
-            logger.exception("YOLOX COCO eval: COCOeval failed; mAP=0.0")
+    def _score_yolox_coco_predictions(
+        self, images_meta: list, annotations: list, predictions: list
+    ) -> tuple[float, bool]:
+        """Score predictions against ground truth with ``pycocotools`` COCOeval.
 
-        mAP_percent = mAP * 100.0
-        if scored and published:
-            accuracy_status = ReportCheckTypes.from_result(
-                mAP_percent >= published * (1.0 - tolerance)
-            )
-        elif scored and not published:
-            # No reference score configured — cannot judge the mAP.
-            accuracy_status = ReportCheckTypes.NA
-        else:
-            # Could not compute a real mAP: the server returned no detection
-            # boxes, ground truth was empty, or COCOeval errored. For a release
-            # gate this is a FAIL, not NA — a serving/plumbing regression must
-            # not pass silently.
-            logger.error(
-                "YOLOX COCO eval: could not score mAP (preds=%d, anns=%d); "
-                "failing accuracy_check (is the server returning boxes?)",
+        Returns ``(mAP, scored)`` where ``mAP`` is mAP@[.5:.95] (>= 0) and
+        ``scored`` is False when there was nothing to score (no predictions or
+        no GT) or COCOeval errored.
+        """
+        # Lazy imports: heavy deps only needed for this eval.
+        from pycocotools.coco import COCO
+        from pycocotools.cocoeval import COCOeval
+
+        if not (predictions and annotations):
+            logger.warning(
+                "YOLOX COCO eval: nothing to score (predictions=%d, "
+                "annotations=%d) - is the server returning detection boxes?",
                 len(predictions),
                 len(annotations),
             )
-            accuracy_status = ReportCheckTypes.FAIL
+            return 0.0, False
 
-        logger.info(
-            "YOLOX COCO eval: mAP=%.4f (%.2f%%) images=%d preds=%d anns=%d "
-            "published=%s -> accuracy_status=%s",
-            mAP,
-            mAP_percent,
-            len(image_ids),
-            len(predictions),
-            len(annotations),
-            published,
-            accuracy_status,
-        )
-        return {
-            "accuracy_status": accuracy_status,
-            "mAP_percent": mAP_percent,
-            "num_images": len(image_ids),
-            "mean_latency": mean_latency,
-        }
+        try:
+            coco_gt = COCO()
+            coco_gt.dataset = {
+                "images": images_meta,
+                "annotations": annotations,
+                "categories": [{"id": c, "name": str(c)} for c in range(80)],
+            }
+            coco_gt.createIndex()
+            coco_dt = coco_gt.loadRes(predictions)
+            coco_eval = COCOeval(coco_gt, coco_dt, "bbox")
+            coco_eval.params.imgIds = [m["id"] for m in images_meta]
+            coco_eval.evaluate()
+            coco_eval.accumulate()
+            coco_eval.summarize()
+            return max(float(coco_eval.stats[0]), 0.0), True
+        except Exception:
+            logger.exception("YOLOX COCO eval: COCOeval failed; mAP=0.0")
+            return 0.0, False
