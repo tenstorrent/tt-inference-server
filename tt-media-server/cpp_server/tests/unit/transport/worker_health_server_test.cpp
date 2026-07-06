@@ -46,12 +46,12 @@ std::string httpGet(uint16_t port, const std::string& path) {
 
 class WorkerHealthServerTest : public ::testing::Test {
  protected:
-  WorkerHealth health_{"prefill-0"};
+  WorkerHealth health{"prefill-0"};
   // Port 0 => ephemeral; the server resolves the real port after start().
-  WorkerHealthServer server_{health_, "127.0.0.1", 0};
+  WorkerHealthServer server{health, "127.0.0.1", 0};
 
-  void SetUp() override { ASSERT_TRUE(server_.start()); }
-  uint16_t port() const { return server_.port(); }
+  void SetUp() override { ASSERT_TRUE(server.start()); }
+  uint16_t port() const { return server.port(); }
 };
 
 TEST_F(WorkerHealthServerTest, LivenessIsUpBeforeReady) {
@@ -65,7 +65,7 @@ TEST_F(WorkerHealthServerTest, ReadinessIs503UntilBringupCompletes) {
   EXPECT_NE(resp.find("503 Service Unavailable"), std::string::npos);
   EXPECT_NE(resp.find("\"ready\":false"), std::string::npos);
 
-  health_.setLifecycle(WorkerLifecycle::Ready);
+  health.setLifecycle(WorkerLifecycle::Ready);
 
   resp = httpGet(port(), "/readyz");
   EXPECT_NE(resp.find("200 OK"), std::string::npos);
@@ -73,7 +73,7 @@ TEST_F(WorkerHealthServerTest, ReadinessIs503UntilBringupCompletes) {
 }
 
 TEST_F(WorkerHealthServerTest, LivenessDropsTo503OnShutdown) {
-  health_.setLifecycle(WorkerLifecycle::ShuttingDown);
+  health.setLifecycle(WorkerLifecycle::ShuttingDown);
   const std::string resp = httpGet(port(), "/healthz");
   EXPECT_NE(resp.find("503 Service Unavailable"), std::string::npos);
   EXPECT_NE(resp.find("\"status\":\"fail\""), std::string::npos);
