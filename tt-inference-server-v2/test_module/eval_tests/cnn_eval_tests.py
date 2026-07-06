@@ -28,6 +28,12 @@ logger = logging.getLogger(__name__)
 
 
 CNN_MOBILENETV2_RUNNER = "tt-xla-mobilenetv2"
+
+_VISION_STATUS_TO_CHECK: dict[int, ReportCheckTypes] = {
+    0: ReportCheckTypes.NA,
+    2: ReportCheckTypes.PASS,
+    3: ReportCheckTypes.FAIL,
+}
 # Reuse the ImageNet subset prepared by VisionEvalsTest so benchmarks and
 # accuracy evals exercise the model with the exact same inputs.
 IMAGENET_DATASET_DIR = "server_tests/datasets/imagenet_subset"
@@ -174,8 +180,9 @@ def _run_mobilenetv2_eval(ctx: MediaContext) -> dict:
     logger.info(f"VisionEvalsTest model results: {model_results}")
 
     device_result = model_results.get("device", {})
-    device_result["accuracy_status"] = model_results.get(
-        "accuracy_status", ReportCheckTypes.NA
+    raw_status = model_results.get("accuracy_status")
+    device_result["accuracy_status"] = _VISION_STATUS_TO_CHECK.get(
+        raw_status, ReportCheckTypes.NA
     )
     logger.info(f"VisionEvalsTest device eval_results: {device_result}")
     return device_result
@@ -220,6 +227,9 @@ def run_cnn_eval(ctx: MediaContext) -> Block:
         data["published_score"] = task.score.published_score
         data["score"] = ttft_value
         data["published_score_ref"] = task.score.published_score_ref
+        # Non-MobileNet CNNs only get a timing benchmark here, no accuracy grade,
+        # so accuracy is Not Applicable (non-blocking).
+        data["accuracy_check"] = ReportCheckTypes.NA
 
     return Block(
         kind="evals",

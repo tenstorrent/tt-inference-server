@@ -477,8 +477,9 @@ def run_audio_eval(ctx: MediaContext) -> Block:
             "published_score": task.score.published_score,
             "score": ttft_value,
             "published_score_ref": task.score.published_score_ref,
-            # TODO: replace hardcoded PASS with a real accuracy evaluation.
-            "accuracy_check": ReportCheckTypes.PASS,
+            # Non-whisper audio models have no accuracy evaluation implemented,
+            # so accuracy is Not Applicable (non-blocking)
+            "accuracy_check": ReportCheckTypes.NA,
             "t/s/u": tsu_value,
             "rtr": rtr_value,
         },

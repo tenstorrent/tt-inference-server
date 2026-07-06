@@ -211,7 +211,7 @@ def run_cnn_benchmark(ctx: MediaContext) -> Block:
         else 0
     )
     # Sequential single-user benchmark, so tput_user = total throughput.
-    target_checks, accuracy_check = _cnn_target_checks(
+    target_checks, target_check = _cnn_target_checks(
         ctx, ttft_value, inference_steps_per_second
     )
     return Block(
@@ -234,7 +234,7 @@ def run_cnn_benchmark(ctx: MediaContext) -> Block:
                 "ttft": ttft_value,
                 "inference_steps_per_second": inference_steps_per_second,
                 "tput_user": inference_steps_per_second,
-                "accuracy_check": accuracy_check,
+                "target_check": target_check,
                 "target_checks": target_checks,
             },
         },
