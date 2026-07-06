@@ -129,6 +129,9 @@ class Session {
    * @param deltaTokens Delta prompt tokens (after matched prefix trimmed)
    * @param initialBlocks Block info computed from the prompt (for prepending)
    * @param onComplete Callback invoked at stream end with final block info
+   * @param onNoHashes Callback invoked at stream end when no new blocks were
+   *        formed (e.g. empty generation). Allows the caller to close/evict
+   *        the session whose KV slot now holds stale data.
    * @param parentThinkCount Cumulative think tokens already present in the
    *        matched KV prefix. Seeded from the matched session's accumulated
    *        count on a prefix-cache HIT so think tokens accumulate across turns;
@@ -140,6 +143,7 @@ class Session {
       std::function<void(const std::string&,
                          const std::vector<utils::BlockHashInfo>&)>
           onComplete,
+      std::function<void(const std::string&)> onNoHashes = nullptr,
       uint32_t parentThinkCount = 0);
 
   /**
@@ -196,6 +200,7 @@ class Session {
   std::function<void(const std::string&,
                      const std::vector<utils::BlockHashInfo>&)>
       onComplete_;
+  std::function<void(const std::string&)> onNoHashes_;
 
   // Thinking token tracking
   bool inThinkingBlock_ = false;
