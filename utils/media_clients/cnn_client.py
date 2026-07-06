@@ -42,6 +42,10 @@ DEFAULT_COCO_NUM_IMAGES = 100
 # (standard COCO eval uses ~0.01).
 COCO_EVAL_MIN_CONFIDENCE = 1.0  # percent -> server score_thr ~0.01
 COCO_EVAL_TOP_K = 300
+# Benchmark (latency/throughput timing only) reuses COCO images for YOLOX so it
+# doesn't also pull the ImageNet subset. Materialized once from the same HF
+# dataset the eval streams (parquet already cached).
+COCO_BENCHMARK_DATASET_DIR = "server_tests/datasets/coco_bench"
 
 
 class CnnClientStrategy(BaseMediaStrategy):
@@ -162,8 +166,59 @@ class CnnClientStrategy(BaseMediaStrategy):
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
 
+    def _is_yolox(self) -> bool:
+        """True for YOLOX detection models (they eval/benchmark on COCO)."""
+        return "yolox" in (self.model_spec.hf_model_repo or "").lower()
+
+    def _ensure_coco_benchmark_images(
+        self, count: int = DEFAULT_DATASET_DOWNLOAD_COUNT
+    ) -> tuple[Path, list[dict]]:
+        """Materialize a small COCO image set for benchmark timing.
+
+        The benchmark only needs images to POST for latency/throughput timing
+        (it ignores labels), so YOLOX reuses COCO here instead of pulling the
+        ImageNet subset. Streamed from the same HF dataset the eval uses (so the
+        parquet is already cached); images are saved once and reused. Returns
+        ``(dataset_path, metadata)`` matching ``_ensure_imagenet_dataset``.
+        """
+        dataset_path = Path(COCO_BENCHMARK_DATASET_DIR)
+        metadata_path = dataset_path / IMAGENET_METADATA_FILE
+        if metadata_path.exists():
+            try:
+                with metadata_path.open("r", encoding="utf-8") as f:
+                    metadata = json.load(f)
+                if metadata:
+                    return dataset_path, metadata
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        logger.info(
+            "COCO benchmark images missing at %s; materializing %d images.",
+            dataset_path,
+            count,
+        )
+        # Lazy import to avoid loading 'datasets' at module import time.
+        from datasets import load_dataset
+
+        ds = load_dataset(COCO_HF_DATASET, split=COCO_HF_SPLIT, streaming=True)
+        dataset_path.mkdir(parents=True, exist_ok=True)
+        metadata: list[dict] = []
+        for i, sample in enumerate(itertools.islice(ds, count)):
+            image = sample["image"]
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            filename = f"coco_{i:03d}.jpg"
+            image.save(dataset_path / filename)
+            metadata.append({"filename": filename})
+
+        if not metadata:
+            raise RuntimeError("No COCO benchmark images could be materialized.")
+        with metadata_path.open("w", encoding="utf-8") as f:
+            json.dump(metadata, f)
+        return dataset_path, metadata
+
     def _run_image_analysis_benchmark(self) -> list[CnnGenerationTestStatus]:
-        """Run image analysis benchmark using the ImageNet subset dataset.
+        """Run image analysis benchmark using an image subset dataset.
 
         Sends one request per image present in the dataset (so the number of
         requests is determined by the dataset itself, not by a benchmark
@@ -172,11 +227,16 @@ class CnnClientStrategy(BaseMediaStrategy):
         request - no accuracy comparison. Aggregate metrics such as TTFT are
         computed downstream from `len(status_list)`.
         """
-        dataset_path, metadata = self._ensure_imagenet_dataset()
+        # The benchmark only needs images to time inference (accuracy-agnostic).
+        # YOLOX reuses COCO so it doesn't also download the ImageNet subset;
+        # other CNNs keep using the shared ImageNet subset.
+        if self._is_yolox():
+            dataset_path, metadata = self._ensure_coco_benchmark_images()
+        else:
+            dataset_path, metadata = self._ensure_imagenet_dataset()
         total_requests = len(metadata)
         logger.info(
-            "Running image analysis benchmark over ImageNet subset at %s "
-            "(%d images -> %d requests).",
+            "Running image analysis benchmark over %s (%d images -> %d requests).",
             dataset_path,
             total_requests,
             total_requests,
