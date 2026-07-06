@@ -27,13 +27,11 @@ def _rc(workflow="benchmarks", **kw):
         prefix_cache_request_rate=None,
         prefix_cache_scenarios_json=None,
         prefix_cache_trace=None,
-        prefix_cache_goodput=None,
         prefix_cache_metrics_url=None,
         spec_decode=False,
         spec_decode_preset="full",
         spec_decode_warmup_requests=None,
         tools="aiperf",
-        goodput=None,
         jwt_secret=None,
         device="t3k",
         service_port="8000",
@@ -190,28 +188,6 @@ def test_build_llm_bench_cmd_forwards_tools_and_jwt():
         Path("/tmp/out"),
     )
     assert cmd_jwt[cmd_jwt.index("--jwt-secret") + 1] == "sek"
-
-
-def test_build_llm_bench_cmd_forwards_goodput():
-    v2_dir = Path(__file__).resolve().parents[2] / "tt-inference-server-v2"
-    slo = "time_to_first_token:4000 output_token_throughput_per_user:45"
-    cmd = v2_bridge._build_llm_bench_cmd(
-        v2_dir,
-        _spec(ModelType.LLM),
-        _rc(tools="aiperf", goodput=slo),
-        "/tmp/spec.json",
-        Path("/tmp/out"),
-    )
-    assert cmd[cmd.index("--goodput") + 1] == slo
-
-    cmd_none = v2_bridge._build_llm_bench_cmd(
-        v2_dir,
-        _spec(ModelType.LLM),
-        _rc(tools="aiperf"),
-        "/tmp/spec.json",
-        Path("/tmp/out"),
-    )
-    assert "--goodput" not in cmd_none
 
 
 def test_run_v2_llm_benchmark_workflow_invokes_launcher(monkeypatch, tmp_path):
