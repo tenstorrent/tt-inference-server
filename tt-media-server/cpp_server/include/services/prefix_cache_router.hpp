@@ -74,11 +74,10 @@ struct PrefixCacheRouterCallbacks {
   std::function<void()> onSessionInFlight;
 
   // Callbacks for getSlot() - session creation and slot management
-  std::function<void(
-      std::function<void(const domain::Session&)> onCompletion,
-      std::function<void(std::string_view)> onError,
-      std::vector<utils::BlockHashInfo> initialBlockInfos,
-      std::optional<uint32_t> slotIdToCopyFrom)>
+  std::function<void(std::function<void(const domain::Session&)> onCompletion,
+                     std::function<void(std::string_view)> onError,
+                     std::vector<utils::BlockHashInfo> initialBlockInfos,
+                     std::optional<uint32_t> slotIdToCopyFrom)>
       createSession;
 
   std::function<uint32_t(const std::string& sessionId,
@@ -144,7 +143,8 @@ class PrefixCacheRouter {
    *   4. New session allocation (if no cache hit)
    *
    * @param promptTokenIds  Token IDs from the request prompt.
-   * @param opts            Routing options (previousResponseId, responseId, cancelFn).
+   * @param opts            Routing options (previousResponseId, responseId,
+   * cancelFn).
    * @param onResolved      Callback with the result (session found or created).
    * @param onError         Callback for errors (e.g., rate limit).
    */

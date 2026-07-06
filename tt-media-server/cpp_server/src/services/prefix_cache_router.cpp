@@ -363,7 +363,8 @@ void PrefixCacheRouter::getSlot(
 
     if (acquired.has_value() && acquired->sessionFound) {
       TT_LOG_INFO(
-          "[PrefixCacheRouter::getSlot] Prefix-cache HIT sessionId={} slotId={} "
+          "[PrefixCacheRouter::getSlot] Prefix-cache HIT sessionId={} "
+          "slotId={} "
           "matchedTokens={} thinkTokens={}",
           acquired->sessionId, acquired->slotId,
           acquired->numberOfMatchedTokens, acquired->accumulatedThinkTokens);

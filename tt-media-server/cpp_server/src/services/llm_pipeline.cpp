@@ -119,7 +119,8 @@ void LLMPipeline::resolveSession(
         req->slotId = result.slotId;
         req->session = mgr->getSession(result.sessionId);
         req->continuation = !result.isNewSession;
-        req->kv_position_id = result.matchedTokens + result.accumulatedThinkTokens;
+        req->kv_position_id =
+            result.matchedTokens + result.accumulatedThinkTokens;
         req->accumulated_think_tokens =
             static_cast<int>(result.accumulatedThinkTokens);
 
@@ -152,9 +153,8 @@ void LLMPipeline::resolveSession(
       },
       // onError callback
       [onError, loop](const std::string& msg) {
-        loop->runInLoop([onError, msg]() {
-          onError({SessionErrorType::RATE_LIMIT, msg});
-        });
+        loop->runInLoop(
+            [onError, msg]() { onError({SessionErrorType::RATE_LIMIT, msg}); });
       });
 }
 

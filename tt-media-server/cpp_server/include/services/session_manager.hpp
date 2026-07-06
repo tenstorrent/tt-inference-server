@@ -141,7 +141,8 @@ class SessionManager {
    * All hashing, block splitting, and session creation happens inside.
    *
    * @param promptTokenIds  Token IDs from the request prompt.
-   * @param opts            Routing options (previousResponseId, responseId, cancelFn).
+   * @param opts            Routing options (previousResponseId, responseId,
+   * cancelFn).
    * @param loop            Event loop for async session creation callback.
    * @param onResolved      Callback with the result (session found or created).
    * @param onError         Callback for errors (e.g., rate limit).
