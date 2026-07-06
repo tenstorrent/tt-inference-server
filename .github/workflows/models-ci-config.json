@@ -17,6 +17,11 @@
           "devices": [
             "P150"
           ]
+        },
+        "release": {
+          "devices": [
+            "P150"
+          ]
         }
       }
     },
