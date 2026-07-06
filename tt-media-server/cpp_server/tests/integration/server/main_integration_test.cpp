@@ -9,12 +9,13 @@
 // and the worker). The fixture also mocks the worker by pushing tokens to
 // the result queue, so responses complete and can be asserted on.
 //
-// IMPORTANT: This test requires external Dynamo infrastructure (etcd + frontend).
-// The test registers its own mock DynamoEndpoint in-process — do not start a
-// deploy.sh worker alongside it.
+// IMPORTANT: This test requires external Dynamo infrastructure (etcd +
+// frontend). The test registers its own mock DynamoEndpoint in-process — do not
+// start a deploy.sh worker alongside it.
 //
 //   Terminal 1:  cd dynamo_frontend && ./deploy.sh --no-monitoring --no-worker
-//   Terminal 2:  cd cpp_server/build && ctest -R MainIntegrationTest --output-on-failure
+//   Terminal 2:  cd cpp_server/build && ctest -R MainIntegrationTest
+//   --output-on-failure
 //
 // Do not set DYNAMO_HOST=127.0.0.1 when Docker publishes ports on the host
 // (remote dev containers): leave DYNAMO_HOST unset so the fixture auto-detects
@@ -647,9 +648,9 @@ TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
   EXPECT_EQ(body["choices"][0]["message"]["role"].asString(), "assistant");
 
   const auto& msg = body["choices"][0]["message"];
-  const std::string text =
-      msg["content"].isString() ? msg["content"].asString()
-                                : msg.get("reasoning_content", "").asString();
+  const std::string text = msg["content"].isString()
+                               ? msg["content"].asString()
+                               : msg.get("reasoning_content", "").asString();
   EXPECT_FALSE(text.empty());
 }
 
