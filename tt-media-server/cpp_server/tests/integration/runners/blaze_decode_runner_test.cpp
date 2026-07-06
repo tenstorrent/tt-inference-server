@@ -43,7 +43,7 @@ class EnvSetter {
 };
 
 constexpr uint64_t MOCK_PIPELINE_TOKEN_ID = 12345u;
-const std::vector<int64_t> DEFAULT_STOP_TOKEN_IDS = {987654321};
+const std::vector<uint32_t> DEFAULT_STOP_TOKEN_IDS = {987654321};
 
 // Length of the mock pipeline's reasoning preamble: think-open, three decode
 // tokens, think-close. Mirrors PipelineSimulator::kThinkPreambleLen.
@@ -84,7 +84,7 @@ class BlazeDecodeRunnerHarness
     : public test::RunnerTestHarness<BlazeDecodeRunner> {
  public:
   explicit BlazeDecodeRunnerHarness(
-      std::vector<int64_t> stopTokenIds = DEFAULT_STOP_TOKEN_IDS)
+      std::vector<uint32_t> stopTokenIds = DEFAULT_STOP_TOKEN_IDS)
       : test::RunnerTestHarness<BlazeDecodeRunner>(
             test::makeLLMConfig(128, 8, 0, std::move(stopTokenIds))) {}
 };

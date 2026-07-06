@@ -1005,6 +1005,14 @@ if(ENABLE_BLAZE)
     target_include_directories(mock_schedulers_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
+
+    add_executable(blaze_slot_manager_test
+        tests/unit/runners/blaze_slot_manager_test.cpp
+    )
+    target_link_libraries(blaze_slot_manager_test PRIVATE llm_runner_lib GTest::gtest_main)
+    target_include_directories(blaze_slot_manager_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
 endif()
 
 add_executable(sequence_test tests/unit/model/sequence_test.cpp)
@@ -1353,6 +1361,7 @@ if(ENABLE_BLAZE)
     gtest_discover_tests(blaze_decode_runner_test)
     gtest_discover_tests(blaze_prefill_runner_test)
     gtest_discover_tests(mock_schedulers_test)
+    gtest_discover_tests(blaze_slot_manager_test)
 endif()
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
