@@ -121,16 +121,6 @@ Json::Value needsForWorkerRole(DiscoveryWorkerRole role) {
   return needs;
 }
 
-DiscoveryWorkerRole advertisedWorkerRole(DiscoveryWorkerRole role) {
-  if (const char* env = std::getenv("DYNAMO_DISCOVERY_WORKER_ROLE");
-      env && *env) {
-    const std::string value(env);
-    if (value == "decode") return DiscoveryWorkerRole::DECODE;
-    if (value == "prefill") return DiscoveryWorkerRole::PREFILL;
-  }
-  return role;
-}
-
 /// Build the instance JSON document the frontend dials over (transport.tcp).
 Json::Value buildInstanceJson(const DiscoveryConfig& c) {
   Json::Value instance(Json::objectValue);
@@ -211,7 +201,6 @@ void setRuntimeParserField(Json::Value& runtime, const char* field,
 /// list the model. Paths point at the same files cpp_server itself loads so
 /// the frontend tokenization matches exactly.
 Json::Value buildMdcJson(const DiscoveryConfig& c) {
-  const DiscoveryWorkerRole advertisedRole = advertisedWorkerRole(c.worker_role);
   Json::Value mdc(Json::objectValue);
   mdc["type"] = "Model";
   mdc["namespace"] = c.namespace_name;
@@ -290,19 +279,19 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   card["kv_cache_block_size"] =
       static_cast<int>(tt::config::kvCacheBlockSize());
   card["migration_limit"] =
-      advertisedRole == DiscoveryWorkerRole::PREFILL &&
+      c.worker_role == DiscoveryWorkerRole::PREFILL &&
               tt::config::dynamoNativePrefillHandoffEnabled()
           ? 1
           : 0;
   card["model_type"] =
-      advertisedRole == DiscoveryWorkerRole::PREFILL ? "Prefill" : "Chat";
+      c.worker_role == DiscoveryWorkerRole::PREFILL ? "Prefill" : "Chat";
   card["model_input"] = "Tokens";
-  card["worker_type"] = workerRoleName(advertisedRole);
-  card["needs"] = needsForWorkerRole(advertisedRole);
+  card["worker_type"] = workerRoleName(c.worker_role);
+  card["needs"] = needsForWorkerRole(c.worker_role);
 
   Json::Value runtime(Json::objectValue);
   runtime["total_kv_blocks"] = Json::Value::null;
-  if (advertisedRole == DiscoveryWorkerRole::PREFILL &&
+  if (c.worker_role == DiscoveryWorkerRole::PREFILL &&
       tt::config::prefillMaxInFlight() > 0) {
     runtime["max_num_seqs"] =
         static_cast<Json::UInt64>(tt::config::prefillMaxInFlight());
@@ -411,10 +400,7 @@ class EtcdDiscoveryRegistration : public DiscoveryRegistration {
     const std::string key = instanceKey(cfg);
     client->put("v1/instances/" + key, serializeJson(buildInstanceJson(cfg)),
                 leaseId);
-    const char* suppressMdc = std::getenv("DYNAMO_SUPPRESS_MDC");
-    if (!(suppressMdc && std::string(suppressMdc) == "1")) {
-      client->put("v1/mdc/" + key, serializeJson(buildMdcJson(cfg)), leaseId);
-    }
+    client->put("v1/mdc/" + key, serializeJson(buildMdcJson(cfg)), leaseId);
   }
 
   DiscoveryConfig cfg;

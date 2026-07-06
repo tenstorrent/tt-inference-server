@@ -375,9 +375,8 @@ Json::Value buildGenerateBody(const tt::sockets::PrefillRequestMessage& request,
   return body;
 }
 
-std::vector<uint8_t> buildRequestFrame(
-    const std::string& endpointPath,
-    const tt::sockets::PrefillRequestMessage& request,
+std::vector<uint8_t> buildDynamoRequestFrame(
+    const std::string& endpointPath, const Json::Value& bodyJson,
     const std::string& requestId, const std::string& responseAddress) {
   Json::Value info(Json::objectValue);
   info["address"] = responseAddress;
@@ -396,7 +395,7 @@ std::vector<uint8_t> buildRequestFrame(
   control["connection_info"] = std::move(connectionInfo);
 
   const std::string header = compactJson(control);
-  const std::string body = compactJson(buildGenerateBody(request, requestId));
+  const std::string body = compactJson(bodyJson);
   TwoPartMessage twoPart;
   twoPart.header.assign(header.begin(), header.end());
   twoPart.body.assign(body.begin(), body.end());
@@ -413,6 +412,15 @@ std::vector<uint8_t> buildRequestFrame(
   put_u32_be(frame, static_cast<uint32_t>(payload.size()));
   frame.insert(frame.end(), payload.begin(), payload.end());
   return frame;
+}
+
+std::vector<uint8_t> buildRequestFrame(
+    const std::string& endpointPath,
+    const tt::sockets::PrefillRequestMessage& request,
+    const std::string& requestId, const std::string& responseAddress) {
+  return buildDynamoRequestFrame(endpointPath,
+                                 buildGenerateBody(request, requestId),
+                                 requestId, responseAddress);
 }
 
 Json::Value tokenIdsToJson(const std::vector<int64_t>& tokenIds) {
@@ -427,40 +435,8 @@ std::vector<uint8_t> buildRouterBestWorkerFrame(
     const std::string& endpointPath,
     const tt::sockets::PrefillRequestMessage& request,
     const std::string& requestId, const std::string& responseAddress) {
-  Json::Value info(Json::objectValue);
-  info["address"] = responseAddress;
-  info["subject"] = requestId;
-  info["context"] = requestId;
-  info["stream_type"] = "response";
-
-  Json::Value connectionInfo(Json::objectValue);
-  connectionInfo["transport"] = "tcp_server";
-  connectionInfo["info"] = compactJson(info);
-
-  Json::Value control(Json::objectValue);
-  control["id"] = requestId;
-  control["request_type"] = "single_in";
-  control["response_type"] = "many_out";
-  control["connection_info"] = std::move(connectionInfo);
-
-  const std::string header = compactJson(control);
-  const std::string body = compactJson(tokenIdsToJson(request.tokenIds));
-  TwoPartMessage twoPart;
-  twoPart.header.assign(header.begin(), header.end());
-  twoPart.body.assign(body.begin(), body.end());
-  const auto payload = encode_two_part(twoPart);
-
-  Json::Value headers(Json::objectValue);
-  const std::string headersJson = compactJson(headers);
-
-  std::vector<uint8_t> frame;
-  put_u16_be(frame, static_cast<uint16_t>(endpointPath.size()));
-  frame.insert(frame.end(), endpointPath.begin(), endpointPath.end());
-  put_u16_be(frame, static_cast<uint16_t>(headersJson.size()));
-  frame.insert(frame.end(), headersJson.begin(), headersJson.end());
-  put_u32_be(frame, static_cast<uint32_t>(payload.size()));
-  frame.insert(frame.end(), payload.begin(), payload.end());
-  return frame;
+  return buildDynamoRequestFrame(endpointPath, tokenIdsToJson(request.tokenIds),
+                                 requestId, responseAddress);
 }
 
 }  // namespace

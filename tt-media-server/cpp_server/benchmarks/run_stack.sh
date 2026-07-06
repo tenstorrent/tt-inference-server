@@ -10,10 +10,11 @@
 #   ./run_stack.sh up                      # disaggregated: decode + prefill split
 #   ./run_stack.sh down                    # tear everything down
 #
-# Optional decode-orchestrated Dynamo prefill:
+# Optional decode-orchestrated Dynamo prefill with router-sidecar selection:
 #   DYNAMO_DECODE_ORCHESTRATES_PREFILL=1 DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=1 ./run_stack.sh up
 #
-# Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; frontend -> /tmp/tt_frontend.log.
+# Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; router -> /tmp/tt_router.log ;
+# frontend -> /tmp/tt_frontend.log.
 
 set -euo pipefail
 
@@ -211,10 +212,9 @@ up() {
         SOCKET_TRANSPORT=tcp SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
         MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE}"
     sleep 3
-    # Distinct memory-queue + metrics shm names: decode and prefill are
-    # co-located on one host, and these default to fixed names
-    # (tt_mem_requests/_results, /tt_worker_metrics) — sharing them makes the
-    # prefill worker's KV allocation requests race the decode worker's and hang.
+    # Co-located prefill replicas need separate worker IPC queues and metrics
+    # shm. The defaults are fixed names, so sharing them lets one replica
+    # consume another replica's work.
     for replica in $(seq 0 $((PREFILL_REPLICAS - 1))); do
         replica_port=$((PREFILL_PORT + replica))
         replica_log="${PREFILL_LOG}"

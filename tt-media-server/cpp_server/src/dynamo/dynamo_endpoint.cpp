@@ -324,7 +324,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       TokenChunk err;
       err.error =
           "cpp_server Dynamo prefill endpoint is registered for discovery "
-          "only; native prefill execution is not implemented in this spike";
+          "only; enable DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED to execute "
+          "prefill over Dynamo";
       err.error_code = 501;
       writer->sendChunk(err);
       writer->finalize();
