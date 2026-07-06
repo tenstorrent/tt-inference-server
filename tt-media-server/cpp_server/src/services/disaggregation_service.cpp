@@ -649,7 +649,12 @@ void DisaggregationService::handleDynamoStreamingRequest(
 
   tt::dynamo::DynamoPrefillClient::Options options;
   options.etcd_endpoints = tt::config::dynamoEtcdEndpoints();
-  options.namespace_name = tt::config::dynamoNamespace();
+  if (const char* ns = std::getenv("DYNAMO_PREFILL_CLIENT_NAMESPACE");
+      ns && *ns) {
+    options.namespace_name = ns;
+  } else {
+    options.namespace_name = tt::config::dynamoNamespace();
+  }
   if (const char* component = std::getenv("DYNAMO_PREFILL_CLIENT_COMPONENT");
       component && *component) {
     options.component = component;
@@ -666,6 +671,17 @@ void DisaggregationService::handleDynamoStreamingRequest(
     options.response_host = host;
   } else if (const char* host = std::getenv("DYN_TCP_RPC_HOST"); host && *host) {
     options.response_host = host;
+  }
+  if (const char* timeout = std::getenv("DYNAMO_PREFILL_CLIENT_TIMEOUT_MS");
+      timeout && *timeout) {
+    try {
+      options.timeout_ms = std::stoi(timeout);
+    } catch (const std::exception& e) {
+      TT_LOG_WARN(
+          "[DisaggregationService] Ignoring invalid "
+          "DYNAMO_PREFILL_CLIENT_TIMEOUT_MS={}: {}",
+          timeout, e.what());
+    }
   }
 
   std::thread([this, message = std::move(message), options = std::move(options)]() {
