@@ -15,17 +15,22 @@ templates:
   uses_tensor_model_cache: false
   device_model_specs:
     - device: P150
-      max_concurrency: 4
-      max_context: 16384
+      max_concurrency: 32
+      max_context: 40960  # Qwen3 native max_position_embeddings
       default_impl: true
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "16384"
-        MAX_NUM_SEQS: "4"
-        GPU_MEMORY_UTILIZATION: "0.35"
+        MAX_MODEL_LENGTH: "40960"
+        MAX_NUM_SEQS: "32"
+        GPU_MEMORY_UTILIZATION: "0.5"
         TT_KV_POOL_GB: "32"
         OPTIMIZATION_LEVEL: "1"
+        CPU_SAMPLING: "false"
         ENABLE_TRACE: "true"
+        KV_CACHE_DTYPE: "bfp_bf8"
+        PREFILL_CHUNK_SIZE: "1024"
+        MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
+        PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
 
 - weights:
     - meta-llama/Llama-3.2-3B
@@ -38,17 +43,22 @@ templates:
   uses_tensor_model_cache: false
   device_model_specs:
     - device: P150
-      max_concurrency: 4
-      max_context: 16384
-      default_impl: false
+      max_concurrency: 32
+      max_context: 65536  # 64 * 1024
+      default_impl: true
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "16384"
-        MAX_NUM_SEQS: "4"
-        GPU_MEMORY_UTILIZATION: "0.35"
+        MAX_MODEL_LENGTH: "65536"
+        MAX_NUM_SEQS: "32"
+        GPU_MEMORY_UTILIZATION: "0.5"
         TT_KV_POOL_GB: "32"
         OPTIMIZATION_LEVEL: "1"
+        CPU_SAMPLING: "false"
         ENABLE_TRACE: "true"
+        KV_CACHE_DTYPE: "bfp_bf8"
+        PREFILL_CHUNK_SIZE: "1024"
+        MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
+        PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
 
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
@@ -60,17 +70,22 @@ templates:
   uses_tensor_model_cache: false
   device_model_specs:
     - device: P150
-      max_concurrency: 4
-      max_context: 16384
-      default_impl: false
+      max_concurrency: 32
+      max_context: 65536  # 64 * 1024
+      default_impl: true
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "16384"
-        MAX_NUM_SEQS: "4"
-        GPU_MEMORY_UTILIZATION: "0.30"
+        MAX_MODEL_LENGTH: "65536"
+        MAX_NUM_SEQS: "32"
+        GPU_MEMORY_UTILIZATION: "0.35"
         TT_KV_POOL_GB: "32"
         OPTIMIZATION_LEVEL: "1"
+        CPU_SAMPLING: "false"
         ENABLE_TRACE: "true"
+        KV_CACHE_DTYPE: "bfp_bf8"
+        PREFILL_CHUNK_SIZE: "1024"
+        MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
+        PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
 
 - weights:
     - Qwen/Qwen3-8B
@@ -82,17 +97,22 @@ templates:
   uses_tensor_model_cache: false
   device_model_specs:
     - device: P150
-      max_concurrency: 4
-      max_context: 16384
-      default_impl: false
+      max_concurrency: 32
+      max_context: 40960  # Qwen3 native max_position_embeddings
+      default_impl: true
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "16384"
-        MAX_NUM_SEQS: "4"
-        GPU_MEMORY_UTILIZATION: "0.30"
+        MAX_MODEL_LENGTH: "40960"
+        MAX_NUM_SEQS: "32"
+        GPU_MEMORY_UTILIZATION: "0.35"
         TT_KV_POOL_GB: "32"
         OPTIMIZATION_LEVEL: "1"
+        CPU_SAMPLING: "false"
         ENABLE_TRACE: "true"
+        KV_CACHE_DTYPE: "bfp_bf8"
+        PREFILL_CHUNK_SIZE: "1024"
+        MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
+        PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
 
 - weights:
     - tiiuae/Falcon3-7B-Instruct
@@ -104,17 +124,24 @@ templates:
   uses_tensor_model_cache: false
   device_model_specs:
     - device: P150
-      max_concurrency: 4
-      max_context: 16384
+      max_concurrency: 32
+      max_context: 32768  # Falcon3 native max_position_embeddings
       default_impl: true
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "16384"
-        MAX_NUM_SEQS: "4"
-        GPU_MEMORY_UTILIZATION: "0.225"
+        MAX_MODEL_LENGTH: "32768"
+        MAX_NUM_SEQS: "32"
+        GPU_MEMORY_UTILIZATION: "0.35"
         TT_KV_POOL_GB: "32"
         OPTIMIZATION_LEVEL: "1"
+        CPU_SAMPLING: "false"
         ENABLE_TRACE: "true"
+        KV_CACHE_DTYPE: "bfp_bf8"
+        # 1024 (not 2048): Falcon3 head_dim=256 makes the b32 prefill SDPA buffer
+        # DRAM-OOM at chunk 2048 during trace-capture.
+        PREFILL_CHUNK_SIZE: "1024"
+        MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
+        PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
 
 - weights:
     # gemma-4-31b-it Forge LLM (tensor-parallel) on p300x2/QB2. Lowercase
