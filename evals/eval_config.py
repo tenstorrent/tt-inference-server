@@ -2050,54 +2050,6 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="terminal_bench_2",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                score=EvalTaskScore(
-                    published_score=66.7,
-                    published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
-                    gpu_reference_score=61.9,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3752#issuecomment-4586446467",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["accuracy"],
-                        "unit": "percent",
-                    },
-                ),
-                agentic_eval_config=TerminalBenchEvalConfig(
-                    dataset="terminal-bench/terminal-bench-2",
-                    agent="terminus-2",
-                    n_concurrent_trials=8,
-                    n_attempts=1,
-                    n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
-                    agent_timeout_sec=2 * 60 * 60,
-                    agent_kwargs={
-                        "parser_name": "json",
-                        "temperature": 1.0,
-                        "model_info": {
-                            "max_input_tokens": 64 * 1024,
-                            "max_output_tokens": 32 * 1024,
-                        },
-                        "llm_kwargs": {
-                            "top_p": 1.0,
-                            "max_tokens": 32 * 1024,
-                            "timeout": 60 * 60,
-                        },
-                    },
-                    task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/break-filter-js-from-html",
-                            # "terminal-bench/financial-document-processor",
-
-                        ],
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
-                },
-            ),
         ],
     ),
     EvalConfig(
