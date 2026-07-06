@@ -903,6 +903,11 @@ class TTModelRunner:
 
             prefill_output = self.model.prefill_forward(**prefill_kwargs)
 
+            # prefill_output may be a tuple of (logits, logprobs); v1 currently
+            # doesn't handle logprobs from TT models, so keep only the logits.
+            if isinstance(prefill_output, tuple):
+                prefill_output = prefill_output[0]
+
             # Process decode requests
             num_decode = len(decode_indices)
             # For decode, we only need the single token at position 0 (decode tokens are placed there in mixed batches)
@@ -961,6 +966,11 @@ class TTModelRunner:
             # TODO: Add encoder-decoder support
             enc_dec_kwargs: dict[str, Any] = {}
             decode_output = self.model.decode_forward(**decode_kwargs, **enc_dec_kwargs)
+
+            # decode_output may be a tuple of (logits, logprobs); v1 currently
+            # doesn't handle logprobs from TT models, so keep only the logits.
+            if isinstance(decode_output, tuple):
+                decode_output = decode_output[0]
 
             # Combine outputs in original batch order
             # Prefill outputs: shape [num_prefill, seq_len, vocab_size] or [num_prefill] if sampled
