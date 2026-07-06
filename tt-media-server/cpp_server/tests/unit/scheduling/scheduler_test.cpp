@@ -301,7 +301,7 @@ TEST(PrefillFirstSchedulerTest,
     auto [decode_batch, is_prefill] = sched.schedule();
     ASSERT_FALSE(is_prefill);
     ASSERT_EQ(decode_batch.size(), 1u);
-    sched.postprocess(decode_batch, {static_cast<int64_t>(i + 2)});
+    sched.postprocess(decode_batch, {static_cast<uint32_t>(i + 2)});
   }
   ASSERT_EQ(runningSeq->size(), 9u);
 
@@ -331,7 +331,7 @@ TEST(PrefillFirstSchedulerTest,
     auto [decode_batch, is_prefill] = sched.schedule();
     ASSERT_FALSE(is_prefill);
     ASSERT_EQ(decode_batch.size(), 1u);
-    sched.postprocess(decode_batch, {static_cast<int64_t>(i + 2)});
+    sched.postprocess(decode_batch, {static_cast<uint32_t>(i + 2)});
   }
   ASSERT_EQ(runningSeq->size(), 9u);
 

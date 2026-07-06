@@ -344,7 +344,7 @@ TEST(BlazeDecodeRunnerIntegrationTest,
   for (size_t i = 0; i < userCount; ++i) {
     harness.submitSequence(
         taskIds[i], slotIds[i],
-        {static_cast<int64_t>(100 + i), static_cast<int64_t>(200 + i)},
+        {static_cast<uint32_t>(100 + i), static_cast<uint32_t>(200 + i)},
         samplingParams);
   }
 
