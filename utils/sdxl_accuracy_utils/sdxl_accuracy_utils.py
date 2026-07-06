@@ -13,8 +13,6 @@ import urllib.request
 
 from PIL import Image
 
-from utils.sdxl_accuracy_utils.clip_encoder import CLIPEncoder
-from utils.sdxl_accuracy_utils.fid_score import calculate_fid_score
 from workflows.workflow_types import ReportCheckTypes
 
 COCO_CAPTIONS_DOWNLOAD_PATH = "https://github.com/mlcommons/inference/raw/4b1d1156c23965172ae56eacdd8372f8897eb771/text_to_image/coco2014/captions/captions_source.tsv"
@@ -72,6 +70,9 @@ def save_images_as_pil(status_list: list, output_folder: str):
 
 
 def calculate_metrics(status_list: list, image_resolution: tuple = (1024, 1024)):
+    from utils.sdxl_accuracy_utils.clip_encoder import CLIPEncoder
+    from utils.sdxl_accuracy_utils.fid_score import calculate_fid_score
+
     prompts = [status.prompt for status in status_list]
     images = []
     decode_errors = 0
