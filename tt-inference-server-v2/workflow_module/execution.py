@@ -89,6 +89,9 @@ class PrefixCacheOptions:
     request_rate: Optional[float] = None
     scenarios_json: Optional[str] = None
     trace_path: Optional[str] = None
+    # AIPerf --goodput SLO string (space-separated KEY:VALUE pairs).
+    # Overrides the manifest preset/scenario goodput when set.
+    goodput: Optional[str] = None
     auth_token: str = ""
     # Worker /metrics endpoints scraped by AIPerf (--server-metrics) for
     # the prefix-cache counters, independent of the load target. Repeatable
@@ -141,6 +144,9 @@ class LLMBenchOptions:
     tools: str = "vllm"
     auth_token: str = ""
     venv_python: Optional[str] = None
+    # AIPerf --goodput SLO string (space-separated KEY:VALUE pairs). Only the
+    # aiperf driver consumes it; other tools ignore it.
+    goodput: Optional[str] = None
 
 
 @dataclass(frozen=True)

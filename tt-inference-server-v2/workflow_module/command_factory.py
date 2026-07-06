@@ -203,6 +203,7 @@ def _build_llm_bench_options(args: argparse.Namespace) -> Optional[LLMBenchOptio
         tools=getattr(args, "tools", None) or "vllm",
         auth_token=_resolve_auth_token(args),
         venv_python=_release_bench_venv_python(args),
+        goodput=getattr(args, "goodput", None),
     )
 
 
@@ -266,6 +267,7 @@ def _build_prefix_cache_options(
         request_rate=args.prefix_cache_request_rate,
         scenarios_json=args.prefix_cache_scenarios_json,
         trace_path=args.prefix_cache_trace,
+        goodput=getattr(args, "prefix_cache_goodput", None),
         auth_token=_resolve_auth_token(args),
         metrics_urls=tuple(getattr(args, "prefix_cache_metrics_url", None) or ()),
         venv_python=_release_venv_python(args, WorkflowVenvType.V2_PREFIX_CACHE),

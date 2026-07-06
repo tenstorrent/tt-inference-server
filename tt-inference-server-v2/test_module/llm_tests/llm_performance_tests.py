@@ -49,6 +49,7 @@ def run_llm_performance(
     server_controller: Optional[ServerController] = None,
     output_subdir: str = "llm",
     auth_token: str = "",
+    goodput: Optional[str] = None,
 ) -> RunnerResult:
     """Run an LLM perf sweep and forward the Blocks to workflow_module.
 
@@ -69,7 +70,9 @@ def run_llm_performance(
     )
     output_dir = Path(ctx.output_path) / output_subdir
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
-    context = DriverContext(output_dir=output_dir, device=device_label)
+    context = DriverContext(
+        output_dir=output_dir, device=device_label, goodput=goodput
+    )
 
     if server_controller is None:
         if ctx.remote_server:

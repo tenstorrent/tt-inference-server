@@ -340,6 +340,9 @@ def _forward_prefix_cache(cmd, runtime_config) -> None:
         cmd, "--prefix-cache-scenarios-json", runtime_config.prefix_cache_scenarios_json
     )
     _extend_if_set(cmd, "--prefix-cache-trace", runtime_config.prefix_cache_trace)
+    _extend_if_set(
+        cmd, "--prefix-cache-goodput", getattr(runtime_config, "prefix_cache_goodput", None)
+    )
     # --prefix-cache-metrics-url is action="append" (a list); emit one flag
     # per URL rather than stringifying the whole list, which would forward a
     # bogus "['https://...']" URL and leave the hit-rate column null.
@@ -384,6 +387,9 @@ def _build_prefix_cache_cmd(v2_dir, model_spec, runtime_config, json_fpath, outp
         cmd, "--prefix-cache-scenarios-json", runtime_config.prefix_cache_scenarios_json
     )
     _extend_if_set(cmd, "--prefix-cache-trace", runtime_config.prefix_cache_trace)
+    _extend_if_set(
+        cmd, "--prefix-cache-goodput", getattr(runtime_config, "prefix_cache_goodput", None)
+    )
     for metrics_url in getattr(runtime_config, "prefix_cache_metrics_url", None) or []:
         _extend_if_set(cmd, "--prefix-cache-metrics-url", metrics_url)
     _forward_jwt(cmd, runtime_config)
@@ -396,6 +402,7 @@ def _build_llm_bench_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_
         launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"
     )
     _extend_if_set(cmd, "--tools", runtime_config.tools)
+    _extend_if_set(cmd, "--goodput", getattr(runtime_config, "goodput", None))
     _forward_jwt(cmd, runtime_config)
     return cmd
 
