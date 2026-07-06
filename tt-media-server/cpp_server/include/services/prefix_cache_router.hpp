@@ -72,6 +72,24 @@ struct PrefixCacheRouterCallbacks {
       setSessionResponseId;
 
   std::function<void()> onSessionInFlight;
+
+  // Callbacks for getSlot() - session creation and slot management
+  std::function<void(
+      std::function<void(const domain::Session&)> onCompletion,
+      std::function<void(std::string_view)> onError,
+      std::vector<utils::BlockHashInfo> initialBlockInfos,
+      std::optional<uint32_t> slotIdToCopyFrom)>
+      createSession;
+
+  std::function<uint32_t(const std::string& sessionId,
+                         std::function<void()> cancelFn)>
+      acquireInFlight;
+
+  std::function<void(uint32_t slotId)> lockSlot;
+  std::function<void(uint32_t slotId)> unlockSlot;
+
+  std::function<void(const std::string& sessionId, uint32_t matchedTokens)>
+      shrinkResidentPrefixToMatchedTokens;
 };
 
 class PrefixCacheRouter {
@@ -115,6 +133,24 @@ class PrefixCacheRouter {
 
   void onSessionClosed(const std::string& sessionId, uint64_t keyHash,
                        const std::string& responseId);
+
+  /**
+   * Unified slot acquisition - the main entry point for prefix cache routing.
+   *
+   * Internally handles all routing layers:
+   *   1. Compute block hashes from tokens
+   *   2. Response-id lookup (if previousResponseId provided)
+   *   3. Prefix-hash lookup
+   *   4. New session allocation (if no cache hit)
+   *
+   * @param promptTokenIds  Token IDs from the request prompt.
+   * @param opts            Routing options (previousResponseId, responseId, cancelFn).
+   * @param onResolved      Callback with the result (session found or created).
+   * @param onError         Callback for errors (e.g., rate limit).
+   */
+  void getSlot(std::span<const int> promptTokenIds, GetSlotOptions opts,
+               std::function<void(SlotAcquireResult)> onResolved,
+               std::function<void(const std::string&)> onError);
 
  private:
   PrefixCacheRouterCallbacks callbacks;
