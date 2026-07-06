@@ -49,9 +49,7 @@ def test_aiperf_driver_emits_goodput_as_single_token(monkeypatch, tmp_path):
 
     driver = AIPerfDriver(venv_python=Path("/tmp/venv/bin/python"))
     config = LLMRunConfig(isl=128, osl=128, max_concurrency=1, num_prompts=8)
-    server = ServerConnection(
-        base_url="http://localhost", service_port=8000, model="m"
-    )
+    server = ServerConnection(base_url="http://localhost", service_port=8000, model="m")
     slo = "time_to_first_token:4000 output_token_throughput_per_user:45"
     context = DriverContext(output_dir=tmp_path, goodput=slo)
 
@@ -73,9 +71,7 @@ def test_aiperf_driver_omits_goodput_when_unset(monkeypatch, tmp_path):
 
     driver = AIPerfDriver(venv_python=Path("/tmp/venv/bin/python"))
     config = LLMRunConfig(isl=128, osl=128, max_concurrency=1, num_prompts=8)
-    server = ServerConnection(
-        base_url="http://localhost", service_port=8000, model="m"
-    )
+    server = ServerConnection(base_url="http://localhost", service_port=8000, model="m")
     context = DriverContext(output_dir=tmp_path)
 
     driver.run(config, server, context)

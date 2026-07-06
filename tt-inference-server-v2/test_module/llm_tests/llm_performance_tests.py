@@ -70,9 +70,7 @@ def run_llm_performance(
     )
     output_dir = Path(ctx.output_path) / output_subdir
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
-    context = DriverContext(
-        output_dir=output_dir, device=device_label, goodput=goodput
-    )
+    context = DriverContext(output_dir=output_dir, device=device_label, goodput=goodput)
 
     if server_controller is None:
         if ctx.remote_server:

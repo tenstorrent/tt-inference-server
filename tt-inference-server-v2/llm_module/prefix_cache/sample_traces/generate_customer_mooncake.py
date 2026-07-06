@@ -77,9 +77,7 @@ def main() -> None:
             # Shared 50K root (cache-shared across all sessions) followed by a
             # per-request unique tail so every request still hashes to a
             # distinct leaf while reusing the 98-block root.
-            unique = list(
-                range(next_unique_block, next_unique_block + UNIQUE_BLOCKS)
-            )
+            unique = list(range(next_unique_block, next_unique_block + UNIQUE_BLOCKS))
             next_unique_block += UNIQUE_BLOCKS
             hash_ids = SHARED_ROOT + unique
             assert len(hash_ids) * BLOCK_SIZE >= INPUT_LENGTH, (

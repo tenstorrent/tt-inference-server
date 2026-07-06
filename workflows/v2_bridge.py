@@ -341,7 +341,9 @@ def _forward_prefix_cache(cmd, runtime_config) -> None:
     )
     _extend_if_set(cmd, "--prefix-cache-trace", runtime_config.prefix_cache_trace)
     _extend_if_set(
-        cmd, "--prefix-cache-goodput", getattr(runtime_config, "prefix_cache_goodput", None)
+        cmd,
+        "--prefix-cache-goodput",
+        getattr(runtime_config, "prefix_cache_goodput", None),
     )
     # --prefix-cache-metrics-url is action="append" (a list); emit one flag
     # per URL rather than stringifying the whole list, which would forward a
@@ -388,7 +390,9 @@ def _build_prefix_cache_cmd(v2_dir, model_spec, runtime_config, json_fpath, outp
     )
     _extend_if_set(cmd, "--prefix-cache-trace", runtime_config.prefix_cache_trace)
     _extend_if_set(
-        cmd, "--prefix-cache-goodput", getattr(runtime_config, "prefix_cache_goodput", None)
+        cmd,
+        "--prefix-cache-goodput",
+        getattr(runtime_config, "prefix_cache_goodput", None),
     )
     for metrics_url in getattr(runtime_config, "prefix_cache_metrics_url", None) or []:
         _extend_if_set(cmd, "--prefix-cache-metrics-url", metrics_url)
