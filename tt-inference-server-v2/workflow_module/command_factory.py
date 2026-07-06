@@ -204,6 +204,7 @@ def _build_llm_bench_options(args: argparse.Namespace) -> Optional[LLMBenchOptio
         tools=getattr(args, "tools", None) or "vllm",
         auth_token=_mint_jwt_if_secret(getattr(args, "jwt_secret", None)),
         venv_python=_release_bench_venv_python(args),
+        goodput=getattr(args, "goodput", None),
     )
 
 

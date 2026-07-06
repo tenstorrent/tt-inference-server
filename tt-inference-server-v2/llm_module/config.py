@@ -95,3 +95,6 @@ class DriverContext:
     device: str = ""
     extra_env: dict = field(default_factory=dict)
     per_run_timeout_s: Optional[float] = 7200.0
+    # AIPerf --goodput SLO string (space-separated KEY:VALUE pairs) applied to
+    # the sweep. Only the AIPerf driver consumes it; other drivers ignore it.
+    goodput: Optional[str] = None

@@ -368,6 +368,23 @@ def parse_args() -> argparse.Namespace:
             "(genai-perf via Docker), or 'guidellm'."
         ),
     )
+    parser.add_argument(
+        "--goodput",
+        type=str,
+        default=None,
+        metavar="SLO",
+        help=(
+            "AIPerf --goodput SLO string applied to the LLM benchmark sweep: "
+            "space-separated KEY:VALUE pairs where KEY is a metric tag and "
+            "VALUE is in the metric's display unit. Reports the fraction of "
+            "requests meeting every threshold. Valid tags include "
+            "time_to_first_token (ms), request_latency (ms), "
+            "inter_token_latency (ms), output_token_throughput_per_user "
+            "(tokens/s). Only used by --tools aiperf; ignored by "
+            "vllm/genai/guidellm. Example: "
+            "'time_to_first_token:4000 output_token_throughput_per_user:45'."
+        ),
+    )
 
     # ----- Serving-bench suites (--workflow serving_bench) ------------
     parser.add_argument(

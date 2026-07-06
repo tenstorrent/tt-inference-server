@@ -227,6 +227,7 @@ class BenchmarksWorkflow(WorkflowExecution):
                 tools=opts.tools,
                 auth_token=opts.auth_token,
                 venv_python=venv_python,
+                goodput=opts.goodput,
             ),
         )
 

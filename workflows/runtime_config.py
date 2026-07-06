@@ -57,6 +57,8 @@ class RuntimeConfig:
 
     # Workflow control
     tools: str = "vllm"
+    # AIPerf --goodput SLO string for the default LLM benchmark sweep.
+    goodput: Optional[str] = None
     disable_trace_capture: bool = False
     disable_metal_timeout: bool = False
     concurrency_sweeps: bool = False
@@ -145,6 +147,7 @@ class RuntimeConfig:
             vllm_override_args=args.vllm_override_args,
             runtime_model_spec_json=args.runtime_model_spec_json,
             tools=args.tools,
+            goodput=getattr(args, "goodput", None),
             disable_trace_capture=args.disable_trace_capture,
             disable_metal_timeout=args.disable_metal_timeout,
             concurrency_sweeps=args.concurrency_sweeps,

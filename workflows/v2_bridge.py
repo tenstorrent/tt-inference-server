@@ -395,6 +395,7 @@ def _build_llm_bench_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_
         launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"
     )
     _extend_if_set(cmd, "--tools", runtime_config.tools)
+    _extend_if_set(cmd, "--goodput", getattr(runtime_config, "goodput", None))
     _forward_jwt(cmd, runtime_config)
     return cmd
 

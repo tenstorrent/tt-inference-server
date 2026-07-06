@@ -135,6 +135,9 @@ class LLMBenchOptions:
     tools: str = "vllm"
     auth_token: str = ""
     venv_python: Optional[str] = None
+    # AIPerf --goodput SLO string (space-separated KEY:VALUE pairs). Only the
+    # aiperf driver consumes it; other tools ignore it.
+    goodput: Optional[str] = None
 
 
 @dataclass(frozen=True)
