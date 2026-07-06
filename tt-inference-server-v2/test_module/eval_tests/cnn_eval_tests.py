@@ -220,6 +220,9 @@ def run_cnn_eval(ctx: MediaContext) -> Block:
         data["published_score"] = task.score.published_score
         data["score"] = ttft_value
         data["published_score_ref"] = task.score.published_score_ref
+        # Non-MobileNet CNNs only get a timing benchmark here, no accuracy grade,
+        # so accuracy is Not Applicable (non-blocking).
+        data["accuracy_check"] = ReportCheckTypes.NA
 
     return Block(
         kind="evals",
