@@ -343,7 +343,8 @@ def render_aiperf_prefix_cache(block: Block, metadata: Mapping[str, Any]) -> str
                 "mooncake_trace`. **Synth** variants apply the "
                 "`--synthesis-*` multipliers. **Trace Theo. Hit %** is the "
                 "upper bound from `aiperf analyze-trace`; **Measured Hit %** "
-                "is the actual vLLM hit-rate observed during the run.\n\n"
+                "is the actual serving-engine hit-rate observed during the "
+                "run.\n\n"
                 f"{trace_table}"
             )
 
@@ -383,7 +384,8 @@ def render_aiperf_prefix_cache(block: Block, metadata: Mapping[str, Any]) -> str
     parts.append(
         "**Metric definitions:**\n"
         "> - **Cache Hit %**: `(hits_delta / queries_delta) * 100` from the "
-        "vLLM Prometheus counters across the benchmark window.\n"
+        "serving engine's prefix-cache counters across the benchmark "
+        "window.\n"
         "> - **TTFT / TPOT / ITL / E2EL P50/P90/P95/P99**: AIPerf percentiles "
         "from `profile_export_aiperf.json`.\n"
         "> - **Output Tok/s/User**: AIPerf `output_token_throughput_per_user` "

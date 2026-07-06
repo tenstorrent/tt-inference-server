@@ -32,9 +32,7 @@ def _make_ctx(model_type, *, agentic=False):
     ctx.output_path = "/tmp/test_output"
     tasks = []
     if agentic:
-        tasks.append(
-            SimpleNamespace(workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC)
-        )
+        tasks.append(SimpleNamespace(workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC))
     ctx.all_params = SimpleNamespace(tasks=tasks)
     return ctx
 
@@ -81,19 +79,23 @@ class TestReleaseWorkflowRegistry:
     def test_registered(self):
         assert get_workflow_class("release") is ReleaseWorkflow
 
-    def test_llm_children_drops_spec_tests(self):
-        assert ReleaseWorkflow.llm_children == ("evals", "benchmarks")
+    def test_llm_children_include_spec_tests(self):
+        assert ReleaseWorkflow.llm_children == ("evals", "benchmarks", "spec_tests")
         assert ReleaseWorkflow.children == ("evals", "benchmarks", "spec_tests")
 
 
 class TestReleaseWorkflowChildSelection:
-    def test_llm_without_agentic_runs_evals_and_benchmarks_only(self):
+    def test_llm_without_agentic_runs_full_suite(self):
         outcomes, classes, _acc, _meta = _run_release(_make_ctx(ModelType.LLM))
         classes["evals"].assert_called_once()
         classes["benchmarks"].assert_called_once()
-        classes["spec_tests"].assert_not_called()
+        classes["spec_tests"].assert_called_once()
         classes["agentic"].assert_not_called()
-        assert [o.task_type for o in outcomes] == ["evals", "benchmarks"]
+        assert [o.task_type for o in outcomes] == [
+            "evals",
+            "benchmarks",
+            "spec_tests",
+        ]
 
     def test_llm_with_agentic_task_runs_agentic_child(self):
         outcomes, classes, _acc, _meta = _run_release(
@@ -101,11 +103,12 @@ class TestReleaseWorkflowChildSelection:
         )
         classes["evals"].assert_called_once()
         classes["benchmarks"].assert_called_once()
-        classes["spec_tests"].assert_not_called()
+        classes["spec_tests"].assert_called_once()
         classes["agentic"].assert_called_once()
         assert [o.task_type for o in outcomes] == [
             "evals",
             "benchmarks",
+            "spec_tests",
             "agentic",
         ]
 
@@ -132,13 +135,19 @@ class TestReleaseWorkflowChildSelection:
         ctx = _make_ctx(ModelType.LLM)
         evals_cls, evals_inst = _fake_child("evals")
         bench_cls, bench_inst = _fake_child("benchmarks")
-        registry = {"evals": evals_cls, "benchmarks": bench_cls}
+        spec_cls, spec_inst = _fake_child("spec_tests")
+        registry = {
+            "evals": evals_cls,
+            "benchmarks": bench_cls,
+            "spec_tests": spec_cls,
+        }
         with patch.dict(
             "workflow_module.workflows.WORKFLOW_REGISTRY", registry, clear=False
         ):
             ReleaseWorkflow(ctx, accumulator=MagicMock()).run_tasks()
         evals_inst.run_tasks.assert_called_once()
         bench_inst.run_tasks.assert_called_once()
+        spec_inst.run_tasks.assert_called_once()
 
     def test_llm_release_expands_optional_benchmark_sweeps(self):
         prefix_opts = PrefixCacheOptions(preset="ci")
@@ -161,6 +170,7 @@ class TestReleaseWorkflowChildSelection:
             "benchmarks",
             "benchmarks",
             "benchmarks",
+            "spec_tests",
         ]
 
         bench_metas = [

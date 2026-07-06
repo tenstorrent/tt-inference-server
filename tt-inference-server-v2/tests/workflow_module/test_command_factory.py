@@ -12,8 +12,11 @@ out of scope here.
 from __future__ import annotations
 
 from argparse import Namespace
+from types import SimpleNamespace
 
 import pytest
+
+from workflows.workflow_types import InferenceEngine
 
 from workflow_module import command_factory as cf
 from workflow_module.execution import (
@@ -300,3 +303,76 @@ class TestMintJwt:
         monkeypatch.setenv("JWT_SECRET", "env-secret-key-of-sufficient-length-12345")
         monkeypatch.setenv("OPENAI_API_KEY", "")
         assert cf._mint_jwt_if_secret(None)
+
+
+class TestResolveAuthToken:
+    """Engine-aware bearer-token selection.
+
+    Forge/media servers (tt-media-server) validate a *literal* ``Bearer
+    $API_KEY``; only the vLLM (tt-metal) server decodes a JWT. Sending a
+    minted JWT to a forge/media server is what caused the 401 storm this
+    fix addresses.
+    """
+
+    def _args(self, **kw):
+        base = dict(model="m", device="p150", jwt_secret=None)
+        base.update(kw)
+        return Namespace(**base)
+
+    def _patch_engine(self, monkeypatch, engine):
+        monkeypatch.setattr(
+            cf,
+            "get_runtime_model_spec",
+            lambda model, device: (
+                SimpleNamespace(inference_engine=engine),
+                None,
+                None,
+            ),
+        )
+
+    def test_forge_uses_literal_default_not_jwt(self, monkeypatch):
+        # Even with JWT_SECRET set, a forge server must get the literal key.
+        monkeypatch.setenv("JWT_SECRET", "secret-of-sufficient-length-123456")
+        for var in ("VLLM_API_KEY", "API_KEY", "OPENAI_API_KEY"):
+            monkeypatch.delenv(var, raising=False)
+        self._patch_engine(monkeypatch, InferenceEngine.FORGE)
+        assert cf._resolve_auth_token(self._args()) == "your-secret-key"
+
+    def test_forge_accepts_raw_string_engine(self, monkeypatch):
+        # model_spec may carry the enum's str value rather than the enum.
+        for var in ("VLLM_API_KEY", "API_KEY", "OPENAI_API_KEY"):
+            monkeypatch.delenv(var, raising=False)
+        self._patch_engine(monkeypatch, InferenceEngine.FORGE.value)
+        assert cf._resolve_auth_token(self._args()) == "your-secret-key"
+
+    def test_media_prefers_explicit_vllm_api_key(self, monkeypatch):
+        monkeypatch.setenv("JWT_SECRET", "secret-of-sufficient-length-123456")
+        monkeypatch.setenv("VLLM_API_KEY", "explicit-key")
+        self._patch_engine(monkeypatch, InferenceEngine.MEDIA)
+        assert cf._resolve_auth_token(self._args()) == "explicit-key"
+
+    def test_vllm_engine_mints_jwt(self, monkeypatch):
+        pytest.importorskip("jwt")
+        monkeypatch.setenv("JWT_SECRET", "secret-of-sufficient-length-123456")
+        self._patch_engine(monkeypatch, InferenceEngine.VLLM)
+        token = cf._resolve_auth_token(self._args())
+        assert token != "your-secret-key"
+        assert token.count(".") == 2  # header.payload.signature
+
+    def test_vllm_engine_without_secret_returns_empty(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        self._patch_engine(monkeypatch, InferenceEngine.VLLM)
+        assert cf._resolve_auth_token(self._args()) == ""
+
+    def test_unresolvable_spec_falls_back_to_jwt_path(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+        def boom(model, device):
+            raise RuntimeError("no spec")
+
+        monkeypatch.setattr(cf, "get_runtime_model_spec", boom)
+        assert cf._resolve_auth_token(self._args()) == ""

@@ -783,7 +783,7 @@ class TestSetupHostValidation:
         mock_spec.model_name = "Llama-3.1-8B-Instruct"
 
         cli_defaults = {
-            "workflow": "benchmarks",
+            "workflow": "reports",
             "device": "n150",
             "model": "Llama-3.1-8B-Instruct",
             "docker_server": False,

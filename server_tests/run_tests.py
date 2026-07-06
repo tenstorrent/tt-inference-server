@@ -240,9 +240,7 @@ def main():
     )
     if remote_server:
         if not _wait_for_remote_openai_ready(prompt_client):
-            logger.error(
-                "⛔️ Remote inference endpoint is not ready. Aborting tests."
-            )
+            logger.error("⛔️ Remote inference endpoint is not ready. Aborting tests.")
             return 1
     elif not prompt_client.wait_for_healthy():
         logger.error("⛔️ vLLM server is not healthy. Aborting tests.")

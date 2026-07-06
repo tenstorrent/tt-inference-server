@@ -140,6 +140,13 @@ class LLMPipeline {
   bool shouldDoPrefillOnDecode(
       const tt::domain::llm::LLMRequest& request) const;
 
+  // Decide, given the uncached delta size, whether prefill runs locally on the
+  // decode device (true) or is sent to the prefill server (false). Shared by
+  // session resolution and dispatch so the slot-copy decision and the actual
+  // prefill routing stay consistent.
+  bool willPrefillOnDecode(const tt::domain::llm::LLMRequest& request,
+                           size_t deltaTokens) const;
+
   std::shared_ptr<LLMService> service_;
   std::shared_ptr<SessionManager> sessionManager_;
   std::shared_ptr<DisaggregationService> disaggregationService_;

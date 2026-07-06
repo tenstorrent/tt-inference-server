@@ -19,49 +19,25 @@
 #include "services/memory_services/memory_manager.hpp"
 #include "tt_llm_engine/scheduler/scheduler_types.hpp"
 #include "utils/logger.hpp"
-#include "utils/tokenizers/tokenizer.hpp"
+
 namespace tt::runners::blaze {
+
 namespace sched = tt_llm_engine::scheduler;
 BlazeDecodeRunner::BlazeDecodeRunner(
-    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
-    tt::ipc::ITaskQueue* taskQueue, tt::ipc::ICancelQueue* stopQueue,
+    const config::LLMConfig& config,
+    std::unique_ptr<IDecodeScheduler> decodeScheduler,
+    ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
+    tt::ipc::ICancelQueue* stopQueue,
     std::unique_ptr<tt::services::MemoryManager> injectedMemoryManager)
     : config(config),
       resultQueue(resultQueue),
       taskQueue(taskQueue),
       stopQueue(stopQueue),
+      decodeScheduler(std::move(decodeScheduler)),
       slotManager(tt::config::pmMaxUsers()),
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
-  TT_LOG_INFO(
-      "BlazeDecodeRunner: Constructing DecodeScheduler with SocketConfig...");
-  auto pipelineConfig = utils::makeDecodePipelineConfig(config);
-  auto migrationClientInterface =
-      utils::makeDecodeMigrationClientInterface(config);
-  auto thinkTokenIds = tt::utils::tokenizers::thinkTokenIds();
-  auto eosTokenId = tt::utils::tokenizers::staticInfo().eosTokenId;
-  ds::SchedulerParams managerParams{};
-  managerParams.num_layers = tt::config::modelNumLayers();
-  managerParams.eos_token = static_cast<uint32_t>(eosTokenId);
-  managerParams.think_open_token_id =
-      static_cast<uint32_t>(thinkTokenIds.first);
-  managerParams.think_close_token_id =
-      static_cast<uint32_t>(thinkTokenIds.second);
-  managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
-  managerParams.self_endpoint_id = tt::config::migrationDecodeEndpointId();
-  if (tt::config::enableMigration()) {
-    migrationClientInterface->connect_to(
-        tt::config::migrationPrefillEndpointId(), "CONNECTOR", "ds_pd");
-  }
-  if (tt::config::specDecodeMode() == "mtp") {
-    managerParams.spec_decode_mode = ds::SpecDecodeMode::MTP;
-    managerParams.max_spec_tokens =
-        static_cast<uint32_t>(tt::config::mtpLevel());
-  }
-  decodeScheduler =
-      std::make_unique<ds::DecodeScheduler>(pipelineConfig, managerParams);
-  TT_LOG_INFO(
-      "BlazeDecodeRunner: DecodeScheduler constructed, calling start()...");
-  decodeScheduler->start();
+  assert(this->decodeScheduler != nullptr);
+  this->decodeScheduler->start();
   TT_LOG_INFO(
       "BlazeDecodeRunner: PipelineManager started, creating MemoryManager...");
   memoryManager = injectedMemoryManager

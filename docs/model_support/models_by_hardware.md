@@ -43,17 +43,6 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | LLM | [gpt-oss-20b](llm/gpt-oss-20b_galaxy.md) |
 | 🛠️ Experimental | VLM | [gemma-3-27b-it](vlm/gemma-3-27b-it_galaxy.md) |
 
-## [BH Galaxy](https://tenstorrent.com/hardware/galaxy)
-
-| Status | Type | Model |
-|--------|------|-------|
-| 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_blackhole_galaxy.md) |
-| 🟢 Complete | Image | [stable-diffusion-xl-base-1.0](image/stable-diffusion-xl-base-1.0_blackhole_galaxy.md) |
-| 🟢 Complete | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_blackhole_galaxy.md) |
-| 🟢 Complete | LLM | [Qwen3-32B](llm/Qwen3-32B_blackhole_galaxy.md) |
-| 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_blackhole_galaxy.md) |
-| 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_blackhole_galaxy.md) |
-
 ## [BH LoudBox](https://tenstorrent.com/hardware/tt-loudbox)
 
 | Status | Type | Model |
@@ -86,9 +75,11 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | Image | [Motif-Image-6B-Preview](image/Motif-Image-6B-Preview_p300x2.md) |
 | 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_p300x2.md) |
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p300x2.md) |
+| 🟡 Functional | Image | [Z-Image-Turbo](image/Z-Image-Turbo_p300x2.md) |
 | 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p300x2.md) |
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p300x2.md) |
 | 🟡 Functional | LLM | [Qwen3-32B](llm/Qwen3-32B_p300x2.md) |
+| 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_p300x2.md) |
 | 🛠️ Experimental | TTS | [speecht5_tts](tts/speecht5_tts_p300x2.md) |
 
 ## [p100](https://tenstorrent.com/hardware/blackhole)

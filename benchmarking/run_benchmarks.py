@@ -23,9 +23,9 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from benchmarking.benchmark_config import (
-    BENCHMARK_CONFIGS,
     BenchmarkConfig,
     expand_concurrency_sweep_params,
+    get_benchmark_config,
     powers_of_two_up_to,
     select_smoke_test_benchmark_config,
 )
@@ -156,11 +156,7 @@ def main():
         os.environ["VLLM_API_KEY"] = "your-secret-key"
         logger.info("VLLM_API_KEY environment variable set to your-secret-key.")
 
-    # Look up the evaluation configuration for the model using BENCHMARK_CONFIGS.
-    if model_spec.model_id not in BENCHMARK_CONFIGS:
-        message = f"No benchmark tasks defined for model: {model_spec.model_name}"
-        raise ValueError(message)
-    benchmark_config = BENCHMARK_CONFIGS[model_spec.model_id]
+    benchmark_config = get_benchmark_config(model_spec)
     smoke_test_mode = _is_smoke_test_mode(runtime_config)
     if smoke_test_mode:
         benchmark_config = select_smoke_test_benchmark_config(benchmark_config, device)

@@ -232,11 +232,11 @@ class TestWorkflowExecution:
         from workflows.workflow_types import ModelType
 
         model_spec = Namespace(
-            model_name="DeepSeek-R1-0528",
+            model_name="Kimi-K2.6",
             model_type=ModelType.LLM,
         )
         runtime_config = RuntimeConfig(
-            model="DeepSeek-R1-0528",
+            model="Kimi-K2.6",
             workflow="release",
             device="SUPER_CLUSTER",
             impl="tt-transformers",
@@ -256,9 +256,10 @@ class TestWorkflowExecution:
         ), patch(
             "workflows.run_workflows.has_agentic_tasks_configured", return_value=False
         ), patch(
-            # DeepSeek-R1-0528 has server tests configured; isolate this test to
+            # Kimi-K2.6 has server tests configured; isolate this test to
             # the benchmarks-delegation behavior by dropping the TESTS step.
-            "workflows.run_workflows.TEST_CONFIGS", {}
+            "workflows.run_workflows.TEST_CONFIGS",
+            {},
         ), patch(
             "workflows.v2_bridge.run_v2_llm_benchmark_workflow",
             return_value=WorkflowResult(workflow_name="benchmarks", return_code=0),

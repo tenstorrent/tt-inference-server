@@ -20,7 +20,7 @@ def test_remote_console_uses_base_url_and_skips_ready_check():
     server = ServerConnection(
         base_url="https://console.tenstorrent.com:443",
         service_port=443,
-        model="deepseek-ai/DeepSeek-R1-0528",
+        model="moonshotai/Kimi-K2.6",
         auth_token="sk-test",
         is_remote=True,
     )

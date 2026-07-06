@@ -68,7 +68,7 @@ class ITransferEngine {
 
   /**
    * @brief Resolve a peer's advertised segment by name.
-   * @return a handle, or kInvalidSegment on failure.
+   * @return a handle, or K_INVALID_SEGMENT on failure.
    */
   virtual SegmentHandle openSegment(const std::string& segmentName) = 0;
 

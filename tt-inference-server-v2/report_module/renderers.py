@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Mapping, Sequence
 
 from report_module.display import (
     DISPLAY_NAMES,
+    FOOTNOTES,
     decimal_places,
     display_name,
     target_checks_header,
@@ -38,9 +39,19 @@ HIDDEN_COLUMNS = frozenset(
 
 GENERIC_KINDS: tuple[str, ...] = (
     "benchmarks",
-    "evals",
     "spec_tests",
     "stress_tests",
+)
+
+EVALS_KIND = "evals"
+
+EVALS_METHODOLOGY_NOTE = (
+    "Note: The ratio to published scores defines if eval ran roughly correctly, "
+    "as the exact methodology of the model publisher cannot always be reproduced. "
+    "For this reason the accuracy check is based first on being equivalent to the "
+    "GPU reference within a +/- tolerance. If a value GPU reference is not "
+    "available, the accuracy check is based on the direct ratio to the published "
+    "score."
 )
 
 _REGISTRY: Dict[str, RendererFn] = {}
@@ -259,10 +270,16 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
     heading = _heading(
         block.kind, model, device, block.title or "", block.task_type or ""
     )
+    footnote = FOOTNOTES.get(block.kind)
 
     if len(records) > 1:
         table = _build_table(records)
-        return f"{heading}\n\n{table}" if table else ""
+        if not table:
+            return ""
+        parts = [heading, table]
+        if footnote:
+            parts.append(footnote)
+        return "\n\n".join(parts)
 
     record = records[0]
     scalar_fields: Dict[str, Any] = {}
@@ -291,7 +308,27 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
             continue
         parts.append(f"#### {_humanize_key(key)}\n\n{sub_table}")
 
-    return "\n\n".join(parts) if len(parts) > 1 else ""
+    if len(parts) <= 1:
+        return ""
+    if footnote:
+        parts.append(footnote)
+    return "\n\n".join(parts)
+
+
+@register(EVALS_KIND)
+def render_evals(block: Block, metadata: Mapping[str, Any]) -> str:
+    """Render eval results as one table followed by the methodology note."""
+    records = _extract_records(block)
+    if not records:
+        return ""
+    model, device = _resolve_model_device(block, metadata, records)
+    heading = _heading(
+        block.kind, model, device, block.title or "", block.task_type or ""
+    )
+    table = _build_table(records)
+    if not table:
+        return ""
+    return f"{heading}\n\n{table}\n\n{EVALS_METHODOLOGY_NOTE}"
 
 
 for _kind in GENERIC_KINDS:

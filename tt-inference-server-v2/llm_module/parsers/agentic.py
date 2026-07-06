@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Union
 
@@ -129,6 +130,7 @@ def _build_evals_data(
         "ratio_to_published": ratio_pub,
         "ratio_to_reference": ratio_ref,
         "accuracy_check": accuracy_check,
+        "mean_seconds_per_task": metrics.get("mean_seconds_per_task"),
     }
     if not success:
         data["success"] = False
@@ -152,7 +154,53 @@ def _attach_harbor_targets(targets: Dict[str, Any], metrics: Mapping[str, Any]) 
 def extract_harbor_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
     metrics = _extract_harbor_summary_metrics(raw)
     _add_harbor_pass_at_metrics(raw, metrics)
+    mean_seconds = _mean_seconds_per_task(raw, metrics)
+    if mean_seconds is not None:
+        metrics["mean_seconds_per_task"] = mean_seconds
     return metrics
+
+
+def _mean_seconds_per_task(
+    raw: Mapping[str, Any],
+    metrics: Mapping[str, Any],
+) -> Optional[float]:
+    """Mean wall-clock seconds per trial from the run's start/finish window.
+
+    Terminal-bench (Harbor) writes ``started_at``/``finished_at``/
+    ``n_total_trials`` at the top level of result.json. SWE-bench has no native
+    timing, so its harness normalization injects the same three fields from the
+    agent log. The denominator falls back to the summary ``n_trials`` when
+    ``n_total_trials`` is absent.
+    """
+    started = _parse_timestamp(raw.get("started_at"))
+    finished = _parse_timestamp(raw.get("finished_at"))
+    if started is None or finished is None:
+        return None
+
+    n_tasks = raw.get("n_total_trials")
+    if not isinstance(n_tasks, int) or isinstance(n_tasks, bool):
+        n_tasks = metrics.get("n_trials")
+    if not isinstance(n_tasks, int) or n_tasks <= 0:
+        return None
+
+    duration = (finished - started).total_seconds()
+    if duration < 0:
+        return None
+    return duration / n_tasks
+
+
+def _parse_timestamp(value: Any) -> Optional[datetime]:
+    """Parse an ISO-8601 timestamp, tolerating a trailing ``Z`` and the
+    ``YYYY-MM-DD HH:MM:SS,mmm`` log format (comma milliseconds)."""
+    if not isinstance(value, str) or not value:
+        return None
+    text = value.strip().replace(",", ".")
+    if text.endswith("Z"):
+        text = text[:-1]
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
 
 
 def compute_accuracy_check(metrics: Mapping[str, Any], score: Any = None) -> int:
