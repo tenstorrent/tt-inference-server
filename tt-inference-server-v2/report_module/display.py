@@ -102,6 +102,8 @@ DISPLAY_NAMES: Dict[str, str] = {
     "published_score_ref": "Published Score Ref",
     "score": "Score",
     "accuracy_check": "Accuracy Check",
+    # Benchmarks report a performance-target verdict, not an accuracy check.
+    "target_check": "Target Check",
     # Liveness / infra
     "status": "Status",
     "expected_devices": "Expected Devices",

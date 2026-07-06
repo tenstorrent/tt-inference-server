@@ -40,6 +40,11 @@ _METADATA_RENDERING_KEYS = frozenset(ACCEPTANCE_EXPORT_KEYS)
 _EVALS_KIND = "evals"
 _CONSOLIDATED_EVALS_TITLE = "Accuracy Evaluations"
 
+# Divider placed between the preamble and each top-level result section so
+# adjacent sections (e.g. a benchmark table and the "📋 Summary" block) are
+# visually separated in both raw CI logs and rendered markdown.
+_SECTION_SEPARATOR = "\n\n---\n\n"
+
 
 @dataclass(frozen=True)
 class GenerateResult:
@@ -146,7 +151,7 @@ def _assemble_release_markdown(
     }
     metadata_json = json.dumps(visible_metadata, indent=4, default=str)
     metadata_block = (
-        f"### Metadata: {schema.model_name} on {schema.device}\n"
+        f"### Metadata: {schema.model_name} on {schema.device}\n\n"
         f"```json\n{metadata_json}\n```"
     )
     preamble = [header, metadata_block]
@@ -157,7 +162,8 @@ def _assemble_release_markdown(
         preamble.append(acceptance_md)
 
     sections = _inject_spec_test_summary(rendered_pairs, schema.metadata)
-    return "\n\n".join(preamble + sections)
+    preamble_md = "\n\n".join(preamble)
+    return _SECTION_SEPARATOR.join([preamble_md] + sections)
 
 
 def _inject_spec_test_summary(
@@ -277,7 +283,7 @@ def _build_spec_test_summary_markdown(
     ]
     results_table = "\n".join([result_header] + result_rows)
 
-    return f"## 📋 Summary\n{summary_table}\n\n## 🧪 Test Results\n{results_table}"
+    return f"## 📋 Summary\n\n{summary_table}\n\n## 🧪 Test Results\n\n{results_table}"
 
 
 def _coerce_float(value: Any) -> float:
