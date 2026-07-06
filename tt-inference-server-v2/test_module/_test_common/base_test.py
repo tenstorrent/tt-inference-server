@@ -19,7 +19,7 @@ from report_module.schema import Block
 from utils.url_helpers import DEFAULT_DEPLOY_URL, build_base_url
 
 from .blockify import block_id
-from .exceptions import NotApplicable, SkipTest, TestOutcomeSignal
+from .exceptions import SkipTest, TestOutcomeSignal
 from .hardware_requirements import HardwareRequirement
 from .report_types import TestStatus
 from .test_classes import TestConfig
