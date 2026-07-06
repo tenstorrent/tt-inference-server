@@ -4621,13 +4621,21 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Use the chat endpoint so the server applies the chat template
+                # (and thus --default-chat-template-kwargs '{"enable_thinking":
+                # true}'); client-side apply_chat_template on /v1/completions
+                # would render with the default enable_thinking=false and
+                # suppress native reasoning (see gemma-4-31B-it note above).
+                use_chat_api=True,
                 model_kwargs={
                     "max_length": 131072,
                 },
                 # Thinking-mode sampling (Qwen3.6 page, general tasks):
                 # temperature=1.0, top_p=0.95, top_k=20.
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={
-                    "stream": "true",
+                    "stream": "false",
                     "max_gen_toks": 32 * 1024,
                     "until": [],
                     "do_sample": "true",
@@ -4763,13 +4771,21 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Use the chat endpoint so the server applies the chat template
+                # (and thus --default-chat-template-kwargs '{"enable_thinking":
+                # true}'); client-side apply_chat_template on /v1/completions
+                # would render with the default enable_thinking=false and
+                # suppress native reasoning (see gemma-4-31B-it note above).
+                use_chat_api=True,
                 model_kwargs={
                     "max_length": 131072,
                 },
                 # Thinking-mode sampling (Qwen3.6 page, general tasks):
                 # temperature=1.0, top_p=0.95, top_k=20.
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={
-                    "stream": "true",
+                    "stream": "false",
                     "max_gen_toks": 32 * 1024,
                     "until": [],
                     "do_sample": "true",
@@ -4905,13 +4921,21 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Use the chat endpoint so the server applies the chat template
+                # (and thus --default-chat-template-kwargs '{"enable_thinking":
+                # true}'); client-side apply_chat_template on /v1/completions
+                # would render with the default enable_thinking=false and
+                # suppress native reasoning (see gemma-4-31B-it note above).
+                use_chat_api=True,
                 model_kwargs={
                     "max_length": 131072,
                 },
                 # Thinking-mode sampling (Qwen3.6 page, general tasks):
                 # temperature=1.0, top_p=0.95, top_k=20.
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={
-                    "stream": "true",
+                    "stream": "false",
                     "max_gen_toks": 32 * 1024,
                     "until": [],
                     "do_sample": "true",
@@ -5047,13 +5071,21 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Use the chat endpoint so the server applies the chat template
+                # (and thus --default-chat-template-kwargs '{"enable_thinking":
+                # true}'); client-side apply_chat_template on /v1/completions
+                # would render with the default enable_thinking=false and
+                # suppress native reasoning (see gemma-4-31B-it note above).
+                use_chat_api=True,
                 model_kwargs={
                     "max_length": 131072,
                 },
                 # Thinking-mode sampling (Qwen3.6 page, general tasks):
                 # temperature=1.0, top_p=0.95, top_k=20.
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={
-                    "stream": "true",
+                    "stream": "false",
                     "max_gen_toks": 32 * 1024,
                     "until": [],
                     "do_sample": "true",
