@@ -8,11 +8,12 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdlib>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 #include "config/settings.hpp"
@@ -92,6 +93,17 @@ std::string serializeJson(const Json::Value& v) {
   b["indentation"] = "";
   b["emitUTF8"] = true;
   return Json::writeString(b, v);
+}
+
+Json::Value parseJson(const std::string& data) {
+  Json::Value out;
+  Json::CharReaderBuilder builder;
+  std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+  std::string errs;
+  if (!reader->parse(data.data(), data.data() + data.size(), &out, &errs)) {
+    throw std::runtime_error("invalid JSON: " + errs);
+  }
+  return out;
 }
 
 /// Hierarchical key that Dynamo's KVStoreDiscovery uses for both file and
@@ -339,7 +351,8 @@ class EtcdDiscoveryRegistration : public DiscoveryRegistration {
     }
     publishKeys();
     TT_LOG_INFO(
-        "[DynamoDiscovery/etcd] Registered key={} model={} role={} endpoints={}",
+        "[DynamoDiscovery/etcd] Registered key={} model={} role={} "
+        "endpoints={}",
         instanceKey(cfg), cfg.model_name, workerRoleName(cfg.worker_role),
         cfg.etcd_endpoints);
   }
@@ -409,6 +422,51 @@ class EtcdDiscoveryRegistration : public DiscoveryRegistration {
 };
 
 }  // namespace
+
+std::vector<DynamoEndpointInstance> listDynamoEndpointInstances(
+    const std::string& etcdEndpoints, const std::string& namespaceName,
+    const std::string& component, const std::string& endpoint) {
+  EtcdClient client(etcdEndpoints);
+  const std::string prefix =
+      "v1/instances/" + namespaceName + "/" + component + "/" + endpoint + "/";
+  auto kvs = client.getPrefix(prefix);
+
+  std::vector<DynamoEndpointInstance> instances;
+  for (const auto& [key, value] : kvs) {
+    try {
+      Json::Value instance = parseJson(value);
+      if (!instance.isObject() || !instance.isMember("transport") ||
+          !instance.get("transport", Json::Value{}).isObject()) {
+        continue;
+      }
+
+      const Json::Value transport = instance.get("transport", Json::Value{});
+      const std::string tcp = transport.get("tcp", "").asString();
+      if (tcp.empty()) continue;
+
+      const auto slash = tcp.find('/');
+      const std::string hostPort =
+          slash == std::string::npos ? tcp : tcp.substr(0, slash);
+      const std::string endpointPath =
+          slash == std::string::npos ? endpoint : tcp.substr(slash + 1);
+      const auto colon = hostPort.rfind(':');
+      if (colon == std::string::npos) continue;
+
+      DynamoEndpointInstance out;
+      out.key = key;
+      out.tcp_address = tcp;
+      out.instance_id = instance.get("instance_id", Json::UInt64(0)).asUInt64();
+      out.host = hostPort.substr(0, colon);
+      out.port = static_cast<uint16_t>(std::stoi(hostPort.substr(colon + 1)));
+      out.endpoint_path = endpointPath.empty() ? endpoint : endpointPath;
+      instances.push_back(std::move(out));
+    } catch (const std::exception& e) {
+      TT_LOG_WARN("[DynamoDiscovery] Skipping invalid instance {}: {}", key,
+                  e.what());
+    }
+  }
+  return instances;
+}
 
 std::unique_ptr<DiscoveryRegistration> DiscoveryRegistration::create(
     const DiscoveryConfig& config) {

@@ -1189,6 +1189,277 @@ jobs:
           retention-days: 1
           if-no-files-found: warn
 
+  dynamo-prefill-routing-equivalence:
+    needs: cpp-build
+    name: Dynamo Prefill Routing Equivalence
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+      no_proxy: "localhost,127.0.0.1,::1"
+      DYN_VENV: ${{ github.workspace }}/.venvs/dynamo
+      DYN_DISCOVERY_BACKEND: etcd
+      ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYN_REQUEST_PLANE: tcp
+      DYN_EVENT_PLANE: zmq
+      DYNAMO_DISCOVERY_BACKEND: etcd
+      DYNAMO_ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYNAMO_NAMESPACE: default
+      DYNAMO_ENDPOINT_NAME: generate
+      DYNAMO_ENDPOINT_ENABLED: "1"
+      MODEL: deepseek-ai/DeepSeek-R1-0528
+      MODEL_NAME: deepseek-ai/DeepSeek-R1-0528
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download C++ build
+        uses: actions/download-artifact@v7
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Set up C++ build artifact
+        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
+
+      - name: Set up uv for Dynamo
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+
+      - name: Create dynamo venv
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.venvs"
+          bash cpp_server/scripts/ci/install_bench_client.sh \
+            --venv "${DYN_VENV}" \
+            --python ${{ env.PYTHON_VERSION }} \
+            --package ai-dynamo \
+            --package uvloop
+
+      - name: Install etcd from upstream release
+        working-directory: .
+        run: |
+          ETCD_VER=v3.5.13
+          curl -fsSL \
+            "https://github.com/etcd-io/etcd/releases/download/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz" \
+            -o /tmp/etcd.tar.gz
+          mkdir -p /tmp/etcd
+          tar xzf /tmp/etcd.tar.gz -C /tmp/etcd --strip-components=1
+          sudo install -m 0755 /tmp/etcd/etcd    /usr/local/bin/etcd
+          sudo install -m 0755 /tmp/etcd/etcdctl /usr/local/bin/etcdctl
+          etcd --version
+          etcdctl version
+
+      - name: Start etcd
+        run: |
+          pkill -f '/usr/local/bin/etcd' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 2380 --label "etcd"
+          rm -rf /tmp/etcd-data
+          etcd \
+            --data-dir /tmp/etcd-data \
+            --advertise-client-urls=http://127.0.0.1:2379 \
+            --listen-client-urls=http://127.0.0.1:2379 \
+            --listen-peer-urls=http://127.0.0.1:2380 \
+            --initial-advertise-peer-urls=http://127.0.0.1:2380 \
+            --initial-cluster='default=http://127.0.0.1:2380' \
+            > dynamo_prefill_etcd.log 2>&1 &
+          echo $! > dynamo_prefill_etcd.pid
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command 'etcdctl --endpoints=http://127.0.0.1:2379 endpoint health' \
+            --pid-file dynamo_prefill_etcd.pid \
+            --failure-log dynamo_prefill_etcd.log \
+            --label "etcd"
+
+      - name: Start cpp_server decode worker
+        env:
+          DYNAMO_COMPONENT: backend
+          DYNAMO_DECODE_ORCHESTRATES_PREFILL: "1"
+          DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED: "1"
+          DYNAMO_PREFILL_CLIENT_NAMESPACE: default
+          DYNAMO_PREFILL_CLIENT_COMPONENT: prefill
+          DYNAMO_PREFILL_CLIENT_TIMEOUT_MS: "120000"
+          LLM_DEVICE_BACKEND: mock_pipeline
+          LLM_MODE: decode
+          MAX_TOKENS_TO_PREFILL_ON_DECODE: "100"
+          SOCKET_TRANSPORT: tcp
+          SOCKET_HOST: 0.0.0.0
+          SOCKET_PORT: "9000"
+          TT_LOG_LEVEL: debug
+        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 9000 --label "Dynamo prefill hint decode"
+          cd cpp_server
+          ./build/tt_media_server_cpp -p 8001 -t 4 > ../dynamo_prefill_decode.log 2>&1 &
+          echo $! > ../dynamo_prefill_decode.pid
+          cd ..
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 8001 \
+            --timeout 120 \
+            --interval 2 \
+            --pid-file dynamo_prefill_decode.pid \
+            --label "Dynamo prefill hint decode"
+
+      - name: Start cpp_server prefill workers
+        run: |
+          for IDX in 1 2; do
+            PORT=$((8001 + IDX))
+            LOG="dynamo_prefill_prefill${IDX}.log"
+            PID="dynamo_prefill_prefill${IDX}.pid"
+            LABEL="Dynamo prefill hint worker ${IDX}"
+            bash cpp_server/scripts/ci/wait_for_port_free.sh --port "${PORT}" --label "${LABEL}"
+            cd cpp_server
+            DYNAMO_WORKER_ROLE=prefill \
+            DYNAMO_COMPONENT=prefill \
+            DYNAMO_DECODE_ORCHESTRATES_PREFILL=1 \
+            DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=1 \
+            LLM_DEVICE_BACKEND=mock_pipeline \
+            LLM_MODE=prefill \
+            SOCKET_TRANSPORT=tcp \
+            SOCKET_HOST=127.0.0.1 \
+            SOCKET_PORT=9000 \
+            TT_LOG_LEVEL=debug \
+            PREFILL_SERVER_ID="dynamo-prefill-${IDX}" \
+            TT_MEMORY_REQUEST_QUEUE="tt_mem_requests_prefill${IDX}" \
+            TT_MEMORY_RESULT_QUEUE="tt_mem_results_prefill${IDX}" \
+            TT_WORKER_METRICS_SHM="/tt_worker_metrics_prefill${IDX}" \
+              ./build/tt_media_server_cpp -p "${PORT}" -t 4 \
+                > "../${LOG}" 2>&1 &
+            echo $! > "../${PID}"
+            cd ..
+            bash cpp_server/scripts/ci/wait_for_liveness.sh \
+              --port "${PORT}" \
+              --timeout 120 \
+              --interval 2 \
+              --pid-file "${PID}" \
+              --label "${LABEL}"
+          done
+
+      - name: Assert tokenizer + config bundle from cpp-build artifact
+        run: |
+          MODEL_DIR="cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
+          for f in config.json tokenizer.json tokenizer_config.json; do
+            [ -f "${MODEL_DIR}/${f}" ] || {
+              echo "::error::Missing ${MODEL_DIR}/${f} in cpp-build artifact."
+              exit 1
+            }
+          done
+
+      - name: Start Dynamo frontend with prefill hints
+        env:
+          DYN_DECODE_PREFILL_HINT: "1"
+        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "Dynamo prefill hint frontend"
+          MODEL_PATH="${GITHUB_WORKSPACE}/tt-media-server/cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
+          "${DYN_VENV}/bin/python3" -m dynamo.frontend \
+              --http-port 8000 \
+              --router-mode kv \
+              --decode-prefill-hint \
+              --model-name "${MODEL_NAME}" \
+              --model-path "${MODEL_PATH}" \
+              > dynamo_prefill_frontend.log 2>&1 &
+          echo $! > dynamo_prefill_frontend.pid
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command 'curl -sf "http://127.0.0.1:8000/v1/models" 2>/dev/null | grep -q "\"data\""' \
+            --timeout 120 \
+            --interval 2 \
+            --pid-file dynamo_prefill_frontend.pid \
+            --failure-log dynamo_prefill_frontend.log \
+            --label "Dynamo prefill hint frontend"
+
+      - name: Verify decode and prefill registered in etcd
+        run: |
+          DECODE_KEYS=$(etcdctl --endpoints=http://127.0.0.1:2379 \
+            get --prefix --keys-only "v1/instances/default/backend/generate/")
+          PREFILL_KEYS=$(etcdctl --endpoints=http://127.0.0.1:2379 \
+            get --prefix --keys-only "v1/instances/default/prefill/generate/")
+          echo "decode keys:"
+          echo "$DECODE_KEYS"
+          echo "prefill keys:"
+          echo "$PREFILL_KEYS"
+          echo "$DECODE_KEYS" | grep -q "v1/instances/default/backend/generate/" || {
+            echo "::error::Decode worker did not register in etcd"
+            exit 1
+          }
+          PREFILL_COUNT=$(printf '%s\n' "$PREFILL_KEYS" \
+            | grep -c "v1/instances/default/prefill/generate/" || true)
+          if [ "$PREFILL_COUNT" -lt 2 ]; then
+            echo "::error::Expected at least 2 prefill registrations, got ${PREFILL_COUNT}"
+            exit 1
+          fi
+
+      - name: Verify Dynamo prefill routing equivalence
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          python3 cpp_server/scripts/ci/check_prefill_routing_equivalence.py \
+            --mode dynamo \
+            --base-url http://127.0.0.1:8000 \
+            --model "${MODEL_NAME}" \
+            --route-log dynamo_prefill_prefill1.log \
+            --route-log dynamo_prefill_prefill2.log
+
+      - name: Confirm no standalone Dynamo router sidecar
+        run: |
+          python3 - <<'PY'
+          import os
+          matches = []
+          for pid in filter(str.isdigit, os.listdir("/proc")):
+              try:
+                  parts = open(f"/proc/{pid}/cmdline", "rb").read().split(b"\0")
+              except OSError:
+                  continue
+              if b"-m" in parts and b"dynamo.router" in parts:
+                  matches.append(pid)
+          if matches:
+              raise SystemExit(f"unexpected dynamo.router processes: {matches}")
+          print("dynamo.router processes: []")
+          PY
+
+      - name: Stop Option 3 Dynamo prefill stack
+        if: always()
+        run: |
+          for pidfile in \
+            dynamo_prefill_frontend.pid \
+            dynamo_prefill_decode.pid \
+            dynamo_prefill_prefill1.pid \
+            dynamo_prefill_prefill2.pid \
+            dynamo_prefill_etcd.pid; do
+            [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null || true
+          done
+          pkill -f 'dynamo.frontend' 2>/dev/null || true
+          pkill -f 'tt_media_server_cpp' 2>/dev/null || true
+          pkill -f '/usr/local/bin/etcd' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 2380 --port 8000 --port 8001 --port 8002 --port 8003 --port 9000 --label "Dynamo prefill routing"
+
+      - name: Show Option 3 routing logs
+        if: always()
+        run: |
+          for LOG in dynamo_prefill_etcd.log dynamo_prefill_frontend.log dynamo_prefill_decode.log dynamo_prefill_prefill1.log dynamo_prefill_prefill2.log; do
+            echo "=== $LOG ==="
+            [ -f "$LOG" ] && cat "$LOG" || echo "(not found)"
+            echo ""
+          done
+
+      - name: Upload Option 3 routing logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: dynamo-prefill-routing-equivalence-logs
+          path: |
+            tt-media-server/dynamo_prefill_etcd.log
+            tt-media-server/dynamo_prefill_frontend.log
+            tt-media-server/dynamo_prefill_decode.log
+            tt-media-server/dynamo_prefill_prefill1.log
+            tt-media-server/dynamo_prefill_prefill2.log
+          retention-days: 1
+          if-no-files-found: warn
+
   dynamo-prefix-cache-e2e:
     needs: cpp-build
     name: Dynamo Frontend Prefix Cache E2E

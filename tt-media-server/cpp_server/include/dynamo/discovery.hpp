@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace tt::dynamo {
 
@@ -50,6 +51,19 @@ struct DiscoveryConfig {
   /// tokenizer_config.json.
   std::string model_path;
 };
+
+struct DynamoEndpointInstance {
+  std::string key;
+  std::string tcp_address;
+  std::string host;
+  uint64_t instance_id = 0;
+  uint16_t port = 0;
+  std::string endpoint_path = "generate";
+};
+
+std::vector<DynamoEndpointInstance> listDynamoEndpointInstances(
+    const std::string& etcdEndpoints, const std::string& namespaceName,
+    const std::string& component, const std::string& endpoint);
 
 /**
  * Lifecycle handle for a discovery registration. Construct via

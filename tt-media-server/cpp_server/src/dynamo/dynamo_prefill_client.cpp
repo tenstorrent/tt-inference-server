@@ -24,7 +24,6 @@
 
 #include "dynamo/dynamo_prefill_handoff.hpp"
 #include "dynamo/dynamo_protocol.hpp"
-#include "dynamo/etcd_client.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::dynamo {
@@ -130,8 +129,7 @@ Fd connectTcp(const std::string& host, uint16_t port, int timeoutMs) {
   const std::string portStr = std::to_string(port);
   int rc = ::getaddrinfo(host.c_str(), portStr.c_str(), &hints, &result);
   if (rc != 0) {
-    throw std::runtime_error("getaddrinfo failed for " + host + ":" +
-                             portStr);
+    throw std::runtime_error("getaddrinfo failed for " + host + ":" + portStr);
   }
   std::unique_ptr<addrinfo, decltype(&::freeaddrinfo)> addrs(result,
                                                              ::freeaddrinfo);
@@ -235,15 +233,17 @@ std::optional<DynamoPrefillHandoff> handoffFromStreamBody(
   if (annotated.get("event", "").asString() == "error") {
     const Json::Value& comments = annotated["comment"];
     std::string message = "prefill worker returned error";
-    if (comments.isArray() && !comments.empty()) message = comments[0].asString();
+    if (comments.isArray() && !comments.empty())
+      message = comments[0].asString();
     throw std::runtime_error(message);
   }
   std::function<std::optional<DynamoPrefillHandoff>(const Json::Value&)>
-      findHandoff = [&](const Json::Value& value)
-      -> std::optional<DynamoPrefillHandoff> {
+      findHandoff =
+          [&](const Json::Value& value) -> std::optional<DynamoPrefillHandoff> {
     if (!value.isObject() && !value.isArray()) return std::nullopt;
     if (value.isObject()) {
-      if (const Json::Value* handoffJson = findDynamoPrefillHandoffJson(value)) {
+      if (const Json::Value* handoffJson =
+              findDynamoPrefillHandoffJson(value)) {
         return parseDynamoPrefillHandoff(*handoffJson);
       }
       if (value.isMember("tt_prefill_handoff") &&
@@ -317,7 +317,8 @@ Json::Value buildGenerateBody(const tt::sockets::PrefillRequestMessage& request,
   body["stop_conditions"] = std::move(stop);
 
   Json::Value sampling(Json::objectValue);
-  if (request.temperature.has_value()) sampling["temperature"] = *request.temperature;
+  if (request.temperature.has_value())
+    sampling["temperature"] = *request.temperature;
   if (request.topP.has_value()) sampling["top_p"] = *request.topP;
   if (request.topK.has_value()) sampling["top_k"] = *request.topK;
   body["sampling_options"] = std::move(sampling);
@@ -379,47 +380,15 @@ std::vector<uint8_t> buildRequestFrame(
 DynamoPrefillClient::DynamoPrefillClient(Options options)
     : options(std::move(options)) {}
 
-std::vector<DynamoPrefillClient::Worker> DynamoPrefillClient::discoverWorkers()
+std::vector<DynamoEndpointInstance> DynamoPrefillClient::discoverWorkers()
     const {
-  EtcdClient client(options.etcd_endpoints);
-  const std::string prefix = "v1/instances/" + options.namespace_name + "/" +
-                             options.component + "/" + options.endpoint + "/";
-  auto kvs = client.getPrefix(prefix);
-  std::vector<Worker> workers;
-  for (const auto& [key, value] : kvs) {
-    try {
-      Json::Value instance = parseJson(value);
-      if (!instance.isObject() || !instance.isMember("transport") ||
-          !instance.get("transport", Json::Value{}).isObject()) {
-        continue;
-      }
-      const Json::Value transport = instance.get("transport", Json::Value{});
-      const std::string tcp = transport.get("tcp", "").asString();
-      if (tcp.empty()) continue;
-      const auto slash = tcp.find('/');
-      const std::string hostPort = slash == std::string::npos ? tcp : tcp.substr(0, slash);
-      const std::string endpoint =
-          slash == std::string::npos ? options.endpoint : tcp.substr(slash + 1);
-      const auto colon = hostPort.rfind(':');
-      if (colon == std::string::npos) continue;
-      Worker w;
-      w.key = key;
-      w.tcp_address = tcp;
-      w.instance_id = instance.get("instance_id", Json::UInt64(0)).asUInt64();
-      w.host = hostPort.substr(0, colon);
-      w.port = static_cast<uint16_t>(std::stoi(hostPort.substr(colon + 1)));
-      w.endpoint_path = endpoint.empty() ? options.endpoint : endpoint;
-      workers.push_back(std::move(w));
-    } catch (const std::exception& e) {
-      TT_LOG_WARN("[DynamoPrefillClient] Skipping invalid worker {}: {}", key,
-                  e.what());
-    }
-  }
-  return workers;
+  return listDynamoEndpointInstances(options.etcd_endpoints,
+                                     options.namespace_name, options.component,
+                                     options.endpoint);
 }
 
-DynamoPrefillClient::Worker DynamoPrefillClient::selectWorker(
-    const std::vector<Worker>& workers) {
+DynamoEndpointInstance DynamoPrefillClient::selectWorker(
+    const std::vector<DynamoEndpointInstance>& workers) {
   if (workers.empty()) {
     throw std::runtime_error("no Dynamo prefill workers registered");
   }
@@ -438,12 +407,13 @@ tt::sockets::PrefillResultMessage DynamoPrefillClient::execute(
         *selectedWorkerId, request.taskId);
   }
 
-  Worker worker;
+  DynamoEndpointInstance worker;
   if (selectedWorkerId.has_value()) {
-    auto it = std::find_if(workers.begin(), workers.end(),
-                           [selected = *selectedWorkerId](const Worker& w) {
-                             return w.instance_id == selected;
-                           });
+    auto it = std::find_if(
+        workers.begin(), workers.end(),
+        [selected = *selectedWorkerId](const DynamoEndpointInstance& w) {
+          return w.instance_id == selected;
+        });
     if (it == workers.end()) {
       TT_LOG_WARN(
           "[DynamoPrefillClient] Advisory prefill worker_id={} is not "
@@ -465,7 +435,8 @@ tt::sockets::PrefillResultMessage DynamoPrefillClient::execute(
       responseHost + ":" + std::to_string(listener.port);
   const std::string requestId =
       "tt-prefill-" + std::to_string(request.taskId) + "-" +
-      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+      std::to_string(
+          std::chrono::steady_clock::now().time_since_epoch().count());
 
   TT_LOG_INFO(
       "[DynamoPrefillClient] Sending prefill taskId={} worker={} address={} "
@@ -474,8 +445,8 @@ tt::sockets::PrefillResultMessage DynamoPrefillClient::execute(
       request.tokenIds.size(), request.registrationHashes.size());
 
   Fd requestFd = connectTcp(worker.host, worker.port, options.timeout_ms);
-  auto frame =
-      buildRequestFrame(worker.endpoint_path, request, requestId, responseAddress);
+  auto frame = buildRequestFrame(worker.endpoint_path, request, requestId,
+                                 responseAddress);
   writeAll(requestFd.get(), frame.data(), frame.size(), options.timeout_ms);
   readAck(requestFd.get(), options.timeout_ms);
 
@@ -497,7 +468,8 @@ tt::sockets::PrefillResultMessage DynamoPrefillClient::execute(
     }
   }
   if (!handoff.has_value()) {
-    throw std::runtime_error("prefill worker completed without tt_prefill_handoff");
+    throw std::runtime_error(
+        "prefill worker completed without tt_prefill_handoff");
   }
   return dynamoPrefillHandoffToPrefillResult(request.taskId, *handoff);
 }

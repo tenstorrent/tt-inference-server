@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "dynamo/discovery.hpp"
 #include "sockets/socket_messages.hpp"
 
 namespace tt::dynamo {
@@ -31,17 +32,9 @@ class DynamoPrefillClient {
       std::optional<uint64_t> selectedWorkerId = std::nullopt);
 
  private:
-  struct Worker {
-    std::string key;
-    std::string tcp_address;
-    std::string host;
-    uint64_t instance_id = 0;
-    uint16_t port = 0;
-    std::string endpoint_path = "generate";
-  };
-
-  std::vector<Worker> discoverWorkers() const;
-  Worker selectWorker(const std::vector<Worker>& workers);
+  std::vector<DynamoEndpointInstance> discoverWorkers() const;
+  DynamoEndpointInstance selectWorker(
+      const std::vector<DynamoEndpointInstance>& workers);
 
   Options options;
   std::atomic<uint64_t> nextWorker{0};
