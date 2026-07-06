@@ -38,15 +38,16 @@ def _categories_by_name(schema: ReportSchema):
 
 
 def test_category_result_passed_and_to_dict():
-    cat = CategoryResult("Benchmarks", STATUS_FAIL, total=5, failed=2, na=1)
-    assert cat.passed == 2
+    cat = CategoryResult("Benchmarks", STATUS_FAIL, total=5, failed=2, na=1, skipped=1)
+    assert cat.passed == 1
     assert cat.to_dict() == {
         "name": "Benchmarks",
         "status": STATUS_FAIL,
         "total": 5,
-        "passed": 2,
+        "passed": 1,
         "failed": 2,
         "na": 1,
+        "skipped": 1,
         "blockers": {},
     }
 
@@ -171,6 +172,126 @@ def test_spec_tests_success_true_passes():
     assert by_name[CATEGORY_SPEC_TESTS].status == STATUS_PASS
 
 
+# --- Spec tests: status-aware (SKIP / ERROR / NA) -------------------------
+
+
+def _spec(status_value: str, **extra) -> Block:
+    data = {"success": status_value == "pass", "status": status_value, **extra}
+    return Block(kind="spec_tests", title="T", task_type="functional", data=data)
+
+
+def test_spec_skip_is_non_blocking():
+    schema = _schema(_spec("skip", skipped=True, reason="no board"))
+    accepted, blockers, cats = acceptance_criteria_check(schema)
+    cat = {c.name: c for c in cats}[CATEGORY_SPEC_TESTS]
+    assert accepted is True and blockers == {}
+    assert cat.skipped == 1 and cat.failed == 0 and cat.status == STATUS_PASS
+
+
+def test_spec_na_is_non_blocking():
+    schema = _schema(_spec("na"))
+    accepted, blockers, cats = acceptance_criteria_check(schema)
+    cat = {c.name: c for c in cats}[CATEGORY_SPEC_TESTS]
+    assert accepted is True and blockers == {}
+    assert cat.na == 1 and cat.failed == 0
+
+
+def test_spec_error_blocks():
+    schema = _schema(_spec("error", error={"type": "AttributeError", "message": "x"}))
+    accepted, blockers, cats = acceptance_criteria_check(schema)
+    cat = {c.name: c for c in cats}[CATEGORY_SPEC_TESTS]
+    assert accepted is False
+    assert "spec.spec_tests:T" in blockers
+    assert "status=error" in blockers["spec.spec_tests:T"]
+    assert cat.failed == 1
+
+
+def test_spec_status_takes_precedence_over_success_flag():
+    # success flag says failure, but explicit SKIP status must win (non-blocking).
+    block = Block(
+        kind="spec_tests",
+        title="T",
+        task_type="functional",
+        data={"success": False, "status": "skip", "reason": "gated"},
+    )
+    accepted, blockers, _ = acceptance_criteria_check(_schema(block))
+    assert accepted is True and blockers == {}
+
+
+def test_mixed_spec_statuses_counts():
+    schema = _schema(
+        _spec("pass"),
+        _spec("skip", skipped=True, reason="r"),
+        _spec("na"),
+    )
+    accepted, blockers, cats = acceptance_criteria_check(schema)
+    cat = {c.name: c for c in cats}[CATEGORY_SPEC_TESTS]
+    assert accepted is True
+    assert cat.total == 3 and cat.passed == 1 and cat.skipped == 1 and cat.na == 1
+
+
+# --- Evals: explicit status overrides accuracy heuristics -----------------
+
+
+def test_eval_explicit_skip_is_non_blocking():
+    schema = _schema(_eval({"success": False, "status": "skip", "reason": "gated"}))
+    accepted, blockers, cats = acceptance_criteria_check(schema)
+    cat = {c.name: c for c in cats}[CATEGORY_EVALS]
+    assert accepted is True and blockers == {}
+    assert cat.skipped == 1
+
+
+def test_eval_explicit_error_blocks():
+    schema = _schema(_eval({"success": False, "status": "error"}))
+    accepted, blockers, _ = acceptance_criteria_check(schema)
+    assert accepted is False
+    assert "status=error" in blockers["evals:E"]
+
+
+# --- Benchmarks: status short-circuits target_checks ----------------------
+
+
+def test_benchmark_skip_is_non_blocking_without_target_checks():
+    # A skipped benchmark has no target_checks; it must NOT trip the
+    # "Missing target_checks" blocker.
+    schema = _schema(
+        Block(kind="benchmarks", title="B", data={"status": "skip", "reason": "gated"})
+    )
+    accepted, blockers, cats = acceptance_criteria_check(schema)
+    cat = {c.name: c for c in cats}[CATEGORY_BENCHMARKS]
+    assert accepted is True and blockers == {}
+    assert cat.skipped == 1 and cat.status == STATUS_NA
+
+
+def test_benchmark_error_blocks():
+    schema = _schema(Block(kind="benchmarks", title="B", data={"status": "error"}))
+    accepted, blockers, _ = acceptance_criteria_check(schema)
+    assert accepted is False
+    assert "status=error" in blockers["benchmarks:B"]
+
+
+def test_benchmark_passing_target_checks_still_pass_with_status_absent():
+    schema = _schema(
+        _bench({"target": {"ttft_check": 2, "ttft": 100, "ttft_ratio": 0.8}})
+    )
+    accepted, blockers, cats = acceptance_criteria_check(schema)
+    cat = {c.name: c for c in cats}[CATEGORY_BENCHMARKS]
+    assert accepted is True and blockers == {}
+    assert cat.status == STATUS_PASS and cat.skipped == 0
+
+
+def test_benchmark_mixed_skip_and_pass_is_pass():
+    schema = _schema(
+        _bench({"target": {"ttft_check": 2, "ttft": 100, "ttft_ratio": 0.8}}),
+        Block(kind="benchmarks", title="B2", data={"status": "skip", "reason": "x"}),
+    )
+    accepted, _, cats = acceptance_criteria_check(schema)
+    cat = {c.name: c for c in cats}[CATEGORY_BENCHMARKS]
+    assert accepted is True
+    assert cat.total == 2 and cat.passed == 1 and cat.skipped == 1
+    assert cat.status == STATUS_PASS
+
+
 # --- Markdown summary -----------------------------------------------------
 
 
@@ -180,6 +301,15 @@ def test_summary_markdown_passing():
     assert "Acceptance status: `PASS`" in md
     assert "All acceptance criteria passed." in md
     assert "2/2 passed" in md
+
+
+def test_summary_markdown_detail_shows_skipped():
+    categories = [
+        CategoryResult(CATEGORY_SPEC_TESTS, STATUS_PASS, total=3, failed=0, skipped=1)
+    ]
+    md = format_acceptance_summary_markdown(True, {}, categories)
+    assert "2/3 passed" in md
+    assert "1 skipped" in md
 
 
 def test_summary_markdown_includes_model_status():

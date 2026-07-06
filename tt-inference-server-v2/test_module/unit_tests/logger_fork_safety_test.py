@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from report_module.schema import Block
 
-from .._test_common import BaseTest, TestConfig
+from .._test_common import BaseTest, SkipTest, TestConfig
 
 if TYPE_CHECKING:
     from ..context import MediaContext
@@ -59,8 +59,7 @@ class LoggerForkSafetyTest(BaseTest):
 
     async def _run_specific_test_async(self):
         if not hasattr(os, "fork"):
-            logger.warning("os.fork() not available, skipping test")
-            return {"success": True, "skipped": True, "reason": "fork not available"}
+            raise SkipTest("os.fork() not available on this platform")
 
         logger.info("Testing logger fork safety with held lock...")
 

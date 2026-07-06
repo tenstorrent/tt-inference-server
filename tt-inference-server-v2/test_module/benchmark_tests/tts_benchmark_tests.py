@@ -233,7 +233,7 @@ def run_tts_benchmark(ctx: MediaContext) -> Block:
     ttft_value = _tts_avg(status_list, "ttft_ms")
     rtr_value = _tts_avg(status_list, "rtr")
     p90_ttft, p95_ttft = _tts_tail_latency(status_list)
-    target_checks, accuracy_check = _tts_target_checks(ctx, ttft_value, rtr_value)
+    target_checks, target_check = _tts_target_checks(ctx, ttft_value, rtr_value)
 
     return Block(
         kind="benchmarks",
@@ -248,7 +248,7 @@ def run_tts_benchmark(ctx: MediaContext) -> Block:
                 "rtr": rtr_value,
                 "ttft_p90": p90_ttft / 1000,
                 "ttft_p95": p95_ttft / 1000,
-                "accuracy_check": accuracy_check,
+                "target_check": target_check,
                 "target_checks": target_checks,
             },
         },

@@ -243,7 +243,7 @@ def run_tiered_check(
     target_checks = evaluate_tiered(targets, specs)
     _log_tiered(target_checks)
     summary = summary_from_tiered(target_checks)
-    logger.info(f"Overall accuracy_check (target tier): {summary.name}")
+    logger.info(f"Overall target_check (target tier): {summary.name}")
     return target_checks, summary
 
 
