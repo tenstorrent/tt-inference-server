@@ -334,7 +334,7 @@ inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig() {
       .numPipelineStages = tt::config::mockPipelineStages(),
       .stageLatency =
           std::chrono::microseconds(tt::config::mockStageLatencyUs()),
-      .prefillChunkSize = tt::config::mockPrefillRoundRobinTokens(),
+      .prefillChunkSize = tt::config::mockPrefillChunkSize(),
       .decodeTokenId = tt::config::mockDecodeTokenId(),
   };
 }

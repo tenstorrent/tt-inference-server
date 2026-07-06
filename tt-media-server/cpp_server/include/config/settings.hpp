@@ -364,12 +364,9 @@ unsigned mockStageLatencyUs();
  * defaults::MOCK_PIPELINE_STAGES. */
 uint32_t mockPipelineStages();
 
-/** Round-robin quantum (prompt tokens) for prefill in the MockDecodeScheduler:
- * a slot injects up to this many tokens before rotating to the next prefilling
- * slot. Mirrors the real decode scheduler's DEFAULT_CHUNK_SIZE. Affects only
- * how first-token latency spreads across concurrent slots, not the shared cap.
- * Default: defaults::MOCK_PREFILL_RR_TOKENS. */
-uint32_t mockPrefillRoundRobinTokens();
+/** Returns how many tokens are used for prefill before moving to the next
+ * slot. Default: defaults::MOCK_PREFILL_CHUNK_SIZE. */
+uint32_t mockPrefillChunkSize();
 
 /** Fixed decode token id emitted by MockSchedulers. From MOCK_DECODE_TOKEN_ID.
  * Default: defaults::MOCK_DECODE_TOKEN_ID. */

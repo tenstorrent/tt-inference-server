@@ -336,9 +336,9 @@ uint32_t mockPipelineStages() {
       envUlong("MOCK_PIPELINE_STAGES", defaults::MOCK_PIPELINE_STAGES));
 }
 
-uint32_t mockPrefillRoundRobinTokens() {
+uint32_t mockPrefillChunkSize() {
   return static_cast<uint32_t>(
-      envUlong("MOCK_PREFILL_RR_TOKENS", defaults::MOCK_PREFILL_RR_TOKENS));
+      envUlong("MOCK_PREFILL_RR_TOKENS", defaults::MOCK_PREFILL_CHUNK_SIZE));
 }
 
 uint32_t mockDecodeTokenId() {

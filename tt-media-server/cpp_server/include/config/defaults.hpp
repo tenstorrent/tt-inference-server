@@ -148,7 +148,7 @@ constexpr int64_t DYNAMO_ETCD_LEASE_TTL_SECS = 10;
 constexpr unsigned MOCK_PREFILL_CHUNK_LATENCY_MS = 1353;
 constexpr unsigned MOCK_STAGE_LATENCY_US = 44;
 constexpr uint32_t MOCK_PIPELINE_STAGES = 64;
-constexpr uint32_t MOCK_PREFILL_RR_TOKENS = 24;
+constexpr uint32_t MOCK_PREFILL_CHUNK_SIZE = 24;
 constexpr unsigned MOCK_DECODE_TOKEN_ID = 12345;
 
 }  // namespace tt::config::defaults
