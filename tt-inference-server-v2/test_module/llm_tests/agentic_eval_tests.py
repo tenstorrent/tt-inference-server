@@ -56,7 +56,17 @@ def _server_connection(ctx: MediaContext) -> ServerConnection:
 
 def _driver_context(ctx: MediaContext) -> DriverContext:
     device = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
-    return DriverContext(output_dir=Path(ctx.output_path), device=device)
+    # In a `release` run the agentic driver shares the run directory with the
+    # LLM benchmark ("llm/") and prefix-cache ("prefix_cache/") outputs, so
+    # group agentic results under a top-level "agentic/" dir (mirroring the
+    # LLM layout) via ``agentic_release_layout``. The standalone `agentic`
+    # workflow keeps its existing eval_<hf>/agentic/<task> layout.
+    release_layout = getattr(ctx.runtime_config, "workflow", None) == "release"
+    return DriverContext(
+        output_dir=Path(ctx.output_path),
+        device=device,
+        agentic_release_layout=release_layout,
+    )
 
 
 def _configure_openai_env(ctx: MediaContext) -> None:

@@ -34,7 +34,12 @@ class AgenticEvalDriver(LLMDriver):
         self._parser = AgenticEvalParser(task_name=task.task_name, score=task.score)
 
     def result_path(self, server: ServerConnection, context: DriverContext) -> Path:
-        output_dir = _agentic_output_dir(context.output_dir, server.model, self.task)
+        output_dir = _agentic_output_dir(
+            context.output_dir,
+            server.model,
+            self.task,
+            release_layout=context.agentic_release_layout,
+        )
         return output_dir / "result.json"
 
     def failure_block(self, *, return_code: int, device: str = ""):
@@ -166,7 +171,12 @@ def build_swebench_config(
         agent_backend=cfg.agent_backend,
         model_name=cfg.model or f"openai/{server.model}",
         api_base=f"{server.url_with_port}/v1",
-        output_dir=_agentic_output_dir(context.output_dir, server.model, task),
+        output_dir=_agentic_output_dir(
+            context.output_dir,
+            server.model,
+            task,
+            release_layout=context.agentic_release_layout,
+        ),
         sweagent_config=cfg.sweagent_config,
         mini_config=cfg.mini_config,
         mini_model_class=cfg.mini_model_class,
@@ -198,7 +208,12 @@ def build_terminal_bench_config(
     venv_python: Optional[Path] = None,
 ) -> TerminalBenchRunConfig:
     cfg = task.agentic_eval_config
-    jobs_dir = _agentic_output_dir(context.output_dir, server.model, task).parent
+    jobs_dir = _agentic_output_dir(
+        context.output_dir,
+        server.model,
+        task,
+        release_layout=context.agentic_release_layout,
+    ).parent
     return TerminalBenchRunConfig(
         task_name=task.task_name,
         dataset=cfg.dataset,
@@ -272,8 +287,20 @@ def _get_limit_mode(runtime_config: Any = None) -> Optional[EvalLimitMode]:
     return EvalLimitMode.from_string(runtime_config.limit_samples_mode)
 
 
-def _agentic_output_dir(output_root: Path, model_id: str, task: Any) -> Path:
+def _agentic_output_dir(
+    output_root: Path,
+    model_id: str,
+    task: Any,
+    *,
+    release_layout: bool = False,
+) -> Path:
     safe_model_id = model_id.replace("/", "__")
+    if release_layout:
+        # release run: group all agentic results under a single top-level
+        # ``agentic/`` dir (sibling of ``llm/`` / ``prefix_cache/``) so the
+        # tree mirrors the LLM layout: agentic/eval_<hf>/<task>.
+        return Path(output_root) / "agentic" / f"eval_{safe_model_id}" / task.task_name
+    # standalone agentic run: eval_<hf>/agentic/<task>.
     return Path(output_root) / f"eval_{safe_model_id}" / "agentic" / task.task_name
 
 
