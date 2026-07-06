@@ -23,6 +23,7 @@ from report_module.schema import Block
 from .._test_common import (
     MetricSpec,
     ReportCheckTypes,
+    SkipTest,
     block_id,
     run_tiered_check,
 )
@@ -224,6 +225,12 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
+    model_name = ctx.model_spec.model_name
+    if model_name not in VIDEO_INFERENCE_STEPS:
+        raise SkipTest(
+            f"video benchmark not implemented for model {model_name!r}; "
+            f"supported: {sorted(VIDEO_INFERENCE_STEPS)}"
+        )
     require_health(ctx)
 
     try:
