@@ -21,7 +21,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_WAIT_HEALTHY_TIMEOUT_S = 1200.0
+DEFAULT_WAIT_HEALTHY_TIMEOUT_S = 3600.0
 DEFAULT_HEALTH_PATH = "/health"
 DEFAULT_POLL_INTERVAL_S = 10
 

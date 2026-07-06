@@ -56,6 +56,7 @@ std::string resolveBlazeSocketDescriptorPrefix() {
       return "gpt-oss";
     case ModelType::MINIMAX_M2_7:
       return "minimax";
+    case ModelType::GLM_5_1:
     case ModelType::GLM_5_2:
       return "glm";
     case ModelType::DEEPSEEK_V4_PRO:
@@ -238,10 +239,6 @@ std::string blazeSocketDescriptorPrefix() {
   return cached;
 }
 
-bool migrateFullKV() {
-  return envBool("MIGRATE_FULL_KV", defaults::MIGRATE_FULL_KV);
-}
-
 unsigned pmConnectTimeoutMs() {
   return static_cast<unsigned>(
       envUlong("PM_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
@@ -321,6 +318,26 @@ size_t cancelQueueCapacity() {
 
 size_t memoryQueueCapacity() {
   return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
+}
+
+bool useMockScheduler() {
+  return envBool("MOCK_USE_SCHEDULER", defaults::MOCK_USE_SCHEDULER);
+}
+
+unsigned mockPrefillLatencyMs() {
+  return static_cast<unsigned>(
+      envUlong("MOCK_PREFILL_CHUNK_LATENCY_MS",
+               defaults::MOCK_PREFILL_CHUNK_LATENCY_MS));
+}
+
+unsigned mockDecodeTokenLatencyUs() {
+  return static_cast<unsigned>(envUlong(
+      "MOCK_DECODE_TOKEN_LATENCY_US", defaults::MOCK_DECODE_TOKEN_LATENCY_US));
+}
+
+uint32_t mockDecodeTokenId() {
+  return static_cast<uint32_t>(
+      envUlong("MOCK_DECODE_TOKEN_ID", defaults::MOCK_DECODE_TOKEN_ID));
 }
 
 LLMConfig llmEngineConfig() {
@@ -477,6 +494,7 @@ ModelType modelType() {
       return ModelType::LLAMA_3_1_8B_INSTRUCT;
     if (m == "openai/gpt-oss-120b") return ModelType::GPT_OSS_120B;
     if (m == "MiniMaxAI/MiniMax-M2.7") return ModelType::MINIMAX_M2_7;
+    if (m == "zai-org/GLM-5.1") return ModelType::GLM_5_1;
     if (m == "zai-org/GLM-5.2") return ModelType::GLM_5_2;
     if (m == "deepseek-ai/DeepSeek-V4-Pro") return ModelType::DEEPSEEK_V4_PRO;
     return ModelType::DEEPSEEK_R1_0528;
@@ -500,6 +518,7 @@ bool sampleOnlyInReasoning() {
     case ModelType::KIMI_K2_7_CODE:
     case ModelType::GPT_OSS_120B:
     case ModelType::MINIMAX_M2_7:
+    case ModelType::GLM_5_1:
     case ModelType::GLM_5_2:
     case ModelType::DEEPSEEK_V4_PRO:
       return false;
@@ -534,12 +553,6 @@ std::string socketHost() {
 uint16_t socketPort() {
   static const uint16_t cached =
       static_cast<uint16_t>(envUlong("SOCKET_PORT", defaults::SOCKET_PORT));
-  return cached;
-}
-
-std::string socketTransport() {
-  static const std::string cached =
-      envString("SOCKET_TRANSPORT", defaults::SOCKET_TRANSPORT);
   return cached;
 }
 
@@ -793,6 +806,25 @@ std::string dynamoComponent() {
 
 std::string dynamoEndpointName() {
   return envString("DYNAMO_ENDPOINT_NAME", defaults::DYNAMO_ENDPOINT_NAME);
+}
+
+/**
+ * Mooncake KV Migration configuration.
+ */
+unsigned kvMigrationTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("KV_MIGRATION_TIMEOUT_MS", defaults::KV_MIGRATION_TIMEOUT_MS));
+}
+
+unsigned kvMigrationSweepIntervalMs() {
+  return static_cast<unsigned>(
+      envUlong("KV_MIGRATION_SWEEP_INTERVAL_MS",
+               defaults::KV_MIGRATION_SWEEP_INTERVAL_MS));
+}
+
+unsigned kvMigrationDrainPollMs() {
+  return static_cast<unsigned>(envUlong("KV_MIGRATION_DRAIN_POLL_MS",
+                                        defaults::KV_MIGRATION_DRAIN_POLL_MS));
 }
 
 }  // namespace tt::config

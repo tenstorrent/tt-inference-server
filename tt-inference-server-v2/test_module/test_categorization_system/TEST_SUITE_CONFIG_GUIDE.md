@@ -230,6 +230,17 @@ The `id_name` is used in suite IDs (`distil-whisper-t3k`), while `model_marker` 
 | Suites with unique test lists | `test_suites/<category>.json` → `test_suites` | explicit definition |
 | Client-side concurrency for a load test | `test_cases[].targets.num_concurrent_requests` | overrides matrix/suite default |
 | Physical chip count probed by liveness | `hardware_defaults.<device>.num_of_devices` | inherited by `DeviceLivenessTest` |
+| Restrict a prerequisite to certain engines | `prerequisite_tests[].engines` | e.g. `["media", "forge"]`; omit for engine-agnostic |
+
+### Prerequisite `engines` allow-list
+
+Each entry in `prerequisite_tests` may declare an `engines` allow-list whose
+values match `workflows.workflow_types.InferenceEngine` (`"vLLM"`, `"media"`,
+`"forge"`). A prerequisite with an allow-list is injected only for suites whose
+model runs on one of those engines; a prerequisite that omits the key is
+engine-agnostic and runs everywhere. `DeviceLivenessTest` uses
+`["media", "forge"]` because it probes the tt-media-server `/tt-liveness`
+endpoint, which vLLM does not expose (vLLM serves `/health` instead).
 
 ### `num_concurrent_requests` vs `num_of_devices`
 

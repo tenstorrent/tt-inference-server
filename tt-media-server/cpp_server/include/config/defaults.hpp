@@ -20,7 +20,6 @@ constexpr const char* TT_PYTHON_PATH = "..";
 constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
 constexpr const char* SOCKET_HOST = "localhost";
 constexpr uint16_t SOCKET_PORT = 9000;
-constexpr const char* SOCKET_TRANSPORT = "zmq";  // "tcp" or "zmq"
 
 // PrefillGateway integration. When true, decode connects as CLIENT to the
 // gateway and prefill listens as SERVER for the gateway to dial in.
@@ -48,7 +47,6 @@ constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
 constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
 constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 40;
 constexpr bool USE_FAST_MODE = false;
-constexpr bool MIGRATE_FULL_KV = false;
 constexpr bool ENABLE_MIGRATION = false;
 constexpr const char* MIGRATION_CMD_QUEUE_NAME = "mig_ep0_cmd";
 constexpr const char* MIGRATION_TABLE_QUEUE_NAME = "mig_ep0_table";
@@ -61,6 +59,11 @@ constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";
 constexpr const char* KAFKA_GROUP_ID = "migration-workers";
 constexpr const char* KAFKA_MIGRATION_REQUEST_TOPIC = "kv-migration-requests";
 constexpr const char* KAFKA_MIGRATION_ACK_TOPIC = "kv-migration-acks";
+
+// Mooncake KV Migration configuration.
+constexpr unsigned KV_MIGRATION_TIMEOUT_MS = 60000;
+constexpr unsigned KV_MIGRATION_SWEEP_INTERVAL_MS = 5000;
+constexpr unsigned KV_MIGRATION_DRAIN_POLL_MS = 100;
 
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 
@@ -80,14 +83,14 @@ constexpr uint32_t MODEL_NUM_LAYERS = 61;
 constexpr uint32_t PREFILL_CHUNK_SIZE = 5120;
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 128;
-constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
+constexpr unsigned WARMUP_TIMEOUT_MS = 150000;
 /**
  * Max time (ms) the runner may go without producing a model output while at
  * least one request is in flight before it self-terminates the worker
  * process. Self-terminating lets the infrastructure monitoring stack notice
  * the crash and restart the server instead of hanging silently.
  */
-constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 60000;
+constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 150000;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 constexpr const char* WIRE_FORMAT = "blaze";
@@ -141,5 +144,12 @@ constexpr const char* DYNAMO_ETCD_ENDPOINTS = "http://etcd:2379/";
 // refreshes the lease at half this interval so a missed tick doesn't trip
 // the reaper.
 constexpr int64_t DYNAMO_ETCD_LEASE_TTL_SECS = 10;
+
+// MockSchedulers (MOCK_USE_SCHEDULER=1 on mock_pipeline backend).
+constexpr bool MOCK_USE_SCHEDULER = false;
+constexpr unsigned MOCK_PREFILL_CHUNK_LATENCY_MS = 1353;
+constexpr unsigned MOCK_DECODE_TOKEN_LATENCY_US =
+    64 * 44;  // 64 * 44us = 2816us
+constexpr unsigned MOCK_DECODE_TOKEN_ID = 12345;
 
 }  // namespace tt::config::defaults

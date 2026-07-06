@@ -121,13 +121,15 @@ def run_media_task(
 
 
 def _resolve_spec_test_suites(ctx: MediaContext) -> List[dict]:
-    """Return matching expanded suites for ``ctx.model_spec.model_name`` + device."""
+    """Return matching expanded suites for ``ctx.model_spec.model_name`` + device.
+    Prerequisite injection is engine-aware."""
     from .test_categorization_system import TestFilter
 
     return (
         TestFilter()
         .filter_by_model(ctx.model_spec.model_name)
         .filter_by_device(ctx.device.name.lower())
+        .filter_prerequisites_by_engine(ctx.model_spec.inference_engine)
         .get_tests()
     )
 
@@ -188,6 +190,11 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
     is non-zero if any test class raised or any Block did not explicitly
     report ``success=True`` (missing key, non-dict data, or any non-True
     value all count as failures).
+
+    An empty filter result (no suite in ``test_module/test_suites/*.json``
+    matches this model+device pair) is treated as a clean no-op: a warning
+    is logged and ``(0, None)`` is returned, so a model that has not yet
+    been wired into the spec-test config does not fail the whole workflow.
     """
     logger.info(
         "Running spec_tests for model=%s, device=%s",
@@ -196,12 +203,12 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
     )
     suites = _resolve_spec_test_suites(ctx)
     if not suites:
-        logger.error(
-            "No spec test suites match model=%r device=%r — nothing to do.",
+        logger.warning(
+            "No spec test suites match model=%r device=%r — skipping spec_tests.",
             ctx.model_spec.model_name,
             ctx.device.name.lower(),
         )
-        return 1, None
+        return 0, None
 
     cap = ctx.spec_tests_num_prompts_cap
     blocks: List[Block] = []
