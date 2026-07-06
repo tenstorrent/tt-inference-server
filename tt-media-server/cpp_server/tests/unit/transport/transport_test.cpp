@@ -37,11 +37,11 @@ TEST(TransferTypes, NocAddrRoundTrips) {
 TEST(StorageBackend, ReportMediumThroughInterface) {
   std::unique_ptr<IStorageBackend> host =
       std::make_unique<HostDramStorageBackend>();
-  EXPECT_EQ(host->medium(), StorageMedium::HostDram);
+  EXPECT_EQ(host->medium(), StorageMedium::HOST_DRAM);
 
   auto device = std::make_unique<DeviceDramStorageBackend>(
       std::make_shared<UmdDeviceAccess>(/*device_id=*/0));
-  EXPECT_EQ(device->medium(), StorageMedium::DeviceDram);
+  EXPECT_EQ(device->medium(), StorageMedium::DEVICE_DRAM);
 }
 
 // The host-DRAM backend stages bytes via memcpy: writeFrom then readInto a
@@ -102,7 +102,7 @@ TEST(MooncakeTransferEngine, ComposesStorageBackend) {
   std::unique_ptr<ITransferEngine> engine =
       std::make_unique<MooncakeTransferEngine>(storage);
   ASSERT_NE(engine, nullptr);
-  EXPECT_EQ(engine->storageMedium(), StorageMedium::DeviceDram);
+  EXPECT_EQ(engine->storageMedium(), StorageMedium::DEVICE_DRAM);
   EXPECT_EQ(engine->storage(), storage);
 }
 
@@ -117,11 +117,11 @@ TEST(MooncakeTransferEngine, MethodsReportFailureWithoutMooncake) {
 
   std::vector<uint8_t> buffer(64, 0);
   EXPECT_FALSE(engine.registerLocalMemory(buffer.data(), buffer.size()));
-  EXPECT_EQ(engine.openSegment("peer"), kInvalidSegment);
+  EXPECT_EQ(engine.openSegment("peer"), K_INVALID_SEGMENT);
 
-  TransferRequest request{TransferOp::Write, buffer.data(), kInvalidSegment, 0,
-                          buffer.size()};
-  EXPECT_EQ(engine.submitAndWait(request).state, TransferState::Failed);
+  TransferRequest request{TransferOp::WRITE, buffer.data(), K_INVALID_SEGMENT,
+                          0, buffer.size()};
+  EXPECT_EQ(engine.submitAndWait(request).state, TransferState::FAILED);
 }
 #endif  // TT_TRANSPORT_WITH_MOONCAKE
 
@@ -150,7 +150,7 @@ TEST(MooncakeMigrationWorker, StorageStagingRoundTrips) {
   const auto addr = reinterpret_cast<uint64_t>(deviceRegion.data());
 
   MigrationWorkerConfig senderCfg;
-  senderCfg.role = MigrationRole::Sender;
+  senderCfg.role = MigrationRole::SENDER;
   senderCfg.peer_segment_name = "receiver";
   senderCfg.device_addr = addr;
   senderCfg.tensor_bytes = deviceRegion.size();
@@ -161,7 +161,7 @@ TEST(MooncakeMigrationWorker, StorageStagingRoundTrips) {
   EXPECT_EQ(deviceRegion, tensor);  // tensor landed in "device DRAM"
 
   MigrationWorkerConfig receiverCfg = senderCfg;
-  receiverCfg.role = MigrationRole::Receiver;
+  receiverCfg.role = MigrationRole::RECEIVER;
   MooncakeMigrationWorker receiver(receiverCfg, engine, nullptr);
   EXPECT_TRUE(receiver.verifyTensorOnReceiver(tensor));
 
@@ -178,7 +178,7 @@ TEST(MooncakeMigrationWorker, RoleGuardsAndTransportNeedsLiveEngine) {
 
   std::vector<uint8_t> deviceRegion(64, 0);
   MigrationWorkerConfig config;
-  config.role = MigrationRole::Sender;
+  config.role = MigrationRole::SENDER;
   config.peer_segment_name = "receiver";
   config.device_addr = reinterpret_cast<uint64_t>(deviceRegion.data());
   config.tensor_bytes = deviceRegion.size();
@@ -190,11 +190,27 @@ TEST(MooncakeMigrationWorker, RoleGuardsAndTransportNeedsLiveEngine) {
   // The transport hop has no init'd engine / peer segment here.
   EXPECT_FALSE(sender.transferToReceiver());
 
-  config.role = MigrationRole::Receiver;
+  config.role = MigrationRole::RECEIVER;
   MooncakeMigrationWorker receiver(config, engine, nullptr);
   // Receiver cannot run the sender steps.
   EXPECT_FALSE(receiver.writeTensorOnSender(tensor));
   EXPECT_FALSE(receiver.transferToReceiver());
+}
+
+TEST(MooncakeMigrationWorker, OwnsLayerHonorsConfiguredSpan) {
+  MigrationWorkerConfig unset;
+  MooncakeMigrationWorker ownsAll(unset, nullptr, nullptr);
+  EXPECT_TRUE(ownsAll.ownsLayer(0));
+  EXPECT_TRUE(ownsAll.ownsLayer(999));
+
+  MigrationWorkerConfig sharded;
+  sharded.layer_start = 4;
+  sharded.layer_end = 8;
+  MooncakeMigrationWorker shard(sharded, nullptr, nullptr);
+  EXPECT_FALSE(shard.ownsLayer(3));
+  EXPECT_TRUE(shard.ownsLayer(4));
+  EXPECT_TRUE(shard.ownsLayer(7));
+  EXPECT_FALSE(shard.ownsLayer(8));
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +239,7 @@ class FakeTransferEngine : public ITransferEngine {
   std::map<std::string, int> openAttempts;
 
   StorageMedium storageMedium() const override {
-    return StorageMedium::HostDram;
+    return StorageMedium::HOST_DRAM;
   }
   std::shared_ptr<IStorageBackend> storage() const override { return nullptr; }
 
@@ -245,12 +261,12 @@ class FakeTransferEngine : public ITransferEngine {
     callLog.emplace_back("open:" + name);
     const int attempt = ++openAttempts[name];
     const auto it = resolveAfterMisses.find(name);
-    if (it == resolveAfterMisses.end()) return kInvalidSegment;
+    if (it == resolveAfterMisses.end()) return K_INVALID_SEGMENT;
     return attempt > it->second ? static_cast<SegmentHandle>(attempt)
-                                : kInvalidSegment;
+                                : K_INVALID_SEGMENT;
   }
   TransferStatus submitAndWait(const TransferRequest&) override {
-    return {TransferState::Completed, 0};
+    return {TransferState::COMPLETED, 0};
   }
 };
 
@@ -276,7 +292,7 @@ TEST(PeerDiscoveryService, ResolvesAllPeersInOneSweep) {
   EXPECT_EQ(resolved->size(), 3u);
   for (const auto& name : {"a", "b", "c"}) {
     EXPECT_EQ(engine.openAttempts[name], 1);  // resolved first try
-    EXPECT_NE(resolved->at(name), kInvalidSegment);
+    EXPECT_NE(resolved->at(name), K_INVALID_SEGMENT);
   }
 }
 

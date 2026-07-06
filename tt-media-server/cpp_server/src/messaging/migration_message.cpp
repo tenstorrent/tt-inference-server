@@ -141,4 +141,5 @@ std::optional<MigrationResponseMessage> parseMigrationResponse(
 
   return out;
 }
+
 }  // namespace tt::messaging

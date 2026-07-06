@@ -1023,6 +1023,88 @@ jobs:
           retention-days: 1
           if-no-files-found: warn
 
+  remote-kv-manager-kafka-e2e:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: RemoteKVManager Kafka E2E
+    # Builds cpp_server with --kafka and runs remote_kv_manager_e2e_test
+    # (see cpp_server/tests/e2e/remote_kv_manager_e2e_test.cpp) against a
+    # real Kafka broker started via cpp_server/scripts/dev-kafka.sh. The
+    # test is not registered with add_test() (opt-in), so it's invoked
+    # directly as a binary rather than via ctest.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      # The broker advertises listener as kafka:9092, so the test binary
+      # (running on the runner host, not inside tt_net) redirects to
+      # 'kafka' after its initial connect. /etc/hosts maps kafka ->
+      # 127.0.0.1; keep any injected HTTP proxy out of the loop for it.
+      no_proxy: "localhost,127.0.0.1,::1,kafka"
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+          # Shares the cpp_server compile ccache with cpp-build / cpp-format-check.
+          ccache-key-suffix: server
+
+      - name: Install librdkafka-dev
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends librdkafka-dev
+
+      - name: Restore cached tokenizer files
+        uses: actions/cache@v5
+        with:
+          path: tt-media-server/cpp_server/tokenizers
+          key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
+          restore-keys: |
+            cpp-server-tokenizers-
+
+      - name: Build C++ server with Kafka enabled
+        run: |
+          cd cpp_server
+          ./build.sh --blaze --kafka
+
+      - name: Start dev Kafka broker
+        # KAFKA_PUBLISH_PORT publishes 9092 to the host so the test binary,
+        # which runs on the runner (not inside tt_net), can dial the broker.
+        env:
+          KAFKA_PUBLISH_PORT: "1"
+        run: bash cpp_server/scripts/dev-kafka.sh up
+
+      - name: Make 'kafka' resolvable on the runner
+        # advertised.listeners=kafka:9092 means the broker's metadata
+        # response redirects clients to that DNS name after their initial
+        # localhost:9092 connect. Point it at loopback.
+        run: echo "127.0.0.1 kafka" | sudo tee -a /etc/hosts
+
+      - name: Run remote_kv_manager_e2e_test
+        env:
+          KAFKA_BROKERS: "kafka:9092"
+        run: ./cpp_server/build/remote_kv_manager_e2e_test
+
+      - name: Show Kafka broker logs on failure
+        if: failure()
+        run: bash cpp_server/scripts/dev-kafka.sh logs --tail 200
+
+      - name: Stop dev Kafka broker
+        if: always()
+        run: bash cpp_server/scripts/dev-kafka.sh down
+
   prefill-gateway-build:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
@@ -1432,6 +1514,7 @@ jobs:
       - cpp-format-check
       - cpp-build
       - mooncake-mpi-e2e
+      - remote-kv-manager-kafka-e2e
       - prefill-gateway-format-check
       - prefill-gateway-build
       - helm-chart-validate
@@ -1474,7 +1557,7 @@ jobs:
                   echo "job condition evaluated false"
                 fi
                 ;;
-              cpp-format-check|cpp-build|mooncake-mpi-e2e)
+              cpp-format-check|cpp-build|mooncake-mpi-e2e|remote-kv-manager-kafka-e2e)
                 if [[ "$CPP_SERVER" != "true" ]]; then
                   echo "cpp_server paths did not change"
                 else
@@ -1524,6 +1607,7 @@ jobs:
             cpp-format-check
             cpp-build
             mooncake-mpi-e2e
+            remote-kv-manager-kafka-e2e
             prefill-gateway-format-check
             prefill-gateway-build
             helm-chart-validate
@@ -1542,6 +1626,7 @@ jobs:
             [cpp-format-check]="${{ needs.cpp-format-check.result }}"
             [cpp-build]="${{ needs.cpp-build.result }}"
             [mooncake-mpi-e2e]="${{ needs.mooncake-mpi-e2e.result }}"
+            [remote-kv-manager-kafka-e2e]="${{ needs.remote-kv-manager-kafka-e2e.result }}"
             [prefill-gateway-format-check]="${{ needs.prefill-gateway-format-check.result }}"
             [prefill-gateway-build]="${{ needs.prefill-gateway-build.result }}"
             [helm-chart-validate]="${{ needs.helm-chart-validate.result }}"

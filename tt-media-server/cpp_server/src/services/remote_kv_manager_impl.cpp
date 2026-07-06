@@ -29,9 +29,10 @@ RemoteKVManagerImpl::RemoteKVManagerImpl(
     std::unique_ptr<tt::messaging::IKafkaProducer> requestProducer,
     std::unique_ptr<tt::messaging::IKafkaConsumer> ackConsumer,
     std::chrono::milliseconds timeout, std::chrono::milliseconds sweepInterval,
-    int drainPollMs)
+    int drainPollMs, LayerToPartition layerToPartition)
     : requestProducer(std::move(requestProducer)),
       ackConsumer(std::move(ackConsumer)),
+      layerToPartition(std::move(layerToPartition)),
       timeout(timeout),
       sweepInterval(sweepInterval),
       drainPollMs(drainPollMs) {
@@ -111,7 +112,13 @@ uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
   bool sent = false;
   std::string err;
   if (requestProducer) {
-    sent = requestProducer->send(payload, &err);
+    if (layerToPartition) {
+      const int32_t partition = layerToPartition(request.layer_id);
+      sent = partition >= 0 ? requestProducer->send(payload, partition, &err)
+                            : requestProducer->send(payload, &err);
+    } else {
+      sent = requestProducer->send(payload, &err);
+    }
   } else {
     err = "no producer";
   }
@@ -137,10 +144,11 @@ uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
 }
 
 /**
- * Method getStatus is used to get the status of a migration for given
+ * Method getMigrationStatus is used to get the status of a migration for given
  * migrationId.
  */
-MigrationStatus RemoteKVManagerImpl::getStatus(uint64_t migrationId) const {
+MigrationStatus RemoteKVManagerImpl::getMigrationStatus(
+    uint64_t migrationId) const {
   std::lock_guard<std::mutex> lock(mtx);
   auto it = migrations.find(migrationId);
   if (it == migrations.end()) {

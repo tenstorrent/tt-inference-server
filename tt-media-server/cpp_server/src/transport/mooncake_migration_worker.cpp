@@ -80,6 +80,11 @@ bool MooncakeMigrationWorker::bringUp(const std::atomic<bool>& cancelToken) {
   return true;
 }
 
+bool MooncakeMigrationWorker::ownsLayer(uint32_t layerId) const {
+  if (config_.layer_end == 0) return true;
+  return layerId >= config_.layer_start && layerId < config_.layer_end;
+}
+
 // Reverse-order teardown: stop being discoverable before the engine drops, so
 // no in-flight peer write lands on memory we've freed. Idempotent.
 void MooncakeMigrationWorker::teardown() {
@@ -100,7 +105,7 @@ void MooncakeMigrationWorker::teardown() {
 // backend (UMD for device DRAM).
 bool MooncakeMigrationWorker::writeTensorOnSender(
     const std::vector<uint8_t>& tensor) {
-  if (config_.role != MigrationRole::Sender) {
+  if (config_.role != MigrationRole::SENDER) {
     TT_LOG_ERROR(
         "[MooncakeMigrationWorker] writeTensorOnSender called on a non-sender "
         "worker");
@@ -123,7 +128,7 @@ bool MooncakeMigrationWorker::writeTensorOnSender(
 // buffer, then push it to the receiver's segment over the transport — the
 // bounce-buffer flow from mooncake/poc-transfer-engine/adr-mooncake-backend.md.
 bool MooncakeMigrationWorker::transferToReceiver() {
-  if (config_.role != MigrationRole::Sender) {
+  if (config_.role != MigrationRole::SENDER) {
     TT_LOG_ERROR(
         "[MooncakeMigrationWorker] transferToReceiver called on a non-sender "
         "worker");
@@ -148,7 +153,7 @@ bool MooncakeMigrationWorker::transferToReceiver() {
                                          staging_.data());
   if (ok) {
     const SegmentHandle peer = engine_->openSegment(config_.peer_segment_name);
-    if (peer == kInvalidSegment) {
+    if (peer == K_INVALID_SEGMENT) {
       TT_LOG_ERROR(
           "[MooncakeMigrationWorker] transferToReceiver: openSegment({}) "
           "failed",
@@ -156,13 +161,13 @@ bool MooncakeMigrationWorker::transferToReceiver() {
       ok = false;
     } else {
       TransferRequest request;
-      request.op = TransferOp::Write;
+      request.op = TransferOp::WRITE;
       request.local_addr = staging_.data();
       request.target = peer;
       request.target_offset = 0;
       request.length = staging_.size();
       const TransferStatus status = engine_->submitAndWait(request);
-      ok = status.state == TransferState::Completed;
+      ok = status.state == TransferState::COMPLETED;
     }
   }
 
@@ -175,7 +180,7 @@ bool MooncakeMigrationWorker::transferToReceiver() {
 // back into a host buffer and byte-compare against the expected tensor.
 bool MooncakeMigrationWorker::verifyTensorOnReceiver(
     const std::vector<uint8_t>& expected) {
-  if (config_.role != MigrationRole::Receiver) {
+  if (config_.role != MigrationRole::RECEIVER) {
     TT_LOG_ERROR(
         "[MooncakeMigrationWorker] verifyTensorOnReceiver called on a "
         "non-receiver worker");

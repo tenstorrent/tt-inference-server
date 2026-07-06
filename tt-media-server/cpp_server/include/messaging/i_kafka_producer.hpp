@@ -3,14 +3,16 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 
 namespace tt::messaging {
 
 /**
- * Polymorphic seam over KafkaProducer so callers (e.g. RemoteKVManagerImpl)
- * can be unit-tested with an in-process fake instead of a real broker.
+ * Polymorphic interface over KafkaProducer so callers (e.g.
+ * RemoteKVManagerImpl) can be unit-tested with an in-process fake instead of a
+ * real broker.
  *
  * Production code injects a tt::messaging::KafkaProducer; tests inject a
  * fake that records sent payloads.
@@ -21,6 +23,14 @@ class IKafkaProducer {
 
   /** See KafkaProducer::send. */
   virtual bool send(std::string_view payload, std::string* errorMessage) = 0;
+
+  /**
+   * Send to a specific partition of the configured topic. Callers use this
+   * when they need deterministic routing (e.g. layer_id -> worker) rather
+   * than the broker's default partitioner.
+   */
+  virtual bool send(std::string_view payload, int32_t partition,
+                    std::string* errorMessage) = 0;
 
   /** See KafkaProducer::flush. */
   virtual bool flush(int timeoutMs, std::string* errorMessage) = 0;

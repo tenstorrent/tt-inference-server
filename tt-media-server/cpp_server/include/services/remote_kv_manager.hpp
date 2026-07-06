@@ -38,12 +38,13 @@ struct MigrationRequest {
 
 /**
  * Async client to the pool of migration workers. The scheduler-facing
- * surface for issuing KV-cache migrations.Publishes requests on Kafka
+ * surface for issuing KV-cache migrations. Publishes requests on Kafka
  * and tracks completion via an ACK topic.
  */
 class IRemoteKVManager {
  public:
   virtual ~IRemoteKVManager() = default;
+
   /**
    * Migrate KV Cache blocks. Returns immediately with a new unique id.
    * The actual transfer happens asynchronously on a remote worker.
@@ -55,7 +56,7 @@ class IRemoteKVManager {
    * Returns MigrationStatus::UNKNOWN if the id was never issued by
    * migrate() or has been garbage-collected.
    */
-  virtual MigrationStatus getStatus(uint64_t migrationId) const = 0;
+  virtual MigrationStatus getMigrationStatus(uint64_t migrationId) const = 0;
 };
 
 }  // namespace tt::services
