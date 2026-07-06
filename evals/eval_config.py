@@ -3465,6 +3465,47 @@ _eval_config_list = [
         ],
     ),
     # =========================================================================
+    # Gemma 4 (31B) - Forge experimental path eval config.
+    #
+    # The Forge ``forge_vllm_plugin`` spec (workflows/model_specs/*/cnn.yaml)
+    # pins the lowercase weights ``google/gemma-4-31b-it`` (matching
+    # tt-media-server ``ModelNames.GEMMA_4_31B_IT``), which yields the distinct
+    # model_name ``gemma-4-31b-it`` -- separate from the vLLM
+    # ``google/gemma-4-31B-it`` spec below. It therefore needs its own eval
+    # entry, or the RELEASE workflow fails fast in validate_setup
+    # ("gemma-4-31b-it not found in EVAL_CONFIGS"). ``ifeval`` is used here (not
+    # the 131072-ctx r1_gpqa_diamond below): instruction-following prompts and
+    # outputs fit the Forge server's 4K ``MAX_MODEL_LENGTH``, whereas the R1
+    # reasoning task's 124K generation budget would 400 on a 4K server.
+    # ``published_score=None`` keeps this experimental path non-accuracy-gated;
+    # fill in published_score / gpu_reference_score from the first CI_NIGHTLY run.
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="google/gemma-4-31b-it",
+        tasks=[
+            EvalTask(
+                task_name="ifeval",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                # Downsampled: first user of the model, trim nightly runtime.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.1,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # =========================================================================
     # Gemma 4 family - GPU reference eval configs.
     #
     # Mirrors the Qwen/Qwen3.6-27B agentic block above and adds GPQA-Diamond.
