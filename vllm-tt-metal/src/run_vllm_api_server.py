@@ -487,6 +487,23 @@ def set_metal_timeout_env_vars():
         logger.info("Metal op timeout disabled via DISABLE_METAL_OP_TIMEOUT=1")
         return
 
+    # The op-timeout is a hang-detection watchdog sized for a single generation
+    # step. In the colocated GRPO setup the vLLM worker also services device-socket
+    # weight updates: recv_state() blocks in a single ttnn.synchronize_device() while
+    # it rendezvous with the trainer over the cross-mesh fabric to stream the full
+    # (multi-GB) state dict. That legitimately takes several seconds (theta_0 alone
+    # measured ~2.5s) and gets slower once the trainer starts issuing DDP all-reduce
+    # traffic on the same fabric, so the default 5s watchdog fires mid-transfer and
+    # marks the device "unrecoverable". Honor an explicit override and give the
+    # colocated path a much larger budget.
+    override = os.getenv("TT_METAL_OP_TIMEOUT_SECONDS")
+    if override:
+        timeout_seconds = override
+    elif os.getenv("TT_COLOCATED_INFERENCE") == "1":
+        timeout_seconds = "120.0"
+    else:
+        timeout_seconds = "5.0"
+
     tt_metal_home = os.getenv("TT_METAL_HOME", "/home/container_app_user/tt-metal")
     python_env_dir = os.getenv("PYTHON_ENV_DIR", f"{tt_metal_home}/python_env")
     log_dir = os.getenv("TT_METAL_LOGS_PATH", "/home/container_app_user/logs")
@@ -503,9 +520,9 @@ def set_metal_timeout_env_vars():
         f"--disable-progress > {log_dir}/tt-triage-$(date +%Y%m%d-%H%M%S).log 2>&1"
     )
 
-    os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = "5.0"
+    os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = timeout_seconds
     os.environ["TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE"] = timeout_cmd
-    logger.info("Set TT_METAL_OPERATION_TIMEOUT_SECONDS=5.0")
+    logger.info(f"Set TT_METAL_OPERATION_TIMEOUT_SECONDS={timeout_seconds}")
     logger.info(f"Set TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE={timeout_cmd}")
 
 
