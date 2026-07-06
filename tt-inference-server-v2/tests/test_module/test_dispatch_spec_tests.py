@@ -138,5 +138,10 @@ def test_raising_case_is_rc1(monkeypatch):
         lambda ctx: [_suite({"name": "A", "module": "m", "enabled": True})],
     )
     monkeypatch.setattr(dispatch, "_instantiate_spec_test", _boom)
-    # A case that raises is a real failure with no block collected -> rc=1.
-    assert dispatch.run_spec_tests(_ctx()) == (1, None)
+    # A case that raises is a real failure -> rc=1, and it emits a *visible*
+    # error block 
+    rc, block = dispatch.run_spec_tests(_ctx())
+    assert rc == 1
+    assert block is not None
+    assert block.data["status"] == "error"
+    assert block.data["error"]["message"] == "kaboom"
