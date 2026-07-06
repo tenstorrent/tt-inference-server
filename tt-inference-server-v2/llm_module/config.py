@@ -95,3 +95,11 @@ class DriverContext:
     device: str = ""
     extra_env: dict = field(default_factory=dict)
     per_run_timeout_s: Optional[float] = 7200.0
+    # AIPerf --goodput SLO string (space-separated KEY:VALUE pairs) applied to
+    # the sweep. Only the AIPerf driver consumes it; other drivers ignore it.
+    goodput: Optional[str] = None
+    # When True, agentic drivers group results under a top-level ``agentic/``
+    # dir (``agentic/eval_<hf>/<task>``) mirroring the ``llm/`` layout used in
+    # a ``release`` run. Standalone agentic runs leave this False and keep the
+    # ``eval_<hf>/agentic/<task>`` layout.
+    agentic_release_layout: bool = False

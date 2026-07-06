@@ -152,7 +152,6 @@ def generate_tts_report_data(model_spec, eval_run_id):
 
 
 from evals.agentic.report import (
-    get_agentic_result_file_pattern,
     is_harbor_result as _is_harbor_result,
     process_agentic_eval_files,
 )
@@ -1413,35 +1412,15 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
-        agentic_file_name_pattern = get_agentic_result_file_pattern(
-            model_spec, eval_run_id
-        )
+        # v2 release runs group agentic results under a top-level agentic/ dir
+        # (mirroring llm/): reports_output/release/<run>/agentic/eval_<hf>/<task>/result.json.
+        # A single recursive glob under the release tree discovers them.
         hf_eval_id = model_spec.hf_model_repo.replace("/", "__")
-        agentic_file_path_patterns = [
-            # v1 path: agentic tasks used to run inside the evals workflow.
-            f"{get_default_workflow_root_log_dir()}/evals_output/{agentic_file_name_pattern}",
-            # v2 path (legacy layout): eval_<model_id>/agentic/<task>/result.json.
-            f"{get_default_workflow_root_log_dir()}/reports_output/agentic/{agentic_file_name_pattern}",
-            # v2 path (current layout): reports_output/agentic/<run>/eval_<hf_model>/agentic/<task>/result.json.
-            f"{get_default_workflow_root_log_dir()}/reports_output/agentic/*/eval_{hf_eval_id}/agentic/*/result.json",
-            # Explicit output dir for the current run (both layouts).
-            str(Path(args.output_path) / agentic_file_name_pattern),
-            str(
-                Path(args.output_path)
-                / "agentic"
-                / "*"
-                / f"eval_{hf_eval_id}"
-                / "agentic"
-                / "*"
-                / "result.json"
-            ),
-        ]
-        seen_patterns = set()
-        for pattern in agentic_file_path_patterns:
-            if pattern in seen_patterns:
-                continue
-            seen_patterns.add(pattern)
-            files.extend(glob(pattern))
+        agentic_file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/reports_output/release/"
+            f"**/agentic/eval_{hf_eval_id}/*/result.json"
+        )
+        files.extend(glob(agentic_file_path_pattern, recursive=True))
 
     if "image" in model_spec.supported_modalities:
         image_file_name_pattern = f"eval_{eval_run_id}/*_results.json"
