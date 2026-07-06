@@ -74,6 +74,12 @@ DRY_RUN=0
 # monitor + log only (never relaunch), for debugging a crash in place.
 POLL_INTERVAL_SEC=5
 RESTART_AFTER=3
+# ssh hardening: fail fast on an unreachable host (never hang a prompt) and drop
+# a silently-dead session within ~60s so a truly gone worker is detected.
+SSH_OPTS="-o ConnectTimeout=5 -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4"
+# A restart escalates SIGTERM -> (grace) -> SIGKILL and only relaunches once the
+# health port is confirmed free, so a squatting worker can never wedge recovery.
+SWEEP_GRACE_SEC=5
 
 usage() {
   cat <<EOF
@@ -103,6 +109,8 @@ Options:
   --poll-interval S        watchdog health poll period (default ${POLL_INTERVAL_SEC})
   --restart-after N        consecutive misses before a restart; 0 = monitor only
                            (default ${RESTART_AFTER})
+  --sweep-grace S          grace before SIGTERM->SIGKILL on restart/teardown
+                           (default ${SWEEP_GRACE_SEC})
   --dry-run                print the commands without launching anything
   -h, --help               this help
 EOF
@@ -127,6 +135,7 @@ parseArgs() {
       --kafka-brokers) KAFKA_BROKERS="$2"; shift 2 ;;
       --poll-interval) POLL_INTERVAL_SEC="$2"; shift 2 ;;
       --restart-after) RESTART_AFTER="$2"; shift 2 ;;
+      --sweep-grace) SWEEP_GRACE_SEC="$2"; shift 2 ;;
       --dry-run) DRY_RUN=1; shift ;;
       -h|--help) usage; exit 0 ;;
       *) die "unknown argument: $1" ;;
@@ -187,7 +196,7 @@ startDiscoveryService() {
     HTTP_PORT="${DISCOVERY_PORT}" BIND_HOST="0.0.0.0" \
       "${META_SERVER}" >"${META_LOG}" 2>&1 &
   else
-    ssh "${DISCOVERY_HOST}" \
+    ssh ${SSH_OPTS} "${DISCOVERY_HOST}" \
       "HTTP_PORT='${DISCOVERY_PORT}' BIND_HOST='0.0.0.0' bash '${META_SERVER}'" \
       >"${META_LOG}" 2>&1 &
   fi
@@ -202,14 +211,40 @@ startDiscoveryService() {
   return 1
 }
 
-# Kill any migration worker on a host so a hung one releases its health port
-# before a relaunch (one worker per host, so the match is unambiguous).
+# Emit the shell program a sweep runs on a host: SIGTERM the worker, wait up to
+# `grace` seconds for a clean exit, SIGKILL any survivor, then FAIL loudly unless
+# both the process is gone and the health port is free. Fed to `bash -s` on stdin
+# (local or over ssh) so the pattern never lands in a process's argv — that both
+# avoids self-matching the sweeper and keeps quoting sane.
+sweepScript() {
+  local port="$1" grace="$2"
+  cat <<EOF
+pat='bringup_mooncake_worker --metadata'
+pkill -TERM -f "\$pat" 2>/dev/null || true
+for _ in \$(seq 1 ${grace}); do pgrep -f "\$pat" >/dev/null 2>&1 || break; sleep 1; done
+pkill -KILL -f "\$pat" 2>/dev/null || true
+sleep 1
+if pgrep -f "\$pat" >/dev/null 2>&1; then
+  echo "SWEEP_FAIL: worker still alive on \$(hostname -s)" >&2; exit 1
+fi
+if command -v ss >/dev/null 2>&1 && ss -ltnH 2>/dev/null | grep -q ":${port} "; then
+  echo "SWEEP_FAIL: port ${port} still bound on \$(hostname -s)" >&2; exit 1
+fi
+echo "SWEEP_OK: ${port} free on \$(hostname -s)"
+EOF
+}
+
+# Kill the migration worker on a host and BLOCK until its process is gone and the
+# health port is free. Returns non-zero if the port cannot be freed, so the caller
+# refuses to relaunch into a squatted port (the churn bug). One worker per host,
+# so matching on the binary is unambiguous.
 sweepWorkerOnHost() {
-  local host="$1"
+  local host="$1" script
+  script="$(sweepScript "${HEALTH_PORT}" "${SWEEP_GRACE_SEC}")"
   if isLocalHost "${host}"; then
-    pkill -f "bringup_mooncake_worker --metadata" 2>/dev/null || true
+    bash -s <<<"${script}"
   else
-    ssh "${host}" "pkill -f 'bringup_mooncake_worker --metadata'" 2>/dev/null || true
+    ssh ${SSH_OPTS} "${host}" bash -s <<<"${script}"
   fi
 }
 
@@ -265,7 +300,7 @@ launchWorkerSlot() {
   if isLocalHost "${host}"; then
     bash -c "${cmd}" >"${log}" 2>&1 &
   else
-    ssh "${host}" "${cmd}" >"${log}" 2>&1 &
+    ssh ${SSH_OPTS} "${host}" "${cmd}" >"${log}" 2>&1 &
   fi
   WK_PID[$s]=$!
   WK_FAILS[$s]=0
@@ -318,9 +353,16 @@ superviseLoop() {
            "(${WK_FAILS[$s]}/${RESTART_AFTER:-inf})" >&2
       if (( RESTART_AFTER > 0 && WK_FAILS[$s] >= RESTART_AFTER )); then
         echo "[deploy] restarting ${WK_ROLE[$s]}-${WK_INDEX[$s]} on ${WK_HOST[$s]}" >&2
+        # Drop the local ssh handle, then hard-sweep the host. Only relaunch once
+        # the port is confirmed free — otherwise a survivor squats it, the new
+        # worker fails to bind, and the "restart" just churns launchers. If the
+        # sweep can't free it, keep WK_FAILS so the next cycle retries the sweep.
         [[ -n "${WK_PID[$s]}" ]] && kill "${WK_PID[$s]}" 2>/dev/null
-        sweepWorkerOnHost "${WK_HOST[$s]}"
-        launchWorkerSlot "${s}"
+        if sweepWorkerOnHost "${WK_HOST[$s]}"; then
+          launchWorkerSlot "${s}"
+        else
+          echo "[deploy] ERROR: could not free ${WK_HOST[$s]}:${HEALTH_PORT}; not relaunching (will retry next cycle)" >&2
+        fi
       fi
     done
     sleep "${POLL_INTERVAL_SEC}"
@@ -335,13 +377,15 @@ cleanup() {
     [[ -n "${WK_PID[$s]:-}" ]] && kill "${WK_PID[$s]}" 2>/dev/null
   done
   [[ -n "${META_PID}" ]] && kill "${META_PID}" 2>/dev/null
-  # Sweep straggler workers on every host (workers hold until SIGTERM).
+  # Sweep straggler workers on every host in parallel (each blocks up to the
+  # grace period; serial across 17 hosts would make teardown crawl).
   local all="${PREFILL_HOSTS},${DECODE_HOSTS}"
   IFS=',' read -ra hosts <<<"${all}"
   for host in "${hosts[@]}"; do
     [[ -z "${host}" ]] && continue
-    sweepWorkerOnHost "${host}"
+    sweepWorkerOnHost "${host}" >/dev/null 2>&1 &
   done
+  wait
 }
 
 main() {
