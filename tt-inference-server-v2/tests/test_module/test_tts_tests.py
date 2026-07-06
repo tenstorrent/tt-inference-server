@@ -16,8 +16,9 @@ from test_module.benchmark_tests.tts_benchmark_tests import (
     DEFAULT_TTS_TEXT,
     _tts_avg,
     _tts_num_calls,
-    _tts_tail_latency,
     _tts_test_text,
+    _tts_throughput_rps,
+    _tts_ttft_percentiles,
 )
 
 
@@ -47,31 +48,54 @@ class TestTtsGenericAverage:
         assert _tts_avg([], "rtr") is None
 
 
-class TestTtsTailLatency:
-    def test_p90_p95_indices_on_ten_samples(self):
-        # Unsorted input verifies the helper sorts before indexing.
-        # n=10: p90 index = ceil(9.0)-1 = 8 -> 90; p95 index = ceil(9.5)-1 = 9 -> 100.
+class TestTtsTtftPercentiles:
+    def test_p50_p90_p95_indices_on_ten_samples(self):
+        # Unsorted input verifies the helper sorts before indexing. n=10:
+        # p50 -> ceil(5.0)-1 = 4 -> 50; p90 -> ceil(9.0)-1 = 8 -> 90;
+        # p95 -> ceil(9.5)-1 = 9 -> 100.
         values = [50.0, 10.0, 100.0, 30.0, 20.0, 90.0, 40.0, 70.0, 60.0, 80.0]
         statuses = [_status(ttft_ms=v) for v in values]
-        assert _tts_tail_latency(statuses) == (90.0, 100.0)
+        assert _tts_ttft_percentiles(statuses) == (50.0, 90.0, 100.0)
 
     def test_none_samples_are_ignored(self):
+        # valid sorted [10, 20, 30], n=3: p50 -> idx 1 -> 20; p90/p95 -> idx 2 -> 30.
         statuses = [
             _status(ttft_ms=None),
             _status(ttft_ms=30.0),
             _status(ttft_ms=10.0),
             _status(ttft_ms=20.0),
         ]
-        assert _tts_tail_latency(statuses) == (30.0, 30.0)
+        assert _tts_ttft_percentiles(statuses) == (20.0, 30.0, 30.0)
 
     def test_single_sample(self):
-        assert _tts_tail_latency([_status(ttft_ms=42.0)]) == (42.0, 42.0)
+        assert _tts_ttft_percentiles([_status(ttft_ms=42.0)]) == (42.0, 42.0, 42.0)
 
     def test_empty_returns_zeroes(self):
-        assert _tts_tail_latency([]) == (0.0, 0.0)
+        assert _tts_ttft_percentiles([]) == (0.0, 0.0, 0.0)
 
     def test_all_none_returns_zeroes(self):
-        assert _tts_tail_latency([_status(ttft_ms=None)]) == (0.0, 0.0)
+        assert _tts_ttft_percentiles([_status(ttft_ms=None)]) == (0.0, 0.0, 0.0)
+
+
+class TestTtsThroughputRps:
+    def test_serial_requests_over_wall_clock(self):
+        statuses = [_status(ttft_ms=10.0) for _ in range(4)]
+        assert _tts_throughput_rps(statuses, wall_seconds=2.0) == pytest.approx(2.0)
+
+    def test_only_successful_requests_counted(self):
+        statuses = [
+            TtsTestStatus(status=True, elapsed=1.0),
+            TtsTestStatus(status=False, elapsed=1.0),
+            TtsTestStatus(status=True, elapsed=1.0),
+        ]
+        assert _tts_throughput_rps(statuses, wall_seconds=1.0) == pytest.approx(2.0)
+
+    def test_non_positive_wall_seconds_returns_none(self):
+        assert _tts_throughput_rps([_status()], wall_seconds=0.0) is None
+
+    def test_no_successful_requests_returns_none(self):
+        statuses = [TtsTestStatus(status=False, elapsed=1.0)]
+        assert _tts_throughput_rps(statuses, wall_seconds=5.0) is None
 
 
 class TestTtsNumCalls:

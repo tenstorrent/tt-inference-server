@@ -139,7 +139,7 @@ def test_raising_case_is_rc1(monkeypatch):
     )
     monkeypatch.setattr(dispatch, "_instantiate_spec_test", _boom)
     # A case that raises is a real failure -> rc=1, and it emits a *visible*
-    # error block 
+    # error block
     rc, block = dispatch.run_spec_tests(_ctx())
     assert rc == 1
     assert block is not None
