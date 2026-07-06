@@ -154,6 +154,12 @@ RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
   if (modelType == "minimax_m2") {
     return {"basic", "minimax_m2"};
   }
+  if (modelType == "glm_moe_dsa") {
+    return {"glm45", "glm47"};
+  }
+  if (modelType == "deepseek_v4") {
+    return {"deepseek_v4", "deepseek_v4"};
+  }
   // deepseek_v3 and unknown types default to DeepSeek R1 reasoning.
   return {"deepseek_r1", nullptr};
 }
@@ -185,7 +191,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   Json::Value card(Json::objectValue);
   card["display_name"] = c.model_name;
   card["slug"] = sanitizeSlug(c.model_name);
-  card["source_path"] = c.model_path;
+  card["source_path"] = c.model_name;
 
   const std::string configPath = c.model_path + "/config.json";
   const std::string tokenizerJsonPath = c.model_path + "/tokenizer.json";

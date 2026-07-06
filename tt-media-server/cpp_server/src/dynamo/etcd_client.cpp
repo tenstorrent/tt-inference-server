@@ -17,6 +17,8 @@
 #include <sstream>
 #include <string>
 
+#include "utils/net.hpp"
+
 namespace tt::dynamo {
 
 namespace {
@@ -61,53 +63,9 @@ std::string base64Encode(const std::string& in) {
 }
 
 // ---------------------------------------------------------------------------
-// URL parsing: accept "http://host:port" optionally with trailing "/" and
-// optionally a comma-separated list (we keep the first endpoint).
+// URL parsing for etcd endpoints lives in include/utils/net.hpp (parseUrl) so
+// the DynamoEndpoint advertise-host detection can share it.
 // ---------------------------------------------------------------------------
-
-struct ParsedUrl {
-  std::string host;
-  int port;
-};
-
-ParsedUrl parseEtcdUrl(const std::string& urlList) {
-  std::string url = urlList;
-  if (auto comma = url.find(','); comma != std::string::npos) {
-    url = url.substr(0, comma);
-  }
-  // strip leading whitespace
-  while (!url.empty() &&
-         std::isspace(static_cast<unsigned char>(url.front()))) {
-    url.erase(url.begin());
-  }
-  if (url.rfind("https://", 0) == 0) {
-    throw EtcdError(
-        "EtcdClient: HTTPS endpoints are not supported (use a TLS-terminating "
-        "sidecar)");
-  }
-  if (url.rfind("http://", 0) == 0) {
-    url.erase(0, 7);
-  }
-  if (auto slash = url.find('/'); slash != std::string::npos) {
-    url.resize(slash);
-  }
-  ParsedUrl out;
-  if (auto colon = url.find(':'); colon != std::string::npos) {
-    out.host = url.substr(0, colon);
-    try {
-      out.port = std::stoi(url.substr(colon + 1));
-    } catch (...) {
-      throw EtcdError("EtcdClient: invalid port in endpoint '" + urlList + "'");
-    }
-  } else {
-    out.host = url;
-    out.port = 2379;
-  }
-  if (out.host.empty()) {
-    throw EtcdError("EtcdClient: empty host in endpoint '" + urlList + "'");
-  }
-  return out;
-}
 
 // ---------------------------------------------------------------------------
 // Tiny blocking HTTP/1.1 client. Connect with a deadline (so etcd-not-running
@@ -424,7 +382,16 @@ std::string serialize(const Json::Value& v) {
 
 EtcdClient::EtcdClient(const std::string& endpoint, int timeoutMs)
     : timeout_ms_(timeoutMs) {
-  auto parsed = parseEtcdUrl(endpoint);
+  // parseUrl is a generic utility that throws std::runtime_error; translate at
+  // the EtcdClient boundary so every failure of this client (parse or
+  // transport) surfaces as EtcdError to callers, per the client's contract.
+  tt::utils::net::ParsedUrl parsed;
+  try {
+    parsed = tt::utils::net::parseUrl(endpoint);
+  } catch (const std::exception& e) {
+    throw EtcdError(std::string("EtcdClient: invalid endpoint '") + endpoint +
+                    "': " + e.what());
+  }
   host_ = parsed.host;
   port_ = parsed.port;
 }

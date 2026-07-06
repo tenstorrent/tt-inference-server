@@ -718,7 +718,7 @@ class TestMainWorkflowIntegration:
         ]
 
         with patch("sys.argv", test_args), patch(
-            "run.run_workflows",
+            "run.run_v2_workflows",
             side_effect=RuntimeError("venv setup failed"),
         ), patch(
             "run.validate_setup",
@@ -759,7 +759,7 @@ class TestMainWorkflowIntegration:
             "run.run_docker_server",
             return_value=mock_server_handle,
         ), patch(
-            "run.run_workflows",
+            "run.run_v2_workflows",
             return_value=[
                 WorkflowResult(workflow_name="evals", return_code=0),
                 WorkflowResult(workflow_name="benchmarks", return_code=0),

@@ -16,9 +16,10 @@
 #include "ipc/interface/task_queue.hpp"
 #include "runtime/runners/blaze_runner/blaze_slot_manager.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
+#include "runtime/runners/blaze_runner/scheduler_interface.hpp"
 #include "runtime/runners/ipc_runner.hpp"
 #include "services/memory_services/memory_manager.hpp"
-#include "tt_llm_engine/scheduler/prefill/prefill_scheduler.hpp"
+#include "tt_llm_engine/scheduler/prefill/prefill_types.hpp"
 
 namespace tt::runners::blaze {
 
@@ -27,8 +28,10 @@ namespace ps = tt_llm_engine::scheduler::prefill;
 class BlazePrefillRunner : public IRunner {
  public:
   BlazePrefillRunner(
-      const tt::config::LLMConfig& config, ipc::IResultQueue* resultQueue,
-      tt::ipc::ITaskQueue* taskQueue, tt::ipc::ICancelQueue* cancelQueue,
+      const tt::config::LLMConfig& config,
+      std::unique_ptr<IPrefillScheduler> prefillScheduler,
+      ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
+      tt::ipc::ICancelQueue* cancelQueue,
       std::unique_ptr<tt::services::MemoryManager> memoryManager = nullptr);
   ~BlazePrefillRunner() override;
 
@@ -40,8 +43,8 @@ class BlazePrefillRunner : public IRunner {
  private:
   void step();
 
-  void drainAndHandleMemoryResponses();
-  void drainAndHandleOutputs();
+  void drainAndHandleSchedulerResponses();
+  void drainAndHandleSchedulerOutputs();
   void drainAndHandleStopRequests();
   inline void handleStopRequest(uint32_t taskId);
   inline std::optional<tt::domain::ManageMemoryTask> getMemoryRequest();
@@ -49,23 +52,24 @@ class BlazePrefillRunner : public IRunner {
   inline void handleAllocateRequest(
       const tt::domain::ManageMemoryTask& request);
   inline void handleEvictRequest(const tt::domain::ManageMemoryTask& request);
-  inline void handleMemoryResponse(const ps::SchedulerResponse& response);
+  inline void handleSchedulerResponse(const ps::SchedulerResponse& response);
   inline void handleAllocateAck(uint32_t taskId, uint32_t slotId);
+  inline void handleSubmitError(uint32_t slotId, int32_t errorCode);
   inline void handleStopAck(uint32_t taskId, uint32_t slotId);
   inline void handleEvictAck(uint32_t taskId, uint32_t slotId);
   inline SlotContext* validateAck(uint32_t taskId, uint32_t slotId,
                                   const char* ackName);
-  inline void handleDeferred(SlotContext& slot);
-  void handleOutput(const ps::OutputMessage& output);
-  std::unique_ptr<tt::domain::llm::Sequence> getRequest();
-  void handleRequest(std::unique_ptr<tt::domain::llm::Sequence> request);
+  inline void handleDeferredAction(SlotContext& slot);
+  void handleSchedulerOutput(const ps::OutputMessage& output);
+  std::unique_ptr<tt::domain::llm::Sequence> getTask();
+  void handleTask(std::unique_ptr<tt::domain::llm::Sequence> task);
   void checkOutputHang();
 
   tt::config::LLMConfig config;
   ipc::IResultQueue* resultQueue;
   tt::ipc::ITaskQueue* taskQueue;
   tt::ipc::ICancelQueue* stopQueue;
-  std::unique_ptr<ps::PrefillScheduler> prefillScheduler;
+  std::unique_ptr<IPrefillScheduler> prefillScheduler;
   PendingRequests pendingRequests;
   SlotManager slotManager;
   std::atomic<bool> stopped{false};

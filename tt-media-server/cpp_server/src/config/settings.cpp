@@ -50,11 +50,17 @@ std::string resolveBlazeSocketDescriptorPrefix() {
     case ModelType::LLAMA_3_1_8B_INSTRUCT:
       return "llama";
     case ModelType::KIMI_K2_6:
+    case ModelType::KIMI_K2_7_CODE:
       return "kimi";
     case ModelType::GPT_OSS_120B:
       return "gpt-oss";
     case ModelType::MINIMAX_M2_7:
       return "minimax";
+    case ModelType::GLM_5_1:
+    case ModelType::GLM_5_2:
+      return "glm";
+    case ModelType::DEEPSEEK_V4_PRO:
+      return "deepseek";
   }
 }
 
@@ -281,12 +287,12 @@ std::string ttWarmupSignalsQueueName() {
                    defaults::TT_WARMUP_SIGNALS_QUEUE);
 }
 
-std::string prefillNumLayers() {
-  return envString("PREFILL_NUM_LAYERS", defaults::PREFILL_NUM_LAYERS);
+uint32_t modelNumLayers() {
+  return envUlong("MODEL_NUM_LAYERS", defaults::MODEL_NUM_LAYERS);
 }
 
-std::string prefillChunkSize() {
-  return envString("PREFILL_CHUNK_SIZE", defaults::PREFILL_CHUNK_SIZE);
+uint32_t prefillChunkSize() {
+  return envUlong("PREFILL_CHUNK_SIZE", defaults::PREFILL_CHUNK_SIZE);
 }
 
 std::string ttMemoryRequestQueueName() {
@@ -312,6 +318,26 @@ size_t cancelQueueCapacity() {
 
 size_t memoryQueueCapacity() {
   return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
+}
+
+bool useMockScheduler() {
+  return envBool("MOCK_USE_SCHEDULER", defaults::MOCK_USE_SCHEDULER);
+}
+
+unsigned mockPrefillLatencyMs() {
+  return static_cast<unsigned>(
+      envUlong("MOCK_PREFILL_CHUNK_LATENCY_MS",
+               defaults::MOCK_PREFILL_CHUNK_LATENCY_MS));
+}
+
+unsigned mockDecodeTokenLatencyUs() {
+  return static_cast<unsigned>(envUlong(
+      "MOCK_DECODE_TOKEN_LATENCY_US", defaults::MOCK_DECODE_TOKEN_LATENCY_US));
+}
+
+uint32_t mockDecodeTokenId() {
+  return static_cast<uint32_t>(
+      envUlong("MOCK_DECODE_TOKEN_ID", defaults::MOCK_DECODE_TOKEN_ID));
 }
 
 LLMConfig llmEngineConfig() {
@@ -463,10 +489,14 @@ ModelType modelType() {
     // Derive model type from MODEL env var
     std::string m = envString("MODEL", defaults::MODEL);
     if (m == "moonshotai/Kimi-K2.6") return ModelType::KIMI_K2_6;
+    if (m == "moonshotai/Kimi-K2.7-Code") return ModelType::KIMI_K2_7_CODE;
     if (m == "meta-llama/Llama-3.1-8B-Instruct")
       return ModelType::LLAMA_3_1_8B_INSTRUCT;
     if (m == "openai/gpt-oss-120b") return ModelType::GPT_OSS_120B;
     if (m == "MiniMaxAI/MiniMax-M2.7") return ModelType::MINIMAX_M2_7;
+    if (m == "zai-org/GLM-5.1") return ModelType::GLM_5_1;
+    if (m == "zai-org/GLM-5.2") return ModelType::GLM_5_2;
+    if (m == "deepseek-ai/DeepSeek-V4-Pro") return ModelType::DEEPSEEK_V4_PRO;
     return ModelType::DEEPSEEK_R1_0528;
   }();
   return cached;
@@ -485,8 +515,12 @@ bool sampleOnlyInReasoning() {
       return true;
     case ModelType::LLAMA_3_1_8B_INSTRUCT:
     case ModelType::KIMI_K2_6:
+    case ModelType::KIMI_K2_7_CODE:
     case ModelType::GPT_OSS_120B:
     case ModelType::MINIMAX_M2_7:
+    case ModelType::GLM_5_1:
+    case ModelType::GLM_5_2:
+    case ModelType::DEEPSEEK_V4_PRO:
       return false;
   }
   return false;
@@ -519,12 +553,6 @@ std::string socketHost() {
 uint16_t socketPort() {
   static const uint16_t cached =
       static_cast<uint16_t>(envUlong("SOCKET_PORT", defaults::SOCKET_PORT));
-  return cached;
-}
-
-std::string socketTransport() {
-  static const std::string cached =
-      envString("SOCKET_TRANSPORT", defaults::SOCKET_TRANSPORT);
   return cached;
 }
 
@@ -661,6 +689,30 @@ bool useFastMode() {
   return envUlong("USE_FAST_MODE", defaults::USE_FAST_MODE);
 }
 
+bool enableMigration() {
+  return envBool("ENABLE_MIGRATION", defaults::ENABLE_MIGRATION);
+}
+
+std::string migrationCmdQueueName() {
+  return envString("MIGRATION_CMD_QUEUE_NAME",
+                   defaults::MIGRATION_CMD_QUEUE_NAME);
+}
+
+std::string migrationTableQueueName() {
+  return envString("MIGRATION_TABLE_QUEUE_NAME",
+                   defaults::MIGRATION_TABLE_QUEUE_NAME);
+}
+
+std::string migrationRespQueueName() {
+  return envString("MIGRATION_RESP_QUEUE_NAME",
+                   defaults::MIGRATION_RESP_QUEUE_NAME);
+}
+
+std::string prefillAckChannelName() {
+  return envString("PREFILL_ACK_CHANNEL_NAME",
+                   defaults::PREFILL_ACK_CHANNEL_NAME);
+}
+
 std::string kafkaBrokers() {
   return envString("KAFKA_BROKERS", defaults::KAFKA_BROKERS);
 }
@@ -668,6 +720,27 @@ std::string kafkaBrokers() {
 std::string kafkaOffloadTopicName() {
   return envString("KAFKA_OFFLOAD_TOPIC_NAME",
                    defaults::KAFKA_OFFLOAD_TOPIC_NAME);
+}
+
+std::string kafkaMigrationRequestTopic() {
+  return envString("KAFKA_MIGRATION_REQUEST_TOPIC",
+                   defaults::KAFKA_MIGRATION_REQUEST_TOPIC);
+}
+
+std::string kafkaMigrationAckTopic() {
+  return envString("KAFKA_MIGRATION_ACK_TOPIC",
+                   defaults::KAFKA_MIGRATION_ACK_TOPIC);
+}
+
+uint32_t migrationPrefillEndpointId() {
+  return static_cast<uint32_t>(
+      envUlong("MIGRATION_PREFILL_ENDPOINT_ID",
+               defaults::MIGRATION_PREFILL_ENDPOINT_ID));
+}
+
+uint32_t migrationDecodeEndpointId() {
+  return static_cast<uint32_t>(envUlong(
+      "MIGRATION_DECODE_ENDPOINT_ID", defaults::MIGRATION_DECODE_ENDPOINT_ID));
 }
 
 std::string kafkaGroupId() {
@@ -701,6 +774,18 @@ std::string dynamoEtcdEndpoints() {
   return defaults::DYNAMO_ETCD_ENDPOINTS;
 }
 
+std::string specDecodeMode() {
+  return envString("SPEC_DECODE_MODE", defaults::SPEC_DECODE_MODE);
+}
+
+size_t mtpLevel() {
+  auto val = static_cast<size_t>(envUlong("MTP_LEVEL", defaults::MTP_LEVEL));
+  if (val > 4) {
+    throw std::runtime_error("MTP_LEVEL must be <= 4");
+  }
+  return val;
+}
+
 int64_t dynamoEtcdLeaseTtlSecs() {
   const char* v = std::getenv("DYNAMO_ETCD_LEASE_TTL_SECS");
   if (!v || !*v) return defaults::DYNAMO_ETCD_LEASE_TTL_SECS;
@@ -721,6 +806,25 @@ std::string dynamoComponent() {
 
 std::string dynamoEndpointName() {
   return envString("DYNAMO_ENDPOINT_NAME", defaults::DYNAMO_ENDPOINT_NAME);
+}
+
+/**
+ * Mooncake KV Migration configuration.
+ */
+unsigned kvMigrationTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("KV_MIGRATION_TIMEOUT_MS", defaults::KV_MIGRATION_TIMEOUT_MS));
+}
+
+unsigned kvMigrationSweepIntervalMs() {
+  return static_cast<unsigned>(
+      envUlong("KV_MIGRATION_SWEEP_INTERVAL_MS",
+               defaults::KV_MIGRATION_SWEEP_INTERVAL_MS));
+}
+
+unsigned kvMigrationDrainPollMs() {
+  return static_cast<unsigned>(envUlong("KV_MIGRATION_DRAIN_POLL_MS",
+                                        defaults::KV_MIGRATION_DRAIN_POLL_MS));
 }
 
 }  // namespace tt::config

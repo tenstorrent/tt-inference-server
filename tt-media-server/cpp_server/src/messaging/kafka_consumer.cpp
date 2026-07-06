@@ -56,16 +56,24 @@ KafkaConsumer::KafkaConsumer(KafkaConsumerConfig config)
 
   rd_kafka_poll_set_consumer(kafkaHandle);
 
-  rd_kafka_topic_partition_list_t* subscriptionList =
+  rd_kafka_topic_partition_list_t* partitionList =
       rd_kafka_topic_partition_list_new(1);
-  rd_kafka_topic_partition_list_add(subscriptionList, config.topic.c_str(),
-                                    RD_KAFKA_PARTITION_UA);
-  rd_kafka_resp_err_t err = rd_kafka_subscribe(kafkaHandle, subscriptionList);
-  rd_kafka_topic_partition_list_destroy(subscriptionList);
+  const int32_t partition = config.partition.value_or(RD_KAFKA_PARTITION_UA);
+  rd_kafka_topic_partition_list_add(partitionList, config.topic.c_str(),
+                                    partition);
+  rd_kafka_resp_err_t err = RD_KAFKA_RESP_ERR_NO_ERROR;
+  if (config.partition.has_value()) {
+    err = rd_kafka_assign(kafkaHandle, partitionList);
+  } else {
+    err = rd_kafka_subscribe(kafkaHandle, partitionList);
+  }
+  rd_kafka_topic_partition_list_destroy(partitionList);
 
   if (err) {
-    TT_LOG_ERROR("[Kafka] rd_kafka_subscribe failed: {}",
-                 rd_kafka_err2str(err));
+    TT_LOG_ERROR(
+        "[Kafka] {} failed: {}",
+        config.partition.has_value() ? "rd_kafka_assign" : "rd_kafka_subscribe",
+        rd_kafka_err2str(err));
     rd_kafka_destroy(kafkaHandle);
     return;
   }

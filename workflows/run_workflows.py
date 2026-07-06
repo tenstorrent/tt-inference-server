@@ -5,7 +5,7 @@
 import logging
 from dataclasses import dataclass
 
-from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from benchmarking.benchmark_config import get_benchmark_config
 from evals.eval_config import EVAL_CONFIGS
 from server_tests.test_categorization_system import TestFilter
 from server_tests.test_config import TEST_CONFIGS
@@ -56,14 +56,16 @@ class WorkflowSetup:
         ]
 
         self.config = None
-        _config = {
-            WorkflowType.EVALS: EVAL_CONFIGS.get(self.model_spec.model_name, {}),
-            WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS.get(
-                self.model_spec.model_id, {}
-            ),
-            WorkflowType.TESTS: TEST_CONFIGS.get(self.model_spec.model_name, {}),
-            WorkflowType.STRESS_TESTS: {},
-        }.get(_workflow_type)
+        if _workflow_type == WorkflowType.EVALS:
+            _config = EVAL_CONFIGS.get(self.model_spec.model_name, {})
+        elif _workflow_type == WorkflowType.BENCHMARKS:
+            _config = get_benchmark_config(self.model_spec)
+        elif _workflow_type == WorkflowType.TESTS:
+            _config = TEST_CONFIGS.get(self.model_spec.model_name, {})
+        elif _workflow_type == WorkflowType.STRESS_TESTS:
+            _config = {}
+        else:
+            _config = None
         if _config:
             self.config = _config
 

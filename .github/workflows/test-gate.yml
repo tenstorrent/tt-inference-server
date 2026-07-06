@@ -907,6 +907,204 @@ jobs:
             exit 1
           fi
 
+  mooncake-mpi-e2e:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: Mooncake MPI Discovery E2E
+    # #4294: builds bringup_mooncake_worker with the Mooncake Transfer Engine
+    # (--mooncake) and runs the single-host MPI discovery test
+    # (run_migration_workers_mpi.sh, registered as the MooncakeMpiDiscovery
+    # ctest). Mooncake isn't part of the --blaze build, so this is a dedicated
+    # job rather than another step in cpp-build. The TCP+HTTP-only subset
+    # (USE_TCP/USE_HTTP, no etcd/redis/rust) keeps the system deps minimal.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      # Loopback must bypass any injected HTTP proxy so the metadata service
+      # probe and the workers' openSegment calls reach 127.0.0.1 directly.
+      no_proxy: "localhost,127.0.0.1,::1"
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+          # Shares the cpp_server compile ccache with cpp-build / cpp-format-check.
+          ccache-key-suffix: server
+
+      - name: Restore cached tokenizer files
+        uses: actions/cache@v5
+        with:
+          path: tt-media-server/cpp_server/tokenizers
+          key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
+          restore-keys: |
+            cpp-server-tokenizers-
+
+      # The Mooncake submodule's .gitmodules URL is SSH (git@github.com:...);
+      # rewrite it to anonymous HTTPS so the runner can fetch it (and its
+      # nested pybind11 / yalantinglibs submodules) without an SSH key.
+      - name: Init Mooncake submodule (recursive)
+        run: |
+          git -c url."https://github.com/".insteadOf="git@github.com:" \
+              submodule update --init --recursive \
+              cpp_server/third_party/Mooncake
+
+      # Transfer Engine system deps for the TCP+HTTP-only subset build. The full
+      # third_party/Mooncake/dependencies.sh also pulls Go/gRPC/redis we don't
+      # need (USE_ETCD/USE_REDIS are OFF), so install just the required set.
+      # Open MPI provides mpirun, which gates the MooncakeMpiDiscovery ctest.
+      - name: Install Mooncake + MPI system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libibverbs-dev libnuma-dev libgoogle-glog-dev libgflags-dev \
+            libjsoncpp-dev libyaml-cpp-dev libcurl4-openssl-dev \
+            openmpi-bin libopenmpi-dev
+
+      # yalantinglibs is resolved via find_package(yalantinglibs CONFIG) and has
+      # no apt package, so build + install it from Mooncake's vendored submodule
+      # (same flags as dependencies.sh, minus examples/benchmarks/tests).
+      - name: Build & install yalantinglibs
+        run: |
+          cd cpp_server/third_party/Mooncake/extern/yalantinglibs
+          cmake -B build -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARK=OFF -DBUILD_UNIT_TESTS=OFF
+          cmake --build build -j "$(nproc)"
+          sudo cmake --install build
+
+      - name: Build C++ server with Mooncake
+        run: |
+          cd cpp_server
+          ./build.sh --mooncake
+
+      # The metadata service is the wheel's http_metadata_server.py (started by
+      # run_mooncake_metadata_server.sh via the in-tree fallback copy); it needs
+      # aiohttp. setup-python puts python/pip on PATH so the launcher resolves.
+      - name: Set up Python for metadata service
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install metadata service dependencies
+        run: python -m pip install aiohttp
+
+      - name: Run Mooncake MPI discovery e2e
+        # Smaller mesh than the local default (4 prefill + 16 decode): 20
+        # oversubscribed MPI ranks thrash a 4-core GitHub runner. 2+6 still
+        # exercises the round-robin fan-out (each decode -> one prefill, each
+        # prefill -> its assigned decodes). Bump via these envs if needed.
+        env:
+          NUM_PREFILL: "2"
+          NUM_DECODE: "6"
+          DISCOVERY_TIMEOUT_SEC: "90"
+        run: |
+          cd cpp_server/build
+          ctest -R MooncakeMpiDiscovery --output-on-failure
+
+      - name: Upload MPI discovery logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: mooncake-mpi-e2e-logs
+          path: |
+            /tmp/tt_mc_mpi_workers.log
+            /tmp/tt_mc_metadata_mpi.log
+          retention-days: 1
+          if-no-files-found: warn
+
+  remote-kv-manager-kafka-e2e:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: RemoteKVManager Kafka E2E
+    # Builds cpp_server with --kafka and runs remote_kv_manager_e2e_test
+    # (see cpp_server/tests/e2e/remote_kv_manager_e2e_test.cpp) against a
+    # real Kafka broker started via cpp_server/scripts/dev-kafka.sh. The
+    # test is not registered with add_test() (opt-in), so it's invoked
+    # directly as a binary rather than via ctest.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      # The broker advertises listener as kafka:9092, so the test binary
+      # (running on the runner host, not inside tt_net) redirects to
+      # 'kafka' after its initial connect. /etc/hosts maps kafka ->
+      # 127.0.0.1; keep any injected HTTP proxy out of the loop for it.
+      no_proxy: "localhost,127.0.0.1,::1,kafka"
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+          # Shares the cpp_server compile ccache with cpp-build / cpp-format-check.
+          ccache-key-suffix: server
+
+      - name: Install librdkafka-dev
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends librdkafka-dev
+
+      - name: Restore cached tokenizer files
+        uses: actions/cache@v5
+        with:
+          path: tt-media-server/cpp_server/tokenizers
+          key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
+          restore-keys: |
+            cpp-server-tokenizers-
+
+      - name: Build C++ server with Kafka enabled
+        run: |
+          cd cpp_server
+          ./build.sh --blaze --kafka
+
+      - name: Start dev Kafka broker
+        # KAFKA_PUBLISH_PORT publishes 9092 to the host so the test binary,
+        # which runs on the runner (not inside tt_net), can dial the broker.
+        env:
+          KAFKA_PUBLISH_PORT: "1"
+        run: bash cpp_server/scripts/dev-kafka.sh up
+
+      - name: Make 'kafka' resolvable on the runner
+        # advertised.listeners=kafka:9092 means the broker's metadata
+        # response redirects clients to that DNS name after their initial
+        # localhost:9092 connect. Point it at loopback.
+        run: echo "127.0.0.1 kafka" | sudo tee -a /etc/hosts
+
+      - name: Run remote_kv_manager_e2e_test
+        env:
+          KAFKA_BROKERS: "kafka:9092"
+        run: ./cpp_server/build/remote_kv_manager_e2e_test
+
+      - name: Show Kafka broker logs on failure
+        if: failure()
+        run: bash cpp_server/scripts/dev-kafka.sh logs --tail 200
+
+      - name: Stop dev Kafka broker
+        if: always()
+        run: bash cpp_server/scripts/dev-kafka.sh down
+
   prefill-gateway-build:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
@@ -1315,6 +1513,8 @@ jobs:
       - test-coverage
       - cpp-format-check
       - cpp-build
+      - mooncake-mpi-e2e
+      - remote-kv-manager-kafka-e2e
       - prefill-gateway-format-check
       - prefill-gateway-build
       - helm-chart-validate
@@ -1357,7 +1557,7 @@ jobs:
                   echo "job condition evaluated false"
                 fi
                 ;;
-              cpp-format-check|cpp-build)
+              cpp-format-check|cpp-build|mooncake-mpi-e2e|remote-kv-manager-kafka-e2e)
                 if [[ "$CPP_SERVER" != "true" ]]; then
                   echo "cpp_server paths did not change"
                 else
@@ -1406,6 +1606,8 @@ jobs:
             test-coverage
             cpp-format-check
             cpp-build
+            mooncake-mpi-e2e
+            remote-kv-manager-kafka-e2e
             prefill-gateway-format-check
             prefill-gateway-build
             helm-chart-validate
@@ -1423,6 +1625,8 @@ jobs:
             [test-coverage]="${{ needs.test-coverage.result }}"
             [cpp-format-check]="${{ needs.cpp-format-check.result }}"
             [cpp-build]="${{ needs.cpp-build.result }}"
+            [mooncake-mpi-e2e]="${{ needs.mooncake-mpi-e2e.result }}"
+            [remote-kv-manager-kafka-e2e]="${{ needs.remote-kv-manager-kafka-e2e.result }}"
             [prefill-gateway-format-check]="${{ needs.prefill-gateway-format-check.result }}"
             [prefill-gateway-build]="${{ needs.prefill-gateway-build.result }}"
             [helm-chart-validate]="${{ needs.helm-chart-validate.result }}"

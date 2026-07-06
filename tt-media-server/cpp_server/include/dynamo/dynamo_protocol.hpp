@@ -31,6 +31,7 @@
 
 namespace trantor {
 class EventLoop;
+class EventLoopThreadPool;
 class TcpServer;
 class TcpClient;
 class TcpConnection;
@@ -301,7 +302,7 @@ struct ServerConfig {
 class DynamoServer {
  public:
   DynamoServer(ServerConfig config, GenerateHandler handler,
-               std::vector<trantor::EventLoop*> ioLoops);
+               trantor::EventLoopThreadPool* loopPool);
   ~DynamoServer();
 
   DynamoServer(const DynamoServer&) = delete;
@@ -323,7 +324,7 @@ class DynamoServer {
  private:
   ServerConfig config_;
   GenerateHandler handler_;
-  std::vector<trantor::EventLoop*> io_loops_;
+  trantor::EventLoopThreadPool* loop_pool_;
   std::unique_ptr<trantor::TcpServer> tcp_server_;
   uint16_t actual_port_ = 0;
   std::atomic<bool> running_{false};

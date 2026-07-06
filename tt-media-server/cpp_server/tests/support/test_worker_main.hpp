@@ -25,7 +25,7 @@ inline int runWorkerSubprocess(int workerId) {
   tt::utils::ZeroOverheadLogger::initialize();
 
   tt::worker::SingleProcessWorkerMetrics::instance().initialize(
-      workerId, tt::worker::MetricsLayout::SP_PIPELINE_RUNNER);
+      workerId, tt::worker::MetricsLayout::BLAZE_RUNNER);
 
   // Signal warmup: parent unblocks isModelReady() only after this.
   tt::ipc::boost::WarmupSignalQueue warmupQueue(
