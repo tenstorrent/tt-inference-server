@@ -29,6 +29,8 @@ class SessionManager;
 
 namespace tt::sockets {
 class InterServerService;
+struct PrefillRequestMessage;
+struct PrefillResultMessage;
 }
 
 namespace tt::services {
@@ -126,6 +128,15 @@ class LLMPipeline {
    */
   void dispatchGeneration(
       tt::domain::llm::LLMRequest& request, SessionInfo sessionInfo,
+      const std::function<void(const tt::domain::llm::LLMStreamChunk&, bool)>&
+          cb) const;
+
+  void handlePrefillRequest(
+      const tt::sockets::PrefillRequestMessage& message,
+      std::function<void(const tt::sockets::PrefillResultMessage&)> onResult)
+      const;
+  void handlePrefillResult(
+      const tt::sockets::PrefillResultMessage& message,
       const std::function<void(const tt::domain::llm::LLMStreamChunk&, bool)>&
           cb) const;
 

@@ -24,6 +24,8 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace tt::dynamo {
 
@@ -60,6 +62,11 @@ class EtcdClient {
 
   /// Delete a single key (range_end is left unset).
   void deleteRange(const std::string& key);
+
+  /// Return key/value pairs under a prefix. Values are decoded from etcd's
+  /// base64 JSON gateway representation.
+  std::vector<std::pair<std::string, std::string>> getPrefix(
+      const std::string& prefix);
 
  private:
   std::string host_;

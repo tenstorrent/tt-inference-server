@@ -43,6 +43,7 @@ class DynamoEndpoint {
     std::string namespace_name = "default";
     std::string component = "backend";
     std::string endpoint = "generate";
+    DiscoveryWorkerRole worker_role = DiscoveryWorkerRole::DECODE;
 
     /// Discovery backend ("file" or "etcd"). Must match the frontend's
     /// DYN_DISCOVERY_BACKEND.
@@ -89,6 +90,8 @@ class DynamoEndpoint {
   std::unique_ptr<DynamoServer> server_;
   std::thread keepalive_thread_;
   std::unique_ptr<trantor::EventLoopThreadPool> loop_pool_;
+  std::shared_ptr<std::string> local_prefill_id_ =
+      std::make_shared<std::string>();
   std::atomic<bool> running_{false};
   std::unique_ptr<DiscoveryRegistration> discovery_;
 };

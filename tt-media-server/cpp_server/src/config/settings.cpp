@@ -62,6 +62,8 @@ std::string resolveBlazeSocketDescriptorPrefix() {
     case ModelType::DEEPSEEK_V4_PRO:
       return "deepseek";
   }
+  throw std::runtime_error(
+      "Unhandled MODEL_TYPE while resolving BLAZE_SOCKET_DESCRIPTOR_PREFIX");
 }
 
 /** Read env string and convert to lowercase for case-insensitive parsing. */
@@ -801,11 +803,36 @@ std::string dynamoNamespace() {
 }
 
 std::string dynamoComponent() {
+  if (const char* v = std::getenv("DYNAMO_COMPONENT"); v && *v) {
+    return v;
+  }
+  if (dynamoWorkerRole() == "prefill") {
+    return "prefill";
+  }
   return envString("DYNAMO_COMPONENT", defaults::DYNAMO_COMPONENT);
 }
 
 std::string dynamoEndpointName() {
   return envString("DYNAMO_ENDPOINT_NAME", defaults::DYNAMO_ENDPOINT_NAME);
+}
+
+std::string dynamoWorkerRole() {
+  std::string role =
+      envString("DYNAMO_WORKER_ROLE", defaults::DYNAMO_WORKER_ROLE);
+  if (role == "prefill" || role == "decode") {
+    return role;
+  }
+  return llmMode() == LLMMode::PREFILL_ONLY ? "prefill" : "decode";
+}
+
+bool dynamoNativePrefillHandoffEnabled() {
+  return envBool("DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED",
+                 defaults::DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED);
+}
+
+bool dynamoDecodeOrchestratesPrefill() {
+  return envBool("DYNAMO_DECODE_ORCHESTRATES_PREFILL",
+                 defaults::DYNAMO_DECODE_ORCHESTRATES_PREFILL);
 }
 
 /**

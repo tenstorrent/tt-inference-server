@@ -16,6 +16,8 @@
 #include <cstring>
 #include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace tt::dynamo {
 
@@ -58,6 +60,48 @@ std::string base64Encode(const std::string& in) {
     out += "=";
   }
   return out;
+}
+
+std::string base64Decode(const std::string& in) {
+  auto val = [](char c) -> int {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+  };
+
+  std::string out;
+  int bits = 0;
+  int buffer = 0;
+  for (char c : in) {
+    if (c == '=') break;
+    const int v = val(c);
+    if (v < 0) continue;
+    buffer = (buffer << 6) | v;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push_back(static_cast<char>((buffer >> bits) & 0xFF));
+    }
+  }
+  return out;
+}
+
+std::string prefixRangeEnd(std::string prefix) {
+  if (prefix.empty()) {
+    return std::string(1, '\0');
+  }
+  for (auto it = prefix.rbegin(); it != prefix.rend(); ++it) {
+    unsigned char c = static_cast<unsigned char>(*it);
+    if (c != 0xFF) {
+      *it = static_cast<char>(c + 1);
+      prefix.erase(it.base(), prefix.end());
+      return prefix;
+    }
+  }
+  return std::string(1, '\0');
 }
 
 // ---------------------------------------------------------------------------
@@ -473,6 +517,29 @@ void EtcdClient::deleteRange(const std::string& key) {
   body["key"] = base64Encode(key);
   httpPostJson(host_, port_, "/v3/kv/deleterange", serialize(body),
                timeout_ms_);
+}
+
+std::vector<std::pair<std::string, std::string>> EtcdClient::getPrefix(
+    const std::string& prefix) {
+  Json::Value body(Json::objectValue);
+  body["key"] = base64Encode(prefix);
+  body["range_end"] = base64Encode(prefixRangeEnd(prefix));
+  Json::Value resp = parseJson(
+      httpPostJson(host_, port_, "/v3/kv/range", serialize(body), timeout_ms_));
+
+  std::vector<std::pair<std::string, std::string>> out;
+  if (!resp.isObject() || !resp.isMember("kvs")) return out;
+  const Json::Value& kvs = resp["kvs"];
+  if (!kvs.isArray()) return out;
+  out.reserve(kvs.size());
+  for (const auto& kv : kvs) {
+    if (!kv.isObject() || !kv["key"].isString() || !kv["value"].isString()) {
+      continue;
+    }
+    out.emplace_back(base64Decode(kv["key"].asString()),
+                     base64Decode(kv["value"].asString()));
+  }
+  return out;
 }
 
 }  // namespace tt::dynamo

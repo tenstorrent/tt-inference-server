@@ -8,11 +8,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 #include "config/settings.hpp"
@@ -101,6 +101,36 @@ std::string instanceKey(const DiscoveryConfig& c) {
          c.instance_id_hex;
 }
 
+const char* workerRoleName(DiscoveryWorkerRole role) {
+  switch (role) {
+    case DiscoveryWorkerRole::PREFILL:
+      return "prefill";
+    case DiscoveryWorkerRole::DECODE:
+      return "decode";
+  }
+  return "decode";
+}
+
+Json::Value needsForWorkerRole(DiscoveryWorkerRole role) {
+  Json::Value needs(Json::arrayValue);
+  if (role == DiscoveryWorkerRole::PREFILL) {
+    Json::Value alternative(Json::arrayValue);
+    alternative.append("decode");
+    needs.append(std::move(alternative));
+  }
+  return needs;
+}
+
+DiscoveryWorkerRole advertisedWorkerRole(DiscoveryWorkerRole role) {
+  if (const char* env = std::getenv("DYNAMO_DISCOVERY_WORKER_ROLE");
+      env && *env) {
+    const std::string value(env);
+    if (value == "decode") return DiscoveryWorkerRole::DECODE;
+    if (value == "prefill") return DiscoveryWorkerRole::PREFILL;
+  }
+  return role;
+}
+
 /// Build the instance JSON document the frontend dials over (transport.tcp).
 Json::Value buildInstanceJson(const DiscoveryConfig& c) {
   Json::Value instance(Json::objectValue);
@@ -181,6 +211,7 @@ void setRuntimeParserField(Json::Value& runtime, const char* field,
 /// list the model. Paths point at the same files cpp_server itself loads so
 /// the frontend tokenization matches exactly.
 Json::Value buildMdcJson(const DiscoveryConfig& c) {
+  const DiscoveryWorkerRole advertisedRole = advertisedWorkerRole(c.worker_role);
   Json::Value mdc(Json::objectValue);
   mdc["type"] = "Model";
   mdc["namespace"] = c.namespace_name;
@@ -258,13 +289,26 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   card["context_length"] = K_CONTEXT_LENGTH;
   card["kv_cache_block_size"] =
       static_cast<int>(tt::config::kvCacheBlockSize());
-  card["migration_limit"] = 0;
-  card["model_type"] = "Chat";
+  card["migration_limit"] =
+      advertisedRole == DiscoveryWorkerRole::PREFILL &&
+              tt::config::dynamoNativePrefillHandoffEnabled()
+          ? 1
+          : 0;
+  card["model_type"] =
+      advertisedRole == DiscoveryWorkerRole::PREFILL ? "Prefill" : "Chat";
   card["model_input"] = "Tokens";
+  card["worker_type"] = workerRoleName(advertisedRole);
+  card["needs"] = needsForWorkerRole(advertisedRole);
 
   Json::Value runtime(Json::objectValue);
   runtime["total_kv_blocks"] = Json::Value::null;
-  runtime["max_num_seqs"] = Json::Value::null;
+  if (advertisedRole == DiscoveryWorkerRole::PREFILL &&
+      tt::config::prefillMaxInFlight() > 0) {
+    runtime["max_num_seqs"] =
+        static_cast<Json::UInt64>(tt::config::prefillMaxInFlight());
+  } else {
+    runtime["max_num_seqs"] = Json::Value::null;
+  }
   runtime["max_num_batched_tokens"] = Json::Value::null;
   const RuntimeParsers parsers = runtimeParsersForModelPath(c.model_path);
   setRuntimeParserField(runtime, "reasoning_parser", parsers.reasoning);
@@ -306,8 +350,9 @@ class EtcdDiscoveryRegistration : public DiscoveryRegistration {
     }
     publishKeys();
     TT_LOG_INFO(
-        "[DynamoDiscovery/etcd] Registered key={} model={} endpoints={}",
-        instanceKey(cfg), cfg.model_name, cfg.etcd_endpoints);
+        "[DynamoDiscovery/etcd] Registered key={} model={} role={} endpoints={}",
+        instanceKey(cfg), cfg.model_name, workerRoleName(cfg.worker_role),
+        cfg.etcd_endpoints);
   }
 
   void keepAlive() override {
@@ -366,7 +411,10 @@ class EtcdDiscoveryRegistration : public DiscoveryRegistration {
     const std::string key = instanceKey(cfg);
     client->put("v1/instances/" + key, serializeJson(buildInstanceJson(cfg)),
                 leaseId);
-    client->put("v1/mdc/" + key, serializeJson(buildMdcJson(cfg)), leaseId);
+    const char* suppressMdc = std::getenv("DYNAMO_SUPPRESS_MDC");
+    if (!(suppressMdc && std::string(suppressMdc) == "1")) {
+      client->put("v1/mdc/" + key, serializeJson(buildMdcJson(cfg)), leaseId);
+    }
   }
 
   DiscoveryConfig cfg;

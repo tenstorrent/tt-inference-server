@@ -10,6 +10,9 @@
 #   ./run_stack.sh up                      # disaggregated: decode + prefill split
 #   ./run_stack.sh down                    # tear everything down
 #
+# Optional decode-orchestrated Dynamo prefill:
+#   DYNAMO_DECODE_ORCHESTRATES_PREFILL=1 DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=1 ./run_stack.sh up
+#
 # Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; frontend -> /tmp/tt_frontend.log.
 
 set -euo pipefail
@@ -25,10 +28,15 @@ export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.43}"
 MODEL="${MODEL:-moonshotai/Kimi-K2.6}"
 MODEL_NAME="${MODEL_NAME:-tt-cpp-server}"
 HTTP_PORT="${HTTP_PORT:-8080}"
+ROUTER_MODE="${ROUTER_MODE:-kv}"
 SERVER_PORT="${SERVER_PORT:-8001}"       # decode/regular REST + dynamo endpoint
 PREFILL_PORT="${PREFILL_PORT:-8002}"     # prefill REST
 SOCKET_PORT="${SOCKET_PORT:-9000}"       # decode<->prefill inter-server socket
 MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
+DYNAMO_DECODE_ORCHESTRATES_PREFILL="${DYNAMO_DECODE_ORCHESTRATES_PREFILL:-0}"
+DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED="${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED:-0}"
+DYNAMO_PREFILL_CLIENT_COMPONENT="${DYNAMO_PREFILL_CLIENT_COMPONENT:-tt-prefill}"
+LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND:-mock}"
 ETCD_NAME="${ETCD_NAME:-etcd}"
 PIDFILE="/tmp/tt_stack.pids"
 
@@ -92,15 +100,38 @@ ensure_etcd() {
     log "etcd at ${ETCD_ENDPOINTS}"
 }
 
-# dynamo registration env shared by the regular/decode worker (the one the
-# frontend discovers). The prefill worker does NOT register.
+# dynamo registration env for the decode worker (the one the frontend
+# discovers).
 worker_dynamo_env() {
     echo "DYNAMO_ENDPOINT_ENABLED=1"
+    echo "DYNAMO_WORKER_ROLE=decode"
     echo "DYNAMO_DISCOVERY_BACKEND=etcd"
     echo "DYNAMO_ETCD_ENDPOINTS=${ETCD_ENDPOINTS}"
     echo "DYNAMO_NAMESPACE=default"
     echo "DYNAMO_COMPONENT=backend"
     echo "DYNAMO_ENDPOINT_NAME=generate"
+    echo "DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED}"
+    echo "DYNAMO_DECODE_ORCHESTRATES_PREFILL=${DYNAMO_DECODE_ORCHESTRATES_PREFILL}"
+    if [[ "${DYNAMO_DECODE_ORCHESTRATES_PREFILL}" == "1" ]]; then
+        echo "DYNAMO_PREFILL_CLIENT_COMPONENT=${DYNAMO_PREFILL_CLIENT_COMPONENT}"
+    fi
+}
+
+prefill_dynamo_env() {
+    echo "DYNAMO_ENDPOINT_ENABLED=1"
+    echo "DYNAMO_WORKER_ROLE=prefill"
+    echo "DYNAMO_DISCOVERY_BACKEND=etcd"
+    echo "DYNAMO_ETCD_ENDPOINTS=${ETCD_ENDPOINTS}"
+    echo "DYNAMO_NAMESPACE=default"
+    if [[ "${DYNAMO_DECODE_ORCHESTRATES_PREFILL}" == "1" ]]; then
+        echo "DYNAMO_COMPONENT=${DYNAMO_PREFILL_CLIENT_COMPONENT}"
+        echo "DYNAMO_DISCOVERY_WORKER_ROLE=decode"
+        echo "DYNAMO_SUPPRESS_MDC=1"
+    else
+        echo "DYNAMO_COMPONENT=prefill"
+    fi
+    echo "DYNAMO_ENDPOINT_NAME=generate"
+    echo "DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED}"
 }
 
 start_frontend() {
@@ -112,6 +143,7 @@ start_frontend() {
         DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
         "${DYN_VENV}/bin/python3" -m dynamo.frontend \
             --http-port "${HTTP_PORT}" \
+            --router-mode "${ROUTER_MODE}" \
             --model-name "${MODEL_NAME}" \
             --model-path "${CPP_DIR}/tokenizers/${MODEL}" \
         > "${FRONTEND_LOG}" 2>&1 < /dev/null &
@@ -147,7 +179,7 @@ up() {
     log "decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
     start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
         $(worker_dynamo_env) \
-        LLM_MODE=decode LLM_DEVICE_BACKEND=mock \
+        LLM_MODE=decode LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND}" \
         SOCKET_TRANSPORT=tcp SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
         MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE}"
     sleep 3
@@ -155,12 +187,22 @@ up() {
     # co-located on one host, and these default to fixed names
     # (tt_mem_requests/_results, /tt_worker_metrics) — sharing them makes the
     # prefill worker's KV allocation requests race the decode worker's and hang.
-    start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
-        LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
-        SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
-        TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
-        TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
-        TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill
+    if [[ "${DYNAMO_DECODE_ORCHESTRATES_PREFILL}" == "1" ]]; then
+        start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
+            $(prefill_dynamo_env) \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND}" \
+            SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
+            TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
+            TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
+            TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill
+    else
+        start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND}" \
+            SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
+            TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
+            TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
+            TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill
+    fi
     sleep 2
     start_frontend
     wait_ready

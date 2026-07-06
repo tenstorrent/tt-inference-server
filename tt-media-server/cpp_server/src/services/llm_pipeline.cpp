@@ -18,6 +18,7 @@
 #include "services/session_manager.hpp"
 #include "services/session_resolution.hpp"
 #include "sockets/inter_server_service.hpp"
+#include "sockets/socket_messages.hpp"
 #include "utils/conversation_hasher.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
@@ -554,14 +555,39 @@ void LLMPipeline::dispatchGeneration(
             request.session->getSessionId());
       }
       // WARNING - TEMP CHANGE
-      disaggregationService_->handleStreamingRequest(
-          request, sessionInfo.registrationHashes, cb);
+      if (tt::config::dynamoDecodeOrchestratesPrefill()) {
+        disaggregationService_->handleDynamoStreamingRequest(
+            request, sessionInfo.registrationHashes, cb);
+      } else {
+        disaggregationService_->handleStreamingRequest(
+            request, sessionInfo.registrationHashes, cb);
+      }
     }
     return;
   }
 
   throw std::runtime_error(
       "LLM Mode must be regular or decode only for chat completions");
+}
+
+void LLMPipeline::handlePrefillRequest(
+    const tt::sockets::PrefillRequestMessage& message,
+    std::function<void(const tt::sockets::PrefillResultMessage&)> onResult)
+    const {
+  if (!disaggregationService_) {
+    throw std::runtime_error("DisaggregationService is not configured");
+  }
+  disaggregationService_->handlePrefillRequest(message, std::move(onResult));
+}
+
+void LLMPipeline::handlePrefillResult(
+    const tt::sockets::PrefillResultMessage& message,
+    const std::function<void(const tt::domain::llm::LLMStreamChunk&, bool)>& cb)
+    const {
+  if (!disaggregationService_) {
+    throw std::runtime_error("DisaggregationService is not configured");
+  }
+  disaggregationService_->handlePrefillResult(message, cb);
 }
 
 void LLMPipeline::abortRequest(uint32_t taskId) const {
@@ -573,7 +599,9 @@ void LLMPipeline::abortRequest(uint32_t taskId) const {
 
 bool LLMPipeline::willPrefillOnDecode(
     const tt::domain::llm::LLMRequest& request, size_t deltaTokens) const {
-  const bool socketReady = socketService_ && socketService_->isConnected();
+  const bool socketReady =
+      tt::config::dynamoDecodeOrchestratesPrefill() ||
+      (socketService_ && socketService_->isConnected());
   if (!socketReady) {
     TT_LOG_WARN(
         "[LLMPipeline] Prefill server not connected; falling back to "
