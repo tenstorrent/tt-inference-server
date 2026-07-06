@@ -157,6 +157,10 @@ class CnnClientStrategy(BaseMediaStrategy):
         )
         try:
             self.require_health()
+            if self._is_yolox():
+                self._ensure_coco_benchmark_images()
+            else:
+                self._ensure_imagenet_dataset()
             loop_start = time.monotonic()
             status_list = self._run_image_analysis_benchmark()
             wall_clock_seconds = time.monotonic() - loop_start
