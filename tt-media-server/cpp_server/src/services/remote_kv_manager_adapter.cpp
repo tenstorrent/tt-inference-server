@@ -248,7 +248,7 @@ int RemoteKVManagerAdapter::poll() {
   std::vector<PendingComplete> completionsToFire;
 
   for (uint64_t kafkaId : toCheck) {
-    const MigrationStatus status = kvManager_->getStatus(kafkaId);
+    const MigrationStatus status = kvManager_->getMigrationStatus(kafkaId);
     if (status == MigrationStatus::IN_PROGRESS ||
         status == MigrationStatus::UNKNOWN) {
       continue;
