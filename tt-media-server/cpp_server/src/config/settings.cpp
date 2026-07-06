@@ -835,6 +835,26 @@ bool dynamoDecodeOrchestratesPrefill() {
                  defaults::DYNAMO_DECODE_ORCHESTRATES_PREFILL);
 }
 
+bool dynamoPrefillRouterEnabled() {
+  return envBool("DYNAMO_PREFILL_ROUTER_ENABLED",
+                 defaults::DYNAMO_PREFILL_ROUTER_ENABLED);
+}
+
+std::string dynamoPrefillRouterComponent() {
+  return envString("DYNAMO_PREFILL_ROUTER_COMPONENT",
+                   defaults::DYNAMO_PREFILL_ROUTER_COMPONENT);
+}
+
+std::string dynamoPrefillRouterEndpoint() {
+  return envString("DYNAMO_PREFILL_ROUTER_ENDPOINT",
+                   defaults::DYNAMO_PREFILL_ROUTER_ENDPOINT);
+}
+
+std::string dynamoPrefillRouterFallback() {
+  return envString("DYNAMO_PREFILL_ROUTER_FALLBACK",
+                   defaults::DYNAMO_PREFILL_ROUTER_FALLBACK);
+}
+
 /**
  * Mooncake KV Migration configuration.
  */

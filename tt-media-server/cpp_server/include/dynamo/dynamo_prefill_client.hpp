@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -18,6 +19,10 @@ class DynamoPrefillClient {
     std::string namespace_name = "default";
     std::string component = "prefill";
     std::string endpoint = "generate";
+    bool router_enabled = false;
+    std::string router_component = "router";
+    std::string router_endpoint = "best_worker_id";
+    std::string router_fallback = "round_robin";
     std::string response_host;
     int timeout_ms = 30000;
   };
@@ -32,11 +37,14 @@ class DynamoPrefillClient {
     std::string key;
     std::string tcp_address;
     std::string host;
+    uint64_t instance_id = 0;
     uint16_t port = 0;
     std::string endpoint_path = "generate";
   };
 
   std::vector<Worker> discoverWorkers() const;
+  std::optional<uint64_t> queryRouterBestWorker(
+      const tt::sockets::PrefillRequestMessage& request) const;
   Worker selectWorker(const std::vector<Worker>& workers);
 
   Options options;

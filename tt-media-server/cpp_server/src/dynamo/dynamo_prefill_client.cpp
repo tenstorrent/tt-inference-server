@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <functional>
@@ -221,6 +222,55 @@ void readAck(int fd, int timeoutMs) {
   }
 }
 
+std::optional<uint64_t> uint64FromJsonValue(const Json::Value& value) {
+  if (value.isUInt64()) return value.asUInt64();
+  if (value.isInt64() && value.asInt64() >= 0) {
+    return static_cast<uint64_t>(value.asInt64());
+  }
+  if (value.isString()) {
+    try {
+      return static_cast<uint64_t>(std::stoull(value.asString()));
+    } catch (const std::exception&) {
+      return std::nullopt;
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<uint64_t> findUint64Recursive(const Json::Value& value) {
+  if (auto scalar = uint64FromJsonValue(value)) {
+    return scalar;
+  }
+  if (value.isObject()) {
+    for (auto it = value.begin(); it != value.end(); ++it) {
+      if (auto found = findUint64Recursive(*it)) return found;
+    }
+  } else if (value.isArray()) {
+    for (const auto& item : value) {
+      if (auto found = findUint64Recursive(item)) return found;
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<uint64_t> workerIdFromStreamBody(
+    const std::vector<uint8_t>& bodyBytes) {
+  if (bodyBytes.empty()) return std::nullopt;
+  std::string body(bodyBytes.begin(), bodyBytes.end());
+  Json::Value wrapper = parseJson(body);
+  if (wrapper.get("complete_final", false).asBool()) {
+    return std::nullopt;
+  }
+  const Json::Value annotated = wrapper.get("data", Json::Value{});
+  if (annotated.isObject() && annotated.get("event", "").asString() == "error") {
+    const Json::Value& comments = annotated["comment"];
+    std::string message = "router sidecar returned error";
+    if (comments.isArray() && !comments.empty()) message = comments[0].asString();
+    throw std::runtime_error(message);
+  }
+  return findUint64Recursive(wrapper);
+}
+
 std::optional<DynamoPrefillHandoff> handoffFromStreamBody(
     const std::vector<uint8_t>& bodyBytes) {
   if (bodyBytes.empty()) return std::nullopt;
@@ -333,7 +383,7 @@ std::vector<uint8_t> buildRequestFrame(
   info["address"] = responseAddress;
   info["subject"] = requestId;
   info["context"] = requestId;
-  info["stream_type"] = "Response";
+  info["stream_type"] = "response";
 
   Json::Value connectionInfo(Json::objectValue);
   connectionInfo["transport"] = "tcp_server";
@@ -347,6 +397,54 @@ std::vector<uint8_t> buildRequestFrame(
 
   const std::string header = compactJson(control);
   const std::string body = compactJson(buildGenerateBody(request, requestId));
+  TwoPartMessage twoPart;
+  twoPart.header.assign(header.begin(), header.end());
+  twoPart.body.assign(body.begin(), body.end());
+  const auto payload = encode_two_part(twoPart);
+
+  Json::Value headers(Json::objectValue);
+  const std::string headersJson = compactJson(headers);
+
+  std::vector<uint8_t> frame;
+  put_u16_be(frame, static_cast<uint16_t>(endpointPath.size()));
+  frame.insert(frame.end(), endpointPath.begin(), endpointPath.end());
+  put_u16_be(frame, static_cast<uint16_t>(headersJson.size()));
+  frame.insert(frame.end(), headersJson.begin(), headersJson.end());
+  put_u32_be(frame, static_cast<uint32_t>(payload.size()));
+  frame.insert(frame.end(), payload.begin(), payload.end());
+  return frame;
+}
+
+Json::Value tokenIdsToJson(const std::vector<int64_t>& tokenIds) {
+  Json::Value tokens(Json::arrayValue);
+  for (int64_t token : tokenIds) {
+    tokens.append(Json::Value(static_cast<Json::Int64>(token)));
+  }
+  return tokens;
+}
+
+std::vector<uint8_t> buildRouterBestWorkerFrame(
+    const std::string& endpointPath,
+    const tt::sockets::PrefillRequestMessage& request,
+    const std::string& requestId, const std::string& responseAddress) {
+  Json::Value info(Json::objectValue);
+  info["address"] = responseAddress;
+  info["subject"] = requestId;
+  info["context"] = requestId;
+  info["stream_type"] = "response";
+
+  Json::Value connectionInfo(Json::objectValue);
+  connectionInfo["transport"] = "tcp_server";
+  connectionInfo["info"] = compactJson(info);
+
+  Json::Value control(Json::objectValue);
+  control["id"] = requestId;
+  control["request_type"] = "single_in";
+  control["response_type"] = "many_out";
+  control["connection_info"] = std::move(connectionInfo);
+
+  const std::string header = compactJson(control);
+  const std::string body = compactJson(tokenIdsToJson(request.tokenIds));
   TwoPartMessage twoPart;
   twoPart.header.assign(header.begin(), header.end());
   twoPart.body.assign(body.begin(), body.end());
@@ -396,6 +494,7 @@ std::vector<DynamoPrefillClient::Worker> DynamoPrefillClient::discoverWorkers()
       Worker w;
       w.key = key;
       w.tcp_address = tcp;
+      w.instance_id = instance.get("instance_id", Json::UInt64(0)).asUInt64();
       w.host = hostPort.substr(0, colon);
       w.port = static_cast<uint16_t>(std::stoi(hostPort.substr(colon + 1)));
       w.endpoint_path = endpoint.empty() ? options.endpoint : endpoint;
@@ -406,6 +505,100 @@ std::vector<DynamoPrefillClient::Worker> DynamoPrefillClient::discoverWorkers()
     }
   }
   return workers;
+}
+
+std::optional<uint64_t> DynamoPrefillClient::queryRouterBestWorker(
+    const tt::sockets::PrefillRequestMessage& request) const {
+  EtcdClient client(options.etcd_endpoints);
+  const std::string prefix = "v1/instances/" + options.namespace_name + "/" +
+                             options.router_component + "/" +
+                             options.router_endpoint + "/";
+  auto kvs = client.getPrefix(prefix);
+  if (kvs.empty()) {
+    throw std::runtime_error("no Dynamo prefill router sidecar registered");
+  }
+
+  Worker router;
+  bool found = false;
+  for (const auto& [key, value] : kvs) {
+    try {
+      Json::Value instance = parseJson(value);
+      if (!instance.isObject() || !instance.isMember("transport") ||
+          !instance.get("transport", Json::Value{}).isObject()) {
+        continue;
+      }
+      const Json::Value transport = instance.get("transport", Json::Value{});
+      const std::string tcp = transport.get("tcp", "").asString();
+      if (tcp.empty()) continue;
+      const auto slash = tcp.find('/');
+      const std::string hostPort =
+          slash == std::string::npos ? tcp : tcp.substr(0, slash);
+      const std::string endpoint = slash == std::string::npos
+                                       ? options.router_endpoint
+                                       : tcp.substr(slash + 1);
+      const auto colon = hostPort.rfind(':');
+      if (colon == std::string::npos) continue;
+      router.key = key;
+      router.tcp_address = tcp;
+      router.instance_id = instance.get("instance_id", Json::UInt64(0)).asUInt64();
+      router.host = hostPort.substr(0, colon);
+      router.port =
+          static_cast<uint16_t>(std::stoi(hostPort.substr(colon + 1)));
+      router.endpoint_path =
+          endpoint.empty() ? options.router_endpoint : endpoint;
+      found = true;
+      break;
+    } catch (const std::exception& e) {
+      TT_LOG_WARN("[DynamoPrefillClient] Skipping invalid router {}: {}", key,
+                  e.what());
+    }
+  }
+  if (!found) {
+    throw std::runtime_error("no usable Dynamo prefill router sidecar endpoint");
+  }
+
+  Listener listener = listenOnLoopback();
+  const std::string responseHost =
+      options.response_host.empty() ? "127.0.0.1" : options.response_host;
+  const std::string responseAddress =
+      responseHost + ":" + std::to_string(listener.port);
+  const std::string requestId =
+      "tt-prefill-route-" + std::to_string(request.taskId) + "-" +
+      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+
+  TT_LOG_INFO(
+      "[DynamoPrefillClient] Querying prefill router taskId={} router={} "
+      "address={} tokens={} hashes={}",
+      request.taskId, router.tcp_address, responseAddress,
+      request.tokenIds.size(), request.registrationHashes.size());
+
+  Fd requestFd = connectTcp(router.host, router.port, options.timeout_ms);
+  auto frame = buildRouterBestWorkerFrame(router.endpoint_path, request,
+                                          requestId, responseAddress);
+  writeAll(requestFd.get(), frame.data(), frame.size(), options.timeout_ms);
+  readAck(requestFd.get(), options.timeout_ms);
+
+  Fd streamFd = acceptOne(listener.fd.get(), options.timeout_ms);
+  std::optional<uint64_t> workerId;
+  for (;;) {
+    TwoPartMessage msg = readTwoPartFrame(streamFd.get(), options.timeout_ms);
+    if (!msg.body.empty()) {
+      std::string body(msg.body.begin(), msg.body.end());
+      Json::Value wrapper = parseJson(body);
+      if (wrapper.get("complete_final", false).asBool()) {
+        break;
+      }
+      if (auto parsed = workerIdFromStreamBody(msg.body)) {
+        workerId = *parsed;
+      }
+    }
+  }
+  if (!workerId.has_value()) {
+    throw std::runtime_error("router sidecar completed without worker id");
+  }
+  TT_LOG_INFO("[DynamoPrefillClient] Router selected prefill worker_id={}",
+              *workerId);
+  return workerId;
 }
 
 DynamoPrefillClient::Worker DynamoPrefillClient::selectWorker(
@@ -420,7 +613,44 @@ DynamoPrefillClient::Worker DynamoPrefillClient::selectWorker(
 tt::sockets::PrefillResultMessage DynamoPrefillClient::execute(
     const tt::sockets::PrefillRequestMessage& request) {
   auto workers = discoverWorkers();
-  auto worker = selectWorker(workers);
+  std::optional<uint64_t> selectedWorkerId;
+  if (options.router_enabled) {
+    try {
+      selectedWorkerId = queryRouterBestWorker(request);
+    } catch (const std::exception& e) {
+      if (options.router_fallback != "round_robin") {
+        throw;
+      }
+      TT_LOG_WARN(
+          "[DynamoPrefillClient] Router selection failed for taskId={}: {}; "
+          "falling back to round-robin",
+          request.taskId, e.what());
+    }
+  }
+
+  Worker worker;
+  if (selectedWorkerId.has_value()) {
+    auto it = std::find_if(workers.begin(), workers.end(),
+                           [selected = *selectedWorkerId](const Worker& w) {
+                             return w.instance_id == selected;
+                           });
+    if (it == workers.end()) {
+      if (options.router_fallback != "round_robin") {
+        throw std::runtime_error(
+            "router selected prefill worker that is not registered: " +
+            std::to_string(*selectedWorkerId));
+      }
+      TT_LOG_WARN(
+          "[DynamoPrefillClient] Router selected unknown worker_id={}; "
+          "falling back to round-robin",
+          *selectedWorkerId);
+      worker = selectWorker(workers);
+    } else {
+      worker = *it;
+    }
+  } else {
+    worker = selectWorker(workers);
+  }
 
   Listener listener = listenOnLoopback();
   const std::string responseHost =

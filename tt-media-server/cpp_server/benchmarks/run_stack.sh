@@ -31,11 +31,17 @@ HTTP_PORT="${HTTP_PORT:-8080}"
 ROUTER_MODE="${ROUTER_MODE:-kv}"
 SERVER_PORT="${SERVER_PORT:-8001}"       # decode/regular REST + dynamo endpoint
 PREFILL_PORT="${PREFILL_PORT:-8002}"     # prefill REST
+PREFILL_REPLICAS="${PREFILL_REPLICAS:-1}"
 SOCKET_PORT="${SOCKET_PORT:-9000}"       # decode<->prefill inter-server socket
 MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
 DYNAMO_DECODE_ORCHESTRATES_PREFILL="${DYNAMO_DECODE_ORCHESTRATES_PREFILL:-0}"
 DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED="${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED:-0}"
 DYNAMO_PREFILL_CLIENT_COMPONENT="${DYNAMO_PREFILL_CLIENT_COMPONENT:-tt-prefill}"
+DYNAMO_PREFILL_ROUTER_ENABLED="${DYNAMO_PREFILL_ROUTER_ENABLED:-${DYNAMO_DECODE_ORCHESTRATES_PREFILL}}"
+DYNAMO_PREFILL_ROUTER_COMPONENT="${DYNAMO_PREFILL_ROUTER_COMPONENT:-router}"
+DYNAMO_PREFILL_ROUTER_ENDPOINT="${DYNAMO_PREFILL_ROUTER_ENDPOINT:-best_worker_id}"
+DYNAMO_PREFILL_ROUTER_FALLBACK="${DYNAMO_PREFILL_ROUTER_FALLBACK:-error}"
+KV_CACHE_BLOCK_SIZE="${KV_CACHE_BLOCK_SIZE:-32}"
 LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND:-mock}"
 ETCD_NAME="${ETCD_NAME:-etcd}"
 PIDFILE="/tmp/tt_stack.pids"
@@ -43,6 +49,7 @@ PIDFILE="/tmp/tt_stack.pids"
 FRONTEND_LOG="/tmp/tt_frontend.log"
 DECODE_LOG="/tmp/tt_decode.log"
 PREFILL_LOG="/tmp/tt_prefill.log"
+ROUTER_LOG="/tmp/tt_router.log"
 
 log() { printf '[run_stack] %s\n' "$*"; }
 die() { printf '[run_stack] %s\n' "$*" >&2; exit 1; }
@@ -56,7 +63,7 @@ teardown() {
     for p in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
         [[ "$p" == "$$" ]] && continue
         local c; c=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null) || continue
-        case "$c" in *"${BIN}"*|*"-m dynamo.frontend"*) pids="$pids $p" ;; esac
+        case "$c" in *"${BIN}"*|*"-m dynamo.frontend"*|*"-m dynamo.router"*) pids="$pids $p" ;; esac
     done
     pids="$(echo "${pids}" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -u | tr '\n' ' ')"
     if [[ -n "${pids// }" ]]; then
@@ -114,6 +121,10 @@ worker_dynamo_env() {
     echo "DYNAMO_DECODE_ORCHESTRATES_PREFILL=${DYNAMO_DECODE_ORCHESTRATES_PREFILL}"
     if [[ "${DYNAMO_DECODE_ORCHESTRATES_PREFILL}" == "1" ]]; then
         echo "DYNAMO_PREFILL_CLIENT_COMPONENT=${DYNAMO_PREFILL_CLIENT_COMPONENT}"
+        echo "DYNAMO_PREFILL_ROUTER_ENABLED=${DYNAMO_PREFILL_ROUTER_ENABLED}"
+        echo "DYNAMO_PREFILL_ROUTER_COMPONENT=${DYNAMO_PREFILL_ROUTER_COMPONENT}"
+        echo "DYNAMO_PREFILL_ROUTER_ENDPOINT=${DYNAMO_PREFILL_ROUTER_ENDPOINT}"
+        echo "DYNAMO_PREFILL_ROUTER_FALLBACK=${DYNAMO_PREFILL_ROUTER_FALLBACK}"
     fi
 }
 
@@ -150,6 +161,20 @@ start_frontend() {
     echo $! >> "${PIDFILE}"
 }
 
+start_router() {
+    [[ -x "${DYN_VENV}/bin/python3" ]] || die "dynamo venv not found at ${DYN_VENV}"
+    log "router -> ${ROUTER_LOG} (endpoint default.${DYNAMO_PREFILL_CLIENT_COMPONENT}.generate)"
+    setsid nohup env \
+        DYN_DISCOVERY_BACKEND=etcd ETCD_ENDPOINTS="${ETCD_ENDPOINTS}" \
+        DYN_REQUEST_PLANE=tcp DYN_EVENT_PLANE=zmq \
+        "${DYN_VENV}/bin/python3" -m dynamo.router \
+            --endpoint "default.${DYNAMO_PREFILL_CLIENT_COMPONENT}.generate" \
+            --router-block-size "${KV_CACHE_BLOCK_SIZE}" \
+            --no-router-track-active-blocks \
+        > "${ROUTER_LOG}" 2>&1 < /dev/null &
+    echo $! >> "${PIDFILE}"
+}
+
 # start_worker <logfile> <rest-port> <env line>...
 start_worker() {
     local logf="$1" port="$2"; shift 2
@@ -176,7 +201,7 @@ up() {
     : > "${PIDFILE}"
     ensure_etcd
 
-    log "decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
+    log "decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT} replicas=${PREFILL_REPLICAS}"
     start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
         $(worker_dynamo_env) \
         LLM_MODE=decode LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND}" \
@@ -187,26 +212,33 @@ up() {
     # co-located on one host, and these default to fixed names
     # (tt_mem_requests/_results, /tt_worker_metrics) — sharing them makes the
     # prefill worker's KV allocation requests race the decode worker's and hang.
-    if [[ "${DYNAMO_DECODE_ORCHESTRATES_PREFILL}" == "1" ]]; then
-        start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
-            $(prefill_dynamo_env) \
+    for replica in $(seq 0 $((PREFILL_REPLICAS - 1))); do
+        replica_port=$((PREFILL_PORT + replica))
+        replica_log="${PREFILL_LOG}"
+        if [[ "${PREFILL_REPLICAS}" != "1" ]]; then
+            replica_log="/tmp/tt_prefill_${replica}.log"
+        fi
+        prefill_env=()
+        if [[ "${DYNAMO_DECODE_ORCHESTRATES_PREFILL}" == "1" ]]; then
+            while IFS= read -r line; do prefill_env+=("${line}"); done < <(prefill_dynamo_env)
+        fi
+        start_worker "${replica_log}" "${replica_port}" \
+            "${prefill_env[@]}" \
             LLM_MODE=prefill LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND}" \
             SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
-            TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
-            TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
-            TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill
-    else
-        start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
-            LLM_MODE=prefill LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND}" \
-            SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
-            TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
-            TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
-            TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill
-    fi
+            TT_MEMORY_REQUEST_QUEUE="tt_mem_requests_prefill_${replica}" \
+            TT_MEMORY_RESULT_QUEUE="tt_mem_results_prefill_${replica}" \
+            TT_WORKER_METRICS_SHM="/tt_worker_metrics_prefill_${replica}"
+    done
     sleep 2
+    if [[ "${DYNAMO_DECODE_ORCHESTRATES_PREFILL}" == "1" && "${DYNAMO_PREFILL_ROUTER_ENABLED}" == "1" ]]; then
+        start_router
+        sleep 2
+    fi
     start_frontend
     wait_ready
     log "decode log: ${DECODE_LOG}  prefill log: ${PREFILL_LOG}"
+    [[ -f "${ROUTER_LOG}" ]] && log "router log: ${ROUTER_LOG}"
     log "frontend: http://127.0.0.1:${HTTP_PORT}  (model id: ${MODEL})"
     log "pids: $(tr '\n' ' ' < "${PIDFILE}")"
 }
