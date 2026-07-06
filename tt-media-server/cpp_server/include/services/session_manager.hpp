@@ -18,10 +18,9 @@
 #include <unordered_set>
 #include <vector>
 
-#include "domain/prefix_index.hpp"
-#include "domain/response_id_index.hpp"
-#include "domain/session.hpp"
+#include "domain/session_manager_structs.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
+#include "services/prefix_cache_router.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/concurrent_queue.hpp"
 #include "utils/conversation_hasher.hpp"
@@ -49,16 +48,8 @@ enum class CloseSessionResult {
 
 class SessionManager {
  public:
-  using Candidate = domain::Candidate;
-  // Result of tryAcquireByPrefixHash: the session's UUID and pre-assigned slot.
-  struct AcquiredSession {
-    bool sessionFound;
-    std::string sessionId;
-    uint32_t slotId;
-    uint32_t numberOfMatchedTokens = 0;
-    uint32_t accumulatedThinkTokens = 0;  // Think tokens at matched block
-    std::vector<Candidate> candidatesList;
-  };
+  using Candidate = domain::prefix_cache::Candidate;
+  using AcquiredSession = PrefixCacheAcquireResult;
 
   SessionManager();
   ~SessionManager();
@@ -77,6 +68,7 @@ class SessionManager {
   CloseSessionResult closeSession(const std::string& sessionId);
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
   uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
+  uint32_t getCommittedBlocks(const std::string& sessionId) const;
 
   // Marks the session in-flight and registers the cancel function atomically.
   // The cancel function is invoked if closeSession is called while in-flight.
@@ -91,9 +83,18 @@ class SessionManager {
   std::shared_ptr<domain::Session> getSession(const std::string& sessionId);
   size_t getActiveSessionCount() const;
 
-  // Lock/unlock a slot to prevent eviction.
-  void lockSlot(uint32_t slotId);
+  domain::MarkInFlightResult tryMarkInFlight(
+      const std::string& sessionId, std::function<void()>& cancelFn,
+      std::optional<uint64_t> expectedKeyHash = std::nullopt,
+      const std::string* expectedResponseId = nullptr);
+  std::optional<uint64_t> getSessionHash(const std::string& sessionId) const;
+  bool setSessionHash(const std::string& sessionId, uint64_t keyHash);
+  bool setSessionResponseId(const std::string& sessionId,
+                            const std::string& responseId);
   void unlockSlot(uint32_t slotId);
+
+  // Lock a slot to prevent eviction.
+  void lockSlot(uint32_t slotId);
 
   /**
    * Try to find a session whose registered prefix hash matches one of the
@@ -119,17 +120,6 @@ class SessionManager {
   std::optional<AcquiredSession> tryAcquireByPrefixHash(
       const std::vector<utils::BlockHashInfo>& blockInfos,
       std::function<void()> cancelFn);
-
-  /**
-   * Given a list of candidates, find one whose matched token count exceeds
-   * the MIN_TOKENS_TO_COPY threshold. Matched tokens = firstBlockSize for
-   * the first block + kvCacheBlockSize for each subsequent matched block.
-   * Candidates are assumed sorted by matchedBlocks descending.
-   *
-   * @return The best qualifying candidate, or std::nullopt if none qualifies.
-   */
-  std::optional<Candidate> findASlotToCopyFrom(
-      const std::vector<Candidate>& candidates) const;
 
   /**
    * Route future lookups to this session by registering the given block infos.
@@ -164,16 +154,16 @@ class SessionManager {
   /**
    * First-time registration: associate a brand-new session with a response id.
    */
-  void initResponseId(const std::string& sessionId,
-                      const std::string& responseId);
+  void registerResponseId(const std::string& sessionId,
+                          const std::string& responseId);
 
   /**
-   * Re-key an existing response-id index entry. Looks up the session currently
+   * Update the response-id index entry. Looks up the session currently
    * registered under `previousResponseId`, removes that entry, and inserts a
    * new entry under `responseId`. No-op when either id is empty.
    */
-  void registerResponseId(const std::string& previousResponseId,
-                          const std::string& responseId);
+  void updateResponseId(const std::string& previousResponseId,
+                        const std::string& responseId);
 
   /**
    * Compute how many tokens of `blockInfos` are already cached for `sessionId`
@@ -239,11 +229,10 @@ class SessionManager {
   void handleMemoryResult(const domain::ManageMemoryResult& result);
   void updateSessionCountMetric();
 
+  mutable std::unique_ptr<PrefixCacheRouter> prefixCacheRouter;
+
   mutable utils::ConcurrentMap<std::string, std::shared_ptr<domain::Session>>
       sessions;
-
-  domain::PrefixIndex prefixIndex;
-  domain::ResponseIdIndex responseIdIndex;
 
   std::unique_ptr<ipc::boost::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::boost::MemoryResultQueue> memoryResultQueue;

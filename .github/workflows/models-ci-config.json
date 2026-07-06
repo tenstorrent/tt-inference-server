@@ -17,6 +17,11 @@
           "devices": [
             "P150"
           ]
+        },
+        "release": {
+          "devices": [
+            "P150"
+          ]
         }
       }
     },
@@ -318,6 +323,21 @@
         }
       ]
     },
+    "Qwen3.6-27B": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        },
+        "release": {
+          "devices": [
+            "P300X2"
+          ]
+        }
+      }
+    },
     "Qwen3-4B": {
       "inference_engine": "FORGE",
       "ci": {
@@ -488,8 +508,33 @@
         }
       }
     },
+    "gemma-4-31B-it": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        },
+        "release": {
+          "devices": [
+            "P300X2"
+          ]
+        }
+      }
+    },
     "gemma-4-31b-it": {
       "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        }
+      }
+    },
+    "gemma-4-12B-it": {
+      "inference_engine": "vLLM",
       "ci": {
         "nightly": {
           "devices": [

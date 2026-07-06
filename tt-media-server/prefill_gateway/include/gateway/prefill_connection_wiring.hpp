@@ -3,25 +3,11 @@
 
 #pragma once
 
-#include <memory>
-#include <vector>
-
-namespace tt::sockets {
-class SocketManager;
-}  // namespace tt::sockets
-
 namespace tt::gateway {
 
 class Dispatcher;
 class PrefillRegistry;
 class ZmqPrefillRouter;
-
-using PrefillSocketManagers =
-    std::vector<std::unique_ptr<tt::sockets::SocketManager>>;
-
-void registerTcpPrefillHandlers(PrefillSocketManagers& prefillSms,
-                                PrefillRegistry& registry,
-                                Dispatcher& dispatcher);
 
 void registerZmqPrefillHandlers(ZmqPrefillRouter& zmqPrefillRouter,
                                 PrefillRegistry& registry,

@@ -37,6 +37,15 @@ from .blocks_sink import BlockAccumulator, get_default_accumulator
 logger = logging.getLogger(__name__)
 
 
+_SPEC_METADATA_FIELDS: Tuple[Tuple[str, str], ...] = (
+    ("model_id", "model_id"),
+    ("model_repo", "hf_model_repo"),
+    ("inference_engine", "inference_engine"),
+    ("tt_metal_commit", "tt_metal_commit"),
+    ("vllm_commit", "vllm_commit"),
+)
+
+
 @dataclass(frozen=True)
 class TaskOutcome:
     """Result of a single ``run_media_task`` invocation inside a workflow."""
@@ -268,7 +277,7 @@ class WorkflowExecution(ABC):
 
         elapsed = time.time() - started
         block_kind = block.kind if block is not None else None
-        if exit_code != 0 or block is None:
+        if exit_code != 0:
             self.logger.error(
                 "❌ task=%s rc=%d block=%s (%.1fs)",
                 task_type.value,
@@ -276,6 +285,10 @@ class WorkflowExecution(ABC):
                 block_kind,
                 elapsed,
             )
+        elif block is None:
+            # Runner intentionally produced no block (e.g. spec_tests found
+            # no matching suites for this model+device)
+            self.logger.info("⏭  task=%s no-op rc=0 (%.1fs)", task_type.value, elapsed)
         else:
             self.logger.info(
                 "✅ task=%s block=%s (%.1fs)", task_type.value, block_kind, elapsed
@@ -301,7 +314,8 @@ class WorkflowExecution(ABC):
         )
         return accepted, blockers
 
-    def _model_status(self) -> Optional[str]:
+    def _load_runtime_model_spec(self) -> Optional[dict]:
+        """Return the ``runtime_model_spec`` sub-dict from the spec JSON, if any."""
         path = self.orchestrator_metadata.runtime_model_spec_json
         if not path:
             return None
@@ -311,9 +325,11 @@ class WorkflowExecution(ABC):
         except (OSError, ValueError):
             return None
         spec = data.get("runtime_model_spec") if isinstance(data, dict) else None
-        if isinstance(spec, dict):
-            return spec.get("status")
-        return None
+        return spec if isinstance(spec, dict) else None
+
+    def _model_status(self) -> Optional[str]:
+        spec = self._load_runtime_model_spec()
+        return spec.get("status") if spec else None
 
     def inject_metadata(self, schema: ReportSchema) -> None:
         meta = schema.metadata
@@ -325,6 +341,26 @@ class WorkflowExecution(ABC):
             meta["run_command"] = m.run_command
         if m.runtime_model_spec_json is not None:
             meta["runtime_model_spec_json"] = m.runtime_model_spec_json
+        self._inject_model_spec_metadata(meta)
+
+    def _inject_model_spec_metadata(self, meta: dict) -> None:
+        """Populate identity/provenance fields from the runtime model spec.
+
+        Single source of truth for both media and LLM reports: every field is
+        written whenever the spec is available (``None`` when the spec omits
+        it, e.g. ``tt_metal_commit`` for a media image) so the report metadata
+        schema is stable across workflows. ``model_impl`` comes from the
+        nested ``impl.impl_name`` (the hyphenated display name, e.g.
+        ``tt-transformers``); the rest map verbatim per
+        :data:`_SPEC_METADATA_FIELDS`.
+        """
+        spec = self._load_runtime_model_spec()
+        if not spec:
+            return
+        for meta_key, spec_key in _SPEC_METADATA_FIELDS:
+            meta[meta_key] = spec.get(spec_key)
+        impl = spec.get("impl")
+        meta["model_impl"] = impl.get("impl_name") if isinstance(impl, dict) else None
 
     def generate_report(self, schema: ReportSchema) -> GenerateResult:
         report_dir = Path(self.ctx.output_path).parent

@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime as _dt
 import json
 import logging
 import os
@@ -268,20 +267,42 @@ def _build_spec_decode_options(
     )
 
 
+def _engine_from_runtime_spec_json(path: Optional[str]) -> Optional[str]:
+    """``inference_engine`` (enum value, e.g. ``"forge"``) from the runtime spec JSON."""
+    if not path:
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            engine = (json.load(f).get("runtime_model_spec") or {}).get(
+                "inference_engine"
+            )
+    except (OSError, ValueError):
+        return None
+    # Serialized as the enum value ("forge"/"media"/"vLLM"); tolerate the name form too.
+    if engine in InferenceEngine.__members__:
+        return InferenceEngine[engine].value
+    return engine or None
+
+
 def _resolve_auth_token(args: argparse.Namespace) -> str:
     """Resolve the bearer token the eval/benchmark clients send.
 
-    Forge/media servers (tt-media-server) check a *literal* ``Bearer $API_KEY``
-    (default ``your-secret-key``, see ``security/api_key_checker.py``) and do
-    NOT decode JWTs; only the vLLM/tt-metal server validates a JWT. Mirrors the
-    engine branch in v1 ``evals/run_evals.py`` — a JWT sent to a forge/media
-    server 401s. Falls back to the JWT path when the spec can't be resolved.
+    Forge/media servers check a *literal* ``Bearer $API_KEY`` and never decode
+    JWTs; only vLLM/tt-metal validates a JWT (a JWT to a forge/media server
+    401s). Take the engine from the ``--runtime-model-spec-json`` v1 already
+    resolved (via ``--impl``) -- re-resolving from the catalog picks the default
+    spec, which is wrong for dual-catalog models (e.g. Llama-3.1-8B-Instruct is
+    both FORGE and vLLM). Fall back to the catalog only when no JSON is present.
     """
-    try:
-        spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
-        engine = getattr(spec.inference_engine, "value", spec.inference_engine)
-    except Exception:  # pragma: no cover - defensive
-        engine = None
+    engine = _engine_from_runtime_spec_json(
+        getattr(args, "runtime_model_spec_json", None)
+    )
+    if engine is None:
+        try:
+            spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+            engine = getattr(spec.inference_engine, "value", spec.inference_engine)
+        except Exception:  # pragma: no cover - defensive
+            engine = None
     if engine in (InferenceEngine.FORGE.value, InferenceEngine.MEDIA.value):
         return os.getenv("VLLM_API_KEY") or os.getenv("API_KEY") or "your-secret-key"
     return _mint_jwt_if_secret(getattr(args, "jwt_secret", None))
@@ -307,10 +328,17 @@ def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
             "will be minted. Install pyjwt to enable JWT-protected servers."
         )
         return ""
+    # NOTE: the payload must match the server's get_encoded_api_key()
+    # (utils/vllm_run_utils.py) byte-for-byte. vLLM sets VLLM_API_KEY to that
+    # token and authorizes by exact string comparison, not JWT validation, so
+    # any extra claim (e.g. "exp") produces a different signature and a 401 on
+    # every request. Keep this to {team_id, token_id} only, matching the server
+    # and the in-container reference client (example_requests_client.py).
+    # Keep only team_id and token_id (drop exp) so this minted key matches the
+    # payload used by get_encoded_api_key.
     payload = {
         "team_id": "tenstorrent",
         "token_id": "debug-test",
-        "exp": int(_dt.datetime.now(_dt.timezone.utc).timestamp()) + 24 * 3600,
     }
     encoded = _jwt.encode(payload, secret, algorithm="HS256")
     os.environ["OPENAI_API_KEY"] = encoded
