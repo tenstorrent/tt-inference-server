@@ -662,10 +662,6 @@ void DisaggregationService::handleDynamoStreamingRequest(
     options.component = "prefill";
   }
   options.endpoint = tt::config::dynamoEndpointName();
-  options.router_enabled = tt::config::dynamoPrefillRouterEnabled();
-  options.router_component = tt::config::dynamoPrefillRouterComponent();
-  options.router_endpoint = tt::config::dynamoPrefillRouterEndpoint();
-  options.router_fallback = tt::config::dynamoPrefillRouterFallback();
   if (const char* host = std::getenv("DYNAMO_PREFILL_CLIENT_RESPONSE_HOST");
       host && *host) {
     options.response_host = host;

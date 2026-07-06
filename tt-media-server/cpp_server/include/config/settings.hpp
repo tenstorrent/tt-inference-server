@@ -363,22 +363,6 @@ bool dynamoNativePrefillHandoffEnabled();
  * socket. From DYNAMO_DECODE_ORCHESTRATES_PREFILL. */
 bool dynamoDecodeOrchestratesPrefill();
 
-/** When true, decode asks a Dynamo router sidecar to select the prefill worker.
- * From DYNAMO_PREFILL_ROUTER_ENABLED. */
-bool dynamoPrefillRouterEnabled();
-
-/** Component for the Dynamo router sidecar selection endpoint. From
- * DYNAMO_PREFILL_ROUTER_COMPONENT. Default: router. */
-std::string dynamoPrefillRouterComponent();
-
-/** Endpoint for the Dynamo router sidecar selection endpoint. From
- * DYNAMO_PREFILL_ROUTER_ENDPOINT. Default: best_worker_id. */
-std::string dynamoPrefillRouterEndpoint();
-
-/** Fallback when router selection fails. Values: round_robin, error. From
- * DYNAMO_PREFILL_ROUTER_FALLBACK. */
-std::string dynamoPrefillRouterFallback();
-
 /** When true and LLM_DEVICE_BACKEND=mock_pipeline, Blaze runners use
  * single-threaded MockSchedulers instead of tt-llm-engine schedulers.
  * From MOCK_USE_SCHEDULER. Default: defaults::MOCK_USE_SCHEDULER. */

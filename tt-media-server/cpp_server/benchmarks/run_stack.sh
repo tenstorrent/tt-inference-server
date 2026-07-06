@@ -38,8 +38,6 @@ DYNAMO_DECODE_ORCHESTRATES_PREFILL="${DYNAMO_DECODE_ORCHESTRATES_PREFILL:-0}"
 DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED="${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED:-0}"
 DYNAMO_PREFILL_CLIENT_COMPONENT="${DYNAMO_PREFILL_CLIENT_COMPONENT:-prefill}"
 DYNAMO_PREFILL_CLIENT_NAMESPACE="${DYNAMO_PREFILL_CLIENT_NAMESPACE:-default}"
-DYNAMO_PREFILL_ROUTER_ENABLED="${DYNAMO_PREFILL_ROUTER_ENABLED:-0}"
-DYNAMO_PREFILL_ROUTER_FALLBACK="${DYNAMO_PREFILL_ROUTER_FALLBACK:-error}"
 DYNAMO_PREFILL_CLIENT_TIMEOUT_MS="${DYNAMO_PREFILL_CLIENT_TIMEOUT_MS:-60000}"
 KV_CACHE_BLOCK_SIZE="${KV_CACHE_BLOCK_SIZE:-32}"
 LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND:-mock}"
@@ -62,7 +60,7 @@ teardown() {
     for p in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
         [[ "$p" == "$$" ]] && continue
         local c; c=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null) || continue
-        case "$c" in *"${BIN}"*|*"-m dynamo.frontend"*|*"-m dynamo.router"*) pids="$pids $p" ;; esac
+        case "$c" in *"${BIN}"*|*"-m dynamo.frontend"*) pids="$pids $p" ;; esac
     done
     pids="$(echo "${pids}" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -u | tr '\n' ' ')"
     if [[ -n "${pids// }" ]]; then
@@ -121,7 +119,6 @@ worker_dynamo_env() {
     if [[ "${DYNAMO_DECODE_ORCHESTRATES_PREFILL}" == "1" ]]; then
         echo "DYNAMO_PREFILL_CLIENT_NAMESPACE=${DYNAMO_PREFILL_CLIENT_NAMESPACE}"
         echo "DYNAMO_PREFILL_CLIENT_COMPONENT=${DYNAMO_PREFILL_CLIENT_COMPONENT}"
-        echo "DYNAMO_PREFILL_ROUTER_FALLBACK=${DYNAMO_PREFILL_ROUTER_FALLBACK}"
         echo "DYNAMO_PREFILL_CLIENT_TIMEOUT_MS=${DYNAMO_PREFILL_CLIENT_TIMEOUT_MS}"
     fi
 }

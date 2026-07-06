@@ -20,10 +20,6 @@ class DynamoPrefillClient {
     std::string namespace_name = "default";
     std::string component = "prefill";
     std::string endpoint = "generate";
-    bool router_enabled = false;
-    std::string router_component = "router";
-    std::string router_endpoint = "best_worker_id";
-    std::string router_fallback = "round_robin";
     std::string response_host;
     int timeout_ms = 30000;
   };
@@ -45,8 +41,6 @@ class DynamoPrefillClient {
   };
 
   std::vector<Worker> discoverWorkers() const;
-  std::optional<uint64_t> queryRouterBestWorker(
-      const tt::sockets::PrefillRequestMessage& request) const;
   Worker selectWorker(const std::vector<Worker>& workers);
 
   Options options;
