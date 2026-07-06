@@ -22,12 +22,40 @@ logger = logging.getLogger(__name__)
 
 DATASET_DIR = "server_tests/datasets/libritts_subset"
 METADATA_FILE = "metadata.json"
+DEFAULT_DATASET_SPLIT = "test.clean"
+
+LIBRITTS_SPLIT_ALIASES = {
+    "test": "test.clean",
+    "test.clean": "test.clean",
+    "test.other": "test.other",
+    "dev": "dev.clean",
+    "validation": "dev.clean",
+    "dev.clean": "dev.clean",
+    "dev.other": "dev.other",
+    "train": "train.clean.100",
+    "train.clean.100": "train.clean.100",
+    "train.clean.360": "train.clean.360",
+}
 
 headers = {
     "accept": "application/json",
     "Content-Type": "application/json",
     "Authorization": "Bearer your-secret-key",
 }
+
+
+def _disable_audio_decode(dataset):
+    """Return ``dataset`` with its audio column left as raw (undecoded) bytes.
+
+    The load test only needs the text prompts, so decoding the audio column is
+    wasted work and, with recent ``datasets`` releases, needs the optional
+    ``torchcodec`` backend just to iterate.
+    """
+    from datasets import Audio
+
+    if "audio" in (getattr(dataset, "column_names", None) or []):
+        return dataset.cast_column("audio", Audio(decode=False))
+    return dataset
 
 
 class TTSLoadTest(BaseTest):
@@ -76,7 +104,7 @@ class TTSLoadTest(BaseTest):
         num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         tts_target_time = self.targets.get("tts_generation_time", 10)
         sample_count = self.targets.get("sample_count", 10)
-        dataset_split = self.targets.get("dataset_split", "test")
+        dataset_split = self.targets.get("dataset_split", DEFAULT_DATASET_SPLIT)
 
         logger.info(
             f"TTS Load Test: num_concurrent_requests={num_concurrent_requests}, "
@@ -141,13 +169,25 @@ class TTSLoadTest(BaseTest):
             "max_ttft_ms": round(max(ttft_values), 2) if ttft_values else 0,
         }
 
-    def _download_samples(self, count: int = 20, split: str = "test") -> None:
+    @staticmethod
+    def _resolve_split(split: str) -> str:
+        """Map a requested split onto a valid LibriTTS-R split name."""
+        return LIBRITTS_SPLIT_ALIASES.get(split, split)
+
+    def _download_samples(
+        self, count: int = 20, split: str = DEFAULT_DATASET_SPLIT
+    ) -> None:
         """Download samples from LibriTTS-R dataset and save metadata."""
         if count <= 0:
             raise ValueError("Sample count must be positive.")
 
+        resolved_split = self._resolve_split(split)
+        if resolved_split != split:
+            logger.info(f"Resolved dataset split '{split}' -> '{resolved_split}'")
+
         logger.info(
-            f"Starting download of {count} samples from LibriTTS-R (split={split})"
+            f"Starting download of {count} samples from LibriTTS-R "
+            f"(split={resolved_split})"
         )
 
         try:
@@ -155,45 +195,12 @@ class TTSLoadTest(BaseTest):
 
             from datasets import load_dataset
 
-            # Try with streaming first
-            try:
-                dataset = load_dataset(
-                    "blabble-io/libritts_r", "clean", split=split, streaming=True
-                )
-                logger.debug("Dataset loaded successfully")
-            except (TypeError, ValueError) as e:
-                logger.warning(f"Initial dataset load failed: {e}")
-                if (
-                    "config" in str(e)
-                    or "ParquetConfig" in str(e)
-                    or "Bad split" in str(e)
-                ):
-                    split_mapping = {
-                        "test.clean": "test",
-                        "test.other": "test",
-                        "dev.clean": "validation",
-                        "dev.other": "validation",
-                        "train.clean.100": "train",
-                        "train.clean.360": "train",
-                    }
-                    standard_split = split_mapping.get(split, "test")
-                    logger.info(
-                        f"Retrying with mapped split: '{split}' -> '{standard_split}'"
-                    )
-                    dataset = load_dataset(
-                        "blabble-io/libritts_r", split=standard_split, streaming=True
-                    )
-                    logger.debug("Dataset loaded with fallback split")
-                else:
-                    raise
+            dataset = load_dataset(
+                "blabble-io/libritts_r", "clean", split=resolved_split, streaming=True
+            )
+            dataset = _disable_audio_decode(dataset)
 
-            # Get samples from stream
-            if hasattr(dataset, "__iter__") and not hasattr(dataset, "__len__"):
-                dataset_subset = list(itertools.islice(dataset, count))
-            else:
-                if count > len(dataset):
-                    count = len(dataset)
-                dataset_subset = dataset.select(range(count))
+            dataset_subset = list(itertools.islice(dataset, count))
 
             output_path = self._dataset_dir
             if output_path.exists():
@@ -201,10 +208,7 @@ class TTSLoadTest(BaseTest):
             output_path.mkdir(parents=True, exist_ok=True)
 
             metadata = []
-            samples_iter = (
-                dataset_subset if isinstance(dataset_subset, list) else dataset_subset
-            )
-            for idx, sample in enumerate(samples_iter):
+            for idx, sample in enumerate(dataset_subset):
                 text_original = sample.get("text_original", "")
                 metadata.append(
                     {
@@ -212,7 +216,7 @@ class TTSLoadTest(BaseTest):
                         "id": sample.get("id", f"libritts_{idx:05d}"),
                         "text": text_original,
                         "normalized_text": sample.get("text_normalized", text_original),
-                        "split": split,
+                        "split": resolved_split,
                     }
                 )
 

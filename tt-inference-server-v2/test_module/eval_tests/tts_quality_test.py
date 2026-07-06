@@ -49,6 +49,21 @@ headers = {
 }
 
 
+def _disable_audio_decode(dataset):
+    """Return ``dataset`` with its audio column left as raw (undecoded) bytes.
+
+    These tests only read text fields, so decoding the audio column is wasted
+    work and, with recent ``datasets`` releases, needs the optional
+    ``torchcodec`` backend just to iterate. Disabling decode keeps the
+    dependency footprint on ``datasets``/``librosa`` alone.
+    """
+    from datasets import Audio
+
+    if "audio" in (getattr(dataset, "column_names", None) or []):
+        return dataset.cast_column("audio", Audio(decode=False))
+    return dataset
+
+
 class TTSQualityTest(BaseTest):
     """Quality test for TTS using Word Error Rate (WER).
 
@@ -371,6 +386,7 @@ class TTSQualityTest(BaseTest):
             dataset = load_dataset(
                 "blabble-io/libritts_r", "clean", split=resolved_split, streaming=True
             )
+            dataset = _disable_audio_decode(dataset)
 
             dataset_subset = list(itertools.islice(dataset, count))
 
