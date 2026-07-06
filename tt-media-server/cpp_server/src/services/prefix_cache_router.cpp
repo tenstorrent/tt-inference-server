@@ -7,11 +7,22 @@
 #include "domain/prefix_cache/block_matcher.hpp"
 #include "metrics/metrics.hpp"
 #include "utils/logger.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::services {
 
 PrefixCacheRouter::PrefixCacheRouter(PrefixCacheRouterCallbacks callbacks)
     : callbacks(std::move(callbacks)) {}
+
+std::vector<utils::BlockHashInfo> PrefixCacheRouter::computeBlockInfos(
+    std::span<const int> promptTokenIds) const {
+  if (promptTokenIds.empty()) {
+    return {};
+  }
+  auto [thinkStart, thinkEnd] = utils::tokenizers::thinkTokenIds();
+  return utils::getPrefixCacheHashesByBlocksWithThinking(promptTokenIds,
+                                                         thinkStart, thinkEnd);
+}
 
 std::optional<PrefixCacheRouter::AcquireResult>
 PrefixCacheRouter::tryAcquireByPrefixHash(

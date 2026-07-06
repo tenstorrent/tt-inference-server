@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -26,6 +27,28 @@ struct PrefixCacheAcquireResult {
   uint32_t numberOfMatchedTokens = 0;
   uint32_t accumulatedThinkTokens = 0;
   std::vector<domain::prefix_cache::Candidate> candidatesList;
+};
+
+/**
+ * Options for getSlot() - all the optional routing hints.
+ */
+struct GetSlotOptions {
+  std::optional<std::string> previousResponseId;  // Response-id continuation
+  std::optional<std::string> responseId;          // New response id to register
+  std::function<void()> cancelFn;                 // Cancellation callback
+};
+
+/**
+ * Result of getSlot() - a unified acquisition result that hides the
+ * distinction between cache hit, partial hit with slot copy, and new session.
+ */
+struct SlotAcquireResult {
+  std::string sessionId;
+  uint32_t slotId = 0;
+  uint32_t matchedTokens = 0;
+  uint32_t accumulatedThinkTokens = 0;
+  bool isNewSession = false;
+  std::vector<utils::BlockHashInfo> blocks;  // For token accumulator init
 };
 
 struct PrefixCacheRouterCallbacks {
@@ -60,6 +83,13 @@ class PrefixCacheRouter {
 
   PrefixCacheRouter(const PrefixCacheRouter&) = delete;
   PrefixCacheRouter& operator=(const PrefixCacheRouter&) = delete;
+
+  /**
+   * Compute block hashes from prompt tokens.
+   * Internalizes block splitting and hashing logic.
+   */
+  std::vector<utils::BlockHashInfo> computeBlockInfos(
+      std::span<const int> promptTokenIds) const;
 
   std::optional<AcquireResult> tryAcquireByPrefixHash(
       const std::vector<utils::BlockHashInfo>& blockInfos,

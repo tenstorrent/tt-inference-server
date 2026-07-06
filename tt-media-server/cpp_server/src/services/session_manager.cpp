@@ -653,6 +653,11 @@ SessionManager::tryAcquireByPrefixHash(
                                                    std::move(cancelFn));
 }
 
+std::vector<utils::BlockHashInfo> SessionManager::computeBlockInfos(
+    std::span<const int> promptTokenIds) const {
+  return prefixCacheRouter->computeBlockInfos(promptTokenIds);
+}
+
 void SessionManager::setResidentPrefixBlocks(const std::string& sessionId,
                                              uint32_t residentBlocks) {
   bool found = sessions.modify(
@@ -717,6 +722,171 @@ void SessionManager::clearSessionBlockThinkTokens(
 void SessionManager::updateSessionCountMetric() {
   tt::metrics::ServerMetrics::instance().setActiveSessionsCount(
       static_cast<double>(getActiveSessionCount()));
+}
+
+void SessionManager::getSlot(std::span<const int> promptTokenIds,
+                             GetSlotOptions opts, trantor::EventLoop* loop,
+                             std::function<void(SlotAcquireResult)> onResolved,
+                             std::function<void(const std::string&)> onError) {
+  // Step 1: Compute block hashes from tokens
+  auto blocks = computeBlockInfos(promptTokenIds);
+  TT_LOG_INFO("[SessionManager::getSlot] tokens={} blocks={}",
+              promptTokenIds.size(), blocks.size());
+
+  // Step 2: Try response-id path first (if provided)
+  const bool useResponseId =
+      opts.previousResponseId.has_value() && !opts.previousResponseId->empty();
+
+  if (useResponseId) {
+    try {
+      auto acquired = prefixCacheRouter->tryAcquireByResponseId(
+          *opts.previousResponseId, opts.cancelFn);
+
+      if (acquired.has_value()) {
+        TT_LOG_INFO(
+            "[SessionManager::getSlot] Response-id HIT prevId={} sessionId={} "
+            "slotId={}",
+            *opts.previousResponseId, acquired->sessionId, acquired->slotId);
+
+        auto [matchedTokens, thinkTokens] =
+            prefixCacheRouter->computeMatchedTokens(acquired->sessionId, blocks);
+
+        prefixCacheRouter->registerPrefixHash(acquired->sessionId, blocks);
+        shrinkResidentPrefixToMatchedTokens(acquired->sessionId, matchedTokens);
+
+        if (opts.responseId.has_value()) {
+          prefixCacheRouter->updateResponseId(*opts.previousResponseId,
+                                              *opts.responseId);
+        }
+
+        SlotAcquireResult result;
+        result.sessionId = acquired->sessionId;
+        result.slotId = acquired->slotId;
+        result.matchedTokens = matchedTokens;
+        result.accumulatedThinkTokens = thinkTokens;
+        result.isNewSession = false;
+        result.blocks = std::move(blocks);
+
+        loop->runInLoop([onResolved, result = std::move(result)]() mutable {
+          onResolved(std::move(result));
+        });
+        return;
+      }
+
+      TT_LOG_INFO(
+          "[SessionManager::getSlot] Response-id MISS prevId={} → trying "
+          "prefix-hash",
+          *opts.previousResponseId);
+    } catch (const SessionInFlightException& e) {
+      loop->runInLoop([onError, msg = std::string(e.what())]() {
+        onError(msg);
+      });
+      return;
+    }
+  }
+
+  // Step 3: Try prefix-hash lookup
+  std::optional<AcquiredSession> acquired;
+  if (!blocks.empty()) {
+    try {
+      acquired = prefixCacheRouter->tryAcquireByPrefixHash(blocks, opts.cancelFn);
+
+      if (acquired.has_value() && acquired->sessionFound) {
+        TT_LOG_INFO(
+            "[SessionManager::getSlot] Prefix-cache HIT sessionId={} slotId={} "
+            "matchedTokens={} thinkTokens={}",
+            acquired->sessionId, acquired->slotId,
+            acquired->numberOfMatchedTokens, acquired->accumulatedThinkTokens);
+
+        prefixCacheRouter->registerPrefixHash(acquired->sessionId, blocks);
+        shrinkResidentPrefixToMatchedTokens(acquired->sessionId,
+                                            acquired->numberOfMatchedTokens);
+
+        SlotAcquireResult result;
+        result.sessionId = acquired->sessionId;
+        result.slotId = acquired->slotId;
+        result.matchedTokens = acquired->numberOfMatchedTokens;
+        result.accumulatedThinkTokens = acquired->accumulatedThinkTokens;
+        result.isNewSession = false;
+        result.blocks = std::move(blocks);
+
+        loop->runInLoop([onResolved, result = std::move(result)]() mutable {
+          onResolved(std::move(result));
+        });
+        return;
+      }
+
+      TT_LOG_INFO("[SessionManager::getSlot] Prefix-cache MISS blocks={} → "
+                  "allocating new session",
+                  blocks.size());
+    } catch (const SessionInFlightException& e) {
+      loop->runInLoop([onError, msg = std::string(e.what())]() {
+        onError(msg);
+      });
+      return;
+    }
+  }
+
+  // Step 4: Allocate new session
+  // Check if we have a candidate slot to copy from
+  std::optional<uint32_t> slotToCopyFrom;
+  uint32_t copyMatchedTokens = 0;
+  if (acquired.has_value() && !acquired->candidatesList.empty()) {
+    const auto& best = acquired->candidatesList.front();
+    if (domain::prefix_cache::BlockMatcher::passesHitThreshold(best)) {
+      auto session = getSession(best.sessionId);
+      if (session) {
+        slotToCopyFrom = session->getSlotId();
+        copyMatchedTokens =
+            domain::prefix_cache::BlockMatcher::blocksToTokens(best.matchedBlocks);
+        lockSlot(*slotToCopyFrom);
+        TT_LOG_INFO(
+            "[SessionManager::getSlot] Will copy from slotId={} matchedTokens={}",
+            *slotToCopyFrom, copyMatchedTokens);
+      }
+    }
+  }
+
+  createSession(
+      [this, blocks = std::move(blocks), opts = std::move(opts), onResolved,
+       slotToCopyFrom, copyMatchedTokens,
+       loop](const domain::Session& session) mutable {
+        // Unlock source slot now that allocation is complete
+        if (slotToCopyFrom.has_value()) {
+          unlockSlot(*slotToCopyFrom);
+        }
+
+        auto slotId = acquireInFlight(session.getSessionId(),
+                                      std::move(opts.cancelFn));
+
+        if (opts.responseId.has_value()) {
+          prefixCacheRouter->registerResponseId(session.getSessionId(),
+                                                *opts.responseId);
+        }
+
+        prefixCacheRouter->registerPrefixHash(session.getSessionId(), blocks);
+
+        SlotAcquireResult result;
+        result.sessionId = session.getSessionId();
+        result.slotId = slotId;
+        result.matchedTokens = copyMatchedTokens;
+        result.accumulatedThinkTokens = 0;
+        result.isNewSession = (copyMatchedTokens == 0);
+        result.blocks = std::move(blocks);
+
+        loop->runInLoop([onResolved, result = std::move(result)]() mutable {
+          onResolved(std::move(result));
+        });
+      },
+      [onError, loop, slotToCopyFrom, this](std::string_view errorMessage) {
+        if (slotToCopyFrom.has_value()) {
+          unlockSlot(*slotToCopyFrom);
+        }
+        loop->runInLoop([onError, msg = std::string(errorMessage)]() {
+          onError(msg);
+        });
+      },
+      loop, {}, std::nullopt, slotToCopyFrom);
 }
 
 }  // namespace tt::services
