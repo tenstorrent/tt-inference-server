@@ -10,11 +10,10 @@
 #   ./run_stack.sh up                      # disaggregated: decode + prefill split
 #   ./run_stack.sh down                    # tear everything down
 #
-# Optional decode-orchestrated Dynamo prefill with router-sidecar selection:
+# Optional decode-orchestrated Dynamo prefill with frontend prefill hints:
 #   DYNAMO_DECODE_ORCHESTRATES_PREFILL=1 DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=1 ./run_stack.sh up
 #
-# Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; router -> /tmp/tt_router.log ;
-# frontend -> /tmp/tt_frontend.log.
+# Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; frontend -> /tmp/tt_frontend.log.
 
 set -euo pipefail
 
@@ -37,11 +36,9 @@ SOCKET_PORT="${SOCKET_PORT:-9000}"       # decode<->prefill inter-server socket
 MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
 DYNAMO_DECODE_ORCHESTRATES_PREFILL="${DYNAMO_DECODE_ORCHESTRATES_PREFILL:-0}"
 DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED="${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED:-0}"
-DYNAMO_PREFILL_CLIENT_COMPONENT="${DYNAMO_PREFILL_CLIENT_COMPONENT:-tt-prefill}"
-DYNAMO_PREFILL_CLIENT_NAMESPACE="${DYNAMO_PREFILL_CLIENT_NAMESPACE:-tt-prefill-routing}"
-DYNAMO_PREFILL_ROUTER_ENABLED="${DYNAMO_PREFILL_ROUTER_ENABLED:-${DYNAMO_DECODE_ORCHESTRATES_PREFILL}}"
-DYNAMO_PREFILL_ROUTER_COMPONENT="${DYNAMO_PREFILL_ROUTER_COMPONENT:-router}"
-DYNAMO_PREFILL_ROUTER_ENDPOINT="${DYNAMO_PREFILL_ROUTER_ENDPOINT:-best_worker_id}"
+DYNAMO_PREFILL_CLIENT_COMPONENT="${DYNAMO_PREFILL_CLIENT_COMPONENT:-prefill}"
+DYNAMO_PREFILL_CLIENT_NAMESPACE="${DYNAMO_PREFILL_CLIENT_NAMESPACE:-default}"
+DYNAMO_PREFILL_ROUTER_ENABLED="${DYNAMO_PREFILL_ROUTER_ENABLED:-0}"
 DYNAMO_PREFILL_ROUTER_FALLBACK="${DYNAMO_PREFILL_ROUTER_FALLBACK:-error}"
 DYNAMO_PREFILL_CLIENT_TIMEOUT_MS="${DYNAMO_PREFILL_CLIENT_TIMEOUT_MS:-60000}"
 KV_CACHE_BLOCK_SIZE="${KV_CACHE_BLOCK_SIZE:-32}"
@@ -52,7 +49,6 @@ PIDFILE="/tmp/tt_stack.pids"
 FRONTEND_LOG="/tmp/tt_frontend.log"
 DECODE_LOG="/tmp/tt_decode.log"
 PREFILL_LOG="/tmp/tt_prefill.log"
-ROUTER_LOG="/tmp/tt_router.log"
 
 log() { printf '[run_stack] %s\n' "$*"; }
 die() { printf '[run_stack] %s\n' "$*" >&2; exit 1; }
@@ -125,9 +121,6 @@ worker_dynamo_env() {
     if [[ "${DYNAMO_DECODE_ORCHESTRATES_PREFILL}" == "1" ]]; then
         echo "DYNAMO_PREFILL_CLIENT_NAMESPACE=${DYNAMO_PREFILL_CLIENT_NAMESPACE}"
         echo "DYNAMO_PREFILL_CLIENT_COMPONENT=${DYNAMO_PREFILL_CLIENT_COMPONENT}"
-        echo "DYNAMO_PREFILL_ROUTER_ENABLED=${DYNAMO_PREFILL_ROUTER_ENABLED}"
-        echo "DYNAMO_PREFILL_ROUTER_COMPONENT=${DYNAMO_PREFILL_ROUTER_COMPONENT}"
-        echo "DYNAMO_PREFILL_ROUTER_ENDPOINT=${DYNAMO_PREFILL_ROUTER_ENDPOINT}"
         echo "DYNAMO_PREFILL_ROUTER_FALLBACK=${DYNAMO_PREFILL_ROUTER_FALLBACK}"
         echo "DYNAMO_PREFILL_CLIENT_TIMEOUT_MS=${DYNAMO_PREFILL_CLIENT_TIMEOUT_MS}"
     fi
@@ -138,13 +131,8 @@ prefill_dynamo_env() {
     echo "DYNAMO_WORKER_ROLE=prefill"
     echo "DYNAMO_DISCOVERY_BACKEND=etcd"
     echo "DYNAMO_ETCD_ENDPOINTS=${ETCD_ENDPOINTS}"
-    if [[ "${DYNAMO_DECODE_ORCHESTRATES_PREFILL}" == "1" ]]; then
-        echo "DYNAMO_NAMESPACE=${DYNAMO_PREFILL_CLIENT_NAMESPACE}"
-        echo "DYNAMO_COMPONENT=${DYNAMO_PREFILL_CLIENT_COMPONENT}"
-    else
-        echo "DYNAMO_NAMESPACE=default"
-        echo "DYNAMO_COMPONENT=prefill"
-    fi
+    echo "DYNAMO_NAMESPACE=${DYNAMO_PREFILL_CLIENT_NAMESPACE}"
+    echo "DYNAMO_COMPONENT=${DYNAMO_PREFILL_CLIENT_COMPONENT}"
     echo "DYNAMO_ENDPOINT_NAME=generate"
     echo "DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED=${DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED}"
 }
@@ -156,26 +144,13 @@ start_frontend() {
         DYN_DISCOVERY_BACKEND=etcd ETCD_ENDPOINTS="${ETCD_ENDPOINTS}" \
         DYN_REQUEST_PLANE=tcp DYN_EVENT_PLANE=zmq \
         DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
+        DYN_DECODE_PREFILL_HINT="${DYNAMO_DECODE_ORCHESTRATES_PREFILL}" \
         "${DYN_VENV}/bin/python3" -m dynamo.frontend \
             --http-port "${HTTP_PORT}" \
             --router-mode "${ROUTER_MODE}" \
             --model-name "${MODEL_NAME}" \
             --model-path "${CPP_DIR}/tokenizers/${MODEL}" \
         > "${FRONTEND_LOG}" 2>&1 < /dev/null &
-    echo $! >> "${PIDFILE}"
-}
-
-start_router() {
-    [[ -x "${DYN_VENV}/bin/python3" ]] || die "dynamo venv not found at ${DYN_VENV}"
-    log "router -> ${ROUTER_LOG} (endpoint ${DYNAMO_PREFILL_CLIENT_NAMESPACE}.${DYNAMO_PREFILL_CLIENT_COMPONENT}.generate)"
-    setsid nohup env \
-        DYN_DISCOVERY_BACKEND=etcd ETCD_ENDPOINTS="${ETCD_ENDPOINTS}" \
-        DYN_REQUEST_PLANE=tcp DYN_EVENT_PLANE=zmq \
-        "${DYN_VENV}/bin/python3" -m dynamo.router \
-            --endpoint "${DYNAMO_PREFILL_CLIENT_NAMESPACE}.${DYNAMO_PREFILL_CLIENT_COMPONENT}.generate" \
-            --router-block-size "${KV_CACHE_BLOCK_SIZE}" \
-            --no-router-track-active-blocks \
-        > "${ROUTER_LOG}" 2>&1 < /dev/null &
     echo $! >> "${PIDFILE}"
 }
 
@@ -238,14 +213,9 @@ up() {
             TT_WORKER_METRICS_SHM="/tt_worker_metrics_prefill_${replica}"
     done
     sleep 2
-    if [[ "${DYNAMO_DECODE_ORCHESTRATES_PREFILL}" == "1" && "${DYNAMO_PREFILL_ROUTER_ENABLED}" == "1" ]]; then
-        start_router
-        sleep 2
-    fi
     start_frontend
     wait_ready
     log "decode log: ${DECODE_LOG}  prefill log: ${PREFILL_LOG}"
-    [[ -f "${ROUTER_LOG}" ]] && log "router log: ${ROUTER_LOG}"
     log "frontend: http://127.0.0.1:${HTTP_PORT}  (model id: ${MODEL})"
     log "pids: $(tr '\n' ' ' < "${PIDFILE}")"
 }

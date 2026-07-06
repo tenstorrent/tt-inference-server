@@ -587,10 +587,15 @@ DynamoPrefillClient::Worker DynamoPrefillClient::selectWorker(
 }
 
 tt::sockets::PrefillResultMessage DynamoPrefillClient::execute(
-    const tt::sockets::PrefillRequestMessage& request) {
+    const tt::sockets::PrefillRequestMessage& request,
+    std::optional<uint64_t> selectedWorkerId) {
   auto workers = discoverWorkers();
-  std::optional<uint64_t> selectedWorkerId;
-  if (options.router_enabled) {
+  if (selectedWorkerId.has_value()) {
+    TT_LOG_INFO(
+        "[DynamoPrefillClient] Using advisory prefill worker_id={} for "
+        "taskId={}",
+        *selectedWorkerId, request.taskId);
+  } else if (options.router_enabled) {
     try {
       selectedWorkerId = queryRouterBestWorker(request);
     } catch (const std::exception& e) {

@@ -684,10 +684,12 @@ void DisaggregationService::handleDynamoStreamingRequest(
     }
   }
 
-  std::thread([this, message = std::move(message), options = std::move(options)]() {
+  auto selectedWorkerId = request.dynamoSuggestedPrefillWorkerId;
+  std::thread([this, message = std::move(message), options = std::move(options),
+               selectedWorkerId]() {
     try {
       tt::dynamo::DynamoPrefillClient client(options);
-      auto result = client.execute(message);
+      auto result = client.execute(message, selectedWorkerId);
       auto callback = streamCallbacks.take(message.taskId);
       if (!callback.has_value()) {
         TT_LOG_WARN(

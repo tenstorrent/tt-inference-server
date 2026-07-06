@@ -17,6 +17,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
+#include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -38,6 +40,30 @@
 namespace tt::dynamo {
 
 namespace {
+
+std::optional<uint64_t> uint64FromJson(const Json::Value& value) {
+  if (value.isUInt64()) return value.asUInt64();
+  if (value.isInt64() && value.asInt64() >= 0) {
+    return static_cast<uint64_t>(value.asInt64());
+  }
+  if (value.isString()) {
+    try {
+      return static_cast<uint64_t>(std::stoull(value.asString()));
+    } catch (const std::exception&) {
+      return std::nullopt;
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<uint32_t> uint32FromJson(const Json::Value& value) {
+  auto parsed = uint64FromJson(value);
+  if (!parsed.has_value() ||
+      *parsed > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
+    return std::nullopt;
+  }
+  return static_cast<uint32_t>(*parsed);
+}
 
 /// Shape an LLMRequest from a Dynamo PreprocessedRequest. The frontend has
 /// already applied the chat template, so we forward token ids directly and
@@ -81,6 +107,23 @@ std::shared_ptr<tt::domain::llm::LLMRequest> buildLLMRequest(
   std::string currentId = dyn.raw.get("id", "").asString();
   if (currentId.empty()) currentId = dyn.raw.get("request_id", "").asString();
   if (!currentId.empty()) req->responseId = currentId;
+
+  if (dyn.raw.isMember("routing") && dyn.raw["routing"].isObject()) {
+    const Json::Value& routing = dyn.raw["routing"];
+    req->dynamoSuggestedPrefillWorkerId =
+        uint64FromJson(routing["prefill_worker_id"]);
+    req->dynamoSuggestedPrefillDpRank =
+        uint32FromJson(routing["prefill_dp_rank"]);
+    if (req->dynamoSuggestedPrefillWorkerId.has_value()) {
+      TT_LOG_INFO(
+          "[DynamoEndpoint] Received advisory prefill worker hint taskId={} "
+          "workerId={} dpRank={}",
+          req->task_id, *req->dynamoSuggestedPrefillWorkerId,
+          req->dynamoSuggestedPrefillDpRank.has_value()
+              ? std::to_string(*req->dynamoSuggestedPrefillDpRank)
+              : "none");
+    }
+  }
 
   return req;
 }

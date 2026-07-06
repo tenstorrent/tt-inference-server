@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -30,7 +31,8 @@ class DynamoPrefillClient {
   explicit DynamoPrefillClient(Options options);
 
   tt::sockets::PrefillResultMessage execute(
-      const tt::sockets::PrefillRequestMessage& request);
+      const tt::sockets::PrefillRequestMessage& request,
+      std::optional<uint64_t> selectedWorkerId = std::nullopt);
 
  private:
   struct Worker {
