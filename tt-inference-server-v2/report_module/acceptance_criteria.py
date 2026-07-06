@@ -168,7 +168,6 @@ def _check_benchmarks(schema: ReportSchema) -> CategoryResult:
     for block in benchmark_blocks:
         block_key = _block_key(block)
 
-        
         explicit = _explicit_status(block)
         if explicit is not None:
             if explicit.is_blocking:
@@ -251,7 +250,6 @@ def _check_evals(schema: ReportSchema) -> CategoryResult:
         block_key = _block_key(block)
         data = block.data if isinstance(block.data, Mapping) else None
 
-       
         explicit = _explicit_status(block)
         if explicit is not None:
             if explicit.is_blocking:

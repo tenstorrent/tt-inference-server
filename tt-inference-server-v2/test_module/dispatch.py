@@ -165,9 +165,7 @@ def run_media_task(
                 f"model_type={model_type_name!r} (unsupported by design)"
             )
             logger.warning("⏭  %s -> skip: %s", task_type.value, reason)
-            block = _media_outcome_block(
-                ctx, task_type, TestStatus.SKIP, reason=reason
-            )
+            block = _media_outcome_block(ctx, task_type, TestStatus.SKIP, reason=reason)
             accept_blocks([block], envelope=sweep_envelope(ctx))
             return 0, block
 

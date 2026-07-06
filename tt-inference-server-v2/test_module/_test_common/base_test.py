@@ -158,9 +158,7 @@ class BaseTest(ABC):
         structured ``signal.data`` diagnostics are merged underneath them.
         """
         status = TestStatus.SKIP if isinstance(signal, SkipTest) else TestStatus.NA
-        logger.info(
-            "⏭  %s -> %s: %s", type(self).__name__, status.value, signal.reason
-        )
+        logger.info("⏭  %s -> %s: %s", type(self).__name__, status.value, signal.reason)
         data: Dict[str, Any] = {
             "success": False,
             "status": status.value,

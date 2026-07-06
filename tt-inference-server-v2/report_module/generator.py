@@ -206,9 +206,7 @@ def _run_status(run: Mapping[str, Any]) -> TestStatus:
     resolved = TestStatus.from_value(run.get("status"))
     if resolved is not None:
         return resolved
-    return TestStatus.from_legacy(
-        run.get("success"), skipped=bool(run.get("skipped"))
-    )
+    return TestStatus.from_legacy(run.get("success"), skipped=bool(run.get("skipped")))
 
 
 def _run_description(run: Mapping[str, Any], status: TestStatus) -> str:
