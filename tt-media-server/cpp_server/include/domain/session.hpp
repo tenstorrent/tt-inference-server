@@ -135,7 +135,7 @@ class Session {
    *        0 for a fresh session.
    */
   void initTokenAccumulator(
-      std::vector<int> deltaTokens,
+      std::vector<uint32_t> deltaTokens,
       std::vector<utils::BlockHashInfo> initialBlocks,
       std::function<void(const std::string&,
                          const std::vector<utils::BlockHashInfo>&)>
@@ -145,7 +145,7 @@ class Session {
   /**
    * Add a generated token to the accumulator.
    */
-  void addGeneratedToken(int tokenId);
+  void addGeneratedToken(uint32_t tokenId);
 
   /**
    * Compute final hashes and register any new blocks.
@@ -188,8 +188,8 @@ class Session {
       releaser_;  // injected by SessionManager (see release())
 
   // Streaming token accumulator (initialized per-request)
-  std::vector<int> deltaTokens_;
-  std::vector<int> generatedTokens_;
+  std::vector<uint32_t> deltaTokens_;
+  std::vector<uint32_t> generatedTokens_;
   std::vector<utils::BlockHashInfo> initialBlocks_;
   uint64_t parentHash_ = 0;
   uint32_t parentThinkCount_ = 0;
@@ -200,8 +200,8 @@ class Session {
   // Thinking token tracking
   bool inThinkingBlock_ = false;
   uint32_t accumulatedThinkTokens_ = 0;
-  int64_t thinkStartTokenId_ = 0;
-  int64_t thinkEndTokenId_ = 0;
+  uint32_t thinkStartTokenId_ = 0;
+  uint32_t thinkEndTokenId_ = 0;
 
   static std::string generateUuid();
 };

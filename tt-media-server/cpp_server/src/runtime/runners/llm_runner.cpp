@@ -40,7 +40,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     auto encodedVocab = tok.getEncodedVocab();
     int vocabSize = static_cast<int>(encodedVocab.size());
     std::vector<int32_t> stopIds;
-    for (int64_t id : tt::utils::tokenizers::staticInfo().stopTokenIds) {
+    for (uint32_t id : tt::utils::tokenizers::staticInfo().stopTokenIds) {
       stopIds.push_back(static_cast<int32_t>(id));
     }
     guidedDecoder = std::make_unique<GuidedDecoderManager>(encodedVocab,
@@ -88,7 +88,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     }
 
     std::vector<Sequence*> seqs = {seq};
-    std::vector<int64_t> tokenIds = {static_cast<int64_t>(result.tokenId)};
+    std::vector<uint32_t> tokenIds = {result.tokenId};
     scheduler->postprocess(seqs, tokenIds);
 
     bool finished = seq->isFinished();
