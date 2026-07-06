@@ -25,8 +25,16 @@ from typing import Callable, List, Optional, Tuple
 
 from report_module.schema import Block
 from workflow_module import accept_blocks
+from workflows.workflow_types import ModelType
 
-from ._test_common import TestConfig, sweep_envelope
+from ._test_common import (
+    SkipTest,
+    TestConfig,
+    TestStatus,
+    block_id,
+    sweep_envelope,
+)
+from ._test_common.exceptions import TestOutcomeSignal
 from .context import MediaContext
 from .task_types import MediaTaskType
 
@@ -84,6 +92,52 @@ def _resolve_runner(
     return getattr(package, func_name)
 
 
+_NO_MEDIA_RUNNER: frozenset[ModelType] = frozenset({ModelType.VLM, ModelType.LLM})
+
+_registered_media_types = set(EVAL_DISPATCH) | set(BENCHMARK_DISPATCH)
+assert not any(mt.name in _registered_media_types for mt in _NO_MEDIA_RUNNER), (
+    "A ModelType in _NO_MEDIA_RUNNER also has a registered media runner"
+)
+
+
+_MEDIA_TASK_BLOCK_KIND = {
+    MediaTaskType.EVALUATION: "evals",
+    MediaTaskType.BENCHMARK: "benchmarks",
+}
+
+
+def _media_outcome_block(
+    ctx: MediaContext,
+    task_type: MediaTaskType,
+    status: TestStatus,
+    reason: Optional[str] = None,
+    exc: Optional[Exception] = None,
+) -> Block:
+    """Build an evals/benchmarks Block for a non-pass, blockless outcome.
+
+    Lets a media runner that was skipped (``SkipTest``), was not gradable
+    (``NotApplicable``), or crashed produce a *visible* Block carrying an
+    explicit :class:`TestStatus` — instead of vanishing behind a bare
+    ``(1, None)`` return value.
+    """
+    kind = _MEDIA_TASK_BLOCK_KIND.get(task_type, "spec_tests")
+    data: dict = {
+        "success": False,
+        "status": status.value,
+        "test_name": ctx.model_spec.model_name,
+    }
+    if reason:
+        data["reason"] = reason
+    if exc is not None:
+        data["error"] = {"type": type(exc).__name__, "message": str(exc)}
+    return Block(
+        kind=kind,
+        id=block_id(ctx) or None,
+        title=kind.replace("_", " ").title(),
+        data=data,
+    )
+
+
 def run_media_task(
     ctx: MediaContext, task_type: MediaTaskType
 ) -> Tuple[int, Optional[Block]]:
@@ -92,7 +146,10 @@ def run_media_task(
     Returns:
         ``(exit_code, block)`` where ``exit_code`` is ``0`` on success and
         ``1`` on any failure, and ``block`` is the runner's emitted Block on
-        success (``None`` on failure or when the model_type has no runner).
+        success (``None`` on failure). A model_type with no registered runner
+        yields a *visible* Block instead of a silent failure: a non-blocking
+        SKIP (``(0, block)``) if the type is runnerless by design
+        (:data:`_NO_MEDIA_RUNNER`), otherwise a blocking ERROR (``(1, block)``).
         The block is also handed to ``workflow_module.accept_blocks`` so a
         sweep-level accumulator can pick it up alongside the return value.
 
@@ -114,32 +171,58 @@ def run_media_task(
 
     runner = _resolve_runner(task_type, model_type_name)
     if runner is None:
-        logger.error(
-            "No %s runner registered for model_type=%r. Known types: %s",
-            task_type.value,
-            model_type_name,
-            sorted(_dispatch_table(task_type)),
+        if ctx.model_spec.model_type in _NO_MEDIA_RUNNER:
+            reason = (
+                f"{task_type.value} has no media runner for "
+                f"model_type={model_type_name!r} (unsupported by design)"
+            )
+            logger.warning("⏭  %s -> skip: %s", task_type.value, reason)
+            block = _media_outcome_block(ctx, task_type, TestStatus.SKIP, reason=reason)
+            accept_blocks([block], envelope=sweep_envelope(ctx))
+            return 0, block
+
+        # Unexpected: a model type that should have a runner doesn't. Surface a
+        # blocking, visible ERROR rather than a silent (1, None) failure.
+        error = RuntimeError(
+            f"no {task_type.value} runner registered for "
+            f"model_type={model_type_name!r}; "
+            f"known types: {sorted(_dispatch_table(task_type))}"
         )
-        return 1, None
+        logger.error("❌ %s -> error: %s", task_type.value, error)
+        block = _media_outcome_block(ctx, task_type, TestStatus.ERROR, exc=error)
+        accept_blocks([block], envelope=sweep_envelope(ctx))
+        return 1, block
 
     try:
         block = runner(ctx)
+    except TestOutcomeSignal as e:
+        # Intentional non-error outcome (skip / not-applicable): emit a
+        # visible, non-blocking Block and keep the task green.
+        status = TestStatus.SKIP if isinstance(e, SkipTest) else TestStatus.NA
+        logger.info("⏭  %s -> %s: %s", task_type.value, status.value, e.reason)
+        block = _media_outcome_block(ctx, task_type, status, reason=e.reason)
+        accept_blocks([block], envelope=sweep_envelope(ctx))
+        return 0, block
     except Exception as e:
         logger.exception("%s runner raised: %s", task_type.value, e)
-        return 1, None
+        block = _media_outcome_block(ctx, task_type, TestStatus.ERROR, exc=e)
+        accept_blocks([block], envelope=sweep_envelope(ctx))
+        return 1, block
 
     accept_blocks([block], envelope=sweep_envelope(ctx))
     return 0, block
 
 
 def _resolve_spec_test_suites(ctx: MediaContext) -> List[dict]:
-    """Return matching expanded suites for ``ctx.model_spec.model_name`` + device."""
+    """Return matching expanded suites for ``ctx.model_spec.model_name`` + device.
+    Prerequisite injection is engine-aware."""
     from .test_categorization_system import TestFilter
 
     return (
         TestFilter()
         .filter_by_model(ctx.model_spec.model_name)
         .filter_by_device(ctx.device.name.lower())
+        .filter_prerequisites_by_engine(ctx.model_spec.inference_engine)
         .get_tests()
     )
 
@@ -167,6 +250,41 @@ def _maybe_cap_num_prompts(case: dict, cap: Optional[int]) -> dict:
         cap,
     )
     return new_case
+
+
+def _error_block(case: dict, ctx: MediaContext, exc: Exception) -> Block:
+    """Build a spec_tests Block for a test that raised before producing one.
+
+    Without this, a class that fails to import/instantiate/run would bump the
+    failure counter but emit no Block, making the crash invisible in the
+    report while still failing the workflow.
+    """
+    return Block(
+        kind="spec_tests",
+        id=block_id(ctx) or None,
+        title=str(case.get("name") or "spec_test").replace("_", " ").title(),
+        task_type=None,
+        targets=dict(case.get("targets") or {}),
+        data={
+            "success": False,
+            "status": TestStatus.ERROR.value,
+            "attempts": 0,
+            "test_name": str(case.get("name") or ""),
+            "description": str(case.get("description") or ""),
+            "error": {"type": type(exc).__name__, "message": str(exc)},
+        },
+    )
+
+
+def _block_status(block: Block) -> TestStatus:
+    """Resolve a Block's :class:`TestStatus`, falling back to legacy fields."""
+    data = block.data if isinstance(block.data, dict) else {}
+    resolved = TestStatus.from_value(data.get("status"))
+    if resolved is not None:
+        return resolved
+    return TestStatus.from_legacy(
+        data.get("success"), skipped=bool(data.get("skipped"))
+    )
 
 
 def _instantiate_spec_test(case: dict, ctx: MediaContext):
@@ -248,19 +366,21 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
                 block = test.run_tests()
             except Exception as e:
                 logger.exception("  ❌ %s raised: %s", class_name, e)
+                blocks.append(_error_block(patched, ctx, e))
                 failures += 1
                 continue
             blocks.append(block)
-            if (
-                not isinstance(block.data, dict)
-                or block.data.get("success") is not True
-            ):
+            status = _block_status(block)
+            if status.is_blocking:
                 logger.error(
-                    "  ❌ %s did not report success=True (data=%r)",
+                    "  ❌ %s -> %s (data=%r)",
                     class_name,
+                    status.value,
                     block.data,
                 )
                 failures += 1
+            elif status in (TestStatus.SKIP, TestStatus.NA):
+                logger.info("  ⏭  %s -> %s", class_name, status.value)
 
     if blocks:
         accept_blocks(blocks, envelope=sweep_envelope(ctx))

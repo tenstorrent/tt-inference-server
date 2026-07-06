@@ -1123,6 +1123,7 @@ add_executable(session_manager_test
     src/domain/prefix_cache/block_matcher.cpp
     src/domain/prefix_cache/response_id_index.cpp
     src/services/session_manager.cpp
+    src/services/prefix_cache_router.cpp
     src/metrics/metrics.cpp
 )
 target_link_libraries(session_manager_test PRIVATE
@@ -1191,6 +1192,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/embedding_service.cpp
     src/services/model_service_registration.cpp
     src/services/session_manager.cpp
+    src/services/prefix_cache_router.cpp
     src/services/session_resolution.cpp
     src/services/memory_services/memory_manager.cpp
     src/domain/session.cpp
@@ -1414,6 +1416,7 @@ add_executable(session_manager_benchmark
     src/domain/prefix_cache/block_matcher.cpp
     src/domain/prefix_cache/response_id_index.cpp
     src/services/session_manager.cpp
+    src/services/prefix_cache_router.cpp
     src/metrics/metrics.cpp
 )
 target_link_libraries(session_manager_benchmark PRIVATE
@@ -1582,6 +1585,20 @@ if(KAFKA_ENABLED)
     target_include_directories(remote_kv_manager_kafka_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
+
+    # E2E test: real RemoteKVManagerImpl driven against a scriptable
+    # MockMigrationWorker over a real Kafka broker (scripts/dev-kafka.sh up).
+    # Not registered with add_test() -- opt-in, run manually.
+    add_executable(remote_kv_manager_e2e_test
+        tests/e2e/remote_kv_manager_e2e_test.cpp
+    )
+    target_link_libraries(remote_kv_manager_e2e_test PRIVATE
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(remote_kv_manager_e2e_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
 else()
     message(STATUS "Kafka support disabled (use -DKAFKA_ENABLED=ON to enable)")
 endif()
@@ -1603,6 +1620,7 @@ set(SOURCES
     src/domain/prefix_cache/block_matcher.cpp
     src/domain/prefix_cache/response_id_index.cpp
     src/services/session_manager.cpp
+    src/services/prefix_cache_router.cpp
     src/services/session_resolution.cpp
     src/domain/session.cpp
     src/runtime/worker/single_process_worker.cpp

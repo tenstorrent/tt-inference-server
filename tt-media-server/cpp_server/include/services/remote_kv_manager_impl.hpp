@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -13,6 +14,7 @@
 
 #include "messaging/i_kafka_consumer.hpp"
 #include "messaging/i_kafka_producer.hpp"
+#include "messaging/migration_message.hpp"
 #include "services/remote_kv_manager.hpp"
 
 namespace tt::services {
@@ -28,10 +30,18 @@ namespace tt::services {
  * IN_PROGRESS as FAILED, so callers eventually observe a terminal state
  * even if a worker disappears.
  *
- * Thread-safety: migrate() / getStatus() are safe to call from any thread.
+ * Thread-safety: migrate() / getMigrationStatus() are safe to call from
+ * any thread.
  */
 class RemoteKVManagerImpl : public IRemoteKVManager {
  public:
+  /**
+   * Maps a MigrationRequest's layer_id to the Kafka partition that owns
+   * that layer's work. Returning a negative value falls back to the
+   * broker-picked partition (i.e. legacy un-partitioned behavior).
+   */
+  using LayerToPartition = std::function<int32_t(uint32_t layerId)>;
+
   /**
    * @param requestProducer  Kafka producer wired to the migration-request
    *   topic. Ownership is taken.
@@ -44,13 +54,18 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
    *   resolution.
    * @param drainPollMs      Per-iteration poll timeout passed to the
    *   consumer. Default 100ms. Lower values trade CPU for responsiveness.
+   * @param layerToPartition Optional layer_id -> partition mapping. When
+   *   set, migrate() routes each request to the returned partition of the
+   *   request topic; a negative return falls back to the broker's default
+   *   partitioner. When null, all requests use the default partitioner
+   *   (legacy behavior).
    */
   RemoteKVManagerImpl(
       std::unique_ptr<tt::messaging::IKafkaProducer> requestProducer,
       std::unique_ptr<tt::messaging::IKafkaConsumer> ackConsumer,
       std::chrono::milliseconds timeout = std::chrono::seconds(60),
       std::chrono::milliseconds sweepInterval = std::chrono::seconds(5),
-      int drainPollMs = 100);
+      int drainPollMs = 100, LayerToPartition layerToPartition = nullptr);
 
   ~RemoteKVManagerImpl() override;
 
@@ -58,7 +73,7 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
   RemoteKVManagerImpl& operator=(const RemoteKVManagerImpl&) = delete;
 
   [[nodiscard]] uint64_t migrate(const MigrationRequest& request) override;
-  MigrationStatus getStatus(uint64_t migrationId) const override;
+  MigrationStatus getMigrationStatus(uint64_t migrationId) const override;
 
  private:
   void drainLoop();
@@ -72,6 +87,7 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
 
   std::unique_ptr<tt::messaging::IKafkaProducer> requestProducer;
   std::unique_ptr<tt::messaging::IKafkaConsumer> ackConsumer;
+  LayerToPartition layerToPartition;
   std::chrono::milliseconds timeout;
   std::chrono::milliseconds sweepInterval;
   int drainPollMs;
