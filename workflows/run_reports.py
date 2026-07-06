@@ -1072,8 +1072,37 @@ def extract_eval_results(files):
     return results, meta_data
 
 
-def evals_release_report_data(args, results, meta_data, model_spec):
+def collect_sample_counts(files) -> dict:
+    """Map task_name -> effective sample count from lm-eval result JSONs.
+
+    Used for the sample-count-aware acceptance check on CI/limit-mode subsets.
+    lm-eval writes ``n-samples: {task: {original, effective}}``; ``effective`` is
+    the count actually scored (after ``--limit``). Returns ``{}`` for formats
+    without this field, in which case scoring falls back to the ratio check.
+    Mirrors ``collect_sample_counts`` in the v2 eval scorer so both report paths
+    make the same PASS/FAIL decision.
+    """
+    counts: dict = {}
+    for json_file in files:
+        try:
+            with Path(json_file).open("r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        for task_name, info in (data.get("n-samples", {}) or {}).items():
+            if task_name in counts or not isinstance(info, dict):
+                continue
+            eff = info.get("effective")
+            if isinstance(eff, int):
+                counts[task_name] = eff
+    return counts
+
+
+def evals_release_report_data(args, results, meta_data, model_spec, sample_counts=None):
     eval_config = EVAL_CONFIGS[model_spec.model_name]
+    sample_counts = sample_counts or {}
 
     task_type = model_spec.model_type.task_type
     report_rows = []
@@ -1158,11 +1187,14 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                 if reference_score:
                     ratio_to_reference = score / reference_score
                     # Sample-count-aware for subset (mode) references; ratio for
-                    # full-set. n_total is not plumbed into the v1 report path
-                    # (subset refs only apply to v2-routed models), so this
-                    # falls back to the ratio check here.
+                    # full-set. n_total comes from the lm-eval n-samples.effective
+                    # field (collect_sample_counts) so a CI/limit-mode subset run
+                    # here makes the same PASS/FAIL decision as the v2 scorer;
+                    # when unavailable, accept_eval_score falls back to the ratio.
                     accuracy_check = ReportCheckTypes.from_result(
-                        accept_eval_score(ref, score, n_total=None)
+                        accept_eval_score(
+                            ref, score, n_total=sample_counts.get(t_key)
+                        )
                     )
                 else:
                     ratio_to_reference = "N/A"
@@ -1473,6 +1505,10 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
 
     results = {}
     meta_data = {}
+    # Effective per-task sample counts (after --limit) for the sample-count-aware
+    # acceptance check on CI/limit-mode subsets; only lm-eval dict-format files
+    # carry the n-samples field.
+    sample_counts = collect_sample_counts(dict_format_files) if dict_format_files else {}
 
     if dict_format_files:
         dict_results, dict_meta_data = extract_eval_results(dict_format_files)
@@ -1503,7 +1539,9 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
             None,
         )
     # generate release report
-    report_rows = evals_release_report_data(args, results, meta_data, model_spec)
+    report_rows = evals_release_report_data(
+        args, results, meta_data, model_spec, sample_counts=sample_counts
+    )
 
     # store results
     markdown_str = generate_evals_release_markdown(report_rows)
