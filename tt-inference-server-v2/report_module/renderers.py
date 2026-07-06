@@ -38,12 +38,13 @@ HIDDEN_COLUMNS = frozenset(
 )
 
 GENERIC_KINDS: tuple[str, ...] = (
-    "benchmarks",
     "spec_tests",
     "stress_tests",
 )
 
 EVALS_KIND = "evals"
+
+BENCHMARKS_KIND = "benchmarks"
 
 EVALS_METHODOLOGY_NOTE = (
     "Note: The ratio to published scores defines if eval ran roughly correctly, "
@@ -52,6 +53,13 @@ EVALS_METHODOLOGY_NOTE = (
     "GPU reference within a +/- tolerance. If a value GPU reference is not "
     "available, the accuracy check is based on the direct ratio to the published "
     "score."
+)
+
+BENCHMARK_TIER_NOTE = (
+    "Note: The Target Check column reflects only the strictest `target` tier. "
+    "The Target Checks table grades three tiers — functional, complete, and "
+    "target — from most to least lenient. Acceptance criteria pass a benchmark "
+    "when any single tier meets all of its checks."
 )
 
 _REGISTRY: Dict[str, RendererFn] = {}
@@ -329,6 +337,36 @@ def render_evals(block: Block, metadata: Mapping[str, Any]) -> str:
     if not table:
         return ""
     return f"{heading}\n\n{table}\n\n{EVALS_METHODOLOGY_NOTE}"
+
+
+def _has_target_checks(block: Block) -> bool:
+    """Whether the block carries a tiered ``target_checks`` mapping.
+
+    Handles both shapes: top-level (audio sweep, run summaries) and nested
+    one level under a section dict (image/video/cnn/etc. "Benchmarks").
+    """
+    data = block.data
+    if not isinstance(data, Mapping):
+        return False
+    if isinstance(data.get(_TARGET_CHECKS_KEY), Mapping):
+        return True
+    return any(
+        isinstance(value, Mapping)
+        and isinstance(value.get(_TARGET_CHECKS_KEY), Mapping)
+        for value in data.values()
+    )
+
+
+@register(BENCHMARKS_KIND)
+def render_benchmarks(block: Block, metadata: Mapping[str, Any]) -> str:
+    """Render a benchmark block, appending the tier note when tiered
+    ``target_checks`` are present (LLM benchmarks without tiers get none)."""
+    table = render_generic_table(block, metadata)
+    if not table:
+        return ""
+    if _has_target_checks(block):
+        return f"{table}\n\n{BENCHMARK_TIER_NOTE}"
+    return table
 
 
 for _kind in GENERIC_KINDS:

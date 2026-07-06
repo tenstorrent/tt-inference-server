@@ -12,7 +12,7 @@ import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from test_module._test_common import ReportCheckTypes
+from test_module._test_common import ReportCheckTypes, TestStatus
 from test_module.llm_tests import llm_eval_tests as mod
 
 _MOD = "test_module.llm_tests.llm_eval_tests"
@@ -152,8 +152,12 @@ class TestBlocksForTask:
         assert b.data["score"] == 0.0
         assert b.data["accuracy_check"] == ReportCheckTypes.FAIL
 
-    def test_task_without_score_is_skipped(self):
-        assert self._blocks(_task(score=None), {"gpqa": {"acc,none": 0.9}}) == []
+    def test_task_without_score_is_na(self):
+        # A task that ran but has no score defined is not gradable -> NA (was
+        # previously dropped, which made the caller mislabel it as a FAIL).
+        (b,) = self._blocks(_task(score=None), {"gpqa": {"acc,none": 0.9}})
+        assert b.data["status"] == TestStatus.NA.value
+        assert b.data["reason"] == "no eval score defined"
 
 
 # --- reading lm-eval result JSON ---------------------------------------------
@@ -239,11 +243,15 @@ class TestRunLLMEval:
         run_task.assert_called_once()
 
     def test_min_context_skip(self):
+        # Task needs more context than the device provides: not run, but now a
+        # visible SKIP block instead of silently vanishing.
         out, run_task, _accept = self._run(
             [_task("longctx", min_context_required=200000)]
         )
         run_task.assert_not_called()
-        assert out == []
+        assert len(out) == 1
+        assert out[0].data["status"] == TestStatus.SKIP.value
+        assert "requires max_context >= 200000" in out[0].data["reason"]
 
 
 # --- EvalsWorkflow override --------------------------------------------------

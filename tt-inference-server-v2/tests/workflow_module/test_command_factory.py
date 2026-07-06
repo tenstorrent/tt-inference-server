@@ -11,6 +11,7 @@ out of scope here.
 
 from __future__ import annotations
 
+import json
 from argparse import Namespace
 from types import SimpleNamespace
 
@@ -376,3 +377,50 @@ class TestResolveAuthToken:
 
         monkeypatch.setattr(cf, "get_runtime_model_spec", boom)
         assert cf._resolve_auth_token(self._args()) == ""
+
+    # --- runtime_model_spec_json precedence (dual-catalog models) -------------
+
+    def _spec_json(self, tmp_path, engine_name):
+        p = tmp_path / "runtime_model_spec.json"
+        p.write_text(
+            json.dumps({"runtime_model_spec": {"inference_engine": engine_name}})
+        )
+        return str(p)
+
+    def test_runtime_spec_json_forge_overrides_catalog_default(
+        self, tmp_path, monkeypatch
+    ):
+        # Dual-catalog model (e.g. Llama-3.1-8B-Instruct): the catalog default
+        # resolves vLLM, but the runtime spec JSON v1 handed us says forge — the
+        # forge server needs the literal key, not a JWT. The JSON serializes the
+        # enum *value* ("forge"), which is what v1 actually writes.
+        monkeypatch.setenv("JWT_SECRET", "secret-of-sufficient-length-123456")
+        for var in ("VLLM_API_KEY", "API_KEY", "OPENAI_API_KEY"):
+            monkeypatch.delenv(var, raising=False)
+        self._patch_engine(monkeypatch, InferenceEngine.VLLM)  # catalog = wrong
+        args = self._args(runtime_model_spec_json=self._spec_json(tmp_path, "forge"))
+        assert cf._resolve_auth_token(args) == "your-secret-key"
+
+    def test_runtime_spec_json_vllm_mints_jwt_over_catalog(self, tmp_path, monkeypatch):
+        pytest.importorskip("jwt")
+        monkeypatch.setenv("JWT_SECRET", "secret-of-sufficient-length-123456")
+        self._patch_engine(monkeypatch, InferenceEngine.FORGE)  # catalog = wrong
+        args = self._args(runtime_model_spec_json=self._spec_json(tmp_path, "vLLM"))
+        assert cf._resolve_auth_token(args).count(".") == 2  # a JWT
+
+    def test_engine_from_runtime_spec_json(self, tmp_path):
+        # Real serialization is the enum value ("forge"); tolerate the name form.
+        assert (
+            cf._engine_from_runtime_spec_json(self._spec_json(tmp_path, "forge"))
+            == "forge"
+        )
+        assert (
+            cf._engine_from_runtime_spec_json(self._spec_json(tmp_path, "FORGE"))
+            == "forge"
+        )
+        assert (
+            cf._engine_from_runtime_spec_json(self._spec_json(tmp_path, "vLLM"))
+            == "vLLM"
+        )
+        assert cf._engine_from_runtime_spec_json(None) is None
+        assert cf._engine_from_runtime_spec_json("/no/such/file.json") is None

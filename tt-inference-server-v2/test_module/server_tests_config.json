@@ -474,6 +474,10 @@
             "name": "DeviceLivenessTest",
             "module": "test_module.health_tests.device_liveness_test",
             "description": "Test for device liveness checks - runs before all other tests",
+            "engines": [
+                "media",
+                "forge"
+            ],
             "markers": [
                 "fast",
                 "prerequisite"

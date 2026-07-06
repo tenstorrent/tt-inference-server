@@ -21,12 +21,15 @@ from report_module.schema import Block
 from workflow_module import accept_blocks
 from workflows.utils import run_command
 
-from .._test_common import ReportCheckTypes, block_id
+from .._test_common import ReportCheckTypes, TestStatus, block_id
 from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
-_WAIT_HEALTHY_TIMEOUT_S = 1200.0
+# Fallback health-wait budget when the model spec doesn't set one. The per-model
+# value comes from DeviceModelSpec.tensor_cache_timeout (first-compile/warmup for
+# large forge LLMs can exceed 1200s); bump it per model in the model spec.
+_DEFAULT_WAIT_HEALTHY_TIMEOUT_S = 3600.0
 
 
 def _device_label(ctx: MediaContext) -> str:
@@ -171,13 +174,14 @@ def _score_one(
 def blocks_for_task(ctx: MediaContext, task, results: dict) -> List[Block]:
     """Score ``task`` against ``results`` and build one Block per task/subtask.
 
-    Returns ``[]`` when the task has no score defined or produced no matching
-    results (the caller surfaces a FAIL block for a task that ran but scored
-    nothing).
+    A task that ran but has no score defined is not gradable -> one NA Bloc.
+    A task with a score but no matching results still returns ``[]`` so the
+    caller can surface a FAIL block for a task that ran but scored nothing.
     """
     if not task.score:
-        logger.info("Skipping %s: no eval score defined.", task.task_name)
-        return []
+        reason = "no eval score defined"
+        logger.info("%s ran but is not gradable: %s.", task.task_name, reason)
+        return [_status_block(ctx, task, TestStatus.NA, reason)]
 
     blocks: List[Block] = []
     for t_key in _target_keys(task, results):
@@ -230,6 +234,33 @@ def _fail_block(ctx: MediaContext, task, error: str) -> Block:
     )
 
 
+def _status_block(ctx: MediaContext, task, status: TestStatus, reason: str) -> Block:
+    """Build a non-graded evals Block carrying an explicit ``status``.
+
+    Keeps a task that was intentionally not run (SKIP) or ran but couldn't be
+    graded (NA) *visible* in the report instead of silently vanishing. The
+    explicit ``status`` short-circuits acceptance grading, so the block is
+    non-blocking.
+    """
+    score = getattr(task, "score", None)
+    return Block(
+        kind="evals",
+        task_type="llm",
+        title=f"LLM Eval — {task.task_name}",
+        id=block_id(ctx) or None,
+        targets={"task_name": task.task_name},
+        data={
+            "task_name": task.task_name,
+            "status": status.value,
+            "skipped": status is TestStatus.SKIP,
+            "reason": reason,
+            "tolerance": getattr(score, "tolerance", None),
+            "published_score": getattr(score, "published_score", None),
+            "score": None,
+        },
+    )
+
+
 # --- running one task --------------------------------------------------------
 
 
@@ -278,7 +309,15 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
             service_port=ctx.server_port,
             auth_token=auth_token,
         )
-    if not server.wait_for_healthy(timeout=_WAIT_HEALTHY_TIMEOUT_S):
+    health_timeout = (
+        getattr(
+            getattr(ctx.model_spec, "device_model_spec", None),
+            "tensor_cache_timeout",
+            None,
+        )
+        or _DEFAULT_WAIT_HEALTHY_TIMEOUT_S
+    )
+    if not server.wait_for_healthy(timeout=health_timeout):
         logger.error("⛔ inference server not healthy; aborting evals.")
         blocks = [_fail_block(ctx, t, "inference server not healthy") for t in tasks]
         _accept(ctx, blocks)
@@ -291,15 +330,16 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
     )
     ran_tasks = []
     rc_by_task = {}
+    skipped_blocks: List[Block] = []
     for task in tasks:
         min_ctx = getattr(task, "min_context_required", None)
         if min_ctx and device_max_context and device_max_context < min_ctx:
-            logger.warning(
-                "Skipping %s: requires max_context >= %s, device provides %s.",
-                task.task_name,
-                min_ctx,
-                device_max_context,
+            reason = (
+                f"requires max_context >= {min_ctx}, device provides "
+                f"{device_max_context}"
             )
+            logger.warning("⏭  Skipping %s: %s.", task.task_name, reason)
+            skipped_blocks.append(_status_block(ctx, task, TestStatus.SKIP, reason))
             continue
         health = server.get_health()
         if getattr(health, "status_code", 200) != 200:
@@ -314,7 +354,7 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         ran_tasks.append(task)
 
     results = merge_eval_results(discover_eval_results(ctx.output_path, ctx.model_spec))
-    blocks: List[Block] = []
+    blocks: List[Block] = list(skipped_blocks)
     for task in ran_tasks:
         task_blocks = blocks_for_task(ctx, task, results)
         if task_blocks:

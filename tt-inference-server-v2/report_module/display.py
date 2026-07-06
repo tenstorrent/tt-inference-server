@@ -105,6 +105,8 @@ DISPLAY_NAMES: Dict[str, str] = {
     "ratio_to_published": "Ratio to Published",
     "ratio_to_reference": "Ratio to Reference",
     "accuracy_check": "Accuracy Check",
+    # Benchmarks report a performance-target verdict, not an accuracy check.
+    "target_check": "Target Check",
     # Liveness / infra
     "status": "Status",
     "expected_devices": "Expected Devices",

@@ -42,11 +42,12 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
         #                         (8.1 -> 9.2 tok/s). Worth ~nothing without trace
         #                         (4.8 -> 5.3). (TTConfig's own default is False;
         #                         the old hardcoded True was the deviation.)
-        #   OPTIMIZATION_LEVEL=0  REQUIRED: opt>=1 aborts in tt-mlir
-        #                         MemoryLayoutPropagation on the 1.2.0 wheel
-        #                         (tt-xla#4990), and TTConfig rejects
-        #                         enable_trace=True + opt>=1 + cpu_sampling=False,
-        #                         so the trace defaults are only valid at opt 0.
+        #   OPTIMIZATION_LEVEL=0  REQUIRED on the current (1.3.0) wheel: opt>=1
+        #                         aborts in tt-mlir OpModel worker-grid validation
+        #                         on Blackhole P300 (device {10,13} vs system-desc
+        #                         {10,11}; tt-xla#5204 / tt-mlir#8767). Fixed by
+        #                         tt-mlir#8769, which postdates this wheel -- flip
+        #                         to opt=1 once the forge wheel includes it.
         # Weights stay bfp_bf8: measured FASTER than bf16 (greedy 9.2 vs 8.0),
         # since bf16 doubles per-token weight DRAM traffic.
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))

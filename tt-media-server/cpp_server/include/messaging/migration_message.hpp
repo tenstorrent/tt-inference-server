@@ -11,9 +11,6 @@
 
 namespace tt::messaging {
 
-/**
-    Payload for a migration message. Consumed by migration worker.
-*/
 struct MigrationRequestMessage {
   uint64_t migration_id;
   uint32_t src_slot;
@@ -23,23 +20,14 @@ struct MigrationRequestMessage {
   uint32_t position_end;
 };
 
-/**
-    Payload for a migration response message. Produced by migration worker.
-*/
 struct MigrationResponseMessage {
   uint64_t migration_id;
   tt::services::MigrationStatus status;
 };
 
-/**
-    JSON encode.
-*/
 std::string serialize(const MigrationRequestMessage& mrm);
 std::string serialize(const MigrationResponseMessage& mrm);
 
-/**
-    JSON decode.
-*/
 std::optional<MigrationRequestMessage> parseMigrationRequest(
     const std::string& json);
 std::optional<MigrationResponseMessage> parseMigrationResponse(
