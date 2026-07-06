@@ -68,6 +68,7 @@ def run_prefix_cache(
     request_rate: Optional[float] = None,
     scenarios_json: Optional[str] = None,
     trace_path: Optional[str] = None,
+    goodput: Optional[str] = None,
     auth_token: str = "",
     metrics_urls: Sequence[str] = (),
     venv_python: Optional[Path] = None,
@@ -126,6 +127,7 @@ def run_prefix_cache(
         request_rate=request_rate,
         manifest_path=Path(scenarios_json) if scenarios_json else None,
         trace_path_override=trace_path,
+        goodput=goodput,
     )
     if not runs:
         logger.error(

@@ -296,6 +296,23 @@ def parse_arguments():
         "'guidellm' for GuideLLM (https://github.com/vllm-project/guidellm). ",
     )
     parser.add_argument(
+        "--goodput",
+        type=str,
+        default=None,
+        metavar="SLO",
+        help=(
+            "AIPerf --goodput SLO string applied to the LLM benchmark sweep "
+            "(--workflow benchmarks --tools aiperf): space-separated KEY:VALUE "
+            "pairs where KEY is a metric tag and VALUE is in the metric's "
+            "display unit. Reports the fraction of requests meeting every "
+            "threshold. Valid tags include time_to_first_token (ms), "
+            "request_latency (ms), inter_token_latency (ms), "
+            "output_token_throughput_per_user (tokens/s). Only used by the "
+            "'aiperf' tool; ignored by vllm/genai/guidellm. Example: "
+            "'time_to_first_token:4000 output_token_throughput_per_user:45'."
+        ),
+    )
+    parser.add_argument(
         "--no-auth",
         action="store_true",
         help="Disable vLLM API key authorization in the server (skips JWT_SECRET requirement)",
@@ -473,6 +490,17 @@ def parse_arguments():
         type=str,
         default=None,
         help="Path to a mooncake-format JSONL trace file for mooncake_trace scenarios.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-goodput",
+        type=str,
+        default=None,
+        metavar="SLO",
+        help="AIPerf --goodput SLO string: space-separated KEY:VALUE pairs (metric tag : "
+        "value in display unit). Reports requests/sec meeting every threshold. Tags include "
+        "time_to_first_token (ms), request_latency (ms), inter_token_latency (ms), "
+        "output_token_throughput_per_user (tokens/s). Overrides the preset/scenario goodput. "
+        "Example: 'time_to_first_token:4000 output_token_throughput_per_user:45'.",
     )
     prefix_cache_group.add_argument(
         "--prefix-cache-metrics-url",

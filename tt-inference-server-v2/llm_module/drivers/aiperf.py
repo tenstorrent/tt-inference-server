@@ -80,6 +80,10 @@ class AIPerfDriver(LLMDriver):
             "--artifact-dir",
             str(artifact_dir),
         ]
+        # AIPerf parses --goodput as a single token holding the full
+        # space-separated KEY:VALUE SLO list, so pass it as one argument.
+        if context.goodput and context.goodput.strip():
+            cmd.extend(["--goodput", context.goodput.strip()])
         env = dict(context.extra_env)
         if server.auth_token:
             env["OPENAI_API_KEY"] = server.auth_token
