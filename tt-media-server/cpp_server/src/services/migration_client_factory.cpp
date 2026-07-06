@@ -28,10 +28,11 @@ MigrationClientFactory::createKafkaClient(
     const std::string& ackTopic, const std::string& groupId,
     std::chrono::milliseconds migrationTimeout,
     std::chrono::milliseconds shutdownTimeout) {
-  auto producer =
-      std::make_unique<tt::messaging::KafkaProducer>(brokers, requestTopic);
+  auto producer = std::make_unique<tt::messaging::KafkaProducer>(
+      tt::messaging::KafkaProducerConfig{brokers, requestTopic});
   auto consumer = std::make_unique<tt::messaging::KafkaConsumer>(
-      brokers, ackTopic, groupId);
+      tt::messaging::KafkaConsumerConfig{brokers, ackTopic, groupId,
+                                         std::nullopt});
 
   return createKafkaClient(std::move(producer), std::move(consumer),
                            migrationTimeout, shutdownTimeout);
