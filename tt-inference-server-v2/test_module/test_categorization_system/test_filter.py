@@ -34,6 +34,7 @@ TEST_CONFIG = "test_config"
 NUM_OF_DEVICES = "num_of_devices"
 NUM_CONCURRENT_REQUESTS = "num_concurrent_requests"
 TARGETS = "targets"
+ENGINES = "engines"
 
 
 class TestFilter:
@@ -84,6 +85,7 @@ class TestFilter:
 
         logger.info("Including prerequisites by default")
         self._include_prerequisites = True
+        self._prerequisite_engine: Optional[str] = None
 
     @classmethod
     def from_category(cls, category: str) -> TestFilter:
@@ -286,8 +288,22 @@ class TestFilter:
 
         return expanded_suites
 
+    def _prerequisite_applies_to_engine(self, prereq: Dict) -> bool:
+        """Whether ``prereq`` should run under the configured inference engine.
+
+        A prerequisite without an ``engines`` allow-list is engine-agnostic and
+        always applies. One that declares engines applies only when the active
+        engine is in that list."""
+        allowed_engines = prereq.get(ENGINES)
+        if not allowed_engines or self._prerequisite_engine is None:
+            return True
+        return self._prerequisite_engine in allowed_engines
+
     def _get_prerequisite_for_suite(self, suite: Dict) -> List[Dict]:
         """Get expanded prerequisite tests for a specific suite.
+
+        Prerequisites whose ``engines`` allow-list excludes the configured
+        inference engine are skipped.
 
         Args:
             suite: Suite dict for hardware context
@@ -300,6 +316,14 @@ class TestFilter:
         )
         prereqs = []
         for prereq in self.prerequisite_tests:
+            if not self._prerequisite_applies_to_engine(prereq):
+                logger.info(
+                    "Skipping prerequisite %s for engine %s (allowed: %s)",
+                    prereq.get("name", "unknown"),
+                    self._prerequisite_engine,
+                    prereq.get(ENGINES),
+                )
+                continue
             expanded = self._expand_prerequisite_test(prereq, suite)
             prereqs.append(expanded)
         return prereqs
@@ -315,6 +339,10 @@ class TestFilter:
             Self for method chaining
         """
         self._include_prerequisites = include
+        return self
+
+    def filter_prerequisites_by_engine(self, engine: Optional[str]) -> TestFilter:
+        self._prerequisite_engine = engine
         return self
 
     def filter_by_model_category(self, categories: List[str]) -> TestFilter:

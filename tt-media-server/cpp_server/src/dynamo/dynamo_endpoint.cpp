@@ -32,6 +32,7 @@
 #include "utils/conversation_hasher.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
+#include "utils/net.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::dynamo {
@@ -173,7 +174,7 @@ DynamoEndpoint::DynamoEndpoint(std::shared_ptr<services::LLMPipeline> pipeline,
     throw std::invalid_argument("DynamoEndpoint: pipeline must not be null");
   }
   if (options_.advertise_host.empty()) {
-    options_.advertise_host = detectAdvertiseHost();
+    options_.advertise_host = detectAdvertiseHost(options_.etcd_endpoints);
   }
   if (options_.model_name.empty()) {
     // Use MODEL env var value for etcd registration (frontend routes by model)
@@ -186,13 +187,41 @@ DynamoEndpoint::DynamoEndpoint(std::shared_ptr<services::LLMPipeline> pipeline,
 
 DynamoEndpoint::~DynamoEndpoint() { stop(); }
 
-std::string DynamoEndpoint::detectAdvertiseHost() const {
+std::string DynamoEndpoint::detectAdvertiseHost(
+    const std::string& etcdEndpoints) const {
   if (const char* env = std::getenv("DYN_TCP_RPC_HOST")) {
+    TT_LOG_INFO("[DynamoEndpoint] advertise host from DYN_TCP_RPC_HOST={}",
+                env);
     return env;
   }
 
-  // Pick the first non-loopback IPv4 interface (matches Dynamo's auto-detect
-  // for multi-host deployments). Fall back to 127.0.0.1.
+  // Route-based detection: ask the kernel which local IP it would use to reach
+  // etcd. That IP is, by construction, on the same network as etcd — which is
+  // the network the Dynamo frontend (co-located with etcd on dynamo-net) can
+  // dial back. `sourceIpForRoute` does the UDP-connect dance internally and
+  // returns empty on any failure, so we just fall through to the heuristic.
+  if (!etcdEndpoints.empty()) {
+    try {
+      const auto url = tt::utils::net::parseUrl(etcdEndpoints);
+      std::string ip = tt::utils::net::sourceIpForRoute(url.host, url.port);
+      if (!ip.empty()) {
+        TT_LOG_INFO(
+            "[DynamoEndpoint] advertise host from route to etcd ({}:{}): {}",
+            url.host, url.port, ip);
+        return ip;
+      }
+    } catch (const std::exception& e) {
+      TT_LOG_DEBUG(
+          "[DynamoEndpoint] route-based advertise detection failed: {}",
+          e.what());
+    }
+  }
+
+  // Fallback: pick the first non-loopback IPv4 interface (matches Dynamo's
+  // auto-detect for multi-host deployments). Fall back to 127.0.0.1.
+  TT_LOG_INFO(
+      "[DynamoEndpoint] advertise host: route detection unavailable, falling "
+      "back to first non-loopback IPv4 interface");
   ifaddrs* ifaddr = nullptr;
   if (::getifaddrs(&ifaddr) != 0 || ifaddr == nullptr) {
     return "127.0.0.1";
@@ -670,8 +699,8 @@ void DynamoEndpoint::start() {
 
   // start() binds and listens on the pool loops synchronously; the resolved
   // port is available immediately afterwards.
-  server_ = std::make_unique<DynamoServer>(sc, makeGenerateHandler(),
-                                           loop_pool_->getLoops());
+  server_ =
+      std::make_unique<DynamoServer>(sc, makeGenerateHandler(), loop_pool_.get());
   *local_prefill_id_ = server_->config().component + "/" +
                        server_->config().endpoint + "/" +
                        server_->config().instance_id_hex;
@@ -737,6 +766,7 @@ void DynamoEndpoint::stop() {
   if (keepalive_thread_.joinable()) {
     keepalive_thread_.join();
   }
+
   server_.reset();
   discovery_.reset();
   if (loop_pool_) {

@@ -3,6 +3,8 @@
 
 #include "services/llm_pipeline.hpp"
 
+#include <trantor/net/EventLoop.h>
+
 #include <chrono>
 #include <functional>
 #include <stdexcept>
@@ -142,6 +144,18 @@ void LLMPipeline::resolveSession(
       req->task_id, req->model.value_or("default"), req->stream,
       req->messages.size(), promptKind, promptTokens);
 
+  // Deliver every resolution/error on `loop`. resolveSession may run on a
+  // non-event-loop thread (e.g. the Dynamo dispatch pool), so all callbacks are
+  // routed onto `loop` here in one place instead of at each call site.
+  // runInLoop runs inline when already on `loop`, so on-loop callers pay no
+  // hop.
+  onResolved = [loop, cb = std::move(onResolved)](SessionInfo resolved) {
+    loop->runInLoop([cb, resolved = std::move(resolved)]() { cb(resolved); });
+  };
+  onError = [loop, cb = std::move(onError)](const SessionError& err) {
+    loop->runInLoop([cb, err]() { cb(err); });
+  };
+
   SessionInfo info;
 
   if (!sessionManager_) {
@@ -219,8 +233,8 @@ void LLMPipeline::resolveSession(
         sessionManager_->shrinkResidentPrefixToMatchedTokens(
             acquired->sessionId, matchedTokens);
         if (req->responseId.has_value()) {
-          sessionManager_->registerResponseId(*req->previousResponseId,
-                                              *req->responseId);
+          sessionManager_->updateResponseId(*req->previousResponseId,
+                                            *req->responseId);
         }
         info.validSessionFound = true;
         info.registrationHashes = routingInfo.hashes();
@@ -394,7 +408,7 @@ void LLMPipeline::resolveSession(
         // Register under this turn's response id (when present) so the
         // next request's previous_response_id resolves to this session/slot.
         if (req->responseId.has_value()) {
-          mgr->initResponseId(session.getSessionId(), *req->responseId);
+          mgr->registerResponseId(session.getSessionId(), *req->responseId);
         }
 
         std::vector<int> fullPrompt;
