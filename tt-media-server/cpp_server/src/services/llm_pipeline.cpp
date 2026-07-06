@@ -119,10 +119,12 @@ void LLMPipeline::resolveSession(
         req->slotId = result.slotId;
         req->session = mgr->getSession(result.sessionId);
         req->continuation = !result.isNewSession;
-        req->kv_position_id =
-            result.matchedTokens + result.accumulatedThinkTokens;
-        req->accumulated_think_tokens =
-            static_cast<int>(result.accumulatedThinkTokens);
+        if (!result.isNewSession) {
+          req->kv_position_id =
+              result.matchedTokens + result.accumulatedThinkTokens;
+          req->accumulated_think_tokens =
+              static_cast<int>(result.accumulatedThinkTokens);
+        }
 
         // Apply delta prompt for continuations
         if (!result.isNewSession && result.matchedTokens > 0) {
