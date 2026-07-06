@@ -23,6 +23,7 @@ from report_module.schema import Block
 from .._test_common import (
     MetricSpec,
     ReportCheckTypes,
+    SkipTest,
     block_id,
     run_tiered_check,
 )
@@ -224,6 +225,12 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
+    model_name = ctx.model_spec.model_name
+    if model_name not in VIDEO_INFERENCE_STEPS:
+        raise SkipTest(
+            f"video benchmark not implemented for model {model_name!r}; "
+            f"supported: {sorted(VIDEO_INFERENCE_STEPS)}"
+        )
     require_health(ctx)
 
     try:
@@ -241,7 +248,7 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
         else 0
     )
     # Sequential single-user benchmark, so tput_user = total throughput.
-    target_checks, accuracy_check = _video_target_checks(
+    target_checks, target_check = _video_target_checks(
         ctx, ttft_value, inference_steps_per_second
     )
     return Block(
@@ -264,7 +271,7 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
                 "ttft": ttft_value,
                 "inference_steps_per_second": inference_steps_per_second,
                 "tput_user": inference_steps_per_second,
-                "accuracy_check": accuracy_check,
+                "target_check": target_check,
                 "target_checks": target_checks,
             },
         },
