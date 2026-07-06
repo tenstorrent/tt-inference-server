@@ -25,6 +25,7 @@ from typing import Callable, List, Optional, Tuple
 
 from report_module.schema import Block
 from workflow_module import accept_blocks
+from workflows.workflow_types import ModelType
 
 from ._test_common import (
     SkipTest,
@@ -76,6 +77,14 @@ BENCHMARK_DISPATCH: dict[str, MediaRunner] = {
 }
 
 
+_NO_MEDIA_RUNNER: frozenset[ModelType] = frozenset({ModelType.VLM, ModelType.LLM})
+
+_registered_media_types = set(EVAL_DISPATCH) | set(BENCHMARK_DISPATCH)
+assert not any(mt.name in _registered_media_types for mt in _NO_MEDIA_RUNNER), (
+    "A ModelType in _NO_MEDIA_RUNNER also has a registered media runner"
+)
+
+
 _MEDIA_TASK_BLOCK_KIND = {
     MediaTaskType.EVALUATION: "evals",
     MediaTaskType.BENCHMARK: "benchmarks",
@@ -122,7 +131,10 @@ def run_media_task(
     Returns:
         ``(exit_code, block)`` where ``exit_code`` is ``0`` on success and
         ``1`` on any failure, and ``block`` is the runner's emitted Block on
-        success (``None`` on failure or when the model_type has no runner).
+        success (``None`` on failure). A model_type with no registered runner
+        yields a *visible* Block instead of a silent failure: a non-blocking
+        SKIP (``(0, block)``) if the type is runnerless by design
+        (:data:`_NO_MEDIA_RUNNER`), otherwise a blocking ERROR (``(1, block)``).
         The block is also handed to ``workflow_module.accept_blocks`` so a
         sweep-level accumulator can pick it up alongside the return value.
 
@@ -147,13 +159,28 @@ def run_media_task(
     )
     runner = dispatch.get(model_type_name)
     if runner is None:
-        logger.error(
-            "No %s runner registered for model_type=%r. Known types: %s",
-            task_type.value,
-            model_type_name,
-            sorted(dispatch),
+        if ctx.model_spec.model_type in _NO_MEDIA_RUNNER:
+            reason = (
+                f"{task_type.value} has no media runner for "
+                f"model_type={model_type_name!r} (unsupported by design)"
+            )
+            logger.warning("⏭  %s -> skip: %s", task_type.value, reason)
+            block = _media_outcome_block(
+                ctx, task_type, TestStatus.SKIP, reason=reason
+            )
+            accept_blocks([block], envelope=sweep_envelope(ctx))
+            return 0, block
+
+        # Unexpected: a model type that should have a runner doesn't. Surface a
+        # blocking, visible ERROR rather than a silent (1, None) failure.
+        error = RuntimeError(
+            f"no {task_type.value} runner registered for "
+            f"model_type={model_type_name!r}; known types: {sorted(dispatch)}"
         )
-        return 1, None
+        logger.error("❌ %s -> error: %s", task_type.value, error)
+        block = _media_outcome_block(ctx, task_type, TestStatus.ERROR, exc=error)
+        accept_blocks([block], envelope=sweep_envelope(ctx))
+        return 1, block
 
     try:
         block = runner(ctx)
