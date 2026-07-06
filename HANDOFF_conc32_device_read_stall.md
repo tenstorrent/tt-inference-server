@@ -20,8 +20,44 @@ New findings that supersede/sharpen the notes below (all on the local editable t
 - **Compile-time note correction:** an earlier ">20 min single-layer compile" observation was a `TTXLA_LOGGER_LEVEL=DEBUG` artifact (full-IR dump per graph, ~20× slowdown). Without DEBUG, single-layer compiles in ~65s. The serving config compiles ~76 graph shapes (`num_tokens{1,128,256,512,1024} × num_reqs{1,32} × all_greedy{T,F} × apply_grammar{T,F} × prefix_chunk{T,F}`).
 - **CI intermittency explained (e.g. Falcon3-7B):** identical dispatches, 1 pass / 3 fail — the pass ran its full ~57min suite (benchmarks + gpqa) without tripping the stall; the 3 fails hit it, produced 0 tokens, never recovered, and dead-hung ~6h until the workflow-timeout cancelled them (`Run tests` step, ~7h, container logs purged in the abort cascade). Same fingerprint as the confirmed Qwen3-8B stall. CI eval/benchmark concurrency sits in the *intermittent* zone; conc=64 is *near-deterministic*.
 
-### Pure-tt-xla repro (goal: no tt-media-server) — status
-A pure-tt-xla reproduction (needed for tt-xla-side debugging) is being pursued via a driver that mimics the dynamic batcher's bursty admission. Scripts + live status: `~/tt-xla/HANG_4521_REPRO_README.md` (`tt_xla_hang_repro.py` HANG_DRIVE=continuous, `serve_forge_qwen3_8b.sh`). Stock `vllm serve` and synchronized-wave in-process do NOT reproduce; the open question is whether the bursty in-process driver does, or whether the tt-media-server multiprocessing-worker/IPC path is required.
+### Experiments run today (what was tried / narrowed down)
+
+All Qwen3-8B, production config (b32 / max_model_len 40960 / chunk 1024 / gmu 0.35 / device sampling / trace / b1-prefill / BFP8), single P150, unless noted.
+
+| driver / setup | scale | result |
+|---|---|---|
+| **tt-media-server** (`launch_qwen3_8b_ci.sh`) conc=64, full model | 2 runs | **HANG both — reliable, first conc=64 batch** (gdb: real stall) |
+| stock `vllm serve` conc=64 continuous, full model | 60 runs (~7.7k req) | clean |
+| stock `vllm serve` **eval-mimic** (OSL 1024 ignore_eos + rep_penalty 1.1 + seed + top_k) | 10 runs | clean |
+| in-process `AsyncLLMEngine`, **synchronized waves**, full model | 200 waves | clean |
+| in-process `AsyncLLMEngine`, synchronized waves, **single-layer** | 200 waves | clean |
+| in-process `AsyncLLMEngine`, **bursty continuous** (pre-warmed), full model | 20,000 req | clean |
+| in-process `AsyncLLMEngine`, **cold-start bursty** (first burst compiles under load), full model | in progress | (see progress log) |
+| chunked-prefill qualification sweep, all 5 models, chunk 1024 | 5 models | 5/5 PASS, **no OOM** (config is sound) |
+
+Takeaway: the stall reproduces **only through tt-media-server's driver**. Stock vLLM (native scheduling) and synchronized waves — even at full model, long generation, eval-style sampling, and tens of thousands of requests — do **not** reproduce it. So the trigger is the **admission/driving pattern**, not the model, config, sampling, generation length, or raw device concurrency (device batch is capped at b32=max_num_seqs in every case).
+
+### Fastest reliable repro (commands)
+```
+# serve (from tt-xla venv, chip 0):
+cd ~/tt-xla && source venv/activate && \
+  /path/to/tt-inference-server/tt-media-server/launch_qwen3_8b_ci.sh
+# once a single request returns text, attack (continuous conc=64) — hangs on the first batch:
+OPENAI_API_KEY=your-secret-key ~/tt-xla/venv/bin/vllm bench serve --backend openai-chat \
+  --endpoint /v1/chat/completions --model Qwen/Qwen3-8B --host 127.0.0.1 --port 8019 \
+  --dataset-name random --random-input-len 1024 --random-output-len 128 \
+  --max-concurrency 64 --num-prompts 128 --extra-body '{"truncate_prompt_tokens":"1024","max_tokens":128}'
+```
+Verify a real stall (not a slow compile): `gdb -p <VLLM::EngineCore pid> -batch -ex "thread apply all bt"` → **zero active MLIR/lowering frames** + a thread in `read_completion_queue`/`from_device`. Recover: `pkill -9 -f "VLLM::EngineCore"; fuser -k 8019/tcp; tt-smi -r`.
+
+### Pure-tt-xla repro status (no tt-media-server)
+Not yet achieved via stock vLLM. Scripts + live status in `~/tt-xla/HANG_4521_REPRO_README.md` (`serve_forge_qwen3_8b.sh`, `tt_xla_hang_repro.py` with `HANG_DRIVE=continuous`/`HANG_SKIP_WARMUP=1`). Open question being tested: whether **concurrent compile + execute** (a new graph shape compiling while other requests run — which is what the first tt-media-server batch does) is the missing ingredient, vs. something specific to tt-media-server's multiprocessing worker/IPC path.
+
+### Recommended next steps for the assignee (updated)
+- **Upstream tt-metal, actionable frame:** `buffer_dispatch::copy_completion_queue_data_into_user_space` (under `FDMeshCommandQueue::read_completion_queue`) blocks forever during a `from_device` readback. Ask whether the fast-dispatch completion queue can drop/lose a completion (or deadlock) when many device→host readbacks are enqueued concurrently.
+- **Reproduce it minimally at the tt-metal level** with the pattern that triggers it: **bursty, overlapping concurrent `enqueue_read`/`from_device`** (many admitted near-simultaneously), ideally with a graph being programmed/compiled at the same time — this matches tt-media-server's `device_worker_dynamic_batch` (`get_many(32)` → burst of `generate()` → keep pulling). Smooth one-at-a-time admission (vLLM-native) does NOT trip it.
+- **Confirm whether concurrent first-compile is required** (cold-start test) — if so, the fix likely lives in the compile/dispatch interleave, not steady-state decode.
+- **Interim (tt-inference-server side):** it is now reproducible on `main`/nightly (all 5 forge models incl. Falcon3-7B); expect nightly forge-LLM runs red until the upstream fix. Capping served concurrency below the trip point is the only local mitigation and is not desirable for production.
 
 ## Symptom
 
