@@ -89,12 +89,12 @@ SessionManager::SessionManager() {
           .createSession =
               [this](std::function<void(const domain::Session&)> onCompletion,
                      std::function<void(std::string_view)> onError,
+                     trantor::EventLoop* eventLoop,
                      std::vector<utils::BlockHashInfo> initialBlockInfos,
                      std::optional<uint32_t> slotIdToCopyFrom) {
                 createSession(std::move(onCompletion), std::move(onError),
-                              nullptr,  // eventLoop handled by caller
-                              std::move(initialBlockInfos), std::nullopt,
-                              slotIdToCopyFrom);
+                              eventLoop, std::move(initialBlockInfos),
+                              std::nullopt, slotIdToCopyFrom);
               },
           .acquireInFlight =
               [this](const std::string& sessionId,
@@ -751,7 +751,7 @@ void SessionManager::getSlot(std::span<const int> promptTokenIds,
                              std::function<void(const std::string&)> onError) {
   // Delegate to PrefixCacheRouter which owns all routing logic
   prefixCacheRouter->getSlot(
-      promptTokenIds, std::move(opts),
+      promptTokenIds, std::move(opts), loop,
       [loop, onResolved](SlotAcquireResult result) {
         loop->runInLoop([onResolved, result = std::move(result)]() mutable {
           onResolved(std::move(result));

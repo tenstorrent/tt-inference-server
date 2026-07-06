@@ -306,6 +306,7 @@ void PrefixCacheRouter::onSessionClosed(const std::string& sessionId,
 
 void PrefixCacheRouter::getSlot(
     std::span<const int> promptTokenIds, GetSlotOptions opts,
+    trantor::EventLoop* eventLoop,
     std::function<void(SlotAcquireResult)> onResolved,
     std::function<void(const std::string&)> onError) {
   // Step 1: Compute block hashes from tokens
@@ -446,7 +447,7 @@ void PrefixCacheRouter::getSlot(
         }
         onError(std::string(errorMessage));
       },
-      {}, slotToCopyFrom);
+      eventLoop, {}, slotToCopyFrom);
 }
 
 }  // namespace tt::services

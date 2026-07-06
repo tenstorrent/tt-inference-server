@@ -18,6 +18,10 @@
 #include "domain/session_manager_structs.hpp"
 #include "utils/conversation_hasher.hpp"
 
+namespace trantor {
+class EventLoop;
+}
+
 namespace tt::services {
 
 struct PrefixCacheAcquireResult {
@@ -76,6 +80,7 @@ struct PrefixCacheRouterCallbacks {
   // Callbacks for getSlot() - session creation and slot management
   std::function<void(std::function<void(const domain::Session&)> onCompletion,
                      std::function<void(std::string_view)> onError,
+                     trantor::EventLoop* eventLoop,
                      std::vector<utils::BlockHashInfo> initialBlockInfos,
                      std::optional<uint32_t> slotIdToCopyFrom)>
       createSession;
@@ -149,6 +154,7 @@ class PrefixCacheRouter {
    * @param onError         Callback for errors (e.g., rate limit).
    */
   void getSlot(std::span<const int> promptTokenIds, GetSlotOptions opts,
+               trantor::EventLoop* eventLoop,
                std::function<void(SlotAcquireResult)> onResolved,
                std::function<void(const std::string&)> onError);
 
