@@ -21,9 +21,9 @@ class Family;
 namespace tt::transport {
 
 /// Coarse lifecycle of the worker process itself. This is the ONLY thing that
-/// drives readiness: a worker is Ready once its own bring-up (engine up, segment
-/// published, all peers discovered) has completed. It deliberately does NOT
-/// track peers' liveness afterwards — see the class doc.
+/// drives readiness: a worker is Ready once its own bring-up (engine up,
+/// segment published, all peers discovered) has completed. It deliberately does
+/// NOT track peers' liveness afterwards — see the class doc.
 enum class WorkerLifecycle : uint8_t {
   Initializing,  ///< Before bring-up completes.
   Ready,         ///< Bring-up succeeded; holding as a live endpoint.
@@ -42,8 +42,8 @@ enum class WorkerLifecycle : uint8_t {
  *   - readiness (isReady / readyz): did THIS worker finish its own bring-up
  *                (engine up, segment published, all peers discovered)? Once
  *                Ready it stays ready until shutdown; a peer dying later does
- *                NOT flip it — that peer's own probe handles that, and migration
- *                to it simply fails fire-and-forget.
+ *                NOT flip it — that peer's own probe handles that, and
+ * migration to it simply fails fire-and-forget.
  *
  * The transfer failure / re-resolve counters are pure observability (graph peer
  * flapping) — they are NOT health state and never gate readiness.

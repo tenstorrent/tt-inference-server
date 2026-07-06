@@ -28,7 +28,8 @@ std::string httpGet(uint16_t port, const std::string& path) {
   EXPECT_EQ(::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr), 1);
   EXPECT_EQ(::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
 
-  const std::string req = "GET " + path + " HTTP/1.1\r\nHost: localhost\r\n\r\n";
+  const std::string req =
+      "GET " + path + " HTTP/1.1\r\nHost: localhost\r\n\r\n";
   EXPECT_EQ(::send(fd, req.data(), req.size(), 0),
             static_cast<ssize_t>(req.size()));
 

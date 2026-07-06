@@ -15,10 +15,11 @@
 #      independent. Masters exchange their KV chunk address table.
 #   4. Prefill workers connect to Kafka (request/ack); decode workers run with
 #      --no-kafka.
-#   5. The global KV layer count (--layer-start/--layer-end) is padded up to the
-#      next power of two (e.g. DeepSeek's 61 -> 64) and divided into one
+#   5. The global KV layer count (--layer-start/--layer-end) is divided into one
 #      contiguous slice per worker — NUM_PREFILL slices across prefill workers,
-#      NUM_DECODE across decode — so each worker owns a distinct, aligned span.
+#      NUM_DECODE across decode. Every worker owns ceil(count/shards) layers
+#      except the last, which takes the remainder (DeepSeek's 61 over 16 decode
+#      => fifteen own 4, the last owns 1). No padding; layer indices are absolute.
 #   6. A watchdog then polls every worker's /healthz and, when one dies or hangs,
 #      relaunches ONLY that worker in place. It re-registers under the same name
 #      and peers re-resolve it on their next request. The watchdog loop is also
@@ -75,8 +76,9 @@ DRY_RUN=0
 POLL_INTERVAL_SEC=5
 RESTART_AFTER=3
 # ssh hardening: fail fast on an unreachable host (never hang a prompt) and drop
-# a silently-dead session within ~60s so a truly gone worker is detected.
-SSH_OPTS="-o ConnectTimeout=5 -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4"
+# a silently-dead session within ~60s so a truly gone worker is detected. An
+# array (not a string) so the flags word-split safely without relying on IFS.
+SSH_OPTS=(-o ConnectTimeout=5 -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 # A restart escalates SIGTERM -> (grace) -> SIGKILL and only relaunches once the
 # health port is confirmed free, so a squatting worker can never wedge recovery.
 SWEEP_GRACE_SEC=5
@@ -95,11 +97,11 @@ Required:
 Options:
   --layer-start N          global model KV layer range start (default ${LAYER_START})
   --layer-end M            global range end (exclusive), the model's REAL layer
-                           count. The count is padded up to the next power of two
-                           (e.g. DeepSeek's 61 -> 64) then divided into
-                           NUM_PREFILL contiguous slices for prefill and
-                           NUM_DECODE for decode, one per worker in index order
-                           (0=unset, default ${LAYER_END}, every worker owns all)
+                           count. Divided into NUM_PREFILL contiguous slices for
+                           prefill and NUM_DECODE for decode: each worker owns
+                           ceil(count/shards) layers except the last, which takes
+                           the remainder (61 over 16 decode => fifteen own 4, last
+                           owns 1). No padding (0=unset, default ${LAYER_END})
   --build-dir PATH         cpp_server build dir (default ${BUILD_DIR})
   --worker-bin PATH        worker binary (default <build-dir>/bringup_mooncake_worker)
   --discovery-port PORT    discovery service port (default ${DISCOVERY_PORT})
@@ -196,7 +198,7 @@ startDiscoveryService() {
     HTTP_PORT="${DISCOVERY_PORT}" BIND_HOST="0.0.0.0" \
       "${META_SERVER}" >"${META_LOG}" 2>&1 &
   else
-    ssh ${SSH_OPTS} "${DISCOVERY_HOST}" \
+    ssh "${SSH_OPTS[@]}" "${DISCOVERY_HOST}" \
       "HTTP_PORT='${DISCOVERY_PORT}' BIND_HOST='0.0.0.0' bash '${META_SERVER}'" \
       >"${META_LOG}" 2>&1 &
   fi
@@ -213,13 +215,19 @@ startDiscoveryService() {
 
 # Emit the shell program a sweep runs on a host: SIGTERM the worker, wait up to
 # `grace` seconds for a clean exit, SIGKILL any survivor, then FAIL loudly unless
-# both the process is gone and the health port is free. Fed to `bash -s` on stdin
-# (local or over ssh) so the pattern never lands in a process's argv — that both
-# avoids self-matching the sweeper and keeps quoting sane.
+# both the process is gone and the health port is free. When a worker name ($3)
+# is given the match is scoped to exactly that worker (anchored so decode-1 never
+# matches decode-15), so an unrelated deploy or a co-located worker is never hit;
+# with no name it falls back to matching any migration worker on the host. Fed to
+# `bash -s` on stdin (local or over ssh) so the pattern never lands in a
+# process's argv — that both avoids self-matching the sweeper and keeps quoting
+# sane.
 sweepScript() {
-  local port="$1" grace="$2"
+  local port="$1" grace="$2" name="${3:-}"
+  local pat="bringup_mooncake_worker --metadata"
+  [[ -n "${name}" ]] && pat="bringup_mooncake_worker.*--name ${name}([[:space:]]|\$)"
   cat <<EOF
-pat='bringup_mooncake_worker --metadata'
+pat='${pat}'
 pkill -TERM -f "\$pat" 2>/dev/null || true
 for _ in \$(seq 1 ${grace}); do pgrep -f "\$pat" >/dev/null 2>&1 || break; sleep 1; done
 pkill -KILL -f "\$pat" 2>/dev/null || true
@@ -235,16 +243,17 @@ EOF
 }
 
 # Kill the migration worker on a host and BLOCK until its process is gone and the
-# health port is free. Returns non-zero if the port cannot be freed, so the caller
-# refuses to relaunch into a squatted port (the churn bug). One worker per host,
-# so matching on the binary is unambiguous.
+# health port is free. Pass the worker name ($2) to scope the kill to exactly
+# that worker; omit it to match any migration worker on the host. Returns
+# non-zero if the port cannot be freed, so the caller refuses to relaunch into a
+# squatted port (the churn bug).
 sweepWorkerOnHost() {
-  local host="$1" script
-  script="$(sweepScript "${HEALTH_PORT}" "${SWEEP_GRACE_SEC}")"
+  local host="$1" name="${2:-}" script
+  script="$(sweepScript "${HEALTH_PORT}" "${SWEEP_GRACE_SEC}" "${name}")"
   if isLocalHost "${host}"; then
     bash -s <<<"${script}"
   else
-    ssh ${SSH_OPTS} "${host}" bash -s <<<"${script}"
+    ssh "${SSH_OPTS[@]}" "${host}" bash -s <<<"${script}"
   fi
 }
 
@@ -253,7 +262,9 @@ sweepWorkerOnHost() {
 # key not allowed" (TransferEngine::init fails). Clear it so the relaunch
 # registers cleanly. Harmless on a first launch (the key won't exist yet).
 clearRpcMeta() {
-  curl -sS -X DELETE "${META_URI}?key=mooncake/rpc_meta/$1" >/dev/null 2>&1 || true
+  curl -sS -X DELETE "${META_URI}?key=mooncake/rpc_meta/$1" >/dev/null 2>&1 || \
+    echo "[deploy] WARN: could not clear rpc_meta for '$1' (discovery unreachable?);" \
+         "launch may fail on a duplicate rpc_meta key" >&2
 }
 
 # Register one worker slot (role, role-local index, host) in the parallel arrays.
@@ -300,7 +311,7 @@ launchWorkerSlot() {
   if isLocalHost "${host}"; then
     bash -c "${cmd}" >"${log}" 2>&1 &
   else
-    ssh ${SSH_OPTS} "${host}" "${cmd}" >"${log}" 2>&1 &
+    ssh "${SSH_OPTS[@]}" "${host}" "${cmd}" >"${log}" 2>&1 &
   fi
   WK_PID[$s]=$!
   WK_FAILS[$s]=0
@@ -358,7 +369,7 @@ superviseLoop() {
         # worker fails to bind, and the "restart" just churns launchers. If the
         # sweep can't free it, keep WK_FAILS so the next cycle retries the sweep.
         [[ -n "${WK_PID[$s]}" ]] && kill "${WK_PID[$s]}" 2>/dev/null
-        if sweepWorkerOnHost "${WK_HOST[$s]}"; then
+        if sweepWorkerOnHost "${WK_HOST[$s]}" "${WK_ROLE[$s]}-${WK_INDEX[$s]}"; then
           launchWorkerSlot "${s}"
         else
           echo "[deploy] ERROR: could not free ${WK_HOST[$s]}:${HEALTH_PORT}; not relaunching (will retry next cycle)" >&2
@@ -377,15 +388,21 @@ cleanup() {
     [[ -n "${WK_PID[$s]:-}" ]] && kill "${WK_PID[$s]}" 2>/dev/null
   done
   [[ -n "${META_PID}" ]] && kill "${META_PID}" 2>/dev/null
-  # Sweep straggler workers on every host in parallel (each blocks up to the
-  # grace period; serial across 17 hosts would make teardown crawl).
-  local all="${PREFILL_HOSTS},${DECODE_HOSTS}"
-  IFS=',' read -ra hosts <<<"${all}"
-  for host in "${hosts[@]}"; do
-    [[ -z "${host}" ]] && continue
-    sweepWorkerOnHost "${host}" >/dev/null 2>&1 &
+  # Sweep our workers by name, in parallel (each blocks up to the grace period;
+  # serial across 17 hosts would make teardown crawl). Keep each background PID
+  # so we can wait on it individually and surface a failed sweep instead of
+  # swallowing it — a straggler left holding :HEALTH_PORT matters next deploy.
+  local -a sweepPids=() sweepLabels=()
+  for (( s = 0; s < ${#WK_ROLE[@]}; s++ )); do
+    sweepWorkerOnHost "${WK_HOST[$s]}" "${WK_ROLE[$s]}-${WK_INDEX[$s]}" >/dev/null 2>&1 &
+    sweepPids+=("$!")
+    sweepLabels+=("${WK_ROLE[$s]}-${WK_INDEX[$s]}@${WK_HOST[$s]}")
   done
-  wait
+  local i
+  for (( i = 0; i < ${#sweepPids[@]}; i++ )); do
+    wait "${sweepPids[$i]}" || \
+      echo "[deploy] WARN: sweep of ${sweepLabels[$i]} failed; a straggler may still hold :${HEALTH_PORT}" >&2
+  done
 }
 
 main() {

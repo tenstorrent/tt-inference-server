@@ -60,8 +60,9 @@ WorkerHealth::WorkerHealth(std::string workerName)
              .Add(label);
   ready_ = &prometheus::BuildGauge()
                 .Name("tt_migration_worker_ready")
-                .Help("1 if the worker finished its own bring-up (readiness), "
-                      "else 0")
+                .Help(
+                    "1 if the worker finished its own bring-up (readiness), "
+                    "else 0")
                 .Register(*registry_)
                 .Add(label);
   transferFailures_ =
@@ -83,7 +84,9 @@ WorkerHealth::WorkerHealth(std::string workerName)
            .Register(*registry_)
            .Add(label);
 
-  std::lock_guard<std::mutex> lock(mutex_);
+  // No lock: during construction the object is not yet published to any other
+  // thread (the health server is created later, from the fully-built worker),
+  // so this initial gauge sync is single-threaded by construction.
   refreshGaugesLocked();
 }
 
