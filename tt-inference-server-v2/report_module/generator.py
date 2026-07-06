@@ -22,6 +22,15 @@ from report_module import renderers
 from report_module.acceptance_criteria import ACCEPTANCE_EXPORT_KEYS
 from report_module.report_file_saver import ReportFileSaver
 from report_module.schema import Block, ReportSchema, SchemaLike
+from report_module.status import TestStatus
+
+_STATUS_GLYPHS = {
+    TestStatus.PASS: "✅",
+    TestStatus.FAIL: "❌",
+    TestStatus.ERROR: "❌",
+    TestStatus.SKIP: "⏭️",
+    TestStatus.NA: "🟨",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +201,31 @@ def _spec_test_runs(block: Block) -> List[Mapping[str, Any]]:
     return []
 
 
+def _run_status(run: Mapping[str, Any]) -> TestStatus:
+    """Resolve a run's :class:`TestStatus`, falling back to legacy fields."""
+    resolved = TestStatus.from_value(run.get("status"))
+    if resolved is not None:
+        return resolved
+    return TestStatus.from_legacy(
+        run.get("success"), skipped=bool(run.get("skipped"))
+    )
+
+
+def _run_description(run: Mapping[str, Any], status: TestStatus) -> str:
+    """Description column: append the reason/error for non-pass outcomes."""
+    description = str(run.get("description") or "")
+    if status is TestStatus.SKIP or status is TestStatus.NA:
+        reason = str(run.get("reason") or "")
+        if reason:
+            return f"{description} — {status.value.upper()}: {reason}".lstrip(" —")
+    if status is TestStatus.ERROR:
+        error = run.get("error")
+        message = error.get("message") if isinstance(error, Mapping) else None
+        if message:
+            return f"{description} — ERROR: {message}".lstrip(" —")
+    return description
+
+
 def _build_spec_test_summary_markdown(
     runs: Sequence[Mapping[str, Any]], generated_at: str
 ) -> str:
@@ -200,19 +234,24 @@ def _build_spec_test_summary_markdown(
         return ""
 
     total = len(runs)
-    passed = sum(1 for r in runs if r.get("success") is True)
-    failed = sum(1 for r in runs if r.get("success") is False)
-    skipped = 0
+    statuses = [_run_status(run) for run in runs]
+    passed = sum(1 for s in statuses if s is TestStatus.PASS)
+    failed = sum(1 for s in statuses if s.is_blocking)
+    skipped = sum(1 for s in statuses if s is TestStatus.SKIP)
+    na = sum(1 for s in statuses if s is TestStatus.NA)
     attempted = passed + failed
     total_duration = sum(_coerce_float(r.get("elapsed_seconds")) for r in runs)
     total_attempts = sum(_coerce_int(r.get("attempts")) for r in runs)
-    success_rate = (passed / total * 100.0) if total else 0.0
+    # Success rate excludes non-blocking skips/NA — they weren't graded.
+    gradable = passed + failed
+    success_rate = (passed / gradable * 100.0) if gradable else 0.0
 
     summary_rows = [
         ("Total Tests", str(total)),
         ("Passed", str(passed)),
         ("Failed", str(failed)),
         ("Skipped", str(skipped)),
+        ("NA", str(na)),
         ("Attempted", str(attempted)),
         ("Success Rate", f"{success_rate:.1f}%"),
         ("Total Duration", f"{total_duration:.2f}s"),
@@ -230,13 +269,13 @@ def _build_spec_test_summary_markdown(
     )
     result_rows = [
         "| {status} | {name} | {duration:.2f}s | {attempts} | {description} |".format(
-            status="✅" if run.get("success") is True else "❌",
+            status=_STATUS_GLYPHS.get(status, "❌"),
             name=str(run.get("test_name") or ""),
             duration=_coerce_float(run.get("elapsed_seconds")),
             attempts=_coerce_int(run.get("attempts")),
-            description=str(run.get("description") or ""),
+            description=_run_description(run, status),
         )
-        for run in runs
+        for run, status in zip(runs, statuses)
     ]
     results_table = "\n".join([result_header] + result_rows)
 

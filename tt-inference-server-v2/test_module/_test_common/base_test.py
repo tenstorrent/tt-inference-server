@@ -19,7 +19,9 @@ from report_module.schema import Block
 from utils.url_helpers import DEFAULT_DEPLOY_URL, build_base_url
 
 from .blockify import block_id
+from .exceptions import NotApplicable, SkipTest, TestOutcomeSignal
 from .hardware_requirements import HardwareRequirement
+from .report_types import TestStatus
 from .test_classes import TestConfig
 
 if TYPE_CHECKING:
@@ -208,6 +210,7 @@ class BaseTest(ABC):
         logger.warning("⏭  Skipping %s — %s", type(self).__name__, reason)
         return {
             "success": False,
+            "status": TestStatus.SKIP.value,
             "skipped": True,
             "reason": reason,
             "hardware_requirement": self.HARDWARE_REQUIREMENT.value,
@@ -251,6 +254,7 @@ class BaseTest(ABC):
 
         skip_data = self._assert_hardware_ready()
         if skip_data is not None:
+            skip_data.setdefault("status", TestStatus.SKIP.value)
             skip_data.setdefault("attempts", 0)
             skip_data.setdefault("logs", list(self.logs))
             skip_data.setdefault("elapsed_seconds", time.monotonic() - run_started)
@@ -289,6 +293,12 @@ class BaseTest(ABC):
                     data: Dict[str, Any] = {**result}
                 else:
                     data = {"result": result}
+                # A test may self-declare NA/SKIP in its result dict; otherwise
+                # derive the status from the boolean success it reported.
+                status = TestStatus.from_value(data.get("status")) or (
+                    TestStatus.PASS if success else TestStatus.FAIL
+                )
+                data["status"] = status.value
                 data["success"] = success
                 data["attempts"] = attempts_used
                 data["logs"] = list(self.logs)
@@ -315,6 +325,33 @@ class BaseTest(ABC):
                         "type": "TimeoutError",
                         "message": error_msg,
                         "exception": str(e),
+                    }
+                )
+
+            except TestOutcomeSignal as e:
+                # Intentional non-error outcome: do not retry, do not fail.
+                status = (
+                    TestStatus.SKIP
+                    if isinstance(e, SkipTest)
+                    else TestStatus.NA
+                )
+                logger.info(
+                    "⏭  %s -> %s: %s",
+                    type(self).__name__,
+                    status.value,
+                    e.reason,
+                )
+                return self._block(
+                    {
+                        "success": False,
+                        "status": status.value,
+                        "skipped": isinstance(e, SkipTest),
+                        "reason": e.reason,
+                        "attempts": attempts_used,
+                        "logs": list(self.logs),
+                        "elapsed_seconds": time.monotonic() - run_started,
+                        "test_name": type(self).__name__,
+                        "description": self.description,
                     }
                 )
 
@@ -383,9 +420,12 @@ class BaseTest(ABC):
                 "message": "Tests failed after all retry attempts",
             }
         )
+        # Reaching here means every attempt raised or timed out — the test
+        # never ran to a clean verdict, so this is an ERROR, not a FAIL.
         failure_block = self._block(
             {
                 "success": False,
+                "status": TestStatus.ERROR.value,
                 "attempts": attempts_used,
                 "logs": list(self.logs),
                 "elapsed_seconds": time.monotonic() - run_started,

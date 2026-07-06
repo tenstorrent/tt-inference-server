@@ -26,7 +26,14 @@ from typing import Callable, List, Optional, Tuple
 from report_module.schema import Block
 from workflow_module import accept_blocks
 
-from ._test_common import TestConfig, sweep_envelope
+from ._test_common import (
+    SkipTest,
+    TestConfig,
+    TestStatus,
+    block_id,
+    sweep_envelope,
+)
+from ._test_common.exceptions import TestOutcomeSignal
 from .benchmark_tests import (
     run_audio_benchmark,
     run_cnn_benchmark,
@@ -67,6 +74,44 @@ BENCHMARK_DISPATCH: dict[str, MediaRunner] = {
     "TEXT_TO_SPEECH": run_tts_benchmark,
     "VIDEO": run_video_benchmark,
 }
+
+
+_MEDIA_TASK_BLOCK_KIND = {
+    MediaTaskType.EVALUATION: "evals",
+    MediaTaskType.BENCHMARK: "benchmarks",
+}
+
+
+def _media_outcome_block(
+    ctx: MediaContext,
+    task_type: MediaTaskType,
+    status: TestStatus,
+    reason: Optional[str] = None,
+    exc: Optional[Exception] = None,
+) -> Block:
+    """Build an evals/benchmarks Block for a non-pass, blockless outcome.
+
+    Lets a media runner that was skipped (``SkipTest``), was not gradable
+    (``NotApplicable``), or crashed produce a *visible* Block carrying an
+    explicit :class:`TestStatus` — instead of vanishing behind a bare
+    ``(1, None)`` return value.
+    """
+    kind = _MEDIA_TASK_BLOCK_KIND.get(task_type, "spec_tests")
+    data: dict = {
+        "success": False,
+        "status": status.value,
+        "test_name": ctx.model_spec.model_name,
+    }
+    if reason:
+        data["reason"] = reason
+    if exc is not None:
+        data["error"] = {"type": type(exc).__name__, "message": str(exc)}
+    return Block(
+        kind=kind,
+        id=block_id(ctx) or None,
+        title=kind.replace("_", " ").title(),
+        data=data,
+    )
 
 
 def run_media_task(
@@ -112,9 +157,19 @@ def run_media_task(
 
     try:
         block = runner(ctx)
+    except TestOutcomeSignal as e:
+        # Intentional non-error outcome (skip / not-applicable): emit a
+        # visible, non-blocking Block and keep the task green.
+        status = TestStatus.SKIP if isinstance(e, SkipTest) else TestStatus.NA
+        logger.info("⏭  %s -> %s: %s", task_type.value, status.value, e.reason)
+        block = _media_outcome_block(ctx, task_type, status, reason=e.reason)
+        accept_blocks([block], envelope=sweep_envelope(ctx))
+        return 0, block
     except Exception as e:
         logger.exception("%s runner raised: %s", task_type.value, e)
-        return 1, None
+        block = _media_outcome_block(ctx, task_type, TestStatus.ERROR, exc=e)
+        accept_blocks([block], envelope=sweep_envelope(ctx))
+        return 1, block
 
     accept_blocks([block], envelope=sweep_envelope(ctx))
     return 0, block
@@ -155,6 +210,41 @@ def _maybe_cap_num_prompts(case: dict, cap: Optional[int]) -> dict:
         cap,
     )
     return new_case
+
+
+def _error_block(case: dict, ctx: MediaContext, exc: Exception) -> Block:
+    """Build a spec_tests Block for a test that raised before producing one.
+
+    Without this, a class that fails to import/instantiate/run would bump the
+    failure counter but emit no Block, making the crash invisible in the
+    report while still failing the workflow.
+    """
+    return Block(
+        kind="spec_tests",
+        id=block_id(ctx) or None,
+        title=str(case.get("name") or "spec_test").replace("_", " ").title(),
+        task_type=None,
+        targets=dict(case.get("targets") or {}),
+        data={
+            "success": False,
+            "status": TestStatus.ERROR.value,
+            "attempts": 0,
+            "test_name": str(case.get("name") or ""),
+            "description": str(case.get("description") or ""),
+            "error": {"type": type(exc).__name__, "message": str(exc)},
+        },
+    )
+
+
+def _block_status(block: Block) -> TestStatus:
+    """Resolve a Block's :class:`TestStatus`, falling back to legacy fields."""
+    data = block.data if isinstance(block.data, dict) else {}
+    resolved = TestStatus.from_value(data.get("status"))
+    if resolved is not None:
+        return resolved
+    return TestStatus.from_legacy(
+        data.get("success"), skipped=bool(data.get("skipped"))
+    )
 
 
 def _instantiate_spec_test(case: dict, ctx: MediaContext):
@@ -233,19 +323,21 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
                 block = test.run_tests()
             except Exception as e:
                 logger.exception("  ❌ %s raised: %s", class_name, e)
+                blocks.append(_error_block(patched, ctx, e))
                 failures += 1
                 continue
             blocks.append(block)
-            if (
-                not isinstance(block.data, dict)
-                or block.data.get("success") is not True
-            ):
+            status = _block_status(block)
+            if status.is_blocking:
                 logger.error(
-                    "  ❌ %s did not report success=True (data=%r)",
+                    "  ❌ %s -> %s (data=%r)",
                     class_name,
+                    status.value,
                     block.data,
                 )
                 failures += 1
+            elif status in (TestStatus.SKIP, TestStatus.NA):
+                logger.info("  ⏭  %s -> %s", class_name, status.value)
 
     if not blocks:
         return 1, None
