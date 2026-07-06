@@ -113,7 +113,7 @@ uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
   std::string err;
   if (requestProducer) {
     if (layerToPartition) {
-      const int32_t partition = layerToPartition(request.layer_id);
+      const int32_t partition = layerToPartition(request.layer_begin);
       sent = partition >= 0 ? requestProducer->send(payload, partition, &err)
                             : requestProducer->send(payload, &err);
     } else {

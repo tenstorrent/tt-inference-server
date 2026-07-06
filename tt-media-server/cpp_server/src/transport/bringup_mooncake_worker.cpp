@@ -91,7 +91,8 @@ struct WorkerConfig {
   int discovery_timeout_sec = K_DEFAULT_DISCOVERY_TIMEOUT_SEC;
   TransportProtocol protocol = TransportProtocol::TCP;
   // KV layer span [layer_start, layer_end); 0 == unset. uint32_t matches
-  // MigrationRequestMessage::layer_id so no truncation when mapped to config.
+  // MigrationRequestMessage's layer_begin/layer_end so no truncation when
+  // mapped to config.
   uint32_t layer_start = 0;
   uint32_t layer_end = 0;
   // When false (--no-kafka), the worker brings Mooncake up and then idles
@@ -381,19 +382,24 @@ void handleMigrationRequest(const std::string& raw,
   }
 
   // A single request is broadcast to every worker in the role (one consumer
-  // group each); only the worker owning this layer acts on it. Others skip
-  // silently — no ack — so a sharded fleet produces exactly one ack per layer.
-  if (!worker.ownsLayer(parsed->layer_id)) {
-    TT_LOG_DEBUG("[bringup] skipping migration_id={}: layer {} not owned",
-                 parsed->migration_id, parsed->layer_id);
+  // group each); only the worker owning this layer range acts on it. Others
+  // skip silently — no ack — so a sharded fleet produces exactly one ack per
+  // range. Migration ranges are assumed to never cross worker boundaries, so
+  // checking layer_begin is sufficient to identify the owner.
+  if (!worker.ownsLayer(parsed->layer_begin)) {
+    TT_LOG_DEBUG(
+        "[bringup] skipping migration_id={}: layer range [{},{}) not owned",
+        parsed->migration_id, parsed->layer_begin, parsed->layer_end);
     return;
   }
 
   TT_LOG_INFO(
-      "[bringup] migration_id={} src_slot={} dst_slot={} layer_id={} "
-      "positions=[{}..{}]",
+      "[bringup] migration_id={} src_slot={} dst_slot={} "
+      "layers=[{},{}) src_positions=[{},{}) dst_positions=[{},{})",
       parsed->migration_id, parsed->src_slot, parsed->dst_slot,
-      parsed->layer_id, parsed->position_start, parsed->position_end);
+      parsed->layer_begin, parsed->layer_end,
+      parsed->src_position_begin, parsed->src_position_end,
+      parsed->dst_position_begin, parsed->dst_position_end);
 
   const tt::messaging::MigrationResponseMessage ack{
       .migration_id = parsed->migration_id,
