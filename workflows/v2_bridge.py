@@ -43,6 +43,7 @@ _V2_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
 
 _V2_EVAL_VENV_BY_MODEL_TYPE = {
     ModelType.AUDIO: WorkflowVenvType.EVALS_AUDIO,
+    ModelType.EMBEDDING: WorkflowVenvType.EVALS_EMBEDDING,
 }
 
 # Only models actually validated end-to-end against v2's engine are routed here.
@@ -58,6 +59,9 @@ _V2_ROUTED_MODELS = frozenset(
         "whisper-large-v3",
         "distil-large-v3",
         "Z-Image-Turbo",
+        "bge-large-en-v1.5",
+        "Qwen3-Embedding-4B",
+        "Qwen3-Embedding-8B",
     }
 )
 
