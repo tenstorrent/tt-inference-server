@@ -639,12 +639,16 @@ class Scheduler:
         self.logger.info("Restarting queues after reset")
 
         self._setup_initial_variables()
+        # _setup_initial_variables() clears workers_to_open; recompute it (as __init__
+        # does) so there are actually workers to (re)start after the reset.
+        self.worker_count = self._calculate_worker_count()
         self._start_queues()
 
         self.logger.info("Starting new workers after reset")
 
-        # Start new workers
-        self.start_workers()
+        # Start new workers (start_workers is a coroutine; must be awaited or the
+        # new workers are never actually spawned -> model stays not-ready forever).
+        await self.start_workers()
 
         self.logger.info("All workers restarted successfully")
 

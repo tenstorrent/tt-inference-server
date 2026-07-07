@@ -23,6 +23,9 @@ from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerateRequest
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
+from models.tt_dit.pipelines.flux1.pipeline_flux1_kontext import (
+    Flux1KontextPipeline,
+)
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
 from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
 from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
@@ -47,6 +50,7 @@ dit_runner_log_map = {
     ModelRunners.TT_SD3_5.value: "SD35",
     ModelRunners.TT_FLUX_1_DEV.value: "FLUX.1-dev",
     ModelRunners.TT_FLUX_1_SCHNELL.value: "FLUX.1-schnell",
+    ModelRunners.TT_FLUX_1_KONTEXT_DEV.value: "FLUX.1-Kontext-dev",
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
@@ -243,6 +247,111 @@ class TTFlux1Runner(TTDiTRunner):
             "l1_small_size": 32768,
             "trace_region_size": self.settings.trace_region_size,
         }
+
+
+# FLUX.1-Kontext-dev: instruction-based image editing (reference image + prompt).
+# Shares the FLUX transformer/VAE/encoders with TTFlux1Runner but takes an input
+# image, so run() is overridden to feed it into the pipeline. No mask is used
+# (unlike SDXL edit/inpainting) — requests arrive as ImageToImageRequest.
+class TTFluxKontextRunner(TTDiTRunner):
+    _KONTEXT_GUIDANCE_SCALE = 3.5  # BFL-recommended default for Kontext-dev
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+
+    @staticmethod
+    def _active_lora():
+        """Read the active LoRA (path, scale) from the shared state file, if any.
+        Written by the /v1/lora/apply endpoint; read here so a worker restart
+        (deep_reset) rebuilds the pipeline with the LoRA fused in."""
+        import json
+        import os
+
+        state = os.path.join(os.environ.get("LORA_DIR", "/loras"), "active_lora.json")
+        try:
+            if os.path.isfile(state):
+                d = json.load(open(state))
+                p = d.get("path")
+                if p and os.path.isfile(p):
+                    return p, float(d.get("scale", 1.0))
+        except Exception:
+            pass
+        return None, 1.0
+
+    def create_pipeline(self):
+        try:
+            lora_path, lora_scale = self._active_lora()
+            if lora_path:
+                self.logger.info(
+                    f"Device {self.device_id}: building with LoRA {lora_path} (scale={lora_scale})"
+                )
+            return Flux1KontextPipeline.create_pipeline(
+                checkpoint_name=self.settings.model_weights_path,
+                mesh_device=self.ttnn_device,
+                lora_path=lora_path,
+                lora_scale=lora_scale,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Flux1-Kontext pipeline creation failed",
+                e,
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        return {
+            "l1_small_size": 32768,
+            "trace_region_size": self.settings.trace_region_size,
+        }
+
+    def _decode_image(self, image_b64: str, width: int, height: int) -> Image.Image:
+        # strip an optional data-URL prefix (e.g. "data:image/png;base64,")
+        if "," in image_b64 and image_b64.strip().startswith("data:"):
+            image_b64 = image_b64.split(",", 1)[1]
+        raw = base64.b64decode(image_b64)
+        return Image.open(io.BytesIO(raw)).convert("RGB").resize((width, height))
+
+    def run(self, requests: list[ImageGenerateRequest]):
+        request = requests[0]
+        # Per-request resolution (falls back to the pipeline's configured size;
+        # the pipeline snaps to the nearest Kontext preferred bucket).
+        width = getattr(request, "width", None) or getattr(
+            self.pipeline, "_width", 1024
+        )
+        height = getattr(request, "height", None) or getattr(
+            self.pipeline, "_height", 1024
+        )
+
+        # Edit mode = a reference image is supplied; otherwise text-to-image.
+        image_b64 = getattr(request, "image", None)
+        image = self._decode_image(image_b64, width, height) if image_b64 else None
+        mode = "edit" if image is not None else "generate"
+
+        # NOTE: JP->EN translation (when translate=True) is applied in the API
+        # layer (open_ai_api/image.py) before the request reaches the worker, so
+        # request.prompt is already English here.
+        prompt = request.prompt
+
+        self.logger.info(
+            f"Device {self.device_id}: Kontext {mode} inference "
+            f"({width}x{height}, {request.num_inference_steps} steps)"
+        )
+        images = self.pipeline(
+            image=image,
+            width=width,
+            height=height,
+            prompts=[prompt],
+            num_inference_steps=request.num_inference_steps,
+            guidance_scale=self._KONTEXT_GUIDANCE_SCALE,  # Kontext default (ignore SDXL 5.0 default)
+            seed=int(request.seed or 0),
+            # Siblings trace for throughput; the Kontext path is validated untraced,
+            # so start conservative.
+            traced=False,
+        )
+        self.logger.debug(f"Device {self.device_id}: Kontext inference completed")
+        return images
 
 
 class TTMotifImage6BPreviewRunner(TTDiTRunner):
