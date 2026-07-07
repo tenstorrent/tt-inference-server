@@ -29,9 +29,10 @@ RemoteKVManagerImpl::RemoteKVManagerImpl(
     std::unique_ptr<tt::messaging::IKafkaProducer> requestProducer,
     std::unique_ptr<tt::messaging::IKafkaConsumer> ackConsumer,
     std::chrono::milliseconds timeout, std::chrono::milliseconds sweepInterval,
-    int drainPollMs)
+    int drainPollMs, LayerToPartition layerToPartition)
     : requestProducer(std::move(requestProducer)),
       ackConsumer(std::move(ackConsumer)),
+      layerToPartition(std::move(layerToPartition)),
       timeout(timeout),
       sweepInterval(sweepInterval),
       drainPollMs(drainPollMs) {
@@ -99,16 +100,25 @@ uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
       .migration_id = id,
       .src_slot = request.src_slot,
       .dst_slot = request.dst_slot,
-      .layer_id = request.layer_id,
-      .position_start = request.position_start,
-      .position_end = request.position_end,
+      .layer_begin = request.layer_begin,
+      .layer_end = request.layer_end,
+      .src_position_begin = request.src_position_begin,
+      .src_position_end = request.src_position_end,
+      .dst_position_begin = request.dst_position_begin,
+      .dst_position_end = request.dst_position_end,
   };
   const std::string payload = tt::messaging::serialize(msg);
 
   bool sent = false;
   std::string err;
   if (requestProducer) {
-    sent = requestProducer->send(payload, &err);
+    if (layerToPartition) {
+      const int32_t partition = layerToPartition(request.layer_begin);
+      sent = partition >= 0 ? requestProducer->send(payload, partition, &err)
+                            : requestProducer->send(payload, &err);
+    } else {
+      sent = requestProducer->send(payload, &err);
+    }
   } else {
     err = "no producer";
   }
@@ -134,10 +144,11 @@ uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
 }
 
 /**
- * Method getStatus is used to get the status of a migration for given
+ * Method getMigrationStatus is used to get the status of a migration for given
  * migrationId.
  */
-MigrationStatus RemoteKVManagerImpl::getStatus(uint64_t migrationId) const {
+MigrationStatus RemoteKVManagerImpl::getMigrationStatus(
+    uint64_t migrationId) const {
   std::lock_guard<std::mutex> lock(mtx);
   auto it = migrations.find(migrationId);
   if (it == migrations.end()) {

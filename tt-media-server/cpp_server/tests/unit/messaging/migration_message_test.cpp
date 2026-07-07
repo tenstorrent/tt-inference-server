@@ -36,9 +36,12 @@ MigrationRequestMessage makeRequest() {
       .migration_id = 42,
       .src_slot = 1,
       .dst_slot = 2,
-      .layer_id = 7,
-      .position_start = 100,
-      .position_end = 200,
+      .layer_begin = 0,
+      .layer_end = 32,
+      .src_position_begin = 100,
+      .src_position_end = 200,
+      .dst_position_begin = 100,
+      .dst_position_end = 200,
   };
 }
 
@@ -60,9 +63,12 @@ TEST(MigrationRequestMessageWire, RoundTripPreservesAllFields) {
   EXPECT_EQ(out->migration_id, in.migration_id);
   EXPECT_EQ(out->src_slot, in.src_slot);
   EXPECT_EQ(out->dst_slot, in.dst_slot);
-  EXPECT_EQ(out->layer_id, in.layer_id);
-  EXPECT_EQ(out->position_start, in.position_start);
-  EXPECT_EQ(out->position_end, in.position_end);
+  EXPECT_EQ(out->layer_begin, in.layer_begin);
+  EXPECT_EQ(out->layer_end, in.layer_end);
+  EXPECT_EQ(out->src_position_begin, in.src_position_begin);
+  EXPECT_EQ(out->src_position_end, in.src_position_end);
+  EXPECT_EQ(out->dst_position_begin, in.dst_position_begin);
+  EXPECT_EQ(out->dst_position_end, in.dst_position_end);
 }
 
 TEST(MigrationRequestMessageWire, SerializeEmitsAllExpectedFields) {
@@ -76,10 +82,13 @@ TEST(MigrationRequestMessageWire, SerializeEmitsAllExpectedFields) {
   EXPECT_TRUE(root.isMember("migration_id"));
   EXPECT_TRUE(root.isMember("src_slot"));
   EXPECT_TRUE(root.isMember("dst_slot"));
-  EXPECT_TRUE(root.isMember("layer_id"));
-  EXPECT_TRUE(root.isMember("position_start"));
-  EXPECT_TRUE(root.isMember("position_end"));
-  EXPECT_EQ(root.size(), 6u);
+  EXPECT_TRUE(root.isMember("layer_begin"));
+  EXPECT_TRUE(root.isMember("layer_end"));
+  EXPECT_TRUE(root.isMember("src_position_begin"));
+  EXPECT_TRUE(root.isMember("src_position_end"));
+  EXPECT_TRUE(root.isMember("dst_position_begin"));
+  EXPECT_TRUE(root.isMember("dst_position_end"));
+  EXPECT_EQ(root.size(), 9u);
 }
 
 TEST(MigrationRequestMessageWire, HandlesMaxUint64MigrationId) {
@@ -97,17 +106,23 @@ TEST(MigrationRequestMessageWire, HandlesMaxUint32Slots) {
   MigrationRequestMessage in = makeRequest();
   in.src_slot = std::numeric_limits<uint32_t>::max();
   in.dst_slot = std::numeric_limits<uint32_t>::max();
-  in.layer_id = std::numeric_limits<uint32_t>::max();
-  in.position_start = std::numeric_limits<uint32_t>::max();
-  in.position_end = std::numeric_limits<uint32_t>::max();
+  in.layer_begin = std::numeric_limits<uint32_t>::max();
+  in.layer_end = std::numeric_limits<uint32_t>::max();
+  in.src_position_begin = std::numeric_limits<uint32_t>::max();
+  in.src_position_end = std::numeric_limits<uint32_t>::max();
+  in.dst_position_begin = std::numeric_limits<uint32_t>::max();
+  in.dst_position_end = std::numeric_limits<uint32_t>::max();
 
   const auto out = parseMigrationRequest(serialize(in));
   ASSERT_TRUE(out.has_value());
   EXPECT_EQ(out->src_slot, std::numeric_limits<uint32_t>::max());
   EXPECT_EQ(out->dst_slot, std::numeric_limits<uint32_t>::max());
-  EXPECT_EQ(out->layer_id, std::numeric_limits<uint32_t>::max());
-  EXPECT_EQ(out->position_start, std::numeric_limits<uint32_t>::max());
-  EXPECT_EQ(out->position_end, std::numeric_limits<uint32_t>::max());
+  EXPECT_EQ(out->layer_begin, std::numeric_limits<uint32_t>::max());
+  EXPECT_EQ(out->layer_end, std::numeric_limits<uint32_t>::max());
+  EXPECT_EQ(out->src_position_begin, std::numeric_limits<uint32_t>::max());
+  EXPECT_EQ(out->src_position_end, std::numeric_limits<uint32_t>::max());
+  EXPECT_EQ(out->dst_position_begin, std::numeric_limits<uint32_t>::max());
+  EXPECT_EQ(out->dst_position_end, std::numeric_limits<uint32_t>::max());
 }
 
 TEST(MigrationRequestMessageParse, RejectsMalformedJson) {
@@ -118,15 +133,20 @@ TEST(MigrationRequestMessageParse, RejectsMalformedJson) {
 
 TEST(MigrationRequestMessageParse, RejectsMissingRequiredField) {
   // Every required field, dropped one at a time.
-  for (const char* dropped : {"migration_id", "src_slot", "dst_slot",
-                              "layer_id", "position_start", "position_end"}) {
+  for (const char* dropped :
+       {"migration_id", "src_slot", "dst_slot", "layer_begin", "layer_end",
+        "src_position_begin", "src_position_end", "dst_position_begin",
+        "dst_position_end"}) {
     Json::Value root;
     root["migration_id"] = 1;
     root["src_slot"] = 2;
     root["dst_slot"] = 3;
-    root["layer_id"] = 4;
-    root["position_start"] = 5;
-    root["position_end"] = 6;
+    root["layer_begin"] = 0;
+    root["layer_end"] = 32;
+    root["src_position_begin"] = 100;
+    root["src_position_end"] = 200;
+    root["dst_position_begin"] = 100;
+    root["dst_position_end"] = 200;
     root.removeMember(dropped);
 
     Json::StreamWriterBuilder w;
@@ -143,9 +163,12 @@ TEST(MigrationRequestMessageParse, RejectsNonIntegralField) {
   root["migration_id"] = "not-a-number";
   root["src_slot"] = 2;
   root["dst_slot"] = 3;
-  root["layer_id"] = 4;
-  root["position_start"] = 5;
-  root["position_end"] = 6;
+  root["layer_begin"] = 0;
+  root["layer_end"] = 32;
+  root["src_position_begin"] = 100;
+  root["src_position_end"] = 200;
+  root["dst_position_begin"] = 100;
+  root["dst_position_end"] = 200;
 
   Json::StreamWriterBuilder w;
   w["indentation"] = "";

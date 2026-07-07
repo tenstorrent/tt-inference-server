@@ -69,7 +69,7 @@ bool BlazePrefillRunner::warmup() {
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
-  std::vector<int64_t> warmupTokens(tt::config::prefillChunkSize(), 12345);
+  std::vector<uint32_t> warmupTokens(tt::config::prefillChunkSize(), 12345);
   uint32_t warmupTaskId = 0;
 
   auto warmupSeq = std::make_unique<tt::domain::llm::Sequence>(
