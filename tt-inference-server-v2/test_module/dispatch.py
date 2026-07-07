@@ -11,8 +11,10 @@ runner returns a :class:`report_module.schema.Block`, which is forwarded to
 single base schema later.
 
 In addition to per-model EVALUATION / BENCHMARK runners, this module also
-exposes a ``SPEC_TESTS`` task type that loads matching test cases from
-``test_module/test_suites/*.json`` via ``TestFilter``, instantiates each
+exposes a ``SPEC_TESTS`` task type. For media models it loads matching test
+cases from ``test_module/test_suites/*.json`` via ``TestFilter``; for LLMs it
+runs the vLLM parameter-conformance suites configured in
+``server_tests.test_config.TEST_CONFIGS``. Either way it instantiates each
 test class, runs it, and forwards the resulting Blocks to the accumulator.
 """
 
@@ -179,6 +181,78 @@ def _instantiate_spec_test(case: dict, ctx: MediaContext):
         return instance
 
 
+def _run_llm_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
+    """Run the vLLM parameter-conformance spec tests configured for an LLM.
+
+    Model coverage is defined in ``server_tests.test_config.TEST_CONFIGS`` (the
+    same catalog the v1 ``tests`` workflow uses), keyed by ``model_name``. Each
+    configured ``task_name`` maps to a conformance test class; unknown task
+    names are skipped with a warning. A model with no TEST_CONFIGS entry is a
+    clean no-op (``(0, None)``) — matching the media path's behavior — so an
+    unconfigured LLM release does not fail the whole workflow.
+    """
+    from server_tests.test_config import TEST_CONFIGS
+    from .llm_tests.vllm_param_conformance_test import (
+        VLLMParamConformanceTest,
+        VLLMResponsesParamConformanceTest,
+        run_vllm_param_conformance,
+    )
+
+    llm_spec_test_classes = {
+        "vllm_chat_completions": VLLMParamConformanceTest,
+        "vllm_responses": VLLMResponsesParamConformanceTest,
+    }
+
+    test_config = TEST_CONFIGS.get(ctx.model_spec.model_name)
+    if not test_config:
+        logger.warning(
+            "No LLM spec tests configured for model=%r in TEST_CONFIGS — "
+            "skipping spec_tests.",
+            ctx.model_spec.model_name,
+        )
+        return 0, None
+
+    blocks: List[Block] = []
+    failures = 0
+    for task in test_config.tasks:
+        test_cls = llm_spec_test_classes.get(task.task_name)
+        if test_cls is None:
+            logger.warning(
+                "  - skip unknown LLM spec test task_name=%r (known: %s)",
+                task.task_name,
+                sorted(llm_spec_test_classes),
+            )
+            continue
+        logger.info("  -> %s (%s)", test_cls.__name__, task.task_name)
+        try:
+            block = run_vllm_param_conformance(ctx, test_cls=test_cls)
+        except Exception as e:
+            logger.exception("  ❌ %s raised: %s", test_cls.__name__, e)
+            failures += 1
+            continue
+        blocks.append(block)
+        if not isinstance(block.data, dict) or block.data.get("success") is not True:
+            logger.error(
+                "  ❌ %s did not report success=True (data=%r)",
+                test_cls.__name__,
+                block.data,
+            )
+            failures += 1
+
+    if not blocks:
+        return 1, None
+
+    accept_blocks(blocks, envelope=sweep_envelope(ctx))
+    exit_code = 0 if failures == 0 else 1
+    logger.info(
+        "LLM spec_tests done: %d block(s), %d failure(s) -> exit=%d",
+        len(blocks),
+        failures,
+        exit_code,
+    )
+    return exit_code, blocks[-1]
+
+
 def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
     """Run all spec test cases that match ``ctx`` (model + device).
 
@@ -199,6 +273,11 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
         ctx.model_spec.model_name,
         ctx.device.name,
     )
+    # LLMs are not described by the media test-suite JSON; their spec tests are
+    # the vLLM parameter-conformance suites configured in server_tests.test_config
+    # (TEST_CONFIGS), keyed by model_name. Dispatch those instead of TestFilter.
+    if ctx.model_spec.model_type.name == "LLM":
+        return _run_llm_spec_tests(ctx)
     suites = _resolve_spec_test_suites(ctx)
     if not suites:
         logger.warning(

@@ -129,6 +129,18 @@ def _is_llm_eval_run(wf, model_spec) -> bool:
     )
 
 
+def _is_llm_spec_tests_run(wf, model_spec) -> bool:
+    """LLM ``--workflow spec_tests`` routes to v2.
+
+    v2's ``spec_tests`` runs the vLLM parameter-conformance suites configured in
+    ``server_tests.test_config.TEST_CONFIGS`` for the model; v1's spec-test path
+    only knows the media test-suite JSON and would no-op for an LLM.
+    """
+    return (
+        model_spec.model_type == ModelType.LLM and wf == WorkflowType.SPEC_TESTS
+    )
+
+
 def can_route_to_v2(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
     # Agentic evals, serving-bench benchmark suites, and the prefix-cache /
@@ -143,6 +155,8 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
     if _is_llm_benchmark_run(wf, model_spec, runtime_config):
         return True
     if _is_llm_eval_run(wf, model_spec):
+        return True
+    if _is_llm_spec_tests_run(wf, model_spec):
         return True
     if not is_v2_routed_model(model_spec):
         return False
