@@ -165,7 +165,7 @@ def run_embedding_benchmark(ctx: MediaContext) -> Block:
         total_input_tokens / benchmark_duration if benchmark_duration else 0.0
     )
     tput_user = tput_prefill / float(concurrency) if concurrency else 0.0
-    target_checks, accuracy_check = _embedding_target_checks(
+    target_checks, target_check = _embedding_target_checks(
         ctx, tput_user, tput_prefill, mean_e2el
     )
 
@@ -188,7 +188,7 @@ def run_embedding_benchmark(ctx: MediaContext) -> Block:
                 "tput_prefill": tput_prefill,
                 "e2el": mean_e2el,
                 "req_tput": req_tput,
-                "accuracy_check": accuracy_check,
+                "target_check": target_check,
                 "target_checks": target_checks,
             },
         },

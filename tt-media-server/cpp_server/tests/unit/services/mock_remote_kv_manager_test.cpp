@@ -14,14 +14,17 @@ namespace tt::services {
 namespace {
 
 MigrationRequest makeRequest(uint32_t src = 1, uint32_t dst = 2,
-                             uint32_t layer = 0, uint32_t start = 0,
-                             uint32_t end = 128) {
+                             uint32_t layerBegin = 0, uint32_t layerEnd = 32,
+                             uint32_t posBegin = 0, uint32_t posEnd = 128) {
   return MigrationRequest{
       .src_slot = src,
       .dst_slot = dst,
-      .layer_id = layer,
-      .position_start = start,
-      .position_end = end,
+      .layer_begin = layerBegin,
+      .layer_end = layerEnd,
+      .src_position_begin = posBegin,
+      .src_position_end = posEnd,
+      .dst_position_begin = posBegin,
+      .dst_position_end = posEnd,
   };
 }
 
@@ -165,17 +168,20 @@ TEST(MockRemoteKVManager, ForceStatusSilentlyIgnoresUnknownId) {
 
 TEST(MockRemoteKVManager, GetRequestReturnsOriginalRequest) {
   MockRemoteKVManager mgr;
-  const auto in = makeRequest(/*src=*/7, /*dst=*/13, /*layer=*/2,
-                              /*start=*/64, /*end=*/96);
+  const auto in = makeRequest(/*src=*/7, /*dst=*/13, /*layerBegin=*/0,
+                              /*layerEnd=*/32, /*posBegin=*/64, /*posEnd=*/96);
   const auto id = mgr.migrate(in);
 
   const auto out = mgr.getRequest(id);
   ASSERT_TRUE(out.has_value());
   EXPECT_EQ(out->src_slot, in.src_slot);
   EXPECT_EQ(out->dst_slot, in.dst_slot);
-  EXPECT_EQ(out->layer_id, in.layer_id);
-  EXPECT_EQ(out->position_start, in.position_start);
-  EXPECT_EQ(out->position_end, in.position_end);
+  EXPECT_EQ(out->layer_begin, in.layer_begin);
+  EXPECT_EQ(out->layer_end, in.layer_end);
+  EXPECT_EQ(out->src_position_begin, in.src_position_begin);
+  EXPECT_EQ(out->src_position_end, in.src_position_end);
+  EXPECT_EQ(out->dst_position_begin, in.dst_position_begin);
+  EXPECT_EQ(out->dst_position_end, in.dst_position_end);
 }
 
 TEST(MockRemoteKVManager, GetRequestUnknownIdReturnsNullopt) {

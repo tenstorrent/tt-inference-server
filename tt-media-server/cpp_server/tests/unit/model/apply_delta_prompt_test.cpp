@@ -31,9 +31,9 @@ void applyDeltaPrompt(LLMRequest& req, uint32_t matchedTokens) {
 // Helper to create a request with N sequential tokens [0, 1, 2, ..., N-1].
 LLMRequest makeRequest(uint32_t numTokens) {
   LLMRequest req(/*taskId=*/1);
-  std::vector<int> tokens(numTokens);
+  std::vector<uint32_t> tokens(numTokens);
   std::iota(tokens.begin(), tokens.end(), 0);
-  req.prompt.emplace<std::vector<int>>(std::move(tokens));
+  req.prompt.emplace<std::vector<uint32_t>>(std::move(tokens));
   return req;
 }
 
@@ -46,7 +46,7 @@ TEST(ApplyDeltaPrompt, RemainderAlreadyAligned) {
   auto req = makeRequest(128);
   applyDeltaPrompt(req, 96);
 
-  auto& tokens = std::get<std::vector<int>>(req.prompt);
+  auto& tokens = std::get<std::vector<uint32_t>>(req.prompt);
   EXPECT_EQ(tokens.size(), 32u);
   EXPECT_EQ(tokens.front(), 96);       // first remaining token
   EXPECT_EQ(req.kv_position_id, 96u);  // first free KV index
@@ -61,7 +61,7 @@ TEST(ApplyDeltaPrompt, RemainderNotAligned_SentAsIs) {
   auto req = makeRequest(657);
   applyDeltaPrompt(req, 640);
 
-  auto& tokens = std::get<std::vector<int>>(req.prompt);
+  auto& tokens = std::get<std::vector<uint32_t>>(req.prompt);
   EXPECT_EQ(tokens.size(), 17u);
   EXPECT_EQ(tokens.front(), 640);
   EXPECT_EQ(req.kv_position_id, 640u);
@@ -74,7 +74,7 @@ TEST(ApplyDeltaPrompt, MultiTurnSuffix) {
   auto req = makeRequest(1937);
   applyDeltaPrompt(req, 640);
 
-  auto& tokens = std::get<std::vector<int>>(req.prompt);
+  auto& tokens = std::get<std::vector<uint32_t>>(req.prompt);
   EXPECT_EQ(tokens.size(), 1297u);  // 17 + 1280
   EXPECT_EQ(tokens.front(), 640);
   EXPECT_EQ(req.kv_position_id, 640u);
@@ -86,7 +86,7 @@ TEST(ApplyDeltaPrompt, ZeroMatchedTokens_NoOp) {
   auto req = makeRequest(100);
   applyDeltaPrompt(req, 0);
 
-  auto& tokens = std::get<std::vector<int>>(req.prompt);
+  auto& tokens = std::get<std::vector<uint32_t>>(req.prompt);
   EXPECT_EQ(tokens.size(), 100u);
   EXPECT_FALSE(req.kv_position_id.has_value());
 }
@@ -96,7 +96,7 @@ TEST(ApplyDeltaPrompt, MatchedExceedsTotal_NoOp) {
   auto req = makeRequest(50);
   applyDeltaPrompt(req, 50);
 
-  auto& tokens = std::get<std::vector<int>>(req.prompt);
+  auto& tokens = std::get<std::vector<uint32_t>>(req.prompt);
   EXPECT_EQ(tokens.size(), 50u);
   EXPECT_FALSE(req.kv_position_id.has_value());
 }
@@ -107,7 +107,7 @@ TEST(ApplyDeltaPrompt, LargePrompt) {
   auto req = makeRequest(2048);
   applyDeltaPrompt(req, 1504);
 
-  auto& tokens = std::get<std::vector<int>>(req.prompt);
+  auto& tokens = std::get<std::vector<uint32_t>>(req.prompt);
   EXPECT_EQ(tokens.size(), 544u);
   EXPECT_EQ(tokens.front(), 1504);
   EXPECT_EQ(req.kv_position_id, 1504u);
@@ -119,7 +119,7 @@ TEST(ApplyDeltaPrompt, ExactBoundaries) {
   auto req = makeRequest(256);
   applyDeltaPrompt(req, 192);
 
-  auto& tokens = std::get<std::vector<int>>(req.prompt);
+  auto& tokens = std::get<std::vector<uint32_t>>(req.prompt);
   EXPECT_EQ(tokens.size(), 64u);
   EXPECT_EQ(req.kv_position_id, 192u);
 }

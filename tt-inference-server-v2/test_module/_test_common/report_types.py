@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from enum import IntEnum, auto
 
+from report_module.status import TestStatus
+
 
 class ReportCheckTypes(IntEnum):
     NA = auto()
@@ -31,4 +33,4 @@ class ReportCheckTypes(IntEnum):
         return disp_map[check_type]
 
 
-__all__ = ["ReportCheckTypes"]
+__all__ = ["ReportCheckTypes", "TestStatus"]

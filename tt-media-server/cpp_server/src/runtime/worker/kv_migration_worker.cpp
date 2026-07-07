@@ -79,9 +79,12 @@ void KvMigrationWorker::consumerLoop() {
     const tt::services::MigrationRequest apiReq{
         .src_slot = parsed->src_slot,
         .dst_slot = parsed->dst_slot,
-        .layer_id = parsed->layer_id,
-        .position_start = parsed->position_start,
-        .position_end = parsed->position_end,
+        .layer_begin = parsed->layer_begin,
+        .layer_end = parsed->layer_end,
+        .src_position_begin = parsed->src_position_begin,
+        .src_position_end = parsed->src_position_end,
+        .dst_position_begin = parsed->dst_position_begin,
+        .dst_position_end = parsed->dst_position_end,
     };
 
     TT_LOG_DEBUG("[KvMigrationWorker] dispatching migration_id={} to executor",

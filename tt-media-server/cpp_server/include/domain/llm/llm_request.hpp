@@ -70,7 +70,7 @@ struct LLMRequest : BaseRequest {
 
   // Prompt can be a string or a list of token ids
   // Can be either the original prompt or delta
-  std::variant<std::string, std::vector<int>> prompt;
+  std::variant<std::string, std::vector<uint32_t>> prompt;
 
   // Original chat messages used to derive `prompt`. Kept here so downstream
   // steps (session resolution, prefix-cache routing) don't need a separate
@@ -192,7 +192,7 @@ struct LLMRequest : BaseRequest {
       promptInfo =
           "\"" + detail::truncate(*s, detail::MAX_PROMPT_LOG_LENGTH) + "\"";
     } else {
-      auto& tokens = std::get<std::vector<int>>(prompt);
+      auto& tokens = std::get<std::vector<uint32_t>>(prompt);
       promptInfo = "<" + std::to_string(tokens.size()) + " token ids>";
     }
 
