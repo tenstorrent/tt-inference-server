@@ -47,8 +47,6 @@ class WorkflowVenvType(IntEnum):
     EVALS_VIDEO = auto()
     EVALS_EMBEDDING = auto()
     EVALS_AGENTIC = auto()
-    BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
-    BENCHMARKS_EMBEDDING = auto()
     BENCHMARKS_VIDEO = auto()
     BENCHMARKS_VLLM = auto()
     BENCHMARKS_VLLM_FORGE = auto()
@@ -64,8 +62,6 @@ class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_CNN_API = auto()
     HTTP_CLIENT_VIDEO_API = auto()
     HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API = auto()
-    GENAI_PERF = auto()
-    AIPERF = auto()
 
 
 class DeviceTypes(IntEnum):

@@ -46,20 +46,10 @@ from workflows.workflow_types import (
 
 logger = logging.getLogger(__name__)
 
-# fmt: off
-IMAGE_RESOLUTIONS = [
-    (512, 512),
-    (512, 1024),
-    (1024, 512),
-    (1024, 1024)
-    ]
-# fmt: on
-
 BENCHMARKS_TASK_TYPES = [
     ModelType.IMAGE,
     ModelType.CNN,
     ModelType.AUDIO,
-    ModelType.EMBEDDING,
     ModelType.TEXT_TO_SPEECH,
     ModelType.VIDEO,
 ]

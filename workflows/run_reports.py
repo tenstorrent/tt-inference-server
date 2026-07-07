@@ -62,21 +62,6 @@ FUNCTIONAL_TARGET = 10
 COMPLETE_TARGET = 2
 
 
-def generate_embedding_report_data(model_spec, eval_run_id):
-    """Generate embedding-specific report data.
-
-    Args:
-        model_spec: Model specification
-        eval_run_id: Evaluation run ID
-
-    Returns:
-        File pattern for embedding evaluation results
-    """
-    # Embedding models use results_*.json pattern
-    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
-    return file_name_pattern
-
-
 def generate_audio_report_data(model_spec, eval_run_id):
     """Generate audio-specific report data.
 
@@ -156,30 +141,6 @@ from evals.agentic.report import (
     is_harbor_result as _is_harbor_result,
     process_agentic_eval_files,
 )
-
-
-def get_embedding_benchmark_targets(model_spec, device_str, logger):
-    """Get embedding-specific benchmark targets.
-
-    Args:
-        model_spec: Model specification
-        device_str: Device string
-        logger: Logger instance
-
-    Returns:
-        Benchmark target data for embedding models
-    """
-    from workflows.model_spec import model_performance_reference
-
-    model_data = model_performance_reference.get(model_spec.model_name, {})
-    device_json_list = model_data.get(device_str, [])
-
-    if not device_json_list:
-        logger.warning(
-            f"No performance targets found for embedding model {model_spec.model_name} on {device_str}"
-        )
-
-    return device_json_list
 
 
 def get_audio_benchmark_targets(model_spec, device_str, logger):
@@ -503,7 +464,6 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     from benchmarking.summary_report import (
         create_audio_display_dict,
         create_display_dict,
-        create_embedding_display_dict,
         create_image_generation_display_dict,
         create_video_display_dict,
         create_vlm_display_dict,
@@ -513,12 +473,11 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         save_to_csv,
     )
 
-    # Process all tools and collect results by type (text/image/audio/tts/embedding/cnn)
+    # Process all tools and collect results by type (text/image/audio/tts/cnn)
     text_sections = []
     image_sections = []
     audio_sections = []
     tts_sections = []
-    embedding_sections = []
     cnn_sections = []
     video_sections = []
 
@@ -529,14 +488,11 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(vllm_release_raw)
 
-        # Separate text, vlm, asr, tts, embedding and cnn for vLLM
+        # Separate text, vlm, asr, tts and cnn for vLLM
         vllm_text = [r for r in vllm_release_raw if r.get("task_type") == "text"]
         vllm_vlm = [r for r in vllm_release_raw if r.get("task_type") == "vlm"]
         vllm_audio = [r for r in vllm_release_raw if r.get("task_type") == "asr"]
         vllm_tts = [r for r in vllm_release_raw if r.get("task_type") == "tts"]
-        vllm_embedding = [
-            r for r in vllm_release_raw if r.get("task_type") == "embedding"
-        ]
         vllm_cnn = [r for r in vllm_release_raw if r.get("task_type") == "cnn"]
         vllm_image = [r for r in vllm_release_raw if r.get("task_type") == "image"]
         vllm_video = [r for r in vllm_release_raw if r.get("task_type") == "video"]
@@ -571,15 +527,6 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             vllm_tts_md = get_markdown_table(vllm_tts_display)
             tts_sections.append(
                 f"#### vLLM Text-to-Speech Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_tts_md}"
-            )
-
-        if vllm_embedding:
-            vllm_embedding_display = [
-                create_embedding_display_dict(r) for r in vllm_embedding
-            ]
-            vllm_embedding_md = get_markdown_table(vllm_embedding_display)
-            embedding_sections.append(
-                f"#### vLLM Embedding Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_embedding_md}"
             )
 
         if vllm_cnn:
@@ -628,13 +575,12 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             )
         )
 
-    # Combine sections: text, image, audio, embedding, then cnn (matching original order)
+    # Combine sections: text, image, audio, then cnn (matching original order)
     markdown_sections = (
         text_sections
         + image_sections
         + audio_sections
         + tts_sections
-        + embedding_sections
         + cnn_sections
         + video_sections
     )
@@ -1367,12 +1313,6 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
-    elif model_spec.model_type == ModelType.EMBEDDING:
-        file_name_pattern = generate_embedding_report_data(model_spec, eval_run_id)
-        file_path_pattern = (
-            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
-        )
-        files = glob(file_path_pattern)
     elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
         file_name_pattern = generate_tts_report_data(model_spec, eval_run_id)
         file_path_pattern = (
@@ -1426,7 +1366,6 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
     if (
         model_spec.model_type.name == ModelType.CNN.name
         or model_spec.model_type.name == ModelType.IMAGE.name
-        or model_spec.model_type.name == ModelType.EMBEDDING.name
         or model_spec.model_type.name == ModelType.VIDEO.name
         or model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
     ):
@@ -2072,31 +2011,6 @@ def benchmarks_release_data_format(
     return reformated_benchmarks_release_data
 
 
-def benchmarks_release_data_format_embedding(
-    model_spec, device_str, benchmark_summary_data
-):
-    """Convert the benchmark release data to the desired format for EMBEDDING models"""
-
-    return [
-        {
-            "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-            "model": model_spec.model_name,
-            "model_name": model_spec.model_name,
-            "model_id": model_spec.model_id,
-            "backend": model_spec.model_type.name.lower(),
-            "device": device_str,
-            "num_requests": benchmark_summary_data.get("num_requests", 1),
-            "ISL": benchmark_summary_data.get("input_sequence_length", 0),
-            "concurrency": benchmark_summary_data.get("max_con", 0),
-            "tput_user": benchmark_summary_data.get("mean_tps", 0),
-            "tput_prefill": benchmark_summary_data.get("tps_prefill_throughput", 0),
-            "e2el_ms": benchmark_summary_data.get("mean_e2el_ms", 0),
-            "filename": benchmark_summary_data.get("filename", ""),
-            "task_type": model_spec.model_type.task_type,
-        }
-    ]
-
-
 def add_target_checks_cnn_image_video(
     targets, evals_release_data, benchmark_summary_data, metrics
 ):
@@ -2129,50 +2043,6 @@ def add_target_checks_cnn_image_video(
             "latency_ratio": metrics["target_latency_ratio"],
             "latency_check": metrics["target_latency_check"],
             "tput_check": 2 if tput_user > target_tput_user else 3,
-        },
-    }
-
-    return target_checks
-
-
-def add_target_checks_embedding(metrics):
-    """Add target checks for EMBEDDING models based on evals and benchmark data."""
-    logger.info("Adding target_checks to EMBEDDING benchmark release data")
-
-    logger.info("Calculating target checks")
-    target_checks = {
-        "functional": {
-            "tput_user": metrics["functional_tput_user"],
-            "tput_user_ratio": metrics["functional_tput_user_ratio"],
-            "tput_user_check": metrics["functional_tput_user_check"],
-            "tput_prefill": metrics["functional_tput_prefill"],
-            "tput_prefill_ratio": metrics["functional_tput_prefill_ratio"],
-            "tput_prefill_check": metrics["functional_tput_prefill_check"],
-            "e2el_ms": metrics["functional_e2el_ms"],
-            "e2el_ms_ratio": metrics["functional_e2el_ms_ratio"],
-            "e2el_ms_check": metrics["functional_e2el_ms_check"],
-        },
-        "complete": {
-            "tput_user": metrics["complete_tput_user"],
-            "tput_user_ratio": metrics["complete_tput_user_ratio"],
-            "tput_user_check": metrics["complete_tput_user_check"],
-            "tput_prefill": metrics["complete_tput_prefill"],
-            "tput_prefill_ratio": metrics["complete_tput_prefill_ratio"],
-            "tput_prefill_check": metrics["complete_tput_prefill_check"],
-            "e2el_ms": metrics["complete_e2el_ms"],
-            "e2el_ms_ratio": metrics["complete_e2el_ms_ratio"],
-            "e2el_ms_check": metrics["complete_e2el_ms_check"],
-        },
-        "target": {
-            "tput_user": metrics["target_tput_user"],
-            "tput_user_ratio": metrics["target_tput_user_ratio"],
-            "tput_user_check": metrics["target_tput_user_check"],
-            "tput_prefill": metrics["target_tput_prefill"],
-            "tput_prefill_ratio": metrics["target_tput_prefill_ratio"],
-            "tput_prefill_check": metrics["target_tput_prefill_check"],
-            "e2el_ms": metrics["target_e2el_ms"],
-            "e2el_ms_ratio": metrics["target_e2el_ms_ratio"],
-            "e2el_ms_check": metrics["target_e2el_ms_check"],
         },
     }
 
@@ -2619,57 +2489,6 @@ def main():
             )
 
             # Add target_checks to the existing benchmark object
-            if benchmarks_release_data:
-                benchmarks_release_data[0]["target_checks"] = target_checks
-
-        elif model_spec.model_type.name == ModelType.EMBEDDING.name:
-            # Get performance targets using the shared utility
-            device_str = runtime_config.device.lower()
-            targets = get_performance_targets(
-                model_spec.model_name,
-                device_str,
-                model_type=model_spec.model_type.name,
-            )
-            logger.info(f"Performance targets: {targets}")
-
-            benchmark_summary_data = benchmarks_release_data[0]
-
-            avg_tput_user = benchmark_summary_data.get("mean_tps", 0)
-            avg_tput_prefill = benchmark_summary_data.get("tps_prefill_throughput", 0)
-            avg_e2el_ms = benchmark_summary_data.get("mean_e2el_ms", 0)
-
-            metrics = calculate_target_metrics(
-                [
-                    {
-                        "avg_metric": avg_tput_user,
-                        "target_metric": targets.tput_user,
-                        "field_name": "tput_user",
-                        "is_ascending_metric": True,
-                    },
-                    {
-                        "avg_metric": avg_tput_prefill,
-                        "target_metric": targets.tput_prefill,
-                        "field_name": "tput_prefill",
-                        "is_ascending_metric": True,
-                    },
-                    {
-                        "avg_metric": avg_e2el_ms,
-                        "target_metric": targets.e2el_ms,
-                        "field_name": "e2el_ms",
-                        "is_ascending_metric": False,
-                    },
-                ]
-            )
-
-            logger.info("Adding target_checks for Embedding benchmark release data")
-            target_checks = add_target_checks_embedding(
-                metrics,
-            )
-
-            benchmarks_release_data = benchmarks_release_data_format_embedding(
-                model_spec, device_str, benchmark_summary_data
-            )
-
             if benchmarks_release_data:
                 benchmarks_release_data[0]["target_checks"] = target_checks
 

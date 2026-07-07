@@ -59,9 +59,6 @@ _V2_ROUTED_MODELS = frozenset(
         "whisper-large-v3",
         "distil-large-v3",
         "Z-Image-Turbo",
-        "bge-large-en-v1.5",
-        "Qwen3-Embedding-4B",
-        "Qwen3-Embedding-8B",
     }
 )
 
@@ -123,6 +120,10 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
         return True
     if _is_llm_eval_run(wf, model_spec):
         return True
+    # Embedding models route to v2 by type (like LLM); the v1 embedding
+    # eval/benchmark path has been retired.
+    if model_spec.model_type == ModelType.EMBEDDING:
+        return wf in _V2_WORKFLOW_NAMES
     if not is_v2_routed_model(model_spec):
         return False
     return wf in _V2_WORKFLOW_NAMES
