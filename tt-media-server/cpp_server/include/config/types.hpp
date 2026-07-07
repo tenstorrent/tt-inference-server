@@ -81,7 +81,6 @@ inline LLMMode llmModeFromString(const std::string& v) {
 
 enum class ModelRunnerType {
   MOCK,
-  LLAMA,
   MOCK_PIPELINE,
   PIPELINE_MANAGER,
   TT_SDXL_GENERATE,
@@ -129,8 +128,6 @@ inline std::string toString(ModelRunnerType m) {
   switch (m) {
     case ModelRunnerType::MOCK:
       return "mock";
-    case ModelRunnerType::LLAMA:
-      return "llama";
     case ModelRunnerType::MOCK_PIPELINE:
       return "mock_pipeline";
     case ModelRunnerType::PIPELINE_MANAGER:
@@ -155,7 +152,6 @@ inline std::string toClientRunnerName(ModelRunnerType m) {
     case ModelRunnerType::TT_SDXL_EDIT:
       return "tt-sdxl-edit";
     case ModelRunnerType::MOCK:
-    case ModelRunnerType::LLAMA:
     case ModelRunnerType::MOCK_PIPELINE:
     case ModelRunnerType::PIPELINE_MANAGER:
       return "";
