@@ -16,7 +16,7 @@ using Sequence = tt::domain::llm::Sequence;
 
 Block::Block(int blockId) : blockId(blockId) {}
 
-void Block::update(int64_t hash, std::vector<int64_t> tokenIds) {
+void Block::update(int64_t hash, std::vector<uint32_t> tokenIds) {
   this->hash = hash;
   this->tokenIds = std::move(tokenIds);
 }
@@ -41,7 +41,7 @@ BlockManager::BlockManager(size_t numBlocks, size_t blockSize)
   }
 }
 
-int64_t BlockManager::computeHash(const std::vector<int64_t>& tokenIds,
+int64_t BlockManager::computeHash(const std::vector<uint32_t>& tokenIds,
                                   int64_t prefix) {
   return hashTokenIds(tokenIds, prefix);
 }
@@ -87,7 +87,7 @@ bool BlockManager::allocate(Sequence& seq) {
   int64_t h = -1;
   bool cacheMiss = false;
   for (size_t i = 0; i < seq.numBlocks(); ++i) {
-    std::vector<int64_t> tokenIds = seq.block(i);
+    std::vector<uint32_t> tokenIds = seq.block(i);
     h = (tokenIds.size() == blockSize) ? computeHash(tokenIds, h) : -1;
     auto it = hashToBlockId.find(h);
     int blockId = (it != hashToBlockId.end()) ? it->second : -1;
@@ -161,7 +161,7 @@ void BlockManager::mayAppend(Sequence& seq) {
     assert(lastBlock.hash == -1);
     TT_LOG_DEBUG("[block_manager] may_append task_id={} fill_last_block len={}",
                  seq.taskId, len);
-    std::vector<int64_t> tokenIds = seq.block(seq.numBlocks() - 1);
+    std::vector<uint32_t> tokenIds = seq.block(seq.numBlocks() - 1);
     int64_t prefix =
         (blockTable.size() > 1)
             ? blocks[static_cast<size_t>(blockTable[blockTable.size() - 2])]

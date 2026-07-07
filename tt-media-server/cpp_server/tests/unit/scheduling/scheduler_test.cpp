@@ -32,7 +32,7 @@ std::shared_ptr<tt::ipc::ITaskQueue> makeQueue() {
 
 Config makeConfig(int numBlocks = 32, int blockSize = 8,
                   int maxBatchedTokens = 256, int eos = 0,
-                  std::vector<int64_t> stopTokenIds = {}) {
+                  std::vector<uint32_t> stopTokenIds = {}) {
   Config c;
   c.num_kvcache_blocks = numBlocks;
   c.kvcache_block_size = blockSize;
@@ -42,9 +42,9 @@ Config makeConfig(int numBlocks = 32, int blockSize = 8,
   return c;
 }
 
-std::vector<int64_t> prompt(size_t len) {
-  std::vector<int64_t> p;
-  for (size_t i = 0; i < len; ++i) p.push_back(static_cast<int64_t>(i));
+std::vector<uint32_t> prompt(size_t len) {
+  std::vector<uint32_t> p;
+  for (size_t i = 0; i < len; ++i) p.push_back(static_cast<uint32_t>(i));
   return p;
 }
 
@@ -118,7 +118,7 @@ TEST(PrefillFirstSchedulerTest,
   auto [prefill_batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
   ASSERT_EQ(prefill_batch.size(), 1u);
-  std::vector<int64_t> tokens = {1};
+  std::vector<uint32_t> tokens = {1};
   sched.postprocess(prefill_batch, tokens);
 
   auto [decode_batch, is_decode] = sched.schedule();
@@ -128,7 +128,7 @@ TEST(PrefillFirstSchedulerTest,
 }
 
 TEST(PrefillFirstSchedulerTest, OneRequest_PrefillThenDecodeThenEos) {
-  Config config = makeConfig(32, 8, 256, 99, std::vector<int64_t>{99});
+  Config config = makeConfig(32, 8, 256, 99, std::vector<uint32_t>{99});
   auto queue = makeQueue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
   sched.addRequest(nextId(), prompt(4),
@@ -194,7 +194,7 @@ TEST(PrefillFirstSchedulerTest,
 }
 
 TEST(PrefillFirstSchedulerTest, Postprocess_WhenEosToken_MarksFinished) {
-  Config config = makeConfig(32, 8, 256, 99, std::vector<int64_t>{99});
+  Config config = makeConfig(32, 8, 256, 99, std::vector<uint32_t>{99});
   auto queue = makeQueue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq{nextId(), 256, prompt(2),
@@ -301,7 +301,7 @@ TEST(PrefillFirstSchedulerTest,
     auto [decode_batch, is_prefill] = sched.schedule();
     ASSERT_FALSE(is_prefill);
     ASSERT_EQ(decode_batch.size(), 1u);
-    sched.postprocess(decode_batch, {static_cast<int64_t>(i + 2)});
+    sched.postprocess(decode_batch, {static_cast<uint32_t>(i + 2)});
   }
   ASSERT_EQ(runningSeq->size(), 9u);
 
@@ -331,7 +331,7 @@ TEST(PrefillFirstSchedulerTest,
     auto [decode_batch, is_prefill] = sched.schedule();
     ASSERT_FALSE(is_prefill);
     ASSERT_EQ(decode_batch.size(), 1u);
-    sched.postprocess(decode_batch, {static_cast<int64_t>(i + 2)});
+    sched.postprocess(decode_batch, {static_cast<uint32_t>(i + 2)});
   }
   ASSERT_EQ(runningSeq->size(), 9u);
 

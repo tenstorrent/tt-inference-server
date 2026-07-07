@@ -45,7 +45,7 @@ bool Scheduler::isFinished() const {
   return prefillQueue->empty() && decodeQueue.empty();
 }
 
-Sequence& Scheduler::addRequest(uint32_t taskId, std::vector<int64_t> prompt,
+Sequence& Scheduler::addRequest(uint32_t taskId, std::vector<uint32_t> prompt,
                                 const SamplingParams& params) {
   auto seq =
       std::make_unique<Sequence>(std::move(taskId), static_cast<int>(blockSize),
@@ -160,11 +160,11 @@ void Scheduler::preempt(Sequence& seq) {
 }
 
 void Scheduler::postprocess(std::vector<Sequence*>& seqs,
-                            const std::vector<int64_t>& tokenIds) {
+                            const std::vector<uint32_t>& tokenIds) {
   ZoneScopedN("Scheduler::postprocess");
   for (size_t i = 0; i < seqs.size(); ++i) {
     Sequence* seq = seqs[i];
-    int64_t tokenId = tokenIds[i];
+    uint32_t tokenId = tokenIds[i];
     seq->appendToken(tokenId);
 
     bool isStopToken = stopTokenIds.count(tokenId) > 0;
