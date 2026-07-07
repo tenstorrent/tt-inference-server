@@ -182,8 +182,7 @@ void DisaggregationService::setupSocketHandlers() {
     socketService->onPrefillRequested(
         [this](const tt::sockets::PrefillRequestMessage& message) {
           handlePrefillRequest(
-              message,
-              [this](const tt::sockets::PrefillResultMessage& result) {
+              message, [this](const tt::sockets::PrefillResultMessage& result) {
                 socketService->sendPrefillResult(result);
               });
         });
@@ -239,10 +238,10 @@ void DisaggregationService::handlePrefillRequest(
             std::get<std::vector<uint32_t>>(request->prompt).size();
         // Only the prefill-side trim counts: the prefill runner trims and
         // recomputes purely by its own prefix match.
-        const int cachedTokens = static_cast<int>(
-            fullPromptTokens >= trimmedPromptTokens
-                ? fullPromptTokens - trimmedPromptTokens
-                : 0);
+        const int cachedTokens =
+            static_cast<int>(fullPromptTokens >= trimmedPromptTokens
+                                 ? fullPromptTokens - trimmedPromptTokens
+                                 : 0);
         request->migrationStartPosition =
             request->decode_skip_tokens < cachedTokens
                 ? 0u
@@ -270,10 +269,9 @@ void DisaggregationService::handlePrefillRequest(
         }
         const uint64_t migrationId = request->migrationId.value();
         llmService->submitStreamingRequest(
-            *request,
-            [this, prefillSessionId, message, maxTokens, slotId, cachedTokens,
-             migrationId, resultCallback](const LLMStreamChunk& response,
-                                          bool /*isFinal*/) {
+            *request, [this, prefillSessionId, message, maxTokens, slotId,
+                       cachedTokens, migrationId, resultCallback](
+                          const LLMStreamChunk& response, bool /*isFinal*/) {
               auto prefillResult =
                   tt::sockets::PrefillResultMessage(message.taskId);
               prefillResult.slotId = slotId;
@@ -360,12 +358,12 @@ void DisaggregationService::handlePrefillResult(
         "propagating error to client",
         message.taskId);
     const auto reason = tt::sockets::errorReasonFromPrefillResult(message);
-    callback(makeErrorChunk(message.taskId,
-                            reason == LLMErrorReason::TIMEOUT
-                                ? "prefill timeout"
-                                : "prefill error",
-                            reason),
-             /*isFinal=*/true);
+    callback(
+        makeErrorChunk(message.taskId,
+                       reason == LLMErrorReason::TIMEOUT ? "prefill timeout"
+                                                         : "prefill error",
+                       reason),
+        /*isFinal=*/true);
     return;
   }
 
@@ -379,9 +377,9 @@ void DisaggregationService::handlePrefillResult(
 
   callback(response, false);
 
-  bool continueDecode = !message.tokenIds.empty() &&
-                        (!message.remainingTokens.has_value() ||
-                         message.remainingTokens.value() > 0);
+  bool continueDecode =
+      !message.tokenIds.empty() && (!message.remainingTokens.has_value() ||
+                                    message.remainingTokens.value() > 0);
   if (continueDecode) {
     auto request = std::make_shared<LLMRequest>(message.taskId);
     request->disaggregated = true;
@@ -406,20 +404,19 @@ void DisaggregationService::handlePrefillResult(
     auto submitContinuation =
         [this, callback](std::shared_ptr<LLMRequest> continuationRequest,
                          std::shared_ptr<tt::domain::Session> sessionPtr) {
-          auto releaseOnFinal =
-              [callback, sessionPtr](const LLMStreamChunk& chunk,
-                                      bool isFinal) {
-                if (sessionPtr && !chunk.choices.empty() &&
-                    chunk.choices[0].token_id) {
-                  sessionPtr->addGeneratedToken(
-                      static_cast<int>(*chunk.choices[0].token_id));
-                }
-                if (isFinal && sessionPtr) {
-                  sessionPtr->finalizeAndRegisterHashes();
-                  sessionPtr->release();
-                }
-                callback(chunk, isFinal);
-              };
+          auto releaseOnFinal = [callback, sessionPtr](
+                                    const LLMStreamChunk& chunk, bool isFinal) {
+            if (sessionPtr && !chunk.choices.empty() &&
+                chunk.choices[0].token_id) {
+              sessionPtr->addGeneratedToken(
+                  static_cast<int>(*chunk.choices[0].token_id));
+            }
+            if (isFinal && sessionPtr) {
+              sessionPtr->finalizeAndRegisterHashes();
+              sessionPtr->release();
+            }
+            callback(chunk, isFinal);
+          };
           llmService->submitStreamingRequest(*continuationRequest,
                                              releaseOnFinal);
         };
@@ -441,7 +438,8 @@ void DisaggregationService::handlePrefillResult(
     }
 
     sessionManager->createSession(
-        [this, request, submitContinuation](const tt::domain::Session& session) {
+        [this, request,
+         submitContinuation](const tt::domain::Session& session) {
           const auto sessionId = session.getSessionId();
           request->sessionId = sessionId;
           request->slotId = sessionManager->acquireInFlight(
@@ -665,7 +663,8 @@ void DisaggregationService::handleDynamoStreamingRequest(
   if (const char* host = std::getenv("DYNAMO_PREFILL_CLIENT_RESPONSE_HOST");
       host && *host) {
     options.response_host = host;
-  } else if (const char* host = std::getenv("DYN_TCP_RPC_HOST"); host && *host) {
+  } else if (const char* host = std::getenv("DYN_TCP_RPC_HOST");
+             host && *host) {
     options.response_host = host;
   }
   if (const char* timeout = std::getenv("DYNAMO_PREFILL_CLIENT_TIMEOUT_MS");

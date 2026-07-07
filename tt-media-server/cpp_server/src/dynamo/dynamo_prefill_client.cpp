@@ -293,10 +293,9 @@ std::vector<uint8_t> buildRequestFrame(
     const std::string& endpointPath,
     const tt::sockets::PrefillRequestMessage& request,
     const std::string& requestId, const std::string& responseAddress) {
-  return buildDynamoRequestFrame(endpointPath,
-                                 buildDynamoPrefillGenerateBody(request,
-                                                                requestId),
-                                 requestId, responseAddress);
+  return buildDynamoRequestFrame(
+      endpointPath, buildDynamoPrefillGenerateBody(request, requestId),
+      requestId, responseAddress);
 }
 
 }  // namespace

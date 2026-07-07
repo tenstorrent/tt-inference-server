@@ -26,10 +26,10 @@
 #include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
-#include "dynamo/dynamo_prefill_messages.hpp"
-#include "dynamo/dynamo_prefill_handoff.hpp"
-#include "dynamo/json_value_utils.hpp"
 #include "domain/session.hpp"
+#include "dynamo/dynamo_prefill_handoff.hpp"
+#include "dynamo/dynamo_prefill_messages.hpp"
+#include "dynamo/json_value_utils.hpp"
 #include "services/llm_pipeline.hpp"
 #include "sockets/socket_messages.hpp"
 #include "utils/id_generator.hpp"
@@ -207,11 +207,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
   trantor::EventLoopThreadPool* pool = loop_pool_.get();
 
   if (options_.worker_role == DiscoveryWorkerRole::PREFILL) {
-    return [this, pipeline, pool](
-               const GenerateRequest& dynReq,
-               const TcpStreamConnectionInfo& connInfo) {
-      const std::string requestId =
-          dynReq.raw.get("request_id", "").asString();
+    return [this, pipeline, pool](const GenerateRequest& dynReq,
+                                  const TcpStreamConnectionInfo& connInfo) {
+      const std::string requestId = dynReq.raw.get("request_id", "").asString();
       TT_LOG_INFO(
           "[DynamoEndpoint] Dynamo prefill request received id={} "
           "tokens={}",
@@ -227,9 +225,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
         writer->connect();
 
         const std::string selectedPrefillId =
-            !local_prefill_id_.empty()
-                ? local_prefill_id_
-                : std::string{"prefill/generate"};
+            !local_prefill_id_.empty() ? local_prefill_id_
+                                       : std::string{"prefill/generate"};
         TT_LOG_INFO(
             "[DynamoEndpoint] Executing Dynamo prefill via "
             "PrefillRequestMessage taskId={} selected_prefill_id={} "
@@ -242,17 +239,15 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               prefillMessage,
               [writer, selectedPrefillId](
                   const tt::sockets::PrefillResultMessage& result) {
-                auto handoff =
-                    dynamoPrefillHandoffFromPrefillResult(result,
-                                                          selectedPrefillId);
+                auto handoff = dynamoPrefillHandoffFromPrefillResult(
+                    result, selectedPrefillId);
                 TT_LOG_INFO(
                     "[DynamoEndpoint] Emitting Dynamo prefill handoff "
                     "selected_prefill_id={} migrationId={} token_count={} "
                     "kv_position_id={} cached_tokens={} error={}",
-                    handoff.selectedPrefillId,
-                    handoff.migrationId.value_or(0), handoff.tokenCount,
-                    handoff.kvPositionId.value_or(0), handoff.cachedTokens,
-                    handoff.error);
+                    handoff.selectedPrefillId, handoff.migrationId.value_or(0),
+                    handoff.tokenCount, handoff.kvPositionId.value_or(0),
+                    handoff.cachedTokens, handoff.error);
 
                 TokenChunk out;
                 out.finish_reason = "stop";
@@ -431,7 +426,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
         auto prefillResult =
             dynamoPrefillHandoffToPrefillResult(req->task_id, handoff);
         prefillResult.remainingTokens = dynReq.max_tokens;
-        pipeline->handlePrefillResult(prefillResult, forwardDecodeChunkToDynamo);
+        pipeline->handlePrefillResult(prefillResult,
+                                      forwardDecodeChunkToDynamo);
       } catch (const std::exception& e) {
         TT_LOG_ERROR("[DynamoEndpoint] handlePrefillResult failed: {}",
                      e.what());
@@ -638,8 +634,8 @@ void DynamoEndpoint::start() {
 
   // start() binds and listens on the pool loops synchronously; the resolved
   // port is available immediately afterwards.
-  server_ =
-      std::make_unique<DynamoServer>(sc, makeGenerateHandler(), loop_pool_.get());
+  server_ = std::make_unique<DynamoServer>(sc, makeGenerateHandler(),
+                                           loop_pool_.get());
   local_prefill_id_ = server_->config().component + "/" +
                       server_->config().endpoint + "/" +
                       server_->config().instance_id_hex;

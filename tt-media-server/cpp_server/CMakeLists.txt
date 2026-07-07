@@ -1192,6 +1192,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/service_container.cpp
     src/services/disaggregation_service.cpp
     src/services/llm_pipeline.cpp
+    src/dynamo/discovery.cpp
     src/dynamo/etcd_client.cpp
     src/dynamo/dynamo_protocol.cpp
     src/dynamo/dynamo_prefill_client.cpp
