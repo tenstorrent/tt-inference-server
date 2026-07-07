@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -23,28 +22,25 @@ namespace tt::services {
  * Adapter that implements MigrationClientInterface using IRemoteKVManager.
  *
  * This allows PrefillScheduler to use our Kafka-backed RemoteKVManager for
- * both KV cache migration entry points:
+ * cross-endpoint Prefill->Decode KV migration on a migrating SUBMIT, via the
+ * burst lifecycle:
  *
- *   1) migrate()            — ALLOCATE prefix-cache loopback (intra-endpoint
- *                             slot->slot KV pre-warm).
- *   2) start_burst() /
- *      enqueue_migration_in_burst() /
- *      finish_burst()       — cross-endpoint Prefill->Decode KV migration on
- *                             a migrating SUBMIT (61 layers x N chunks all
- *                             aggregated under one burst uuid).
+ *   start_burst() / enqueue_migration_in_burst() / finish_burst()
+ *     — 61 layers x N chunks all aggregated under one burst uuid.
+ *
+ * The single-shot migrate() entry point (ALLOCATE prefix-cache slot-copy
+ * loopback) is intentionally not supported by this adapter and throws.
  *
  * Aggregation (master-worker parity):
- * Every scheduler-facing "unit of work" (one migrate() call, or one start_burst
- * .. finish_burst pair) fans out to N per-layer requests on IRemoteKVManager
- * (one Kafka request per layer per position range). The N per-layer Kafka acks
- * are aggregated inside poll() and delivered to the scheduler as EXACTLY ONE
- * terminal callback (onComplete_ or onFailed_) per group token. This mirrors
- * the "master migration worker" semantics: multiple sub-completions collapse
- * into a single on_migration_complete / on_migration_failed event.
+ * Every scheduler-facing "unit of work" (one start_burst .. finish_burst pair)
+ * fans out to N per-layer requests on IRemoteKVManager (one Kafka request per
+ * layer per position range). The N per-layer Kafka acks are aggregated inside
+ * poll() and delivered to the scheduler as EXACTLY ONE terminal callback
+ * (onComplete_ or onFailed_) per group token. This mirrors the "master
+ * migration worker" semantics: multiple sub-completions collapse into a
+ * single on_migration_complete / on_migration_failed event.
  *
  * Group token:
- * - migrate() mints an adapter-owned token (high bit set to keep its space
- *   disjoint from caller-supplied uuids).
  * - start_burst(uuid) uses the caller-supplied uuid directly as both the
  *   BurstId and the terminal event's token — finish_burst returns that same
  *   uuid so the scheduler can correlate the eventual on_migration_complete
@@ -64,16 +60,16 @@ namespace tt::services {
  *
  * Threading:
  * - poll() should be called from the scheduler's ack_reader_thread.
- * - migrate() / start_burst() / enqueue_migration_in_burst() / finish_burst()
- *   are thread-safe but expected to be driven from the same owner thread as
+ * - start_burst() / enqueue_migration_in_burst() / finish_burst() are
+ *   thread-safe but expected to be driven from the same owner thread as
  *   poll() (that is the MigrationClientInterface contract).
  * - shutdown(drain=true) must be called from a thread OTHER than the poll()
  *   owner. The caller must ensure poll() continues to run on its owner thread
  *   until shutdown returns, otherwise the drain will time out.
  *
  * Callback registration: Register all callbacks during setup, before the first
- * migrate() / start_burst() / poll() call. Callbacks are read without
- * synchronization from poll() on the owner thread.
+ * start_burst() / poll() call. Callbacks are read without synchronization
+ * from poll() on the owner thread.
  */
 class RemoteKVManagerAdapter
     : public tt_llm_engine::scheduler::MigrationClientInterface {
@@ -102,10 +98,9 @@ class RemoteKVManagerAdapter
   RemoteKVManagerAdapter& operator=(const RemoteKVManagerAdapter&) = delete;
 
   // --- Burst lifecycle (cross-endpoint P->D migration on migrating SUBMIT) ---
-  // BurstId == the caller-supplied uuid. Fan-out and completion aggregation
-  // use the same MigrationGroup machinery as migrate(); poll() only emits the
-  // terminal event after finish_burst() has closed the group AND all fanned
-  // out per-layer Kafka acks have landed.
+  // BurstId == the caller-supplied uuid. poll() only emits the terminal event
+  // after finish_burst() has closed the group AND all fanned-out per-layer
+  // Kafka acks have landed.
   BurstId start_burst(MigrationToken uuid) override;
 
   void enqueue_migration_in_burst(BurstId burst, int remote_endpoint_id,
@@ -124,9 +119,10 @@ class RemoteKVManagerAdapter
   // RemoteKVManagerImpl and appear as an immediate FAILED status on poll().
   uint32_t cmd_queue_write_space() const override { return UINT32_MAX; }
 
-  // --- Single migration (ALLOCATE prefix-cache loopback pre-warm) ---
-  // One-shot: the returned group is `closed` from the start, so poll() fires
-  // the terminal event as soon as all per-layer Kafka acks have landed.
+  // --- Single migration (ALLOCATE prefix-cache slot-copy loopback) ---
+  // Intentionally not implemented — this adapter does not support the
+  // slot-copy path; all callers should go through the burst lifecycle above.
+  // Throws std::logic_error if invoked.
   MigrationToken migrate(int remote_endpoint_id, uint32_t src_slot,
                          uint32_t dst_slot, uint32_t layer_start,
                          uint32_t layer_end_exclusive, uint32_t pos_start,
@@ -159,16 +155,14 @@ class RemoteKVManagerAdapter
   void shutdown(bool drain = true) override;
 
  private:
-  // Aggregation state for ONE scheduler-facing unit of work — either a single
-  // migrate() call OR a start_burst()..finish_burst() lifecycle. Owns the set
-  // of per-layer Kafka migration_ids that must all terminate before poll()
-  // fires the group's single MigrationComplete callback.
+  // Aggregation state for ONE scheduler-facing unit of work — a
+  // start_burst()..finish_burst() lifecycle. Owns the set of per-layer Kafka
+  // migration_ids that must all terminate before poll() fires the group's
+  // single MigrationComplete callback.
   //
-  // `closed` gates completion emission:
-  //   - migrate(): closed=true at construction (one-shot, no further fan-out).
-  //   - start_burst() / enqueue_.. / finish_burst(): closed=false until
-  //     finish_burst() flips it, so enqueue calls can keep adding pending ids
-  //     without a premature "done" firing.
+  // `closed` gates completion emission: false until finish_burst() flips it,
+  // so enqueue calls can keep adding pending ids without a premature "done"
+  // firing.
   //
   // `failedReported` guards against a second callback: once a per-layer FAILED
   // is observed we call onFailed_ and never fire again for this token, but
@@ -181,24 +175,19 @@ class RemoteKVManagerAdapter
     bool failedReported{false};
   };
 
-  // Token minter for adapter-owned MigrationTokens. Bit 63 is set to keep the
-  // adapter's token space disjoint from any caller-supplied uuid space (same
-  // convention as MigrationLayerClientAdapter::migrate).
-  MigrationToken mintToken();
-
   std::unique_ptr<IRemoteKVManager> kvManager_;
 
   mutable std::mutex mtx_;
   std::condition_variable drainCv_;
 
-  // Group state keyed by the adapter-minted MigrationToken returned to the
-  // scheduler; poll() aggregates into these.
+  // Group state keyed by the burst uuid (caller-supplied MigrationToken
+  // returned by start_burst / finish_burst); poll() aggregates into these.
   std::unordered_map<MigrationToken, MigrationGroup> groups_;
-  // Reverse index: Kafka migration_id -> owning group's token. Rebuilt on
-  // every migrate(); trimmed as per-layer acks land in poll().
+  // Reverse index: Kafka migration_id -> owning group's token. Extended on
+  // every enqueue_migration_in_burst(); trimmed as per-layer acks land in
+  // poll().
   std::unordered_map<uint64_t, MigrationToken> kafkaToGroup_;
 
-  std::atomic<uint64_t> nextTokenSuffix_{0};
   bool shutdownRequested_{false};
 
   std::chrono::milliseconds shutdownTimeout_;

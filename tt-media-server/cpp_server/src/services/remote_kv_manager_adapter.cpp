@@ -143,81 +143,19 @@ RemoteKVManagerAdapter::MigrationToken RemoteKVManagerAdapter::finish_burst(
   return burst;
 }
 
-RemoteKVManagerAdapter::MigrationToken RemoteKVManagerAdapter::mintToken() {
-  // High bit set: adapter-owned token space, disjoint from any caller-supplied
-  // uuid space (mirrors MigrationLayerClientAdapter::migrate's convention).
-  // Bursts use the caller-supplied uuid unchanged, so a caller that respects
-  // the same convention (bit 63 clear for their uuids) has zero collision risk.
-  constexpr MigrationToken kHighBit = MigrationToken{1} << 63;
-  return kHighBit | nextTokenSuffix_.fetch_add(1, std::memory_order_relaxed);
-}
-
 RemoteKVManagerAdapter::MigrationToken RemoteKVManagerAdapter::migrate(
-    int /*remote_endpoint_id*/, uint32_t src_slot, uint32_t dst_slot,
-    uint32_t layer_start, uint32_t layer_end_exclusive, uint32_t pos_start,
-    uint32_t pos_end_exclusive) {
-  // remote_endpoint_id ignored: Kafka topic routing is not endpoint-specific.
-  if (layer_end_exclusive <= layer_start) {
-    throw std::invalid_argument(
-        "[RemoteKVManagerAdapter] migrate(): empty layer range");
-  }
-
-  const MigrationToken token = mintToken();
-
-  // Fan out one Kafka request per layer. Each per-layer request shares the
-  // same [pos_start, pos_end_exclusive) rectangle (ALLOCATE prefix-cache
-  // loopback: src and dst position ranges are identical). Collected under a
-  // single MigrationGroup keyed by `token` with closed=true (one-shot); poll()
-  // fires the terminal event as soon as all per-layer acks have landed.
-  std::lock_guard<std::mutex> lock(mtx_);
-  if (shutdownRequested_) {
-    throw std::runtime_error(
-        "[RemoteKVManagerAdapter] migrate() called after shutdown()");
-  }
-
-  auto [git, inserted] =
-      groups_.emplace(token, MigrationGroup{.token = token,
-                                            .pendingKafkaIds = {},
-                                            // One-shot: no further fan-out
-                                            // possible for this token, so mark
-                                            // closed right away and poll()
-                                            // will fire the terminal event as
-                                            // soon as the pending set drains.
-                                            .closed = true,
-                                            .failed = false,
-                                            .failedReported = false});
-  if (!inserted) {
-    TT_LOG_ERROR(
-        "[RemoteKVManagerAdapter] token collision on mint token={}; "
-        "returning existing group",
-        token);
-    return token;
-  }
-  MigrationGroup& group = git->second;
-
-  for (uint32_t layer = layer_start; layer < layer_end_exclusive; ++layer) {
-    const MigrationRequest request{
-        .src_slot = src_slot,
-        .dst_slot = dst_slot,
-        .layer_begin = layer,
-        .layer_end = layer + 1,
-        .src_position_begin = pos_start,
-        .src_position_end = pos_end_exclusive,
-        .dst_position_begin = pos_start,
-        .dst_position_end = pos_end_exclusive,
-    };
-    const uint64_t kafkaId = kvManager_->migrate(request);
-    group.pendingKafkaIds.insert(kafkaId);
-    kafkaToGroup_.emplace(kafkaId, token);
-  }
-
-  TT_LOG_DEBUG(
-      "[RemoteKVManagerAdapter] migrate: token={}, slot {}->{}, "
-      "layers [{},{}) fanned out to {} Kafka request(s), pos [{},{})",
-      token, src_slot, dst_slot, layer_start, layer_end_exclusive,
-      group.pendingKafkaIds.size(), pos_start, pos_end_exclusive);
-
-  return token;
+    int /*remote_endpoint_id*/, uint32_t /*src_slot*/, uint32_t /*dst_slot*/,
+    uint32_t /*layer_start*/, uint32_t /*layer_end_exclusive*/,
+    uint32_t /*pos_start*/, uint32_t /*pos_end_exclusive*/) {
+  // Intentionally not implemented. This entry point is only exercised by the
+  // ALLOCATE prefix-cache slot-copy loopback path, which is out of scope for
+  // this adapter. Throwing (instead of a silent stub) ensures any accidental
+  // caller crashes loudly at the source rather than deadlocking on a token
+  // that will never receive a terminal event.
+  throw std::logic_error(
+      "[RemoteKVManagerAdapter] migrate() is not implemented "
+      "(slot-copy path is unsupported); use start_burst/enqueue/finish_burst "
+      "for cross-endpoint KV migration");
 }
 
 int RemoteKVManagerAdapter::poll() {
