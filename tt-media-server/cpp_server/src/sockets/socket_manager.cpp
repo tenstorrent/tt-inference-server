@@ -11,8 +11,11 @@
 namespace tt::sockets {
 
 namespace {
-constexpr auto MESSAGE_LOOP_SLEEP = std::chrono::milliseconds(10);
-}
+// Idle backoff only — applied when no message is pending. A burst of concurrent
+// messages is drained in a single pass (see messageLoop), so this no longer
+// serializes requests at the poll interval the way the old 10ms did.
+constexpr auto MESSAGE_LOOP_IDLE_WAIT = std::chrono::milliseconds(1);
+}  // namespace
 
 SocketManager::~SocketManager() { stop(); }
 
@@ -75,16 +78,31 @@ void SocketManager::stop() {
 
 void SocketManager::messageLoop(std::stop_token stopToken) {
   while (running && !stopToken.stop_requested()) {
+    bool drainedAny = false;
     try {
-      auto data = transport->receiveRawData();
-      if (!data.empty()) {
+      // Drain every message the transport currently has buffered in one pass.
+      // Previously we handled a single message per iteration and then slept, so
+      // a burst of N concurrent messages was admitted at the poll interval
+      // (N * 10ms) — that was the dominant decode->prefill "socket" latency,
+      // growing ~10ms per concurrent request. Draining here collapses the burst
+      // into a single pass so all queued requests are admitted immediately.
+      while (running && !stopToken.stop_requested()) {
+        auto data = transport->receiveRawData();
+        if (data.empty()) {
+          break;
+        }
         handleIncomingMessage(data);
+        drainedAny = true;
       }
     } catch (const std::exception& e) {
       TT_LOG_ERROR("[SocketManager] Message loop error: {}", e.what());
     }
 
-    std::this_thread::sleep_for(MESSAGE_LOOP_SLEEP);
+    // Back off only when idle; kept short (1ms) so first-message latency after
+    // an idle period stays low instead of the old fixed 10ms poll.
+    if (!drainedAny) {
+      std::this_thread::sleep_for(MESSAGE_LOOP_IDLE_WAIT);
+    }
   }
 }
 
