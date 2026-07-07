@@ -21,6 +21,7 @@ from pathlib import Path
 import aiohttp
 import numpy as np
 
+from .._libritts import disable_audio_decode, resolve_split
 from .._test_common import BaseTest
 
 logger = logging.getLogger(__name__)
@@ -29,39 +30,11 @@ DATASET_DIR = "server_tests/datasets/libritts_subset"
 METADATA_FILE = "metadata.json"
 DEFAULT_DATASET_SPLIT = "test.clean"
 
-LIBRITTS_SPLIT_ALIASES = {
-    "test": "test.clean",
-    "test.clean": "test.clean",
-    "test.other": "test.other",
-    "dev": "dev.clean",
-    "validation": "dev.clean",
-    "dev.clean": "dev.clean",
-    "dev.other": "dev.other",
-    "train": "train.clean.100",
-    "train.clean.100": "train.clean.100",
-    "train.clean.360": "train.clean.360",
-}
-
 headers = {
     "accept": "application/json",
     "Content-Type": "application/json",
     "Authorization": "Bearer your-secret-key",
 }
-
-
-def _disable_audio_decode(dataset):
-    """Return ``dataset`` with its audio column left as raw (undecoded) bytes.
-
-    These tests only read text fields, so decoding the audio column is wasted
-    work and, with recent ``datasets`` releases, needs the optional
-    ``torchcodec`` backend just to iterate. Disabling decode keeps the
-    dependency footprint on ``datasets``/``librosa`` alone.
-    """
-    from datasets import Audio
-
-    if "audio" in (getattr(dataset, "column_names", None) or []):
-        return dataset.cast_column("audio", Audio(decode=False))
-    return dataset
 
 
 class TTSQualityTest(BaseTest):
@@ -362,11 +335,6 @@ class TTSQualityTest(BaseTest):
 
         return buffer.getvalue()
 
-    @staticmethod
-    def _resolve_split(split: str) -> str:
-        """Map a requested split onto a valid LibriTTS-R split name."""
-        return LIBRITTS_SPLIT_ALIASES.get(split, split)
-
     def _download_samples(
         self, count: int = 20, split: str = DEFAULT_DATASET_SPLIT
     ) -> None:
@@ -374,7 +342,7 @@ class TTSQualityTest(BaseTest):
         if count <= 0:
             raise ValueError("Sample count must be positive.")
 
-        resolved_split = self._resolve_split(split)
+        resolved_split = resolve_split(split)
         if resolved_split != split:
             logger.info(f"Resolved dataset split '{split}' -> '{resolved_split}'")
 
@@ -386,7 +354,7 @@ class TTSQualityTest(BaseTest):
             dataset = load_dataset(
                 "blabble-io/libritts_r", "clean", split=resolved_split, streaming=True
             )
-            dataset = _disable_audio_decode(dataset)
+            dataset = disable_audio_decode(dataset)
 
             dataset_subset = list(itertools.islice(dataset, count))
 
