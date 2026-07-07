@@ -120,7 +120,7 @@ constexpr size_t MEMORY_QUEUE_CAPACITY = 128;
 // IPC message sizes
 constexpr size_t MAX_SEQUENCE_NON_TOKEN_BYTES = 4096;
 constexpr size_t TASK_QUEUE_MAX_MSG_SIZE =
-    MAX_CONTEXT_LENGTH * sizeof(int64_t) + MAX_SEQUENCE_NON_TOKEN_BYTES;
+    MAX_CONTEXT_LENGTH * sizeof(uint32_t) + MAX_SEQUENCE_NON_TOKEN_BYTES;
 constexpr size_t MEMORY_REQUEST_MAX_MSG_SIZE = 256;
 constexpr size_t MEMORY_RESULT_MAX_MSG_SIZE = 4096;
 

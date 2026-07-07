@@ -50,7 +50,7 @@ bool Session::clearInFlight() {
 }
 
 void Session::initTokenAccumulator(
-    std::vector<int> deltaTokens,
+    std::vector<uint32_t> deltaTokens,
     std::vector<utils::BlockHashInfo> initialBlocks,
     std::function<void(const std::string&,
                        const std::vector<utils::BlockHashInfo>&)>
@@ -75,7 +75,7 @@ void Session::initTokenAccumulator(
   accumulatedThinkTokens_ = parentThinkCount_;
 }
 
-void Session::addGeneratedToken(int tokenId) {
+void Session::addGeneratedToken(uint32_t tokenId) {
   generatedTokens_.push_back(tokenId);
 
   // Track thinking state using the same marker rules as prefix hashing.
@@ -84,9 +84,9 @@ void Session::addGeneratedToken(int tokenId) {
       thinkEndTokenId_ != utils::tokenizers::kNoTokenId;
   if (!thinkingEnabled) return;
 
-  if (tokenId == static_cast<int>(thinkStartTokenId_)) {
+  if (tokenId == thinkStartTokenId_) {
     inThinkingBlock_ = true;
-  } else if (tokenId == static_cast<int>(thinkEndTokenId_)) {
+  } else if (tokenId == thinkEndTokenId_) {
     inThinkingBlock_ = false;
   } else if (inThinkingBlock_) {
     ++accumulatedThinkTokens_;  // Only content tokens, not markers
@@ -97,7 +97,7 @@ void Session::finalizeAndRegisterHashes() {
   if (!onComplete_) return;
 
   // Combine delta prompt + generated tokens
-  std::vector<int> allDeltaTokens = deltaTokens_;
+  std::vector<uint32_t> allDeltaTokens = deltaTokens_;
   allDeltaTokens.insert(allDeltaTokens.end(), generatedTokens_.begin(),
                         generatedTokens_.end());
 

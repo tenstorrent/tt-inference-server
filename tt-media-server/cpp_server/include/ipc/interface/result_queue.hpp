@@ -13,7 +13,7 @@ namespace tt::ipc {
 struct SharedToken {
   uint32_t token_index = 0;
   uint32_t flags = 0;
-  uint64_t token_id = 0;
+  uint32_t token_id = 0;
   uint32_t task_id = 0;
   uint32_t spec_accepts = 0;
   uint32_t spec_rejects = 0;
