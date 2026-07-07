@@ -1192,9 +1192,7 @@ def evals_release_report_data(args, results, meta_data, model_spec, sample_count
                     # here makes the same PASS/FAIL decision as the v2 scorer;
                     # when unavailable, accept_eval_score falls back to the ratio.
                     accuracy_check = ReportCheckTypes.from_result(
-                        accept_eval_score(
-                            ref, score, n_total=sample_counts.get(t_key)
-                        )
+                        accept_eval_score(ref, score, n_total=sample_counts.get(t_key))
                     )
                 else:
                     ratio_to_reference = "N/A"
@@ -1508,7 +1506,9 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
     # Effective per-task sample counts (after --limit) for the sample-count-aware
     # acceptance check on CI/limit-mode subsets; only lm-eval dict-format files
     # carry the n-samples field.
-    sample_counts = collect_sample_counts(dict_format_files) if dict_format_files else {}
+    sample_counts = (
+        collect_sample_counts(dict_format_files) if dict_format_files else {}
+    )
 
     if dict_format_files:
         dict_results, dict_meta_data = extract_eval_results(dict_format_files)

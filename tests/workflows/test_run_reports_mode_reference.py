@@ -174,9 +174,7 @@ def test_collect_sample_counts_reads_effective(tmp_path):
         json.dumps(
             {
                 "results": {"r1_gpqa_diamond": {"exact_match,none": 0.7}},
-                "n-samples": {
-                    "r1_gpqa_diamond": {"original": 198, "effective": 40}
-                },
+                "n-samples": {"r1_gpqa_diamond": {"original": 198, "effective": 40}},
             }
         )
     )
