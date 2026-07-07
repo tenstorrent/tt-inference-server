@@ -19,7 +19,8 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
-from urllib.parse import urlparse
+
+from utils.url_helpers import uses_remote_base_url
 
 from ..config import DriverContext, LLMRunConfig, ServerConnection
 from ..parsers.vllm import VLLMBenchParser
@@ -33,13 +34,6 @@ def _resolve_auth_token(server: ServerConnection) -> str:
     return (
         server.auth_token or os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY") or ""
     )
-
-
-def _uses_remote_base_url(server: ServerConnection) -> bool:
-    if server.is_remote:
-        return True
-    scheme = urlparse(server.url_with_port).scheme
-    return scheme == "https"
 
 
 def build_vllm_bench_serve_argv(
@@ -88,7 +82,7 @@ def build_vllm_bench_serve_argv(
         str(result_filename),
     ]
 
-    if _uses_remote_base_url(server):
+    if uses_remote_base_url(server.url_with_port, server.is_remote):
         cmd.extend(["--base-url", server.url_with_port])
         cmd.extend(["--ready-check-timeout-sec", "0"])
         cmd.extend(["--trust-remote-code"])

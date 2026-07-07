@@ -74,6 +74,18 @@ def is_remote_server(runtime_config=None, args=None) -> bool:
     )
 
 
+def uses_remote_base_url(url_with_port: str, is_remote: bool = False) -> bool:
+    """Return ``True`` when a benchmark should target a remote ``--base-url``.
+
+    Remote when the server was explicitly flagged remote, or when the resolved
+    URL uses TLS (``https``); a local plaintext server uses ``--host``/``--port``
+    instead.
+    """
+    if is_remote:
+        return True
+    return urlparse(url_with_port).scheme == "https"
+
+
 def build_base_url(deploy_url: str, service_port) -> str:
     """Return ``scheme://host[:port]`` for building endpoint URLs.
 
