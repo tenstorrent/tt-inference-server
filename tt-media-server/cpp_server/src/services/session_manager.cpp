@@ -675,7 +675,7 @@ SessionManager::tryAcquireByPrefixHash(
 }
 
 std::vector<utils::BlockHashInfo> SessionManager::computeBlockInfos(
-    std::span<const int> promptTokenIds) const {
+    std::span<const uint32_t> promptTokenIds) const {
   return prefixCacheRouter->computeBlockInfos(promptTokenIds);
 }
 
@@ -745,7 +745,7 @@ void SessionManager::updateSessionCountMetric() {
       static_cast<double>(getActiveSessionCount()));
 }
 
-void SessionManager::getSlot(std::span<const int> promptTokenIds,
+void SessionManager::getSlot(std::span<const uint32_t> promptTokenIds,
                              GetSlotOptions opts, trantor::EventLoop* loop,
                              std::function<void(SlotAcquireResult)> onResolved,
                              std::function<void(const std::string&)> onError) {

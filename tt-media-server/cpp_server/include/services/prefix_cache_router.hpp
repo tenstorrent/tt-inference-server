@@ -111,7 +111,7 @@ class PrefixCacheRouter {
    * Internalizes block splitting and hashing logic.
    */
   std::vector<utils::BlockHashInfo> computeBlockInfos(
-      std::span<const int> promptTokenIds) const;
+      std::span<const uint32_t> promptTokenIds) const;
 
   std::optional<AcquireResult> tryAcquireByPrefixHash(
       const std::vector<utils::BlockHashInfo>& blockInfos,
@@ -153,7 +153,7 @@ class PrefixCacheRouter {
    * @param onResolved      Callback with the result (session found or created).
    * @param onError         Callback for errors (e.g., rate limit).
    */
-  void getSlot(std::span<const int> promptTokenIds, GetSlotOptions opts,
+  void getSlot(std::span<const uint32_t> promptTokenIds, GetSlotOptions opts,
                trantor::EventLoop* eventLoop,
                std::function<void(SlotAcquireResult)> onResolved,
                std::function<void(const std::string&)> onError);

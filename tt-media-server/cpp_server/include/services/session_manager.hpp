@@ -128,7 +128,7 @@ class SessionManager {
    * Convenience wrapper around PrefixCacheRouter::computeBlockInfos.
    */
   std::vector<utils::BlockHashInfo> computeBlockInfos(
-      std::span<const int> promptTokenIds) const;
+      std::span<const uint32_t> promptTokenIds) const;
 
   /**
    * Unified slot acquisition - the main entry point for prefix cache routing.
@@ -153,7 +153,7 @@ class SessionManager {
    *   - isNewSession: whether this is a fresh session
    *   - blocks: for token accumulator initialization
    */
-  void getSlot(std::span<const int> promptTokenIds, GetSlotOptions opts,
+  void getSlot(std::span<const uint32_t> promptTokenIds, GetSlotOptions opts,
                trantor::EventLoop* loop,
                std::function<void(SlotAcquireResult)> onResolved,
                std::function<void(const std::string&)> onError);

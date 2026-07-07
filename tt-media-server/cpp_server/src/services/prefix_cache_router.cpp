@@ -15,7 +15,7 @@ PrefixCacheRouter::PrefixCacheRouter(PrefixCacheRouterCallbacks callbacks)
     : callbacks(std::move(callbacks)) {}
 
 std::vector<utils::BlockHashInfo> PrefixCacheRouter::computeBlockInfos(
-    std::span<const int> promptTokenIds) const {
+    std::span<const uint32_t> promptTokenIds) const {
   if (promptTokenIds.empty()) {
     return {};
   }
@@ -305,7 +305,7 @@ void PrefixCacheRouter::onSessionClosed(const std::string& sessionId,
 }
 
 void PrefixCacheRouter::getSlot(
-    std::span<const int> promptTokenIds, GetSlotOptions opts,
+    std::span<const uint32_t> promptTokenIds, GetSlotOptions opts,
     trantor::EventLoop* eventLoop,
     std::function<void(SlotAcquireResult)> onResolved,
     std::function<void(const std::string&)> onError) {

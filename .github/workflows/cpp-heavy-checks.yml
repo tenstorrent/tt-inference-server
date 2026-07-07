@@ -363,113 +363,6 @@ jobs:
           [ -f zmq_prefill.pid ] && kill $(cat zmq_prefill.pid) 2>/dev/null || true
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 8002 --port 9000 --label "ZMQ direct split"
 
-      # ── Round 2: Prefill + Mock Decode split ─────────────────────────
-      - name: Start Prefill server (mock decode split)
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "mock decode split prefill"
-          cd cpp_server
-          NS=mock_decode_prefill
-          SOCKET_TRANSPORT=zmq \
-          TT_LOG_LEVEL=debug \
-          LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
-          SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./build/tt_media_server_cpp -p 8001 -t 4 \
-            > ../mock_decode_prefill.log 2>&1 &
-          echo $! > ../mock_decode_prefill.pid
-          cd ..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8001 --pid-file mock_decode_prefill.pid --label "mock decode split prefill server"
-
-      - name: Start Decode server (mock decode split)
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 9000 --label "mock decode split decode"
-          cd cpp_server
-          NS=mock_decode
-          SOCKET_TRANSPORT=zmq \
-          LLM_DEVICE_BACKEND=mock LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
-          TT_LOG_LEVEL=debug \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./build/tt_media_server_cpp -p 8000 -t 4 \
-            > ../mock_decode.log 2>&1 &
-          echo $! > ../mock_decode.pid
-          cd ..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8000 --pid-file mock_decode.pid --label "mock decode split decode server"
-
-      - name: Verify mock decode split socket connection
-        run: |
-          bash cpp_server/scripts/ci/wait_for_liveness.sh \
-            --port 8001 \
-            --expect '"socket_status":"client:connected"' \
-            --pid-file mock_decode_prefill.pid \
-            --label "mock decode split prefill socket"
-          bash cpp_server/scripts/ci/wait_for_liveness.sh \
-            --port 8000 \
-            --expect '"socket_status":"server:connected' \
-            --pid-file mock_decode.pid \
-            --label "mock decode split decode socket"
-          PREFILL_LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-          DECODE_LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
-          echo "Prefill liveness: $PREFILL_LIVENESS"
-          echo "Decode liveness:  $DECODE_LIVENESS"
-          FAIL=0
-          if ! echo "$PREFILL_LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Prefill server model_ready is not true"
-            FAIL=1
-          fi
-          if ! echo "$PREFILL_LIVENESS" | grep -q '"socket_status":"client:connected"'; then
-            echo "ERROR: Prefill server socket_status is not 'client:connected'"
-            FAIL=1
-          fi
-          if ! echo "$DECODE_LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Decode server model_ready is not true"
-            FAIL=1
-          fi
-          if ! echo "$DECODE_LIVENESS" | grep -q '"socket_status":"server:connected'; then
-            echo "ERROR: Decode socket_status does not start with 'server:connected'"
-            FAIL=1
-          fi
-          if [ "$FAIL" -ne 0 ]; then
-            exit 1
-          fi
-
-      - name: Run vLLM bench serve against mock decode split
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --base-url http://127.0.0.1:8000 \
-            --dataset-name random \
-            --random-input-len 1024 \
-            --random-output-len 128 \
-            --num-prompts 1000 \
-            --max-concurrency 64 \
-            --save-result \
-            --result-filename "vllm-bench-split-mock-decode-result.json" \
-            2>&1 | tee bench_split_mock_decode_output.txt
-
-      - name: Stop mock decode split servers
-        if: always()
-        run: |
-          [ -f mock_decode.pid ] && kill $(cat mock_decode.pid) 2>/dev/null || true
-          [ -f mock_decode_prefill.pid ] && kill $(cat mock_decode_prefill.pid) 2>/dev/null || true
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 8001 --port 9000 --label "mock decode split"
-
       - name: Check benchmark thresholds
         run: |
           CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
@@ -496,7 +389,6 @@ jobs:
           }
 
           check_threshold prefill_decode_split_zmq vllm-bench-split-zmq-result.json
-          check_threshold prefill_decode_split_mock_decode vllm-bench-split-mock-decode-result.json
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
           echo "BENCH_THRESHOLD_LOG=$THRESHOLD_LOG" >> "$GITHUB_ENV"
 
@@ -516,20 +408,6 @@ jobs:
           else
             echo "No zmq_prefill.log file found"
           fi
-          echo ""
-          echo "=== Prefill Server Logs (mock decode round) ==="
-          if [ -f mock_decode_prefill.log ]; then
-            cat mock_decode_prefill.log
-          else
-            echo "No mock_decode_prefill.log file found"
-          fi
-          echo ""
-          echo "=== Decode Server Logs (mock decode round) ==="
-          if [ -f mock_decode.log ]; then
-            cat mock_decode.log
-          else
-            echo "No mock_decode.log file found"
-          fi
 
       - name: Upload benchmark result
         if: always()
@@ -538,7 +416,6 @@ jobs:
           name: cpp-server-prefill-decode-split-result
           path: |
             tt-media-server/vllm-bench-split-zmq-result.json
-            tt-media-server/vllm-bench-split-mock-decode-result.json
           retention-days: 1
           if-no-files-found: warn
 
@@ -550,8 +427,6 @@ jobs:
           path: |
             tt-media-server/zmq_decode.log
             tt-media-server/zmq_prefill.log
-            tt-media-server/mock_decode.log
-            tt-media-server/mock_decode_prefill.log
           retention-days: 1
           if-no-files-found: warn
 

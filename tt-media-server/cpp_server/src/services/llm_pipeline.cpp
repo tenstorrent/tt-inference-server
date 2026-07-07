@@ -72,7 +72,7 @@ void LLMPipeline::resolveSession(
     std::function<void(const SessionError&)> onError,
     std::function<void()> cancelFn) const {
   const char* promptKind = "string";
-  auto* tokens = std::get_if<std::vector<int>>(&req->prompt);
+  auto* tokens = std::get_if<std::vector<uint32_t>>(&req->prompt);
   if (tokens) {
     promptKind = "tokens";
   }
@@ -128,8 +128,9 @@ void LLMPipeline::resolveSession(
 
         // Capture full prompt before delta trim; finalizeAndRegisterHashes
         // re-hashes the whole conversation from scratch (initialBlocks empty).
-        std::vector<int> fullPrompt;
-        if (auto* promptTokens = std::get_if<std::vector<int>>(&req->prompt)) {
+        std::vector<uint32_t> fullPrompt;
+        if (auto* promptTokens =
+                std::get_if<std::vector<uint32_t>>(&req->prompt)) {
           fullPrompt = *promptTokens;
         }
 
@@ -148,6 +149,9 @@ void LLMPipeline::resolveSession(
               [mgr](const std::string& sessionId,
                     const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
+              },
+              [mgr](const std::string& sessionId) {
+                mgr->closeSession(sessionId);
               },
               result.accumulatedThinkTokens);
         }
@@ -247,11 +251,11 @@ void LLMPipeline::dispatchGeneration(
             *request.kv_position_id -
             static_cast<uint32_t>(request.accumulated_think_tokens);
         const auto fullPromptTokens =
-            std::get<std::vector<int>>(request.prompt).size();
+            std::get<std::vector<uint32_t>>(request.prompt).size();
         session_resolution::applyDeltaPrompt(request, matchedTokens);
-        reusedPrefixTokens =
-            static_cast<int>(fullPromptTokens -
-                             std::get<std::vector<int>>(request.prompt).size());
+        reusedPrefixTokens = static_cast<int>(
+            fullPromptTokens -
+            std::get<std::vector<uint32_t>>(request.prompt).size());
       }
       TT_LOG_DEBUG("[LLMPipeline] Using prefill on decode for sessionId: {}",
                    request.sessionId.value_or("none"));

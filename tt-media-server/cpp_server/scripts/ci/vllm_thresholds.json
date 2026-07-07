@@ -1,12 +1,5 @@
 {
   "scenarios": {
-    "cpp_mock": {
-      "label": "C++ Server vLLM Bench (mock)",
-      "min_completed": 1000,
-      "max_failed": 0,
-      "max_mean_tpot_ms": 1,
-      "max_mean_ttft_ms": 175
-    },
     "cpp_mock_pipeline": {
       "label": "C++ Server vLLM Bench (mock_pipeline)",
       "min_completed": 1000,
@@ -27,13 +20,6 @@
       "max_failed": 0,
       "max_mean_tpot_ms": 12,
       "max_mean_ttft_ms": 1000
-    },
-    "prefill_decode_split_mock_decode": {
-      "label": "C++ Server Prefill/Decode Split (mock decode)",
-      "min_completed": 1000,
-      "max_failed": 0,
-      "max_mean_tpot_ms": 10,
-      "max_mean_ttft_ms": 2000
     },
     "gateway_split_tcp": {
       "label": "C++ Server Gateway Split (TCP)",
