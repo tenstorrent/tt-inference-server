@@ -25,13 +25,7 @@ namespace tt::dynamo {
  * Dedicated Dynamo `generate` endpoint.
  *
  * Hosts a TCP listener that speaks the Dynamo wire protocol and dispatches
- * each inbound request through the same `LLMPipeline` used by HTTP
- * `/v1/chat/completions` and `/v1/responses` — so Dynamo traffic benefits
- * from session management, prefix-cache routing, and (when configured)
- * disaggregated prefill, with no mock detour.
- *
- * One instance per process. Construct in main.cpp once the LLMPipeline /
- * SessionManager are ready, call `start()` after the worker manager is up.
+ * inbound requests through the normal `LLMPipeline`.
  */
 class DynamoEndpoint {
  public:
@@ -94,8 +88,7 @@ class DynamoEndpoint {
   std::unique_ptr<DynamoServer> server_;
   std::thread keepalive_thread_;
   std::unique_ptr<trantor::EventLoopThreadPool> loop_pool_;
-  std::shared_ptr<std::string> local_prefill_id_ =
-      std::make_shared<std::string>();
+  std::string local_prefill_id_;
   std::atomic<bool> running_{false};
   std::unique_ptr<DiscoveryRegistration> discovery_;
 };

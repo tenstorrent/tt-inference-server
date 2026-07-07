@@ -35,6 +35,12 @@ class DynamoPrefillClient {
   std::vector<DynamoEndpointInstance> discoverWorkers() const;
   DynamoEndpointInstance selectWorker(
       const std::vector<DynamoEndpointInstance>& workers);
+  DynamoEndpointInstance selectTargetWorker(
+      const std::vector<DynamoEndpointInstance>& workers,
+      std::optional<uint64_t> selectedWorkerId);
+  tt::sockets::PrefillResultMessage executeAgainstWorker(
+      const DynamoEndpointInstance& worker,
+      const tt::sockets::PrefillRequestMessage& request) const;
 
   Options options;
   std::atomic<uint64_t> nextWorker{0};

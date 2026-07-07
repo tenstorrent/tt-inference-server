@@ -8,19 +8,40 @@
 #include <cstdint>
 #include <exception>
 #include <limits>
+#include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 
 namespace tt::dynamo::json_value {
 
-inline std::optional<uint64_t> optionalUInt64(const Json::Value& obj,
-                                              const char* field) {
-  if (!obj.isMember(field) || obj[field].isNull()) return std::nullopt;
-  if (obj[field].isUInt64()) return obj[field].asUInt64();
-  if (obj[field].isUInt()) return obj[field].asUInt();
-  if (obj[field].isString()) {
+inline std::string compactJson(const Json::Value& value) {
+  Json::StreamWriterBuilder writer;
+  writer["indentation"] = "";
+  writer["emitUTF8"] = true;
+  return Json::writeString(writer, value);
+}
+
+inline Json::Value parseJson(const std::string& data) {
+  Json::Value out;
+  Json::CharReaderBuilder builder;
+  std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+  std::string errs;
+  if (!reader->parse(data.data(), data.data() + data.size(), &out, &errs)) {
+    throw std::runtime_error("invalid JSON: " + errs);
+  }
+  return out;
+}
+
+inline std::optional<uint64_t> asOptionalUInt64(const Json::Value& value) {
+  if (value.isUInt64()) return value.asUInt64();
+  if (value.isUInt()) return value.asUInt();
+  if (value.isInt64() && value.asInt64() >= 0) {
+    return static_cast<uint64_t>(value.asInt64());
+  }
+  if (value.isString()) {
     try {
-      return static_cast<uint64_t>(std::stoull(obj[field].asString()));
+      return static_cast<uint64_t>(std::stoull(value.asString()));
     } catch (const std::exception&) {
       return std::nullopt;
     }
@@ -28,14 +49,25 @@ inline std::optional<uint64_t> optionalUInt64(const Json::Value& obj,
   return std::nullopt;
 }
 
-inline std::optional<uint32_t> optionalUInt32(const Json::Value& obj,
-                                              const char* field) {
-  auto value = optionalUInt64(obj, field);
-  if (!value.has_value() ||
-      *value > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
+inline std::optional<uint32_t> asOptionalUInt32(const Json::Value& value) {
+  auto parsed = asOptionalUInt64(value);
+  if (!parsed.has_value() ||
+      *parsed > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
     return std::nullopt;
   }
-  return static_cast<uint32_t>(*value);
+  return static_cast<uint32_t>(*parsed);
+}
+
+inline std::optional<uint64_t> optionalUInt64(const Json::Value& obj,
+                                              const char* field) {
+  if (!obj.isMember(field) || obj[field].isNull()) return std::nullopt;
+  return asOptionalUInt64(obj[field]);
+}
+
+inline std::optional<uint32_t> optionalUInt32(const Json::Value& obj,
+                                              const char* field) {
+  if (!obj.isMember(field) || obj[field].isNull()) return std::nullopt;
+  return asOptionalUInt32(obj[field]);
 }
 
 inline std::optional<int> optionalInt(const Json::Value& obj,

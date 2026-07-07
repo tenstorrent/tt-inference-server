@@ -165,7 +165,6 @@ struct LLMRequest : BaseRequest {
   // decode. Decode still owns the local-vs-remote prefill decision and only
   // uses this hint when it decides to offload prefill.
   std::optional<uint64_t> dynamoSuggestedPrefillWorkerId;
-  std::optional<uint32_t> dynamoSuggestedPrefillDpRank;
 
   // Structured output constraint
   std::optional<ResponseFormat> response_format;

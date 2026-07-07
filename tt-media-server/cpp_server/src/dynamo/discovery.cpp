@@ -18,6 +18,7 @@
 
 #include "config/settings.hpp"
 #include "dynamo/etcd_client.hpp"
+#include "dynamo/json_value_utils.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::dynamo {
@@ -84,24 +85,6 @@ std::string sanitizeSlug(const std::string& s) {
     } else {
       out += '-';
     }
-  }
-  return out;
-}
-
-std::string serializeJson(const Json::Value& v) {
-  Json::StreamWriterBuilder b;
-  b["indentation"] = "";
-  b["emitUTF8"] = true;
-  return Json::writeString(b, v);
-}
-
-Json::Value parseJson(const std::string& data) {
-  Json::Value out;
-  Json::CharReaderBuilder builder;
-  std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
-  std::string errs;
-  if (!reader->parse(data.data(), data.data() + data.size(), &out, &errs)) {
-    throw std::runtime_error("invalid JSON: " + errs);
   }
   return out;
 }
@@ -411,9 +394,10 @@ class EtcdDiscoveryRegistration : public DiscoveryRegistration {
  private:
   void publishKeys() {
     const std::string key = instanceKey(cfg);
-    client->put("v1/instances/" + key, serializeJson(buildInstanceJson(cfg)),
+    client->put("v1/instances/" + key,
+                json_value::compactJson(buildInstanceJson(cfg)), leaseId);
+    client->put("v1/mdc/" + key, json_value::compactJson(buildMdcJson(cfg)),
                 leaseId);
-    client->put("v1/mdc/" + key, serializeJson(buildMdcJson(cfg)), leaseId);
   }
 
   DiscoveryConfig cfg;
@@ -434,7 +418,7 @@ std::vector<DynamoEndpointInstance> listDynamoEndpointInstances(
   std::vector<DynamoEndpointInstance> instances;
   for (const auto& [key, value] : kvs) {
     try {
-      Json::Value instance = parseJson(value);
+      Json::Value instance = json_value::parseJson(value);
       if (!instance.isObject() || !instance.isMember("transport") ||
           !instance.get("transport", Json::Value{}).isObject()) {
         continue;

@@ -23,7 +23,9 @@
 #include <utility>
 
 #include "dynamo/dynamo_prefill_handoff.hpp"
+#include "dynamo/dynamo_prefill_messages.hpp"
 #include "dynamo/dynamo_protocol.hpp"
+#include "dynamo/json_value_utils.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::dynamo {
@@ -52,24 +54,6 @@ class Fd {
  private:
   int fd = -1;
 };
-
-std::string compactJson(const Json::Value& value) {
-  Json::StreamWriterBuilder writer;
-  writer["indentation"] = "";
-  writer["emitUTF8"] = true;
-  return Json::writeString(writer, value);
-}
-
-Json::Value parseJson(const std::string& data) {
-  Json::Value out;
-  Json::CharReaderBuilder builder;
-  std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
-  std::string errs;
-  if (!reader->parse(data.data(), data.data() + data.size(), &out, &errs)) {
-    throw std::runtime_error("invalid JSON: " + errs);
-  }
-  return out;
-}
 
 void setNonBlocking(int fd, bool nonBlocking) {
   int flags = ::fcntl(fd, F_GETFL, 0);
@@ -224,7 +208,7 @@ std::optional<DynamoPrefillHandoff> handoffFromStreamBody(
     const std::vector<uint8_t>& bodyBytes) {
   if (bodyBytes.empty()) return std::nullopt;
   std::string body(bodyBytes.begin(), bodyBytes.end());
-  Json::Value wrapper = parseJson(body);
+  Json::Value wrapper = json_value::parseJson(body);
   if (wrapper.get("complete_final", false).asBool()) {
     return std::nullopt;
   }
@@ -266,67 +250,6 @@ std::optional<DynamoPrefillHandoff> handoffFromStreamBody(
   return std::nullopt;
 }
 
-Json::Value prefillRequestToJson(
-    const tt::sockets::PrefillRequestMessage& request) {
-  Json::Value root(Json::objectValue);
-  root["task_id"] = Json::Value(static_cast<Json::UInt>(request.taskId));
-
-  Json::Value hashes(Json::arrayValue);
-  for (uint64_t hash : request.registrationHashes) {
-    hashes.append(Json::Value(static_cast<Json::UInt64>(hash)));
-  }
-  root["registration_hashes"] = std::move(hashes);
-
-  Json::Value tokens(Json::arrayValue);
-  for (int64_t token : request.tokenIds) {
-    tokens.append(Json::Value(static_cast<Json::Int64>(token)));
-  }
-  root["token_ids"] = std::move(tokens);
-
-  root["max_tokens"] = request.maxTokens.has_value()
-                           ? Json::Value(*request.maxTokens)
-                           : Json::Value::null;
-  root["slot_id"] = request.slotId.has_value()
-                        ? Json::Value(static_cast<Json::UInt>(*request.slotId))
-                        : Json::Value::null;
-  root["temperature"] = request.temperature.has_value()
-                            ? Json::Value(*request.temperature)
-                            : Json::Value::null;
-  root["top_p"] =
-      request.topP.has_value() ? Json::Value(*request.topP) : Json::Value::null;
-  root["top_k"] =
-      request.topK.has_value() ? Json::Value(*request.topK) : Json::Value::null;
-  root["fast_mode"] = request.fastMode;
-  root["decode_position_id"] = request.decodePositionId;
-  root["decode_skip_tokens"] = request.decodeSkipTokens;
-  return root;
-}
-
-Json::Value buildGenerateBody(const tt::sockets::PrefillRequestMessage& request,
-                              const std::string& requestId) {
-  Json::Value body(Json::objectValue);
-  body["request_id"] = requestId;
-  Json::Value tokens(Json::arrayValue);
-  for (int64_t token : request.tokenIds) {
-    tokens.append(Json::Value(static_cast<Json::Int64>(token)));
-  }
-  body["token_ids"] = std::move(tokens);
-
-  Json::Value stop(Json::objectValue);
-  stop["max_tokens"] = request.maxTokens.value_or(1);
-  body["stop_conditions"] = std::move(stop);
-
-  Json::Value sampling(Json::objectValue);
-  if (request.temperature.has_value())
-    sampling["temperature"] = *request.temperature;
-  if (request.topP.has_value()) sampling["top_p"] = *request.topP;
-  if (request.topK.has_value()) sampling["top_k"] = *request.topK;
-  body["sampling_options"] = std::move(sampling);
-
-  body["tt_prefill_request"] = prefillRequestToJson(request);
-  return body;
-}
-
 std::vector<uint8_t> buildDynamoRequestFrame(
     const std::string& endpointPath, const Json::Value& bodyJson,
     const std::string& requestId, const std::string& responseAddress) {
@@ -338,7 +261,7 @@ std::vector<uint8_t> buildDynamoRequestFrame(
 
   Json::Value connectionInfo(Json::objectValue);
   connectionInfo["transport"] = "tcp_server";
-  connectionInfo["info"] = compactJson(info);
+  connectionInfo["info"] = json_value::compactJson(info);
 
   Json::Value control(Json::objectValue);
   control["id"] = requestId;
@@ -346,15 +269,15 @@ std::vector<uint8_t> buildDynamoRequestFrame(
   control["response_type"] = "many_out";
   control["connection_info"] = std::move(connectionInfo);
 
-  const std::string header = compactJson(control);
-  const std::string body = compactJson(bodyJson);
+  const std::string header = json_value::compactJson(control);
+  const std::string body = json_value::compactJson(bodyJson);
   TwoPartMessage twoPart;
   twoPart.header.assign(header.begin(), header.end());
   twoPart.body.assign(body.begin(), body.end());
   const auto payload = encode_two_part(twoPart);
 
   Json::Value headers(Json::objectValue);
-  const std::string headersJson = compactJson(headers);
+  const std::string headersJson = json_value::compactJson(headers);
 
   std::vector<uint8_t> frame;
   put_u16_be(frame, static_cast<uint16_t>(endpointPath.size()));
@@ -371,7 +294,8 @@ std::vector<uint8_t> buildRequestFrame(
     const tt::sockets::PrefillRequestMessage& request,
     const std::string& requestId, const std::string& responseAddress) {
   return buildDynamoRequestFrame(endpointPath,
-                                 buildGenerateBody(request, requestId),
+                                 buildDynamoPrefillGenerateBody(request,
+                                                                requestId),
                                  requestId, responseAddress);
 }
 
@@ -396,18 +320,9 @@ DynamoEndpointInstance DynamoPrefillClient::selectWorker(
   return workers[idx % workers.size()];
 }
 
-tt::sockets::PrefillResultMessage DynamoPrefillClient::execute(
-    const tt::sockets::PrefillRequestMessage& request,
+DynamoEndpointInstance DynamoPrefillClient::selectTargetWorker(
+    const std::vector<DynamoEndpointInstance>& workers,
     std::optional<uint64_t> selectedWorkerId) {
-  auto workers = discoverWorkers();
-  if (selectedWorkerId.has_value()) {
-    TT_LOG_INFO(
-        "[DynamoPrefillClient] Using advisory prefill worker_id={} for "
-        "taskId={}",
-        *selectedWorkerId, request.taskId);
-  }
-
-  DynamoEndpointInstance worker;
   if (selectedWorkerId.has_value()) {
     auto it = std::find_if(
         workers.begin(), workers.end(),
@@ -420,14 +335,16 @@ tt::sockets::PrefillResultMessage DynamoPrefillClient::execute(
           "registered; "
           "falling back to round-robin",
           *selectedWorkerId);
-      worker = selectWorker(workers);
-    } else {
-      worker = *it;
+      return selectWorker(workers);
     }
-  } else {
-    worker = selectWorker(workers);
+    return *it;
   }
+  return selectWorker(workers);
+}
 
+tt::sockets::PrefillResultMessage DynamoPrefillClient::executeAgainstWorker(
+    const DynamoEndpointInstance& worker,
+    const tt::sockets::PrefillRequestMessage& request) const {
   Listener listener = listenOnLoopback();
   const std::string responseHost =
       options.response_host.empty() ? "127.0.0.1" : options.response_host;
@@ -458,7 +375,7 @@ tt::sockets::PrefillResultMessage DynamoPrefillClient::execute(
     TwoPartMessage msg = readTwoPartFrame(streamFd.get(), options.timeout_ms);
     if (!msg.body.empty()) {
       std::string body(msg.body.begin(), msg.body.end());
-      Json::Value wrapper = parseJson(body);
+      Json::Value wrapper = json_value::parseJson(body);
       if (wrapper.get("complete_final", false).asBool()) {
         break;
       }
@@ -472,6 +389,20 @@ tt::sockets::PrefillResultMessage DynamoPrefillClient::execute(
         "prefill worker completed without tt_prefill_handoff");
   }
   return dynamoPrefillHandoffToPrefillResult(request.taskId, *handoff);
+}
+
+tt::sockets::PrefillResultMessage DynamoPrefillClient::execute(
+    const tt::sockets::PrefillRequestMessage& request,
+    std::optional<uint64_t> selectedWorkerId) {
+  auto workers = discoverWorkers();
+  if (selectedWorkerId.has_value()) {
+    TT_LOG_INFO(
+        "[DynamoPrefillClient] Using advisory prefill worker_id={} for "
+        "taskId={}",
+        *selectedWorkerId, request.taskId);
+  }
+  return executeAgainstWorker(selectTargetWorker(workers, selectedWorkerId),
+                              request);
 }
 
 }  // namespace tt::dynamo

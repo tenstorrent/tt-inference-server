@@ -1196,6 +1196,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/dynamo/dynamo_protocol.cpp
     src/dynamo/dynamo_prefill_client.cpp
     src/dynamo/dynamo_prefill_handoff.cpp
+    src/dynamo/dynamo_prefill_messages.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/zmq_socket_transport.cpp
@@ -1612,6 +1613,7 @@ set(SOURCES
     src/dynamo/etcd_client.cpp
     src/dynamo/dynamo_prefill_client.cpp
     src/dynamo/dynamo_prefill_handoff.cpp
+    src/dynamo/dynamo_prefill_messages.cpp
     src/dynamo/dynamo_endpoint.cpp
 )
 

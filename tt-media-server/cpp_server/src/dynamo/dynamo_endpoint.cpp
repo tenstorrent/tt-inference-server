@@ -17,7 +17,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
-#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -27,11 +26,12 @@
 #include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
+#include "dynamo/dynamo_prefill_messages.hpp"
 #include "dynamo/dynamo_prefill_handoff.hpp"
+#include "dynamo/json_value_utils.hpp"
 #include "domain/session.hpp"
 #include "services/llm_pipeline.hpp"
 #include "sockets/socket_messages.hpp"
-#include "utils/conversation_hasher.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/net.hpp"
@@ -40,30 +40,6 @@
 namespace tt::dynamo {
 
 namespace {
-
-std::optional<uint64_t> uint64FromJson(const Json::Value& value) {
-  if (value.isUInt64()) return value.asUInt64();
-  if (value.isInt64() && value.asInt64() >= 0) {
-    return static_cast<uint64_t>(value.asInt64());
-  }
-  if (value.isString()) {
-    try {
-      return static_cast<uint64_t>(std::stoull(value.asString()));
-    } catch (const std::exception&) {
-      return std::nullopt;
-    }
-  }
-  return std::nullopt;
-}
-
-std::optional<uint32_t> uint32FromJson(const Json::Value& value) {
-  auto parsed = uint64FromJson(value);
-  if (!parsed.has_value() ||
-      *parsed > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
-    return std::nullopt;
-  }
-  return static_cast<uint32_t>(*parsed);
-}
 
 /// Shape an LLMRequest from a Dynamo PreprocessedRequest. The frontend has
 /// already applied the chat template, so we forward token ids directly and
@@ -111,72 +87,16 @@ std::shared_ptr<tt::domain::llm::LLMRequest> buildLLMRequest(
   if (dyn.raw.isMember("routing") && dyn.raw["routing"].isObject()) {
     const Json::Value& routing = dyn.raw["routing"];
     req->dynamoSuggestedPrefillWorkerId =
-        uint64FromJson(routing["prefill_worker_id"]);
-    req->dynamoSuggestedPrefillDpRank =
-        uint32FromJson(routing["prefill_dp_rank"]);
+        json_value::asOptionalUInt64(routing["prefill_worker_id"]);
     if (req->dynamoSuggestedPrefillWorkerId.has_value()) {
       TT_LOG_INFO(
           "[DynamoEndpoint] Received advisory prefill worker hint taskId={} "
-          "workerId={} dpRank={}",
-          req->task_id, *req->dynamoSuggestedPrefillWorkerId,
-          req->dynamoSuggestedPrefillDpRank.has_value()
-              ? std::to_string(*req->dynamoSuggestedPrefillDpRank)
-              : "none");
+          "workerId={}",
+          req->task_id, *req->dynamoSuggestedPrefillWorkerId);
     }
   }
 
   return req;
-}
-
-tt::sockets::PrefillRequestMessage buildPrefillRequestMessage(
-    const GenerateRequest& dyn) {
-  if (dyn.raw.isMember("tt_prefill_request") &&
-      dyn.raw["tt_prefill_request"].isObject()) {
-    const Json::Value& raw = dyn.raw["tt_prefill_request"];
-    auto message = tt::sockets::PrefillRequestMessage(
-        raw.get("task_id", tt::utils::TaskIDGenerator::generate()).asUInt());
-    if (raw["registration_hashes"].isArray()) {
-      for (const auto& hash : raw["registration_hashes"]) {
-        message.registrationHashes.push_back(hash.asUInt64());
-      }
-    }
-    if (raw["token_ids"].isArray()) {
-      for (const auto& token : raw["token_ids"]) {
-        message.tokenIds.push_back(token.asInt64());
-      }
-    }
-    if (raw.isMember("max_tokens") && !raw["max_tokens"].isNull()) {
-      message.maxTokens = raw["max_tokens"].asInt();
-    }
-    if (raw.isMember("slot_id") && !raw["slot_id"].isNull()) {
-      message.slotId = raw["slot_id"].asUInt();
-    }
-    if (raw.isMember("temperature") && !raw["temperature"].isNull()) {
-      message.temperature = raw["temperature"].asFloat();
-    }
-    if (raw.isMember("top_p") && !raw["top_p"].isNull()) {
-      message.topP = raw["top_p"].asFloat();
-    }
-    if (raw.isMember("top_k") && !raw["top_k"].isNull()) {
-      message.topK = raw["top_k"].asInt();
-    }
-    message.fastMode = raw.get("fast_mode", false).asBool();
-    message.decodePositionId = raw.get("decode_position_id", 0).asInt();
-    message.decodeSkipTokens = raw.get("decode_skip_tokens", 0).asInt();
-    return message;
-  }
-
-  auto message = tt::sockets::PrefillRequestMessage(
-      tt::utils::TaskIDGenerator::generate());
-  std::vector<int> tokenIds(dyn.token_ids.begin(), dyn.token_ids.end());
-  message.registrationHashes =
-      tt::utils::computePrefixCachingInfoFromTokens(tokenIds).hashes();
-  message.tokenIds.assign(dyn.token_ids.begin(), dyn.token_ids.end());
-  message.maxTokens = dyn.max_tokens;
-  message.temperature = dyn.temperature;
-  message.topP = dyn.top_p;
-  message.topK = dyn.top_k;
-  return message;
 }
 
 /// Translate one streaming chunk from the pipeline into a Dynamo TokenChunk.
@@ -238,11 +158,8 @@ std::string DynamoEndpoint::detectAdvertiseHost(
     return env;
   }
 
-  // Route-based detection: ask the kernel which local IP it would use to reach
-  // etcd. That IP is, by construction, on the same network as etcd — which is
-  // the network the Dynamo frontend (co-located with etcd on dynamo-net) can
-  // dial back. `sourceIpForRoute` does the UDP-connect dance internally and
-  // returns empty on any failure, so we just fall through to the heuristic.
+  // Prefer the local IP the kernel would use to reach etcd; that is usually
+  // the same network the Dynamo frontend can dial back.
   if (!etcdEndpoints.empty()) {
     try {
       const auto url = tt::utils::net::parseUrl(etcdEndpoints);
@@ -260,8 +177,7 @@ std::string DynamoEndpoint::detectAdvertiseHost(
     }
   }
 
-  // Fallback: pick the first non-loopback IPv4 interface (matches Dynamo's
-  // auto-detect for multi-host deployments). Fall back to 127.0.0.1.
+  // Fallback to the first non-loopback IPv4 interface, then localhost.
   TT_LOG_INFO(
       "[DynamoEndpoint] advertise host: route detection unavailable, falling "
       "back to first non-loopback IPv4 interface");
@@ -287,17 +203,11 @@ std::string DynamoEndpoint::detectAdvertiseHost(
 }
 
 GenerateHandler DynamoEndpoint::makeGenerateHandler() {
-  // `pool` is owned by DynamoEndpoint::loop_pool_; stop() tears it down
-  // only after joining accept + handler threads, so the raw pointer is
-  // valid for the lifetime of every in-flight request. Round-robining
-  // requests across loops gives drogon-style per-IO-thread concurrency
-  // and keeps a slow callback from head-of-line blocking other requests.
   auto pipeline = pipeline_;
   trantor::EventLoopThreadPool* pool = loop_pool_.get();
 
   if (options_.worker_role == DiscoveryWorkerRole::PREFILL) {
-    auto localPrefillId = local_prefill_id_;
-    return [pipeline, pool, localPrefillId](
+    return [this, pipeline, pool](
                const GenerateRequest& dynReq,
                const TcpStreamConnectionInfo& connInfo) {
       const std::string requestId =
@@ -308,7 +218,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           requestId.empty() ? "?" : requestId, dynReq.token_ids.size());
 
       if (tt::config::dynamoDecodeOrchestratesPrefill()) {
-        auto prefillMessage = buildPrefillRequestMessage(dynReq);
+        auto prefillMessage = dynamoGenerateRequestToPrefillRequest(dynReq);
         auto writer = DynamoStreamWriter::create(
             pool->getNextLoop(), connInfo, requestId,
             [pipeline, taskId = prefillMessage.taskId]() {
@@ -317,8 +227,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
         writer->connect();
 
         const std::string selectedPrefillId =
-            localPrefillId && !localPrefillId->empty()
-                ? *localPrefillId
+            !local_prefill_id_.empty()
+                ? local_prefill_id_
                 : std::string{"prefill/generate"};
         TT_LOG_INFO(
             "[DynamoEndpoint] Executing Dynamo prefill via "
@@ -385,19 +295,13 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
     trantor::EventLoop* loop = pool->getNextLoop();
     auto req = buildLLMRequest(dynReq);
 
-    // Reasoning/usage accounting for the Dynamo path. The worker doesn't decode
-    // or run the response writer here (the frontend detokenizes), so we count
-    // token ids directly. A model whose chat template opens <think> in the
-    // prompt (Kimi) begins generation already inside the reasoning span; other
-    // reasoning models emit <think> themselves. Reasoning ends at </think>.
+    // The frontend detokenizes this path, so usage is counted from token ids.
     struct UsageAccum {
       int64_t thinkStart;
       int64_t thinkEnd;
       bool inReasoning;
       int completion = 0;
       int reasoning = 0;
-      // Prefix-cache reuse reported by the prefill server in disaggregation
-      // (carried on the first stream chunk). 0 in non-disaggregated runs.
       int cachedTokens = 0;
     };
     auto usage = std::make_shared<UsageAccum>();
@@ -411,18 +315,11 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           dynReq.token_ids.back() == static_cast<int>(usage->thinkStart);
     }
 
-    // Capture which loop thread is serving this request — combined with the
-    // pre-warm log this lets us spot any unexpected cold thread that bypassed
-    // the warm-up (e.g. consumer thread spawned later in LLMService).
     const auto loopTid =
         std::hash<std::thread::id>{}(std::this_thread::get_id());
     TT_LOG_INFO("[DynamoLatency] id={} stage=dispatched loop_tid={}",
                 probeId.empty() ? "?" : probeId, loopTid);
 
-    // The call-home writer owns the outbound connection and streams chunks
-    // asynchronously on the loop — no blocking, no per-request thread. The
-    // pipeline callbacks below are unchanged: sendChunk/signalDone forward to
-    // it.
     auto cancelFn = [pipeline, taskId = req->task_id]() {
       pipeline->abortRequest(taskId);
     };
@@ -441,7 +338,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       signalDone();
     };
 
-    auto sendPipelineChunk =
+    auto forwardDecodeChunkToDynamo =
         [pipeline, req, sendChunk, signalDone, firstChunkSeen, usage](
             const tt::domain::llm::LLMStreamChunk& chunk, bool isFinal) {
           bool expected = false;
@@ -503,7 +400,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
         TokenChunk err;
         err.error =
             "Dynamo prefill handoff metadata was provided, but "
-          "DYNAMO_DECODE_ORCHESTRATES_PREFILL is not enabled";
+            "DYNAMO_DECODE_ORCHESTRATES_PREFILL is not enabled";
         err.error_code = 501;
         sendChunk(err);
         signalDone();
@@ -533,11 +430,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       try {
         auto prefillResult =
             dynamoPrefillHandoffToPrefillResult(req->task_id, handoff);
-        // The prefill leg is a Dynamo-internal probe that asks for one token to
-        // synchronize the handoff. Continue decode using the original client's
-        // generation budget from this request.
         prefillResult.remainingTokens = dynReq.max_tokens;
-        pipeline->handlePrefillResult(prefillResult, sendPipelineChunk);
+        pipeline->handlePrefillResult(prefillResult, forwardDecodeChunkToDynamo);
       } catch (const std::exception& e) {
         TT_LOG_ERROR("[DynamoEndpoint] handlePrefillResult failed: {}",
                      e.what());
@@ -745,9 +639,9 @@ void DynamoEndpoint::start() {
   // port is available immediately afterwards.
   server_ =
       std::make_unique<DynamoServer>(sc, makeGenerateHandler(), loop_pool_.get());
-  *local_prefill_id_ = server_->config().component + "/" +
-                       server_->config().endpoint + "/" +
-                       server_->config().instance_id_hex;
+  local_prefill_id_ = server_->config().component + "/" +
+                      server_->config().endpoint + "/" +
+                      server_->config().instance_id_hex;
   server_->start();
   if (server_->port() == 0) {
     running_ = false;
