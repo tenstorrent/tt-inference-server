@@ -197,9 +197,12 @@ MigrationRequest makeApiRequest(uint32_t src = 1, uint32_t dst = 2) {
   return MigrationRequest{
       .src_slot = src,
       .dst_slot = dst,
-      .layer_id = 3,
-      .position_start = 0,
-      .position_end = 128,
+      .layer_begin = 0,
+      .layer_end = 32,
+      .src_position_begin = 0,
+      .src_position_end = 128,
+      .dst_position_begin = 0,
+      .dst_position_end = 128,
   };
 }
 
@@ -208,9 +211,12 @@ std::string serializeReq(uint64_t id, const MigrationRequest& r) {
       .migration_id = id,
       .src_slot = r.src_slot,
       .dst_slot = r.dst_slot,
-      .layer_id = r.layer_id,
-      .position_start = r.position_start,
-      .position_end = r.position_end,
+      .layer_begin = r.layer_begin,
+      .layer_end = r.layer_end,
+      .src_position_begin = r.src_position_begin,
+      .src_position_end = r.src_position_end,
+      .dst_position_begin = r.dst_position_begin,
+      .dst_position_end = r.dst_position_end,
   });
 }
 
@@ -261,9 +267,12 @@ TEST(KvMigrationWorkerTest, ValidRequestDispatchedToExecutor) {
   EXPECT_EQ(subs[0].first, 100u);
   EXPECT_EQ(subs[0].second.src_slot, req.src_slot);
   EXPECT_EQ(subs[0].second.dst_slot, req.dst_slot);
-  EXPECT_EQ(subs[0].second.layer_id, req.layer_id);
-  EXPECT_EQ(subs[0].second.position_start, req.position_start);
-  EXPECT_EQ(subs[0].second.position_end, req.position_end);
+  EXPECT_EQ(subs[0].second.layer_begin, req.layer_begin);
+  EXPECT_EQ(subs[0].second.layer_end, req.layer_end);
+  EXPECT_EQ(subs[0].second.src_position_begin, req.src_position_begin);
+  EXPECT_EQ(subs[0].second.src_position_end, req.src_position_end);
+  EXPECT_EQ(subs[0].second.dst_position_begin, req.dst_position_begin);
+  EXPECT_EQ(subs[0].second.dst_position_end, req.dst_position_end);
 }
 
 TEST(KvMigrationWorkerTest, AckPublishedWithExecutorStatus) {

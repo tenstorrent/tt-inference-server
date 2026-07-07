@@ -106,7 +106,7 @@ std::string renderLastUserTurn(const std::vector<ChatMessage>& messages,
   return rendered;
 }
 
-uint64_t hashTokenPrefix(std::span<const int> tokens) {
+uint64_t hashTokenPrefix(std::span<const uint32_t> tokens) {
   if (tokens.empty()) {
     return 0;
   }
@@ -114,7 +114,7 @@ uint64_t hashTokenPrefix(std::span<const int> tokens) {
 }
 
 PrefixCachingInfo computePrefixCachingInfoFromTokens(
-    std::span<const int> tokens) {
+    std::span<const uint32_t> tokens) {
   PrefixCachingInfo info;
 
   // Hash non-thinking tokens into per-block hashes, tracking think counts.
@@ -128,8 +128,8 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
   return info;
 }
 
-std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens,
-                                                   uint64_t parentHash) {
+std::vector<uint64_t> getPrefixCacheHashesByBlocks(
+    std::span<const uint32_t> tokens, uint64_t parentHash) {
   const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
   const size_t blockSize = tt::config::kvCacheBlockSize();
 
@@ -142,8 +142,8 @@ std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens,
     std::vector<uint64_t> hashes;
     size_t offset = 0;
     while (offset + blockSize <= tokens.size()) {
-      const int* blockStart = tokens.data() + offset;
-      const size_t blockBytes = blockSize * sizeof(int);
+      const uint32_t* blockStart = tokens.data() + offset;
+      const size_t blockBytes = blockSize * sizeof(uint32_t);
       parentHash = XXH64(blockStart, blockBytes, parentHash);
       hashes.push_back(parentHash);
       offset += blockSize;
@@ -166,15 +166,15 @@ std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens,
   // common prefix shared across conversations with the same model config.
 
   // First block (larger, covers system prompt / preamble)
-  const size_t firstBlockBytes = firstBlockSize * sizeof(int);
+  const size_t firstBlockBytes = firstBlockSize * sizeof(uint32_t);
   parentHash = XXH64(tokens.data(), firstBlockBytes, parentHash);
   hashes.push_back(parentHash);
 
   // Remaining blocks use the standard block size
   size_t offset = firstBlockSize;
   while (offset + blockSize <= tokens.size()) {
-    const int* blockStart = tokens.data() + offset;
-    const size_t blockBytes = blockSize * sizeof(int);
+    const uint32_t* blockStart = tokens.data() + offset;
+    const size_t blockBytes = blockSize * sizeof(uint32_t);
     parentHash = XXH64(blockStart, blockBytes, parentHash);
     hashes.push_back(parentHash);
     offset += blockSize;
@@ -184,8 +184,8 @@ std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens,
 }
 
 std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
-    std::span<const int> tokens, int64_t thinkStartId, int64_t thinkEndId,
-    uint64_t parentHash, uint32_t parentThinkCount) {
+    std::span<const uint32_t> tokens, uint32_t thinkStartId,
+    uint32_t thinkEndId, uint64_t parentHash, uint32_t parentThinkCount) {
   const bool filterThinking = (thinkStartId != tokenizers::kNoTokenId &&
                                thinkEndId != tokenizers::kNoTokenId);
   const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
@@ -196,21 +196,21 @@ std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
   }
 
   std::vector<BlockHashInfo> result;
-  std::vector<int> currentBlock;
+  std::vector<uint32_t> currentBlock;
   currentBlock.reserve(std::max(firstBlockSize, blockSize));
 
   bool inThinking = false;
   uint32_t thinkCount = parentThinkCount;
   size_t targetBlockSize = (parentHash == 0) ? firstBlockSize : blockSize;
 
-  for (int token : tokens) {
+  for (uint32_t token : tokens) {
     if (filterThinking) {
       // Mirror the session-side think marker state machine.
-      if (token == static_cast<int>(thinkStartId)) {
+      if (token == thinkStartId) {
         inThinking = true;
         continue;  // Skip marker, don't count
       }
-      if (token == static_cast<int>(thinkEndId)) {
+      if (token == thinkEndId) {
         inThinking = false;
         continue;  // Skip marker, don't count
       }
@@ -225,8 +225,8 @@ std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
 
     if (currentBlock.size() == targetBlockSize) {
       // Block complete: hash it
-      parentHash = XXH64(currentBlock.data(), currentBlock.size() * sizeof(int),
-                         parentHash);
+      parentHash = XXH64(currentBlock.data(),
+                         currentBlock.size() * sizeof(uint32_t), parentHash);
       result.push_back({parentHash, thinkCount});
       currentBlock.clear();
       targetBlockSize = blockSize;  // All subsequent blocks use standard size

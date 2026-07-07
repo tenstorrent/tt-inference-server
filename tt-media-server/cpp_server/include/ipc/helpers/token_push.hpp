@@ -12,7 +12,7 @@
 namespace tt::ipc::helpers {
 
 inline void pushToken(tt::ipc::IResultQueue& queue, uint32_t taskId,
-                      uint64_t tokenId, uint32_t flag = 0,
+                      uint32_t tokenId, uint32_t flag = 0,
                       uint32_t specAccepts = 0, uint32_t specRejects = 0) {
   tt::ipc::SharedToken token{};
   token.task_id = taskId;

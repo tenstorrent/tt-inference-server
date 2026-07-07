@@ -96,7 +96,7 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
       for (Sequence* seq : seqs) {
         py::list tokenIds;
         if (isPrefill) {
-          for (int64_t t : seq->getTokenIds()) tokenIds.append(t);
+          for (uint32_t t : seq->getTokenIds()) tokenIds.append(t);
         } else {
           tokenIds.append(seq->getTokenIds().back());
         }

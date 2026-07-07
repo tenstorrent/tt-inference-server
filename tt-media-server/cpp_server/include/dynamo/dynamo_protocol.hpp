@@ -167,7 +167,7 @@ struct DynamoUsage {
 };
 
 struct TokenChunk {
-  std::vector<int> token_ids;
+  std::vector<uint32_t> token_ids;
   std::optional<std::string> finish_reason;
   /// If set, signals a pre-stream error. stream_response will send this as an
   /// Annotated::error chunk so the Dynamo frontend can intercept it.
@@ -196,7 +196,7 @@ std::vector<uint8_t> encode_stream_final();
 
 struct GenerateRequest {
   std::string model;
-  std::vector<int> token_ids;
+  std::vector<uint32_t> token_ids;
 
   // StopConditions ---------------------------------------------------------
   int max_tokens = 128;
