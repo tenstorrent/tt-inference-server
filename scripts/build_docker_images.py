@@ -432,11 +432,25 @@ def process_sha_combination(args_tuple):
         resolved_tt_metal_commit = resolve_commit_to_full_sha(tt_metal_commit)
         process_logger.info(f"Resolved tt_metal_commit: {resolved_tt_metal_commit}")
 
+        # Determine the impl flavor for this commit pair. tt_symbiote models get
+        # a dedicated image (separate Dockerfile + tag namespace) so they never
+        # collide with tt_transformers images on the same commit pair.
+        tt_symbiote_version = _tt_symbiote_version_for_commit_pair(
+            tt_metal_commit, vllm_commit
+        )
+        is_tt_symbiote = tt_symbiote_version is not None
+        if is_tt_symbiote:
+            process_logger.info(
+                "Commit pair maps to tt_symbiote model(s); building tt_symbiote "
+                f"image (tt_symbiote=={tt_symbiote_version})"
+            )
+
         # Generate image tags using provided commit
         image_tags = get_image_tags(
             tt_metal_commit=tt_metal_commit,
             vllm_commit=vllm_commit,
             ubuntu_version=ubuntu_version,
+            is_tt_symbiote=is_tt_symbiote,
         )
 
         process_logger.info(f"Generated image tags: {image_tags}")
@@ -563,6 +577,7 @@ def process_sha_combination(args_tuple):
                         vllm_commit,
                         container_app_uid,
                         process_logger,
+                        is_tt_symbiote=is_tt_symbiote,
                     )
                     image_status["dev"]["build_succeeded"] = True
                 except Exception as e:
@@ -851,23 +866,35 @@ def get_image_tags(
     ubuntu_version,
     tag_suffix="",
     image_repo="ghcr.io/tenstorrent/tt-inference-server",
+    is_tt_symbiote=False,
 ):
     """
     Generate Docker image tags for all image types.
+
+    tt_symbiote-impl images use a dedicated repo namespace
+    (vllm-tt-metal-tt-symbiote-src-*) so they never collide with the
+    tt_transformers (default) images built from the same commit pair. The
+    tt-metal base image is impl-agnostic and keeps its shared tag.
     """
     repo_root = get_repo_root_path()
     version_file = repo_root / "VERSION"
     image_version = version_file.read_text().strip()
 
     os_version = f"ubuntu-{ubuntu_version}-amd64"
-    tt_metal_tag = tt_metal_commit
-    vllm_tag = vllm_commit
+    # Commits are truncated to 12 chars to match generate_docker_tag in
+    # workflows/model_spec.py, so the built release tag matches the synthesized
+    # model_spec.docker_image (no-op for the short SHAs / tags most specs use;
+    # required for specs that store full 40-char SHAs, e.g. tt_symbiote models).
+    max_tag_len = 12
+    tt_metal_tag = tt_metal_commit[:max_tag_len]
+    vllm_tag = vllm_commit[:max_tag_len]
 
     suffix = f"-{tag_suffix}" if tag_suffix else ""
+    src_class = "vllm-tt-metal-tt-symbiote-src" if is_tt_symbiote else "vllm-tt-metal-src"
 
-    dev_image_tag = f"{image_repo}/vllm-tt-metal-src-dev-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
-    release_image_tag = f"{image_repo}/vllm-tt-metal-src-release-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
-    multihost_image_tag = f"{image_repo}/vllm-tt-metal-src-multihost-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
+    dev_image_tag = f"{image_repo}/{src_class}-dev-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
+    release_image_tag = f"{image_repo}/{src_class}-release-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
+    multihost_image_tag = f"{image_repo}/{src_class}-multihost-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
     tt_metal_base_tag = f"local/tt-metal/tt-metalium/{os_version}:{tt_metal_commit}"
 
     return {
@@ -1050,23 +1077,49 @@ def build_tt_metal_base_image(
             cwd=tt_metal_dir,
         )
 
-        # tt-metal's Dockerfile uses Docker Buildx Bake — plain `docker build` is not
-        # supported because tool layers (cmake, zstd, openmpi) are FROM scratch stubs
-        # that Bake overrides with pre-built images (see dockerfile/docker-bake.hcl).
+        # Recent tt-metal commits build the base via Docker Buildx Bake — plain
+        # `docker build` is not supported there because tool layers (cmake, zstd,
+        # openmpi) are FROM scratch stubs that Bake overrides with pre-built
+        # images (see dockerfile/docker-bake.hcl).
+        #
+        # Older commits (e.g. c09f09c3, used by some tt_symbiote models) predate
+        # docker-bake.hcl and use a self-contained dockerfile/Dockerfile whose
+        # `ci-build` target can be built directly. Fall back to plain
+        # `docker build --target ci-build` when the bake file is absent.
         logger.info("Building tt-metal Docker image...")
-        build_command = [
-            "env",
-            f"UBUNTU_VERSION={ubuntu_version}",
-            "docker",
-            "buildx",
-            "bake",
-            "-f",
-            "dockerfile/docker-bake.hcl",
-            "--set",
-            f"ci-build.tags={tt_metal_base_tag}",
-            "--load",
-            "ci-build",
-        ]
+        bake_file = tt_metal_dir / "dockerfile" / "docker-bake.hcl"
+        if bake_file.exists():
+            build_command = [
+                "env",
+                f"UBUNTU_VERSION={ubuntu_version}",
+                "docker",
+                "buildx",
+                "bake",
+                "-f",
+                "dockerfile/docker-bake.hcl",
+                "--set",
+                f"ci-build.tags={tt_metal_base_tag}",
+                "--load",
+                "ci-build",
+            ]
+        else:
+            logger.info(
+                "dockerfile/docker-bake.hcl not found at this commit; falling back "
+                "to plain `docker build --target ci-build`."
+            )
+            build_command = [
+                "docker",
+                "build",
+                "-f",
+                "dockerfile/Dockerfile",
+                "--target",
+                "ci-build",
+                "--build-arg",
+                f"UBUNTU_VERSION={ubuntu_version}",
+                "-t",
+                tt_metal_base_tag,
+                ".",
+            ]
 
         run_command_with_logging(
             build_command, logger=logger, check=True, cwd=tt_metal_dir
@@ -1097,12 +1150,51 @@ def should_push_image(image_tag, force_push=False):
     return local_exists and (not remote_exists or force_push)
 
 
+def _tt_symbiote_version_for_commit_pair(tt_metal_commit, vllm_commit):
+    """Return the tt_symbiote pip version to install for a commit pair.
+
+    Scans MODEL_SPECS for an ``impl=tt_symbiote`` model whose
+    (tt_metal_commit, vllm_commit) matches the image being built. Commit
+    matching is prefix-tolerant because the catalog may store short SHAs while
+    the build resolves full SHAs. Returns ``None`` if no tt_symbiote model maps
+    to this pair (tt_transformers-only image).
+
+    NOTE: this is the tt_symbiote *library* version, read from the model spec's
+    ``metadata["tt_symbiote_version"]`` — NOT ``spec.version`` (which is the
+    tt-inference-server image version, gated >= 0.11.0 and used in the image
+    tag). The two are intentionally decoupled.
+    """
+
+    def _commit_match(a, b):
+        if not a or not b:
+            return a == b
+        return a.startswith(b) or b.startswith(a)
+
+    for spec in MODEL_SPECS.values():
+        if getattr(spec.impl, "impl_id", None) != "tt_symbiote":
+            continue
+        if _commit_match(tt_metal_commit, spec.tt_metal_commit) and _commit_match(
+            vllm_commit, spec.vllm_commit
+        ):
+            version = (spec.metadata or {}).get("tt_symbiote_version")
+            if not version:
+                logger.warning(
+                    "tt_symbiote model %s matches commit pair but has no "
+                    "metadata.tt_symbiote_version; skipping tt_symbiote install.",
+                    getattr(spec, "model_name", "?"),
+                )
+                return None
+            return version
+    return None
+
+
 def build_dev_image(
     image_tags,
     tt_metal_commit,
     vllm_commit,
     container_app_uid,
     logger,
+    is_tt_symbiote=False,
 ):
     """
     Build the dev Docker image from the Dockerfile.
@@ -1113,6 +1205,9 @@ def build_dev_image(
         vllm_commit: VLLM commit hash
         container_app_uid: Container application UID
         logger: Logger instance
+        is_tt_symbiote: When True, build the tt_symbiote variant (dedicated
+            Dockerfile + mandatory tt_symbiote install). When False, build the
+            tt_transformers (default) image with no tt_symbiote layer.
     """
     repo_root = get_repo_root_path()
     dev_image_tag = image_tags["dev"]
@@ -1122,7 +1217,15 @@ def build_dev_image(
     model_specs_json_path = generate_model_specs_json()
     logger.info(f"Generated model specs JSON at: {model_specs_json_path}")
 
-    logger.info(f"Building dev image: {dev_image_tag}")
+    # tt_symbiote models use a dedicated Dockerfile that always installs the
+    # tt_symbiote release; tt_transformers models use the shared default
+    # Dockerfile with no tt_symbiote layer.
+    dockerfile = (
+        "vllm-tt-metal/vllm.tt-metal.src.tt-symbiote.dev.Dockerfile"
+        if is_tt_symbiote
+        else "vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile"
+    )
+    logger.info(f"Building dev image: {dev_image_tag} (dockerfile: {dockerfile})")
 
     build_command = [
         "docker",
@@ -1138,9 +1241,48 @@ def build_dev_image(
         "--build-arg",
         f"CONTAINER_APP_UID={container_app_uid}",
         "-f",
-        "vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile",
+        dockerfile,
         ".",
     ]
+
+    # tt_symbiote images install the tt_symbiote release (0.1.5+ has no ttnn dep,
+    # so it never overwrites the source-built ttnn; see the tt_symbiote
+    # Dockerfile). The version comes from the matching model spec's
+    # metadata.tt_symbiote_version. tt_transformers (default) images never
+    # install tt_symbiote.
+    if is_tt_symbiote:
+        tt_symbiote_version = _tt_symbiote_version_for_commit_pair(
+            tt_metal_commit, vllm_commit
+        )
+        if not tt_symbiote_version:
+            raise ValueError(
+                "tt_symbiote image requested but no tt_symbiote model with "
+                "metadata.tt_symbiote_version maps to commit pair "
+                f"({tt_metal_commit}, {vllm_commit})."
+            )
+        # Index tt_symbiote is pulled from. The Dockerfile defaults to the
+        # production PyPI index. To validate a pre-release, set
+        # TT_SYMBIOTE_INDEX_URL=https://test.pypi.org/simple/ in the build
+        # environment; the Dockerfile passes it as --extra-index-url so deps
+        # still resolve from PyPI.
+        tt_symbiote_index_url = os.environ.get("TT_SYMBIOTE_INDEX_URL")
+        index_note = (
+            f" from {tt_symbiote_index_url}"
+            if tt_symbiote_index_url
+            else " from the Dockerfile default index (PyPI)"
+        )
+        logger.info(
+            f"Including tt_symbiote=={tt_symbiote_version} in image {dev_image_tag}{index_note}"
+        )
+        build_command[-1:-1] = [
+            "--build-arg",
+            f"TT_SYMBIOTE_VERSION={tt_symbiote_version}",
+        ]
+        if tt_symbiote_index_url:
+            build_command[-1:-1] = [
+                "--build-arg",
+                f"TT_SYMBIOTE_INDEX_URL={tt_symbiote_index_url}",
+            ]
 
     run_command_with_logging(build_command, logger=logger, check=True, cwd=repo_root)
     logger.info(f"Successfully built dev image: {dev_image_tag}")
