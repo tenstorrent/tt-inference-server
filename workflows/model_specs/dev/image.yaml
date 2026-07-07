@@ -202,6 +202,24 @@ templates:
         trace_region_size: 55000000
   status: COMPLETE
 
+# FLUX.1-Kontext-dev: instruction-based image editing. Shares the FLUX.1-dev
+# transformer/VAE/encoders; validated end-to-end (untraced) on P300 (1,2).
+- weights:
+    - black-forest-labs/FLUX.1-Kontext-dev
+  impl: tt_transformers
+  min_disk_gb: 60  # full diffusers repo (~54GB: transformer + T5 + CLIP + VAE)
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P300
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 55000000
+  status: FUNCTIONAL
+
 - weights:
     - black-forest-labs/FLUX.1-schnell
   impl: tt_transformers
