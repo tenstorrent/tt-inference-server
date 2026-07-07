@@ -144,6 +144,23 @@ class LLMEvalOptions:
 
 
 @dataclass(frozen=True)
+class AgenticOptions:
+    """Agentic-eval knobs forwarded to ``AgenticWorkflow``.
+
+    ``auth_token`` is the bearer token (minted JWT or literal API key) the
+    agentic harnesses send to the inference server.
+    ``venv_python`` pins the EVALS_AGENTIC interpreter whose ``bin/`` holds
+    the harness binaries (harbor / sweagent / mini-extra); set for the
+    ``release`` path, where ``run.py`` runs in the V2_RUN_SCRIPT venv (a
+    standalone agentic run is already inside the venv via run_agentic.py,
+    so it stays ``None``).
+    """
+
+    auth_token: str = ""
+    venv_python: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class OrchestratorMetadata:
     """Top-level metadata the per-task runners can't see themselves.
 
@@ -159,6 +176,7 @@ class OrchestratorMetadata:
     serving_bench: Optional[ServingBenchOptions] = None
     llm_bench: Optional[LLMBenchOptions] = None
     llm_eval: Optional[LLMEvalOptions] = None
+    agentic: Optional[AgenticOptions] = None
 
 
 class WorkflowExecution(ABC):
@@ -250,6 +268,17 @@ class WorkflowExecution(ABC):
             markdown_path=gen.markdown_path,
             json_path=gen.json_path,
         )
+
+    @classmethod
+    def is_applicable(cls, ctx: MediaContext) -> bool:
+        """Whether this workflow has anything to run for ``ctx``.
+
+        ``ReleaseWorkflow`` skips children that report ``False`` (e.g. the
+        agentic child on a model with no agentic eval tasks). A standalone
+        run ignores this and fails loudly instead, so a mistyped
+        ``--workflow`` is never a silent no-op.
+        """
+        return True
 
     def prepare(self) -> None:
         # v2 runs against an external inference server, so there's no venv
@@ -371,6 +400,7 @@ class WorkflowExecution(ABC):
 
 
 __all__ = [
+    "AgenticOptions",
     "ServingBenchOptions",
     "LLMBenchOptions",
     "LLMEvalOptions",

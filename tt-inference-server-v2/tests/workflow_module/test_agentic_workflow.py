@@ -93,3 +93,24 @@ class TestAgenticWorkflowRunTasks:
 
         assert len(outcomes) == 1
         assert outcomes[0].exit_code == 1
+
+    def test_forwards_agentic_options_to_runner(self):
+        from workflow_module.execution import AgenticOptions, OrchestratorMetadata
+
+        meta = OrchestratorMetadata(
+            agentic=AgenticOptions(
+                auth_token="tok", venv_python="/venvs/agentic/bin/python"
+            )
+        )
+        wf = AgenticWorkflow(_make_ctx(), orchestrator_metadata=meta)
+        with patch(
+            "test_module.llm_tests.agentic_eval_tests.run_llm_agentic_eval",
+            return_value=[_fake_block()],
+        ) as run_eval:
+            wf.run_tasks()
+
+        _args, kwargs = run_eval.call_args
+        assert kwargs == {
+            "auth_token": "tok",
+            "venv_python": "/venvs/agentic/bin/python",
+        }

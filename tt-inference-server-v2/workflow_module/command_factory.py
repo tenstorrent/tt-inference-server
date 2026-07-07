@@ -23,6 +23,7 @@ from test_module import MediaContext
 
 from .commands import Command, SummaryCommand, WorkflowCommand
 from .execution import (
+    AgenticOptions,
     LLMBenchOptions,
     LLMEvalOptions,
     OrchestratorMetadata,
@@ -34,6 +35,8 @@ from .execution import (
 # Workflows whose LLM path runs the standard-eval / perf-benchmark child.
 _LLM_BENCH_WORKFLOWS = frozenset({"benchmarks", "release"})
 _LLM_EVAL_WORKFLOWS = frozenset({"evals", "release"})
+# Workflows whose LLM path runs the agentic-eval child.
+_AGENTIC_WORKFLOWS = frozenset({"agentic", "release"})
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +172,7 @@ def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetada
         serving_bench=_build_serving_bench_options(args),
         llm_bench=_build_llm_bench_options(args),
         llm_eval=_build_llm_eval_options(args),
+        agentic=_build_agentic_options(args),
     )
 
 
@@ -215,6 +219,33 @@ def _build_llm_eval_options(args: argparse.Namespace) -> Optional[LLMEvalOptions
     return LLMEvalOptions(
         auth_token=_resolve_auth_token(args),
     )
+
+
+def _build_agentic_options(args: argparse.Namespace) -> Optional[AgenticOptions]:
+    """Bearer-token + venv plumbing for the agentic child (agentic/release)."""
+    if getattr(args, "workflow", None) not in _AGENTIC_WORKFLOWS:
+        return None
+    return AgenticOptions(
+        auth_token=_resolve_auth_token(args),
+        venv_python=_agentic_venv_python(args),
+    )
+
+
+def _agentic_venv_python(args: argparse.Namespace) -> Optional[str]:
+    """EVALS_AGENTIC interpreter for the release agentic child.
+
+    A standalone agentic run is already inside the EVALS_AGENTIC venv
+    (run_agentic.py re-execs there), so its harnesses resolve from
+    ``sys.executable`` — return ``None``. A release run executes in the
+    V2_RUN_SCRIPT venv, so pin the EVALS_AGENTIC interpreter; the v2 bridge
+    provisions that venv before run.py when the model has agentic tasks.
+    """
+    if getattr(args, "workflow", None) != "release":
+        return None
+    from workflows.workflow_types import WorkflowVenvType
+    from workflows.workflow_venvs import VENV_CONFIGS
+
+    return str(VENV_CONFIGS[WorkflowVenvType.EVALS_AGENTIC].venv_python)
 
 
 def _build_serving_bench_options(

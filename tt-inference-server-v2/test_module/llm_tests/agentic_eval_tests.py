@@ -9,12 +9,13 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from llm_module import (
     DriverContext,
+    HttpServerController,
     LLMRunConfig,
     ServerConnection,
     make_agentic_driver,
@@ -28,22 +29,32 @@ from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
+# Fallback health-wait budget when the model spec doesn't set one (mirrors
+# llm_eval_tests; the per-model value comes from tensor_cache_timeout).
+_DEFAULT_WAIT_HEALTHY_TIMEOUT_S = 3600.0
+
 
 def _select_agentic_tasks(ctx: MediaContext) -> list:
-    """Return EVALS_AGENTIC tasks; raise loudly if mixed with non-agentic."""
+    """Return the EVALS_AGENTIC subset of the model's eval tasks.
+
+    Non-agentic tasks are simply ignored: standard (lm-eval / lmms-eval)
+    tasks belong to the evals workflow, and a release run drives both
+    children off the same task list.
+    """
     tasks = getattr(ctx.all_params, "tasks", []) or []
     agentic = [
         t for t in tasks if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
     ]
     non_agentic = [
-        t for t in tasks if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
+        t.task_name
+        for t in tasks
+        if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
     ]
     if agentic and non_agentic:
-        raise RuntimeError(
-            f"v2 agentic runner only supports EVALS_AGENTIC tasks. "
-            f"Got non-agentic tasks: {[t.task_name for t in non_agentic]}. "
-            f"Either port those to v2, remove {ctx.model_spec.model_name!r} from "
-            f"_V2_ROUTED_MODELS, or use --eval-samples to select agentic tasks only."
+        logger.info(
+            "Ignoring non-agentic eval tasks (the standard evals workflow "
+            "runs them): %s",
+            non_agentic,
         )
     return agentic
 
@@ -61,20 +72,45 @@ def _driver_context(ctx: MediaContext) -> DriverContext:
     return DriverContext(output_dir=Path(ctx.output_path), device=device)
 
 
-def _configure_openai_env(ctx: MediaContext) -> None:
+def _configure_openai_env(ctx: MediaContext, auth_token: str = "") -> None:
     base_url = f"{ctx.base_url}/v1"
-    os.environ.setdefault("OPENAI_API_KEY", os.getenv("API_KEY", "EMPTY"))
+    if auth_token:
+        # The agentic harnesses (harbor / sweagent / mini-extra subprocesses)
+        # read the bearer token from OPENAI_API_KEY.
+        os.environ["OPENAI_API_KEY"] = auth_token
+    else:
+        os.environ.setdefault("OPENAI_API_KEY", os.getenv("API_KEY", "EMPTY"))
     os.environ.setdefault("OPENAI_BASE_URL", base_url)
     os.environ.setdefault("OPENAI_API_BASE", base_url)
     logger.info("OpenAI-compatible environment configured for agentic evals.")
 
 
-def _require_openai_server(ctx: MediaContext) -> None:
+def _wait_for_healthy(ctx: MediaContext, auth_token: str = "") -> bool:
+    """Poll /health until the server is up (a cold server otherwise fails the
+    single /v1/models probe below with connection-refused)."""
+    server = HttpServerController(
+        base_url=ctx.server_host,
+        service_port=ctx.server_port,
+        auth_token=auth_token,
+    )
+    timeout = (
+        getattr(
+            getattr(ctx.model_spec, "device_model_spec", None),
+            "tensor_cache_timeout",
+            None,
+        )
+        or _DEFAULT_WAIT_HEALTHY_TIMEOUT_S
+    )
+    return server.wait_for_healthy(timeout=timeout)
+
+
+def _require_openai_server(ctx: MediaContext, auth_token: str = "") -> None:
     """Check the OpenAI-compatible server path used by agentic harnesses."""
 
     url = f"{ctx.base_url}/v1/models"
+    headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
     try:
-        with urlopen(url, timeout=30) as response:
+        with urlopen(Request(url, headers=headers), timeout=30) as response:
             if response.status != 200:
                 raise RuntimeError(
                     f"Expected status 200 from {url}, got {response.status}"
@@ -100,11 +136,18 @@ def _require_openai_server(ctx: MediaContext) -> None:
     logger.info("OpenAI-compatible server health check passed via %s", url)
 
 
-def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
-    """Run every EVALS_AGENTIC task for this model; return one Block per task."""
-    _configure_openai_env(ctx)
-    _require_openai_server(ctx)
+def run_llm_agentic_eval(
+    ctx: MediaContext,
+    *,
+    auth_token: str = "",
+    venv_python: Optional[str] = None,
+) -> List[Block]:
+    """Run every EVALS_AGENTIC task for this model; return one Block per task.
 
+    ``auth_token`` is the bearer token sent to a JWT/API-key-protected server;
+    ``venv_python`` pins the EVALS_AGENTIC interpreter for the release path
+    (``None`` resolves the harness binaries from ``sys.executable``).
+    """
     agentic_tasks = _select_agentic_tasks(ctx)
     if not agentic_tasks:
         raise RuntimeError(
@@ -117,9 +160,26 @@ def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
     driver_context = _driver_context(ctx)
     placeholder_config = LLMRunConfig(isl=0, osl=0, max_concurrency=0, num_prompts=0)
 
+    _configure_openai_env(ctx, auth_token)
+    if not _wait_for_healthy(ctx, auth_token):
+        # Mirror run_llm_eval: emit FAIL blocks so the report shows the tasks
+        # that never ran (acceptance fails on them) instead of dropping them.
+        logger.error("⛔ inference server not healthy; aborting agentic evals.")
+        blocks = [
+            make_agentic_driver(
+                task, runtime_config=runtime_config, venv_python=venv_python
+            ).failure_block(return_code=1, device=driver_context.device)
+            for task in agentic_tasks
+        ]
+        accept_blocks(blocks, envelope=sweep_envelope(ctx))
+        return blocks
+    _require_openai_server(ctx, auth_token)
+
     blocks: List[Block] = []
     for task in agentic_tasks:
-        driver = make_agentic_driver(task, runtime_config=runtime_config)
+        driver = make_agentic_driver(
+            task, runtime_config=runtime_config, venv_python=venv_python
+        )
         logger.info("Running %s task: %s", driver.name, task.task_name)
         outcome = driver.run(placeholder_config, server, driver_context)
 

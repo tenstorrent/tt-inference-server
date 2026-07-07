@@ -95,8 +95,9 @@ def _is_llm_eval_run(wf, model_spec) -> bool:
     """LLM ``--workflow evals`` / ``--workflow release`` route to v2.
 
     Standard evals run lm-eval / lmms-eval through ``EvalsWorkflow``; release
-    additionally runs the perf benchmark. Both go through the generic run.py
-    branch (no launcher) — the eval subprocess uses the per-task venv binary.
+    additionally runs the perf benchmark and (for models with agentic tasks)
+    the agentic evals. All go through the generic run.py branch (no launcher)
+    — each subprocess uses its per-task venv binary.
     """
     return model_spec.model_type == ModelType.LLM and wf in (
         WorkflowType.EVALS,
@@ -337,8 +338,10 @@ def _ensure_v2_venv(model_spec) -> Path:
     return venv_config.venv_python
 
 
-# Standard LLM/VLM eval backends (mirrors llm_module.eval_configs). EVALS_AGENTIC
-# is provisioned by the agentic launcher, not here.
+# Standard LLM/VLM eval backends (mirrors llm_module.eval_configs). For a
+# standalone --workflow agentic run, EVALS_AGENTIC is provisioned by the
+# agentic launcher (run_agentic.py); for release it is provisioned here via
+# _llm_agentic_venv_types.
 _V2_LLM_STANDARD_EVAL_VENVS = frozenset(
     {
         WorkflowVenvType.EVALS_COMMON,
@@ -413,6 +416,28 @@ def _llm_eval_venv_types(model_spec, runtime_config=None) -> List[WorkflowVenvTy
     return sorted(seen, key=lambda v: v.name)
 
 
+def _llm_agentic_venv_types(model_spec) -> List[WorkflowVenvType]:
+    """EVALS_AGENTIC iff the model's eval config has agentic tasks.
+
+    The release agentic child runs under V2_RUN_SCRIPT and invokes the harness
+    binaries (harbor / sweagent / mini-extra) out of the EVALS_AGENTIC venv, so
+    it must exist up front. Deliberately not narrowed by --eval-samples: the
+    agentic child runs its tasks regardless of that selection, and an
+    under-provisioned venv breaks the run.
+    """
+    try:
+        from evals.eval_config import EVAL_CONFIGS
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("Could not import EVAL_CONFIGS (%s); skipping agentic venv.", e)
+        return []
+    cfg = EVAL_CONFIGS.get(model_spec.model_name)
+    if cfg is None:
+        return []
+    if any(t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC for t in cfg.tasks):
+        return [WorkflowVenvType.EVALS_AGENTIC]
+    return []
+
+
 def _v2_dependency_venv_types(
     model_spec, wf, runtime_config=None
 ) -> List[WorkflowVenvType]:
@@ -424,9 +449,11 @@ def _v2_dependency_venv_types(
         if model_spec.model_type == ModelType.LLM:
             venv_types.extend(_llm_eval_venv_types(model_spec, runtime_config))
     # The release benchmark child runs the default perf tool (vllm) in-process
-    # under V2_RUN_SCRIPT, so its tool venv must exist up front.
+    # under V2_RUN_SCRIPT, so its tool venv must exist up front; likewise the
+    # release agentic child needs the EVALS_AGENTIC harness venv.
     if wf == WorkflowType.RELEASE and model_spec.model_type == ModelType.LLM:
         venv_types.append(WorkflowVenvType.V2_LLM_VLLM)
+        venv_types.extend(_llm_agentic_venv_types(model_spec))
     return venv_types
 
 

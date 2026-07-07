@@ -27,9 +27,16 @@ class AgenticEvalDriver(LLMDriver):
 
     name = "agentic"
 
-    def __init__(self, task: Any, *, runtime_config: Any = None) -> None:
+    def __init__(
+        self,
+        task: Any,
+        *,
+        runtime_config: Any = None,
+        venv_python: Optional[str] = None,
+    ) -> None:
         self.task = task
         self.runtime_config = runtime_config
+        self.venv_python = venv_python
         self._parser = AgenticEvalParser(task_name=task.task_name, score=task.score)
 
     def result_path(self, server: ServerConnection, context: DriverContext) -> Path:
@@ -83,6 +90,7 @@ class SWEbenchAgenticDriver(AgenticEvalDriver):
             context,
             runtime_config=self.runtime_config,
             n_tasks=n_tasks,
+            venv_python=self.venv_python,
         )
         rc = run_swebench(run_config)
         return self._load_result(rc, self.result_path(server, context))
@@ -110,16 +118,26 @@ class TerminalBenchAgenticDriver(AgenticEvalDriver):
             context,
             runtime_config=self.runtime_config,
             n_tasks=n_tasks,
+            venv_python=self.venv_python,
         )
         rc = run_terminal_bench(run_config)
         return self._load_result(rc, self.result_path(server, context))
 
 
-def make_agentic_driver(task: Any, *, runtime_config: Any = None) -> AgenticEvalDriver:
+def make_agentic_driver(
+    task: Any,
+    *,
+    runtime_config: Any = None,
+    venv_python: Optional[str] = None,
+) -> AgenticEvalDriver:
     if task.swebench_eval_config is not None:
-        return SWEbenchAgenticDriver(task, runtime_config=runtime_config)
+        return SWEbenchAgenticDriver(
+            task, runtime_config=runtime_config, venv_python=venv_python
+        )
     if task.agentic_eval_config is not None:
-        return TerminalBenchAgenticDriver(task, runtime_config=runtime_config)
+        return TerminalBenchAgenticDriver(
+            task, runtime_config=runtime_config, venv_python=venv_python
+        )
     raise RuntimeError(
         f"EVALS_AGENTIC task {task.task_name!r} has neither "
         "swebench_eval_config nor agentic_eval_config set."
@@ -133,9 +151,11 @@ def build_swebench_config(
     *,
     runtime_config: Any = None,
     n_tasks: Optional[int] = None,
+    venv_python: Optional[str] = None,
 ) -> SWEbenchRunConfig:
     cfg = task.swebench_eval_config
     return SWEbenchRunConfig(
+        venv_python=venv_python,
         task_name=task.task_name,
         dataset_name=cfg.dataset_name,
         dataset_split=cfg.dataset_split,
@@ -171,10 +191,12 @@ def build_terminal_bench_config(
     *,
     runtime_config: Any = None,
     n_tasks: Optional[int] = None,
+    venv_python: Optional[str] = None,
 ) -> TerminalBenchRunConfig:
     cfg = task.agentic_eval_config
     jobs_dir = _agentic_output_dir(context.output_dir, server.model, task).parent
     return TerminalBenchRunConfig(
+        venv_python=venv_python,
         task_name=task.task_name,
         dataset=cfg.dataset,
         agent=cfg.agent,
