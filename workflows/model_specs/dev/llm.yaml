@@ -1339,8 +1339,6 @@ templates:
 - weights:
     - moonshotai/Kimi-K2.6
   impl: tt_transformers
-  version: remote
-  tt_metal_commit: remote  # placeholder: model is served externally, not built locally
   inference_engine: VLLM
   device_model_specs:
     - device: SUPER_CLUSTER
@@ -1369,8 +1367,6 @@ templates:
 - weights:
     - MiniMaxAI/MiniMax-M2.7
   impl: tt_transformers
-  version: remote
-  tt_metal_commit: remote  # placeholder: model is served externally, not built locally
   inference_engine: VLLM
   device_model_specs:
     - device: SUPER_CLUSTER
@@ -1392,8 +1388,6 @@ templates:
 - weights:
     - openai/gpt-oss-120b
   impl: gpt_oss
-  version: remote
-  tt_metal_commit: remote  # placeholder: model is served externally, not built locally
   inference_engine: VLLM
   device_model_specs:
     - device: SUPER_CLUSTER
