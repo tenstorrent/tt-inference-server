@@ -149,10 +149,27 @@ class VLLMParamConformanceTest(BaseTest):
         logger.info("vLLM parameter suite exited with code %s", return_code)
 
     def _resolve_model_name(self) -> str:
+        """Resolve the ``model`` value sent in each request.
+
+        The served model name is the HF repo (e.g. ``moonshotai/Kimi-K2.6``),
+        not the short internal ``model_name`` (``Kimi-K2.6``) — this is what the
+        eval/benchmark drivers send (``model_spec.hf_model_repo``). Remote
+        endpoints route by this exact name, so a mismatch is rejected as
+        model-not-found. Prefer an explicit ``remote_api_model`` override from
+        the spec metadata, then ``hf_model_repo``, then fall back to the short
+        ``model_name`` and finally the CLI config.
+        """
         if self.ctx is not None:
-            model_name = getattr(self.ctx.model_spec, "model_name", None)
-            if model_name:
-                return str(model_name)
+            spec = self.ctx.model_spec
+            metadata = getattr(spec, "metadata", None)
+            if isinstance(metadata, dict):
+                remote_api_model = metadata.get("remote_api_model")
+                if remote_api_model:
+                    return str(remote_api_model)
+            for attr in ("hf_model_repo", "model_name"):
+                value = getattr(spec, attr, None)
+                if value:
+                    return str(value)
         return str(self.config.get("model") or DEFAULT_MODEL_NAME)
 
     @staticmethod

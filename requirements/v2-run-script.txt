@@ -24,6 +24,17 @@ torchvision
 open-clip-torch
 pillow
 requests
+# The LLM spec_tests path (test_module.llm_tests.vllm_param_conformance_test)
+# shells out to the vLLM parameter-conformance pytest suites with this venv's
+# interpreter, so pytest + pytest-asyncio (one suite is @pytest.mark.asyncio)
+# must be installed here.
+pytest==8.3.5
+pytest-asyncio==1.3.0
+# The conformance suites' conftest imports server_tests.conftest ->
+# utils.prompt_client -> utils.prompt_generation, which pull in transformers
+# (AutoTokenizer) and jinja2 at import time.
+transformers==4.57.1
+jinja2
 # LLM eval/release run in this venv and mint the server bearer token from
 # --jwt-secret (command_factory._mint_jwt_if_secret), so pyjwt must be here.
 pyjwt
