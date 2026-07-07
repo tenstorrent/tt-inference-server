@@ -499,7 +499,7 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
     total_elapsed = sum(s.elapsed for s in status_list)
     # tput_user is per-user image throughput (images/sec = 1 / avg latency).
     tput_user = len(status_list) / total_elapsed if total_elapsed > 0 else 0
-    target_checks, accuracy_check = _image_target_checks(ctx, ttft_value, tput_user)
+    target_checks, target_check = _image_target_checks(ctx, ttft_value, tput_user)
     num_inference_steps_used = status_list[0].num_inference_steps if status_list else 0
     benchmarks_data = {
         "num_requests": len(status_list),
@@ -512,7 +512,7 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
             "ttft_ms": ttft_value * 1000,
             "inference_steps_per_second": inference_steps_per_second,
             "tput_user": tput_user,
-            "accuracy_check": accuracy_check,
+            "target_check": target_check,
             "target_checks": target_checks,
         }
     )

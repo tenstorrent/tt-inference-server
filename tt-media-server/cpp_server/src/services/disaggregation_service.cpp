@@ -96,8 +96,8 @@ void DisaggregationService::setupSocketHandlers() {
             // free slot, and the prompt is just that single trailing token.
             request.kv_position_id =
                 static_cast<uint32_t>(message.tokenIds.size() - 1);
-            request.prompt.emplace<std::vector<int>>(message.tokenIds.end() - 1,
-                                                     message.tokenIds.end());
+            request.prompt.emplace<std::vector<uint32_t>>(
+                message.tokenIds.end() - 1, message.tokenIds.end());
             request.max_tokens = message.remainingTokens;
             request.slotId = message.slotId;
             // Restore the sampling subset echoed back from the prefill server.
@@ -160,8 +160,8 @@ void DisaggregationService::setupSocketHandlers() {
 
           auto maxTokens = message.maxTokens;
 
-          request->prompt.emplace<std::vector<int>>(message.tokenIds.begin(),
-                                                    message.tokenIds.end());
+          request->prompt.emplace<std::vector<uint32_t>>(
+              message.tokenIds.begin(), message.tokenIds.end());
           auto slotId = message.slotId;
           request->slotId = slotId;
           request->decode_position_id = message.decodePositionId;
@@ -184,7 +184,7 @@ void DisaggregationService::setupSocketHandlers() {
                 // resolvePrefillSession (full prompt - remaining delta).
                 const size_t fullPromptTokens = message.tokenIds.size();
                 const size_t trimmedPromptTokens =
-                    std::get<std::vector<int>>(request->prompt).size();
+                    std::get<std::vector<uint32_t>>(request->prompt).size();
                 // Cached (reused) prompt tokens = the leading prefix this
                 // prefill did NOT recompute = what resolvePrefillSession
                 // trimmed off its own prefix-cache hit (fullPrompt - remaining
@@ -449,7 +449,7 @@ void DisaggregationService::handleStreamingRequest(
 
     auto maxTokens = request.max_tokens;
     auto slotId = request.slotId;
-    auto tokenIds = std::get<std::vector<int>>(request.prompt);
+    auto tokenIds = std::get<std::vector<uint32_t>>(request.prompt);
     // kv_position_id is the first free KV index (the matched prefix occupies
     // [0, kv_position_id)), which is exactly the position the prefill server
     // should resume writing from.
@@ -462,9 +462,8 @@ void DisaggregationService::handleStreamingRequest(
     int decodeSkipTokens = decodePositionId - request.accumulated_think_tokens;
 
     auto sent = socketService->sendPrefillRequest(
-        request.task_id, registrationHashes,
-        std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
-        slotId, tt::utils::mapper::mapSamplingParams(request), decodePositionId,
+        request.task_id, registrationHashes, tokenIds, maxTokens, slotId,
+        tt::utils::mapper::mapSamplingParams(request), decodePositionId,
         decodeSkipTokens);
 
     if (!sent) {

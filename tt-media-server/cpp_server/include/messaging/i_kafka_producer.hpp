@@ -26,7 +26,7 @@ class IKafkaProducer {
 
   /**
    * Send to a specific partition of the configured topic. Callers use this
-   * when they need deterministic routing (e.g. layer_id -> worker) rather
+   * when they need deterministic routing (e.g. layer_begin -> worker) rather
    * than the broker's default partitioner.
    */
   virtual bool send(std::string_view payload, int32_t partition,

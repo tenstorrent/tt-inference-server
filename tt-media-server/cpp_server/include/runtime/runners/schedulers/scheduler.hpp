@@ -37,7 +37,7 @@ class Scheduler {
 
   /** Creates a sequence, takes ownership, and enqueues it for prefill. */
   tt::domain::llm::Sequence& addRequest(
-      uint32_t taskId, std::vector<int64_t> prompt,
+      uint32_t taskId, std::vector<uint32_t> prompt,
       const tt::domain::llm::SamplingParams& params =
           tt::domain::llm::SamplingParams());
 
@@ -69,7 +69,7 @@ class Scheduler {
    * @param token_ids  One token per sequence from the model.
    */
   void postprocess(std::vector<tt::domain::llm::Sequence*>& seqs,
-                   const std::vector<int64_t>& tokenIds);
+                   const std::vector<uint32_t>& tokenIds);
   void removeSequence(uint32_t taskId);
 
   /**
@@ -79,7 +79,7 @@ class Scheduler {
    */
   void abortRequest(uint32_t taskId);
 
-  bool isStopToken(int64_t tokenId) const {
+  bool isStopToken(uint32_t tokenId) const {
     return stopTokenIds.count(tokenId) > 0;
   }
 
@@ -114,7 +114,7 @@ class Scheduler {
 
   size_t maxInFlightCount;
   size_t maxNumBatchedTokens;
-  std::unordered_set<int64_t> stopTokenIds;
+  std::unordered_set<uint32_t> stopTokenIds;
   llm_engine::BlockManager blockManager;
   ipc::ITaskQueue* prefillQueue;
   std::unordered_map<uint32_t, std::unique_ptr<tt::domain::llm::Sequence>>

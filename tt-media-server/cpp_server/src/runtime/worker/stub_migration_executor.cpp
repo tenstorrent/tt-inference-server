@@ -16,9 +16,10 @@ void StubMigrationExecutor::execute(uint64_t migrationId,
                                     DoneCallback onDone) {
   TT_LOG_DEBUG(
       "[StubMigrationExecutor] migration_id={} src_slot={} dst_slot={} "
-      "layer_id={} position=[{}..{}] -> {}",
-      migrationId, req.src_slot, req.dst_slot, req.layer_id, req.position_start,
-      req.position_end, static_cast<int>(result));
+      "layers=[{}..{}) src_pos=[{}..{}) dst_pos=[{}..{}) -> {}",
+      migrationId, req.src_slot, req.dst_slot, req.layer_begin, req.layer_end,
+      req.src_position_begin, req.src_position_end, req.dst_position_begin,
+      req.dst_position_end, static_cast<int>(result));
 
   if (onDone) {
     onDone(result);
