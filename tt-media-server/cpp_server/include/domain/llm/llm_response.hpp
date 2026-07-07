@@ -78,7 +78,7 @@ struct LLMChoice {
   int index = 0;
   std::optional<Json::Value> logprobs;
   std::optional<std::string> finish_reason;
-  std::optional<int64_t> token_id;
+  std::optional<uint32_t> token_id;
   std::optional<Json::Value> tool_calls;
   uint32_t spec_accepts = 0;
   uint32_t spec_rejects = 0;

@@ -16,7 +16,7 @@ namespace tt::domain::llm {
 using Config = tt::config::LLMConfig;
 
 Sequence::Sequence(uint32_t taskId, int blockSize,
-                   std::vector<int64_t> inputTokenIds,
+                   std::vector<uint32_t> inputTokenIds,
                    const SamplingParams& inputSamplingParams)
     : taskId(taskId),
       status(SequenceStatus::WAITING),
@@ -30,7 +30,7 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
 }
 
 Sequence::Sequence(uint32_t taskId, int blockSize,
-                   std::vector<int64_t> inputTokenIds, size_t numPromptTokens,
+                   std::vector<uint32_t> inputTokenIds, size_t numPromptTokens,
                    std::optional<uint32_t> slotId,
                    std::optional<uint32_t> prefillSlotId, bool continuation,
                    bool disaggregated,
@@ -60,7 +60,7 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
   }
 }
 
-std::vector<int64_t> Sequence::block(size_t i) const {
+std::vector<uint32_t> Sequence::block(size_t i) const {
   size_t n = numBlocks();
   if (i >= n) {
     throw std::out_of_range("block index out of range");
@@ -70,14 +70,14 @@ std::vector<int64_t> Sequence::block(size_t i) const {
   return {tokenIds.begin() + start, tokenIds.begin() + end};
 }
 
-std::vector<int64_t> Sequence::completionTokenIds() const {
+std::vector<uint32_t> Sequence::completionTokenIds() const {
   if (numPromptTokens >= tokenIds.size()) {
     return {};
   }
   return {tokenIds.begin() + numPromptTokens, tokenIds.end()};
 }
 
-void Sequence::appendToken(int64_t tokenId) {
+void Sequence::appendToken(uint32_t tokenId) {
   tokenIds.push_back(tokenId);
   lastToken = tokenId;
 }
@@ -93,7 +93,7 @@ void Sequence::serialize(std::ostream& os) const {
            sizeof(numCachedTokens));
   os.write(reinterpret_cast<const char*>(&tokenIdsSize), sizeof(tokenIdsSize));
   os.write(reinterpret_cast<const char*>(tokenIds.data()),
-           tokenIdsSize * sizeof(int64_t));
+           tokenIdsSize * sizeof(uint32_t));
   os.write(reinterpret_cast<const char*>(&blockTableSize),
            sizeof(blockTableSize));
   os.write(reinterpret_cast<const char*>(blockTable.data()),
@@ -150,7 +150,7 @@ Sequence Sequence::deserialize(std::istream& is) {
 
   Config defaultConfig;
   Sequence seq(taskId, static_cast<int>(defaultConfig.kvcache_block_size),
-               std::vector<int64_t>{});
+               std::vector<uint32_t>{});
 
   is.read(reinterpret_cast<char*>(&seq.lastToken), sizeof(seq.lastToken));
   is.read(reinterpret_cast<char*>(&seq.numPromptTokens),
@@ -162,7 +162,7 @@ Sequence Sequence::deserialize(std::istream& is) {
   is.read(reinterpret_cast<char*>(&tokenIdsSize), sizeof(tokenIdsSize));
   seq.tokenIds.resize(tokenIdsSize);
   is.read(reinterpret_cast<char*>(seq.tokenIds.data()),
-          tokenIdsSize * sizeof(int64_t));
+          tokenIdsSize * sizeof(uint32_t));
 
   size_t blockTableSize;
   is.read(reinterpret_cast<char*>(&blockTableSize), sizeof(blockTableSize));

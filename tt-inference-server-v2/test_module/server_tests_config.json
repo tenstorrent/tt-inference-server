@@ -738,7 +738,7 @@
                 "mock_mode": false
             }
         },
-        "TestTTSServerHealth": {
+        "TTSLoadTest": {
             "module": "test_module.load_param_tests.tts_load_test",
             "markers": [
                 "load",

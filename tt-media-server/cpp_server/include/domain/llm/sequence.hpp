@@ -20,12 +20,12 @@ enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED, ABORTED };
 
 struct TokenResult {
   uint32_t taskId;
-  uint64_t tokenId = 0;
+  uint32_t tokenId = 0;
   std::optional<bool> finished;
   bool isError = false;
 
   TokenResult() = default;
-  TokenResult(uint32_t taskId, uint64_t tokenId,
+  TokenResult(uint32_t taskId, uint32_t tokenId,
               std::optional<bool> finished = {}, bool isError = false)
       : taskId(taskId),
         tokenId(tokenId),
@@ -35,10 +35,10 @@ struct TokenResult {
 
 class Sequence {
  public:
-  Sequence(uint32_t taskId, int blockSize, std::vector<int64_t> tokenIds,
+  Sequence(uint32_t taskId, int blockSize, std::vector<uint32_t> tokenIds,
            const SamplingParams& samplingParams = SamplingParams());
 
-  Sequence(uint32_t taskId, int blockSize, std::vector<int64_t> tokenIds,
+  Sequence(uint32_t taskId, int blockSize, std::vector<uint32_t> tokenIds,
            size_t numPromptTokens, std::optional<uint32_t> slotId,
            std::optional<uint32_t> prefillSlotId, bool continuation,
            bool disaggregated, std::unique_ptr<SamplingParams> samplingParams,
@@ -54,7 +54,7 @@ class Sequence {
   uint32_t taskId;
 
   size_t size() const { return tokenIds.size(); }
-  int64_t operator[](size_t i) const { return tokenIds[i]; }
+  uint32_t operator[](size_t i) const { return tokenIds[i]; }
 
   bool isFinished() const { return status == SequenceStatus::FINISHED; }
   bool isAborted() const { return status == SequenceStatus::ABORTED; }
@@ -76,17 +76,17 @@ class Sequence {
   void setPrefillKVCacheSlot(uint32_t slot) { prefillKvCacheSlot = slot; }
   uint32_t getPrefillKVCacheSlot() const { return prefillKvCacheSlot; }
 
-  std::vector<int64_t> block(size_t i) const;
-  std::vector<int64_t> completionTokenIds() const;
-  void appendToken(int64_t tokenId);
+  std::vector<uint32_t> block(size_t i) const;
+  std::vector<uint32_t> completionTokenIds() const;
+  void appendToken(uint32_t tokenId);
 
   SequenceStatus getStatus() const { return status; }
   void setStatus(SequenceStatus s) { status = s; }
 
-  const std::vector<int64_t>& getTokenIds() const { return tokenIds; }
+  const std::vector<uint32_t>& getTokenIds() const { return tokenIds; }
 
-  int64_t getLastToken() const { return lastToken; }
-  void setLastToken(int64_t t) { lastToken = t; }
+  uint32_t getLastToken() const { return lastToken; }
+  void setLastToken(uint32_t t) { lastToken = t; }
 
   size_t getNumPromptTokens() const { return numPromptTokens; }
   void setNumPromptTokens(size_t n) { numPromptTokens = n; }
@@ -133,8 +133,8 @@ class Sequence {
 
  private:
   SequenceStatus status = SequenceStatus::WAITING;
-  std::vector<int64_t> tokenIds;
-  int64_t lastToken = 0;
+  std::vector<uint32_t> tokenIds;
+  uint32_t lastToken = 0;
   std::optional<uint32_t> kvPositionId = std::nullopt;
   size_t numPromptTokens = 0;
   size_t numCachedTokens = 0;
