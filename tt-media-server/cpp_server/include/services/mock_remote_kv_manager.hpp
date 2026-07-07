@@ -63,7 +63,7 @@ class MockRemoteKVManager : public IRemoteKVManager {
     Migration migration;
     MigrationRequest request;
     // Polls remaining until status flips to `terminal`. 0 means the next
-    // (or current) getStatus() resolves immediately.
+    // (or current) getMigrationStatus() resolves immediately.
     size_t pollsRemaining;
     MigrationStatus terminal;
   };
