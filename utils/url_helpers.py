@@ -47,6 +47,15 @@ def normalize_server_url(value: str) -> str:
     return server_url
 
 
+def is_remote_server(runtime_config=None) -> bool:
+    """Return ``True`` when a remote ``--server-url`` was configured.
+
+    A truthy ``runtime_config.server_url`` means tests should target a remote
+    OpenAI-compatible endpoint rather than a locally launched server.
+    """
+    return bool(getattr(runtime_config, "server_url", None))
+
+
 def resolve_deploy_url(runtime_config=None) -> str:
     """Resolve the deploy URL using the standard precedence.
 
