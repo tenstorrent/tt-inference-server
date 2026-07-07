@@ -129,6 +129,7 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_t3k.md) |
 | 🛠️ Experimental | LLM | [gpt-oss-20b](llm/gpt-oss-20b_t3k.md) |
 | 🛠️ Experimental | LLM | [Qwen2.5-Coder-32B-Instruct](llm/Qwen2.5-Coder-32B-Instruct_t3k.md) |
+| 🛠️ Experimental | VLM | [dots.ocr](vlm/dots.ocr_t3k.md) |
 | 🛠️ Experimental | VLM | [gemma-3-27b-it](vlm/gemma-3-27b-it_t3k.md) |
 | 🛠️ Experimental | VLM | [Qwen2.5-VL-32B-Instruct](vlm/Qwen2.5-VL-32B-Instruct_t3k.md) |
 
