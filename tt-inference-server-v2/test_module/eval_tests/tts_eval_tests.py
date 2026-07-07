@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import importlib
 import logging
 import sys
@@ -108,33 +107,42 @@ def _tts_eval_block(
 
 
 def _run_tts_quality_eval(ctx: MediaContext) -> dict:
-    """Run ``TTSQualityTest`` against the live server and return its result dict.
+    """Run ``TTSQualityTest`` against the live server and return its result data.
 
     Imported lazily so the module doesn't pull in numpy/torch at import time;
     callers must gate on :func:`_missing_quality_deps` first.
+
+    The test runs through :meth:`BaseTest.run_tests`, so it inherits the shared
+    retry/timeout/hardware-gate envelope; the WER metrics are
+    read back from the returned Block's ``data``.
     """
     from .._test_common import TestConfig
     from .tts_quality_test import TTSQualityTest
 
     sample_count = _tts_sample_count(ctx)
     test = TTSQualityTest(
-        TestConfig.create_default(timeout=3600),
+        TestConfig(
+            {
+                "timeout": 3600,
+                "retry_attempts": 1,
+                "retry_delay": 10,
+                "break_on_failure": False,
+            }
+        ),
         targets={
             "sample_count": sample_count,
             "wer_threshold": DEFAULT_WER_THRESHOLD,
             "cleanup": True,
         },
+        ctx=ctx,
     )
-    # TTSQualityTest.__init__ doesn't forward ctx to BaseTest, so set the
-    # server URL explicitly (mirrors _run_whisper_lmms_eval in audio evals).
-    test.base_url = ctx.base_url
     logger.info(
         "Running TTSQualityTest: samples=%s wer_threshold=%s base_url=%s",
         sample_count,
         DEFAULT_WER_THRESHOLD,
         ctx.base_url,
     )
-    return asyncio.run(test._run_specific_test_async())
+    return dict(test.run_tests().data)
 
 
 def run_tts_eval(ctx: MediaContext) -> Block:

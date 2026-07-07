@@ -52,7 +52,7 @@ class TTSQualityTest(BaseTest):
     TASK_TYPE = "audio"
 
     def __init__(self, config, targets=None, **kwargs):
-        super().__init__(config, targets)
+        super().__init__(config, targets, **kwargs)
         self._whisper_model = None
         self._whisper_processor = None
 
