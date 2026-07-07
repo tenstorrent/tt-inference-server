@@ -93,7 +93,7 @@ your ports differ.
 Confirm the endpoint works end-to-end with a single request. Use either the curl or
 Python snippet in the [sections below](#curl-single-image), pointed at
 `http://127.0.0.1:8001/v1/chat/completions`. A successful call prints the extracted
-text. (For the full API reference, see [`ENDPOINT_USAGE.md`](ENDPOINT_USAGE.md).)
+text.
 
 ## Step 4 — Run the batch demo over a folder
 
@@ -142,9 +142,9 @@ The batch demo writes everything to `demo/demo_outputs/`:
 
 ## Reference: call the endpoint directly
 
-These are the request snippets referenced in **Step 3**. For the full API reference
-(headers, image-input formats, `max_tokens`/`temperature`/`finish_reason` notes), see
-[`ENDPOINT_USAGE.md`](ENDPOINT_USAGE.md).
+These are the request snippets referenced in **Step 3**. The endpoint is a standard
+OpenAI-compatible Chat Completions API; `max_tokens`/`temperature` behavior and the
+`finish_reason` values are covered in the Options and Troubleshooting sections below.
 
 ### curl (single image)
 
