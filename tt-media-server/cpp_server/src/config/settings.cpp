@@ -825,11 +825,6 @@ std::string dynamoWorkerRole() {
   return llmMode() == LLMMode::PREFILL_ONLY ? "prefill" : "decode";
 }
 
-bool dynamoNativePrefillHandoffEnabled() {
-  return envBool("DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED",
-                 defaults::DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED);
-}
-
 bool dynamoDecodeOrchestratesPrefill() {
   return envBool("DYNAMO_DECODE_ORCHESTRATES_PREFILL",
                  defaults::DYNAMO_DECODE_ORCHESTRATES_PREFILL);

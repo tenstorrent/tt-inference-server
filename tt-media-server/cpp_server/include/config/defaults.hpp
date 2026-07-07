@@ -138,7 +138,6 @@ constexpr const char* DYNAMO_NAMESPACE = "default";
 constexpr const char* DYNAMO_COMPONENT = "backend";
 constexpr const char* DYNAMO_ENDPOINT_NAME = "generate";
 constexpr const char* DYNAMO_WORKER_ROLE = "auto";
-constexpr bool DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED = false;
 constexpr bool DYNAMO_DECODE_ORCHESTRATES_PREFILL = false;
 
 // Discovery: etcd endpoint for Dynamo's KVStoreDiscovery.

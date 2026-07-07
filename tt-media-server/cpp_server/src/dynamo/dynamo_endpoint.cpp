@@ -307,7 +307,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           "tokens={}",
           requestId.empty() ? "?" : requestId, dynReq.token_ids.size());
 
-      if (tt::config::dynamoNativePrefillHandoffEnabled()) {
+      if (tt::config::dynamoDecodeOrchestratesPrefill()) {
         auto prefillMessage = buildPrefillRequestMessage(dynReq);
         auto writer = DynamoStreamWriter::create(
             pool->getNextLoop(), connInfo, requestId,
@@ -367,7 +367,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       TokenChunk err;
       err.error =
           "cpp_server Dynamo prefill endpoint is registered for discovery "
-          "only; enable DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED to execute "
+          "only; enable DYNAMO_DECODE_ORCHESTRATES_PREFILL to execute "
           "prefill over Dynamo";
       err.error_code = 501;
       writer->sendChunk(err);
@@ -499,11 +499,11 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
 
     if (const Json::Value* handoffJson =
             findDynamoPrefillHandoffJson(dynReq.raw)) {
-      if (!tt::config::dynamoNativePrefillHandoffEnabled()) {
+      if (!tt::config::dynamoDecodeOrchestratesPrefill()) {
         TokenChunk err;
         err.error =
             "Dynamo prefill handoff metadata was provided, but "
-            "DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED is not enabled";
+          "DYNAMO_DECODE_ORCHESTRATES_PREFILL is not enabled";
         err.error_code = 501;
         sendChunk(err);
         signalDone();

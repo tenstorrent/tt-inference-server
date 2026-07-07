@@ -292,7 +292,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
       static_cast<int>(tt::config::kvCacheBlockSize());
   card["migration_limit"] =
       c.worker_role == DiscoveryWorkerRole::PREFILL &&
-              tt::config::dynamoNativePrefillHandoffEnabled()
+              tt::config::dynamoDecodeOrchestratesPrefill()
           ? 1
           : 0;
   card["model_type"] =

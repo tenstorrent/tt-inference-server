@@ -354,13 +354,10 @@ std::string dynamoEndpointName();
  * auto, decode, prefill. auto derives from LLM_MODE. */
 std::string dynamoWorkerRole();
 
-/** Enable the experimental Dynamo prefill handoff control plane. From
- * DYNAMO_NATIVE_PREFILL_HANDOFF_ENABLED. Default: false. */
-bool dynamoNativePrefillHandoffEnabled();
-
-/** When true, decode keeps the legacy prefill decision point but calls a
- * Dynamo-registered prefill worker directly instead of using the inter-server
- * socket. From DYNAMO_DECODE_ORCHESTRATES_PREFILL. */
+/** When true, decode keeps the local-vs-remote prefill decision point but calls
+ * a Dynamo-registered prefill worker directly instead of using the inter-server
+ * socket path. Prefill workers also use this to enable the matching
+ * tt_prefill_handoff endpoint behavior. From DYNAMO_DECODE_ORCHESTRATES_PREFILL. */
 bool dynamoDecodeOrchestratesPrefill();
 
 /** When true and LLM_DEVICE_BACKEND=mock_pipeline, Blaze runners use
