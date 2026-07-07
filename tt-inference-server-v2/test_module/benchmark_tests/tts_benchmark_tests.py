@@ -201,18 +201,37 @@ def _tts_target_checks(
     )
 
 
-def _tts_tail_latency(status_list: list[TtsTestStatus]) -> tuple[float, float]:
-    logger.info("Calculating tail latency (P90, P95)")
-    if not status_list:
-        return 0.0, 0.0
+def _tts_ttft_percentiles(
+    status_list: list[TtsTestStatus],
+) -> tuple[float, float, float]:
+    """Return (P50, P90, P95) of TTFT in ms across successful requests."""
+    logger.info("Calculating TTFT percentiles (P50, P90, P95)")
     valid = [s.ttft_ms for s in status_list if s.ttft_ms is not None]
     if not valid:
-        return 0.0, 0.0
+        return 0.0, 0.0, 0.0
     sorted_ttft = sorted(valid)
     n = len(sorted_ttft)
-    p90_index = min(math.ceil(n * 0.9) - 1, n - 1)
-    p95_index = min(math.ceil(n * 0.95) - 1, n - 1)
-    return sorted_ttft[p90_index], sorted_ttft[p95_index]
+
+    def _percentile(fraction: float) -> float:
+        index = min(math.ceil(n * fraction) - 1, n - 1)
+        return sorted_ttft[max(index, 0)]
+
+    return _percentile(0.5), _percentile(0.9), _percentile(0.95)
+
+
+def _tts_throughput_rps(
+    status_list: list[TtsTestStatus], wall_seconds: float
+) -> Optional[float]:
+    """Requests-per-second over the benchmark wall-clock (informational).
+
+    The TTS benchmark issues requests sequentially, so this reflects
+    serial end-to-end throughput, not peak concurrent throughput. There is
+    no throughput target for TTS, so this metric is display-only.
+    """
+    successful = sum(1 for s in status_list if s.status)
+    if wall_seconds <= 0 or successful == 0:
+        return None
+    return successful / wall_seconds
 
 
 def run_tts_benchmark(ctx: MediaContext) -> Block:
@@ -224,7 +243,9 @@ def run_tts_benchmark(ctx: MediaContext) -> Block:
 
     try:
         num_calls = _tts_num_calls(ctx, is_eval=False)
+        bench_start = time.monotonic()
         status_list = _run_tts_benchmark(ctx, num_calls)
+        wall_seconds = time.monotonic() - bench_start
     except Exception as e:
         logger.error(f"Benchmark execution encountered an error: {e}")
         raise
@@ -232,7 +253,8 @@ def run_tts_benchmark(ctx: MediaContext) -> Block:
     logger.info("Generating benchmark report...")
     ttft_value = _tts_avg(status_list, "ttft_ms")
     rtr_value = _tts_avg(status_list, "rtr")
-    p90_ttft, p95_ttft = _tts_tail_latency(status_list)
+    p50_ttft, p90_ttft, p95_ttft = _tts_ttft_percentiles(status_list)
+    throughput_rps = _tts_throughput_rps(status_list, wall_seconds)
     target_checks, target_check = _tts_target_checks(ctx, ttft_value, rtr_value)
 
     return Block(
@@ -246,8 +268,12 @@ def run_tts_benchmark(ctx: MediaContext) -> Block:
                 "num_requests": len(status_list),
                 "ttft": ttft_value / 1000 if ttft_value is not None else None,
                 "rtr": rtr_value,
+                # ttft_p50 and throughput_rps are informational only: TTS has
+                # no P50/throughput targets, so they carry no target check.
+                "ttft_p50": p50_ttft / 1000,
                 "ttft_p90": p90_ttft / 1000,
                 "ttft_p95": p95_ttft / 1000,
+                "throughput_rps": throughput_rps,
                 "target_check": target_check,
                 "target_checks": target_checks,
             },

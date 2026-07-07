@@ -137,6 +137,21 @@ def test_eval_all_na_is_na_status_not_failure():
     assert by_name[CATEGORY_EVALS].status == STATUS_NA
 
 
+def test_summary_detail_absent_vs_all_na_are_distinguished():
+    # No eval block at all -> genuinely "no blocks present".
+    absent = CategoryResult(CATEGORY_EVALS, STATUS_NA, total=0, failed=0)
+    absent_md = format_acceptance_summary_markdown(True, {}, [absent])
+    assert "no blocks present" in absent_md
+
+    # One eval block that ran but self-reported NA accuracy -> NA status with
+    # a block present. Must NOT be misreported as "no blocks present".
+    present_all_na = CategoryResult(CATEGORY_EVALS, STATUS_NA, total=1, failed=0, na=1)
+    present_md = format_acceptance_summary_markdown(True, {}, [present_all_na])
+    assert "no blocks present" not in present_md
+    assert "0/1 passed" in present_md
+    assert "1 NA" in present_md
+
+
 # --- Spec tests -----------------------------------------------------------
 
 

@@ -93,12 +93,8 @@ def test_media_outcome_block_kind_follows_task_type():
 
 
 def _patch_runner(monkeypatch, task_type, runner):
-    target = (
-        "EVAL_DISPATCH"
-        if task_type == MediaTaskType.EVALUATION
-        else ("BENCHMARK_DISPATCH")
-    )
-    monkeypatch.setattr(dispatch, target, {"AUDIO": runner})
+
+    monkeypatch.setattr(dispatch, "_resolve_runner", lambda tt, name: runner)
     monkeypatch.setattr(dispatch, "accept_blocks", lambda *a, **k: True)
 
 
