@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import os
 from typing import TYPE_CHECKING, Optional, Union
 
 import torch
@@ -64,9 +65,23 @@ class TTPlatform(Platform):
         if cache_config and cache_config.block_size is None:
             cache_config.block_size = 16
 
-        # Disable prefix caching for TT backend (not yet supported)
-        logger.info("Prefix caching is not yet supported for TT backend; disabling it.")
-        vllm_config.cache_config.enable_prefix_caching = False
+        # Prefix caching is off by default for TT backend: most TT models compute
+        # the whole prompt every prefill, so reusing cached blocks would silently
+        # skip real compute. Models that DO honor a cached prefix (TS-8: dots.ocr
+        # S2 computes only the uncached suffix and attends over the resident
+        # prefix KV) opt in via TT_ENABLE_PREFIX_CACHING=1.
+        if os.environ.get("TT_ENABLE_PREFIX_CACHING") == "1":
+            logger.info(
+                "Prefix caching explicitly enabled for TT backend "
+                "(TT_ENABLE_PREFIX_CACHING=1); model must compute only the "
+                "uncached suffix (TS-8)."
+            )
+        else:
+            logger.info(
+                "Prefix caching is not enabled for TT backend; disabling it. "
+                "Set TT_ENABLE_PREFIX_CACHING=1 for prefix-cache-aware models."
+            )
+            vllm_config.cache_config.enable_prefix_caching = False
 
         parallel_config = vllm_config.parallel_config
         if parallel_config.worker_cls == "auto":
