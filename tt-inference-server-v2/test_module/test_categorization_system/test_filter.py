@@ -35,6 +35,8 @@ NUM_OF_DEVICES = "num_of_devices"
 NUM_CONCURRENT_REQUESTS = "num_concurrent_requests"
 TARGETS = "targets"
 ENGINES = "engines"
+CATEGORIES = "categories"
+EXCLUDE_CATEGORIES = "exclude_categories"
 
 
 class TestFilter:
@@ -311,11 +313,42 @@ class TestFilter:
                 return category
         return None
 
+    def _prerequisite_applies_to_category(self, prereq: Dict, suite: Dict) -> bool:
+        """Whether ``prereq`` should run for ``suite``'s model category.
+
+        Prereqs may declare either or both of:
+
+        - ``categories``: allow-list — only these categories get this prereq.
+        - ``exclude_categories``: deny-list — these categories never get it.
+
+        The deny-list wins over the allow-list. A prereq with neither key is
+        category-agnostic and always applies. A suite whose category can't be
+        resolved (no matching weight) is treated as unknown: allow-lists that
+        don't include ``None`` reject it, deny-lists don't.
+        """
+        allow = prereq.get(CATEGORIES) or []
+        deny = prereq.get(EXCLUDE_CATEGORIES) or []
+        if not allow and not deny:
+            return True
+
+        category = self._get_suite_category(suite)
+        if category is not None and category in deny:
+            return False
+        if allow and category not in allow:
+            return False
+        return True
+
     def _get_prerequisite_for_suite(self, suite: Dict) -> List[Dict]:
         """Get expanded prerequisite tests for a specific suite.
 
-        Prerequisites whose ``engines`` allow-list excludes the configured
-        inference engine are skipped.
+        Prerequisites are gated by two orthogonal, config-driven axes:
+
+        - ``engines`` on the prereq vs. the engine passed to
+          :meth:`filter_prerequisites_by_engine`.
+        - ``categories`` / ``exclude_categories`` on the prereq vs. the
+          suite's model category (derived from ``weights``).
+
+        A prereq is only prepended when *both* gates pass.
 
         Args:
             suite: Suite dict for hardware context
@@ -326,7 +359,6 @@ class TestFilter:
         logger.info(
             f"Getting prerequisite tests for suite: {suite.get('id', 'unknown')}"
         )
-        suite_category = self._get_suite_category(suite)
         prereqs = []
         for prereq in self.prerequisite_tests:
             if not self._prerequisite_applies_to_engine(prereq):
@@ -337,15 +369,15 @@ class TestFilter:
                     prereq.get(ENGINES),
                 )
                 continue
-            # DeviceLivenessTest probes the tt-media-server ``/tt-liveness``
-            # endpoint, which LLM deployments (bare ``vllm serve``) don't expose.
-            # It can never pass there, so skip it for LLM suites — the LLM
-            # eval/benchmark paths already gate on ``/health`` via llm_module.
-            if suite_category == "LLM" and prereq.get("name") == "DeviceLivenessTest":
+            if not self._prerequisite_applies_to_category(prereq, suite):
                 logger.info(
-                    "Skipping DeviceLivenessTest prerequisite for LLM suite %s "
-                    "(bare vLLM has no /tt-liveness route; LLM gates on /health)",
+                    "Skipping prerequisite %s for suite %s "
+                    "(category=%s, categories=%s, exclude_categories=%s)",
+                    prereq.get("name", "unknown"),
                     suite.get("id", "unknown"),
+                    self._get_suite_category(suite),
+                    prereq.get(CATEGORIES),
+                    prereq.get(EXCLUDE_CATEGORIES),
                 )
                 continue
             expanded = self._expand_prerequisite_test(prereq, suite)
