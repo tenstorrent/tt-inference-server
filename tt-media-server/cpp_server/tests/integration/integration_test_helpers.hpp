@@ -51,7 +51,6 @@ namespace tt::test {
 
 constexpr auto kTestDeadline = std::chrono::seconds(10);
 constexpr auto kPollInterval = std::chrono::milliseconds(50);
-constexpr int kDefaultBlockSize = 1;
 
 // ---------------------------------------------------------------------------
 // Environment configuration
@@ -81,17 +80,16 @@ inline std::shared_ptr<ipc::ITaskQueue> makeInMemoryTaskQueue() {
   return std::make_shared<ipc::in_memory::TaskQueue>();
 }
 
-inline config::LLMConfig makeLLMConfig(
-    int numBlocks = 128, int blockSize = 8, int eos = 0,
-    std::vector<uint32_t> stopTokenIds = {},
+inline config::BlazeConfig makeBlazeConfig(
     config::ModelRunnerType runnerType =
         config::ModelRunnerType::MOCK_PIPELINE) {
-  config::LLMConfig cfg{};
+  // Start from the env-backed builder so all scheduler/pipeline knobs reflect
+  // the current process env (set by configureProcess() before this call), then
+  // override the runner type per-test. `blazeConfig()` reads the same
+  // static-cached accessors the runners previously read directly, so this
+  // preserves the existing per-process caching semantics.
+  auto cfg = config::blazeConfig();
   cfg.runner_type = runnerType;
-  cfg.num_kvcache_blocks = numBlocks;
-  cfg.kvcache_block_size = blockSize;
-  cfg.eos = eos;
-  cfg.stop_token_ids = std::move(stopTokenIds);
   return cfg;
 }
 
@@ -241,7 +239,7 @@ void runConcurrently(F&& f, int numThreads = 2) {
 template <typename RunnerType>
 class RunnerTestHarness {
  public:
-  explicit RunnerTestHarness(config::LLMConfig config = {}) : config_(config) {
+  explicit RunnerTestHarness(config::BlazeConfig config = {}) : config_(config) {
     if (config_.runner_type == config::ModelRunnerType::MOCK) {
       config_.runner_type = config::ModelRunnerType::MOCK_PIPELINE;
     }
@@ -273,8 +271,7 @@ class RunnerTestHarness {
   void submitSequence(uint32_t taskId, uint32_t slotId,
                       const std::vector<uint32_t>& promptTokens,
                       const domain::llm::SamplingParams& samplingParams) {
-    domain::llm::Sequence seq(taskId, kDefaultBlockSize, promptTokens,
-                              samplingParams);
+    domain::llm::Sequence seq(taskId, promptTokens, samplingParams);
     setKVCacheSlot(seq, slotId);
     taskQueue_.push(seq);
   }
@@ -310,7 +307,7 @@ class RunnerTestHarness {
     seq.setKVCacheSlot(slotId);
   }
 
-  config::LLMConfig config_;
+  config::BlazeConfig config_;
 
  private:
   void init() {

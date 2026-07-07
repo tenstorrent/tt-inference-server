@@ -43,7 +43,6 @@ class EnvSetter {
 };
 
 constexpr uint64_t MOCK_PIPELINE_TOKEN_ID = 12345u;
-const std::vector<uint32_t> DEFAULT_STOP_TOKEN_IDS = {987654321};
 
 // Length of the mock pipeline's reasoning preamble: think-open, three decode
 // tokens, think-close. Mirrors PipelineSimulator::kThinkPreambleLen.
@@ -83,10 +82,9 @@ inline uint64_t expectedMockToken(size_t index) {
 class BlazeDecodeRunnerHarness
     : public test::RunnerTestHarness<BlazeDecodeRunner> {
  public:
-  explicit BlazeDecodeRunnerHarness(
-      std::vector<uint32_t> stopTokenIds = DEFAULT_STOP_TOKEN_IDS)
+  BlazeDecodeRunnerHarness()
       : test::RunnerTestHarness<BlazeDecodeRunner>(
-            test::makeLLMConfig(128, 8, 0, std::move(stopTokenIds))) {}
+            test::makeBlazeConfig()) {}
 };
 
 }  // namespace
@@ -192,7 +190,7 @@ TEST(BlazeDecodeRunnerIntegrationTest, CancelFlowEmitsAbortToken) {
 
 TEST(BlazeDecodeRunnerIntegrationTest, StopsOnConfiguredStopToken) {
   // Mock simulator emits token_id=12345; this forces stop-token completion.
-  BlazeDecodeRunnerHarness harness({MOCK_PIPELINE_TOKEN_ID});
+  BlazeDecodeRunnerHarness harness;
 
   const uint32_t taskId = 6262;
   const auto allocateResponse = harness.allocate(taskId);

@@ -30,8 +30,6 @@ constexpr const char* PREFILL_SERVER_ID = "";
 constexpr uint32_t PREFILL_MAX_IN_FLIGHT = 0;
 
 constexpr size_t MAX_QUEUE_SIZE = 1000;
-constexpr const char* SCHEDULING_POLICY =
-    "prefill_first";  // "prefill_first" or "max_occupancy"
 constexpr const char* LLM_DEVICE_BACKEND =
     "mock_pipeline";  // "mock_pipeline" or "pipeline_manager"
 constexpr size_t MAX_IN_FLIGHT_COUNT = 32;
@@ -43,8 +41,8 @@ constexpr size_t MAX_CONTEXT_LENGTH = 65536;  // 64k
 constexpr size_t MAX_ISL = 256000;  // 2000k (max input sequence length)
 constexpr size_t MIN_TOKENS_TO_COPY =
     1024;  // min matched tokens to justify slot copy
-constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
-constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
+constexpr size_t PREFIX_CACHE_BLOCK_SIZE = 32;
+constexpr size_t PREFIX_CACHE_FIRST_BLOCK_SIZE = 128;
 constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 40;
 constexpr bool USE_FAST_MODE = false;
 constexpr bool ENABLE_MIGRATION = false;

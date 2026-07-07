@@ -73,14 +73,14 @@ class RealPrefillScheduler final : public IPrefillScheduler {
 }  // namespace
 
 std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
-    const tt::config::LLMConfig& config) {
-  const auto maxUsers = static_cast<uint32_t>(tt::config::pmMaxUsers());
+    const tt::config::BlazeConfig& config) {
+  const auto maxUsers = static_cast<uint32_t>(config.maxUsers);
   if (config.runner_type == tt::config::ModelRunnerType::MOCK_PIPELINE &&
-      tt::config::useMockScheduler()) {
+      config.useMockScheduler) {
     TT_LOG_INFO(
         "makeDecodeScheduler: using MockDecodeScheduler (single-threaded)");
     return std::make_unique<MockDecodeScheduler>(
-        maxUsers, utils::makeMockDecodeSchedulerConfig());
+        maxUsers, utils::makeMockDecodeSchedulerConfig(config));
   }
 
   TT_LOG_INFO(
@@ -91,22 +91,22 @@ std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
   auto thinkTokenIds = tt::utils::tokenizers::thinkTokenIds();
   auto eosTokenId = tt::utils::tokenizers::staticInfo().eosTokenId;
   ds::SchedulerParams managerParams{};
-  managerParams.num_layers = tt::config::modelNumLayers();
+  managerParams.num_layers = config.modelNumLayers;
   managerParams.eos_token = static_cast<uint32_t>(eosTokenId);
   managerParams.think_open_token_id =
       static_cast<uint32_t>(thinkTokenIds.first);
   managerParams.think_close_token_id =
       static_cast<uint32_t>(thinkTokenIds.second);
   managerParams.max_users = maxUsers;
-  managerParams.self_endpoint_id = tt::config::migrationDecodeEndpointId();
-  if (tt::config::enableMigration()) {
+  managerParams.self_endpoint_id = config.migrationDecodeEndpointId;
+  if (config.enableMigration) {
     migrationClientInterface->connect_to(
-        tt::config::migrationPrefillEndpointId(), "CONNECTOR", "ds_pd");
+        config.migrationPrefillEndpointId, "CONNECTOR", "ds_pd");
   }
-  if (tt::config::specDecodeMode() == "mtp") {
+  if (config.specDecodeMode == "mtp") {
     managerParams.spec_decode_mode = ds::SpecDecodeMode::MTP;
     managerParams.max_spec_tokens =
-        static_cast<uint32_t>(tt::config::mtpLevel());
+        static_cast<uint32_t>(config.mtpLevel);
   }
   auto scheduler = std::make_unique<RealDecodeScheduler>(
       std::make_unique<ds::DecodeScheduler>(
@@ -116,14 +116,14 @@ std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
 }
 
 std::unique_ptr<IPrefillScheduler> makePrefillScheduler(
-    const tt::config::LLMConfig& config) {
-  const auto maxUsers = static_cast<uint32_t>(tt::config::pmMaxUsers());
+    const tt::config::BlazeConfig& config) {
+  const auto maxUsers = static_cast<uint32_t>(config.maxUsers);
   if (config.runner_type == tt::config::ModelRunnerType::MOCK_PIPELINE &&
-      tt::config::useMockScheduler()) {
+      config.useMockScheduler) {
     TT_LOG_INFO(
         "makePrefillScheduler: using MockPrefillScheduler (single-threaded)");
     return std::make_unique<MockPrefillScheduler>(
-        maxUsers, utils::makeMockPrefillSchedulerConfig());
+        maxUsers, utils::makeMockPrefillSchedulerConfig(config));
   }
 
   TT_LOG_INFO(
@@ -131,16 +131,16 @@ std::unique_ptr<IPrefillScheduler> makePrefillScheduler(
       "SocketConfig...");
   auto pipelineConfig = utils::makePrefillPipelineConfig(config);
   ps::SchedulerParams managerParams{};
-  managerParams.dest_endpoint_id = tt::config::migrationDecodeEndpointId();
-  managerParams.self_endpoint_id = tt::config::migrationPrefillEndpointId();
-  managerParams.layers_per_chunk = tt::config::modelNumLayers();
-  managerParams.chunk_size = tt::config::prefillChunkSize();
+  managerParams.dest_endpoint_id = config.migrationDecodeEndpointId;
+  managerParams.self_endpoint_id = config.migrationPrefillEndpointId;
+  managerParams.layers_per_chunk = config.modelNumLayers;
+  managerParams.chunk_size = config.prefillChunkSize;
   managerParams.max_users = maxUsers;
   auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
   auto migrationClientInterface = utils::makeMigrationClientInterface(config);
-  if (tt::config::enableMigration()) {
+  if (config.enableMigration) {
     migrationClientInterface->connect_to(
-        tt::config::migrationDecodeEndpointId(), "PUBLISHER", "ds_pd");
+        config.migrationDecodeEndpointId, "PUBLISHER", "ds_pd");
   }
   auto scheduler = std::make_unique<RealPrefillScheduler>(
       std::make_unique<ps::PrefillScheduler>(

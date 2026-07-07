@@ -121,10 +121,6 @@ uint32_t prefillMaxInFlight();
  * defaults::MAX_QUEUE_SIZE. */
 size_t maxQueueSize();
 
-/** Scheduling policy from SCHEDULING_POLICY. Default:
- * defaults::SCHEDULING_POLICY ("prefill_first"). */
-SchedulingPolicy schedulingPolicy();
-
 /** Max in-flight requests from MAX_IN_FLIGHT_COUNT. Default:
  * defaults::MAX_IN_FLIGHT_COUNT. */
 size_t maxInFlightCount();
@@ -162,13 +158,14 @@ size_t maxISL();
  * From MIN_TOKENS_TO_COPY. Default: defaults::MIN_TOKENS_TO_COPY. */
 size_t minTokensToCopy();
 
-/** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
- * defaults::KV_CACHE_BLOCK_SIZE. */
-size_t kvCacheBlockSize();
+/** Prefix-cache block size from KV_CACHE_BLOCK_SIZE. Default:
+ * defaults::PREFIX_CACHE_BLOCK_SIZE. The memory layout is contiguous slots;
+ * "block size" only exists as a fiction for prefix-cache hashing. */
+size_t prefixCacheBlockSize();
 
-/** KV cache first block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
- * defaults::KV_CACHE_FIRST_BLOCK_SIZE. */
-size_t kvCacheFirstBlockSize();
+/** Prefix-cache first-block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
+ * defaults::PREFIX_CACHE_FIRST_BLOCK_SIZE. */
+size_t prefixCacheFirstBlockSize();
 
 /** Minimum match percentage for prefix cache hit from
  * PREFIX_CACHE_HIT_THRESHOLD. Default: defaults::PREFIX_CACHE_HIT_THRESHOLD.
@@ -370,9 +367,9 @@ unsigned mockDecodeTokenLatencyUs();
  * Default: defaults::MOCK_DECODE_TOKEN_ID. */
 uint32_t mockDecodeTokenId();
 
-/** Build LLMConfig from environment variables and runtime settings. Implemented
+/** Build BlazeConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
-LLMConfig llmEngineConfig();
+BlazeConfig blazeConfig();
 
 /** Build ImageConfig from environment variables and runtime settings. Reads
  * MODEL_RUNNER_TYPE, MAX_BATCH_SIZE, SDXL_IMAGE_RESOLUTION. Implemented in

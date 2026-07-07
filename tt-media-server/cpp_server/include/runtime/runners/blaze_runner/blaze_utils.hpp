@@ -9,7 +9,6 @@
 #include <string>
 
 #include "config/runner_config.hpp"
-#include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
 #include "runtime/runners/blaze_runner/mock_scheduler.hpp"
@@ -83,6 +82,7 @@ inline void logISRequest(const sch::ISRequest& req) {
 }
 
 inline sch::ISRequest makeAllocateRequest(
+    const tt::config::BlazeConfig& config,
     uint32_t requestId,
     std::optional<uint32_t> migrateFromSlot = std::nullopt) {
   auto req = sch::ISRequest{
@@ -91,7 +91,7 @@ inline sch::ISRequest makeAllocateRequest(
       .tokens = {},
       .gen = {},
   };
-  if (tt::config::enableMigration() and migrateFromSlot.has_value()) {
+  if (config.enableMigration and migrateFromSlot.has_value()) {
     req.migrate_from_slot = *migrateFromSlot;
   }
   return req;
@@ -118,6 +118,7 @@ inline sch::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
 }
 
 inline sch::GenerationParams makeGenerationParams(
+    const tt::config::BlazeConfig& config,
     const tt::domain::llm::Sequence& seq) {
   const sch::PhaseSamplingParams userSampling{
       .temperature = seq.getSamplingParams().temperature,
@@ -127,64 +128,68 @@ inline sch::GenerationParams makeGenerationParams(
   return {
       .max_new_tokens =
           static_cast<uint32_t>(seq.getSamplingParams().max_tokens.value_or(
-              static_cast<int>(tt::config::maxContextLength()))),
+              static_cast<int>(config.maxContextLength))),
       .spec_decode = seq.getSamplingParams().fast_mode,
       .ignore_eos = seq.getSamplingParams().ignore_eos,
       .sampling = userSampling,
       .reasoning_sampling = userSampling,
       .disaggregated_decode =
-          tt::config::enableMigration() && seq.isDisaggregated(),
+          config.enableMigration && seq.isDisaggregated(),
       .starts_in_thinking = seq.getStartsInThinking(),
       .stop_tokens = seq.getSamplingParams().stop_token_ids,
   };
 }
 
-inline void postProcessSamplingParams(sch::GenerationParams& params) {
-  if (tt::config::sampleOnlyInReasoning()) {
+inline void postProcessSamplingParams(const tt::config::BlazeConfig& config,
+                                      sch::GenerationParams& params) {
+  if (config.sampleOnlyInReasoning) {
     // We argmax outside the reasoning phase
     params.sampling = sch::PhaseSamplingParams{
         .temperature = 1.0f, .top_p = 1.0f, .top_k = 1};
   }
 }
 
-inline void fillSequenceFields(sch::ISRequest& req,
+inline void fillSequenceFields(const tt::config::BlazeConfig& config,
+                               sch::ISRequest& req,
                                const tt::domain::llm::Sequence& seq) {
   req.tokens.assign(seq.getTokenIds().begin(), seq.getTokenIds().end());
-  req.gen = makeGenerationParams(seq);
+  req.gen = makeGenerationParams(config, seq);
   if (seq.getKVPositionId().has_value()) {  // override position id
     req.position_id = *seq.getKVPositionId();
   }
-  postProcessSamplingParams(req.gen);
-  if (tt::config::enableMigration()) {
+  postProcessSamplingParams(config, req.gen);
+  if (config.enableMigration) {
     req.migration_uuid = seq.getMigrationId();
   }
 }
 
 inline sch::ISRequest makeSubmitRequest(
-    uint32_t slotId, const tt::domain::llm::Sequence& seq,
+    const tt::config::BlazeConfig& config, uint32_t slotId,
+    const tt::domain::llm::Sequence& seq,
     std::optional<uint32_t> destSlotId = std::nullopt) {
   sch::ISRequest req{};
   req.type = ds::RequestType::SUBMIT;
   req.slot_id = slotId;
-  if (tt::config::enableMigration()) {
+  if (config.enableMigration) {
     req.migration_start_position = seq.getMigrationStartPosition();
     req.dest_slot_id = destSlotId;
   }
-  fillSequenceFields(req, seq);
+  fillSequenceFields(config, req, seq);
   logISRequest(req);
   return req;
 }
 
 inline sch::ISRequest makeContinueRequest(
-    uint32_t slotId, const tt::domain::llm::Sequence& seq,
+    const tt::config::BlazeConfig& config, uint32_t slotId,
+    const tt::domain::llm::Sequence& seq,
     std::optional<uint32_t> destSlotId = std::nullopt) {
   sch::ISRequest req{};
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
-  if (tt::config::enableMigration()) {
+  if (config.enableMigration) {
     req.dest_slot_id = destSlotId;
   }
-  fillSequenceFields(req, seq);
+  fillSequenceFields(config, req, seq);
   return req;
 }
 
@@ -253,14 +258,14 @@ inline pl::WireFormat wireFormatFromString(const std::string& s) {
 }
 
 inline pl::PipelineConfig makeDecodePipelineConfig(
-    const tt::config::LLMConfig& config) {
+    const tt::config::BlazeConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
       return pl::SocketConfig{
-          .h2d_socket_id = tt::config::blazeSocketDescriptorPrefix(),
-          .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix(),
-          .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
-          .wire_format = wireFormatFromString(tt::config::wireFormat())};
+          .h2d_socket_id = config.blazeSocketDescriptorPrefix,
+          .d2h_socket_id = config.blazeSocketDescriptorPrefix,
+          .connect_timeout_ms = config.pmConnectTimeoutMs,
+          .wire_format = wireFormatFromString(config.wireFormat)};
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return pl::PipelineSimulatorConfig{
           .num_stages = 64,
@@ -283,12 +288,12 @@ inline pl::PipelineConfig makeDecodePipelineConfig(
 }
 
 inline pl::PrefillPipelineConfig makePrefillPipelineConfig(
-    const tt::config::LLMConfig& config) {
+    const tt::config::BlazeConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
       return pl::PrefillH2DConfig{
-          .service_id = tt::config::blazeSocketDescriptorPrefix(),
-          .connect_timeout_ms = tt::config::pmConnectTimeoutMs()};
+          .service_id = config.blazeSocketDescriptorPrefix,
+          .connect_timeout_ms = config.pmConnectTimeoutMs};
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return pl::PrefillMockConfig{
           .auto_layer_acks = true,
@@ -299,12 +304,12 @@ inline pl::PrefillPipelineConfig makePrefillPipelineConfig(
 }
 
 inline pl::CounterChannelConfig makePrefillAckChannelConfig(
-    const tt::config::LLMConfig& config) {
+    const tt::config::BlazeConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
       return pl::InterProcessCounterChannelConfig{
-          .shm_name = tt::config::prefillAckChannelName(),
-          .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
+          .shm_name = config.prefillAckChannelName,
+          .connect_timeout_ms = config.pmConnectTimeoutMs,
       };
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return pl::SingleProcessCounterChannelConfig{};
@@ -314,40 +319,42 @@ inline pl::CounterChannelConfig makePrefillAckChannelConfig(
 }
 
 // Builders for the mock scheduler config structs. Same shape as the pipeline
-// builders above (env/settings -> plain-data config): the callers in
+// builders above (config -> plain-data config): the callers in
 // blaze_scheduler_factory.cpp have already branched on MOCK_PIPELINE +
-// useMockScheduler, so these deliberately take no arguments.
-inline MockPrefillSchedulerConfig makeMockPrefillSchedulerConfig() {
+// useMockScheduler, so these read only the mock knobs off `config`.
+inline MockPrefillSchedulerConfig makeMockPrefillSchedulerConfig(
+    const tt::config::BlazeConfig& config) {
   return MockPrefillSchedulerConfig{
       .prefillLatency =
-          std::chrono::milliseconds(tt::config::mockPrefillLatencyMs()),
-      .prefillChunkSize = tt::config::prefillChunkSize(),
+          std::chrono::milliseconds(config.mockPrefillLatencyMs),
+      .prefillChunkSize = config.prefillChunkSize,
   };
 }
 
-inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig() {
+inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig(
+    const tt::config::BlazeConfig& config) {
   return MockDecodeSchedulerConfig{
       .prefillLatency =
-          std::chrono::milliseconds(tt::config::mockPrefillLatencyMs()),
-      .prefillChunkSize = tt::config::prefillChunkSize(),
-      .decodeTokenId = tt::config::mockDecodeTokenId(),
+          std::chrono::milliseconds(config.mockPrefillLatencyMs),
+      .prefillChunkSize = config.prefillChunkSize,
+      .decodeTokenId = config.mockDecodeTokenId,
       .decodeTokenLatency =
-          std::chrono::microseconds(tt::config::mockDecodeTokenLatencyUs()),
+          std::chrono::microseconds(config.mockDecodeTokenLatencyUs),
   };
 }
 
 inline std::unique_ptr<sch::MigrationClientInterface>
-makeMigrationClientInterface(const tt::config::LLMConfig& config) {
-  if (!tt::config::enableMigration()) {
+makeMigrationClientInterface(const tt::config::BlazeConfig& config) {
+  if (!config.enableMigration) {
     return nullptr;
   }
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
 #ifdef ENABLE_BLAZE_MIGRATION
       return std::make_unique<sch::MigrationLayerClientAdapter>(
-          tt::config::migrationCmdQueueName(),
-          tt::config::migrationTableQueueName(),
-          tt::config::migrationRespQueueName());
+          config.migrationCmdQueueName,
+          config.migrationTableQueueName,
+          config.migrationRespQueueName);
 #else
       throw std::runtime_error(
           "LLM_DEVICE_BACKEND=pipeline_manager requires a build with "
@@ -361,17 +368,17 @@ makeMigrationClientInterface(const tt::config::LLMConfig& config) {
 }
 
 inline std::unique_ptr<sch::MigrationClientInterface>
-makeDecodeMigrationClientInterface(const tt::config::LLMConfig& config) {
-  if (!tt::config::enableMigration()) {
+makeDecodeMigrationClientInterface(const tt::config::BlazeConfig& config) {
+  if (!config.enableMigration) {
     return nullptr;
   }
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
 #ifdef ENABLE_BLAZE_MIGRATION
       return std::make_unique<sch::MigrationLayerClientAdapter>(
-          tt::config::migrationCmdQueueName(),
-          tt::config::migrationTableQueueName(),
-          tt::config::migrationRespQueueName());
+          config.migrationCmdQueueName,
+          config.migrationTableQueueName,
+          config.migrationRespQueueName);
 #else
       throw std::runtime_error(
           "LLM_DEVICE_BACKEND=pipeline_manager requires a build with "
