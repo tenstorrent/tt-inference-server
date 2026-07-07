@@ -44,7 +44,7 @@ namespace {
  */
 tt::utils::PrefixCachingInfo computeRoutingInfo(
     const tt::domain::llm::LLMRequest& req) {
-  if (auto* tokens = std::get_if<std::vector<int>>(&req.prompt)) {
+  if (auto* tokens = std::get_if<std::vector<uint32_t>>(&req.prompt)) {
     // Full token-id dump: capped so we don't blow up the log line on long
     // prompts but keeps the head/tail context that matters for diagnosing
     // boundary detection. Set DYNAMO_LOG_FULL_TOKENS=1 to disable the cap.
@@ -74,7 +74,7 @@ tt::utils::PrefixCachingInfo computeRoutingInfo(
     const auto& header =
         tt::utils::tokenizers::staticInfo().assistantHeaderSequence;
     std::string headerStr;
-    for (int t : header) {
+    for (uint32_t t : header) {
       if (!headerStr.empty()) headerStr += ",";
       headerStr += std::to_string(t);
     }
@@ -133,7 +133,7 @@ void LLMPipeline::resolveSession(
     std::function<void()> cancelFn) const {
   size_t promptTokens = 0;
   const char* promptKind = "string";
-  if (auto* toks = std::get_if<std::vector<int>>(&req->prompt)) {
+  if (auto* toks = std::get_if<std::vector<uint32_t>>(&req->prompt)) {
     promptTokens = toks->size();
     promptKind = "tokens";
   }
@@ -215,13 +215,17 @@ void LLMPipeline::resolveSession(
             "thinkTokens={} deltaTokens={}",
             req->task_id, matchedTokens, thinkTokens, req->prompt_tokens_count);
 
-        if (auto* deltaTokens = std::get_if<std::vector<int>>(&req->prompt)) {
+        if (auto* deltaTokens =
+                std::get_if<std::vector<uint32_t>>(&req->prompt)) {
           req->session->initTokenAccumulator(
               *deltaTokens, routingInfo.blocks,
               [mgr = sessionManager_](
                   const std::string& sessionId,
                   const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
+              },
+              [mgr = sessionManager_](const std::string& sessionId) {
+                mgr->closeSession(sessionId);
               });
         }
         sessionManager_->registerPrefixHash(acquired->sessionId,
@@ -292,8 +296,8 @@ void LLMPipeline::resolveSession(
         req->accumulated_think_tokens =
             static_cast<int>(acquired->accumulatedThinkTokens);
 
-        std::vector<int> fullPrompt;
-        if (auto* p = std::get_if<std::vector<int>>(&req->prompt)) {
+        std::vector<uint32_t> fullPrompt;
+        if (auto* p = std::get_if<std::vector<uint32_t>>(&req->prompt)) {
           fullPrompt = *p;
         }
         session_resolution::applyDeltaPrompt(*req, matchedTokens,
@@ -308,6 +312,9 @@ void LLMPipeline::resolveSession(
                   const std::string& sessionId,
                   const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
+              },
+              [mgr = sessionManager_](const std::string& sessionId) {
+                mgr->closeSession(sessionId);
               },
               /*parentThinkCount=*/acquired->accumulatedThinkTokens);
         }
@@ -410,8 +417,8 @@ void LLMPipeline::resolveSession(
           mgr->registerResponseId(session.getSessionId(), *req->responseId);
         }
 
-        std::vector<int> fullPrompt;
-        if (auto* p = std::get_if<std::vector<int>>(&req->prompt)) {
+        std::vector<uint32_t> fullPrompt;
+        if (auto* p = std::get_if<std::vector<uint32_t>>(&req->prompt)) {
           fullPrompt = *p;
         }
 
@@ -436,6 +443,9 @@ void LLMPipeline::resolveSession(
               [mgr](const std::string& sessionId,
                     const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
+              },
+              [mgr](const std::string& sessionId) {
+                mgr->closeSession(sessionId);
               });
         }
 
@@ -542,11 +552,11 @@ void LLMPipeline::dispatchGeneration(
             *request.kv_position_id -
             static_cast<uint32_t>(request.accumulated_think_tokens);
         const auto fullPromptTokens =
-            std::get<std::vector<int>>(request.prompt).size();
+            std::get<std::vector<uint32_t>>(request.prompt).size();
         session_resolution::applyDeltaPrompt(request, matchedTokens);
-        reusedPrefixTokens =
-            static_cast<int>(fullPromptTokens -
-                             std::get<std::vector<int>>(request.prompt).size());
+        reusedPrefixTokens = static_cast<int>(
+            fullPromptTokens -
+            std::get<std::vector<uint32_t>>(request.prompt).size());
       }
       TT_LOG_DEBUG("[LLMPipeline] Using prefill on decode for sessionId: {}",
                    request.sessionId.value_or("none"));

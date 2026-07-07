@@ -33,7 +33,7 @@ constexpr size_t MAX_QUEUE_SIZE = 1000;
 constexpr const char* SCHEDULING_POLICY =
     "prefill_first";  // "prefill_first" or "max_occupancy"
 constexpr const char* LLM_DEVICE_BACKEND =
-    "mock_pipeline";  // "mock", "mock_pipeline", "pipeline_manager", "llama"
+    "mock_pipeline";  // "mock_pipeline" or "pipeline_manager"
 constexpr size_t MAX_IN_FLIGHT_COUNT = 32;
 constexpr size_t MAX_SESSIONS_COUNT = 128;
 constexpr unsigned SESSION_EVICTION_RATE = 90;
@@ -120,7 +120,7 @@ constexpr size_t MEMORY_QUEUE_CAPACITY = 128;
 // IPC message sizes
 constexpr size_t MAX_SEQUENCE_NON_TOKEN_BYTES = 4096;
 constexpr size_t TASK_QUEUE_MAX_MSG_SIZE =
-    MAX_CONTEXT_LENGTH * sizeof(int64_t) + MAX_SEQUENCE_NON_TOKEN_BYTES;
+    MAX_CONTEXT_LENGTH * sizeof(uint32_t) + MAX_SEQUENCE_NON_TOKEN_BYTES;
 constexpr size_t MEMORY_REQUEST_MAX_MSG_SIZE = 256;
 constexpr size_t MEMORY_RESULT_MAX_MSG_SIZE = 4096;
 
