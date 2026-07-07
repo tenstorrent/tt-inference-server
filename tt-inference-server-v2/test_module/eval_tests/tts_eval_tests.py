@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-import importlib
+import importlib.util
 import logging
 import sys
 from pathlib import Path
@@ -45,11 +45,11 @@ def _missing_quality_deps() -> List[str]:
 
 
 def _can_import(module_name: str) -> bool:
+    """Return True if ``module_name`` looks importable, without executing it."""
     try:
-        importlib.import_module(module_name)
-    except ImportError:
+        return importlib.util.find_spec(module_name) is not None
+    except (ImportError, ValueError):
         return False
-    return True
 
 
 def _intelligibility_score(avg_wer: float) -> float:
