@@ -58,7 +58,7 @@ def test_no_limit_mode_falls_back_to_full_reference():
 
     ref = resolve_eval_reference(score, None)
 
-    assert ref["is_mode_ref"] is False
+    assert ref["is_subset_reference"] is False
     assert ref["reference_score"] == 83.33
     assert ref["reference_ref"] == "full (198)"
     assert ref["tolerance"] == 0.05
@@ -69,7 +69,7 @@ def test_limit_mode_without_matching_entry_falls_back():
 
     ref = resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
 
-    assert ref["is_mode_ref"] is False
+    assert ref["is_subset_reference"] is False
     assert ref["reference_score"] == 83.33
 
 
@@ -84,7 +84,7 @@ def test_ci_nightly_uses_subset_reference_and_tolerance():
 
     ref = resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
 
-    assert ref["is_mode_ref"] is True
+    assert ref["is_subset_reference"] is True
     assert ref["reference_score"] == 72.5
     assert ref["tolerance"] == 0.10
     assert "ci-nightly doc_ids 0-39" in ref["reference_ref"]

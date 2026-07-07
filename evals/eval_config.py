@@ -68,7 +68,8 @@ def resolve_eval_reference(score_obj, limit_mode):
     engine scorers (tt-inference-server-v2) so both paths agree.
 
     Returns a dict: reference_score, reference_ref, tolerance,
-    abs_margin (or None), is_mode_ref (bool).
+    is_subset_reference (bool: True when the returned reference is a
+    limit-mode subset reference rather than the full-dataset baseline).
     """
     mode_ref = None
     if limit_mode is not None:
@@ -87,14 +88,14 @@ def resolve_eval_reference(score_obj, limit_mode):
             "tolerance": mode_ref.tolerance
             if mode_ref.tolerance is not None
             else score_obj.tolerance,
-            "is_mode_ref": True,
+            "is_subset_reference": True,
         }
 
     return {
         "reference_score": score_obj.gpu_reference_score,
         "reference_ref": full_ref_label,
         "tolerance": score_obj.tolerance,
-        "is_mode_ref": False,
+        "is_subset_reference": False,
     }
 
 
@@ -121,7 +122,7 @@ def accept_eval_score(ref, score, n_total=None):
     if not reference:
         return None
     assert reference > 0, "Reference score is not > 0"
-    if ref.get("is_mode_ref") and n_total:
+    if ref.get("is_subset_reference") and n_total:
         ref_rate = reference / 100.0
         threshold = math.floor(n_total * ref_rate * (1.0 - tolerance))
         observed = round(score / 100.0 * n_total)
