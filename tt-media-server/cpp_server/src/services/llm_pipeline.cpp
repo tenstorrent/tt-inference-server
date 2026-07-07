@@ -223,6 +223,9 @@ void LLMPipeline::resolveSession(
                   const std::string& sessionId,
                   const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
+              },
+              [mgr = sessionManager_](const std::string& sessionId) {
+                mgr->closeSession(sessionId);
               });
         }
         sessionManager_->registerPrefixHash(acquired->sessionId,
@@ -309,6 +312,9 @@ void LLMPipeline::resolveSession(
                   const std::string& sessionId,
                   const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
+              },
+              [mgr = sessionManager_](const std::string& sessionId) {
+                mgr->closeSession(sessionId);
               },
               /*parentThinkCount=*/acquired->accumulatedThinkTokens);
         }
@@ -437,6 +443,9 @@ void LLMPipeline::resolveSession(
               [mgr](const std::string& sessionId,
                     const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
+              },
+              [mgr](const std::string& sessionId) {
+                mgr->closeSession(sessionId);
               });
         }
 
