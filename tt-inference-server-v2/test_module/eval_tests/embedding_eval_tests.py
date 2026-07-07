@@ -16,7 +16,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from report_module.schema import Block
 
-from .._test_common import block_id
+from .._test_common import ReportCheckTypes, block_id
 from ..context import HardwareRequirement, MediaContext, require_health
 
 logger = logging.getLogger(__name__)
@@ -156,6 +156,9 @@ def run_embedding_eval(ctx: MediaContext) -> Block:
         targets={"task_name": ctx.all_params.tasks[0].task_name},
         data={
             "task_name": ctx.all_params.tasks[0].task_name,
+            # MTEB produces correlation metrics but no reference score to grade
+            # against, so accuracy is Not Applicable (non-blocking).
+            "accuracy_check": ReportCheckTypes.NA,
             **metrics,
         },
     )
