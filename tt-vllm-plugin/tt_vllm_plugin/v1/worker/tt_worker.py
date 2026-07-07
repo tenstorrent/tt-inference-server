@@ -355,6 +355,23 @@ class TTWorker(WorkerBase):
                 "(tt-metal PR #45734)."
             )
 
+        # Quiesce the device and drop any captured decode trace before the
+        # transfer. recv_state() allocates the full received state dict as fresh
+        # device buffers; a decode trace (captured lazily on the first real
+        # decode -- never during warmup) reserves a device DRAM region +
+        # worker-core/L1 resources, and allocating the receive buffers into that
+        # contended state wedges the on-device CCL recv (unrecoverable device
+        # timeout in ttnn.synchronize_device inside recv_state). The theta_0
+        # update, before any decode trace exists, transfers fine; every
+        # post-rollout update hung. Releasing the decode trace here restores the
+        # clean pre-decode device state; tt-transformers re-captures it lazily on
+        # the next generation using the freshly-updated (in-place, same-address)
+        # weights. Guarded on hasattr so an older tt-metal Generator (no
+        # release_decode_traces) still imports.
+        ttnn.synchronize_device(self.mesh_device)
+        if hasattr(model, "release_decode_traces"):
+            model.release_decode_traces()
+
         # 1. Receive the HF-keyed dict of on-device tensors over the bridge.
         bridge = self._get_weight_bridge(sender_rank)
         logger.info(
