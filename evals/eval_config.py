@@ -3517,7 +3517,7 @@ _eval_config_list = [
                 task_name="aime25",
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.05,  # 30 samples * 0.05 ~= 1 sample
-                    EvalLimitMode.CI_NIGHTLY: 0.99,  # 0.50,  # 30 samples * 0.2 = 6 samples
+                    EvalLimitMode.CI_NIGHTLY: 0.50,  # 30 samples * 0.5 = 15 samples
                 },
                 score=EvalTaskScore(
                     published_score=92.5,  # AIME 2025 score (without tools)
@@ -3533,7 +3533,7 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
-                max_concurrent=32,
+                max_concurrent=64,
                 model_kwargs={
                     "timeout": "14400",
                 },
@@ -3541,7 +3541,7 @@ _eval_config_list = [
                     # lm-eval-harness' SSE consumer only parses
                     # /v1/completions chunks, not /v1/chat/completions; keep
                     # stream=false to avoid empty resps + KeyError: 'message'.
-                    "stream": "true",
+                    "stream": "false",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -3555,7 +3555,7 @@ _eval_config_list = [
                 task_name="gpqa_diamond_cot_zeroshot",
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.006,  # 198 samples * 0.006 ~= 1 sample
-                    EvalLimitMode.CI_NIGHTLY: 0.99,  # 0.035,  # 198 samples * 0.035 ~= 6 samples
+                    EvalLimitMode.CI_NIGHTLY: 0.035,  # 198 samples * 0.035 ~= 6 samples
                 },
                 score=EvalTaskScore(
                     published_score=80.1,  # GPQA Diamond score (without tools)
@@ -3576,7 +3576,7 @@ _eval_config_list = [
                     "timeout": "14400",
                 },
                 gen_kwargs={
-                    "stream": "true",
+                    "stream": "false",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -3603,7 +3603,7 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
-                max_concurrent=32,
+                max_concurrent=128,
                 model_kwargs={
                     "timeout": "7200",
                 },
