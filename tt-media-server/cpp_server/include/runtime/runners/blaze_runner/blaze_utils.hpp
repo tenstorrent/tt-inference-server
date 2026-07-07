@@ -344,9 +344,10 @@ makeMigrationClientInterface(const tt::config::LLMConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
 #ifdef ENABLE_BLAZE_MIGRATION
-      // create() waits (retries) for the migration endpoint's shmem queues to appear
-      // instead of throwing immediately, so the server can start before the endpoint
-      // is up. Timeout via TT_MIGRATION_CLIENT_ATTACH_TIMEOUT_MS (default 2 min).
+      // create() waits (retries) for the migration endpoint's shmem queues to
+      // appear instead of throwing immediately, so the server can start before
+      // the endpoint is up. Timeout via TT_MIGRATION_CLIENT_ATTACH_TIMEOUT_MS
+      // (default 2 min).
       return sch::MigrationLayerClientAdapter::create(
           tt::config::migrationCmdQueueName(),
           tt::config::migrationTableQueueName(),
@@ -371,9 +372,10 @@ makeDecodeMigrationClientInterface(const tt::config::LLMConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
 #ifdef ENABLE_BLAZE_MIGRATION
-      // create() waits (retries) for the migration endpoint's shmem queues to appear
-      // instead of throwing immediately, so the server can start before the endpoint
-      // is up. Timeout via TT_MIGRATION_CLIENT_ATTACH_TIMEOUT_MS (default 2 min).
+      // create() waits (retries) for the migration endpoint's shmem queues to
+      // appear instead of throwing immediately, so the server can start before
+      // the endpoint is up. Timeout via TT_MIGRATION_CLIENT_ATTACH_TIMEOUT_MS
+      // (default 2 min).
       return sch::MigrationLayerClientAdapter::create(
           tt::config::migrationCmdQueueName(),
           tt::config::migrationTableQueueName(),
