@@ -650,6 +650,12 @@ size_t maxISL() {
   return cached;
 }
 
+size_t taskQueueMaxMsgSize() {
+  static const size_t cached = maxContextLength() * sizeof(uint32_t) +
+                               defaults::MAX_SEQUENCE_NON_TOKEN_BYTES;
+  return cached;
+}
+
 size_t minTokensToCopy() {
   static const size_t cached = static_cast<size_t>(
       envUlong("MIN_TOKENS_TO_COPY", defaults::MIN_TOKENS_TO_COPY));

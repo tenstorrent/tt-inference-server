@@ -14,6 +14,8 @@
 
 namespace tt::config {
 
+size_t maxContextLength();
+
 struct RunnerConfigBase {
   ModelRunnerType runner_type = ModelRunnerType::MOCK;
 };
@@ -35,7 +37,7 @@ struct MediaRunnerConfigBase : RunnerConfigBase {
 };
 
 struct LLMConfig : RunnerConfigBase {
-  size_t max_num_batched_tokens = 64 * defaults::MAX_CONTEXT_LENGTH;
+  size_t max_num_batched_tokens = 64 * maxContextLength();
   size_t max_in_flight_count = 64;
   std::vector<uint32_t> stop_token_ids;  // Set by tt::config::llmEngineConfig()
                                          // from active tokenizer strategy

@@ -158,6 +158,13 @@ size_t maxContextLength();
  * defaults::MAX_ISL. */
 size_t maxISL();
 
+/** Per-message capacity (bytes) of the IPC task queue, derived at runtime from
+ * maxContextLength() so overriding MAX_CONTEXT_LENGTH also resizes the queue
+ * buffer (mirrors defaults::TASK_QUEUE_MAX_MSG_SIZE, which is only the
+ * default). Sized to hold maxContextLength() token ids plus non-token sequence
+ * fields. */
+size_t taskQueueMaxMsgSize();
+
 /** Minimum matched tokens required to justify a slot copy operation.
  * From MIN_TOKENS_TO_COPY. Default: defaults::MIN_TOKENS_TO_COPY. */
 size_t minTokensToCopy();
