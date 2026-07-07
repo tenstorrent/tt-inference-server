@@ -70,55 +70,57 @@ class TTSQualityTest(BaseTest):
             f"TTS Quality Test: samples={sample_count}, wer_threshold={wer_threshold * 100:.0f}%"
         )
 
-        # Download samples from LibriTTS-R
-        self._download_samples(count=sample_count, split=dataset_split)
+        try:
+            # Download samples from LibriTTS-R
+            self._download_samples(count=sample_count, split=dataset_split)
 
-        # Load metadata
-        metadata = self._load_metadata()
-        if not metadata:
-            return {"success": False, "error": "No metadata found"}
+            # Load metadata
+            metadata = self._load_metadata()
+            if not metadata:
+                return {"success": False, "error": "No metadata found"}
 
-        # Load Whisper model for transcription
-        self._load_whisper_model()
+            # Load Whisper model for transcription
+            self._load_whisper_model()
 
-        # Generate audio and calculate WER
-        results = await self._run_quality_test(metadata, batch_size)
+            # Generate audio and calculate WER
+            results = await self._run_quality_test(metadata, batch_size)
 
-        # Calculate overall WER
-        wer_values = [r["wer"] for r in results if r.get("wer") is not None]
-        avg_wer = np.mean(wer_values) if wer_values else 1.0
-        min_wer = np.min(wer_values) if wer_values else 1.0
-        max_wer = np.max(wer_values) if wer_values else 1.0
+            # Calculate overall WER
+            wer_values = [r["wer"] for r in results if r.get("wer") is not None]
+            avg_wer = np.mean(wer_values) if wer_values else 1.0
+            min_wer = np.min(wer_values) if wer_values else 1.0
+            max_wer = np.max(wer_values) if wer_values else 1.0
 
-        success = avg_wer <= wer_threshold
-        valid_count = len(wer_values)
-        total_count = len(results)
+            success = avg_wer <= wer_threshold
+            valid_count = len(wer_values)
+            total_count = len(results)
 
-        # Cleanup
-        if self.targets.get("cleanup", True):
-            self._cleanup_samples()
+            total_duration = time.time() - test_start_time
+            logger.info(
+                f"TTS Quality Test completed: avg_wer={avg_wer * 100:.1f}%, "
+                f"valid={valid_count}/{total_count}, success={success}, "
+                f"duration={total_duration:.1f}s"
+            )
 
-        # Unload model
-        self._unload_whisper_model()
-
-        total_duration = time.time() - test_start_time
-        logger.info(
-            f"TTS Quality Test completed: avg_wer={avg_wer * 100:.1f}%, "
-            f"valid={valid_count}/{total_count}, success={success}, "
-            f"duration={total_duration:.1f}s"
-        )
-
-        return {
-            "success": success,
-            "avg_wer": round(avg_wer, 4),
-            "min_wer": round(min_wer, 4),
-            "max_wer": round(max_wer, 4),
-            "wer_threshold": wer_threshold,
-            "valid_samples": valid_count,
-            "total_samples": total_count,
-            "accuracy": round(valid_count / total_count, 4) if total_count > 0 else 0,
-            "duration": round(total_duration, 2),
-        }
+            return {
+                "success": success,
+                "avg_wer": round(avg_wer, 4),
+                "min_wer": round(min_wer, 4),
+                "max_wer": round(max_wer, 4),
+                "wer_threshold": wer_threshold,
+                "valid_samples": valid_count,
+                "total_samples": total_count,
+                "accuracy": round(valid_count / total_count, 4)
+                if total_count > 0
+                else 0,
+                "duration": round(total_duration, 2),
+            }
+        finally:
+            # Always release the downloaded dataset and Whisper weights, even
+            # if generation/transcription raised partway through.
+            if self.targets.get("cleanup", True):
+                self._cleanup_samples()
+            self._unload_whisper_model()
 
     def _load_whisper_model(self):
         """Load Whisper model for speech recognition."""
