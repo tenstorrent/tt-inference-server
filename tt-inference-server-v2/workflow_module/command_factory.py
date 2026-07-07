@@ -17,7 +17,7 @@ from workflows.model_spec import get_runtime_model_spec
 from workflows.runtime_config import RuntimeConfig
 from workflows.workflow_types import DeviceTypes, InferenceEngine
 
-from utils.url_helpers import resolve_deploy_url
+from utils.url_helpers import is_remote_server, resolve_deploy_url
 
 from test_module import MediaContext
 
@@ -122,7 +122,7 @@ def _build_context(
         spec_tests_num_prompts_cap=args.num_prompts,
         runtime_config=runtime_config,
         server_url=_resolve_server_url(args, runtime_config),
-        remote_server=_is_remote_server(args, runtime_config),
+        remote_server=is_remote_server(runtime_config, args),
     )
 
 
@@ -141,15 +141,6 @@ def _resolve_server_url(
     if explicit:
         return explicit
     return resolve_deploy_url(runtime_config)
-
-
-def _is_remote_server(
-    args: argparse.Namespace, runtime_config: Optional[RuntimeConfig]
-) -> bool:
-    return bool(
-        getattr(args, "server_url", None)
-        or (runtime_config is not None and getattr(runtime_config, "server_url", None))
-    )
 
 
 def _resolve_eval_config(model_name: str):

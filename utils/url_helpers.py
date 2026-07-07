@@ -60,6 +60,20 @@ def resolve_deploy_url(runtime_config=None) -> str:
     return os.environ.get("DEPLOY_URL", DEFAULT_DEPLOY_URL)
 
 
+def is_remote_server(runtime_config=None, args=None) -> bool:
+    """Return ``True`` when a remote ``--server-url`` was configured.
+
+    Checks the explicit ``--server-url`` CLI flag first (when ``args`` is
+    provided), then falls back to ``runtime_config.server_url`` propagated
+    through the v2 bridge. A truthy value means tests/benchmarks should target
+    a remote OpenAI-compatible endpoint rather than a locally launched server.
+    """
+    return bool(
+        (args is not None and getattr(args, "server_url", None))
+        or getattr(runtime_config, "server_url", None)
+    )
+
+
 def build_base_url(deploy_url: str, service_port) -> str:
     """Return ``scheme://host[:port]`` for building endpoint URLs.
 

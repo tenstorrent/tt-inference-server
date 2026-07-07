@@ -258,8 +258,9 @@ def run_v2_llm_benchmark_workflow(
 ) -> WorkflowResult:
     """Run LLM benchmarks through v2's ``run_llm_bench.py`` launcher.
 
-    Used for ``--workflow benchmarks`` and for the benchmarks step inside
-    v1's ``--workflow release`` orchestrator (evals/reports stay on v1).
+    Only reached for ``--workflow benchmarks`` (see ``_is_llm_benchmark_run``).
+    Release does not call this: its perf benchmark runs inside the v2 release
+    engine via the generic run.py path in :func:`run_v2_workflows`.
     """
     repo_root = Path(__file__).resolve().parent.parent
     v2_dir = repo_root / _V2_DIR_NAME
