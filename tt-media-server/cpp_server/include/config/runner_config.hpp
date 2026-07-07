@@ -37,8 +37,8 @@ struct MediaRunnerConfigBase : RunnerConfigBase {
 struct LLMConfig : RunnerConfigBase {
   size_t max_num_batched_tokens = 64 * defaults::MAX_CONTEXT_LENGTH;
   size_t max_in_flight_count = 64;
-  std::vector<int64_t> stop_token_ids;  // Set by tt::config::llmEngineConfig()
-                                        // from active tokenizer strategy
+  std::vector<uint32_t> stop_token_ids;  // Set by tt::config::llmEngineConfig()
+                                         // from active tokenizer strategy
   int eos = 1;
   size_t kvcache_block_size = 256;
   size_t num_kvcache_blocks = 512;

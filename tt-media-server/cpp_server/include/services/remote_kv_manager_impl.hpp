@@ -36,9 +36,12 @@ namespace tt::services {
 class RemoteKVManagerImpl : public IRemoteKVManager {
  public:
   /**
-   * Maps a MigrationRequest's layer_id to the Kafka partition that owns
-   * that layer's work. Returning a negative value falls back to the
-   * broker-picked partition (i.e. legacy un-partitioned behavior).
+   * Maps a MigrationRequest's layer_begin (the anchor of the [layer_begin,
+   * layer_end) range) to the Kafka partition that owns that layer's work.
+   * Migration requests are assumed to stay within a single partition block,
+   * so layer_begin uniquely identifies the owning partition. Returning a
+   * negative value falls back to the broker-picked partition (i.e. legacy
+   * un-partitioned behavior).
    */
   using LayerToPartition = std::function<int32_t(uint32_t layerId)>;
 
@@ -54,11 +57,12 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
    *   resolution.
    * @param drainPollMs      Per-iteration poll timeout passed to the
    *   consumer. Default 100ms. Lower values trade CPU for responsiveness.
-   * @param layerToPartition Optional layer_id -> partition mapping. When
-   *   set, migrate() routes each request to the returned partition of the
-   *   request topic; a negative return falls back to the broker's default
-   *   partitioner. When null, all requests use the default partitioner
-   *   (legacy behavior).
+   * @param layerToPartition Optional layer -> partition mapping (applied to
+   *   the request's layer_begin, since a migration is expected to stay
+   *   inside a single partition block). When set, migrate() routes each
+   *   request to the returned partition of the request topic; a negative
+   *   return falls back to the broker's default partitioner. When null,
+   *   all requests use the default partitioner (legacy behavior).
    */
   RemoteKVManagerImpl(
       std::unique_ptr<tt::messaging::IKafkaProducer> requestProducer,

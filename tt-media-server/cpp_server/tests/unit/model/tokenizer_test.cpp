@@ -81,7 +81,7 @@ TEST_F(DeepseekTokenizerTest, CompareWithExpectedTokens) {
   // Pre-computed expected tokens from DeepSeek R1 05 28 tokenizer (without
   // special tokens) Generated using: tokenizer.encode(text,
   // add_special_tokens=False)
-  std::map<std::string, std::vector<int>> expectedTokens = {
+  std::map<std::string, std::vector<uint32_t>> expectedTokens = {
       {"Hello, world!", {19923, 14, 2058, 3}},
       {"The quick brown fox jumps over the lazy dog.",
        {671, 4787, 13769, 46012, 54994, 1060, 270, 41638, 6397, 16}},
@@ -411,7 +411,7 @@ TEST_F(DeepseekTokenizerTest, DecodeSpecialTokenMixedWithNormal) {
   auto helloIds = tokenizer().encode("Hello");
   ASSERT_FALSE(helloIds.empty());
 
-  std::vector<int> withSpecial = helloIds;
+  std::vector<uint32_t> withSpecial = helloIds;
   withSpecial.push_back(1);  // append EOS
 
   std::string skipped =

@@ -46,7 +46,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   Config config = makeEngineConfig();
 
   struct Request {
-    std::vector<int64_t> prompt;
+    std::vector<uint32_t> prompt;
     int max_tokens;
   };
   std::vector<Request> requests = {
@@ -72,7 +72,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
     taskIds.push_back(seq.taskId);
   }
 
-  std::unordered_map<uint32_t, std::vector<int64_t>> receivedTokens;
+  std::unordered_map<uint32_t, std::vector<uint32_t>> receivedTokens;
   std::atomic<int> finishedCount{0};
 
   std::thread consumer([&]() {
@@ -108,7 +108,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   // 30 tokens: think_start + 10 think + think_end + 18 visible
   // Visible tokens: first is "response", rest are " response" (round-trip
   // stable)
-  const std::vector<int64_t> expectedSeq0 = {
+  const std::vector<uint32_t> expectedSeq0 = {
       kThinkStart,         kThinkContent,       kWhitespace,
       kThinkContent,       kWhitespace,         kThinkContent,
       kWhitespace,         kThinkContent,       kWhitespace,
@@ -121,12 +121,12 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
       kVisibleContentCont, kVisibleContentCont, kVisibleContentCont,
   };
   // 10 tokens: think_start + 9 think
-  const std::vector<int64_t> expectedSeq1 = {
+  const std::vector<uint32_t> expectedSeq1 = {
       kThinkStart,   kThinkContent, kWhitespace,   kThinkContent, kWhitespace,
       kThinkContent, kWhitespace,   kThinkContent, kWhitespace,   kThinkContent,
   };
   // 20 tokens: think_start + 10 think + think_end + 8 visible
-  const std::vector<int64_t> expectedSeq2 = {
+  const std::vector<uint32_t> expectedSeq2 = {
       kThinkStart,         kThinkContent,       kWhitespace,
       kThinkContent,       kWhitespace,         kThinkContent,
       kWhitespace,         kThinkContent,       kWhitespace,
@@ -174,7 +174,7 @@ TEST(LLMRunnerTest, StructuredOutputCompletesBeforeMaxTokens) {
       tt::utils::TaskIDGenerator::generate(), {1, 2, 3}, sp);
   uint32_t taskId = seq.taskId;
 
-  std::vector<int64_t> tokens;
+  std::vector<uint32_t> tokens;
   std::atomic<bool> done{false};
 
   std::thread consumer([&]() {

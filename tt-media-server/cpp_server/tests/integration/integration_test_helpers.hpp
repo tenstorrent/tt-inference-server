@@ -83,7 +83,7 @@ inline std::shared_ptr<ipc::ITaskQueue> makeInMemoryTaskQueue() {
 
 inline config::LLMConfig makeLLMConfig(
     int numBlocks = 128, int blockSize = 8, int eos = 0,
-    std::vector<int64_t> stopTokenIds = {},
+    std::vector<uint32_t> stopTokenIds = {},
     config::ModelRunnerType runnerType =
         config::ModelRunnerType::MOCK_PIPELINE) {
   config::LLMConfig cfg{};
@@ -101,8 +101,8 @@ inline config::LLMConfig makeLLMConfig(
 
 inline uint32_t generateTaskId() { return utils::TaskIDGenerator::generate(); }
 
-inline std::vector<int64_t> makeSequentialPrompt(size_t length) {
-  std::vector<int64_t> prompt(length);
+inline std::vector<uint32_t> makeSequentialPrompt(size_t length) {
+  std::vector<uint32_t> prompt(length);
   std::iota(prompt.begin(), prompt.end(), 0);
   return prompt;
 }
@@ -271,7 +271,7 @@ class RunnerTestHarness {
   // Submit a sequence to the runner's task queue.
   // Derived classes may override to set the correct KV cache slot method.
   void submitSequence(uint32_t taskId, uint32_t slotId,
-                      const std::vector<int64_t>& promptTokens,
+                      const std::vector<uint32_t>& promptTokens,
                       const domain::llm::SamplingParams& samplingParams) {
     domain::llm::Sequence seq(taskId, kDefaultBlockSize, promptTokens,
                               samplingParams);

@@ -20,20 +20,20 @@ class Block {
  public:
   explicit Block(int blockId);
 
-  void update(int64_t hash, std::vector<int64_t> tokenIds);
+  void update(int64_t hash, std::vector<uint32_t> tokenIds);
   void reset();
 
   int blockId = 0;
   int refCount = 0;
   int64_t hash = -1;
-  std::vector<int64_t> tokenIds;
+  std::vector<uint32_t> tokenIds;
 };
 
 class BlockManager {
  public:
   BlockManager(size_t numBlocks, size_t blockSize);
 
-  static int64_t computeHash(const std::vector<int64_t>& tokenIds,
+  static int64_t computeHash(const std::vector<uint32_t>& tokenIds,
                              int64_t prefix = -1);
 
   bool allocate(tt::domain::llm::Sequence& seq);

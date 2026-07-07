@@ -181,9 +181,12 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
   static MigrationRequest sampleRequest() {
     return MigrationRequest{.src_slot = 1,
                             .dst_slot = 2,
-                            .layer_id = 3,
-                            .position_start = 0,
-                            .position_end = 128};
+                            .layer_begin = 3,
+                            .layer_end = 4,
+                            .src_position_begin = 0,
+                            .src_position_end = 128,
+                            .dst_position_begin = 0,
+                            .dst_position_end = 128};
   }
 
   std::string brokers;
@@ -330,7 +333,8 @@ TEST_F(RemoteKVManagerE2ETest, MigrateRoutesRequestToOwnerPartition) {
   std::this_thread::sleep_for(KAFKA_GROUP_JOIN_WARMUP);
 
   auto req = sampleRequest();
-  req.layer_id = K_PARTITIONED_TARGET_LAYER;
+  req.layer_begin = K_PARTITIONED_TARGET_LAYER;
+  req.layer_end = K_PARTITIONED_TARGET_LAYER + 1;
   const uint64_t id = manager->migrate(req);
   ASSERT_NE(id, 0u);
 
@@ -355,7 +359,8 @@ TEST_F(RemoteKVManagerE2ETest, MigrateRoutesRequestToOwnerPartition) {
   ASSERT_EQ(raw.size(), 1u);
   const auto parsed = tt::messaging::parseMigrationRequest(raw[0]);
   ASSERT_TRUE(parsed.has_value());
-  EXPECT_EQ(parsed->layer_id, K_PARTITIONED_TARGET_LAYER);
+  EXPECT_EQ(parsed->layer_begin, K_PARTITIONED_TARGET_LAYER);
+  EXPECT_EQ(parsed->layer_end, K_PARTITIONED_TARGET_LAYER + 1);
   EXPECT_EQ(parsed->migration_id, id);
 
   for (auto& w : workers) w->stop();
@@ -384,7 +389,8 @@ TEST_F(RemoteKVManagerE2ETest, PartitionedOwnerReplyFailedPropagates) {
   std::this_thread::sleep_for(KAFKA_GROUP_JOIN_WARMUP);
 
   auto req = sampleRequest();
-  req.layer_id = K_PARTITIONED_TARGET_LAYER;
+  req.layer_begin = K_PARTITIONED_TARGET_LAYER;
+  req.layer_end = K_PARTITIONED_TARGET_LAYER + 1;
   const uint64_t id = manager->migrate(req);
   ASSERT_NE(id, 0u);
 
@@ -427,7 +433,8 @@ TEST_F(RemoteKVManagerE2ETest, PartitionedOwnerDropFailsViaTimeoutSweeper) {
   std::this_thread::sleep_for(KAFKA_GROUP_JOIN_WARMUP);
 
   auto req = sampleRequest();
-  req.layer_id = K_PARTITIONED_TARGET_LAYER;
+  req.layer_begin = K_PARTITIONED_TARGET_LAYER;
+  req.layer_end = K_PARTITIONED_TARGET_LAYER + 1;
   const uint64_t id = manager->migrate(req);
   ASSERT_NE(id, 0u);
   EXPECT_EQ(manager->getMigrationStatus(id), MigrationStatus::IN_PROGRESS);

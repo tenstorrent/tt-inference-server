@@ -33,7 +33,7 @@ std::shared_ptr<tt::ipc::ITaskQueue> makeQueue() {
 
 Config makeConfig(int numBlocks = 128, int blockSize = 8,
                   int maxBatchedTokens = 256, int eos = 0,
-                  std::vector<int64_t> stopTokenIds = {}) {
+                  std::vector<uint32_t> stopTokenIds = {}) {
   Config c;
   c.num_kvcache_blocks = numBlocks;
   c.kvcache_block_size = blockSize;
@@ -43,9 +43,9 @@ Config makeConfig(int numBlocks = 128, int blockSize = 8,
   return c;
 }
 
-std::vector<int64_t> prompt(size_t len) {
-  std::vector<int64_t> p;
-  for (size_t i = 0; i < len; ++i) p.push_back(static_cast<int64_t>(i));
+std::vector<uint32_t> prompt(size_t len) {
+  std::vector<uint32_t> p;
+  for (size_t i = 0; i < len; ++i) p.push_back(static_cast<uint32_t>(i));
   return p;
 }
 

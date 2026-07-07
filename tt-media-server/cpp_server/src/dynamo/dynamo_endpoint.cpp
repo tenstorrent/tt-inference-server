@@ -106,7 +106,7 @@ TokenChunk toTokenChunk(const tt::domain::llm::LLMStreamChunk& chunk,
                         bool isFinal) {
   TokenChunk out;
   if (!chunk.choices.empty() && chunk.choices.front().token_id.has_value()) {
-    out.token_ids = {static_cast<int>(*chunk.choices.front().token_id)};
+    out.token_ids = {static_cast<uint32_t>(*chunk.choices.front().token_id)};
   }
   if (isFinal) {
     if (!chunk.choices.empty()) {
@@ -297,8 +297,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
 
     // The frontend detokenizes this path, so usage is counted from token ids.
     struct UsageAccum {
-      int64_t thinkStart;
-      int64_t thinkEnd;
+      uint32_t thinkStart;
+      uint32_t thinkEnd;
       bool inReasoning;
       int completion = 0;
       int reasoning = 0;
@@ -310,9 +310,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       usage->thinkStart = think.first;
       usage->thinkEnd = think.second;
       const auto kNo = tt::utils::tokenizers::kNoTokenId;
-      usage->inReasoning =
-          usage->thinkStart != kNo && !dynReq.token_ids.empty() &&
-          dynReq.token_ids.back() == static_cast<int>(usage->thinkStart);
+      usage->inReasoning = usage->thinkStart != kNo &&
+                           !dynReq.token_ids.empty() &&
+                           dynReq.token_ids.back() == usage->thinkStart;
     }
 
     const auto loopTid =
@@ -548,11 +548,12 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                 if (sessionPtr && !chunk.choices.empty() &&
                     chunk.choices[0].token_id) {
                   sessionPtr->addGeneratedToken(
-                      static_cast<int>(*chunk.choices[0].token_id));
+                      static_cast<uint32_t>(*chunk.choices[0].token_id));
                 }
 
                 if (!chunk.choices.empty() && chunk.choices[0].token_id) {
-                  const int tid = static_cast<int>(*chunk.choices[0].token_id);
+                  const uint32_t tid =
+                      static_cast<uint32_t>(*chunk.choices[0].token_id);
                   const auto kNo = tt::utils::tokenizers::kNoTokenId;
                   usage->completion += 1;
                   if (usage->thinkStart != kNo && tid == usage->thinkStart) {

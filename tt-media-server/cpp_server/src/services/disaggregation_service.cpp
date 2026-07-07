@@ -102,7 +102,7 @@ tt::sockets::PrefillRequestMessage buildPrefillRequestMessage(
   auto message = tt::sockets::PrefillRequestMessage(request.task_id);
   message.registrationHashes = registrationHashes;
 
-  auto tokenIds = std::get<std::vector<int>>(request.prompt);
+  auto tokenIds = std::get<std::vector<uint32_t>>(request.prompt);
   message.tokenIds.assign(tokenIds.begin(), tokenIds.end());
   message.maxTokens = request.max_tokens;
   message.slotId = request.slotId;
@@ -214,8 +214,8 @@ void DisaggregationService::handlePrefillRequest(
 
   auto maxTokens = message.maxTokens;
 
-  request->prompt.emplace<std::vector<int>>(message.tokenIds.begin(),
-                                            message.tokenIds.end());
+  request->prompt.emplace<std::vector<uint32_t>>(message.tokenIds.begin(),
+                                                 message.tokenIds.end());
   auto slotId = message.slotId;
   request->slotId = slotId;
   request->decode_position_id = message.decodePositionId;
@@ -236,7 +236,7 @@ void DisaggregationService::handlePrefillRequest(
         // reuse) = prompt tokens trimmed off by resolvePrefillSession.
         const size_t fullPromptTokens = message.tokenIds.size();
         const size_t trimmedPromptTokens =
-            std::get<std::vector<int>>(request->prompt).size();
+            std::get<std::vector<uint32_t>>(request->prompt).size();
         // Only the prefill-side trim counts: the prefill runner trims and
         // recomputes purely by its own prefix match.
         const int cachedTokens = static_cast<int>(
@@ -393,8 +393,8 @@ void DisaggregationService::handlePrefillResult(
     // free slot, and the prompt is just that single trailing token.
     request->kv_position_id =
         static_cast<uint32_t>(message.tokenIds.size() - 1);
-    request->prompt.emplace<std::vector<int>>(message.tokenIds.end() - 1,
-                                              message.tokenIds.end());
+    request->prompt.emplace<std::vector<uint32_t>>(message.tokenIds.end() - 1,
+                                                   message.tokenIds.end());
     request->max_tokens = message.remainingTokens;
     request->slotId = message.slotId;
     // Restore the sampling subset echoed back from the prefill server.
