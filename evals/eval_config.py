@@ -123,8 +123,12 @@ class EvalTask:
             # max_concurrent is not supported in lm-eval==0.4.3
             object.__setattr__(self, "batch_size", self.max_concurrent)
             object.__setattr__(self, "max_concurrent", None)
-            if self.model_kwargs:
-                raise ValueError("model_kwargs are not supported in lm-eval==0.4.3")
+            # lm-eval 0.4.4's API models default add_bos_token=False. Llama is trained with a
+            # leading BOS and regresses badly without it (meta_ifeval strict-format failures,
+            # ~3pt drop crossing the 0.95 gate). Force BOS on for all meta tasks.
+            mk = dict(self.model_kwargs or {})
+            mk.setdefault("add_bos_token", "True")
+            object.__setattr__(self, "model_kwargs", mk)
 
     def validate_data(self):
         pass
