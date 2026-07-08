@@ -61,7 +61,7 @@ surface, and how this attaches to the existing tt-llm-engine migration worker.
 
 The Mooncake `transfer_engine` is built **from source** out of the vendored submodule
 (`third_party/Mooncake`), so a fresh clone needs two one-time setup steps before
-`./build.sh --mooncake` will configure. (Plain `./build.sh` / `--blaze` builds don't
+`./build.sh --mooncake` will configure. (Plain `./build.sh` builds don't
 need any of this — Mooncake is only pulled in by `--mooncake`.)
 
 ### 1. Check out the Mooncake submodule — recursively
@@ -128,23 +128,23 @@ build output under that root — **not** from inside `build/`):
 
 ```bash
 ./build.sh                    # both guards OFF — transport_lib/transport_test still build (no-op fallbacks)
-./build.sh --blaze            # real UMD device-DRAM backend (USE_METAL_CPP_LIB)
+./build.sh            # real UMD device-DRAM backend (USE_METAL_CPP_LIB)
 ./build.sh --mooncake         # real Mooncake transport (TCP+RDMA) → also builds transport_migration_e2e
-./build.sh --blaze --mooncake # both real backends — required for the device-DRAM (real HW) e2e path
+./build.sh --mooncake # both real backends — required for the device-DRAM (real HW) e2e path
 
 cd build && ctest --output-on-failure        # runs transport_test in any configuration
 
 # Two-process acceptance harness (stays in cpp_server; needs a --mooncake build):
 tests/e2e/scripts/run_transport_migration_e2e.sh                 # transport-only loopback, no HW
 STORAGE=device SRC_DEVICE_ID=0 DST_DEVICE_ID=1 \
-  tests/e2e/scripts/run_transport_migration_e2e.sh               # real device DRAM, two boards (build with --blaze --mooncake)
+  tests/e2e/scripts/run_transport_migration_e2e.sh               # real device DRAM, two boards (build with --mooncake)
 
 # #4209 worker discovery via the Mooncake Metadata Service (host RAM only, two hosts):
 tests/integration/run_mooncake_metadata_server.sh                 # start the metadata service
 tests/integration/run_migration_worker_discovery.sh               # single-host smoke (auto-starts service)
 ```
 
-Build guards: `USE_METAL_CPP_LIB` (real UMD I/O, via `--blaze`) and
+Build guards: `USE_METAL_CPP_LIB` (real UMD I/O) and
 `TT_TRANSPORT_WITH_MOONCAKE` (real Mooncake transport, via `--mooncake`). Each real
 backend sits behind a guard with a no-op fallback, so the library and unit test build
 in **every** configuration.
@@ -154,7 +154,7 @@ in **every** configuration.
 | Step | Status |
 |------|--------|
 | Interfaces + host-DRAM round-trip + worker staging (`transport_test`, any build) | impl |
-| Device-DRAM backend single-galaxy round-trip (UMD, `--blaze`) | impl |
+| Device-DRAM backend single-galaxy round-trip (UMD) | impl |
 | Mooncake transport loopback TCP (host backend, `--mooncake`) | impl |
 | Two-galaxy acceptance, both backends enabled | pending a two-process HW run |
 | Metadata-service worker discovery, two hosts, host RAM (#4209) | impl |

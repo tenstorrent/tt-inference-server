@@ -28,7 +28,7 @@ def preflight(cfg: Config) -> None:
     if not cfg.worker_bin.is_file() or not os.access(cfg.worker_bin, os.X_OK):
         raise PreflightError(
             f"{cfg.worker_bin} not found/executable. "
-            "Build it: ./build.sh --blaze --kafka --mooncake"
+            "Build it: ./build.sh --kafka --mooncake"
         )
     if shutil.which("mpirun") is None:
         raise PreflightError("mpirun not found; install Open MPI to run this test.")

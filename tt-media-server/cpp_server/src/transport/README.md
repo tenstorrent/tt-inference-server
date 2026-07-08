@@ -308,15 +308,14 @@ Every real backend sits behind a guard with a no-op fallback, so `transport_lib`
 
 | Guard | Enables | Flag |
 |-------|---------|------|
-| `USE_METAL_CPP_LIB` | real UMD device-DRAM I/O | `--blaze` |
-| `TT_TRANSPORT_WITH_MOONCAKE` | real Mooncake transport | `--mooncake` (implies `--blaze`) |
+| `USE_METAL_CPP_LIB` | real UMD device-DRAM I/O | / |
+| `TT_TRANSPORT_WITH_MOONCAKE` | real Mooncake transport | `--mooncake` |
 | `TT_TRANSPORT_WITH_KV_TABLE` | real `KvChunkAddressTable` adapter (protobuf) | `-DENABLE_KV_TABLE=ON` (needs `migration_lib`) |
 
 ## Build & run
 
 ```bash
-./build.sh                  # both guards OFF — everything builds (no-op fallbacks)
-./build.sh --blaze          # real UMD device-DRAM
+./build.sh                  # real UMD device-DRAM
 ./build.sh --mooncake       # real Mooncake transport → builds the e2e harnesses
 
 cd build && ctest --output-on-failure          # unit tests (any config)
@@ -330,7 +329,7 @@ cd build && ctest --output-on-failure          # unit tests (any config)
 ./build/transport_kv_migration_e2e
 # Hardware / real-table paths can't run in one gtest process, so they stay on the
 # two-process shell harness (--role sender|receiver):
-MODE=device  tests/e2e/scripts/run_transport_kv_migration_e2e.sh      # real device DRAM (--blaze + HW)
+MODE=device  tests/e2e/scripts/run_transport_kv_migration_e2e.sh      # real device DRAM
 TABLE=prefill_kv_table.pb DECODE_TABLE=decoder_kv_table.pb \
              tests/e2e/scripts/run_transport_kv_migration_e2e.sh      # real table (-DENABLE_KV_TABLE=ON)
 ```
@@ -345,7 +344,7 @@ TABLE=prefill_kv_table.pb DECODE_TABLE=decoder_kv_table.pb \
 | orchestration (Begin/MirrorReady/Done/Ack) over a threaded channel | unit-tested |
 | multi-host n→m fan-out (routing via `hostsForRequest`, per-host orchestration, partial-failure reporting) | unit-tested (fakes) |
 | real Mooncake TCP, host store (full round trip, fan-out) | ctest `TransportKvMigrationE2E` (`--mooncake` build, no HW) |
-| real UMD device DRAM / real `.pb` table / multi-host scale-out | manual shell-harness run (+`--blaze`/HW/`ENABLE_KV_TABLE`) |
+| real UMD device DRAM / real `.pb` table / multi-host scale-out | manual shell-harness run (+HW/`ENABLE_KV_TABLE`) |
 
 The sender computing both `mirror_offset` **and** the dst `NocAddr` is what makes
 device→device RDMA a localized swap: drop the mirror, WRITE straight to the
@@ -426,7 +425,7 @@ WORKER_BIN=./build/bringup_mooncake_worker \
 | Step | Status |
 |------|--------|
 | Interfaces + host-DRAM round-trip + worker staging (`transport_test`, any build) | impl |
-| Device-DRAM backend single-galaxy round-trip (UMD, `--blaze`) | impl |
+| Device-DRAM backend single-galaxy round-trip (UMD) | impl |
 | Mooncake transport loopback TCP (host backend, `--mooncake`) | impl |
 | Two-galaxy acceptance, both backends enabled | pending a two-process HW run |
 | Metadata-service worker discovery, two hosts, host RAM (#4209, `migration_worker_discovery`) | **validated** (two hosts, 1 MiB tensor, byte-verified MATCH) |
@@ -443,10 +442,10 @@ The existing KV-migration worker lives in
 [`../../tt-llm-engine/disaggregation/migration/`](../../tt-llm-engine/disaggregation/migration/)
 and already moves KV cache galaxy-to-galaxy over **MPI/DCN** with ULFM fault
 tolerance. It routes all transport through an abstract `SenderBackend` /
-`ReceiverBackend` interface (today only `DcnSenderBackend`). Add a 
+`ReceiverBackend` interface (today only `DcnSenderBackend`). Add a
 `MooncakeSenderBackend` implementing that same interface. Mooncake fills
 *capability* gaps (multi-NIC RDMA bandwidth, dynamic membership, a pooled global
-KV-cache store with cross-request prefix reuse), not a correctness hole. 
+KV-cache store with cross-request prefix reuse), not a correctness hole.
 
 **Discovery lifecycle (post-merge):** discovery resolves peers once at bring-up and the
 worker then holds the handles until SIGTERM. Steady-state membership changes are not yet

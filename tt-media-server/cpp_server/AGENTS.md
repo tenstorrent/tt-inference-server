@@ -27,7 +27,7 @@ title alone.
 ## Build
 
 ```bash
-./build.sh --blaze
+./build.sh
 ```
 
 ## Run

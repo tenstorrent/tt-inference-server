@@ -19,11 +19,11 @@ For `tt_media_server_cpp` you usually want both: the worker's `BlazeRunner::step
 
 All paths below are relative to `tt-media-server/cpp_server/`.
 
-1. **Build the server with the BlazeRunner code path enabled.** Without `--blaze`, the runner registry falls back to `MOCK` and you'll be profiling the wrong code.
+1. **Build the server.** tt-llm-engine/Blaze is always built in, so the BlazeRunner code path is used automatically.
 
    ```bash
    cd tt-media-server/cpp_server
-   ./build.sh --blaze
+   ./build.sh
    ```
 
    Verify the binary is fresh and not stripped:
@@ -33,7 +33,7 @@ All paths below are relative to `tt-media-server/cpp_server/`.
    ls build/tt_media_server_cpp
    ```
 
-2. **Start the server with the mock pipeline backend, and stash its PID for step 6.** Tokenizer files must be in place (`./build.sh --blaze` fetches them; for an ad-hoc download see `build.sh:200`). Capturing `$!` immediately is the simplest way to make sure cleanup later kills the right process and not some other `tt_media_server_cpp` (`pkill -f` is too broad — see the warning in step 6).
+2. **Start the server with the mock pipeline backend, and stash its PID for step 6.** Tokenizer files must be in place (`./build.sh` fetches them; for an ad-hoc download see `build.sh:200`). Capturing `$!` immediately is the simplest way to make sure cleanup later kills the right process and not some other `tt_media_server_cpp` (`pkill -f` is too broad — see the warning in step 6).
 
    ```bash
    LLM_DEVICE_BACKEND=mock_pipeline ./build/tt_media_server_cpp \
@@ -45,11 +45,9 @@ All paths below are relative to `tt-media-server/cpp_server/`.
    until curl -sf http://127.0.0.1:8000/tt-liveness \
             | grep -q '"model_ready":true'; do sleep 1; done
 
-   # Confirm Blaze runner (not the MOCK fallback) was selected.
+   # Confirm the Blaze runner was selected.
    grep -E "Creating Blaze runner|RunnerRegistry" server.log | head
    # Expect: "[RunnerRegistry] Creating Blaze runner (pipeline_manager)"
-   # If you see "No factory registered for (llm, mock_pipeline); falling back
-   # to MOCK", the binary was built without --blaze — go back to step 1.
    ```
 
 3. **Drive load and capture.** A flamegraph of an idle process is mostly Tracy / metrics / epoll noise — push traffic during the capture window. The script then handles `perf record`, `stackcollapse-perf`, `flamegraph.pl`, and kernel-frame folding.

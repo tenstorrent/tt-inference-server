@@ -23,7 +23,7 @@
 # Env overrides:
 #   ROLE=both|receiver|sender  (default both — both procs on this host/loopback;
 #                          receiver/sender launch ONE side for a two-galaxy run)
-#   MODE=host|device      (default host — runs anywhere; device needs HW+--blaze)
+#   MODE=host|device      (default host — runs anywhere; device needs HW)
 #   TABLE=builtin|<path>   (default builtin; <path> needs -DENABLE_KV_TABLE=ON)
 #   DECODE_TABLE=<path>    (sender, real-table mode: the decode-side .pb)
 #   CONTROL_HOST=<ip>      (sender: where the receiver's control channel lives;

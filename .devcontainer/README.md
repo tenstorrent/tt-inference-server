@@ -61,7 +61,7 @@ cd tt-media-server/cpp_server
 cd tt-llm-engine
 ./setup.sh --all
 cd ..
-./build.sh --blaze
+./build.sh
 ```
 
 Set `TT_INFERENCE_DEV_IMAGE` to override the local Docker image tag:

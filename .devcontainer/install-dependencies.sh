@@ -83,4 +83,4 @@ cd "${llm_engine}"
 
 cd "${cpp_server}"
 cleanup_moved_cmake_build_dir "${cpp_server}/build" "${cpp_server}"
-./build.sh --blaze
+./build.sh

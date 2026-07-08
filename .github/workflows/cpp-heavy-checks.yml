@@ -69,7 +69,7 @@ jobs:
       - name: Build C++ server
         run: |
           cd cpp_server
-          ./build.sh --blaze
+          ./build.sh
           cd ..
 
       - name: Archive C++ build
@@ -122,7 +122,7 @@ jobs:
       - name: Build C++ server
         run: |
           cd cpp_server
-          ./build.sh --blaze
+          ./build.sh
           cd ..
 
       - name: Set up uv
@@ -287,7 +287,7 @@ jobs:
       - name: Build C++ server
         run: |
           cd cpp_server
-          ./build.sh --blaze
+          ./build.sh
           cd ..
 
       - name: Set up uv
@@ -481,7 +481,7 @@ jobs:
       - name: Build C++ server
         run: |
           cd cpp_server
-          ./build.sh --blaze
+          ./build.sh
           cd ..
 
       - name: Configure prefill_gateway
@@ -1286,7 +1286,7 @@ jobs:
       - name: Build C++ server with ThreadSanitizer
         run: |
           cd cpp_server
-          ./build.sh --tsan --blaze
+          ./build.sh --tsan
 
       - name: Archive C++ tokenizer bundle
         run: |
@@ -1318,8 +1318,6 @@ jobs:
         run: |
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "TSan-instrumented server"
           cd cpp_server/build
-          # mock_scheduler = CPU-only MockDecodeScheduler (no device); the LLM
-          # runner it needs is only compiled with --blaze (see build step).
           LLM_DEVICE_BACKEND=mock_scheduler ./tt_media_server_cpp -p 8001 -t 4 > ../../tsan_server.log 2>&1 &
           echo $! > ../../tsan_server.pid
           cd ../..

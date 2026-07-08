@@ -241,18 +241,14 @@ FetchContent_Declare(
 set(CPPZMQ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(cppzmq)
 
-# Option to enable tt-llm-engine (formerly tt-blaze pipeline_manager)
-option(ENABLE_BLAZE "Enable tt-llm-engine support" OFF)
-# Real shmem migration (MigrationLayerClientAdapter + migration_client static lib).
-# mock_pipeline CI builds use --blaze only; disaggregated pipeline_manager runs
-# need --blaze-with-migration (implies ENABLE_BLAZE).
-option(ENABLE_BLAZE_MIGRATION "Build real shmem migration client (requires ENABLE_BLAZE)" OFF)
-if(ENABLE_BLAZE_MIGRATION AND NOT ENABLE_BLAZE)
-    message(FATAL_ERROR "ENABLE_BLAZE_MIGRATION=ON requires ENABLE_BLAZE=ON (use build.sh --blaze-with-migration)")
-endif()
 
-if(ENABLE_BLAZE)
-    # Prefer a pre-built tt-llm-engine discovered via find_package — this is
+# Real shmem migration (MigrationLayerClientAdapter + migration_client static lib).
+# tt-llm-engine/mock_pipeline is always built; disaggregated pipeline_manager
+# runs additionally need --blaze-with-migration.
+option(ENABLE_BLAZE_MIGRATION "Build real shmem migration client" OFF)
+
+
+# Prefer a pre-built tt-llm-engine discovered via find_package — this is
     # the path used by the Docker build, which pulls /opt/tt-llm-engine out
     # of the tt-llm-engine builder image and sets CMAKE_PREFIX_PATH so the
     # package is locatable. Fall back to building the in-tree submodule for
@@ -276,15 +272,12 @@ if(ENABLE_BLAZE)
         message(STATUS "tt-llm-engine: building from in-tree submodule (legacy path)")
     else()
         message(FATAL_ERROR
-            "ENABLE_BLAZE=ON but tt-llm-engine is neither installed "
+            "tt-llm-engine is neither installed "
             "(find_package failed) nor present in source tree at "
             "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine. "
             "Either ensure the prebuilt image's /opt/tt-llm-engine is on "
             "CMAKE_PREFIX_PATH, or initialize the tt-llm-engine submodule.")
     endif()
-else()
-    message(STATUS "tt-llm-engine: DISABLED (use -DENABLE_BLAZE=ON to enable)")
-endif()
 
 # Mooncake Transfer Engine (TCP + RDMA) is vendored as a top-level git submodule
 # at third_party/Mooncake (pinned to release v0.3.11.post1) and built directly
@@ -473,15 +466,13 @@ set(LLM_RUNNER_LIB_SOURCES
     src/api/route_registry.cpp
 )
 
-# Add tt-llm-engine-dependent sources only when ENABLE_BLAZE is ON
-if(ENABLE_BLAZE)
-    list(APPEND LLM_RUNNER_LIB_SOURCES
+# Add tt-llm-engine-dependent sources
+list(APPEND LLM_RUNNER_LIB_SOURCES
         src/runtime/runners/blaze_runner/blaze_decode_runner.cpp
         src/runtime/runners/blaze_runner/blaze_prefill_runner.cpp
         src/runtime/runners/blaze_runner/blaze_scheduler_factory.cpp
     )
-    message(STATUS "llm_runner_lib: including tt-llm-engine-dependent sources (ENABLE_BLAZE=ON)")
-endif()
+    message(STATUS "llm_runner_lib: including tt-llm-engine-dependent sources")
 
 add_library(llm_runner_lib ${LLM_RUNNER_LIB_SOURCES})
 target_include_directories(llm_runner_lib PUBLIC
@@ -491,73 +482,68 @@ target_include_directories(llm_runner_lib PUBLIC
 # Link tokenizers_cpp, JsonCpp, xgrammar (guided decoding), and xxhash (stable hashing)
 target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar xxhash_lib)
 
-# Link tt-llm-engine when ENABLE_BLAZE is ON: prefer Full (SocketPipeline + TT::Metalium),
+# Link tt-llm-engine: prefer Full (SocketPipeline + TT::Metalium),
 # fall back to Core (mock pipeline only).
-if(ENABLE_BLAZE)
-    if(TARGET TtLlmEngine::Full)
-        target_link_libraries(llm_runner_lib PUBLIC TtLlmEngine::Full)
-        message(STATUS "Linking llm_runner_lib against TtLlmEngine::Full")
-    elseif(TARGET TtLlmEngine::Core)
-        target_link_libraries(llm_runner_lib PUBLIC TtLlmEngine::Core)
-        message(STATUS "Linking llm_runner_lib against TtLlmEngine::Core")
-    endif()
-    target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE)
-    # Detect where the tt-llm-engine source tree lives. Two layouts are supported:
-    #   1. Monolithic flow (main's Dockerfile.blaze): cpp_server/tt-llm-engine/ —
-    #      cloned in-tree during the Docker build.
-    #   2. Slim flow (v2 Dockerfile.blaze): /opt/tt-llm-engine-src/ — COPY'd from
-    #      the prebuilt tt-llm-engine image's source tree.
-    # Both layouts expose the same subdirectories (src/, disaggregation/, tt-metal/),
-    # so a single root variable lets every consumer-of-engine-source path adapt.
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/CMakeLists.txt")
-        set(_TT_LLM_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine")
-        message(STATUS "tt-llm-engine source: in-tree at ${_TT_LLM_ENGINE_ROOT}")
-    elseif(EXISTS "/opt/tt-llm-engine-src/CMakeLists.txt")
-        set(_TT_LLM_ENGINE_ROOT "/opt/tt-llm-engine-src")
-        message(STATUS "tt-llm-engine source: slim engine image at ${_TT_LLM_ENGINE_ROOT}")
-    else()
-        message(FATAL_ERROR
-            "ENABLE_BLAZE=ON but tt-llm-engine source not found. Expected either "
-            "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/ (in-tree clone, monolithic flow) "
-            "or /opt/tt-llm-engine-src/ (slim engine image flow).")
-    endif()
-
-    # Header-only MigrationClientInterface implementations (MigrationLayerClientAdapter,
-    # MockMigrationClient) live under the engine's src tree rather than its public
-    # include tree; blaze_utils.hpp instantiates them, so expose that path.
-    target_include_directories(llm_runner_lib PUBLIC
-        ${_TT_LLM_ENGINE_ROOT}/src)
-
-    if(ENABLE_BLAZE_MIGRATION)
-        target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE_MIGRATION)
-        # MigrationLayerClientAdapter forwards to migration_worker::MigrationLayerClient,
-        # whose implementation lives in the disaggregation/migration project. That
-        # project is a standalone CMake project() (own CPM cache + find_package(MPI)),
-        # so it can't be add_subdirectory'd here. Its client is lightweight though
-        # (just POSIX shmem queues), so we compile the two needed translation units
-        # directly into a small static lib and link it in. There is a single concrete
-        # implementation (no mock/real .so swap), so static linking is sufficient for
-        # both Core and LD_PRELOAD'd Full runs.
-        set(_MIG_DIR ${_TT_LLM_ENGINE_ROOT}/disaggregation/migration)
-        set(_MIG_TT_STL "${_TT_LLM_ENGINE_ROOT}/tt-metal/tt_stl")
-        add_library(migration_client STATIC
-            ${_MIG_DIR}/src/migration_client.cpp
-            ${_MIG_DIR}/src/file_lock_guard.cpp)
-        set_target_properties(migration_client PROPERTIES POSITION_INDEPENDENT_CODE ON)
-        target_include_directories(migration_client PUBLIC
-            ${_MIG_DIR}/include
-            ${_MIG_DIR}/src/worker
-            ${_TT_LLM_ENGINE_ROOT}/src/common
-            ${TT_METAL_INCLUDE_DIRS}
-            ${_MIG_TT_STL})
-        target_link_libraries(migration_client PUBLIC spdlog::spdlog PRIVATE rt)
-        target_link_libraries(llm_runner_lib PUBLIC migration_client)
-        message(STATUS "Blaze migration client: ENABLED (ENABLE_BLAZE_MIGRATION=ON)")
-    else()
-        message(STATUS "Blaze migration client: DISABLED (use build.sh --blaze-with-migration for pipeline_manager shmem migration)")
-    endif()
+if(TARGET TtLlmEngine::Full)
+    target_link_libraries(llm_runner_lib PUBLIC TtLlmEngine::Full)
+    message(STATUS "Linking llm_runner_lib against TtLlmEngine::Full")
+elseif(TARGET TtLlmEngine::Core)
+    target_link_libraries(llm_runner_lib PUBLIC TtLlmEngine::Core)
+    message(STATUS "Linking llm_runner_lib against TtLlmEngine::Core")
+endif()
+# Detect where the tt-llm-engine source tree lives. Two layouts are supported:
+#   1. Monolithic flow (main's Dockerfile.blaze): cpp_server/tt-llm-engine/ —
+#      cloned in-tree during the Docker build.
+#   2. Slim flow (v2 Dockerfile.blaze): /opt/tt-llm-engine-src/ — COPY'd from
+#      the prebuilt tt-llm-engine image's source tree.
+# Both layouts expose the same subdirectories (src/, disaggregation/, tt-metal/),
+# so a single root variable lets every consumer-of-engine-source path adapt.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/CMakeLists.txt")
+    set(_TT_LLM_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine")
+    message(STATUS "tt-llm-engine source: in-tree at ${_TT_LLM_ENGINE_ROOT}")
+elseif(EXISTS "/opt/tt-llm-engine-src/CMakeLists.txt")
+    set(_TT_LLM_ENGINE_ROOT "/opt/tt-llm-engine-src")
+    message(STATUS "tt-llm-engine source: slim engine image at ${_TT_LLM_ENGINE_ROOT}")
 else()
-    message(STATUS "Skipping tt-llm-engine linking (ENABLE_BLAZE=OFF)")
+    message(FATAL_ERROR
+        "tt-llm-engine source not found. Expected either "
+        "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/ (in-tree clone, monolithic flow) "
+        "or /opt/tt-llm-engine-src/ (slim engine image flow).")
+endif()
+
+# Header-only MigrationClientInterface implementations (MigrationLayerClientAdapter,
+# MockMigrationClient) live under the engine's src tree rather than its public
+# include tree; blaze_utils.hpp instantiates them, so expose that path.
+target_include_directories(llm_runner_lib PUBLIC
+    ${_TT_LLM_ENGINE_ROOT}/src)
+
+if(ENABLE_BLAZE_MIGRATION)
+    target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE_MIGRATION)
+    # MigrationLayerClientAdapter forwards to migration_worker::MigrationLayerClient,
+    # whose implementation lives in the disaggregation/migration project. That
+    # project is a standalone CMake project() (own CPM cache + find_package(MPI)),
+    # so it can't be add_subdirectory'd here. Its client is lightweight though
+    # (just POSIX shmem queues), so we compile the two needed translation units
+    # directly into a small static lib and link it in. There is a single concrete
+    # implementation (no mock/real .so swap), so static linking is sufficient for
+    # both Core and LD_PRELOAD'd Full runs.
+    set(_MIG_DIR ${_TT_LLM_ENGINE_ROOT}/disaggregation/migration)
+    set(_MIG_TT_STL "${_TT_LLM_ENGINE_ROOT}/tt-metal/tt_stl")
+    add_library(migration_client STATIC
+        ${_MIG_DIR}/src/migration_client.cpp
+        ${_MIG_DIR}/src/file_lock_guard.cpp)
+    set_target_properties(migration_client PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_include_directories(migration_client PUBLIC
+        ${_MIG_DIR}/include
+        ${_MIG_DIR}/src/worker
+        ${_TT_LLM_ENGINE_ROOT}/src/common
+        ${TT_METAL_INCLUDE_DIRS}
+        ${_MIG_TT_STL})
+    target_link_libraries(migration_client PUBLIC spdlog::spdlog PRIVATE rt)
+    target_link_libraries(llm_runner_lib PUBLIC migration_client)
+    message(STATUS "Blaze migration client: ENABLED (ENABLE_BLAZE_MIGRATION=ON)")
+else()
+    message(STATUS "Blaze migration client: DISABLED (use build.sh --blaze-with-migration for pipeline_manager shmem migration)")
 endif()
 if(USE_EXTERNAL_FMT)
     target_link_libraries(llm_runner_lib PUBLIC Boost::boost spdlog::spdlog fmt::fmt)
@@ -838,7 +824,7 @@ if(TARGET transfer_engine)
 
     # Real KV-cache migration (table-addressed mirror + orchestration over a
     # TCP control channel). Self-contained TCP control transport, links only
-    # transport_lib. host mode runs with no hardware; device mode needs --blaze;
+    # transport_lib. host mode runs with no hardware;
     # real-table (--table <pb>) needs -DENABLE_KV_TABLE=ON.
     add_executable(transport_kv_migration_e2e
         tests/e2e/transport_kv_migration_e2e.cpp)
@@ -934,36 +920,33 @@ target_link_libraries(dynamo_protocol_test PRIVATE
 target_include_directories(dynamo_protocol_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+add_executable(blaze_decode_runner_test
+    tests/integration/runners/blaze_decode_runner_test.cpp
+    src/runtime/worker/single_process_worker_metrics.cpp
+    src/runtime/worker/worker_metrics_shm.cpp
+)
+target_link_libraries(blaze_decode_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(blaze_decode_runner_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
-if(ENABLE_BLAZE)
-    add_executable(blaze_decode_runner_test
-        tests/integration/runners/blaze_decode_runner_test.cpp
-        src/runtime/worker/single_process_worker_metrics.cpp
-        src/runtime/worker/worker_metrics_shm.cpp
-    )
-    target_link_libraries(blaze_decode_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
-    target_include_directories(blaze_decode_runner_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
+add_executable(blaze_prefill_runner_test
+    tests/integration/runners/blaze_prefill_runner_test.cpp
+    src/runtime/worker/single_process_worker_metrics.cpp
+    src/runtime/worker/worker_metrics_shm.cpp
+)
+target_link_libraries(blaze_prefill_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(blaze_prefill_runner_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
-    add_executable(blaze_prefill_runner_test
-        tests/integration/runners/blaze_prefill_runner_test.cpp
-        src/runtime/worker/single_process_worker_metrics.cpp
-        src/runtime/worker/worker_metrics_shm.cpp
-    )
-    target_link_libraries(blaze_prefill_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
-    target_include_directories(blaze_prefill_runner_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    add_executable(mock_schedulers_test
-        tests/unit/runners/mock_schedulers_test.cpp
-    )
-    target_link_libraries(mock_schedulers_test PRIVATE llm_runner_lib GTest::gtest_main)
-    target_include_directories(mock_schedulers_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-endif()
+add_executable(mock_schedulers_test
+    tests/unit/runners/mock_schedulers_test.cpp
+)
+target_link_libraries(mock_schedulers_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(mock_schedulers_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
 add_executable(sequence_test tests/unit/model/sequence_test.cpp)
 target_link_libraries(sequence_test PRIVATE
@@ -1299,11 +1282,9 @@ gtest_discover_tests(kv_migration_orchestrator_test)
 if(ENABLE_KV_TABLE)
     gtest_discover_tests(kv_chunk_address_table_adapter_test)
 endif()
-if(ENABLE_BLAZE)
-    gtest_discover_tests(blaze_decode_runner_test)
-    gtest_discover_tests(blaze_prefill_runner_test)
-    gtest_discover_tests(mock_schedulers_test)
-endif()
+gtest_discover_tests(blaze_decode_runner_test)
+gtest_discover_tests(blaze_prefill_runner_test)
+gtest_discover_tests(mock_schedulers_test)
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(tokenizer_test)
@@ -1399,26 +1380,21 @@ if(KAFKA_ENABLED)
     )
 
     # RemoteKVManagerAdapter - bridges IRemoteKVManager to MigrationClientInterface
-    # Only built when ENABLE_BLAZE is ON (requires tt-llm-engine headers)
     # Note: disaggregation/migration/include is needed for migration_client.hpp
     # which migration_client_interface.hpp includes for event types.
-    if(ENABLE_BLAZE)
-        add_library(remote_kv_adapter
-            src/services/remote_kv_manager_adapter.cpp
-        )
-        target_include_directories(remote_kv_adapter PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration/include
-        )
-        target_link_libraries(remote_kv_adapter PUBLIC
-            messaging
-            spdlog::spdlog
-        )
-        message(STATUS "remote_kv_adapter: ENABLED (ENABLE_BLAZE=ON)")
-    else()
-        message(STATUS "remote_kv_adapter: DISABLED (requires ENABLE_BLAZE=ON)")
-    endif()
+    add_library(remote_kv_adapter
+        src/services/remote_kv_manager_adapter.cpp
+    )
+    target_include_directories(remote_kv_adapter PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration/include
+    )
+    target_link_libraries(remote_kv_adapter PUBLIC
+        messaging
+        spdlog::spdlog
+    )
+    message(STATUS "remote_kv_adapter: ENABLED")
 
     # Migration worker library (for consumer instances)
     add_library(migration_worker
@@ -1696,8 +1672,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE stb_image_write)
 # runner with a different workspace path). Without this, CMake bakes the
 # absolute build-time path into RUNPATH and ld.so fails to find
 # libtt_llm_engine_core.so.0 elsewhere.
-if(ENABLE_BLAZE)
-    # $ORIGIN/tt-llm-engine keeps libtt_llm_engine_core.so.0 / libtt_llm_engine.so.0
+# $ORIGIN/tt-llm-engine keeps libtt_llm_engine_core.so.0 / libtt_llm_engine.so.0
     # resolvable when the build artifact is unpacked on a different machine.
     # INSTALL_RPATH_USE_LINK_PATH TRUE additionally appends the absolute link
     # directories (e.g. tt-llm-engine/tt-metal/build_Release/lib where libfmt.so.11,
@@ -1709,7 +1684,6 @@ if(ENABLE_BLAZE)
         INSTALL_RPATH "$ORIGIN/tt-llm-engine"
         INSTALL_RPATH_USE_LINK_PATH TRUE
     )
-endif()
 
 # Compiler warnings
 target_compile_options(${PROJECT_NAME} PRIVATE

@@ -145,7 +145,7 @@ transport (with a zero-copy `acquire/publish`) while this branch *splits* them
 differ (MPI rank + `KvChunkAddressTable` vs `openSegment`/offset + P2PHANDSHAKE);
 receiver-write and ACK/fault semantics differ (DCN receiver-drains-then-writes vs
 Mooncake one-sided write); and Mooncake currently builds inside tt-llm-engine
-(`DS_ENABLE_MOONCAKE`, needs `ENABLE_BLAZE`) while `transport_lib` is dependency-free.
+(`DS_ENABLE_MOONCAKE`) while `transport_lib` is dependency-free.
 
 ## Mooncake API surface (verified against upstream `main`)
 

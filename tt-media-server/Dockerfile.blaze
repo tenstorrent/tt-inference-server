@@ -145,7 +145,7 @@ RUN export CARGO_HOME=${HOME_DIR}/.cargo \
 COPY --from=engine /opt/tt-llm-engine     /opt/tt-llm-engine
 COPY --from=engine /opt/tt-llm-engine-src /opt/tt-llm-engine-src
 
-# ----- Build cpp_server with ENABLE_BLAZE=ON -----
+# ----- Build cpp_server with ENABLE_BLAZE_MIGRATION=ON -----
 # cpp_server/CMakeLists.txt uses find_package(tt-llm-engine CONFIG QUIET)
 # (with add_subdirectory fallback for local dev), so this build links
 # against /opt/tt-llm-engine instead of recompiling tt-llm-engine in-tree.

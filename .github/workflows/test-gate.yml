@@ -652,7 +652,7 @@ jobs:
       - name: C++ lint check (build with clang-tidy)
         run: |
           cd cpp_server
-          ./build.sh --clang-tidy --blaze
+          ./build.sh --clang-tidy
 
   prefill-gateway-format-check:
     needs: detect-changes
@@ -750,7 +750,7 @@ jobs:
       - name: Build C++ server
         run: |
           cd cpp_server
-          ./build.sh --blaze
+          ./build.sh
           cd ..
 
       - name: Run C++ unit tests
@@ -766,7 +766,7 @@ jobs:
     # #4294: builds bringup_mooncake_worker with the Mooncake Transfer Engine
     # (--mooncake) and runs the single-host MPI discovery test
     # (run_migration_workers_mpi.sh, registered as the MooncakeMpiDiscovery
-    # ctest). Mooncake isn't part of the --blaze build, so this is a dedicated
+    # ctest). Mooncake is not part of the default build, so this is a dedicated
     # job rather than another step in cpp-build. The TCP+HTTP-only subset
     # (USE_TCP/USE_HTTP, no etcd/redis/rust) keeps the system deps minimal.
     runs-on: ubuntu-latest
@@ -929,7 +929,7 @@ jobs:
       - name: Build C++ server with Kafka enabled
         run: |
           cd cpp_server
-          ./build.sh --blaze --kafka
+          ./build.sh --kafka
 
       - name: Start dev Kafka broker
         # KAFKA_PUBLISH_PORT publishes 9092 to the host so the test binary,

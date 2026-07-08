@@ -12,6 +12,9 @@
 #include "config/settings.hpp"
 #include "config/types.hpp"
 #include "ipc/media_payload_ipc.hpp"
+#include "runtime/runners/blaze_runner/blaze_decode_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_prefill_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_scheduler_factory.hpp"
 #include "runtime/runners/embedding_runner.hpp"
 #include "runtime/runners/image_ipc_runner.hpp"
 #include "runtime/runners/runner_registry.hpp"
@@ -24,12 +27,6 @@
 #include "services/llm_service.hpp"
 #include "services/service_registry.hpp"
 #include "utils/logger.hpp"
-
-#ifdef ENABLE_BLAZE
-#include "runtime/runners/blaze_runner/blaze_decode_runner.hpp"
-#include "runtime/runners/blaze_runner/blaze_prefill_runner.hpp"
-#include "runtime/runners/blaze_runner/blaze_scheduler_factory.hpp"
-#endif
 
 namespace tt::services {
 
@@ -45,7 +42,6 @@ void registerLLM() {
 
   auto& runners = utils::RunnerRegistry::instance();
 
-#ifdef ENABLE_BLAZE
   auto blazeFactory =
       [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
          ipc::ITaskQueue* taskQueue,
@@ -71,7 +67,6 @@ void registerLLM() {
   runners.registerIpcRunner(config::ModelService::LLM,
                             config::ModelRunnerType::MOCK_SCHEDULER,
                             blazeFactory);
-#endif
 
   auto& routes = api::RouteRegistry::instance();
   routes.registerRoute(config::ModelService::LLM, "POST",

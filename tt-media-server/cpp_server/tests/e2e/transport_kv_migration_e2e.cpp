@@ -23,7 +23,7 @@
 //                    Runs on any --mooncake build, no hardware. The byte
 //                    content is a deterministic pattern keyed by (layer,pos),
 //                    so the receiver verifies without an out-of-band payload.
-//   --mode device  : real TT device DRAM via UMD (needs --blaze --mooncake +
+//   --mode device  : real TT device DRAM via UMD (needs --mooncake +
 //                    hardware). The sender first writes the pattern into its
 //                    source devices, then migrates; the receiver verifies.
 //
