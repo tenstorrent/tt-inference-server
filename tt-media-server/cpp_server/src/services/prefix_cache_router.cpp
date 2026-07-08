@@ -309,8 +309,22 @@ void PrefixCacheRouter::getSlot(
     trantor::EventLoop* eventLoop,
     std::function<void(SlotAcquireResult)> onResolved,
     std::function<void(const std::string&)> onError) {
-  // Step 1: Compute block hashes from tokens
-  auto blocks = computeBlockInfos(promptTokenIds);
+  auto attachPrefixRegistrar = [this](SlotAcquireResult& result) {
+    const std::string sessionId = result.sessionId;
+    result.registerPrefixBlocks =
+        [this, sessionId](const std::vector<utils::BlockHashInfo>& blocks) {
+          registerPrefixHash(sessionId, blocks);
+        };
+  };
+
+  // Step 1: Compute block hashes from tokens (or use precomputed blocks).
+  std::vector<utils::BlockHashInfo> blocks;
+  if (opts.precomputedBlocks.has_value()) {
+    blocks = std::move(*opts.precomputedBlocks);
+    opts.precomputedBlocks.reset();
+  } else {
+    blocks = computeBlockInfos(promptTokenIds);
+  }
   TT_LOG_INFO("[PrefixCacheRouter::getSlot] tokens={} blocks={}",
               promptTokenIds.size(), blocks.size());
 
@@ -346,6 +360,7 @@ void PrefixCacheRouter::getSlot(
       result.accumulatedThinkTokens = thinkTokens;
       result.isNewSession = false;
       result.blocks = std::move(blocks);
+      attachPrefixRegistrar(result);
 
       onResolved(std::move(result));
       return;
@@ -381,6 +396,7 @@ void PrefixCacheRouter::getSlot(
       result.accumulatedThinkTokens = acquired->accumulatedThinkTokens;
       result.isNewSession = false;
       result.blocks = std::move(blocks);
+      attachPrefixRegistrar(result);
 
       onResolved(std::move(result));
       return;
@@ -438,6 +454,7 @@ void PrefixCacheRouter::getSlot(
         result.accumulatedThinkTokens = 0;
         result.isNewSession = (copyMatchedTokens == 0);
         result.blocks = std::move(blocks);
+        attachPrefixRegistrar(result);
 
         onResolved(std::move(result));
       },

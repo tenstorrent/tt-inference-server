@@ -37,6 +37,32 @@ inline std::string createSessionWithSlot(
   return createTestSession(manager, loop, slotId, blockInfos);
 }
 
+tt::services::SlotAcquireResult runGetSlot(
+    tt::services::SessionManager& manager, trantor::EventLoop* loop,
+    const std::vector<uint32_t>& tokens,
+    tt::services::GetSlotOptions opts = {}) {
+  std::promise<tt::services::SlotAcquireResult> promise;
+  auto future = promise.get_future();
+  manager.getSlot(
+      tokens, std::move(opts), loop,
+      [&promise](tt::services::SlotAcquireResult result) {
+        promise.set_value(std::move(result));
+      },
+      [&promise](const std::string& err) {
+        promise.set_exception(
+            std::make_exception_ptr(std::runtime_error(err)));
+      });
+  return future.get();
+}
+
+tt::services::SlotAcquireResult runGetSlotWithBlocks(
+    tt::services::SessionManager& manager, trantor::EventLoop* loop,
+    std::vector<tt::utils::BlockHashInfo> blocks,
+    tt::services::GetSlotOptions opts = {}) {
+  opts.precomputedBlocks = std::move(blocks);
+  return runGetSlot(manager, loop, {}, std::move(opts));
+}
+
 // ---------------------------------------------------------------------------
 // tryMarkInFlight
 // ---------------------------------------------------------------------------

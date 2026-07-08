@@ -348,97 +348,61 @@ void DisaggregationService::resolvePrefillSession(
     return;
   }
 
-  // Convert hashes to BlockHashInfo for session manager calls.
-  // Think token counts are 0 since prefill server doesn't track them.
   auto blockInfos = utils::hashesToBlockInfos(routingHashes);
 
-  auto acquired = sessionManager->tryAcquireByPrefixHash(blockInfos, nullptr);
+  GetSlotOptions opts;
+  opts.precomputedBlocks = std::move(blockInfos);
 
-  if (acquired.has_value() && acquired->sessionFound) {
-    TT_LOG_INFO(
-        "[DisaggregationService] Prefill prefix cache HIT taskId={} "
-        "sessionId={} slotId={} matchedTokens={}",
-        request->task_id, acquired->sessionId, acquired->slotId,
-        acquired->numberOfMatchedTokens);
-    request->prefillSlotId = acquired->slotId;
-    // Record the acquired session so the prefill completion can release its
-    // in-flight hold (see clearInFlight below).
-    request->sessionId = acquired->sessionId;
-    request->continuation = true;
-    session_resolution::applyDeltaPrompt(
-        *request, acquired->numberOfMatchedTokens,
-        {.skipUnlessRegularMode = false,
-         .setKvPositionId = true,
-         .logPrefix = "[DisaggregationService]"});
-    sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
-    // Eagerly drop any resident tail past the common prefix: this turn's
-    // new/diverged blocks are not computed yet. The full prefix is marked
-    // resident again when this prefill completes (see prefill result callback).
-    sessionManager->shrinkResidentPrefixToMatchedTokens(
-        acquired->sessionId, acquired->numberOfMatchedTokens);
-    socketService->sendPrefillCacheBlocksAdded(blockHashes(blockInfos));
-    onResolved();
-  } else {
-    // Check if there's a candidate slot worth copying from.
-    auto copyPlan = acquired.has_value()
-                        ? session_resolution::prepareSlotCopy(
-                              *sessionManager, acquired->candidatesList,
-                              request->task_id, "[DisaggregationService]")
-                        : std::nullopt;
-    std::optional<uint32_t> slotToCopyFrom =
-        copyPlan.has_value() ? std::make_optional(copyPlan->slotToCopyFrom)
-                             : std::nullopt;
-    uint32_t copyMatchedTokens =
-        copyPlan.has_value() ? copyPlan->matchedTokens : 0;
+  sessionManager->getSlot(
+      {}, std::move(opts), eventLoopThread.getLoop(),
+      [this, request, onResolved = std::move(onResolved)](
+          SlotAcquireResult result) mutable {
+        const auto& blockInfos = result.blocks;
 
-    TT_LOG_INFO(
-        "[DisaggregationService] Prefill prefix cache MISS taskId={} "
-        "hashes={}, creating new session",
-        request->task_id, routingHashes.size());
-
-    sessionManager->createSession(
-        [this, request, infos = std::move(blockInfos), sm = sessionManager,
-         slotToCopyFrom, copyMatchedTokens, onResolved = std::move(onResolved)](
-            const tt::domain::Session& session) mutable {
-          if (slotToCopyFrom.has_value()) {
-            sm->unlockSlot(*slotToCopyFrom);
-          }
+        if (!result.isNewSession) {
           TT_LOG_INFO(
-              "[DisaggregationService] New session allocated taskId={} "
-              "sessionId={} slotId={}",
-              request->task_id, session.getSessionId(), session.getSlotId());
-          sm->registerPrefixHash(session.getSessionId(), infos);
-          socketService->sendPrefillCacheBlocksAdded(blockHashes(infos));
-          request->sessionId = session.getSessionId();
-          request->prefillSlotId =
-              sm->acquireInFlight(session.getSessionId(), nullptr);
+              "[DisaggregationService] Prefill prefix cache HIT taskId={} "
+              "sessionId={} slotId={} matchedTokens={}",
+              request->task_id, result.sessionId, result.slotId,
+              result.matchedTokens);
+          request->prefillSlotId = result.slotId;
+          request->sessionId = result.sessionId;
+          request->continuation = true;
+          session_resolution::applyDeltaPrompt(
+              *request, result.matchedTokens,
+              {.skipUnlessRegularMode = false,
+               .setKvPositionId = true,
+               .logPrefix = "[DisaggregationService]"});
+        } else {
+          TT_LOG_INFO(
+              "[DisaggregationService] Prefill prefix cache MISS taskId={} "
+              "hashes={}, new sessionId={} slotId={}",
+              request->task_id, blockInfos.size(), result.sessionId,
+              result.slotId);
+          request->sessionId = result.sessionId;
+          request->prefillSlotId = result.slotId;
 
-          // If copying, set continuation and kv_position_id on the request.
-          if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
+          if (result.matchedTokens > 0) {
             request->continuation = true;
-            request->kv_position_id = copyMatchedTokens;
+            request->kv_position_id = result.matchedTokens;
             session_resolution::applyDeltaPrompt(
-                *request, copyMatchedTokens,
+                *request, result.matchedTokens,
                 {.skipUnlessRegularMode = false,
                  .setKvPositionId = false,
                  .logPrefix = "[DisaggregationService]"});
           }
-          onResolved();
-        },
-        [request, sm = sessionManager, slotToCopyFrom,
-         onError = std::move(onError)](std::string_view errorMessage) {
-          if (slotToCopyFrom.has_value()) {
-            sm->unlockSlot(*slotToCopyFrom);
-          }
-          TT_LOG_WARN(
-              "[DisaggregationService] Failed to create session for "
-              "taskId={}: {}",
-              request->task_id, errorMessage);
-          onError(errorMessage);
-        },
-        /*eventLoop=*/eventLoopThread.getLoop(), blockInfos,
-        /*slotId=*/std::nullopt, slotToCopyFrom);
-  }
+        }
+
+        socketService->sendPrefillCacheBlocksAdded(blockHashes(blockInfos));
+        onResolved();
+      },
+      [request, onError = std::move(onError)](const std::string& errorMessage) {
+        TT_LOG_WARN(
+            "[DisaggregationService] Prefix cache resolution failed for "
+            "taskId={}: {}",
+            request->task_id, errorMessage);
+        onError(errorMessage);
+      });
 }
 
 void DisaggregationService::handleStreamingRequest(

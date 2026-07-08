@@ -143,12 +143,14 @@ void LLMPipeline::resolveSession(
         }
 
         // Initialize token accumulator for incremental hash registration
-        if (!fullPrompt.empty()) {
+        if (!fullPrompt.empty() && result.registerPrefixBlocks) {
+          auto registerBlocks = result.registerPrefixBlocks;
           req->session->initTokenAccumulator(
               std::move(fullPrompt), /*initialBlocks=*/{},
-              [mgr](const std::string& sessionId,
-                    const std::vector<tt::utils::BlockHashInfo>& blocks) {
-                mgr->registerPrefixHash(sessionId, blocks);
+              [registerBlocks = std::move(registerBlocks)](
+                  const std::string& /*sessionId*/,
+                  const std::vector<tt::utils::BlockHashInfo>& blocks) {
+                registerBlocks(blocks);
               },
               [mgr](const std::string& sessionId) {
                 mgr->closeSession(sessionId);

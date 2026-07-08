@@ -49,8 +49,6 @@ enum class CloseSessionResult {
 
 class SessionManager {
  public:
-  using Candidate = domain::prefix_cache::Candidate;
-  using AcquiredSession = PrefixCacheAcquireResult;
   using SlotResult = SlotAcquireResult;
 
   SessionManager();
@@ -99,38 +97,6 @@ class SessionManager {
   void lockSlot(uint32_t slotId);
 
   /**
-   * Try to find a session whose registered prefix hash matches one of the
-   * provided block infos. Searches from the longest prefix (last hash) to
-   * the shortest (first hash) to maximize KV cache reuse. Atomically marks
-   * the session in-flight and registers the cancel function.
-   *
-   * @param blockInfos  Per-block hash and think count info (index 0 = first).
-   * @param cancelFn    Cancel function registered on the acquired session.
-   *
-   * Returns:
-   *   AcquiredSession — session found; contains sessionId, slotId,
-   *                     numberOfMatchedTokens, and accumulatedThinkTokens.
-   *                     Caller owns the in-flight state and MUST release
-   *                     when the request completes.
-   *   nullopt         — no session registered under any hash. Caller should
-   *                     fall back to createSession.
-   *
-   * Throws:
-   *   SessionInFlightException — all candidate sessions are already
-   *                              serving other requests (maps to HTTP 429).
-   */
-  std::optional<AcquiredSession> tryAcquireByPrefixHash(
-      const std::vector<utils::BlockHashInfo>& blockInfos,
-      std::function<void()> cancelFn);
-
-  /**
-   * Compute block hashes from prompt tokens.
-   * Convenience wrapper around PrefixCacheRouter::computeBlockInfos.
-   */
-  std::vector<utils::BlockHashInfo> computeBlockInfos(
-      std::span<const uint32_t> promptTokenIds) const;
-
-  /**
    * Unified slot acquisition - the main entry point for prefix cache routing.
    *
    * Internally handles all routing layers:
@@ -159,66 +125,6 @@ class SessionManager {
                std::function<void(const std::string&)> onError);
 
   /**
-   * Route future lookups to this session by registering the given block infos.
-   * blockInfos[0].hash becomes the key in prefixIndex; blockInfos[1:] are
-   * stored as remainingBlocks in the entry. If an entry with identical
-   * remaining hashes already exists, the session is added to that entry;
-   * otherwise a new entry is created.
-   *
-   * If the session was previously registered under a different key hash, it is
-   * removed from that hash's index entry first.
-   */
-  void registerPrefixHash(const std::string& sessionId,
-                          const std::vector<utils::BlockHashInfo>& blockInfos);
-
-  /**
-   * Response-id continuation lookup.
-   * Atomically marks the matching session in-flight and registers the cancel
-   * function under the same lock.
-   *
-   * Returns:
-   *   AcquiredSession — session found under `previousResponseId` and locked.
-   *   nullopt         — no session registered under this id (or id empty).
-   *                     Caller should fall back to createSession.
-   *
-   * Throws:
-   *   SessionInFlightException — a session is registered under this id but is
-   *                              already serving another request (HTTP 429).
-   */
-  std::optional<AcquiredSession> tryAcquireByResponseId(
-      const std::string& previousResponseId, std::function<void()> cancelFn);
-
-  /**
-   * First-time registration: associate a brand-new session with a response id.
-   */
-  void registerResponseId(const std::string& sessionId,
-                          const std::string& responseId);
-
-  /**
-   * Update the response-id index entry. Looks up the session currently
-   * registered under `previousResponseId`, removes that entry, and inserts a
-   * new entry under `responseId`. No-op when either id is empty.
-   */
-  void updateResponseId(const std::string& previousResponseId,
-                        const std::string& responseId);
-
-  /**
-   * Compute how many tokens of `blockInfos` are already cached for `sessionId`
-   * in the prefix index. Used after response-id acquisition to derive the
-   * delta. Returns {matchedTokens, accumulatedThinkTokens}.
-   */
-  std::pair<uint32_t, uint32_t> computeMatchedTokens(
-      const std::string& sessionId,
-      const std::vector<utils::BlockHashInfo>& blockInfos);
-
-  /**
-   * Reset accumulatedThinkTokens to 0 on all prefix index entries that contain
-   * the given session. Called when prefill-on-decode overrides thinking tokens
-   * so that future lookups report zero cached think tokens for this session.
-   */
-  void clearSessionBlockThinkTokens(const std::string& sessionId);
-
-  /**
    * Mark the leading `residentBlocks` blocks of `sessionId`'s prefix as
    * resident (KV computed and safe to copy from). Called when a prefill
    * completes. Sets the count outright — the whole prompt is resident at that
@@ -236,6 +142,13 @@ class SessionManager {
    */
   void shrinkResidentPrefixToMatchedTokens(const std::string& sessionId,
                                            uint32_t matchedTokens);
+
+  /**
+   * Reset accumulatedThinkTokens to 0 on all prefix index entries that contain
+   * the given session. Called when prefill-on-decode overrides thinking tokens
+   * so that future lookups report zero cached think tokens for this session.
+   */
+  void clearSessionBlockThinkTokens(const std::string& sessionId);
 
  private:
   struct PendingAllocation {

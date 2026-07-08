@@ -4,14 +4,15 @@
 #include "services/session_resolution.hpp"
 
 #include "domain/prefix_cache/block_matcher.hpp"
+#include "domain/prefix_cache/helpers.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services::session_resolution {
 
 std::optional<SlotCopyPlan> prepareSlotCopy(
     SessionManager& sessionManager,
-    const std::vector<SessionManager::Candidate>& candidates, uint32_t taskId,
-    std::string_view logPrefix) {
+    const std::vector<domain::prefix_cache::Candidate>& candidates,
+    uint32_t taskId, std::string_view logPrefix) {
   if (candidates.empty()) {
     return std::nullopt;
   }

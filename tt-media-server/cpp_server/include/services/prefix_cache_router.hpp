@@ -40,6 +40,9 @@ struct GetSlotOptions {
   std::optional<std::string> previousResponseId;  // Response-id continuation
   std::optional<std::string> responseId;          // New response id to register
   std::function<void()> cancelFn;                 // Cancellation callback
+  // When set, skip token hashing and use these blocks directly (e.g. prefill
+  // server receiving routing hashes from the decode node).
+  std::optional<std::vector<utils::BlockHashInfo>> precomputedBlocks;
 };
 
 /**
@@ -53,6 +56,9 @@ struct SlotAcquireResult {
   uint32_t accumulatedThinkTokens = 0;
   bool isNewSession = false;
   std::vector<utils::BlockHashInfo> blocks;  // For token accumulator init
+  // Hook for Session::initTokenAccumulator incremental hash registration.
+  std::function<void(const std::vector<utils::BlockHashInfo>&)>
+      registerPrefixBlocks;
 };
 
 struct PrefixCacheRouterCallbacks {

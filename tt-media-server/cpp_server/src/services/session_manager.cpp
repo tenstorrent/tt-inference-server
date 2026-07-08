@@ -478,7 +478,8 @@ void SessionManager::createSession(
     domain::Session session(slotId.value(), keyHash);
     insertSession(session);
     if (!initialBlockInfos.empty()) {
-      registerPrefixHash(session.getSessionId(), initialBlockInfos);
+      prefixCacheRouter->registerPrefixHash(session.getSessionId(),
+                                            initialBlockInfos);
     }
     TT_LOG_INFO("[SessionManager] Created session with pre-assigned slot: {}",
                 slotId.value());
@@ -666,17 +667,9 @@ void SessionManager::retryFailedDeallocs() {
   }
 }
 
-std::optional<SessionManager::AcquiredSession>
-SessionManager::tryAcquireByPrefixHash(
-    const std::vector<utils::BlockHashInfo>& blockInfos,
-    std::function<void()> cancelFn) {
-  return prefixCacheRouter->tryAcquireByPrefixHash(blockInfos,
-                                                   std::move(cancelFn));
-}
-
-std::vector<utils::BlockHashInfo> SessionManager::computeBlockInfos(
-    std::span<const uint32_t> promptTokenIds) const {
-  return prefixCacheRouter->computeBlockInfos(promptTokenIds);
+void SessionManager::clearSessionBlockThinkTokens(
+    const std::string& sessionId) {
+  prefixCacheRouter->clearSessionBlockThinkTokens(sessionId);
 }
 
 void SessionManager::setResidentPrefixBlocks(const std::string& sessionId,
@@ -704,40 +697,6 @@ void SessionManager::shrinkResidentPrefixToMatchedTokens(
       "[SessionManager] shrinkResidentPrefixToMatchedTokens: sessionId={} "
       "matchedTokens={} -> matchedBlocks={}",
       sessionId, matchedTokens, matchedBlocks);
-}
-
-void SessionManager::registerPrefixHash(
-    const std::string& sessionId,
-    const std::vector<utils::BlockHashInfo>& blockInfos) {
-  prefixCacheRouter->registerPrefixHash(sessionId, blockInfos);
-}
-
-std::optional<SessionManager::AcquiredSession>
-SessionManager::tryAcquireByResponseId(const std::string& previousResponseId,
-                                       std::function<void()> cancelFn) {
-  return prefixCacheRouter->tryAcquireByResponseId(previousResponseId,
-                                                   std::move(cancelFn));
-}
-
-void SessionManager::registerResponseId(const std::string& sessionId,
-                                        const std::string& responseId) {
-  prefixCacheRouter->registerResponseId(sessionId, responseId);
-}
-
-void SessionManager::updateResponseId(const std::string& previousResponseId,
-                                      const std::string& responseId) {
-  prefixCacheRouter->updateResponseId(previousResponseId, responseId);
-}
-
-std::pair<uint32_t, uint32_t> SessionManager::computeMatchedTokens(
-    const std::string& sessionId,
-    const std::vector<utils::BlockHashInfo>& blockInfos) {
-  return prefixCacheRouter->computeMatchedTokens(sessionId, blockInfos);
-}
-
-void SessionManager::clearSessionBlockThinkTokens(
-    const std::string& sessionId) {
-  prefixCacheRouter->clearSessionBlockThinkTokens(sessionId);
 }
 
 void SessionManager::updateSessionCountMetric() {
