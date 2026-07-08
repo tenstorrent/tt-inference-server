@@ -5,17 +5,16 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from pathlib import Path
 from typing import List
-from urllib.error import URLError
-from urllib.request import urlopen
 
 from llm_module import (
     DriverContext,
+    HttpServerController,
     LLMRunConfig,
+    RemoteOpenAIController,
     ServerConnection,
     make_agentic_driver,
 )
@@ -70,34 +69,36 @@ def _configure_openai_env(ctx: MediaContext) -> None:
 
 
 def _require_openai_server(ctx: MediaContext) -> None:
-    """Check the OpenAI-compatible server path used by agentic harnesses."""
+    """Block until the inference server is ready for the agentic harnesses.
 
-    url = f"{ctx.base_url}/v1/models"
-    try:
-        with urlopen(url, timeout=30) as response:
-            if response.status != 200:
-                raise RuntimeError(
-                    f"Expected status 200 from {url}, got {response.status}"
-                )
-            payload = json.loads(response.read().decode("utf-8"))
-    except (OSError, URLError, json.JSONDecodeError) as exc:
-        raise RuntimeError(
-            f"OpenAI-compatible server health check failed: {url}"
-        ) from exc
+    Reuses the same readiness controllers as the LLM eval/benchmark paths
+    instead of a single-shot probe, so a server that is still coming up (or
+    hits a transient blip) is retried rather than failing the run instantly:
 
-    model_ids = [
-        item.get("id")
-        for item in payload.get("data", [])
-        if isinstance(item, dict) and item.get("id")
-    ]
-    expected = ctx.model_spec.hf_model_repo
-    if expected not in model_ids:
-        logger.warning(
-            "OpenAI server is healthy but %s was not listed by /v1/models: %s",
-            expected,
-            model_ids,
+    * local ``--docker-server`` (``--net host``) deployments are polled on
+      vLLM's ``/health`` via :class:`HttpServerController`;
+    * remote OpenAI-compatible endpoints, which do not expose ``/health``, are
+      polled on ``/v1/models`` via :class:`RemoteOpenAIController`.
+    """
+    auth_token = os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY") or ""
+    if ctx.remote_server:
+        controller = RemoteOpenAIController(
+            base_url=ctx.server_url,
+            auth_token=auth_token,
         )
-    logger.info("OpenAI-compatible server health check passed via %s", url)
+    else:
+        controller = HttpServerController(
+            base_url=ctx.server_host,
+            service_port=ctx.server_port,
+            auth_token=auth_token,
+        )
+
+    endpoint = getattr(controller, "health_url", None) or getattr(
+        controller, "models_url", ""
+    )
+    if not controller.wait_for_healthy():
+        raise RuntimeError(f"Inference server health check failed at {endpoint}")
+    logger.info("Inference server health check passed via %s", endpoint)
 
 
 def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:

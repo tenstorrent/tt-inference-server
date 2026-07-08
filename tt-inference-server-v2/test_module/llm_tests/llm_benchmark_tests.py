@@ -61,6 +61,7 @@ def run_llm_bench(
     tools: str = "vllm",
     auth_token: str = "",
     venv_python: Optional[Path] = None,
+    goodput: Optional[str] = None,
 ) -> RunnerResult:
     """Run the LLM performance sweep for ``tools`` and emit Blocks.
 
@@ -68,8 +69,18 @@ def run_llm_bench(
     tool-specific venv, so ``sys.executable`` is the right interpreter and
     ``<venv>/bin/vllm`` is the right ``vllm`` CLI when ``venv_python`` is not
     given explicitly.
+
+    ``goodput`` is the AIPerf ``--goodput`` SLO string; only the ``aiperf``
+    driver consumes it, so a warning is logged if it is set for another tool.
     """
     driver = _make_driver(tools, venv_python)
+
+    if goodput and tools != "aiperf":
+        logger.warning(
+            "--goodput is only supported by --tools aiperf; ignoring for tool=%s.",
+            tools,
+        )
+        goodput = None
 
     if tools == "guidellm":
         #  --tools guidellm runs the dataset-driven scenario set
@@ -107,6 +118,7 @@ def run_llm_bench(
         driver=driver,
         configs=configs,
         auth_token=auth_token,
+        goodput=goodput,
     )
 
 

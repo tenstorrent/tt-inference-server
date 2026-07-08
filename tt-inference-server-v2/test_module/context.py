@@ -44,6 +44,7 @@ class MediaContext:
     spec_tests_num_prompts_cap: Optional[int] = None
     runtime_config: Optional[Any] = None
     server_url: Optional[str] = None
+    remote_server: bool = False
 
     @property
     def _deploy_url(self) -> str:

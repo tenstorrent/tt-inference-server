@@ -89,7 +89,16 @@ class PrefixCacheOptions:
     request_rate: Optional[float] = None
     scenarios_json: Optional[str] = None
     trace_path: Optional[str] = None
+    # AIPerf --goodput SLO string (space-separated KEY:VALUE pairs).
+    # Overrides the manifest preset/scenario goodput when set.
+    goodput: Optional[str] = None
     auth_token: str = ""
+    # Worker /metrics endpoints scraped by AIPerf (--server-metrics) for
+    # the prefix-cache counters, independent of the load target. Repeatable
+    # for multi-worker deployments. Empty keeps AIPerf's auto-derived
+    # /metrics from --url (the frontend), which lacks the counters.
+    metrics_urls: Tuple[str, ...] = ()
+    venv_python: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -103,6 +112,7 @@ class SpecDecodeOptions:
     preset: str = "full"
     warmup_requests: int = 4
     auth_token: str = ""
+    venv_python: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -134,6 +144,9 @@ class LLMBenchOptions:
     tools: str = "vllm"
     auth_token: str = ""
     venv_python: Optional[str] = None
+    # AIPerf --goodput SLO string (space-separated KEY:VALUE pairs). Only the
+    # aiperf driver consumes it; other tools ignore it.
+    goodput: Optional[str] = None
 
 
 @dataclass(frozen=True)

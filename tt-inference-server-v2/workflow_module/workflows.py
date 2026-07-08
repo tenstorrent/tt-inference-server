@@ -11,9 +11,10 @@ registry edit, not a structural change.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import time
 from pathlib import Path
-from typing import ClassVar, Dict, List, Sequence, Type
+from typing import ClassVar, Dict, List, Optional, Sequence, Type
 
 from test_module.task_types import MediaTaskType
 from workflows.workflow_types import ModelType
@@ -33,6 +34,17 @@ _PREFIX_CACHE_TASK_LABEL = "prefix_cache"
 _LLM_BENCH_TASK_LABEL = "llm_benchmark"
 _LLM_EVAL_TASK_LABEL = "llm_eval"
 _SPEC_DECODE_TASK_LABEL = "spec_decode"
+
+
+def _has_agentic_tasks(ctx) -> bool:
+    """True if the run's eval tasks include any EVALS_AGENTIC task."""
+    from workflows.workflow_types import WorkflowVenvType
+
+    tasks = getattr(getattr(ctx, "all_params", None), "tasks", None) or []
+    return any(
+        getattr(t, "workflow_venv_type", None) == WorkflowVenvType.EVALS_AGENTIC
+        for t in tasks
+    )
 
 
 class EvalsWorkflow(WorkflowExecution):
@@ -215,6 +227,7 @@ class BenchmarksWorkflow(WorkflowExecution):
                 tools=opts.tools,
                 auth_token=opts.auth_token,
                 venv_python=venv_python,
+                goodput=opts.goodput,
             ),
         )
 
@@ -243,7 +256,10 @@ class BenchmarksWorkflow(WorkflowExecution):
                 request_rate=opts.request_rate,
                 scenarios_json=opts.scenarios_json,
                 trace_path=opts.trace_path,
+                goodput=opts.goodput,
                 auth_token=opts.auth_token,
+                metrics_urls=opts.metrics_urls,
+                venv_python=Path(opts.venv_python) if opts.venv_python else None,
             ),
         )
 
@@ -314,6 +330,7 @@ class BenchmarksWorkflow(WorkflowExecution):
                 preset=opts.preset,
                 warmup_requests=opts.warmup_requests,
                 auth_token=opts.auth_token,
+                venv_python=Path(opts.venv_python) if opts.venv_python else None,
             )
         except Exception as e:
             elapsed = time.time() - started
@@ -358,22 +375,96 @@ class ReleaseWorkflow(WorkflowExecution):
     llm_children: ClassVar[Sequence[str]] = ("evals", "benchmarks", "spec_tests")
 
     def run_tasks(self) -> List[TaskOutcome]:
-        children = (
-            self.llm_children
-            if self.ctx.model_spec.model_type == ModelType.LLM
-            else self.children
-        )
+        if self.ctx.model_spec.model_type == ModelType.LLM:
+            return self._run_llm_tasks()
+        children = self.children
         outcomes: List[TaskOutcome] = []
         for child_name in children:
-            child_cls = WORKFLOW_REGISTRY[child_name]
-            self.logger.info("--- release: %s ---", child_name)
-            child = child_cls(
-                self.ctx,
-                accumulator=self.accumulator,
-                orchestrator_metadata=self.orchestrator_metadata,
-            )
-            outcomes.extend(child.run_tasks())
+            outcomes.extend(self._run_child(child_name))
         return outcomes
+
+    def _run_llm_tasks(self) -> List[TaskOutcome]:
+        outcomes: List[TaskOutcome] = []
+        for child_name in self._llm_children():
+            if child_name == "benchmarks":
+                outcomes.extend(self._run_llm_benchmark_children())
+            else:
+                outcomes.extend(self._run_child(child_name))
+        return outcomes
+
+    def _run_llm_benchmark_children(self) -> List[TaskOutcome]:
+        outcomes: List[TaskOutcome] = []
+        prefix_cache = self.orchestrator_metadata.prefix_cache
+        spec_decode = self.orchestrator_metadata.spec_decode
+
+        if prefix_cache is None and spec_decode is None:
+            outcomes.extend(self._run_child("benchmarks"))
+        else:
+            outcomes.extend(
+                self._run_child(
+                    "benchmarks",
+                    replace(
+                        self.orchestrator_metadata,
+                        prefix_cache=None,
+                        spec_decode=None,
+                    ),
+                )
+            )
+
+        if prefix_cache is not None:
+            outcomes.extend(
+                self._run_child(
+                    "benchmarks",
+                    replace(
+                        self.orchestrator_metadata,
+                        spec_decode=None,
+                        llm_bench=None,
+                    ),
+                    label="benchmarks:prefix_cache",
+                )
+            )
+        if spec_decode is not None:
+            outcomes.extend(
+                self._run_child(
+                    "benchmarks",
+                    replace(
+                        self.orchestrator_metadata,
+                        prefix_cache=None,
+                        llm_bench=None,
+                    ),
+                    label="benchmarks:spec_decode",
+                )
+            )
+        return outcomes
+
+    def _run_child(
+        self,
+        child_name: str,
+        metadata=None,
+        *,
+        label: Optional[str] = None,
+    ) -> List[TaskOutcome]:
+        child_cls = WORKFLOW_REGISTRY[child_name]
+        self.logger.info("--- release: %s ---", label or child_name)
+        child = child_cls(
+            self.ctx,
+            accumulator=self.accumulator,
+            orchestrator_metadata=metadata or self.orchestrator_metadata,
+        )
+        return child.run_tasks()
+
+    def _llm_children(self) -> Sequence[str]:
+        """LLM release children, appending ``agentic`` when the model has
+        EVALS_AGENTIC tasks configured.
+
+        Agentic now runs in-process as a release child (its harness binaries
+        are resolved from the EVALS_AGENTIC venv explicitly), so its Blocks
+        land in the single release report. Models without agentic tasks skip
+        it to avoid a no-op failure.
+        """
+        if _has_agentic_tasks(self.ctx):
+            return tuple(self.llm_children) + ("agentic",)
+        return self.llm_children
 
 
 WORKFLOW_REGISTRY: Dict[str, Type[WorkflowExecution]] = {
