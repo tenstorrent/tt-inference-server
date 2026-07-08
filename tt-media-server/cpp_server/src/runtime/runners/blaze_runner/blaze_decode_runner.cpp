@@ -643,7 +643,7 @@ void BlazeDecodeRunner::handleSchedulerOutput(const ds::OutputMessage& output) {
   bool finished = output.is_complete;
 
   slotContext.tokensGenerated++;
-  slotContext.currentPosition = output.position_id;
+  slotContext.currentPosition = finished ? 0 : output.position_id;
   metrics.onOutputToken(output.slot_id);
   utils::SpecDelta spec{};
   if (finished) {
@@ -739,6 +739,9 @@ void BlazeDecodeRunner::handleTask(
           task->getKVPositionId().has_value()
               ? std::to_string(*task->getKVPositionId())
               : "none");
+      if (!isNew && task->getKVPositionId().has_value()) {
+        slotContext.currentPosition = *task->getKVPositionId();
+      }
       if (!decodeScheduler->push_request(req)) {
         TT_LOG_DEBUG(
             "[BlazeDecodeRunner] handleRequest: failed to push request, "
