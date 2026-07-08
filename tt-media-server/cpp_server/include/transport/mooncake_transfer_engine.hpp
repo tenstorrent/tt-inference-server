@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "transport/i_storage_backend.hpp"
@@ -66,6 +67,10 @@ class MooncakeTransferEngine : public ITransferEngine {
   bool unregisterLocalMemory(void* addr) override;
   SegmentHandle openSegment(const std::string& segmentName) override;
   SegmentHandle refreshSegment(const std::string& segmentName) override;
+  std::string resolveServerName(const std::string& segmentName) override;
+  bool publishMetadata(const std::string& key,
+                       const std::string& value) override;
+  std::optional<std::string> lookupMetadata(const std::string& key) override;
   TransferStatus submitAndWait(const TransferRequest& request) override;
 
  private:
