@@ -396,7 +396,7 @@ TEST(BlazeDecodeRunnerIntegrationTest, MockSchedulerFlatTokenStream) {
   // cadence, so tokens are emitted with no artificial delay.
   EnvSetter mockStageLatencyUs("MOCK_STAGE_LATENCY_US", "0");
 
-    BlazeDecodeRunnerHarness harness;
+  BlazeDecodeRunnerHarness harness;
 
   const uint32_t taskId = 5150;
   const auto allocateResponse = harness.allocate(taskId);
