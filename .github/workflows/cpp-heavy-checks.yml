@@ -1286,7 +1286,7 @@ jobs:
       - name: Build C++ server with ThreadSanitizer
         run: |
           cd cpp_server
-          ./build.sh --tsan
+          ./build.sh --tsan --blaze
 
       - name: Archive C++ tokenizer bundle
         run: |
@@ -1312,13 +1312,15 @@ jobs:
           uv pip install guidellm
           echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
-      - name: Start TSan-instrumented server (mock_pipeline)
+      - name: Start TSan-instrumented server (mock_scheduler)
         env:
           TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0:second_deadlock_stack=1:history_size=7:log_path=tsan-server"
         run: |
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "TSan-instrumented server"
           cd cpp_server/build
-          ./tt_media_server_cpp -p 8001 -t 4 > ../../tsan_server.log 2>&1 &
+          # mock_scheduler = CPU-only MockDecodeScheduler (no device); the LLM
+          # runner it needs is only compiled with --blaze (see build step).
+          LLM_DEVICE_BACKEND=mock_scheduler ./tt_media_server_cpp -p 8001 -t 4 > ../../tsan_server.log 2>&1 &
           echo $! > ../../tsan_server.pid
           cd ../..
           bash cpp_server/scripts/ci/wait_for_liveness.sh \
