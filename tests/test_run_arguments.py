@@ -1073,6 +1073,19 @@ class TestMediaServerDockerEnvVars:
         assert env_vars["MODEL_RUNNER_TYPE"] == "tt_sdxl_generate"
         assert env_vars["DEVICE_IDS"].replace(" ", "").count("(") > 1
 
+    def test_non_cpp_media_persists_hf_cache_on_cache_root(self):
+        """Whisper (uvicorn media server) must place HF_HOME on the cache_root
+        volume so weights survive container restarts."""
+        model_spec, _, _ = get_runtime_model_spec(
+            model="whisper-large-v3",
+            device="n150",
+        )
+
+        env_vars = get_media_server_docker_env_vars(model_spec)
+
+        assert env_vars.get("SERVER_MODE") != "cpp"
+        assert env_vars["HF_HOME"] == "/home/container_app_user/cache_root/huggingface"
+
 
 class TestSecretsHandling:
     """Tests for secrets handling functionality."""
