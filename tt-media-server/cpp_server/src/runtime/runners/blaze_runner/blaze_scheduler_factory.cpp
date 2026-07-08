@@ -74,7 +74,7 @@ class RealPrefillScheduler final : public IPrefillScheduler {
 
 std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
     const tt::config::BlazeConfig& config) {
-  const auto maxUsers = static_cast<uint32_t>(tt::config::pmMaxUsers());
+  const auto maxUsers = config.maxUsers;
   if (config.runner_type == tt::config::ModelRunnerType::MOCK_SCHEDULER) {
     TT_LOG_INFO(
         "makeDecodeScheduler: using MockDecodeScheduler (single-threaded)");

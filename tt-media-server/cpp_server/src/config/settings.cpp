@@ -373,7 +373,6 @@ BlazeConfig blazeConfig() {
     cfg.migrationDecodeEndpointId = migrationDecodeEndpointId();
     cfg.specDecodeMode = specDecodeMode();
     cfg.mtpLevel = mtpLevel();
-    cfg.useMockScheduler = useMockScheduler();
 
     // Pipeline / channel config
     cfg.blazeSocketDescriptorPrefix = blazeSocketDescriptorPrefix();
@@ -384,9 +383,9 @@ BlazeConfig blazeConfig() {
     cfg.migrationTableQueueName = migrationTableQueueName();
     cfg.migrationRespQueueName = migrationRespQueueName();
 
-    // Mock scheduler knobs
-    cfg.mockPrefillLatencyMs = mockPrefillLatencyMs();
-    cfg.mockDecodeTokenLatencyUs = mockDecodeTokenLatencyUs();
+    // Mock pipeline knobs
+    cfg.numPipelineStages = mockPipelineStages();
+    cfg.stageLatencyUs = mockStageLatencyUs();
     cfg.mockDecodeTokenId = mockDecodeTokenId();
 
     // Generation fallbacks read by blaze_utils
