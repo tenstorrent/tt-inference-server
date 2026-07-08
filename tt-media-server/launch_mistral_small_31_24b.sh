@@ -47,22 +47,29 @@ export CPU_SAMPLING="${CPU_SAMPLING:-false}"
 
 export SERVICE_PORT="${SERVICE_PORT:-8019}"
 
-# TT_METAL_HOME is REQUIRED even for the BYO-uvicorn path: the plugin only sets
-# TT_METAL_RUNTIME_ROOT, and tt-metal writes JIT kernels to $TT_METAL_HOME/built
-# AND reads SOC descriptors from $TT_METAL_HOME/tt_metal/soc_descriptors. If unset,
-# built resolves to /built (root) -> "Permission denied"; if pointed at an
-# incomplete tt-metal copy -> "bad file: .../soc_descriptors/*_arch.yaml".
-# Derive it from the plugin's OWN resolution (setup_tt_metal_home sets
-# TT_METAL_RUNTIME_ROOT to the wheel copy if present else the third_party
-# submodule) so it always matches the tt-metal the runtime actually uses.
-# Exported here so the media-server worker subprocesses inherit it.
-_tt_metal_root=$(python3 -c "import os, pjrt_plugin_tt as p; p.setup_tt_metal_home(); print(os.environ.get('TT_METAL_RUNTIME_ROOT',''))" 2>/dev/null || true)
-if [ -z "${TT_METAL_HOME:-}" ]; then
-    if [ -n "${_tt_metal_root}" ] && [ -d "${_tt_metal_root}/tt_metal/soc_descriptors" ]; then
-        export TT_METAL_HOME="${_tt_metal_root}"
-    else
-        echo "[launch] WARNING: could not resolve a complete tt-metal (TT_METAL_RUNTIME_ROOT=${_tt_metal_root:-<empty>}); set TT_METAL_HOME manually to a tt-metal dir that contains tt_metal/soc_descriptors/"
-    fi
+# tt-metal path resolution. Two distinct consumers:
+#   - JIT kernel build dir: $TT_METAL_HOME/built (unset -> /built -> Permission denied)
+#   - SOC descriptors: read from the plugin's TT_METAL_RUNTIME_ROOT, which the
+#     worker RE-RESOLVES (env may not propagate) to the plugin-local tt-metal if
+#     that dir exists. If that copy is INCOMPLETE -> "bad file:
+#     .../pjrt_plugin_tt/tt-metal/.../soc_descriptors/*_arch.yaml".
+# So we must pin BOTH vars to the SAME complete tt-metal and reject an
+# incomplete one. Prefer an explicit TT_METAL_RUNTIME_ROOT already in the env
+# (e.g. from venv/activate); else use the plugin's resolution.
+_tt_metal_root="${TT_METAL_RUNTIME_ROOT:-}"
+if [ -z "${_tt_metal_root}" ]; then
+    _tt_metal_root=$(python3 -c "import os, pjrt_plugin_tt as p; p.setup_tt_metal_home(); print(os.environ.get('TT_METAL_RUNTIME_ROOT',''))" 2>/dev/null || true)
+fi
+# Reject an incomplete tt-metal: require at least one *_arch.yaml SOC descriptor.
+if [ -n "${_tt_metal_root}" ] && ls "${_tt_metal_root}/tt_metal/soc_descriptors/"*_arch.yaml >/dev/null 2>&1; then
+    export TT_METAL_HOME="${TT_METAL_HOME:-${_tt_metal_root}}"
+    export TT_METAL_RUNTIME_ROOT="${_tt_metal_root}"
+else
+    echo "[launch] WARNING: no complete tt-metal found (root=${_tt_metal_root:-<empty>} lacks tt_metal/soc_descriptors/*_arch.yaml)."
+    echo "[launch]   Find one:  find ~/tt-xla -path '*tt_metal/soc_descriptors/blackhole_140_arch.yaml' -size +0c"
+    echo "[launch]   Then set:  export TT_METAL_RUNTIME_ROOT=<that tt-metal root>  (and re-run)"
+    echo "[launch]   If the WORKER still re-resolves to an incomplete plugin-local copy, symlink it:"
+    echo "[launch]     cd ~/tt-xla/python_package/pjrt_plugin_tt && mv tt-metal tt-metal.bak && ln -s <complete tt-metal root> tt-metal"
 fi
 
 # Galaxy mesh descriptor, arch-matched to DEVICE and resolved from TT_METAL_HOME.
@@ -85,7 +92,7 @@ fi
 echo "[launch] MODEL=${MODEL} DEVICE=${DEVICE} MODEL_RUNNER=${MODEL_RUNNER}"
 echo "[launch] MAX_MODEL_LENGTH=${MAX_MODEL_LENGTH} MAX_NUM_SEQS=${MAX_NUM_SEQS} GMU=${GPU_MEMORY_UTILIZATION}"
 echo "[launch] OPTIMIZATION_LEVEL=${OPTIMIZATION_LEVEL} ENABLE_TRACE=${ENABLE_TRACE} CPU_SAMPLING=${CPU_SAMPLING}"
-echo "[launch] TT_METAL_HOME=${TT_METAL_HOME:-<unset>}"
+echo "[launch] TT_METAL_HOME=${TT_METAL_HOME:-<unset>} TT_METAL_RUNTIME_ROOT=${TT_METAL_RUNTIME_ROOT:-<unset>}"
 echo "[launch] SERVICE_PORT=${SERVICE_PORT} TT_MESH_GRAPH_DESC_PATH=${TT_MESH_GRAPH_DESC_PATH:-<unset>}"
 
 # --skip-venv: assume the tt-xla venv is already active (see prereqs above).

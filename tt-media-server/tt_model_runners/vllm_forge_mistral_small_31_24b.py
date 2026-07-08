@@ -48,6 +48,16 @@ class VLLMForgeMistralSmall31_24BRunner(BaseDeviceRunner):
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "true").lower() == "true"
         enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
+        # Explicit TP mesh is REQUIRED on the 32-device galaxy. From
+        # ModelConfigs (device_mesh_shape=(8,4) for GALAXY/BLACKHOLE_GALAXY):
+        # [8,4] = 4-way TP x 8-way data, matching Stage 1 and Mistral's GQA (8 KV
+        # heads -> 2/device). Without it the plugin auto-picks (4,8) -> 1 KV
+        # head/device (GQA-degenerate), which fails the stablehlo pipeline with
+        # "tensor sharding is incompatible with tensor shape" (and trips SDPA
+        # tree-reduction). See tt-metal#43210 for the MGD (4,8) reshape warning.
+        mesh_shape = list(getattr(self.settings, "device_mesh_shape", ()) or ())
+        if len(mesh_shape) != 2 or mesh_shape[0] * mesh_shape[1] < 2:
+            mesh_shape = [8, 4]
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
@@ -63,6 +73,7 @@ class VLLMForgeMistralSmall31_24BRunner(BaseDeviceRunner):
                 "min_context_len": 32,
                 "enable_tensor_parallel": True,
                 "use_2d_mesh": False,
+                "mesh_shape": mesh_shape,
                 "experimental_weight_dtype": "bfp_bf8",
                 "experimental_kv_cache_dtype": "bfp_bf8",
                 # b1-prefill: needs min_num_seqs < max_num_seqs (MAX_NUM_SEQS=32).
