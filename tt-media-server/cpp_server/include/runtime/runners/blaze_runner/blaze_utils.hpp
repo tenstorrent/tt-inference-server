@@ -332,8 +332,7 @@ inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig(
     const tt::config::BlazeConfig& config) {
   return MockDecodeSchedulerConfig{
       .numPipelineStages = config.numPipelineStages,
-      .stageLatency =
-          std::chrono::microseconds(config.stageLatencyUs),
+      .stageLatency = std::chrono::microseconds(config.stageLatencyUs),
       .prefillChunkSize = config.prefillChunkSize,
       .decodeTokenId = config.mockDecodeTokenId,
   };
