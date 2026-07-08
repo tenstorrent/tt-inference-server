@@ -49,8 +49,7 @@ tt::services::SlotAcquireResult runGetSlot(
         promise.set_value(std::move(result));
       },
       [&promise](const std::string& err) {
-        promise.set_exception(
-            std::make_exception_ptr(std::runtime_error(err)));
+        promise.set_exception(std::make_exception_ptr(std::runtime_error(err)));
       });
   return future.get();
 }

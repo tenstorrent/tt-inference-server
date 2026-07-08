@@ -355,8 +355,8 @@ void DisaggregationService::resolvePrefillSession(
 
   sessionManager->getSlot(
       {}, std::move(opts), eventLoopThread.getLoop(),
-      [this, request, onResolved = std::move(onResolved)](
-          SlotAcquireResult result) mutable {
+      [this, request,
+       onResolved = std::move(onResolved)](SlotAcquireResult result) mutable {
         const auto& blockInfos = result.blocks;
 
         if (!result.isNewSession) {
