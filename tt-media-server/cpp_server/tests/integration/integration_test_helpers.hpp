@@ -82,7 +82,7 @@ inline std::shared_ptr<ipc::ITaskQueue> makeInMemoryTaskQueue() {
 
 inline config::BlazeConfig makeBlazeConfig(
     config::ModelRunnerType runnerType =
-        config::ModelRunnerType::MOCK_SCHEDULER) {
+        config::ModelRunnerType::MOCK_PIPELINE) {
   // Start from the env-backed builder so all scheduler/pipeline knobs reflect
   // the current process env (set by configureProcess() before this call), then
   // override the runner type per-test. `blazeConfig()` reads the same

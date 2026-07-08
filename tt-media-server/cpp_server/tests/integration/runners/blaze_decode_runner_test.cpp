@@ -82,8 +82,11 @@ inline uint64_t expectedMockToken(size_t index) {
 class BlazeDecodeRunnerHarness
     : public test::RunnerTestHarness<BlazeDecodeRunner> {
  public:
-  BlazeDecodeRunnerHarness()
-      : test::RunnerTestHarness<BlazeDecodeRunner>(test::makeBlazeConfig()) {}
+  explicit BlazeDecodeRunnerHarness(
+      config::ModelRunnerType runnerType =
+          config::ModelRunnerType::MOCK_PIPELINE)
+      : test::RunnerTestHarness<BlazeDecodeRunner>(
+            test::makeBlazeConfig(runnerType)) {}
 };
 
 }  // namespace
@@ -390,13 +393,11 @@ TEST(BlazeDecodeRunnerIntegrationTest,
 }
 
 TEST(BlazeDecodeRunnerIntegrationTest, MockSchedulerFlatTokenStream) {
-  EnvSetter mockPrefillLatencyMs("MOCK_PREFILL_CHUNK_LATENCY_MS", "0");
-  // Zero the per-stage latency: with MOCK_SCHEDULER this drives both the
-  // pipeline-fill (first-token) latency and the derived per-slot decode
-  // cadence, so tokens are emitted with no artificial delay.
+  // Zero the per-stage latency: with MOCK_SCHEDULER this drives the derived
+  // per-slot decode cadence, so tokens are emitted with no artificial delay.
   EnvSetter mockStageLatencyUs("MOCK_STAGE_LATENCY_US", "0");
 
-  BlazeDecodeRunnerHarness harness;
+  BlazeDecodeRunnerHarness harness(config::ModelRunnerType::MOCK_SCHEDULER);
 
   const uint32_t taskId = 5150;
   const auto allocateResponse = harness.allocate(taskId);
