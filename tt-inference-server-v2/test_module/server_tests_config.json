@@ -478,6 +478,9 @@
                 "media",
                 "forge"
             ],
+            "exclude_categories": [
+                "LLM"
+            ],
             "markers": [
                 "fast",
                 "prerequisite"
@@ -488,7 +491,7 @@
                 "break_on_failure": true,
                 "mock_mode": false
             },
-            "_comment": "retry_attempts and num_of_devices derived from hardware_defaults"
+            "_comment": "retry_attempts and num_of_devices derived from hardware_defaults. Gated by both 'engines' and 'exclude_categories' (LLM suites run bare vllm serve, which has no /tt-liveness route; the LLM path gates on /health)."
         },
         {
             "name": "LoggerForkSafetyTest",

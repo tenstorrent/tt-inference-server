@@ -266,9 +266,9 @@ inline pl::PipelineConfig makeDecodePipelineConfig(
           .wire_format = wireFormatFromString(config.wireFormat)};
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return pl::PipelineSimulatorConfig{
-          .num_stages = 64,
-          .stage_duration_us = 44,
-          .decode_token_id = 12345,
+          .num_stages = config.numPipelineStages,
+          .stage_duration_us = config.stageLatencyUs,
+          .decode_token_id = config.mockDecodeTokenId,
       };
       /* spec decode config
        return PipelineSimulatorConfig{
@@ -323,7 +323,7 @@ inline pl::CounterChannelConfig makePrefillAckChannelConfig(
 inline MockPrefillSchedulerConfig makeMockPrefillSchedulerConfig(
     const tt::config::BlazeConfig& config) {
   return MockPrefillSchedulerConfig{
-      .prefillLatency = std::chrono::milliseconds(config.mockPrefillLatencyMs),
+      .prefillLatency = std::chrono::milliseconds(config.prefillChunkSize),
       .prefillChunkSize = config.prefillChunkSize,
   };
 }
@@ -331,11 +331,11 @@ inline MockPrefillSchedulerConfig makeMockPrefillSchedulerConfig(
 inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig(
     const tt::config::BlazeConfig& config) {
   return MockDecodeSchedulerConfig{
-      .prefillLatency = std::chrono::milliseconds(config.mockPrefillLatencyMs),
+      .numPipelineStages = config.numPipelineStages,
+      .stageLatency =
+          std::chrono::microseconds(config.stageLatencyUs),
       .prefillChunkSize = config.prefillChunkSize,
       .decodeTokenId = config.mockDecodeTokenId,
-      .decodeTokenLatency =
-          std::chrono::microseconds(config.mockDecodeTokenLatencyUs),
   };
 }
 

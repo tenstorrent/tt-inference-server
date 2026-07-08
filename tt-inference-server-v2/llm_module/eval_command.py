@@ -59,6 +59,21 @@ def _clamp_max_gen_toks(
     return out
 
 
+def _inject_seed_into_gen_kwargs(gen_kwargs: dict, seed) -> dict:
+    """Return a copy of gen_kwargs with the task seed added if not already set.
+
+    lm-eval's ``--seed`` only seeds the harness RNG (dataset/fewshot shuffling);
+    it does not reach the server's SamplingParams. For ``do_sample=true`` tasks
+    the request must carry its own seed to be reproducible, so propagate
+    ``task.seed`` into gen_kwargs (the per-request sampling params). A seed
+    already present in gen_kwargs wins."""
+    if seed is None or "seed" in gen_kwargs:
+        return gen_kwargs
+    out = dict(gen_kwargs)
+    out["seed"] = str(seed)
+    return out
+
+
 def _get_limit_mode(runtime_config) -> Optional[EvalLimitMode]:
     if runtime_config is None or not getattr(
         runtime_config, "limit_samples_mode", None
@@ -218,6 +233,9 @@ def build_eval_command(
     )
     effective_gen_kwargs = _clamp_max_gen_toks(
         task.gen_kwargs, device_max_context, task.task_name
+    )
+    effective_gen_kwargs = _inject_seed_into_gen_kwargs(
+        effective_gen_kwargs, getattr(task, "seed", None)
     )
 
     optional_model_args = []

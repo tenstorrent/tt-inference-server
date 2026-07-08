@@ -320,19 +320,25 @@ size_t memoryQueueCapacity() {
   return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
 }
 
-bool useMockScheduler() {
-  return envBool("MOCK_USE_SCHEDULER", defaults::MOCK_USE_SCHEDULER);
-}
-
 unsigned mockPrefillLatencyMs() {
   return static_cast<unsigned>(
       envUlong("MOCK_PREFILL_CHUNK_LATENCY_MS",
                defaults::MOCK_PREFILL_CHUNK_LATENCY_MS));
 }
 
-unsigned mockDecodeTokenLatencyUs() {
-  return static_cast<unsigned>(envUlong(
-      "MOCK_DECODE_TOKEN_LATENCY_US", defaults::MOCK_DECODE_TOKEN_LATENCY_US));
+unsigned mockStageLatencyUs() {
+  return static_cast<unsigned>(
+      envUlong("MOCK_STAGE_LATENCY_US", defaults::MOCK_STAGE_LATENCY_US));
+}
+
+uint32_t mockPipelineStages() {
+  return static_cast<uint32_t>(
+      envUlong("MOCK_PIPELINE_STAGES", defaults::MOCK_PIPELINE_STAGES));
+}
+
+uint32_t mockPrefillChunkSize() {
+  return static_cast<uint32_t>(
+      envUlong("MOCK_PREFILL_RR_TOKENS", defaults::MOCK_PREFILL_CHUNK_SIZE));
 }
 
 uint32_t mockDecodeTokenId() {
@@ -347,6 +353,8 @@ BlazeConfig blazeConfig() {
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
     if (backend == "pipeline_manager") {
       cfg.runner_type = ModelRunnerType::PIPELINE_MANAGER;
+    } else if (backend == "mock_scheduler") {
+      cfg.runner_type = ModelRunnerType::MOCK_SCHEDULER;
     } else {
       // Default and "mock_pipeline" both route through the blaze mock pipeline.
       cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
@@ -664,6 +672,12 @@ size_t maxContextLength() {
 size_t maxISL() {
   static const size_t cached =
       static_cast<size_t>(envUlong("MAX_ISL", defaults::MAX_ISL));
+  return cached;
+}
+
+size_t taskQueueMaxMsgSize() {
+  static const size_t cached = maxContextLength() * sizeof(uint32_t) +
+                               defaults::MAX_SEQUENCE_NON_TOKEN_BYTES;
   return cached;
 }
 

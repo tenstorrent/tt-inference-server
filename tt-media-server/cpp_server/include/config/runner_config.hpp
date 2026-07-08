@@ -14,6 +14,8 @@
 
 namespace tt::config {
 
+size_t maxContextLength();
+
 struct RunnerConfigBase {
   ModelRunnerType runner_type = ModelRunnerType::MOCK;
 };
@@ -52,7 +54,6 @@ struct BlazeConfig : RunnerConfigBase {
   uint32_t migrationDecodeEndpointId = defaults::MIGRATION_DECODE_ENDPOINT_ID;
   std::string specDecodeMode = defaults::SPEC_DECODE_MODE;
   size_t mtpLevel = defaults::MTP_LEVEL;
-  bool useMockScheduler = defaults::MOCK_USE_SCHEDULER;
 
   // Pipeline / channel config
   std::string blazeSocketDescriptorPrefix;
@@ -63,10 +64,10 @@ struct BlazeConfig : RunnerConfigBase {
   std::string migrationTableQueueName = defaults::MIGRATION_TABLE_QUEUE_NAME;
   std::string migrationRespQueueName = defaults::MIGRATION_RESP_QUEUE_NAME;
 
-  // Mock scheduler knobs
-  unsigned mockPrefillLatencyMs = defaults::MOCK_PREFILL_CHUNK_LATENCY_MS;
-  unsigned mockDecodeTokenLatencyUs = defaults::MOCK_DECODE_TOKEN_LATENCY_US;
-  uint32_t mockDecodeTokenId = defaults::MOCK_DECODE_TOKEN_ID;
+  // Mock pipeline knobs
+  unsigned numPipelineStages = defaults::MOCK_PREFILL_CHUNK_LATENCY_MS;
+  unsigned stageLatencyUs = defaults::MOCK_PREFILL_CHUNK_LATENCY_MS;
+  unsigned mockDecodeTokenId = defaults::MOCK_DECODE_TOKEN_ID;
 
   // Generation fallbacks read by blaze_utils
   size_t maxContextLength = defaults::MAX_CONTEXT_LENGTH;
