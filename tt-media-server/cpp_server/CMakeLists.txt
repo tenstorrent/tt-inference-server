@@ -738,6 +738,15 @@ target_include_directories(concurrent_map_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(socket_messages_test tests/unit/sockets/socket_messages_test.cpp)
+target_link_libraries(socket_messages_test PRIVATE
+    cereal::cereal
+    GTest::gtest_main)
+target_include_directories(socket_messages_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cereal_SOURCE_DIR}/include
+)
+
 add_executable(session_test
     tests/unit/services/session_test.cpp
     src/domain/session.cpp
@@ -973,6 +982,7 @@ gtest_discover_tests(cancellation_test)
 gtest_discover_tests(structured_output_test)
 gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
+gtest_discover_tests(socket_messages_test)
 gtest_discover_tests(session_test)
 gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)
