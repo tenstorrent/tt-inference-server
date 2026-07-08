@@ -180,6 +180,9 @@ struct TokenChunk {
   /// the response `nvext.engine_data` when the client requests it via
   /// `nvext.extra_fields: ["engine_data"]`.
   Json::Value engine_data;
+  /// Prefill-only handoff payload. Dynamo's PrefillRouter extracts this field
+  /// and forwards it to decode as `prefill_result.disaggregated_params`.
+  Json::Value disaggregated_params;
 };
 
 /// Encode a TokenChunk as a NetworkStreamWrapper<Annotated<T>> JSON body.

@@ -382,10 +382,39 @@ int main(int argc, char* argv[]) {
       opts.endpoint = tt::config::dynamoEndpointName();
       opts.etcd_endpoints = tt::config::dynamoEtcdEndpoints();
       opts.etcd_lease_ttl_secs = tt::config::dynamoEtcdLeaseTtlSecs();
+      if (const char* v = std::getenv("DYNAMO_MODEL_TYPE"); v && *v) {
+        opts.model_type = v;
+      } else if (tt::config::dynamoNativeRoutingEnabled() &&
+                 tt::config::llmMode() == tt::config::LLMMode::PREFILL_ONLY) {
+        // Dynamo's Rust ModelType is a bitflag; ModelType.Empty serializes as
+        // an empty string in human-readable JSON.
+        opts.model_type = "";
+      }
+      if (const char* v = std::getenv("DYNAMO_MODEL_INPUT"); v && *v) {
+        opts.model_input = v;
+      }
+      if (const char* v = std::getenv("DYNAMO_WORKER_TYPE"); v && *v) {
+        opts.worker_type = v;
+      } else if (tt::config::dynamoNativeRoutingEnabled()) {
+        switch (tt::config::llmMode()) {
+          case tt::config::LLMMode::PREFILL_ONLY:
+            opts.worker_type = "Prefill";
+            opts.needs = {{"Decode"}};
+            break;
+          case tt::config::LLMMode::DECODE_ONLY:
+            opts.worker_type = "Decode";
+            opts.needs = {{"Prefill"}};
+            break;
+          case tt::config::LLMMode::REGULAR:
+            opts.worker_type = "Aggregated";
+            break;
+        }
+      }
 
       try {
-        dynamoEndpoint =
-            std::make_unique<tt::dynamo::DynamoEndpoint>(pipeline, opts);
+        dynamoEndpoint = std::make_unique<tt::dynamo::DynamoEndpoint>(
+            pipeline, tt::services::ServiceContainer::instance().disaggregation(),
+            opts);
         dynamoEndpoint->start();
       } catch (const std::exception& e) {
         TT_LOG_ERROR("[Main] Dynamo endpoint failed to start: {}", e.what());

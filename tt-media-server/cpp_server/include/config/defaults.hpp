@@ -134,6 +134,7 @@ constexpr int DECODE_MAX_TOKEN_IDS = 1;
 // frontends). All defaults are overridable via env vars; the endpoint is
 // off unless DYNAMO_ENDPOINT_ENABLED=1.
 constexpr bool DYNAMO_ENDPOINT_ENABLED = false;
+constexpr bool DYNAMO_NATIVE_ROUTING = false;
 constexpr const char* DYNAMO_BIND_HOST = "0.0.0.0";
 constexpr const char* DYNAMO_NAMESPACE = "default";
 constexpr const char* DYNAMO_COMPONENT = "backend";

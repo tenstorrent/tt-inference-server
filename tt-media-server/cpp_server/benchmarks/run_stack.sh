@@ -7,7 +7,9 @@
 # host ai-dynamo venv; etcd runs as the public quay image; workers run as the
 # locally-built mock binary. See benchmarks/test_prefill_decode.py.
 #
-#   ./run_stack.sh up                      # disaggregated: decode + prefill split
+#   ./run_stack.sh up                      # legacy direct socket split
+#   DYNAMO_NATIVE_ROUTING=1 ./run_stack.sh up
+#                                          # native Dynamo decode/prefill split
 #   ./run_stack.sh down                    # tear everything down
 #
 # Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; frontend -> /tmp/tt_frontend.log.
@@ -29,6 +31,8 @@ SERVER_PORT="${SERVER_PORT:-8001}"       # decode/regular REST + dynamo endpoint
 PREFILL_PORT="${PREFILL_PORT:-8002}"     # prefill REST
 SOCKET_PORT="${SOCKET_PORT:-9000}"       # decode<->prefill inter-server socket
 MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
+DYNAMO_NATIVE_ROUTING="${DYNAMO_NATIVE_ROUTING:-0}"
+DYNAMO_NATIVE_NAMESPACE="${DYNAMO_NATIVE_NAMESPACE:-dynamo}"
 ETCD_NAME="${ETCD_NAME:-etcd}"
 PIDFILE="/tmp/tt_stack.pids"
 
@@ -92,15 +96,22 @@ ensure_etcd() {
     log "etcd at ${ETCD_ENDPOINTS}"
 }
 
-# dynamo registration env shared by the regular/decode worker (the one the
-# frontend discovers). The prefill worker does NOT register.
+# dynamo registration env. Legacy mode registers only the decode worker under
+# default/backend/generate. Native mode registers decode and prefill workers as
+# separate Dynamo worker types under dynamo/{decode,prefill}/generate.
 worker_dynamo_env() {
+    local namespace="${1:-default}"
+    local component="${2:-backend}"
+    local worker_type="${3:-}"
+    local model_type="${4:-Chat}"
     echo "DYNAMO_ENDPOINT_ENABLED=1"
     echo "DYNAMO_DISCOVERY_BACKEND=etcd"
     echo "DYNAMO_ETCD_ENDPOINTS=${ETCD_ENDPOINTS}"
-    echo "DYNAMO_NAMESPACE=default"
-    echo "DYNAMO_COMPONENT=backend"
+    echo "DYNAMO_NAMESPACE=${namespace}"
+    echo "DYNAMO_COMPONENT=${component}"
     echo "DYNAMO_ENDPOINT_NAME=generate"
+    [[ -n "${model_type}" ]] && echo "DYNAMO_MODEL_TYPE=${model_type}"
+    [[ -n "${worker_type}" ]] && echo "DYNAMO_WORKER_TYPE=${worker_type}"
 }
 
 start_frontend() {
@@ -112,6 +123,7 @@ start_frontend() {
         DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
         "${DYN_VENV}/bin/python3" -m dynamo.frontend \
             --http-port "${HTTP_PORT}" \
+            --router-mode "${ROUTER_MODE:-kv}" \
             --model-name "${MODEL_NAME}" \
             --model-path "${CPP_DIR}/tokenizers/${MODEL}" \
         > "${FRONTEND_LOG}" 2>&1 < /dev/null &
@@ -144,23 +156,44 @@ up() {
     : > "${PIDFILE}"
     ensure_etcd
 
-    log "decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
-    start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
-        $(worker_dynamo_env) \
-        LLM_MODE=decode LLM_DEVICE_BACKEND=mock \
-        SOCKET_TRANSPORT=tcp SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
-        MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE}"
-    sleep 3
-    # Distinct memory-queue + metrics shm names: decode and prefill are
-    # co-located on one host, and these default to fixed names
-    # (tt_mem_requests/_results, /tt_worker_metrics) — sharing them makes the
-    # prefill worker's KV allocation requests race the decode worker's and hang.
-    start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
-        LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
-        SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
-        TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
-        TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
-        TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill
+    if [[ "${DYNAMO_NATIVE_ROUTING}" == "1" ]]; then
+        log "native Dynamo routing: decode :${SERVER_PORT}, prefill :${PREFILL_PORT}"
+        start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
+            $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" decode Decode Chat) \
+            LLM_MODE=decode LLM_DEVICE_BACKEND=mock \
+            USE_PREFILL_GATEWAY=0 DYNAMO_NATIVE_ROUTING=1
+        sleep 3
+        # Distinct memory-queue + metrics shm names: decode and prefill are
+        # co-located on one host, and these default to fixed names
+        # (tt_mem_requests/_results, /tt_worker_metrics) — sharing them makes the
+        # prefill worker's KV allocation requests race the decode worker's and hang.
+        start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
+            $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" prefill Prefill "") \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
+            USE_PREFILL_GATEWAY=0 DYNAMO_NATIVE_ROUTING=1 \
+            DYNAMO_MODEL_INPUT=Tokens \
+            TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
+            TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
+            TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill
+    else
+        log "legacy socket routing: decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
+        start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
+            $(worker_dynamo_env) \
+            LLM_MODE=decode LLM_DEVICE_BACKEND=mock \
+            SOCKET_TRANSPORT=tcp SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
+            MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE}"
+        sleep 3
+        # Distinct memory-queue + metrics shm names: decode and prefill are
+        # co-located on one host, and these default to fixed names
+        # (tt_mem_requests/_results, /tt_worker_metrics) — sharing them makes the
+        # prefill worker's KV allocation requests race the decode worker's and hang.
+        start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
+            SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
+            TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
+            TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
+            TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill
+    fi
     sleep 2
     start_frontend
     wait_ready

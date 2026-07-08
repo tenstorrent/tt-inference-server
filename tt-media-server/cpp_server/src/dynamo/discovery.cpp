@@ -12,7 +12,6 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 #include "config/settings.hpp"
@@ -257,8 +256,22 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   card["kv_cache_block_size"] =
       static_cast<int>(tt::config::kvCacheBlockSize());
   card["migration_limit"] = 0;
-  card["model_type"] = "Chat";
-  card["model_input"] = "Tokens";
+  card["model_type"] = c.model_type;
+  card["model_input"] = c.model_input;
+  if (!c.worker_type.empty()) {
+    card["worker_type"] = c.worker_type;
+  }
+  if (!c.needs.empty()) {
+    Json::Value needs(Json::arrayValue);
+    for (const auto& alternative : c.needs) {
+      Json::Value inner(Json::arrayValue);
+      for (const auto& workerType : alternative) {
+        inner.append(workerType);
+      }
+      needs.append(std::move(inner));
+    }
+    card["needs"] = std::move(needs);
+  }
 
   Json::Value runtime(Json::objectValue);
   runtime["total_kv_blocks"] = Json::Value::null;

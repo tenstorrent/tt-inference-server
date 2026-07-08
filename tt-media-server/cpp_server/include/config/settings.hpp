@@ -332,6 +332,11 @@ size_t memoryQueueCapacity();
  * DYNAMO_ENDPOINT_ENABLED. Default: defaults::DYNAMO_ENDPOINT_ENABLED. */
 bool dynamoEndpointEnabled();
 
+/** Experimental: let Dynamo own disaggregated prefill routing instead of the
+ * legacy cpp_server socket/gateway path. From DYNAMO_NATIVE_ROUTING. Default:
+ * defaults::DYNAMO_NATIVE_ROUTING. */
+bool dynamoNativeRoutingEnabled();
+
 /** Bind host for the Dynamo listener. From DYNAMO_BIND_HOST. Default:
  * defaults::DYNAMO_BIND_HOST. */
 std::string dynamoBindHost();
