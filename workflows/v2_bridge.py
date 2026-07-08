@@ -58,6 +58,7 @@ _V2_ROUTED_MODELS = frozenset(
         "whisper-large-v3",
         "distil-large-v3",
         "Z-Image-Turbo",
+        "speecht5_tts",
     }
 )
 

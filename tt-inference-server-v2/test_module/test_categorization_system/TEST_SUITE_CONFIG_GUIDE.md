@@ -231,16 +231,31 @@ The `id_name` is used in suite IDs (`distil-whisper-t3k`), while `model_marker` 
 | Client-side concurrency for a load test | `test_cases[].targets.num_concurrent_requests` | overrides matrix/suite default |
 | Physical chip count probed by liveness | `hardware_defaults.<device>.num_of_devices` | inherited by `DeviceLivenessTest` |
 | Restrict a prerequisite to certain engines | `prerequisite_tests[].engines` | e.g. `["media", "forge"]`; omit for engine-agnostic |
+| Restrict a prerequisite to certain model categories | `prerequisite_tests[].categories` / `prerequisite_tests[].exclude_categories` | e.g. `exclude_categories: ["LLM"]`; omit for category-agnostic |
 
-### Prerequisite `engines` allow-list
+### Prerequisite gating
 
-Each entry in `prerequisite_tests` may declare an `engines` allow-list whose
-values match `workflows.workflow_types.InferenceEngine` (`"vLLM"`, `"media"`,
-`"forge"`). A prerequisite with an allow-list is injected only for suites whose
-model runs on one of those engines; a prerequisite that omits the key is
-engine-agnostic and runs everywhere. `DeviceLivenessTest` uses
-`["media", "forge"]` because it probes the tt-media-server `/tt-liveness`
-endpoint, which vLLM does not expose (vLLM serves `/health` instead).
+Each entry in `prerequisite_tests` is gated by two orthogonal, config-driven
+axes. A prerequisite is injected for a suite only when *both* gates pass.
+
+**`engines` allow-list.** Values match
+`workflows.workflow_types.InferenceEngine` (`"vLLM"`, `"media"`, `"forge"`).
+An allow-list means the prereq runs only when the active engine (set by
+`TestFilter.filter_prerequisites_by_engine(...)`) is in the list. Omit for
+engine-agnostic.
+
+**`categories` / `exclude_categories`.** Values match keys in
+`model_categories` (`"LLM"`, `"IMAGE"`, `"AUDIO"`, ...). The suite's category
+is derived from its `weights`. `categories` is an allow-list; the prereq runs
+only for categories in the list. `exclude_categories` is a deny-list and wins
+over the allow-list. Omit both for category-agnostic.
+
+`DeviceLivenessTest` uses `engines: ["media", "forge"]` **and**
+`exclude_categories: ["LLM"]` because it probes the tt-media-server
+`/tt-liveness` endpoint. LLM suites run bare `vllm serve`, which exposes
+`/health` (probed by the LLM eval/benchmark path) but has no `/tt-liveness`
+route. The category deny-list guarantees the skip even for callers that don't
+wire up the engine filter (dry-runs, CLI listings, doc generation).
 
 ### `num_concurrent_requests` vs `num_of_devices`
 

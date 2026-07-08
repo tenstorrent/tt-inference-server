@@ -21,12 +21,14 @@ from pathlib import Path
 import aiohttp
 import numpy as np
 
+from .._libritts import disable_audio_decode, resolve_split
 from .._test_common import BaseTest
 
 logger = logging.getLogger(__name__)
 
 DATASET_DIR = "server_tests/datasets/libritts_subset"
 METADATA_FILE = "metadata.json"
+DEFAULT_DATASET_SPLIT = "test.clean"
 
 headers = {
     "accept": "application/json",
@@ -50,7 +52,7 @@ class TTSQualityTest(BaseTest):
     TASK_TYPE = "audio"
 
     def __init__(self, config, targets=None, **kwargs):
-        super().__init__(config, targets)
+        super().__init__(config, targets, **kwargs)
         self._whisper_model = None
         self._whisper_processor = None
 
@@ -60,7 +62,7 @@ class TTSQualityTest(BaseTest):
 
         # Configuration
         sample_count = self.targets.get("sample_count", 10)
-        dataset_split = self.targets.get("dataset_split", "test")
+        dataset_split = self.targets.get("dataset_split", DEFAULT_DATASET_SPLIT)
         wer_threshold = self.targets.get("wer_threshold", 0.20)  # 20% WER
         batch_size = self._get_num_concurrent_requests(default=1)
 
@@ -68,55 +70,57 @@ class TTSQualityTest(BaseTest):
             f"TTS Quality Test: samples={sample_count}, wer_threshold={wer_threshold * 100:.0f}%"
         )
 
-        # Download samples from LibriTTS-R
-        self._download_samples(count=sample_count, split=dataset_split)
+        try:
+            # Download samples from LibriTTS-R
+            self._download_samples(count=sample_count, split=dataset_split)
 
-        # Load metadata
-        metadata = self._load_metadata()
-        if not metadata:
-            return {"success": False, "error": "No metadata found"}
+            # Load metadata
+            metadata = self._load_metadata()
+            if not metadata:
+                return {"success": False, "error": "No metadata found"}
 
-        # Load Whisper model for transcription
-        self._load_whisper_model()
+            # Load Whisper model for transcription
+            self._load_whisper_model()
 
-        # Generate audio and calculate WER
-        results = await self._run_quality_test(metadata, batch_size)
+            # Generate audio and calculate WER
+            results = await self._run_quality_test(metadata, batch_size)
 
-        # Calculate overall WER
-        wer_values = [r["wer"] for r in results if r.get("wer") is not None]
-        avg_wer = np.mean(wer_values) if wer_values else 1.0
-        min_wer = np.min(wer_values) if wer_values else 1.0
-        max_wer = np.max(wer_values) if wer_values else 1.0
+            # Calculate overall WER
+            wer_values = [r["wer"] for r in results if r.get("wer") is not None]
+            avg_wer = np.mean(wer_values) if wer_values else 1.0
+            min_wer = np.min(wer_values) if wer_values else 1.0
+            max_wer = np.max(wer_values) if wer_values else 1.0
 
-        success = avg_wer <= wer_threshold
-        valid_count = len(wer_values)
-        total_count = len(results)
+            success = avg_wer <= wer_threshold
+            valid_count = len(wer_values)
+            total_count = len(results)
 
-        # Cleanup
-        if self.targets.get("cleanup", True):
-            self._cleanup_samples()
+            total_duration = time.time() - test_start_time
+            logger.info(
+                f"TTS Quality Test completed: avg_wer={avg_wer * 100:.1f}%, "
+                f"valid={valid_count}/{total_count}, success={success}, "
+                f"duration={total_duration:.1f}s"
+            )
 
-        # Unload model
-        self._unload_whisper_model()
-
-        total_duration = time.time() - test_start_time
-        logger.info(
-            f"TTS Quality Test completed: avg_wer={avg_wer * 100:.1f}%, "
-            f"valid={valid_count}/{total_count}, success={success}, "
-            f"duration={total_duration:.1f}s"
-        )
-
-        return {
-            "success": success,
-            "avg_wer": round(avg_wer, 4),
-            "min_wer": round(min_wer, 4),
-            "max_wer": round(max_wer, 4),
-            "wer_threshold": wer_threshold,
-            "valid_samples": valid_count,
-            "total_samples": total_count,
-            "accuracy": round(valid_count / total_count, 4) if total_count > 0 else 0,
-            "duration": round(total_duration, 2),
-        }
+            return {
+                "success": success,
+                "avg_wer": round(avg_wer, 4),
+                "min_wer": round(min_wer, 4),
+                "max_wer": round(max_wer, 4),
+                "wer_threshold": wer_threshold,
+                "valid_samples": valid_count,
+                "total_samples": total_count,
+                "accuracy": round(valid_count / total_count, 4)
+                if total_count > 0
+                else 0,
+                "duration": round(total_duration, 2),
+            }
+        finally:
+            # Always release the downloaded dataset and Whisper weights, even
+            # if generation/transcription raised partway through.
+            if self.targets.get("cleanup", True):
+                self._cleanup_samples()
+            self._unload_whisper_model()
 
     def _load_whisper_model(self):
         """Load Whisper model for speech recognition."""
@@ -333,10 +337,16 @@ class TTSQualityTest(BaseTest):
 
         return buffer.getvalue()
 
-    def _download_samples(self, count: int = 20, split: str = "test") -> None:
+    def _download_samples(
+        self, count: int = 20, split: str = DEFAULT_DATASET_SPLIT
+    ) -> None:
         """Download samples from LibriTTS-R dataset."""
         if count <= 0:
             raise ValueError("Sample count must be positive.")
+
+        resolved_split = resolve_split(split)
+        if resolved_split != split:
+            logger.info(f"Resolved dataset split '{split}' -> '{resolved_split}'")
 
         try:
             import itertools
@@ -344,8 +354,9 @@ class TTSQualityTest(BaseTest):
             from datasets import load_dataset
 
             dataset = load_dataset(
-                "blabble-io/libritts_r", "clean", split=split, streaming=True
+                "blabble-io/libritts_r", "clean", split=resolved_split, streaming=True
             )
+            dataset = disable_audio_decode(dataset)
 
             dataset_subset = list(itertools.islice(dataset, count))
 
@@ -365,7 +376,7 @@ class TTSQualityTest(BaseTest):
                         "id": sample_id,
                         "text": text_original,
                         "normalized_text": sample.get("text_normalized", text_original),
-                        "split": split,
+                        "split": resolved_split,
                     }
                 )
 

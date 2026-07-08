@@ -347,17 +347,10 @@ LLMConfig llmEngineConfig() {
     cfg.max_in_flight_count = maxInFlightCount();
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
-    if (backend == "llama") {
-      cfg.kvcache_block_size = 32;
-      cfg.max_num_batched_tokens = 16384;
-      cfg.runner_type = ModelRunnerType::LLAMA;
-    } else if (backend == "mock") {
-      cfg.runner_type = ModelRunnerType::MOCK;
-    } else if (backend == "mock_pipeline") {
-      cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
-    } else if (backend == "pipeline_manager") {
+    if (backend == "pipeline_manager") {
       cfg.runner_type = ModelRunnerType::PIPELINE_MANAGER;
     } else {
+      // Default and "mock_pipeline" both route through the blaze mock pipeline.
       cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
     }
     cfg.scheduling_policy = schedulingPolicy();
