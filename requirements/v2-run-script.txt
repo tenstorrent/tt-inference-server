@@ -28,6 +28,9 @@ transformers==4.57.1
 # LLM eval/release run in this venv and mint the server bearer token from
 # --jwt-secret (command_factory._mint_jwt_if_secret), so pyjwt must be here.
 pyjwt
+transformers
+librosa
+datasets
 # VLLMParamConformanceTest spawns its pytest suite via sys.executable (this
 # venv's python), so pytest must live here. 
 pytest==8.3.5
