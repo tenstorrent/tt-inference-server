@@ -589,9 +589,9 @@ class HostSetupManager:
             / "weights"
             / self.model_spec.model_name
         )
-        if self.check_model_weights_dir(host_weights_dir):
-            logger.info("Weights already exist in host volume, skipping download")
-            return
+        # Always run `hf download`; it resumes partial downloads and skips files
+        # already present. weights_complete only gates the offline fallback below.
+        weights_complete = self.check_model_weights_dir(host_weights_dir)
         host_weights_dir.mkdir(parents=True, exist_ok=True)
         cmd = [
             str(hf_exec),
@@ -605,7 +605,13 @@ class HostSetupManager:
         logger.info(f"Downloading model to host volume: {hf_repo}")
         logger.info(f"Command: {shlex.join(cmd)}")
         result = subprocess.run(cmd)
-        assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
+        if result.returncode != 0 and weights_complete:
+            logger.warning(
+                f"Could not reach Hugging Face to verify weights; "
+                f"using existing weights at {host_weights_dir}"
+            )
+        else:
+            assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
         logger.info(f"✅ Using weights directory: {host_weights_dir}")
 
     def setup_weights_local(self):
