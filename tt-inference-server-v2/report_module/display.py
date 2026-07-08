@@ -104,7 +104,10 @@ DISPLAY_NAMES: Dict[str, str] = {
     "tolerance": "Tolerance",
     "published_score": "Published Score",
     "published_score_ref": "Published Score Ref",
+    "gpu_reference_score": "GPU Reference Score",
     "score": "Score",
+    "ratio_to_published": "Ratio to Published",
+    "ratio_to_reference": "Ratio to Reference",
     "accuracy_check": "Accuracy Check",
     # Benchmarks report a performance-target verdict, not an accuracy check.
     "target_check": "Target Check",
@@ -214,6 +217,43 @@ EXPLANATIONS: Dict[str, str] = {
     "request_throughput": "Request Throughput (RPS)",
 }
 
+# Per-section footnotes, looked up by ``Block.kind`` and appended below
+# the rendered table(s). Carries over the methodology notes that the v1
+# report stack emitted (eval GPU-reference note, benchmark mean-column
+# note). Kinds without an entry render footnote-free.
+_BENCHMARK_MEAN_NOTE = (
+    "Note: Columns without a percentile label (e.g. P50, P95, P99) report "
+    "the mean value across the benchmark run."
+)
+
+_EVALS_FOOTNOTE = (
+    "Note: The ratio to published scores defines if eval ran roughly "
+    "correctly, as the exact methodology of the model publisher cannot "
+    "always be reproduced. For this reason the accuracy check is based "
+    "first on being equivalent to the GPU reference within a +/- "
+    "tolerance. If a value GPU reference is not available, the accuracy "
+    "check is based on the direct ratio to the published score."
+)
+
+_SPEC_DECODE_FOOTNOTE = (
+    f"{_BENCHMARK_MEAN_NOTE}\n\n"
+    "Note: Throughput columns (Output Token Throughput, Total Token "
+    "Throughput) are time-averaged over the full benchmark duration and "
+    "are therefore influenced by prefill performance.\n\n"
+    "Note: Near-constant TPOT across tasks is the expected behaviour; the "
+    "one known exception is that TPOT increases with the concurrency "
+    "factor."
+)
+
+FOOTNOTES: Dict[str, str] = {
+    "evals": _EVALS_FOOTNOTE,
+    "vllm": _BENCHMARK_MEAN_NOTE,
+    "aiperf": _BENCHMARK_MEAN_NOTE,
+    "genai_perf": _BENCHMARK_MEAN_NOTE,
+    "guidellm": _BENCHMARK_MEAN_NOTE,
+    "aiperf_spec_decode": _SPEC_DECODE_FOOTNOTE,
+}
+
 
 def display_name(raw_key: str) -> str:
     """Translate a raw data key to its display header, or fall back."""
@@ -248,6 +288,7 @@ __all__ = [
     "DISPLAY_NAMES",
     "DECIMAL_PLACES",
     "EXPLANATIONS",
+    "FOOTNOTES",
     "display_name",
     "decimal_places",
     "target_checks_header",
