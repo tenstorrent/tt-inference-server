@@ -25,6 +25,7 @@
 #include <utility>
 
 #include "domain/llm/llm_error_reason.hpp"
+#include "domain/llm/llm_request.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::dynamo {
@@ -496,7 +497,8 @@ void DynamoServer::process_request(const trantor::TcpConnectionPtr& conn,
       TT_LOG_DEBUG(
           "[DynamoServer] Request id={} input_tokens={} max_tokens={} "
           "address={}",
-          id, genReq.token_ids.size(), genReq.max_tokens, connInfo.address);
+          id, genReq.token_ids.size(),
+          tt::domain::llm::detail::optStr(genReq.max_tokens), connInfo.address);
       handler_(genReq, connInfo);
     } catch (const std::exception& e) {
       TT_LOG_ERROR("[DynamoServer] request dispatch failed id={}: {}", id,
