@@ -610,6 +610,12 @@ size_t maxTokensToPrefillOnDecode() {
                defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
 }
 
+bool usePrefillFirstDisaggregation() {
+  static const bool cached = envBool("USE_PREFILL_FIRST_DISAGGREGATION",
+                                     defaults::USE_PREFILL_FIRST_DISAGGREGATION);
+  return cached;
+}
+
 size_t maxContextLength() {
   static const size_t cached = static_cast<size_t>(
       envUlong("MAX_CONTEXT_LENGTH", defaults::MAX_CONTEXT_LENGTH));
