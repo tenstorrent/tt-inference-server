@@ -39,7 +39,7 @@ TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueue) {
   auto llmService = makeService(taskQueue);
 
   tt::domain::llm::LLMRequest request{/*taskId=*/7};
-  request.prompt = std::vector<int>{10, 20, 30};
+  request.prompt = std::vector<uint32_t>{10, 20, 30};
   request.skip_special_tokens = true;
 
   ASSERT_NO_THROW(llmService->submitStreamingRequest(
@@ -59,7 +59,7 @@ TEST(LLMServiceProcessStreamingRequest,
   auto taskQueue = std::make_shared<tt::ipc::in_memory::TaskQueue>();
   auto llmService = makeService(taskQueue);
   tt::domain::llm::LLMRequest request{/*taskId=*/7};
-  request.prompt = std::vector<int>{10, 20, 30};
+  request.prompt = std::vector<uint32_t>{10, 20, 30};
   request.skip_special_tokens = true;
 
   llmService->submitStreamingRequest(
@@ -79,8 +79,8 @@ TEST(LLMServiceProcessStreamingRequest,
   auto taskQueue = std::make_shared<tt::ipc::in_memory::TaskQueue>();
   auto llmService = makeService(taskQueue);
   tt::domain::llm::LLMRequest request{/*taskId=*/7};
-  auto thinkStartKimi26 = 163606;
-  request.prompt = std::vector<int>{10, 20, 30, thinkStartKimi26};
+  uint32_t thinkStartKimi26 = 163606;
+  request.prompt = std::vector<uint32_t>{10, 20, 30, thinkStartKimi26};
   request.skip_special_tokens = true;
 
   llmService->submitStreamingRequest(
@@ -100,10 +100,10 @@ TEST(LLMServiceProcessStreamingRequest,
   auto taskQueue = std::make_shared<tt::ipc::in_memory::TaskQueue>();
   auto llmService = makeService(taskQueue);
   tt::domain::llm::LLMRequest request{/*taskId=*/7};
-  auto thinkStartKimi26 = 163606;
-  auto thinkEndKimi26 = 163607;
+  uint32_t thinkStartKimi26 = 163606;
+  uint32_t thinkEndKimi26 = 163607;
   request.prompt =
-      std::vector<int>{10, 20, 30, thinkStartKimi26, thinkEndKimi26};
+      std::vector<uint32_t>{10, 20, 30, thinkStartKimi26, thinkEndKimi26};
   request.skip_special_tokens = true;
 
   llmService->submitStreamingRequest(
@@ -122,7 +122,7 @@ TEST(LLMServiceProcessStreamingRequest, PropagatesMigrationStartPosition) {
   auto taskQueue = std::make_shared<tt::ipc::in_memory::TaskQueue>();
   auto llmService = makeService(taskQueue);
   tt::domain::llm::LLMRequest request{/*taskId=*/7};
-  request.prompt = std::vector<int>{10, 20, 30};
+  request.prompt = std::vector<uint32_t>{10, 20, 30};
   request.skip_special_tokens = true;
   request.migrationStartPosition = 64;
 

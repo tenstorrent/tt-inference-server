@@ -14,19 +14,22 @@ namespace tt::services {
 namespace {
 
 MigrationRequest makeRequest(uint32_t src = 1, uint32_t dst = 2,
-                             uint32_t layer = 0, uint32_t start = 0,
-                             uint32_t end = 128) {
+                             uint32_t layerBegin = 0, uint32_t layerEnd = 32,
+                             uint32_t posBegin = 0, uint32_t posEnd = 128) {
   return MigrationRequest{
       .src_slot = src,
       .dst_slot = dst,
-      .layer_id = layer,
-      .position_start = start,
-      .position_end = end,
+      .layer_begin = layerBegin,
+      .layer_end = layerEnd,
+      .src_position_begin = posBegin,
+      .src_position_end = posEnd,
+      .dst_position_begin = posBegin,
+      .dst_position_end = posEnd,
   };
 }
 
 // ---------------------------------------------------------------------------
-// migrate() / getStatus() basics
+// migrate() / getMigrationStatus() basics
 // ---------------------------------------------------------------------------
 
 TEST(MockRemoteKVManager, MigrateAssignsUniqueIncreasingIds) {
@@ -46,12 +49,12 @@ TEST(MockRemoteKVManager, MigrateDefaultsToImmediateSuccess) {
   // every migration resolve to SUCCESSFUL on the first poll.
   MockRemoteKVManager mgr;
   const auto id = mgr.migrate(makeRequest());
-  EXPECT_EQ(mgr.getStatus(id), MigrationStatus::SUCCESSFUL);
+  EXPECT_EQ(mgr.getMigrationStatus(id), MigrationStatus::SUCCESSFUL);
 }
 
 TEST(MockRemoteKVManager, GetStatusUnknownIdReturnsUnknown) {
   MockRemoteKVManager mgr;
-  EXPECT_EQ(mgr.getStatus(/*never minted=*/0xDEADBEEFCAFEBABEULL),
+  EXPECT_EQ(mgr.getMigrationStatus(/*never minted=*/0xDEADBEEFCAFEBABEULL),
             MigrationStatus::UNKNOWN);
 }
 
@@ -64,21 +67,21 @@ TEST(MockRemoteKVManager, SetDefaultStatusAppliesToSubsequentMigrations) {
   mgr.setDefaultStatus(MigrationStatus::FAILED);
 
   const auto id = mgr.migrate(makeRequest());
-  EXPECT_EQ(mgr.getStatus(id), MigrationStatus::FAILED);
+  EXPECT_EQ(mgr.getMigrationStatus(id), MigrationStatus::FAILED);
 }
 
 TEST(MockRemoteKVManager, SetDefaultStatusDoesNotMutateExistingMigrations) {
   MockRemoteKVManager mgr;
   const auto first = mgr.migrate(makeRequest());
-  ASSERT_EQ(mgr.getStatus(first), MigrationStatus::SUCCESSFUL);
+  ASSERT_EQ(mgr.getMigrationStatus(first), MigrationStatus::SUCCESSFUL);
 
   mgr.setDefaultStatus(MigrationStatus::FAILED);
 
   // Already-resolved migration stays put.
-  EXPECT_EQ(mgr.getStatus(first), MigrationStatus::SUCCESSFUL);
+  EXPECT_EQ(mgr.getMigrationStatus(first), MigrationStatus::SUCCESSFUL);
   // New ones pick up the new default.
   const auto second = mgr.migrate(makeRequest());
-  EXPECT_EQ(mgr.getStatus(second), MigrationStatus::FAILED);
+  EXPECT_EQ(mgr.getMigrationStatus(second), MigrationStatus::FAILED);
 }
 
 // ---------------------------------------------------------------------------
@@ -90,23 +93,26 @@ TEST(MockRemoteKVManager, SetPollsBeforeResolutionDelaysTransition) {
   mgr.setPollsBeforeResolution(3);
 
   const auto id = mgr.migrate(makeRequest());
-  EXPECT_EQ(mgr.getStatus(id), MigrationStatus::IN_PROGRESS);  // poll 1
-  EXPECT_EQ(mgr.getStatus(id), MigrationStatus::IN_PROGRESS);  // poll 2
-  EXPECT_EQ(mgr.getStatus(id),
+  EXPECT_EQ(mgr.getMigrationStatus(id),
+            MigrationStatus::IN_PROGRESS);  // poll 1
+  EXPECT_EQ(mgr.getMigrationStatus(id),
+            MigrationStatus::IN_PROGRESS);  // poll 2
+  EXPECT_EQ(mgr.getMigrationStatus(id),
             MigrationStatus::SUCCESSFUL);  // poll 3 -> terminal
-  EXPECT_EQ(mgr.getStatus(id), MigrationStatus::SUCCESSFUL);  // stays put
+  EXPECT_EQ(mgr.getMigrationStatus(id),
+            MigrationStatus::SUCCESSFUL);  // stays put
 }
 
 TEST(MockRemoteKVManager, SetPollsBeforeResolutionDoesNotAffectExisting) {
   MockRemoteKVManager mgr;
   const auto early = mgr.migrate(makeRequest());
-  ASSERT_EQ(mgr.getStatus(early), MigrationStatus::SUCCESSFUL);
+  ASSERT_EQ(mgr.getMigrationStatus(early), MigrationStatus::SUCCESSFUL);
 
   mgr.setPollsBeforeResolution(5);
   const auto late = mgr.migrate(makeRequest());
 
-  EXPECT_EQ(mgr.getStatus(early), MigrationStatus::SUCCESSFUL);
-  EXPECT_EQ(mgr.getStatus(late), MigrationStatus::IN_PROGRESS);
+  EXPECT_EQ(mgr.getMigrationStatus(early), MigrationStatus::SUCCESSFUL);
+  EXPECT_EQ(mgr.getMigrationStatus(late), MigrationStatus::IN_PROGRESS);
 }
 
 TEST(MockRemoteKVManager, SetPollsBeforeResolutionRespectsDefaultStatus) {
@@ -115,8 +121,10 @@ TEST(MockRemoteKVManager, SetPollsBeforeResolutionRespectsDefaultStatus) {
   mgr.setPollsBeforeResolution(2);
 
   const auto id = mgr.migrate(makeRequest());
-  EXPECT_EQ(mgr.getStatus(id), MigrationStatus::IN_PROGRESS);  // poll 1
-  EXPECT_EQ(mgr.getStatus(id), MigrationStatus::FAILED);  // poll 2 -> terminal
+  EXPECT_EQ(mgr.getMigrationStatus(id),
+            MigrationStatus::IN_PROGRESS);  // poll 1
+  EXPECT_EQ(mgr.getMigrationStatus(id),
+            MigrationStatus::FAILED);  // poll 2 -> terminal
 }
 
 // ---------------------------------------------------------------------------
@@ -126,10 +134,10 @@ TEST(MockRemoteKVManager, SetPollsBeforeResolutionRespectsDefaultStatus) {
 TEST(MockRemoteKVManager, ForceStatusPinsKnownMigration) {
   MockRemoteKVManager mgr;
   const auto id = mgr.migrate(makeRequest());
-  ASSERT_EQ(mgr.getStatus(id), MigrationStatus::SUCCESSFUL);
+  ASSERT_EQ(mgr.getMigrationStatus(id), MigrationStatus::SUCCESSFUL);
 
   mgr.forceStatus(id, MigrationStatus::FAILED);
-  EXPECT_EQ(mgr.getStatus(id), MigrationStatus::FAILED);
+  EXPECT_EQ(mgr.getMigrationStatus(id), MigrationStatus::FAILED);
 }
 
 TEST(MockRemoteKVManager, ForceStatusOverridesPollingState) {
@@ -139,10 +147,10 @@ TEST(MockRemoteKVManager, ForceStatusOverridesPollingState) {
   mgr.setPollsBeforeResolution(10);
 
   const auto id = mgr.migrate(makeRequest());
-  ASSERT_EQ(mgr.getStatus(id), MigrationStatus::IN_PROGRESS);
+  ASSERT_EQ(mgr.getMigrationStatus(id), MigrationStatus::IN_PROGRESS);
 
   mgr.forceStatus(id, MigrationStatus::SUCCESSFUL);
-  EXPECT_EQ(mgr.getStatus(id), MigrationStatus::SUCCESSFUL);
+  EXPECT_EQ(mgr.getMigrationStatus(id), MigrationStatus::SUCCESSFUL);
 }
 
 TEST(MockRemoteKVManager, ForceStatusSilentlyIgnoresUnknownId) {
@@ -151,7 +159,7 @@ TEST(MockRemoteKVManager, ForceStatusSilentlyIgnoresUnknownId) {
 
   // No entry should have been created; the id remains UNKNOWN.
   EXPECT_EQ(mgr.migrationCount(), 0u);
-  EXPECT_EQ(mgr.getStatus(123), MigrationStatus::UNKNOWN);
+  EXPECT_EQ(mgr.getMigrationStatus(123), MigrationStatus::UNKNOWN);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,17 +168,20 @@ TEST(MockRemoteKVManager, ForceStatusSilentlyIgnoresUnknownId) {
 
 TEST(MockRemoteKVManager, GetRequestReturnsOriginalRequest) {
   MockRemoteKVManager mgr;
-  const auto in = makeRequest(/*src=*/7, /*dst=*/13, /*layer=*/2,
-                              /*start=*/64, /*end=*/96);
+  const auto in = makeRequest(/*src=*/7, /*dst=*/13, /*layerBegin=*/0,
+                              /*layerEnd=*/32, /*posBegin=*/64, /*posEnd=*/96);
   const auto id = mgr.migrate(in);
 
   const auto out = mgr.getRequest(id);
   ASSERT_TRUE(out.has_value());
   EXPECT_EQ(out->src_slot, in.src_slot);
   EXPECT_EQ(out->dst_slot, in.dst_slot);
-  EXPECT_EQ(out->layer_id, in.layer_id);
-  EXPECT_EQ(out->position_start, in.position_start);
-  EXPECT_EQ(out->position_end, in.position_end);
+  EXPECT_EQ(out->layer_begin, in.layer_begin);
+  EXPECT_EQ(out->layer_end, in.layer_end);
+  EXPECT_EQ(out->src_position_begin, in.src_position_begin);
+  EXPECT_EQ(out->src_position_end, in.src_position_end);
+  EXPECT_EQ(out->dst_position_begin, in.dst_position_begin);
+  EXPECT_EQ(out->dst_position_end, in.dst_position_end);
 }
 
 TEST(MockRemoteKVManager, GetRequestUnknownIdReturnsNullopt) {
@@ -181,7 +192,7 @@ TEST(MockRemoteKVManager, GetRequestUnknownIdReturnsNullopt) {
 TEST(MockRemoteKVManager, GetMigrationReturnsRecordReflectingStatus) {
   MockRemoteKVManager mgr;
   const auto id = mgr.migrate(makeRequest());
-  ASSERT_EQ(mgr.getStatus(id), MigrationStatus::SUCCESSFUL);
+  ASSERT_EQ(mgr.getMigrationStatus(id), MigrationStatus::SUCCESSFUL);
 
   const auto rec = mgr.getMigration(id);
   ASSERT_TRUE(rec.has_value());
@@ -217,7 +228,7 @@ TEST(MockRemoteKVManager, ClearWipesEntriesAndResetsIds) {
   mgr.clear();
 
   EXPECT_EQ(mgr.migrationCount(), 0u);
-  EXPECT_EQ(mgr.getStatus(firstBefore), MigrationStatus::UNKNOWN);
+  EXPECT_EQ(mgr.getMigrationStatus(firstBefore), MigrationStatus::UNKNOWN);
 
   // Id counter restarts; collides with the (now unreachable) old first id.
   const auto firstAfter = mgr.migrate(makeRequest());
@@ -233,8 +244,8 @@ TEST(MockRemoteKVManager, ClearKeepsKnobSettings) {
 
   // Knobs survive: new migration still gets 2-poll delay then FAILED.
   const auto id = mgr.migrate(makeRequest());
-  EXPECT_EQ(mgr.getStatus(id), MigrationStatus::IN_PROGRESS);
-  EXPECT_EQ(mgr.getStatus(id), MigrationStatus::FAILED);
+  EXPECT_EQ(mgr.getMigrationStatus(id), MigrationStatus::IN_PROGRESS);
+  EXPECT_EQ(mgr.getMigrationStatus(id), MigrationStatus::FAILED);
 }
 
 // ---------------------------------------------------------------------------
@@ -248,7 +259,7 @@ TEST(MockRemoteKVManager, UsableViaInterfacePointer) {
       std::make_unique<MockRemoteKVManager>();
 
   const auto id = mgr->migrate(makeRequest());
-  EXPECT_EQ(mgr->getStatus(id), MigrationStatus::SUCCESSFUL);
+  EXPECT_EQ(mgr->getMigrationStatus(id), MigrationStatus::SUCCESSFUL);
 }
 
 }  // namespace

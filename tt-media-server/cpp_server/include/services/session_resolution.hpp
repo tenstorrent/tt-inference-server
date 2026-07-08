@@ -34,7 +34,7 @@ inline uint32_t applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
     return 0;
   }
 
-  auto& tokens = std::get<std::vector<int>>(req.prompt);
+  auto& tokens = std::get<std::vector<uint32_t>>(req.prompt);
   const size_t skip = static_cast<size_t>(matchedTokens);
   if (skip >= tokens.size()) {
     return 0;

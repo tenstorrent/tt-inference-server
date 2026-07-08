@@ -132,9 +132,12 @@ class RemoteKVManagerKafkaTest : public ::testing::Test {
     return MigrationRequest{
         .src_slot = src,
         .dst_slot = dst,
-        .layer_id = 3,
-        .position_start = 0,
-        .position_end = 128,
+        .layer_begin = 0,
+        .layer_end = 32,
+        .src_position_begin = 0,
+        .src_position_end = 128,
+        .dst_position_begin = 0,
+        .dst_position_end = 128,
     };
   }
 
@@ -159,10 +162,12 @@ TEST_F(RemoteKVManagerKafkaTest, MigrateRoundTripCompletes) {
 
   const uint64_t id = manager->migrate(sampleRequest(7, 9));
   EXPECT_NE(id, 0u);
-  EXPECT_EQ(manager->getStatus(id), MigrationStatus::IN_PROGRESS);
+  EXPECT_EQ(manager->getMigrationStatus(id), MigrationStatus::IN_PROGRESS);
 
   ASSERT_TRUE(waitFor(
-      [&] { return manager->getStatus(id) == MigrationStatus::SUCCESSFUL; },
+      [&] {
+        return manager->getMigrationStatus(id) == MigrationStatus::SUCCESSFUL;
+      },
       COMPLETION_TIMEOUT))
       << "migration did not complete within " << COMPLETION_TIMEOUT.count()
       << "ms; check broker, topic auto-creation, and consumer-group warmup";
@@ -190,7 +195,7 @@ TEST_F(RemoteKVManagerKafkaTest, MultipleMigrationsAllComplete) {
   ASSERT_TRUE(waitFor(
       [&] {
         for (uint64_t id : ids) {
-          if (manager->getStatus(id) != MigrationStatus::SUCCESSFUL) {
+          if (manager->getMigrationStatus(id) != MigrationStatus::SUCCESSFUL) {
             return false;
           }
         }
@@ -211,9 +216,11 @@ TEST_F(RemoteKVManagerKafkaTest, ConfiguredFailureStatusPropagates) {
 
   const uint64_t id = manager->migrate(sampleRequest());
 
-  ASSERT_TRUE(
-      waitFor([&] { return manager->getStatus(id) == MigrationStatus::FAILED; },
-              COMPLETION_TIMEOUT))
+  ASSERT_TRUE(waitFor(
+      [&] {
+        return manager->getMigrationStatus(id) == MigrationStatus::FAILED;
+      },
+      COMPLETION_TIMEOUT))
       << "FAILED ack did not arrive within " << COMPLETION_TIMEOUT.count()
       << "ms";
 
@@ -223,7 +230,7 @@ TEST_F(RemoteKVManagerKafkaTest, ConfiguredFailureStatusPropagates) {
 TEST_F(RemoteKVManagerKafkaTest, UnknownIdReturnsUnknown) {
   auto manager = makeManager();
   // No worker needed; we never publish anything for this id.
-  EXPECT_EQ(manager->getStatus(/*never-issued=*/0xCAFEBABEDEADBEEFull),
+  EXPECT_EQ(manager->getMigrationStatus(/*never-issued=*/0xCAFEBABEDEADBEEFull),
             MigrationStatus::UNKNOWN);
 }
 

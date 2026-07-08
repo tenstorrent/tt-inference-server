@@ -142,10 +142,11 @@ async def test_run_async_streaming_yields_each_token(mock_get_settings):
 @pytest.mark.parametrize(
     "env, expected",
     [
-        # Defaults — no env set
+        # Defaults — no env set (opt=1 fixes #4471 flatbuffer; host-side sampling
+        # avoids the b4/16K OOM; trace on for decode-graph replay)
         (
             {},
-            {"optimization_level": 0, "cpu_sampling": True, "enable_trace": False},
+            {"optimization_level": 1, "cpu_sampling": True, "enable_trace": True},
         ),
         # All env vars set
         (

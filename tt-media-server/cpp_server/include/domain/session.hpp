@@ -129,23 +129,27 @@ class Session {
    * @param deltaTokens Delta prompt tokens (after matched prefix trimmed)
    * @param initialBlocks Block info computed from the prompt (for prepending)
    * @param onComplete Callback invoked at stream end with final block info
+   * @param onNoHashes Callback invoked at stream end when no new blocks were
+   *        formed (e.g. empty generation). Allows the caller to close/evict
+   *        the session whose KV slot now holds stale data.
    * @param parentThinkCount Cumulative think tokens already present in the
    *        matched KV prefix. Seeded from the matched session's accumulated
    *        count on a prefix-cache HIT so think tokens accumulate across turns;
    *        0 for a fresh session.
    */
   void initTokenAccumulator(
-      std::vector<int> deltaTokens,
+      std::vector<uint32_t> deltaTokens,
       std::vector<utils::BlockHashInfo> initialBlocks,
       std::function<void(const std::string&,
                          const std::vector<utils::BlockHashInfo>&)>
           onComplete,
+      std::function<void(const std::string&)> onNoHashes = nullptr,
       uint32_t parentThinkCount = 0);
 
   /**
    * Add a generated token to the accumulator.
    */
-  void addGeneratedToken(int tokenId);
+  void addGeneratedToken(uint32_t tokenId);
 
   /**
    * Compute final hashes and register any new blocks.
@@ -188,20 +192,21 @@ class Session {
       releaser_;  // injected by SessionManager (see release())
 
   // Streaming token accumulator (initialized per-request)
-  std::vector<int> deltaTokens_;
-  std::vector<int> generatedTokens_;
+  std::vector<uint32_t> deltaTokens_;
+  std::vector<uint32_t> generatedTokens_;
   std::vector<utils::BlockHashInfo> initialBlocks_;
   uint64_t parentHash_ = 0;
   uint32_t parentThinkCount_ = 0;
   std::function<void(const std::string&,
                      const std::vector<utils::BlockHashInfo>&)>
       onComplete_;
+  std::function<void(const std::string&)> onNoHashes_;
 
   // Thinking token tracking
   bool inThinkingBlock_ = false;
   uint32_t accumulatedThinkTokens_ = 0;
-  int64_t thinkStartTokenId_ = 0;
-  int64_t thinkEndTokenId_ = 0;
+  uint32_t thinkStartTokenId_ = 0;
+  uint32_t thinkEndTokenId_ = 0;
 
   static std::string generateUuid();
 };

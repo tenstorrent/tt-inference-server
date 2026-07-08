@@ -162,10 +162,11 @@ test_module/
 `MediaTaskType` has three values: `EVALUATION`, `BENCHMARK`, `SPEC_TESTS`.
 `run_media_task(ctx, task_type)`:
 
-- For `EVALUATION` / `BENCHMARK`: looks up the runner by
+- For `EVALUATION` / `BENCHMARK`: looks up the runner *name* by
   `ctx.model_spec.model_type.name` in `EVAL_DISPATCH` / `BENCHMARK_DISPATCH`,
-  invokes it, hands the resulting Block to the accumulator, and returns
-  `(exit_code, block)`.
+  lazily imports it via `_resolve_runner` (so importing `dispatch` doesn't pull
+  in every runner's optional deps), invokes it, hands the resulting Block to the
+  accumulator, and returns `(exit_code, block)`.
 - For `SPEC_TESTS`: resolves matching cases from `test_suites/*.json` via
   `TestFilter`, instantiates each test class, calls `BaseTest.run_tests()`, and
   hands every resulting Block to the accumulator.
@@ -480,9 +481,12 @@ When you're ready to move a model from v1 to v2, add it to
     - Run the test against `ctx.base_url`.
     - Return a `Block` with the appropriate `kind` (`benchmarks` / `evals`).
 2. Register the runner in `BENCHMARK_DISPATCH` / `EVAL_DISPATCH` in
-   `test_module/dispatch.py`, keyed by `ctx.model_spec.model_type.name`.
+   `test_module/dispatch.py`, keyed by `ctx.model_spec.model_type.name`. The
+   value is the runner's *function name* as a string; `_resolve_runner` imports
+   it lazily through the package `__getattr__`.
 3. Export it from `test_module/benchmark_tests/__init__.py` (or eval equivalent)
-   so the top-level `test_module/__init__.py` re-exports it.
+   so both `_resolve_runner` and the top-level `test_module/__init__.py` can
+   resolve it by name.
 4. The dispatcher calls `accept_blocks([block], envelope=sweep_envelope(ctx))`
    for you — runners do not call it directly.
 

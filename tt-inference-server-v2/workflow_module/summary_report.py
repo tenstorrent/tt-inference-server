@@ -144,13 +144,13 @@ def _summary_target_checks(
 
 
 def aggregate_to_block(aggregate: BenchmarkAggregate) -> Block:
-    target_checks, accuracy_check = _summary_target_checks(aggregate)
+    target_checks, target_check = _summary_target_checks(aggregate)
     statistics = [
         _stats_record(name, stats) for name, stats in aggregate.metrics.items()
     ]
     data = {
         "num_runs": aggregate.run_count,
-        "accuracy_check": accuracy_check,
+        "target_check": target_check,
         "statistics": statistics,
         "target_checks": target_checks,
     }

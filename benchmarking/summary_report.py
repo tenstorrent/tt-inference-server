@@ -108,7 +108,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     image_pattern = r"""
         ^benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy|gpu|GPU))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy|gpu|GPU|super_cluster|SUPER_CLUSTER|Super-Cluster))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -156,7 +156,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     structured_pattern = r"""
         ^benchmark_structured_
         (?P<model>.+?)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy|gpu|GPU))?
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy|gpu|GPU|super_cluster|SUPER_CLUSTER|Super-Cluster))?
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _dataset-(?P<dataset>.+?)
         _(?P<so_tag>no-so|so-[\d.]+)
@@ -188,7 +188,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     text_pattern = r"""
         ^benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy|gpu|GPU))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy|gpu|GPU|super_cluster|SUPER_CLUSTER|Super-Cluster))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -218,7 +218,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     cnn_pattern = r"""
         ^benchmark_
         (?P<model_id>id_.+?)                      # Model ID (starts with id_)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy|gpu|GPU))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy|gpu|GPU|super_cluster|SUPER_CLUSTER|Super-Cluster))?  # Optional device
         _(?P<timestamp>\d+\.?\d*)                 # Timestamp (can be float)
         \.json$
     """
@@ -480,7 +480,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         "model_name": params["model_name"],
         "model_id": data.get("model_id", ""),
         "backend": data.get("backend", ""),
-        "device": params.get("device", ""),
+        "device": params.get("device") or "",
         "input_sequence_length": params["input_sequence_length"],
         "output_sequence_length": params["output_sequence_length"],
         "max_con": actual_max_con,
@@ -1090,7 +1090,18 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     model_name = metadata["model_name"]
     device = results[0].get("device")
     if "device" in metadata:
-        assert metadata["device"] == device, "Device mismatch in metadata"
+        ## this change is for v2 LLM benchmarks which don't have a device in the filename
+        ## so we need to use the device from the metadata
+        meta_device = metadata["device"]
+        for row in results:
+            row_device = row.get("device")
+            if row_device in (None, "", NOT_MEASURED_STR):
+                row["device"] = meta_device
+            else:
+                assert meta_device.lower() == str(row_device).lower(), (
+                    f"Device mismatch in metadata: {meta_device!r} vs {row_device!r}"
+                )
+        device = meta_device
 
     # save stats
     data_file_path = output_dir / "data" / f"benchmark_stats_{report_id}.csv"
