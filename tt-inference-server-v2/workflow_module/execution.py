@@ -301,7 +301,9 @@ class WorkflowExecution(ABC):
         return self.accumulator.build_schema()
 
     def apply_acceptance_criteria(self, schema: ReportSchema) -> Tuple[bool, list]:
-        accepted, blockers, categories = acceptance_criteria_check(schema)
+        accepted, blockers, categories = acceptance_criteria_check(
+            schema, known_issues=self._known_issues()
+        )
         schema.metadata.update(
             build_acceptance_export(
                 accepted, blockers, categories, self._model_status()
@@ -313,6 +315,16 @@ class WorkflowExecution(ABC):
             len(blockers),
         )
         return accepted, blockers
+
+    def _known_issues(self) -> Optional[list]:
+        """model_spec known_issues (waivers) for this device, or None.
+
+        Guarded with getattr so a spec that predates the field, or a differently
+        shaped ctx, degrades to "no waivers" rather than raising.
+        """
+        spec = getattr(self.ctx, "model_spec", None)
+        device_spec = getattr(spec, "device_model_spec", None)
+        return getattr(device_spec, "known_issues", None) or None
 
     def _load_runtime_model_spec(self) -> Optional[dict]:
         """Return the ``runtime_model_spec`` sub-dict from the spec JSON, if any."""
