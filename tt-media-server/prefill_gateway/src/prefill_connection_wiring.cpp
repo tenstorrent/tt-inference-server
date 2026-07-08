@@ -118,6 +118,13 @@ void registerTcpPrefillHandlers(PrefillSocketManagers& prefillSms,
           dispatcher.onCacheBlocksAdded(msg);
         });
 
+    sm->registerHandler<tt::sockets::SlotReservationRequestMessage>(
+        tt::sockets::tags::SLOT_RESERVATION_REQUEST,
+        [&dispatcher, state](const tt::sockets::SlotReservationRequestMessage&
+                                 msg) {
+          dispatcher.onSlotReservationRequest(state->getServerId(), msg);
+        });
+
     sm->setConnectionLostCallback([&registry, state]() {
       const std::string sid = state->getServerId();
       if (!sid.empty()) {
@@ -166,6 +173,21 @@ void registerZmqPrefillHandlers(ZmqPrefillRouter& zmqPrefillRouter,
       [&dispatcher](const ZmqPrefillRouter::PeerIdentity&,
                     const tt::sockets::PrefillCacheBlocksAddedMessage& msg) {
         dispatcher.onCacheBlocksAdded(msg);
+      });
+
+  zmqPrefillRouter.registerHandler<tt::sockets::SlotReservationRequestMessage>(
+      tt::sockets::tags::SLOT_RESERVATION_REQUEST,
+      [&dispatcher, &zmqPrefillRouter](
+          const ZmqPrefillRouter::PeerIdentity& peerId,
+          const tt::sockets::SlotReservationRequestMessage& msg) {
+        auto serverId = zmqPrefillRouter.serverIdForPeer(peerId);
+        if (!serverId.has_value()) {
+          TT_LOG_WARN(
+              "[Gateway] Ignoring slot reservation request from unregistered "
+              "prefill");
+          return;
+        }
+        dispatcher.onSlotReservationRequest(*serverId, msg);
       });
 }
 
