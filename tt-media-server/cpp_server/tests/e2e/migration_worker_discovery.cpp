@@ -38,6 +38,12 @@ struct Options {
   std::string peer;      // sender only: receiver's name
   std::size_t bytes = 65536;
   int timeout_sec = 30;
+  // sender only: additionally resolve the peer's routable HOST via
+  // resolveServerName (the rpc_meta lookup the real prefill worker uses to
+  // discover a decode host), and fail if it can't. openSegment already proves
+  // handle-level discovery; this proves the host-level discovery our worker
+  // integration depends on.
+  bool check_resolve = false;
 };
 
 void usage() {
@@ -52,6 +58,9 @@ void usage() {
          "  --peer NAME       sender only: the receiver's predefined --name\n"
          "  [--bytes N]       tensor size (default 65536)\n"
          "  [--timeout-sec S] (default 30)\n"
+         "  [--check-resolve] sender only: also resolve the peer's HOST via\n"
+         "                    resolveServerName (rpc_meta lookup) and fail if "
+         "empty\n"
          "\n"
          "Discovery: the receiver registers --name in the metadata service "
          "under an\n"
@@ -76,6 +85,10 @@ bool parseArgs(int argc, char** argv, Options& o) {
     if (a == "--metadata" && next(o.metadata)) continue;
     if (a == "--name" && next(o.name)) continue;
     if (a == "--peer" && next(o.peer)) continue;
+    if (a == "--check-resolve") {
+      o.check_resolve = true;
+      continue;
+    }
     std::string v;
     if (a == "--bytes" && next(v)) {
       o.bytes = std::strtoull(v.c_str(), nullptr, 0);
@@ -177,6 +190,22 @@ int runSender(const Options& o) {
     return 1;
   }
   std::cout << "[sender] discovered peer '" << o.peer << "'\n";
+
+  // Host-level discovery: this is the exact call the real prefill worker uses to
+  // turn a decode's logical --name into its routable host (rpc_meta lookup) so
+  // it can open a control channel. openSegment above proved handle discovery;
+  // this proves the worker-integration path resolves a host too.
+  if (o.check_resolve) {
+    const std::string host = engine->resolveServerName(o.peer);
+    if (host.empty()) {
+      std::cerr << "[sender] resolveServerName(" << o.peer
+                << ") returned empty (rpc_meta lookup failed)\n";
+      engine->unregisterLocalMemory(staging.data());
+      return 1;
+    }
+    std::cout << "[sender] resolved peer '" << o.peer << "' -> host " << host
+              << "\n";
+  }
 
   TransferRequest tensorReq;
   tensorReq.op = TransferOp::WRITE;
