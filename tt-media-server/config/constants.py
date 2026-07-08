@@ -43,6 +43,7 @@ class SupportedModels(Enum):
     SPEECHT5_TTS = "microsoft/speecht5_tts"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "google/gemma-4-31B-it"
+    MISTRAL_SMALL_3_1_24B_INSTRUCT_2503 = "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
     FALCON3_7B_INSTRUCT = "tiiuae/Falcon3-7B-Instruct"
     Z_IMAGE_TURBO = "Tongyi-MAI/Z-Image-Turbo"
     YOLOX_NANO = "Megvii-BaseDetection/YOLOX-Nano"
@@ -93,6 +94,7 @@ class ModelNames(Enum):
     SPEECHT5_TTS = "speecht5_tts"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "gemma-4-31b-it"
+    MISTRAL_SMALL_3_1_24B_INSTRUCT_2503 = "Mistral-Small-3.1-24B-Instruct-2503"
     FALCON3_7B_INSTRUCT = "Falcon3-7B-Instruct"
     YOLOX_NANO = "yolox_nano"
     Z_IMAGE_TURBO = "Z-Image-Turbo"
@@ -122,6 +124,7 @@ class ModelRunners(Enum):
     VLLMForge_LLAMA_70B = "vllm_forge_llama_70b"
     VLLMForge_GEMMA4_31B = "vllm_forge_gemma4_31b"
     VLLMForge_QWEN_32B = "vllm_forge_qwen_32b"
+    VLLMForge_MISTRAL_SMALL_31_24B = "vllm_forge_mistral_small_31_24b"
     QWEN_EMBEDDING_8B = "qwen_embedding_8b"
     BGELargeEN_V1_5 = "bge_large_en_v1_5"
     BGEM3 = "bge-m3"
@@ -175,6 +178,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.VLLMForge_LLAMA_70B,
         ModelRunners.VLLMForge_GEMMA4_31B,
         ModelRunners.VLLMForge_QWEN_32B,
+        ModelRunners.VLLMForge_MISTRAL_SMALL_31_24B,
         ModelRunners.LLM_TEST,
         ModelRunners.LLAMA_RUNNER,
         ModelRunners.LORA_SINGLE_CHIP,
@@ -258,6 +262,9 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.VLLMForge_LLAMA_70B: {ModelNames.LLAMA_3_1_70B},
     ModelRunners.VLLMForge_GEMMA4_31B: {ModelNames.GEMMA_4_31B_IT},
     ModelRunners.VLLMForge_QWEN_32B: {ModelNames.QWEN_3_32B},
+    ModelRunners.VLLMForge_MISTRAL_SMALL_31_24B: {
+        ModelNames.MISTRAL_SMALL_3_1_24B_INSTRUCT_2503
+    },
     ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
     ModelRunners.BGEM3: {ModelNames.BGE_M3},
@@ -1101,6 +1108,18 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         # Dims env-driven via dev/cnn.yaml env_vars (see gemma entry above).
+        "max_batch_size": 1,
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
+    },
+    (ModelRunners.VLLMForge_MISTRAL_SMALL_31_24B, DeviceTypes.GALAXY): {
+        # WH galaxy (galaxy-wh-6u): 32 chips as an 8x4 TP mesh, matching the
+        # tt-xla Stage 1 benchmark (mesh_shape=[8,4], use_2d_mesh=False) and the
+        # single_galaxy_mesh_graph_descriptor (device_topology dims [8,4]).
+        "device_mesh_shape": (8, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        # Dims env-driven via dev/cnn.yaml env_vars (see gemma entry above); this
+        # entry only carries the TP mesh topology.
         "max_batch_size": 1,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
