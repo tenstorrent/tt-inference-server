@@ -31,3 +31,11 @@ datasets
 # v2 orchestrator eager-import: workflow_module -> test_module.context ->
 # health_tests uses aiohttp at module top.
 aiohttp
+
+# Required by models whose HF repo ships a custom tiktoken-based tokenizer
+# (e.g. moonshotai/Kimi-*). transformers loads tokenization_kimi.py via
+# trust_remote_code, which imports tiktoken (and blobfile to fetch the
+# vocab). Without these, AutoTokenizer.from_pretrained fails with an
+# ImportError once --tokenizer-trust-remote-code is enabled.
+tiktoken
+blobfile

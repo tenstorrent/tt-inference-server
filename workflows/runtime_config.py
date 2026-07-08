@@ -78,6 +78,8 @@ class RuntimeConfig:
     prefix_cache_request_rate: Optional[float] = None
     prefix_cache_scenarios_json: Optional[str] = None
     prefix_cache_trace: Optional[str] = None
+    prefix_cache_goodput: Optional[str] = None
+    prefix_cache_metrics_url: Optional[List[str]] = None
     jwt_secret: Optional[str] = None
     serving_bench_suites: Optional[str] = None
 
@@ -165,6 +167,8 @@ class RuntimeConfig:
                 args, "prefix_cache_scenarios_json", None
             ),
             prefix_cache_trace=getattr(args, "prefix_cache_trace", None),
+            prefix_cache_goodput=getattr(args, "prefix_cache_goodput", None),
+            prefix_cache_metrics_url=getattr(args, "prefix_cache_metrics_url", None),
             jwt_secret=getattr(args, "jwt_secret", None),
             serving_bench_suites=getattr(args, "serving_bench_suites", None),
             spec_decode=getattr(args, "spec_decode", False),
