@@ -5,6 +5,8 @@
 
 #include <algorithm>
 
+#include "domain/prefix_cache/block_matcher.hpp"
+
 namespace tt::domain::prefix_cache {
 
 namespace {
@@ -14,7 +16,6 @@ bool remainingHashesMatch(const std::list<RemainingBlockInfo>& a,
   if (a.size() != b.size()) return false;
   auto itA = a.begin();
   auto itB = b.begin();
-
   while (itA != a.end()) {
     if (itA->hash != itB->hash) return false;
     ++itA;
@@ -23,15 +24,6 @@ bool remainingHashesMatch(const std::list<RemainingBlockInfo>& a,
   return true;
 }
 
-std::list<RemainingBlockInfo> buildRemainingBlocks(
-    const std::vector<utils::BlockHashInfo>& blockInfos) {
-  std::list<RemainingBlockInfo> remaining;
-  for (size_t i = 1; i < blockInfos.size(); ++i) {
-    remaining.push_back(
-        {blockInfos[i].hash, blockInfos[i].accumulatedThinkTokens});
-  }
-  return remaining;
-}
 }  // namespace
 
 std::vector<PrefixIndexEntry> PrefixIndex::getEntriesForKey(
@@ -50,8 +42,9 @@ void PrefixIndex::registerPrefixHash(
   const uint64_t keyHash = blockInfos.front().hash;
   const uint32_t keyThinkCount = blockInfos.front().accumulatedThinkTokens;
   const std::list<RemainingBlockInfo> remaining =
-      buildRemainingBlocks(blockInfos);
-  bool exists =
+      BlockMatcher::buildCallerRemaining(blockInfos);
+
+  const bool exists =
       prefixIndex.modify(keyHash, [&sessionId, &remaining, keyThinkCount](
                                       std::vector<PrefixIndexEntry>& entries) {
         for (auto it = entries.begin(); it != entries.end();) {
@@ -71,6 +64,7 @@ void PrefixIndex::registerPrefixHash(
         entries.push_back(
             PrefixIndexEntry{{sessionId}, remaining, keyThinkCount});
       });
+
   if (!exists) {
     std::vector<PrefixIndexEntry> entries;
     entries.push_back(PrefixIndexEntry{{sessionId}, remaining, keyThinkCount});

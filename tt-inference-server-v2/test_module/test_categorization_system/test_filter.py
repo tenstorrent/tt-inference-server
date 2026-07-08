@@ -34,6 +34,9 @@ TEST_CONFIG = "test_config"
 NUM_OF_DEVICES = "num_of_devices"
 NUM_CONCURRENT_REQUESTS = "num_concurrent_requests"
 TARGETS = "targets"
+ENGINES = "engines"
+CATEGORIES = "categories"
+EXCLUDE_CATEGORIES = "exclude_categories"
 
 
 class TestFilter:
@@ -84,6 +87,7 @@ class TestFilter:
 
         logger.info("Including prerequisites by default")
         self._include_prerequisites = True
+        self._prerequisite_engine: Optional[str] = None
 
     @classmethod
     def from_category(cls, category: str) -> TestFilter:
@@ -286,8 +290,65 @@ class TestFilter:
 
         return expanded_suites
 
+    def _prerequisite_applies_to_engine(self, prereq: Dict) -> bool:
+        """Whether ``prereq`` should run under the configured inference engine.
+
+        A prerequisite without an ``engines`` allow-list is engine-agnostic and
+        always applies. One that declares engines applies only when the active
+        engine is in that list."""
+        allowed_engines = prereq.get(ENGINES)
+        if not allowed_engines or self._prerequisite_engine is None:
+            return True
+        return self._prerequisite_engine in allowed_engines
+
+    def _get_suite_category(self, suite: Dict) -> Optional[str]:
+        """Return the model category (e.g. ``"LLM"``) for ``suite``.
+
+        Derived from the suite's ``weights`` via the model -> category reverse
+        mapping; returns the first category found, or ``None`` if unknown.
+        """
+        for model in suite.get("weights", []):
+            category = self._model_to_category.get(model)
+            if category:
+                return category
+        return None
+
+    def _prerequisite_applies_to_category(self, prereq: Dict, suite: Dict) -> bool:
+        """Whether ``prereq`` should run for ``suite``'s model category.
+
+        Prereqs may declare either or both of:
+
+        - ``categories``: allow-list — only these categories get this prereq.
+        - ``exclude_categories``: deny-list — these categories never get it.
+
+        The deny-list wins over the allow-list. A prereq with neither key is
+        category-agnostic and always applies. A suite whose category can't be
+        resolved (no matching weight) is treated as unknown: allow-lists that
+        don't include ``None`` reject it, deny-lists don't.
+        """
+        allow = prereq.get(CATEGORIES) or []
+        deny = prereq.get(EXCLUDE_CATEGORIES) or []
+        if not allow and not deny:
+            return True
+
+        category = self._get_suite_category(suite)
+        if category is not None and category in deny:
+            return False
+        if allow and category not in allow:
+            return False
+        return True
+
     def _get_prerequisite_for_suite(self, suite: Dict) -> List[Dict]:
         """Get expanded prerequisite tests for a specific suite.
+
+        Prerequisites are gated by two orthogonal, config-driven axes:
+
+        - ``engines`` on the prereq vs. the engine passed to
+          :meth:`filter_prerequisites_by_engine`.
+        - ``categories`` / ``exclude_categories`` on the prereq vs. the
+          suite's model category (derived from ``weights``).
+
+        A prereq is only prepended when *both* gates pass.
 
         Args:
             suite: Suite dict for hardware context
@@ -300,6 +361,25 @@ class TestFilter:
         )
         prereqs = []
         for prereq in self.prerequisite_tests:
+            if not self._prerequisite_applies_to_engine(prereq):
+                logger.info(
+                    "Skipping prerequisite %s for engine %s (allowed: %s)",
+                    prereq.get("name", "unknown"),
+                    self._prerequisite_engine,
+                    prereq.get(ENGINES),
+                )
+                continue
+            if not self._prerequisite_applies_to_category(prereq, suite):
+                logger.info(
+                    "Skipping prerequisite %s for suite %s "
+                    "(category=%s, categories=%s, exclude_categories=%s)",
+                    prereq.get("name", "unknown"),
+                    suite.get("id", "unknown"),
+                    self._get_suite_category(suite),
+                    prereq.get(CATEGORIES),
+                    prereq.get(EXCLUDE_CATEGORIES),
+                )
+                continue
             expanded = self._expand_prerequisite_test(prereq, suite)
             prereqs.append(expanded)
         return prereqs
@@ -315,6 +395,10 @@ class TestFilter:
             Self for method chaining
         """
         self._include_prerequisites = include
+        return self
+
+    def filter_prerequisites_by_engine(self, engine: Optional[str]) -> TestFilter:
+        self._prerequisite_engine = engine
         return self
 
     def filter_by_model_category(self, categories: List[str]) -> TestFilter:

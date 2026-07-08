@@ -133,7 +133,7 @@ bool InterServerService::isEnabled() const { return enabled; }
 
 bool InterServerService::sendPrefillRequest(
     uint32_t taskId, const std::vector<uint64_t>& registrationHashes,
-    const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens,
+    const std::vector<uint32_t>& tokenIds, std::optional<int> maxTokens,
     std::optional<uint32_t> slotId,
     const tt::domain::llm::SamplingParams& sampling, int decodePositionId,
     int decodeSkipTokens) {

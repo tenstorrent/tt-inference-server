@@ -23,8 +23,8 @@ namespace tt::utils::tokenizers {
 
 namespace {
 
-std::unordered_set<int> parseSpecialTokenIds(const std::string& jsonBlob) {
-  std::unordered_set<int> ids;
+std::unordered_set<uint32_t> parseSpecialTokenIds(const std::string& jsonBlob) {
+  std::unordered_set<uint32_t> ids;
   Json::CharReaderBuilder builder;
   Json::Value root;
   std::string errs;
@@ -37,7 +37,7 @@ std::unordered_set<int> parseSpecialTokenIds(const std::string& jsonBlob) {
   for (const auto& tok : added) {
     if (tok.isMember("special") && tok["special"].asBool() &&
         tok.isMember("id")) {
-      ids.insert(tok["id"].asInt());
+      ids.insert(static_cast<uint32_t>(tok["id"].asInt()));
     }
   }
   return ids;
@@ -88,15 +88,18 @@ Tokenizer::Tokenizer(const std::string& path) {
 
 bool Tokenizer::isLoaded() const { return tok_ != nullptr; }
 
-std::vector<int> Tokenizer::encode(const std::string& text) const {
+std::vector<uint32_t> Tokenizer::encode(const std::string& text) const {
   if (!tok_) {
     throw std::runtime_error(
         "[TokenizerUtil] Tokenizer not loaded, cannot encode");
   }
-  return tok_->Encode(text);
+  // tokenizers-cpp emits int32_t ids; token ids are non-negative and well
+  // within uint32_t range, so this widening conversion is lossless.
+  const std::vector<int32_t> ids = tok_->Encode(text);
+  return std::vector<uint32_t>(ids.begin(), ids.end());
 }
 
-std::string Tokenizer::decode(const std::vector<int>& tokenIds,
+std::string Tokenizer::decode(const std::vector<uint32_t>& tokenIds,
                               bool skipSpecialTokens) const {
   if (!tok_) {
     throw std::runtime_error(
@@ -104,9 +107,15 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds,
   }
   if (tokenIds.empty()) return "";
 
+  // tokenizers-cpp Decode takes int32_t ids; convert without any value change
+  // (token ids fit in both types).
+  auto toI32 = [](const std::vector<uint32_t>& v) {
+    return std::vector<int32_t>(v.begin(), v.end());
+  };
+
   // Fast path: no special tokens to filter
   if (!skipSpecialTokens || specialTokenIds_.empty()) {
-    return tok_->Decode(tokenIds);
+    return tok_->Decode(toI32(tokenIds));
   }
 
   // Fast path: single token, check if special
@@ -114,15 +123,15 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds,
     if (specialTokenIds_.find(tokenIds[0]) != specialTokenIds_.end()) {
       return "";  // Special token, skip it
     }
-    return tok_->Decode(tokenIds);
+    return tok_->Decode(toI32(tokenIds));
   }
 
   // Slow path: multiple tokens, filter special tokens
-  std::vector<int> filtered;
+  std::vector<int32_t> filtered;
   filtered.reserve(tokenIds.size());
-  for (int id : tokenIds) {
+  for (uint32_t id : tokenIds) {
     if (specialTokenIds_.find(id) == specialTokenIds_.end()) {
-      filtered.push_back(id);
+      filtered.push_back(static_cast<int32_t>(id));
     }
   }
   if (filtered.empty()) return "";
@@ -161,7 +170,7 @@ Tokenizer::StreamDecoder::StreamDecoder(const Tokenizer& tokenizer,
                                         bool skipSpecialTokens)
     : tokenizer_(tokenizer), skipSpecialTokens_(skipSpecialTokens) {}
 
-std::string Tokenizer::StreamDecoder::step(int tokenId) {
+std::string Tokenizer::StreamDecoder::step(uint32_t tokenId) {
   if (pending_.empty()) {
     std::string decoded = tokenizer_.decode({tokenId}, skipSpecialTokens_);
     if (!endsWithReplacementChar(decoded)) {
@@ -426,12 +435,12 @@ const StaticTokenizerInfo& staticInfo() {
   return staticInfoFor(config::modelType());
 }
 
-std::pair<int64_t, int64_t> thinkTokenIdsFor(config::ModelType model) {
+std::pair<uint32_t, uint32_t> thinkTokenIdsFor(config::ModelType model) {
   const auto& info = staticInfoFor(model);
   return {info.thinkStartTokenId, info.thinkEndTokenId};
 }
 
-std::pair<int64_t, int64_t> thinkTokenIds() {
+std::pair<uint32_t, uint32_t> thinkTokenIds() {
   return thinkTokenIdsFor(config::modelType());
 }
 

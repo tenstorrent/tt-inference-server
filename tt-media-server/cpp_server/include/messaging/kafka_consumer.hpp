@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -15,6 +16,13 @@ struct KafkaConsumerConfig {
   std::string brokers;
   std::string topic;
   std::string group_id;
+  // When set, the consumer uses rd_kafka_assign() to pin itself to this
+  // partition instead of joining the group's rebalance. This guarantees
+  // "worker k always reads partition k" semantics but disables automatic
+  // failover and group-managed offset commits. auto.offset.reset=latest
+  // still applies, so requests in flight during a restart are lost --
+  // callers must reconcile via a higher-level timeout/sweeper.
+  std::optional<int32_t> partition;
 };
 
 class KafkaConsumer : public IKafkaConsumer {
