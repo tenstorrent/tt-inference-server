@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <optional>
+#include <string>
 #include <utility>
 
 #include "config/settings.hpp"
@@ -697,7 +698,9 @@ void BlazePrefillRunner::handleTask(
           task->taskId, slotId, task->isContinuation(),
           task->getNumPromptTokens(), task->getTokenIds().size(),
           slotManager.activeRunningCount(),
-          task->getMigrationId().has_value() ? *task->getMigrationId() : -1);
+          task->getMigrationId().has_value()
+              ? std::to_string(*task->getMigrationId())
+              : "None");
 
       auto migrationUuid = task->getMigrationId();
       auto destSlot = migrationUuid.has_value()

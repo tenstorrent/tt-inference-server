@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <utility>
 
 #include "config/settings.hpp"
@@ -726,7 +727,9 @@ void BlazeDecodeRunner::handleTask(
           task->taskId, slotId, isNew, task->isContinuation(),
           task->getNumPromptTokens(), task->getTokenIds().size(),
           slotManager.activeRunningCount(),
-          task->getMigrationId().has_value() ? *task->getMigrationId() : -1);
+          task->getMigrationId().has_value()
+              ? std::to_string(*task->getMigrationId())
+              : "None");
       ds::ISRequest req = isNew ? utils::makeSubmitRequest(slotId, *task)
                                 : utils::makeContinueRequest(slotId, *task);
       TT_LOG_DEBUG(
