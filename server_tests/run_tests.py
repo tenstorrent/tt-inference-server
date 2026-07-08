@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 from datetime import datetime
 import os
 import argparse
-import json
-import jwt
 import logging
 import sys
 from pathlib import Path
@@ -16,9 +14,12 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from utils.remote_readiness import _wait_for_remote_openai_ready
 from server_tests.test_config import TEST_CONFIGS, TestTask
+from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
-from utils.url_helpers import build_base_url, resolve_deploy_url
+from utils.auth_helpers import setup_tests_auth
+from utils.url_helpers import build_base_url, is_remote_server, resolve_deploy_url
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
 from workflows.runtime_config import RuntimeConfig
@@ -52,10 +53,13 @@ def build_test_command(
 
     test_kwargs_list = [f"-{arg}" for arg in task.test_args]
 
+    base = build_base_url(deploy_url, service_port)
     if task.task_name == "vllm_responses":
         # vLLM responses test needs the service port to connect to the server.
         base = build_base_url(deploy_url, service_port)
         test_kwargs_list.extend(["--endpoint-url", f"{base}/v1/responses"])
+    elif task.task_name == "vllm_chat_completions":
+        test_kwargs_list.extend(["--endpoint-url", f"{base}/v1/chat/completions"])
     cmd = [
         str(test_exec),
         task.test_path,
@@ -133,6 +137,7 @@ def main():
     jwt_secret = args.jwt_secret
     model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
     runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
+    remote_server = is_remote_server(runtime_config)
 
     # runtime config loaded from JSON
     device_str = runtime_config.device
@@ -153,17 +158,7 @@ def main():
     logger.info(f"service_port=: {service_port}")
     logger.info(f"output_path=: {args.output_path}")
 
-    # set environment vars
-    if jwt_secret:
-        # If jwt-secret is provided, generate the JWT and set OPENAI_API_KEY.
-        json_payload = json.loads(
-            '{"team_id": "tenstorrent", "token_id": "debug-test"}'
-        )
-        encoded_jwt = jwt.encode(json_payload, jwt_secret, algorithm="HS256")
-        os.environ["OPENAI_API_KEY"] = encoded_jwt
-        logger.info(
-            "OPENAI_API_KEY environment variable set using provided JWT secret."
-        )
+    setup_tests_auth(jwt_secret, remote_server, logger)
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
 
@@ -173,12 +168,32 @@ def main():
         raise ValueError(message)
     test_config = TEST_CONFIGS[model_spec.model_name]
 
-    logger.info("Wait for the vLLM server to be ready ...")
+    if remote_server:
+        logger.info("Wait for remote OpenAI-compatible endpoint to be ready ...")
+    else:
+        logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
-    env_config.jwt_secret = args.jwt_secret
+    if remote_server:
+        env_config.vllm_api_key = os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY")
+    else:
+        env_config.jwt_secret = args.jwt_secret
+        env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
     env_config.service_port = runtime_config.service_port
     env_config.vllm_model = model_spec.hf_model_repo
     env_config.deploy_url = deploy_url
+
+    prompt_client = PromptClient(
+        env_config,
+        model_spec=model_spec,
+        runtime_config=runtime_config,
+    )
+    if remote_server:
+        if not _wait_for_remote_openai_ready(prompt_client):
+            logger.error("⛔️ Remote inference endpoint is not ready. Aborting tests.")
+            return 1
+    elif not prompt_client.wait_for_healthy():
+        logger.error("⛔️ vLLM server is not healthy. Aborting tests.")
+        return 1
 
     # Create a single shared output directory for all tasks in this run
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
