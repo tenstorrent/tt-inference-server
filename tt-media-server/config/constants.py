@@ -1123,6 +1123,18 @@ ModelConfigs = {
         "max_batch_size": 1,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
+    (ModelRunners.VLLMForge_MISTRAL_SMALL_31_24B, DeviceTypes.BLACKHOLE_GALAXY): {
+        # BH galaxy: same 8x4 / 32-chip TP topology as WH galaxy
+        # (single_bh_galaxy_mesh_graph_descriptor also has device_topology
+        # dims [8,4]). Serving-side bringup target; Stage 1 was validated on WH.
+        "device_mesh_shape": (8, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        # Dims env-driven via dev/cnn.yaml env_vars (see gemma entry above); this
+        # entry only carries the TP mesh topology.
+        "max_batch_size": 1,
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
+    },
     (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
