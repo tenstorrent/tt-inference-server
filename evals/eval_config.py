@@ -3545,8 +3545,12 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
+                # CI_NIGHTLY 0.05 (~10 samples), not the usual 0.2: reasoning
+                # eval (~48K tokens/sample) served batch-1, so samples run
+                # sequentially and dominate CI runtime. Widen EvalTaskScore
+                # tolerance if the small-N accuracy gate flakes.
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
