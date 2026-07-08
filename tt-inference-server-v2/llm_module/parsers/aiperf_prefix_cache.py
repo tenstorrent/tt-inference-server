@@ -19,11 +19,64 @@ Uplift) -- mirroring the v1 report layout.
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 from report_module.schema import Block
 
 from .base import LLMResultParser
+
+# Customer SLA targets (used for the per-run PASS/FAIL verdicts). Kept here
+# so the renderer and tests share one source of truth. Latency targets are
+# milliseconds; output speed is tokens/s/user; hit-rate is a fraction.
+SLA_TTFT_P50_MAX_MS = 4_000.0
+SLA_TTFT_P90_MAX_MS = 10_000.0
+SLA_TTFT_P99_MAX_MS = 35_000.0
+SLA_OUTPUT_SPEED_MIN_TPS_PER_USER = 45.0
+SLA_HIT_RATE_MIN = 0.90
+
+
+def _le(measured: Any, target: float) -> Optional[bool]:
+    """Return measured <= target, or None when measured is missing/0."""
+    if not isinstance(measured, (int, float)) or measured <= 0:
+        return None
+    return float(measured) <= target
+
+
+def _ge(measured: Any, target: float) -> Optional[bool]:
+    """Return measured >= target, or None when measured is missing/0."""
+    if not isinstance(measured, (int, float)) or measured <= 0:
+        return None
+    return float(measured) >= target
+
+
+def _compute_sla_checks(raw: Mapping[str, Any]) -> dict:
+    """Compute customer SLA PASS/FAIL booleans from one run's metrics.
+
+    Each check is ``True``/``False``, or ``None`` when the underlying
+    metric was not captured (e.g. hit-rate when the worker ``/metrics``
+    endpoint is unreachable). ``sla_pass`` is the strict overall verdict:
+    ``True`` only when every check passed, ``False`` if any check failed,
+    and ``None`` when any check is missing (incomplete data).
+    """
+    checks = {
+        "sla_ttft_p50_pass": _le(raw.get("median_ttft_ms"), SLA_TTFT_P50_MAX_MS),
+        "sla_ttft_p90_pass": _le(raw.get("p90_ttft_ms"), SLA_TTFT_P90_MAX_MS),
+        "sla_ttft_p99_pass": _le(raw.get("p99_ttft_ms"), SLA_TTFT_P99_MAX_MS),
+        "sla_output_speed_pass": _ge(
+            raw.get("output_token_throughput_per_user"),
+            SLA_OUTPUT_SPEED_MIN_TPS_PER_USER,
+        ),
+        "sla_hit_rate_pass": _ge(raw.get("prefix_cache_hit_rate"), SLA_HIT_RATE_MIN),
+    }
+    values = list(checks.values())
+    if any(v is False for v in values):
+        overall: Optional[bool] = False
+    elif any(v is None for v in values):
+        overall = None
+    else:
+        overall = True
+    checks["sla_pass"] = overall
+    return checks
 
 
 class AIPerfPrefixCacheParser(LLMResultParser):
@@ -61,6 +114,11 @@ class AIPerfPrefixCacheParser(LLMResultParser):
             for key in ("trace_name", "synthesis_variant"):
                 if key not in record and key in metadata:
                     record[key] = metadata[key]
+
+        # Customer SLA PASS/FAIL verdicts (None-safe; missing metrics ->
+        # None). Surfaced as record fields so the renderer can build the
+        # "SLA Compliance" table declaratively.
+        record.update(_compute_sla_checks(raw))
 
         return self._wrap_record(record)
 

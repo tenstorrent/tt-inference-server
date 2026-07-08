@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -40,6 +41,9 @@ MESSAGE_MAX_LEN = 250
 # test_module/llm_tests/<this file> -> parents[2] is the v2 package root.
 _V2_ROOT = Path(__file__).resolve().parents[2]
 _LLM_MODULE_DIR = _V2_ROOT / "llm_module"
+# The v1 repo root (parent of the v2 package) holds server_tests / utils /
+# workflows, which llm_module/conftest.py imports.
+_REPO_ROOT = _V2_ROOT.parent
 
 
 def _truncate_message(message: Any) -> str:
@@ -110,9 +114,20 @@ class VLLMParamConformanceTest(BaseTest):
         ]
         logger.info("Running vLLM parameter suite: %s", " ".join(command))
 
+        # The child pytest is a fresh interpreter and does NOT inherit run.py's
+        # in-process sys.path additions. llm_module/conftest.py imports from
+        # server_tests / utils (repo root) and report_module (v2 root), so make
+        # both importable via PYTHONPATH.
+        env = dict(os.environ)
+        existing = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = os.pathsep.join(
+            [str(_REPO_ROOT), str(_V2_ROOT)] + ([existing] if existing else [])
+        )
+
         process = await asyncio.create_subprocess_exec(
             *command,
             cwd=str(_V2_ROOT),
+            env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )

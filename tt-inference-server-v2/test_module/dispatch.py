@@ -35,46 +35,61 @@ from ._test_common import (
     sweep_envelope,
 )
 from ._test_common.exceptions import TestOutcomeSignal
-from .benchmark_tests import (
-    run_audio_benchmark,
-    run_cnn_benchmark,
-    run_embedding_benchmark,
-    run_image_benchmark,
-    run_tts_benchmark,
-    run_video_benchmark,
-)
 from .context import MediaContext
-from .eval_tests import (
-    run_audio_eval,
-    run_cnn_eval,
-    run_embedding_eval,
-    run_image_eval,
-    run_tts_eval,
-    run_video_eval,
-)
 from .task_types import MediaTaskType
 
 logger = logging.getLogger(__name__)
 
 MediaRunner = Callable[[MediaContext], Block]
 
-EVAL_DISPATCH: dict[str, MediaRunner] = {
-    "CNN": run_cnn_eval,
-    "IMAGE": run_image_eval,
-    "AUDIO": run_audio_eval,
-    "EMBEDDING": run_embedding_eval,
-    "TEXT_TO_SPEECH": run_tts_eval,
-    "VIDEO": run_video_eval,
+# model_type.name -> runner function name. Values are resolved lazily by
+# _resolve_runner via the eval_tests / benchmark_tests package __getattr__ so
+# that importing this module does NOT pull in every media runner's optional
+# heavy deps (e.g. image evals -> open_clip). Keyed by ModelType.name.
+EVAL_DISPATCH: dict[str, str] = {
+    "CNN": "run_cnn_eval",
+    "IMAGE": "run_image_eval",
+    "AUDIO": "run_audio_eval",
+    "EMBEDDING": "run_embedding_eval",
+    "TEXT_TO_SPEECH": "run_tts_eval",
+    "VIDEO": "run_video_eval",
 }
 
-BENCHMARK_DISPATCH: dict[str, MediaRunner] = {
-    "CNN": run_cnn_benchmark,
-    "IMAGE": run_image_benchmark,
-    "AUDIO": run_audio_benchmark,
-    "EMBEDDING": run_embedding_benchmark,
-    "TEXT_TO_SPEECH": run_tts_benchmark,
-    "VIDEO": run_video_benchmark,
+BENCHMARK_DISPATCH: dict[str, str] = {
+    "CNN": "run_cnn_benchmark",
+    "IMAGE": "run_image_benchmark",
+    "AUDIO": "run_audio_benchmark",
+    "EMBEDDING": "run_embedding_benchmark",
+    "TEXT_TO_SPEECH": "run_tts_benchmark",
+    "VIDEO": "run_video_benchmark",
 }
+
+
+def _dispatch_table(task_type: MediaTaskType) -> dict[str, str]:
+    if task_type == MediaTaskType.EVALUATION:
+        return EVAL_DISPATCH
+    return BENCHMARK_DISPATCH
+
+
+def _resolve_runner(
+    task_type: MediaTaskType, model_type_name: str
+) -> Optional[MediaRunner]:
+    """Lazily import the runner registered for ``(task_type, model_type)``.
+
+    The import is deferred to call time (rather than module import time) so a
+    workflow that only touches one model type doesn't drag in the optional
+    heavy dependencies of every other runner. Resolution goes through the
+    package ``__getattr__`` (``.eval_tests`` / ``.benchmark_tests``), which
+    imports just the one submodule that defines the function.
+    """
+    func_name = _dispatch_table(task_type).get(model_type_name)
+    if func_name is None:
+        return None
+    package_name = (
+        "eval_tests" if task_type == MediaTaskType.EVALUATION else "benchmark_tests"
+    )
+    package = importlib.import_module(f".{package_name}", __package__)
+    return getattr(package, func_name)
 
 
 _NO_MEDIA_RUNNER: frozenset[ModelType] = frozenset({ModelType.VLM, ModelType.LLM})
@@ -154,10 +169,7 @@ def run_media_task(
         ctx.device.name,
     )
 
-    dispatch = (
-        EVAL_DISPATCH if task_type == MediaTaskType.EVALUATION else BENCHMARK_DISPATCH
-    )
-    runner = dispatch.get(model_type_name)
+    runner = _resolve_runner(task_type, model_type_name)
     if runner is None:
         if ctx.model_spec.model_type in _NO_MEDIA_RUNNER:
             reason = (
@@ -173,7 +185,8 @@ def run_media_task(
         # blocking, visible ERROR rather than a silent (1, None) failure.
         error = RuntimeError(
             f"no {task_type.value} runner registered for "
-            f"model_type={model_type_name!r}; known types: {sorted(dispatch)}"
+            f"model_type={model_type_name!r}; "
+            f"known types: {sorted(_dispatch_table(task_type))}"
         )
         logger.error("❌ %s -> error: %s", task_type.value, error)
         block = _media_outcome_block(ctx, task_type, TestStatus.ERROR, exc=error)
@@ -310,6 +323,9 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
     matches this model+device pair) is treated as a clean no-op: a warning
     is logged and ``(0, None)`` is returned, so a model that has not yet
     been wired into the spec-test config does not fail the whole workflow.
+    A matched suite whose cases are all skipped (disabled/malformed) is the
+    same kind of no-op — it produces no blocks and no failures and returns
+    ``(0, None)`` rather than a spurious ``rc=1``.
     """
     logger.info(
         "Running spec_tests for model=%s, device=%s",
@@ -366,18 +382,16 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
             elif status in (TestStatus.SKIP, TestStatus.NA):
                 logger.info("  ⏭  %s -> %s", class_name, status.value)
 
-    if not blocks:
-        return 1, None
-
-    accept_blocks(blocks, envelope=sweep_envelope(ctx))
-    exit_code = 0 if failures == 0 else 1
+    if blocks:
+        accept_blocks(blocks, envelope=sweep_envelope(ctx))
+    exit_code = 1 if failures else 0
     logger.info(
         "spec_tests done: %d block(s), %d failure(s) -> exit=%d",
         len(blocks),
         failures,
         exit_code,
     )
-    return exit_code, blocks[-1]
+    return exit_code, (blocks[-1] if blocks else None)
 
 
 __all__ = [

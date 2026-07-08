@@ -49,6 +49,7 @@ class SpeechT5TTSTest(BaseTest):
 
         payload = {
             "text": "Hello world, this is a test of SpeechT5 text to speech synthesis.",
+            "response_format": "json",
         }
 
         timeout = aiohttp.ClientTimeout(total=120)  # 2 minute timeout for TTS
