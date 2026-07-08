@@ -82,8 +82,7 @@ inline void logISRequest(const sch::ISRequest& req) {
 }
 
 inline sch::ISRequest makeAllocateRequest(
-    const tt::config::BlazeConfig& config,
-    uint32_t requestId,
+    const tt::config::BlazeConfig& config, uint32_t requestId,
     std::optional<uint32_t> migrateFromSlot = std::nullopt) {
   auto req = sch::ISRequest{
       .type = ds::RequestType::ALLOCATE,
@@ -133,8 +132,7 @@ inline sch::GenerationParams makeGenerationParams(
       .ignore_eos = seq.getSamplingParams().ignore_eos,
       .sampling = userSampling,
       .reasoning_sampling = userSampling,
-      .disaggregated_decode =
-          config.enableMigration && seq.isDisaggregated(),
+      .disaggregated_decode = config.enableMigration && seq.isDisaggregated(),
       .starts_in_thinking = seq.getStartsInThinking(),
       .stop_tokens = seq.getSamplingParams().stop_token_ids,
   };
@@ -325,8 +323,7 @@ inline pl::CounterChannelConfig makePrefillAckChannelConfig(
 inline MockPrefillSchedulerConfig makeMockPrefillSchedulerConfig(
     const tt::config::BlazeConfig& config) {
   return MockPrefillSchedulerConfig{
-      .prefillLatency =
-          std::chrono::milliseconds(config.mockPrefillLatencyMs),
+      .prefillLatency = std::chrono::milliseconds(config.mockPrefillLatencyMs),
       .prefillChunkSize = config.prefillChunkSize,
   };
 }
@@ -334,8 +331,7 @@ inline MockPrefillSchedulerConfig makeMockPrefillSchedulerConfig(
 inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig(
     const tt::config::BlazeConfig& config) {
   return MockDecodeSchedulerConfig{
-      .prefillLatency =
-          std::chrono::milliseconds(config.mockPrefillLatencyMs),
+      .prefillLatency = std::chrono::milliseconds(config.mockPrefillLatencyMs),
       .prefillChunkSize = config.prefillChunkSize,
       .decodeTokenId = config.mockDecodeTokenId,
       .decodeTokenLatency =
@@ -352,8 +348,7 @@ makeMigrationClientInterface(const tt::config::BlazeConfig& config) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
 #ifdef ENABLE_BLAZE_MIGRATION
       return std::make_unique<sch::MigrationLayerClientAdapter>(
-          config.migrationCmdQueueName,
-          config.migrationTableQueueName,
+          config.migrationCmdQueueName, config.migrationTableQueueName,
           config.migrationRespQueueName);
 #else
       throw std::runtime_error(
@@ -376,8 +371,7 @@ makeDecodeMigrationClientInterface(const tt::config::BlazeConfig& config) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
 #ifdef ENABLE_BLAZE_MIGRATION
       return std::make_unique<sch::MigrationLayerClientAdapter>(
-          config.migrationCmdQueueName,
-          config.migrationTableQueueName,
+          config.migrationCmdQueueName, config.migrationTableQueueName,
           config.migrationRespQueueName);
 #else
       throw std::runtime_error(

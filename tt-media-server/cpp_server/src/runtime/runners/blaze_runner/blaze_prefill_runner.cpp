@@ -108,7 +108,8 @@ bool BlazePrefillRunner::warmup() {
   }
 
   TT_LOG_INFO("BlazePrefillRunner: warmup - pushing SUBMIT request...");
-  prefillScheduler->push_request(utils::makeSubmitRequest(config, slotId, *warmupSeq));
+  prefillScheduler->push_request(
+      utils::makeSubmitRequest(config, slotId, *warmupSeq));
 
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   bool receivedToken = false;
@@ -348,8 +349,8 @@ inline void BlazePrefillRunner::handleEvictRequest(
 
 inline void BlazePrefillRunner::handleAllocateRequest(
     const tt::domain::ManageMemoryTask& request) {
-  auto allocateRequest =
-      utils::makeAllocateRequest(config, request.taskId, request.slotIdToCopyFrom);
+  auto allocateRequest = utils::makeAllocateRequest(config, request.taskId,
+                                                    request.slotIdToCopyFrom);
   if (!prefillScheduler->push_request(allocateRequest)) {
     TT_LOG_WARN(
         "[BlazePrefillRunner] handleAllocateRequest: scheduler queue full, "
@@ -704,7 +705,8 @@ void BlazePrefillRunner::handleTask(
                           ? std::make_optional(task->getKVCacheSlot())
                           : std::nullopt;
 
-      ps::ISRequest req = utils::makeSubmitRequest(config, slotId, *task, destSlot);
+      ps::ISRequest req =
+          utils::makeSubmitRequest(config, slotId, *task, destSlot);
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] handleRequest: SUBMIT taskId={}, slotId={}, "
           "isContinuation={}, numPromptTokens={}, totalTokens={}, "

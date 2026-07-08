@@ -109,7 +109,8 @@ bool BlazeDecodeRunner::warmup() {
   }
 
   TT_LOG_INFO("BlazeDecodeRunner: warmup - pushing SUBMIT request...");
-  decodeScheduler->push_request(utils::makeSubmitRequest(config, slotId, *warmupSeq));
+  decodeScheduler->push_request(
+      utils::makeSubmitRequest(config, slotId, *warmupSeq));
 
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   bool receivedToken = false;
@@ -330,8 +331,8 @@ inline void BlazeDecodeRunner::handleEvictRequest(
 
 inline void BlazeDecodeRunner::handleAllocateRequest(
     const tt::domain::ManageMemoryTask& request) {
-  auto allocateRequest =
-      utils::makeAllocateRequest(config, request.taskId, request.slotIdToCopyFrom);
+  auto allocateRequest = utils::makeAllocateRequest(config, request.taskId,
+                                                    request.slotIdToCopyFrom);
   if (!decodeScheduler->push_request(allocateRequest)) {
     TT_LOG_WARN(
         "[BlazeDecodeRunner] handleAllocateRequest: scheduler queue full, "
@@ -727,8 +728,9 @@ void BlazeDecodeRunner::handleTask(
           task->getNumPromptTokens(), task->getTokenIds().size(),
           slotManager.activeRunningCount(),
           task->getMigrationId().has_value() ? *task->getMigrationId() : -1);
-      ds::ISRequest req = isNew ? utils::makeSubmitRequest(config, slotId, *task)
-                                : utils::makeContinueRequest(config, slotId, *task);
+      ds::ISRequest req =
+          isNew ? utils::makeSubmitRequest(config, slotId, *task)
+                : utils::makeContinueRequest(config, slotId, *task);
       TT_LOG_DEBUG(
           "[BlazeDecodeRunner] handleRequest: {} taskId={}, slotId={}, "
           "isNew={}, isContinuation={}, numPromptTokens={}, totalTokens={}, "

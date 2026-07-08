@@ -83,8 +83,7 @@ class BlazeDecodeRunnerHarness
     : public test::RunnerTestHarness<BlazeDecodeRunner> {
  public:
   BlazeDecodeRunnerHarness()
-      : test::RunnerTestHarness<BlazeDecodeRunner>(
-            test::makeBlazeConfig()) {}
+      : test::RunnerTestHarness<BlazeDecodeRunner>(test::makeBlazeConfig()) {}
 };
 
 }  // namespace

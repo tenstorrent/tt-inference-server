@@ -367,8 +367,8 @@ unsigned mockDecodeTokenLatencyUs();
  * Default: defaults::MOCK_DECODE_TOKEN_ID. */
 uint32_t mockDecodeTokenId();
 
-/** Build BlazeConfig from environment variables and runtime settings. Implemented
- * in src/config/settings.cpp. */
+/** Build BlazeConfig from environment variables and runtime settings.
+ * Implemented in src/config/settings.cpp. */
 BlazeConfig blazeConfig();
 
 /** Build ImageConfig from environment variables and runtime settings. Reads

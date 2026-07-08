@@ -239,7 +239,8 @@ void runConcurrently(F&& f, int numThreads = 2) {
 template <typename RunnerType>
 class RunnerTestHarness {
  public:
-  explicit RunnerTestHarness(config::BlazeConfig config = {}) : config_(config) {
+  explicit RunnerTestHarness(config::BlazeConfig config = {})
+      : config_(config) {
     if (config_.runner_type == config::ModelRunnerType::MOCK) {
       config_.runner_type = config::ModelRunnerType::MOCK_PIPELINE;
     }

@@ -100,13 +100,12 @@ std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
   managerParams.max_users = maxUsers;
   managerParams.self_endpoint_id = config.migrationDecodeEndpointId;
   if (config.enableMigration) {
-    migrationClientInterface->connect_to(
-        config.migrationPrefillEndpointId, "CONNECTOR", "ds_pd");
+    migrationClientInterface->connect_to(config.migrationPrefillEndpointId,
+                                         "CONNECTOR", "ds_pd");
   }
   if (config.specDecodeMode == "mtp") {
     managerParams.spec_decode_mode = ds::SpecDecodeMode::MTP;
-    managerParams.max_spec_tokens =
-        static_cast<uint32_t>(config.mtpLevel);
+    managerParams.max_spec_tokens = static_cast<uint32_t>(config.mtpLevel);
   }
   auto scheduler = std::make_unique<RealDecodeScheduler>(
       std::make_unique<ds::DecodeScheduler>(
@@ -139,8 +138,8 @@ std::unique_ptr<IPrefillScheduler> makePrefillScheduler(
   auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
   auto migrationClientInterface = utils::makeMigrationClientInterface(config);
   if (config.enableMigration) {
-    migrationClientInterface->connect_to(
-        config.migrationDecodeEndpointId, "PUBLISHER", "ds_pd");
+    migrationClientInterface->connect_to(config.migrationDecodeEndpointId,
+                                         "PUBLISHER", "ds_pd");
   }
   auto scheduler = std::make_unique<RealPrefillScheduler>(
       std::make_unique<ps::PrefillScheduler>(

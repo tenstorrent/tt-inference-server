@@ -177,14 +177,15 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   params.stop_token_ids = {10, 20};
   params.allowed_token_ids = {1, 2, 3};
 
-  Sequence orig(
-      tt::utils::TaskIDGenerator::generate(), {1, 2, 3, 4, 5}, /*numPromptTokens=*/3,
-      std::optional<uint32_t>{42}, std::optional<uint32_t>{7},
-      /*continuation=*/true, /*disaggregated=*/true,
-      std::make_unique<SamplingParams>(params),
-      std::optional<uint32_t>{17}, /*decodePositionId=*/18,
-      /*decodeSkipTokens=*/11, std::optional<uint64_t>{0xDEADBEEFCAFE1234ULL},
-      /*startsInThinking=*/true, std::optional<uint32_t>{128});
+  Sequence orig(tt::utils::TaskIDGenerator::generate(), {1, 2, 3, 4, 5},
+                /*numPromptTokens=*/3, std::optional<uint32_t>{42},
+                std::optional<uint32_t>{7},
+                /*continuation=*/true, /*disaggregated=*/true,
+                std::make_unique<SamplingParams>(params),
+                std::optional<uint32_t>{17}, /*decodePositionId=*/18,
+                /*decodeSkipTokens=*/11,
+                std::optional<uint64_t>{0xDEADBEEFCAFE1234ULL},
+                /*startsInThinking=*/true, std::optional<uint32_t>{128});
 
   std::ostringstream os;
   orig.serialize(os);
