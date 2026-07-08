@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import ClassVar, Dict, List, Sequence, Type
 
 from test_module.task_types import MediaTaskType
-from workflows.workflow_types import ModelType
+from workflows.workflow_types import ModelType, WorkflowVenvType
 
 from .execution import (
     LLMBenchOptions,
@@ -102,13 +102,26 @@ class AgenticWorkflow(WorkflowExecution):
     name = "agentic"
     task_types = (MediaTaskType.EVALUATION,)
 
+    @classmethod
+    def is_applicable(cls, ctx) -> bool:
+        """Only models with EVALS_AGENTIC tasks have anything to run."""
+        tasks = getattr(ctx.all_params, "tasks", []) or []
+        return any(
+            t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC for t in tasks
+        )
+
     def run_tasks(self) -> List[TaskOutcome]:
         from test_module.llm_tests.agentic_eval_tests import run_llm_agentic_eval
 
+        opts = self.orchestrator_metadata.agentic
+        auth_token = opts.auth_token if opts is not None else ""
+        venv_python = opts.venv_python if opts is not None else None
         self.logger.info("→ task=agentic")
         started = time.time()
         try:
-            blocks = run_llm_agentic_eval(self.ctx)
+            blocks = run_llm_agentic_eval(
+                self.ctx, auth_token=auth_token, venv_python=venv_python
+            )
         except Exception as e:
             elapsed = time.time() - started
             self.logger.exception("❌ agentic raised after %.1fs: %s", elapsed, e)
@@ -355,7 +368,14 @@ class SpecTestsWorkflow(WorkflowExecution):
 class ReleaseWorkflow(WorkflowExecution):
     name = "release"
     children: ClassVar[Sequence[str]] = ("evals", "benchmarks", "spec_tests")
-    llm_children: ClassVar[Sequence[str]] = ("evals", "benchmarks", "spec_tests")
+    # Agentic runs last: the earlier children health-wait on / warm up the
+    # server, and the multi-hour agentic harnesses can't starve them of it.
+    llm_children: ClassVar[Sequence[str]] = (
+        "evals",
+        "benchmarks",
+        "spec_tests",
+        "agentic",
+    )
 
     def run_tasks(self) -> List[TaskOutcome]:
         children = (
@@ -366,6 +386,13 @@ class ReleaseWorkflow(WorkflowExecution):
         outcomes: List[TaskOutcome] = []
         for child_name in children:
             child_cls = WORKFLOW_REGISTRY[child_name]
+            if not child_cls.is_applicable(self.ctx):
+                self.logger.info(
+                    "--- release: %s (skipped — not applicable to %s) ---",
+                    child_name,
+                    self.ctx.model_spec.model_name,
+                )
+                continue
             self.logger.info("--- release: %s ---", child_name)
             child = child_cls(
                 self.ctx,

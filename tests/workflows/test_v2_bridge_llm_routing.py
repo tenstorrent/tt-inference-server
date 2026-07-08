@@ -97,6 +97,53 @@ def test_evals_provisions_only_eval_venvs(monkeypatch):
     assert WorkflowVenvType.V2_LLM_VLLM not in venvs
 
 
+def test_release_provisions_agentic_venv_for_agentic_models(monkeypatch):
+    from workflows.workflow_types import WorkflowVenvType
+
+    spec = _spec(ModelType.LLM)
+    monkeypatch.setattr(v2_bridge, "_llm_eval_venv_types", lambda ms, rc=None: [])
+    monkeypatch.setattr(
+        v2_bridge,
+        "_llm_agentic_venv_types",
+        lambda ms: [WorkflowVenvType.EVALS_AGENTIC],
+    )
+    venvs = v2_bridge._v2_dependency_venv_types(spec, WorkflowType.RELEASE)
+    assert WorkflowVenvType.EVALS_AGENTIC in venvs
+    # Standalone evals never provisions it (a standalone agentic run goes
+    # through the run_agentic.py launcher instead).
+    venvs_evals = v2_bridge._v2_dependency_venv_types(spec, WorkflowType.EVALS)
+    assert WorkflowVenvType.EVALS_AGENTIC not in venvs_evals
+
+
+def test_llm_agentic_venv_types_reads_eval_config(monkeypatch):
+    import evals.eval_config as ec
+    from workflows.workflow_types import WorkflowVenvType as V
+
+    agentic_cfg = SimpleNamespace(
+        tasks=[
+            _ev_task("terminal_bench_2", V.EVALS_AGENTIC),
+            _ev_task("r1_gpqa_diamond", V.EVALS_COMMON),
+        ]
+    )
+    standard_cfg = SimpleNamespace(tasks=[_ev_task("ifeval", V.EVALS_COMMON)])
+    monkeypatch.setattr(
+        ec,
+        "EVAL_CONFIGS",
+        {"agentic-model": agentic_cfg, "standard-model": standard_cfg},
+    )
+    assert v2_bridge._llm_agentic_venv_types(
+        _spec(ModelType.LLM, name="agentic-model")
+    ) == [V.EVALS_AGENTIC]
+    assert (
+        v2_bridge._llm_agentic_venv_types(_spec(ModelType.LLM, name="standard-model"))
+        == []
+    )
+    assert (
+        v2_bridge._llm_agentic_venv_types(_spec(ModelType.LLM, name="unknown-model"))
+        == []
+    )
+
+
 def _ev_task(name, venv):
     return SimpleNamespace(task_name=name, workflow_venv_type=venv)
 

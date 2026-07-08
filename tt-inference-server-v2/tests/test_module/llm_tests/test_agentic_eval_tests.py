@@ -19,7 +19,11 @@ from llm_module.drivers.agentic import (
     resolve_n_tasks,
     resolve_task_names,
 )
-from llm_module.agentic.swebench import run as run_swebench
+from llm_module.agentic.swebench import (
+    build_mini_sweagent_command,
+    build_swebench_harness_command,
+    run as run_swebench,
+)
 from llm_module.agentic.terminal_bench import run as run_terminal_bench
 from llm_module.parsers.agentic import AgenticEvalParser, compute_accuracy_check
 from test_module.llm_tests.agentic_eval_tests import _select_agentic_tasks
@@ -284,6 +288,47 @@ class TestSWEbenchHarness:
             assert run_swebench(cfg) == 31
 
 
+class TestVenvPythonResolution:
+    """The release path pins the EVALS_AGENTIC interpreter; the standalone
+    path (venv_python=None) resolves harness binaries from sys.executable."""
+
+    def test_swebench_commands_resolve_from_venv_python(self, tmp_path):
+        cfg = build_swebench_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+            venv_python="/venvs/agentic/bin/python",
+        )
+
+        mini_cmd = build_mini_sweagent_command(
+            cfg, tmp_path / "model.yaml", tmp_path / "mini_out"
+        )
+        assert mini_cmd[0] == "/venvs/agentic/bin/mini-extra"
+
+        harness_cmd = build_swebench_harness_command(
+            cfg, tmp_path / "predictions.jsonl", "run-id"
+        )
+        assert harness_cmd[0] == "/venvs/agentic/bin/python"
+        assert harness_cmd[1:3] == ["-m", "swebench.harness.run_evaluation"]
+
+    def test_terminal_bench_resolves_harbor_from_venv_python(self, tmp_path):
+        cfg = build_terminal_bench_config(
+            _terminal_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+            venv_python="/venvs/agentic/bin/python",
+        )
+
+        with patch("llm_module.agentic.terminal_bench.subprocess.run") as run_cmd:
+            run_cmd.return_value.returncode = 3
+            assert run_terminal_bench(cfg) == 3
+
+        cmd = run_cmd.call_args[0][0]
+        assert cmd[0] == "/venvs/agentic/bin/harbor"
+
+
 class TestAgenticLimitResolution:
     def test_fractional_agentic_limits_become_one_task(self):
         task = _terminal_task(limit_samples_map={EvalLimitMode.CI_COMMIT: 0.01})
@@ -321,7 +366,9 @@ class TestSelectAgenticTasks:
     def test_empty_task_list_returns_empty(self):
         assert _select_agentic_tasks(self._ctx_with_tasks([])) == []
 
-    def test_mixed_tasks_raises(self):
+    def test_mixed_tasks_selects_agentic_subset(self):
+        # Models like gemma-4-31B-it mix standard (r1_gpqa_diamond) and
+        # agentic tasks; the standard ones belong to the evals workflow.
         t_agentic = _terminal_task()
         t_other = _terminal_task(
             task_name="mmlu",
@@ -329,12 +376,7 @@ class TestSelectAgenticTasks:
         )
         ctx = self._ctx_with_tasks([t_agentic, t_other])
 
-        try:
-            _select_agentic_tasks(ctx)
-        except RuntimeError as exc:
-            assert "non-agentic tasks" in str(exc)
-        else:
-            raise AssertionError("Expected mixed agentic task selection to fail")
+        assert _select_agentic_tasks(ctx) == [t_agentic]
 
 
 class TestAgenticBridge:
@@ -361,14 +403,64 @@ class TestAgenticBridge:
         driver.parse.return_value = block
 
         with patch(
+            "test_module.llm_tests.agentic_eval_tests._wait_for_healthy",
+            return_value=True,
+        ), patch(
             "test_module.llm_tests.agentic_eval_tests._require_openai_server"
+        ), patch(
+            "test_module.llm_tests.agentic_eval_tests.make_agentic_driver",
+            return_value=driver,
+        ) as make_driver, patch(
+            "test_module.llm_tests.agentic_eval_tests.accept_blocks"
+        ) as accept:
+            blocks = run_llm_agentic_eval(ctx, venv_python="/venvs/agentic/bin/python")
+
+        assert blocks == [block]
+        driver.run.assert_called_once()
+        driver.parse.assert_called_once_with(HARBOR_RESULT_FIXTURE, device="N150")
+        accept.assert_called_once()
+        _args, kwargs = make_driver.call_args
+        assert kwargs["venv_python"] == "/venvs/agentic/bin/python"
+
+    def test_unhealthy_server_emits_failure_blocks(self):
+        from test_module.llm_tests.agentic_eval_tests import run_llm_agentic_eval
+
+        ctx = MagicMock()
+        ctx.all_params.tasks = [_terminal_task()]
+        ctx.model_spec.model_name = "test-llm"
+        ctx.model_spec.hf_model_repo = "Qwen/Qwen3.6-27B"
+        ctx.device.name = "N150"
+        ctx.service_port = 8000
+        ctx.output_path = "/tmp/out"
+        ctx.runtime_config = _runtime("smoke-test")
+
+        driver = MagicMock()
+        fail_block = AgenticEvalParser(
+            task_name="terminal_bench_2", score=FakeScore()
+        ).failure_block(return_code=1, device="N150")
+        driver.failure_block.return_value = fail_block
+
+        with patch(
+            "test_module.llm_tests.agentic_eval_tests._wait_for_healthy",
+            return_value=False,
         ), patch(
             "test_module.llm_tests.agentic_eval_tests.make_agentic_driver",
             return_value=driver,
         ), patch("test_module.llm_tests.agentic_eval_tests.accept_blocks") as accept:
             blocks = run_llm_agentic_eval(ctx)
 
-        assert blocks == [block]
-        driver.run.assert_called_once()
-        driver.parse.assert_called_once_with(HARBOR_RESULT_FIXTURE, device="N150")
+        assert blocks == [fail_block]
+        driver.run.assert_not_called()
         accept.assert_called_once()
+
+    def test_auth_token_exported_for_harness_subprocesses(self, monkeypatch):
+        from test_module.llm_tests.agentic_eval_tests import _configure_openai_env
+
+        monkeypatch.setenv("OPENAI_API_KEY", "stale-token")
+        ctx = MagicMock()
+        ctx.base_url = "http://127.0.0.1:8000"
+        _configure_openai_env(ctx, auth_token="minted-jwt")
+
+        import os
+
+        assert os.environ["OPENAI_API_KEY"] == "minted-jwt"

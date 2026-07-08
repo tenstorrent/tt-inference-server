@@ -36,6 +36,10 @@ class TerminalBenchRunConfig:
     exclude_task_names: list[str] = field(default_factory=list)
     quiet: bool = True
     yes: bool = True
+    # Interpreter of the EVALS_AGENTIC venv whose bin/ holds the harbor
+    # binary; None resolves from sys.executable (the standalone agentic
+    # path, which already runs inside that venv).
+    venv_python: Optional[str] = None
 
 
 def _get_agent_kwargs(config: TerminalBenchRunConfig) -> dict[str, Any]:
@@ -118,7 +122,8 @@ def _annotate_result_file(result_file: Path) -> None:
 
 
 def run(config: TerminalBenchRunConfig) -> int:
-    harbor_exec = Path(sys.executable).parent / "harbor"
+    python_exec = Path(config.venv_python or sys.executable)
+    harbor_exec = python_exec.parent / "harbor"
 
     if config.agent_timeout_sec is not None:
         harbor_config_path = _write_harbor_config(config)

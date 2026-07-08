@@ -21,6 +21,7 @@ from workflows.workflow_types import InferenceEngine
 
 from workflow_module import command_factory as cf
 from workflow_module.execution import (
+    AgenticOptions,
     LLMBenchOptions,
     LLMEvalOptions,
     PrefixCacheOptions,
@@ -155,6 +156,34 @@ class TestLLMBenchOptions:
     def test_prefix_cache_defers(self):
         args = Namespace(workflow="benchmarks", prefix_cache=True, spec_decode=False)
         assert cf._build_llm_bench_options(args) is None
+
+
+class TestAgenticOptions:
+    def test_none_for_non_agentic_workflow(self):
+        assert cf._build_agentic_options(Namespace(workflow="benchmarks")) is None
+        assert cf._build_agentic_options(Namespace(workflow="evals")) is None
+
+    def test_standalone_agentic_has_no_venv_python(self, monkeypatch):
+        # run_agentic.py already re-execs into the EVALS_AGENTIC venv, so the
+        # harnesses resolve from sys.executable.
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        opts = cf._build_agentic_options(Namespace(workflow="agentic", jwt_secret=None))
+        assert isinstance(opts, AgenticOptions)
+        assert opts.venv_python is None
+
+    def test_release_pins_agentic_venv_python(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        opts = cf._build_agentic_options(Namespace(workflow="release", jwt_secret=None))
+        assert isinstance(opts, AgenticOptions)
+        assert opts.venv_python is not None
+        assert "agentic" in opts.venv_python.lower()
+
+    def test_release_threads_minted_token(self, monkeypatch):
+        monkeypatch.setattr(cf, "_mint_jwt_if_secret", lambda secret: f"tok:{secret}")
+        opts = cf._build_agentic_options(
+            Namespace(workflow="release", jwt_secret="sek")
+        )
+        assert opts.auth_token == "tok:sek"
 
 
 class TestMintJwt:

@@ -13,10 +13,11 @@ python tt-inference-server-v2/run.py \
     --service-port 8000
 ```
 
-This launches the `release` workflow (evals + benchmarks + spec_tests) against
-the inference server on `localhost:8000`, accumulates per-test `Block`s into a
-single `ReportSchema`, applies acceptance criteria, and writes a markdown +
-JSON report into `output/<model>_<device>_<workflow>/`.
+This launches the `release` workflow (evals + benchmarks + spec_tests, plus
+agentic evals for LLM models that configure them) against the inference server
+on `localhost:8000`, accumulates per-test `Block`s into a single
+`ReportSchema`, applies acceptance criteria, and writes a markdown + JSON
+report into `output/<model>_<device>_<workflow>/`.
 
 ## Repeated benchmark runs (`--repeat`)
 
@@ -123,12 +124,16 @@ WORKFLOW_REGISTRY = {
     "evals":      EvalsWorkflow,       # task_types = (EVALUATION,)
     "benchmarks": BenchmarksWorkflow,  # task_types = (BENCHMARK,)
     "spec_tests": SpecTestsWorkflow,   # task_types = (SPEC_TESTS,)
-    "release":    ReleaseWorkflow,     # composes the three above
+    "agentic":    AgenticWorkflow,     # Terminal-Bench / SWE-bench evals
+    "release":    ReleaseWorkflow,     # composes the leaves above
 }
 ```
 
 `ReleaseWorkflow` is the composition primitive: it runs each child by name and
 flattens their task lists. Adding a new leaf workflow to release is one line.
+Children whose `is_applicable(ctx)` returns `False` are skipped — e.g. the
+`agentic` child (LLM releases only) no-ops for models with no `EVALS_AGENTIC`
+tasks in `evals/eval_config.py`.
 
 `blocks_sink.py` owns the process-global `BlockAccumulator`. Runners do not
 hand a Block back to the workflow directly — they call `accept_blocks([block],
@@ -310,12 +315,16 @@ with speculative decoding enabled.
 Run agentic accuracy evals (Terminal-Bench and SWE-bench) directly against an
 already-up OpenAI-compatible LLM server. The workflow is `agentic`; it bypasses
 the generic media-task dispatcher and emits `Block(kind="evals")` results through
-the same report/acceptance path as other evals.
+the same report/acceptance path as other evals. An LLM `release` run also
+executes it as a child (after evals/benchmarks/spec_tests) whenever the model
+has `EVALS_AGENTIC` tasks configured — there the harness binaries are resolved
+from the `EVALS_AGENTIC` venv via `AgenticOptions.venv_python` (the venv is
+provisioned by the v1 bridge), since release itself runs under `V2_RUN_SCRIPT`.
 
-Agentic harnesses require the dedicated `EVALS_AGENTIC` venv (Harbor,
-mini-swe-agent, SWE-bench, and related tools). Use the thin launcher
-`run_agentic.py`, which selects/creates that venv and re-execs `run.py` inside
-it:
+For a standalone run, agentic harnesses require the dedicated `EVALS_AGENTIC`
+venv (Harbor, mini-swe-agent, SWE-bench, and related tools). Use the thin
+launcher `run_agentic.py`, which selects/creates that venv and re-execs
+`run.py` inside it:
 
 ```bash
 MODEL_SPECS_ENV=dev python tt-inference-server-v2/run_agentic.py \
@@ -351,10 +360,11 @@ the agentic drivers. For a nightly-limited run, include:
 }
 ```
 
-The workflow checks the server via `/v1/models`, sets OpenAI-compatible
-environment variables (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`),
-then runs each configured agentic task through the v2 LLM driver/parser
-adapters.
+The workflow waits for `/health`, checks the server via `/v1/models`, sets
+OpenAI-compatible environment variables (`OPENAI_API_KEY`, `OPENAI_BASE_URL`,
+`OPENAI_API_BASE`; a minted JWT / API key is threaded through
+`AgenticOptions.auth_token`), then runs each configured agentic task through
+the v2 LLM driver/parser adapters.
 
 ## How v1 routes to v2
 
