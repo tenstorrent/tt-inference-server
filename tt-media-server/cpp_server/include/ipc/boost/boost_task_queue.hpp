@@ -8,6 +8,7 @@
 
 #include "config/defaults.hpp"
 #include "config/runner_config.hpp"
+#include "config/settings.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
 
@@ -23,7 +24,8 @@ class TaskQueue : public tt::ipc::ITaskQueue {
 
   /** Create a new queue (main process). */
   TaskQueue(const std::string& name, int capacity)
-      : queue_(std::make_unique<Queue>(name, capacity)) {}
+      : queue_(std::make_unique<Queue>(name, capacity,
+                                       tt::config::taskQueueMaxMsgSize())) {}
 
   /** Open an existing queue (worker process). */
   explicit TaskQueue(const std::string& name)

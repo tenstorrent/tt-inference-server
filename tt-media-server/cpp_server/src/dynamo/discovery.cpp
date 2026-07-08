@@ -23,8 +23,6 @@ namespace tt::dynamo {
 
 namespace {
 
-constexpr int K_CONTEXT_LENGTH = 131072;
-
 /// Used only when a referenced file is missing/unreadable. The frontend
 /// blake3-validates every file it fetches from the MDC, so for files that
 /// exist we must publish their real digest (see fileChecksum); an all-zero
@@ -255,7 +253,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   promptFormatter["hf_tokenizer_config_json"] = std::move(hfTokCfg);
   card["prompt_formatter"] = std::move(promptFormatter);
 
-  card["context_length"] = K_CONTEXT_LENGTH;
+  card["context_length"] = static_cast<int>(tt::config::maxContextLength());
   card["kv_cache_block_size"] =
       static_cast<int>(tt::config::kvCacheBlockSize());
   card["migration_limit"] = 0;
