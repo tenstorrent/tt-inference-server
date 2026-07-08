@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def _select_agentic_tasks(ctx: MediaContext) -> list:
-    """Return EVALS_AGENTIC tasks; raise loudly if mixed with non-agentic."""
+    """Return only EVALS_AGENTIC tasks for the dedicated agentic workflow."""
     tasks = getattr(ctx.all_params, "tasks", []) or []
     agentic = [
         t for t in tasks if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
@@ -37,12 +37,10 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
     non_agentic = [
         t for t in tasks if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
     ]
-    if agentic and non_agentic:
-        raise RuntimeError(
-            f"v2 agentic runner only supports EVALS_AGENTIC tasks. "
-            f"Got non-agentic tasks: {[t.task_name for t in non_agentic]}. "
-            f"Either port those to v2, remove {ctx.model_spec.model_name!r} from "
-            f"_V2_ROUTED_MODELS, or use --eval-samples to select agentic tasks only."
+    if non_agentic:
+        logger.info(
+            "Skipping non-agentic eval task(s) in v2 agentic workflow: %s",
+            [t.task_name for t in non_agentic],
         )
     return agentic
 
@@ -57,7 +55,17 @@ def _server_connection(ctx: MediaContext) -> ServerConnection:
 
 def _driver_context(ctx: MediaContext) -> DriverContext:
     device = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
-    return DriverContext(output_dir=Path(ctx.output_path), device=device)
+    # In a `release` run the agentic driver shares the run directory with the
+    # LLM benchmark ("llm/") and prefix-cache ("prefix_cache/") outputs, so
+    # group agentic results under a top-level "agentic/" dir (mirroring the
+    # LLM layout) via ``agentic_release_layout``. The standalone `agentic`
+    # workflow keeps its existing eval_<hf>/agentic/<task> layout.
+    release_layout = getattr(ctx.runtime_config, "workflow", None) == "release"
+    return DriverContext(
+        output_dir=Path(ctx.output_path),
+        device=device,
+        agentic_release_layout=release_layout,
+    )
 
 
 def _configure_openai_env(ctx: MediaContext) -> None:
