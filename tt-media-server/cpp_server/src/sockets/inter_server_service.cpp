@@ -199,6 +199,22 @@ bool InterServerService::sendPrefillCacheBlocksAdded(
   return socketManager.sendObject(tags::PREFILL_CACHE_BLOCKS_ADDED, message);
 }
 
+bool InterServerService::sendSlotReservationRequest(
+    const SlotReservationRequestMessage& message) {
+  if (!enabled) {
+    return false;
+  }
+  return socketManager.sendObject(tags::SLOT_RESERVATION_REQUEST, message);
+}
+
+bool InterServerService::sendSlotReservationResponse(
+    const SlotReservationResponseMessage& message) {
+  if (!enabled) {
+    return false;
+  }
+  return socketManager.sendObject(tags::SLOT_RESERVATION_RESPONSE, message);
+}
+
 void InterServerService::onPrefillRequested(PrefillRequestedCallback callback) {
   prefillRequestedCallback = callback;
 }
@@ -209,6 +225,16 @@ void InterServerService::onPrefillCancelled(PrefillCancelCallback callback) {
 
 void InterServerService::onPrefillComplete(PrefillCompleteCallback callback) {
   prefillCompleteCallback = callback;
+}
+
+void InterServerService::onSlotReservationRequest(
+    SlotReservationRequestCallback callback) {
+  slotReservationRequestCallback = callback;
+}
+
+void InterServerService::onSlotReservationResponse(
+    SlotReservationResponseCallback callback) {
+  slotReservationResponseCallback = callback;
 }
 
 void InterServerService::setConnectionLostCallback(
@@ -271,6 +297,18 @@ void InterServerService::setupMessageHandlers() {
         [this](const PrefillHealthRequestMessage&) {
           sendPrefillHealthStatus();
         });
+
+    socketManager.registerHandler<SlotReservationResponseMessage>(
+        tags::SLOT_RESERVATION_RESPONSE,
+        [this](const SlotReservationResponseMessage& message) {
+          TT_LOG_INFO(
+              "[InterServerService] Received slot reservation response: "
+              "taskId={} error={} (handler only; phase 0)",
+              message.taskId, message.error);
+          if (slotReservationResponseCallback) {
+            slotReservationResponseCallback(message);
+          }
+        });
   }
 
   if (llmMode == tt::config::LLMMode::DECODE_ONLY) {
@@ -302,6 +340,18 @@ void InterServerService::setupMessageHandlers() {
           }
           if (prefillCompleteCallback) {
             prefillCompleteCallback(message);
+          }
+        });
+
+    socketManager.registerHandler<SlotReservationRequestMessage>(
+        tags::SLOT_RESERVATION_REQUEST,
+        [this](const SlotReservationRequestMessage& message) {
+          TT_LOG_INFO(
+              "[InterServerService] Received slot reservation request: "
+              "taskId={} hashes={} (handler only; phase 0)",
+              message.taskId, message.registrationHashes.size());
+          if (slotReservationRequestCallback) {
+            slotReservationRequestCallback(message);
           }
         });
   }
