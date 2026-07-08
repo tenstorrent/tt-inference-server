@@ -1215,6 +1215,7 @@ target_link_libraries(main_integration_test PRIVATE
     pybind11::embed
     stb_image_write
     xxhash_lib
+    blake3
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(main_integration_test PRIVATE PkgConfig::ZMQ)
@@ -1242,6 +1243,7 @@ target_link_libraries(prefill_integration_test PRIVATE
     pybind11::embed
     stb_image_write
     xxhash_lib
+    blake3
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(prefill_integration_test PRIVATE PkgConfig::ZMQ)
@@ -1269,6 +1271,7 @@ target_link_libraries(disaggregated_e2e_test PRIVATE
     pybind11::embed
     stb_image_write
     xxhash_lib
+    blake3
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(disaggregated_e2e_test PRIVATE PkgConfig::ZMQ)

@@ -3,10 +3,10 @@
 
 #include "dynamo/dynamo_prefill_handoff.hpp"
 
+#include <utility>
+
 #include "dynamo/json_value_utils.hpp"
 #include "sockets/socket_messages.hpp"
-
-#include <utility>
 
 namespace tt::dynamo {
 
@@ -20,11 +20,10 @@ DynamoPrefillHandoff dynamoPrefillHandoffFromPrefillResult(
   handoff.tokenIds = result.tokenIds;
   handoff.remainingTokens = result.remainingTokens;
   handoff.migrationId = result.migrationId;
-  handoff.kvPositionId =
-      result.tokenIds.empty()
-          ? std::optional<uint32_t>{}
-          : std::optional<uint32_t>(
-                static_cast<uint32_t>(result.tokenIds.size() - 1));
+  handoff.kvPositionId = result.tokenIds.empty()
+                             ? std::optional<uint32_t>{}
+                             : std::optional<uint32_t>(static_cast<uint32_t>(
+                                   result.tokenIds.size() - 1));
   handoff.decodeSlotId = result.slotId;
   handoff.temperature = result.temperature;
   handoff.topP = result.topP;
@@ -58,8 +57,8 @@ Json::Value dynamoPrefillHandoffToJson(const DynamoPrefillHandoff& handoff) {
   out["error"] = handoff.error;
   out["generated_text"] = handoff.generatedText;
   Json::Value tokenIds(Json::arrayValue);
-  for (int64_t tokenId : handoff.tokenIds) {
-    tokenIds.append(Json::Value(static_cast<Json::Int64>(tokenId)));
+  for (uint32_t tokenId : handoff.tokenIds) {
+    tokenIds.append(Json::Value(static_cast<Json::UInt>(tokenId)));
   }
   out["token_ids"] = std::move(tokenIds);
   json_value::setOptional(out, "remaining_tokens", handoff.remainingTokens);
@@ -98,8 +97,7 @@ const Json::Value* findDynamoPrefillHandoffJson(const Json::Value& raw) {
     const auto& prefillResult = raw["prefill_result"];
     if (prefillResult.isMember("disaggregated_params") &&
         prefillResult["disaggregated_params"].isObject()) {
-      const auto& disaggregatedParams =
-          prefillResult["disaggregated_params"];
+      const auto& disaggregatedParams = prefillResult["disaggregated_params"];
       if (disaggregatedParams.isMember("tt_prefill_handoff") &&
           disaggregatedParams["tt_prefill_handoff"].isObject()) {
         return &disaggregatedParams["tt_prefill_handoff"];
@@ -123,7 +121,7 @@ DynamoPrefillHandoff parseDynamoPrefillHandoff(const Json::Value& json) {
   handoff.generatedText = json.get("generated_text", "").asString();
   if (json.isMember("token_ids") && json["token_ids"].isArray()) {
     for (const auto& tokenId : json["token_ids"]) {
-      handoff.tokenIds.push_back(tokenId.asInt64());
+      handoff.tokenIds.push_back(tokenId.asUInt());
     }
   }
   handoff.remainingTokens = json_value::optionalInt(json, "remaining_tokens");
@@ -143,10 +141,9 @@ DynamoPrefillHandoff parseDynamoPrefillHandoff(const Json::Value& json) {
   if (json.isMember("cached_tokens") && json["cached_tokens"].isInt()) {
     handoff.cachedTokens = json["cached_tokens"].asInt();
   }
-  handoff.tokenCount = json_value::optionalUInt32(json, "token_count")
-                           .value_or(0);
-  handoff.selectedPrefillId =
-      json.get("selected_prefill_id", "").asString();
+  handoff.tokenCount =
+      json_value::optionalUInt32(json, "token_count").value_or(0);
+  handoff.selectedPrefillId = json.get("selected_prefill_id", "").asString();
   handoff.routingReason = json.get("routing_reason", "").asString();
 
   return handoff;

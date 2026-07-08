@@ -26,7 +26,7 @@ tt::sockets::PrefillRequestMessage dynamoGenerateRequestToPrefillRequest(
     }
     if (raw["token_ids"].isArray()) {
       for (const auto& token : raw["token_ids"]) {
-        message.tokenIds.push_back(token.asInt64());
+        message.tokenIds.push_back(token.asUInt());
       }
     }
     if (raw.isMember("max_tokens") && !raw["max_tokens"].isNull()) {
@@ -52,9 +52,8 @@ tt::sockets::PrefillRequestMessage dynamoGenerateRequestToPrefillRequest(
 
   auto message = tt::sockets::PrefillRequestMessage(
       tt::utils::TaskIDGenerator::generate());
-  std::vector<int> tokenIds(request.token_ids.begin(), request.token_ids.end());
   message.registrationHashes =
-      tt::utils::computePrefixCachingInfoFromTokens(tokenIds).hashes();
+      tt::utils::computePrefixCachingInfoFromTokens(request.token_ids).hashes();
   message.tokenIds.assign(request.token_ids.begin(), request.token_ids.end());
   message.maxTokens = request.max_tokens;
   message.temperature = request.temperature;
@@ -75,8 +74,8 @@ Json::Value prefillRequestToDynamoJson(
   root["registration_hashes"] = std::move(hashes);
 
   Json::Value tokens(Json::arrayValue);
-  for (int64_t token : request.tokenIds) {
-    tokens.append(Json::Value(static_cast<Json::Int64>(token)));
+  for (uint32_t token : request.tokenIds) {
+    tokens.append(Json::Value(static_cast<Json::UInt>(token)));
   }
   root["token_ids"] = std::move(tokens);
 
@@ -105,8 +104,8 @@ Json::Value buildDynamoPrefillGenerateBody(
   Json::Value body(Json::objectValue);
   body["request_id"] = requestId;
   Json::Value tokens(Json::arrayValue);
-  for (int64_t token : request.tokenIds) {
-    tokens.append(Json::Value(static_cast<Json::Int64>(token)));
+  for (uint32_t token : request.tokenIds) {
+    tokens.append(Json::Value(static_cast<Json::UInt>(token)));
   }
   body["token_ids"] = std::move(tokens);
 

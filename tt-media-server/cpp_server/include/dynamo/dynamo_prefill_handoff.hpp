@@ -25,7 +25,7 @@ struct DynamoPrefillHandoff {
   std::string selectedPrefillId;
   bool error = false;
   std::string generatedText;
-  std::vector<int64_t> tokenIds;
+  std::vector<uint32_t> tokenIds;
   std::optional<int> remainingTokens;
   std::optional<uint64_t> migrationId;
   std::optional<uint32_t> kvPositionId;

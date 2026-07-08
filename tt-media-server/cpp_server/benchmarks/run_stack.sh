@@ -58,6 +58,7 @@ teardown() {
     # also sweep stray workers/frontend (orphaned --worker children, prior runs)
     for p in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
         [[ "$p" == "$$" ]] && continue
+        [[ -r "/proc/$p/cmdline" ]] || continue
         local c; c=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null) || continue
         case "$c" in *"${BIN}"*|*"-m dynamo.frontend"*) pids="$pids $p" ;; esac
     done
@@ -87,6 +88,12 @@ teardown() {
 }
 
 ensure_etcd() {
+    if docker ps --format '{{.Names}}' | grep -qx "${ETCD_NAME}"; then
+        if ! docker port "${ETCD_NAME}" 2379 >/dev/null 2>&1; then
+            log "existing ${ETCD_NAME} has no published 2379 port; recreating"
+            docker rm -f "${ETCD_NAME}" >/dev/null 2>&1 || true
+        fi
+    fi
     if ! docker ps --format '{{.Names}}' | grep -qx "${ETCD_NAME}"; then
         log "starting etcd"
         docker rm -f "${ETCD_NAME}" >/dev/null 2>&1 || true
@@ -97,9 +104,20 @@ ensure_etcd() {
         sleep 3
     fi
     ETCD_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${ETCD_NAME}")
-    [[ -n "${ETCD_IP}" ]] || die "could not resolve etcd container IP"
-    docker exec "${ETCD_NAME}" etcdctl endpoint health >/dev/null 2>&1 || die "etcd unhealthy"
+    if [[ ! "${ETCD_IP}" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+        log "existing ${ETCD_NAME} has invalid container IP '${ETCD_IP}'; recreating"
+        docker rm -f "${ETCD_NAME}" >/dev/null 2>&1 || true
+        docker run -d --name "${ETCD_NAME}" -p 2379:2379 quay.io/coreos/etcd:v3.5.13 \
+            /usr/local/bin/etcd --name dyn-etcd \
+                --advertise-client-urls http://0.0.0.0:2379 \
+                --listen-client-urls http://0.0.0.0:2379 >/dev/null
+        sleep 3
+        ETCD_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${ETCD_NAME}")
+        [[ "${ETCD_IP}" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || die "could not resolve usable etcd container IP"
+    fi
     ETCD_ENDPOINTS="http://${ETCD_IP}:2379"
+    docker exec "${ETCD_NAME}" etcdctl endpoint health >/dev/null 2>&1 || die "etcd unhealthy"
+    curl -fsS "${ETCD_ENDPOINTS}/health" >/dev/null 2>&1 || die "etcd not reachable at ${ETCD_ENDPOINTS}"
     log "etcd at ${ETCD_ENDPOINTS}"
 }
 
