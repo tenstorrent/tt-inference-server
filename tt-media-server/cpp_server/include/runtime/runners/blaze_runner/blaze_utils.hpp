@@ -22,7 +22,6 @@
 #include "tt_llm_engine/pipeline/prefill_pipeline_config.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
 #include "tt_llm_engine/scheduler/migration_client_interface.hpp"
-#include "tt_llm_engine/scheduler/prefill/prefill_types.hpp"
 #include "utils/logger.hpp"
 
 namespace {
@@ -54,7 +53,6 @@ namespace tt::runners::blaze::utils {
 
 namespace sch = tt_llm_engine::scheduler;
 namespace ds = sch::decode;
-namespace ps = sch::prefill;
 
 inline void logISRequest(const sch::ISRequest& req) {
   const sch::GenerationParams& gen = req.gen;
@@ -267,19 +265,9 @@ inline pl::PipelineConfig makeDecodePipelineConfig(
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return pl::PipelineSimulatorConfig{
           .num_stages = config.numPipelineStages,
-          .stage_duration_us = config.stageLatencyUs,
+          .stage_duration_us = config.mockStageLatencyUs,
           .decode_token_id = config.mockDecodeTokenId,
       };
-      /* spec decode config
-       return PipelineSimulatorConfig{
-          .num_stages = 64,
-          .stage_duration_us = 44,
-          .accept_rate = 0.9f,
-          .safe_vocab_base = 1000,    // anything safely above your tokenizer's
-      stop ids .safe_vocab_modulus = 64,   // any size >= 5; bigger = lower
-      coincidental-stop chance
-      };
-       */
     default:
       throw std::runtime_error("Invalid blaze decode runner type");
   }
@@ -318,12 +306,12 @@ inline pl::CounterChannelConfig makePrefillAckChannelConfig(
 
 // Builders for the mock scheduler config structs. Same shape as the pipeline
 // builders above (config -> plain-data config): the callers in
-// blaze_scheduler_factory.cpp have already branched on MOCK_PIPELINE +
-// useMockScheduler, so these read only the mock knobs off `config`.
+// blaze_scheduler_factory.cpp have already branched on MOCK_SCHEDULER, so
+// these read only the mock knobs off `config`.
 inline MockPrefillSchedulerConfig makeMockPrefillSchedulerConfig(
     const tt::config::BlazeConfig& config) {
   return MockPrefillSchedulerConfig{
-      .prefillLatency = std::chrono::milliseconds(config.prefillChunkSize),
+      .prefillLatency = std::chrono::milliseconds(config.mockPrefillLatencyMs),
       .prefillChunkSize = config.prefillChunkSize,
   };
 }
@@ -332,8 +320,7 @@ inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig(
     const tt::config::BlazeConfig& config) {
   return MockDecodeSchedulerConfig{
       .numPipelineStages = config.numPipelineStages,
-      .stageLatency = std::chrono::microseconds(config.stageLatencyUs),
-      .prefillChunkSize = config.prefillChunkSize,
+      .stageLatency = std::chrono::microseconds(config.mockStageLatencyUs),
       .decodeTokenId = config.mockDecodeTokenId,
   };
 }

@@ -82,9 +82,8 @@ inline uint64_t expectedMockToken(size_t index) {
 class BlazeDecodeRunnerHarness
     : public test::RunnerTestHarness<BlazeDecodeRunner> {
  public:
-  explicit BlazeDecodeRunnerHarness(
-      config::ModelRunnerType runnerType =
-          config::ModelRunnerType::MOCK_PIPELINE)
+  explicit BlazeDecodeRunnerHarness(config::ModelRunnerType runnerType =
+                                        config::ModelRunnerType::MOCK_PIPELINE)
       : test::RunnerTestHarness<BlazeDecodeRunner>(
             test::makeBlazeConfig(runnerType)) {}
 };

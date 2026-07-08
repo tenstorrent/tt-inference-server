@@ -65,8 +65,9 @@ struct BlazeConfig : RunnerConfigBase {
   std::string migrationRespQueueName = defaults::MIGRATION_RESP_QUEUE_NAME;
 
   // Mock pipeline knobs
-  unsigned numPipelineStages = defaults::MOCK_PREFILL_CHUNK_LATENCY_MS;
-  unsigned stageLatencyUs = defaults::MOCK_PREFILL_CHUNK_LATENCY_MS;
+  unsigned numPipelineStages = defaults::MOCK_PIPELINE_STAGES;
+  unsigned mockStageLatencyUs = defaults::MOCK_STAGE_LATENCY_US;
+  unsigned mockPrefillLatencyMs = defaults::MOCK_PREFILL_CHUNK_LATENCY_MS;
   unsigned mockDecodeTokenId = defaults::MOCK_DECODE_TOKEN_ID;
 
   // Generation fallbacks read by blaze_utils

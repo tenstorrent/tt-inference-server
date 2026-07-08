@@ -385,7 +385,8 @@ BlazeConfig blazeConfig() {
 
     // Mock pipeline knobs
     cfg.numPipelineStages = mockPipelineStages();
-    cfg.stageLatencyUs = mockStageLatencyUs();
+    cfg.mockStageLatencyUs = mockStageLatencyUs();
+    cfg.mockPrefillLatencyMs = mockPrefillLatencyMs();
     cfg.mockDecodeTokenId = mockDecodeTokenId();
 
     // Generation fallbacks read by blaze_utils
