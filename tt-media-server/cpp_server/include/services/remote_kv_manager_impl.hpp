@@ -49,13 +49,7 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
    * @param requestProducer  Kafka producer wired to the migration-request
    *   topic. Ownership is taken.
    * @param ackConsumer      Kafka consumer subscribed to the migration-ack
-   *   topic, with a group.id that is UNIQUE to this RemoteKVManagerImpl
-   *   instance (see tt::config::kafkaMigrationAckGroupId()). Sharing a
-   *   group.id across instances lets Kafka partition-assign each ack to one
-   *   arbitrary member; acks for migrations owned by a different member are
-   *   dropped ("unknown migration_id") and the owning instance's sweeper
-   *   times the migration out after `timeout` and marks it FAILED. Ownership
-   *   is taken.
+   *   topic, with a unique group.id. Ownership is taken.
    * @param timeout          Max age of an IN_PROGRESS migration before the
    *   sweeper marks it FAILED. Default 60s.
    * @param sweepInterval    How often the drain thread runs the timeout

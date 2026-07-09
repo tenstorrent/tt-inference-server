@@ -61,14 +61,6 @@ constexpr const char* PREFILL_ACK_CHANNEL_NAME = "tt_prefill_layer_acks";
 constexpr const char* KAFKA_BROKERS = "localhost:9092";
 constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";
 constexpr const char* KAFKA_GROUP_ID = "migration-workers";
-// Empty sentinel: an unset KAFKA_MIGRATION_ACK_GROUP_ID means the factory
-// should synthesize a per-instance group id at runtime
-// (kafkaMigrationAckGroupId falls back to prefillServerId(), which is
-// hostname:port and thus unique per prefill process). We can't materialize
-// prefillServerId() into a constexpr because it depends on gethostname() and
-// the SOCKET_PORT env var; keeping the sentinel here documents the contract at
-// the defaults layer.
-constexpr const char* KAFKA_MIGRATION_ACK_GROUP_ID = "";
 constexpr const char* KAFKA_MIGRATION_REQUEST_TOPIC = "kv-migration-requests";
 constexpr const char* KAFKA_MIGRATION_ACK_TOPIC = "kv-migration-acks";
 

@@ -203,35 +203,8 @@ std::string kafkaMigrationRequestTopic();
 std::string kafkaMigrationAckTopic();
 
 /** Kafka consumer group ID from KAFKA_GROUP_ID. Default:
- * defaults::KAFKA_GROUP_ID.
- *
- * NOTE: for the PrefillScheduler's migration-ack consumer specifically, use
- * kafkaMigrationAckGroupId() instead — that setting defaults to a
- * per-instance value so multiple prefill processes don't share an ack group
- * and starve each other of completion events. This getter is still the right
- * choice for the migration-request-topic subscription (workers *want* to
- * share a group there so request partitions balance across them).
- */
+ * defaults::KAFKA_GROUP_ID. */
 std::string kafkaGroupId();
-
-/** Kafka consumer group ID for the migration-ack topic on the PrefillScheduler
- * side. From KAFKA_MIGRATION_ACK_GROUP_ID. Falls back to prefillServerId()
- * (hostname:SOCKET_PORT, or the value of PREFILL_SERVER_ID) when the env var
- * is unset, so each prefill process gets a distinct ack-consumer group by
- * default.
- *
- * Why this is separate from kafkaGroupId(): RemoteKVManagerImpl documents
- * that its ack consumer must have a *unique* group.id per instance. When
- * multiple PrefillSchedulers share a group, Kafka splits the ack topic's
- * partitions between them, so each ack lands on one arbitrary scheduler
- * whose migrations map may not contain that migration_id — the scheduler
- * that actually owns the migration then times out after the sweep interval
- * and marks the burst FAILED{IncompleteBurstSent}. Splitting this env var
- * lets deployments keep the worker-side KAFKA_GROUP_ID shared (as intended
- * for request-topic balancing) while the scheduler-side ack group is per
- * process by construction.
- */
-std::string kafkaMigrationAckGroupId();
 
 /** Max retries for session slot allocation from
  * SESSION_ALLOCATION_MAX_RETRIES. Default:
