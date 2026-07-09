@@ -40,3 +40,5 @@ pytest-asyncio==1.3.0
 jinja2
 librosa
 datasets
+# YOLOX (yolox_nano) evals compute real COCO mAP via pycocotools' COCOeval.
+pycocotools
