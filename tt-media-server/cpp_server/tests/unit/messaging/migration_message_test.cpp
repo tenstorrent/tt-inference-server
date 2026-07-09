@@ -104,25 +104,26 @@ TEST(MigrationRequestMessageWire, HandlesMaxUint64MigrationId) {
 
 TEST(MigrationRequestMessageWire, HandlesMaxUint32Slots) {
   MigrationRequestMessage in = makeRequest();
-  in.src_slot = std::numeric_limits<uint32_t>::max();
-  in.dst_slot = std::numeric_limits<uint32_t>::max();
-  in.layer_begin = std::numeric_limits<uint32_t>::max();
-  in.layer_end = std::numeric_limits<uint32_t>::max();
-  in.src_position_begin = std::numeric_limits<uint32_t>::max();
-  in.src_position_end = std::numeric_limits<uint32_t>::max();
-  in.dst_position_begin = std::numeric_limits<uint32_t>::max();
-  in.dst_position_end = std::numeric_limits<uint32_t>::max();
+  const auto kMax = std::numeric_limits<uint32_t>::max();
+  in.src_slot = kMax;
+  in.dst_slot = kMax;
+  in.layer_begin = kMax;
+  in.layer_end = kMax;
+  in.src_position_begin = kMax;
+  in.src_position_end = kMax;
+  in.dst_position_begin = kMax;
+  in.dst_position_end = kMax;
 
   const auto out = parseMigrationRequest(serialize(in));
   ASSERT_TRUE(out.has_value());
-  EXPECT_EQ(out->src_slot, std::numeric_limits<uint32_t>::max());
-  EXPECT_EQ(out->dst_slot, std::numeric_limits<uint32_t>::max());
-  EXPECT_EQ(out->layer_begin, std::numeric_limits<uint32_t>::max());
-  EXPECT_EQ(out->layer_end, std::numeric_limits<uint32_t>::max());
-  EXPECT_EQ(out->src_position_begin, std::numeric_limits<uint32_t>::max());
-  EXPECT_EQ(out->src_position_end, std::numeric_limits<uint32_t>::max());
-  EXPECT_EQ(out->dst_position_begin, std::numeric_limits<uint32_t>::max());
-  EXPECT_EQ(out->dst_position_end, std::numeric_limits<uint32_t>::max());
+  EXPECT_EQ(out->src_slot, kMax);
+  EXPECT_EQ(out->dst_slot, kMax);
+  EXPECT_EQ(out->layer_begin, kMax);
+  EXPECT_EQ(out->layer_end, kMax);
+  EXPECT_EQ(out->src_position_begin, kMax);
+  EXPECT_EQ(out->src_position_end, kMax);
+  EXPECT_EQ(out->dst_position_begin, kMax);
+  EXPECT_EQ(out->dst_position_end, kMax);
 }
 
 TEST(MigrationRequestMessageParse, RejectsMalformedJson) {

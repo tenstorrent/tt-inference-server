@@ -139,7 +139,7 @@ wait_ready() {
 }
 
 up() {
-    [[ -x "${BIN}" ]] || { log "no binary; building (mock)"; (cd "${CPP_DIR}" && env -u TT_METAL_HOME ./build.sh); }
+    [[ -x "${BIN}" ]] || { log "no binary; building (mock)"; (cd "${CPP_DIR}" && env -u TT_METAL_HOME ./build.sh --blaze); }
     teardown
     : > "${PIDFILE}"
     ensure_etcd

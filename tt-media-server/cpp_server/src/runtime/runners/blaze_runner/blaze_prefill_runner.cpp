@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <optional>
+#include <string>
 #include <utility>
 
 #include "config/settings.hpp"
@@ -22,7 +23,7 @@
 namespace tt::runners::blaze {
 
 BlazePrefillRunner::BlazePrefillRunner(
-    const config::LLMConfig& config,
+    const config::BlazeConfig& config,
     std::unique_ptr<IPrefillScheduler> prefillScheduler,
     ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
     tt::ipc::ICancelQueue* stopQueue,
@@ -32,9 +33,9 @@ BlazePrefillRunner::BlazePrefillRunner(
       taskQueue(taskQueue),
       stopQueue(stopQueue),
       prefillScheduler(std::move(prefillScheduler)),
-      slotManager(tt::config::pmMaxUsers()),
+      slotManager(config.maxUsers),
       lastOutputTime(std::chrono::steady_clock::now()),
-      outputHangTimeout(tt::config::outputHangTimeoutMs()) {
+      outputHangTimeout(config.outputHangTimeoutMs) {
   assert(this->prefillScheduler != nullptr);
   this->prefillScheduler->start();
   TT_LOG_INFO(
@@ -69,21 +70,21 @@ bool BlazePrefillRunner::warmup() {
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
-  std::vector<uint32_t> warmupTokens(tt::config::prefillChunkSize(), 12345);
+  std::vector<uint32_t> warmupTokens(config.prefillChunkSize, 12345);
   uint32_t warmupTaskId = 0;
 
   auto warmupSeq = std::make_unique<tt::domain::llm::Sequence>(
-      warmupTaskId, 1, warmupTokens, warmupParams);
+      warmupTaskId, warmupTokens, warmupParams);
 
   constexpr uint32_t warmupAllocateRequestId = 0;
   constexpr uint32_t warmupEvictRequestId = 1;
 
-  const auto timeout = std::chrono::milliseconds(tt::config::warmupTimeoutMs());
+  const auto timeout = std::chrono::milliseconds(config.warmupTimeoutMs);
   const auto pollInterval = std::chrono::milliseconds(10);
 
   TT_LOG_INFO("BlazePrefillRunner: warmup - pushing ALLOCATE request...");
   prefillScheduler->push_request(
-      utils::makeAllocateRequest(warmupAllocateRequestId));
+      utils::makeAllocateRequest(config, warmupAllocateRequestId));
 
   TT_LOG_INFO("BlazePrefillRunner: warmup - waiting for ALLOCATE response...");
   ps::SchedulerResponse response{};
@@ -108,7 +109,8 @@ bool BlazePrefillRunner::warmup() {
   }
 
   TT_LOG_INFO("BlazePrefillRunner: warmup - pushing SUBMIT request...");
-  prefillScheduler->push_request(utils::makeSubmitRequest(slotId, *warmupSeq));
+  prefillScheduler->push_request(
+      utils::makeSubmitRequest(config, slotId, *warmupSeq));
 
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   bool receivedToken = false;
@@ -198,7 +200,7 @@ void BlazePrefillRunner::step() {
 void BlazePrefillRunner::drainAndHandleSchedulerResponses() {
   ps::SchedulerResponse response;
   size_t drained = 0;
-  size_t maxUsers = tt::config::pmMaxUsers();
+  size_t maxUsers = config.maxUsers;
   while (drained < maxUsers && prefillScheduler->try_pop_response(response)) {
     handleSchedulerResponse(response);
     drained++;
@@ -208,7 +210,7 @@ void BlazePrefillRunner::drainAndHandleSchedulerResponses() {
 void BlazePrefillRunner::drainAndHandleSchedulerOutputs() {
   ps::OutputMessage output;
   size_t drained = 0;
-  size_t maxUsers = tt::config::pmMaxUsers();
+  size_t maxUsers = config.maxUsers;
   while (drained < maxUsers && prefillScheduler->try_pop_output(output)) {
     handleSchedulerOutput(output);
     drained++;
@@ -348,8 +350,8 @@ inline void BlazePrefillRunner::handleEvictRequest(
 
 inline void BlazePrefillRunner::handleAllocateRequest(
     const tt::domain::ManageMemoryTask& request) {
-  auto allocateRequest =
-      utils::makeAllocateRequest(request.taskId, request.slotIdToCopyFrom);
+  auto allocateRequest = utils::makeAllocateRequest(config, request.taskId,
+                                                    request.slotIdToCopyFrom);
   if (!prefillScheduler->push_request(allocateRequest)) {
     TT_LOG_WARN(
         "[BlazePrefillRunner] handleAllocateRequest: scheduler queue full, "
@@ -678,7 +680,7 @@ void BlazePrefillRunner::handleTask(
     std::unique_ptr<tt::domain::llm::Sequence> task) {
   auto slotId = task->getPrefillKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
-  assert(slotId < tt::config::pmMaxUsers());
+  assert(slotId < config.maxUsers);
 
   auto decodePositionId = task->getDecodePositionId();
   auto decodeSkipTokens = task->getDecodeSkipTokens();
@@ -697,14 +699,17 @@ void BlazePrefillRunner::handleTask(
           task->taskId, slotId, task->isContinuation(),
           task->getNumPromptTokens(), task->getTokenIds().size(),
           slotManager.activeRunningCount(),
-          task->getMigrationId().has_value() ? *task->getMigrationId() : -1);
+          task->getMigrationId().has_value()
+              ? std::to_string(*task->getMigrationId())
+              : "None");
 
       auto migrationUuid = task->getMigrationId();
       auto destSlot = migrationUuid.has_value()
                           ? std::make_optional(task->getKVCacheSlot())
                           : std::nullopt;
 
-      ps::ISRequest req = utils::makeSubmitRequest(slotId, *task, destSlot);
+      ps::ISRequest req =
+          utils::makeSubmitRequest(config, slotId, *task, destSlot);
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] handleRequest: SUBMIT taskId={}, slotId={}, "
           "isContinuation={}, numPromptTokens={}, totalTokens={}, "

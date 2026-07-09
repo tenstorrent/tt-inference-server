@@ -130,8 +130,8 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
 
 std::vector<uint64_t> getPrefixCacheHashesByBlocks(
     std::span<const uint32_t> tokens, uint64_t parentHash) {
-  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
-  const size_t blockSize = tt::config::kvCacheBlockSize();
+  const size_t firstBlockSize = tt::config::prefixCacheFirstBlockSize();
+  const size_t blockSize = tt::config::prefixCacheBlockSize();
 
   // When continuing from a parent hash, use standard block size for all blocks
   if (parentHash != 0) {
@@ -188,8 +188,8 @@ std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
     uint32_t thinkEndId, uint64_t parentHash, uint32_t parentThinkCount) {
   const bool filterThinking = (thinkStartId != tokenizers::kNoTokenId &&
                                thinkEndId != tokenizers::kNoTokenId);
-  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
-  const size_t blockSize = tt::config::kvCacheBlockSize();
+  const size_t firstBlockSize = tt::config::prefixCacheFirstBlockSize();
+  const size_t blockSize = tt::config::prefixCacheBlockSize();
 
   if (firstBlockSize == 0 || blockSize == 0) {
     return {};
