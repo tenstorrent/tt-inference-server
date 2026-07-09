@@ -176,16 +176,4 @@ enum class ResponseFormatType : uint8_t {
   JSON_SCHEMA = 2
 };
 
-enum class SchedulingPolicy {
-  PREFILL_FIRST,
-  MAX_OCCUPANCY,
-};
-
-/** Parse SCHEDULING_POLICY; empty or unknown -> PREFILL_FIRST. Expects
- * lowercase input. */
-inline SchedulingPolicy schedulingPolicyFromString(const std::string& v) {
-  if (v == "max_occupancy") return SchedulingPolicy::MAX_OCCUPANCY;
-  return SchedulingPolicy::PREFILL_FIRST;
-}
-
 }  // namespace tt::config
