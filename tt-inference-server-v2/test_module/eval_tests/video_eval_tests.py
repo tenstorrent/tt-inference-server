@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def _run_video_generation_eval(ctx: MediaContext) -> dict:
     """Delegate to VideoGenerationEvalsTest."""
-    from server_tests.test_classes import TestConfig
+    from .._test_common import TestConfig
 
     from .._test_common import is_i2v_video_model
     from .video_generation_eval_test import (
@@ -67,7 +67,7 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
 
 def _run_video_fvd_and_fvmd_eval() -> dict:
     """Run FVD + FVMD eval against reference and generated video directories."""
-    from server_tests.test_classes import TestConfig
+    from .._test_common import TestConfig
 
     from .video_fvd_eval_test import DATASET_DIR as FVD_DATASET_DIR
     from .video_fvd_eval_test import VideoFVDTest, VideoFVDTestRequest

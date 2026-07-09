@@ -19,7 +19,7 @@ from server_tests.test_cases.server_helper import (
     DEFAULT_AUTHORIZATION,
     SERVER_BASE_URL,
 )
-from server_tests.test_classes import TestConfig
+from .._test_common import TestConfig
 from utils.sdxl_accuracy_utils.clip_encoder import CLIPEncoder
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import sdxl_get_prompts
 
