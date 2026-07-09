@@ -44,6 +44,21 @@ class TestServerConnection:
         conn = ServerConnection(base_url="http://host/", service_port=8000, model="m")
         assert conn.url_with_port == "http://host:8000"
 
+    def test_url_with_port_keeps_embedded_port(self):
+        conn = ServerConnection(
+            base_url="http://host:9000", service_port=8000, model="m"
+        )
+        assert conn.url_with_port == "http://host:9000"
+
+    def test_remote_url_preserves_full_url(self):
+        conn = ServerConnection(
+            base_url="https://console.tenstorrent.com/openai",
+            service_port=8000,
+            model="m",
+            is_remote=True,
+        )
+        assert conn.url_with_port == "https://console.tenstorrent.com/openai"
+
     def test_host_strips_scheme_and_embedded_port(self):
         conn = ServerConnection(
             base_url="http://host:1234", service_port=8000, model="m"

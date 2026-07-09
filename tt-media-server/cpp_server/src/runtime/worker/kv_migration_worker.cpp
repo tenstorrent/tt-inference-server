@@ -32,7 +32,17 @@ KvMigrationWorker::KvMigrationWorker(
   }
 }
 
-KvMigrationWorker::~KvMigrationWorker() { stop(); }
+KvMigrationWorker::~KvMigrationWorker() {
+  stop();  // join the poll thread first: no new jobs are submitted after this.
+  // Then drain the executor while this worker is still fully valid. An async
+  // executor (e.g. MooncakeMigrationExecutor) finishes its in-flight job during
+  // destruction and fires its DoneCallback -> publishAck, which locks ackMutex
+  // and uses ackProducer. Destroying it here, in the dtor body, guarantees
+  // those members still exist. Relying on member-destruction order would be
+  // fragile: `executor` is declared before `ackMutex`, so by default it is torn
+  // down AFTER ackMutex -- the in-flight ack would then lock a destroyed mutex.
+  executor.reset();
+}
 
 void KvMigrationWorker::start() {
   bool expected = false;

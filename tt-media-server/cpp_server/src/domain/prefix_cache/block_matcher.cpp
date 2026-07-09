@@ -95,8 +95,8 @@ std::uint32_t BlockMatcher::blocksToTokens(std::size_t matchedBlocks) {
     return 0;
   }
 
-  const std::size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
-  const std::size_t blockSize = tt::config::kvCacheBlockSize();
+  const std::size_t firstBlockSize = tt::config::prefixCacheFirstBlockSize();
+  const std::size_t blockSize = tt::config::prefixCacheBlockSize();
   return static_cast<std::uint32_t>(firstBlockSize +
                                     (matchedBlocks - 1) * blockSize);
 }
@@ -106,8 +106,8 @@ std::uint32_t BlockMatcher::tokensToBlocks(std::uint32_t tokens) {
     return 0;
   }
 
-  const std::size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
-  const std::size_t blockSize = tt::config::kvCacheBlockSize();
+  const std::size_t firstBlockSize = tt::config::prefixCacheFirstBlockSize();
+  const std::size_t blockSize = tt::config::prefixCacheBlockSize();
   if (tokens <= firstBlockSize || blockSize == 0) {
     return 1;
   }

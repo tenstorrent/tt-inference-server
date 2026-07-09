@@ -7,14 +7,20 @@
 // orchestration tests. Each test is its own binary, so a single include per
 // binary; the free helpers are inline to be safe.
 
+#include <condition_variable>
 #include <cstdint>
 #include <cstring>
+#include <deque>
+#include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "sockets/i_socket_transport.hpp"
 #include "transport/i_device_io.hpp"
 #include "transport/i_storage_backend.hpp"
 #include "transport/i_transfer_engine.hpp"
@@ -27,6 +33,70 @@ namespace tt::transport {
 namespace test {
 
 constexpr uint32_t K_CHUNK = 64;  // small chunk for readable byte content
+
+// A blocking, thread-safe channel end: receiveRawData blocks until a message
+// arrives or the inbound queue is closed — like a real socket. Two of them with
+// crossed queues form a connected pair across threads.
+struct Pipe {
+  std::mutex m;
+  std::condition_variable cv;
+  std::deque<std::vector<uint8_t>> q;
+  bool closed = false;
+};
+
+inline void closePipe(const std::shared_ptr<Pipe>& p) {
+  {
+    std::lock_guard<std::mutex> lk(p->m);
+    p->closed = true;
+  }
+  p->cv.notify_all();
+}
+
+class BlockingFakeTransport : public sockets::ISocketTransport {
+ public:
+  BlockingFakeTransport(std::shared_ptr<Pipe> in, std::shared_ptr<Pipe> out)
+      : in(std::move(in)), out(std::move(out)) {}
+
+  bool initializeAsServer(uint16_t) override { return true; }
+  bool initializeAsClient(const std::string&, uint16_t) override {
+    return true;
+  }
+  void start() override {}
+  // Models a real transport teardown: closing the inbound queue unblocks a
+  // pending receiveRawData() so a receiver loop waiting on it returns.
+  void stop() override { closePipe(in); }
+  // Reflects pipe closure so KvControlChannel::receive() can tell an
+  // empty-on-close read apart from "no data yet" (it disambiguates via
+  // isConnected()), like a real socket dropping its connection.
+  bool isConnected() const override {
+    std::lock_guard<std::mutex> lk(in->m);
+    return !in->closed;
+  }
+  std::string getStatus() const override { return "blocking-fake"; }
+
+  bool sendRawData(std::span<const uint8_t> data) override {
+    {
+      std::lock_guard<std::mutex> lk(out->m);
+      out->q.emplace_back(data.begin(), data.end());
+    }
+    out->cv.notify_one();
+    return true;
+  }
+  std::vector<uint8_t> receiveRawData() override {
+    std::unique_lock<std::mutex> lk(in->m);
+    in->cv.wait(lk, [&] { return !in->q.empty() || in->closed; });
+    if (in->q.empty()) return {};  // closed
+    std::vector<uint8_t> front = std::move(in->q.front());
+    in->q.pop_front();
+    return front;
+  }
+  void setConnectionLostCallback(std::function<void()>) override {}
+  void setConnectionEstablishedCallback(std::function<void()>) override {}
+
+ private:
+  std::shared_ptr<Pipe> in;
+  std::shared_ptr<Pipe> out;
+};
 
 // Shared segment registry: an engine's advertised name -> its registered host
 // buffer (base, length). Models the cluster-wide segment directory.
