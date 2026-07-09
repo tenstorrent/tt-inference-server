@@ -285,7 +285,9 @@ def test_get_benchmark_config_returns_empty_for_video(monkeypatch):
     benchmark_config = _import_benchmark_config(monkeypatch)
 
     model_id = _find_model_id(
-        model_name="mochi-1-preview", device=DeviceTypes.T3K, impl_name="tt-transformers"
+        model_name="mochi-1-preview",
+        device=DeviceTypes.T3K,
+        impl_name="tt-transformers",
     )
     spec = MODEL_SPECS[model_id]
     assert spec.model_type == ModelType.VIDEO

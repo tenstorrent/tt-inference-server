@@ -150,7 +150,10 @@ class TestVideoMatrixExpansion:
         "wan-p300x2": {"video_generation_target_time": 500, "poll_timeout": 800},
     }
     MOCHI_LOAD_TARGETS = {
-        "mochi-p150x4": {"video_generation_target_time": 480, "num_inference_steps": 50},
+        "mochi-p150x4": {
+            "video_generation_target_time": 480,
+            "num_inference_steps": 50,
+        },
         "mochi-p300x2": {
             "video_generation_target_time": 900,
             "num_inference_steps": 50,
@@ -175,11 +178,31 @@ class TestVideoMatrixExpansion:
     # Expected VideoGenerationI2VTest targets per expanded suite. p150x4 keeps
     # the base poll_timeout (no per-device override).
     WAN_I2V_TARGETS = {
-        "wan-i2v-t3k": {"num_inference_steps": 40, "poll_timeout": 1500, "poll_interval": 5},
-        "wan-i2v-galaxy": {"num_inference_steps": 40, "poll_timeout": 550, "poll_interval": 5},
-        "wan-i2v-p150x4": {"num_inference_steps": 40, "poll_timeout": 1200, "poll_interval": 5},
-        "wan-i2v-p150x8": {"num_inference_steps": 40, "poll_timeout": 900, "poll_interval": 5},
-        "wan-i2v-p300x2": {"num_inference_steps": 40, "poll_timeout": 800, "poll_interval": 5},
+        "wan-i2v-t3k": {
+            "num_inference_steps": 40,
+            "poll_timeout": 1500,
+            "poll_interval": 5,
+        },
+        "wan-i2v-galaxy": {
+            "num_inference_steps": 40,
+            "poll_timeout": 550,
+            "poll_interval": 5,
+        },
+        "wan-i2v-p150x4": {
+            "num_inference_steps": 40,
+            "poll_timeout": 1200,
+            "poll_interval": 5,
+        },
+        "wan-i2v-p150x8": {
+            "num_inference_steps": 40,
+            "poll_timeout": 900,
+            "poll_interval": 5,
+        },
+        "wan-i2v-p300x2": {
+            "num_inference_steps": 40,
+            "poll_timeout": 800,
+            "poll_interval": 5,
+        },
     }
 
     @staticmethod
@@ -237,6 +260,6 @@ class TestVideoMatrixExpansion:
 
     def test_wan_i2v_targets_merge_per_device(self):
         for suite_id, expected in self.WAN_I2V_TARGETS.items():
-            assert (
-                self._case_targets(suite_id, "VideoGenerationI2VTest") == expected
-            ), suite_id
+            assert self._case_targets(suite_id, "VideoGenerationI2VTest") == expected, (
+                suite_id
+            )

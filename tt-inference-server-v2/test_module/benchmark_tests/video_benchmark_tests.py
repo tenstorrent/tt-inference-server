@@ -269,7 +269,7 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
     logger.info("Generating benchmark report...")
     # Only successful generations produce meaningful timings. A fast HTTP
     # rejection (bad route/auth, server error) returns near-instantly, which
-    # would otherwise inflate throughput and deflate TTFT 
+    # would otherwise inflate throughput and deflate TTFT
     successful = [s for s in status_list if s.status]
     num_total = len(status_list)
     num_successful = len(successful)
