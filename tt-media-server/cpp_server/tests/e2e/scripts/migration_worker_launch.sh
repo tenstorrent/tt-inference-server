@@ -8,8 +8,10 @@
 # reproduces the worker identically.
 #
 # It only translates the deploy's env into the worker's flags — all topology
-# (how many prefill/decode, which physical host) is decided by the deploy. The
-# worker infers its role from --name, so we never pass --role.
+# (how many prefill/decode, which physical host) is decided by the deploy. We
+# pass --role explicitly (from WORKER_ROLE): the worker can infer role from a
+# prefill*/decode* --name prefix, but real table tags (bh-glx-…, host-…) don't
+# match that prefix, so relying on inference makes the worker abort.
 #
 # Contract: WORKER_TAG is this worker's logical identity and is used verbatim as
 #   --name (the Mooncake/rpc_meta discovery key) and --host (the table's
@@ -88,6 +90,7 @@ case "${WORKER_ROLE}" in
     # peerless, but if the deploy gave it peers it resolves + holds them (it does
     # not initiate). No prefill identity / Kafka.
     exec "${WORKER_BIN}" \
+      --role "${WORKER_ROLE}" \
       --metadata "${METADATA}" --name "${WORKER_TAG}" --host "${WORKER_TAG}" \
       --table "${DECODE_TABLE}" \
       ${peer_args[@]+"${peer_args[@]}"} \
@@ -104,6 +107,7 @@ case "${WORKER_ROLE}" in
     # delivers a record to one member per group => broadcast across prefills).
     export KAFKA_GROUP_ID="${KAFKA_GROUP_ID:-migration-workers-prefill-${WORKER_TAG}}"
     exec "${WORKER_BIN}" \
+      --role "${WORKER_ROLE}" \
       --metadata "${METADATA}" --name "${WORKER_TAG}" --host "${WORKER_TAG}" \
       --prefill-table "${PREFILL_TABLE}" --decode-table "${DECODE_TABLE}" \
       "${peer_args[@]}" \

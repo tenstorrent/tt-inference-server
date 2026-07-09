@@ -88,6 +88,12 @@ HEALTH_PORT=0
 # metadata (this value is only the fallback for a peer that hasn't published).
 # Set in migration_deploy.conf or override with --control-port.
 CONTROL_PORT="${CONTROL_PORT:-18650}"
+# OPTIONAL container name. When set, workers run inside this container (via a
+# docker-exec --worker-bin wrapper) as root, so the sweep/teardown must kill them
+# with `docker exec <CONTAINER> pkill` — a host-side pkill as the deploy user
+# can't touch a root-in-container process, leaving stale workers + squatted ports
+# (exabox Bug A). Empty => host-side pkill (bare-host/in-container deploys).
+CONTAINER="${CONTAINER:-}"
 # Mirrors bringup_mooncake_worker's K_DEFAULT_HOST_DRAM_BYTES (4 GiB). Kept in
 # sync by hand; the worker also clamps/validates this against physical RAM.
 HOST_DRAM_BYTES=$((4 * 1024 * 1024 * 1024))
@@ -136,6 +142,9 @@ fabric_node_host, not on the CLI):
 Options:
   --build-dir PATH         cpp_server build dir (default ${BUILD_DIR})
   --worker-bin PATH        worker binary (default <build-dir>/mooncake_kv_migration_worker)
+  --container NAME          workers run inside this container (docker-exec
+                           --worker-bin wrapper); sweep/teardown kill via
+                           'docker exec NAME pkill'. Omit for host-side pkill
   --discovery-port PORT    discovery service port (default ${DISCOVERY_PORT})
   --host-dram-bytes N      per-worker pool, page-aligned (default 4 GiB)
   --discovery-timeout-sec S  peer discovery timeout (default ${DISCOVERY_TIMEOUT_SEC})
@@ -191,6 +200,7 @@ parseArgs() {
       --discovery-port) DISCOVERY_PORT="$2"; shift 2 ;;
       --health-port) HEALTH_PORT="$2"; shift 2 ;;
       --control-port) CONTROL_PORT="$2"; shift 2 ;;
+      --container) CONTAINER="$2"; shift 2 ;;
       --host-dram-bytes) HOST_DRAM_BYTES="$2"; shift 2 ;;
       --discovery-timeout-sec) DISCOVERY_TIMEOUT_SEC="$2"; shift 2 ;;
       --kafka-brokers) KAFKA_BROKERS="$2"; shift 2 ;;
@@ -306,13 +316,18 @@ sweepScript() {
   local port="$1" grace="$2" name="${3:-}"
   local pat="mooncake_kv_migration_worker --metadata"
   [[ -n "${name}" ]] && pat="mooncake_kv_migration_worker.*--name ${name}([[:space:]]|\$)"
+  # When CONTAINER is set the worker runs as root inside it, so pkill/pgrep must
+  # target the container's PID namespace, not the host's. Ports live in the host
+  # namespace (workers use --network host), so the `ss` check stays host-side.
+  local run=""
+  [[ -n "${CONTAINER}" ]] && run="docker exec ${CONTAINER} "
   cat <<EOF
 pat='${pat}'
-pkill -TERM -f "\$pat" 2>/dev/null || true
-for _ in \$(seq 1 ${grace}); do pgrep -f "\$pat" >/dev/null 2>&1 || break; sleep 1; done
-pkill -KILL -f "\$pat" 2>/dev/null || true
+${run}pkill -TERM -f "\$pat" 2>/dev/null || true
+for _ in \$(seq 1 ${grace}); do ${run}pgrep -f "\$pat" >/dev/null 2>&1 || break; sleep 1; done
+${run}pkill -KILL -f "\$pat" 2>/dev/null || true
 sleep 1
-if pgrep -f "\$pat" >/dev/null 2>&1; then
+if ${run}pgrep -f "\$pat" >/dev/null 2>&1; then
   echo "SWEEP_FAIL: worker still alive on \$(hostname -s)" >&2; exit 1
 fi
 if command -v ss >/dev/null 2>&1 && ss -ltnH 2>/dev/null | grep -q ":${port} "; then
@@ -416,6 +431,7 @@ workerCmd() {
 WORKER_BIN=${WORKER_BIN} METADATA=${META_URI} \
 KAFKA_BROKERS=${KAFKA_BROKERS} HEALTH_PORT=${HEALTH_PORT} \
 CONTROL_PORT=${CONTROL_PORT} \
+${CONTAINER:+CTR=${CONTAINER} }\
 PREFILL_TABLE=${PREFILL_TABLE} DECODE_TABLE=${DECODE_TABLE} \
 ${devmap:+DEVICE_MAP=${devmap} }PEERS=${peers} \
 MC_TCP_BIND_ADDRESS=auto bash ${RANK_LAUNCH}"
