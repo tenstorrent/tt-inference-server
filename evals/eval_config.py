@@ -501,7 +501,7 @@ _eval_config_list = [
             ),
         ],
     ),
-  EvalConfig(
+    EvalConfig(
         hf_model_repo="MiniMaxAI/MiniMax-M3",
         tasks=[
             EvalTask(
