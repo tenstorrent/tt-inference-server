@@ -431,8 +431,8 @@ void PrefixCacheRouter::getSlot(
 
   callbacks.createSession(
       [this, blocks = std::move(blocks), opts = std::move(opts), onResolved,
-       slotToCopyFrom, copyMatchedTokens, attachPrefixRegistrar](
-          const domain::Session& session) mutable {
+       slotToCopyFrom, copyMatchedTokens,
+       attachPrefixRegistrar](const domain::Session& session) mutable {
         // Unlock source slot now that allocation is complete
         if (slotToCopyFrom.has_value()) {
           callbacks.unlockSlot(*slotToCopyFrom);

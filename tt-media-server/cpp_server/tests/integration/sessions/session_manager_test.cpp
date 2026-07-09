@@ -6,8 +6,8 @@
 #include <gtest/gtest.h>
 #include <trantor/net/EventLoop.h>
 
-#include <atomic>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <span>
 #include <string>
@@ -588,9 +588,9 @@ TEST(SessionManagerGetSlot, ResponseId_UnknownPreviousId_AllocatesNewSession) {
 TEST(SessionManagerGetSlot, ResponseId_EmptyPreviousId_AllocatesNewSession) {
   GetSlotTestContext ctx;
 
-  auto result = runGetSlot(
-      ctx.manager, ctx.lf.loop, kResponseIdTokens,
-      tt::services::GetSlotOptions{.previousResponseId = ""});
+  auto result =
+      runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
+                 tt::services::GetSlotOptions{.previousResponseId = ""});
   EXPECT_TRUE(result.isNewSession);
   ctx.manager.getSession(result.sessionId)->release();
 }
@@ -598,9 +598,8 @@ TEST(SessionManagerGetSlot, ResponseId_EmptyPreviousId_AllocatesNewSession) {
 TEST(SessionManagerGetSlot, ResponseId_EmptyResponseId_IsNoOp) {
   GetSlotTestContext ctx;
 
-  auto result = runGetSlot(
-      ctx.manager, ctx.lf.loop, kResponseIdTokens,
-      tt::services::GetSlotOptions{.responseId = ""});
+  auto result = runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
+                           tt::services::GetSlotOptions{.responseId = ""});
   auto session = ctx.manager.getSession(result.sessionId);
   ASSERT_TRUE(session);
   EXPECT_TRUE(session->getResponseId().empty());
@@ -610,28 +609,27 @@ TEST(SessionManagerGetSlot, ResponseId_EmptyResponseId_IsNoOp) {
 TEST(SessionManagerGetSlot, ResponseId_ReKey_MovesSessionToNewId) {
   GetSlotTestContext ctx;
 
-  auto turn1 = runGetSlot(
-      ctx.manager, ctx.lf.loop, kResponseIdTokens,
-      tt::services::GetSlotOptions{.responseId = "resp-1"});
+  auto turn1 = runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
+                          tt::services::GetSlotOptions{.responseId = "resp-1"});
   ctx.manager.getSession(turn1.sessionId)->release();
 
-  auto turn2 = runGetSlot(
-      ctx.manager, ctx.lf.loop, kResponseIdTokens,
-      tt::services::GetSlotOptions{.previousResponseId = "resp-1",
-                                   .responseId = "resp-2"});
+  auto turn2 =
+      runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
+                 tt::services::GetSlotOptions{.previousResponseId = "resp-1",
+                                              .responseId = "resp-2"});
   EXPECT_EQ(turn2.sessionId, turn1.sessionId);
   ctx.manager.getSession(turn2.sessionId)->release();
 
-  auto miss = runGetSlot(
-      ctx.manager, ctx.lf.loop, kResponseIdTokens,
-      tt::services::GetSlotOptions{.previousResponseId = "resp-1"});
+  auto miss =
+      runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
+                 tt::services::GetSlotOptions{.previousResponseId = "resp-1"});
   EXPECT_TRUE(miss.isNewSession);
   EXPECT_NE(miss.sessionId, turn1.sessionId);
   ctx.manager.getSession(miss.sessionId)->release();
 
-  auto hit = runGetSlot(
-      ctx.manager, ctx.lf.loop, kResponseIdTokens,
-      tt::services::GetSlotOptions{.previousResponseId = "resp-2"});
+  auto hit =
+      runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
+                 tt::services::GetSlotOptions{.previousResponseId = "resp-2"});
   EXPECT_FALSE(hit.isNewSession);
   EXPECT_EQ(hit.sessionId, turn1.sessionId);
   ctx.manager.getSession(hit.sessionId)->release();
@@ -640,9 +638,8 @@ TEST(SessionManagerGetSlot, ResponseId_ReKey_MovesSessionToNewId) {
 TEST(SessionManagerGetSlot, ResponseId_SecondAcquireWhileInFlight_Throws) {
   GetSlotTestContext ctx;
 
-  auto turn1 = runGetSlot(
-      ctx.manager, ctx.lf.loop, kResponseIdTokens,
-      tt::services::GetSlotOptions{.responseId = "resp-1"});
+  auto turn1 = runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
+                          tt::services::GetSlotOptions{.responseId = "resp-1"});
 
   EXPECT_THROW(
       runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
@@ -655,14 +652,13 @@ TEST(SessionManagerGetSlot, ResponseId_SecondAcquireWhileInFlight_Throws) {
 TEST(SessionManagerGetSlot, ResponseId_AcquireAfterRelease_Succeeds) {
   GetSlotTestContext ctx;
 
-  auto turn1 = runGetSlot(
-      ctx.manager, ctx.lf.loop, kResponseIdTokens,
-      tt::services::GetSlotOptions{.responseId = "resp-1"});
+  auto turn1 = runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
+                          tt::services::GetSlotOptions{.responseId = "resp-1"});
   ctx.manager.getSession(turn1.sessionId)->release();
 
-  auto turn2 = runGetSlot(
-      ctx.manager, ctx.lf.loop, kResponseIdTokens,
-      tt::services::GetSlotOptions{.previousResponseId = "resp-1"});
+  auto turn2 =
+      runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
+                 tt::services::GetSlotOptions{.previousResponseId = "resp-1"});
   ASSERT_FALSE(turn2.isNewSession);
   EXPECT_EQ(turn2.sessionId, turn1.sessionId);
   ctx.manager.getSession(turn2.sessionId)->release();
@@ -671,16 +667,15 @@ TEST(SessionManagerGetSlot, ResponseId_AcquireAfterRelease_Succeeds) {
 TEST(SessionManagerGetSlot, ResponseId_CloseSession_RemovesFromIndex) {
   GetSlotTestContext ctx;
 
-  auto turn1 = runGetSlot(
-      ctx.manager, ctx.lf.loop, kResponseIdTokens,
-      tt::services::GetSlotOptions{.responseId = "resp-1"});
+  auto turn1 = runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
+                          tt::services::GetSlotOptions{.responseId = "resp-1"});
   ctx.manager.getSession(turn1.sessionId)->release();
   ASSERT_EQ(ctx.manager.closeSession(turn1.sessionId),
             tt::services::CloseSessionResult::SUCCESS);
 
-  auto turn2 = runGetSlot(
-      ctx.manager, ctx.lf.loop, kResponseIdTokens,
-      tt::services::GetSlotOptions{.previousResponseId = "resp-1"});
+  auto turn2 =
+      runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
+                 tt::services::GetSlotOptions{.previousResponseId = "resp-1"});
   EXPECT_TRUE(turn2.isNewSession);
   ctx.manager.getSession(turn2.sessionId)->release();
 }
@@ -702,26 +697,24 @@ TEST(SessionManagerGetSlot, ResponseId_CloseWhileAcquired_FiresCancelFn) {
 TEST(SessionManagerGetSlot, ResponseId_TwoTurnContinuation_ReKeysAcrossIds) {
   GetSlotTestContext ctx;
 
-  auto turn1 = runGetSlot(
-      ctx.manager, ctx.lf.loop, kResponseIdTokens,
-      tt::services::GetSlotOptions{.responseId = "r1"});
+  auto turn1 = runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
+                          tt::services::GetSlotOptions{.responseId = "r1"});
   ctx.manager.getSession(turn1.sessionId)->release();
 
-  auto turn2 = runGetSlot(
-      ctx.manager, ctx.lf.loop, kResponseIdTokens,
-      tt::services::GetSlotOptions{.previousResponseId = "r1",
-                                   .responseId = "r2"});
+  auto turn2 = runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
+                          tt::services::GetSlotOptions{
+                              .previousResponseId = "r1", .responseId = "r2"});
   EXPECT_EQ(turn2.sessionId, turn1.sessionId);
   ctx.manager.getSession(turn2.sessionId)->release();
 
-  auto turn3 = runGetSlot(
-      ctx.manager, ctx.lf.loop, kResponseIdTokens,
-      tt::services::GetSlotOptions{.previousResponseId = "r2"});
+  auto turn3 =
+      runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
+                 tt::services::GetSlotOptions{.previousResponseId = "r2"});
   EXPECT_EQ(turn3.sessionId, turn1.sessionId);
 
-  auto miss = runGetSlot(
-      ctx.manager, ctx.lf.loop, kResponseIdTokens,
-      tt::services::GetSlotOptions{.previousResponseId = "r1"});
+  auto miss =
+      runGetSlot(ctx.manager, ctx.lf.loop, kResponseIdTokens,
+                 tt::services::GetSlotOptions{.previousResponseId = "r1"});
   EXPECT_TRUE(miss.isNewSession);
   ctx.manager.getSession(turn3.sessionId)->release();
   ctx.manager.getSession(miss.sessionId)->release();
@@ -732,25 +725,30 @@ TEST(SessionManagerGetSlot,
   GetSlotTestContext ctx;
 
   std::vector<tt::utils::BlockHashInfo> turn1Blocks = {
-      {100, 0}, {200, 0}, {300, 0},
+      {100, 0},
+      {200, 0},
+      {300, 0},
   };
 
-  auto turn1 = runGetSlotWithBlocks(
-      ctx.manager, ctx.lf.loop, turn1Blocks,
-      tt::services::GetSlotOptions{.responseId = "r1"});
+  auto turn1 =
+      runGetSlotWithBlocks(ctx.manager, ctx.lf.loop, turn1Blocks,
+                           tt::services::GetSlotOptions{.responseId = "r1"});
   EXPECT_TRUE(turn1.isNewSession);
   ctx.manager.getSession(turn1.sessionId)->release();
 
-  auto turn2 = runGetSlotWithBlocks(
-      ctx.manager, ctx.lf.loop, turn1Blocks,
-      tt::services::GetSlotOptions{.previousResponseId = "r1",
-                                   .responseId = "r2"});
+  auto turn2 =
+      runGetSlotWithBlocks(ctx.manager, ctx.lf.loop, turn1Blocks,
+                           tt::services::GetSlotOptions{
+                               .previousResponseId = "r1", .responseId = "r2"});
   ASSERT_FALSE(turn2.isNewSession);
   EXPECT_EQ(turn2.sessionId, turn1.sessionId);
   EXPECT_GT(turn2.matchedTokens, 0u);
 
   std::vector<tt::utils::BlockHashInfo> turn2Blocks = {
-      {100, 0}, {200, 0}, {300, 0}, {400, 0},
+      {100, 0},
+      {200, 0},
+      {300, 0},
+      {400, 0},
   };
   ASSERT_TRUE(turn2.registerPrefixBlocks);
   turn2.registerPrefixBlocks(turn2Blocks);
@@ -764,7 +762,8 @@ TEST(SessionManagerGetSlot,
   EXPECT_GT(turn3.matchedTokens, turn2.matchedTokens);
   ctx.manager.getSession(turn3.sessionId)->release();
 
-  auto prefixHit = runGetSlotWithBlocks(ctx.manager, ctx.lf.loop, turn1Blocks, {});
+  auto prefixHit =
+      runGetSlotWithBlocks(ctx.manager, ctx.lf.loop, turn1Blocks, {});
   EXPECT_FALSE(prefixHit.isNewSession);
   EXPECT_EQ(prefixHit.sessionId, turn1.sessionId);
   ctx.manager.getSession(prefixHit.sessionId)->release();
@@ -779,7 +778,9 @@ TEST(SessionManagerClearThinkTokens, ResetsThinkTokensToZero) {
   LoopFixture lf;
 
   std::vector<tt::utils::BlockHashInfo> blocks = {
-      {100, 5}, {200, 12}, {300, 20},
+      {100, 5},
+      {200, 12},
+      {300, 20},
   };
   createSessionWithSlot(manager, lf.loop, 70u, blocks);
 
