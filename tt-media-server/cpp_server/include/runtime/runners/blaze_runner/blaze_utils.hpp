@@ -402,18 +402,44 @@ makePrefillKafkaMigrationClient(const tt::config::LLMConfig& config) {
           .brokers = tt::config::kafkaBrokers(),
           .topic = tt::config::kafkaMigrationRequestTopic(),
       });
+  // The ack consumer MUST have a group.id that is unique per PrefillScheduler
+  // process. If two schedulers share a group, Kafka splits the ack topic's
+  // partitions between them: each ack lands on one arbitrary scheduler, whose
+  // migrations map may not contain that migration_id — the scheduler that
+  // actually owns the migration then times out after
+  // kvMigrationTimeoutMs and marks the burst FAILED{IncompleteBurstSent}.
+  // kafkaMigrationAckGroupId() falls back to prefillServerId()
+  // (hostname:SOCKET_PORT) so this is per-process by default; the worker's
+  // request-topic subscription keeps using the shared KAFKA_GROUP_ID (as
+  // intended, so request partitions balance across workers).
+  const std::string ackGroupId = tt::config::kafkaMigrationAckGroupId();
+  if (ackGroupId == tt::config::kafkaGroupId()) {
+    // The ack-consumer group id collapsed to the SAME value as the
+    // worker-side KAFKA_GROUP_ID. This is the exact misconfiguration this
+    // separate env var exists to prevent — a second PrefillScheduler with
+    // the same ack group.id will get some ack topic partitions
+    // assigned to it, silently swallowing acks that belong to the first
+    // scheduler (RemoteKVManagerImpl drops "unknown migration_id" acks and
+    // the owning scheduler times out after kvMigrationTimeoutMs). Reaches
+    // this branch when either KAFKA_MIGRATION_ACK_GROUP_ID is explicitly
+    // set to KAFKA_GROUP_ID's value, or when someone points both at the
+    // same custom string. Loud warning, not fatal: a single-scheduler
+    // deployment still works.
+    TT_LOG_WARN(
+        "[makePrefillKafkaMigrationClient] ack-consumer group_id='{}' equals "
+        "the worker KAFKA_GROUP_ID; RemoteKVManagerImpl requires a UNIQUE "
+        "group.id per instance. Safe only if there is exactly one "
+        "PrefillScheduler process — multiple schedulers with this "
+        "configuration will silently misroute acks and time out bursts. "
+        "Prefer leaving KAFKA_MIGRATION_ACK_GROUP_ID unset so it defaults "
+        "to prefillServerId() (hostname:port, unique per process).",
+        ackGroupId);
+  }
   auto ackConsumer = std::make_unique<tt::messaging::KafkaConsumer>(
       tt::messaging::KafkaConsumerConfig{
           .brokers = tt::config::kafkaBrokers(),
           .topic = tt::config::kafkaMigrationAckTopic(),
-          // Shared with the worker's request-topic subscription: group.id is
-          // scoped per topic, so worker (request topic) and client (ack topic)
-          // do not fight over partitions. If multiple PrefillScheduler
-          // processes need to consume acks independently, they must set
-          // KAFKA_GROUP_ID to distinct values at deploy time — sharing a
-          // group here would split ack partitions across processes and
-          // silently starve some bursts of their completion event.
-          .group_id = tt::config::kafkaGroupId(),
+          .group_id = ackGroupId,
       });
   auto kvManager = std::make_unique<tt::services::RemoteKVManagerImpl>(
       std::move(requestProducer), std::move(ackConsumer),
@@ -425,10 +451,10 @@ makePrefillKafkaMigrationClient(const tt::config::LLMConfig& config) {
   auto loopback = makeShmemOrMockMigrationClient(config);
   TT_LOG_INFO(
       "makePrefillKafkaMigrationClient: CompositeMigrationClient wired "
-      "(brokers={}, request_topic={}, ack_topic={}, group_id={}); burst = "
+      "(brokers={}, request_topic={}, ack_topic={}, ack_group_id={}); burst = "
       "RemoteKVManagerAdapter, loopback per runner_type",
       tt::config::kafkaBrokers(), tt::config::kafkaMigrationRequestTopic(),
-      tt::config::kafkaMigrationAckTopic(), tt::config::kafkaGroupId());
+      tt::config::kafkaMigrationAckTopic(), ackGroupId);
   return std::make_unique<tt::services::CompositeMigrationClient>(
       std::move(burst), std::move(loopback));
 }

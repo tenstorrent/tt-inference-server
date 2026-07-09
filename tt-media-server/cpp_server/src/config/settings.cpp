@@ -758,6 +758,19 @@ uint32_t migrationDecodeEndpointId() {
 std::string kafkaGroupId() {
   return envString("KAFKA_GROUP_ID", defaults::KAFKA_GROUP_ID);
 }
+
+std::string kafkaMigrationAckGroupId() {
+  // The default in defaults.hpp is deliberately empty ("") because a proper
+  // default has to be computed at runtime — prefillServerId() reads
+  // PREFILL_SERVER_ID / hostname / SOCKET_PORT and cannot be constexpr. Treat
+  // the empty sentinel from envString() as "use the per-instance fallback"
+  // rather than trying to feed literal "" to librdkafka's group.id (which
+  // rejects empty strings).
+  std::string v = envString("KAFKA_MIGRATION_ACK_GROUP_ID",
+                            defaults::KAFKA_MIGRATION_ACK_GROUP_ID);
+  if (!v.empty()) return v;
+  return prefillServerId();
+}
 unsigned sessionAllocationMaxRetries() {
   return static_cast<unsigned>(
       envUlong("SESSION_ALLOCATION_MAX_RETRIES",
