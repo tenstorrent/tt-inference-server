@@ -1,0 +1,143 @@
+name: Cleanup Branches
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List branches without deleting them
+        type: boolean
+        default: true
+      base_branch:
+        description: Base branch for merged-branch cleanup
+        type: string
+        default: main
+      stale_days:
+        description: Delete unmerged branches with no commits newer than this many days (0 = disable)
+        type: number
+        default: 90
+  schedule:
+    # First day of each month at 04:00 Europe/Belgrade (CET, UTC+1).
+    # GitHub cron is UTC-only → 03:00 UTC. During CEST (summer) this is 05:00 local.
+    - cron: '0 3 1 * *'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    name: Delete merged and stale branches
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Delete merged and stale remote branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_BRANCH: ${{ github.event_name == 'workflow_dispatch' && inputs.base_branch || 'main' }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          STALE_DAYS: ${{ github.event_name == 'workflow_dispatch' && inputs.stale_days || 90 }}
+        run: |
+          set -euo pipefail
+
+          git fetch --prune origin "${BASE_BRANCH}"
+          git fetch --prune origin
+
+          is_protected() {
+            case "$1" in
+              main|master|develop) return 0 ;;
+              release/*) return 0 ;;
+            esac
+            return 1
+          }
+
+          has_open_pr() {
+            local branch="$1"
+            [[ "$(gh pr list --head "${branch}" --state open --json number -q 'length')" != "0" ]]
+          }
+
+          declare -A SEEN=()
+          merged_candidates=0
+          stale_candidates=0
+          deleted=0
+          skipped_protected=0
+          skipped_open_pr=0
+
+          queue_branch() {
+            local branch="$1"
+            local reason="$2"
+
+            [[ -n "${SEEN[${branch}]+x}" ]] && return 0
+            SEEN["${branch}"]=1
+
+            if is_protected "${branch}"; then
+              echo "Skipping protected branch: ${branch} (${reason})"
+              skipped_protected=$((skipped_protected + 1))
+              return 0
+            fi
+
+            if [[ "${reason}" == "stale" ]] && has_open_pr "${branch}"; then
+              echo "Skipping branch with open PR: ${branch}"
+              skipped_open_pr=$((skipped_open_pr + 1))
+              return 0
+            fi
+
+            case "${reason}" in
+              merged) merged_candidates=$((merged_candidates + 1)) ;;
+              stale) stale_candidates=$((stale_candidates + 1)) ;;
+            esac
+
+            if [[ "${DRY_RUN}" == "true" ]]; then
+              echo "Would delete (${reason}): ${branch}"
+            else
+              echo "Deleting (${reason}): ${branch}"
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${branch}"
+              deleted=$((deleted + 1))
+            fi
+          }
+
+          echo "=== Merged into origin/${BASE_BRANCH} ==="
+          while IFS= read -r branch; do
+            [[ -z "${branch}" ]] && continue
+            [[ "${branch}" == "HEAD" ]] && continue
+            queue_branch "${branch}" "merged"
+          done < <(
+            git branch -r --merged "origin/${BASE_BRANCH}" \
+              | sed 's|^[[:space:]]*origin/||' \
+              | sort -u
+          )
+
+          if [[ "${STALE_DAYS}" -gt 0 ]]; then
+            echo "=== Stale for more than ${STALE_DAYS} days (unmerged) ==="
+            cutoff_epoch="$(date -u -d "${STALE_DAYS} days ago" +%s)"
+
+            while IFS=$'\t' read -r branch commit_date; do
+              [[ -z "${branch}" ]] && continue
+
+              if git merge-base --is-ancestor "origin/${branch}" "origin/${BASE_BRANCH}" 2>/dev/null; then
+                continue
+              fi
+
+              commit_epoch="$(date -u -d "${commit_date}" +%s)"
+              if [[ "${commit_epoch}" -lt "${cutoff_epoch}" ]]; then
+                queue_branch "${branch}" "stale"
+              fi
+            done < <(
+              gh api "repos/${GITHUB_REPOSITORY}/branches?per_page=100" --paginate \
+                --jq '.[] | [.name, .commit.commit.committer.date] | @tsv'
+            )
+          else
+            echo "Stale branch cleanup disabled (stale_days=0)"
+          fi
+
+          echo "Base branch: ${BASE_BRANCH}"
+          echo "Dry run: ${DRY_RUN}"
+          echo "Stale threshold (days): ${STALE_DAYS}"
+          echo "Merged candidates: ${merged_candidates}"
+          echo "Stale candidates: ${stale_candidates}"
+          echo "Deleted: ${deleted}"
+          echo "Skipped (protected): ${skipped_protected}"
+          echo "Skipped (open PR): ${skipped_open_pr}"
