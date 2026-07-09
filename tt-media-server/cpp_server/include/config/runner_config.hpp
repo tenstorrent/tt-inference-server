@@ -43,7 +43,6 @@ struct MediaRunnerConfigBase : RunnerConfigBase {
 struct BlazeConfig : RunnerConfigBase {
   // Sizing & timeouts
   size_t maxUsers = defaults::PM_MAX_USERS;
-  size_t maxSeqLen = defaults::MAX_CONTEXT_LENGTH;
   unsigned warmupTimeoutMs = defaults::WARMUP_TIMEOUT_MS;
   unsigned outputHangTimeoutMs = defaults::OUTPUT_HANG_TIMEOUT_MS;
 

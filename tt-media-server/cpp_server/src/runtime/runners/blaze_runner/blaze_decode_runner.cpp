@@ -635,7 +635,8 @@ void BlazeDecodeRunner::handleSchedulerOutput(const ds::OutputMessage& output) {
   auto taskId = slotContext.taskId.value();
   if (output.ctx_exhausted) {
     TT_LOG_INFO(
-        "[BlazeDecodeRunner] handleSchedulerOutput: ctx_exhausted for slotId={}",
+        "[BlazeDecodeRunner] handleSchedulerOutput: ctx_exhausted for "
+        "slotId={}",
         output.slot_id);
     slotManager.setSlotAsIdle(output.slot_id);
     metrics.decrementActiveRequests();
