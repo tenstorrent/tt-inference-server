@@ -39,7 +39,7 @@ namespace {
 
 void configureEnv() {
   setenv("LLM_DEVICE_BACKEND", "mock", 1);
-  setenv("LLM_MODE", "regular", 1);
+  setenv("LLM_MODE", "decode_only", 1);
   setenv("DEVICE_IDS", "(0)", 1);
   setenv("MAX_NUM_SESSIONS", "4", 1);
   setenv("KV_CACHE_FIRST_BLOCK_SIZE", "32", 1);
@@ -647,7 +647,8 @@ TEST_F(MainIntegrationTest, SamplingParams_MaxTokensAndTemperature) {
 }
 
 TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
-  // LLM_MODE=regular: every request is served locally, never disaggregated.
+  // LLM_MODE=decode_only without a socket: falls back to prefill-on-decode
+  // (local), so the request is never disaggregated.
   auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
 
   auto seq = server->taskQueue().receive();
@@ -659,15 +660,15 @@ TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
 }
 
 TEST_F(MainIntegrationTest, MigrationId_IsNulloptInRegularMode) {
-  // In regular (non-disaggregated) mode, no migration ID is generated.
+  // Without a connected prefill server, no migration ID is generated.
   // Verify the field survives IPC serialization as nullopt (not garbage).
   auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
 
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
   EXPECT_FALSE(seq->getMigrationId().has_value())
-      << "migrationId must be nullopt in regular mode (only prefill generates "
-         "it)";
+      << "migrationId must be nullopt without a prefill server (only prefill "
+         "generates it)";
 
   mockWorkerResponse(seq->taskId);
   future.get();
