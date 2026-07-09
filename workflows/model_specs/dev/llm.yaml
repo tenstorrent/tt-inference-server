@@ -1396,3 +1396,21 @@ templates:
       remote_api_model: openai/gpt-oss-120b
       reasoning_parser_name: openai_gptoss
       tool_call_parser_name: openai
+
+- weights:
+    - MiniMaxAI/MiniMax-M3
+  impl: tt_transformers
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 64
+      max_context: 1048576  # 1024 * 1024; 
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    MiniMaxAI/MiniMax-M3:
+      remote_api_model: MiniMaxAI/MiniMax-M3
+      reasoning_parser_name: minimax_m3
+      tool_call_parser_name: minimax_m3
