@@ -21,22 +21,30 @@ struct Migration {
   MigrationStatus status;
 };
 
+/**
+ * Range convention: all `_begin` / `_end` pairs are HALF-OPEN, i.e. [begin,
+ * end).
+ */
 struct MigrationRequest {
   uint32_t src_slot;
   uint32_t dst_slot;
-  uint32_t layer_id;
-  uint32_t position_start;
-  uint32_t position_end;
+  uint32_t layer_begin;
+  uint32_t layer_end;  // exclusive
+  uint32_t src_position_begin;
+  uint32_t src_position_end;  // exclusive
+  uint32_t dst_position_begin;
+  uint32_t dst_position_end;  // exclusive
 };
 
 /**
  * Async client to the pool of migration workers. The scheduler-facing
- * surface for issuing KV-cache migrations.Publishes requests on Kafka
+ * surface for issuing KV-cache migrations. Publishes requests on Kafka
  * and tracks completion via an ACK topic.
  */
 class IRemoteKVManager {
  public:
   virtual ~IRemoteKVManager() = default;
+
   /**
    * Migrate KV Cache blocks. Returns immediately with a new unique id.
    * The actual transfer happens asynchronously on a remote worker.
@@ -48,7 +56,7 @@ class IRemoteKVManager {
    * Returns MigrationStatus::UNKNOWN if the id was never issued by
    * migrate() or has been garbage-collected.
    */
-  virtual MigrationStatus getStatus(uint64_t migrationId) const = 0;
+  virtual MigrationStatus getMigrationStatus(uint64_t migrationId) const = 0;
 };
 
 }  // namespace tt::services

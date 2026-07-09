@@ -17,6 +17,11 @@
           "devices": [
             "P150"
           ]
+        },
+        "release": {
+          "devices": [
+            "P150"
+          ]
         }
       }
     },
@@ -325,6 +330,11 @@
           "devices": [
             "P300X2"
           ]
+        },
+        "release": {
+          "devices": [
+            "P300X2"
+          ]
         }
       }
     },
@@ -444,6 +454,11 @@
             "P150X4",
             "T3K"
           ]
+        },
+        "release": {
+            "devices": [
+            "P300X2"
+          ]
         }
       }
     },
@@ -502,6 +517,11 @@
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        },
+        "release": {
           "devices": [
             "P300X2"
           ]

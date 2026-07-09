@@ -41,7 +41,8 @@ uint64_t MockRemoteKVManager::migrate(const MigrationRequest& request) {
   return id;
 }
 
-MigrationStatus MockRemoteKVManager::getStatus(uint64_t migrationId) const {
+MigrationStatus MockRemoteKVManager::getMigrationStatus(
+    uint64_t migrationId) const {
   std::lock_guard<std::mutex> lock(mtx);
   auto it = entries.find(migrationId);
   if (it == entries.end()) {
@@ -83,7 +84,7 @@ void MockRemoteKVManager::forceStatus(uint64_t migrationId,
     // Silently ignore — id was never issued or has been cleared. We don't
     // throw here because tests routinely call forceStatus with ids they
     // haven't yet observed; the wrong-order case fails loudly via UNKNOWN
-    // returns from getStatus().
+    // returns from getMigrationStatus().
     return;
   }
 

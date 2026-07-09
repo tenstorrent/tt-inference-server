@@ -11,6 +11,7 @@ out of scope here.
 
 from __future__ import annotations
 
+import json
 from argparse import Namespace
 from types import SimpleNamespace
 
@@ -24,6 +25,7 @@ from workflow_module.execution import (
     LLMEvalOptions,
     PrefixCacheOptions,
     ServingBenchOptions,
+    SpecDecodeOptions,
 )
 
 
@@ -79,6 +81,8 @@ class TestPrefixCacheOptions:
 
     def test_built_from_flags(self, monkeypatch):
         monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         args = Namespace(
             prefix_cache=True,
             prefix_cache_preset="full",
@@ -87,6 +91,7 @@ class TestPrefixCacheOptions:
             prefix_cache_request_rate=4.0,
             prefix_cache_scenarios_json=None,
             prefix_cache_trace=None,
+            prefix_cache_metrics_url=["worker-a:9000", "worker-b:9000/metrics"],
             jwt_secret=None,
         )
         opts = cf._build_prefix_cache_options(args)
@@ -96,6 +101,85 @@ class TestPrefixCacheOptions:
         assert opts.arrival_pattern == "poisson"
         assert opts.request_rate == 4.0
         assert opts.auth_token == ""  # no secret -> auth disabled
+        # Repeatable --prefix-cache-metrics-url -> tuple, forwarded verbatim
+        # (normalization happens later in the driver).
+        assert opts.metrics_urls == ("worker-a:9000", "worker-b:9000/metrics")
+
+    def test_metrics_urls_default_empty_when_flag_absent(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        # No prefix_cache_metrics_url attr at all (image-model entry path).
+        args = Namespace(
+            prefix_cache=True,
+            prefix_cache_preset="ci",
+            prefix_cache_scenarios=None,
+            prefix_cache_arrival=None,
+            prefix_cache_request_rate=None,
+            prefix_cache_scenarios_json=None,
+            prefix_cache_trace=None,
+            jwt_secret=None,
+        )
+        opts = cf._build_prefix_cache_options(args)
+        assert opts is not None
+        assert opts.metrics_urls == ()
+
+    def test_release_pins_tool_venv_python(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        args = Namespace(
+            workflow="release",
+            prefix_cache=True,
+            prefix_cache_preset="ci",
+            prefix_cache_scenarios=None,
+            prefix_cache_arrival=None,
+            prefix_cache_request_rate=None,
+            prefix_cache_scenarios_json=None,
+            prefix_cache_trace=None,
+            jwt_secret=None,
+        )
+        opts = cf._build_prefix_cache_options(args)
+        assert isinstance(opts, PrefixCacheOptions)
+        assert opts.venv_python is not None
+        assert "prefix" in opts.venv_python.lower()
+
+
+class TestSpecDecodeOptions:
+    def test_none_when_flag_absent(self):
+        assert cf._build_spec_decode_options(Namespace()) is None
+
+    def test_built_from_flags(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        args = Namespace(
+            spec_decode=True,
+            spec_decode_preset="ci",
+            spec_decode_warmup_requests=2,
+            jwt_secret=None,
+        )
+        opts = cf._build_spec_decode_options(args)
+        assert isinstance(opts, SpecDecodeOptions)
+        assert opts.preset == "ci"
+        assert opts.warmup_requests == 2
+        assert opts.auth_token == ""
+
+    def test_release_pins_tool_venv_python(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        args = Namespace(
+            workflow="release",
+            spec_decode=True,
+            spec_decode_preset="ci",
+            spec_decode_warmup_requests=4,
+            jwt_secret=None,
+        )
+        opts = cf._build_spec_decode_options(args)
+        assert isinstance(opts, SpecDecodeOptions)
+        assert opts.venv_python is not None
+        assert "spec" in opts.venv_python.lower()
 
 
 class TestLLMEvalOptions:
@@ -103,7 +187,11 @@ class TestLLMEvalOptions:
         assert cf._build_llm_eval_options(Namespace(workflow="benchmarks")) is None
 
     def test_built_for_evals(self, monkeypatch):
+        # _mint_jwt_if_secret falls back to literal API_KEY/OPENAI_API_KEY for
+        # remote console endpoints, so clear them to assert the no-secret case.
         monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         opts = cf._build_llm_eval_options(Namespace(workflow="evals", jwt_secret=None))
         assert isinstance(opts, LLMEvalOptions)
         assert opts.auth_token == ""
@@ -155,11 +243,52 @@ class TestLLMBenchOptions:
         args = Namespace(workflow="benchmarks", prefix_cache=True, spec_decode=False)
         assert cf._build_llm_bench_options(args) is None
 
+    def test_release_with_prefix_cache_still_builds_bench_options(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        opts = cf._build_llm_bench_options(
+            Namespace(
+                workflow="release",
+                tools=None,
+                jwt_secret=None,
+                prefix_cache=True,
+                spec_decode=False,
+            )
+        )
+        assert isinstance(opts, LLMBenchOptions)
+        assert opts.tools == "vllm"
+        assert opts.venv_python is not None
+
+    def test_release_with_spec_decode_still_builds_bench_options(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        opts = cf._build_llm_bench_options(
+            Namespace(
+                workflow="release",
+                tools=None,
+                jwt_secret=None,
+                prefix_cache=False,
+                spec_decode=True,
+            )
+        )
+        assert isinstance(opts, LLMBenchOptions)
+        assert opts.tools == "vllm"
+        assert opts.venv_python is not None
+
 
 class TestMintJwt:
     def test_no_secret_returns_empty(self, monkeypatch):
         monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         assert cf._mint_jwt_if_secret(None) == ""
+
+    def test_literal_api_key_used_when_no_jwt_secret(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.setenv("API_KEY", "literal-token")
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        assert cf._mint_jwt_if_secret(None) == "literal-token"
+        import os
+
+        assert os.environ["OPENAI_API_KEY"] == "literal-token"
 
     def test_secret_mints_token_and_exports_env(self, monkeypatch):
         pytest.importorskip("jwt")
@@ -233,14 +362,65 @@ class TestResolveAuthToken:
 
     def test_vllm_engine_without_secret_returns_empty(self, monkeypatch):
         monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         self._patch_engine(monkeypatch, InferenceEngine.VLLM)
         assert cf._resolve_auth_token(self._args()) == ""
 
     def test_unresolvable_spec_falls_back_to_jwt_path(self, monkeypatch):
         monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
         def boom(model, device):
             raise RuntimeError("no spec")
 
         monkeypatch.setattr(cf, "get_runtime_model_spec", boom)
         assert cf._resolve_auth_token(self._args()) == ""
+
+    # --- runtime_model_spec_json precedence (dual-catalog models) -------------
+
+    def _spec_json(self, tmp_path, engine_name):
+        p = tmp_path / "runtime_model_spec.json"
+        p.write_text(
+            json.dumps({"runtime_model_spec": {"inference_engine": engine_name}})
+        )
+        return str(p)
+
+    def test_runtime_spec_json_forge_overrides_catalog_default(
+        self, tmp_path, monkeypatch
+    ):
+        # Dual-catalog model (e.g. Llama-3.1-8B-Instruct): the catalog default
+        # resolves vLLM, but the runtime spec JSON v1 handed us says forge — the
+        # forge server needs the literal key, not a JWT. The JSON serializes the
+        # enum *value* ("forge"), which is what v1 actually writes.
+        monkeypatch.setenv("JWT_SECRET", "secret-of-sufficient-length-123456")
+        for var in ("VLLM_API_KEY", "API_KEY", "OPENAI_API_KEY"):
+            monkeypatch.delenv(var, raising=False)
+        self._patch_engine(monkeypatch, InferenceEngine.VLLM)  # catalog = wrong
+        args = self._args(runtime_model_spec_json=self._spec_json(tmp_path, "forge"))
+        assert cf._resolve_auth_token(args) == "your-secret-key"
+
+    def test_runtime_spec_json_vllm_mints_jwt_over_catalog(self, tmp_path, monkeypatch):
+        pytest.importorskip("jwt")
+        monkeypatch.setenv("JWT_SECRET", "secret-of-sufficient-length-123456")
+        self._patch_engine(monkeypatch, InferenceEngine.FORGE)  # catalog = wrong
+        args = self._args(runtime_model_spec_json=self._spec_json(tmp_path, "vLLM"))
+        assert cf._resolve_auth_token(args).count(".") == 2  # a JWT
+
+    def test_engine_from_runtime_spec_json(self, tmp_path):
+        # Real serialization is the enum value ("forge"); tolerate the name form.
+        assert (
+            cf._engine_from_runtime_spec_json(self._spec_json(tmp_path, "forge"))
+            == "forge"
+        )
+        assert (
+            cf._engine_from_runtime_spec_json(self._spec_json(tmp_path, "FORGE"))
+            == "forge"
+        )
+        assert (
+            cf._engine_from_runtime_spec_json(self._spec_json(tmp_path, "vLLM"))
+            == "vLLM"
+        )
+        assert cf._engine_from_runtime_spec_json(None) is None
+        assert cf._engine_from_runtime_spec_json("/no/such/file.json") is None

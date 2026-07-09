@@ -474,6 +474,13 @@
             "name": "DeviceLivenessTest",
             "module": "test_module.health_tests.device_liveness_test",
             "description": "Test for device liveness checks - runs before all other tests",
+            "engines": [
+                "media",
+                "forge"
+            ],
+            "exclude_categories": [
+                "LLM"
+            ],
             "markers": [
                 "fast",
                 "prerequisite"
@@ -484,7 +491,7 @@
                 "break_on_failure": true,
                 "mock_mode": false
             },
-            "_comment": "retry_attempts and num_of_devices derived from hardware_defaults"
+            "_comment": "retry_attempts and num_of_devices derived from hardware_defaults. Gated by both 'engines' and 'exclude_categories' (LLM suites run bare vllm serve, which has no /tt-liveness route; the LLM path gates on /health)."
         },
         {
             "name": "LoggerForkSafetyTest",
@@ -731,7 +738,7 @@
                 "mock_mode": false
             }
         },
-        "TestTTSServerHealth": {
+        "TTSLoadTest": {
             "module": "test_module.load_param_tests.tts_load_test",
             "markers": [
                 "load",

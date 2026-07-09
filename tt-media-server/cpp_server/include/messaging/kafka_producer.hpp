@@ -43,6 +43,18 @@ class KafkaProducer : public IKafkaProducer {
    */
   bool send(std::string_view payload,
             std::string* errorMessage = nullptr) override;
+
+  /**
+   * Sends a message to a specific partition of the configured Kafka topic.
+   *
+   * @param payload Message content to send.
+   * @param partition Target partition index (0-based). Must exist on the
+   *   topic or the send will fail.
+   * @param errorMessage Optional output parameter for error details.
+   */
+  bool send(std::string_view payload, int32_t partition,
+            std::string* errorMessage = nullptr) override;
+
   /**
    * Flushes queued messages and waits for delivery.
    *

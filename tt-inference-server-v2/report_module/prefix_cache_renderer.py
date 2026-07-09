@@ -42,9 +42,11 @@ DISPLAY_COLUMNS: List[Tuple[str, str]] = [
     ("prefix_cache_hit_rate_pct", "Cache Hit %"),
     ("mean_ttft_ms", "TTFT Avg (ms)"),
     ("median_ttft_ms", "TTFT P50 (ms)"),
+    ("p90_ttft_ms", "TTFT P90 (ms)"),
     ("p95_ttft_ms", "TTFT P95 (ms)"),
     ("p99_ttft_ms", "TTFT P99 (ms)"),
     ("mean_tpot_ms", "TPOT Avg (ms)"),
+    ("p90_tpot_ms", "TPOT P90 (ms)"),
     ("p95_tpot_ms", "TPOT P95 (ms)"),
     ("p99_tpot_ms", "TPOT P99 (ms)"),
     ("mean_itl_ms", "ITL Avg (ms)"),
@@ -54,6 +56,8 @@ DISPLAY_COLUMNS: List[Tuple[str, str]] = [
     ("p95_e2el_ms", "E2EL P95 (ms)"),
     ("p99_e2el_ms", "E2EL P99 (ms)"),
     ("output_token_throughput", "Output Tok/s"),
+    ("output_token_throughput_per_user", "Output Tok/s/User"),
+    ("goodput", "Goodput (req/s)"),
     ("request_throughput", "Req/s"),
 ]
 
@@ -73,6 +77,8 @@ TRACE_DISPLAY_COLUMNS: List[Tuple[str, str]] = [
     ("trace_theoretical_hit_rate_pct", "Trace Theo. Hit %"),
     ("prefix_cache_hit_rate_pct", "Measured Hit %"),
     ("mean_ttft_ms", "TTFT Avg (ms)"),
+    ("median_ttft_ms", "TTFT P50 (ms)"),
+    ("p90_ttft_ms", "TTFT P90 (ms)"),
     ("p95_ttft_ms", "TTFT P95 (ms)"),
     ("p99_ttft_ms", "TTFT P99 (ms)"),
     ("mean_tpot_ms", "TPOT Avg (ms)"),
@@ -81,6 +87,8 @@ TRACE_DISPLAY_COLUMNS: List[Tuple[str, str]] = [
     ("p95_e2el_ms", "E2EL P95 (ms)"),
     ("p99_e2el_ms", "E2EL P99 (ms)"),
     ("output_token_throughput", "Output Tok/s"),
+    ("output_token_throughput_per_user", "Output Tok/s/User"),
+    ("goodput", "Goodput (req/s)"),
     ("request_throughput", "Req/s"),
 ]
 
@@ -112,9 +120,9 @@ def _format_number(col: str, value: Any) -> str:
         return str(value)
     if col == "prefix_cache_hit_rate_pct":
         return f"{value:.1f}"
-    if col == "request_throughput":
+    if col in ("request_throughput", "goodput"):
         return f"{value:.3f}"
-    if col == "output_token_throughput":
+    if col in ("output_token_throughput", "output_token_throughput_per_user"):
         return f"{value:.2f}"
     if isinstance(value, float):
         return f"{value:.1f}"
@@ -211,6 +219,63 @@ def _format_uplift_row(row: Mapping[str, Any]) -> Dict[str, str]:
     return out
 
 
+# Customer SLA targets surfaced in the SLA Compliance table. (measured-key,
+# pass-key, display header, target label, value formatter).
+SLA_COLUMNS: List[Tuple[str, str, str, str]] = [
+    ("median_ttft_ms", "sla_ttft_p50_pass", "TTFT P50 (<4s)", "4000ms"),
+    ("p90_ttft_ms", "sla_ttft_p90_pass", "TTFT P90 (<10s)", "10000ms"),
+    ("p99_ttft_ms", "sla_ttft_p99_pass", "TTFT P99 (<35s)", "35000ms"),
+    (
+        "output_token_throughput_per_user",
+        "sla_output_speed_pass",
+        "Out t/s/u (>=45)",
+        "45",
+    ),
+    ("prefix_cache_hit_rate_pct", "sla_hit_rate_pass", "Hit % (>=90)", "90%"),
+]
+
+
+def _verdict(passed: Any) -> str:
+    if passed is True:
+        return "PASS"
+    if passed is False:
+        return "FAIL"
+    return NA
+
+
+def _sla_cell(measured: Any, passed: Any, col: str) -> str:
+    """Render "<measured> (PASS|FAIL)" for one SLA cell."""
+    measured_str = _format_number(col, measured)
+    return f"{measured_str} ({_verdict(passed)})"
+
+
+def _build_sla_rows(rows: Sequence[Mapping[str, Any]]) -> List[Dict[str, str]]:
+    """Build the SLA-compliance table (one row per non-baseline run).
+
+    Only rows that actually carry SLA verdicts (i.e. ran with a goodput /
+    customer preset) are included; baseline control rows are excluded
+    because the customer KPIs describe the cached workload.
+    """
+    sla_rows: List[Dict[str, str]] = []
+    for row in rows:
+        if row.get("scenario") == "baseline":
+            continue
+        if all(row.get(pass_key) is None for _, pass_key, _, _ in SLA_COLUMNS):
+            continue
+        out: Dict[str, str] = {
+            "Scenario": str(row.get("scenario") or NA),
+            "Label": str(row.get("label") or NA),
+            "Concur": str(row.get("concurrency") or NA),
+        }
+        for measured_key, pass_key, header, _target in SLA_COLUMNS:
+            out[header] = _sla_cell(
+                row.get(measured_key), row.get(pass_key), measured_key
+            )
+        out["Overall"] = _verdict(row.get("sla_pass"))
+        sla_rows.append(out)
+    return sla_rows
+
+
 def _sort_rows(rows: Sequence[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
     """Keep baseline first then sort by scenario / isl / concurrency / arrival."""
     return sorted(
@@ -247,9 +312,13 @@ def render_aiperf_prefix_cache(block: Block, metadata: Mapping[str, Any]) -> str
         "**Benchmarking Tool:** "
         "[AIPerf](https://github.com/ai-dynamo/aiperf) with the "
         "`--prefix-cache` scenario set. Cache hit-rate is derived from the "
-        "vLLM Prometheus counters `vllm:prefix_cache_hits_total` / "
-        "`vllm:prefix_cache_queries_total` scraped during each run via "
-        "AIPerf's `--server-metrics`."
+        "worker Prometheus counters `tt_prefix_cache_hits_total` / "
+        "`tt_prefix_cache_queries_total` (or the vLLM "
+        "`vllm:prefix_cache_*` equivalents) scraped during each run via "
+        "AIPerf's `--server-metrics`. In a Dynamo deployment point "
+        "`--prefix-cache-metrics-url` at the cpp_server worker(s); the "
+        "prefix-unaware frontend does not aggregate these counters. "
+        "Multi-worker deltas are summed across endpoints."
     )
 
     if synthetic_rows:
@@ -274,8 +343,26 @@ def render_aiperf_prefix_cache(block: Block, metadata: Mapping[str, Any]) -> str
                 "mooncake_trace`. **Synth** variants apply the "
                 "`--synthesis-*` multipliers. **Trace Theo. Hit %** is the "
                 "upper bound from `aiperf analyze-trace`; **Measured Hit %** "
-                "is the actual vLLM hit-rate observed during the run.\n\n"
+                "is the actual serving-engine hit-rate observed during the "
+                "run.\n\n"
                 f"{trace_table}"
+            )
+
+    sla_rows = _build_sla_rows(rows)
+    if sla_rows:
+        sla_table = build_markdown_table(sla_rows)
+        if sla_table:
+            parts.append(
+                "#### SLA Compliance vs Customer Targets\n\n"
+                "Per-run PASS/FAIL against the customer KPIs: TTFT P50 < 4s, "
+                "P90 < 10s, P99 < 35s; output speed >= 45 tokens/s/user; "
+                "KV-cache hit rate >= 90%. **Overall** is PASS only when every "
+                "target is met, FAIL if any is missed, and N/A when a metric "
+                "was not captured (e.g. hit-rate when the worker `/metrics` "
+                "endpoint is unreachable). Goodput SLO enforcement is applied "
+                "in-run via AIPerf `--goodput` (the **Goodput (req/s)** column "
+                "above is the throughput of requests meeting every SLO).\n\n"
+                f"{sla_table}"
             )
 
     if synthetic_rows:
@@ -297,9 +384,15 @@ def render_aiperf_prefix_cache(block: Block, metadata: Mapping[str, Any]) -> str
     parts.append(
         "**Metric definitions:**\n"
         "> - **Cache Hit %**: `(hits_delta / queries_delta) * 100` from the "
-        "vLLM Prometheus counters across the benchmark window.\n"
-        "> - **TTFT / TPOT / ITL / E2EL P50/P95/P99**: AIPerf percentiles "
+        "serving engine's prefix-cache counters across the benchmark "
+        "window.\n"
+        "> - **TTFT / TPOT / ITL / E2EL P50/P90/P95/P99**: AIPerf percentiles "
         "from `profile_export_aiperf.json`.\n"
+        "> - **Output Tok/s/User**: AIPerf `output_token_throughput_per_user` "
+        "(per-request output speed); maps to the customer's >= 45 t/s/u SLA.\n"
+        "> - **Goodput (req/s)**: AIPerf `--goodput` -- requests/sec meeting "
+        "every SLO (TTFT <= 4000ms AND output speed >= 45 t/s/u by default; "
+        "override via `--prefix-cache-goodput`).\n"
         "> - **Scenarios**: `shared_system` (100% shared prefix), "
         "`prefix_pool` (tunable reuse via N prefix prompts), `multi_turn` "
         "(organic reuse via conversation history), `mooncake_trace` "

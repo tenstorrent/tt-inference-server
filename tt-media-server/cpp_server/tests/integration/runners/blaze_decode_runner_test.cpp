@@ -43,7 +43,6 @@ class EnvSetter {
 };
 
 constexpr uint64_t MOCK_PIPELINE_TOKEN_ID = 12345u;
-const std::vector<int64_t> DEFAULT_STOP_TOKEN_IDS = {987654321};
 
 // Length of the mock pipeline's reasoning preamble: think-open, three decode
 // tokens, think-close. Mirrors PipelineSimulator::kThinkPreambleLen.
@@ -83,10 +82,10 @@ inline uint64_t expectedMockToken(size_t index) {
 class BlazeDecodeRunnerHarness
     : public test::RunnerTestHarness<BlazeDecodeRunner> {
  public:
-  explicit BlazeDecodeRunnerHarness(
-      std::vector<int64_t> stopTokenIds = DEFAULT_STOP_TOKEN_IDS)
+  explicit BlazeDecodeRunnerHarness(config::ModelRunnerType runnerType =
+                                        config::ModelRunnerType::MOCK_PIPELINE)
       : test::RunnerTestHarness<BlazeDecodeRunner>(
-            test::makeLLMConfig(128, 8, 0, std::move(stopTokenIds))) {}
+            test::makeBlazeConfig(runnerType)) {}
 };
 
 }  // namespace
@@ -192,7 +191,7 @@ TEST(BlazeDecodeRunnerIntegrationTest, CancelFlowEmitsAbortToken) {
 
 TEST(BlazeDecodeRunnerIntegrationTest, StopsOnConfiguredStopToken) {
   // Mock simulator emits token_id=12345; this forces stop-token completion.
-  BlazeDecodeRunnerHarness harness({MOCK_PIPELINE_TOKEN_ID});
+  BlazeDecodeRunnerHarness harness;
 
   const uint32_t taskId = 6262;
   const auto allocateResponse = harness.allocate(taskId);
@@ -344,7 +343,7 @@ TEST(BlazeDecodeRunnerIntegrationTest,
   for (size_t i = 0; i < userCount; ++i) {
     harness.submitSequence(
         taskIds[i], slotIds[i],
-        {static_cast<int64_t>(100 + i), static_cast<int64_t>(200 + i)},
+        {static_cast<uint32_t>(100 + i), static_cast<uint32_t>(200 + i)},
         samplingParams);
   }
 
@@ -393,11 +392,11 @@ TEST(BlazeDecodeRunnerIntegrationTest,
 }
 
 TEST(BlazeDecodeRunnerIntegrationTest, MockSchedulerFlatTokenStream) {
-  EnvSetter mockUseScheduler("MOCK_USE_SCHEDULER", "1");
-  EnvSetter mockPrefillLatencyMs("MOCK_PREFILL_CHUNK_LATENCY_MS", "0");
-  EnvSetter mockDecodeTokenLatencyUs("MOCK_DECODE_TOKEN_LATENCY_US", "0");
+  // Zero the per-stage latency: with MOCK_SCHEDULER this drives the derived
+  // per-slot decode cadence, so tokens are emitted with no artificial delay.
+  EnvSetter mockStageLatencyUs("MOCK_STAGE_LATENCY_US", "0");
 
-  BlazeDecodeRunnerHarness harness;
+  BlazeDecodeRunnerHarness harness(config::ModelRunnerType::MOCK_SCHEDULER);
 
   const uint32_t taskId = 5150;
   const auto allocateResponse = harness.allocate(taskId);

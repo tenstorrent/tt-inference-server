@@ -26,8 +26,8 @@ namespace tt::services {
  * Test-control knobs — apply to migrations submitted AFTER the call:
  *   setDefaultStatus(status)     terminal state for newly submitted migrations
  *                                (default: SUCCESSFUL).
- *   setPollsBeforeResolution(n)  getStatus() returns IN_PROGRESS for the
- *                                first n polls, then transitions to the
+ *   setPollsBeforeResolution(n)  getMigrationStatus() returns IN_PROGRESS for
+ *                                the first n polls, then transitions to the
  *                                configured terminal state (default: 0 →
  *                                resolve on first poll).
  *
@@ -45,7 +45,7 @@ class MockRemoteKVManager : public IRemoteKVManager {
   MockRemoteKVManager() = default;
 
   [[nodiscard]] uint64_t migrate(const MigrationRequest& request) override;
-  MigrationStatus getStatus(uint64_t migrationId) const override;
+  MigrationStatus getMigrationStatus(uint64_t migrationId) const override;
 
   void setDefaultStatus(MigrationStatus status);
   void setPollsBeforeResolution(size_t polls);
@@ -63,7 +63,7 @@ class MockRemoteKVManager : public IRemoteKVManager {
     Migration migration;
     MigrationRequest request;
     // Polls remaining until status flips to `terminal`. 0 means the next
-    // (or current) getStatus() resolves immediately.
+    // (or current) getMigrationStatus() resolves immediately.
     size_t pollsRemaining;
     MigrationStatus terminal;
   };
@@ -72,7 +72,7 @@ class MockRemoteKVManager : public IRemoteKVManager {
   uint64_t nextId = 1;
   MigrationStatus defaultTerminalStatus = MigrationStatus::SUCCESSFUL;
   size_t initialPollsBeforeResolution = 0;
-  // mutable because getStatus() is const but lazily advances per-entry
+  // mutable because getMigrationStatus() is const but lazily advances per-entry
   // poll counters on each call.
   mutable std::unordered_map<uint64_t, Entry> entries;
 };

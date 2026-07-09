@@ -71,9 +71,12 @@ std::string serialize(const MigrationRequestMessage& mrm) {
   root["migration_id"] = static_cast<Json::UInt64>(mrm.migration_id);
   root["src_slot"] = mrm.src_slot;
   root["dst_slot"] = mrm.dst_slot;
-  root["layer_id"] = mrm.layer_id;
-  root["position_start"] = mrm.position_start;
-  root["position_end"] = mrm.position_end;
+  root["layer_begin"] = mrm.layer_begin;
+  root["layer_end"] = mrm.layer_end;
+  root["src_position_begin"] = mrm.src_position_begin;
+  root["src_position_end"] = mrm.src_position_end;
+  root["dst_position_begin"] = mrm.dst_position_begin;
+  root["dst_position_end"] = mrm.dst_position_end;
 
   return write(root);
 }
@@ -90,8 +93,10 @@ std::optional<MigrationRequestMessage> parseMigrationRequest(
     const std::string& json) {
   Json::Value root;
   if (!parse(json, root)) return std::nullopt;
-  for (const char* field : {"migration_id", "src_slot", "dst_slot", "layer_id",
-                            "position_start", "position_end"}) {
+  for (const char* field :
+       {"migration_id", "src_slot", "dst_slot", "layer_begin", "layer_end",
+        "src_position_begin", "src_position_end", "dst_position_begin",
+        "dst_position_end"}) {
     if (!root.isMember(field) || !root[field].isIntegral()) {
       TT_LOG_ERROR("[migration_message] Request missing/non-integral: {}",
                    field);
@@ -103,9 +108,12 @@ std::optional<MigrationRequestMessage> parseMigrationRequest(
   out.migration_id = root["migration_id"].asUInt64();
   out.src_slot = root["src_slot"].asUInt();
   out.dst_slot = root["dst_slot"].asUInt();
-  out.layer_id = root["layer_id"].asUInt();
-  out.position_start = root["position_start"].asUInt();
-  out.position_end = root["position_end"].asUInt();
+  out.layer_begin = root["layer_begin"].asUInt();
+  out.layer_end = root["layer_end"].asUInt();
+  out.src_position_begin = root["src_position_begin"].asUInt();
+  out.src_position_end = root["src_position_end"].asUInt();
+  out.dst_position_begin = root["dst_position_begin"].asUInt();
+  out.dst_position_end = root["dst_position_end"].asUInt();
 
   return out;
 }
@@ -133,4 +141,5 @@ std::optional<MigrationResponseMessage> parseMigrationResponse(
 
   return out;
 }
+
 }  // namespace tt::messaging

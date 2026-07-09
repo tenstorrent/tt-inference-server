@@ -68,8 +68,9 @@ def test_guidellm_uses_scenarios_not_sweep(monkeypatch, tmp_path):
 
     seen = {}
 
-    def _capture(ctx, *, driver, configs, auth_token=""):
+    def _capture(ctx, *, driver, configs, auth_token="", goodput=None):
         seen["configs"] = configs
+        seen["goodput"] = goodput
         from llm_module.runner import RunnerResult
 
         return RunnerResult()
@@ -86,6 +87,48 @@ def test_guidellm_uses_scenarios_not_sweep(monkeypatch, tmp_path):
     )
     lbt.run_llm_bench(ctx, tools="guidellm", venv_python=Path("/tmp/venv/bin/python"))
     assert seen["configs"] is sentinel
+
+
+def _capture_goodput(monkeypatch, tmp_path, tools):
+    """Run run_llm_bench with a single-config sweep, capturing forwarded goodput."""
+    monkeypatch.setattr(
+        "llm_module.benchmark_configs.get_llm_configs",
+        lambda *a, **k: [object()],
+    )
+    seen = {}
+
+    def _capture(ctx, *, driver, configs, auth_token="", goodput=None):
+        seen["goodput"] = goodput
+        from llm_module.runner import RunnerResult
+
+        return RunnerResult()
+
+    monkeypatch.setattr(lbt, "run_llm_performance", _capture)
+    ctx = SimpleNamespace(
+        model_spec=SimpleNamespace(
+            model_name="Llama-3.1-8B-Instruct", hf_model_repo="org/m"
+        ),
+        device=SimpleNamespace(name="T3K"),
+        runtime_config=SimpleNamespace(limit_samples_mode=None),
+        output_path=str(tmp_path),
+    )
+    lbt.run_llm_bench(
+        ctx,
+        tools=tools,
+        venv_python=Path("/tmp/venv/bin/python"),
+        goodput="time_to_first_token:4000 output_token_throughput_per_user:45",
+    )
+    return seen["goodput"]
+
+
+def test_goodput_forwarded_for_aiperf(monkeypatch, tmp_path):
+    forwarded = _capture_goodput(monkeypatch, tmp_path, "aiperf")
+    assert forwarded == "time_to_first_token:4000 output_token_throughput_per_user:45"
+
+
+def test_goodput_dropped_for_non_aiperf(monkeypatch, tmp_path):
+    """--goodput only applies to aiperf; other tools get None (with a warning)."""
+    assert _capture_goodput(monkeypatch, tmp_path, "vllm") is None
 
 
 if __name__ == "__main__":

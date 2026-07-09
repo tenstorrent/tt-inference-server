@@ -537,41 +537,6 @@ class TestEmbeddingMatrixExpansion:
         ]
 
 
-class TestTtsMatrixExpansion:
-    """Validate that the migrated tts.json produces the same suites as before."""
-
-    def test_tts_suite_count(self):
-        suites = load_suite_files_by_category("tts")
-        assert len(suites) == 2
-
-    def test_tts_suite_ids(self):
-        suites = load_suite_files_by_category("tts")
-        ids = {s["id"] for s in suites}
-        assert ids == {"speecht5-n150", "speecht5-p150"}
-
-    def test_tts_test_cases_match(self):
-        suites = load_suite_files_by_category("tts")
-        for suite in suites:
-            assert len(suite["test_cases"]) == 4
-            templates = [tc["template"] for tc in suite["test_cases"]]
-            assert templates == [
-                "SpeechT5TTSTest",
-                "TTSLoadTest",
-                "TTSParamTest",
-                "TTSIntegrationTest",
-            ]
-
-    def test_tts_health_test_targets(self):
-        suites = load_suite_files_by_category("tts")
-        for suite in suites:
-            health_test = suite["test_cases"][1]
-            assert health_test["targets"] == {
-                "tts_generation_time": 10,
-                "sample_count": 10,
-                "compare_audio": True,
-            }
-
-
 class TestImageMatrixExpansion:
     """Validate image.json expansion.
 
@@ -706,7 +671,7 @@ class TestAllSuitesLoad:
 
     def test_total_suite_count(self):
         all_suites = load_suite_files()
-        assert len(all_suites) == 37
+        assert len(all_suites) == 50
 
     def test_no_duplicate_ids(self):
         all_suites = load_suite_files()

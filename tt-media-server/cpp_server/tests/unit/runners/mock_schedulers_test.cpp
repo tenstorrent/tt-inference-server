@@ -48,20 +48,13 @@ bool waitForOutput(
   return scheduler.try_pop_output(out);
 }
 
-// Drain exactly `expected` outputs, returning the actual count seen before the
-// timeout. Returns < expected if the emitter stalls.
-uint32_t drainOutputs(MockDecodeScheduler& scheduler, uint32_t expected) {
-  uint32_t count = 0;
-  sch::OutputMessage out{};
-  while (count < expected && waitForOutput(scheduler, out)) {
-    ++count;
-  }
-  return count;
-}
-
 // Allocates a slot, submits a SUBMIT with `promptLen` prompt tokens requesting
-// `maxNewTokens`, and returns the wall-clock time from push_request to the
-// final output. `tokenCount` receives how many outputs were produced.
+// `maxNewTokens`, and returns the wall-clock span of the decode phase itself:
+// from the first emitted token to the last. Timing deliberately starts at the
+// first token rather than at push_request because the pipeline-fill time-to-
+// first-token now scales with prompt length; decode throughput - the thing
+// under test - is what must stay input-independent. `tokenCount` receives how
+// many outputs were produced.
 std::chrono::microseconds timeDecode(uint32_t maxNewTokens, size_t promptLen,
                                      uint32_t& tokenCount,
                                      MockDecodeSchedulerConfig cfg) {
@@ -72,12 +65,23 @@ std::chrono::microseconds timeDecode(uint32_t maxNewTokens, size_t promptLen,
   EXPECT_TRUE(scheduler.try_pop_response(alloc));
 
   const std::vector<uint32_t> prompt(promptLen, 7u);
-  const auto start = std::chrono::steady_clock::now();
   EXPECT_TRUE(
       scheduler.push_request(makeSubmit(alloc.slot_id, maxNewTokens, prompt)));
-  tokenCount = drainOutputs(scheduler, maxNewTokens);
-  const auto elapsed = std::chrono::steady_clock::now() - start;
-  return std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
+
+  sch::OutputMessage out{};
+  std::chrono::steady_clock::time_point firstAt{};
+  std::chrono::steady_clock::time_point lastAt{};
+  tokenCount = 0;
+  while (tokenCount < maxNewTokens && waitForOutput(scheduler, out)) {
+    const auto now = std::chrono::steady_clock::now();
+    if (tokenCount == 0) {
+      firstAt = now;
+    }
+    lastAt = now;
+    ++tokenCount;
+  }
+  return std::chrono::duration_cast<std::chrono::microseconds>(lastAt -
+                                                               firstAt);
 }
 
 TEST(MockSchedulerTest, PrefillSubmitCompletesWithNoDecodeTokens) {
@@ -218,20 +222,26 @@ TEST(MockSchedulerTest, PrefillRejectsContinue) {
   EXPECT_NE(response.error_code, sch::request_error::kOk);
 }
 
-// Models the real decode engine's steady-state throughput: 64 pipeline stages
-// of ~44us each give a fill (first-token) latency of 64*44 = 2816us, but once
-// the pipeline is full a token retires every stage-time, i.e. ~1 token / 44us
-// (~22.7k tok/s) -- independent of prompt length. The mock reproduces this by
-// spacing tokens at a fixed decodeTokenLatency, so the observed rate must
-// depend only on that spacing, never on the number of input (prompt) tokens.
-// (Set decodeTokenLatency to 44us to emit at the real ~22.7k tok/s; here a
-// larger spacing keeps the test fast while exercising the same invariant.)
+// Models the real decode engine's steady-state throughput. A single sequence
+// retires one token per full pipeline traversal (autoregression: token N+1
+// waits for token N), so with one active slot the per-slot decode spacing is
+// numPipelineStages * stageLatency - independent of prompt length. (With ~64
+// slots interleaved those traversals overlap to retire ~one token per
+// stageLatency in aggregate; a single slot isolates the per-slot spacing.)
+// Prefill time DOES scale with prompt length - it streams one token per stage-
+// time through the shared pipeline - so this test measures the decode span from
+// first token to last, which must depend only on the traversal time, never on
+// the number of input (prompt) tokens.
 TEST(MockSchedulerTest, DecodeThroughputIsFlatAndInputIndependent) {
-  constexpr unsigned kTokenLatencyUs = 1000;
+  // 100 stages * 10us = 1000us per-slot decode spacing. A small stageLatency
+  // keeps the large prompt's prefill fast (it streams at one token / 10us).
+  constexpr uint32_t kStages = 100;
+  constexpr unsigned kStageLatencyUs = 10;
+  constexpr unsigned kTokenLatencyUs = kStages * kStageLatencyUs;  // 1000us
   constexpr uint32_t kMaxNewTokens = 50;
   const MockDecodeSchedulerConfig cfg{
-      .prefillLatency = std::chrono::milliseconds(0),
-      .decodeTokenLatency = std::chrono::microseconds(kTokenLatencyUs),
+      .numPipelineStages = kStages,
+      .stageLatency = std::chrono::microseconds(kStageLatencyUs),
   };
 
   uint32_t shortCount = 0;
@@ -246,9 +256,9 @@ TEST(MockSchedulerTest, DecodeThroughputIsFlatAndInputIndependent) {
   EXPECT_EQ(shortCount, kMaxNewTokens);
   EXPECT_EQ(longCount, kMaxNewTokens);
 
-  // Wall time is bounded below by the sum of the inter-token spacings: the
-  // emitter's cv_.wait_until never returns early, so emission cannot be faster
-  // than (K-1) * latency (no spacing precedes the first token). It is bounded
+  // The measured span covers the K-1 gaps between K tokens. It is bounded
+  // below by (K-1) * latency: the emitter's cv_.wait_until never returns early,
+  // so tokens can't be spaced tighter than one latency apart. It is bounded
   // above by that floor plus an overshoot budget for OS scheduling jitter
   // (thread wake-up + consumer poll jitter). Both prompt sizes must land in
   // this same window - the window depends only on K and latency, which is
@@ -270,6 +280,60 @@ TEST(MockSchedulerTest, DecodeThroughputIsFlatAndInputIndependent) {
   EXPECT_NEAR(static_cast<double>(shortPrompt.count()),
               static_cast<double>(longPrompt.count()),
               static_cast<double>((ceilUs - floorUs).count()));
+}
+
+// The pipeline is one shared resource: total tokens (prefill + decode) across
+// ALL slots retire at most one per stageLatency. So N slots decoding together
+// cannot collectively exceed 1 / stageLatency - the property the old per-slot
+// model lacked (there, N slots each ticked independently and blew past the
+// cap).
+TEST(MockSchedulerTest, SharedPipelineCapsAggregateThroughput) {
+  constexpr uint32_t kStages = 8;
+  constexpr unsigned kStageLatencyUs = 100;  // cap = 1/100us = 10k tok/s
+  constexpr uint32_t kSlots = 8;
+  constexpr uint32_t kTokensPerSlot = 20;
+  const MockDecodeSchedulerConfig cfg{
+      .numPipelineStages = kStages,
+      .stageLatency = std::chrono::microseconds(kStageLatencyUs),
+  };
+  MockDecodeScheduler scheduler(kSlots, cfg);
+  scheduler.start();
+
+  std::vector<uint32_t> slotIds;
+  for (uint32_t i = 0; i < kSlots; ++i) {
+    ASSERT_TRUE(scheduler.push_request(makeAllocate(i)));
+    sch::SchedulerResponse alloc{};
+    ASSERT_TRUE(scheduler.try_pop_response(alloc));
+    ASSERT_NE(alloc.slot_id, sch::INVALID_SLOT);
+    slotIds.push_back(alloc.slot_id);
+  }
+  // 1-token prompt so prefill is negligible and decode dominates the window.
+  for (const uint32_t sid : slotIds) {
+    ASSERT_TRUE(scheduler.push_request(makeSubmit(sid, kTokensPerSlot, {7u})));
+  }
+
+  const uint32_t total = kSlots * kTokensPerSlot;
+  uint32_t seen = 0;
+  sch::OutputMessage out{};
+  ASSERT_TRUE(waitForOutput(scheduler, out));  // first token: start the clock
+  ++seen;
+  const auto first = std::chrono::steady_clock::now();
+  while (seen < total && waitForOutput(scheduler, out)) {
+    ++seen;
+  }
+  const auto span = std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::steady_clock::now() - first);
+
+  EXPECT_EQ(seen, total);
+  const auto nominal = std::chrono::microseconds((total - 1) * kStageLatencyUs);
+  // Can't beat the cap: the (total - 1) tokens after the first arrive no faster
+  // than one per stageLatency.
+  EXPECT_GE(span, nominal * 95 / 100);
+  // Must actually run *at* the cap, not a fraction of it. Regression guard: the
+  // emitter's timed wait overshoots 44us-scale deadlines, which once left the
+  // pipeline half-empty and running at ~half throughput; catch-up injection
+  // keeps the average issue rate pinned to 1/stageLatency.
+  EXPECT_LE(span, nominal * 140 / 100);
 }
 
 }  // namespace

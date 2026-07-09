@@ -57,6 +57,36 @@ class VLLMForgeRunner(BaseDeviceRunner):
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "true").lower() == "true"
         enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
+        # BFP8 KV cache ("bfp_bf8" halves the KV footprint vs bf16; "" -> bf16).
+        kv_cache_dtype = os.getenv("KV_CACHE_DTYPE", "")
+        # On-device chunked-SDPA prefill chunk size: without it the full-context
+        # prefill SDPA buffer OOMs the DRAM banks at 32K/64K. Only passed when set.
+        prefill_chunk_size = os.getenv("PREFILL_CHUNK_SIZE")
+        # "false" -> bf16 matmul dest accumulation (smaller buffers). Only passed
+        # when set, so other models keep the plugin default.
+        fp32_dest_acc_en = os.getenv("FP32_DEST_ACC_EN")
+        # b1-prefill (tt-xla #5281): compile a small [min_num_seqs, n] prefill graph
+        # alongside b32 and route <= prefill_batch_threshold pending prefills to it
+        # (lower TTFT) while decode stays at max_num_seqs. Only passed when set.
+        min_num_seqs = os.getenv("MIN_NUM_SEQS")
+        prefill_batch_threshold = os.getenv("PREFILL_BATCH_THRESHOLD")
+        additional_config = {
+            "enable_const_eval": True,
+            "min_context_len": self.settings.vllm.min_context_length,
+            "experimental_weight_dtype": "bfp_bf8",
+            "experimental_kv_cache_dtype": kv_cache_dtype,
+            "cpu_sampling": cpu_sampling,
+            "optimization_level": optimization_level,
+            "enable_trace": enable_trace,
+        }
+        if prefill_chunk_size:
+            additional_config["prefill_chunk_size"] = int(prefill_chunk_size)
+        if fp32_dest_acc_en is not None:
+            additional_config["fp32_dest_acc_en"] = fp32_dest_acc_en.lower() == "true"
+        if min_num_seqs:
+            additional_config["min_num_seqs"] = int(min_num_seqs)
+        if prefill_batch_threshold:
+            additional_config["prefill_batch_threshold"] = int(prefill_batch_threshold)
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
@@ -64,14 +94,7 @@ class VLLMForgeRunner(BaseDeviceRunner):
             max_num_seqs=self.settings.vllm.max_num_seqs,
             enable_chunked_prefill=False,
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
-            additional_config={
-                "enable_const_eval": True,
-                "min_context_len": self.settings.vllm.min_context_length,
-                "experimental_weight_dtype": "bfp_bf8",
-                "cpu_sampling": cpu_sampling,
-                "optimization_level": optimization_level,
-                "enable_trace": enable_trace,
-            },
+            additional_config=additional_config,
         )
         self.logger.info(
             f"Device {self.device_id}: additional_config={engine_args.additional_config}"

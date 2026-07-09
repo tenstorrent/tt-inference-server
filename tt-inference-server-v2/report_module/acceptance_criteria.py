@@ -5,9 +5,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from .schema import Block, ReportSchema
+from .status import TestStatus
 
 # Three canonical kinds emitted by every runner. Acceptance routes by
 # this field alone — no substring matching, no frozensets, no regex.
@@ -39,11 +40,14 @@ class CategoryResult:
     total: int
     failed: int
     na: int = 0
+    skipped: int = 0
     blockers: Dict[str, str] = field(default_factory=dict)
+    # Would-be blockers dropped because a model_spec known_issues waiver matched.
+    waived: Dict[str, str] = field(default_factory=dict)
 
     @property
     def passed(self) -> int:
-        return self.total - self.failed - self.na
+        return self.total - self.failed - self.na - self.skipped - len(self.waived)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -53,16 +57,19 @@ class CategoryResult:
             "passed": self.passed,
             "failed": self.failed,
             "na": self.na,
+            "skipped": self.skipped,
             "blockers": dict(self.blockers),
+            "waived": dict(self.waived),
         }
 
 
 def acceptance_criteria_check(
     schema: ReportSchema,
+    known_issues: Optional[Iterable[Any]] = None,
 ) -> Tuple[bool, Dict[str, str], List[CategoryResult]]:
     categories = [
         _check_benchmarks(schema),
-        _check_evals(schema),
+        _check_evals(schema, known_issues),
         _check_spec_tests(schema),
     ]
     blockers: Dict[str, str] = {}
@@ -95,6 +102,41 @@ def task_failure_blockers(
             f"Task '{task_type}' failed (exit={exit_code}) {detail}."
         )
     return blockers
+
+
+def _find_waiver(
+    known_issues: Optional[Iterable[Any]],
+    workflow_name: str,
+    task_name: Optional[str],
+) -> Optional[str]:
+    """Return the reason string of a matching known_issues waiver, else None.
+
+    Accepts both ``workflows.model_spec.KnownIssue`` objects (workflow_type is a
+    ``WorkflowType`` enum) and plain dicts (as they appear in the runtime spec
+    JSON), so it works regardless of how the spec was deserialized. A waiver with
+    ``task_name is None`` matches every task in its workflow.
+    """
+    if not known_issues:
+        return None
+    for issue in known_issues:
+        wt = getattr(issue, "workflow_type", None)
+        if wt is not None:
+            wt_name = getattr(wt, "name", None) or str(wt)
+            issue_task = getattr(issue, "task_name", None)
+            reason = getattr(issue, "reason", "") or ""
+        elif isinstance(issue, Mapping):
+            wt_name = str(issue.get("workflow_type", ""))
+            issue_task = issue.get("task_name")
+            reason = issue.get("reason", "") or ""
+        else:
+            continue
+        # Normalize "WorkflowType.EVALS" -> "EVALS".
+        wt_name = wt_name.rsplit(".", 1)[-1]
+        if wt_name.upper() != workflow_name.upper():
+            continue
+        if issue_task is None or issue_task == task_name:
+            return reason or f"known issue ({workflow_name})"
+    return None
 
 
 ACCEPTANCE_EXPORT_KEYS = (
@@ -169,11 +211,15 @@ def _format_blocker_lines(blockers: Mapping[str, str]) -> List[str]:
 
 
 def _detail(category: CategoryResult) -> str:
-    if category.status == STATUS_NA:
+    if category.total == 0:
         return "no blocks present"
     parts = [f"{category.passed}/{category.total} passed"]
     if category.failed:
         parts.append(f"{category.failed} failed")
+    if category.waived:
+        parts.append(f"{len(category.waived)} waived")
+    if category.skipped:
+        parts.append(f"{category.skipped} skipped")
     if category.na:
         parts.append(f"{category.na} NA")
     return ", ".join(parts)
@@ -186,8 +232,24 @@ def _check_benchmarks(schema: ReportSchema) -> CategoryResult:
 
     blockers: Dict[str, str] = {}
     failed = 0
+    skipped = 0
+    na = 0
     for block in benchmark_blocks:
         block_key = _block_key(block)
+
+        explicit = _explicit_status(block)
+        if explicit is not None:
+            if explicit.is_blocking:
+                blockers[block_key] = (
+                    f"{block.title or block.kind} reported status={explicit.value}"
+                )
+                failed += 1
+            elif explicit is TestStatus.SKIP:
+                skipped += 1
+            elif explicit is TestStatus.NA:
+                na += 1
+            continue
+
         block_blockers: Dict[str, str] = {}
         target_checks = _resolve_nested(block.data, "target_checks")
         if not isinstance(target_checks, Mapping):
@@ -226,54 +288,95 @@ def _check_benchmarks(schema: ReportSchema) -> CategoryResult:
             failed += 1
             blockers.update(block_blockers)
 
-    status = STATUS_FAIL if failed else STATUS_PASS
+    non_pass = failed + skipped + na
+    if failed:
+        status = STATUS_FAIL
+    elif non_pass == len(benchmark_blocks) and (skipped or na):
+        status = STATUS_NA
+    else:
+        status = STATUS_PASS
     return CategoryResult(
         CATEGORY_BENCHMARKS,
         status,
         len(benchmark_blocks),
         failed,
+        na=na,
+        skipped=skipped,
         blockers=blockers,
     )
 
 
-def _check_evals(schema: ReportSchema) -> CategoryResult:
+def _check_evals(
+    schema: ReportSchema,
+    known_issues: Optional[Iterable[Any]] = None,
+) -> CategoryResult:
     eval_blocks = [b for b in schema.sections if b.kind == KIND_EVALS]
     if not eval_blocks:
         return CategoryResult(CATEGORY_EVALS, STATUS_NA, 0, 0)
 
     blockers: Dict[str, str] = {}
+    waived: Dict[str, str] = {}
     failed = 0
     na = 0
+    skipped = 0
     for block in eval_blocks:
         block_key = _block_key(block)
         data = block.data if isinstance(block.data, Mapping) else None
 
+        # Determine this block's blocker message (if any). success=False is
+        # decisive — a test that self-reported failure is a blocker regardless
+        # of any accuracy_check value alongside it.
+        message: Optional[str] = None
+        explicit = _explicit_status(block)
+        if explicit is not None:
+            if explicit.is_blocking:
+                blockers[block_key] = (
+                    f"{block.title or block.kind} reported status={explicit.value} "
+                    f"(attempts={data.get('attempts', '?')})"
+                )
+                failed += 1
+            elif explicit is TestStatus.SKIP:
+                skipped += 1
+            elif explicit is TestStatus.NA:
+                na += 1
+            continue
+
         # success=False is decisive — a test that self-reported failure
         # is a blocker regardless of any accuracy_check value alongside it.
         if data is not None and data.get("success") is False:
-            blockers[block_key] = (
+            message = (
                 f"{block.title or block.kind} reported success=False "
                 f"(attempts={data.get('attempts', '?')})"
             )
-            failed += 1
+        else:
+            check_value = _resolve_nested(block.data, "accuracy_check")
+            if check_value is None:
+                message = "Missing accuracy_check on eval block."
+            else:
+                state = _check_state(check_value)
+                if state == STATUS_FAIL:
+                    message = "Accuracy check failed."
+                elif state == STATUS_NA:
+                    na += 1
+
+        if message is None:
             continue
 
-        check_value = _resolve_nested(block.data, "accuracy_check")
-        if check_value is None:
-            blockers[block_key] = "Missing accuracy_check on eval block."
-            failed += 1
+        # A model_spec known_issues waiver (workflow_type EVALS, matching
+        # task_name) demotes the blocker to a non-fatal waiver — mirroring the
+        # v1 acceptance path, which the release workflow otherwise bypasses.
+        task_name = data.get("task_name") if data is not None else None
+        reason = _find_waiver(known_issues, "EVALS", task_name)
+        if reason is not None:
+            waived[block_key] = f"{message} (waived: {reason})"
             continue
+        blockers[block_key] = message
+        failed += 1
 
-        state = _check_state(check_value)
-        if state == STATUS_FAIL:
-            blockers[block_key] = "Accuracy check failed."
-            failed += 1
-        elif state == STATUS_NA:
-            na += 1
-
+    non_pass = failed + na + skipped
     if failed:
         status = STATUS_FAIL
-    elif na == len(eval_blocks):
+    elif na == len(eval_blocks) or (skipped and non_pass == len(eval_blocks)):
         status = STATUS_NA
     else:
         status = STATUS_PASS
@@ -283,7 +386,9 @@ def _check_evals(schema: ReportSchema) -> CategoryResult:
         len(eval_blocks),
         failed,
         na=na,
+        skipped=skipped,
         blockers=blockers,
+        waived=waived,
     )
 
 
@@ -300,14 +405,20 @@ def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
 
     blockers: Dict[str, str] = {}
     failed = 0
+    skipped = 0
+    na = 0
     for block in spec_blocks:
-        success = block.data.get("success")
-        if success is False:
+        test_status = _block_test_status(block)
+        if test_status.is_blocking:
             blockers[f"spec.{_block_key(block)}"] = (
-                f"{block.title or block.kind} reported success=False "
+                f"{block.title or block.kind} reported status={test_status.value} "
                 f"(attempts={block.data.get('attempts', '?')})"
             )
             failed += 1
+        elif test_status is TestStatus.SKIP:
+            skipped += 1
+        elif test_status is TestStatus.NA:
+            na += 1
 
     status = STATUS_FAIL if failed else STATUS_PASS
     return CategoryResult(
@@ -315,6 +426,8 @@ def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
         status,
         len(spec_blocks),
         failed,
+        na=na,
+        skipped=skipped,
         blockers=blockers,
     )
 
@@ -354,6 +467,28 @@ def _block_key(block: Block) -> str:
     if block.title:
         return f"{block.kind}:{block.title}"
     return block.kind
+
+
+def _block_test_status(block: Block) -> TestStatus:
+    """Resolve a block's :class:`TestStatus`, falling back to legacy fields."""
+    data = block.data if isinstance(block.data, Mapping) else {}
+    resolved = TestStatus.from_value(data.get("status"))
+    if resolved is not None:
+        return resolved
+    return TestStatus.from_legacy(
+        data.get("success"), skipped=bool(data.get("skipped"))
+    )
+
+
+def _explicit_status(block: Block):
+    """Return the block's explicit :class:`TestStatus`, or None if unset.
+
+    Unlike :func:`_block_test_status`, this does *not* infer a status from
+    legacy fields — evals/benchmarks without a ``status`` keep their existing
+    accuracy_check / target_checks grading.
+    """
+    data = block.data if isinstance(block.data, Mapping) else {}
+    return TestStatus.from_value(data.get("status"))
 
 
 def _level_passes(level_checks: Mapping[str, Any]) -> bool:

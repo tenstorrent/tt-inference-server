@@ -26,7 +26,19 @@ pillow
 requests
 imageio
 imageio-ffmpeg
-datasets
+transformers==4.57.1
 # LLM eval/release run in this venv and mint the server bearer token from
 # --jwt-secret (command_factory._mint_jwt_if_secret), so pyjwt must be here.
 pyjwt
+
+# VLLMParamConformanceTest runs its pytest suites via `sys.executable -m pytest`
+# under this venv; the suites use @pytest.mark.asyncio.
+pytest==8.3.5
+pytest-asyncio==1.3.0
+# The conformance suite's conftest imports server_tests.conftest ->
+# utils.prompt_client / utils.prompt_generation, which import transformers and
+# jinja2 at module load. jinja2 also arrives transitively via torch; pinned here
+# to keep the eager import chain self-contained.
+jinja2
+librosa
+datasets

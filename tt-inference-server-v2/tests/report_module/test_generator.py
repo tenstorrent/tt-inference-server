@@ -13,12 +13,56 @@ import pytest
 
 from report_module.generator import (
     ReportGenerator,
+    _build_spec_test_summary_markdown,
     _coerce_schema,
     _collapse_same_heading_blocks,
     _consolidate_eval_blocks,
     generate_report,
 )
 from report_module.schema import Block, ReportSchema
+
+
+def test_spec_summary_distinguishes_skip_error_from_pass_fail():
+    runs = [
+        {"test_name": "A", "status": "pass", "success": True, "attempts": 1},
+        {"test_name": "B", "status": "fail", "success": False, "attempts": 1},
+        {
+            "test_name": "C",
+            "status": "error",
+            "success": False,
+            "attempts": 0,
+            "error": {"message": "boom"},
+        },
+        {
+            "test_name": "D",
+            "status": "skip",
+            "success": False,
+            "reason": "no board",
+            "attempts": 0,
+        },
+        {"test_name": "E", "status": "na", "reason": "no dataset", "attempts": 0},
+    ]
+    md = _build_spec_test_summary_markdown(runs, "2026-07-05")
+
+    assert "| Passed | 1 |" in md
+    assert "| Failed | 2 |" in md  # fail + error both blocking
+    assert "| Skipped | 1 |" in md
+    assert "| NA | 1 |" in md
+    # Success rate excludes non-blocking skip/NA: 1 pass / (1 pass + 2 blocking).
+    assert "| Success Rate | 33.3% |" in md
+    # Distinct glyphs + reason surfaced in the description column.
+    assert "⏭️" in md and "🟨" in md
+    assert "no board" in md and "boom" in md
+
+
+def test_spec_summary_legacy_rows_without_status():
+    runs = [
+        {"test_name": "A", "success": True, "attempts": 1},
+        {"test_name": "B", "success": False, "attempts": 1},
+    ]
+    md = _build_spec_test_summary_markdown(runs, "2026-07-05")
+    assert "| Passed | 1 |" in md
+    assert "| Failed | 1 |" in md
 
 
 def _eval_block(task: str, **data) -> Block:
