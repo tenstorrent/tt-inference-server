@@ -1508,7 +1508,11 @@ if(KAFKA_ENABLED)
         # Unit test for CompositeMigrationClient. Uses two in-process
         # FakeBackends (defined inline in the test) so it does not need
         # Kafka or shmem; the whole point is to pin down the composite's
-        # routing / fan-out behavior in isolation.
+        # routing / fan-out behavior in isolation. gtest_discover_tests
+        # registers each TEST() case with ctest individually so the PR
+        # gate picks them up (unlike some sibling Kafka unit tests in
+        # this file that are only built, not ctest-registered — a
+        # pre-existing gap that should be closed separately).
         add_executable(composite_migration_client_test
             tests/unit/services/composite_migration_client_test.cpp
         )
@@ -1519,6 +1523,7 @@ if(KAFKA_ENABLED)
         target_include_directories(composite_migration_client_test PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
         )
+        gtest_discover_tests(composite_migration_client_test)
     else()
         message(STATUS "remote_kv_adapter: DISABLED (requires ENABLE_BLAZE=ON)")
     endif()
