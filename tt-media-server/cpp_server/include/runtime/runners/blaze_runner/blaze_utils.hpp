@@ -114,7 +114,7 @@ inline sch::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
 inline sch::GenerationParams makeGenerationParams(
     const tt::config::BlazeConfig& config,
     const tt::domain::llm::Sequence& seq) {
-  const sch::SamplingParams userSampling{
+  const sch::SamplingParams sampling{
       .temperature = seq.getSamplingParams().temperature,
       .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
       .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
@@ -125,20 +125,11 @@ inline sch::GenerationParams makeGenerationParams(
               static_cast<int>(config.maxContextLength))),
       .spec_decode = seq.getSamplingParams().fast_mode,
       .ignore_eos = seq.getSamplingParams().ignore_eos,
-      .sampling = userSampling,
+      .sampling = sampling,
       .disaggregated_decode = config.enableMigration && seq.isDisaggregated(),
       .starts_in_thinking = seq.getStartsInThinking(),
       .stop_tokens = seq.getSamplingParams().stop_token_ids,
   };
-}
-
-inline void postProcessSamplingParams(const tt::config::BlazeConfig& config,
-                                      sch::GenerationParams& params) {
-  if (config.sampleOnlyInReasoning) {
-    // We argmax outside the reasoning phase
-    params.sampling =
-        sch::SamplingParams{.temperature = 1.0f, .top_p = 1.0f, .top_k = 1};
-  }
 }
 
 inline void fillSequenceFields(const tt::config::BlazeConfig& config,
@@ -149,7 +140,6 @@ inline void fillSequenceFields(const tt::config::BlazeConfig& config,
   if (seq.getKVPositionId().has_value()) {  // override position id
     req.position_id = *seq.getKVPositionId();
   }
-  postProcessSamplingParams(config, req.gen);
   if (config.enableMigration) {
     req.migration_uuid = seq.getMigrationId();
   }
