@@ -8,8 +8,8 @@
 -c constraints.txt
 --extra-index-url https://download.pytorch.org/whl/cpu
 
-torch
-torchvision
+torch==2.7.1+cpu
+torchvision==0.22.1+cpu
 datasets
 transformers==4.57.1
 pyyaml==6.0.3
