@@ -239,9 +239,7 @@ def run_cnn_eval(ctx: MediaContext) -> Block:
         data["mismatches_count"] = eval_result["mismatches_count"]
     elif runner_in_use == CNN_YOLOX_NANO_RUNNER and eval_result:
         logger.info("Adding YOLOX COCO mAP eval results")
-        data["accuracy_check"] = eval_result.get(
-            "accuracy_status", ReportCheckTypes.NA
-        )
+        data["accuracy_check"] = eval_result.get("accuracy_status", ReportCheckTypes.NA)
         # Report mAP (as a percentage) as the eval score against the published
         # COCO mAP (25.8 for yolox_nano).
         data["score"] = eval_result["mAP_percent"]
@@ -313,9 +311,7 @@ def _yolox_detect(ctx: MediaContext, image_jpeg: bytes) -> tuple[list, float]:
 
     detections: list = []
     if response.status_code != 200:
-        logger.warning(
-            "YOLOX COCO eval: server returned HTTP %s", response.status_code
-        )
+        logger.warning("YOLOX COCO eval: server returned HTTP %s", response.status_code)
         return detections, elapsed
     try:
         body = response.json()
@@ -323,9 +319,7 @@ def _yolox_detect(ctx: MediaContext, image_jpeg: bytes) -> tuple[list, float]:
         return detections, elapsed
 
     image_data = body.get("image_data") if isinstance(body, dict) else None
-    first = (
-        image_data[0] if isinstance(image_data, list) and image_data else image_data
-    )
+    first = image_data[0] if isinstance(image_data, list) and image_data else image_data
     if not isinstance(first, dict):
         return detections, elapsed
     output = first.get("output") or {}
@@ -381,9 +375,7 @@ def _run_yolox_coco_eval(ctx: MediaContext) -> dict:
     task = ctx.all_params.tasks[0]
     published = task.score.published_score
     tolerance = task.score.tolerance
-    num_images = int(
-        os.environ.get("YOLOX_COCO_NUM_IMAGES", DEFAULT_COCO_NUM_IMAGES)
-    )
+    num_images = int(os.environ.get("YOLOX_COCO_NUM_IMAGES", DEFAULT_COCO_NUM_IMAGES))
 
     images_meta, annotations, predictions, mean_latency = (
         _collect_yolox_coco_predictions(ctx, num_images)
@@ -474,9 +466,7 @@ def _collect_yolox_coco_predictions(
                     image = _PILImage.open(io.BytesIO(image["bytes"]))
                 width = int(sample.get("width") or image.width)
                 height = int(sample.get("height") or image.height)
-                images_meta.append(
-                    {"id": image_id, "width": width, "height": height}
-                )
+                images_meta.append({"id": image_id, "width": width, "height": height})
 
                 objects = sample.get("objects") or {}
                 categories = objects.get("category") or []
