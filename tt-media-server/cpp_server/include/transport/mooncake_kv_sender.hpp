@@ -14,6 +14,9 @@
 
 namespace tt::transport {
 
+class WorkerHealth;
+
+
 /**
  * @brief Prefill-host (sender) side of a KV migration.
  *
@@ -33,10 +36,13 @@ namespace tt::transport {
  */
 class MooncakeKvSender {
  public:
+  /// @param health optional; when set, a transfer failure bumps the transfer/
+  ///        re-resolve counters (pure observability, never gates readiness).
   MooncakeKvSender(std::shared_ptr<ITransferEngine> engine, IDeviceIo& device,
                    std::shared_ptr<const IKvTable> prefillTable,
                    std::shared_ptr<const IKvTable> decodeTable,
-                   std::string prefillHost, std::string decodeHost);
+                   std::string prefillHost, std::string decodeHost,
+                   WorkerHealth* health = nullptr);
 
   /**
    * @brief Transfer one slot's chunks into the decode mirror segment.
@@ -48,8 +54,15 @@ class MooncakeKvSender {
                     const std::string& segmentName);
 
  private:
+  // Force-refresh the peer's segment descriptor after a failed transfer so the
+  // NEXT request re-resolves its current address. A TCP sender caches the
+  // descriptor at openSegment() time, so a peer that restarted on a fresh
+  // dynamic port would otherwise be targeted at its dead address forever.
+  void refreshPeerSegment(const std::string& segmentName);
+
   std::shared_ptr<ITransferEngine> engine_;
   IDeviceIo& device_;
+  WorkerHealth* health_ = nullptr;
   std::shared_ptr<const IKvTable> prefill_table_;
   std::shared_ptr<const IKvTable> decode_table_;
   std::string prefill_host_;
