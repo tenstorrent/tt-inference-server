@@ -731,8 +731,9 @@ void BlazeDecodeRunner::handleTask(
           task->getMigrationId().has_value()
               ? std::to_string(*task->getMigrationId())
               : "None");
-      ds::ISRequest req = isNew ? utils::makeSubmitRequest(config, slotId, *task)
-                                : utils::makeContinueRequest(config, slotId, *task);
+      ds::ISRequest req =
+          isNew ? utils::makeSubmitRequest(config, slotId, *task)
+                : utils::makeContinueRequest(config, slotId, *task);
       TT_LOG_DEBUG(
           "[BlazeDecodeRunner] handleRequest: {} taskId={}, slotId={}, "
           "isNew={}, isContinuation={}, numPromptTokens={}, totalTokens={}, "
