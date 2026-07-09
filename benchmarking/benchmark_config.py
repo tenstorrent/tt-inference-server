@@ -54,13 +54,6 @@ class BenchmarkTaskEmbedding(BenchmarkTask):
 
 
 @dataclass(frozen=True)
-class BenchmarkTaskVideo(BenchmarkTask):
-    param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
-    task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_VIDEO_API
-    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.BENCHMARKS_VIDEO
-
-
-@dataclass(frozen=True)
 class BenchmarkTaskTTS(BenchmarkTask):
     param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
     task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_CNN_API
@@ -576,8 +569,6 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
             param_map={device: capped_perf_reference},
             workflow_venv_type=vllm_benchmark_venv,
         )
-    elif model_spec.model_type == ModelType.VIDEO:
-        perf_ref_task = BenchmarkTaskVideo(param_map={device: capped_perf_reference})
     elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
         perf_ref_task = BenchmarkTaskTTS(param_map={device: capped_perf_reference})
     elif model_spec.model_type == ModelType.IMAGE:
@@ -606,10 +597,6 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
             benchmark_task_runs = BenchmarkTaskEmbedding(
                 param_map={device: [BenchmarkTaskParams()]},
                 workflow_venv_type=vllm_benchmark_venv,
-            )
-        elif model_spec.model_type == ModelType.VIDEO:
-            benchmark_task_runs = BenchmarkTaskVideo(
-                param_map={device: [BenchmarkTaskParams()]}
             )
         elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
             benchmark_task_runs = BenchmarkTaskTTS(

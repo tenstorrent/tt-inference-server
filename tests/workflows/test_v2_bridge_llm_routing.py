@@ -193,6 +193,16 @@ def test_mochi_video_routes_to_v2(workflow):
     assert v2_bridge.can_route_to_v2(spec, rc) is True
 
 
+@pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
+def test_any_video_model_routes_to_v2(workflow):
+    """All VIDEO model types route to v2, not only names in _V2_ROUTED_MODELS."""
+    spec, rc = _spec(ModelType.VIDEO, name="some-unlisted-video-model"), _rc(
+        workflow=workflow
+    )
+    assert v2_bridge.is_v2_routed_model(spec) is False
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
+
+
 def test_build_llm_bench_cmd_forwards_tools_and_jwt():
     v2_dir = Path(__file__).resolve().parents[2] / "tt-inference-server-v2"
     cmd = v2_bridge._build_llm_bench_cmd(
