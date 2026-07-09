@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,10 @@ from report_module.generator import (
     generate_report,
 )
 from report_module.schema import Block, ReportSchema
+
+
+def _squash(md: str) -> str:
+    return re.sub(r" +", " ", md)
 
 
 def test_spec_summary_distinguishes_skip_error_from_pass_fail():
@@ -42,7 +47,7 @@ def test_spec_summary_distinguishes_skip_error_from_pass_fail():
         },
         {"test_name": "E", "status": "na", "reason": "no dataset", "attempts": 0},
     ]
-    md = _build_spec_test_summary_markdown(runs, "2026-07-05")
+    md = _squash(_build_spec_test_summary_markdown(runs, "2026-07-05"))
 
     assert "| Passed | 1 |" in md
     assert "| Failed | 2 |" in md  # fail + error both blocking
@@ -60,7 +65,7 @@ def test_spec_summary_legacy_rows_without_status():
         {"test_name": "A", "success": True, "attempts": 1},
         {"test_name": "B", "success": False, "attempts": 1},
     ]
-    md = _build_spec_test_summary_markdown(runs, "2026-07-05")
+    md = _squash(_build_spec_test_summary_markdown(runs, "2026-07-05"))
     assert "| Passed | 1 |" in md
     assert "| Failed | 1 |" in md
 

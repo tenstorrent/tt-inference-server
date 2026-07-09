@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
 from report_module import renderers
 from report_module.acceptance_criteria import ACCEPTANCE_EXPORT_KEYS
+from report_module.markdown_table import build_markdown_table
 from report_module.report_file_saver import ReportFileSaver
 from report_module.schema import Block, ReportSchema, SchemaLike
 from report_module.status import TestStatus
@@ -262,26 +263,23 @@ def _build_spec_test_summary_markdown(
         ("Total Attempts", str(total_attempts)),
         ("Generated", generated_at or "-"),
     ]
-    summary_table = "\n".join(
-        ["| Metric | Value |", "|:-------|------:|"]
-        + [f"| {metric} | {value} |" for metric, value in summary_rows]
+
+    summary_table = build_markdown_table(
+        [{"Metric": metric, "Value": value} for metric, value in summary_rows]
     )
 
-    result_header = (
-        "| Status | Test Name | Duration | Attempts | Description |\n"
-        "|:------:|:----------|---------:|---------:|:------------|"
+    results_table = build_markdown_table(
+        [
+            {
+                "Status": _STATUS_GLYPHS.get(status, "❌"),
+                "Test Name": str(run.get("test_name") or ""),
+                "Duration": f"{_coerce_float(run.get('elapsed_seconds')):.2f}s",
+                "Attempts": str(_coerce_int(run.get("attempts"))),
+                "Description": _run_description(run, status),
+            }
+            for run, status in zip(runs, statuses)
+        ]
     )
-    result_rows = [
-        "| {status} | {name} | {duration:.2f}s | {attempts} | {description} |".format(
-            status=_STATUS_GLYPHS.get(status, "❌"),
-            name=str(run.get("test_name") or ""),
-            duration=_coerce_float(run.get("elapsed_seconds")),
-            attempts=_coerce_int(run.get("attempts")),
-            description=_run_description(run, status),
-        )
-        for run, status in zip(runs, statuses)
-    ]
-    results_table = "\n".join([result_header] + result_rows)
 
     return f"## 📋 Summary\n\n{summary_table}\n\n## 🧪 Test Results\n\n{results_table}"
 
