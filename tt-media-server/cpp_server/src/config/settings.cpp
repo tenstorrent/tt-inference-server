@@ -369,6 +369,7 @@ BlazeConfig blazeConfig() {
     cfg.modelNumLayers = modelNumLayers();
     cfg.prefillChunkSize = prefillChunkSize();
     cfg.enableMigration = enableMigration();
+    cfg.prefillUseRemoteKvManager = prefillUseRemoteKvManager();
     cfg.migrationPrefillEndpointId = migrationPrefillEndpointId();
     cfg.migrationDecodeEndpointId = migrationDecodeEndpointId();
     cfg.specDecodeMode = specDecodeMode();

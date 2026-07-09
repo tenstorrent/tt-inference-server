@@ -332,14 +332,20 @@ inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig(
   };
 }
 
-// Runner-type-driven migration client factory. This is the client the
-// PrefillScheduler gets when PREFILL_USE_REMOTE_KV_MANAGER is off, AND — when
-// it is on — the loopback backend that a CompositeMigrationClient uses to
-// serve migrate() calls the Kafka RemoteKVManagerAdapter cannot handle
-// (ALLOCATE(migrate_from_slot) prefix-cache slot copies). Kept as a separate
-// helper so both callers share exactly one runner_type switch.
+// Runner-type-driven migration client factory that hands out the shmem-backed
+// MigrationLayerClientAdapter for real device runs, or a MockMigrationClient
+// for the mock pipeline. This is the client the PrefillScheduler gets when
+// PREFILL_USE_REMOTE_KV_MANAGER is off, AND — when it is on — the loopback
+// backend that a CompositeMigrationClient uses to serve migrate() calls the
+// Kafka RemoteKVManagerAdapter cannot handle (ALLOCATE(migrate_from_slot)
+// prefix-cache slot copies). Kept as a separate helper so both callers share
+// exactly one runner_type switch.
+//
+// NOTE: this is not the top-level factory called by the scheduler factory —
+// that is makeMigrationClientInterface() below, which dispatches to either
+// this helper or the Kafka path.
 inline std::unique_ptr<sch::MigrationClientInterface>
-makeMigrationClientInterface(const tt::config::BlazeConfig& config) {
+makeShmemOrMockMigrationClient(const tt::config::BlazeConfig& config) {
   if (!config.enableMigration) {
     return nullptr;
   }
@@ -384,7 +390,7 @@ makeMigrationClientInterface(const tt::config::BlazeConfig& config) {
 // the shmem-only path.
 #ifdef KAFKA_ENABLED
 inline std::unique_ptr<sch::MigrationClientInterface>
-makePrefillKafkaMigrationClient(const tt::config::LLMConfig& config) {
+makePrefillKafkaMigrationClient(const tt::config::BlazeConfig& config) {
   auto requestProducer = std::make_unique<tt::messaging::KafkaProducer>(
       tt::messaging::KafkaProducerConfig{
           .brokers = tt::config::kafkaBrokers(),
@@ -422,16 +428,20 @@ makePrefillKafkaMigrationClient(const tt::config::LLMConfig& config) {
 }
 #endif  // KAFKA_ENABLED
 
+// Top-level migration-client factory for the PrefillScheduler. Dispatches
+// on the (env-derived) prefillUseRemoteKvManager flag carried on the config:
+// when true, the burst path goes through the Kafka-backed
+// RemoteKVManagerAdapter (composed with a shmem/mock loopback for migrate()
+// calls the adapter cannot service); when false, the scheduler talks directly
+// to the shmem/mock client. This function is what
+// blaze_scheduler_factory::makePrefillScheduler calls; the two helpers above
+// are private-in-spirit implementation details.
 inline std::unique_ptr<sch::MigrationClientInterface>
-makeMigrationClientInterface(const tt::config::LLMConfig& config) {
-  if (!tt::config::enableMigration()) {
+makeMigrationClientInterface(const tt::config::BlazeConfig& config) {
+  if (!config.enableMigration) {
     return nullptr;
   }
-  // PREFILL_USE_REMOTE_KV_MANAGER routes the burst path to the Kafka-backed
-  // RemoteKVManagerAdapter while keeping the shmem/mock client for the
-  // migrate() path (composed inside CompositeMigrationClient). Off by
-  // default; when off the scheduler talks directly to the shmem/mock client.
-  if (tt::config::prefillUseRemoteKvManager()) {
+  if (config.prefillUseRemoteKvManager) {
 #ifdef KAFKA_ENABLED
     return makePrefillKafkaMigrationClient(config);
 #else
