@@ -12,8 +12,7 @@ on:
         type: number
         default: 90
   schedule:
-    # First day of each month at 04:00 Europe/Belgrade (CET, UTC+1).
-    # GitHub cron is UTC-only → 03:00 UTC. During CEST (summer) this is 05:00 local.
+    # GitHub cron is UTC-only → 03:00 UTC.
     - cron: '0 3 1 * *'
 
 permissions:
