@@ -67,10 +67,9 @@ class RouterBenchHarness {
   }
 
   void releaseSession(const std::string& sessionId) {
-    sessions.modify(sessionId,
-                    [](std::shared_ptr<BenchSession>& session) {
-                      session->clearInFlight();
-                    });
+    sessions.modify(sessionId, [](std::shared_ptr<BenchSession>& session) {
+      session->clearInFlight();
+    });
   }
 
  private:
@@ -111,38 +110,38 @@ class RouterBenchHarness {
   tt::services::PrefixCacheRouterCallbacks makeCallbacks() {
     tt::services::PrefixCacheRouterCallbacks callbacks;
 
-    callbacks.tryMarkInFlight =
-        [this](const std::string& sessionId, std::function<void()>& cancelFn,
-               std::optional<uint64_t> expectedKeyHash,
-               const std::string* expectedResponseId) {
-          return tryMarkSessionInFlight(sessionId, cancelFn, expectedKeyHash,
-                                        expectedResponseId);
-        };
+    callbacks.tryMarkInFlight = [this](const std::string& sessionId,
+                                       std::function<void()>& cancelFn,
+                                       std::optional<uint64_t> expectedKeyHash,
+                                       const std::string* expectedResponseId) {
+      return tryMarkSessionInFlight(sessionId, cancelFn, expectedKeyHash,
+                                    expectedResponseId);
+    };
 
     callbacks.getSession = [this](const std::string& sessionId) {
       std::shared_ptr<BenchSession> session;
       sessions.withValue(sessionId,
-                       [&](const std::shared_ptr<BenchSession>& stored) {
-                         session = stored;
-                       });
+                         [&](const std::shared_ptr<BenchSession>& stored) {
+                           session = stored;
+                         });
       return session;
     };
 
     callbacks.getSessionHash = [this](const std::string& sessionId) {
       std::optional<uint64_t> hash;
       sessions.withValue(sessionId,
-                       [&](const std::shared_ptr<BenchSession>& stored) {
-                         hash = stored->getHash();
-                       });
+                         [&](const std::shared_ptr<BenchSession>& stored) {
+                           hash = stored->getHash();
+                         });
       return hash;
     };
 
     callbacks.setSessionHash = [this](const std::string& sessionId,
                                       uint64_t keyHash) {
       return sessions.modify(sessionId,
-                           [keyHash](std::shared_ptr<BenchSession>& stored) {
-                             stored->setHash(keyHash);
-                           });
+                             [keyHash](std::shared_ptr<BenchSession>& stored) {
+                               stored->setHash(keyHash);
+                             });
     };
 
     callbacks.setSessionResponseId = [this](const std::string& sessionId,
@@ -163,14 +162,15 @@ class RouterBenchHarness {
            trantor::EventLoop* /*eventLoop*/,
            std::vector<tt::utils::BlockHashInfo> /*initialBlockInfos*/,
            std::optional<uint32_t> /*slotIdToCopyFrom*/) {
-          throw std::runtime_error("createSession not used in router benchmark");
+          throw std::runtime_error(
+              "createSession not used in router benchmark");
         };
 
     callbacks.acquireInFlight =
         [](const std::string& /*sessionId*/,
            std::function<void()> /*cancelFn*/) -> uint32_t {
-          throw std::runtime_error("acquireInFlight not used in router benchmark");
-        };
+      throw std::runtime_error("acquireInFlight not used in router benchmark");
+    };
 
     callbacks.lockSlot = [](uint32_t /*slotId*/) {};
     callbacks.unlockSlot = [](uint32_t /*slotId*/) {};
@@ -289,8 +289,7 @@ struct ResponseIdFixture : benchmark::Fixture {
 
     for (size_t i = 0; i < numSessions; ++i) {
       const auto sessionId = harness.addSession(static_cast<uint32_t>(i + 100));
-      harness.registerBlocks(sessionId,
-                             {{static_cast<uint64_t>(i + 5000), 0}});
+      harness.registerBlocks(sessionId, {{static_cast<uint64_t>(i + 5000), 0}});
       const std::string responseId = "resp-" + std::to_string(i);
       harness.registerResponseId(sessionId, responseId);
       targetResponseId = responseId;

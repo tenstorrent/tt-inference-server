@@ -39,9 +39,10 @@ PrefixCacheRouter::tryAcquireByPrefixHash(
 
   std::vector<Candidate> candidates;
   prefixIndex.withEntriesForKey(
-      keyHash, [&](const std::vector<domain::prefix_cache::PrefixIndexEntry>& entries) {
-        candidates =
-            domain::prefix_cache::BlockMatcher::buildCandidates(blockInfos, entries);
+      keyHash,
+      [&](const std::vector<domain::prefix_cache::PrefixIndexEntry>& entries) {
+        candidates = domain::prefix_cache::BlockMatcher::buildCandidates(
+            blockInfos, entries);
       });
   domain::prefix_cache::BlockMatcher::sortCandidates(candidates);
 
