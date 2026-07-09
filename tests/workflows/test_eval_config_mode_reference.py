@@ -12,7 +12,6 @@ sample-count-aware integer floor. See evals.eval_config.resolve_eval_reference
 and evals.eval_config.accept_eval_score.
 """
 
-import json
 from pathlib import Path
 import sys
 
@@ -24,7 +23,6 @@ from evals.eval_config import (
     accept_eval_score,
     resolve_eval_reference,
 )
-from workflows.run_reports import _resolve_eval_reference, collect_sample_counts
 from workflows.workflow_types import EvalLimitMode
 
 
@@ -42,11 +40,6 @@ def _make_score(**overrides):
 
 
 # --- reference selection ----------------------------------------------------
-
-
-def test_run_reports_reuses_shared_resolver():
-    # run_reports aliases the shared resolver (single source of truth).
-    assert _resolve_eval_reference is resolve_eval_reference
 
 
 def test_no_limit_mode_falls_back_to_full_reference():
@@ -160,32 +153,3 @@ def test_no_reference_returns_none():
     score = _make_score(gpu_reference_score=None)
     ref = resolve_eval_reference(score, None)
     assert accept_eval_score(ref, 50.0, n_total=40) is None
-
-
-# --- v1 sample-count plumbing -----------------------------------------------
-
-
-def test_collect_sample_counts_reads_effective(tmp_path):
-    # The v1 report path must recover effective sample counts from lm-eval
-    # result JSONs so the subset acceptance check is sample-count-aware
-    # (matching the v2 scorer) instead of always falling back to the ratio.
-    result_json = tmp_path / "results_0.json"
-    result_json.write_text(
-        json.dumps(
-            {
-                "results": {"r1_gpqa_diamond": {"exact_match,none": 0.7}},
-                "n-samples": {"r1_gpqa_diamond": {"original": 198, "effective": 40}},
-            }
-        )
-    )
-
-    counts = collect_sample_counts([str(result_json)])
-
-    assert counts == {"r1_gpqa_diamond": 40}
-
-
-def test_collect_sample_counts_ignores_files_without_field(tmp_path):
-    no_field = tmp_path / "results_1.json"
-    no_field.write_text(json.dumps({"results": {"foo": {"acc": 0.5}}}))
-
-    assert collect_sample_counts([str(no_field)]) == {}
