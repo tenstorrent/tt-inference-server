@@ -39,4 +39,5 @@ pytest-asyncio==1.3.0
 # to keep the eager import chain self-contained.
 jinja2
 librosa
-datasets
+datasets==5.0.0
+pyarrow==24.0.0
