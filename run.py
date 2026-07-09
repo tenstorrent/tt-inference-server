@@ -293,7 +293,24 @@ def parse_arguments():
         default="vllm",
         help="Benchmarking tool to use: 'vllm' for vLLM benchmark_serving.py (default), "
         "'genai' for genai-perf (Triton SDK), 'aiperf' for AIPerf (https://github.com/ai-dynamo/aiperf), "
-        "'guidellm' for GuideLLM (https://github.com/vllm-project/guidellm).",
+        "'guidellm' for GuideLLM (https://github.com/vllm-project/guidellm). ",
+    )
+    parser.add_argument(
+        "--goodput",
+        type=str,
+        default=None,
+        metavar="SLO",
+        help=(
+            "AIPerf --goodput SLO string applied to the LLM benchmark sweep "
+            "(--workflow benchmarks --tools aiperf): space-separated KEY:VALUE "
+            "pairs where KEY is a metric tag and VALUE is in the metric's "
+            "display unit. Reports the fraction of requests meeting every "
+            "threshold. Valid tags include time_to_first_token (ms), "
+            "request_latency (ms), inter_token_latency (ms), "
+            "output_token_throughput_per_user (tokens/s). Only used by the "
+            "'aiperf' tool; ignored by vllm/genai/guidellm. Example: "
+            "'time_to_first_token:4000 output_token_throughput_per_user:45'."
+        ),
     )
     parser.add_argument(
         "--no-auth",
@@ -435,9 +452,12 @@ def parse_arguments():
     prefix_cache_group.add_argument(
         "--prefix-cache-preset",
         type=str,
-        choices=["ci", "full"],
+        choices=["ci", "full", "highcache_50k"],
         default="full",
-        help="Preset for --prefix-cache (default: full). 'ci' is a short regression sweep.",
+        help="Preset for --prefix-cache (default: full). 'ci' is a short regression sweep; "
+        "'highcache_50k' simulates the customer trillion-scale shape (50K shared/cacheable "
+        "prefix + 5K new ISL + 500 OSL at concurrency 32, ~90.9%% steady-state hit-rate) "
+        "with a matched zero-prefix baseline for TTFT-uplift comparison.",
     )
     prefix_cache_group.add_argument(
         "--prefix-cache-scenarios",
@@ -472,11 +492,62 @@ def parse_arguments():
         help="Path to a mooncake-format JSONL trace file for mooncake_trace scenarios.",
     )
     prefix_cache_group.add_argument(
+        "--prefix-cache-goodput",
+        type=str,
+        default=None,
+        metavar="SLO",
+        help="AIPerf --goodput SLO string: space-separated KEY:VALUE pairs (metric tag : "
+        "value in display unit). Reports requests/sec meeting every threshold. Tags include "
+        "time_to_first_token (ms), request_latency (ms), inter_token_latency (ms), "
+        "output_token_throughput_per_user (tokens/s). Overrides the preset/scenario goodput. "
+        "Example: 'time_to_first_token:4000 output_token_throughput_per_user:45'.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-metrics-url",
+        type=str,
+        action="append",
+        default=None,
+        metavar="URL",
+        help="Worker /metrics endpoint with the tt_prefix_cache_* counters, forwarded to "
+        "AIPerf as --server-metrics (load stays on the frontend). Accepts a full URL, "
+        "host:port, or host:port/metrics. Repeatable for multi-worker deployments. "
+        "Without it the scrape hits the prefix-unaware frontend and hit-rate is null.",
+    )
+    prefix_cache_group.add_argument(
         "--jwt-secret",
         type=str,
         default=None,
-        help="JWT secret for prefix-cache runs that hit an inference server behind JWT auth. "
-        "Reads $JWT_SECRET when omitted.",
+        help="JWT secret for prefix-cache / spec-decode runs that hit an inference server "
+        "behind JWT auth. Reads $JWT_SECRET when omitted.",
+    )
+
+    # Speculative-decoding benchmark
+    spec_decode_group = parser.add_argument_group(
+        "Speculative-decoding benchmark (v2)",
+        "Arguments for --workflow benchmarks --spec-decode (routed to v2)",
+    )
+    spec_decode_group.add_argument(
+        "--spec-decode",
+        action="store_true",
+        help="Switch --workflow benchmarks to the v2 AIPerf speculative-decoding sweep over "
+        "SPEED-Bench. Scrapes the vLLM vllm:spec_decode_* counters per run for acceptance "
+        "rate / mean accepted length. The server's speculative_config is out of scope and "
+        "must be set by whoever launched it. Routes the run through the v2 engine. "
+        "Requires --workflow benchmarks.",
+    )
+    spec_decode_group.add_argument(
+        "--spec-decode-preset",
+        type=str,
+        choices=["ci", "full"],
+        default="full",
+        help="Preset for --spec-decode (default: full). 'ci' is a short regression sweep.",
+    )
+    spec_decode_group.add_argument(
+        "--spec-decode-warmup-requests",
+        type=int,
+        default=None,
+        help="Short chat-completion warmup requests sent before the spec-decode sweep "
+        "(v2 default: 4; 0 disables).",
     )
 
     args = parser.parse_args()
@@ -520,9 +591,15 @@ def parse_arguments():
     if args.eval_samples and args.limit_samples_mode:
         parser.error("--eval-samples and --limit-samples-mode are mutually exclusive.")
 
-    if args.prefix_cache and args.workflow != "benchmarks":
+    if args.prefix_cache and args.workflow not in ("benchmarks", "release"):
         parser.error(
-            "--prefix-cache currently requires --workflow benchmarks "
+            "--prefix-cache currently requires --workflow benchmarks or release "
+            f"(got --workflow {args.workflow})."
+        )
+
+    if args.spec_decode and args.workflow not in ("benchmarks", "release"):
+        parser.error(
+            "--spec-decode currently requires --workflow benchmarks or release "
             f"(got --workflow {args.workflow})."
         )
 

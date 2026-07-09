@@ -68,6 +68,13 @@ if [ -n "${CACHE_ROOT}" ] && [ -d "${CACHE_ROOT}" ]; then
     # only set permisssions for cache_root
     set_group_permissions "$CACHE_ROOT" "$SHARED_GROUP_NAME"
     # NOTE: running recursive chmod on /home/${CONTAINER_APP_USERNAME} takes long time
+
+    # Pre-create + permission the CI triage log dir; set_group_permissions skips
+    # its recursive pass when CACHE_ROOT is already 2775 (reused volume), leaving
+    # this subdir unwritable for the de-escalated user. See #4255.
+    mkdir -p "${CACHE_ROOT}/logs"
+    chgrp -R "$SHARED_GROUP_NAME" "${CACHE_ROOT}/logs"
+    chmod -R 2775 "${CACHE_ROOT}/logs"
     echo "Mounted volume permissions setup completed."
 else
     echo "CACHE_ROOT is not set or does not exist, skipping volume permissions setup."

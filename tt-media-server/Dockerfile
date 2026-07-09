@@ -82,6 +82,10 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-
     && rm cmake.sh \
     && /usr/local/bin/cmake --version
 
+# download.pytorch.org intermittently returns 503 during dependency installs;
+# raise uv's HTTP retry count (default 3) for every uv invocation in create_venv.sh.
+ENV UV_HTTP_RETRIES=10
+
 # build tt-metal
 RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \

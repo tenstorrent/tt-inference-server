@@ -21,17 +21,19 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Optional, Sequence
 
 from llm_module import (
     DriverContext,
+    HttpServerController,
     LLMDriver,
     LLMPerformanceRunner,
     LLMRunConfig,
+    RemoteOpenAIController,
     ServerConnection,
     ServerController,
 )
-from report_module.schema import Block
+from llm_module.runner import RunnerResult
 from workflow_module import accept_blocks
 
 from ..context import MediaContext
@@ -46,22 +48,42 @@ def run_llm_performance(
     configs: Sequence[LLMRunConfig],
     server_controller: Optional[ServerController] = None,
     output_subdir: str = "llm",
-) -> List[Block]:
+    auth_token: str = "",
+    goodput: Optional[str] = None,
+) -> RunnerResult:
     """Run an LLM perf sweep and forward the Blocks to workflow_module.
 
-    Returns the list of Blocks produced by the runner. The same list
-    is also handed to ``workflow_module.accept_blocks`` so the
-    downstream workflow can act on it. Callers can ignore the return
-    if they don't need the in-memory copy.
+    Returns the :class:`RunnerResult` so callers see per-sweep-point exit
+    codes (``return_codes``/``ok``), not just the Blocks — a partial sweep
+    failure must not read as success.
+
+    ``auth_token`` is sent to the inference server (e.g. a minted JWT
+    exported as the bearer token); empty string disables auth.
     """
+    server_base_url = ctx.server_url if ctx.remote_server else ctx.server_host
     server = ServerConnection(
-        base_url=ctx.server_host,
+        base_url=server_base_url,
         service_port=ctx.server_port,
         model=ctx.model_spec.hf_model_repo,
+        auth_token=auth_token,
+        is_remote=ctx.remote_server,
     )
     output_dir = Path(ctx.output_path) / output_subdir
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
-    context = DriverContext(output_dir=output_dir, device=device_label)
+    context = DriverContext(output_dir=output_dir, device=device_label, goodput=goodput)
+
+    if server_controller is None:
+        if ctx.remote_server:
+            server_controller = RemoteOpenAIController(
+                base_url=server.url_with_port,
+                auth_token=auth_token,
+            )
+        else:
+            server_controller = HttpServerController(
+                base_url=ctx.server_host,
+                service_port=ctx.server_port,
+                auth_token=auth_token,
+            )
 
     runner = LLMPerformanceRunner(
         driver=driver,
@@ -88,7 +110,7 @@ def run_llm_performance(
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         },
     )
-    return result.blocks
+    return result
 
 
 __all__ = ["run_llm_performance"]

@@ -89,10 +89,15 @@ void DisaggregationService::setupSocketHandlers() {
             auto request = LLMRequest(message.taskId);
             request.disaggregated = true;
             request.migrationId = message.migrationId;
+            // Intentional exception to the first-free-index convention: the
+            // prefill-generated token is NOT migrated, so decode's first step
+            // reprocesses the last prompt token. That token already occupies
+            // KV index size-1, so decode resumes there rather than at the next
+            // free slot, and the prompt is just that single trailing token.
             request.kv_position_id =
                 static_cast<uint32_t>(message.tokenIds.size() - 1);
-            request.prompt.emplace<std::vector<int>>(message.tokenIds.end() - 1,
-                                                     message.tokenIds.end());
+            request.prompt.emplace<std::vector<uint32_t>>(
+                message.tokenIds.end() - 1, message.tokenIds.end());
             request.max_tokens = message.remainingTokens;
             request.slotId = message.slotId;
             // Restore the sampling subset echoed back from the prefill server.
@@ -155,8 +160,8 @@ void DisaggregationService::setupSocketHandlers() {
 
           auto maxTokens = message.maxTokens;
 
-          request->prompt.emplace<std::vector<int>>(message.tokenIds.begin(),
-                                                    message.tokenIds.end());
+          request->prompt.emplace<std::vector<uint32_t>>(
+              message.tokenIds.begin(), message.tokenIds.end());
           auto slotId = message.slotId;
           request->slotId = slotId;
           request->decode_position_id = message.decodePositionId;
@@ -179,7 +184,7 @@ void DisaggregationService::setupSocketHandlers() {
                 // resolvePrefillSession (full prompt - remaining delta).
                 const size_t fullPromptTokens = message.tokenIds.size();
                 const size_t trimmedPromptTokens =
-                    std::get<std::vector<int>>(request->prompt).size();
+                    std::get<std::vector<uint32_t>>(request->prompt).size();
                 // Cached (reused) prompt tokens = the leading prefix this
                 // prefill did NOT recompute = what resolvePrefillSession
                 // trimmed off its own prefix-cache hit (fullPrompt - remaining
@@ -196,6 +201,16 @@ void DisaggregationService::setupSocketHandlers() {
                     fullPromptTokens >= trimmedPromptTokens
                         ? fullPromptTokens - trimmedPromptTokens
                         : 0);
+                request->migrationStartPosition =
+                    request->decode_skip_tokens < cachedTokens
+                        ? 0u
+                        : static_cast<uint32_t>(cachedTokens);
+                TT_LOG_DEBUG(
+                    "[DisaggregationService] taskId={} "
+                    "migrationStartPosition={} prefillMatchedTokens={} "
+                    "decodeSkipTokens={}",
+                    message.taskId, *request->migrationStartPosition,
+                    cachedTokens, request->decode_skip_tokens);
                 // Capture the resolved sessionId by value:
                 // submitStreamingRequest hands the request to the pipeline, so
                 // request->sessionId is no longer reliable by the time this
@@ -250,10 +265,9 @@ void DisaggregationService::setupSocketHandlers() {
                                 reason, response.error.value_or("error"));
                       } else {
                         prefillResult.remainingTokens =
-                            maxTokens.has_value()
-                                ? std::optional<int>(
-                                      std::max(0, maxTokens.value() - 1))
-                                : std::nullopt;
+                            maxTokens.has_value() ? std::optional<int>(std::max(
+                                                        0, maxTokens.value()))
+                                                  : std::nullopt;
                         prefillResult.tokenIds.insert(
                             prefillResult.tokenIds.end(),
                             message.tokenIds.begin(), message.tokenIds.end());
@@ -273,6 +287,16 @@ void DisaggregationService::setupSocketHandlers() {
                       // Releasing to IDLE-but-cached also lets the next turn's
                       // prefix cache match it. clearInFlight() is idempotent.
                       if (!prefillSessionId.empty() && sessionManager) {
+                        // The prefill computed the whole prompt prefix, so all
+                        // of its blocks are now resident and safe to copy from.
+                        // (Prefill is one-shot, so there is no stream-end
+                        // finalize to mark residency as on the decode path.)
+                        if (!isError) {
+                          sessionManager->setResidentPrefixBlocks(
+                              prefillSessionId,
+                              static_cast<uint32_t>(
+                                  message.registrationHashes.size()));
+                        }
                         sessionManager->releaseInFlight(prefillSessionId);
                       }
                     });
@@ -347,6 +371,11 @@ void DisaggregationService::resolvePrefillSession(
          .setKvPositionId = true,
          .logPrefix = "[DisaggregationService]"});
     sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
+    // Eagerly drop any resident tail past the common prefix: this turn's
+    // new/diverged blocks are not computed yet. The full prefix is marked
+    // resident again when this prefill completes (see prefill result callback).
+    sessionManager->shrinkResidentPrefixToMatchedTokens(
+        acquired->sessionId, acquired->numberOfMatchedTokens);
     socketService->sendPrefillCacheBlocksAdded(blockHashes(blockInfos));
     onResolved();
   } else {
@@ -387,11 +416,11 @@ void DisaggregationService::resolvePrefillSession(
           // If copying, set continuation and kv_position_id on the request.
           if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
             request->continuation = true;
-            request->kv_position_id = copyMatchedTokens - 1;
+            request->kv_position_id = copyMatchedTokens;
             session_resolution::applyDeltaPrompt(
                 *request, copyMatchedTokens,
                 {.skipUnlessRegularMode = false,
-                 .setKvPositionId = true,
+                 .setKvPositionId = false,
                  .logPrefix = "[DisaggregationService]"});
           }
           onResolved();
@@ -420,9 +449,12 @@ void DisaggregationService::handleStreamingRequest(
 
     auto maxTokens = request.max_tokens;
     auto slotId = request.slotId;
-    auto tokenIds = std::get<std::vector<int>>(request.prompt);
+    auto tokenIds = std::get<std::vector<uint32_t>>(request.prompt);
+    // kv_position_id is the first free KV index (the matched prefix occupies
+    // [0, kv_position_id)), which is exactly the position the prefill server
+    // should resume writing from.
     int decodePositionId = request.kv_position_id.has_value()
-                               ? static_cast<int>(*request.kv_position_id + 1)
+                               ? static_cast<int>(*request.kv_position_id)
                                : 0;
     // Same reused prefix as decodePositionId but excluding the accumulated
     // think tokens that were folded into kv_position_id during session
@@ -430,9 +462,8 @@ void DisaggregationService::handleStreamingRequest(
     int decodeSkipTokens = decodePositionId - request.accumulated_think_tokens;
 
     auto sent = socketService->sendPrefillRequest(
-        request.task_id, registrationHashes,
-        std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
-        slotId, tt::utils::mapper::mapSamplingParams(request), decodePositionId,
+        request.task_id, registrationHashes, tokenIds, maxTokens, slotId,
+        tt::utils::mapper::mapSamplingParams(request), decodePositionId,
         decodeSkipTokens);
 
     if (!sent) {

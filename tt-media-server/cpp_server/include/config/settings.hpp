@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include "config/runner_config.hpp"
@@ -94,10 +95,6 @@ std::string socketHost();
 /** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
 uint16_t socketPort();
 
-/** Socket transport type from SOCKET_TRANSPORT. Values: "tcp", "zmq".
- * Default: defaults::SOCKET_TRANSPORT. */
-std::string socketTransport();
-
 /** Whether the inter-server socket integrates with PrefillGateway. From
  * USE_PREFILL_GATEWAY. */
 bool usePrefillGateway();
@@ -123,10 +120,6 @@ uint32_t prefillMaxInFlight();
 /** Max in-flight requests before 429. From MAX_QUEUE_SIZE. Default:
  * defaults::MAX_QUEUE_SIZE. */
 size_t maxQueueSize();
-
-/** Scheduling policy from SCHEDULING_POLICY. Default:
- * defaults::SCHEDULING_POLICY ("prefill_first"). */
-SchedulingPolicy schedulingPolicy();
 
 /** Max in-flight requests from MAX_IN_FLIGHT_COUNT. Default:
  * defaults::MAX_IN_FLIGHT_COUNT. */
@@ -161,17 +154,25 @@ size_t maxContextLength();
  * defaults::MAX_ISL. */
 size_t maxISL();
 
+/** Per-message capacity (bytes) of the IPC task queue, derived at runtime from
+ * maxContextLength() so overriding MAX_CONTEXT_LENGTH also resizes the queue
+ * buffer (mirrors defaults::TASK_QUEUE_MAX_MSG_SIZE, which is only the
+ * default). Sized to hold maxContextLength() token ids plus non-token sequence
+ * fields. */
+size_t taskQueueMaxMsgSize();
+
 /** Minimum matched tokens required to justify a slot copy operation.
  * From MIN_TOKENS_TO_COPY. Default: defaults::MIN_TOKENS_TO_COPY. */
 size_t minTokensToCopy();
 
-/** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
- * defaults::KV_CACHE_BLOCK_SIZE. */
-size_t kvCacheBlockSize();
+/** Prefix-cache block size from KV_CACHE_BLOCK_SIZE. Default:
+ * defaults::PREFIX_CACHE_BLOCK_SIZE. The memory layout is contiguous slots;
+ * "block size" only exists as a fiction for prefix-cache hashing. */
+size_t prefixCacheBlockSize();
 
-/** KV cache first block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
- * defaults::KV_CACHE_FIRST_BLOCK_SIZE. */
-size_t kvCacheFirstBlockSize();
+/** Prefix-cache first-block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
+ * defaults::PREFIX_CACHE_FIRST_BLOCK_SIZE. */
+size_t prefixCacheFirstBlockSize();
 
 /** Minimum match percentage for prefix cache hit from
  * PREFIX_CACHE_HIT_THRESHOLD. Default: defaults::PREFIX_CACHE_HIT_THRESHOLD.
@@ -188,6 +189,15 @@ std::string kafkaBrokers();
 /** Kafka topic name from KAFKA_OFFLOAD_TOPIC_NAME. Default:
  * defaults::KAFKA_OFFLOAD_TOPIC_NAME. */
 std::string kafkaOffloadTopicName();
+
+/** Kafka topic for KV-migration requests (decode -> migration worker). From
+ * KAFKA_MIGRATION_REQUEST_TOPIC. Default:
+ * defaults::KAFKA_MIGRATION_REQUEST_TOPIC. */
+std::string kafkaMigrationRequestTopic();
+
+/** Kafka topic for KV-migration acks (migration worker -> decode). From
+ * KAFKA_MIGRATION_ACK_TOPIC. Default: defaults::KAFKA_MIGRATION_ACK_TOPIC. */
+std::string kafkaMigrationAckTopic();
 
 /** Kafka consumer group ID from KAFKA_GROUP_ID. Default:
  * defaults::KAFKA_GROUP_ID. */
@@ -210,13 +220,41 @@ unsigned pmConnectTimeoutMs();
  * defaults::PM_MAX_USERS. */
 size_t pmMaxUsers();
 
-/** Prefill number of layers from PREFILL_NUM_LAYERS. Default:
- * defaults::PREFILL_NUM_LAYERS. */
-std::string prefillNumLayers();
+/** Model number of layers from MODEL_NUM_LAYERS. Default:
+ * defaults::MODEL_NUM_LAYERS. */
+uint32_t modelNumLayers();
 
 /** Prefill chunk size from PREFILL_CHUNK_SIZE. Default:
  * defaults::PREFILL_CHUNK_SIZE. */
-std::string prefillChunkSize();
+uint32_t prefillChunkSize();
+
+/** Enable migration from ENABLE_MIGRATION. Default:
+ * defaults::ENABLE_MIGRATION. */
+bool enableMigration();
+
+/** Migration cmd queue name from MIGRATION_CMD_QUEUE_NAME. Default:
+ * defaults::MIGRATION_CMD_QUEUE_NAME. */
+std::string migrationCmdQueueName();
+
+/** Migration table queue name from MIGRATION_TABLE_QUEUE_NAME. Default:
+ * defaults::MIGRATION_TABLE_QUEUE_NAME. */
+std::string migrationTableQueueName();
+
+/** Migration resp queue name from MIGRATION_RESP_QUEUE_NAME. Default:
+ * defaults::MIGRATION_RESP_QUEUE_NAME. */
+std::string migrationRespQueueName();
+
+/** Migration prefill endpoint id from MIGRATION_PREFILL_ENDPOINT_ID. Default:
+ * defaults::MIGRATION_PREFILL_ENDPOINT_ID. */
+uint32_t migrationPrefillEndpointId();
+
+/** Migration decode endpoint id from MIGRATION_DECODE_ENDPOINT_ID. Default:
+ * defaults::MIGRATION_DECODE_ENDPOINT_ID. */
+uint32_t migrationDecodeEndpointId();
+
+/** Prefill ack channel name from PREFILL_ACK_CHANNEL_NAME. Default:
+ * defaults::PREFILL_ACK_CHANNEL_NAME. */
+std::string prefillAckChannelName();
 
 /** Warmup timeout (ms) while waiting for the first token during runner warmup.
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
@@ -237,6 +275,13 @@ std::string ttResultQueueName();
 /** Cancel queue name from TT_CANCEL_QUEUE. Default: defaults::TT_CANCEL_QUEUE.
  */
 std::string ttCancelQueueName();
+
+/** Spec decode mode from SPEC_DECODE_MODE. Default: defaults::SPEC_DECODE_MODE.
+ */
+std::string specDecodeMode();
+
+/** MTP level from MTP_LEVEL. Default: defaults::MTP_LEVEL. */
+size_t mtpLevel();
 
 /** Media payload task queue name from TT_MEDIA_TASK_QUEUE. */
 std::string ttMediaTaskQueueName();
@@ -309,9 +354,31 @@ std::string dynamoComponent();
  * defaults::DYNAMO_ENDPOINT_NAME. */
 std::string dynamoEndpointName();
 
-/** Build LLMConfig from environment variables and runtime settings. Implemented
- * in src/config/settings.cpp. */
-LLMConfig llmEngineConfig();
+/** Prefill completion latency for MockSchedulers. From
+ * MOCK_PREFILL_CHUNK_LATENCY_MS. Default:
+ * defaults::MOCK_PREFILL_CHUNK_LATENCY_MS. */
+unsigned mockPrefillLatencyMs();
+
+/** Time one token spends in a single pipeline stage, for the
+ * MockDecodeScheduler.
+ * defaults::MOCK_STAGE_LATENCY_US. */
+unsigned mockStageLatencyUs();
+
+/** Transformer pipeline depth modeled by the MockDecodeScheduler.
+ * defaults::MOCK_PIPELINE_STAGES. */
+uint32_t mockPipelineStages();
+
+/** Returns how many tokens are used for prefill before moving to the next
+ * slot. Default: defaults::MOCK_PREFILL_CHUNK_SIZE. */
+uint32_t mockPrefillChunkSize();
+
+/** Fixed decode token id emitted by MockSchedulers. From MOCK_DECODE_TOKEN_ID.
+ * Default: defaults::MOCK_DECODE_TOKEN_ID. */
+uint32_t mockDecodeTokenId();
+
+/** Build BlazeConfig from environment variables and runtime settings.
+ * Implemented in src/config/settings.cpp. */
+BlazeConfig blazeConfig();
 
 /** Build ImageConfig from environment variables and runtime settings. Reads
  * MODEL_RUNNER_TYPE, MAX_BATCH_SIZE, SDXL_IMAGE_RESOLUTION. Implemented in
@@ -324,5 +391,23 @@ RunnerConfig workerRunnerConfig(size_t workerIndex);
 
 /** Model from MODEL. Default: defaults::MODEL. */
 Model model();
+
+// ---------------------------------------------------------------------------
+// Mooncake KV Migration configuration.
+// ---------------------------------------------------------------------------
+/** Max age (ms) of an IN_PROGRESS KV migration before the sweeper marks it
+ * FAILED. From KV_MIGRATION_TIMEOUT_MS. Default:
+ * defaults::KV_MIGRATION_TIMEOUT_MS. */
+unsigned kvMigrationTimeoutMs();
+
+/** How often (ms) the RemoteKVManagerImpl drain thread runs its timeout sweep.
+ * From KV_MIGRATION_SWEEP_INTERVAL_MS. Default:
+ * defaults::KV_MIGRATION_SWEEP_INTERVAL_MS. */
+unsigned kvMigrationSweepIntervalMs();
+
+/** Per-iteration Kafka poll timeout (ms) for the RemoteKVManagerImpl drain
+ * loop. From KV_MIGRATION_DRAIN_POLL_MS. Default:
+ * defaults::KV_MIGRATION_DRAIN_POLL_MS. */
+unsigned kvMigrationDrainPollMs();
 
 }  // namespace tt::config

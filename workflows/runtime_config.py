@@ -57,6 +57,8 @@ class RuntimeConfig:
 
     # Workflow control
     tools: str = "vllm"
+    # AIPerf --goodput SLO string for the default LLM benchmark sweep.
+    goodput: Optional[str] = None
     disable_trace_capture: bool = False
     disable_metal_timeout: bool = False
     concurrency_sweeps: bool = False
@@ -76,8 +78,15 @@ class RuntimeConfig:
     prefix_cache_request_rate: Optional[float] = None
     prefix_cache_scenarios_json: Optional[str] = None
     prefix_cache_trace: Optional[str] = None
+    prefix_cache_goodput: Optional[str] = None
+    prefix_cache_metrics_url: Optional[List[str]] = None
     jwt_secret: Optional[str] = None
     serving_bench_suites: Optional[str] = None
+
+    # Speculative-decoding benchmark
+    spec_decode: bool = False
+    spec_decode_preset: str = "full"
+    spec_decode_warmup_requests: Optional[int] = None
 
     # Device configuration
     device_id: Optional[List[int]] = None
@@ -138,6 +147,7 @@ class RuntimeConfig:
             vllm_override_args=args.vllm_override_args,
             runtime_model_spec_json=args.runtime_model_spec_json,
             tools=args.tools,
+            goodput=getattr(args, "goodput", None),
             disable_trace_capture=args.disable_trace_capture,
             disable_metal_timeout=args.disable_metal_timeout,
             concurrency_sweeps=args.concurrency_sweeps,
@@ -157,8 +167,15 @@ class RuntimeConfig:
                 args, "prefix_cache_scenarios_json", None
             ),
             prefix_cache_trace=getattr(args, "prefix_cache_trace", None),
+            prefix_cache_goodput=getattr(args, "prefix_cache_goodput", None),
+            prefix_cache_metrics_url=getattr(args, "prefix_cache_metrics_url", None),
             jwt_secret=getattr(args, "jwt_secret", None),
             serving_bench_suites=getattr(args, "serving_bench_suites", None),
+            spec_decode=getattr(args, "spec_decode", False),
+            spec_decode_preset=getattr(args, "spec_decode_preset", "full"),
+            spec_decode_warmup_requests=getattr(
+                args, "spec_decode_warmup_requests", None
+            ),
             device_id=args.device_id,
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,

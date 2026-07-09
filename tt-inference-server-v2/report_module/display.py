@@ -22,6 +22,7 @@ DISPLAY_NAMES: Dict[str, str] = {
     "max_concurrency": "Concurrency",
     "concurrency": "Concurrency",
     "num_requests": "Num Requests",
+    "error_request_count": "Errors",
     "num_runs": "Total Runs",
     "num_prompts": "Num Prompts",
     "num_responses": "Num Responses",
@@ -31,6 +32,9 @@ DISPLAY_NAMES: Dict[str, str] = {
     "std_ttft_ms": "TTFT Std (ms)",
     "ttft": "TTFT",
     "ttft_ms": "TTFT (ms)",
+    "ttft_p50": "TTFT P50 (s)",
+    "ttft_p90": "TTFT P90 (s)",
+    "ttft_p95": "TTFT P95 (s)",
     "p5_ttft": "P5 TTFT (ms)",
     "p25_ttft": "P25 TTFT (ms)",
     "p50_ttft": "P50 TTFT (ms)",
@@ -55,6 +59,7 @@ DISPLAY_NAMES: Dict[str, str] = {
     "tput_prefill": "Tput Prefill (TPS)",
     "request_throughput": "Req Tput (RPS)",
     "req_tput": "Req Tput (RPS)",
+    "throughput_rps": "Req Tput (RPS)",
     "total_token_throughput": "Total Token Throughput (tokens/s)",
     "total_input_tokens": "Total Input Tokens",
     "total_output_tokens": "Total Output Tokens",
@@ -99,8 +104,13 @@ DISPLAY_NAMES: Dict[str, str] = {
     "tolerance": "Tolerance",
     "published_score": "Published Score",
     "published_score_ref": "Published Score Ref",
+    "gpu_reference_score": "GPU Reference Score",
     "score": "Score",
+    "ratio_to_published": "Ratio to Published",
+    "ratio_to_reference": "Ratio to Reference",
     "accuracy_check": "Accuracy Check",
+    # Benchmarks report a performance-target verdict, not an accuracy check.
+    "target_check": "Target Check",
     # Liveness / infra
     "status": "Status",
     "expected_devices": "Expected Devices",
@@ -111,6 +121,12 @@ DISPLAY_NAMES: Dict[str, str] = {
     "model_ready": "Model Ready",
     "runner_in_use": "Runner",
     "child_result": "Child Result",
+    # vLLM parameter-conformance tables
+    "test_case": "Test Case",
+    "parametrization": "Parametrization",
+    "summary": "Summary",
+    "message": "Message",
+    "endpoint_url": "Endpoint URL",
     # Common envelope
     "name": "Name",
     "success": "Success",
@@ -120,6 +136,17 @@ DISPLAY_NAMES: Dict[str, str] = {
     "dataset": "Dataset",
     "structured_output_ratio": "SO Ratio",
     "correct_rate_pct": "Correct Rate (%)",
+    # Speculative decoding (aiperf spec-decode sweep)
+    "public_dataset": "Dataset",
+    "output_len": "OSL",
+    "completed": "Completed",
+    "acceptance_rate": "Accept Rate",
+    "mean_accepted_length": "Mean Acc Len",
+    "p95_ttft_ms": "P95 TTFT (ms)",
+    "p95_tpot_ms": "P95 TPOT (ms)",
+    "p95_e2el_ms": "P95 E2EL (ms)",
+    "p99_e2el_ms": "P99 E2EL (ms)",
+    "output_throughput": "Output Token Throughput (tokens/s)",
 }
 
 # Raw key → digits after the decimal point. Missing keys use
@@ -146,6 +173,7 @@ DECIMAL_PLACES: Dict[str, int] = {
     "tps_decode_throughput": 1,
     "tps_prefill_throughput": 1,
     "request_throughput": 3,
+    "throughput_rps": 3,
     "total_token_throughput": 2,
     "requests_duration": 2,
     "average_duration": 2,
@@ -164,6 +192,13 @@ DECIMAL_PLACES: Dict[str, int] = {
     "rtr": 3,
     "wer": 4,
     "audio_duration": 2,
+    "acceptance_rate": 3,
+    "mean_accepted_length": 2,
+    "p95_ttft_ms": 1,
+    "p95_tpot_ms": 1,
+    "p95_e2el_ms": 1,
+    "p99_e2el_ms": 1,
+    "output_throughput": 2,
 }
 
 # Footnote glossary. Looked up by raw key. Only add entries for terms
@@ -180,6 +215,43 @@ EXPLANATIONS: Dict[str, str] = {
     "tps_prefill_throughput": "Throughput for prefill tokens (TPS)",
     "mean_e2el_ms": "End-to-End Latency (ms)",
     "request_throughput": "Request Throughput (RPS)",
+}
+
+# Per-section footnotes, looked up by ``Block.kind`` and appended below
+# the rendered table(s). Carries over the methodology notes that the v1
+# report stack emitted (eval GPU-reference note, benchmark mean-column
+# note). Kinds without an entry render footnote-free.
+_BENCHMARK_MEAN_NOTE = (
+    "Note: Columns without a percentile label (e.g. P50, P95, P99) report "
+    "the mean value across the benchmark run."
+)
+
+_EVALS_FOOTNOTE = (
+    "Note: The ratio to published scores defines if eval ran roughly "
+    "correctly, as the exact methodology of the model publisher cannot "
+    "always be reproduced. For this reason the accuracy check is based "
+    "first on being equivalent to the GPU reference within a +/- "
+    "tolerance. If a value GPU reference is not available, the accuracy "
+    "check is based on the direct ratio to the published score."
+)
+
+_SPEC_DECODE_FOOTNOTE = (
+    f"{_BENCHMARK_MEAN_NOTE}\n\n"
+    "Note: Throughput columns (Output Token Throughput, Total Token "
+    "Throughput) are time-averaged over the full benchmark duration and "
+    "are therefore influenced by prefill performance.\n\n"
+    "Note: Near-constant TPOT across tasks is the expected behaviour; the "
+    "one known exception is that TPOT increases with the concurrency "
+    "factor."
+)
+
+FOOTNOTES: Dict[str, str] = {
+    "evals": _EVALS_FOOTNOTE,
+    "vllm": _BENCHMARK_MEAN_NOTE,
+    "aiperf": _BENCHMARK_MEAN_NOTE,
+    "genai_perf": _BENCHMARK_MEAN_NOTE,
+    "guidellm": _BENCHMARK_MEAN_NOTE,
+    "aiperf_spec_decode": _SPEC_DECODE_FOOTNOTE,
 }
 
 
@@ -216,6 +288,7 @@ __all__ = [
     "DISPLAY_NAMES",
     "DECIMAL_PLACES",
     "EXPLANATIONS",
+    "FOOTNOTES",
     "display_name",
     "decimal_places",
     "target_checks_header",

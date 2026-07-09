@@ -15,7 +15,6 @@ PROMETHEUS_HOST_PORT="${PROMETHEUS_HOST_PORT:-9090}"
 GRAFANA_HOST_PORT="${GRAFANA_HOST_PORT:-3000}"
 MODEL_NAME="tt-cpp-server"
 LLM_DEVICE_BACKEND="${LLM_DEVICE_BACKEND:-pipeline_manager}"
-WORKER_TOKENIZER_DIR="/home/container_app_user/app/server/cpp_server/tokenizers"
 MONITORING_COMPOSE="${REPO_ROOT}/tt-media-server/monitoring/docker-compose.yml"
 MONITORING_PROJECT_NAME="dynamo-monitoring"
 MONITORING_PROMETHEUS_NAME="dynamo-prometheus"
@@ -164,7 +163,7 @@ if [[ -n "$LOCAL_BUILD" ]]; then
     CPP_SERVER_DIR_ABS="$(readlink -f "$CPP_SERVER_DIR" 2>/dev/null || true)"
     [[ -d "$CPP_SERVER_DIR_ABS" ]] || die "cpp_server directory not found: $CPP_SERVER_DIR"
     [[ -f "$CPP_SERVER_DIR_ABS/build/tt_media_server_cpp" ]] \
-        || die "no binary at $CPP_SERVER_DIR_ABS/build/tt_media_server_cpp — run ./build.sh first"
+        || die "no binary at $CPP_SERVER_DIR_ABS/build/tt_media_server_cpp — run ./build.sh --blaze first"
     log "using local build from $CPP_SERVER_DIR_ABS"
     LOCAL_BUILD_MOUNT+=(-v "${CPP_SERVER_DIR_ABS}/build:/home/container_app_user/app/server/cpp_server/build:ro")
     WORKER_ENTRYPOINT+=(--entrypoint /bin/bash)
@@ -325,6 +324,8 @@ docker run -d --name "$WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
     "${WORKER_GATEWAY_ENV[@]}" \
     "${WORKER_MODEL_ENV[@]}" \
     -e MAX_SESSIONS_COUNT=128 -e TT_LOG_LEVEL=debug -e USE_FAST_MODE=1 \
+    -e MIN_TOKENS_TO_COPY="${MIN_TOKENS_TO_COPY:-1024}" \
+    -e MOCK_PREFILL_SLEEP_MS="${MOCK_PREFILL_SLEEP_MS:-0}" \
     -e DYN_TX_TRACE="${DYN_TX_TRACE:-}" \
     "$WORKER_IMAGE" \
     ${LOCAL_BUILD:+-c 'cd cpp_server && LIB="$(pwd)/tt-llm-engine/build-full/libtt_llm_engine.so.0"; [ -f "$LIB" ] && export LD_PRELOAD="$LIB"; ./build/tt_media_server_cpp'} \
@@ -343,16 +344,14 @@ log "worker registered:"
 docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only v1/ | grep -v '^$' | sed 's/^/[deploy]   /'
 
 # ── frontend ────────────────────────────────────────────────────────────────
-# The frontend image bakes the tokenizer tree at WORKER_TOKENIZER_DIR (same
-# fetch_tokenizers.sh the worker uses), so MODEL_PATH just points the entrypoint
-# at the baked dir — no tokenizer extraction or bind-mount needed.
+# The frontend image bakes the tokenizer tree at the path each worker advertises
+# in its MDC, so the run is model-agnostic: it resolves every discovered model's
+# tokenizer locally and serves whatever workers register in etcd.
 log "starting frontend ($FRONTEND_IMAGE)"
 docker run -d --name "$FRONTEND_NAME" --network "$NETWORK_NAME" -p "${FRONTEND_HOST_PORT}:8000" \
-    -e MODEL_PATH="${WORKER_TOKENIZER_DIR}/${HF_MODEL_ID}" \
     -e DYN_DISCOVERY_BACKEND=etcd \
     -e ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
     -e MODEL_NAME="$MODEL_NAME" \
-    -e HF_MODEL_ID="$HF_MODEL_ID" \
     -e HF_TOKEN="${HF_TOKEN:-}" \
     -e DYN_CHAT_PROCESSOR="${DYN_CHAT_PROCESSOR:-dynamo}" \
     -e DYN_RUNTIME_NUM_WORKER_THREADS="${DYN_RUNTIME_NUM_WORKER_THREADS:-}" \

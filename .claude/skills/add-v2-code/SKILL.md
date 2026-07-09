@@ -65,8 +65,9 @@ Details in the v2 README; the registries to touch are:
   optionally `ReleaseWorkflow.children` and `MediaTaskType` dispatch in `run_media_task`.
 - **Media runners** (evals/benchmarks per model type): `EVAL_DISPATCH` /
   `BENCHMARK_DISPATCH` in `tt-inference-server-v2/test_module/dispatch.py`, keyed by
-  `model_spec.model_type.name` (e.g. `"IMAGE"`, `"AUDIO"`). Export the runner through
-  `test_module/benchmark_tests/__init__.py` (or `eval_tests/`).
+  `model_spec.model_type.name` (e.g. `"IMAGE"`, `"AUDIO"`). The value is the runner's
+  function *name* (string); `_resolve_runner` imports it lazily. Export the runner
+  through `test_module/benchmark_tests/__init__.py` (or `eval_tests/`) so it resolves.
 - **Spec tests**: data-driven via `test_module/test_suites/<category>.json`; guides in
   `test_module/test_categorization_system/TEST_SUITE_CONFIG_GUIDE.md` and
   `TEST_MARKING_SYSTEM.md`.

@@ -58,7 +58,7 @@ void LLMService::init(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
   this->maxQueueSize = maxQueueSize;
 
   const auto& stopIds = tt::utils::tokenizers::staticInfo().stopTokenIds;
-  stopTokenSet = std::unordered_set<int64_t>(stopIds.begin(), stopIds.end());
+  stopTokenSet = std::unordered_set<uint32_t>(stopIds.begin(), stopIds.end());
 
   TT_LOG_INFO("[LLMService] Initialized (workers={})",
               this->workerManager->numWorkers());
@@ -146,14 +146,14 @@ std::string decodeToken(
     decoder = tt::utils::tokenizers::activeTokenizer().createStreamDecoder(
         skipSpecial);
   }
-  std::string delta = decoder->step(static_cast<int>(tokenId));
+  std::string delta = decoder->step(tokenId);
   if (isFinal) delta += decoder->flush();
   return delta;
 }
 
 LLMStreamChunk buildStreamChunk(
     const ipc::SharedToken& token, const std::string& delta,
-    const std::unordered_set<int64_t>& stopTokenSet) {
+    const std::unordered_set<uint32_t>& stopTokenSet) {
   LLMStreamChunk response{token.task_id};
   response.id = std::to_string(token.task_id);
   response.created = std::chrono::duration_cast<std::chrono::seconds>(
@@ -164,11 +164,11 @@ LLMStreamChunk buildStreamChunk(
   choice.index = token.token_index;
   choice.text = delta;
 
-  choice.token_id = static_cast<int64_t>(token.token_id);
+  choice.token_id = static_cast<uint32_t>(token.token_id);
   choice.spec_accepts = token.spec_accepts;
   choice.spec_rejects = token.spec_rejects;
   if (token.isFinal()) {
-    bool isStop = stopTokenSet.count(static_cast<int64_t>(token.token_id)) > 0;
+    bool isStop = stopTokenSet.count(static_cast<uint32_t>(token.token_id)) > 0;
     choice.finish_reason = isStop ? "stop" : "length";
   }
   response.choices.push_back(std::move(choice));
@@ -355,21 +355,26 @@ void LLMService::produceStream(
                             request.skip_text_decode};
   streamCallbacks.insert(taskId, std::move(entry));
 
-  auto prompt = std::get<std::vector<int>>(request.prompt);
-  std::vector<int64_t> tokenIds(prompt.begin(), prompt.end());
+  auto prompt = std::get<std::vector<uint32_t>>(request.prompt);
+  std::vector<uint32_t> tokenIds(prompt.begin(), prompt.end());
 
   tt::metrics::ServerMetrics::instance().onRequestSubmitted(
       taskId, static_cast<int>(tokenIds.size()));
 
+  bool startsInThinking = false;
+  if (!tokenIds.empty() &&
+      tokenIds.back() == tt::utils::tokenizers::thinkTokenIds().first) {
+    startsInThinking = true;
+  }
+
   auto sequence = std::make_unique<tt::domain::llm::Sequence>(
-      taskId,
-      static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
-      std::move(tokenIds), prompt.size(), request.slotId, request.prefillSlotId,
-      request.continuation, request.disaggregated,
+      taskId, std::move(tokenIds), prompt.size(), request.slotId,
+      request.prefillSlotId, request.continuation, request.disaggregated,
       std::make_unique<tt::domain::llm::SamplingParams>(
           tt::utils::mapper::mapSamplingParams(request)),
       request.kv_position_id, request.decode_position_id,
-      request.decode_skip_tokens, request.migrationId);
+      request.decode_skip_tokens, request.migrationId, startsInThinking,
+      request.migrationStartPosition);
   taskQueue->push(*std::move(sequence));
 }
 

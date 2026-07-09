@@ -42,8 +42,6 @@ def format_backend_value(backend: str) -> str:
     """Format backend value for display in summary table."""
     if backend == "vllm":
         return "vLLM"
-    elif backend == "genai-perf":
-        return "genai"
     else:
         return backend if backend else NOT_MEASURED_STR
 
@@ -106,158 +104,11 @@ def _get_task_type(model_id: str) -> str | None:
 
 
 def extract_params_from_filename(filename: str) -> Dict[str, Any]:
-    # Try AIPerf image benchmark pattern first (most specific)
-    aiperf_image_pattern = r"""
-        ^aiperf_benchmark_
-        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy|gpu|GPU))?  # Optional device
-        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
-        _isl-(?P<isl>\d+)
-        _osl-(?P<osl>\d+)
-        _maxcon-(?P<maxcon>\d+)
-        _n-(?P<n>\d+)
-        _images-(?P<images_per_prompt>\d+)
-        _height-(?P<image_height>\d+)
-        _width-(?P<image_width>\d+)
-        \.json$
-    """
-
-    # Try AIPerf image pattern first
-    match = re.search(aiperf_image_pattern, filename, re.VERBOSE)
-    if match:
-        # Determine if this is VLM or image generation based on model name
-        model_name = match.group("model")
-        # Image generation models (SDXL, SD) vs VLM models (Qwen-VL, Llama-Vision, gemma-3)
-        is_image_generation = any(
-            img_gen in model_name.lower()
-            for img_gen in ["stable-diffusion", "sdxl", "sd-", "sd3"]
-        )
-        task_type = "image" if is_image_generation else "vlm"
-
-        return {
-            "model_name": model_name,
-            "timestamp": match.group("timestamp"),
-            "device": match.group("device"),
-            "input_sequence_length": int(match.group("isl")),
-            "output_sequence_length": int(match.group("osl")),
-            "max_con": int(match.group("maxcon")),
-            "num_requests": int(match.group("n")),
-            "images_per_prompt": int(match.group("images_per_prompt")),
-            "image_height": int(match.group("image_height")),
-            "image_width": int(match.group("image_width")),
-            "task_type": task_type,
-            "backend": "aiperf",
-        }
-
-    # Try AIPerf text benchmark pattern
-    aiperf_text_pattern = r"""
-        ^aiperf_benchmark_
-        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy|gpu|GPU))?  # Optional device
-        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
-        _isl-(?P<isl>\d+)
-        _osl-(?P<osl>\d+)
-        _maxcon-(?P<maxcon>\d+)
-        _n-(?P<n>\d+)
-        \.json$
-    """
-
-    # Try aiperf text pattern
-    match = re.search(aiperf_text_pattern, filename, re.VERBOSE)
-    if match:
-        return {
-            "model_name": match.group("model"),
-            "timestamp": match.group("timestamp"),
-            "device": match.group("device"),
-            "input_sequence_length": int(match.group("isl")),
-            "output_sequence_length": int(match.group("osl")),
-            "max_con": int(match.group("maxcon")),
-            "num_requests": int(match.group("n")),
-            "task_type": "text",
-            "backend": "aiperf",
-        }
-
-    # GuideLLM image benchmark pattern (kept symmetric with AIPerf so omni-modal
-    # image runs are categorized as VLM in the reports). The optional
-    # `_sweep-<idx>` suffix appears when GuideLLM ran a sweep profile (one
-    # source benchmarks.json -> multiple normalized files, one per strategy).
-    guidellm_image_pattern = r"""
-        ^guidellm_benchmark_
-        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
-        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
-        _isl-(?P<isl>\d+)
-        _osl-(?P<osl>\d+)
-        _maxcon-(?P<maxcon>\d+)
-        _n-(?P<n>\d+)
-        _images-(?P<images_per_prompt>\d+)
-        _height-(?P<image_height>\d+)
-        _width-(?P<image_width>\d+)
-        (?:_sweep-(?P<sweep_index>\d+))?           # Optional GuideLLM sweep index
-        \.json$
-    """
-    match = re.search(guidellm_image_pattern, filename, re.VERBOSE)
-    if match:
-        model_name = match.group("model")
-        is_image_generation = any(
-            img_gen in model_name.lower()
-            for img_gen in ["stable-diffusion", "sdxl", "sd-", "sd3"]
-        )
-        task_type = "image" if is_image_generation else "vlm"
-        sweep_idx = match.group("sweep_index")
-        return {
-            "model_name": model_name,
-            "timestamp": match.group("timestamp"),
-            "device": match.group("device"),
-            "input_sequence_length": int(match.group("isl")),
-            "output_sequence_length": int(match.group("osl")),
-            "max_con": int(match.group("maxcon")),
-            "num_requests": int(match.group("n")),
-            "images_per_prompt": int(match.group("images_per_prompt")),
-            "image_height": int(match.group("image_height")),
-            "image_width": int(match.group("image_width")),
-            "sweep_index": int(sweep_idx) if sweep_idx is not None else None,
-            "task_type": task_type,
-            "backend": "guidellm",
-        }
-
-    # GuideLLM text benchmark pattern (multi_turn_chat / custom_dataset /
-    # omni_modal_text scenarios all flatten to the same vLLM-compatible
-    # filename produced by run_guidellm_benchmarks.emit_normalized_guidellm_result).
-    # The optional `_sweep-<idx>` suffix is present only for sweep profiles.
-    guidellm_text_pattern = r"""
-        ^guidellm_benchmark_
-        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
-        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
-        _isl-(?P<isl>\d+)
-        _osl-(?P<osl>\d+)
-        _maxcon-(?P<maxcon>\d+)
-        _n-(?P<n>\d+)
-        (?:_sweep-(?P<sweep_index>\d+))?           # Optional GuideLLM sweep index
-        \.json$
-    """
-    match = re.search(guidellm_text_pattern, filename, re.VERBOSE)
-    if match:
-        sweep_idx = match.group("sweep_index")
-        return {
-            "model_name": match.group("model"),
-            "timestamp": match.group("timestamp"),
-            "device": match.group("device"),
-            "input_sequence_length": int(match.group("isl")),
-            "output_sequence_length": int(match.group("osl")),
-            "max_con": int(match.group("maxcon")),
-            "num_requests": int(match.group("n")),
-            "sweep_index": int(sweep_idx) if sweep_idx is not None else None,
-            "task_type": "text",
-            "backend": "guidellm",
-        }
-
     # Try the image benchmark pattern
     image_pattern = r"""
-        ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
+        ^benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy|gpu|GPU))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy|gpu|GPU|super_cluster|SUPER_CLUSTER|Super-Cluster))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -305,7 +156,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     structured_pattern = r"""
         ^benchmark_structured_
         (?P<model>.+?)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy|gpu|GPU))?
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy|gpu|GPU|super_cluster|SUPER_CLUSTER|Super-Cluster))?
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _dataset-(?P<dataset>.+?)
         _(?P<so_tag>no-so|so-[\d.]+)
@@ -335,9 +186,9 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
 
     # Fall back to text benchmark pattern
     text_pattern = r"""
-        ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
+        ^benchmark_
         (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy|gpu|GPU))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy|gpu|GPU|super_cluster|SUPER_CLUSTER|Super-Cluster))?  # Optional device
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _isl-(?P<isl>\d+)
         _osl-(?P<osl>\d+)
@@ -367,7 +218,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     cnn_pattern = r"""
         ^benchmark_
         (?P<model_id>id_.+?)                      # Model ID (starts with id_)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy|gpu|GPU))?  # Optional device
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy|gpu|GPU|super_cluster|SUPER_CLUSTER|Super-Cluster))?  # Optional device
         _(?P<timestamp>\d+\.?\d*)                 # Timestamp (can be float)
         \.json$
     """
@@ -427,70 +278,6 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
 
     filename = os.path.basename(filepath)
     params = extract_params_from_filename(filename)
-
-    # Handle aiperf and guidellm benchmark files. GuideLLM results are
-    # normalized into the same flat vLLM-compatible schema as AIPerf by
-    # benchmarking/run_guidellm_benchmarks.py::adapt_guidellm_to_vllm_metrics,
-    # so they share the processing branch and only differ in the `backend`
-    # tag carried through to the report.
-    backend_tag = params.get("backend")
-    if backend_tag in ("aiperf", "guidellm"):
-        logger.info(
-            f"Processing {backend_tag} benchmark file (vLLM-compatible schema): {filepath}"
-        )
-        mean_tpot_ms = data.get("mean_tpot_ms", 0)
-        if mean_tpot_ms and mean_tpot_ms > 0:
-            mean_tps = 1000.0 / mean_tpot_ms
-            std_tps = None
-            if data.get("std_tpot_ms"):
-                std_tps = mean_tps - (1000.0 / (mean_tpot_ms + data.get("std_tpot_ms")))
-        else:
-            mean_tps = None
-            std_tps = None
-
-        actual_max_con = min(params["max_con"], params["num_requests"])
-        tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
-        tps_prefill_throughput = None
-        if data.get("mean_ttft_ms") and data.get("mean_ttft_ms") > 0:
-            tps_prefill_throughput = (
-                params["input_sequence_length"] * actual_max_con
-            ) / (data.get("mean_ttft_ms") / 1000)
-
-        metrics = {
-            "timestamp": params["timestamp"],
-            "model_name": params["model_name"],
-            "model_id": data.get("model_id", ""),
-            "backend": backend_tag,
-            "device": params.get("device", ""),
-            "input_sequence_length": params["input_sequence_length"],
-            "output_sequence_length": params["output_sequence_length"],
-            "max_con": actual_max_con,
-            "mean_ttft_ms": data.get("mean_ttft_ms"),
-            "std_ttft_ms": data.get("std_ttft_ms"),
-            "mean_tpot_ms": mean_tpot_ms,
-            "std_tpot_ms": data.get("std_tpot_ms"),
-            "mean_tps": mean_tps,
-            "std_tps": std_tps,
-            "tps_decode_throughput": tps_decode_throughput,
-            "tps_prefill_throughput": tps_prefill_throughput,
-            "mean_e2el_ms": data.get("mean_e2el_ms"),
-            "request_throughput": data.get("request_throughput"),
-            "total_token_throughput": data.get("total_token_throughput"),
-            "total_input_tokens": data.get("total_input_tokens"),
-            "total_output_tokens": data.get("total_output_tokens"),
-            "num_prompts": data.get("num_prompts", ""),
-            "num_requests": params["num_requests"],
-            "filename": filename,
-            "task_type": params["task_type"],
-        }
-
-        # Add image-specific fields if this is an image or VLM benchmark
-        if params["task_type"] in ("image", "vlm"):
-            metrics["images_per_prompt"] = params.get("images_per_prompt", 1)
-            metrics["image_height"] = params.get("image_height", 0)
-            metrics["image_width"] = params.get("image_width", 0)
-
-        return format_metrics(metrics)
 
     # Check if this is a CNN/SDXL-style benchmark (old format with benchmarks_data structure)
     # These have task_type "cnn" or "image" but use a different JSON format
@@ -693,7 +480,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         "model_name": params["model_name"],
         "model_id": data.get("model_id", ""),
         "backend": data.get("backend", ""),
-        "device": params.get("device", ""),
+        "device": params.get("device") or "",
         "input_sequence_length": params["input_sequence_length"],
         "output_sequence_length": params["output_sequence_length"],
         "max_con": actual_max_con,
@@ -1271,7 +1058,7 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     assert len(files) > 0, "No benchmark files found."
     results = process_benchmark_files(files, pattern="benchmark_*.json")
 
-    # Sort results by config then source (vllm, aiperf, genai-perf) for consistent ordering
+    # Sort results by config then source for consistent ordering
     def get_sort_key(result):
         """Generate sort key: (isl, osl, concurrency, images, height, width, source_priority)"""
         isl = result.get("input_sequence_length", 0)
@@ -1279,13 +1066,11 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         concurrency = result.get("max_con", 1)
         backend = result.get("backend", "")
 
-        # Define source priority: vllm=0, aiperf=1, genai-perf=2
+        # Define source priority: vllm=0
         # Note: "openai-chat" is vLLM's backend label for image/VLM benchmarks
         source_priority = {
             "vllm": 0,
             "openai-chat": 0,
-            "aiperf": 1,
-            "genai-perf": 2,
         }.get(backend, 3)
 
         # For image benchmarks, also include image dimensions
@@ -1305,7 +1090,18 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     model_name = metadata["model_name"]
     device = results[0].get("device")
     if "device" in metadata:
-        assert metadata["device"] == device, "Device mismatch in metadata"
+        ## this change is for v2 LLM benchmarks which don't have a device in the filename
+        ## so we need to use the device from the metadata
+        meta_device = metadata["device"]
+        for row in results:
+            row_device = row.get("device")
+            if row_device in (None, "", NOT_MEASURED_STR):
+                row["device"] = meta_device
+            else:
+                assert meta_device.lower() == str(row_device).lower(), (
+                    f"Device mismatch in metadata: {meta_device!r} vs {row_device!r}"
+                )
+        device = meta_device
 
     # save stats
     data_file_path = output_dir / "data" / f"benchmark_stats_{report_id}.csv"

@@ -3,9 +3,12 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+
+#include "messaging/i_kafka_consumer.hpp"
 
 namespace tt::messaging {
 
@@ -13,12 +16,19 @@ struct KafkaConsumerConfig {
   std::string brokers;
   std::string topic;
   std::string group_id;
+  // When set, the consumer uses rd_kafka_assign() to pin itself to this
+  // partition instead of joining the group's rebalance. This guarantees
+  // "worker k always reads partition k" semantics but disables automatic
+  // failover and group-managed offset commits. auto.offset.reset=latest
+  // still applies, so requests in flight during a restart are lost --
+  // callers must reconcile via a higher-level timeout/sweeper.
+  std::optional<int32_t> partition;
 };
 
-class KafkaConsumer {
+class KafkaConsumer : public IKafkaConsumer {
  public:
   explicit KafkaConsumer(KafkaConsumerConfig config);
-  ~KafkaConsumer();
+  ~KafkaConsumer() override;
 
   KafkaConsumer(const KafkaConsumer&) = delete;
   KafkaConsumer& operator=(const KafkaConsumer&) = delete;
@@ -41,7 +51,7 @@ class KafkaConsumer {
    * @note This method must be called regularly (at least every few seconds) to
    *       maintain the consumer's liveness in the consumer group.
    */
-  std::optional<std::string> receive(int timeoutMs);
+  std::optional<std::string> receive(int timeoutMs) override;
 
  private:
   struct Impl;

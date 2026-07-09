@@ -39,7 +39,13 @@ def build_sampling_params(
     # We check falsey here because that is what we used to do, if user passes 0, he will get 65536(default) tokens back
     max_tokens = request.max_tokens if request.max_tokens else defaults["max_tokens"]
     n = request.n if request.n is not None else defaults["n"]
-    seed = request.seed if request.seed is not None else defaults["seed"]
+    # Force seed=None: the Forge device sampler ignores per-request seeds
+    # (tt-xla#4539), but a non-None seed still forces the ~5x-slower seeded path
+    # (per-step CPU noise draw + H2D copy). lm-eval always sends seed=1234, so drop
+    # it. Scoped to Forge LLMs: every caller of this builder is a Forge runner
+    # (VLLMForgeRunner + the TP Llama-70B/Qwen-32B/Gemma runners); the metal runner
+    # has its own builder and still honors seed. See #4338.
+    seed = None
     logprobs = (
         request.logprobs if request.logprobs is not None else defaults["logprobs"]
     )

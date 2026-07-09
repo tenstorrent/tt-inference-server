@@ -16,8 +16,8 @@ namespace {
 //   IN_FLIGHT -> IDLE       (clearInFlight)
 // ---------------------------------------------------------------------------
 
-// Test seam: the state transitions are protected (owned by SessionManager in
-// production). A subclass re-exposes them so the state machine can be unit
+// Test interface: the state transitions are protected (owned by SessionManager
+// in production). A subclass re-exposes them so the state machine can be unit
 // tested directly, without coupling the domain header to gtest test names.
 struct TestableSession : tt::domain::Session {
   using tt::domain::Session::clearInFlight;

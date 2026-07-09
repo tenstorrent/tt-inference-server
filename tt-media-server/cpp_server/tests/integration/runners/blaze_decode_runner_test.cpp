@@ -6,29 +6,86 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "../integration_test_helpers.hpp"
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
+#include "tt_llm_engine/pipeline/pipeline_types.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::runners::blaze {
-
 namespace {
 
+class EnvSetter {
+ public:
+  EnvSetter(const std::string& key, const std::string& value) : key(key) {
+    if (const char* old = std::getenv(key.c_str())) {
+      oldValue = old;
+    }
+    setenv(key.c_str(), value.c_str(), 1);
+  }
+  ~EnvSetter() {
+    if (oldValue.has_value()) {
+      setenv(key.c_str(), oldValue.value().c_str(), 1);
+    } else {
+      unsetenv(key.c_str());
+    }
+  }
+
+ private:
+  std::string key;
+  std::optional<std::string> oldValue;
+};
+
 constexpr uint64_t MOCK_PIPELINE_TOKEN_ID = 12345u;
-const std::vector<int64_t> DEFAULT_STOP_TOKEN_IDS = {987654321};
+
+// Length of the mock pipeline's reasoning preamble: think-open, three decode
+// tokens, think-close. Mirrors PipelineSimulator::kThinkPreambleLen.
+constexpr size_t THINK_PREAMBLE_LEN = 5;
+
+// When the active model defines think tokens, the mock PipelineSimulator emits
+// a reasoning preamble ahead of the fixed decode token. The runner casts the
+// think ids to uint32_t, so a model without think tokens collapses to
+// EMPTY_TOKEN and the preamble is disabled.
+inline bool mockPreambleEnabled() {
+  const auto think = tt::utils::tokenizers::thinkTokenIds();
+  return static_cast<uint32_t>(think.first) !=
+             tt_llm_engine::pipeline::EMPTY_TOKEN &&
+         static_cast<uint32_t>(think.second) !=
+             tt_llm_engine::pipeline::EMPTY_TOKEN;
+}
+
+// Token the mock pipeline publishes at position `index` of a fresh generation.
+// With the preamble the stream is [think-open, decode, decode, decode,
+// think-close, decode, ...]; otherwise it is a flat stream of the decode token.
+inline uint64_t expectedMockToken(size_t index) {
+  if (!mockPreambleEnabled()) {
+    return MOCK_PIPELINE_TOKEN_ID;
+  }
+  const auto think = tt::utils::tokenizers::thinkTokenIds();
+  const uint64_t thinkOpen = static_cast<uint32_t>(think.first);
+  const uint64_t thinkClose = static_cast<uint32_t>(think.second);
+  // The reasoning block the mock simulator emits, in order, before settling
+  // into a flat stream of the decode token.
+  const std::array<uint64_t, THINK_PREAMBLE_LEN> preamble = {
+      thinkOpen, MOCK_PIPELINE_TOKEN_ID, MOCK_PIPELINE_TOKEN_ID,
+      MOCK_PIPELINE_TOKEN_ID, thinkClose};
+  return index < preamble.size() ? preamble[index] : MOCK_PIPELINE_TOKEN_ID;
+}
 
 // Specialized harness for decode runner that uses setKVCacheSlot (default).
 class BlazeDecodeRunnerHarness
     : public test::RunnerTestHarness<BlazeDecodeRunner> {
  public:
-  explicit BlazeDecodeRunnerHarness(
-      std::vector<int64_t> stopTokenIds = DEFAULT_STOP_TOKEN_IDS)
+  explicit BlazeDecodeRunnerHarness(config::ModelRunnerType runnerType =
+                                        config::ModelRunnerType::MOCK_PIPELINE)
       : test::RunnerTestHarness<BlazeDecodeRunner>(
-            test::makeLLMConfig(128, 8, 0, std::move(stopTokenIds))) {}
+            test::makeBlazeConfig(runnerType)) {}
 };
 
 }  // namespace
@@ -57,11 +114,15 @@ TEST(BlazeDecodeRunnerIntegrationTest,
   EXPECT_TRUE(producedTokens.back().isFinal())
       << "Expected BlazeDecodeRunner to emit a final token";
 
-  for (const auto& token : producedTokens) {
-    EXPECT_EQ(token.task_id, taskId);
+  for (size_t i = 0; i < producedTokens.size(); ++i) {
+    EXPECT_EQ(producedTokens[i].task_id, taskId);
 
-    // Mock simulator is configured to emit token 12345 for all tasks.
-    EXPECT_EQ(token.token_id, MOCK_PIPELINE_TOKEN_ID);
+    // When think tokens are configured, the mock simulator opens generation
+    // with a reasoning block (think-open, decode tokens, think-close) before
+    // settling into a flat stream of the decode token. expectedMockToken()
+    // returns the token expected at each position of that stream.
+    EXPECT_EQ(producedTokens[i].token_id, expectedMockToken(i))
+        << "Unexpected token at index " << i;
   }
 }
 
@@ -130,7 +191,7 @@ TEST(BlazeDecodeRunnerIntegrationTest, CancelFlowEmitsAbortToken) {
 
 TEST(BlazeDecodeRunnerIntegrationTest, StopsOnConfiguredStopToken) {
   // Mock simulator emits token_id=12345; this forces stop-token completion.
-  BlazeDecodeRunnerHarness harness({MOCK_PIPELINE_TOKEN_ID});
+  BlazeDecodeRunnerHarness harness;
 
   const uint32_t taskId = 6262;
   const auto allocateResponse = harness.allocate(taskId);
@@ -151,11 +212,21 @@ TEST(BlazeDecodeRunnerIntegrationTest, StopsOnConfiguredStopToken) {
       << "Expected at least one token for stop-token test";
   ASSERT_TRUE(producedTokens.back().isFinal())
       << "Expected stop token to end generation";
-  EXPECT_EQ(producedTokens.size(), 1u)
-      << "Stop token should finalize immediately in mock pipeline";
-  EXPECT_EQ(producedTokens.front().task_id, taskId);
-  EXPECT_EQ(producedTokens.front().token_id, MOCK_PIPELINE_TOKEN_ID);
-  EXPECT_FALSE(producedTokens.front().isAbort());
+  // The configured stop token is the decode token, so generation halts the
+  // first time the decode token is emitted. With the reasoning preamble that is
+  // one step in (after the think-open token); otherwise it is the first token.
+  const std::vector<uint64_t> expected =
+      mockPreambleEnabled()
+          ? std::vector<uint64_t>{expectedMockToken(0), MOCK_PIPELINE_TOKEN_ID}
+          : std::vector<uint64_t>{MOCK_PIPELINE_TOKEN_ID};
+
+  ASSERT_EQ(producedTokens.size(), expected.size());
+  for (size_t i = 0; i < producedTokens.size(); ++i) {
+    EXPECT_EQ(producedTokens[i].task_id, taskId);
+    EXPECT_EQ(producedTokens[i].token_id, expected[i])
+        << "Unexpected token at index " << i;
+    EXPECT_FALSE(producedTokens[i].isAbort());
+  }
 }
 
 TEST(BlazeDecodeRunnerIntegrationTest, TwoConcurrentTasksStayIsolated) {
@@ -222,13 +293,15 @@ TEST(BlazeDecodeRunnerIntegrationTest, TwoConcurrentTasksStayIsolated) {
   EXPECT_TRUE(tokensA.back().isFinal());
   EXPECT_TRUE(tokensB.back().isFinal());
 
-  for (const auto& token : tokensA) {
-    EXPECT_EQ(token.task_id, taskA);
-    EXPECT_EQ(token.token_id, MOCK_PIPELINE_TOKEN_ID);
+  for (size_t i = 0; i < tokensA.size(); ++i) {
+    EXPECT_EQ(tokensA[i].task_id, taskA);
+    EXPECT_EQ(tokensA[i].token_id, expectedMockToken(i))
+        << "Unexpected taskA token at index " << i;
   }
-  for (const auto& token : tokensB) {
-    EXPECT_EQ(token.task_id, taskB);
-    EXPECT_EQ(token.token_id, MOCK_PIPELINE_TOKEN_ID);
+  for (size_t i = 0; i < tokensB.size(); ++i) {
+    EXPECT_EQ(tokensB[i].task_id, taskB);
+    EXPECT_EQ(tokensB[i].token_id, expectedMockToken(i))
+        << "Unexpected taskB token at index " << i;
   }
 }
 
@@ -270,7 +343,7 @@ TEST(BlazeDecodeRunnerIntegrationTest,
   for (size_t i = 0; i < userCount; ++i) {
     harness.submitSequence(
         taskIds[i], slotIds[i],
-        {static_cast<int64_t>(100 + i), static_cast<int64_t>(200 + i)},
+        {static_cast<uint32_t>(100 + i), static_cast<uint32_t>(200 + i)},
         samplingParams);
   }
 
@@ -295,8 +368,10 @@ TEST(BlazeDecodeRunnerIntegrationTest,
     const size_t userIndex = token.task_id - kFirstTaskId;
     EXPECT_FALSE(sawFinal[userIndex])
         << "Received token after final for task_id=" << token.task_id;
+    EXPECT_EQ(token.token_id, expectedMockToken(tokenCounts[userIndex]))
+        << "Unexpected token for task_id=" << token.task_id << " at index "
+        << tokenCounts[userIndex];
     tokenCounts[userIndex]++;
-    EXPECT_EQ(token.token_id, MOCK_PIPELINE_TOKEN_ID);
     EXPECT_FALSE(token.isAbort());
 
     if (token.isFinal()) {
@@ -314,6 +389,33 @@ TEST(BlazeDecodeRunnerIntegrationTest,
     EXPECT_EQ(tokenCounts[i], static_cast<size_t>(kMaxTokensPerUser))
         << "Unexpected token count for task_id=" << taskIds[i];
   }
+}
+
+TEST(BlazeDecodeRunnerIntegrationTest, MockSchedulerFlatTokenStream) {
+  // Zero the per-stage latency: with MOCK_SCHEDULER this drives the derived
+  // per-slot decode cadence, so tokens are emitted with no artificial delay.
+  EnvSetter mockStageLatencyUs("MOCK_STAGE_LATENCY_US", "0");
+
+  BlazeDecodeRunnerHarness harness(config::ModelRunnerType::MOCK_SCHEDULER);
+
+  const uint32_t taskId = 5150;
+  const auto allocateResponse = harness.allocate(taskId);
+  ASSERT_EQ(allocateResponse.status, domain::ManageMemoryStatus::SUCCESS);
+
+  domain::llm::SamplingParams samplingParams;
+  samplingParams.max_tokens = 3;
+  samplingParams.ignore_eos = true;
+
+  harness.submitSequence(taskId, allocateResponse.slotId, {11, 22, 33},
+                         samplingParams);
+  const auto producedTokens = harness.collectTaskTokensUntilFinal(taskId);
+  harness.assertRunnerHealthy();
+
+  ASSERT_EQ(producedTokens.size(), 3u);
+  for (const auto& token : producedTokens) {
+    EXPECT_EQ(token.token_id, MOCK_PIPELINE_TOKEN_ID);
+  }
+  EXPECT_TRUE(producedTokens.back().isFinal());
 }
 
 }  // namespace tt::runners::blaze

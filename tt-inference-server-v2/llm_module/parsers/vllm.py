@@ -7,107 +7,72 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any, Dict, List, Mapping, Tuple
+from typing import Any, Dict, Mapping, Optional
 
 from report_module.schema import Block
 
 from .base import LLMResultParser
-
-LATENCY_METRICS: Tuple[str, ...] = ("ttft", "tpot", "itl", "e2el")
-LATENCY_STATS: Tuple[str, ...] = (
-    "mean",
-    "median",
-    "std",
-    "p1",
-    "p5",
-    "p10",
-    "p25",
-    "p50",
-    "p75",
-    "p90",
-    "p95",
-    "p99",
-)
+from .base import round_metric as _round
 
 
 class VLLMBenchParser(LLMResultParser):
     kind = "vllm"
 
     def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
+        completed = _num(raw.get("completed"))
         record: Dict[str, Any] = {
             "kind": self.kind,
             "model": str(raw.get("model_id", "") or ""),
             "device": device,
             "timestamp": _format_date(raw.get("date", "")),
-            "Run Configuration": _run_configuration(raw),
-            "Latency Statistics (ms)": _latency_stats(raw),
-            "Throughput": _throughput(raw),
-            "Request Totals": _request_totals(raw),
+            "concurrency": _num_int(raw.get("max_concurrency")),
+            "num_requests": _num_int(raw.get("completed")),
+            "input_sequence_length": _per_request_int(
+                raw.get("total_input_tokens"), completed
+            ),
+            "output_sequence_length": _per_request(
+                raw.get("total_output_tokens"), completed
+            ),
+            "mean_ttft_ms": _round(raw.get("mean_ttft_ms"), 4),
+            "p50_ttft": _round(raw.get("median_ttft_ms"), 4),
+            "p99_ttft": _round(raw.get("p99_ttft_ms"), 4),
+            "mean_tpot_ms": _round(raw.get("mean_tpot_ms"), 4),
+            "mean_e2el_ms": _round(raw.get("mean_e2el_ms"), 4),
+            "tps_decode_throughput": _round(raw.get("output_throughput"), 4),
+            "request_throughput": _round(raw.get("request_throughput"), 4),
+            "error_request_count": _errors(raw.get("failed")),
         }
         return self._wrap_record(record)
 
 
-def _run_configuration(raw: Mapping[str, Any]) -> Dict[str, Any]:
-    config: Dict[str, Any] = {
-        "backend": raw.get("backend"),
-        "endpoint_type": raw.get("endpoint_type"),
-        "label": raw.get("label"),
-        "model": raw.get("model_id"),
-        "tokenizer": raw.get("tokenizer_id"),
-        "num_prompts": raw.get("num_prompts"),
-        "max_concurrency": raw.get("max_concurrency"),
-        "request_rate": raw.get("request_rate"),
-        "burstiness": raw.get("burstiness"),
-        "duration_sec": _round(raw.get("duration"), 2),
-    }
-    if raw.get("ramp_up_strategy") is not None:
-        config["ramp_up_strategy"] = raw.get("ramp_up_strategy")
-        config["ramp_up_start_rps"] = raw.get("ramp_up_start_rps")
-        config["ramp_up_end_rps"] = raw.get("ramp_up_end_rps")
-    return config
+def _num(value: Any) -> Optional[float]:
+    return (
+        float(value)
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+        else None
+    )
 
 
-def _latency_stats(raw: Mapping[str, Any]) -> List[Dict[str, Any]]:
-    columns_present = _detect_present_stats(raw)
-    rows: List[Dict[str, Any]] = []
-    for metric in LATENCY_METRICS:
-        if not any(f"{stat}_{metric}_ms" in raw for stat in LATENCY_STATS):
-            continue
-        row: Dict[str, Any] = {"metric": metric}
-        for stat in columns_present:
-            row[stat] = _round(raw.get(f"{stat}_{metric}_ms"), 4)
-        rows.append(row)
-    return rows
+def _num_int(value: Any) -> Optional[int]:
+    v = _num(value)
+    return int(v) if v is not None else None
 
 
-def _detect_present_stats(raw: Mapping[str, Any]) -> List[str]:
-    seen: List[str] = []
-    for stat in LATENCY_STATS:
-        for metric in LATENCY_METRICS:
-            if f"{stat}_{metric}_ms" in raw:
-                seen.append(stat)
-                break
-    return seen
+def _per_request(total: Any, completed: Optional[float]) -> Optional[float]:
+    t = _num(total)
+    if t is None or not completed:
+        return None
+    return round(t / completed, 1)
 
 
-def _throughput(raw: Mapping[str, Any]) -> Dict[str, Any]:
-    return {
-        "requests_per_second": _round(raw.get("request_throughput"), 4),
-        "request_goodput": _round(raw.get("request_goodput"), 4),
-        "output_tokens_per_second": _round(raw.get("output_throughput"), 2),
-        "total_tokens_per_second": _round(raw.get("total_token_throughput"), 2),
-        "max_output_tokens_per_second": _round(raw.get("max_output_tokens_per_s"), 2),
-        "max_concurrent_requests": raw.get("max_concurrent_requests"),
-    }
+def _per_request_int(total: Any, completed: Optional[float]) -> Optional[int]:
+    value = _per_request(total, completed)
+    return int(round(value)) if value is not None else None
 
 
-def _request_totals(raw: Mapping[str, Any]) -> Dict[str, Any]:
-    return {
-        "completed": raw.get("completed"),
-        "failed": raw.get("failed"),
-        "total_input_tokens": raw.get("total_input_tokens"),
-        "total_output_tokens": raw.get("total_output_tokens"),
-    }
+def _errors(value: Any) -> Optional[int]:
+    v = _num(value)
+    return int(v) if v else None
 
 
 def _format_date(date_str: Any) -> str:
@@ -125,11 +90,3 @@ def _format_date(date_str: Any) -> str:
         except ValueError:
             continue
     return text
-
-
-def _round(value: Any, digits: int) -> Any:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return round(value, digits)
-    return value
