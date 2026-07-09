@@ -49,7 +49,7 @@ inline uint32_t applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
   tokens.erase(tokens.begin(), tokens.begin() + static_cast<ptrdiff_t>(skip));
   req.prompt_tokens_count = static_cast<int>(tokens.size());
 
-  if (options.setKvPositionId && matchedTokens > 0) {
+  if (options.setKvPositionId) {
     // First free KV index: the matched prefix fills indices [0, matchedTokens),
     // so the next token's KV is written at matchedTokens.
     req.kv_position_id = matchedTokens;

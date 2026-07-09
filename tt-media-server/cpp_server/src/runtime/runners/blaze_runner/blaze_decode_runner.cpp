@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <utility>
 
 #include "config/settings.hpp"
@@ -24,7 +25,7 @@ namespace tt::runners::blaze {
 
 namespace sched = tt_llm_engine::scheduler;
 BlazeDecodeRunner::BlazeDecodeRunner(
-    const config::LLMConfig& config,
+    const config::BlazeConfig& config,
     std::unique_ptr<IDecodeScheduler> decodeScheduler,
     ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
     tt::ipc::ICancelQueue* stopQueue,
@@ -34,8 +35,8 @@ BlazeDecodeRunner::BlazeDecodeRunner(
       taskQueue(taskQueue),
       stopQueue(stopQueue),
       decodeScheduler(std::move(decodeScheduler)),
-      slotManager(tt::config::pmMaxUsers()),
-      outputHangTimeout(tt::config::outputHangTimeoutMs()) {
+      slotManager(config.maxUsers),
+      outputHangTimeout(config.outputHangTimeoutMs) {
   assert(this->decodeScheduler != nullptr);
   this->decodeScheduler->start();
   TT_LOG_INFO(
@@ -74,17 +75,17 @@ bool BlazeDecodeRunner::warmup() {
   uint32_t warmupTaskId = 0;
 
   auto warmupSeq = std::make_unique<tt::domain::llm::Sequence>(
-      warmupTaskId, 1, warmupTokens, warmupParams);
+      warmupTaskId, warmupTokens, warmupParams);
 
   constexpr uint32_t warmupAllocateRequestId = 0;
   constexpr uint32_t warmupEvictRequestId = 1;
 
-  const auto timeout = std::chrono::milliseconds(tt::config::warmupTimeoutMs());
+  const auto timeout = std::chrono::milliseconds(config.warmupTimeoutMs);
   const auto pollInterval = std::chrono::milliseconds(10);
 
   TT_LOG_INFO("BlazeDecodeRunner: warmup - pushing ALLOCATE request...");
   decodeScheduler->push_request(
-      utils::makeAllocateRequest(warmupAllocateRequestId));
+      utils::makeAllocateRequest(config, warmupAllocateRequestId));
 
   TT_LOG_INFO("BlazeDecodeRunner: warmup - waiting for ALLOCATE response...");
   ds::SchedulerResponse response{};
@@ -109,7 +110,8 @@ bool BlazeDecodeRunner::warmup() {
   }
 
   TT_LOG_INFO("BlazeDecodeRunner: warmup - pushing SUBMIT request...");
-  decodeScheduler->push_request(utils::makeSubmitRequest(slotId, *warmupSeq));
+  decodeScheduler->push_request(
+      utils::makeSubmitRequest(config, slotId, *warmupSeq));
 
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   bool receivedToken = false;
@@ -183,7 +185,7 @@ void BlazeDecodeRunner::step() {
 void BlazeDecodeRunner::drainAndHandleSchedulerResponses() {
   ds::SchedulerResponse response;
   size_t drained = 0;
-  size_t maxUsers = tt::config::pmMaxUsers();
+  size_t maxUsers = config.maxUsers;
   while (drained < maxUsers && decodeScheduler->try_pop_response(response)) {
     handleSchedulerResponse(response);
     drained++;
@@ -193,7 +195,7 @@ void BlazeDecodeRunner::drainAndHandleSchedulerResponses() {
 void BlazeDecodeRunner::drainAndHandleSchedulerOutputs() {
   ds::OutputMessage output;
   size_t drained = 0;
-  size_t maxUsers = tt::config::pmMaxUsers();
+  size_t maxUsers = config.maxUsers;
   while (drained < maxUsers && decodeScheduler->try_pop_output(output)) {
     handleSchedulerOutput(output);
     drained++;
@@ -330,8 +332,8 @@ inline void BlazeDecodeRunner::handleEvictRequest(
 
 inline void BlazeDecodeRunner::handleAllocateRequest(
     const tt::domain::ManageMemoryTask& request) {
-  auto allocateRequest =
-      utils::makeAllocateRequest(request.taskId, request.slotIdToCopyFrom);
+  auto allocateRequest = utils::makeAllocateRequest(config, request.taskId,
+                                                    request.slotIdToCopyFrom);
   if (!decodeScheduler->push_request(allocateRequest)) {
     TT_LOG_WARN(
         "[BlazeDecodeRunner] handleAllocateRequest: scheduler queue full, "
@@ -633,6 +635,10 @@ void BlazeDecodeRunner::handleSchedulerOutput(const ds::OutputMessage& output) {
   slotContext.lastProgressTime = std::chrono::steady_clock::now();
   auto taskId = slotContext.taskId.value();
   if (output.ctx_exhausted) {
+    TT_LOG_INFO(
+        "[BlazeDecodeRunner] handleSchedulerOutput: ctx_exhausted for "
+        "slotId={}",
+        output.slot_id);
     slotManager.setSlotAsIdle(output.slot_id);
     metrics.decrementActiveRequests();
     ipc::helpers::pushToken(
@@ -705,7 +711,7 @@ void BlazeDecodeRunner::handleTask(
     std::unique_ptr<tt::domain::llm::Sequence> task) {
   auto slotId = task->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
-  assert(slotId < tt::config::pmMaxUsers());
+  assert(slotId < config.maxUsers);
 
   bool isNew = !task->isContinuation() && !task->isDisaggregated();
   if (isNew && task->getSamplingParams().hasGuidedDecoding()) {
@@ -726,9 +732,12 @@ void BlazeDecodeRunner::handleTask(
           task->taskId, slotId, isNew, task->isContinuation(),
           task->getNumPromptTokens(), task->getTokenIds().size(),
           slotManager.activeRunningCount(),
-          task->getMigrationId().has_value() ? *task->getMigrationId() : -1);
-      ds::ISRequest req = isNew ? utils::makeSubmitRequest(slotId, *task)
-                                : utils::makeContinueRequest(slotId, *task);
+          task->getMigrationId().has_value()
+              ? std::to_string(*task->getMigrationId())
+              : "None");
+      ds::ISRequest req =
+          isNew ? utils::makeSubmitRequest(config, slotId, *task)
+                : utils::makeContinueRequest(config, slotId, *task);
       TT_LOG_DEBUG(
           "[BlazeDecodeRunner] handleRequest: {} taskId={}, slotId={}, "
           "isNew={}, isContinuation={}, numPromptTokens={}, totalTokens={}, "
@@ -739,6 +748,9 @@ void BlazeDecodeRunner::handleTask(
           task->getKVPositionId().has_value()
               ? std::to_string(*task->getKVPositionId())
               : "none");
+      if (!isNew && task->getKVPositionId().has_value()) {
+        slotContext.currentPosition = *task->getKVPositionId();
+      }
       if (!decodeScheduler->push_request(req)) {
         TT_LOG_DEBUG(
             "[BlazeDecodeRunner] handleRequest: failed to push request, "

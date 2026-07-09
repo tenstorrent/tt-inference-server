@@ -455,15 +455,8 @@ else()
     endif()
 endif()
 
-# LLM runner static library (sources under include/runtime/runners/llm_runner/,
-# src/runtime/runners/llm_runner/; C++ namespace tt::runners::llm_engine)
+# LLM runner static library (C++ namespace tt::runners::llm_engine)
 set(LLM_RUNNER_LIB_SOURCES
-    src/runtime/runners/llm_runner/block_manager.cpp
-    src/runtime/runners/llm_runner/hash.cpp
-    src/runtime/runners/llm_runner.cpp
-    src/runtime/runners/llm_runner/model_runner.cpp
-    src/runtime/runners/llm_runner/mock_model_runner.cpp
-    src/runtime/runners/schedulers/scheduler.cpp
     src/domain/llm/sequence.cpp
     src/domain/llm/sampling_params.cpp
     src/utils/logger.cpp
@@ -490,15 +483,6 @@ if(ENABLE_BLAZE)
     message(STATUS "llm_runner_lib: including tt-llm-engine-dependent sources (ENABLE_BLAZE=ON)")
 endif()
 
-# Add socket backend when tt-metal is available
-if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
-    list(APPEND LLM_RUNNER_LIB_SOURCES
-        src/runtime/runners/llama_model_runner.cpp
-    )
-    message(STATUS "llm_runner_lib: building with tt-metal socket integration")
-else()
-    message(STATUS "llm_runner_lib: building without tt-metal (tt-metal not found)")
-endif()
 add_library(llm_runner_lib ${LLM_RUNNER_LIB_SOURCES})
 target_include_directories(llm_runner_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -574,21 +558,6 @@ if(ENABLE_BLAZE)
     endif()
 else()
     message(STATUS "Skipping tt-llm-engine linking (ENABLE_BLAZE=OFF)")
-endif()
-if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
-    target_compile_definitions(llm_runner_lib PUBLIC USE_METAL_CPP_LIB)
-    # Find tt_metal library directory
-    set(_tt_metal_lib_dir "")
-    if(EXISTS "${TT_METAL_HOME}/build_Release/lib/libtt_metal.so")
-        set(_tt_metal_lib_dir "${TT_METAL_HOME}/build_Release/lib")
-    elseif(EXISTS "${TT_METAL_HOME}/build/lib/libtt_metal.so")
-        set(_tt_metal_lib_dir "${TT_METAL_HOME}/build/lib")
-    endif()
-    if(_tt_metal_lib_dir)
-        target_link_directories(llm_runner_lib PUBLIC "${_tt_metal_lib_dir}")
-        target_link_libraries(llm_runner_lib PUBLIC tt_metal tt_stl fmt)
-    endif()
-    target_link_libraries(llm_runner_lib PUBLIC pybind11::embed)
 endif()
 if(USE_EXTERNAL_FMT)
     target_link_libraries(llm_runner_lib PUBLIC Boost::boost spdlog::spdlog fmt::fmt)
@@ -930,17 +899,6 @@ endif()
 
 # Unit tests (link llm_runner_lib)
 enable_testing()
-add_executable(scheduler_test tests/unit/scheduling/scheduler_test.cpp)
-target_link_libraries(scheduler_test PRIVATE llm_runner_lib GTest::gtest_main)
-target_include_directories(scheduler_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-add_executable(llm_runner_test tests/integration/runners/llm_runner_test.cpp)
-target_link_libraries(llm_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
-target_include_directories(llm_runner_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
 
 # Transport layer placeholder smoke test (also forces transport_lib to link).
 add_executable(transport_test tests/unit/transport/transport_test.cpp)
@@ -1114,12 +1072,6 @@ target_link_libraries(conversation_hasher_test PRIVATE llm_runner_lib GTest::gte
 add_executable(cancel_queue_test tests/unit/data_structures/cancel_queue_test.cpp)
 target_link_libraries(cancel_queue_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(cancel_queue_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-add_executable(cancellation_test tests/integration/sessions/cancellation_test.cpp)
-target_link_libraries(cancellation_test PRIVATE llm_runner_lib GTest::gtest_main)
-target_include_directories(cancellation_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -1419,8 +1371,6 @@ set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2E
     TIMEOUT 120
     RESOURCE_LOCK integration_server
 )
-gtest_discover_tests(scheduler_test)
-gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(transport_test)
 gtest_discover_tests(dynamo_protocol_test)
 gtest_discover_tests(kv_cache_addressing_test)
@@ -1445,7 +1395,6 @@ gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(tokenizer_test)
 gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)
-gtest_discover_tests(cancellation_test)
 gtest_discover_tests(structured_output_test)
 gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
@@ -1464,14 +1413,6 @@ target_include_directories(apply_delta_prompt_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 add_test(NAME ApplyDeltaPrompt COMMAND apply_delta_prompt_test)
-
-# IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
-add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
-target_link_libraries(ipc_scheduler_smoke_test PRIVATE llm_runner_lib GTest::gtest_main)
-target_include_directories(ipc_scheduler_smoke_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
 
 # Cancellation E2E test (starts mock server, runs Python tests, stops server)
 add_test(NAME CancellationE2E
@@ -1950,12 +1891,9 @@ if(SANITIZE_ADDRESS)
     set(ASAN_FLAGS -fsanitize=address -fno-omit-frame-pointer -g)
     set(ASAN_TARGETS
         ${PROJECT_NAME}
-        scheduler_test
-        llm_runner_test
         sequence_test
         lockfree_queue_test
         cancel_queue_test
-        cancellation_test
         structured_output_test
     )
     if(KAFKA_ENABLED)

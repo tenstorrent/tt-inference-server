@@ -81,16 +81,6 @@ TEST(ApplyDeltaPrompt, MultiTurnSuffix) {
   EXPECT_EQ(req.prompt_tokens_count, 1297);
 }
 
-// Zero matched tokens is a no-op.
-TEST(ApplyDeltaPrompt, ZeroMatchedTokens_NoOp) {
-  auto req = makeRequest(100);
-  applyDeltaPrompt(req, 0);
-
-  auto& tokens = std::get<std::vector<uint32_t>>(req.prompt);
-  EXPECT_EQ(tokens.size(), 100u);
-  EXPECT_FALSE(req.kv_position_id.has_value());
-}
-
 // matchedTokens >= total is a no-op.
 TEST(ApplyDeltaPrompt, MatchedExceedsTotal_NoOp) {
   auto req = makeRequest(50);

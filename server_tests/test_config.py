@@ -111,6 +111,26 @@ _test_config_list = [
             ),
         ],
     ),
+    TestConfig(
+        hf_model_repo="moonshotai/Kimi-K2.6",
+        tasks=[
+            TestTask(
+                task_name="vllm_chat_completions",
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
+                test_args=("s", "v"),
+            ),
+        ],
+    ),
+    TestConfig(
+        hf_model_repo="MiniMaxAI/MiniMax-M2.7",
+        tasks=[
+            TestTask(
+                task_name="vllm_chat_completions",
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
+                test_args=("s", "v"),
+            ),
+        ],
+    ),
 ]
 
 

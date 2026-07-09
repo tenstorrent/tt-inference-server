@@ -223,6 +223,9 @@ void LLMPipeline::resolveSession(
                   const std::string& sessionId,
                   const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
+              },
+              [mgr = sessionManager_](const std::string& sessionId) {
+                mgr->closeSession(sessionId);
               });
         }
         sessionManager_->registerPrefixHash(acquired->sessionId,
@@ -310,6 +313,9 @@ void LLMPipeline::resolveSession(
                   const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
               },
+              [mgr = sessionManager_](const std::string& sessionId) {
+                mgr->closeSession(sessionId);
+              },
               /*parentThinkCount=*/acquired->accumulatedThinkTokens);
         }
         sessionManager_->registerPrefixHash(acquired->sessionId,
@@ -345,7 +351,9 @@ void LLMPipeline::resolveSession(
 
   // Layer 2: Allocate a new session. Async — onCompletion runs on `loop`.
   // Before allocating, check if there's a candidate slot worth copying from.
-  auto copyPlan = acquired.has_value()
+  // Slot copies require migration workers that only exist in decode-only mode.
+  auto copyPlan = (acquired.has_value() &&
+                   tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY)
                       ? session_resolution::prepareSlotCopy(
                             *sessionManager_, acquired->candidatesList,
                             req->task_id, "[LLMPipeline]")
@@ -354,11 +362,11 @@ void LLMPipeline::resolveSession(
   // The decode-side copy only pays off when the delta is prefilled locally. If
   // the uncached delta is large enough to route to the prefill server, drop the
   // copy and let the prefill server reuse its own prefix cache instead.
-  if (copyPlan.has_value() &&
-      tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY) {
+  if (copyPlan.has_value()) {
     const size_t deltaTokens = promptTokens > copyPlan->matchedTokens
                                    ? promptTokens - copyPlan->matchedTokens
                                    : 0;
+    // TODO remove this once we have a partial slot copy in
     if (!willPrefillOnDecode(*req, deltaTokens)) {
       TT_LOG_INFO(
           "[LLMPipeline] taskId={} delta={} exceeds prefill-on-decode limit; "
@@ -437,6 +445,9 @@ void LLMPipeline::resolveSession(
               [mgr](const std::string& sessionId,
                     const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
+              },
+              [mgr](const std::string& sessionId) {
+                mgr->closeSession(sessionId);
               });
         }
 

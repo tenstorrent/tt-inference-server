@@ -44,6 +44,7 @@ bool Session::clearInFlight() {
   parentHash_ = 0;
   parentThinkCount_ = 0;
   onComplete_ = nullptr;
+  onNoHashes_ = nullptr;
   inThinkingBlock_ = false;
   accumulatedThinkTokens_ = 0;
   return true;
@@ -55,6 +56,7 @@ void Session::initTokenAccumulator(
     std::function<void(const std::string&,
                        const std::vector<utils::BlockHashInfo>&)>
         onComplete,
+    std::function<void(const std::string&)> onNoHashes,
     uint32_t parentThinkCount) {
   deltaTokens_ = std::move(deltaTokens);
   initialBlocks_ = std::move(initialBlocks);
@@ -65,6 +67,7 @@ void Session::initTokenAccumulator(
   // the matched KV prefix on a HIT so the count accumulates across turns.
   parentThinkCount_ = parentThinkCount;
   onComplete_ = std::move(onComplete);
+  onNoHashes_ = std::move(onNoHashes);
   generatedTokens_.clear();
 
   // Initialize thinking token tracking
@@ -116,6 +119,11 @@ void Session::finalizeAndRegisterHashes() {
     // every block in allBlocks is resident and safe to copy from.
     committed_blocks_ = static_cast<uint32_t>(allBlocks.size());
     onComplete_(session_id_, allBlocks);
+  } else if (onNoHashes_) {
+    // No new blocks produced (e.g. empty generation). The session's KV slot
+    // holds stale/garbage data and cannot be meaningfully reused via prefix
+    // lookup. Notify the caller so it can close/evict the session.
+    onNoHashes_(session_id_);
   }
 }
 

@@ -81,8 +81,8 @@ inline LLMMode llmModeFromString(const std::string& v) {
 
 enum class ModelRunnerType {
   MOCK,
-  LLAMA,
   MOCK_PIPELINE,
+  MOCK_SCHEDULER,
   PIPELINE_MANAGER,
   TT_SDXL_GENERATE,
   TT_SDXL_IMAGE_TO_IMAGE,
@@ -129,10 +129,10 @@ inline std::string toString(ModelRunnerType m) {
   switch (m) {
     case ModelRunnerType::MOCK:
       return "mock";
-    case ModelRunnerType::LLAMA:
-      return "llama";
     case ModelRunnerType::MOCK_PIPELINE:
       return "mock_pipeline";
+    case ModelRunnerType::MOCK_SCHEDULER:
+      return "mock_scheduler";
     case ModelRunnerType::PIPELINE_MANAGER:
       return "pipeline_manager";
     case ModelRunnerType::TT_SDXL_GENERATE:
@@ -155,8 +155,8 @@ inline std::string toClientRunnerName(ModelRunnerType m) {
     case ModelRunnerType::TT_SDXL_EDIT:
       return "tt-sdxl-edit";
     case ModelRunnerType::MOCK:
-    case ModelRunnerType::LLAMA:
     case ModelRunnerType::MOCK_PIPELINE:
+    case ModelRunnerType::MOCK_SCHEDULER:
     case ModelRunnerType::PIPELINE_MANAGER:
       return "";
   }
@@ -175,17 +175,5 @@ enum class ResponseFormatType : uint8_t {
   JSON_OBJECT = 1,
   JSON_SCHEMA = 2
 };
-
-enum class SchedulingPolicy {
-  PREFILL_FIRST,
-  MAX_OCCUPANCY,
-};
-
-/** Parse SCHEDULING_POLICY; empty or unknown -> PREFILL_FIRST. Expects
- * lowercase input. */
-inline SchedulingPolicy schedulingPolicyFromString(const std::string& v) {
-  if (v == "max_occupancy") return SchedulingPolicy::MAX_OCCUPANCY;
-  return SchedulingPolicy::PREFILL_FIRST;
-}
 
 }  // namespace tt::config

@@ -49,6 +49,7 @@ def test_category_result_passed_and_to_dict():
         "na": 1,
         "skipped": 1,
         "blockers": {},
+        "waived": {},
     }
 
 
@@ -129,12 +130,61 @@ def test_eval_accuracy_check_fail():
     assert "Accuracy check failed" in blockers["evals:E"]
 
 
+def test_eval_known_issue_waives_blocker():
+    # A failed eval whose task_name matches an EVALS known_issue is demoted to a
+    # non-fatal waiver, so acceptance passes. Works with dict-shaped waivers.
+    schema = _schema(_eval({"task_name": "longbench_code_e", "accuracy_check": 3}))
+    known_issues = [
+        {"workflow_type": "EVALS", "task_name": "longbench_code_e", "reason": "flaky"}
+    ]
+    accepted, blockers, cats = acceptance_criteria_check(schema, known_issues)
+    by_name = {c.name: c for c in cats}
+    assert accepted is True and blockers == {}
+    assert by_name[CATEGORY_EVALS].status == STATUS_PASS
+    assert "evals:E" in by_name[CATEGORY_EVALS].waived
+
+
+def test_eval_known_issue_wrong_task_still_blocks():
+    # Waiver only matches its declared task_name; an unlisted failure blocks.
+    schema = _schema(_eval({"task_name": "longbench_single_e", "accuracy_check": 3}))
+    known_issues = [
+        {"workflow_type": "EVALS", "task_name": "longbench_code_e", "reason": "flaky"}
+    ]
+    accepted, blockers, _ = acceptance_criteria_check(schema, known_issues)
+    assert accepted is False and "evals:E" in blockers
+
+
+def test_eval_known_issue_wrong_workflow_still_blocks():
+    # A BENCHMARKS-scoped waiver must not mask an eval blocker.
+    schema = _schema(_eval({"task_name": "longbench_code_e", "accuracy_check": 3}))
+    known_issues = [
+        {"workflow_type": "BENCHMARKS", "task_name": "longbench_code_e", "reason": "x"}
+    ]
+    accepted, _, _ = acceptance_criteria_check(schema, known_issues)
+    assert accepted is False
+
+
 def test_eval_all_na_is_na_status_not_failure():
     schema = _schema(_eval({"accuracy_check": 1}))  # 1 == NA tier
     accepted, blockers, cats = acceptance_criteria_check(schema)
     by_name = {c.name: c for c in cats}
     assert accepted is True and blockers == {}
     assert by_name[CATEGORY_EVALS].status == STATUS_NA
+
+
+def test_summary_detail_absent_vs_all_na_are_distinguished():
+    # No eval block at all -> genuinely "no blocks present".
+    absent = CategoryResult(CATEGORY_EVALS, STATUS_NA, total=0, failed=0)
+    absent_md = format_acceptance_summary_markdown(True, {}, [absent])
+    assert "no blocks present" in absent_md
+
+    # One eval block that ran but self-reported NA accuracy -> NA status with
+    # a block present. Must NOT be misreported as "no blocks present".
+    present_all_na = CategoryResult(CATEGORY_EVALS, STATUS_NA, total=1, failed=0, na=1)
+    present_md = format_acceptance_summary_markdown(True, {}, [present_all_na])
+    assert "no blocks present" not in present_md
+    assert "0/1 passed" in present_md
+    assert "1 NA" in present_md
 
 
 # --- Spec tests -----------------------------------------------------------

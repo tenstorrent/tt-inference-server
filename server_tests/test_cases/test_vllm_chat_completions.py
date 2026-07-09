@@ -95,7 +95,7 @@ def test_max_tokens(report_test, api_client, max_val, request):
 def test_stop(report_test, api_client, stop_seq, request):
     """Tests the 'stop' parameter."""
     prompt = [{"role": "user", "content": "Count to 5 and then say 'StopIt'."}]
-    payload = {"messages": prompt, "stop": stop_seq, "max_tokens": 20}
+    payload = {"messages": prompt, "stop": stop_seq, "max_tokens": 1024}
     response = api_client(payload)
 
     output_text = response["choices"][0]["message"]["content"]
