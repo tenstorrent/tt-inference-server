@@ -392,6 +392,7 @@ BlazeConfig blazeConfig() {
     // Generation fallbacks read by blaze_utils
     cfg.maxContextLength = maxContextLength();
     cfg.sampleOnlyInReasoning = sampleOnlyInReasoning();
+    cfg.maxSeqLen = maxContextLength();
     return cfg;
   }();
   return cached;
