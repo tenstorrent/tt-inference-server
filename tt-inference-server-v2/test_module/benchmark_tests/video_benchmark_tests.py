@@ -24,7 +24,12 @@ from .._test_common import (
     MetricSpec,
     ReportCheckTypes,
     SkipTest,
+    VIDEO_GENERATION_ENDPOINT,
+    _load_fixture_image_base64,
     block_id,
+    build_video_generation_payload,
+    get_video_generation_submit_endpoint,
+    is_i2v_video_model,
     run_tiered_check,
 )
 from ..context import MediaContext, require_health
@@ -35,7 +40,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
 DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
-VIDEO_INFERENCE_STEPS = {"mochi-1-preview": 50, "Wan2.2-T2V-A14B-Diffusers": 40}
+VIDEO_INFERENCE_STEPS = {
+    "mochi-1-preview": 50,
+    "Wan2.2-T2V-A14B-Diffusers": 40,
+    "Wan2.2-I2V-A14B-Diffusers": 40,
+}
 VIDEO_JOB_STATUS_COMPLETED = "completed"
 VIDEO_JOB_STATUS_FAILED = "failed"
 VIDEO_JOB_STATUS_CANCELLED = "cancelled"
@@ -49,7 +58,7 @@ def _download_video(ctx: MediaContext, job_id: str, headers: dict) -> str:
         video_path = output_dir / f"{job_id}.mp4"
 
         response = requests.get(
-            f"{ctx.base_url}/v1/videos/generations/{job_id}/download",
+            f"{ctx.base_url}/{VIDEO_GENERATION_ENDPOINT}/{job_id}/download",
             headers=headers,
             timeout=300,
             stream=True,
@@ -84,7 +93,7 @@ def _poll_video_completion(
     while time.time() - start_time < timeout:
         try:
             response = requests.get(
-                f"{ctx.base_url}/v1/videos/generations/{job_id}",
+                f"{ctx.base_url}/{VIDEO_GENERATION_ENDPOINT}/{job_id}",
                 headers=headers,
                 timeout=30,
             )
@@ -116,21 +125,32 @@ def _poll_video_completion(
 
 
 def _generate_video(
-    ctx: MediaContext, prompt: str, num_inference_steps: int = 20
+    ctx: MediaContext,
+    prompt: str,
+    num_inference_steps: int = 20,
+    image_b64: str | None = None,
 ) -> tuple[bool, float, str, str]:
     logger.info(f"🎬 Generating video with prompt: {prompt}")
+    model_name = ctx.model_spec.model_name
+    submit_endpoint = get_video_generation_submit_endpoint(model_name)
     headers = {
         "accept": "application/json",
         "Authorization": "Bearer your-secret-key",
         "Content-Type": "application/json",
     }
-    payload = {"prompt": prompt, "num_inference_steps": num_inference_steps}
-    logger.info(f"Payload: {payload}")
+    payload = build_video_generation_payload(
+        prompt=prompt,
+        num_inference_steps=num_inference_steps,
+        model_name=model_name,
+        image_b64=image_b64,
+    )
+    # Avoid logging the (large) base64 image prompt for I2V.
+    logger.info(f"Payload keys: {sorted(payload)} -> endpoint: {submit_endpoint}")
 
     start_time = time.time()
     try:
         response = requests.post(
-            f"{ctx.base_url}/v1/videos/generations",
+            f"{ctx.base_url}/{submit_endpoint}",
             json=payload,
             headers=headers,
             timeout=90,
@@ -164,8 +184,12 @@ def _run_video_generation_benchmark(
     ctx: MediaContext, num_calls: int
 ) -> list[VideoGenerationTestStatus]:
     logger.info("Running video generation benchmark.")
-    inference_steps = VIDEO_INFERENCE_STEPS[ctx.model_spec.model_name]
+    model_name = ctx.model_spec.model_name
+    inference_steps = VIDEO_INFERENCE_STEPS[model_name]
     logger.info(f"Inference steps: {inference_steps}")
+
+    # For I2V models load the conditioning image once and reuse it across calls.
+    image_b64 = _load_fixture_image_base64() if is_i2v_video_model(model_name) else None
 
     status_list: list[VideoGenerationTestStatus] = []
     for i in range(num_calls):
@@ -174,6 +198,7 @@ def _run_video_generation_benchmark(
             ctx,
             prompt=f"Test video generation {i + 1}",
             num_inference_steps=inference_steps,
+            image_b64=image_b64,
         )
         logger.info(f"Generated video in {elapsed:.2f} seconds.")
 

@@ -2,7 +2,11 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""T2V vs I2V endpoint and payload selection for video generation evals."""
+"""T2V vs I2V endpoint and payload selection for video generation.
+
+Shared by both the video generation evals and benchmarks so the two flows
+submit jobs to the same endpoints with the same payload shape.
+"""
 
 from __future__ import annotations
 

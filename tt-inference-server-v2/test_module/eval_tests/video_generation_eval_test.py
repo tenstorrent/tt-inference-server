@@ -23,7 +23,7 @@ from server_tests.test_classes import TestConfig
 from utils.sdxl_accuracy_utils.clip_encoder import CLIPEncoder
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import sdxl_get_prompts
 
-from .video_generation_eval_routing import (
+from .._test_common import (
     VIDEO_GENERATION_ENDPOINT,
     _load_fixture_image_base64,
     build_video_generation_payload,

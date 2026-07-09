@@ -25,7 +25,7 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
     """Delegate to VideoGenerationEvalsTest."""
     from server_tests.test_classes import TestConfig
 
-    from .video_generation_eval_routing import is_i2v_video_model
+    from .._test_common import is_i2v_video_model
     from .video_generation_eval_test import (
         VideoGenerationEvalsTest,
         VideoGenerationEvalsTestRequest,
