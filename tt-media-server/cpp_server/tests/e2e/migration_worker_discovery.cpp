@@ -191,10 +191,10 @@ int runSender(const Options& o) {
   }
   std::cout << "[sender] discovered peer '" << o.peer << "'\n";
 
-  // Host-level discovery: this is the exact call the real prefill worker uses to
-  // turn a decode's logical --name into its routable host (rpc_meta lookup) so
-  // it can open a control channel. openSegment above proved handle discovery;
-  // this proves the worker-integration path resolves a host too.
+  // Host-level discovery: this is the exact call the real prefill worker uses
+  // to turn a decode's logical --name into its routable host (rpc_meta lookup)
+  // so it can open a control channel. openSegment above proved handle
+  // discovery; this proves the worker-integration path resolves a host too.
   if (o.check_resolve) {
     const std::string host = engine->resolveServerName(o.peer);
     if (host.empty()) {

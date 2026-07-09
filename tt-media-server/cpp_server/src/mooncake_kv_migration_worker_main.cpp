@@ -87,10 +87,10 @@ constexpr uint16_t K_DEFAULT_CONTROL_PORT = 18650;
 // service instead of a static convention.
 constexpr const char* K_CONTROL_KEY_PREFIX = "kv_control/";
 
-// Peer discovery retry loop (mirrors main's PeerDiscoveryService): keep sweeping
-// the metadata service every K_DISCOVERY_POLL_MS until every peer resolves or
-// K_DISCOVERY_TIMEOUT_MS elapses, so a peer that registers slightly later still
-// wires up instead of being lost to a one-shot lookup.
+// Peer discovery retry loop (mirrors main's PeerDiscoveryService): keep
+// sweeping the metadata service every K_DISCOVERY_POLL_MS until every peer
+// resolves or K_DISCOVERY_TIMEOUT_MS elapses, so a peer that registers slightly
+// later still wires up instead of being lost to a one-shot lookup.
 constexpr int K_DISCOVERY_TIMEOUT_MS = 30000;
 constexpr int K_DISCOVERY_POLL_MS = 1000;
 
@@ -155,7 +155,8 @@ void usage() {
          "           --peer-control NAME=host:port (repeatable, static)\n"
          "           [--peer-control-port N]  fallback control port for a "
          "discovered peer that hasn't published its endpoint (default 18650).\n"
-         "           The prefill (sender) opens a control channel to each peer; "
+         "           The prefill (sender) opens a control channel to each "
+         "peer; "
          "a decode (receiver) resolves+holds them but does not initiate.\n"
          "  prefill: --prefill-table P.pb --decode-table D.pb (+ >=1 peer)\n"
          "  decode:  --table D.pb [--control-port N] (default 18650) "
@@ -311,7 +312,8 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
   // One shared control port per host: decode listens here, prefill dials it for
   // discovered peers. Fixed (not per-peer), matching the bringup-era deploy.
   if (cfg.control_port == 0) cfg.control_port = K_DEFAULT_CONTROL_PORT;
-  if (cfg.peer_control_port == 0) cfg.peer_control_port = K_DEFAULT_CONTROL_PORT;
+  if (cfg.peer_control_port == 0)
+    cfg.peer_control_port = K_DEFAULT_CONTROL_PORT;
 
   if (cfg.role == Role::PREFILL &&
       (cfg.prefill_table_path.empty() || cfg.decode_table_path.empty() ||
@@ -421,11 +423,11 @@ bool startHealthServer(WorkerHealth& health, const WorkerConfig& cfg,
   return true;
 }
 
-// One attempt to resolve a single peer's control endpoint. Primary source is the
-// peer's published "kv_control/<name>" (host AND port); the fallback is
-// resolveServerName's rpc_meta host paired with the fixed peer_control_port, for
-// a peer that registered its data plane but hasn't published a control endpoint
-// (mixed/old deploy). Returns false if neither source resolves it yet.
+// One attempt to resolve a single peer's control endpoint. Primary source is
+// the peer's published "kv_control/<name>" (host AND port); the fallback is
+// resolveServerName's rpc_meta host paired with the fixed peer_control_port,
+// for a peer that registered its data plane but hasn't published a control
+// endpoint (mixed/old deploy). Returns false if neither source resolves it yet.
 bool resolveOnePeer(ITransferEngine& engine, const WorkerConfig& cfg,
                     const std::string& name,
                     KvControlChannelConnector::Endpoint& ep) {
@@ -454,8 +456,9 @@ bool resolveOnePeer(ITransferEngine& engine, const WorkerConfig& cfg,
 // Resolve every peer this worker was given (role-agnostic — a worker is just a
 // migration worker with a peer list) to its control endpoint via the metadata
 // service, retrying until all resolve or the timeout elapses. Static
-// --peer-control entries win and skip resolution; a SIGTERM (@p stop) aborts the
-// wait promptly. Returns the name->endpoint map, possibly partial on timeout.
+// --peer-control entries win and skip resolution; a SIGTERM (@p stop) aborts
+// the wait promptly. Returns the name->endpoint map, possibly partial on
+// timeout.
 std::unordered_map<std::string, KvControlChannelConnector::Endpoint>
 resolvePeers(ITransferEngine& engine, const WorkerConfig& cfg,
              const std::atomic<bool>& stop) {
@@ -512,9 +515,9 @@ int runPrefill(const WorkerConfig& cfg) {
   // Discover every decode peer's control endpoint through the metadata service
   // (host AND port from its published "kv_control/<name>"), retrying until they
   // resolve — this is what lets --peer be a logical tag like "decode-0" instead
-  // of a hardcoded endpoint. The prefill is the sender, so it ACTS on the peers:
-  // openChannels() below creates a control channel to each (the TCP connect then
-  // runs asynchronously in each transport's background loop).
+  // of a hardcoded endpoint. The prefill is the sender, so it ACTS on the
+  // peers: openChannels() below creates a control channel to each (the TCP
+  // connect then runs asynchronously in each transport's background loop).
   auto peers = resolvePeers(*engine, cfg, gStop);
 
   KvControlChannelConnector connector(peers, makeClientTransport);
@@ -624,7 +627,7 @@ int runDecode(const WorkerConfig& cfg) {
   std::string segment = cfg.segment;
   if (segment.empty()) {
     segment = (cfg.metadata_uri == "P2PHANDSHAKE") ? engine->localServerName()
-                                                    : cfg.name;
+                                                   : cfg.name;
   }
   // The mirror is registered as the Mooncake segment inside MooncakeKvReceiver.
   MooncakeKvReceiver receiver(engine, *device, decode->table, cfg.host,
@@ -649,8 +652,8 @@ int runDecode(const WorkerConfig& cfg) {
   // plane already uses. The host mirrors what Mooncake advertised in rpc_meta.
   // Only meaningful with a real metadata service; under P2PHANDSHAKE this
   // no-ops and prefill falls back to a static endpoint.
-  const std::string controlEndpoint =
-      hostOf(engine->localServerName()) + ":" + std::to_string(cfg.control_port);
+  const std::string controlEndpoint = hostOf(engine->localServerName()) + ":" +
+                                      std::to_string(cfg.control_port);
   const std::string controlKey = std::string(K_CONTROL_KEY_PREFIX) + cfg.name;
   if (engine->publishMetadata(controlKey, controlEndpoint)) {
     TT_LOG_INFO("[worker] decode '{}' published control endpoint {} -> {}",

@@ -119,7 +119,8 @@ class ITransferEngine {
    * learn at bring-up — e.g. a worker's KV *control* endpoint — has nowhere to
    * live otherwise, forcing a hard-coded convention. This routes those facts
    * through the metadata service too, so discovery stays the single source of
-   * truth. Keys are raw; the caller namespaces them (e.g. "kv_control/decode-0").
+   * truth. Keys are raw; the caller namespaces them (e.g.
+   * "kv_control/decode-0").
    *
    * @return true on success. The base implementation is a no-op returning false
    *         so engines without a metadata service (P2PHANDSHAKE / test fakes)
@@ -137,7 +138,8 @@ class ITransferEngine {
    *         there is no metadata service. The base implementation returns
    *         std::nullopt.
    */
-  virtual std::optional<std::string> lookupMetadata(const std::string& /*key*/) {
+  virtual std::optional<std::string> lookupMetadata(
+      const std::string& /*key*/) {
     return std::nullopt;
   }
 

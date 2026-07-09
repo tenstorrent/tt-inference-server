@@ -62,7 +62,8 @@ void MooncakeKvSender::refreshPeerSegment(const std::string& segmentName) {
     health_->onReresolveAttempt();
   }
   TT_LOG_WARN(
-      "[MooncakeKvSender] transfer to segment '{}' failed; force-refreshing its "
+      "[MooncakeKvSender] transfer to segment '{}' failed; force-refreshing "
+      "its "
       "descriptor so the next request re-resolves the peer's current address "
       "(peer may have restarted on a fresh port)",
       segmentName);

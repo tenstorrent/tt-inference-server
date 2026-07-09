@@ -47,7 +47,8 @@ class KvMigrationMultiHostSender {
   ///        for each key (destination layout is whole-table-stable, so it is
   ///        reused across migrations).
   /// @param health optional; forwarded to each per-host sender so a stale-peer
-  ///        transfer failure bumps the re-resolve counters (observability only).
+  ///        transfer failure bumps the re-resolve counters (observability
+  ///        only).
   KvMigrationMultiHostSender(
       std::shared_ptr<ITransferEngine> engine, IDeviceIo& device,
       std::shared_ptr<const IKvTable> prefillTable,

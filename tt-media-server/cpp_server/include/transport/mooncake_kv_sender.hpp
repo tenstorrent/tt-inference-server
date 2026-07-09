@@ -16,7 +16,6 @@ namespace tt::transport {
 
 class WorkerHealth;
 
-
 /**
  * @brief Prefill-host (sender) side of a KV migration.
  *
