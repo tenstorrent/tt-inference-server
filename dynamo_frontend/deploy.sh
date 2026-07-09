@@ -425,6 +425,7 @@ if [[ "$DYNAMO_NATIVE_ROUTING_ENABLED" == "1" ]]; then
         -e DYNAMO_NAMESPACE="${DYNAMO_NATIVE_NAMESPACE:-dynamo}" \
         -e DYNAMO_COMPONENT=prefill \
         -e DYNAMO_ENDPOINT_NAME=generate \
+        -e DYNAMO_MODEL_TYPE=Prefill \
         -e DYNAMO_MODEL_INPUT=Tokens \
         -e DYNAMO_WORKER_TYPE=Prefill \
         -e SERVER_MODE=cpp \

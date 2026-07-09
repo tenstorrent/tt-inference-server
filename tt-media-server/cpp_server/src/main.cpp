@@ -386,9 +386,9 @@ int main(int argc, char* argv[]) {
         opts.model_type = v;
       } else if (tt::config::dynamoNativeRoutingEnabled() &&
                  tt::config::llmMode() == tt::config::LLMMode::PREFILL_ONLY) {
-        // Dynamo's Rust ModelType is a bitflag; ModelType.Empty serializes as
-        // an empty string in human-readable JSON.
-        opts.model_type = "";
+        // ai-dynamo 1.2.1 rejects Tokens+Empty during discovery; keep
+        // worker_type=Prefill while using the released-compatible capability.
+        opts.model_type = "Prefill";
       }
       if (const char* v = std::getenv("DYNAMO_MODEL_INPUT"); v && *v) {
         opts.model_input = v;

@@ -126,8 +126,10 @@ Prometheus scrapes `prefill-gateway:9091`.
    `--dynamo-native-routing`, starts the worker as `LLM_MODE=decode` with
    `DYNAMO_NATIVE_ROUTING=1` on `dynamo.decode.generate`, then starts one
    managed `LLM_MODE=prefill` worker with `DYNAMO_ENDPOINT_ENABLED=1`,
-   `DYNAMO_WORKER_TYPE=Prefill`, empty `model_type` (Dynamo
-   `ModelType.Empty`), and endpoint `dynamo.prefill.generate`. Neither worker
+   `DYNAMO_WORKER_TYPE=Prefill`, `DYNAMO_MODEL_TYPE=Prefill`, and endpoint
+   `dynamo.prefill.generate`. The explicit `Prefill` model type keeps the MDC
+   compatible with the released `ai-dynamo` frontend, which rejects
+   `Tokens+Empty` even when `worker_type=Prefill` is present. Neither worker
    starts the legacy decode-to-prefill socket path. Dynamo's integrated prefill
    router owns the local-vs-remote prefill decision; when a request reaches
    decode, cpp_server prefills locally instead of reapplying
@@ -192,7 +194,8 @@ the prefill pool. The script should show both etcd registrations:
 `v1/instances/dynamo/prefill/generate/...`. The matching MDC entries should
 show the decode worker with `worker_type="Decode"` and the prefill worker with
 `worker_type="Prefill"`, `needs=[["Decode"]]`, `model_input="Tokens"`, and an
-empty `model_type` value (Dynamo `ModelType.Empty`).
+explicit `model_type="Prefill"` value for compatibility with the released
+`ai-dynamo` discovery watcher.
 
 Inspect what the worker registered:
 

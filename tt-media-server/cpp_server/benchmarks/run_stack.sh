@@ -224,10 +224,9 @@ up() {
         # (tt_mem_requests/_results, /tt_worker_metrics) — sharing them makes the
         # prefill worker's KV allocation requests race the decode worker's and hang.
         start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
-            $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" prefill Prefill "") \
+            $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" prefill Prefill Prefill) \
             LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
             USE_PREFILL_GATEWAY=0 DYNAMO_NATIVE_ROUTING=1 \
-            DYNAMO_MODEL_TYPE= \
             DYNAMO_MODEL_INPUT=Tokens \
             TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
             TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
