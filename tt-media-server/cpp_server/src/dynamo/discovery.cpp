@@ -255,7 +255,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
 
   card["context_length"] = static_cast<int>(tt::config::maxContextLength());
   card["kv_cache_block_size"] =
-      static_cast<int>(tt::config::kvCacheBlockSize());
+      static_cast<int>(tt::config::prefixCacheBlockSize());
   card["migration_limit"] = 0;
   card["model_type"] = "Chat";
   card["model_input"] = "Tokens";

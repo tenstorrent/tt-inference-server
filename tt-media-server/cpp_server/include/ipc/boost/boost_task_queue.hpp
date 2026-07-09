@@ -36,13 +36,13 @@ class TaskQueue : public tt::ipc::ITaskQueue {
   }
 
   std::unique_ptr<tt::domain::llm::Sequence> tryPop() override {
-    tt::domain::llm::Sequence seq(0, 1, {});
+    tt::domain::llm::Sequence seq(0, {});
     if (!queue_->tryPop(seq)) return nullptr;
     return std::make_unique<tt::domain::llm::Sequence>(std::move(seq));
   }
 
   std::unique_ptr<tt::domain::llm::Sequence> receive() override {
-    tt::domain::llm::Sequence seq(0, 1, {});
+    tt::domain::llm::Sequence seq(0, {});
     queue_->receive(seq);
     return std::make_unique<tt::domain::llm::Sequence>(std::move(seq));
   }
