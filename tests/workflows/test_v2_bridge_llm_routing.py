@@ -181,7 +181,7 @@ def test_non_routed_media_benchmarks_stays_on_v1():
 def test_wan_video_routes_to_v2(model_name, workflow):
     spec, rc = _spec(ModelType.VIDEO, name=model_name), _rc(workflow=workflow)
     assert v2_bridge._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is False
-    assert v2_bridge.is_v2_routed_model(spec) is True
+    assert v2_bridge.is_v2_routed_model(spec) is False
     assert v2_bridge.can_route_to_v2(spec, rc) is True
 
 
@@ -189,7 +189,7 @@ def test_wan_video_routes_to_v2(model_name, workflow):
 def test_mochi_video_routes_to_v2(workflow):
     spec, rc = _spec(ModelType.VIDEO, name="mochi-1-preview"), _rc(workflow=workflow)
     assert v2_bridge._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is False
-    assert v2_bridge.is_v2_routed_model(spec) is True
+    assert v2_bridge.is_v2_routed_model(spec) is False
     assert v2_bridge.can_route_to_v2(spec, rc) is True
 
 

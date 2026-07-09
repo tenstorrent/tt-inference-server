@@ -243,16 +243,10 @@ def main():
             deploy_url=deploy_url,
         )
 
-    # LLM and audio evals are served by the v2 engine (tt-inference-server-v2/
-    # run.py via workflows/v2_bridge); the v1 lm-eval/lmms-eval path has been
-    # retired. Reaching here means can_route_to_v2 did not route this model to
-    # v2 (a routing regression).
     else:
         raise SystemExit(
-            f"evals for {model_spec.model_name!r} are served by the v2 engine; "
-            "the v1 lm-eval/lmms-eval path has been retired. Reaching this "
-            "branch means workflows/v2_bridge.can_route_to_v2 did not route "
-            "this model to v2."
+            f"evals for {model_spec.model_name!r} ({model_spec.model_type.name}) "
+            "were not routed by can_route_to_v2(); check workflows/v2_bridge.py."
         )
 
 

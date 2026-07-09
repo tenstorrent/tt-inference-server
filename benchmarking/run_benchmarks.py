@@ -216,14 +216,9 @@ def main():
         )
         return return_code
 
-    # LLM benchmarks (incl. prefix-cache / spec-decode / serving-bench) are
-    # served by the v2 engine (tt-inference-server-v2 via workflows/v2_bridge);
-    # the v1 vLLM/genai-perf benchmark path has been retired. Reaching here means
-    # can_route_to_v2 did not route this model to v2 (a routing regression).
     raise SystemExit(
-        f"benchmarks for {model_spec.model_name!r} are served by the v2 engine; "
-        "the v1 benchmark path has been retired. Reaching this branch means "
-        "workflows/v2_bridge.can_route_to_v2 did not route this model to v2."
+        f"benchmarks for {model_spec.model_name!r} ({model_spec.model_type.name}) "
+        "were not routed by can_route_to_v2(); check workflows/v2_bridge.py."
     )
 
 

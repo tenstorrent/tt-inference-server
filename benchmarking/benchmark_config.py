@@ -691,5 +691,7 @@ def get_benchmark_config(model_spec) -> BenchmarkConfig:
     this helper runs. Do not consult the import-time catalog here: the runtime
     JSON must override even when its ``model_id`` collides with a built-in spec.
     """
+    if model_spec.model_type == ModelType.VIDEO:
+        return BenchmarkConfig(model_id=model_spec.model_id, tasks=[])
 
     return build_benchmark_config(model_spec)
