@@ -25,12 +25,19 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
     """Delegate to VideoGenerationEvalsTest."""
     from server_tests.test_classes import TestConfig
 
+    from .video_generation_eval_routing import is_i2v_video_model
     from .video_generation_eval_test import (
         VideoGenerationEvalsTest,
         VideoGenerationEvalsTestRequest,
     )
 
-    logger.info("Running video generation eval.")
+    model_name = ctx.model_spec.model_name
+    generation_mode = "I2V" if is_i2v_video_model(model_name) else "T2V"
+    logger.info(
+        "Running video generation eval for %s using %s endpoint.",
+        model_name,
+        generation_mode,
+    )
 
     num_prompts = 5
     num_inference_steps = 40
@@ -38,7 +45,7 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
     frame_sample_rate = 8
 
     request = VideoGenerationEvalsTestRequest(
-        model_name=ctx.model_spec.model_name,
+        model_name=model_name,
         num_prompts=num_prompts,
         start_from=start_from,
         num_inference_steps=num_inference_steps,
