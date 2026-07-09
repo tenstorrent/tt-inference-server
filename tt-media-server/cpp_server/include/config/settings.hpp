@@ -235,6 +235,12 @@ uint32_t prefillChunkSize();
  * defaults::ENABLE_MIGRATION. */
 bool enableMigration();
 
+/**
+ * Route the PrefillScheduler's cross-endpoint (P->D) KV migration through the
+ * Kafka-backed RemoteKVManagerAdapter.
+ */
+bool prefillUseRemoteKvManager();
+
 /** Migration cmd queue name from MIGRATION_CMD_QUEUE_NAME. Default:
  * defaults::MIGRATION_CMD_QUEUE_NAME. */
 std::string migrationCmdQueueName();

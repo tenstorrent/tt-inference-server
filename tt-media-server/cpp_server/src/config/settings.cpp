@@ -700,6 +700,11 @@ bool enableMigration() {
   return envBool("ENABLE_MIGRATION", defaults::ENABLE_MIGRATION);
 }
 
+bool prefillUseRemoteKvManager() {
+  return envBool("PREFILL_USE_REMOTE_KV_MANAGER",
+                 defaults::PREFILL_USE_REMOTE_KV_MANAGER);
+}
+
 std::string migrationCmdQueueName() {
   return envString("MIGRATION_CMD_QUEUE_NAME",
                    defaults::MIGRATION_CMD_QUEUE_NAME);

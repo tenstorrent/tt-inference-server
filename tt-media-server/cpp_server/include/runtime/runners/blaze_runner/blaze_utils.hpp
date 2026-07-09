@@ -25,6 +25,12 @@
 #include "tt_llm_engine/scheduler/migration_client_interface.hpp"
 #include "tt_llm_engine/scheduler/prefill/prefill_types.hpp"
 #include "utils/logger.hpp"
+#ifdef KAFKA_ENABLED
+#include "messaging/kafka_consumer.hpp"
+#include "messaging/kafka_producer.hpp"
+#include "services/remote_kv_manager_adapter.hpp"
+#include "services/remote_kv_manager_impl.hpp"
+#endif
 
 namespace {
 
@@ -339,10 +345,65 @@ inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig() {
   };
 }
 
+// Kafka-backed migration client for the PrefillScheduler. Constructs a
+// RemoteKVManagerImpl (with its Kafka producer + ack consumer wired from the
+// KAFKA_* env vars) and wraps it in a RemoteKVManagerAdapter so the scheduler
+// sees a MigrationClientInterface. Only compiled when the binary was built
+// with KAFKA_ENABLED=ON; the non-Kafka build surfaces a clear error at
+// scheduler construction (in makeMigrationClientInterface below) instead of
+// silently downgrading to the shmem path.
+#ifdef KAFKA_ENABLED
+inline std::unique_ptr<sch::MigrationClientInterface>
+makePrefillKafkaMigrationClient() {
+  auto requestProducer = std::make_unique<tt::messaging::KafkaProducer>(
+      tt::messaging::KafkaProducerConfig{
+          .brokers = tt::config::kafkaBrokers(),
+          .topic = tt::config::kafkaMigrationRequestTopic(),
+      });
+  auto ackConsumer = std::make_unique<tt::messaging::KafkaConsumer>(
+      tt::messaging::KafkaConsumerConfig{
+          .brokers = tt::config::kafkaBrokers(),
+          .topic = tt::config::kafkaMigrationAckTopic(),
+          // Shared with the worker's request-topic subscription: group.id is
+          // scoped per topic, so worker (request topic) and client (ack topic)
+          // do not fight over partitions. If multiple PrefillScheduler
+          // processes need to consume acks independently, they must set
+          // KAFKA_GROUP_ID to distinct values at deploy time — sharing a
+          // group here would split ack partitions across processes and
+          // silently starve some bursts of their completion event.
+          .group_id = tt::config::kafkaGroupId(),
+      });
+  auto kvManager = std::make_unique<tt::services::RemoteKVManagerImpl>(
+      std::move(requestProducer), std::move(ackConsumer),
+      std::chrono::milliseconds(tt::config::kvMigrationTimeoutMs()),
+      std::chrono::milliseconds(tt::config::kvMigrationSweepIntervalMs()),
+      static_cast<int>(tt::config::kvMigrationDrainPollMs()));
+  TT_LOG_INFO(
+      "makePrefillKafkaMigrationClient: RemoteKVManagerAdapter wired "
+      "(brokers={}, request_topic={}, ack_topic={}, group_id={})",
+      tt::config::kafkaBrokers(), tt::config::kafkaMigrationRequestTopic(),
+      tt::config::kafkaMigrationAckTopic(), tt::config::kafkaGroupId());
+  return std::make_unique<tt::services::RemoteKVManagerAdapter>(
+      std::move(kvManager));
+}
+#endif  // KAFKA_ENABLED
+
 inline std::unique_ptr<sch::MigrationClientInterface>
 makeMigrationClientInterface(const tt::config::LLMConfig& config) {
   if (!tt::config::enableMigration()) {
     return nullptr;
+  }
+  // PREFILL_USE_REMOTE_KV_MANAGER swaps the shmem MigrationLayerClientAdapter
+  // for the Kafka-backed RemoteKVManagerAdapter, independent of runner_type.
+  if (tt::config::prefillUseRemoteKvManager()) {
+#ifdef KAFKA_ENABLED
+    return makePrefillKafkaMigrationClient();
+#else
+    throw std::runtime_error(
+        "PREFILL_USE_REMOTE_KV_MANAGER=1 but this binary was built without "
+        "KAFKA_ENABLED=ON. Rebuild with -DKAFKA_ENABLED=ON or unset "
+        "PREFILL_USE_REMOTE_KV_MANAGER to use the shmem MigrationLayerClient.");
+#endif
   }
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:

@@ -1416,6 +1416,13 @@ if(KAFKA_ENABLED)
             spdlog::spdlog
         )
         message(STATUS "remote_kv_adapter: ENABLED (ENABLE_BLAZE=ON)")
+
+        # Wire the Kafka-backed RemoteKVManagerAdapter into the PrefillScheduler factory (blaze_utils.hpp)
+        target_link_libraries(llm_runner_lib PUBLIC remote_kv_adapter)
+        target_compile_definitions(llm_runner_lib PUBLIC KAFKA_ENABLED)
+        message(STATUS
+            "llm_runner_lib: PREFILL_USE_REMOTE_KV_MANAGER path ENABLED "
+            "(linked against remote_kv_adapter, KAFKA_ENABLED define set)")
     else()
         message(STATUS "remote_kv_adapter: DISABLED (requires ENABLE_BLAZE=ON)")
     endif()
