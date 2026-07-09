@@ -644,7 +644,7 @@ void BlazeDecodeRunner::handleSchedulerOutput(const ds::OutputMessage& output) {
   bool finished = output.is_complete;
 
   slotContext.tokensGenerated++;
-  slotContext.currentPosition = finished ? 0 : output.position_id;
+  slotContext.currentPosition = output.position_id;
   metrics.onOutputToken(output.slot_id);
   utils::SpecDelta spec{};
   if (finished) {
