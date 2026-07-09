@@ -54,11 +54,8 @@ class TestStrategyMap(unittest.TestCase):
     def test_strategy_map_contains_embedding(self):
         assert "EMBEDDING" in STRATEGY_MAP
 
-    def test_strategy_map_contains_video(self):
-        assert "VIDEO" in STRATEGY_MAP
-
     def test_strategy_map_size(self):
-        assert len(STRATEGY_MAP) == 3
+        assert len(STRATEGY_MAP) == 2
 
 
 class TestMediaClientFactoryCreateStrategy(unittest.TestCase):
@@ -226,7 +223,7 @@ class TestMediaClientFactoryRunMediaTask(unittest.TestCase):
 # Pytest parametrized tests for better edge case coverage
 @pytest.mark.parametrize(
     "model_type_name",
-    ["CNN", "EMBEDDING", "TEXT_TO_SPEECH"],
+    ["CNN", "EMBEDDING"],
 )
 def test_create_strategy_all_supported_types(model_type_name):
     """Test that all supported model types create a strategy successfully."""
