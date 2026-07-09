@@ -692,62 +692,6 @@ class TestVideoMatrixExpansion:
             assert "targets" not in param_test
 
 
-class TestCnnMatrixExpansion:
-    """Validate that the migrated cnn.json produces the same suites as before."""
-
-    EXPECTED_IDS = {
-        "mobilenetv2-n150",
-        "mobilenetv2-n300",
-        "resnet-50-n150",
-        "resnet-50-n300",
-        "efficientnet-n150",
-        "segformer-n150",
-        "unet-n150",
-        "vit-n150",
-        "vovnet-n150",
-    }
-
-    def test_cnn_suite_count(self):
-        suites = load_suite_files_by_category("cnn")
-        assert len(suites) == 9
-
-    def test_cnn_suite_ids(self):
-        suites = load_suite_files_by_category("cnn")
-        ids = {s["id"] for s in suites}
-        assert ids == self.EXPECTED_IDS
-
-    def test_cnn_shared_test_cases(self):
-        suites = load_suite_files_by_category("cnn")
-        for suite in suites:
-            assert len(suite["test_cases"]) == 2
-            assert suite["test_cases"][0]["template"] == "CnnLoadTest"
-            assert suite["test_cases"][0]["targets"] == {
-                "cnn_time": 5,
-                "response_format": "json",
-                "top_k": 3,
-                "min_confidence": 70.0,
-            }
-            assert suite["test_cases"][1]["template"] == "CnnParamTest"
-
-    def test_cnn_num_of_devices(self):
-        suites = load_suite_files_by_category("cnn")
-        for suite in suites:
-            assert suite["num_of_devices"] == 1
-
-    def test_cnn_n300_only_compatible_models(self):
-        """Only mobilenetv2 and resnet should have n300 suites."""
-        suites = load_suite_files_by_category("cnn")
-        n300_ids = {s["id"] for s in suites if s["device"] == "n300"}
-        assert n300_ids == {"mobilenetv2-n300", "resnet-50-n300"}
-
-    def test_cnn_resnet_id_name(self):
-        """resnet model_marker should be 'resnet' but ID uses 'resnet-50'."""
-        suites = load_suite_files_by_category("cnn")
-        suite_map = {s["id"]: s for s in suites}
-        assert suite_map["resnet-50-n150"]["model_marker"] == "resnet"
-        assert suite_map["resnet-50-n150"]["weights"] == ["resnet-50"]
-
-
 class TestEmbeddingMatrixExpansion:
     """Validate that the migrated embedding.json produces the same suites as before."""
 
@@ -935,7 +879,7 @@ class TestAllSuitesLoad:
 
     def test_total_suite_count(self):
         all_suites = load_suite_files()
-        assert len(all_suites) == 50
+        assert len(all_suites) == 41
 
     def test_no_duplicate_ids(self):
         all_suites = load_suite_files()

@@ -48,9 +48,6 @@ class TestMediaTaskType(unittest.TestCase):
 class TestStrategyMap(unittest.TestCase):
     """Tests for STRATEGY_MAP configuration."""
 
-    def test_strategy_map_contains_cnn(self):
-        assert "CNN" in STRATEGY_MAP
-
     def test_strategy_map_contains_embedding(self):
         assert "EMBEDDING" in STRATEGY_MAP
 
@@ -58,7 +55,7 @@ class TestStrategyMap(unittest.TestCase):
         assert "VIDEO" in STRATEGY_MAP
 
     def test_strategy_map_size(self):
-        assert len(STRATEGY_MAP) == 3
+        assert len(STRATEGY_MAP) == 2
 
 
 class TestMediaClientFactoryCreateStrategy(unittest.TestCase):
@@ -68,22 +65,6 @@ class TestMediaClientFactoryCreateStrategy(unittest.TestCase):
         mock_spec = MagicMock()
         mock_spec.model_type.name = model_type_name
         return mock_spec
-
-    def test_create_strategy_cnn(self):
-        mock_spec = self._create_mock_model_spec("CNN")
-        mock_params = {"param": "value"}
-        mock_device = MagicMock()
-        output_path = "/tmp/output"
-        service_port = 8000
-
-        with patch.dict(
-            "utils.media_clients.media_client_factory.STRATEGY_MAP",
-            {"CNN": create_mock_strategy_class("CnnClientStrategy")},
-        ):
-            strategy = MediaClientFactory._create_strategy(
-                mock_spec, mock_params, mock_device, output_path, service_port
-            )
-            assert strategy is not None
 
     def test_create_strategy_video(self):
         mock_spec = self._create_mock_model_spec("VIDEO")
@@ -112,19 +93,19 @@ class TestMediaClientFactoryCreateStrategy(unittest.TestCase):
             )
 
     def test_create_strategy_passes_correct_arguments(self):
-        mock_spec = self._create_mock_model_spec("CNN")
+        mock_spec = self._create_mock_model_spec("VIDEO")
         mock_params = {"key": "value"}
         mock_device = MagicMock(name="test_device")
         output_path = "/custom/output"
         service_port = 9000
 
-        mock_strategy_class = create_mock_strategy_class("CnnClientStrategy")
+        mock_strategy_class = create_mock_strategy_class("VideoClientStrategy")
         mock_strategy_instance = MagicMock()
         mock_strategy_class.return_value = mock_strategy_instance
 
         with patch.dict(
             "utils.media_clients.media_client_factory.STRATEGY_MAP",
-            {"CNN": mock_strategy_class},
+            {"VIDEO": mock_strategy_class},
         ):
             result = MediaClientFactory._create_strategy(
                 mock_spec, mock_params, mock_device, output_path, service_port
