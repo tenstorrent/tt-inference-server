@@ -526,7 +526,7 @@ int runPrefill(const WorkerConfig& cfg) {
 
   KvMigrationMultiHostSender sender(engine, *device, prefill->table,
                                     decode->table, cfg.host,
-                                    connector.channels());
+                                    connector.channels(), &health);
   auto executor = std::make_unique<MooncakeMigrationExecutor>(sender);
 
   const std::string brokers =

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "transport/kv_cache_layout.hpp"
+#include "transport/worker_health.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::transport {
@@ -42,15 +43,31 @@ MooncakeKvSender::MooncakeKvSender(std::shared_ptr<ITransferEngine> engine,
                                    std::shared_ptr<const IKvTable> prefillTable,
                                    std::shared_ptr<const IKvTable> decodeTable,
                                    std::string prefillHost,
-                                   std::string decodeHost)
+                                   std::string decodeHost, WorkerHealth* health)
     : engine_(std::move(engine)),
       device_(device),
+      health_(health),
       prefill_table_(std::move(prefillTable)),
       decode_table_(std::move(decodeTable)),
       prefill_host_(std::move(prefillHost)),
       decode_host_(std::move(decodeHost)) {
   if (decode_table_) {
     dst_layout_ = KvCacheLayout(allHostLocations(*decode_table_, decode_host_));
+  }
+}
+
+void MooncakeKvSender::refreshPeerSegment(const std::string& segmentName) {
+  if (health_) {
+    health_->onTransferFailure();
+    health_->onReresolveAttempt();
+  }
+  TT_LOG_WARN(
+      "[MooncakeKvSender] transfer to segment '{}' failed; force-refreshing its "
+      "descriptor so the next request re-resolves the peer's current address "
+      "(peer may have restarted on a fresh port)",
+      segmentName);
+  if (engine_->refreshSegment(segmentName) == K_INVALID_SEGMENT && health_) {
+    health_->onReresolveFailure();
   }
 }
 
@@ -99,6 +116,7 @@ bool MooncakeKvSender::transferSlot(const MigrationRequest& request,
   if (segment == K_INVALID_SEGMENT) {
     TT_LOG_ERROR("[MooncakeKvSender] transferSlot: openSegment({}) failed",
                  segmentName);
+    refreshPeerSegment(segmentName);
     return false;
   }
 
@@ -127,6 +145,10 @@ bool MooncakeKvSender::transferSlot(const MigrationRequest& request,
   }
 
   bool ok = true;
+  // A failed WRITE (vs a planning error like a missing source or size mismatch)
+  // is the symptom of a stale segment descriptor after a peer restart, so track
+  // it separately and only force-refresh for that case.
+  bool transferFailed = false;
   for (const ChunkPlan& chunk : decodePlan.chunks) {
     const uint32_t ordinal = (chunk.position - dstStart) / step;
     const auto srcIt = source.find(loKey(chunk.layer, ordinal));
@@ -194,11 +216,14 @@ bool MooncakeKvSender::transferSlot(const MigrationRequest& request,
             "[MooncakeKvSender] WRITE failed device={:#x} noc={:#x} offset={}",
             dst.device, dst.noc_addr, *offset);
         ok = false;
+        transferFailed = true;
       }
     }
   }
 
   engine_->unregisterLocalMemory(staging.data());
+  // Re-resolve for the NEXT request only; this one still fails and acks FAILED.
+  if (transferFailed) refreshPeerSegment(segmentName);
   return ok;
 }
 
