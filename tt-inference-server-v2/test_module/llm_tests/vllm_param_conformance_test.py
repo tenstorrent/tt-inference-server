@@ -165,9 +165,9 @@ class VLLMParamConformanceTest(BaseTest):
 
     def _resolve_model_name(self) -> str:
         if self.ctx is not None:
-            model_name = getattr(self.ctx.model_spec, "model_name", None)
-            if model_name:
-                return str(model_name)
+            hf_model_repo = getattr(self.ctx.model_spec, "hf_model_repo", None)
+            if hf_model_repo:
+                return str(hf_model_repo)
         return str(self.config.get("model") or DEFAULT_MODEL_NAME)
 
     @staticmethod
