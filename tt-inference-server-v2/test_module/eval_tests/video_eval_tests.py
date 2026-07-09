@@ -163,6 +163,7 @@ def run_video_eval(ctx: MediaContext) -> Block:
     if eval_result:
         logger.info("Adding eval results from video generation test to benchmark data")
         data["num_prompts"] = eval_result.get("num_prompts", 0)
+        data["num_generated"] = eval_result.get("num_generated", 0)
         data["num_inference_steps"] = eval_result.get("num_inference_steps", 0)
 
         clip_results = eval_result.get("clip_results", {})

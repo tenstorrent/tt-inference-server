@@ -19,6 +19,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from workflows.utils import get_num_calls
 
 from report_module.schema import Block
+from report_module.status import TestStatus
 
 from .._test_common import (
     MetricSpec,
@@ -266,40 +267,62 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
         raise
 
     logger.info("Generating benchmark report...")
-    ttft_value = _video_ttft(status_list)
+    # Only successful generations produce meaningful timings. A fast HTTP
+    # rejection (bad route/auth, server error) returns near-instantly, which
+    # would otherwise inflate throughput and deflate TTFT 
+    successful = [s for s in status_list if s.status]
+    num_total = len(status_list)
+    num_successful = len(successful)
+    all_succeeded = num_total > 0 and num_successful == num_total
+
+    ttft_value = _video_ttft(successful)
     inference_steps_per_second = (
-        sum(s.inference_steps_per_second for s in status_list) / len(status_list)
-        if status_list
+        sum(s.inference_steps_per_second for s in successful) / num_successful
+        if successful
         else 0
     )
     # Sequential single-user benchmark, so tput_user = total throughput.
     target_checks, target_check = _video_target_checks(
         ctx, ttft_value, inference_steps_per_second
     )
+
+    block_data: dict = {
+        "Benchmarks": {
+            "num_requests": num_total,
+            "num_successful": num_successful,
+            "num_inference_steps": (
+                status_list[0].num_inference_steps if status_list else 0
+            ),
+            "ttft": ttft_value,
+            "inference_steps_per_second": inference_steps_per_second,
+            "tput_user": inference_steps_per_second,
+            "target_check": target_check,
+            "target_checks": target_checks,
+        },
+    }
+
+    # A benchmark where any generation failed is not a valid PASS regardless of
+    # the timing of the survivors: surface it as a blocking failure so a broken
+    # endpoint cannot be reported as passing.
+    if not all_succeeded:
+        logger.error(
+            f"Video benchmark: only {num_successful}/{num_total} generations "
+            f"succeeded; marking benchmark as FAILED."
+        )
+        block_data["status"] = TestStatus.FAIL.value
+
     return Block(
         kind="benchmarks",
         task_type="video",
         title="Video Benchmark",
         id=block_id(ctx) or None,
         targets={
-            "num_prompts": len(status_list),
+            "num_prompts": num_total,
             "num_inference_steps": (
                 status_list[0].num_inference_steps if status_list else 0
             ),
         },
-        data={
-            "Benchmarks": {
-                "num_requests": len(status_list),
-                "num_inference_steps": (
-                    status_list[0].num_inference_steps if status_list else 0
-                ),
-                "ttft": ttft_value,
-                "inference_steps_per_second": inference_steps_per_second,
-                "tput_user": inference_steps_per_second,
-                "target_check": target_check,
-                "target_checks": target_checks,
-            },
-        },
+        data=block_data,
     )
 
 

@@ -4,6 +4,7 @@
 
 import json
 import logging
+import math
 import shutil
 import statistics
 import time
@@ -41,6 +42,9 @@ DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
 DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
 ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_reference.json"
 DATASET_DIR = "server_tests/datasets/videos"
+# accuracy_check codes returned by _check_accuracy.
+ACCURACY_CHECK_FAIL = 3
+MIN_GENERATION_SUCCESS_RATIO = 1.0
 
 
 @dataclass
@@ -100,6 +104,7 @@ class VideoGenerationEvalsTest(BaseTest):
             server_url=request.server_url,
             num_inference_steps=request.num_inference_steps,
         )
+        num_generated = len(videos_info)
 
         # Step 3: Calculate CLIP scores
         logger.info("Step 3: Calculating CLIP scores for video frames")
@@ -117,9 +122,22 @@ class VideoGenerationEvalsTest(BaseTest):
             num_prompts=request.num_prompts,
         )
 
+        # A run that failed to generate the requested videos is not a valid
+        # PASS, regardless of the CLIP score computed over the surviving subset.
+        min_required = max(
+            1, math.ceil(request.num_prompts * MIN_GENERATION_SUCCESS_RATIO)
+        )
+        if num_generated < min_required:
+            logger.error(
+                f"Only {num_generated}/{request.num_prompts} videos generated "
+                f"(minimum required: {min_required}); failing accuracy check."
+            )
+            accuracy_check = ACCURACY_CHECK_FAIL
+
         results = {
             "model": request.model_name,
             "num_prompts": request.num_prompts,
+            "num_generated": num_generated,
             "num_inference_steps": request.num_inference_steps,
             "clip_results": clip_results,
             "accuracy_check": accuracy_check,
