@@ -41,7 +41,8 @@ class PrefixCacheRouterTest : public ::testing::Test {
     createdSlotCopyFrom_.clear();
     nextAllocSlot_ = 1000;
 
-    router_ = std::make_unique<tt::services::PrefixCacheRouter>(makeCallbacks());
+    router_ =
+        std::make_unique<tt::services::PrefixCacheRouter>(makeCallbacks());
   }
 
   std::string addSession(uint32_t slotId, uint64_t hash = 0) {
@@ -132,14 +133,14 @@ class PrefixCacheRouterTest : public ::testing::Test {
   tt::services::PrefixCacheRouterCallbacks makeCallbacks() {
     tt::services::PrefixCacheRouterCallbacks callbacks;
 
-    callbacks.tryMarkInFlight =
-        [this](const std::string& sessionId, std::function<void()>& cancelFn,
-               std::optional<uint64_t> expectedKeyHash,
-               const std::string* expectedResponseId)
+    callbacks.tryMarkInFlight = [this](const std::string& sessionId,
+                                       std::function<void()>& cancelFn,
+                                       std::optional<uint64_t> expectedKeyHash,
+                                       const std::string* expectedResponseId)
         -> tt::domain::MarkInFlightResult {
-          return tryMarkSessionInFlight(sessionId, cancelFn, expectedKeyHash,
-                                        expectedResponseId);
-        };
+      return tryMarkSessionInFlight(sessionId, cancelFn, expectedKeyHash,
+                                    expectedResponseId);
+    };
 
     callbacks.getSession = [this](const std::string& sessionId) {
       auto it = sessions_.find(sessionId);
@@ -201,8 +202,12 @@ class PrefixCacheRouterTest : public ::testing::Test {
           .slotId;
     };
 
-    callbacks.lockSlot = [this](uint32_t slotId) { lockedSlots_.insert(slotId); };
-    callbacks.unlockSlot = [this](uint32_t slotId) { lockedSlots_.erase(slotId); };
+    callbacks.lockSlot = [this](uint32_t slotId) {
+      lockedSlots_.insert(slotId);
+    };
+    callbacks.unlockSlot = [this](uint32_t slotId) {
+      lockedSlots_.erase(slotId);
+    };
 
     callbacks.shrinkResidentPrefixToMatchedTokens =
         [this](const std::string& sessionId, uint32_t matchedTokens) {
@@ -225,7 +230,8 @@ class PrefixCacheRouterTest : public ::testing::Test {
 // tryAcquireByPrefixHash
 // ---------------------------------------------------------------------------
 
-TEST_F(PrefixCacheRouterTest, TryAcquireByPrefixHash_EmptyBlocks_ReturnsNullopt) {
+TEST_F(PrefixCacheRouterTest,
+       TryAcquireByPrefixHash_EmptyBlocks_ReturnsNullopt) {
   EXPECT_FALSE(router_->tryAcquireByPrefixHash({}, nullptr).has_value());
 }
 
@@ -251,8 +257,8 @@ TEST_F(PrefixCacheRouterTest,
   auto sessionId = addSession(8u);
   registerBlocks(sessionId, threeBlocks());
 
-  ASSERT_TRUE(router_->tryAcquireByPrefixHash(threeBlocks(), nullptr)
-                  ->sessionFound);
+  ASSERT_TRUE(
+      router_->tryAcquireByPrefixHash(threeBlocks(), nullptr)->sessionFound);
   auto busy = router_->tryAcquireByPrefixHash(threeBlocks(), nullptr);
   ASSERT_TRUE(busy.has_value());
   EXPECT_FALSE(busy->sessionFound);
@@ -285,8 +291,7 @@ TEST_F(PrefixCacheRouterTest, TryAcquireByResponseId_EmptyId_ReturnsNullopt) {
 }
 
 TEST_F(PrefixCacheRouterTest, TryAcquireByResponseId_Miss_ReturnsNullopt) {
-  EXPECT_FALSE(
-      router_->tryAcquireByResponseId("missing", nullptr).has_value());
+  EXPECT_FALSE(router_->tryAcquireByResponseId("missing", nullptr).has_value());
 }
 
 TEST_F(PrefixCacheRouterTest, TryAcquireByResponseId_Hit_ReturnsSession) {
@@ -384,7 +389,8 @@ TEST_F(PrefixCacheRouterTest, OnSessionClosed_RemovesIndexes) {
 
   router_->onSessionClosed(sessionId, 100u, "resp-close");
 
-  EXPECT_FALSE(router_->tryAcquireByResponseId("resp-close", nullptr).has_value());
+  EXPECT_FALSE(
+      router_->tryAcquireByResponseId("resp-close", nullptr).has_value());
   auto sessionId2 = addSession(19u);
   registerBlocks(sessionId2, threeBlocks());
   auto hit = router_->tryAcquireByPrefixHash(threeBlocks(), nullptr);
@@ -473,8 +479,8 @@ TEST_F(PrefixCacheRouterTest, GetSlot_BusyCandidate_CopiesFromSourceSlot) {
   auto threeBlockInfos = router_->computeBlockInfos(threePrompt);
   auto sessionId = addSession(22u);
   registerBlocks(sessionId, threeBlockInfos);
-  ASSERT_TRUE(router_->tryAcquireByPrefixHash(threeBlockInfos, nullptr)
-                  ->sessionFound);
+  ASSERT_TRUE(
+      router_->tryAcquireByPrefixHash(threeBlockInfos, nullptr)->sessionFound);
 
   auto fourPrompt = makeFourBlockPrompt();
   std::optional<tt::services::SlotAcquireResult> result;

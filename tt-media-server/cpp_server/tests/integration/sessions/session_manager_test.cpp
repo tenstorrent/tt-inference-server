@@ -473,10 +473,10 @@ TEST(SessionManagerConcurrency,
 // ---------------------------------------------------------------------------
 // getSlot() routing tests
 //
-// These cover the unified slot acquisition path used by LLMPipeline: response-id
-// continuation, prefix-cache fallback, and in-flight / cancel semantics.
-// Turn-1 sessions are bootstrapped with createTestSession + registerResponseId
-// (IPC allocation is not available in these unit tests).
+// These cover the unified slot acquisition path used by LLMPipeline:
+// response-id continuation, prefix-cache fallback, and in-flight / cancel
+// semantics. Turn-1 sessions are bootstrapped with createTestSession +
+// registerResponseId (IPC allocation is not available in these unit tests).
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -516,7 +516,8 @@ TEST(SessionManagerGetSlot, ResponseIdHit_ReturnsSessionAndSlot) {
   releaseSlot(manager, sessionId);
 }
 
-TEST(SessionManagerGetSlot, UnknownPreviousResponseId_FallsThroughToPrefixCache) {
+TEST(SessionManagerGetSlot,
+     UnknownPreviousResponseId_FallsThroughToPrefixCache) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
