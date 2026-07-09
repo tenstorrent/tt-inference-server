@@ -37,10 +37,12 @@ PrefixCacheRouter::tryAcquireByPrefixHash(
 
   const uint64_t keyHash = blockInfos.front().hash;
 
-  const std::vector<domain::prefix_cache::PrefixIndexEntry> entries =
-      prefixIndex.getEntriesForKey(keyHash);
-  std::vector<Candidate> candidates =
-      domain::prefix_cache::BlockMatcher::buildCandidates(blockInfos, entries);
+  std::vector<Candidate> candidates;
+  prefixIndex.withEntriesForKey(
+      keyHash, [&](const std::vector<domain::prefix_cache::PrefixIndexEntry>& entries) {
+        candidates =
+            domain::prefix_cache::BlockMatcher::buildCandidates(blockInfos, entries);
+      });
   domain::prefix_cache::BlockMatcher::sortCandidates(candidates);
 
   if (candidates.empty()) {
@@ -261,11 +263,17 @@ std::pair<uint32_t, uint32_t> PrefixCacheRouter::computeMatchedTokens(
     return {0, 0};
   }
 
-  const std::vector<domain::prefix_cache::PrefixIndexEntry> entries =
-      prefixIndex.getEntriesForKey(blockInfos.front().hash);
-  const auto [matchedBlocks, thinkTokens] =
-      domain::prefix_cache::BlockMatcher::computeMatchedBlocksForSession(
-          sessionId, blockInfos, entries);
+  std::size_t matchedBlocks = 0;
+  std::uint32_t thinkTokens = 0;
+  prefixIndex.withEntriesForKey(
+      blockInfos.front().hash,
+      [&](const std::vector<domain::prefix_cache::PrefixIndexEntry>& entries) {
+        const auto match =
+            domain::prefix_cache::BlockMatcher::computeMatchedBlocksForSession(
+                sessionId, blockInfos, entries);
+        matchedBlocks = match.first;
+        thinkTokens = match.second;
+      });
 
   if (matchedBlocks == 0) {
     return {0, 0};

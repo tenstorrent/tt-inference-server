@@ -1366,24 +1366,23 @@ target_include_directories(prefix_cache_e2e_test PRIVATE
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)
 target_link_libraries(tokenizer_benchmark PRIVATE llm_runner_lib)
 
-# Session manager microbenchmark (Google Benchmark)
-add_executable(session_manager_benchmark
-    benchmarks/session_manager_benchmark.cpp
+# Prefix cache router microbenchmark (Google Benchmark)
+add_executable(prefix_cache_router_benchmark
+    benchmarks/prefix_cache_router_benchmark.cpp
     src/domain/session.cpp
     src/domain/prefix_cache/prefix_index.cpp
     src/domain/prefix_cache/block_matcher.cpp
     src/domain/prefix_cache/response_id_index.cpp
-    src/services/session_manager.cpp
     src/services/prefix_cache_router.cpp
     src/metrics/metrics.cpp
 )
-target_link_libraries(session_manager_benchmark PRIVATE
+target_link_libraries(prefix_cache_router_benchmark PRIVATE
     llm_runner_lib Drogon::Drogon prometheus-cpp::core benchmark::benchmark benchmark::benchmark_main)
-target_include_directories(session_manager_benchmark PRIVATE
+target_include_directories(prefix_cache_router_benchmark PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
-add_test(NAME SessionManagerBenchmark COMMAND session_manager_benchmark --benchmark_min_time=0.1s)
+add_test(NAME PrefixCacheRouterBenchmark COMMAND prefix_cache_router_benchmark --benchmark_min_time=0.1s)
 
 # Kafka messaging support (optional)
 if(KAFKA_ENABLED)
