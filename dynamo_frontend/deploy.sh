@@ -27,7 +27,6 @@ PREFILL_GATEWAY_DECODE_PORT="${PREFILL_GATEWAY_DECODE_PORT:-7100}"
 PREFILL_GATEWAY_METRICS_PORT="${PREFILL_GATEWAY_METRICS_PORT:-9091}"
 PREFILL_GATEWAY_HEALTH_PORT="${PREFILL_GATEWAY_HEALTH_PORT:-9092}"
 PREFILL_GATEWAY_PREFILL_BIND="${PREFILL_GATEWAY_PREFILL_BIND:-0.0.0.0:7200}"
-PREFILL_GATEWAY_SOCKET_TRANSPORT="${PREFILL_GATEWAY_SOCKET_TRANSPORT:-zmq}"
 PREFILL_WORKER_PORT="${PREFILL_WORKER_PORT:-8001}"
 PREFILL_DIRECT_SOCKET_PORT="${PREFILL_DIRECT_SOCKET_PORT:-9000}"
 
@@ -52,7 +51,6 @@ PREFILL_DIRECT_ENABLED=0
 DYNAMO_NATIVE_ROUTING_ENABLED=0
 PREFILL_GATEWAY_STARTED=0
 PREFILL_WORKERS_STARTED=()
-PREFILL_GATEWAY_PREFILLS=()
 PREFILL_WORKER_COUNT="${PREFILL_WORKER_COUNT:-1}"
 
 log() { printf '[deploy] %s\n' "$*"; }
@@ -112,11 +110,9 @@ Usage: $0 [options]
   --llm-device-backend <name>   cpp_server LLM_DEVICE_BACKEND (default: ${LLM_DEVICE_BACKEND})
   --prefill-gateway            start PrefillGateway and route decode prefill requests through it
   --prefill-gateway-image <img> (default: ${PREFILL_GATEWAY_IMAGE}; auto-builds default if missing)
-  --prefill-gateway-prefill <host:port>
-                               TCP prefill endpoint; repeatable, implies tcp transport
   --prefill-gateway-prefill-bind <host:port>
                                ZMQ prefill bind endpoint (default: ${PREFILL_GATEWAY_PREFILL_BIND})
-  --prefill-workers <count>    managed prefill worker count for gateway ZMQ/native modes (default: ${PREFILL_WORKER_COUNT})
+  --prefill-workers <count>    managed prefill worker count for gateway/native modes (default: ${PREFILL_WORKER_COUNT})
   --prefill-direct             start one managed prefill worker connected directly to decode
   --dynamo-native-routing      EXPERIMENTAL: register decode/prefill pools and let Dynamo route prefills
   --no-monitoring              skip Prometheus + Grafana deployment
@@ -147,12 +143,6 @@ while [[ $# -gt 0 ]]; do
         --llm-device-backend) LLM_DEVICE_BACKEND="$2";      shift 2 ;;
         --prefill-gateway) PREFILL_GATEWAY_ENABLED=1;       shift ;;
         --prefill-gateway-image) PREFILL_GATEWAY_IMAGE="$2"; shift 2 ;;
-        --prefill-gateway-prefill)
-            PREFILL_GATEWAY_ENABLED=1
-            PREFILL_GATEWAY_SOCKET_TRANSPORT=tcp
-            PREFILL_GATEWAY_PREFILLS+=(--prefill="$2")
-            shift 2
-            ;;
         --prefill-gateway-prefill-bind)
             PREFILL_GATEWAY_ENABLED=1
             PREFILL_GATEWAY_PREFILL_BIND="$2"
@@ -189,9 +179,6 @@ if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
     [[ "$PREFILL_DIRECT_ENABLED" == "0" ]] || die "--prefill-direct and --prefill-gateway are mutually exclusive"
     [[ "$DYNAMO_NATIVE_ROUTING_ENABLED" == "0" ]] || die "--dynamo-native-routing and --prefill-gateway are mutually exclusive"
     ensure_prefill_gateway_image
-    if [[ "$PREFILL_GATEWAY_SOCKET_TRANSPORT" == "tcp" && "${#PREFILL_GATEWAY_PREFILLS[@]}" -eq 0 ]]; then
-        die "--prefill-gateway-prefill is required when PREFILL_GATEWAY_SOCKET_TRANSPORT=tcp"
-    fi
 fi
 if [[ "$DYNAMO_NATIVE_ROUTING_ENABLED" == "1" ]]; then
     [[ "$PREFILL_DIRECT_ENABLED" == "0" ]] || die "--dynamo-native-routing and --prefill-direct are mutually exclusive"
@@ -251,16 +238,11 @@ if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
         --decode-port="$PREFILL_GATEWAY_DECODE_PORT"
         --metrics-port="$PREFILL_GATEWAY_METRICS_PORT"
         --health-port="$PREFILL_GATEWAY_HEALTH_PORT"
+        --prefill-bind="$PREFILL_GATEWAY_PREFILL_BIND"
     )
-    if [[ "$PREFILL_GATEWAY_SOCKET_TRANSPORT" == "tcp" ]]; then
-        PREFILL_GATEWAY_ARGS+=("${PREFILL_GATEWAY_PREFILLS[@]}")
-    else
-        PREFILL_GATEWAY_ARGS+=(--prefill-bind="$PREFILL_GATEWAY_PREFILL_BIND")
-    fi
 
     log "starting PrefillGateway ($PREFILL_GATEWAY_IMAGE)"
     docker run -d --name "$PREFILL_GATEWAY_NAME" --network "$NETWORK_NAME" \
-        -e SOCKET_TRANSPORT="$PREFILL_GATEWAY_SOCKET_TRANSPORT" \
         "$PREFILL_GATEWAY_IMAGE" \
         "${PREFILL_GATEWAY_ARGS[@]}" >/dev/null
     PREFILL_GATEWAY_STARTED=1
@@ -351,14 +333,13 @@ wait_native_prefill_workers() {
     die "native prefill worker(s) did not register within 60s"
 }
 
-if [[ "$PREFILL_GATEWAY_ENABLED" == "1" && "$PREFILL_GATEWAY_SOCKET_TRANSPORT" != "tcp" ]]; then
+if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
     PREFILL_CONNECT_PORT="$(endpoint_port "$PREFILL_GATEWAY_PREFILL_BIND")"
 
     for idx in $(seq 0 $((PREFILL_WORKER_COUNT - 1))); do
         start_prefill_worker "$(prefill_worker_name "$idx")" "managed gateway prefill worker ${idx}" "$PREFILL_WORKER_PORT" \
             -e DYNAMO_ENDPOINT_ENABLED=0 \
             -e USE_PREFILL_GATEWAY=1 \
-            -e SOCKET_TRANSPORT="$PREFILL_GATEWAY_SOCKET_TRANSPORT" \
             -e SOCKET_HOST="$PREFILL_GATEWAY_NAME" \
             -e SOCKET_PORT="$PREFILL_CONNECT_PORT" \
             -e PREFILL_SERVER_ID="managed-prefill-${idx}"
@@ -371,7 +352,6 @@ if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
         -e LLM_MODE=decode
         -e USE_PREFILL_GATEWAY=1
         -e MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-0}"
-        -e SOCKET_TRANSPORT="$PREFILL_GATEWAY_SOCKET_TRANSPORT"
         -e SOCKET_HOST="$PREFILL_GATEWAY_NAME"
         -e SOCKET_PORT="$PREFILL_GATEWAY_DECODE_PORT"
     )
@@ -380,7 +360,6 @@ elif [[ "$PREFILL_DIRECT_ENABLED" == "1" ]]; then
         -e LLM_MODE=decode
         -e USE_PREFILL_GATEWAY=0
         -e MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
-        -e SOCKET_TRANSPORT=tcp
         -e SOCKET_HOST=0.0.0.0
         -e SOCKET_PORT="$PREFILL_DIRECT_SOCKET_PORT"
     )
@@ -434,7 +413,6 @@ if [[ "$PREFILL_DIRECT_ENABLED" == "1" ]]; then
     start_prefill_worker "$PREFILL_WORKER_NAME" "direct prefill worker" "$PREFILL_WORKER_PORT" \
         -e DYNAMO_ENDPOINT_ENABLED=0 \
         -e USE_PREFILL_GATEWAY=0 \
-        -e SOCKET_TRANSPORT=tcp \
         -e SOCKET_HOST="$WORKER_NAME" \
         -e SOCKET_PORT="$PREFILL_DIRECT_SOCKET_PORT" \
         -e TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \

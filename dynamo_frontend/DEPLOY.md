@@ -5,10 +5,9 @@ network — **etcd** (discovery), **cpp_server** (worker), and
 **dynamo-frontend** (HTTP gateway) — plus **Prometheus** and **Grafana** from
 `tt-media-server/monitoring/`. Optional prefill modes are:
 `--prefill-direct`, `--prefill-gateway`, and `--dynamo-native-routing`. Gateway
-ZMQ mode and native routing can start multiple managed prefill workers with
-`--prefill-workers`; gateway TCP mode uses the external endpoints passed with
-repeatable `--prefill-gateway-prefill`. It then tails the decode worker's logs.
-Ctrl+C tears the managed containers down.
+and native routing can start multiple managed prefill workers with
+`--prefill-workers`. It then tails the decode worker's logs. Ctrl+C tears the
+managed containers down.
 
 ## Quick start
 
@@ -51,9 +50,8 @@ worker image and runs that binary — no `--cpp-server-dir` and no image rebuild
 | `--llm-device-backend <name>` | `pipeline_manager`                   | `LLM_DEVICE_BACKEND` env on the worker                                          |
 | `--prefill-gateway`      | off                                       | Start PrefillGateway and route decode prefill requests through it               |
 | `--prefill-gateway-image <img>` | `tt-prefill-gateway:dev`          | PrefillGateway image; the default local image is built automatically if missing |
-| `--prefill-gateway-prefill <host:port>` | none                       | External TCP prefill endpoint; repeatable and implies TCP transport             |
 | `--prefill-gateway-prefill-bind <host:port>` | `0.0.0.0:7200`        | ZMQ prefill ROUTER bind endpoint                                                |
-| `--prefill-workers <count>` | `1`                                  | Managed prefill worker count for gateway ZMQ and native Dynamo routing          |
+| `--prefill-workers <count>` | `1`                                  | Managed prefill worker count for gateway and native Dynamo routing              |
 | `--prefill-direct`       | off                                       | Start one managed prefill worker connected directly to decode, without PrefillGateway |
 | `--dynamo-native-routing` | off                                      | Experimental: register decode/prefill pools with Dynamo and let Dynamo route prefills |
 | `--no-monitoring`        | off                                       | Skip Prometheus + Grafana                                                       |
@@ -107,18 +105,18 @@ Prometheus scrapes `prefill-gateway:9091`.
    needed.
 5. **Direct prefill/decode (optional)** — with `--prefill-direct`, starts the
    Dynamo-registered worker as `LLM_MODE=decode` and starts one managed
-   `LLM_MODE=prefill` worker that connects directly to decode over TCP. The
-   decode worker keeps short prompts local according to
+   `LLM_MODE=prefill` worker that connects directly to decode using the
+   cpp_server inter-server ZMQ transport. The decode worker keeps short prompts
+   local according to
    `MAX_TOKENS_TO_PREFILL_ON_DECODE` (default `1000`) and offloads larger
-   prompt deltas to the managed prefill worker. Dynamo discovers the decode
-   worker only in this mode.
+   prompt deltas to the managed prefill worker. Dynamo still receives requests
+   through the decode worker; it does not select among prefill workers in this
+   mode.
 6. **PrefillGateway (optional)** — with `--prefill-gateway`, starts the
    gateway on `dynamo-net`. The default ZMQ mode binds `0.0.0.0:7200` for
    prefills and exposes metrics on container port `9091`; the script starts
    `--prefill-workers` managed `LLM_MODE=prefill` workers that connect to that
-   bind endpoint. TCP mode is selected by repeating
-   `--prefill-gateway-prefill <host:port>` for externally managed prefill
-   endpoints. The Dynamo-registered worker runs as `LLM_MODE=decode` with
+   bind endpoint. The Dynamo-registered worker runs as `LLM_MODE=decode` with
    `USE_PREFILL_GATEWAY=1` and `MAX_TOKENS_TO_PREFILL_ON_DECODE=0`, so decode
    requests route prefill work through the gateway.
 7. **Dynamo-native routing (experimental)** — with
