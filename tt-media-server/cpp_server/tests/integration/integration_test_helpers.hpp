@@ -16,6 +16,7 @@
 #include <future>
 #include <memory>
 #include <numeric>
+#include <span>
 #include <string>
 #include <thread>
 #include <type_traits>
@@ -101,9 +102,10 @@ inline config::LLMConfig makeLLMConfig(
 
 inline uint32_t generateTaskId() { return utils::TaskIDGenerator::generate(); }
 
-inline std::vector<uint32_t> makeSequentialPrompt(size_t length) {
+inline std::vector<uint32_t> makeSequentialPrompt(size_t length,
+                                                  uint32_t start = 0) {
   std::vector<uint32_t> prompt(length);
-  std::iota(prompt.begin(), prompt.end(), 0);
+  std::iota(prompt.begin(), prompt.end(), start);
   return prompt;
 }
 
@@ -203,6 +205,56 @@ inline std::string createTestSession(
 inline uint32_t acquireInFlight(services::SessionManager& manager,
                                 const std::string& sessionId) {
   return manager.acquireInFlight(sessionId, nullptr);
+}
+
+struct GetSlotOutcome {
+  std::optional<services::SlotAcquireResult> result;
+  std::optional<std::string> error;
+  bool rateLimited = false;
+};
+
+// Synchronous wrapper around SessionManager::getSlot for integration tests.
+// Requires a running TrantorLoopFixture event loop.
+inline GetSlotOutcome callGetSlot(services::SessionManager& manager,
+                                  trantor::EventLoop* loop,
+                                  std::span<const uint32_t> promptTokenIds,
+                                  services::GetSlotOptions opts) {
+  std::promise<GetSlotOutcome> promise;
+  auto future = promise.get_future();
+
+  try {
+    manager.getSlot(
+        promptTokenIds, std::move(opts), loop,
+        [&promise](services::SlotAcquireResult result) {
+          promise.set_value({.result = std::move(result)});
+        },
+        [&promise](const std::string& error) {
+          promise.set_value({.error = error});
+        });
+  } catch (const services::SessionInFlightException&) {
+    return {.rateLimited = true};
+  }
+
+  return future.get();
+}
+
+inline void releaseSlot(services::SessionManager& manager,
+                        const std::string& sessionId) {
+  if (auto session = manager.getSession(sessionId)) {
+    session->release();
+  }
+}
+
+// Simulates a completed turn-1 session registered under responseId.
+inline std::string bootstrapSessionWithResponseId(
+    services::SessionManager& manager, trantor::EventLoop* loop,
+    uint32_t slotId, const std::string& responseId,
+    const std::vector<utils::BlockHashInfo>& blockInfos = {}) {
+  auto sessionId = blockInfos.empty()
+                       ? createTestSession(manager, loop, slotId)
+                       : createTestSession(manager, loop, slotId, blockInfos);
+  manager.registerResponseId(sessionId, responseId);
+  return sessionId;
 }
 
 // ---------------------------------------------------------------------------
