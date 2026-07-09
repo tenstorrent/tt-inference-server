@@ -28,6 +28,7 @@
 #ifdef KAFKA_ENABLED
 #include "messaging/kafka_consumer.hpp"
 #include "messaging/kafka_producer.hpp"
+#include "services/composite_migration_client.hpp"
 #include "services/remote_kv_manager_adapter.hpp"
 #include "services/remote_kv_manager_impl.hpp"
 #endif
@@ -345,16 +346,57 @@ inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig() {
   };
 }
 
-// Kafka-backed migration client for the PrefillScheduler. Constructs a
-// RemoteKVManagerImpl (with its Kafka producer + ack consumer wired from the
-// KAFKA_* env vars) and wraps it in a RemoteKVManagerAdapter so the scheduler
-// sees a MigrationClientInterface. Only compiled when the binary was built
-// with KAFKA_ENABLED=ON; the non-Kafka build surfaces a clear error at
-// scheduler construction (in makeMigrationClientInterface below) instead of
-// silently downgrading to the shmem path.
+// Runner-type-driven migration client factory. This is the client the
+// PrefillScheduler gets when PREFILL_USE_REMOTE_KV_MANAGER is off, AND — when
+// it is on — the loopback backend that a CompositeMigrationClient uses to
+// serve migrate() calls the Kafka RemoteKVManagerAdapter cannot handle
+// (ALLOCATE(migrate_from_slot) prefix-cache slot copies). Kept as a separate
+// helper so both callers share exactly one runner_type switch.
+inline std::unique_ptr<sch::MigrationClientInterface>
+makeShmemOrMockMigrationClient(const tt::config::LLMConfig& config) {
+  switch (config.runner_type) {
+    case tt::config::ModelRunnerType::PIPELINE_MANAGER:
+#ifdef ENABLE_BLAZE_MIGRATION
+      return std::make_unique<sch::MigrationLayerClientAdapter>(
+          tt::config::migrationCmdQueueName(),
+          tt::config::migrationTableQueueName(),
+          tt::config::migrationRespQueueName());
+#else
+      throw std::runtime_error(
+          "LLM_DEVICE_BACKEND=pipeline_manager requires a build with "
+          "--blaze-with-migration");
+#endif
+    case tt::config::ModelRunnerType::MOCK_PIPELINE:
+      return std::make_unique<sch::MockMigrationClient>();
+    default:
+      throw std::runtime_error("Invalid blaze prefill runner type");
+  }
+}
+
+// Kafka-backed migration client for the PrefillScheduler. Builds two
+// backends and hands them to a CompositeMigrationClient:
+//
+//   burst backend (Kafka):
+//     RemoteKVManagerAdapter wraps a RemoteKVManagerImpl wired to a Kafka
+//     producer (request topic) and Kafka consumer (ack topic). Handles the
+//     start_burst / enqueue_migration_in_burst / finish_burst path used for
+//     cross-endpoint P->D KV migration on a migrating SUBMIT.
+//
+//   loopback backend (shmem or mock, per runner_type):
+//     Whatever makeShmemOrMockMigrationClient would return for the current
+//     runner_type. Serves the single-shot migrate() path used for
+//     ALLOCATE(migrate_from_slot) prefix-cache slot copies, which the Kafka
+//     adapter intentionally does not implement (RemoteKVManagerAdapter::
+//     migrate() throws). Without this, a single IS request with
+//     migrate_from_slot would crash the prefill worker.
+//
+// Only compiled when the binary was built with KAFKA_ENABLED=ON; the
+// non-Kafka build surfaces a clear error at scheduler construction (in
+// makeMigrationClientInterface below) instead of silently downgrading to
+// the shmem-only path.
 #ifdef KAFKA_ENABLED
 inline std::unique_ptr<sch::MigrationClientInterface>
-makePrefillKafkaMigrationClient() {
+makePrefillKafkaMigrationClient(const tt::config::LLMConfig& config) {
   auto requestProducer = std::make_unique<tt::messaging::KafkaProducer>(
       tt::messaging::KafkaProducerConfig{
           .brokers = tt::config::kafkaBrokers(),
@@ -378,13 +420,17 @@ makePrefillKafkaMigrationClient() {
       std::chrono::milliseconds(tt::config::kvMigrationTimeoutMs()),
       std::chrono::milliseconds(tt::config::kvMigrationSweepIntervalMs()),
       static_cast<int>(tt::config::kvMigrationDrainPollMs()));
+  auto burst = std::make_unique<tt::services::RemoteKVManagerAdapter>(
+      std::move(kvManager));
+  auto loopback = makeShmemOrMockMigrationClient(config);
   TT_LOG_INFO(
-      "makePrefillKafkaMigrationClient: RemoteKVManagerAdapter wired "
-      "(brokers={}, request_topic={}, ack_topic={}, group_id={})",
+      "makePrefillKafkaMigrationClient: CompositeMigrationClient wired "
+      "(brokers={}, request_topic={}, ack_topic={}, group_id={}); burst = "
+      "RemoteKVManagerAdapter, loopback per runner_type",
       tt::config::kafkaBrokers(), tt::config::kafkaMigrationRequestTopic(),
       tt::config::kafkaMigrationAckTopic(), tt::config::kafkaGroupId());
-  return std::make_unique<tt::services::RemoteKVManagerAdapter>(
-      std::move(kvManager));
+  return std::make_unique<tt::services::CompositeMigrationClient>(
+      std::move(burst), std::move(loopback));
 }
 #endif  // KAFKA_ENABLED
 
@@ -393,11 +439,13 @@ makeMigrationClientInterface(const tt::config::LLMConfig& config) {
   if (!tt::config::enableMigration()) {
     return nullptr;
   }
-  // PREFILL_USE_REMOTE_KV_MANAGER swaps the shmem MigrationLayerClientAdapter
-  // for the Kafka-backed RemoteKVManagerAdapter, independent of runner_type.
+  // PREFILL_USE_REMOTE_KV_MANAGER routes the burst path to the Kafka-backed
+  // RemoteKVManagerAdapter while keeping the shmem/mock client for the
+  // migrate() path (composed inside CompositeMigrationClient). Off by
+  // default; when off the scheduler talks directly to the shmem/mock client.
   if (tt::config::prefillUseRemoteKvManager()) {
 #ifdef KAFKA_ENABLED
-    return makePrefillKafkaMigrationClient();
+    return makePrefillKafkaMigrationClient(config);
 #else
     throw std::runtime_error(
         "PREFILL_USE_REMOTE_KV_MANAGER=1 but this binary was built without "
@@ -405,23 +453,7 @@ makeMigrationClientInterface(const tt::config::LLMConfig& config) {
         "PREFILL_USE_REMOTE_KV_MANAGER to use the shmem MigrationLayerClient.");
 #endif
   }
-  switch (config.runner_type) {
-    case tt::config::ModelRunnerType::PIPELINE_MANAGER:
-#ifdef ENABLE_BLAZE_MIGRATION
-      return std::make_unique<sch::MigrationLayerClientAdapter>(
-          tt::config::migrationCmdQueueName(),
-          tt::config::migrationTableQueueName(),
-          tt::config::migrationRespQueueName());
-#else
-      throw std::runtime_error(
-          "LLM_DEVICE_BACKEND=pipeline_manager requires a build with "
-          "--blaze-with-migration");
-#endif
-    case tt::config::ModelRunnerType::MOCK_PIPELINE:
-      return std::make_unique<sch::MockMigrationClient>();
-    default:
-      throw std::runtime_error("Invalid blaze decode runner type");
-  }
+  return makeShmemOrMockMigrationClient(config);
 }
 
 inline std::unique_ptr<sch::MigrationClientInterface>

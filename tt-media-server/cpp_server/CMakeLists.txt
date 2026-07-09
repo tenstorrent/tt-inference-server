@@ -1403,8 +1403,15 @@ if(KAFKA_ENABLED)
     # Note: disaggregation/migration/include is needed for migration_client.hpp
     # which migration_client_interface.hpp includes for event types.
     if(ENABLE_BLAZE)
+        # CompositeMigrationClient joins the Kafka RemoteKVManagerAdapter (burst
+        # path) with the shmem/mock MigrationLayerClient (migrate/loopback
+        # path) behind a single MigrationClientInterface so the PrefillScheduler
+        # can still service ALLOCATE(migrate_from_slot) prefix-cache copies —
+        # the Kafka adapter intentionally throws on that entry point, so
+        # composing is what makes PREFILL_USE_REMOTE_KV_MANAGER safe.
         add_library(remote_kv_adapter
             src/services/remote_kv_manager_adapter.cpp
+            src/services/composite_migration_client.cpp
         )
         target_include_directories(remote_kv_adapter PUBLIC
             ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -1423,6 +1430,21 @@ if(KAFKA_ENABLED)
         message(STATUS
             "llm_runner_lib: PREFILL_USE_REMOTE_KV_MANAGER path ENABLED "
             "(linked against remote_kv_adapter, KAFKA_ENABLED define set)")
+
+        # Unit test for CompositeMigrationClient. Uses two in-process
+        # FakeBackends (defined inline in the test) so it does not need
+        # Kafka or shmem; the whole point is to pin down the composite's
+        # routing / fan-out behavior in isolation.
+        add_executable(composite_migration_client_test
+            tests/unit/services/composite_migration_client_test.cpp
+        )
+        target_link_libraries(composite_migration_client_test PRIVATE
+            remote_kv_adapter
+            GTest::gtest_main
+        )
+        target_include_directories(composite_migration_client_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
     else()
         message(STATUS "remote_kv_adapter: DISABLED (requires ENABLE_BLAZE=ON)")
     endif()
