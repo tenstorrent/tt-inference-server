@@ -1,0 +1,109 @@
+name: Cleanup Stale Branches
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List stale branches without deleting them
+        type: boolean
+        default: true
+      stale_days:
+        description: Delete branches with no commits newer than this many days
+        type: number
+        default: 90
+  schedule:
+    # First day of each month at 04:00 Europe/Belgrade (CET, UTC+1).
+    # GitHub cron is UTC-only → 03:00 UTC. During CEST (summer) this is 05:00 local.
+    - cron: '0 3 1 * *'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    name: Delete stale branches
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Delete stale remote branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          STALE_DAYS: ${{ github.event_name == 'workflow_dispatch' && inputs.stale_days || 90 }}
+        run: |
+          set -euo pipefail
+
+          is_protected() {
+            case "$1" in
+              main|master|develop) return 0 ;;
+              release/*) return 0 ;;
+            esac
+            return 1
+          }
+
+          # Open PRs include drafts in GitHub (state=open, draft=true).
+          declare -A ACTIVE_PR_BRANCHES=()
+          while IFS= read -r head_branch; do
+            [[ -z "${head_branch}" ]] && continue
+            ACTIVE_PR_BRANCHES["${head_branch}"]=1
+          done < <(
+            gh pr list --state open --limit 1000 --json headRefName \
+              --jq '.[].headRefName'
+          )
+
+          has_open_or_draft_pr() {
+            [[ -n "${ACTIVE_PR_BRANCHES[$1]+x}" ]]
+          }
+
+          stale_candidates=0
+          deleted=0
+          skipped_protected=0
+          skipped_active_pr=0
+          skipped_recent=0
+
+          cutoff_epoch="$(date -u -d "${STALE_DAYS} days ago" +%s)"
+
+          echo "=== Branches stale for more than ${STALE_DAYS} days ==="
+
+          while IFS=$'\t' read -r branch commit_date; do
+            [[ -z "${branch}" ]] && continue
+
+            if is_protected "${branch}"; then
+              echo "Skipping protected branch: ${branch}"
+              skipped_protected=$((skipped_protected + 1))
+              continue
+            fi
+
+            commit_epoch="$(date -u -d "${commit_date}" +%s)"
+            if [[ "${commit_epoch}" -ge "${cutoff_epoch}" ]]; then
+              skipped_recent=$((skipped_recent + 1))
+              continue
+            fi
+
+            if has_open_or_draft_pr "${branch}"; then
+              echo "Skipping branch with open or draft PR: ${branch}"
+              skipped_active_pr=$((skipped_active_pr + 1))
+              continue
+            fi
+
+            stale_candidates=$((stale_candidates + 1))
+
+            if [[ "${DRY_RUN}" == "true" ]]; then
+              echo "Would delete (stale since ${commit_date}): ${branch}"
+            else
+              echo "Deleting (stale since ${commit_date}): ${branch}"
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${branch}"
+              deleted=$((deleted + 1))
+            fi
+          done < <(
+            gh api "repos/${GITHUB_REPOSITORY}/branches?per_page=100" --paginate \
+              --jq '.[] | [.name, .commit.commit.committer.date] | @tsv'
+          )
+
+          echo "Dry run: ${DRY_RUN}"
+          echo "Stale threshold (days): ${STALE_DAYS}"
+          echo "Stale candidates: ${stale_candidates}"
+          echo "Deleted: ${deleted}"
+          echo "Skipped (protected): ${skipped_protected}"
+          echo "Skipped (open/draft PR): ${skipped_active_pr}"
+          echo "Skipped (recent): ${skipped_recent}"
