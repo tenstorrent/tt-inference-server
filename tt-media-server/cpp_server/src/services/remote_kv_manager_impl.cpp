@@ -16,8 +16,11 @@ namespace tt::services {
  * parameters.
  *
  * @param requestProducer Kafka producer wired to the migration-request topic.
- * @param ackConsumer Kafka consumer subscribed to the migration-ack topic, with
- * a unique group.id.
+ * @param ackConsumer Kafka consumer subscribed to the migration-ack topic,
+ * with a group.id unique to this instance (see
+ * tt::config::kafkaMigrationAckGroupId()). Sharing a group.id across
+ * RemoteKVManagerImpl instances causes Kafka to split ack-topic partitions
+ * between them, silently starving the owning instance of completion events.
  * @param timeout Max age of an IN_PROGRESS migration before the sweeper marks
  * it FAILED. Default 60s.
  * @param sweepInterval How often the drain thread runs the timeout sweep.
