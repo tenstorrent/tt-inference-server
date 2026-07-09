@@ -373,6 +373,7 @@ BlazeConfig blazeConfig() {
     cfg.migrationDecodeEndpointId = migrationDecodeEndpointId();
     cfg.specDecodeMode = specDecodeMode();
     cfg.mtpLevel = mtpLevel();
+    cfg.prefillInflightCap = prefillInflightCap();
 
     // Pipeline / channel config
     cfg.blazeSocketDescriptorPrefix = blazeSocketDescriptorPrefix();
@@ -807,6 +808,11 @@ std::string dynamoEtcdEndpoints() {
 
 std::string specDecodeMode() {
   return envString("SPEC_DECODE_MODE", defaults::SPEC_DECODE_MODE);
+}
+
+uint32_t prefillInflightCap() {
+  return static_cast<uint32_t>(envUlong("TT_DECODE_PREFILL_INFLIGHT_CAP",
+                                        defaults::PREFILL_INFLIGHT_CAP));
 }
 
 size_t mtpLevel() {

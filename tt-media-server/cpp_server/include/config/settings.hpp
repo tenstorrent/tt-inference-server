@@ -283,6 +283,11 @@ std::string specDecodeMode();
 /** MTP level from MTP_LEVEL. Default: defaults::MTP_LEVEL. */
 size_t mtpLevel();
 
+/** Total device in-flight token cap (prefill + decode) above which the decode
+ * scheduler stops injecting prefill, from TT_DECODE_PREFILL_INFLIGHT_CAP.
+ * 0 = disabled. Default: defaults::PREFILL_INFLIGHT_CAP. */
+uint32_t prefillInflightCap();
+
 /** Media payload task queue name from TT_MEDIA_TASK_QUEUE. */
 std::string ttMediaTaskQueueName();
 

@@ -69,6 +69,11 @@ constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 constexpr const char* SPEC_DECODE_MODE = "none";
 constexpr size_t MTP_LEVEL = 1;
 
+// Total device in-flight token cap (prefill + decode) above which the decode
+// scheduler stops injecting prefill, reserving buffer slots for decode to
+// flatten ITL. 0 = disabled. See SchedulerParams::prefill_inflight_cap.
+constexpr uint32_t PREFILL_INFLIGHT_CAP = 0;
+
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
 constexpr const char* TT_RESULT_QUEUE = "tt_results";
 constexpr const char* TT_CANCEL_QUEUE = "tt_cancels";

@@ -98,6 +98,13 @@ std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
       static_cast<uint32_t>(thinkTokenIds.second);
   managerParams.max_users = maxUsers;
   managerParams.self_endpoint_id = config.migrationDecodeEndpointId;
+  managerParams.prefill_inflight_cap = config.prefillInflightCap;
+  if (managerParams.prefill_inflight_cap > 0) {
+    TT_LOG_INFO(
+        "makeDecodeScheduler: prefill in-flight cap enabled (total device "
+        "in-flight tokens limited to {} before prefill injection pauses)",
+        managerParams.prefill_inflight_cap);
+  }
   if (config.enableMigration) {
     migrationClientInterface->connect_to(config.migrationPrefillEndpointId,
                                          "CONNECTOR", "ds_pd");
