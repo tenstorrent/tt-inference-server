@@ -27,6 +27,7 @@
 #include "domain/session.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/llm_pipeline.hpp"
+#include "services/session_manager.hpp"
 #include "sockets/socket_messages.hpp"
 #include "utils/conversation_hasher.hpp"
 #include "utils/id_generator.hpp"
@@ -166,40 +167,66 @@ Json::Value prefillResultToJson(
 
 std::optional<tt::sockets::PrefillResultMessage> prefillResultFromJson(
     const Json::Value& dynRaw) {
-  if (!dynRaw.isMember("prefill_result")) return std::nullopt;
-  const auto& prefillResult = dynRaw["prefill_result"];
-  if (!prefillResult.isObject()) return std::nullopt;
-  const auto& params = prefillResult["disaggregated_params"];
-  if (!params.isObject() || !params.isMember("tt_prefill_result")) {
-    return std::nullopt;
+  const Json::Value* ttResult = nullptr;
+  auto tryParams = [&ttResult](const Json::Value& params) {
+    if (ttResult != nullptr || !params.isObject()) return;
+    if (params.isMember("tt_prefill_result") &&
+        params["tt_prefill_result"].isObject()) {
+      ttResult = &params["tt_prefill_result"];
+    }
+  };
+
+  if (dynRaw.isMember("prefill_result") &&
+      dynRaw["prefill_result"].isObject()) {
+    const auto& prefillResult = dynRaw["prefill_result"];
+    tryParams(prefillResult["disaggregated_params"]);
+    tryParams(prefillResult);
   }
-  const auto& ttResult = params["tt_prefill_result"];
-  if (!ttResult.isObject()) return std::nullopt;
+  tryParams(dynRaw["disaggregated_params"]);
+  if (dynRaw.isMember("extra_args") && dynRaw["extra_args"].isObject()) {
+    const auto& extraArgs = dynRaw["extra_args"];
+    tryParams(extraArgs["disaggregated_params"]);
+    if (extraArgs.isMember("prefill_result") &&
+        extraArgs["prefill_result"].isObject()) {
+      tryParams(extraArgs["prefill_result"]["disaggregated_params"]);
+      tryParams(extraArgs["prefill_result"]);
+    }
+  }
+
+  if (ttResult == nullptr) return std::nullopt;
 
   auto message = tt::sockets::PrefillResultMessage(
-      ttResult.get("task_id", tt::utils::TaskIDGenerator::generate()).asUInt());
-  message.generatedText = ttResult.get("generated_text", "").asString();
-  message.error = ttResult.get("error", false).asBool();
-  if (ttResult.isMember("token_ids") && ttResult["token_ids"].isArray()) {
-    for (const auto& token : ttResult["token_ids"]) {
+      ttResult->get("task_id", tt::utils::TaskIDGenerator::generate())
+          .asUInt());
+  message.generatedText = ttResult->get("generated_text", "").asString();
+  message.error = ttResult->get("error", false).asBool();
+  if (ttResult->isMember("token_ids") && (*ttResult)["token_ids"].isArray()) {
+    for (const auto& token : (*ttResult)["token_ids"]) {
       message.tokenIds.push_back(token.asUInt());
     }
   }
-  message.remainingTokens = optionalInt(ttResult["remaining_tokens"]);
-  message.slotId = optionalUInt(ttResult["slot_id"]);
-  if (!ttResult["temperature"].isNull()) {
-    message.temperature = ttResult["temperature"].asFloat();
+  message.remainingTokens = optionalInt((*ttResult)["remaining_tokens"]);
+  message.slotId = optionalUInt((*ttResult)["slot_id"]);
+  if (!(*ttResult)["temperature"].isNull()) {
+    message.temperature = (*ttResult)["temperature"].asFloat();
   }
-  if (!ttResult["top_p"].isNull()) {
-    message.topP = ttResult["top_p"].asFloat();
+  if (!(*ttResult)["top_p"].isNull()) {
+    message.topP = (*ttResult)["top_p"].asFloat();
   }
-  message.topK = optionalInt(ttResult["top_k"]);
-  message.fastMode = ttResult.get("fast_mode", false).asBool();
-  message.cachedTokens = ttResult.get("cached_tokens", 0).asInt();
-  if (ttResult.isMember("migration_id")) {
-    message.migrationId = ttResult["migration_id"].asUInt64();
+  message.topK = optionalInt((*ttResult)["top_k"]);
+  message.fastMode = ttResult->get("fast_mode", false).asBool();
+  message.cachedTokens = ttResult->get("cached_tokens", 0).asInt();
+  if (ttResult->isMember("migration_id")) {
+    message.migrationId = (*ttResult)["migration_id"].asUInt64();
   }
   return message;
+}
+
+bool shouldAllocateMockDecodeSlot() {
+  const auto runnerType = tt::config::llmEngineConfig().runner_type;
+  return runnerType == tt::config::ModelRunnerType::MOCK_PIPELINE ||
+         runnerType == tt::config::ModelRunnerType::MOCK_SCHEDULER ||
+         runnerType == tt::config::ModelRunnerType::MOCK;
 }
 
 tt::domain::llm::LLMRequest buildDisaggregatedDecodeRequest(
@@ -469,11 +496,15 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                                : prefillResult->generatedText);
           return;
         }
-        auto decodeReq = std::make_shared<tt::domain::llm::LLMRequest>(
-            buildDisaggregatedDecodeRequest(*prefillResult));
-        pipeline->submitResolvedStreamingRequest(
-            *decodeReq,
-            [pipeline, decodeReq, sendChunk, signalDone, usage](
+        auto submitDecode =
+            [pipeline, sendChunk, signalDone, usage](
+                std::shared_ptr<tt::domain::llm::LLMRequest> decodeReq,
+                std::shared_ptr<services::SessionManager> sessionManager,
+                std::string sessionIdToRelease = "") {
+              pipeline->submitResolvedStreamingRequest(
+                  *decodeReq,
+                  [pipeline, decodeReq, sendChunk, signalDone, usage,
+                   sessionManager, sessionIdToRelease](
                 const tt::domain::llm::LLMStreamChunk& chunk, bool isFinal) {
               if (chunk.cached_prompt_tokens.has_value()) {
                 usage->cachedTokens = *chunk.cached_prompt_tokens;
@@ -492,11 +523,64 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               }
               const bool sent = sendChunk(out);
               if (isFinal) {
+                if (sessionManager && !sessionIdToRelease.empty()) {
+                  sessionManager->releaseInFlight(sessionIdToRelease);
+                }
                 signalDone();
               } else if (!sent) {
+                if (sessionManager && !sessionIdToRelease.empty()) {
+                  sessionManager->releaseInFlight(sessionIdToRelease);
+                }
                 pipeline->abortRequest(decodeReq->task_id);
               }
             });
+            };
+
+        auto decodeReq = std::make_shared<tt::domain::llm::LLMRequest>(
+            buildDisaggregatedDecodeRequest(*prefillResult));
+        if (!prefillResult->slotId.has_value()) {
+          if (!shouldAllocateMockDecodeSlot()) {
+            sendErrorAndDone(
+                "DYNAMO_NATIVE_ROUTING=1: prefill result did not include a "
+                "reserved decode slot_id; slot reservation must be wired before "
+                "native remote prefill can continue on decode",
+                500);
+            return;
+          }
+          auto sessionManager = pipeline->sessionManager();
+          if (!sessionManager) {
+            sendErrorAndDone(
+                "DYNAMO_NATIVE_ROUTING=1: decode worker has no session manager "
+                "for mock slot allocation",
+                500);
+            return;
+          }
+          TT_LOG_INFO(
+              "[DynamoEndpoint] Native prefill result has no decode slot_id; "
+              "allocating mock_pipeline decode-local slot for taskId={}",
+              decodeReq->task_id);
+          sessionManager->createSession(
+              [decodeReq, sessionManager, submitDecode](
+                  const tt::domain::Session& session) {
+                decodeReq->sessionId = session.getSessionId();
+                decodeReq->slotId =
+                    sessionManager->acquireInFlight(session.getSessionId(),
+                                                    nullptr);
+                decodeReq->session =
+                    sessionManager->getSession(session.getSessionId());
+                submitDecode(decodeReq, sessionManager, session.getSessionId());
+              },
+              [sendErrorAndDone](std::string_view error) {
+                sendErrorAndDone(
+                    "DYNAMO_NATIVE_ROUTING=1: failed to allocate mock decode "
+                    "slot: " +
+                        std::string(error),
+                    503);
+              },
+              loop);
+          return;
+        }
+        submitDecode(decodeReq, nullptr);
         return;
       }
     }

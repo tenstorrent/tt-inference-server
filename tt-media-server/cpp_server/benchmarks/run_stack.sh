@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
-# run_stack.sh — bring up the Dynamo frontend + cpp_server (mock) for the
+# run_stack.sh — bring up the Dynamo frontend + cpp_server (mock_pipeline) for the
 # prefill/decode test suite, without any tt-shield image. Frontend runs from a
 # host ai-dynamo venv; etcd runs as the public quay image; workers run as the
-# locally-built mock binary. See benchmarks/test_prefill_decode.py.
+# locally-built mock_pipeline binary. See benchmarks/test_prefill_decode.py.
 #
 #   ./run_stack.sh up                      # legacy direct socket split
 #   DYNAMO_NATIVE_ROUTING=1 ./run_stack.sh up
@@ -115,6 +115,17 @@ worker_dynamo_env() {
     [[ -n "${worker_type}" ]] && echo "DYNAMO_WORKER_TYPE=${worker_type}"
 }
 
+worker_ipc_env() {
+    local ns="$1"
+    echo "TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_${ns}"
+    echo "TT_TASK_QUEUE=tt_tasks_${ns}"
+    echo "TT_RESULT_QUEUE=tt_results_${ns}"
+    echo "TT_CANCEL_QUEUE=tt_cancels_${ns}"
+    echo "TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_${ns}"
+    echo "TT_MEMORY_RESULT_QUEUE=tt_mem_results_${ns}"
+    echo "TT_WORKER_METRICS_SHM=/tt_worker_metrics_${ns}"
+}
+
 start_frontend() {
     [[ -x "${DYN_VENV}/bin/python3" ]] || die "dynamo venv not found at ${DYN_VENV}"
     "${DYN_VENV}/bin/python3" -c 'import dynamo.frontend' >/dev/null 2>&1 \
@@ -136,11 +147,11 @@ start_frontend() {
 ensure_binary() {
     local rebuild=0
     if [[ ! -x "${BIN}" ]]; then
-        log "no binary; building (Blaze mock)"
+        log "no binary; building with --blaze for mock_pipeline"
         rebuild=1
     elif [[ ! -f "${CPP_DIR}/build/CMakeCache.txt" ]] || \
          ! grep -q '^ENABLE_BLAZE:BOOL=ON$' "${CPP_DIR}/build/CMakeCache.txt"; then
-        log "existing binary was not built with --blaze; rebuilding for mock LLM runners"
+        log "existing binary was not built with --blaze; rebuilding for mock_pipeline"
         rebuild=1
     else
         local src
@@ -216,40 +227,30 @@ up() {
         log "native Dynamo routing: decode :${SERVER_PORT}, prefill :${PREFILL_PORT}"
         start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
             $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" decode Decode Chat) \
-            LLM_MODE=decode LLM_DEVICE_BACKEND=mock \
+            $(worker_ipc_env native_decode) \
+            LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
             USE_PREFILL_GATEWAY=0 DYNAMO_NATIVE_ROUTING=1
         wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
-        # Distinct memory-queue + metrics shm names: decode and prefill are
-        # co-located on one host, and these default to fixed names
-        # (tt_mem_requests/_results, /tt_worker_metrics) — sharing them makes the
-        # prefill worker's KV allocation requests race the decode worker's and hang.
         start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
             $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" prefill Prefill Prefill) \
-            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
+            $(worker_ipc_env native_prefill) \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
             USE_PREFILL_GATEWAY=0 DYNAMO_NATIVE_ROUTING=1 \
-            DYNAMO_MODEL_INPUT=Tokens \
-            TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
-            TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
-            TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill
+            DYNAMO_MODEL_INPUT=Tokens
         wait_worker_healthy "prefill" "${PREFILL_PORT}" "${PREFILL_LOG}"
     else
         log "legacy socket routing: decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
         start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
             $(worker_dynamo_env) \
-            LLM_MODE=decode LLM_DEVICE_BACKEND=mock \
+            $(worker_ipc_env legacy_decode) \
+            LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
             SOCKET_TRANSPORT=tcp SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
             MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE}"
         wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
-        # Distinct memory-queue + metrics shm names: decode and prefill are
-        # co-located on one host, and these default to fixed names
-        # (tt_mem_requests/_results, /tt_worker_metrics) — sharing them makes the
-        # prefill worker's KV allocation requests race the decode worker's and hang.
         start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
-            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
-            SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
-            TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
-            TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
-            TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill
+            $(worker_ipc_env legacy_prefill) \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
+            SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}"
         wait_worker_healthy "prefill" "${PREFILL_PORT}" "${PREFILL_LOG}"
     fi
     start_frontend

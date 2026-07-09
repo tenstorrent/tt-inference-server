@@ -51,8 +51,9 @@ PREFILL_GATEWAY_ENABLED=0
 PREFILL_DIRECT_ENABLED=0
 DYNAMO_NATIVE_ROUTING_ENABLED=0
 PREFILL_GATEWAY_STARTED=0
-PREFILL_WORKER_STARTED=0
+PREFILL_WORKERS_STARTED=()
 PREFILL_GATEWAY_PREFILLS=()
+PREFILL_WORKER_COUNT="${PREFILL_WORKER_COUNT:-1}"
 
 log() { printf '[deploy] %s\n' "$*"; }
 die() { printf '[deploy] %s\n' "$*" >&2; exit 1; }
@@ -115,8 +116,9 @@ Usage: $0 [options]
                                TCP prefill endpoint; repeatable, implies tcp transport
   --prefill-gateway-prefill-bind <host:port>
                                ZMQ prefill bind endpoint (default: ${PREFILL_GATEWAY_PREFILL_BIND})
+  --prefill-workers <count>    managed prefill worker count for gateway ZMQ/native modes (default: ${PREFILL_WORKER_COUNT})
   --prefill-direct             start one managed prefill worker connected directly to decode
-  --dynamo-native-routing      EXPERIMENTAL: disable legacy prefill sockets and expect Dynamo to route large prefills
+  --dynamo-native-routing      EXPERIMENTAL: register decode/prefill pools and let Dynamo route prefills
   --no-monitoring              skip Prometheus + Grafana deployment
 
 LLM_DEVICE_BACKEND, HF_TOKEN, and perf knobs (ROUTER_MODE, DYN_TOKENIZER,
@@ -156,12 +158,15 @@ while [[ $# -gt 0 ]]; do
             PREFILL_GATEWAY_PREFILL_BIND="$2"
             shift 2
             ;;
+        --prefill-workers) PREFILL_WORKER_COUNT="$2"; shift 2 ;;
         --prefill-direct) PREFILL_DIRECT_ENABLED=1;       shift ;;
         --dynamo-native-routing) DYNAMO_NATIVE_ROUTING_ENABLED=1; shift ;;
         --no-monitoring)  MONITORING_ENABLED=0;             shift ;;
         *) echo "Unknown argument: $1" >&2; usage ;;
     esac
 done
+
+[[ "$PREFILL_WORKER_COUNT" =~ ^[1-9][0-9]*$ ]] || die "--prefill-workers must be a positive integer"
 
 # Local-build: validate the binary and prepare the bind-mount + entrypoint.
 LOCAL_BUILD_MOUNT=()
@@ -213,8 +218,8 @@ cleanup() {
     if [[ "${PREFILL_GATEWAY_STARTED:-0}" == "1" ]]; then
         docker rm -f "$PREFILL_GATEWAY_NAME" >/dev/null 2>&1 || true
     fi
-    if [[ "${PREFILL_WORKER_STARTED:-0}" == "1" ]]; then
-        docker rm -f "$PREFILL_WORKER_NAME" >/dev/null 2>&1 || true
+    if [[ "${#PREFILL_WORKERS_STARTED[@]}" -gt 0 ]]; then
+        docker rm -f "${PREFILL_WORKERS_STARTED[@]}" >/dev/null 2>&1 || true
     fi
     docker rm -f "$FRONTEND_NAME" "$WORKER_NAME" "$ETCD_NAME" >/dev/null 2>&1 || true
 }
@@ -269,50 +274,100 @@ fi
 DEVICE_ARGS=()
 [[ -e /dev/tenstorrent ]] && DEVICE_ARGS+=(--device /dev/tenstorrent --cap-add=SYS_NICE)
 
-# Model-specific env: Kimi uses the 'kimi' blaze prefix + default MD format;
-# DeepSeek uses the legacy MD format + 'deepseek' prefix.
+# Model-specific env for Blaze prefix and metadata format.
 WORKER_MODEL_ENV=()
 case "$HF_MODEL_ID" in
     *[Kk]imi*) WORKER_MODEL_ENV+=(-e BLAZE_SOCKET_DESCRIPTOR_PREFIX=kimi) ;;
     *)         WORKER_MODEL_ENV+=(-e USE_DEEPSEEK_MD_FORMAT=1 -e BLAZE_SOCKET_DESCRIPTOR_PREFIX=deepseek) ;;
 esac
 
-if [[ "$PREFILL_GATEWAY_ENABLED" == "1" && "$PREFILL_GATEWAY_SOCKET_TRANSPORT" != "tcp" ]]; then
-    PREFILL_CONNECT_PORT="$(endpoint_port "$PREFILL_GATEWAY_PREFILL_BIND")"
-    PREFILL_WORKER_COMMAND=()
+prefill_worker_name() {
+    local idx="$1"
+    if [[ "$idx" == "0" ]]; then
+        printf '%s' "$PREFILL_WORKER_NAME"
+    else
+        printf '%s-%s' "$PREFILL_WORKER_NAME" "$idx"
+    fi
+}
+
+start_prefill_worker() {
+    local name="$1"
+    local label="$2"
+    local port="$3"
+    shift 3
+
+    local command=()
     if [[ -n "$LOCAL_BUILD" ]]; then
-        PREFILL_WORKER_COMMAND=(-c "cd cpp_server && ./build/tt_media_server_cpp -p ${PREFILL_WORKER_PORT}")
+        command=(-c "cd cpp_server && ./build/tt_media_server_cpp -p ${port}")
     fi
 
-    log "starting managed prefill worker ($WORKER_IMAGE)"
-    docker run -d --name "$PREFILL_WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
+    log "starting ${label} ($WORKER_IMAGE)"
+    docker run -d --name "$name" --network "$NETWORK_NAME" --shm-size=2g \
         "${DEVICE_ARGS[@]}" "${LOCAL_BUILD_MOUNT[@]}" "${WORKER_ENTRYPOINT[@]}" \
-        -e DYNAMO_ENDPOINT_ENABLED=0 \
         -e SERVER_MODE=cpp \
         -e MODEL="$HF_MODEL_ID" \
         -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
         -e LLM_MODE=prefill \
-        -e USE_PREFILL_GATEWAY=1 \
-        -e SOCKET_TRANSPORT="$PREFILL_GATEWAY_SOCKET_TRANSPORT" \
-        -e SOCKET_HOST="$PREFILL_GATEWAY_NAME" \
-        -e SOCKET_PORT="$PREFILL_CONNECT_PORT" \
-        -e PREFILL_SERVER_ID=managed-prefill-0 \
         -e DEVICE_IDS="$DEVICE_IDS" \
         "${WORKER_MODEL_ENV[@]}" \
         -e MAX_SESSIONS_COUNT=128 -e TT_LOG_LEVEL=debug -e USE_FAST_MODE=1 \
+        "$@" \
         "$WORKER_IMAGE" \
-        "${PREFILL_WORKER_COMMAND[@]}" \
+        "${command[@]}" \
         >/dev/null
-    PREFILL_WORKER_STARTED=1
+    PREFILL_WORKERS_STARTED+=("$name")
 
     sleep 2
-    docker ps --format '{{.Names}}' | grep -q "^${PREFILL_WORKER_NAME}\$" \
-        || { docker logs --tail 80 "$PREFILL_WORKER_NAME" >&2 || true; die "managed prefill worker exited during startup"; }
+    docker ps --format '{{.Names}}' | grep -q "^${name}\$" \
+        || { docker logs --tail 80 "$name" >&2 || true; die "${label} exited during startup"; }
+}
+
+wait_native_prefill_workers() {
+    local expected="$1"
+    local prefix="v1/instances/${DYNAMO_NATIVE_NAMESPACE:-dynamo}/prefill/generate/"
+
+    log "waiting for ${expected} native prefill worker(s) to register with etcd (up to 60s)"
+    for _ in $(seq 1 60); do
+        local alive=1
+        for name in "${PREFILL_WORKERS_STARTED[@]}"; do
+            docker ps --format '{{.Names}}' | grep -q "^${name}\$" || alive=0
+        done
+        [[ "$alive" == "1" ]] || {
+            for name in "${PREFILL_WORKERS_STARTED[@]}"; do docker logs --tail 80 "$name" >&2 || true; done
+            die "native prefill worker exited before registering"
+        }
+
+        local registered
+        registered="$(docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only "$prefix" 2>/dev/null | grep -c "^${prefix}" || true)"
+        if (( registered >= expected )); then
+            log "native prefill worker(s) registered:"
+            docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only "v1/instances/${DYNAMO_NATIVE_NAMESPACE:-dynamo}/" | grep -v '^$' | sed 's/^/[deploy]   /'
+            return
+        fi
+        sleep 1
+    done
+
+    for name in "${PREFILL_WORKERS_STARTED[@]}"; do docker logs --tail 80 "$name" >&2 || true; done
+    die "native prefill worker(s) did not register within 60s"
+}
+
+if [[ "$PREFILL_GATEWAY_ENABLED" == "1" && "$PREFILL_GATEWAY_SOCKET_TRANSPORT" != "tcp" ]]; then
+    PREFILL_CONNECT_PORT="$(endpoint_port "$PREFILL_GATEWAY_PREFILL_BIND")"
+
+    for idx in $(seq 0 $((PREFILL_WORKER_COUNT - 1))); do
+        start_prefill_worker "$(prefill_worker_name "$idx")" "managed gateway prefill worker ${idx}" "$PREFILL_WORKER_PORT" \
+            -e DYNAMO_ENDPOINT_ENABLED=0 \
+            -e USE_PREFILL_GATEWAY=1 \
+            -e SOCKET_TRANSPORT="$PREFILL_GATEWAY_SOCKET_TRANSPORT" \
+            -e SOCKET_HOST="$PREFILL_GATEWAY_NAME" \
+            -e SOCKET_PORT="$PREFILL_CONNECT_PORT" \
+            -e PREFILL_SERVER_ID="managed-prefill-${idx}"
+    done
 fi
 
-WORKER_GATEWAY_ENV=()
+WORKER_ROUTING_ENV=()
 if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
-    WORKER_GATEWAY_ENV+=(
+    WORKER_ROUTING_ENV+=(
         -e LLM_MODE=decode
         -e USE_PREFILL_GATEWAY=1
         -e MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-0}"
@@ -321,7 +376,7 @@ if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
         -e SOCKET_PORT="$PREFILL_GATEWAY_DECODE_PORT"
     )
 elif [[ "$PREFILL_DIRECT_ENABLED" == "1" ]]; then
-    WORKER_GATEWAY_ENV+=(
+    WORKER_ROUTING_ENV+=(
         -e LLM_MODE=decode
         -e USE_PREFILL_GATEWAY=0
         -e MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
@@ -330,7 +385,7 @@ elif [[ "$PREFILL_DIRECT_ENABLED" == "1" ]]; then
         -e SOCKET_PORT="$PREFILL_DIRECT_SOCKET_PORT"
     )
 elif [[ "$DYNAMO_NATIVE_ROUTING_ENABLED" == "1" ]]; then
-    WORKER_GATEWAY_ENV+=(
+    WORKER_ROUTING_ENV+=(
         -e DYNAMO_NAMESPACE="${DYNAMO_NATIVE_NAMESPACE:-dynamo}"
         -e DYNAMO_COMPONENT=decode
         -e DYNAMO_ENDPOINT_NAME=generate
@@ -353,7 +408,7 @@ docker run -d --name "$WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
     -e MODEL="$HF_MODEL_ID" \
     -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
     -e DEVICE_IDS="$DEVICE_IDS" \
-    "${WORKER_GATEWAY_ENV[@]}" \
+    "${WORKER_ROUTING_ENV[@]}" \
     "${WORKER_MODEL_ENV[@]}" \
     -e MAX_SESSIONS_COUNT=128 -e TT_LOG_LEVEL=debug -e USE_FAST_MODE=1 \
     -e MIN_TOKENS_TO_COPY="${MIN_TOKENS_TO_COPY:-1024}" \
@@ -376,88 +431,36 @@ log "worker registered:"
 docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only v1/ | grep -v '^$' | sed 's/^/[deploy]   /'
 
 if [[ "$PREFILL_DIRECT_ENABLED" == "1" ]]; then
-    PREFILL_WORKER_COMMAND=()
-    if [[ -n "$LOCAL_BUILD" ]]; then
-        PREFILL_WORKER_COMMAND=(-c "cd cpp_server && ./build/tt_media_server_cpp -p ${PREFILL_WORKER_PORT}")
-    fi
-
-    log "starting direct prefill worker ($WORKER_IMAGE)"
-    docker run -d --name "$PREFILL_WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
-        "${DEVICE_ARGS[@]}" "${LOCAL_BUILD_MOUNT[@]}" "${WORKER_ENTRYPOINT[@]}" \
+    start_prefill_worker "$PREFILL_WORKER_NAME" "direct prefill worker" "$PREFILL_WORKER_PORT" \
         -e DYNAMO_ENDPOINT_ENABLED=0 \
-        -e SERVER_MODE=cpp \
-        -e MODEL="$HF_MODEL_ID" \
-        -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
-        -e LLM_MODE=prefill \
         -e USE_PREFILL_GATEWAY=0 \
         -e SOCKET_TRANSPORT=tcp \
         -e SOCKET_HOST="$WORKER_NAME" \
         -e SOCKET_PORT="$PREFILL_DIRECT_SOCKET_PORT" \
-        -e DEVICE_IDS="$DEVICE_IDS" \
-        "${WORKER_MODEL_ENV[@]}" \
-        -e MAX_SESSIONS_COUNT=128 -e TT_LOG_LEVEL=debug -e USE_FAST_MODE=1 \
         -e TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
         -e TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
-        -e TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill \
-        "$WORKER_IMAGE" \
-        "${PREFILL_WORKER_COMMAND[@]}" \
-        >/dev/null
-    PREFILL_WORKER_STARTED=1
-
-    sleep 2
-    docker ps --format '{{.Names}}' | grep -q "^${PREFILL_WORKER_NAME}\$" \
-        || { docker logs --tail 80 "$PREFILL_WORKER_NAME" >&2 || true; die "direct prefill worker exited during startup"; }
+        -e TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill
 fi
 
 if [[ "$DYNAMO_NATIVE_ROUTING_ENABLED" == "1" ]]; then
-    PREFILL_WORKER_COMMAND=()
-    if [[ -n "$LOCAL_BUILD" ]]; then
-        PREFILL_WORKER_COMMAND=(-c "cd cpp_server && ./build/tt_media_server_cpp -p ${PREFILL_WORKER_PORT}")
-    fi
-
-    log "starting Dynamo-registered native prefill worker ($WORKER_IMAGE)"
-    docker run -d --name "$PREFILL_WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
-        "${DEVICE_ARGS[@]}" "${LOCAL_BUILD_MOUNT[@]}" "${WORKER_ENTRYPOINT[@]}" \
-        -e DYNAMO_ENDPOINT_ENABLED=1 \
-        -e DYNAMO_NATIVE_ROUTING=1 \
-        -e DYNAMO_DISCOVERY_BACKEND=etcd \
-        -e DYNAMO_ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
-        -e DYNAMO_NAMESPACE="${DYNAMO_NATIVE_NAMESPACE:-dynamo}" \
-        -e DYNAMO_COMPONENT=prefill \
-        -e DYNAMO_ENDPOINT_NAME=generate \
-        -e DYNAMO_MODEL_TYPE=Prefill \
-        -e DYNAMO_MODEL_INPUT=Tokens \
-        -e DYNAMO_WORKER_TYPE=Prefill \
-        -e SERVER_MODE=cpp \
-        -e MODEL="$HF_MODEL_ID" \
-        -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
-        -e LLM_MODE=prefill \
-        -e USE_PREFILL_GATEWAY=0 \
-        -e DEVICE_IDS="$DEVICE_IDS" \
-        "${WORKER_MODEL_ENV[@]}" \
-        -e MAX_SESSIONS_COUNT=128 -e TT_LOG_LEVEL=debug -e USE_FAST_MODE=1 \
-        -e TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
-        -e TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
-        -e TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill \
-        "$WORKER_IMAGE" \
-        "${PREFILL_WORKER_COMMAND[@]}" \
-        >/dev/null
-    PREFILL_WORKER_STARTED=1
-
-    log "waiting for native prefill worker to register with etcd (up to 60s)"
-    for _ in $(seq 1 60); do
-        docker ps --format '{{.Names}}' | grep -q "^${PREFILL_WORKER_NAME}\$" \
-            || { docker logs --tail 80 "$PREFILL_WORKER_NAME" >&2 || true; die "native prefill worker exited before registering"; }
-        if docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only v1/instances/ 2>/dev/null \
-            | grep -q "^v1/instances/${DYNAMO_NATIVE_NAMESPACE:-dynamo}/prefill/generate/"; then
-            PREFILL_REGISTERED=1
-            break
-        fi
-        sleep 1
+    for idx in $(seq 0 $((PREFILL_WORKER_COUNT - 1))); do
+        start_prefill_worker "$(prefill_worker_name "$idx")" "Dynamo-registered prefill worker ${idx}" "$PREFILL_WORKER_PORT" \
+            -e DYNAMO_ENDPOINT_ENABLED=1 \
+            -e DYNAMO_NATIVE_ROUTING=1 \
+            -e USE_PREFILL_GATEWAY=0 \
+            -e DYNAMO_DISCOVERY_BACKEND=etcd \
+            -e DYNAMO_ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
+            -e DYNAMO_NAMESPACE="${DYNAMO_NATIVE_NAMESPACE:-dynamo}" \
+            -e DYNAMO_COMPONENT=prefill \
+            -e DYNAMO_ENDPOINT_NAME=generate \
+            -e DYNAMO_MODEL_TYPE=Prefill \
+            -e DYNAMO_MODEL_INPUT=Tokens \
+            -e DYNAMO_WORKER_TYPE=Prefill \
+            -e TT_MEMORY_REQUEST_QUEUE="tt_mem_requests_prefill_${idx}" \
+            -e TT_MEMORY_RESULT_QUEUE="tt_mem_results_prefill_${idx}" \
+            -e TT_WORKER_METRICS_SHM="/tt_worker_metrics_prefill_${idx}"
     done
-    [[ -n "${PREFILL_REGISTERED:-}" ]] || { docker logs --tail 80 "$PREFILL_WORKER_NAME" >&2 || true; die "native prefill worker did not register within 60s"; }
-    log "native prefill worker registered:"
-    docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only "v1/instances/${DYNAMO_NATIVE_NAMESPACE:-dynamo}/" | grep -v '^$' | sed 's/^/[deploy]   /'
+    wait_native_prefill_workers "$PREFILL_WORKER_COUNT"
 fi
 
 # ── frontend ────────────────────────────────────────────────────────────────
@@ -514,7 +517,7 @@ if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
     log "PrefillGateway metrics on ${PREFILL_GATEWAY_NAME}:${PREFILL_GATEWAY_METRICS_PORT} inside ${NETWORK_NAME}"
 fi
 if [[ "$DYNAMO_NATIVE_ROUTING_ENABLED" == "1" ]]; then
-    log "Dynamo native routing enabled; Dynamo owns local-vs-remote prefill routing, not legacy sockets"
+    log "Dynamo native routing enabled; Dynamo owns local-vs-remote prefill routing"
 fi
 log "tailing worker logs (Ctrl+C to tear down)"
 docker logs -f "$WORKER_NAME"
