@@ -103,8 +103,8 @@ bool KvMigrationReceiverServer::start() {
   }
   channel_ = std::make_unique<KvControlChannel>(transport_, receive_timeout_,
                                                 poll_interval_);
-  orchestrator_ = std::make_unique<KvMigrationReceiver>(
-      *channel_, receiver_, local_table_blob_);
+  orchestrator_ = std::make_unique<KvMigrationReceiver>(*channel_, receiver_,
+                                                        local_table_blob_);
   running_ = true;
   thread_ = std::thread([this] { orchestrator_->run(); });
   TT_LOG_INFO("[KvMigrationReceiverServer] listening on port {}", port_);

@@ -20,9 +20,9 @@
 // Table source: each worker loads ONLY its own .pb. Prefill obtains the one
 // fleet decode table once over the control channel (TABLE_EXCHANGE / #4295).
 // TE/Mooncake moves KV bytes only — not table provisioning. The engine→worker
-// handoff (engine_table_handoff) can later replace the local .pb behind the same
-// IKvTable. Device IO: MultiDeviceUmd; FabricNode→ASIC chip resolution comes
-// from an optional --device-map file, falling back to the placeholder
+// handoff (engine_table_handoff) can later replace the local .pb behind the
+// same IKvTable. Device IO: MultiDeviceUmd; FabricNode→ASIC chip resolution
+// comes from an optional --device-map file, falling back to the placeholder
 // (device & 0xFFFF) for a single-mesh host when no map is given.
 
 #include <unistd.h>
@@ -574,8 +574,7 @@ int runPrefill(const WorkerConfig& cfg) {
   // One fleet decode table: pull once from any connected decode, or disk
   // fallback when running without peers.
   std::shared_ptr<const IKvTable> decodeTable;
-  const bool wantsExchange =
-      !cfg.discover_peers.empty() || !cfg.peers.empty();
+  const bool wantsExchange = !cfg.discover_peers.empty() || !cfg.peers.empty();
   if (wantsExchange) {
     decodeTable =
         provisionDecodeTableFromControl(connector.channels(), prefill->blob);
