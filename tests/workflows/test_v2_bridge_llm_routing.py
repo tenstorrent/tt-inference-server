@@ -75,7 +75,6 @@ def test_media_eval_run_is_not_llm_eval():
     assert v2_bridge.can_route_to_v2(spec, _rc(workflow="evals")) is False
 
 
-
 @pytest.mark.parametrize("workflow", ["benchmarks", "evals", "release"])
 def test_vlm_routes_to_v2_like_llm(workflow):
     spec = _spec(ModelType.VLM, name="Qwen2.5-VL-7B-Instruct")
