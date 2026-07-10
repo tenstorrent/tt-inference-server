@@ -131,8 +131,11 @@ class KvMigrationReceiverServer {
   using ServerTransportFactory =
       std::function<std::shared_ptr<sockets::ISocketTransport>(uint16_t port)>;
 
+  /// @param localTableBlob decode `.pb` bytes for init-time TABLE_EXCHANGE
+  ///        replies (empty = migrate-only; no table provisioning).
   KvMigrationReceiverServer(uint16_t port, ServerTransportFactory factory,
                             MooncakeKvReceiver& receiver,
+                            std::vector<uint8_t> localTableBlob = {},
                             std::chrono::milliseconds receiveTimeout =
                                 KvControlChannel::kDefaultReceiveTimeout,
                             std::chrono::milliseconds pollInterval =
@@ -157,6 +160,7 @@ class KvMigrationReceiverServer {
   uint16_t port_;
   ServerTransportFactory factory_;
   MooncakeKvReceiver& receiver_;
+  std::vector<uint8_t> local_table_blob_;
   std::chrono::milliseconds receive_timeout_;
   std::chrono::milliseconds poll_interval_;
 

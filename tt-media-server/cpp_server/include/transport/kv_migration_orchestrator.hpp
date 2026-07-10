@@ -64,7 +64,10 @@ class KvMigrationSender {
  */
 class KvMigrationReceiver {
  public:
-  KvMigrationReceiver(KvControlChannel& channel, MooncakeKvReceiver& receiver);
+  /// @param localTableBlob this decode's serialized `.pb` (replied on
+  ///        TABLE_EXCHANGE). Empty disables table provisioning on this channel.
+  KvMigrationReceiver(KvControlChannel& channel, MooncakeKvReceiver& receiver,
+                      std::vector<uint8_t> localTableBlob = {});
 
   /// Init-time table exchange: receive the peer's table, then send ours.
   std::optional<std::vector<uint8_t>> exchangeTables(
@@ -81,12 +84,14 @@ class KvMigrationReceiver {
   void run();
 
  private:
-  /// Dispatch a received message (prepareMirror/MirrorReady, drain/Ack).
-  /// @return false only if a reply send fails (peer would wedge — stop).
+  /// Dispatch a received message (TABLE_EXCHANGE, prepareMirror/MirrorReady,
+  /// drain/Ack). @return false only if a reply send fails (peer would wedge —
+  /// stop).
   bool handle(const KvControlMessage& msg);
 
   KvControlChannel& channel_;
   MooncakeKvReceiver& receiver_;
+  std::vector<uint8_t> local_table_blob_;
 };
 
 }  // namespace tt::transport

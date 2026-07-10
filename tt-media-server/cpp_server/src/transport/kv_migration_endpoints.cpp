@@ -79,11 +79,13 @@ KvControlChannelConnector::channels() const {
 
 KvMigrationReceiverServer::KvMigrationReceiverServer(
     uint16_t port, ServerTransportFactory factory, MooncakeKvReceiver& receiver,
+    std::vector<uint8_t> localTableBlob,
     std::chrono::milliseconds receiveTimeout,
     std::chrono::milliseconds pollInterval)
     : port_(port),
       factory_(std::move(factory)),
       receiver_(receiver),
+      local_table_blob_(std::move(localTableBlob)),
       receive_timeout_(receiveTimeout),
       poll_interval_(pollInterval) {}
 
@@ -101,7 +103,8 @@ bool KvMigrationReceiverServer::start() {
   }
   channel_ = std::make_unique<KvControlChannel>(transport_, receive_timeout_,
                                                 poll_interval_);
-  orchestrator_ = std::make_unique<KvMigrationReceiver>(*channel_, receiver_);
+  orchestrator_ = std::make_unique<KvMigrationReceiver>(
+      *channel_, receiver_, local_table_blob_);
   running_ = true;
   thread_ = std::thread([this] { orchestrator_->run(); });
   TT_LOG_INFO("[KvMigrationReceiverServer] listening on port {}", port_);

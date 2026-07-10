@@ -104,8 +104,11 @@ bool KvMigrationSender::migrate(uint64_t uuid,
 // --- Receiver --------------------------------------------------------------
 
 KvMigrationReceiver::KvMigrationReceiver(KvControlChannel& channel,
-                                         MooncakeKvReceiver& receiver)
-    : channel_(channel), receiver_(receiver) {}
+                                         MooncakeKvReceiver& receiver,
+                                         std::vector<uint8_t> localTableBlob)
+    : channel_(channel),
+      receiver_(receiver),
+      local_table_blob_(std::move(localTableBlob)) {}
 
 std::optional<std::vector<uint8_t>> KvMigrationReceiver::exchangeTables(
     const std::vector<uint8_t>& localTableBlob) {
@@ -122,6 +125,28 @@ bool KvMigrationReceiver::serveOne() {
 bool KvMigrationReceiver::handle(const KvControlMessage& in) {
   const KvControlMessage* msg = &in;
   switch (msg->type) {
+    case KvControlType::TABLE_EXCHANGE: {
+      // Prefill (Sender) already sent its blob; reply with our decode table.
+      // Prefill needs the one fleet decode table; we ignore their prefill blob.
+      if (local_table_blob_.empty()) {
+        TT_LOG_ERROR(
+            "[KvMigrationReceiver] TABLE_EXCHANGE with no local table blob "
+            "configured");
+        return false;
+      }
+      KvControlMessage out;
+      out.type = KvControlType::TABLE_EXCHANGE;
+      out.role = 1;  // receiver
+      out.table_blob = local_table_blob_;
+      if (!channel_.send(out)) {
+        TT_LOG_ERROR("[KvMigrationReceiver] TABLE_EXCHANGE reply failed");
+        return false;
+      }
+      TT_LOG_INFO(
+          "[KvMigrationReceiver] TABLE_EXCHANGE replied ({} B local table)",
+          local_table_blob_.size());
+      break;
+    }
     case KvControlType::BEGIN_MIGRATION: {
       const auto segment = receiver_.prepareMirror(sliceOf(*msg), msg->uuid);
       KvControlMessage ready;

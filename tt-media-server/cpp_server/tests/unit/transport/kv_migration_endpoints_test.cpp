@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "sockets/i_socket_transport.hpp"
 #include "transport/in_memory_kv_table.hpp"
@@ -70,7 +71,8 @@ struct DecodeHost {
         std::make_shared<BlockingFakeTransport>(/*in=*/ab, /*out=*/ba);
     server = std::make_unique<KvMigrationReceiverServer>(
         /*port=*/0, [serverTp](uint16_t) { return serverTp; }, *receiver,
-        K_RECV_TIMEOUT, K_POLL_INTERVAL);
+        /*localTableBlob=*/std::vector<uint8_t>{}, K_RECV_TIMEOUT,
+        K_POLL_INTERVAL);
     server->start();
   }
   ~DecodeHost() {
