@@ -80,7 +80,7 @@ uint32_t resolveBlazeNumberOfPipelineStages() {
     case ModelType::GLM_5_1:
     case ModelType::GLM_5_2:
       return 80;
-    default: 
+    default:
       return defaults::BLAZE_NUMBER_OF_PIPELINE_STAGES;
   }
 }
