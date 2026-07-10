@@ -100,6 +100,16 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (65536, 128),
     (131072, 128),
 ]
+# Additional high-ISL sweep points appended only for remote SUPER_CLUSTER
+# endpoints, whose token budget is context*concurrency (see
+# DeviceModelSpec._infer_data) so concurrency does not collapse at high ISL.
+# They extend the sweep toward ~250K ISL while staying below the 256K cap, and
+# are still filtered per model by ``isl + osl <= max_context`` at build time
+# (e.g. reachable by Kimi's 256K context, skipped for a 128K-context model).
+SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
+    (196608, 128),  # 192K
+    (245760, 128),  # 240K
+]
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
 
@@ -540,6 +550,13 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
     perf_reference = model_spec.device_model_spec.perf_reference
 
+    # SUPER_CLUSTER remote endpoints extend the sweep toward ~250K ISL; other
+    # devices use the standard pairs. Per-model ``isl + osl <= max_context``
+    # filtering still applies below.
+    text_isl_osl_pairs = list(BENCHMARK_ISL_OSL_PAIRS)
+    if device == DeviceTypes.SUPER_CLUSTER:
+        text_isl_osl_pairs += SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS
+
     vllm_benchmark_venv = select_vllm_benchmark_venv(model_spec)
 
     # Apply capping to each perf reference entry (including vision tokens for VLM models)
@@ -606,7 +623,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                 param_map={
                     device: [
                         expanded_params
-                        for isl, osl in BENCHMARK_ISL_OSL_PAIRS
+                        for isl, osl in text_isl_osl_pairs
                         if isl + osl <= max_context
                         for expanded_params in _expand_text_sweep_params(
                             isl=isl,

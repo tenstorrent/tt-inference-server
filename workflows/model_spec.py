@@ -386,6 +386,11 @@ class DeviceModelSpec:
             # DP engines without needing to know about DP rank.
             max_concurrency = max_concurrency // data_parallel_size
             max_tokens_all_users = max_tokens_all_users * data_parallel_size
+        # Remote SUPER_CLUSTER endpoints are not bound by a single-device KV
+        # pool: the servable token budget across concurrent users is
+        # context * concurrency.
+        if self.device == DeviceTypes.SUPER_CLUSTER:
+            max_tokens_all_users = self.max_context * self.max_concurrency
         object.__setattr__(self, "max_tokens_all_users", max_tokens_all_users)
         # TODO: we should get max_num_batched_tokens from DeviceModelSpec in the future
         default_vllm_args = {
