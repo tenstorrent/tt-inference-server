@@ -135,9 +135,12 @@ def produce_and_count_acks(cfg: Config) -> bool:
         "migration_id": migration_id,
         "src_slot": 0,
         "dst_slot": 1,
-        "layer_id": 0,
-        "position_start": 0,
-        "position_end": 16,
+        "layer_begin": 0,
+        "layer_end": 1,
+        "src_position_begin": 0,
+        "src_position_end": 16,
+        "dst_position_begin": 0,
+        "dst_position_end": 16,
     }
 
     consumer = build_ack_consumer(cfg.kafka_brokers)

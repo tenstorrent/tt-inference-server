@@ -36,10 +36,11 @@ bool KvControlChannel::send(const KvControlMessage& message) {
   return transport_->sendRawData(bytes);
 }
 
-std::optional<KvControlMessage> KvControlChannel::receive() {
+KvControlChannel::ReceiveOutcome KvControlChannel::receiveMessage(
+    KvControlMessage& out) {
   if (!transport_) {
     TT_LOG_ERROR("[KvControlChannel] receive with no transport");
-    return std::nullopt;
+    return ReceiveOutcome::Closed;
   }
 
   const auto deadline = std::chrono::steady_clock::now() + receive_timeout_;
@@ -52,11 +53,13 @@ std::optional<KvControlMessage> KvControlChannel::receive() {
           TT_LOG_ERROR(
               "[KvControlChannel] received malformed message ({} bytes)",
               result.data.size());
+          return ReceiveOutcome::Closed;  // corrupt stream: unusable
         }
-        return message;
+        out = *message;
+        return ReceiveOutcome::Message;
       }
       case sockets::ReceiveStatus::CLOSED:
-        return std::nullopt;  // connection closed
+        return ReceiveOutcome::Closed;  // connection closed
       case sockets::ReceiveStatus::NO_DATA:
         // The peer hasn't replied yet (e.g. still preparing the mirror). Wait
         // and retry rather than aborting a healthy migration on a normal
@@ -67,12 +70,27 @@ std::optional<KvControlMessage> KvControlChannel::receive() {
     }
 
     if (std::chrono::steady_clock::now() >= deadline) {
-      TT_LOG_ERROR("[KvControlChannel] receive timed out after {} ms",
-                   receive_timeout_.count());
-      return std::nullopt;
+      return ReceiveOutcome::TimedOut;
     }
     std::this_thread::sleep_for(poll_interval_);
   }
+}
+
+std::optional<KvControlMessage> KvControlChannel::receive() {
+  KvControlMessage msg;
+  switch (receiveMessage(msg)) {
+    case ReceiveOutcome::Message:
+      return msg;
+    case ReceiveOutcome::TimedOut:
+      // A bounded wait (the sender awaiting MirrorReady/Ack) that expires is an
+      // error for that caller; log it here, where the timeout is unexpected.
+      TT_LOG_ERROR("[KvControlChannel] receive timed out after {} ms",
+                   receive_timeout_.count());
+      return std::nullopt;
+    case ReceiveOutcome::Closed:
+      return std::nullopt;
+  }
+  return std::nullopt;
 }
 
 }  // namespace tt::transport

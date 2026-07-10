@@ -496,7 +496,10 @@ void DynamoServer::process_request(const trantor::TcpConnectionPtr& conn,
       TT_LOG_DEBUG(
           "[DynamoServer] Request id={} input_tokens={} max_tokens={} "
           "address={}",
-          id, genReq.token_ids.size(), genReq.max_tokens, connInfo.address);
+          id, genReq.token_ids.size(),
+          genReq.max_tokens.has_value() ? std::to_string(*genReq.max_tokens)
+                                        : "None",
+          connInfo.address);
       handler_(genReq, connInfo);
     } catch (const std::exception& e) {
       TT_LOG_ERROR("[DynamoServer] request dispatch failed id={}: {}", id,

@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <utility>
 
 #include "config/settings.hpp"
@@ -634,6 +635,10 @@ void BlazeDecodeRunner::handleSchedulerOutput(const ds::OutputMessage& output) {
   slotContext.lastProgressTime = std::chrono::steady_clock::now();
   auto taskId = slotContext.taskId.value();
   if (output.ctx_exhausted) {
+    TT_LOG_INFO(
+        "[BlazeDecodeRunner] handleSchedulerOutput: ctx_exhausted for "
+        "slotId={}",
+        output.slot_id);
     slotManager.setSlotAsIdle(output.slot_id);
     metrics.decrementActiveRequests();
     ipc::helpers::pushToken(
@@ -727,7 +732,9 @@ void BlazeDecodeRunner::handleTask(
           task->taskId, slotId, isNew, task->isContinuation(),
           task->getNumPromptTokens(), task->getTokenIds().size(),
           slotManager.activeRunningCount(),
-          task->getMigrationId().has_value() ? *task->getMigrationId() : -1);
+          task->getMigrationId().has_value()
+              ? std::to_string(*task->getMigrationId())
+              : "None");
       ds::ISRequest req =
           isNew ? utils::makeSubmitRequest(config, slotId, *task)
                 : utils::makeContinueRequest(config, slotId, *task);
@@ -741,6 +748,9 @@ void BlazeDecodeRunner::handleTask(
           task->getKVPositionId().has_value()
               ? std::to_string(*task->getKVPositionId())
               : "none");
+      if (!isNew && task->getKVPositionId().has_value()) {
+        slotContext.currentPosition = *task->getKVPositionId();
+      }
       if (!decodeScheduler->push_request(req)) {
         TT_LOG_DEBUG(
             "[BlazeDecodeRunner] handleRequest: failed to push request, "
