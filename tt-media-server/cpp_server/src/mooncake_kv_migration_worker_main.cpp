@@ -17,9 +17,10 @@
 // tt_kv_migration_consumer (StubMigrationExecutor): it is the first binary that
 // actually moves KV on a Kafka trigger.
 //
-// Table source: each worker loads ONLY its own .pb; peers exchange tables over
-// the Transfer Engine at bring-up (#4295 / #4279). The engine→worker handoff
-// (engine_table_handoff) can later replace the local .pb behind the same
+// Table source: each worker loads ONLY its own .pb. Prefill obtains the one
+// fleet decode table once over the control channel (TABLE_EXCHANGE / #4295).
+// TE/Mooncake moves KV bytes only — not table provisioning. The engine→worker
+// handoff (engine_table_handoff) can later replace the local .pb behind the same
 // IKvTable. Device IO: MultiDeviceUmd; FabricNode→ASIC chip resolution comes
 // from an optional --device-map file, falling back to the placeholder
 // (device & 0xFFFF) for a single-mesh host when no map is given.
@@ -59,7 +60,6 @@
 #include "transport/mooncake_migration_executor.hpp"
 #include "transport/mooncake_transfer_engine.hpp"
 #include "transport/multi_device_umd.hpp"
-#include "transport/peer_table_exchange.hpp"
 #include "transport/transfer_types.hpp"
 #include "transport/umd_device_access.hpp"
 #include "transport/worker_health.hpp"
@@ -77,6 +77,10 @@ constexpr int K_IDLE_POLL_MS = 100;
 // consuming Kafka. On timeout it proceeds degraded (see runPrefill).
 constexpr int K_CONNECT_TIMEOUT_MS = 30000;
 
+// Control-channel receive budget must cover one TABLE_EXCHANGE of a large
+// decode .pb (100–350+ MiB) at bring-up, not only tiny migrate messages.
+constexpr int K_CONTROL_RECEIVE_TIMEOUT_MS = 300000;
+
 // Default KV migration control port a decode binds when --control-port is
 // omitted. The endpoint is published to the metadata service (see
 // K_CONTROL_KEY_PREFIX), so prefill discovers host AND port from there rather
@@ -89,15 +93,9 @@ constexpr uint16_t K_DEFAULT_CONTROL_PORT = 18650;
 // peer fact (segment, rpc host, and the control endpoint) in the one metadata
 // service instead of a static convention.
 constexpr const char* K_CONTROL_KEY_PREFIX = "kv_control/";
-// Sorted peer-name CSV a worker publishes so peers know which per-peer TE
-// table-exchange slot to WRITE into: "kv_table_peers/<name>" -> "a,b,c".
-constexpr const char* K_TABLE_PEERS_KEY_PREFIX = "kv_table_peers/";
 
 constexpr int K_DISCOVERY_TIMEOUT_MS = 30000;
 constexpr int K_DISCOVERY_POLL_MS = 1000;
-// Fleet-wide TE table-exchange slot body capacity (#4295). Must match across
-// workers — it fixes the per-peer slot stride. Sized for large decode tables.
-constexpr std::size_t K_MAX_TABLE_BYTES = K_DEFAULT_MAX_TABLE_BYTES;
 
 std::atomic<bool> gStop{false};
 static_assert(std::atomic<bool>::is_always_lock_free,
@@ -161,10 +159,10 @@ void usage() {
          "           [--peer-control-port N]  fallback control port for a "
          "discovered peer that hasn't published its endpoint (default 18650).\n"
          "           The prefill (sender) opens a control channel to each "
-         "peer for migrations; both roles also use --peer for TE table "
-         "exchange at bring-up (#4295).\n"
+         "peer; TABLE_EXCHANGE pulls the one decode table once, then "
+         "migrations use the same channels.\n"
          "  prefill: --prefill-table P.pb (+ >=1 peer); decode table comes "
-         "from TE exchange with peers (optional --decode-table fallback)\n"
+         "from control TABLE_EXCHANGE (optional --decode-table fallback)\n"
          "  decode:  --table D.pb [--control-port N] (default 18650) "
          "[--segment NAME]\n"
          "  both:    [--device-map FILE]  ('mesh chip umd' per line; needed "
@@ -326,7 +324,7 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
        (cfg.peers.empty() && cfg.discover_peers.empty() &&
         cfg.decode_table_path.empty()))) {
     std::cerr << "prefill needs --prefill-table and either peers "
-                 "(--peer / --peer-control) for TE table exchange, or "
+                 "(--peer / --peer-control) for TABLE_EXCHANGE, or "
                  "--decode-table as a local fallback\n";
     return false;
   }
@@ -499,211 +497,30 @@ resolvePeers(ITransferEngine& engine, const WorkerConfig& cfg,
   return peers;
 }
 
-// Resolve peer segment handles via openSegment (data-plane discovery). Retries
-// until every unique name resolves or the timeout / stop fires.
-// Bring-up only: peers have not yet been opened, so there is no stale cached
-// descriptor to refresh — openSegment is correct here (refreshSegment is for
-// post-restart recovery after a prior open).
-std::map<std::string, SegmentHandle> resolvePeerSegments(
-    ITransferEngine& engine, const std::vector<std::string>& names,
-    const std::atomic<bool>& stop) {
-  std::map<std::string, SegmentHandle> resolved;
-  std::vector<std::string> pending;
-  for (const auto& name : names) {
-    if (!name.empty() && resolved.count(name) == 0 &&
-        std::find(pending.begin(), pending.end(), name) == pending.end()) {
-      pending.push_back(name);
+// Pull the one fleet decode table from the first connected decode control
+// channel (TABLE_EXCHANGE). All decodes share the same .pb — one successful
+// exchange is enough.
+std::shared_ptr<const IKvTable> provisionDecodeTableFromControl(
+    const std::unordered_map<std::string, KvControlChannel*>& channels,
+    const std::vector<uint8_t>& prefillBlob) {
+  for (const auto& [host, channel] : channels) {
+    if (channel == nullptr || !channel->isConnected()) {
+      continue;
     }
-  }
-  const auto wanted = pending.size();
-  const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::milliseconds(K_DISCOVERY_TIMEOUT_MS);
-  while (!pending.empty() && !stop.load()) {
-    std::vector<std::string> unresolved;
-    for (const auto& name : pending) {
-      const SegmentHandle h = engine.openSegment(name);
-      if (h != K_INVALID_SEGMENT) {
-        resolved[name] = h;
-      } else {
-        unresolved.push_back(name);
-      }
+    auto table =
+        provisionPeerTable(*channel, TableExchangeRole::Sender, prefillBlob);
+    if (table) {
+      TT_LOG_INFO(
+          "[worker] got decode table via control TABLE_EXCHANGE with '{}' "
+          "({} B local prefill blob)",
+          host, prefillBlob.size());
+      return table;
     }
-    pending.swap(unresolved);
-    if (pending.empty() || std::chrono::steady_clock::now() >= deadline) break;
-    std::this_thread::sleep_for(std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
+    TT_LOG_WARN(
+        "[worker] TABLE_EXCHANGE with '{}' failed; trying next connected peer",
+        host);
   }
-  for (const auto& name : pending) {
-    TT_LOG_ERROR("[worker] segment '{}' unresolved for table exchange", name);
-  }
-  return resolved.size() == wanted ? resolved
-                                   : std::map<std::string, SegmentHandle>{};
-}
-
-// Unique sorted peer names — local slot i is peers[i].
-std::vector<std::string> sortedUniquePeers(
-    const std::vector<std::string>& names) {
-  std::vector<std::string> out;
-  for (const auto& n : names) {
-    if (!n.empty() && std::find(out.begin(), out.end(), n) == out.end()) {
-      out.push_back(n);
-    }
-  }
-  std::sort(out.begin(), out.end());
-  return out;
-}
-
-std::string joinCsv(const std::vector<std::string>& names) {
-  std::string out;
-  for (std::size_t i = 0; i < names.size(); ++i) {
-    if (i) out += ',';
-    out += names[i];
-  }
-  return out;
-}
-
-std::vector<std::string> splitCsv(const std::string& csv) {
-  std::vector<std::string> out;
-  std::size_t start = 0;
-  while (start <= csv.size()) {
-    const auto comma = csv.find(',', start);
-    const auto end = comma == std::string::npos ? csv.size() : comma;
-    if (end > start) out.emplace_back(csv.substr(start, end - start));
-    if (comma == std::string::npos) break;
-    start = comma + 1;
-  }
-  return out;
-}
-
-// Index of @p name in peer's published sorted peer CSV, or nullopt.
-std::optional<std::size_t> indexInPeerList(const std::vector<std::string>& list,
-                                           const std::string& name) {
-  for (std::size_t i = 0; i < list.size(); ++i) {
-    if (list[i] == name) return i;
-  }
-  return std::nullopt;
-}
-
-// Wait until peer has published kv_table_peers/<peer>, then return our index
-// in that list (remote slot we WRITE into).
-std::optional<std::size_t> lookupRemoteSlotIndex(
-    ITransferEngine& engine, const std::string& peerName,
-    const std::string& localName, const std::atomic<bool>& stop) {
-  const std::string key = std::string(K_TABLE_PEERS_KEY_PREFIX) + peerName;
-  const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::milliseconds(K_DISCOVERY_TIMEOUT_MS);
-  while (!stop.load()) {
-    if (auto csv = engine.lookupMetadata(key)) {
-      const auto list = splitCsv(*csv);
-      if (auto idx = indexInPeerList(list, localName)) return idx;
-      TT_LOG_ERROR(
-          "[worker] peer '{}' table-peer list '{}' does not contain us '{}'",
-          peerName, *csv, localName);
-      return std::nullopt;
-    }
-    if (std::chrono::steady_clock::now() >= deadline) break;
-    std::this_thread::sleep_for(std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
-  }
-  TT_LOG_ERROR("[worker] peer '{}' never published {}", peerName, key);
-  return std::nullopt;
-}
-
-bool allBlobsEqual(
-    const std::map<std::string, std::vector<std::uint8_t>>& blobs) {
-  if (blobs.empty()) return true;
-  const auto& first = blobs.begin()->second;
-  for (const auto& [name, blob] : blobs) {
-    if (blob != first) {
-      TT_LOG_ERROR(
-          "[worker] peer '{}' table blob differs from '{}' ({} vs {} B)", name,
-          blobs.begin()->first, blob.size(), first.size());
-      return false;
-    }
-  }
-  return true;
-}
-
-std::optional<std::map<std::string, std::vector<std::uint8_t>>>
-exchangeTablesWithPeers(ITransferEngine& engine, const WorkerConfig& cfg,
-                        const std::vector<std::uint8_t>& localBlob,
-                        const std::atomic<bool>& stop) {
-  const auto localPeers = sortedUniquePeers(cfg.discover_peers);
-  if (localPeers.empty()) {
-    return std::map<std::string, std::vector<std::uint8_t>>{};
-  }
-  if (localBlob.size() > K_MAX_TABLE_BYTES) {
-    TT_LOG_ERROR("[worker] local table {} B exceeds max {}", localBlob.size(),
-                 K_MAX_TABLE_BYTES);
-    return std::nullopt;
-  }
-
-  // Publish our sorted peer list so each peer knows which remote slot to use
-  // when WRITEing into us.
-  const std::string peersKey = std::string(K_TABLE_PEERS_KEY_PREFIX) + cfg.name;
-  const std::string peersCsv = joinCsv(localPeers);
-  if (!engine.publishMetadata(peersKey, peersCsv)) {
-    TT_LOG_ERROR("[worker] failed to publish {} -> {}", peersKey, peersCsv);
-    return std::nullopt;
-  }
-  TT_LOG_INFO("[worker] published {} -> {}", peersKey, peersCsv);
-
-  PeerTableExchange xchg(
-      PeerTableExchangeConfig{/*timeoutSec=*/K_DISCOVERY_TIMEOUT_MS / 1000,
-                              /*pollIntervalMs=*/1,
-                              /*maxTableBytes=*/K_MAX_TABLE_BYTES});
-  std::vector<std::uint8_t> recvBuf(xchg.requiredRecvBytes(localPeers.size()),
-                                    0);
-  if (engine.registeredLocalBufferCount() > 0) {
-    TT_LOG_ERROR(
-        "[worker] expected no registered buffers before table exchange "
-        "(have {}); mirror handoff would not be buffers[0]",
-        engine.registeredLocalBufferCount());
-    return std::nullopt;
-  }
-  if (!engine.registerLocalMemory(recvBuf.data(), recvBuf.size())) {
-    TT_LOG_ERROR("[worker] register table-exchange recv region failed");
-    return std::nullopt;
-  }
-  if (engine.registeredLocalBufferCount() > 0 &&
-      engine.firstRegisteredLocalBuffer() != recvBuf.data()) {
-    TT_LOG_ERROR("[worker] table-exchange recv region is not buffers[0]");
-    engine.unregisterLocalMemory(recvBuf.data());
-    return std::nullopt;
-  }
-
-  const auto segments = resolvePeerSegments(engine, localPeers, stop);
-  std::optional<std::map<std::string, std::vector<std::uint8_t>>> result;
-  if (segments.size() == localPeers.size()) {
-    std::map<std::string, PeerTableExchange::PeerSlot> slots;
-    bool ok = true;
-    for (std::size_t i = 0; i < localPeers.size(); ++i) {
-      const auto& peerName = localPeers[i];
-      auto remoteIdx = lookupRemoteSlotIndex(engine, peerName, cfg.name, stop);
-      if (!remoteIdx) {
-        ok = false;
-        break;
-      }
-      slots[peerName] = PeerTableExchange::PeerSlot{
-          segments.at(peerName), /*localSlotIndex=*/i,
-          /*remoteSlotIndex=*/*remoteIdx};
-    }
-    if (ok) {
-      result = xchg.exchange(engine, slots, cfg.name, localBlob, recvBuf.data(),
-                             &stop);
-    }
-  } else {
-    TT_LOG_ERROR("[worker] table exchange: resolved {}/{} peer segments",
-                 segments.size(), localPeers.size());
-  }
-
-  engine.unregisterLocalMemory(recvBuf.data());
-  if (engine.registeredLocalBufferCount() != 0) {
-    TT_LOG_ERROR(
-        "[worker] buffers remain registered after table-exchange unregister "
-        "(count={}); decode mirror would not be buffers[0]",
-        engine.registeredLocalBufferCount());
-    return std::nullopt;
-  }
-  return result;
+  return nullptr;
 }
 
 int runPrefill(const WorkerConfig& cfg) {
@@ -723,43 +540,6 @@ int runPrefill(const WorkerConfig& cfg) {
     return 1;
   }
 
-  // Publish a temporary segment so decode peers can openSegment(us) for TE
-  // table exchange, then exchange BEFORE any mirror registration.
-  std::shared_ptr<const IKvTable> decodeTable;
-  if (!cfg.discover_peers.empty()) {
-    auto exchanged =
-        exchangeTablesWithPeers(*engine, cfg, prefill->blob, gStop);
-    if (!exchanged || exchanged->empty()) {
-      TT_LOG_ERROR("[worker] TE table exchange failed");
-      return 1;
-    }
-    if (!allBlobsEqual(*exchanged)) {
-      TT_LOG_ERROR(
-          "[worker] decode peer tables diverge; refusing to pick one silently");
-      return 1;
-    }
-    decodeTable = deserializeKvTable(exchanged->begin()->second);
-    if (!decodeTable) {
-      TT_LOG_ERROR("[worker] failed to parse exchanged decode table");
-      return 1;
-    }
-    TT_LOG_INFO(
-        "[worker] prefill '{}' got decode table via TE exchange ({} B from {} "
-        "peers)",
-        cfg.name, exchanged->begin()->second.size(), exchanged->size());
-  } else if (!cfg.decode_table_path.empty()) {
-    auto decode = loadKvTableFile(cfg.decode_table_path);
-    if (!decode) {
-      TT_LOG_ERROR("[worker] failed to load --decode-table fallback");
-      return 1;
-    }
-    decodeTable = decode->table;
-  } else {
-    TT_LOG_ERROR(
-        "[worker] prefill needs peers for TE exchange or --decode-table");
-    return 1;
-  }
-
   const DeviceMap deviceMap = loadDeviceMapFile(cfg.device_map_path);
   auto device = buildDeviceIo(*prefill->table, cfg.host, deviceMap);
 
@@ -771,11 +551,50 @@ int runPrefill(const WorkerConfig& cfg) {
   // connect then runs asynchronously in each transport's background loop).
   auto peers = resolvePeers(*engine, cfg, gStop);
 
-  KvControlChannelConnector connector(peers, makeClientTransport);
+  KvControlChannelConnector connector(
+      peers, makeClientTransport,
+      std::chrono::milliseconds(K_CONTROL_RECEIVE_TIMEOUT_MS));
   if (!connector.openChannels()) {
     TT_LOG_WARN(
         "[worker] not every decode peer got a transport; involved-but-missing "
         "hosts will fail their slice");
+  }
+
+  // Startup barrier: wait for control channels before TABLE_EXCHANGE / Kafka.
+  const std::size_t total = connector.channelCount();
+  const std::size_t connected =
+      connector.awaitConnected(std::chrono::milliseconds(K_CONNECT_TIMEOUT_MS));
+  if (connected < total) {
+    TT_LOG_WARN(
+        "[worker] only {}/{} decode control channels connected within {}ms; "
+        "migrations to unconnected hosts will fail until they connect",
+        connected, total, K_CONNECT_TIMEOUT_MS);
+  }
+
+  // One fleet decode table: pull once from any connected decode, or disk
+  // fallback when running without peers.
+  std::shared_ptr<const IKvTable> decodeTable;
+  const bool wantsExchange =
+      !cfg.discover_peers.empty() || !cfg.peers.empty();
+  if (wantsExchange) {
+    decodeTable =
+        provisionDecodeTableFromControl(connector.channels(), prefill->blob);
+    if (!decodeTable) {
+      TT_LOG_ERROR(
+          "[worker] control TABLE_EXCHANGE failed (need >=1 connected decode)");
+      return 1;
+    }
+  } else if (!cfg.decode_table_path.empty()) {
+    auto decode = loadKvTableFile(cfg.decode_table_path);
+    if (!decode) {
+      TT_LOG_ERROR("[worker] failed to load --decode-table fallback");
+      return 1;
+    }
+    decodeTable = decode->table;
+  } else {
+    TT_LOG_ERROR(
+        "[worker] prefill needs peers for TABLE_EXCHANGE or --decode-table");
+    return 1;
   }
 
   KvMigrationMultiHostSender sender(engine, *device, prefill->table,
@@ -804,29 +623,7 @@ int runPrefill(const WorkerConfig& cfg) {
   tt::worker::KvMigrationWorker worker(std::move(consumer), std::move(producer),
                                        std::move(executor));
 
-  // Startup barrier: wait for the decode control channels to actually connect
-  // before declaring READY and starting Kafka consumption. Otherwise the worker
-  // would begin acking migrations while the control sockets are still
-  // connecting in the background, and the first request would fail spuriously.
-  // On timeout we proceed degraded: migrations to still-unconnected hosts fail
-  // and ack FAILED (they succeed once that host connects). NOTE: this covers
-  // STARTUP only -- a peer that drops AFTER connecting is out of scope for now
-  // (that migration acks FAILED; steady-state re-connect is future work).
-  const std::size_t total = connector.channelCount();
-  const std::size_t connected =
-      connector.awaitConnected(std::chrono::milliseconds(K_CONNECT_TIMEOUT_MS));
-  if (connected < total) {
-    TT_LOG_WARN(
-        "[worker] only {}/{} decode control channels connected within {}ms; "
-        "migrations to unconnected hosts will fail until they connect",
-        connected, total, K_CONNECT_TIMEOUT_MS);
-  }
-
-  // Readiness gate (addresses the review note): only now, after the connect
-  // barrier, do we flip Ready and start consuming Kafka. A fully-degraded
-  // worker (no channel connected, e.g. all peers down) stays not-ready so an
-  // orchestrator won't route to it; a partially-connected one is Ready and
-  // serves the hosts it reached (unreachable ones ack FAILED, as before).
+  // Readiness gate: only after connect + table provision do we flip Ready.
   if (connected == 0 && total > 0) {
     health.setProcessHealthy(true);
     TT_LOG_WARN(
@@ -865,18 +662,6 @@ int runDecode(const WorkerConfig& cfg) {
     return 1;
   }
 
-  // TE table exchange BEFORE mirror registration so buffers[0] is the exchange
-  // recv slot; then unregister and the mirror becomes buffers[0] for migration.
-  if (!cfg.discover_peers.empty()) {
-    auto exchanged = exchangeTablesWithPeers(*engine, cfg, decode->blob, gStop);
-    if (!exchanged) {
-      TT_LOG_ERROR("[worker] decode '{}' TE table exchange failed", cfg.name);
-      return 1;
-    }
-    TT_LOG_INFO("[worker] decode '{}' exchanged tables with {} peer(s)",
-                cfg.name, exchanged->size());
-  }
-
   const DeviceMap deviceMap = loadDeviceMapFile(cfg.device_map_path);
   auto device = buildDeviceIo(*decode->table, cfg.host, deviceMap);
 
@@ -897,8 +682,11 @@ int runDecode(const WorkerConfig& cfg) {
     return 1;
   }
 
-  KvMigrationReceiverServer server(cfg.control_port, makeServerTransport,
-                                   receiver);
+  // Control server replies to TABLE_EXCHANGE with this decode .pb, then serves
+  // migrate Begin/Done. Long receive timeout covers large table provisioning.
+  KvMigrationReceiverServer server(
+      cfg.control_port, makeServerTransport, receiver, decode->blob,
+      std::chrono::milliseconds(K_CONTROL_RECEIVE_TIMEOUT_MS));
   if (!server.start()) {
     TT_LOG_ERROR("[worker] decode '{}' failed to start control server on :{}",
                  cfg.name, cfg.control_port);
@@ -918,7 +706,6 @@ int runDecode(const WorkerConfig& cfg) {
         cfg.name, controlKey);
   }
 
-  // Mirror registered, control server listening, endpoint published.
   health.setLifecycle(WorkerLifecycle::Ready);
   TT_LOG_INFO("[worker] decode '{}' READY: segment={} control_port={}",
               cfg.name, segment, cfg.control_port);

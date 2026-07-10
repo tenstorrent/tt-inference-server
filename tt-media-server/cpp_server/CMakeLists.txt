@@ -604,7 +604,6 @@ add_library(transport_lib
     src/transport/mooncake_transfer_engine.cpp
     src/transport/mooncake_migration_worker.cpp
     src/transport/peer_discovery_service.cpp
-    src/transport/peer_table_exchange.cpp
     src/transport/worker_health.cpp
     src/transport/worker_health_server.cpp
     # Real KV-cache addressing: physical mirror layout + sender/receiver views +
