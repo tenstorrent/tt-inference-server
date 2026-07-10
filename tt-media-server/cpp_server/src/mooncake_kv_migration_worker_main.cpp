@@ -17,15 +17,16 @@
 // tt_kv_migration_consumer (StubMigrationExecutor): it is the first binary that
 // actually moves KV on a Kafka trigger.
 //
-// Table source: loadKvTableFile for now (the .pb path); the engine→worker
-// handoff (engine_table_handoff) swaps in behind the same IKvTable once the
-// engine implements the producer. Device IO: MultiDeviceUmd; FabricNode→ASIC
-// chip resolution comes from an optional --device-map file (the same contract
-// the engine will hand over), falling back to the placeholder (device &
-// 0xFFFF) for a single-mesh host when no map is given.
+// Table source: each worker loads ONLY its own .pb; peers exchange tables over
+// the Transfer Engine at bring-up (#4295 / #4279). The engine→worker handoff
+// (engine_table_handoff) can later replace the local .pb behind the same
+// IKvTable. Device IO: MultiDeviceUmd; FabricNode→ASIC chip resolution comes
+// from an optional --device-map file, falling back to the placeholder
+// (device & 0xFFFF) for a single-mesh host when no map is given.
 
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -33,6 +34,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -57,6 +59,7 @@
 #include "transport/mooncake_migration_executor.hpp"
 #include "transport/mooncake_transfer_engine.hpp"
 #include "transport/multi_device_umd.hpp"
+#include "transport/peer_table_exchange.hpp"
 #include "transport/transfer_types.hpp"
 #include "transport/umd_device_access.hpp"
 #include "transport/worker_health.hpp"
@@ -86,13 +89,15 @@ constexpr uint16_t K_DEFAULT_CONTROL_PORT = 18650;
 // peer fact (segment, rpc host, and the control endpoint) in the one metadata
 // service instead of a static convention.
 constexpr const char* K_CONTROL_KEY_PREFIX = "kv_control/";
+// Sorted peer-name CSV a worker publishes so peers know which per-peer TE
+// table-exchange slot to WRITE into: "kv_table_peers/<name>" -> "a,b,c".
+constexpr const char* K_TABLE_PEERS_KEY_PREFIX = "kv_table_peers/";
 
-// Peer discovery retry loop (mirrors main's PeerDiscoveryService): keep
-// sweeping the metadata service every K_DISCOVERY_POLL_MS until every peer
-// resolves or K_DISCOVERY_TIMEOUT_MS elapses, so a peer that registers slightly
-// later still wires up instead of being lost to a one-shot lookup.
 constexpr int K_DISCOVERY_TIMEOUT_MS = 30000;
 constexpr int K_DISCOVERY_POLL_MS = 1000;
+// Fleet-wide TE table-exchange slot body capacity (#4295). Must match across
+// workers — it fixes the per-peer slot stride. Sized for large decode tables.
+constexpr std::size_t K_MAX_TABLE_BYTES = K_DEFAULT_MAX_TABLE_BYTES;
 
 std::atomic<bool> gStop{false};
 static_assert(std::atomic<bool>::is_always_lock_free,
@@ -156,9 +161,10 @@ void usage() {
          "           [--peer-control-port N]  fallback control port for a "
          "discovered peer that hasn't published its endpoint (default 18650).\n"
          "           The prefill (sender) opens a control channel to each "
-         "peer; "
-         "a decode (receiver) resolves+holds them but does not initiate.\n"
-         "  prefill: --prefill-table P.pb --decode-table D.pb (+ >=1 peer)\n"
+         "peer for migrations; both roles also use --peer for TE table "
+         "exchange at bring-up (#4295).\n"
+         "  prefill: --prefill-table P.pb (+ >=1 peer); decode table comes "
+         "from TE exchange with peers (optional --decode-table fallback)\n"
          "  decode:  --table D.pb [--control-port N] (default 18650) "
          "[--segment NAME]\n"
          "  both:    [--device-map FILE]  ('mesh chip umd' per line; needed "
@@ -316,10 +322,12 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
     cfg.peer_control_port = K_DEFAULT_CONTROL_PORT;
 
   if (cfg.role == Role::PREFILL &&
-      (cfg.prefill_table_path.empty() || cfg.decode_table_path.empty() ||
-       (cfg.peers.empty() && cfg.discover_peers.empty()))) {
-    std::cerr << "prefill needs --prefill-table, --decode-table and at least "
-                 "one --peer NAME (or --peer-control NAME=host:port)\n";
+      (cfg.prefill_table_path.empty() ||
+       (cfg.peers.empty() && cfg.discover_peers.empty() &&
+        cfg.decode_table_path.empty()))) {
+    std::cerr << "prefill needs --prefill-table and either peers "
+                 "(--peer / --peer-control) for TE table exchange, or "
+                 "--decode-table as a local fallback\n";
     return false;
   }
   if (cfg.role == Role::DECODE && cfg.table_path.empty()) {
@@ -491,6 +499,215 @@ resolvePeers(ITransferEngine& engine, const WorkerConfig& cfg,
   return peers;
 }
 
+// Resolve peer segment handles via openSegment (data-plane discovery). Retries
+// until every unique name resolves or the timeout / stop fires.
+// Bring-up only: peers have not yet been opened, so there is no stale cached
+// descriptor to refresh — openSegment is correct here (refreshSegment is for
+// post-restart recovery after a prior open).
+std::map<std::string, SegmentHandle> resolvePeerSegments(
+    ITransferEngine& engine, const std::vector<std::string>& names,
+    const std::atomic<bool>& stop) {
+  std::map<std::string, SegmentHandle> resolved;
+  std::vector<std::string> pending;
+  for (const auto& name : names) {
+    if (!name.empty() && resolved.count(name) == 0 &&
+        std::find(pending.begin(), pending.end(), name) == pending.end()) {
+      pending.push_back(name);
+    }
+  }
+  const auto wanted = pending.size();
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(K_DISCOVERY_TIMEOUT_MS);
+  while (!pending.empty() && !stop.load()) {
+    std::vector<std::string> unresolved;
+    for (const auto& name : pending) {
+      const SegmentHandle h = engine.openSegment(name);
+      if (h != K_INVALID_SEGMENT) {
+        resolved[name] = h;
+      } else {
+        unresolved.push_back(name);
+      }
+    }
+    pending.swap(unresolved);
+    if (pending.empty() || std::chrono::steady_clock::now() >= deadline) break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
+  }
+  for (const auto& name : pending) {
+    TT_LOG_ERROR("[worker] segment '{}' unresolved for table exchange", name);
+  }
+  return resolved.size() == wanted ? resolved
+                                   : std::map<std::string, SegmentHandle>{};
+}
+
+// Unique sorted peer names — local slot i is peers[i].
+std::vector<std::string> sortedUniquePeers(
+    const std::vector<std::string>& names) {
+  std::vector<std::string> out;
+  for (const auto& n : names) {
+    if (!n.empty() && std::find(out.begin(), out.end(), n) == out.end()) {
+      out.push_back(n);
+    }
+  }
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+std::string joinCsv(const std::vector<std::string>& names) {
+  std::string out;
+  for (std::size_t i = 0; i < names.size(); ++i) {
+    if (i) out += ',';
+    out += names[i];
+  }
+  return out;
+}
+
+std::vector<std::string> splitCsv(const std::string& csv) {
+  std::vector<std::string> out;
+  std::size_t start = 0;
+  while (start <= csv.size()) {
+    const auto comma = csv.find(',', start);
+    const auto end = comma == std::string::npos ? csv.size() : comma;
+    if (end > start) out.emplace_back(csv.substr(start, end - start));
+    if (comma == std::string::npos) break;
+    start = comma + 1;
+  }
+  return out;
+}
+
+// Index of @p name in peer's published sorted peer CSV, or nullopt.
+std::optional<std::size_t> indexInPeerList(const std::vector<std::string>& list,
+                                           const std::string& name) {
+  for (std::size_t i = 0; i < list.size(); ++i) {
+    if (list[i] == name) return i;
+  }
+  return std::nullopt;
+}
+
+// Wait until peer has published kv_table_peers/<peer>, then return our index
+// in that list (remote slot we WRITE into).
+std::optional<std::size_t> lookupRemoteSlotIndex(
+    ITransferEngine& engine, const std::string& peerName,
+    const std::string& localName, const std::atomic<bool>& stop) {
+  const std::string key = std::string(K_TABLE_PEERS_KEY_PREFIX) + peerName;
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(K_DISCOVERY_TIMEOUT_MS);
+  while (!stop.load()) {
+    if (auto csv = engine.lookupMetadata(key)) {
+      const auto list = splitCsv(*csv);
+      if (auto idx = indexInPeerList(list, localName)) return idx;
+      TT_LOG_ERROR(
+          "[worker] peer '{}' table-peer list '{}' does not contain us '{}'",
+          peerName, *csv, localName);
+      return std::nullopt;
+    }
+    if (std::chrono::steady_clock::now() >= deadline) break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
+  }
+  TT_LOG_ERROR("[worker] peer '{}' never published {}", peerName, key);
+  return std::nullopt;
+}
+
+bool allBlobsEqual(
+    const std::map<std::string, std::vector<std::uint8_t>>& blobs) {
+  if (blobs.empty()) return true;
+  const auto& first = blobs.begin()->second;
+  for (const auto& [name, blob] : blobs) {
+    if (blob != first) {
+      TT_LOG_ERROR(
+          "[worker] peer '{}' table blob differs from '{}' ({} vs {} B)", name,
+          blobs.begin()->first, blob.size(), first.size());
+      return false;
+    }
+  }
+  return true;
+}
+
+std::optional<std::map<std::string, std::vector<std::uint8_t>>>
+exchangeTablesWithPeers(ITransferEngine& engine, const WorkerConfig& cfg,
+                        const std::vector<std::uint8_t>& localBlob,
+                        const std::atomic<bool>& stop) {
+  const auto localPeers = sortedUniquePeers(cfg.discover_peers);
+  if (localPeers.empty()) {
+    return std::map<std::string, std::vector<std::uint8_t>>{};
+  }
+  if (localBlob.size() > K_MAX_TABLE_BYTES) {
+    TT_LOG_ERROR("[worker] local table {} B exceeds max {}", localBlob.size(),
+                 K_MAX_TABLE_BYTES);
+    return std::nullopt;
+  }
+
+  // Publish our sorted peer list so each peer knows which remote slot to use
+  // when WRITEing into us.
+  const std::string peersKey =
+      std::string(K_TABLE_PEERS_KEY_PREFIX) + cfg.name;
+  const std::string peersCsv = joinCsv(localPeers);
+  if (!engine.publishMetadata(peersKey, peersCsv)) {
+    TT_LOG_ERROR("[worker] failed to publish {} -> {}", peersKey, peersCsv);
+    return std::nullopt;
+  }
+  TT_LOG_INFO("[worker] published {} -> {}", peersKey, peersCsv);
+
+  PeerTableExchange xchg(PeerTableExchangeConfig{
+      /*timeoutSec=*/K_DISCOVERY_TIMEOUT_MS / 1000,
+      /*pollIntervalMs=*/1,
+      /*maxTableBytes=*/K_MAX_TABLE_BYTES});
+  std::vector<std::uint8_t> recvBuf(xchg.requiredRecvBytes(localPeers.size()),
+                                    0);
+  if (engine.registeredLocalBufferCount() > 0) {
+    TT_LOG_ERROR(
+        "[worker] expected no registered buffers before table exchange "
+        "(have {}); mirror handoff would not be buffers[0]",
+        engine.registeredLocalBufferCount());
+    return std::nullopt;
+  }
+  if (!engine.registerLocalMemory(recvBuf.data(), recvBuf.size())) {
+    TT_LOG_ERROR("[worker] register table-exchange recv region failed");
+    return std::nullopt;
+  }
+  if (engine.registeredLocalBufferCount() > 0 &&
+      engine.firstRegisteredLocalBuffer() != recvBuf.data()) {
+    TT_LOG_ERROR("[worker] table-exchange recv region is not buffers[0]");
+    engine.unregisterLocalMemory(recvBuf.data());
+    return std::nullopt;
+  }
+
+  const auto segments = resolvePeerSegments(engine, localPeers, stop);
+  std::optional<std::map<std::string, std::vector<std::uint8_t>>> result;
+  if (segments.size() == localPeers.size()) {
+    std::map<std::string, PeerTableExchange::PeerSlot> slots;
+    bool ok = true;
+    for (std::size_t i = 0; i < localPeers.size(); ++i) {
+      const auto& peerName = localPeers[i];
+      auto remoteIdx =
+          lookupRemoteSlotIndex(engine, peerName, cfg.name, stop);
+      if (!remoteIdx) {
+        ok = false;
+        break;
+      }
+      slots[peerName] = PeerTableExchange::PeerSlot{
+          segments.at(peerName), /*localSlotIndex=*/i,
+          /*remoteSlotIndex=*/*remoteIdx};
+    }
+    if (ok) {
+      result = xchg.exchange(engine, slots, cfg.name, localBlob, recvBuf.data(),
+                             &stop);
+    }
+  } else {
+    TT_LOG_ERROR("[worker] table exchange: resolved {}/{} peer segments",
+                 segments.size(), localPeers.size());
+  }
+
+  engine.unregisterLocalMemory(recvBuf.data());
+  if (engine.registeredLocalBufferCount() != 0) {
+    TT_LOG_ERROR(
+        "[worker] buffers remain registered after table-exchange unregister "
+        "(count={}); decode mirror would not be buffers[0]",
+        engine.registeredLocalBufferCount());
+    return std::nullopt;
+  }
+  return result;
+}
+
 int runPrefill(const WorkerConfig& cfg) {
   // Declared before the health server so the server (which borrows this) is
   // destroyed first; liveness is up immediately, readiness stays false until
@@ -503,9 +720,44 @@ int runPrefill(const WorkerConfig& cfg) {
   if (!engine) return 1;
 
   auto prefill = loadKvTableFile(cfg.prefill_table_path);
-  auto decode = loadKvTableFile(cfg.decode_table_path);
-  if (!prefill || !decode) {
-    TT_LOG_ERROR("[worker] failed to load prefill/decode table");
+  if (!prefill) {
+    TT_LOG_ERROR("[worker] failed to load prefill table");
+    return 1;
+  }
+
+  // Publish a temporary segment so decode peers can openSegment(us) for TE
+  // table exchange, then exchange BEFORE any mirror registration.
+  std::shared_ptr<const IKvTable> decodeTable;
+  if (!cfg.discover_peers.empty()) {
+    auto exchanged =
+        exchangeTablesWithPeers(*engine, cfg, prefill->blob, gStop);
+    if (!exchanged || exchanged->empty()) {
+      TT_LOG_ERROR("[worker] TE table exchange failed");
+      return 1;
+    }
+    if (!allBlobsEqual(*exchanged)) {
+      TT_LOG_ERROR(
+          "[worker] decode peer tables diverge; refusing to pick one silently");
+      return 1;
+    }
+    decodeTable = deserializeKvTable(exchanged->begin()->second);
+    if (!decodeTable) {
+      TT_LOG_ERROR("[worker] failed to parse exchanged decode table");
+      return 1;
+    }
+    TT_LOG_INFO(
+        "[worker] prefill '{}' got decode table via TE exchange ({} B from {} "
+        "peers)",
+        cfg.name, exchanged->begin()->second.size(), exchanged->size());
+  } else if (!cfg.decode_table_path.empty()) {
+    auto decode = loadKvTableFile(cfg.decode_table_path);
+    if (!decode) {
+      TT_LOG_ERROR("[worker] failed to load --decode-table fallback");
+      return 1;
+    }
+    decodeTable = decode->table;
+  } else {
+    TT_LOG_ERROR("[worker] prefill needs peers for TE exchange or --decode-table");
     return 1;
   }
 
@@ -527,9 +779,8 @@ int runPrefill(const WorkerConfig& cfg) {
         "hosts will fail their slice");
   }
 
-  KvMigrationMultiHostSender sender(engine, *device, prefill->table,
-                                    decode->table, cfg.host,
-                                    connector.channels(), &health);
+  KvMigrationMultiHostSender sender(engine, *device, prefill->table, decodeTable,
+                                    cfg.host, connector.channels(), &health);
   auto executor = std::make_unique<MooncakeMigrationExecutor>(sender);
 
   const std::string brokers =
@@ -614,22 +865,31 @@ int runDecode(const WorkerConfig& cfg) {
     return 1;
   }
 
+  // TE table exchange BEFORE mirror registration so buffers[0] is the exchange
+  // recv slot; then unregister and the mirror becomes buffers[0] for migration.
+  if (!cfg.discover_peers.empty()) {
+    auto exchanged =
+        exchangeTablesWithPeers(*engine, cfg, decode->blob, gStop);
+    if (!exchanged) {
+      TT_LOG_ERROR("[worker] decode '{}' TE table exchange failed", cfg.name);
+      return 1;
+    }
+    TT_LOG_INFO("[worker] decode '{}' exchanged tables with {} peer(s)",
+                cfg.name, exchanged->size());
+  }
+
   const DeviceMap deviceMap = loadDeviceMapFile(cfg.device_map_path);
   auto device = buildDeviceIo(*decode->table, cfg.host, deviceMap);
 
   // Segment name the sender opens for the data plane. With a metadata service
   // the mirror is registered under — and resolvable by — the worker's LOGICAL
-  // name (cfg.name): the same register-by-name / resolve-by-name discovery the
-  // bringup worker uses on main (PeerDiscoveryService), so the sender finds the
-  // peer through the metadata service instead of a hard-coded endpoint. Only
-  // P2PHANDSHAKE (no metadata registry to resolve a logical name) falls back to
-  // the engine's live IP:port. An explicit --segment always overrides.
+  // name (cfg.name). Only P2PHANDSHAKE falls back to the engine's live IP:port.
+  // An explicit --segment always overrides.
   std::string segment = cfg.segment;
   if (segment.empty()) {
     segment = (cfg.metadata_uri == "P2PHANDSHAKE") ? engine->localServerName()
                                                    : cfg.name;
   }
-  // The mirror is registered as the Mooncake segment inside MooncakeKvReceiver.
   MooncakeKvReceiver receiver(engine, *device, decode->table, cfg.host,
                               segment);
   if (!receiver.registered()) {
@@ -646,12 +906,6 @@ int runDecode(const WorkerConfig& cfg) {
     return 1;
   }
 
-  // Publish our KV control endpoint (host + bound port) into the metadata
-  // service, keyed by our logical name, so prefill discovers where to open the
-  // control channel — the same register-by-name / resolve-by-name path the data
-  // plane already uses. The host mirrors what Mooncake advertised in rpc_meta.
-  // Only meaningful with a real metadata service; under P2PHANDSHAKE this
-  // no-ops and prefill falls back to a static endpoint.
   const std::string controlEndpoint = hostOf(engine->localServerName()) + ":" +
                                       std::to_string(cfg.control_port);
   const std::string controlKey = std::string(K_CONTROL_KEY_PREFIX) + cfg.name;
@@ -665,22 +919,7 @@ int runDecode(const WorkerConfig& cfg) {
         cfg.name, controlKey);
   }
 
-  // Role-agnostic peer discovery (mirrors main: a worker is just a migration
-  // worker with a peer list). A decode is normally a pure receiver with no
-  // peers, but if it was given some via --peer we resolve them through the same
-  // metadata path as any worker. They are only held today — the receiver never
-  // initiates a migration — so this is the single seam to flip for a symmetric
-  // data plane: hand `resolved` to a sender exactly as runPrefill does.
-  if (!cfg.peers.empty() || !cfg.discover_peers.empty()) {
-    const auto resolved = resolvePeers(*engine, cfg, gStop);
-    TT_LOG_INFO(
-        "[worker] decode '{}' resolved {} peer(s) (held; receiver role does "
-        "not initiate migrations)",
-        cfg.name, resolved.size());
-  }
-
-  // Mirror registered, control server listening, endpoint published: the decode
-  // worker has finished its own bring-up, so flip it Ready.
+  // Mirror registered, control server listening, endpoint published.
   health.setLifecycle(WorkerLifecycle::Ready);
   TT_LOG_INFO("[worker] decode '{}' READY: segment={} control_port={}",
               cfg.name, segment, cfg.control_port);

@@ -460,6 +460,40 @@ WORKER_BIN=./build/bringup_mooncake_worker \
   tests/e2e/scripts/run_migration_workers_mpi.sh
 ```
 
+## KV table exchange at bring-up (#4295)
+
+Production path is `mooncake_kv_migration_worker` (deployed by
+`scripts/deploy_migration_workers.sh`). After metadata discovery, **before** the
+decode mirror is registered, each worker exchanges its opaque `.pb` with peers
+over the Transfer Engine (`PeerTableExchange` — prod form of the #4279 PoC):
+
+```
+publish kv_table_peers/<name> = sorted peer CSV
+register recv region as buffers[0]  (N per-peer slots)
+  → openSegment(peers)
+  → each peer WRITEs into slot(index_of_us_in_their_list)
+  → wait for every local slot's done-flag + checksum
+  → unregister recv region
+  → (decode) register KV mirror as buffers[0] for migration
+```
+
+Symmetric and mesh-safe: NP×MD fan-in uses isolated slots (no shared-slot races).
+Prefill verifies all decode blobs match, then builds the sender from that table.
+Decode keeps peer blobs for future reverse paths. Deploy default topology is
+bidirectional (prefill ↔ every decode). `--decode-table` on prefill remains a
+no-peer fallback.
+
+**Why TE instead of `provisionPeerTable` (control-channel exchange):** control
+channels swap small protocol messages and are opened *after* tables are known
+(prefill builds the sender from the decode table). Tables are 100–350+ MiB;
+shipping them over the control TCP path would block bring-up and couple bulk
+I/O to the migration control plane. TE is the bulk data path we already run for
+KV bytes — same transport, checksummed framing, per-peer slots. Control-channel
+`exchangeTableBlob` remains for orchestrator / small-table paths.
+
+**TCP-only:** flag-last completion assumes sequential blocking WRITEs. Do not
+switch this path to RDMA without an ordering fence before the flag WRITE.
+
 ## Validation status
 
 | Step | Status |
