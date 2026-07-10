@@ -220,7 +220,16 @@ def _run_image_analysis_benchmark(ctx: MediaContext) -> list[CnnGenerationTestSt
         logger.info(f"Analyzing image {i}/{total_requests}: {sample['filename']}")
         status, elapsed = _analyze_image(ctx, image_file)
         logger.info(f"Analyzed image in {elapsed:.2f} seconds.")
-        status_list.append(CnnGenerationTestStatus(status=status, elapsed=elapsed))
+        # Single-user, one inference per request, so tput_user (images/sec/user)
+        # = 1/elapsed. Set it here or it defaults to 0 and the enforced
+        # tput_user_check fails for every CNN.
+        status_list.append(
+            CnnGenerationTestStatus(
+                status=status,
+                elapsed=elapsed,
+                inference_steps_per_second=(1.0 / elapsed if elapsed > 0 else 0),
+            )
+        )
 
     logger.info(
         "Completed image analysis benchmark: %d requests sent.",
