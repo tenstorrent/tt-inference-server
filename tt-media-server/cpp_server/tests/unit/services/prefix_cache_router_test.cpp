@@ -46,7 +46,7 @@ class PrefixCacheRouterTest : public ::testing::Test {
     createdSlotCopyFrom_.clear();
     nextAllocSlot_ = 1000;
 
-    router_ =
+    router =
         std::make_unique<tt::services::PrefixCacheRouter>(makeCallbacks());
   }
 
@@ -60,7 +60,7 @@ class PrefixCacheRouterTest : public ::testing::Test {
 
   void registerBlocks(const std::string& sessionId,
                       const std::vector<tt::utils::BlockHashInfo>& blocks) {
-    router_->registerPrefixHash(sessionId, blocks);
+    router->registerPrefixHash(sessionId, blocks);
   }
 
   void releaseSession(const std::string& sessionId) {
@@ -228,7 +228,7 @@ class PrefixCacheRouterTest : public ::testing::Test {
   std::vector<std::pair<std::string, uint32_t>> shrunkSessions_;
   std::vector<uint32_t> createdSlotCopyFrom_;
   uint32_t nextAllocSlot_ = 1000;
-  std::unique_ptr<tt::services::PrefixCacheRouter> router_;
+  std::unique_ptr<tt::services::PrefixCacheRouter> router;
 };
 
 // ---------------------------------------------------------------------------
@@ -237,19 +237,19 @@ class PrefixCacheRouterTest : public ::testing::Test {
 
 TEST_F(PrefixCacheRouterTest,
        TryAcquireByPrefixHash_EmptyBlocks_ReturnsNullopt) {
-  EXPECT_FALSE(router_->tryAcquireByPrefixHash({}, nullptr).has_value());
+  EXPECT_FALSE(router->tryAcquireByPrefixHash({}, nullptr).has_value());
 }
 
 TEST_F(PrefixCacheRouterTest, TryAcquireByPrefixHash_Miss_ReturnsNullopt) {
   EXPECT_FALSE(
-      router_->tryAcquireByPrefixHash(threeBlocks(), nullptr).has_value());
+      router->tryAcquireByPrefixHash(threeBlocks(), nullptr).has_value());
 }
 
 TEST_F(PrefixCacheRouterTest, TryAcquireByPrefixHash_Hit_ReturnsSession) {
   auto sessionId = addSession(7u);
   registerBlocks(sessionId, threeBlocks());
 
-  auto acquired = router_->tryAcquireByPrefixHash(threeBlocks(), nullptr);
+  auto acquired = router->tryAcquireByPrefixHash(threeBlocks(), nullptr);
   ASSERT_TRUE(acquired.has_value());
   EXPECT_TRUE(acquired->sessionFound);
   EXPECT_EQ(acquired->sessionId, sessionId);
@@ -263,8 +263,8 @@ TEST_F(PrefixCacheRouterTest,
   registerBlocks(sessionId, threeBlocks());
 
   ASSERT_TRUE(
-      router_->tryAcquireByPrefixHash(threeBlocks(), nullptr)->sessionFound);
-  auto busy = router_->tryAcquireByPrefixHash(threeBlocks(), nullptr);
+      router->tryAcquireByPrefixHash(threeBlocks(), nullptr)->sessionFound);
+  auto busy = router->tryAcquireByPrefixHash(threeBlocks(), nullptr);
   ASSERT_TRUE(busy.has_value());
   EXPECT_FALSE(busy->sessionFound);
   EXPECT_FALSE(busy->candidatesList.empty());
@@ -276,13 +276,13 @@ TEST_F(PrefixCacheRouterTest,
   registerBlocks(sessionId, threeBlocks());
   sessions_[sessionId]->setHash(999u);
 
-  auto stale = router_->tryAcquireByPrefixHash(threeBlocks(), nullptr);
+  auto stale = router->tryAcquireByPrefixHash(threeBlocks(), nullptr);
   ASSERT_TRUE(stale.has_value());
   EXPECT_FALSE(stale->sessionFound);
 
   auto sessionId2 = addSession(10u);
   registerBlocks(sessionId2, threeBlocks());
-  auto hit = router_->tryAcquireByPrefixHash(threeBlocks(), nullptr);
+  auto hit = router->tryAcquireByPrefixHash(threeBlocks(), nullptr);
   ASSERT_TRUE(hit.has_value());
   EXPECT_EQ(hit->sessionId, sessionId2);
 }
@@ -292,18 +292,18 @@ TEST_F(PrefixCacheRouterTest,
 // ---------------------------------------------------------------------------
 
 TEST_F(PrefixCacheRouterTest, TryAcquireByResponseId_EmptyId_ReturnsNullopt) {
-  EXPECT_FALSE(router_->tryAcquireByResponseId("", nullptr).has_value());
+  EXPECT_FALSE(router->tryAcquireByResponseId("", nullptr).has_value());
 }
 
 TEST_F(PrefixCacheRouterTest, TryAcquireByResponseId_Miss_ReturnsNullopt) {
-  EXPECT_FALSE(router_->tryAcquireByResponseId("missing", nullptr).has_value());
+  EXPECT_FALSE(router->tryAcquireByResponseId("missing", nullptr).has_value());
 }
 
 TEST_F(PrefixCacheRouterTest, TryAcquireByResponseId_Hit_ReturnsSession) {
   auto sessionId = addSession(11u);
-  router_->registerResponseId(sessionId, "resp-1");
+  router->registerResponseId(sessionId, "resp-1");
 
-  auto acquired = router_->tryAcquireByResponseId("resp-1", nullptr);
+  auto acquired = router->tryAcquireByResponseId("resp-1", nullptr);
   ASSERT_TRUE(acquired.has_value());
   EXPECT_TRUE(acquired->sessionFound);
   EXPECT_EQ(acquired->sessionId, sessionId);
@@ -312,20 +312,20 @@ TEST_F(PrefixCacheRouterTest, TryAcquireByResponseId_Hit_ReturnsSession) {
 
 TEST_F(PrefixCacheRouterTest, TryAcquireByResponseId_Busy_Throws) {
   auto sessionId = addSession(12u);
-  router_->registerResponseId(sessionId, "resp-1");
+  router->registerResponseId(sessionId, "resp-1");
 
-  ASSERT_TRUE(router_->tryAcquireByResponseId("resp-1", nullptr).has_value());
-  EXPECT_THROW(router_->tryAcquireByResponseId("resp-1", nullptr),
+  ASSERT_TRUE(router->tryAcquireByResponseId("resp-1", nullptr).has_value());
+  EXPECT_THROW(router->tryAcquireByResponseId("resp-1", nullptr),
                std::runtime_error);
 }
 
 TEST_F(PrefixCacheRouterTest, TryAcquireByResponseId_Stale_RemovesIndexEntry) {
   auto sessionId = addSession(13u);
-  router_->registerResponseId(sessionId, "resp-1");
+  router->registerResponseId(sessionId, "resp-1");
   sessions_[sessionId]->setResponseId("stale");
 
-  EXPECT_FALSE(router_->tryAcquireByResponseId("resp-1", nullptr).has_value());
-  EXPECT_FALSE(router_->tryAcquireByResponseId("resp-1", nullptr).has_value());
+  EXPECT_FALSE(router->tryAcquireByResponseId("resp-1", nullptr).has_value());
+  EXPECT_FALSE(router->tryAcquireByResponseId("resp-1", nullptr).has_value());
 }
 
 // ---------------------------------------------------------------------------
@@ -334,18 +334,18 @@ TEST_F(PrefixCacheRouterTest, TryAcquireByResponseId_Stale_RemovesIndexEntry) {
 
 TEST_F(PrefixCacheRouterTest, RegisterResponseId_EmptyId_IsNoOp) {
   auto sessionId = addSession(14u);
-  router_->registerResponseId(sessionId, "");
+  router->registerResponseId(sessionId, "");
   EXPECT_TRUE(sessions_[sessionId]->getResponseId().empty());
 }
 
 TEST_F(PrefixCacheRouterTest, UpdateResponseId_ReKeysLookup) {
   auto sessionId = addSession(15u);
-  router_->registerResponseId(sessionId, "resp-1");
+  router->registerResponseId(sessionId, "resp-1");
 
-  router_->updateResponseId("resp-1", "resp-2");
-  EXPECT_FALSE(router_->tryAcquireByResponseId("resp-1", nullptr).has_value());
+  router->updateResponseId("resp-1", "resp-2");
+  EXPECT_FALSE(router->tryAcquireByResponseId("resp-1", nullptr).has_value());
 
-  auto acquired = router_->tryAcquireByResponseId("resp-2", nullptr);
+  auto acquired = router->tryAcquireByResponseId("resp-2", nullptr);
   ASSERT_TRUE(acquired.has_value());
   EXPECT_EQ(acquired->sessionId, sessionId);
 }
@@ -363,7 +363,7 @@ TEST_F(PrefixCacheRouterTest, ComputeMatchedTokens_ReflectsRegisteredBlocks) {
   };
   registerBlocks(sessionId, blocks);
 
-  auto [matched, think] = router_->computeMatchedTokens(sessionId, blocks);
+  auto [matched, think] = router->computeMatchedTokens(sessionId, blocks);
   EXPECT_GT(matched, 0u);
   EXPECT_EQ(think, 20u);
 }
@@ -377,8 +377,8 @@ TEST_F(PrefixCacheRouterTest, ClearSessionBlockThinkTokens_ResetsThinkCount) {
   };
   registerBlocks(sessionId, blocks);
 
-  router_->clearSessionBlockThinkTokens(sessionId);
-  auto [matched, think] = router_->computeMatchedTokens(sessionId, blocks);
+  router->clearSessionBlockThinkTokens(sessionId);
+  auto [matched, think] = router->computeMatchedTokens(sessionId, blocks);
   EXPECT_GT(matched, 0u);
   EXPECT_EQ(think, 0u);
 }
@@ -390,15 +390,15 @@ TEST_F(PrefixCacheRouterTest, ClearSessionBlockThinkTokens_ResetsThinkCount) {
 TEST_F(PrefixCacheRouterTest, OnSessionClosed_RemovesIndexes) {
   auto sessionId = addSession(18u);
   registerBlocks(sessionId, threeBlocks());
-  router_->registerResponseId(sessionId, "resp-close");
+  router->registerResponseId(sessionId, "resp-close");
 
-  router_->onSessionClosed(sessionId, 100u, "resp-close");
+  router->onSessionClosed(sessionId, 100u, "resp-close");
 
   EXPECT_FALSE(
-      router_->tryAcquireByResponseId("resp-close", nullptr).has_value());
+      router->tryAcquireByResponseId("resp-close", nullptr).has_value());
   auto sessionId2 = addSession(19u);
   registerBlocks(sessionId2, threeBlocks());
-  auto hit = router_->tryAcquireByPrefixHash(threeBlocks(), nullptr);
+  auto hit = router->tryAcquireByPrefixHash(threeBlocks(), nullptr);
   ASSERT_TRUE(hit.has_value());
   EXPECT_EQ(hit->sessionId, sessionId2);
 }
@@ -409,17 +409,17 @@ TEST_F(PrefixCacheRouterTest, OnSessionClosed_RemovesIndexes) {
 
 TEST_F(PrefixCacheRouterTest, GetSlot_ResponseIdHit) {
   auto prompt = makeThreeBlockPrompt();
-  auto blocks = router_->computeBlockInfos(prompt);
+  auto blocks = router->computeBlockInfos(prompt);
   auto sessionId = addSession(20u);
   registerBlocks(sessionId, blocks);
-  router_->registerResponseId(sessionId, "resp-1");
+  router->registerResponseId(sessionId, "resp-1");
 
   tt::services::GetSlotOptions opts;
   opts.previousResponseId = "resp-1";
   opts.responseId = "resp-2";
 
   std::optional<tt::services::SlotAcquireResult> result;
-  router_->getSlot(
+  router->getSlot(
       prompt, std::move(opts), nullptr,
       [&](tt::services::SlotAcquireResult acquired) {
         result = std::move(acquired);
@@ -434,18 +434,18 @@ TEST_F(PrefixCacheRouterTest, GetSlot_ResponseIdHit) {
   EXPECT_EQ(shrunkSessions_.front().first, sessionId);
 
   releaseSession(sessionId);
-  EXPECT_FALSE(router_->tryAcquireByResponseId("resp-1", nullptr).has_value());
-  EXPECT_TRUE(router_->tryAcquireByResponseId("resp-2", nullptr).has_value());
+  EXPECT_FALSE(router->tryAcquireByResponseId("resp-1", nullptr).has_value());
+  EXPECT_TRUE(router->tryAcquireByResponseId("resp-2", nullptr).has_value());
 }
 
 TEST_F(PrefixCacheRouterTest, GetSlot_PrefixCacheHit) {
   auto prompt = makeThreeBlockPrompt();
-  auto blocks = router_->computeBlockInfos(prompt);
+  auto blocks = router->computeBlockInfos(prompt);
   auto sessionId = addSession(21u);
   registerBlocks(sessionId, blocks);
 
   std::optional<tt::services::SlotAcquireResult> result;
-  router_->getSlot(
+  router->getSlot(
       prompt, {}, nullptr,
       [&](tt::services::SlotAcquireResult acquired) {
         result = std::move(acquired);
@@ -464,7 +464,7 @@ TEST_F(PrefixCacheRouterTest, GetSlot_AllocatesNewSessionOnMiss) {
   opts.responseId = "resp-new";
 
   std::optional<tt::services::SlotAcquireResult> result;
-  router_->getSlot(
+  router->getSlot(
       prompt, std::move(opts), nullptr,
       [&](tt::services::SlotAcquireResult acquired) {
         result = std::move(acquired);
@@ -481,15 +481,15 @@ TEST_F(PrefixCacheRouterTest, GetSlot_AllocatesNewSessionOnMiss) {
 
 TEST_F(PrefixCacheRouterTest, GetSlot_BusyCandidate_CopiesFromSourceSlot) {
   auto threePrompt = makeThreeBlockPrompt();
-  auto threeBlockInfos = router_->computeBlockInfos(threePrompt);
+  auto threeBlockInfos = router->computeBlockInfos(threePrompt);
   auto sessionId = addSession(22u);
   registerBlocks(sessionId, threeBlockInfos);
   ASSERT_TRUE(
-      router_->tryAcquireByPrefixHash(threeBlockInfos, nullptr)->sessionFound);
+      router->tryAcquireByPrefixHash(threeBlockInfos, nullptr)->sessionFound);
 
   auto fourPrompt = makeFourBlockPrompt();
   std::optional<tt::services::SlotAcquireResult> result;
-  router_->getSlot(
+  router->getSlot(
       fourPrompt, {}, nullptr,
       [&](tt::services::SlotAcquireResult acquired) {
         result = std::move(acquired);
