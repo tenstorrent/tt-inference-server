@@ -74,7 +74,7 @@ class TestReport:
         result: Any = None,
         logs: List = None,
         attempts: int = 1,
-        descrtiption: str = "",
+        description: str = "",
     ):
         self.test_name = test_name
         self.success = success
@@ -85,7 +85,7 @@ class TestReport:
         self.logs = logs or []  # Store test execution logs
         self.attempts = attempts  # Store number of attempts made
         self.timestamp = time.time()
-        self.description = descrtiption
+        self.description = description
 
     def __str__(self):
         status = "✅ PASS" if self.success else "❌ FAIL"

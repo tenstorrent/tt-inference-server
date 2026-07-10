@@ -78,7 +78,7 @@ def _ensure_imagenet_dataset() -> tuple[Path, list[dict]]:
     )
 
     # Lazy import to avoid loading 'datasets' library at module import time
-    from server_tests.test_classes import TestConfig
+    from .._test_common import TestConfig
 
     from .vision_evals_test import VisionEvalsTest, VisionEvalsTestRequest
 
@@ -156,7 +156,7 @@ def _cnn_ttft(status_list: list[CnnGenerationTestStatus]) -> float:
 
 def _run_mobilenetv2_eval(ctx: MediaContext) -> dict:
     """Delegate MobileNetV2 accuracy eval to VisionEvalsTest."""
-    from server_tests.test_classes import TestConfig
+    from .._test_common import TestConfig
 
     from .vision_evals_test import VisionEvalsTest, VisionEvalsTestRequest
 

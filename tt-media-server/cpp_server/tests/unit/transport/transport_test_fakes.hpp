@@ -7,14 +7,20 @@
 // orchestration tests. Each test is its own binary, so a single include per
 // binary; the free helpers are inline to be safe.
 
+#include <condition_variable>
 #include <cstdint>
 #include <cstring>
+#include <deque>
+#include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "sockets/i_socket_transport.hpp"
 #include "transport/i_device_io.hpp"
 #include "transport/i_storage_backend.hpp"
 #include "transport/i_transfer_engine.hpp"
@@ -27,6 +33,70 @@ namespace tt::transport {
 namespace test {
 
 constexpr uint32_t K_CHUNK = 64;  // small chunk for readable byte content
+
+// A blocking, thread-safe channel end: receiveRawData blocks until a message
+// arrives or the inbound queue is closed — like a real socket. Two of them with
+// crossed queues form a connected pair across threads.
+struct Pipe {
+  std::mutex m;
+  std::condition_variable cv;
+  std::deque<std::vector<uint8_t>> q;
+  bool closed = false;
+};
+
+inline void closePipe(const std::shared_ptr<Pipe>& p) {
+  {
+    std::lock_guard<std::mutex> lk(p->m);
+    p->closed = true;
+  }
+  p->cv.notify_all();
+}
+
+class BlockingFakeTransport : public sockets::ISocketTransport {
+ public:
+  BlockingFakeTransport(std::shared_ptr<Pipe> in, std::shared_ptr<Pipe> out)
+      : in(std::move(in)), out(std::move(out)) {}
+
+  bool initializeAsServer(uint16_t) override { return true; }
+  bool initializeAsClient(const std::string&, uint16_t) override {
+    return true;
+  }
+  void start() override {}
+  // Models a real transport teardown: closing the inbound queue unblocks a
+  // pending receiveRawData() so a receiver loop waiting on it returns.
+  void stop() override { closePipe(in); }
+  // Reflects pipe closure so KvControlChannel::receive() can tell an
+  // empty-on-close read apart from "no data yet" (it disambiguates via
+  // isConnected()), like a real socket dropping its connection.
+  bool isConnected() const override {
+    std::lock_guard<std::mutex> lk(in->m);
+    return !in->closed;
+  }
+  std::string getStatus() const override { return "blocking-fake"; }
+
+  bool sendRawData(std::span<const uint8_t> data) override {
+    {
+      std::lock_guard<std::mutex> lk(out->m);
+      out->q.emplace_back(data.begin(), data.end());
+    }
+    out->cv.notify_one();
+    return true;
+  }
+  std::vector<uint8_t> receiveRawData() override {
+    std::unique_lock<std::mutex> lk(in->m);
+    in->cv.wait(lk, [&] { return !in->q.empty() || in->closed; });
+    if (in->q.empty()) return {};  // closed
+    std::vector<uint8_t> front = std::move(in->q.front());
+    in->q.pop_front();
+    return front;
+  }
+  void setConnectionLostCallback(std::function<void()>) override {}
+  void setConnectionEstablishedCallback(std::function<void()>) override {}
+
+ private:
+  std::shared_ptr<Pipe> in;
+  std::shared_ptr<Pipe> out;
+};
 
 // Shared segment registry: an engine's advertised name -> its registered host
 // buffer (base, length). Models the cluster-wide segment directory.
@@ -70,6 +140,24 @@ class FakeTransferEngine : public ITransferEngine {
     std::memcpy(it->second + r.target_offset, r.local_addr, r.length);
     return {TransferState::COMPLETED, r.length};
   }
+  // The fake has no real async: submitBatch applies every entry immediately
+  // (memcpy) and stashes the summed bytes in the handle; waitBatch just reports
+  // it. Correctness (bytes landed) is preserved; there is simply no overlap to
+  // model without a network. An invalid entry yields an invalid handle so the
+  // base submitBatchAndWait reports FAILED.
+  TransferHandle submitBatch(const std::vector<TransferRequest>& rs) override {
+    std::size_t total = 0;
+    for (const TransferRequest& r : rs) {
+      const TransferStatus s = submitAndWait(r);
+      if (s.state != TransferState::COMPLETED) return {};  // invalid
+      total += s.transferred_bytes;
+    }
+    return {static_cast<uint64_t>(total), true};
+  }
+  TransferStatus waitBatch(TransferHandle h) override {
+    if (!h.valid) return {TransferState::FAILED, 0};
+    return {TransferState::COMPLETED, static_cast<std::size_t>(h.value)};
+  }
 
  private:
   std::shared_ptr<FakeRegistry> reg;
@@ -89,9 +177,24 @@ class FakeDeviceIo : public IDeviceIo {
     return it == store.end() ? std::vector<uint8_t>{} : it->second;
   }
   bool read(LocalDeviceId d, NocAddr n, std::size_t size, void* host) override {
-    const auto it = store.find({d, n});
-    if (it == store.end() || it->second.size() < size) return false;
-    std::memcpy(host, it->second.data(), size);
+    // Device DRAM is a contiguous address space: a read of [n, n+size) may span
+    // several stored chunks (the sender merges contiguous chunks into one
+    // large read). Assemble the range by walking consecutive chunk keys, which
+    // for contiguously-seeded chunks land exactly at n, n+size0, n+size0+size1…
+    // A single whole-chunk read is just the one-iteration case. Fails on a gap
+    // (no chunk at the next address), same as the real device faulting.
+    auto* out = static_cast<uint8_t*>(host);
+    std::size_t done = 0;
+    NocAddr cur = n;
+    while (done < size) {
+      const auto it = store.find({d, cur});
+      if (it == store.end() || it->second.empty()) return false;
+      const std::size_t avail = it->second.size();
+      const std::size_t take = (size - done < avail) ? (size - done) : avail;
+      std::memcpy(out + done, it->second.data(), take);
+      done += take;
+      cur += avail;
+    }
     return true;
   }
   bool write(LocalDeviceId d, NocAddr n, const void* host,
