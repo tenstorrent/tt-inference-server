@@ -21,10 +21,10 @@
 # deploy pins them to a single tag per worker.
 #
 # Peers (PEERS): CSV of peer tags for THIS worker, role-agnostic — the deploy
-#   fills it (default: prefill ↔ every decode, decode ↔ every prefill for TE
-#   table exchange #4295) and this launcher just forwards it. The worker
-#   resolves each tag for TE exchange + (prefill) control host:port from
-#   metadata; role decides who initiates migrations (prefill = sender).
+#   fills it (default: prefill → every decode for control TABLE_EXCHANGE +
+#   migrate; decode → none) and this launcher just forwards it. The worker
+#   resolves each tag for control host:port from metadata; role decides who
+#   initiates (prefill = sender).
 #
 # Required env (all roles): WORKER_ROLE, WORKER_BIN, METADATA, WORKER_TAG,
 #   HEALTH_PORT, DECODE_TABLE.
@@ -74,10 +74,10 @@ device_args=()
 
 # Peers are a GENERIC per-worker input (PEERS = CSV of peer tags), independent of
 # role: a worker is just a migration worker with a peer list, resolved through
-# the metadata service. The deploy decides the set (default: prefill ↔ every
-# decode for TE table exchange #4295), so this launcher never branches peers on
-# role — it just forwards whatever it was handed. Each peer's control host:port
-# is discovered from its published "kv_control/<tag>"; CONTROL_PORT is only the
+# the metadata service. The deploy decides the set (default: prefill gets every
+# decode; a decode gets none), so this launcher never branches peers on role —
+# it just forwards whatever it was handed. Each peer's control host:port is
+# discovered from its published "kv_control/<tag>"; CONTROL_PORT is only the
 # fallback for a peer that hasn't published yet.
 peer_args=()
 IFS=',' read -ra peer_tags <<<"${PEERS:-}"
@@ -87,9 +87,8 @@ done
 
 case "${WORKER_ROLE}" in
   decode)
-    # Receiver: TE table exchange with prefills (if PEERS set), then registers
-    # its KV mirror + serves the control protocol. Prefill initiates migrations;
-    # decode does not. No Kafka.
+    # Receiver: registers KV mirror + serves control (TABLE_EXCHANGE reply +
+    # migrate). Prefill initiates; decode does not. No Kafka.
     exec "${WORKER_BIN}" \
       --role "${WORKER_ROLE}" \
       --metadata "${METADATA}" --name "${WORKER_TAG}" --host "${WORKER_TAG}" \

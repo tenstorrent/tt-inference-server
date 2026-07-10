@@ -256,8 +256,6 @@ declare -a WK_ROLE=() WK_INDEX=() WK_HOST=() WK_TAG=() WK_DEVMAP=() WK_PORT=() W
 declare -a WK_PEERS=()
 # CSV of every decode's tag — default peer set for a prefill.
 DECODE_TAG_LIST=""
-# CSV of every prefill's tag — default peer set for a decode (TE table exchange).
-PREFILL_TAG_LIST=""
 # Optional per-worker peer override, keyed by tag: WORKER_PEERS[<tag>]="p1,p2".
 # A worker is just a migration worker with a peer list, so this lets you hand
 # ANY worker (any role) an explicit peer set, overriding the role default. Set
@@ -369,18 +367,15 @@ clearRpcMeta() {
 # map opens the wrong chip). Empty when unset => discovery-only, no transfer.
 # Peer CSV for a worker, role-agnostic: an explicit WORKER_PEERS[<tag>] override
 # always wins; otherwise the role default — a prefill peers with every decode
-# (DECODE_TAG_LIST), a decode peers with every prefill (PREFILL_TAG_LIST) so
-# TE table exchange (#4295) is bidirectional. Prefill reads a complete
-# DECODE_TAG_LIST because initWorkerSlots builds it before adding any prefill
-# slot; decode reads PREFILL_TAG_LIST built in the same pass.
+# (DECODE_TAG_LIST) for control TABLE_EXCHANGE + migrate; a decode peers with
+# nothing (pure receiver). Prefill reads a complete DECODE_TAG_LIST because
+# initWorkerSlots builds it before adding any prefill slot.
 peersForWorker() {
   local role="$1" tag="$2"
   if [[ -n "${WORKER_PEERS[$tag]:-}" ]]; then
     printf '%s' "${WORKER_PEERS[$tag]}"
   elif [[ "${role}" == "prefill" ]]; then
     printf '%s' "${DECODE_TAG_LIST}"
-  elif [[ "${role}" == "decode" ]]; then
-    printf '%s' "${PREFILL_TAG_LIST}"
   fi
 }
 
@@ -406,14 +401,10 @@ initWorkerSlots() {
   IFS=',' read -ra prefill_tags <<<"${PREFILL_TAGS}"
   IFS=',' read -ra decode_tags <<<"${DECODE_TAGS}"
   local i tag
-  # Build both tag lists before any slot so peersForWorker sees a complete mesh.
+  # Decodes first so DECODE_TAG_LIST is complete before any prefill reads it.
   for (( i = 0; i < NUM_DECODE; i++ )); do
     tag="${decode_tags[$i]:-decode-${i}}"
     DECODE_TAG_LIST="${DECODE_TAG_LIST:+${DECODE_TAG_LIST},}${tag}"
-  done
-  for (( i = 0; i < NUM_PREFILL; i++ )); do
-    tag="${prefill_tags[$i]:-prefill-${i}}"
-    PREFILL_TAG_LIST="${PREFILL_TAG_LIST:+${PREFILL_TAG_LIST},}${tag}"
   done
   for (( i = 0; i < NUM_PREFILL; i++ )); do
     tag="${prefill_tags[$i]:-prefill-${i}}"
