@@ -453,7 +453,6 @@ class TestInstallRequirementsReturnBool:
             "evals-vision.txt",
             "evals-audio.txt",
             "evals-embedding.txt",
-            "evals-video.txt",
             "evals-run-script.txt",
             "stress-tests-run-script.txt",
             "benchmarks-run-script.txt",

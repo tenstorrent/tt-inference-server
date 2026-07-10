@@ -21,7 +21,7 @@ from server_tests.test_cases.server_helper import (
     DEFAULT_AUTHORIZATION,
     SERVER_DEFAULT_URL,
 )
-from server_tests.test_classes import TestConfig
+from .._test_common import TestConfig
 
 DATASET_DIR = "server_tests/datasets/imagenet_subset"
 MODELS = [

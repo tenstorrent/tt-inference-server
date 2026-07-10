@@ -413,7 +413,6 @@ BlazeConfig blazeConfig() {
 
     // Generation fallbacks read by blaze_utils
     cfg.maxContextLength = maxContextLength();
-    cfg.sampleOnlyInReasoning = sampleOnlyInReasoning();
     return cfg;
   }();
   return cached;
@@ -559,24 +558,6 @@ Model model() {
   static const Model cached =
       modelFromString(envString("MODEL", defaults::MODEL));
   return cached;
-}
-
-bool sampleOnlyInReasoning() {
-  switch (modelType()) {
-    // DeepSeek samples only inside the reasoning phase; argmax otherwise.
-    case ModelType::DEEPSEEK_R1_0528:
-      return true;
-    case ModelType::LLAMA_3_1_8B_INSTRUCT:
-    case ModelType::KIMI_K2_6:
-    case ModelType::KIMI_K2_7_CODE:
-    case ModelType::GPT_OSS_120B:
-    case ModelType::MINIMAX_M2_7:
-    case ModelType::GLM_5_1:
-    case ModelType::GLM_5_2:
-    case ModelType::DEEPSEEK_V4_PRO:
-      return false;
-  }
-  return false;
 }
 
 LLMMode llmMode() {

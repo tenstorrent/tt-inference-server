@@ -78,7 +78,7 @@ def _ensure_imagenet_dataset() -> tuple[Path, list[dict]]:
     )
 
     # Lazy import to avoid loading 'datasets' library at module import time
-    from server_tests.test_classes import TestConfig
+    from .._test_common import TestConfig
 
     from ..eval_tests.vision_evals_test import (
         VisionEvalsTest,

@@ -73,7 +73,6 @@ struct BlazeConfig : RunnerConfigBase {
 
   // Generation fallbacks read by blaze_utils
   size_t maxContextLength = defaults::MAX_CONTEXT_LENGTH;
-  bool sampleOnlyInReasoning = false;
 };
 
 struct EmbeddingConfig : RunnerConfigBase {};

@@ -635,6 +635,10 @@ void BlazeDecodeRunner::handleSchedulerOutput(const ds::OutputMessage& output) {
   slotContext.lastProgressTime = std::chrono::steady_clock::now();
   auto taskId = slotContext.taskId.value();
   if (output.ctx_exhausted) {
+    TT_LOG_INFO(
+        "[BlazeDecodeRunner] handleSchedulerOutput: ctx_exhausted for "
+        "slotId={}",
+        output.slot_id);
     slotManager.setSlotAsIdle(output.slot_id);
     metrics.decrementActiveRequests();
     ipc::helpers::pushToken(

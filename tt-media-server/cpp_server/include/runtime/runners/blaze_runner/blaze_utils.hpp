@@ -62,8 +62,7 @@ inline void logISRequest(const sch::ISRequest& req) {
       "migration_start_position={} migrate_from_slot={} "
       "gen.max_new_tokens={} gen.spec_decode={} gen.ignore_eos={} "
       "gen.sampling.temp={} gen.sampling.top_p={} gen.sampling.top_k={} "
-      "gen.reasoning_sampling.temp={} gen.reasoning_sampling.top_p={} "
-      "gen.reasoning_sampling.top_k={} gen.disaggregated_decode={} "
+      "gen.disaggregated_decode={} "
       "gen.starts_in_thinking={} gen.await_kv_migration={} gen.prefill_only={} "
       "gen.relaxed_acceptance_threshold={} gen.stop_token_count={}",
       requestTypeToString(req.type), req.request_id, req.slot_id,
@@ -72,9 +71,7 @@ inline void logISRequest(const sch::ISRequest& req) {
       formatOptional(req.migration_start_position),
       formatOptional(req.migrate_from_slot), gen.max_new_tokens,
       gen.spec_decode, gen.ignore_eos, gen.sampling.temperature,
-      gen.sampling.top_p, gen.sampling.top_k,
-      gen.reasoning_sampling.temperature, gen.reasoning_sampling.top_p,
-      gen.reasoning_sampling.top_k, gen.disaggregated_decode,
+      gen.sampling.top_p, gen.sampling.top_k, gen.disaggregated_decode,
       gen.starts_in_thinking, gen.await_kv_migration, gen.prefill_only,
       gen.relaxed_acceptance_threshold, gen.stop_tokens.size());
 }
@@ -117,7 +114,7 @@ inline sch::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
 inline sch::GenerationParams makeGenerationParams(
     const tt::config::BlazeConfig& config,
     const tt::domain::llm::Sequence& seq) {
-  const sch::PhaseSamplingParams userSampling{
+  const sch::SamplingParams sampling{
       .temperature = seq.getSamplingParams().temperature,
       .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
       .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
@@ -128,21 +125,11 @@ inline sch::GenerationParams makeGenerationParams(
               static_cast<int>(config.maxContextLength))),
       .spec_decode = seq.getSamplingParams().fast_mode,
       .ignore_eos = seq.getSamplingParams().ignore_eos,
-      .sampling = userSampling,
-      .reasoning_sampling = userSampling,
+      .sampling = sampling,
       .disaggregated_decode = config.enableMigration && seq.isDisaggregated(),
       .starts_in_thinking = seq.getStartsInThinking(),
       .stop_tokens = seq.getSamplingParams().stop_token_ids,
   };
-}
-
-inline void postProcessSamplingParams(const tt::config::BlazeConfig& config,
-                                      sch::GenerationParams& params) {
-  if (config.sampleOnlyInReasoning) {
-    // We argmax outside the reasoning phase
-    params.sampling = sch::PhaseSamplingParams{
-        .temperature = 1.0f, .top_p = 1.0f, .top_k = 1};
-  }
 }
 
 inline void fillSequenceFields(const tt::config::BlazeConfig& config,
@@ -153,7 +140,6 @@ inline void fillSequenceFields(const tt::config::BlazeConfig& config,
   if (seq.getKVPositionId().has_value()) {  // override position id
     req.position_id = *seq.getKVPositionId();
   }
-  postProcessSamplingParams(config, req.gen);
   if (config.enableMigration) {
     req.migration_uuid = seq.getMigrationId();
   }

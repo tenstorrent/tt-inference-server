@@ -97,6 +97,7 @@ std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
   managerParams.think_close_token_id =
       static_cast<uint32_t>(thinkTokenIds.second);
   managerParams.max_users = maxUsers;
+  managerParams.max_seq_len = config.maxContextLength;
   managerParams.self_endpoint_id = config.migrationDecodeEndpointId;
   managerParams.number_of_pipeline_stages = config.blazeNumberOfPipelineStages;
   if (managerParams.number_of_pipeline_stages > 0) {
@@ -139,6 +140,7 @@ std::unique_ptr<IPrefillScheduler> makePrefillScheduler(
   managerParams.self_endpoint_id = config.migrationPrefillEndpointId;
   managerParams.layers_per_chunk = config.modelNumLayers;
   managerParams.chunk_size = config.prefillChunkSize;
+  managerParams.max_seq_len = config.maxContextLength;
   managerParams.max_users = maxUsers;
   auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
   auto migrationClientInterface = utils::makeMigrationClientInterface(config);
