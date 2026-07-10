@@ -46,8 +46,7 @@ class PrefixCacheRouterTest : public ::testing::Test {
     createdSlotCopyFrom_.clear();
     nextAllocSlot_ = 1000;
 
-    router =
-        std::make_unique<tt::services::PrefixCacheRouter>(makeCallbacks());
+    router = std::make_unique<tt::services::PrefixCacheRouter>(makeCallbacks());
   }
 
   std::string addSession(uint32_t slotId, uint64_t hash = 0) {
