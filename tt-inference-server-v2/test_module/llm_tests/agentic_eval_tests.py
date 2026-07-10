@@ -18,6 +18,7 @@ from llm_module import (
     ServerConnection,
     make_agentic_driver,
 )
+from llm_module.agentic.parallel_bench import start_parallel_bench
 from report_module.schema import Block
 from workflows.workflow_types import WorkflowVenvType
 from workflow_module import accept_blocks
@@ -130,7 +131,29 @@ def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
     for task in agentic_tasks:
         driver = make_agentic_driver(task, runtime_config=runtime_config)
         logger.info("Running %s task: %s", driver.name, task.task_name)
-        outcome = driver.run(placeholder_config, server, driver_context)
+
+        # Top-up synthetic vllm bench serve load in parallel so the endpoint is
+        # exercised at the model's full max_concurrency while the (CPU/Docker
+        # bounded) agentic trials run. No-op for non-SUPER_CLUSTER models.
+        bench_load = None
+        try:
+            task_output_dir = driver.result_path(server, driver_context).parent
+            bench_load = start_parallel_bench(
+                ctx,
+                task,
+                watch_dir=task_output_dir,
+                sidecar_dir=task_output_dir / "parallel_bench",
+            )
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(
+                "Could not start parallel bench for %s: %s", task.task_name, e
+            )
+
+        try:
+            outcome = driver.run(placeholder_config, server, driver_context)
+        finally:
+            if bench_load is not None:
+                bench_load.stop()
 
         if outcome.return_code != 0:
             logger.error(
