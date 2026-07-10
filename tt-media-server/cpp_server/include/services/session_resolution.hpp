@@ -34,7 +34,7 @@ inline uint32_t applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
     return 0;
   }
 
-  auto& tokens = std::get<std::vector<int>>(req.prompt);
+  auto& tokens = std::get<std::vector<uint32_t>>(req.prompt);
   const size_t skip = static_cast<size_t>(matchedTokens);
   if (skip >= tokens.size()) {
     return 0;
@@ -49,8 +49,10 @@ inline uint32_t applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
   tokens.erase(tokens.begin(), tokens.begin() + static_cast<ptrdiff_t>(skip));
   req.prompt_tokens_count = static_cast<int>(tokens.size());
 
-  if (options.setKvPositionId && matchedTokens > 0) {
-    req.kv_position_id = matchedTokens - 1;
+  if (options.setKvPositionId) {
+    // First free KV index: the matched prefix fills indices [0, matchedTokens),
+    // so the next token's KV is written at matchedTokens.
+    req.kv_position_id = matchedTokens;
   }
 
   return matchedTokens;

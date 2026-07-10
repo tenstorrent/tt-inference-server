@@ -2,12 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Routing tests for the v2 LLM-benchmark bridge.
-
-LLM models + ``--workflow benchmarks`` are fully ported to v2 (replacing
-v1's run_benchmarks.py + run_reports.py). These check the predicate, the
-``can_route_to_v2`` decision, and the launcher command the bridge builds.
-"""
+"""Routing tests for the v2 LLM-benchmark bridge."""
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +21,16 @@ def _rc(workflow="benchmarks", **kw):
     base = dict(
         workflow=workflow,
         prefix_cache=False,
+        prefix_cache_preset="full",
+        prefix_cache_scenarios=None,
+        prefix_cache_arrival=None,
+        prefix_cache_request_rate=None,
+        prefix_cache_scenarios_json=None,
+        prefix_cache_trace=None,
+        prefix_cache_metrics_url=None,
+        spec_decode=False,
+        spec_decode_preset="full",
+        spec_decode_warmup_requests=None,
         tools="aiperf",
         jwt_secret=None,
         device="t3k",
@@ -51,10 +56,108 @@ def test_prefix_cache_is_not_llm_bench_but_still_routes():
     assert v2_bridge.can_route_to_v2(spec, rc) is True
 
 
-def test_llm_evals_stays_on_v1():
+def test_llm_evals_routes_to_v2():
     spec, rc = _spec(ModelType.LLM), _rc(workflow="evals")
     assert v2_bridge._is_llm_benchmark_run(WorkflowType.EVALS, spec, rc) is False
-    assert v2_bridge.can_route_to_v2(spec, rc) is False
+    assert v2_bridge._is_llm_eval_run(WorkflowType.EVALS, spec) is True
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
+
+
+def test_llm_release_routes_to_v2():
+    spec, rc = _spec(ModelType.LLM), _rc(workflow="release")
+    assert v2_bridge._is_llm_eval_run(WorkflowType.RELEASE, spec) is True
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
+
+
+def test_media_eval_run_is_not_llm_eval():
+    spec = _spec(ModelType.IMAGE, name="not-a-routed-model")
+    assert v2_bridge._is_llm_eval_run(WorkflowType.EVALS, spec) is False
+    assert v2_bridge.can_route_to_v2(spec, _rc(workflow="evals")) is False
+
+
+def test_release_provisions_eval_and_bench_venvs(monkeypatch):
+    from workflows.workflow_types import WorkflowVenvType
+
+    spec = _spec(ModelType.LLM)
+    monkeypatch.setattr(
+        v2_bridge,
+        "_llm_eval_venv_types",
+        lambda ms, rc=None: [
+            WorkflowVenvType.EVALS_COMMON,
+            WorkflowVenvType.EVALS_META,
+        ],
+    )
+    venvs = v2_bridge._v2_dependency_venv_types(spec, WorkflowType.RELEASE)
+    assert WorkflowVenvType.EVALS_COMMON in venvs
+    assert WorkflowVenvType.EVALS_META in venvs
+    assert WorkflowVenvType.V2_LLM_VLLM in venvs
+
+
+def test_release_provisions_prefix_cache_and_spec_decode_venvs(monkeypatch):
+    from workflows.workflow_types import WorkflowVenvType
+
+    spec = _spec(ModelType.LLM)
+    rc = _rc(workflow="release", prefix_cache=True, spec_decode=True)
+    monkeypatch.setattr(v2_bridge, "_llm_eval_venv_types", lambda ms, rc=None: [])
+    monkeypatch.setattr(v2_bridge, "_llm_release_includes_agentic", lambda ms: False)
+
+    venvs = v2_bridge._v2_dependency_venv_types(spec, WorkflowType.RELEASE, rc)
+
+    assert WorkflowVenvType.V2_LLM_VLLM in venvs
+    assert WorkflowVenvType.V2_PREFIX_CACHE in venvs
+    assert WorkflowVenvType.V2_SPEC_DECODE in venvs
+
+
+def test_evals_provisions_only_eval_venvs(monkeypatch):
+    from workflows.workflow_types import WorkflowVenvType
+
+    spec = _spec(ModelType.LLM)
+    monkeypatch.setattr(
+        v2_bridge,
+        "_llm_eval_venv_types",
+        lambda ms, rc=None: [WorkflowVenvType.EVALS_COMMON],
+    )
+    venvs = v2_bridge._v2_dependency_venv_types(spec, WorkflowType.EVALS)
+    assert venvs == [WorkflowVenvType.EVALS_COMMON]
+    assert WorkflowVenvType.V2_LLM_VLLM not in venvs
+
+
+def _ev_task(name, venv):
+    return SimpleNamespace(task_name=name, workflow_venv_type=venv)
+
+
+def test_selected_eval_tasks_eval_samples_filters_to_requested():
+    from workflows.workflow_types import WorkflowVenvType as V
+
+    tasks = [
+        _ev_task("meta_gpqa", V.EVALS_META),
+        _ev_task("longbench_single_e", V.EVALS_COMMON),
+    ]
+    rc = SimpleNamespace(
+        eval_samples='{"longbench_single_e": [0, 1, 2]}', limit_samples_mode=None
+    )
+    sel = v2_bridge._selected_eval_tasks(tasks, rc)
+    assert [t.task_name for t in sel] == ["longbench_single_e"]
+
+
+def test_selected_eval_tasks_smoke_keeps_first_only():
+    from workflows.workflow_types import WorkflowVenvType as V
+
+    tasks = [
+        _ev_task("meta_gpqa", V.EVALS_META),
+        _ev_task("longbench_single_e", V.EVALS_COMMON),
+    ]
+    rc = SimpleNamespace(eval_samples=None, limit_samples_mode="smoke-test")
+    sel = v2_bridge._selected_eval_tasks(tasks, rc)
+    assert [t.task_name for t in sel] == ["meta_gpqa"]
+
+
+def test_selected_eval_tasks_no_narrowing_returns_all():
+    from workflows.workflow_types import WorkflowVenvType as V
+
+    tasks = [_ev_task("a", V.EVALS_COMMON), _ev_task("b", V.EVALS_META)]
+    rc = SimpleNamespace(eval_samples=None, limit_samples_mode=None)
+    assert v2_bridge._selected_eval_tasks(tasks, rc) == tasks
 
 
 def test_non_routed_media_benchmarks_stays_on_v1():
@@ -75,7 +178,7 @@ def test_build_llm_bench_cmd_forwards_tools_and_jwt():
     assert str(v2_dir / "run_llm_bench.py") in cmd
     assert cmd[cmd.index("--workflow") + 1] == "benchmarks"
     assert cmd[cmd.index("--tools") + 1] == "guidellm"
-    assert "--jwt-secret" not in cmd  # None is not forwarded
+    assert "--jwt-secret" not in cmd
 
     cmd_jwt = v2_bridge._build_llm_bench_cmd(
         v2_dir,
@@ -85,6 +188,130 @@ def test_build_llm_bench_cmd_forwards_tools_and_jwt():
         Path("/tmp/out"),
     )
     assert cmd_jwt[cmd_jwt.index("--jwt-secret") + 1] == "sek"
+
+
+def test_run_v2_llm_benchmark_workflow_invokes_launcher(monkeypatch, tmp_path):
+    spec, rc = _spec(ModelType.LLM), _rc(server_url="https://console.example.com")
+    calls = []
+
+    def fake_run_command(cmd, logger=None, env=None):
+        calls.append(cmd)
+        return 0
+
+    monkeypatch.setattr(v2_bridge, "run_command", fake_run_command)
+    monkeypatch.setattr(
+        v2_bridge, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+
+    result = v2_bridge.run_v2_llm_benchmark_workflow(spec, rc, "/tmp/spec.json")
+
+    assert result.workflow_name == "benchmarks"
+    assert result.return_code == 0
+    assert len(calls) == 1
+    cmd = calls[0]
+    assert "run_llm_bench.py" in cmd[1]
+    assert cmd[cmd.index("--server-url") + 1] == "https://console.example.com"
+
+
+def _patch_eval_configs(monkeypatch, *, agentic):
+    from workflows.workflow_types import WorkflowVenvType
+    import evals.eval_config as eval_config
+
+    venv = WorkflowVenvType.EVALS_AGENTIC if agentic else WorkflowVenvType.EVALS_COMMON
+    cfg = SimpleNamespace(tasks=[SimpleNamespace(workflow_venv_type=venv)])
+    monkeypatch.setattr(
+        eval_config, "EVAL_CONFIGS", {"Llama-3.1-8B-Instruct": cfg}, raising=False
+    )
+
+
+def test_llm_release_includes_agentic_true_when_agentic_task(monkeypatch):
+    _patch_eval_configs(monkeypatch, agentic=True)
+    assert v2_bridge._llm_release_includes_agentic(_spec(ModelType.LLM)) is True
+
+
+def test_llm_release_includes_agentic_false_without_agentic_task(monkeypatch):
+    _patch_eval_configs(monkeypatch, agentic=False)
+    assert v2_bridge._llm_release_includes_agentic(_spec(ModelType.LLM)) is False
+
+
+def test_llm_release_includes_agentic_false_for_non_llm(monkeypatch):
+    _patch_eval_configs(monkeypatch, agentic=True)
+    assert v2_bridge._llm_release_includes_agentic(_spec(ModelType.IMAGE)) is False
+
+
+def test_release_dispatches_only_engine(monkeypatch, tmp_path):
+    spec, rc = _spec(ModelType.LLM), _rc(workflow="release")
+    calls = []
+
+    monkeypatch.setattr(
+        v2_bridge,
+        "run_command",
+        lambda cmd, logger=None, env=None: calls.append(cmd) or 0,
+    )
+    monkeypatch.setattr(v2_bridge, "_ensure_v2_venv", lambda ms: Path("/fake/python"))
+    monkeypatch.setattr(v2_bridge, "_ensure_v2_dependency_venvs", lambda *a, **k: None)
+    monkeypatch.setattr(
+        v2_bridge, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+    monkeypatch.setattr(v2_bridge, "ensure_readwriteable_dir", lambda p: None)
+
+    results = v2_bridge.run_v2_workflows(spec, rc, str(tmp_path / "spec.json"))
+
+    # Agentic now runs in-process inside the release engine; no extra
+    # subprocess for agentic, tests, or report merging.
+    assert [r.workflow_name for r in results] == ["release"]
+    assert all(r.return_code == 0 for r in results)
+    assert any("run.py" in c[1] for c in calls)
+    assert not any("run_agentic.py" in c[1] for c in calls)
+    assert not any("run_release_merge.py" in c[1] for c in calls)
+
+
+def test_release_forwards_prefix_cache_and_spec_decode_flags(monkeypatch, tmp_path):
+    spec = _spec(ModelType.LLM)
+    rc = _rc(
+        workflow="release",
+        prefix_cache=True,
+        prefix_cache_preset="ci",
+        prefix_cache_scenarios="multi_turn",
+        prefix_cache_arrival="poisson",
+        prefix_cache_request_rate=2.0,
+        prefix_cache_metrics_url=[
+            "blaze-a29-server-ngrok.n.cloud.tenstorrent.com/metrics"
+        ],
+        spec_decode=True,
+        spec_decode_preset="ci",
+        spec_decode_warmup_requests=2,
+    )
+    calls = []
+
+    monkeypatch.setattr(
+        v2_bridge,
+        "run_command",
+        lambda cmd, logger=None, env=None: calls.append(cmd) or 0,
+    )
+    monkeypatch.setattr(v2_bridge, "_ensure_v2_venv", lambda ms: Path("/fake/python"))
+    monkeypatch.setattr(v2_bridge, "_ensure_v2_dependency_venvs", lambda *a, **k: None)
+    monkeypatch.setattr(
+        v2_bridge, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+    monkeypatch.setattr(v2_bridge, "ensure_readwriteable_dir", lambda p: None)
+
+    v2_bridge.run_v2_workflows(spec, rc, str(tmp_path / "spec.json"))
+
+    assert len(calls) == 1
+    cmd = calls[0]
+    assert "--prefix-cache" in cmd
+    assert cmd[cmd.index("--prefix-cache-preset") + 1] == "ci"
+    assert cmd[cmd.index("--prefix-cache-scenarios") + 1] == "multi_turn"
+    assert cmd[cmd.index("--prefix-cache-arrival") + 1] == "poisson"
+    assert cmd[cmd.index("--prefix-cache-request-rate") + 1] == "2.0"
+    assert (
+        cmd[cmd.index("--prefix-cache-metrics-url") + 1]
+        == "blaze-a29-server-ngrok.n.cloud.tenstorrent.com/metrics"
+    )
+    assert "--spec-decode" in cmd
+    assert cmd[cmd.index("--spec-decode-preset") + 1] == "ci"
+    assert cmd[cmd.index("--spec-decode-warmup-requests") + 1] == "2"
 
 
 if __name__ == "__main__":

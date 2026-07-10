@@ -5,7 +5,7 @@
 import logging
 from dataclasses import dataclass
 
-from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from benchmarking.benchmark_config import get_benchmark_config
 from evals.eval_config import EVAL_CONFIGS
 from server_tests.test_categorization_system import TestFilter
 from server_tests.test_config import TEST_CONFIGS
@@ -15,6 +15,7 @@ from workflows.workflow_config import (
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
+from workflows.workflow_types import WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
@@ -56,14 +57,16 @@ class WorkflowSetup:
         ]
 
         self.config = None
-        _config = {
-            WorkflowType.EVALS: EVAL_CONFIGS.get(self.model_spec.model_name, {}),
-            WorkflowType.BENCHMARKS: BENCHMARK_CONFIGS.get(
-                self.model_spec.model_id, {}
-            ),
-            WorkflowType.TESTS: TEST_CONFIGS.get(self.model_spec.model_name, {}),
-            WorkflowType.STRESS_TESTS: {},
-        }.get(_workflow_type)
+        if _workflow_type == WorkflowType.EVALS:
+            _config = EVAL_CONFIGS.get(self.model_spec.model_name, {})
+        elif _workflow_type == WorkflowType.BENCHMARKS:
+            _config = get_benchmark_config(self.model_spec)
+        elif _workflow_type == WorkflowType.TESTS:
+            _config = TEST_CONFIGS.get(self.model_spec.model_name, {})
+        elif _workflow_type == WorkflowType.STRESS_TESTS:
+            _config = {}
+        else:
+            _config = None
         if _config:
             self.config = _config
 
@@ -123,6 +126,16 @@ class WorkflowSetup:
 
 
 def run_single_workflow(model_spec, runtime_config, json_fpath):
+    workflow_type = WorkflowType.from_string(runtime_config.workflow)
+    if workflow_type == WorkflowType.BENCHMARKS:
+        from workflows.v2_bridge import (
+            _is_llm_benchmark_run,
+            run_v2_llm_benchmark_workflow,
+        )
+
+        if _is_llm_benchmark_run(workflow_type, model_spec, runtime_config):
+            return run_v2_llm_benchmark_workflow(model_spec, runtime_config, json_fpath)
+
     manager = WorkflowSetup(model_spec, runtime_config, json_fpath)
     manager.setup_workflow()
     return_code = manager.run_workflow_script()
@@ -138,6 +151,17 @@ def has_spec_tests_configured(model_name, device):
     )
 
 
+def has_agentic_tasks_configured(model_name):
+    """True if the model's EvalConfig has any task owned by the v2 agentic workflow."""
+    eval_config = EVAL_CONFIGS.get(model_name)
+    if not eval_config:
+        return False
+    return any(
+        task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
+        for task in eval_config.tasks
+    )
+
+
 def run_workflows(model_spec, runtime_config, json_fpath):
     workflow_results = []
     if WorkflowType.from_string(runtime_config.workflow) == WorkflowType.RELEASE:
@@ -147,6 +171,13 @@ def run_workflows(model_spec, runtime_config, json_fpath):
             WorkflowType.EVALS,
             WorkflowType.BENCHMARKS,
         ]
+        if has_agentic_tasks_configured(model_spec.model_name):
+            workflows_to_run.insert(1, WorkflowType.AGENTIC)
+        else:
+            logger.info(
+                f"Skipping agentic for {model_spec.model_name}: "
+                "no EVALS_AGENTIC tasks configured."
+            )
         if has_spec_tests_configured(model_spec.model_name, runtime_config.device):
             workflows_to_run.append(WorkflowType.SPEC_TESTS)
         else:
@@ -162,9 +193,17 @@ def run_workflows(model_spec, runtime_config, json_fpath):
                 runtime_config.disable_trace_capture = True
             logger.info(f"Next workflow in release: {wf.name}")
             runtime_config.workflow = wf.name
-            workflow_results.append(
-                run_single_workflow(model_spec, runtime_config, json_fpath)
-            )
+            if wf == WorkflowType.AGENTIC:
+                # Agentic evals are v2-owned; reports merge their Harbor result.json.
+                from workflows.v2_bridge import run_v2_workflows
+
+                workflow_results.extend(
+                    run_v2_workflows(model_spec, runtime_config, json_fpath)
+                )
+            else:
+                workflow_results.append(
+                    run_single_workflow(model_spec, runtime_config, json_fpath)
+                )
             done_trace_capture = True
         return workflow_results
     else:

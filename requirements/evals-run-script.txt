@@ -25,6 +25,7 @@ datasets
 open-clip-torch
 pyjwt
 pillow
+pycocotools
 imageio
 imageio-ffmpeg
 mteb[openai]>=2.6.6

@@ -23,8 +23,8 @@ namespace tt::utils::tokenizers {
 
 namespace {
 
-std::unordered_set<int> parseSpecialTokenIds(const std::string& jsonBlob) {
-  std::unordered_set<int> ids;
+std::unordered_set<uint32_t> parseSpecialTokenIds(const std::string& jsonBlob) {
+  std::unordered_set<uint32_t> ids;
   Json::CharReaderBuilder builder;
   Json::Value root;
   std::string errs;
@@ -37,7 +37,7 @@ std::unordered_set<int> parseSpecialTokenIds(const std::string& jsonBlob) {
   for (const auto& tok : added) {
     if (tok.isMember("special") && tok["special"].asBool() &&
         tok.isMember("id")) {
-      ids.insert(tok["id"].asInt());
+      ids.insert(static_cast<uint32_t>(tok["id"].asInt()));
     }
   }
   return ids;
@@ -88,15 +88,18 @@ Tokenizer::Tokenizer(const std::string& path) {
 
 bool Tokenizer::isLoaded() const { return tok_ != nullptr; }
 
-std::vector<int> Tokenizer::encode(const std::string& text) const {
+std::vector<uint32_t> Tokenizer::encode(const std::string& text) const {
   if (!tok_) {
     throw std::runtime_error(
         "[TokenizerUtil] Tokenizer not loaded, cannot encode");
   }
-  return tok_->Encode(text);
+  // tokenizers-cpp emits int32_t ids; token ids are non-negative and well
+  // within uint32_t range, so this widening conversion is lossless.
+  const std::vector<int32_t> ids = tok_->Encode(text);
+  return std::vector<uint32_t>(ids.begin(), ids.end());
 }
 
-std::string Tokenizer::decode(const std::vector<int>& tokenIds,
+std::string Tokenizer::decode(const std::vector<uint32_t>& tokenIds,
                               bool skipSpecialTokens) const {
   if (!tok_) {
     throw std::runtime_error(
@@ -104,9 +107,15 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds,
   }
   if (tokenIds.empty()) return "";
 
+  // tokenizers-cpp Decode takes int32_t ids; convert without any value change
+  // (token ids fit in both types).
+  auto toI32 = [](const std::vector<uint32_t>& v) {
+    return std::vector<int32_t>(v.begin(), v.end());
+  };
+
   // Fast path: no special tokens to filter
   if (!skipSpecialTokens || specialTokenIds_.empty()) {
-    return tok_->Decode(tokenIds);
+    return tok_->Decode(toI32(tokenIds));
   }
 
   // Fast path: single token, check if special
@@ -114,15 +123,15 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds,
     if (specialTokenIds_.find(tokenIds[0]) != specialTokenIds_.end()) {
       return "";  // Special token, skip it
     }
-    return tok_->Decode(tokenIds);
+    return tok_->Decode(toI32(tokenIds));
   }
 
   // Slow path: multiple tokens, filter special tokens
-  std::vector<int> filtered;
+  std::vector<int32_t> filtered;
   filtered.reserve(tokenIds.size());
-  for (int id : tokenIds) {
+  for (uint32_t id : tokenIds) {
     if (specialTokenIds_.find(id) == specialTokenIds_.end()) {
-      filtered.push_back(id);
+      filtered.push_back(static_cast<int32_t>(id));
     }
   }
   if (filtered.empty()) return "";
@@ -161,7 +170,7 @@ Tokenizer::StreamDecoder::StreamDecoder(const Tokenizer& tokenizer,
                                         bool skipSpecialTokens)
     : tokenizer_(tokenizer), skipSpecialTokens_(skipSpecialTokens) {}
 
-std::string Tokenizer::StreamDecoder::step(int tokenId) {
+std::string Tokenizer::StreamDecoder::step(uint32_t tokenId) {
   if (pending_.empty()) {
     std::string decoded = tokenizer_.decode({tokenId}, skipSpecialTokens_);
     if (!endsWithReplacementChar(decoded)) {
@@ -200,12 +209,20 @@ std::string tokenizerDirForModel(config::ModelType model) {
   switch (model) {
     case config::ModelType::KIMI_K2_6:
       return "moonshotai/Kimi-K2.6";
+    case config::ModelType::KIMI_K2_7_CODE:
+      return "moonshotai/Kimi-K2.7-Code";
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return "meta-llama/Llama-3.1-8B-Instruct";
     case config::ModelType::GPT_OSS_120B:
       return "openai/gpt-oss-120b";
     case config::ModelType::MINIMAX_M2_7:
       return "MiniMaxAI/MiniMax-M2.7";
+    case config::ModelType::GLM_5_1:
+      return "zai-org/GLM-5.1";
+    case config::ModelType::GLM_5_2:
+      return "zai-org/GLM-5.2";
+    case config::ModelType::DEEPSEEK_V4_PRO:
+      return "deepseek-ai/DeepSeek-V4-Pro";
     case config::ModelType::DEEPSEEK_R1_0528:
     default:
       return "deepseek-ai/DeepSeek-R1-0528";
@@ -218,17 +235,21 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return std::make_unique<LlamaTokenizer>(path);
     case config::ModelType::KIMI_K2_6:
-      // Kimi K2.6 uses model-specific files, but currently shares the same
-      // chat-template/tool-call behavior as DeepSeek until a dedicated
+    case config::ModelType::KIMI_K2_7_CODE:
+      // Kimi K2.6 / K2.7-Code use model-specific files, but currently share the
+      // same chat-template/tool-call behavior as DeepSeek until a dedicated
       // Kimi tokenizer implementation is added.
       return std::make_unique<DeepseekTokenizer>(path);
     case config::ModelType::GPT_OSS_120B:
     case config::ModelType::MINIMAX_M2_7:
+    case config::ModelType::GLM_5_1:
+    case config::ModelType::GLM_5_2:
       // These load their own model-specific files but currently reuse the
       // DeepSeek chat-template/tool-call behavior until a dedicated tokenizer
       // implementation is added.
       return std::make_unique<DeepseekTokenizer>(path);
     case config::ModelType::DEEPSEEK_R1_0528:
+    case config::ModelType::DEEPSEEK_V4_PRO:
     default:
       return std::make_unique<DeepseekTokenizer>(path);
   }
@@ -283,6 +304,22 @@ const StaticTokenizerInfo& kimiK26Info() {
   return kInfo;
 }
 
+// IDs verified against the fetched Kimi-K2.7-Code tokenizer; identical layout
+// to Kimi-K2.6 (config.json eos_token_id 163586 <|im_end|>, [EOS] 163585,
+// <|im_assistant|> 163588, <think>/</think> 163606/163607). model_type is
+// "kimi_k25", so discovery reuses the existing kimi_k25 parser branch.
+const StaticTokenizerInfo& kimiK27CodeInfo() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"moonshotai/Kimi-K2.7-Code",
+      /*stopTokenIds=*/{163586},
+      /*eosTokenId=*/163585,
+      /*assistantHeaderSequence=*/{163588},
+      /*thinkStartTokenId=*/163606,  // <think>
+      /*thinkEndTokenId=*/163607,    // </think>
+  };
+  return kInfo;
+}
+
 // IDs verified against the fetched o200k_harmony tokenizer. gpt-oss uses the
 // Harmony channel format rather than <think> tags, so no think tokens; the
 // assistant turn ends on <|return|> (200002) and a tool call on <|call|>
@@ -313,6 +350,59 @@ const StaticTokenizerInfo& minimaxM27Info() {
   return kInfo;
 }
 
+// IDs verified against the fetched GLM-5.1 tokenizer (added_tokens in
+// tokenizer.json). Identical special-token layout to GLM-5.2: same eos set
+// [154820, 154827, 154829] and <think>/</think> 154841/154842, and the same
+// glm_moe_dsa model_type (so discovery reuses the glm45/glm47 parser branch).
+const StaticTokenizerInfo& glm51Info() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"zai-org/GLM-5.1",
+      // config.json / generation_config.json eos_token_id:
+      // [154820, 154827, 154829] = <|endoftext|>, <|user|>, <|observation|>.
+      /*stopTokenIds=*/{154827, 154829},
+      /*eosTokenId=*/154820,  // <|endoftext|> (primary; also pad + tokenizer
+                              // eos)
+      /*assistantHeaderSequence=*/{},
+      /*thinkStartTokenId=*/154841,  // <think>
+      /*thinkEndTokenId=*/154842,    // </think>
+  };
+  return kInfo;
+}
+
+// IDs verified against the fetched GLM-5.2 tokenizer (added_tokens in
+// tokenizer.json). GLM uses <think>...</think> reasoning and <tool_call>/
+// <arg_key>/<arg_value> tool calls.
+const StaticTokenizerInfo& glm52Info() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"zai-org/GLM-5.2",
+      // config.json / generation_config.json eos_token_id:
+      // [154820, 154827, 154829] = <|endoftext|>, <|user|>, <|observation|>.
+      /*stopTokenIds=*/{154827, 154829},
+      /*eosTokenId=*/154820,  // <|endoftext|> (primary; also pad + tokenizer
+                              // eos)
+      /*assistantHeaderSequence=*/{},
+      /*thinkStartTokenId=*/154841,  // <think>
+      /*thinkEndTokenId=*/154842,    // </think>
+  };
+  return kInfo;
+}
+
+// IDs verified against the fetched DeepSeek-V4-Pro tokenizer (added_tokens in
+// tokenizer.json). Same DeepSeek-R1 special-token layout (eos 1, assistant
+// header 128804) but the <think>/</think> ids differ from R1-0528
+// (128821/128822 vs 128798/128799), so it needs its own static info.
+const StaticTokenizerInfo& deepseekV4ProInfo() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"deepseek-ai/DeepSeek-V4-Pro",
+      /*stopTokenIds=*/{1},
+      /*eosTokenId=*/1,  // <｜end▁of▁sentence｜> (config + generation_config)
+      /*assistantHeaderSequence=*/{128804},  // <｜Assistant｜>
+      /*thinkStartTokenId=*/128821,          // <think>
+      /*thinkEndTokenId=*/128822,            // </think>
+  };
+  return kInfo;
+}
+
 }  // namespace
 
 const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
@@ -323,10 +413,18 @@ const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
       return llama31Info();
     case config::ModelType::KIMI_K2_6:
       return kimiK26Info();
+    case config::ModelType::KIMI_K2_7_CODE:
+      return kimiK27CodeInfo();
     case config::ModelType::GPT_OSS_120B:
       return gptOss120bInfo();
     case config::ModelType::MINIMAX_M2_7:
       return minimaxM27Info();
+    case config::ModelType::GLM_5_1:
+      return glm51Info();
+    case config::ModelType::GLM_5_2:
+      return glm52Info();
+    case config::ModelType::DEEPSEEK_V4_PRO:
+      return deepseekV4ProInfo();
   }
   throw std::invalid_argument(
       "tokenizers::staticInfoFor: no static info registered for ModelType " +
@@ -337,12 +435,12 @@ const StaticTokenizerInfo& staticInfo() {
   return staticInfoFor(config::modelType());
 }
 
-std::pair<int64_t, int64_t> thinkTokenIdsFor(config::ModelType model) {
+std::pair<uint32_t, uint32_t> thinkTokenIdsFor(config::ModelType model) {
   const auto& info = staticInfoFor(model);
   return {info.thinkStartTokenId, info.thinkEndTokenId};
 }
 
-std::pair<int64_t, int64_t> thinkTokenIds() {
+std::pair<uint32_t, uint32_t> thinkTokenIds() {
   return thinkTokenIdsFor(config::modelType());
 }
 
