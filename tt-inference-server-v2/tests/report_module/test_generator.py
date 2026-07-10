@@ -55,8 +55,11 @@ def test_spec_summary_distinguishes_skip_error_from_pass_fail():
     assert "| NA | 1 |" in md
     # Success rate excludes non-blocking skip/NA: 1 pass / (1 pass + 2 blocking).
     assert "| Success Rate | 33.3% |" in md
-    # Distinct glyphs + reason surfaced in the description column.
-    assert "⏭️" in md and "🟨" in md
+    assert "✅ PASS" in md
+    assert "❌ FAIL" in md
+    assert "❌ ERROR" in md
+    assert "⏭️ SKIP" in md
+    assert "🟨 NA" in md
     assert "no board" in md and "boom" in md
 
 

@@ -209,6 +209,10 @@ def _run_status(run: Mapping[str, Any]) -> TestStatus:
     return TestStatus.from_legacy(run.get("success"), skipped=bool(run.get("skipped")))
 
 
+def _status_cell(status: TestStatus) -> str:
+    return f"{_STATUS_GLYPHS.get(status, '❌')} {status.value.upper()}"  # noqa: E501
+
+
 def _run_description(run: Mapping[str, Any], status: TestStatus) -> str:
     """Description column: append the reason/error for non-pass outcomes."""
     description = str(run.get("description") or "")
@@ -264,7 +268,7 @@ def _build_spec_test_summary_markdown(
     results_table = build_markdown_table(
         [
             {
-                "Status": _STATUS_GLYPHS.get(status, "❌"),
+                "Status": _status_cell(status),
                 "Test Name": str(run.get("test_name") or ""),
                 "Duration": f"{_coerce_float(run.get('elapsed_seconds')):.2f}s",
                 "Attempts": str(_coerce_int(run.get("attempts"))),
