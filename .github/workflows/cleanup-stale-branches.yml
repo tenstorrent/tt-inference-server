@@ -1,0 +1,167 @@
+name: Cleanup Stale Branches
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List stale branches without deleting them
+        type: boolean
+        default: true
+      stale_days:
+        description: Delete branches with no commits newer than this many days
+        type: number
+        default: 90
+  schedule:
+    # GitHub cron is UTC-only → 03:00 UTC.
+    - cron: '0 3 1 * *'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    name: Delete stale branches
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Delete stale remote branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          STALE_DAYS: ${{ github.event_name == 'workflow_dispatch' && inputs.stale_days || 90 }}
+        run: |
+          set -euo pipefail
+
+          is_protected() {
+            case "$1" in
+              main|master|develop) return 0 ;;
+              release/*) return 0 ;;
+            esac
+            return 1
+          }
+
+          REPO_OWNER="${GITHUB_REPOSITORY%/*}"
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+
+          # Open PRs include drafts in GitHub (state=open, draft=true).
+          declare -A ACTIVE_PR_BRANCHES=()
+          while IFS= read -r head_branch; do
+            [[ -z "${head_branch}" ]] && continue
+            ACTIVE_PR_BRANCHES["${head_branch}"]=1
+          done < <(
+            gh pr list -R "${GITHUB_REPOSITORY}" --state open --limit 1000 \
+              --json headRefName --jq '.[].headRefName'
+          )
+
+          has_open_or_draft_pr() {
+            [[ -n "${ACTIVE_PR_BRANCHES[$1]+x}" ]]
+          }
+
+          stale_candidates=0
+          deleted=0
+          skipped_protected=0
+          skipped_active_pr=0
+          skipped_recent=0
+          skipped_missing_date=0
+
+          cutoff_epoch="$(date -u -d "${STALE_DAYS} days ago" +%s)"
+
+          echo "=== Branches stale for more than ${STALE_DAYS} days ==="
+
+          list_branches_with_dates() {
+            local cursor="" has_next response
+            while :; do
+              if [[ -z "${cursor}" ]]; then
+                response="$(
+                  gh api graphql \
+                    -f owner="${REPO_OWNER}" \
+                    -f name="${REPO_NAME}" \
+                    -f query='query($owner: String!, $name: String!) {
+                      repository(owner: $owner, name: $name) {
+                        refs(refPrefix: "refs/heads/", first: 100) {
+                          pageInfo { hasNextPage endCursor }
+                          nodes {
+                            name
+                            target { ... on Commit { committedDate } }
+                          }
+                        }
+                      }
+                    }'
+                )"
+              else
+                response="$(
+                  gh api graphql \
+                    -f owner="${REPO_OWNER}" \
+                    -f name="${REPO_NAME}" \
+                    -f cursor="${cursor}" \
+                    -f query='query($owner: String!, $name: String!, $cursor: String!) {
+                      repository(owner: $owner, name: $name) {
+                        refs(refPrefix: "refs/heads/", first: 100, after: $cursor) {
+                          pageInfo { hasNextPage endCursor }
+                          nodes {
+                            name
+                            target { ... on Commit { committedDate } }
+                          }
+                        }
+                      }
+                    }'
+                )"
+              fi
+
+              jq -r '.data.repository.refs.nodes[]
+                | [.name, (.target.committedDate // "")] | @tsv' <<<"${response}"
+
+              has_next="$(jq -r '.data.repository.refs.pageInfo.hasNextPage' <<<"${response}")"
+              [[ "${has_next}" == "true" ]] || break
+              cursor="$(jq -r '.data.repository.refs.pageInfo.endCursor' <<<"${response}")"
+            done
+          }
+
+          while IFS=$'\t' read -r branch commit_date; do
+            [[ -z "${branch}" ]] && continue
+
+            if is_protected "${branch}"; then
+              echo "Skipping protected branch: ${branch}"
+              skipped_protected=$((skipped_protected + 1))
+              continue
+            fi
+
+            if [[ -z "${commit_date}" ]]; then
+              echo "Skipping branch with missing commit date: ${branch}"
+              skipped_missing_date=$((skipped_missing_date + 1))
+              continue
+            fi
+
+            commit_epoch="$(date -u -d "${commit_date}" +%s)"
+            if [[ "${commit_epoch}" -ge "${cutoff_epoch}" ]]; then
+              skipped_recent=$((skipped_recent + 1))
+              continue
+            fi
+
+            if has_open_or_draft_pr "${branch}"; then
+              echo "Skipping branch with open or draft PR: ${branch}"
+              skipped_active_pr=$((skipped_active_pr + 1))
+              continue
+            fi
+
+            stale_candidates=$((stale_candidates + 1))
+
+            if [[ "${DRY_RUN}" == "true" ]]; then
+              echo "Would delete (stale since ${commit_date}): ${branch}"
+            else
+              echo "Deleting (stale since ${commit_date}): ${branch}"
+              encoded_branch="${branch//\//%2F}"
+              gh api --method DELETE \
+                "repos/${GITHUB_REPOSITORY}/git/refs/heads/${encoded_branch}"
+              deleted=$((deleted + 1))
+            fi
+          done < <(list_branches_with_dates)
+
+          echo "Dry run: ${DRY_RUN}"
+          echo "Stale threshold (days): ${STALE_DAYS}"
+          echo "Stale candidates: ${stale_candidates}"
+          echo "Deleted: ${deleted}"
+          echo "Skipped (protected): ${skipped_protected}"
+          echo "Skipped (open/draft PR): ${skipped_active_pr}"
+          echo "Skipped (recent): ${skipped_recent}"
+          echo "Skipped (missing date): ${skipped_missing_date}"
