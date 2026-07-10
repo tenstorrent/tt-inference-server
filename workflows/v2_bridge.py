@@ -45,6 +45,10 @@ _V2_EVAL_VENV_BY_MODEL_TYPE = {
     ModelType.AUDIO: WorkflowVenvType.EVALS_AUDIO,
 }
 
+# Model types that share v2's LLM code path (vLLM serving + llm_module eval /
+# benchmark drivers) rather than a media runner.
+_LLM_LIKE_TYPES = frozenset({ModelType.LLM, ModelType.VLM})
+
 # Only models actually validated end-to-end against v2's engine are routed here.
 _V2_ROUTED_MODELS = frozenset(
     {
@@ -80,13 +84,13 @@ def _is_spec_decode_run(wf, runtime_config) -> bool:
 
 
 def _is_llm_benchmark_run(wf, model_spec, runtime_config) -> bool:
-    """Any LLM model + ``--workflow benchmarks`` routes to v2's ``llm_module``;
+    """Any LLM/VLM model + ``--workflow benchmarks`` routes to v2's ``llm_module``;
     the ``--tools`` value selects the driver. The prefix-cache and spec-decode
     variants have their own dispatch and are handled separately.
     """
     return (
         wf == WorkflowType.BENCHMARKS
-        and model_spec.model_type == ModelType.LLM
+        and model_spec.model_type in _LLM_LIKE_TYPES
         and not _is_prefix_cache_run(wf, runtime_config)
         and not _is_spec_decode_run(wf, runtime_config)
     )
@@ -102,7 +106,7 @@ def _llm_release_includes_agentic(model_spec) -> bool:
     provisioning of the EVALS_AGENTIC venv; the release engine itself decides
     whether to run the agentic child (see ReleaseWorkflow._llm_children).
     """
-    if model_spec.model_type != ModelType.LLM:
+    if model_spec.model_type not in _LLM_LIKE_TYPES:
         return False
     try:
         from evals.eval_config import EVAL_CONFIGS
@@ -118,13 +122,14 @@ def _llm_release_includes_agentic(model_spec) -> bool:
 
 
 def _is_llm_eval_run(wf, model_spec) -> bool:
-    """LLM ``--workflow evals`` / ``--workflow release`` route to v2.
+    """LLM/VLM ``--workflow evals`` / ``--workflow release`` route to v2.
 
-    Standard evals run lm-eval / lmms-eval through ``EvalsWorkflow``; release
-    additionally runs the perf benchmark. Both go through the generic run.py
-    branch (no launcher) — the eval subprocess uses the per-task venv binary.
+    Standard evals run lm-eval / lmms-eval through ``EvalsWorkflow`` (VLMs use
+    the lmms-eval / EVALS_VISION tasks); release additionally runs the perf
+    benchmark. Both go through the generic run.py branch (no launcher) — the
+    eval subprocess uses the per-task venv binary.
     """
-    return model_spec.model_type == ModelType.LLM and wf in (
+    return model_spec.model_type in _LLM_LIKE_TYPES and wf in (
         WorkflowType.EVALS,
         WorkflowType.RELEASE,
     )
@@ -531,11 +536,11 @@ def _v2_dependency_venv_types(
         eval_venv = _V2_EVAL_VENV_BY_MODEL_TYPE.get(model_spec.model_type)
         if eval_venv is not None:
             venv_types.append(eval_venv)
-        if model_spec.model_type == ModelType.LLM:
+        if model_spec.model_type in _LLM_LIKE_TYPES:
             venv_types.extend(_llm_eval_venv_types(model_spec, runtime_config))
     # The release benchmark child runs the default perf tool (vllm) in-process
     # under V2_RUN_SCRIPT, so its tool venv must exist up front.
-    if wf == WorkflowType.RELEASE and model_spec.model_type == ModelType.LLM:
+    if wf == WorkflowType.RELEASE and model_spec.model_type in _LLM_LIKE_TYPES:
         venv_types.append(WorkflowVenvType.V2_LLM_VLLM)
         if getattr(runtime_config, "prefix_cache", False):
             venv_types.append(WorkflowVenvType.V2_PREFIX_CACHE)

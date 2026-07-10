@@ -75,6 +75,38 @@ def test_media_eval_run_is_not_llm_eval():
     assert v2_bridge.can_route_to_v2(spec, _rc(workflow="evals")) is False
 
 
+
+@pytest.mark.parametrize("workflow", ["benchmarks", "evals", "release"])
+def test_vlm_routes_to_v2_like_llm(workflow):
+    spec = _spec(ModelType.VLM, name="Qwen2.5-VL-7B-Instruct")
+    assert v2_bridge.can_route_to_v2(spec, _rc(workflow=workflow)) is True
+
+
+def test_vlm_benchmarks_is_llm_benchmark_run():
+    spec, rc = _spec(ModelType.VLM, name="Qwen2.5-VL-7B-Instruct"), _rc()
+    assert v2_bridge._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is True
+
+
+def test_vlm_evals_is_llm_eval_run():
+    spec = _spec(ModelType.VLM, name="Qwen2.5-VL-7B-Instruct")
+    assert v2_bridge._is_llm_eval_run(WorkflowType.EVALS, spec) is True
+    assert v2_bridge._is_llm_eval_run(WorkflowType.RELEASE, spec) is True
+
+
+def test_vlm_release_provisions_llm_venvs(monkeypatch):
+    from workflows.workflow_types import WorkflowVenvType
+
+    spec = _spec(ModelType.VLM, name="Qwen2.5-VL-7B-Instruct")
+    monkeypatch.setattr(
+        v2_bridge,
+        "_llm_eval_venv_types",
+        lambda ms, rc=None: [WorkflowVenvType.EVALS_VISION],
+    )
+    venvs = v2_bridge._v2_dependency_venv_types(spec, WorkflowType.RELEASE)
+    assert WorkflowVenvType.EVALS_VISION in venvs
+    assert WorkflowVenvType.V2_LLM_VLLM in venvs
+
+
 def test_release_provisions_eval_and_bench_venvs(monkeypatch):
     from workflows.workflow_types import WorkflowVenvType
 
