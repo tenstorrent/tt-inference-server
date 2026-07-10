@@ -92,9 +92,8 @@ KvMigrationReceiverServer::~KvMigrationReceiverServer() { stop(); }
 
 void KvMigrationReceiverServer::startSingleSession(
     std::shared_ptr<sockets::ISocketTransport> transport) {
-  channel_ = std::make_unique<KvControlChannel>(std::move(transport),
-                                                receive_timeout_,
-                                                poll_interval_);
+  channel_ = std::make_unique<KvControlChannel>(
+      std::move(transport), receive_timeout_, poll_interval_);
   orchestrator_ = std::make_unique<KvMigrationReceiver>(*channel_, receiver_,
                                                         local_table_blob_);
   thread_ = std::thread([this] { orchestrator_->run(); });
@@ -103,8 +102,8 @@ void KvMigrationReceiverServer::startSingleSession(
 void KvMigrationReceiverServer::onAccept(
     std::shared_ptr<sockets::ISocketTransport> peer) {
   if (!peer) {
-    TT_LOG_ERROR(
-        "[KvMigrationReceiverServer] null peer transport on port {}", port_);
+    TT_LOG_ERROR("[KvMigrationReceiverServer] null peer transport on port {}",
+                 port_);
     return;
   }
 
@@ -142,10 +141,10 @@ bool KvMigrationReceiverServer::start() {
 
   // Production TCP: multi-accept so every prefill gets a session.
   // Unit-test fakes: enableMultiAccept returns false — single connected peer.
-  if (listenTransport_->enableMultiAccept([this](
-          std::shared_ptr<sockets::ISocketTransport> peer) {
-        onAccept(std::move(peer));
-      })) {
+  if (listenTransport_->enableMultiAccept(
+          [this](std::shared_ptr<sockets::ISocketTransport> peer) {
+            onAccept(std::move(peer));
+          })) {
     listenTransport_->start();
   } else {
     startSingleSession(listenTransport_);

@@ -167,8 +167,7 @@ class KvMigrationReceiverServer {
     std::thread thread;
   };
 
-  void startSingleSession(
-      std::shared_ptr<sockets::ISocketTransport> transport);
+  void startSingleSession(std::shared_ptr<sockets::ISocketTransport> transport);
   void onAccept(std::shared_ptr<sockets::ISocketTransport> peer);
 
   uint16_t port_;

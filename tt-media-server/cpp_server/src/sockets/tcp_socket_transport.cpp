@@ -120,7 +120,8 @@ std::shared_ptr<TcpSocketTransport> TcpSocketTransport::fromConnectedFd(
   if (!connectedFd) {
     return nullptr;
   }
-  auto transport = std::shared_ptr<TcpSocketTransport>(new TcpSocketTransport());
+  auto transport =
+      std::shared_ptr<TcpSocketTransport>(new TcpSocketTransport());
   transport->mode = Mode::CLIENT;
   configureSocket(connectedFd.get());
   transport->clientSocket = std::move(connectedFd);
