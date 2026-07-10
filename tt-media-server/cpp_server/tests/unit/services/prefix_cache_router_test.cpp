@@ -273,7 +273,7 @@ TEST_F(PrefixCacheRouterTest,
        TryAcquireByPrefixHash_StaleSession_RemovesFromIndex) {
   auto sessionId = addSession(9u, 999u);
   registerBlocks(sessionId, threeBlocks());
-  sessions_[sessionId]->setHash(999u);
+  sessions[sessionId]->setHash(999u);
 
   auto stale = router->tryAcquireByPrefixHash(threeBlocks(), nullptr);
   ASSERT_TRUE(stale.has_value());
@@ -321,7 +321,7 @@ TEST_F(PrefixCacheRouterTest, TryAcquireByResponseId_Busy_Throws) {
 TEST_F(PrefixCacheRouterTest, TryAcquireByResponseId_Stale_RemovesIndexEntry) {
   auto sessionId = addSession(13u);
   router->registerResponseId(sessionId, "resp-1");
-  sessions_[sessionId]->setResponseId("stale");
+  sessions[sessionId]->setResponseId("stale");
 
   EXPECT_FALSE(router->tryAcquireByResponseId("resp-1", nullptr).has_value());
   EXPECT_FALSE(router->tryAcquireByResponseId("resp-1", nullptr).has_value());
@@ -334,7 +334,7 @@ TEST_F(PrefixCacheRouterTest, TryAcquireByResponseId_Stale_RemovesIndexEntry) {
 TEST_F(PrefixCacheRouterTest, RegisterResponseId_EmptyId_IsNoOp) {
   auto sessionId = addSession(14u);
   router->registerResponseId(sessionId, "");
-  EXPECT_TRUE(sessions_[sessionId]->getResponseId().empty());
+  EXPECT_TRUE(sessions[sessionId]->getResponseId().empty());
 }
 
 TEST_F(PrefixCacheRouterTest, UpdateResponseId_ReKeysLookup) {
