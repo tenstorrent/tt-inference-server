@@ -6,9 +6,12 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "transport/device_dram_storage_backend.hpp"
@@ -18,6 +21,7 @@
 #include "transport/mooncake_migration_worker.hpp"
 #include "transport/mooncake_transfer_engine.hpp"
 #include "transport/peer_discovery_service.hpp"
+#include "transport/peer_table_exchange.hpp"
 #include "transport/transfer_types.hpp"
 #include "transport/umd_device_access.hpp"
 
@@ -274,18 +278,218 @@ class FakeTransferEngine : public ITransferEngine {
   }
 };
 
+// Fake that models TE table exchange: WRITEs copy into a peer's registered
+// recv base (keyed by SegmentHandle). Enough to unit-test PeerTableExchange
+// without Mooncake.
+class TableExchangeFakeEngine : public ITransferEngine {
+ public:
+  std::map<SegmentHandle, std::uint8_t*> peerRecvBase;
+  std::vector<void*> registered;
+
+  StorageMedium storageMedium() const override {
+    return StorageMedium::HOST_DRAM;
+  }
+  std::shared_ptr<IStorageBackend> storage() const override { return nullptr; }
+  bool init(const EngineConfig&) override { return true; }
+  bool registerLocalMemory(void* addr, std::size_t) override {
+    registered.push_back(addr);
+    return true;
+  }
+  bool unregisterLocalMemory(void* addr) override {
+    const auto it = std::find(registered.begin(), registered.end(), addr);
+    if (it != registered.end()) registered.erase(it);
+    return true;
+  }
+  void* firstRegisteredLocalBuffer() const override {
+    return registered.empty() ? nullptr : registered.front();
+  }
+  std::size_t registeredLocalBufferCount() const override {
+    return registered.size();
+  }
+  SegmentHandle openSegment(const std::string&) override {
+    return K_INVALID_SEGMENT;
+  }
+  SegmentHandle refreshSegment(const std::string&) override {
+    return K_INVALID_SEGMENT;
+  }
+  TransferStatus submitAndWait(const TransferRequest& req) override {
+    if (req.op != TransferOp::WRITE) {
+      return {TransferState::FAILED, 0};
+    }
+    const auto it = peerRecvBase.find(req.target);
+    if (it == peerRecvBase.end() || it->second == nullptr) {
+      return {TransferState::FAILED, 0};
+    }
+    std::memcpy(it->second + req.target_offset, req.local_addr, req.length);
+    // Release so waitForFlag's acquire load observes the flag (and prior body).
+    std::atomic_thread_fence(std::memory_order_release);
+    return {TransferState::COMPLETED, 0};
+  }
+};
+
+TEST(PeerTableExchange, Fnv1aIsStable) {
+  const std::uint8_t data[] = {1, 2, 3, 4};
+  EXPECT_EQ(PeerTableExchange::fnv1a(data, 4),
+            PeerTableExchange::fnv1a(data, 4));
+  EXPECT_NE(PeerTableExchange::fnv1a(data, 4),
+            PeerTableExchange::fnv1a(data, 3));
+}
+
+// 1:1 exchange into each other's single slot.
+TEST(PeerTableExchange, RoundTripTwoPeers) {
+  PeerTableExchangeConfig cfg;
+  cfg.timeoutSec = 2;
+  cfg.pollIntervalMs = 1;
+  cfg.maxTableBytes = 64;
+  PeerTableExchange xchg(cfg);
+
+  const std::vector<std::uint8_t> tableA = {10, 20, 30, 40};
+  const std::vector<std::uint8_t> tableB = {50, 60, 70, 80, 90};
+
+  std::vector<std::uint8_t> recvA(xchg.requiredRecvBytes(1), 0);
+  std::vector<std::uint8_t> recvB(xchg.requiredRecvBytes(1), 0);
+
+  constexpr SegmentHandle kHandleA = 1;
+  constexpr SegmentHandle kHandleB = 2;
+
+  TableExchangeFakeEngine engineA;
+  engineA.peerRecvBase[kHandleB] = recvB.data();
+  TableExchangeFakeEngine engineB;
+  engineB.peerRecvBase[kHandleA] = recvA.data();
+
+  using Slot = PeerTableExchange::PeerSlot;
+  std::optional<std::map<std::string, std::vector<std::uint8_t>>> gotA;
+  std::optional<std::map<std::string, std::vector<std::uint8_t>>> gotB;
+  std::thread tB([&] {
+    gotB = xchg.exchange(engineB,
+                         {{"peer-a", Slot{kHandleA, /*local=*/0, /*remote=*/0}}},
+                         "peer-b", tableB, recvB.data());
+  });
+  gotA = xchg.exchange(engineA,
+                       {{"peer-b", Slot{kHandleB, /*local=*/0, /*remote=*/0}}},
+                       "peer-a", tableA, recvA.data());
+  tB.join();
+
+  ASSERT_TRUE(gotA.has_value());
+  ASSERT_TRUE(gotB.has_value());
+  EXPECT_EQ(gotA->at("peer-b"), tableB);
+  EXPECT_EQ(gotB->at("peer-a"), tableA);
+}
+
+// Prefill with two decode peers: each decode WRITEs into a distinct slot —
+// concurrent fan-in must not corrupt either blob.
+TEST(PeerTableExchange, MultiPeerFanInIsolatedSlots) {
+  PeerTableExchangeConfig cfg;
+  cfg.timeoutSec = 2;
+  cfg.pollIntervalMs = 1;
+  cfg.maxTableBytes = 64;
+  PeerTableExchange xchg(cfg);
+
+  const std::vector<std::uint8_t> tableP = {1, 1, 1};
+  const std::vector<std::uint8_t> tableD0 = {2, 2, 2, 2};
+  const std::vector<std::uint8_t> tableD1 = {3, 3, 3, 3, 3};
+
+  // Prefill peers = [decode-0, decode-1] (sorted) → 2 slots.
+  // Each decode peers only prefill → 1 slot; prefill is index 0 in that list.
+  std::vector<std::uint8_t> recvP(xchg.requiredRecvBytes(2), 0);
+  std::vector<std::uint8_t> recvD0(xchg.requiredRecvBytes(1), 0);
+  std::vector<std::uint8_t> recvD1(xchg.requiredRecvBytes(1), 0);
+
+  constexpr SegmentHandle kPrefill = 10;
+  constexpr SegmentHandle kD0 = 20;
+  constexpr SegmentHandle kD1 = 21;
+
+  TableExchangeFakeEngine engP;
+  engP.peerRecvBase[kD0] = recvD0.data();
+  engP.peerRecvBase[kD1] = recvD1.data();
+  TableExchangeFakeEngine engD0;
+  engD0.peerRecvBase[kPrefill] = recvP.data();
+  TableExchangeFakeEngine engD1;
+  engD1.peerRecvBase[kPrefill] = recvP.data();
+
+  using Slot = PeerTableExchange::PeerSlot;
+  std::optional<std::map<std::string, std::vector<std::uint8_t>>> gotP, gotD0,
+      gotD1;
+
+  std::thread t0([&] {
+    gotD0 = xchg.exchange(
+        engD0, {{"prefill", Slot{kPrefill, /*local=*/0, /*remote=*/0}}},
+        "decode-0", tableD0, recvD0.data());
+  });
+  std::thread t1([&] {
+    gotD1 = xchg.exchange(
+        engD1, {{"prefill", Slot{kPrefill, /*local=*/0, /*remote=*/1}}},
+        "decode-1", tableD1, recvD1.data());
+  });
+  gotP = xchg.exchange(
+      engP,
+      {{"decode-0", Slot{kD0, /*local=*/0, /*remote=*/0}},
+       {"decode-1", Slot{kD1, /*local=*/1, /*remote=*/0}}},
+      "prefill", tableP, recvP.data());
+  t0.join();
+  t1.join();
+
+  ASSERT_TRUE(gotP.has_value());
+  ASSERT_TRUE(gotD0.has_value());
+  ASSERT_TRUE(gotD1.has_value());
+  EXPECT_EQ(gotP->at("decode-0"), tableD0);
+  EXPECT_EQ(gotP->at("decode-1"), tableD1);
+  EXPECT_EQ(gotD0->at("prefill"), tableP);
+  EXPECT_EQ(gotD1->at("prefill"), tableP);
+}
+
+// register → unregister → register must make the new buffer buffers[0].
+TEST(PeerTableExchange, RegisterUnregisterRestoresBuffers0) {
+  TableExchangeFakeEngine engine;
+  std::uint8_t recvSlot[32]{};
+  std::uint8_t mirror[64]{};
+  ASSERT_TRUE(engine.registerLocalMemory(recvSlot, sizeof(recvSlot)));
+  EXPECT_EQ(engine.firstRegisteredLocalBuffer(), recvSlot);
+  ASSERT_TRUE(engine.registerLocalMemory(mirror, sizeof(mirror)));
+  EXPECT_EQ(engine.firstRegisteredLocalBuffer(), recvSlot);
+  EXPECT_EQ(engine.registeredLocalBufferCount(), 2u);
+  ASSERT_TRUE(engine.unregisterLocalMemory(recvSlot));
+  EXPECT_EQ(engine.firstRegisteredLocalBuffer(), mirror);
+  ASSERT_TRUE(engine.unregisterLocalMemory(mirror));
+  EXPECT_EQ(engine.registeredLocalBufferCount(), 0u);
+  ASSERT_TRUE(engine.registerLocalMemory(mirror, sizeof(mirror)));
+  EXPECT_EQ(engine.firstRegisteredLocalBuffer(), mirror);
+  EXPECT_EQ(engine.registeredLocalBufferCount(), 1u);
+}
+
+TEST(PeerTableExchange, RejectsOversizedLocalBlob) {
+  PeerTableExchangeConfig cfg;
+  cfg.maxTableBytes = 4;
+  PeerTableExchange xchg(cfg);
+  TableExchangeFakeEngine engine;
+  std::vector<std::uint8_t> recv(xchg.requiredRecvBytes(1), 0);
+  std::vector<std::uint8_t> big(8, 1);
+  using Slot = PeerTableExchange::PeerSlot;
+  EXPECT_FALSE(xchg
+                   .exchange(engine, {{"p", Slot{1, 0, 0}}}, "self", big,
+                             recv.data())
+                   .has_value());
+}
+
+TEST(PeerTableExchange, EmptyPeersIsSuccess) {
+  PeerTableExchange xchg;
+  TableExchangeFakeEngine engine;
+  std::vector<std::uint8_t> blob = {1};
+  const auto got = xchg.exchange(engine, {}, "self", blob, nullptr);
+  ASSERT_TRUE(got.has_value());
+  EXPECT_TRUE(got->empty());
+}
+
 // Fast tunables so the polling path runs in milliseconds, not seconds.
 PeerDiscoveryConfig fastDiscovery(int timeoutSec) {
   return PeerDiscoveryConfig{/*poll_interval_ms=*/1,
                              /*timeout_sec=*/timeoutSec};
 }
 
-// A fast PeerDiscoveryService to inject into the worker under test.
 std::shared_ptr<PeerDiscoveryService> fastDiscoveryService(int timeoutSec) {
   return std::make_shared<PeerDiscoveryService>(fastDiscovery(timeoutSec));
 }
 
-// All peers already registered: a single sweep resolves every name.
 TEST(PeerDiscoveryService, ResolvesAllPeersInOneSweep) {
   FakeTransferEngine engine;
   engine.resolveAfterMisses = {{"a", 0}, {"b", 0}, {"c", 0}};
@@ -295,13 +499,11 @@ TEST(PeerDiscoveryService, ResolvesAllPeersInOneSweep) {
   ASSERT_TRUE(resolved.has_value());
   EXPECT_EQ(resolved->size(), 3u);
   for (const auto& name : {"a", "b", "c"}) {
-    EXPECT_EQ(engine.openAttempts[name], 1);  // resolved first try
+    EXPECT_EQ(engine.openAttempts[name], 1);
     EXPECT_NE(resolved->at(name), K_INVALID_SEGMENT);
   }
 }
 
-// A peer that isn't registered yet is retried; only the unresolved name is
-// re-polled, and discovery succeeds once it appears.
 TEST(PeerDiscoveryService, RetriesOnlyUnresolvedUntilTheyAppear) {
   FakeTransferEngine engine;
   engine.resolveAfterMisses = {{"ready", 0}, {"late", 2}};
@@ -310,23 +512,20 @@ TEST(PeerDiscoveryService, RetriesOnlyUnresolvedUntilTheyAppear) {
   const auto resolved = discovery.discover(engine, {"ready", "late"});
   ASSERT_TRUE(resolved.has_value());
   EXPECT_EQ(resolved->size(), 2u);
-  EXPECT_EQ(engine.openAttempts["ready"], 1);  // resolved once, not re-polled
-  EXPECT_GE(engine.openAttempts["late"], 3);   // 2 misses then a hit
+  EXPECT_EQ(engine.openAttempts["ready"], 1);
+  EXPECT_GE(engine.openAttempts["late"], 3);
 }
 
-// A peer that never registers makes discovery give up and return nullopt.
 TEST(PeerDiscoveryService, TimesOutWhenAPeerNeverResolves) {
   FakeTransferEngine engine;
-  engine.resolveAfterMisses = {{"present", 0}};  // "ghost" absent => never
+  engine.resolveAfterMisses = {{"present", 0}};
   PeerDiscoveryService discovery(fastDiscovery(1));
 
   const auto resolved = discovery.discover(engine, {"present", "ghost"});
   EXPECT_FALSE(resolved.has_value());
-  EXPECT_GE(engine.openAttempts["ghost"], 1);  // it did try
+  EXPECT_GE(engine.openAttempts["ghost"], 1);
 }
 
-// No peers configured: discover() short-circuits to an empty (success) map
-// without ever touching the engine.
 TEST(PeerDiscoveryService, NoPeersResolvesToEmptyMap) {
   FakeTransferEngine engine;
   PeerDiscoveryService discovery(fastDiscovery(5));
@@ -334,12 +533,9 @@ TEST(PeerDiscoveryService, NoPeersResolvesToEmptyMap) {
   const auto resolved = discovery.discover(engine, {});
   ASSERT_TRUE(resolved.has_value());
   EXPECT_TRUE(resolved->empty());
-  EXPECT_TRUE(engine.callLog.empty());  // no openSegment attempts
+  EXPECT_TRUE(engine.callLog.empty());
 }
 
-// Duplicate names must not inflate the expected count (which would wedge
-// discovery into a permanent false timeout): they collapse to one entry and
-// are polled once.
 TEST(PeerDiscoveryService, DeduplicatesRepeatedPeerNames) {
   FakeTransferEngine engine;
   engine.resolveAfterMisses = {{"a", 0}, {"b", 0}};
@@ -348,10 +544,9 @@ TEST(PeerDiscoveryService, DeduplicatesRepeatedPeerNames) {
   const auto resolved = discovery.discover(engine, {"a", "a", "b", "a"});
   ASSERT_TRUE(resolved.has_value());
   EXPECT_EQ(resolved->size(), 2u);
-  EXPECT_EQ(engine.openAttempts["a"], 1);  // resolved once despite repeats
+  EXPECT_EQ(engine.openAttempts["a"], 1);
 }
 
-// Empty names are ignored entirely — never passed to openSegment.
 TEST(PeerDiscoveryService, IgnoresEmptyPeerNames) {
   FakeTransferEngine engine;
   engine.resolveAfterMisses = {{"real", 0}};
@@ -360,24 +555,21 @@ TEST(PeerDiscoveryService, IgnoresEmptyPeerNames) {
   const auto resolved = discovery.discover(engine, {"", "real", ""});
   ASSERT_TRUE(resolved.has_value());
   EXPECT_EQ(resolved->size(), 1u);
-  EXPECT_EQ(engine.openAttempts.count(""), 0u);  // never tried to open ""
+  EXPECT_EQ(engine.openAttempts.count(""), 0u);
 }
 
-// A set cancel token aborts discovery after a single sweep, rather than
-// blocking until the (here, long) timeout — exactly one open attempt is made.
 TEST(PeerDiscoveryService, CancelTokenAbortsPromptly) {
-  FakeTransferEngine engine;                           // "ghost" never resolves
-  PeerDiscoveryService discovery(fastDiscovery(600));  // would block ~10min
+  FakeTransferEngine engine;
+  PeerDiscoveryService discovery(fastDiscovery(600));
   std::atomic<bool> cancel{true};
 
   const auto resolved = discovery.discover(engine, {"ghost"}, &cancel);
   EXPECT_FALSE(resolved.has_value());
-  EXPECT_EQ(engine.openAttempts["ghost"], 1);  // one sweep, then bailed out
+  EXPECT_EQ(engine.openAttempts["ghost"], 1);
 }
 
-// A 0s timeout still makes exactly one attempt (it is not a no-op).
 TEST(PeerDiscoveryService, ZeroTimeoutTriesExactlyOnce) {
-  FakeTransferEngine engine;  // "ghost" never resolves
+  FakeTransferEngine engine;
   PeerDiscoveryService discovery(fastDiscovery(0));
 
   const auto resolved = discovery.discover(engine, {"ghost"});
