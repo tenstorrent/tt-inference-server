@@ -19,6 +19,7 @@ from report_module.display import (
 from report_module.formatting import format_value
 from report_module.markdown_table import build_markdown_table
 from report_module.schema import Block
+from report_module.status import glyph_for_label
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +194,9 @@ def _format_cell(column: str, value: Any) -> str:
         and not isinstance(value, bool)
         and value in _CHECK_INT_TO_LABEL
     ):
-        return _CHECK_INT_TO_LABEL[value]
+        label = _CHECK_INT_TO_LABEL[value]
+        emoji = glyph_for_label(label)
+        return f"{emoji} {label}" if emoji else label
     places = decimal_places(column)
     if places is not None and isinstance(value, float) and value == value:
         return f"{value:.{places}f}"

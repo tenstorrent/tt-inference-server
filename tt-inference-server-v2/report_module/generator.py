@@ -23,15 +23,8 @@ from report_module.acceptance_criteria import ACCEPTANCE_EXPORT_KEYS
 from report_module.markdown_table import build_markdown_table
 from report_module.report_file_saver import ReportFileSaver
 from report_module.schema import Block, ReportSchema, SchemaLike
+from report_module.status import STATUS_GLYPHS as _STATUS_GLYPHS
 from report_module.status import TestStatus
-
-_STATUS_GLYPHS = {
-    TestStatus.PASS: "✅",
-    TestStatus.FAIL: "❌",
-    TestStatus.ERROR: "❌",
-    TestStatus.SKIP: "⏭️",
-    TestStatus.NA: "🟨",
-}
 
 logger = logging.getLogger(__name__)
 
