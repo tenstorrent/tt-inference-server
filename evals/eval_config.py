@@ -362,7 +362,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=8,
+                    n_concurrent_trials=16,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=16,
@@ -395,110 +395,110 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
-            EvalTask(
-                task_name="tau3_bench_banking",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                score=EvalTaskScore(
-                    published_score=8.9,
-                    published_score_ref="https://artificialanalysis.ai/models?models=minimax-m2-7",
-                    gpu_reference_score=11.3,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4324#issuecomment-4815788892",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["accuracy"],
-                        "unit": "percent",
-                    },
-                    tolerance=0.10,
-                ),
-                agentic_eval_config=TerminalBenchEvalConfig(
-                    dataset="sierra-research/tau3-bench",
-                    agent="tau3_llm_agent",
-                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
-                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
-                    # A single served instance is shared by the agent,
-                    # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=4,
-                    n_attempts=1,
-                    n_tasks=97,
-                    override_cpus=4,
-                    override_memory_mb=8 * 1024,
-                    agent_timeout_sec=3600,
-                    agent_kwargs={
-                        "tau2_trial_index": 0,
-                        "temperature": 1.0,
-                        "max_steps": 200,
-                        # Default is 120s; a single reasoning user-sim turn under
-                        # load can exceed that and trip an MCP request timeout.
-                        "tool_timeout_sec": 900,
-                        "read_timeout_sec": 120,
-                    },
-                    # NOTE: values injected here are passed to the Harbor
-                    # container verbatim. Unlike the task.toml env, the
-                    # "${VAR:-default}" template syntax is NOT resolved on this
-                    # path, so use literal values -- a templated model name
-                    # reaches litellm unexpanded and fails with "LLM Provider
-                    # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
-                    # intentionally omitted: the task's docker-compose already
-                    # substitutes those from the launching shell env.
-                    environment_env={
-                        "TAU2_USER_MODEL": "openai/MiniMaxAI/MiniMax-M2.7",
-                    },
-                    verifier_env={
-                        "TAU2_NL_ASSERTIONS_MODEL": "openai/MiniMaxAI/MiniMax-M2.7",
-                    },
-                    task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002",
-                        ],
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 3,
-                },
-            ),
-            EvalTask(
-                task_name="swe_bench_verified",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                score=EvalTaskScore(
-                    published_score=79.9,
-                    published_score_ref="https://huggingface.co/MiniMaxAI/MiniMax-M3",
-                    gpu_reference_score=62.4,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4324#issuecomment-4830558090",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["accuracy"],
-                        "unit": "percent",
-                    },
-                ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
-                    n_concurrent_trials=8,
-                    max_workers=24,
-                    n_tasks=None,
-                    temperature=1.0,
-                    top_p=0.95,
-                    max_input_tokens=200 * 1024,
-                    max_output_tokens=64 * 1024,
-                    instance_ids_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-12143",
-                            "pytest-dev__pytest-5262",
-                            "django__django-14672",
-                            "sympy__sympy-13551",
-                            "sphinx-doc__sphinx-9281",
-                        ],
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
-                },
-            ),
+            # EvalTask(
+            #     task_name="tau3_bench_banking",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+            #     score=EvalTaskScore(
+            #         published_score=8.9,
+            #         published_score_ref="https://artificialanalysis.ai/models?models=minimax-m2-7",
+            #         gpu_reference_score=11.3,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4324#issuecomment-4815788892",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": ["accuracy"],
+            #             "unit": "percent",
+            #         },
+            #         tolerance=0.10,
+            #     ),
+            #     agentic_eval_config=TerminalBenchEvalConfig(
+            #         dataset="sierra-research/tau3-bench",
+            #         agent="tau3_llm_agent",
+            #         agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+            #         task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+            #         # A single served instance is shared by the agent,
+            #         # the simulated user, and the Natural Language verifier.
+            #         n_concurrent_trials=4,
+            #         n_attempts=1,
+            #         n_tasks=97,
+            #         override_cpus=4,
+            #         override_memory_mb=8 * 1024,
+            #         agent_timeout_sec=3600,
+            #         agent_kwargs={
+            #             "tau2_trial_index": 0,
+            #             "temperature": 1.0,
+            #             "max_steps": 200,
+            #             # Default is 120s; a single reasoning user-sim turn under
+            #             # load can exceed that and trip an MCP request timeout.
+            #             "tool_timeout_sec": 900,
+            #             "read_timeout_sec": 120,
+            #         },
+            #         # NOTE: values injected here are passed to the Harbor
+            #         # container verbatim. Unlike the task.toml env, the
+            #         # "${VAR:-default}" template syntax is NOT resolved on this
+            #         # path, so use literal values -- a templated model name
+            #         # reaches litellm unexpanded and fails with "LLM Provider
+            #         # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
+            #         # intentionally omitted: the task's docker-compose already
+            #         # substitutes those from the launching shell env.
+            #         environment_env={
+            #             "TAU2_USER_MODEL": "openai/MiniMaxAI/MiniMax-M2.7",
+            #         },
+            #         verifier_env={
+            #             "TAU2_NL_ASSERTIONS_MODEL": "openai/MiniMaxAI/MiniMax-M2.7",
+            #         },
+            #         task_names_map={
+            #             EvalLimitMode.CI_NIGHTLY: [
+            #                 "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
+            #                 "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
+            #                 "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
+            #                 "sierra-research/tau3-bench__tau3-banking_knowledge-task-002",
+            #             ],
+            #         },
+            #     ),
+            #     limit_samples_map={
+            #         EvalLimitMode.SMOKE_TEST: 3,
+            #     },
+            # ),
+            # EvalTask(
+            #     task_name="swe_bench_verified",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+            #     score=EvalTaskScore(
+            #         published_score=79.9,
+            #         published_score_ref="https://huggingface.co/MiniMaxAI/MiniMax-M3",
+            #         gpu_reference_score=62.4,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4324#issuecomment-4830558090",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": ["accuracy"],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     swebench_eval_config=SWEbenchEvalConfig(
+            #         dataset_name="SWE-bench/SWE-bench_Verified",
+            #         sweagent_subset="verified",
+            #         dataset_split="test",
+            #         agent_backend="mini-swe-agent",
+            #         n_concurrent_trials=8,
+            #         max_workers=24,
+            #         n_tasks=None,
+            #         temperature=1.0,
+            #         top_p=0.95,
+            #         max_input_tokens=200 * 1024,
+            #         max_output_tokens=64 * 1024,
+            #         instance_ids_map={
+            #             EvalLimitMode.CI_NIGHTLY: [
+            #                 "django__django-12143",
+            #                 "pytest-dev__pytest-5262",
+            #                 "django__django-14672",
+            #                 "sympy__sympy-13551",
+            #                 "sphinx-doc__sphinx-9281",
+            #             ],
+            #         },
+            #     ),
+            #     limit_samples_map={
+            #         EvalLimitMode.SMOKE_TEST: 5,
+            #     },
+            # ),
         ],
     ),
     EvalConfig(
