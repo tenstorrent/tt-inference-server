@@ -114,8 +114,7 @@ std::string prefillServerId();
  */
 std::string logInstanceTag(int workerIndex = -1);
 
-/** Number of pipeline stages for the Blaze Decode runner. From
- * BLAZE_NUMBER_OF_PIPELINE_STAGES. */
+// Number of pipeline stages for the Blaze Decode runner.
 uint32_t blazeNumberOfPipelineStages();
 
 /** Max in-flight requests before 429. From MAX_QUEUE_SIZE. Default:
@@ -283,11 +282,6 @@ std::string specDecodeMode();
 
 /** MTP level from MTP_LEVEL. Default: defaults::MTP_LEVEL. */
 size_t mtpLevel();
-
-/** Total device in-flight token cap (prefill + decode) above which the decode
- * scheduler stops injecting prefill, from TT_DECODE_PREFILL_INFLIGHT_CAP.
- * 0 = disabled. Default: defaults::PREFILL_INFLIGHT_CAP. */
-uint32_t prefillInflightCap();
 
 /** Media payload task queue name from TT_MEDIA_TASK_QUEUE. */
 std::string ttMediaTaskQueueName();

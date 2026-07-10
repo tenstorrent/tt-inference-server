@@ -69,9 +69,7 @@ constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 constexpr const char* SPEC_DECODE_MODE = "none";
 constexpr size_t MTP_LEVEL = 1;
 
-// Total device in-flight token cap (prefill + decode) above which the decode
-// scheduler stops injecting prefill, reserving buffer slots for decode to
-// flatten ITL. 0 = disabled. See SchedulerParams::prefill_inflight_cap.
+// number of pipeline stages of the Blaze Decode Model.
 constexpr uint32_t BLAZE_NUMBER_OF_PIPELINE_STAGES = 64;
 
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
