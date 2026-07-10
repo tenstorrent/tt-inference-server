@@ -1315,23 +1315,33 @@ jobs:
           import yaml
           with open('charts/tt-inference-server/values.yaml') as f:
               v = yaml.safe_load(f)
-          for model, cfg in v['models'].items():
-              for key in cfg:
-                  if key != 'serverType':
-                      print(f"{model},{key}")
+          # models[model][engine][device]; skip scalar metadata (e.g. defaultEngine)
+          for model, engines in v['models'].items():
+              for engine, devices in engines.items():
+                  if not isinstance(devices, dict):
+                      continue
+                  for device, dev_cfg in devices.items():
+                      if not isinstance(dev_cfg, dict):
+                          continue
+                      print(f"{model},{engine},{device}")
           EOF
 
       - name: Helm template validation
         run: |
           set -o pipefail
+          if [ ! -s /tmp/helm-matrix.txt ]; then
+            echo "::error::model-device matrix is empty — nothing to validate"
+            exit 1
+          fi
           FAILED=0
-          while IFS=',' read -r model device; do
-            echo "--- Validating: $model / $device"
+          while IFS=',' read -r model engine device; do
+            echo "--- Validating: $model / $engine / $device"
             if ! helm template ci-test charts/tt-inference-server \
                 --set "model=$model" \
+                --set "engine=$engine" \
                 --set "device=$device" \
                 | kubeconform -strict -summary; then
-              echo "FAILED: $model / $device"
+              echo "FAILED: $model / $engine / $device"
               FAILED=1
             fi
           done < /tmp/helm-matrix.txt
