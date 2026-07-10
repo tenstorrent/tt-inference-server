@@ -1,21 +1,25 @@
-# FLUX.1-schnell Tenstorrent Support on BH QuietBox 2
+# yolox_nano Tenstorrent Support on P150
 
 #### Useful links
 
-- [BH QuietBox 2 details](https://tenstorrent.com/hardware/tt-quietbox)
-- [Search other image models](./README.md)
+- [P150 details](https://tenstorrent.com/hardware/blackhole)
+- [Search other cnn models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Quickstart - Deploy FLUX.1-schnell Inference Server on BH QuietBox 2
+`yolox_nano` is also supported on hardware:
+
+- [N150](yolox_nano_n150.md)
+
+## Quickstart - Deploy yolox_nano Inference Server on p150
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
-This model is supported by [tt-media-server](../../../tt-media-server/README.md) inference engine.
+This model is supported by [tt-media-server (forge plugin)](../../../tt-media-server/README.md) inference engine.
 
 **via run.py command**
 
 ```bash
-python3 run.py --model FLUX.1-schnell --device p300x2 --workflow server --docker-server
+python3 run.py --model yolox_nano --device p150 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -23,9 +27,9 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 
 | Parameter | Value |
 |-----------|-------|
-| Weights | [black-forest-labs/FLUX.1-schnell](https://huggingface.co/black-forest-labs/FLUX.1-schnell) |
+| Weights | [yolox_nano](https://huggingface.co/yolox_nano) |
 | Model Status | 🟢 Complete |
 | Max Batch Size | 1 |
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/tt_transformers) |
 | tt-metal Commit | `c49bb76` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.18.0-c49bb76` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server-forge:0.18.0-c49bb76` |

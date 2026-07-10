@@ -1,19 +1,19 @@
-# Qwen3-8B Tenstorrent Support on WH LoudBox/QuietBox
+# Qwen3-8B Tenstorrent Support on BH P300
 
 #### Useful links
 
-- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [BH P300 details](https://tenstorrent.com/hardware/blackhole)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
 `Qwen3-8B` is also supported on hardware:
 
 - [WH Galaxy](Qwen3-8B_galaxy.md)
-- [BH P300](Qwen3-8B_p300.md)
+- [WH LoudBox/QuietBox](Qwen3-8B_t3k.md)
 - [N150](Qwen3-8B_n150.md)
 - [N300](Qwen3-8B_n300.md)
 
-## Quickstart - Deploy Qwen3-8B Inference Server on WH LoudBox/QuietBox
+## Quickstart - Deploy Qwen3-8B Inference Server on BH P300
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
@@ -29,15 +29,15 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Qwen3-8B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e0e0500-409b1cd \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e867533-22be241 \
   --model Qwen3-8B \
-  --tt-device t3k
+  --tt-device p300
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model Qwen3-8B --device t3k --workflow server --docker-server
+python3 run.py --model Qwen3-8B --device p300 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -49,7 +49,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🟡 Functional |
 | Max Batch Size | 32 |
 | Max Context Length | 40960 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/e0e0500/models/tt_transformers) |
-| tt-metal Commit | `e0e0500` |
-| vLLM Commit | `409b1cd` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e0e0500-409b1cd` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers) |
+| tt-metal Commit | `e867533` |
+| vLLM Commit | `22be241` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e867533-22be241` |
