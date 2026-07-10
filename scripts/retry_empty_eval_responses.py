@@ -168,23 +168,24 @@ def extract_content(response: dict) -> str:
 
 
 def extract_reasoning_content(response: dict) -> str:
-    """Thinking/reasoning text (Kimi ``message.reasoning_content``), if present."""
+    """Thinking/reasoning text, if present (Kimi or DeepSeek field names)."""
     choices = response.get("choices") or []
     if not choices:
         return ""
     message = (choices[0].get("message") or {})
-    return message.get("reasoning_content") or ""
+    return message.get("reasoning_content") or message.get("reasoning") or ""
 
 
 def _stream_chunk_parts(choice: dict) -> tuple[str, str, bool]:
     """Return (reasoning_delta, content_delta, is_chat_chunk) from one SSE chunk."""
     delta = choice.get("delta") or {}
-    reasoning = delta.get("reasoning_content") or ""
+    reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
     content = delta.get("content") or ""
     if (
         reasoning
         or content
         or "reasoning_content" in delta
+        or "reasoning" in delta
         or "content" in delta
     ):
         return reasoning, content, True
@@ -408,6 +409,8 @@ def curl_chat_completion(
     api_key: str,
     payload: dict,
     timeout_sec: int,
+    *,
+    http1_1: bool = False,
 ) -> tuple[int, str, Optional[dict]]:
     url = base_url.rstrip("/")
     if not url.endswith("/chat/completions"):
@@ -423,7 +426,15 @@ def curl_chat_completion(
             "curl",
             "--keepalive-time",
             "15",
+            "-v",
             "-sS",
+            "-N",
+            "--ignore-content-length",
+        ]
+        if http1_1:
+            cmd.append("--http1.1")
+        cmd.extend(
+            [
             "-X",
             "POST",
             url,
@@ -435,7 +446,8 @@ def curl_chat_completion(
             str(timeout_sec),
             "-d",
             f"@{payload_path}",
-        ]
+            ]
+        )
         if stream:
             # Flush chunks as they arrive; status code is emitted after the body.
             cmd.extend(["-N", "-w", "\nHTTP_STATUS:%{http_code}"])
@@ -686,6 +698,12 @@ def parse_args() -> argparse.Namespace:
         default=16,
         help="Number of concurrent curl retries (default: 16)",
     )
+    parser.add_argument(
+        "--http1.1",
+        dest="http1_1",
+        action="store_true",
+        help="Force curl to use HTTP/1.1 (avoids HTTP/2 GOAWAY on long SSE streams)",
+    )
     return parser.parse_args()
 
 
@@ -700,6 +718,7 @@ def retry_one_sample(
     timeout_sec: int,
     tokenizer_model: Optional[str],
     no_estimate_tokens: bool,
+    http1_1: bool,
     output_path: Path,
     write_lock: threading.Lock,
 ) -> dict:
@@ -720,6 +739,7 @@ def retry_one_sample(
         api_key,
         payload,
         timeout_sec=timeout_sec,
+        http1_1=http1_1,
     )
 
     content = extract_content(response) if response else ""
@@ -873,6 +893,7 @@ def main() -> int:
                     timeout_sec=args.timeout_sec,
                     tokenizer_model=tokenizer_model,
                     no_estimate_tokens=args.no_estimate_tokens,
+                    http1_1=args.http1_1,
                     output_path=output_path,
                     write_lock=write_lock,
                 ): sample
