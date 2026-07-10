@@ -39,12 +39,12 @@ class PrefixCacheRouterTest : public ::testing::Test {
     setenv("KV_CACHE_FIRST_BLOCK_SIZE", "32", 1);
     setenv("KV_CACHE_BLOCK_SIZE", "32", 1);
 
-    sessions_.clear();
-    inFlight_.clear();
-    lockedSlots_.clear();
-    shrunkSessions_.clear();
-    createdSlotCopyFrom_.clear();
-    nextAllocSlot_ = 1000;
+    sessions.clear();
+    inFlight.clear();
+    lockedSlots.clear();
+    shrunkSessions.clear();
+    createdSlotCopyFrom.clear();
+    nextAllocSlot = 1000;
 
     router = std::make_unique<tt::services::PrefixCacheRouter>(makeCallbacks());
   }
@@ -53,7 +53,7 @@ class PrefixCacheRouterTest : public ::testing::Test {
     auto session = std::make_shared<TestableSession>(slotId, hash);
     session->markPrepared();
     const auto sessionId = session->getSessionId();
-    sessions_.emplace(sessionId, std::move(session));
+    sessions.emplace(sessionId, std::move(session));
     return sessionId;
   }
 
@@ -63,10 +63,10 @@ class PrefixCacheRouterTest : public ::testing::Test {
   }
 
   void releaseSession(const std::string& sessionId) {
-    auto it = sessions_.find(sessionId);
-    if (it != sessions_.end()) {
+    auto it = sessions.find(sessionId);
+    if (it != sessions.end()) {
       it->second->clearInFlight();
-      inFlight_.erase(sessionId);
+      inFlight.erase(sessionId);
     }
   }
 
@@ -106,8 +106,8 @@ class PrefixCacheRouterTest : public ::testing::Test {
       std::optional<uint64_t> expectedKeyHash,
       const std::string* expectedResponseId) {
     tt::domain::MarkInFlightResult result;
-    auto it = sessions_.find(sessionId);
-    if (it == sessions_.end()) {
+    auto it = sessions.find(sessionId);
+    if (it == sessions.end()) {
       result.outcome = tt::domain::MarkInFlightOutcome::NotFound;
       return result;
     }
@@ -128,7 +128,7 @@ class PrefixCacheRouterTest : public ::testing::Test {
     }
     session.markInFlight();
     session.setCancelFn(std::move(cancelFn));
-    inFlight_.insert(sessionId);
+    inFlight.insert(sessionId);
     result.outcome = tt::domain::MarkInFlightOutcome::Marked;
     result.slotId = session.getSlotId();
     return result;
@@ -147,13 +147,13 @@ class PrefixCacheRouterTest : public ::testing::Test {
     };
 
     callbacks.getSession = [this](const std::string& sessionId) {
-      auto it = sessions_.find(sessionId);
-      return it == sessions_.end() ? nullptr : it->second;
+      auto it = sessions.find(sessionId);
+      return it == sessions.end() ? nullptr : it->second;
     };
 
     callbacks.getSessionHash = [this](const std::string& sessionId) {
-      auto it = sessions_.find(sessionId);
-      if (it == sessions_.end()) {
+      auto it = sessions.find(sessionId);
+      if (it == sessions.end()) {
         return std::optional<uint64_t>{};
       }
       return std::optional<uint64_t>{it->second->getHash()};
@@ -161,8 +161,8 @@ class PrefixCacheRouterTest : public ::testing::Test {
 
     callbacks.setSessionHash = [this](const std::string& sessionId,
                                       uint64_t keyHash) {
-      auto it = sessions_.find(sessionId);
-      if (it == sessions_.end()) {
+      auto it = sessions.find(sessionId);
+      if (it == sessions.end()) {
         return false;
       }
       it->second->setHash(keyHash);
@@ -171,8 +171,8 @@ class PrefixCacheRouterTest : public ::testing::Test {
 
     callbacks.setSessionResponseId = [this](const std::string& sessionId,
                                             const std::string& responseId) {
-      auto it = sessions_.find(sessionId);
-      if (it == sessions_.end()) {
+      auto it = sessions.find(sessionId);
+      if (it == sessions.end()) {
         return false;
       }
       it->second->setResponseId(responseId);
@@ -190,13 +190,13 @@ class PrefixCacheRouterTest : public ::testing::Test {
                std::vector<tt::utils::BlockHashInfo> initialBlockInfos,
                std::optional<uint32_t> slotIdToCopyFrom) {
           if (slotIdToCopyFrom.has_value()) {
-            createdSlotCopyFrom_.push_back(*slotIdToCopyFrom);
+            createdSlotCopyFrom.push_back(*slotIdToCopyFrom);
           }
           auto session = std::make_shared<TestableSession>(
-              nextAllocSlot_++,
+              nextAllocSlot++,
               initialBlockInfos.empty() ? 0 : initialBlockInfos.front().hash);
           session->markPrepared();
-          sessions_.emplace(session->getSessionId(), session);
+          sessions.emplace(session->getSessionId(), session);
           onCompletion(*session);
         };
 
@@ -207,26 +207,26 @@ class PrefixCacheRouterTest : public ::testing::Test {
     };
 
     callbacks.lockSlot = [this](uint32_t slotId) {
-      lockedSlots_.insert(slotId);
+      lockedSlots.insert(slotId);
     };
     callbacks.unlockSlot = [this](uint32_t slotId) {
-      lockedSlots_.erase(slotId);
+      lockedSlots.erase(slotId);
     };
 
     callbacks.shrinkResidentPrefixToMatchedTokens =
         [this](const std::string& sessionId, uint32_t matchedTokens) {
-          shrunkSessions_.emplace_back(sessionId, matchedTokens);
+          shrunkSessions.emplace_back(sessionId, matchedTokens);
         };
 
     return callbacks;
   }
 
-  std::unordered_map<std::string, std::shared_ptr<TestableSession>> sessions_;
-  std::unordered_set<std::string> inFlight_;
-  std::unordered_set<uint32_t> lockedSlots_;
-  std::vector<std::pair<std::string, uint32_t>> shrunkSessions_;
-  std::vector<uint32_t> createdSlotCopyFrom_;
-  uint32_t nextAllocSlot_ = 1000;
+  std::unordered_map<std::string, std::shared_ptr<TestableSession>> sessions;
+  std::unordered_set<std::string> inFlight;
+  std::unordered_set<uint32_t> lockedSlots;
+  std::vector<std::pair<std::string, uint32_t>> shrunkSessions;
+  std::vector<uint32_t> createdSlotCopyFrom;
+  uint32_t nextAllocSlot = 1000;
   std::unique_ptr<tt::services::PrefixCacheRouter> router;
 };
 
@@ -429,8 +429,8 @@ TEST_F(PrefixCacheRouterTest, GetSlot_ResponseIdHit) {
   EXPECT_EQ(result->sessionId, sessionId);
   EXPECT_EQ(result->slotId, 20u);
   EXPECT_FALSE(result->isNewSession);
-  EXPECT_FALSE(shrunkSessions_.empty());
-  EXPECT_EQ(shrunkSessions_.front().first, sessionId);
+  EXPECT_FALSE(shrunkSessions.empty());
+  EXPECT_EQ(shrunkSessions.front().first, sessionId);
 
   releaseSession(sessionId);
   EXPECT_FALSE(router->tryAcquireByResponseId("resp-1", nullptr).has_value());
@@ -473,8 +473,8 @@ TEST_F(PrefixCacheRouterTest, GetSlot_AllocatesNewSessionOnMiss) {
   ASSERT_TRUE(result.has_value());
   EXPECT_TRUE(result->isNewSession);
   EXPECT_EQ(result->slotId, 1000u);
-  auto it = sessions_.find(result->sessionId);
-  ASSERT_NE(it, sessions_.end());
+  auto it = sessions.find(result->sessionId);
+  ASSERT_NE(it, sessions.end());
   EXPECT_EQ(it->second->getResponseId(), "resp-new");
 }
 
@@ -499,9 +499,9 @@ TEST_F(PrefixCacheRouterTest, GetSlot_BusyCandidate_CopiesFromSourceSlot) {
   EXPECT_NE(result->sessionId, sessionId);
   EXPECT_FALSE(result->isNewSession);
   EXPECT_GT(result->matchedTokens, 0u);
-  ASSERT_EQ(createdSlotCopyFrom_.size(), 1u);
-  EXPECT_EQ(createdSlotCopyFrom_.front(), 22u);
-  EXPECT_TRUE(lockedSlots_.empty());
+  ASSERT_EQ(createdSlotCopyFrom.size(), 1u);
+  EXPECT_EQ(createdSlotCopyFrom.front(), 22u);
+  EXPECT_TRUE(lockedSlots.empty());
 }
 
 }  // namespace
