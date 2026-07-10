@@ -7,9 +7,11 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 #include "sockets/i_socket_transport.hpp"
 #include "transport/kv_control_channel.hpp"
@@ -112,22 +114,23 @@ class KvControlChannelConnector {
 };
 
 /**
- * @brief Decode-side server: listens for a sender, runs the receiver protocol.
+ * @brief Decode-side control server: accepts prefills, runs receiver protocol.
  *
- * Owns a server control channel and runs `KvMigrationReceiver::run()` on a
- * background thread, dispatching prepareMirror/drain against the injected
- * `MooncakeKvReceiver` (which has already registered its full-table mirror as
- * the one Mooncake segment the sender writes into). The transport is injected
- * via a factory for the same decoupling/testability reason as the connector.
+ * Production (TcpSocketTransport): multi-accept — every connecting prefill gets
+ * its own control session (channel + KvMigrationReceiver::run thread) so
+ * TABLE_EXCHANGE and migrate work under N-prefill × 1-decode discovery.
+ *
+ * Unit-test fakes: factory returns an already-connected peer transport; the
+ * server keeps the historical single-session path.
  *
  * Lifetime: `receiver` must outlive this server. stop() (also called by the
- * dtor) tears the transport down — which unblocks the receive loop — and joins
- * the thread; it is idempotent.
+ * dtor) tears listen + all sessions down and joins threads; it is idempotent.
  */
 class KvMigrationReceiverServer {
  public:
-  /// Create a SERVER transport bound + listening on `port` (already
-  /// initializeAsServer()'d + start()'ed), or nullptr on failure.
+  /// Create a SERVER transport bound + listening on `port`. For TCP, leave it
+  /// un-started — this server sets the multi-accept handler then start()s it.
+  /// Test fakes may return an already-connected peer (single-session mode).
   using ServerTransportFactory =
       std::function<std::shared_ptr<sockets::ISocketTransport>(uint16_t port)>;
 
@@ -147,16 +150,27 @@ class KvMigrationReceiverServer {
   KvMigrationReceiverServer& operator=(const KvMigrationReceiverServer&) =
       delete;
 
-  /// Build the transport + channel + receiver orchestrator and spawn the loop.
-  /// @return false if the transport factory failed (nothing started).
+  /// Build the listen transport (or single fake session) and spawn accept /
+  /// serve loops. @return false if the transport factory failed.
   bool start();
 
-  /// Stop the transport (unblocks the loop) and join the thread. Idempotent.
+  /// Stop listen + all sessions and join threads. Idempotent.
   void stop();
 
   bool running() const { return running_; }
 
  private:
+  struct Session {
+    std::shared_ptr<sockets::ISocketTransport> transport;
+    std::unique_ptr<KvControlChannel> channel;
+    std::unique_ptr<KvMigrationReceiver> orchestrator;
+    std::thread thread;
+  };
+
+  void startSingleSession(
+      std::shared_ptr<sockets::ISocketTransport> transport);
+  void onAccept(std::shared_ptr<sockets::ISocketTransport> peer);
+
   uint16_t port_;
   ServerTransportFactory factory_;
   MooncakeKvReceiver& receiver_;
@@ -164,10 +178,14 @@ class KvMigrationReceiverServer {
   std::chrono::milliseconds receive_timeout_;
   std::chrono::milliseconds poll_interval_;
 
-  std::shared_ptr<sockets::ISocketTransport> transport_;
+  std::shared_ptr<sockets::ISocketTransport> listenTransport_;
+  // Single-session (fake) path.
   std::unique_ptr<KvControlChannel> channel_;
   std::unique_ptr<KvMigrationReceiver> orchestrator_;
   std::thread thread_;
+
+  std::mutex sessionsMutex_;
+  std::vector<std::unique_ptr<Session>> sessions_;
   bool running_ = false;
 };
 

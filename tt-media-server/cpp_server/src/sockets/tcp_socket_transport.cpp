@@ -107,7 +107,34 @@ void configureSocket(int socketFd) {
 }
 }  // namespace
 
+namespace {
+// Enough for a fleet of prefills dialing one decode at once; listen(…, 1)
+// dropped the second SYN into nowhere and hung TABLE_EXCHANGE.
+constexpr int K_LISTEN_BACKLOG = 128;
+}  // namespace
+
 TcpSocketTransport::~TcpSocketTransport() { stop(); }
+
+std::shared_ptr<TcpSocketTransport> TcpSocketTransport::fromConnectedFd(
+    tt::utils::ScopedFd connectedFd) {
+  if (!connectedFd) {
+    return nullptr;
+  }
+  auto transport = std::shared_ptr<TcpSocketTransport>(new TcpSocketTransport());
+  transport->mode = Mode::CLIENT;
+  configureSocket(connectedFd.get());
+  transport->clientSocket = std::move(connectedFd);
+  transport->peerSocket.store(transport->clientSocket.get(),
+                              std::memory_order_release);
+  transport->running = true;
+  transport->connected = true;
+  return transport;
+}
+
+bool TcpSocketTransport::enableMultiAccept(AcceptHandler handler) {
+  acceptHandler_ = std::move(handler);
+  return true;
+}
 
 bool TcpSocketTransport::initializeAsServer(uint16_t port) {
   mode = Mode::SERVER;
@@ -142,13 +169,14 @@ bool TcpSocketTransport::initializeAsServer(uint16_t port) {
     return false;
   }
 
-  if (listen(serverSocket.get(), 1) < 0) {
+  if (listen(serverSocket.get(), K_LISTEN_BACKLOG) < 0) {
     TT_LOG_ERROR("[TcpSocketTransport] Failed to listen: {}", strerror(errno));
     serverSocket.reset();
     return false;
   }
 
-  TT_LOG_INFO("[TcpSocketTransport] Server initialized on port {}", port);
+  TT_LOG_INFO("[TcpSocketTransport] Server initialized on port {} (backlog={})",
+              port, K_LISTEN_BACKLOG);
   return true;
 }
 
@@ -232,11 +260,21 @@ void TcpSocketTransport::serverLoop(std::stop_token stopToken) {
 
     configureSocket(accepted.get());
 
-    peerSocket.store(accepted.get(), std::memory_order_release);
-    connected = true;
-
     TT_LOG_INFO("[TcpSocketTransport] Client connected from {}:{}",
                 inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
+
+    // Multi-accept: hand a connected peer transport to the decode control
+    // server and keep listening so every prefill gets its own channel.
+    if (acceptHandler_) {
+      auto peer = fromConnectedFd(std::move(accepted));
+      if (peer) {
+        acceptHandler_(std::move(peer));
+      }
+      continue;
+    }
+
+    peerSocket.store(accepted.get(), std::memory_order_release);
+    connected = true;
     notifyConnectionEstablished();
 
     while (running && connected && !stopToken.stop_requested()) {

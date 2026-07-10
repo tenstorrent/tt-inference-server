@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <span>
 #include <stop_token>
@@ -26,12 +27,19 @@ namespace tt::sockets {
 /**
  * @brief TCP socket transport using raw POSIX sockets.
  *
- * Original transport implementation — length-prefixed framing over a single
- * TCP connection with keepalive and automatic reconnect.
+ * Length-prefixed framing with keepalive. Client mode auto-reconnects.
+ * Server mode either:
+ *   - legacy single-peer (default): accept one client, hold until disconnect;
+ *   - multi-accept: when enableMultiAccept() is set before start(), every
+ *     accepted FD becomes a peer transport handed to the handler and the loop
+ *     keeps accepting — required so multiple prefills share one decode port.
  */
 class TcpSocketTransport : public ISocketTransport,
                            protected SocketTransportState {
  public:
+  /// Invoked on the accept thread with a connected peer transport.
+  using AcceptHandler = sockets::ISocketTransport::AcceptHandler;
+
   TcpSocketTransport() = default;
   TcpSocketTransport(const TcpSocketTransport&) = delete;
   TcpSocketTransport& operator=(const TcpSocketTransport&) = delete;
@@ -39,8 +47,16 @@ class TcpSocketTransport : public ISocketTransport,
   TcpSocketTransport& operator=(TcpSocketTransport&&) = delete;
   ~TcpSocketTransport() override;
 
+  /// Wrap an already-connected peer FD (no connect/accept thread).
+  static std::shared_ptr<TcpSocketTransport> fromConnectedFd(
+      tt::utils::ScopedFd connectedFd);
+
   bool initializeAsServer(uint16_t port) override;
   bool initializeAsClient(const std::string& host, uint16_t port) override;
+
+  /// Multi-accept mode: must be set BEFORE start(). Each accept builds a
+  /// fromConnectedFd peer and invokes the handler; the listen loop continues.
+  bool enableMultiAccept(AcceptHandler handler) override;
 
   void start() override;
   void stop() override;
@@ -68,13 +84,14 @@ class TcpSocketTransport : public ISocketTransport,
                           bool returnIfNoInitialData);
 
   std::string host;
-  uint16_t port;
+  uint16_t port = 0;
 
   tt::utils::ScopedFd serverSocket;
   tt::utils::ScopedFd clientSocket;
   std::atomic<int> peerSocket{-1};
 
   std::jthread connectionThread;
+  AcceptHandler acceptHandler_;
 
   mutable std::mutex socketMutex;
 };

@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -90,6 +91,14 @@ class ISocketTransport {
 
   virtual void setReconnectBackoff(std::chrono::milliseconds /*initialDelay*/,
                                    std::chrono::milliseconds /*maxDelay*/) {}
+
+  /// Optional multi-accept for listen sockets. Handler receives a connected
+  /// peer transport (ownership shared). Default returns false (single-peer /
+  /// fake transports). TcpSocketTransport returns true after arming the
+  /// accept loop — caller must start() afterward.
+  using AcceptHandler =
+      std::function<void(std::shared_ptr<ISocketTransport> peer)>;
+  virtual bool enableMultiAccept(AcceptHandler /*handler*/) { return false; }
 };
 
 }  // namespace tt::sockets

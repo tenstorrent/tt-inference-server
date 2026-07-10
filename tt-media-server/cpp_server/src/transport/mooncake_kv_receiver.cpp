@@ -3,6 +3,7 @@
 
 #include "transport/mooncake_kv_receiver.hpp"
 
+#include <mutex>
 #include <utility>
 
 #include "utils/logger.hpp"
@@ -67,20 +68,17 @@ MooncakeKvReceiver::~MooncakeKvReceiver() {
   }
 }
 
+std::size_t MooncakeKvReceiver::pendingCount() const {
+  std::lock_guard<std::mutex> lock(pendingMutex_);
+  return pending_.size();
+}
+
 std::optional<std::string> MooncakeKvReceiver::prepareMirror(
     const KvSlice& slice, uint64_t uuid) {
   if (!registered_) {
     TT_LOG_ERROR(
         "[MooncakeKvReceiver] prepareMirror(uuid={}): mirror not registered",
         uuid);
-    return std::nullopt;
-  }
-
-  // Reject a duplicate uuid: emplace below would not overwrite, so the stale
-  // Pending would linger and the second drain would be lost.
-  if (pending_.find(uuid) != pending_.end()) {
-    TT_LOG_ERROR(
-        "[MooncakeKvReceiver] prepareMirror(uuid={}): already prepared", uuid);
     return std::nullopt;
   }
 
@@ -121,7 +119,18 @@ std::optional<std::string> MooncakeKvReceiver::prepareMirror(
   }
 
   const std::size_t n = plan.chunks.size();
-  pending_.emplace(uuid, std::move(plan));
+  {
+    std::lock_guard<std::mutex> lock(pendingMutex_);
+    // Reject a duplicate uuid: emplace below would not overwrite, so the stale
+    // Pending would linger and the second drain would be lost.
+    if (pending_.find(uuid) != pending_.end()) {
+      TT_LOG_ERROR(
+          "[MooncakeKvReceiver] prepareMirror(uuid={}): already prepared",
+          uuid);
+      return std::nullopt;
+    }
+    pending_.emplace(uuid, std::move(plan));
+  }
   TT_LOG_INFO(
       "[MooncakeKvReceiver] prepareMirror(uuid={}) ready: {} chunks, "
       "segment={}",
@@ -130,14 +139,18 @@ std::optional<std::string> MooncakeKvReceiver::prepareMirror(
 }
 
 bool MooncakeKvReceiver::drain(uint64_t uuid) {
-  const auto it = pending_.find(uuid);
-  if (it == pending_.end()) {
-    TT_LOG_ERROR("[MooncakeKvReceiver] drain(uuid={}): no prepared mirror",
-                 uuid);
-    return false;
+  HostKvPlan plan;
+  {
+    std::lock_guard<std::mutex> lock(pendingMutex_);
+    const auto it = pending_.find(uuid);
+    if (it == pending_.end()) {
+      TT_LOG_ERROR("[MooncakeKvReceiver] drain(uuid={}): no prepared mirror",
+                   uuid);
+      return false;
+    }
+    plan = it->second;
   }
 
-  const HostKvPlan& plan = it->second;
   bool ok = true;
   // Selective: write back only this migration's chunks (fan-out: each replica
   // on this host) from the shared mirror, never the untouched span of the
@@ -173,7 +186,8 @@ bool MooncakeKvReceiver::drain(uint64_t uuid) {
   // and stale KV, so the caller must not consume the slot until a drain
   // succeeds (see README "Contract for a higher-layer caller").
   if (ok) {
-    pending_.erase(it);
+    std::lock_guard<std::mutex> lock(pendingMutex_);
+    pending_.erase(uuid);
   }
   TT_LOG_INFO("[MooncakeKvReceiver] drain(uuid={}) -> {}", uuid,
               ok ? "OK" : "PARTIAL (retryable)");

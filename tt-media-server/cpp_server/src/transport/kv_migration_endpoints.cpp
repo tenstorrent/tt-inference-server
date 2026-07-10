@@ -3,7 +3,6 @@
 
 #include "transport/kv_migration_endpoints.hpp"
 
-#include <thread>
 #include <utility>
 
 #include "utils/logger.hpp"
@@ -91,22 +90,68 @@ KvMigrationReceiverServer::KvMigrationReceiverServer(
 
 KvMigrationReceiverServer::~KvMigrationReceiverServer() { stop(); }
 
+void KvMigrationReceiverServer::startSingleSession(
+    std::shared_ptr<sockets::ISocketTransport> transport) {
+  channel_ = std::make_unique<KvControlChannel>(std::move(transport),
+                                                receive_timeout_,
+                                                poll_interval_);
+  orchestrator_ = std::make_unique<KvMigrationReceiver>(*channel_, receiver_,
+                                                        local_table_blob_);
+  thread_ = std::thread([this] { orchestrator_->run(); });
+}
+
+void KvMigrationReceiverServer::onAccept(
+    std::shared_ptr<sockets::ISocketTransport> peer) {
+  if (!peer) {
+    TT_LOG_ERROR(
+        "[KvMigrationReceiverServer] null peer transport on port {}", port_);
+    return;
+  }
+
+  auto session = std::make_unique<Session>();
+  session->transport = std::move(peer);
+  session->channel = std::make_unique<KvControlChannel>(
+      session->transport, receive_timeout_, poll_interval_);
+  session->orchestrator = std::make_unique<KvMigrationReceiver>(
+      *session->channel, receiver_, local_table_blob_);
+  auto* orch = session->orchestrator.get();
+  session->thread = std::thread([orch] { orch->run(); });
+
+  std::size_t active = 0;
+  {
+    std::lock_guard<std::mutex> lock(sessionsMutex_);
+    sessions_.push_back(std::move(session));
+    active = sessions_.size();
+  }
+  TT_LOG_INFO(
+      "[KvMigrationReceiverServer] accepted prefill control session on :{} "
+      "(active={})",
+      port_, active);
+}
+
 bool KvMigrationReceiverServer::start() {
   if (running_) {
     return true;
   }
-  transport_ = factory_ ? factory_(port_) : nullptr;
-  if (!transport_) {
+  listenTransport_ = factory_ ? factory_(port_) : nullptr;
+  if (!listenTransport_) {
     TT_LOG_ERROR("[KvMigrationReceiverServer] no server transport on port {}",
                  port_);
     return false;
   }
-  channel_ = std::make_unique<KvControlChannel>(transport_, receive_timeout_,
-                                                poll_interval_);
-  orchestrator_ = std::make_unique<KvMigrationReceiver>(*channel_, receiver_,
-                                                        local_table_blob_);
+
+  // Production TCP: multi-accept so every prefill gets a session.
+  // Unit-test fakes: enableMultiAccept returns false — single connected peer.
+  if (listenTransport_->enableMultiAccept([this](
+          std::shared_ptr<sockets::ISocketTransport> peer) {
+        onAccept(std::move(peer));
+      })) {
+    listenTransport_->start();
+  } else {
+    startSingleSession(listenTransport_);
+  }
+
   running_ = true;
-  thread_ = std::thread([this] { orchestrator_->run(); });
   TT_LOG_INFO("[KvMigrationReceiverServer] listening on port {}", port_);
   return true;
 }
@@ -116,15 +161,31 @@ void KvMigrationReceiverServer::stop() {
     return;
   }
   running_ = false;
-  // Tearing the transport down unblocks the receive loop (a real socket drops
-  // the connection; the loopback fake closes its inbound queue), so
-  // KvMigrationReceiver::run() observes CLOSED and returns.
-  if (transport_) {
-    transport_->stop();
+
+  if (listenTransport_) {
+    listenTransport_->stop();
   }
+
+  {
+    std::lock_guard<std::mutex> lock(sessionsMutex_);
+    for (auto& session : sessions_) {
+      if (session->transport) {
+        session->transport->stop();
+      }
+      if (session->thread.joinable()) {
+        session->thread.join();
+      }
+    }
+    sessions_.clear();
+  }
+
   if (thread_.joinable()) {
     thread_.join();
   }
+  orchestrator_.reset();
+  channel_.reset();
+  listenTransport_.reset();
+
   TT_LOG_INFO("[KvMigrationReceiverServer] stopped (port {})", port_);
 }
 
