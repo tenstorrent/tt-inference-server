@@ -538,9 +538,11 @@ def parse_arguments():
     spec_decode_group.add_argument(
         "--spec-decode-preset",
         type=str,
-        choices=["ci", "full"],
+        choices=["ci", "full", "acceptance"],
         default="full",
-        help="Preset for --spec-decode (default: full). 'ci' is a short regression sweep.",
+        help="Preset for --spec-decode (default: full). 'ci' is a short regression sweep. "
+        "'acceptance' skips the throughput/concurrency speed sweep and runs a short "
+        "concurrency-1 pass per SPEED-Bench category for acceptance stats only (fast).",
     )
     spec_decode_group.add_argument(
         "--spec-decode-warmup-requests",

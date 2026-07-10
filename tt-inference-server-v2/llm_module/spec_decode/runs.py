@@ -53,6 +53,25 @@ SPEED_BENCH_QUALITATIVE_NUM_PROMPTS = 80
 # ``--extra-inputs max_completion_tokens:<N>`` (a ceiling, not a fixed length).
 SPEC_DECODE_MAX_COMPLETION_TOKENS = 8192
 
+# The 'acceptance' preset is for GPU eval runs that only care about the
+# speculative-decoding stats (acceptance rate + committed tokens per pass /
+# mean accepted length), not serving speed. Those stats come from the
+# vllm:spec_decode_* Prometheus counter deltas, so we can drop the whole
+# throughput x concurrency grid and run a single short pass per qualitative
+# category. Design choices that keep it both fast and correct:
+#   * concurrency 1 — acceptance is aggregated from counters and is
+#     concurrency-independent, EXCEPT that vLLM can throttle speculation at
+#     large batch sizes (disable_by_batch_size). Running serially measures the
+#     model's intrinsic acceptance without that confound.
+#   * a small prompt count per category — even a few hundred capped-length
+#     generations produce tens of thousands of draft tokens, plenty for a
+#     stable acceptance estimate.
+#   * a tight output cap — bounds wall-clock; the speed columns are ignored.
+# Keeping all 11 categories preserves domain coverage (acceptance varies a lot
+# between code, prose, math, ...), which is the point of the number.
+ACCEPTANCE_NUM_PROMPTS_PER_CATEGORY = 16
+ACCEPTANCE_MAX_COMPLETION_TOKENS = 512
+
 
 @dataclass(frozen=True)
 class SpecDecodeRun:
@@ -118,6 +137,19 @@ def _throughput_runs(isls: Tuple[str, ...]) -> List[SpecDecodeRun]:
     ]
 
 
+def _acceptance_runs(categories: Tuple[str, ...]) -> List[SpecDecodeRun]:
+    """Short concurrency-1 pass per category for acceptance stats only."""
+    return [
+        SpecDecodeRun(
+            public_dataset=f"speed_bench_{category}",
+            max_concurrency=1,
+            num_prompts=ACCEPTANCE_NUM_PROMPTS_PER_CATEGORY,
+            max_completion_tokens=ACCEPTANCE_MAX_COMPLETION_TOKENS,
+        )
+        for category in categories
+    ]
+
+
 SPEC_DECODE_SWEEP: List[SpecDecodeRun] = _qualitative_runs(
     SPEED_BENCH_QUALITATIVE_CATEGORIES
 ) + _throughput_runs(SPEED_BENCH_THROUGHPUT_ISLS)
@@ -126,9 +158,15 @@ SPEC_DECODE_CI_SWEEP: List[SpecDecodeRun] = _qualitative_runs(
     CI_QUALITATIVE_CATEGORIES
 ) + _throughput_runs(CI_THROUGHPUT_ISLS)
 
+# Acceptance-only: every qualitative category, no throughput/concurrency sweep.
+SPEC_DECODE_ACCEPTANCE_SWEEP: List[SpecDecodeRun] = _acceptance_runs(
+    SPEED_BENCH_QUALITATIVE_CATEGORIES
+)
+
 SPEC_DECODE_PRESETS = {
     "full": SPEC_DECODE_SWEEP,
     "ci": SPEC_DECODE_CI_SWEEP,
+    "acceptance": SPEC_DECODE_ACCEPTANCE_SWEEP,
 }
 
 
@@ -138,7 +176,11 @@ def build_runs(preset: str = "full") -> List[SpecDecodeRun]:
     ``full`` (default) runs every qualitative category plus the whole
     throughput ISL x concurrency grid. ``ci`` runs only the 'coding'
     qualitative category plus the 32k throughput ISL across the
-    concurrency sweep (32k_maxcon-{1,16,64}).
+    concurrency sweep (32k_maxcon-{1,16,64}). ``acceptance`` runs a short
+    concurrency-1 pass over every qualitative category and skips the
+    throughput sweep entirely -- for GPU evals that only need the
+    spec-decode acceptance stats (acceptance rate / committed tokens per
+    pass), not serving speed.
     """
     if preset not in SPEC_DECODE_PRESETS:
         raise ValueError(
@@ -162,6 +204,7 @@ def summarize_runs(runs: List[SpecDecodeRun]) -> str:
 
 
 __all__ = [
+    "SPEC_DECODE_ACCEPTANCE_SWEEP",
     "SPEC_DECODE_CI_SWEEP",
     "SPEC_DECODE_PRESETS",
     "SPEC_DECODE_SWEEP",

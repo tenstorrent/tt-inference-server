@@ -326,14 +326,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--spec-decode-preset",
         type=str,
-        choices=["ci", "full"],
+        choices=["ci", "full", "acceptance"],
         default="full",
         help=(
             "Preset for --spec-decode (default: full). 'ci' is a short "
             "regression-friendly sweep (the 'coding' qualitative category "
             "plus speed_bench_throughput_32k at concurrency 1/16/64), "
             "'full' is every SPEED-Bench qualitative category plus the "
-            "whole throughput ISL x concurrency grid."
+            "whole throughput ISL x concurrency grid. 'acceptance' skips "
+            "the throughput/concurrency sweep and runs a short "
+            "concurrency-1 pass per qualitative category -- for GPU evals "
+            "that only need the acceptance stats (acceptance rate / "
+            "committed tokens per pass), not serving speed."
         ),
     )
     parser.add_argument(

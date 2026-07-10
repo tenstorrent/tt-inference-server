@@ -18,6 +18,7 @@ from .metrics import (
     scrape_spec_decode_metrics,
 )
 from .runs import (
+    SPEC_DECODE_ACCEPTANCE_SWEEP,
     SPEC_DECODE_CI_SWEEP,
     SPEC_DECODE_PRESETS,
     SPEC_DECODE_SWEEP,
@@ -27,6 +28,7 @@ from .runs import (
 )
 
 __all__ = [
+    "SPEC_DECODE_ACCEPTANCE_SWEEP",
     "SPEC_DECODE_CI_SWEEP",
     "SPEC_DECODE_PRESETS",
     "SPEC_DECODE_SWEEP",
