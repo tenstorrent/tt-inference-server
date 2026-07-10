@@ -166,6 +166,44 @@ def test_non_routed_media_benchmarks_stays_on_v1():
     assert v2_bridge.can_route_to_v2(spec, rc) is False
 
 
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "Wan2.2-T2V-A14B-Diffusers",
+        "Wan2.2-I2V-A14B-Diffusers",
+        "Wan2.2-I2V-A14B-Prodia",
+        "Wan2.2-I2V-AniSora-V3.2",
+        "Wan2.2-I2V-Distill-LightX2V",
+        "Wan2.2-I2V-LoRA",
+    ],
+)
+@pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
+def test_wan_video_routes_to_v2(model_name, workflow):
+    spec, rc = _spec(ModelType.VIDEO, name=model_name), _rc(workflow=workflow)
+    assert v2_bridge._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is False
+    assert v2_bridge.is_v2_routed_model(spec) is False
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
+
+
+@pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
+def test_mochi_video_routes_to_v2(workflow):
+    spec, rc = _spec(ModelType.VIDEO, name="mochi-1-preview"), _rc(workflow=workflow)
+    assert v2_bridge._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is False
+    assert v2_bridge.is_v2_routed_model(spec) is False
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
+
+
+@pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
+def test_any_video_model_routes_to_v2(workflow):
+    """All VIDEO model types route to v2, not only names in _V2_ROUTED_MODELS."""
+    spec, rc = (
+        _spec(ModelType.VIDEO, name="some-unlisted-video-model"),
+        _rc(workflow=workflow),
+    )
+    assert v2_bridge.is_v2_routed_model(spec) is False
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
+
+
 def test_build_llm_bench_cmd_forwards_tools_and_jwt():
     v2_dir = Path(__file__).resolve().parents[2] / "tt-inference-server-v2"
     cmd = v2_bridge._build_llm_bench_cmd(

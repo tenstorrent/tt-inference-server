@@ -87,8 +87,6 @@ def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
         )
     if model_type == ModelType.EMBEDDING:
         return "embedding"
-    if model_type == ModelType.VIDEO:
-        return "video"
     if model_type == ModelType.TEXT_TO_SPEECH:
         return "tts"
 
@@ -412,32 +410,6 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "req_tput", 0.0
             ),
             "performance_check": data.get("performance_check", ReportCheckTypes.NA),
-        }
-        return format_metrics(metrics)
-
-    if params.get("task_type") == "video":
-        # For VIDEO benchmarks, extract data from JSON content
-        logger.info(f"Processing VIDEO benchmark file: {filename}")
-        benchmarks_data = data.get("benchmarks: ", data)
-        video_benchmarks = benchmarks_data.get("benchmarks", {})
-        metrics = {
-            "timestamp": params["timestamp"],
-            "model": data.get("model", ""),
-            "model_name": data.get("model", ""),
-            "model_id": data.get("model", ""),
-            "backend": "video",
-            "device": params["device"],
-            "filename": filename,
-            "task_type": "video",
-            "num_requests": video_benchmarks.get("num_requests", 0),
-            "mean_latency_ms": video_benchmarks.get("latency", 0) * 1000,
-            "inference_steps_per_second": video_benchmarks.get(
-                "inference_steps_per_second", 0
-            ),
-            "num_inference_steps": video_benchmarks.get("num_inference_steps", 0),
-            "throughput_rps": video_benchmarks.get("throughput_rps"),
-            "performance_check": data.get("performance_check", ReportCheckTypes.NA),
-            **_extract_tail_latencies_ms(video_benchmarks),
         }
         return format_metrics(metrics)
 
@@ -795,29 +767,6 @@ def create_cnn_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     return display_dict
 
 
-def create_video_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
-    """Create display dictionary for video benchmarks."""
-    logger.info(f"Video result: {json.dumps(result, indent=2)}")
-    display_cols: List[Tuple[str, str]] = [
-        ("backend", "Source"),
-        ("num_requests", "Num Requests"),
-        ("num_inference_steps", "Num Inference Steps"),
-        ("mean_latency_ms", "Latency (ms)"),
-        ("p50_latency_ms", "P50 Latency (ms)"),
-        ("p90_latency_ms", "P90 Latency (ms)"),
-        ("p95_latency_ms", "P95 Latency (ms)"),
-        ("throughput_rps", "Tput (RPS)"),
-        ("performance_check", "Performance Check"),
-    ]
-
-    display_dict = {}
-    for col_name, display_header in display_cols:
-        value = result.get(col_name, NOT_MEASURED_STR)
-        display_dict[display_header] = str(value)
-
-    return display_dict
-
-
 def sanitize_cell(text: str) -> str:
     text = str(text).replace("|", "\\|").replace("\n", " ")
     return text.strip()
@@ -1108,7 +1057,7 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
-    # Separate text, vlm, image, asr, embedding, cnn and video benchmarks
+    # Separate text, vlm, image, asr, embedding and cnn benchmarks
     text_results = [r for r in results if r.get("task_type") == "text"]
     vlm_results = [r for r in results if r.get("task_type") == "vlm"]
     image_results = [r for r in results if r.get("task_type") == "image"]
@@ -1116,7 +1065,6 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     tts_results = [r for r in results if r.get("task_type") == "tts"]
     embedding_results = [r for r in results if r.get("task_type") == "embedding"]
     cnn_results = [r for r in results if r.get("task_type") == "cnn"]
-    video_results = [r for r in results if r.get("task_type") == "video"]
     structured_results = [
         r for r in results if r.get("task_type") == "structured_output"
     ]
@@ -1185,14 +1133,6 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         cnn_markdown_str = get_markdown_table(cnn_display_results)
         cnn_section = f"#### CNN Benchmark Sweeps for {model_name} on {device}\n\n{cnn_markdown_str}"
         markdown_sections.append(cnn_section)
-
-    if video_results:
-        video_display_results = [
-            create_video_display_dict(res) for res in video_results
-        ]
-        video_markdown_str = get_markdown_table(video_display_results)
-        video_section = f"#### Video Benchmark Sweeps for {model_name} on {device}\n\n{video_markdown_str}"
-        markdown_sections.append(video_section)
 
     # Combine sections
     if markdown_sections:
