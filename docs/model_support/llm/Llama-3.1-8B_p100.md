@@ -30,25 +30,19 @@ See [prerequisites](../../prerequisites.md) for system software setup, e.g. for 
 
 This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal/README.md) inference engine.
 
-**docker run command**
+Create a `.env` file in the repo root with the following before launching:
 
 ```bash
-docker run \
-  --env "HF_TOKEN=$HF_TOKEN" \
-  --ipc host \
-  --publish 8000:8000 \
-  --device /dev/tenstorrent \
-  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
-  --volume volume_id_Llama-3.1-8B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-55fd115-aa4ae1e \
-  --model Llama-3.1-8B \
-  --tt-device p100
+HF_TOKEN=<replace-with-your-hugging-face-token>
+JWT_SECRET=<replace-with-random-secret>
+MAX_PREFILL_CHUNK_SIZE=2
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model Llama-3.1-8B --device p100 --workflow server --docker-server
+python3 run.py --model Llama-3.1-8B --device p100 --workflow server --docker-server \
+  --vllm-override-args '{"max_model_len": 1024}'
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
