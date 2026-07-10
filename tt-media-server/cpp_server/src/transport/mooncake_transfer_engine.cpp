@@ -3,6 +3,7 @@
 
 #include "transport/mooncake_transfer_engine.hpp"
 
+#include <algorithm>
 #include <utility>
 
 #include "utils/logger.hpp"
@@ -141,6 +142,7 @@ bool MooncakeTransferEngine::registerLocalMemory(void* addr,
         length, rc);
     return false;
   }
+  registeredLocalBuffers_.push_back(addr);
   return true;
 }
 
@@ -155,7 +157,21 @@ bool MooncakeTransferEngine::unregisterLocalMemory(void* addr) {
         "[MooncakeTransferEngine] unregisterLocalMemory failed (rc={})", rc);
     return false;
   }
+  const auto it = std::find(registeredLocalBuffers_.begin(),
+                            registeredLocalBuffers_.end(), addr);
+  if (it != registeredLocalBuffers_.end()) {
+    registeredLocalBuffers_.erase(it);
+  }
   return true;
+}
+
+void* MooncakeTransferEngine::firstRegisteredLocalBuffer() const {
+  return registeredLocalBuffers_.empty() ? nullptr
+                                         : registeredLocalBuffers_.front();
+}
+
+std::size_t MooncakeTransferEngine::registeredLocalBufferCount() const {
+  return registeredLocalBuffers_.size();
 }
 
 SegmentHandle MooncakeTransferEngine::openSegment(
@@ -371,6 +387,15 @@ bool MooncakeTransferEngine::unregisterLocalMemory(void* /*addr*/) {
       "[MooncakeTransferEngine] unregisterLocalMemory unavailable (built "
       "without Mooncake)");
   return false;
+}
+
+void* MooncakeTransferEngine::firstRegisteredLocalBuffer() const {
+  return registeredLocalBuffers_.empty() ? nullptr
+                                         : registeredLocalBuffers_.front();
+}
+
+std::size_t MooncakeTransferEngine::registeredLocalBufferCount() const {
+  return registeredLocalBuffers_.size();
 }
 
 SegmentHandle MooncakeTransferEngine::openSegment(

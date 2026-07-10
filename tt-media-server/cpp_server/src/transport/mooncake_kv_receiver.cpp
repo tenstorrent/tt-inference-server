@@ -41,6 +41,18 @@ MooncakeKvReceiver::MooncakeKvReceiver(
         mirror_.totalBytes());
     return;
   }
+  // Remote WRITEs always target buffers[0]. Table exchange must have
+  // unregistered its recv region first so the mirror lands at index 0.
+  // Skip when the engine does not track registration order (test fakes).
+  if (engine_->registeredLocalBufferCount() > 0 &&
+      engine_->firstRegisteredLocalBuffer() != mirror_.base()) {
+    TT_LOG_ERROR(
+        "[MooncakeKvReceiver] mirror is not buffers[0] after register "
+        "(count={}); migration would write the wrong region — aborting",
+        engine_->registeredLocalBufferCount());
+    engine_->unregisterLocalMemory(mirror_.base());
+    return;
+  }
   registered_ = true;
   TT_LOG_INFO(
       "[MooncakeKvReceiver] registered mirror: {} bytes, {} regions, "
