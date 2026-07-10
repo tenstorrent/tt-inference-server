@@ -12,9 +12,9 @@ verifies:
 * differing parameters yield distinct job IDs (each request is unique),
 * every submission returns 202 Accepted.
 
-Mirrors :mod:`server_tests.test_cases.video_generation_param_test` but
-targets the I2V endpoint and includes a fixed conditioning frame in
-each request.
+Mirrors :mod:`test_module.load_param_tests.video_generation_param_test` but
+targets the I2V endpoint and includes a fixed conditioning frame in each
+request.
 
 Requires the server to be booted with ``MODEL_RUNNER=tt-wan2.2-i2v``.
 """
@@ -26,22 +26,26 @@ import json
 import logging
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import aiohttp
+from report_module.schema import Block
 
-from server_tests.base_test import BaseTest
+from .._test_common import BaseTest, HardwareRequirement, TestConfig
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
+# Constants
 ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_reference.json"
 
-# Conditioning frame reused from the I2V happy-path test fixture so we
-# don't ship a duplicate asset for parameter-sweep coverage.
+# Fixture is sourced from the v1 server_tests datasets directory, which is
+# the canonical location used by other v2 vision tests as well
+# (see e.g. video_generation_i2v_test.py).
 FIXTURE_IMAGE_PATH = (
-    Path(__file__).parent.parent
-    / "datasets"
-    / "imagenet_subset"
-    / "imagenet_002_volcano.jpg"
+    Path("server_tests") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
 )
 
 HTTP_ACCEPTED = 202
@@ -88,6 +92,10 @@ def _build_payload(
 
 class VideoGenerationI2VParamTest(BaseTest):
     """Parameter-sweep happy-path coverage for the I2V endpoint."""
+
+    KIND = "video_generation_i2v_param"
+    TASK_TYPE = "video"
+    HARDWARE_REQUIREMENT = HardwareRequirement.FULL_BOARD
 
     async def _run_specific_test_async(self):
         self.url = f"{self.base_url}/v1/videos/generations/i2v"
@@ -334,3 +342,18 @@ class VideoGenerationI2VParamTest(BaseTest):
         if model_name in reference_data:
             return reference_data[model_name].get("num_inference_steps", default)
         return default
+
+
+def run_video_generation_i2v_param(
+    ctx: "MediaContext", targets: dict | None = None
+) -> Block:
+    """Run :class:`VideoGenerationI2VParamTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return VideoGenerationI2VParamTest(test_config, targets or {}, ctx=ctx).run_tests()

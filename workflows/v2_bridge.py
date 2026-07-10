@@ -145,6 +145,8 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
         return True
     if _is_llm_eval_run(wf, model_spec):
         return True
+    if model_spec.model_type == ModelType.VIDEO:
+        return wf in _V2_WORKFLOW_NAMES
     if not is_v2_routed_model(model_spec):
         return False
     return wf in _V2_WORKFLOW_NAMES
