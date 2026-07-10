@@ -638,8 +638,7 @@ exchangeTablesWithPeers(ITransferEngine& engine, const WorkerConfig& cfg,
 
   // Publish our sorted peer list so each peer knows which remote slot to use
   // when WRITEing into us.
-  const std::string peersKey =
-      std::string(K_TABLE_PEERS_KEY_PREFIX) + cfg.name;
+  const std::string peersKey = std::string(K_TABLE_PEERS_KEY_PREFIX) + cfg.name;
   const std::string peersCsv = joinCsv(localPeers);
   if (!engine.publishMetadata(peersKey, peersCsv)) {
     TT_LOG_ERROR("[worker] failed to publish {} -> {}", peersKey, peersCsv);
@@ -647,10 +646,10 @@ exchangeTablesWithPeers(ITransferEngine& engine, const WorkerConfig& cfg,
   }
   TT_LOG_INFO("[worker] published {} -> {}", peersKey, peersCsv);
 
-  PeerTableExchange xchg(PeerTableExchangeConfig{
-      /*timeoutSec=*/K_DISCOVERY_TIMEOUT_MS / 1000,
-      /*pollIntervalMs=*/1,
-      /*maxTableBytes=*/K_MAX_TABLE_BYTES});
+  PeerTableExchange xchg(
+      PeerTableExchangeConfig{/*timeoutSec=*/K_DISCOVERY_TIMEOUT_MS / 1000,
+                              /*pollIntervalMs=*/1,
+                              /*maxTableBytes=*/K_MAX_TABLE_BYTES});
   std::vector<std::uint8_t> recvBuf(xchg.requiredRecvBytes(localPeers.size()),
                                     0);
   if (engine.registeredLocalBufferCount() > 0) {
@@ -678,8 +677,7 @@ exchangeTablesWithPeers(ITransferEngine& engine, const WorkerConfig& cfg,
     bool ok = true;
     for (std::size_t i = 0; i < localPeers.size(); ++i) {
       const auto& peerName = localPeers[i];
-      auto remoteIdx =
-          lookupRemoteSlotIndex(engine, peerName, cfg.name, stop);
+      auto remoteIdx = lookupRemoteSlotIndex(engine, peerName, cfg.name, stop);
       if (!remoteIdx) {
         ok = false;
         break;
@@ -757,7 +755,8 @@ int runPrefill(const WorkerConfig& cfg) {
     }
     decodeTable = decode->table;
   } else {
-    TT_LOG_ERROR("[worker] prefill needs peers for TE exchange or --decode-table");
+    TT_LOG_ERROR(
+        "[worker] prefill needs peers for TE exchange or --decode-table");
     return 1;
   }
 
@@ -779,8 +778,9 @@ int runPrefill(const WorkerConfig& cfg) {
         "hosts will fail their slice");
   }
 
-  KvMigrationMultiHostSender sender(engine, *device, prefill->table, decodeTable,
-                                    cfg.host, connector.channels(), &health);
+  KvMigrationMultiHostSender sender(engine, *device, prefill->table,
+                                    decodeTable, cfg.host, connector.channels(),
+                                    &health);
   auto executor = std::make_unique<MooncakeMigrationExecutor>(sender);
 
   const std::string brokers =
@@ -868,8 +868,7 @@ int runDecode(const WorkerConfig& cfg) {
   // TE table exchange BEFORE mirror registration so buffers[0] is the exchange
   // recv slot; then unregister and the mirror becomes buffers[0] for migration.
   if (!cfg.discover_peers.empty()) {
-    auto exchanged =
-        exchangeTablesWithPeers(*engine, cfg, decode->blob, gStop);
+    auto exchanged = exchangeTablesWithPeers(*engine, cfg, decode->blob, gStop);
     if (!exchanged) {
       TT_LOG_ERROR("[worker] decode '{}' TE table exchange failed", cfg.name);
       return 1;

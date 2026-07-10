@@ -361,9 +361,9 @@ TEST(PeerTableExchange, RoundTripTwoPeers) {
   std::optional<std::map<std::string, std::vector<std::uint8_t>>> gotA;
   std::optional<std::map<std::string, std::vector<std::uint8_t>>> gotB;
   std::thread tB([&] {
-    gotB = xchg.exchange(engineB,
-                         {{"peer-a", Slot{kHandleA, /*local=*/0, /*remote=*/0}}},
-                         "peer-b", tableB, recvB.data());
+    gotB = xchg.exchange(
+        engineB, {{"peer-a", Slot{kHandleA, /*local=*/0, /*remote=*/0}}},
+        "peer-b", tableB, recvB.data());
   });
   gotA = xchg.exchange(engineA,
                        {{"peer-b", Slot{kHandleB, /*local=*/0, /*remote=*/0}}},
@@ -421,11 +421,10 @@ TEST(PeerTableExchange, MultiPeerFanInIsolatedSlots) {
         engD1, {{"prefill", Slot{kPrefill, /*local=*/0, /*remote=*/1}}},
         "decode-1", tableD1, recvD1.data());
   });
-  gotP = xchg.exchange(
-      engP,
-      {{"decode-0", Slot{kD0, /*local=*/0, /*remote=*/0}},
-       {"decode-1", Slot{kD1, /*local=*/1, /*remote=*/0}}},
-      "prefill", tableP, recvP.data());
+  gotP = xchg.exchange(engP,
+                       {{"decode-0", Slot{kD0, /*local=*/0, /*remote=*/0}},
+                        {"decode-1", Slot{kD1, /*local=*/1, /*remote=*/0}}},
+                       "prefill", tableP, recvP.data());
   t0.join();
   t1.join();
 
@@ -465,10 +464,9 @@ TEST(PeerTableExchange, RejectsOversizedLocalBlob) {
   std::vector<std::uint8_t> recv(xchg.requiredRecvBytes(1), 0);
   std::vector<std::uint8_t> big(8, 1);
   using Slot = PeerTableExchange::PeerSlot;
-  EXPECT_FALSE(xchg
-                   .exchange(engine, {{"p", Slot{1, 0, 0}}}, "self", big,
-                             recv.data())
-                   .has_value());
+  EXPECT_FALSE(
+      xchg.exchange(engine, {{"p", Slot{1, 0, 0}}}, "self", big, recv.data())
+          .has_value());
 }
 
 TEST(PeerTableExchange, EmptyPeersIsSuccess) {

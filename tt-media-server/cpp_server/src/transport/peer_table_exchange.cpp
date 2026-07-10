@@ -17,8 +17,7 @@ namespace tt::transport {
 namespace {
 
 bool isCancelled(const std::atomic<bool>* cancelToken) {
-  return cancelToken != nullptr &&
-         cancelToken->load(std::memory_order_relaxed);
+  return cancelToken != nullptr && cancelToken->load(std::memory_order_relaxed);
 }
 
 }  // namespace
