@@ -8,8 +8,12 @@
 #include "utils/logger.hpp"
 
 #ifdef TT_TRANSPORT_WITH_MOONCAKE
+#include <chrono>
 #include <cstdint>
+#include <cstdlib>  // setenv
+#include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "common.h"           // parseHostNameWithPort
@@ -26,6 +30,30 @@ namespace {
 // Map our transport selector to Mooncake's installTransport proto string.
 const char* protoString(TransportProtocol protocol) {
   return protocol == TransportProtocol::RDMA ? "rdma" : "tcp";
+}
+
+// Resolve a transfer's target_offset (relative to the remote segment) against
+// the segment's registered base address, mirroring Mooncake's TCP usage.
+// Returns std::nullopt if the segment has no registered buffer.
+std::optional<uint64_t> resolveRemoteAddr(mooncake::TransferEngine& engine,
+                                          mooncake::SegmentID segmentId,
+                                          uint64_t targetOffset) {
+  auto metadata = engine.getMetadata();
+  auto segmentDesc =
+      metadata ? metadata->getSegmentDescByID(segmentId) : nullptr;
+  if (!segmentDesc || segmentDesc->buffers.empty()) return std::nullopt;
+  return segmentDesc->buffers[0].addr + targetOffset;
+}
+
+// Poll interval while blocking on a submitted (batch) transfer. Small enough to
+// not add meaningful latency, large enough that we don't spin a core at 100%
+// and starve Mooncake's own transport progress threads for the transfer's
+// whole duration.
+constexpr auto K_POLL_INTERVAL = std::chrono::microseconds(50);
+
+mooncake::TransferRequest::OpCode toMooncakeOp(TransferOp op) {
+  return op == TransferOp::READ ? mooncake::TransferRequest::READ
+                                : mooncake::TransferRequest::WRITE;
 }
 
 }  // namespace
@@ -90,6 +118,19 @@ bool MooncakeTransferEngine::init(const EngineConfig& config) {
   }
 
   const char* proto = protoString(config.protocol);
+
+  // Mooncake's TCP transport defaults its connection pool OFF, which makes it
+  // open AND tear down a fresh TCP connection for every slice (see
+  // TcpTransport::getConnection: !enable_connection_pool_ => resolve+connect
+  // per transfer). A KV migration submits tens of thousands of small writes, so
+  // that per-slice connect/close dominates submitTransfer (measured ~3x
+  // slower). Enable pooling so sockets are reused. overwrite=0: an operator who
+  // set the var explicitly still wins. The flag is read when the transport is
+  // installed below, so this must precede installTransport().
+  if (config.protocol == TransportProtocol::TCP) {
+    ::setenv("MC_TCP_ENABLE_CONNECTION_POOL", "1", /*overwrite=*/0);
+  }
+
   impl_->transport = impl_->engine->installTransport(proto, nullptr);
   if (impl_->transport == nullptr) {
     TT_LOG_ERROR("[MooncakeTransferEngine] installTransport({}) failed", proto);
@@ -168,30 +209,23 @@ TransferStatus MooncakeTransferEngine::submitAndWait(
 
   const auto segmentId = static_cast<mooncake::SegmentID>(request.target);
 
-  // Resolve target_offset (relative to the remote segment) against the
-  // segment's registered base address, mirroring Mooncake's TCP usage.
-  auto metadata = impl_->engine->getMetadata();
-  auto segmentDesc =
-      metadata ? metadata->getSegmentDescByID(segmentId) : nullptr;
-  if (!segmentDesc || segmentDesc->buffers.empty()) {
+  const auto remoteAddr =
+      resolveRemoteAddr(*impl_->engine, segmentId, request.target_offset);
+  if (!remoteAddr) {
     TT_LOG_ERROR(
         "[MooncakeTransferEngine] submitAndWait: no registered buffer for "
         "segment {}",
         request.target);
     return result;
   }
-  const uint64_t remoteAddr =
-      segmentDesc->buffers[0].addr + request.target_offset;
 
   const mooncake::BatchID batchId = impl_->engine->allocateBatchID(1);
 
   mooncake::TransferRequest entry;
-  entry.opcode = request.op == TransferOp::READ
-                     ? mooncake::TransferRequest::READ
-                     : mooncake::TransferRequest::WRITE;
+  entry.opcode = toMooncakeOp(request.op);
   entry.source = request.local_addr;
   entry.target_id = segmentId;
-  entry.target_offset = remoteAddr;
+  entry.target_offset = *remoteAddr;
   entry.length = request.length;
 
   mooncake::Status s = impl_->engine->submitTransfer(batchId, {entry});
@@ -202,7 +236,9 @@ TransferStatus MooncakeTransferEngine::submitAndWait(
     return result;
   }
 
-  // Block until the single task completes or fails.
+  // Block until the single task completes or fails. Sleep between polls so we
+  // don't spin a core against Mooncake's own transport progress threads for the
+  // transfer's whole duration (same rationale as waitBatch).
   for (;;) {
     mooncake::TransferStatus status;
     mooncake::Status poll =
@@ -226,6 +262,129 @@ TransferStatus MooncakeTransferEngine::submitAndWait(
       result.transferred_bytes = status.transferred_bytes;
       break;
     }
+    std::this_thread::sleep_for(K_POLL_INTERVAL);
+  }
+
+  impl_->engine->freeBatchID(batchId);
+  return result;
+}
+
+TransferHandle MooncakeTransferEngine::submitBatch(
+    const std::vector<TransferRequest>& requests) {
+  TransferHandle handle;  // invalid until dispatched
+
+  if (requests.empty()) return handle;  // nothing to dispatch
+  if (!impl_->initialized) {
+    TT_LOG_ERROR("[MooncakeTransferEngine] submitBatch before init");
+    return handle;
+  }
+
+  // Translate every request into a Mooncake entry, resolving each target's
+  // remote base up front. A single bad request fails the whole batch: the
+  // caller submits chunks it needs to land together, so a partial batch would
+  // leave the migration in a half-written state.
+  const auto tResolve0 = std::chrono::steady_clock::now();
+  std::vector<mooncake::TransferRequest> entries;
+  entries.reserve(requests.size());
+  for (const TransferRequest& request : requests) {
+    if (request.target == K_INVALID_SEGMENT) {
+      TT_LOG_ERROR(
+          "[MooncakeTransferEngine] submitBatch: invalid segment in "
+          "batch");
+      return handle;
+    }
+    const auto segmentId = static_cast<mooncake::SegmentID>(request.target);
+    const auto remoteAddr =
+        resolveRemoteAddr(*impl_->engine, segmentId, request.target_offset);
+    if (!remoteAddr) {
+      TT_LOG_ERROR(
+          "[MooncakeTransferEngine] submitBatch: no registered buffer for "
+          "segment {}",
+          request.target);
+      return handle;
+    }
+    mooncake::TransferRequest entry;
+    entry.opcode = toMooncakeOp(request.op);
+    entry.source = request.local_addr;
+    entry.target_id = segmentId;
+    entry.target_offset = *remoteAddr;
+    entry.length = request.length;
+    entries.push_back(entry);
+  }
+
+  const auto tResolve1 = std::chrono::steady_clock::now();
+
+  // One batch sized to the whole request list, so all entries run concurrently
+  // across Mooncake's worker threads instead of one blocking round-trip each.
+  const mooncake::BatchID batchId =
+      impl_->engine->allocateBatchID(entries.size());
+  mooncake::Status s = impl_->engine->submitTransfer(batchId, entries);
+  if (!s.ok()) {
+    TT_LOG_ERROR(
+        "[MooncakeTransferEngine] submitTransfer(batch of {}) failed: "
+        "{}",
+        entries.size(), std::string(s.message()));
+    impl_->engine->freeBatchID(batchId);
+    return handle;
+  }
+  const auto tSubmit1 = std::chrono::steady_clock::now();
+
+  // Diagnostic: split submitBatch into our per-request resolve loop vs
+  // Mooncake's allocateBatchID+submitTransfer, to see which half dominates.
+  const auto ms = [](auto a, auto b) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count();
+  };
+  TT_LOG_INFO(
+      "[MooncakeTransferEngine] submitBatch: {} entries | resolveLoop={}ms | "
+      "allocateBatchID+submitTransfer={}ms",
+      entries.size(), ms(tResolve0, tResolve1), ms(tResolve1, tSubmit1));
+
+  // Return without blocking: the caller stages its next window while these run.
+  handle.value = static_cast<uint64_t>(batchId);
+  handle.valid = true;
+  return handle;
+}
+
+TransferStatus MooncakeTransferEngine::waitBatch(TransferHandle handle) {
+  TransferStatus result{TransferState::FAILED, 0};
+  if (!handle.valid) {
+    TT_LOG_ERROR("[MooncakeTransferEngine] waitBatch on invalid handle");
+    return result;
+  }
+  if (!impl_->initialized) {
+    TT_LOG_ERROR("[MooncakeTransferEngine] waitBatch before init");
+    return result;
+  }
+
+  const auto batchId = static_cast<mooncake::BatchID>(handle.value);
+
+  // Block on the aggregate batch status: COMPLETED only once every task
+  // finished, FAILED if any task failed. Sleep between polls so we don't spin a
+  // core against the transport threads for the batch's whole duration.
+  for (;;) {
+    mooncake::TransferStatus status;
+    mooncake::Status poll =
+        impl_->engine->getBatchTransferStatus(batchId, status);
+    if (!poll.ok()) {
+      TT_LOG_ERROR("[MooncakeTransferEngine] getBatchTransferStatus failed: {}",
+                   std::string(poll.message()));
+      break;
+    }
+    if (status.s == mooncake::TransferStatusEnum::COMPLETED) {
+      result.state = TransferState::COMPLETED;
+      result.transferred_bytes = status.transferred_bytes;
+      break;
+    }
+    if (status.s == mooncake::TransferStatusEnum::FAILED ||
+        status.s == mooncake::TransferStatusEnum::TIMEOUT ||
+        status.s == mooncake::TransferStatusEnum::CANCELED ||
+        status.s == mooncake::TransferStatusEnum::INVALID) {
+      TT_LOG_ERROR("[MooncakeTransferEngine] batch transfer failed (status={})",
+                   static_cast<int>(status.s));
+      result.transferred_bytes = status.transferred_bytes;
+      break;
+    }
+    std::this_thread::sleep_for(K_POLL_INTERVAL);
   }
 
   impl_->engine->freeBatchID(batchId);
@@ -301,6 +460,22 @@ TransferStatus MooncakeTransferEngine::submitAndWait(
       "target_offset={}) unavailable (built without Mooncake)",
       request.op == TransferOp::READ ? "read" : "write", request.length,
       request.target, request.target_offset);
+  return TransferStatus{TransferState::FAILED, 0};
+}
+
+TransferHandle MooncakeTransferEngine::submitBatch(
+    const std::vector<TransferRequest>& requests) {
+  TT_LOG_WARN(
+      "[MooncakeTransferEngine] submitBatch({} requests) unavailable (built "
+      "without Mooncake)",
+      requests.size());
+  return TransferHandle{};  // invalid
+}
+
+TransferStatus MooncakeTransferEngine::waitBatch(TransferHandle /*handle*/) {
+  TT_LOG_WARN(
+      "[MooncakeTransferEngine] waitBatch unavailable (built without "
+      "Mooncake)");
   return TransferStatus{TransferState::FAILED, 0};
 }
 

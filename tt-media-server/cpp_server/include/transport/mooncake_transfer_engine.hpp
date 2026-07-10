@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "transport/i_storage_backend.hpp"
 #include "transport/i_transfer_engine.hpp"
@@ -66,6 +67,9 @@ class MooncakeTransferEngine : public ITransferEngine {
   bool unregisterLocalMemory(void* addr) override;
   SegmentHandle openSegment(const std::string& segmentName) override;
   TransferStatus submitAndWait(const TransferRequest& request) override;
+  TransferHandle submitBatch(
+      const std::vector<TransferRequest>& requests) override;
+  TransferStatus waitBatch(TransferHandle handle) override;
 
  private:
   std::shared_ptr<IStorageBackend> storage_;
