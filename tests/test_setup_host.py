@@ -888,3 +888,53 @@ class TestSetupHostValidation:
             host_weights_dir="/nonexistent/path/to/weights",
         )
         assert manager.check_setup() is False
+
+
+class TestSetupWeightsHostVolumeResume:
+    """setup_weights_huggingface (host-volume branch) must always invoke the
+    resumable `hf download` and fall back to existing weights only when the hub
+    is unreachable and the local copy is already complete."""
+
+    @pytest.fixture
+    def manager(self, tiny_model_spec, temp_dir):
+        mgr = HostSetupManager(
+            model_spec=tiny_model_spec,
+            hf_token="hf_test_token_123456",
+            host_volume=str(temp_dir / "persistent_volume"),
+        )
+        venv = MagicMock()
+        venv.venv_path = temp_dir / "fake_venv"
+        (venv.venv_path / "bin").mkdir(parents=True, exist_ok=True)
+        (venv.venv_path / "bin" / "hf").write_text("#!/bin/bash")
+        with patch("workflows.setup_host.VENV_CONFIGS") as mock_venv_configs:
+            mock_venv_configs.__getitem__ = MagicMock(return_value=venv)
+            yield mgr
+
+    def test_downloads_even_when_weights_present(self, manager):
+        """A complete-looking dir must not skip the download (it may be partial);
+        hf download runs and resumes/verifies."""
+        with patch.object(manager, "check_model_weights_dir", return_value=True), patch(
+            "subprocess.run"
+        ) as mock_run:
+            mock_run.return_value.returncode = 0
+            manager.setup_weights_huggingface()
+        mock_run.assert_called_once()
+
+    def test_falls_back_to_existing_when_hub_unreachable(self, manager):
+        """hf download failure with complete local weights continues instead of
+        raising."""
+        with patch.object(manager, "check_model_weights_dir", return_value=True), patch(
+            "subprocess.run"
+        ) as mock_run:
+            mock_run.return_value.returncode = 1
+            manager.setup_weights_huggingface()  # must not raise
+        mock_run.assert_called_once()
+
+    def test_raises_when_hub_unreachable_and_incomplete(self, manager):
+        """hf download failure without complete local weights must surface."""
+        with patch.object(
+            manager, "check_model_weights_dir", return_value=False
+        ), patch("subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 1
+            with pytest.raises(AssertionError):
+                manager.setup_weights_huggingface()

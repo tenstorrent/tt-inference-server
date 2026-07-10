@@ -49,6 +49,18 @@ class ISocketTransport {
   virtual std::string getStatus() const = 0;
 
   virtual bool sendRawData(std::span<const uint8_t> data) = 0;
+
+  /**
+   * @brief Ownership-transfer send: hands the payload buffer to the transport.
+   *
+   * Lets transports avoid copying large payloads (e.g. pass the buffer straight
+   * to a zero-copy zmq::message_t) on the hot decode->prefill path. The default
+   * copies via the span overload, so transports that don't care need no change.
+   */
+  virtual bool sendRawData(std::vector<uint8_t>&& data) {
+    return sendRawData(std::span<const uint8_t>(data.data(), data.size()));
+  }
+
   virtual std::vector<uint8_t> receiveRawData() = 0;
 
   /**
