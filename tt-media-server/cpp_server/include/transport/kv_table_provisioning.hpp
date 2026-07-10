@@ -17,12 +17,10 @@ namespace tt::transport {
 /**
  * @brief Real KV-table loading + init-time exchange over the control channel.
  *
- * The data plane needs the sender (prefill) to hold BOTH the prefill table (its
- * own, for source reads) and the decode table (the peer's, for destination
- * addressing); the receiver (decode) needs only its own table. Rather than ship
- * the decode `.pb` to every prefill host, each worker loads ONLY its own table
- * from disk and the two swap serialized tables over the already-open control
- * channel — so the sender obtains the decode table over the wire.
+ * Each worker loads ONLY its own `.pb` from disk, then both sides swap
+ * serialized tables over the control channel (TABLE_EXCHANGE). Prefill keeps
+ * the peer decode table for destination addressing; decode keeps the peer
+ * prefill table from the same exchange.
  *
  * The exchanged blob is just the `.pb` file's bytes; the peer reconstructs the
  * table with `KvChunkAddressTableAdapter::fromProtobuf` (which is a no-op

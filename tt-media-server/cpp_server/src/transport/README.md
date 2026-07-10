@@ -464,14 +464,16 @@ WORKER_BIN=./build/bringup_mooncake_worker \
 
 Production path is `mooncake_kv_migration_worker` (deployed by
 `scripts/deploy_migration_workers.sh`). There is **one** prefill `.pb` and
-**one** decode `.pb` for the fleet. Each role loads only its own file. Prefill
-opens control channels to decode peers, then pulls the decode table **once**
-via `TABLE_EXCHANGE` (`provisionPeerTable`) on the first connected channel:
+**one** decode `.pb` for the fleet. Each role loads only its own file, then
+both sides exchange tables over control `TABLE_EXCHANGE` (prefill dials;
+decode listens and replies):
 
 ```
-decode:  load decode.pb → register mirror → control server (blob for exchange)
+decode:  load decode.pb → register mirror → control server
+       → on TABLE_EXCHANGE: store prefill.pb, reply with decode.pb
 prefill: load prefill.pb → resolvePeers → openChannels → awaitConnected
-       → TABLE_EXCHANGE with one decode → build sender → READY / Kafka
+       → TABLE_EXCHANGE with one decode (send prefill.pb, recv decode.pb)
+       → build sender → READY / Kafka
 ```
 
 TE/Mooncake moves **KV bytes** only. `--decode-table` on prefill remains a

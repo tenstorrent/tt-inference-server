@@ -249,6 +249,7 @@ TEST(KvMigrationOrchestrator, ExchangesTableBlobs) {
   ASSERT_TRUE(gotOnReceiver.has_value());
   EXPECT_EQ(*gotOnSender, receiverBlob);
   EXPECT_EQ(*gotOnReceiver, senderBlob);
+  EXPECT_EQ(ro.peerTableBlob(), senderBlob);
 }
 
 // A prepareMirror failure (no local chunks for the request) is reported to the

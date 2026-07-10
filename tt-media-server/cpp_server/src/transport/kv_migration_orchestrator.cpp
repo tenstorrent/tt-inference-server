@@ -3,6 +3,8 @@
 
 #include "transport/kv_migration_orchestrator.hpp"
 
+#include <utility>
+
 #include "transport/kv_control_message.hpp"
 #include "transport/kv_table_provisioning.hpp"
 #include "utils/logger.hpp"
@@ -110,10 +112,55 @@ KvMigrationReceiver::KvMigrationReceiver(KvControlChannel& channel,
       receiver_(receiver),
       local_table_blob_(std::move(localTableBlob)) {}
 
+void KvMigrationReceiver::storePeerTable(std::vector<uint8_t> blob) {
+  peer_table_blob_ = std::move(blob);
+  peer_table_ = deserializeKvTable(peer_table_blob_);
+  if (!peer_table_ && !peer_table_blob_.empty()) {
+    TT_LOG_WARN(
+        "[KvMigrationReceiver] stored peer table blob ({} B) but parse failed "
+        "(bad .pb or ENABLE_KV_TABLE OFF)",
+        peer_table_blob_.size());
+  }
+}
+
+bool KvMigrationReceiver::handleTableExchange(const KvControlMessage& msg) {
+  if (msg.table_blob.empty()) {
+    TT_LOG_ERROR(
+        "[KvMigrationReceiver] TABLE_EXCHANGE missing peer (prefill) table "
+        "blob");
+    return false;
+  }
+  if (local_table_blob_.empty()) {
+    TT_LOG_ERROR(
+        "[KvMigrationReceiver] TABLE_EXCHANGE with no local table blob "
+        "configured");
+    return false;
+  }
+  storePeerTable(msg.table_blob);
+
+  KvControlMessage out;
+  out.type = KvControlType::TABLE_EXCHANGE;
+  out.role = 1;  // receiver
+  out.table_blob = local_table_blob_;
+  if (!channel_.send(out)) {
+    TT_LOG_ERROR("[KvMigrationReceiver] TABLE_EXCHANGE reply failed");
+    return false;
+  }
+  TT_LOG_INFO(
+      "[KvMigrationReceiver] TABLE_EXCHANGE: stored peer table ({} B), "
+      "replied with local ({} B)",
+      peer_table_blob_.size(), local_table_blob_.size());
+  return true;
+}
+
 std::optional<std::vector<uint8_t>> KvMigrationReceiver::exchangeTables(
     const std::vector<uint8_t>& localTableBlob) {
-  return exchangeTableBlob(channel_, TableExchangeRole::Receiver,
-                           localTableBlob);
+  auto peer =
+      exchangeTableBlob(channel_, TableExchangeRole::Receiver, localTableBlob);
+  if (peer) {
+    storePeerTable(*peer);
+  }
+  return peer;
 }
 
 bool KvMigrationReceiver::serveOne() {
@@ -125,28 +172,8 @@ bool KvMigrationReceiver::serveOne() {
 bool KvMigrationReceiver::handle(const KvControlMessage& in) {
   const KvControlMessage* msg = &in;
   switch (msg->type) {
-    case KvControlType::TABLE_EXCHANGE: {
-      // Prefill (Sender) already sent its blob; reply with our decode table.
-      // Prefill needs the one fleet decode table; we ignore their prefill blob.
-      if (local_table_blob_.empty()) {
-        TT_LOG_ERROR(
-            "[KvMigrationReceiver] TABLE_EXCHANGE with no local table blob "
-            "configured");
-        return false;
-      }
-      KvControlMessage out;
-      out.type = KvControlType::TABLE_EXCHANGE;
-      out.role = 1;  // receiver
-      out.table_blob = local_table_blob_;
-      if (!channel_.send(out)) {
-        TT_LOG_ERROR("[KvMigrationReceiver] TABLE_EXCHANGE reply failed");
-        return false;
-      }
-      TT_LOG_INFO(
-          "[KvMigrationReceiver] TABLE_EXCHANGE replied ({} B local table)",
-          local_table_blob_.size());
-      break;
-    }
+    case KvControlType::TABLE_EXCHANGE:
+      return handleTableExchange(*msg);
     case KvControlType::BEGIN_MIGRATION: {
       const auto segment = receiver_.prepareMirror(sliceOf(*msg), msg->uuid);
       KvControlMessage ready;

@@ -17,9 +17,10 @@
 // tt_kv_migration_consumer (StubMigrationExecutor): it is the first binary that
 // actually moves KV on a Kafka trigger.
 //
-// Table source: each worker loads ONLY its own .pb. Prefill obtains the one
-// fleet decode table once over the control channel (TABLE_EXCHANGE / #4295).
-// TE/Mooncake moves KV bytes only — not table provisioning. The engine→worker
+// Table source: each worker loads ONLY its own .pb. Prefill and decode swap
+// tables once over the control channel (TABLE_EXCHANGE / #4295): prefill keeps
+// the fleet decode table; decode stores the peer prefill table. TE/Mooncake
+// moves KV bytes only — not table provisioning. The engine→worker
 // handoff (engine_table_handoff) can later replace the local .pb behind the
 // same IKvTable. Device IO: MultiDeviceUmd; FabricNode→ASIC chip resolution
 // comes from an optional --device-map file, falling back to the placeholder
@@ -159,12 +160,12 @@ void usage() {
          "           [--peer-control-port N]  fallback control port for a "
          "discovered peer that hasn't published its endpoint (default 18650).\n"
          "           The prefill (sender) opens a control channel to each "
-         "peer; TABLE_EXCHANGE pulls the one decode table once, then "
+         "peer; TABLE_EXCHANGE swaps tables once (prefill↔decode), then "
          "migrations use the same channels.\n"
          "  prefill: --prefill-table P.pb (+ >=1 peer); decode table comes "
          "from control TABLE_EXCHANGE (optional --decode-table fallback)\n"
          "  decode:  --table D.pb [--control-port N] (default 18650) "
-         "[--segment NAME]\n"
+         "[--segment NAME]; stores peer prefill table on TABLE_EXCHANGE\n"
          "  both:    [--device-map FILE]  ('mesh chip umd' per line; needed "
          "when this host's table spans multiple meshes)\n"
          "  both:    [--health-port N] [--health-host HOST]  serve "
@@ -405,7 +406,8 @@ std::shared_ptr<tt::sockets::ISocketTransport> makeServerTransport(
     uint16_t port) {
   auto t = std::make_shared<tt::sockets::TcpSocketTransport>();
   if (!t->initializeAsServer(port)) return nullptr;
-  t->start();
+  // Do NOT start() here — KvMigrationReceiverServer installs the multi-accept
+  // handler first, then start()s, so every prefill gets its own session.
   return t;
 }
 
@@ -681,8 +683,9 @@ int runDecode(const WorkerConfig& cfg) {
     return 1;
   }
 
-  // Control server replies to TABLE_EXCHANGE with this decode .pb, then serves
-  // migrate Begin/Done. Long receive timeout covers large table provisioning.
+  // Control server stores peer prefill .pb on TABLE_EXCHANGE, replies with
+  // this decode .pb, then serves migrate Begin/Done. Long receive timeout
+  // covers large table provisioning.
   KvMigrationReceiverServer server(
       cfg.control_port, makeServerTransport, receiver, decode->blob,
       std::chrono::milliseconds(K_CONTROL_RECEIVE_TIMEOUT_MS));
