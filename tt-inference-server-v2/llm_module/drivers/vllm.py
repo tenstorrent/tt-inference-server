@@ -114,14 +114,21 @@ class VLLMBenchDriver(LLMDriver):
         config: LLMRunConfig,
         server: ServerConnection,
         context: DriverContext,
+        result_filename: Optional[Path] = None,
     ) -> DriverResult:
         context.output_dir.mkdir(parents=True, exist_ok=True)
-        run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        result_filename = context.output_dir / (
-            f"benchmark_{safe_filename_part(server.model)}_{run_ts}"
-            f"_isl-{config.isl}_osl-{config.osl}"
-            f"_maxcon-{config.max_concurrency}_n-{config.num_prompts}.json"
-        )
+        # ``result_filename`` lets callers pin a stable path that is overwritten
+        # on each run (e.g. the parallel agentic bench, which loops many
+        # segments and wants a single small artifact rather than one file per
+        # segment). The ISL used stays recoverable from the file content
+        # (total_input_tokens / completed). Default: unique timestamped name.
+        if result_filename is None:
+            run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            result_filename = context.output_dir / (
+                f"benchmark_{safe_filename_part(server.model)}_{run_ts}"
+                f"_isl-{config.isl}_osl-{config.osl}"
+                f"_maxcon-{config.max_concurrency}_n-{config.num_prompts}.json"
+            )
 
         cmd, auth_token = build_vllm_bench_serve_argv(
             vllm_binary=self.vllm_binary,
