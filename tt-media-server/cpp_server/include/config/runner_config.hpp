@@ -50,6 +50,14 @@ struct BlazeConfig : RunnerConfigBase {
   uint32_t modelNumLayers = defaults::MODEL_NUM_LAYERS;
   uint32_t prefillChunkSize = defaults::PREFILL_CHUNK_SIZE;
   bool enableMigration = defaults::ENABLE_MIGRATION;
+  // Route the PrefillScheduler's cross-endpoint (P->D) KV migration through
+  // the Kafka-backed RemoteKVManagerAdapter (composed with a shmem/mock
+  // loopback for migrate() calls the adapter cannot service). Only effective
+  // when enableMigration is also true and the binary was built with
+  // KAFKA_ENABLED=ON; toggling it on a non-Kafka build fails loudly at
+  // scheduler construction rather than silently downgrading to the shmem
+  // path. See makeMigrationClientInterface in blaze_utils.hpp.
+  bool prefillUseRemoteKvManager = defaults::PREFILL_USE_REMOTE_KV_MANAGER;
   uint32_t migrationPrefillEndpointId = defaults::MIGRATION_PREFILL_ENDPOINT_ID;
   uint32_t migrationDecodeEndpointId = defaults::MIGRATION_DECODE_ENDPOINT_ID;
   std::string specDecodeMode = defaults::SPEC_DECODE_MODE;
@@ -72,7 +80,6 @@ struct BlazeConfig : RunnerConfigBase {
 
   // Generation fallbacks read by blaze_utils
   size_t maxContextLength = defaults::MAX_CONTEXT_LENGTH;
-  bool sampleOnlyInReasoning = false;
 };
 
 struct EmbeddingConfig : RunnerConfigBase {};

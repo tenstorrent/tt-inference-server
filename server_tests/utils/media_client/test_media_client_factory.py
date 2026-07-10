@@ -51,11 +51,8 @@ class TestStrategyMap(unittest.TestCase):
     def test_strategy_map_contains_embedding(self):
         assert "EMBEDDING" in STRATEGY_MAP
 
-    def test_strategy_map_contains_video(self):
-        assert "VIDEO" in STRATEGY_MAP
-
     def test_strategy_map_size(self):
-        assert len(STRATEGY_MAP) == 2
+        assert len(STRATEGY_MAP) == 1
 
 
 class TestMediaClientFactoryCreateStrategy(unittest.TestCase):
@@ -65,22 +62,6 @@ class TestMediaClientFactoryCreateStrategy(unittest.TestCase):
         mock_spec = MagicMock()
         mock_spec.model_type.name = model_type_name
         return mock_spec
-
-    def test_create_strategy_video(self):
-        mock_spec = self._create_mock_model_spec("VIDEO")
-        mock_params = {"param": "value"}
-        mock_device = MagicMock()
-        output_path = "/tmp/output"
-        service_port = 8000
-
-        with patch.dict(
-            "utils.media_clients.media_client_factory.STRATEGY_MAP",
-            {"VIDEO": create_mock_strategy_class("VideoClientStrategy")},
-        ):
-            strategy = MediaClientFactory._create_strategy(
-                mock_spec, mock_params, mock_device, output_path, service_port
-            )
-            assert strategy is not None
 
     def test_create_strategy_unsupported_type_raises_value_error(self):
         mock_spec = self._create_mock_model_spec("UNSUPPORTED")
@@ -223,7 +204,7 @@ class TestMediaClientFactoryRunMediaTask(unittest.TestCase):
 # Pytest parametrized tests for better edge case coverage
 @pytest.mark.parametrize(
     "model_type_name",
-    ["CNN", "EMBEDDING", "VIDEO"],
+    ["CNN", "EMBEDDING"],
 )
 def test_create_strategy_all_supported_types(model_type_name):
     """Test that all supported model types create a strategy successfully."""

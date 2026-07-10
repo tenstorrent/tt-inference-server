@@ -26,6 +26,7 @@ from report_module import (
     ReportSchema,
     acceptance_criteria_check,
     build_acceptance_export,
+    task_failure_blockers,
 )
 from test_module.task_types import MediaTaskType
 
@@ -235,7 +236,7 @@ class WorkflowExecution(ABC):
             )
 
         try:
-            accepted, _blockers = self.apply_acceptance_criteria(schema)
+            accepted, _blockers = self.apply_acceptance_criteria(schema, task_outcomes)
             self.inject_metadata(schema)
             gen = self.generate_report(schema)
         except Exception as e:
@@ -313,10 +314,18 @@ class WorkflowExecution(ABC):
             return None
         return self.accumulator.build_schema()
 
-    def apply_acceptance_criteria(self, schema: ReportSchema) -> Tuple[bool, list]:
+    def apply_acceptance_criteria(
+        self, schema: ReportSchema, task_outcomes: Sequence[TaskOutcome]
+    ) -> Tuple[bool, dict]:
         accepted, blockers, categories = acceptance_criteria_check(
             schema, known_issues=self._known_issues()
         )
+        crash_blockers = task_failure_blockers(
+            (o.task_type, o.exit_code, o.block_kind is not None) for o in task_outcomes
+        )
+        if crash_blockers:
+            blockers = {**blockers, **crash_blockers}
+            accepted = False
         schema.metadata.update(
             build_acceptance_export(
                 accepted, blockers, categories, self._model_status()

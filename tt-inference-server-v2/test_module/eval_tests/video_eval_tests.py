@@ -23,14 +23,21 @@ logger = logging.getLogger(__name__)
 
 def _run_video_generation_eval(ctx: MediaContext) -> dict:
     """Delegate to VideoGenerationEvalsTest."""
-    from server_tests.test_classes import TestConfig
+    from .._test_common import TestConfig
 
+    from .._test_common import is_i2v_video_model
     from .video_generation_eval_test import (
         VideoGenerationEvalsTest,
         VideoGenerationEvalsTestRequest,
     )
 
-    logger.info("Running video generation eval.")
+    model_name = ctx.model_spec.model_name
+    generation_mode = "I2V" if is_i2v_video_model(model_name) else "T2V"
+    logger.info(
+        "Running video generation eval for %s using %s endpoint.",
+        model_name,
+        generation_mode,
+    )
 
     num_prompts = 5
     num_inference_steps = 40
@@ -38,7 +45,7 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
     frame_sample_rate = 8
 
     request = VideoGenerationEvalsTestRequest(
-        model_name=ctx.model_spec.model_name,
+        model_name=model_name,
         num_prompts=num_prompts,
         start_from=start_from,
         num_inference_steps=num_inference_steps,
@@ -60,7 +67,7 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
 
 def _run_video_fvd_and_fvmd_eval() -> dict:
     """Run FVD + FVMD eval against reference and generated video directories."""
-    from server_tests.test_classes import TestConfig
+    from .._test_common import TestConfig
 
     from .video_fvd_eval_test import DATASET_DIR as FVD_DATASET_DIR
     from .video_fvd_eval_test import VideoFVDTest, VideoFVDTestRequest
@@ -156,6 +163,7 @@ def run_video_eval(ctx: MediaContext) -> Block:
     if eval_result:
         logger.info("Adding eval results from video generation test to benchmark data")
         data["num_prompts"] = eval_result.get("num_prompts", 0)
+        data["num_generated"] = eval_result.get("num_generated", 0)
         data["num_inference_steps"] = eval_result.get("num_inference_steps", 0)
 
         clip_results = eval_result.get("clip_results", {})
