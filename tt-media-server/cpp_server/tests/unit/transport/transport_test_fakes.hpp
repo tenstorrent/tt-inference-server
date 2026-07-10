@@ -140,6 +140,24 @@ class FakeTransferEngine : public ITransferEngine {
     std::memcpy(it->second + r.target_offset, r.local_addr, r.length);
     return {TransferState::COMPLETED, r.length};
   }
+  // The fake has no real async: submitBatch applies every entry immediately
+  // (memcpy) and stashes the summed bytes in the handle; waitBatch just reports
+  // it. Correctness (bytes landed) is preserved; there is simply no overlap to
+  // model without a network. An invalid entry yields an invalid handle so the
+  // base submitBatchAndWait reports FAILED.
+  TransferHandle submitBatch(const std::vector<TransferRequest>& rs) override {
+    std::size_t total = 0;
+    for (const TransferRequest& r : rs) {
+      const TransferStatus s = submitAndWait(r);
+      if (s.state != TransferState::COMPLETED) return {};  // invalid
+      total += s.transferred_bytes;
+    }
+    return {static_cast<uint64_t>(total), true};
+  }
+  TransferStatus waitBatch(TransferHandle h) override {
+    if (!h.valid) return {TransferState::FAILED, 0};
+    return {TransferState::COMPLETED, static_cast<std::size_t>(h.value)};
+  }
 
  private:
   std::shared_ptr<FakeRegistry> reg;
@@ -159,9 +177,24 @@ class FakeDeviceIo : public IDeviceIo {
     return it == store.end() ? std::vector<uint8_t>{} : it->second;
   }
   bool read(LocalDeviceId d, NocAddr n, std::size_t size, void* host) override {
-    const auto it = store.find({d, n});
-    if (it == store.end() || it->second.size() < size) return false;
-    std::memcpy(host, it->second.data(), size);
+    // Device DRAM is a contiguous address space: a read of [n, n+size) may span
+    // several stored chunks (the sender merges contiguous chunks into one
+    // large read). Assemble the range by walking consecutive chunk keys, which
+    // for contiguously-seeded chunks land exactly at n, n+size0, n+size0+size1…
+    // A single whole-chunk read is just the one-iteration case. Fails on a gap
+    // (no chunk at the next address), same as the real device faulting.
+    auto* out = static_cast<uint8_t*>(host);
+    std::size_t done = 0;
+    NocAddr cur = n;
+    while (done < size) {
+      const auto it = store.find({d, cur});
+      if (it == store.end() || it->second.empty()) return false;
+      const std::size_t avail = it->second.size();
+      const std::size_t take = (size - done < avail) ? (size - done) : avail;
+      std::memcpy(out + done, it->second.data(), take);
+      done += take;
+      cur += avail;
+    }
     return true;
   }
   bool write(LocalDeviceId d, NocAddr n, const void* host,
