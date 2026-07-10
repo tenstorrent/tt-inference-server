@@ -135,6 +135,11 @@ class ParallelBenchLoad:
         return _clamp_isl(isl, self._osl, self._max_context)
 
     def _loop(self) -> None:
+        # Overwrite one stable file each segment: we only keep the latest run,
+        # not thousands of per-segment files. The ISL used is still recoverable
+        # from the file (total_input_tokens / completed) and the concurrency
+        # from max_concurrency.
+        result_filename = self._context.output_dir / "parallel_bench.json"
         while not self._stop.is_set():
             isl = self._current_isl()
             config = LLMRunConfig(
@@ -144,7 +149,12 @@ class ParallelBenchLoad:
                 num_prompts=self._bench_concurrency,
             )
             try:
-                self._driver.run(config, self._server, self._context)
+                self._driver.run(
+                    config,
+                    self._server,
+                    self._context,
+                    result_filename=result_filename,
+                )
             except Exception as e:  # pragma: no cover - defensive
                 # A single failed segment must never break the agentic eval.
                 logger.warning("Parallel bench segment failed (isl=%d): %s", isl, e)
