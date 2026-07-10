@@ -72,7 +72,7 @@ constexpr size_t MTP_LEVEL = 1;
 // Total device in-flight token cap (prefill + decode) above which the decode
 // scheduler stops injecting prefill, reserving buffer slots for decode to
 // flatten ITL. 0 = disabled. See SchedulerParams::prefill_inflight_cap.
-constexpr uint32_t PREFILL_INFLIGHT_CAP = 0;
+constexpr uint32_t BLAZE_NUMBER_OF_PIPELINE_STAGES = 64;
 
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
 constexpr const char* TT_RESULT_QUEUE = "tt_results";

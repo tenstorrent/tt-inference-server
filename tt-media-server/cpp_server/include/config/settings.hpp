@@ -114,8 +114,8 @@ std::string prefillServerId();
  */
 std::string logInstanceTag(int workerIndex = -1);
 
-/** Capacity hint for the gateway, 0 = unlimited. From PREFILL_MAX_IN_FLIGHT. */
-uint32_t prefillMaxInFlight();
+/** Number of pipeline stages for the Blaze Decode runner. From BLAZE_NUMBER_OF_PIPELINE_STAGES. */
+uint32_t blazeNumberOfPipelineStages();
 
 /** Max in-flight requests before 429. From MAX_QUEUE_SIZE. Default:
  * defaults::MAX_QUEUE_SIZE. */
