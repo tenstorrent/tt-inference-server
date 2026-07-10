@@ -29,6 +29,11 @@ struct TestableSession : tt::domain::Session {
 
 class PrefixCacheRouterTest : public ::testing::Test {
  protected:
+  static void SetUpTestSuite() {
+    // Must be set before logger init caches llmMode() on first use.
+    setenv("LLM_MODE", "decode", 1);
+  }
+
   void SetUp() override {
     setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
     setenv("KV_CACHE_FIRST_BLOCK_SIZE", "32", 1);

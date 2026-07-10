@@ -402,10 +402,11 @@ void PrefixCacheRouter::getSlot(
   }
 
   // Step 4: Allocate new session
-  // Check if we have a candidate slot to copy from
+  // Slot copies require migration workers that only exist in decode-only mode.
   std::optional<uint32_t> slotToCopyFrom;
   uint32_t copyMatchedTokens = 0;
-  if (acquired.has_value() && !acquired->candidatesList.empty()) {
+  if (tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY &&
+      acquired.has_value() && !acquired->candidatesList.empty()) {
     const auto& best = acquired->candidatesList.front();
     if (domain::prefix_cache::BlockMatcher::passesHitThreshold(best)) {
       auto session = callbacks.getSession(best.sessionId);
