@@ -3556,7 +3556,7 @@ _eval_config_list = [
                     # lm-eval-harness' SSE consumer only parses
                     # /v1/completions chunks, not /v1/chat/completions; keep
                     # stream=false to avoid empty resps + KeyError: 'message'.
-                    "stream": "false",
+                    "stream": "true",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -3591,7 +3591,7 @@ _eval_config_list = [
                     "timeout": "14400",
                 },
                 gen_kwargs={
-                    "stream": "false",
+                    "stream": "true",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -3623,7 +3623,7 @@ _eval_config_list = [
                     "timeout": "7200",
                 },
                 gen_kwargs={
-                    "stream": "false",
+                    "stream": "true",
                     "reasoning_effort": "low",
                     "do_sample": "true",
                     "temperature": 1.0,
