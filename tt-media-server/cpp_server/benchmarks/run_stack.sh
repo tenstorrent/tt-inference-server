@@ -7,7 +7,7 @@
 # host ai-dynamo venv; etcd runs as the public quay image; workers run as the
 # locally-built mock_pipeline binary. See benchmarks/test_prefill_decode.py.
 #
-#   ./run_stack.sh up                      # legacy direct socket split
+#   ./run_stack.sh up                      # direct cpp_server socket split
 #   DYNAMO_NATIVE_ROUTING=1 ./run_stack.sh up
 #                                          # native Dynamo decode/prefill split
 #   ./run_stack.sh down                    # tear everything down
@@ -97,7 +97,7 @@ ensure_etcd() {
     log "etcd at ${ETCD_ENDPOINTS}"
 }
 
-# dynamo registration env. Legacy mode registers only the decode worker under
+# Dynamo registration env. Direct mode registers only the decode worker under
 # default/backend/generate. Native mode registers decode and prefill workers as
 # separate Dynamo worker types under dynamo/{decode,prefill}/generate.
 worker_dynamo_env() {
@@ -239,18 +239,18 @@ up() {
             DYNAMO_MODEL_INPUT=Tokens
         wait_worker_healthy "prefill" "${PREFILL_PORT}" "${PREFILL_LOG}"
     else
-        log "legacy socket routing: decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
+        log "direct cpp_server socket routing: decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
         start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
             $(worker_dynamo_env) \
-            $(worker_ipc_env legacy_decode) \
+            $(worker_ipc_env direct_decode) \
             LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
-            SOCKET_TRANSPORT=tcp SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
+            SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
             MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE}"
         wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
         start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
-            $(worker_ipc_env legacy_prefill) \
+            $(worker_ipc_env direct_prefill) \
             LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
-            SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}"
+            SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}"
         wait_worker_healthy "prefill" "${PREFILL_PORT}" "${PREFILL_LOG}"
     fi
     start_frontend

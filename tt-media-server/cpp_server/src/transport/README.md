@@ -225,9 +225,9 @@ following — most are not enforced in code:
     transport that returns empty to mean "no message yet" — notably
     `ZmqSocketTransport` (recv returns empty whenever its queue is momentarily
     empty) — is **not** compatible: the channel would abort a healthy migration on
-    the first gap between messages. Do not select the ZMQ backend
-    (`SOCKET_TRANSPORT=zmq`) for the migration control path. (ZMQ is unrelated to
-    Mooncake, which carries the bulk bytes over its own TCP/RDMA transport.)
+    the first gap between messages. Use a blocking TCP-style transport for the
+    migration control path. (ZMQ is unrelated to Mooncake, which carries the bulk
+    bytes over its own TCP/RDMA transport.)
 
 ## Known optimizations & follow-ups
 

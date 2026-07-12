@@ -333,7 +333,7 @@ size_t memoryQueueCapacity();
 bool dynamoEndpointEnabled();
 
 /** Experimental: let Dynamo own disaggregated prefill routing instead of the
- * legacy cpp_server socket/gateway path. From DYNAMO_NATIVE_ROUTING. Default:
+ * cpp_server socket/gateway path. From DYNAMO_NATIVE_ROUTING. Default:
  * defaults::DYNAMO_NATIVE_ROUTING. */
 bool dynamoNativeRoutingEnabled();
 

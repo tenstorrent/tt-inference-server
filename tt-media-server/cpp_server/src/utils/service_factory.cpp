@@ -36,7 +36,7 @@ AuxiliaryServices buildAuxiliaryServices(
       if (tt::config::dynamoNativeRoutingEnabled()) {
         TT_LOG_INFO(
             "[ServiceFactory] DYNAMO_NATIVE_ROUTING=1; constructing "
-            "disaggregation contract service without legacy sockets");
+            "disaggregation contract service without cpp_server sockets");
         auto disagg = std::make_shared<services::DisaggregationService>(
             mode, llm, nullptr);
         return {/*socket=*/nullptr, std::move(disagg)};
