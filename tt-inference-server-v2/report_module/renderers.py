@@ -54,6 +54,7 @@ _KIND_EXTRA_HIDDEN: Dict[str, frozenset] = {
 def _hidden_columns(kind: str) -> frozenset:
     return HIDDEN_COLUMNS | _KIND_EXTRA_HIDDEN.get(kind, frozenset())
 
+
 EVALS_KIND = "evals"
 
 BENCHMARKS_KIND = "benchmarks"

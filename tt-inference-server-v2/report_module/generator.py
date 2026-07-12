@@ -174,9 +174,7 @@ def _inject_spec_test_summary(
         runs.extend(block_runs)
 
     summary_md = (
-        _build_spec_test_summary_markdown(
-            runs, str(metadata.get("generated_at") or "")
-        )
+        _build_spec_test_summary_markdown(runs, str(metadata.get("generated_at") or ""))
         if runs
         else ""
     )
