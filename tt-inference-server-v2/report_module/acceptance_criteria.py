@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from .schema import Block, ReportSchema
-from .status import TestStatus
+from .status import TestStatus, glyph_for_label
 
 # Three canonical kinds emitted by every runner. Acceptance routes by
 # this field alone — no substring matching, no frozensets, no regex.
@@ -23,6 +23,13 @@ FAIL_CHECK_INT = 3
 STATUS_PASS = "PASS"
 STATUS_FAIL = "FAIL"
 STATUS_NA = "NA"
+
+
+def _status_badge(status: str) -> str:
+    """Render a status as ``<emoji> `STATUS```, or just the label if unknown."""
+    emoji = glyph_for_label(status)
+    return f"{emoji} `{status}`" if emoji else f"`{status}`"
+
 
 CATEGORY_BENCHMARKS = "Benchmarks"
 CATEGORY_EVALS = "Evals"
@@ -176,12 +183,14 @@ def format_acceptance_summary_markdown(
     lines = [
         "### Acceptance Criteria",
         "",
-        f"- Acceptance status: `{STATUS_PASS if accepted else STATUS_FAIL}`",
+        f"- Acceptance status: {_status_badge(STATUS_PASS if accepted else STATUS_FAIL)}",
     ]
     if model_status:
         lines.append(f"- Model status: `{model_status}`")
     for category in categories:
-        lines.append(f"- {category.name}: `{category.status}` ({_detail(category)})")
+        lines.append(
+            f"- {category.name}: {_status_badge(category.status)} ({_detail(category)})"
+        )
 
     if not blockers:
         lines.append("- All acceptance criteria passed.")
