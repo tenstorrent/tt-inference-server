@@ -239,3 +239,44 @@ class TestGenerate:
         assert "## 🧪 Test Results" in md
         assert "smoke" in md
         assert "Success Rate" in md
+
+    def test_spec_block_table_trims_wrapper_columns(self, tmp_path: Path):
+        """A spec block's metrics table drops status/success/attempts — those
+        live in the injected summary — and never renders a lowercase ``pass``."""
+        block = Block(
+            kind="spec_tests",
+            title="Tts Load",
+            data={
+                "test_name": "TTSLoadTest",
+                "attempts": 1,
+                "success": True,
+                "status": "pass",
+                "elapsed_seconds": 60.09,
+                "avg_duration_s": 1.92,
+                "ttft_ms": 1914.1,
+            },
+        )
+        md = ReportGenerator().generate(_schema(block), tmp_path).markdown
+        # Metrics table keeps the metrics...
+        assert "### Tts Load" in md
+        assert "1.92" in md and "1914.1" in md
+        # ...but drops the wrapper columns and their raw values.
+        block_table = md.split("### Tts Load", 1)[1]
+        assert "Success" not in block_table
+        assert "| pass " not in block_table and "| true " not in block_table.lower()
+        # Status casing is uppercased with a glyph in the summary above.
+        assert "✅ PASS" in md
+
+    def test_metrics_only_spec_block_still_injects_summary(self, tmp_path: Path):
+        """A spec block carrying only wrapper fields renders no table but must
+        still seed the summary (regression: empty md dropped the anchor)."""
+        block = Block(
+            kind="spec_tests",
+            title="Bare",
+            data={"test_name": "bare", "attempts": 1, "status": "pass"},
+        )
+        md = ReportGenerator().generate(_schema(block), tmp_path).markdown
+        assert "## 🧪 Test Results" in md
+        assert "✅ PASS" in md
+        # No metrics -> no per-block table heading.
+        assert "### Bare" not in md

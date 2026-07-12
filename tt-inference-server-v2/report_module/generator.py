@@ -67,8 +67,10 @@ class ReportGenerator:
         section_markdowns = [
             self._render_block(block, normalized.metadata) for block in render_sections
         ]
+        # Keep empty-md blocks here: a metrics-less spec block renders to ""
+        # but still carries the runs that seed the injected summary. Empties
+        # are dropped after injection.
         rendered_pairs = list(zip(render_sections, section_markdowns))
-        rendered_pairs = [(block, md) for block, md in rendered_pairs if md]
 
         release_md = _assemble_release_markdown(normalized, rendered_pairs)
 
@@ -171,16 +173,26 @@ def _inject_spec_test_summary(
             first_spec_idx = idx
         runs.extend(block_runs)
 
-    sections = [md for _block, md in rendered_pairs]
-    if first_spec_idx is None or not runs:
-        return sections
-
-    summary_md = _build_spec_test_summary_markdown(
-        runs, str(metadata.get("generated_at") or "")
+    summary_md = (
+        _build_spec_test_summary_markdown(
+            runs, str(metadata.get("generated_at") or "")
+        )
+        if runs
+        else ""
     )
-    if not summary_md:
-        return sections
-    return sections[:first_spec_idx] + [summary_md] + sections[first_spec_idx:]
+    if first_spec_idx is None or not summary_md:
+        return [md for _block, md in rendered_pairs if md]
+
+    # Insert the summary just before the first spec block, then drop empty
+    # block markdown (e.g. a spec block whose only fields moved into the
+    # summary renders to "").
+    sections: List[str] = []
+    for idx, (_block, md) in enumerate(rendered_pairs):
+        if idx == first_spec_idx:
+            sections.append(summary_md)
+        if md:
+            sections.append(md)
+    return sections
 
 
 def _spec_test_runs(block: Block) -> List[Mapping[str, Any]]:
