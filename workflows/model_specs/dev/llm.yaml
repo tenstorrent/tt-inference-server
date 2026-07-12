@@ -177,11 +177,17 @@ templates:
         # logits; the default p150_x4 descriptor (selected from MESH_DEVICE) is correct.
         MESH_DEVICE: "P150x4"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # Size the hybrid-off all-user KV pool to fit QB2 DRAM. The container
-        # sizes the pool from Gemma4ForCausalLM.get_max_tokens_all_users, which
-        # honors this env override (value kept here, gated by device + model,
-        # rather than hardcoded in tt-metal).
+        # Full-cache single pool (hybrid kv-cache groups OFF). Hybrid/bounded
+        # (GEMMA4_HYBRID_KV_CACHE_GROUPS=1) serves to ISL 4096 but the benchmark
+        # sweep TT_FATALs at ISL >= 8192 (chunked-prefill SDPA head_dim mismatch,
+        # needs a tt-metal op fix); re-enable + raise GEMMA4_MAX_TOKENS_ALL_USERS
+        # once fixed. Pool sized to QB2 DRAM via get_max_tokens_all_users.
         GEMMA4_MAX_TOKENS_ALL_USERS: "49152"
+        # Generator-level chunked prefill (#49083 fix): an 8192+ prompt as one
+        # full-length chunk hits the nlp_concat_heads fetch-queue hang. 4096 is
+        # the largest chunk that both traces and avoids the wedge (8192 either
+        # wedges eager or OOMs traced).
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 200000000
