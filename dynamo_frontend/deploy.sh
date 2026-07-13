@@ -372,7 +372,7 @@ elif [[ "$DYNAMO_NATIVE_ROUTING_ENABLED" == "1" ]]; then
         -e DYNAMO_COMPONENT=decode
         -e DYNAMO_ENDPOINT_NAME=generate
         -e DYNAMO_MODEL_TYPE=Chat
-        -e DYNAMO_WORKER_TYPE=Decode
+        -e DYNAMO_WORKER_TYPE=decode
         -e USE_PREFILL_GATEWAY=0
         -e DYNAMO_NATIVE_ROUTING=1
     )
@@ -435,7 +435,7 @@ if [[ "$DYNAMO_NATIVE_ROUTING_ENABLED" == "1" ]]; then
             -e DYNAMO_ENDPOINT_NAME=generate \
             -e DYNAMO_MODEL_TYPE=Prefill \
             -e DYNAMO_MODEL_INPUT=Tokens \
-            -e DYNAMO_WORKER_TYPE=Prefill \
+            -e DYNAMO_WORKER_TYPE=prefill \
             -e TT_MEMORY_REQUEST_QUEUE="tt_mem_requests_prefill_${idx}" \
             -e TT_MEMORY_RESULT_QUEUE="tt_mem_results_prefill_${idx}" \
             -e TT_WORKER_METRICS_SHM="/tt_worker_metrics_prefill_${idx}"

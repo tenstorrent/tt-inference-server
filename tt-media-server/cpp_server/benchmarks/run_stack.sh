@@ -226,13 +226,13 @@ up() {
     if [[ "${DYNAMO_NATIVE_ROUTING}" == "1" ]]; then
         log "native Dynamo routing: decode :${SERVER_PORT}, prefill :${PREFILL_PORT}"
         start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
-            $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" decode Decode Chat) \
+            $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" decode decode Chat) \
             $(worker_ipc_env native_decode) \
             LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
             USE_PREFILL_GATEWAY=0 DYNAMO_NATIVE_ROUTING=1
         wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
         start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
-            $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" prefill Prefill Prefill) \
+            $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" prefill prefill Prefill) \
             $(worker_ipc_env native_prefill) \
             LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
             USE_PREFILL_GATEWAY=0 DYNAMO_NATIVE_ROUTING=1 \
