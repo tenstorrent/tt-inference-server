@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import List
 
-from workflows.run_workflows import WorkflowResult
+from workflows.workflow_result import WorkflowResult
 from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
@@ -33,6 +33,7 @@ _V2_WORKFLOW_NAMES = {
     WorkflowType.BENCHMARKS: "benchmarks",
     WorkflowType.EVALS: "evals",
     WorkflowType.SPEC_TESTS: "spec_tests",
+    WorkflowType.STRESS_TESTS: "stress_tests",
     WorkflowType.RELEASE: "release",
     WorkflowType.AGENTIC: "agentic",
     WorkflowType.SERVING_BENCH: "serving_bench",
@@ -146,7 +147,12 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
     # spec-decode benchmarks are v2-only features with no v1 driver. They route
     # to v2 for ANY model, regardless of model_type.
     if (
-        wf in (WorkflowType.AGENTIC, WorkflowType.SERVING_BENCH)
+        wf
+        in (
+            WorkflowType.AGENTIC,
+            WorkflowType.SERVING_BENCH,
+            WorkflowType.STRESS_TESTS,
+        )
         or _is_prefix_cache_run(wf, runtime_config)
         or _is_spec_decode_run(wf, runtime_config)
     ):
@@ -204,6 +210,9 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
         delegate_desc = "spec-decode (run_spec_decode.py)"
     elif _is_llm_benchmark_run(wf, model_spec, runtime_config):
         return [run_v2_llm_benchmark_workflow(model_spec, runtime_config, json_fpath)]
+    elif wf == WorkflowType.STRESS_TESTS:
+        cmd = _build_stress_cmd(model_spec, runtime_config, json_fpath)
+        delegate_desc = "stress-tests (run_stress_tests.py)"
     else:
         v2_run_py = v2_dir / "run.py"
         if not v2_run_py.is_file():
@@ -383,6 +392,36 @@ def _forward_spec_decode(cmd, runtime_config) -> None:
     )
 
 
+def _build_stress_cmd(model_spec, runtime_config, json_fpath):
+    """Launch the v2 stress-tests script under its own venv."""
+    venv_config = VENV_CONFIGS[WorkflowVenvType.STRESS_TESTS_RUN_SCRIPT]
+    assert venv_config.setup(
+        model_spec=model_spec
+    ), "Failed to setup venv: STRESS_TESTS_RUN_SCRIPT"
+    repo_root = Path(__file__).resolve().parent.parent
+    script = (
+        repo_root
+        / _V2_DIR_NAME
+        / "test_module"
+        / "stress_tests"
+        / "run_stress_tests.py"
+    )
+    output_path = get_default_workflow_root_log_dir() / "stress_tests_output"
+    ensure_readwriteable_dir(output_path)
+    return [
+        str(venv_config.venv_python),
+        str(script),
+        "--runtime-model-spec-json",
+        str(json_fpath),
+        "--output-path",
+        str(output_path),
+        "--model",
+        model_spec.model_name,
+        "--device",
+        runtime_config.device,
+    ]
+
+
 def _build_agentic_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):
     launcher = _resolve_launcher(v2_dir, "run_agentic.py", "agentic")
     cmd = _base_v2_cmd(
@@ -454,11 +493,10 @@ def _extend_if_set(cmd, flag, value) -> None:
 def _ensure_v2_venv(model_spec) -> Path:
     """Materialize the V2_RUN_SCRIPT venv and return its interpreter path.
 
-    Mirrors the per-venv body of ``WorkflowSetup.create_required_venvs``
-    (workflows/run_workflows.py) but skips the v1 task-config expansion:
-    v2 owns its own sub-workflow dispatch and has no v1 ``task.workflow_venv_type``
-    entries to pull in. ``VenvConfig.setup`` is idempotent, so calling
-    this on every dispatch is cheap once the venv exists.
+    Materializes a single venv (the v1 ``WorkflowSetup`` used to do this for
+    every task's ``workflow_venv_type``); v2 owns its own sub-workflow dispatch
+    and has no v1 task-config entries to pull in. ``VenvConfig.setup`` is
+    idempotent, so calling this on every dispatch is cheap once the venv exists.
     """
     venv_config = VENV_CONFIGS[WorkflowVenvType.V2_RUN_SCRIPT]
     setup_completed = venv_config.setup(model_spec=model_spec)

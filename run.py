@@ -42,7 +42,6 @@ from workflows.run_docker_server import (
     run_docker_server,
 )
 from workflows.run_local_server import run_local_server
-from workflows.run_workflows import run_workflows
 from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import setup_host
 from workflows.utils import (
@@ -948,7 +947,11 @@ def main():
             )
             workflow_results = run_v2_workflows(model_spec, runtime_config, json_fpath)
         else:
-            workflow_results = run_workflows(model_spec, runtime_config, json_fpath)
+            raise ValueError(
+                f"No workflow driver for --workflow {runtime_config.workflow} on "
+                f"{model_spec.model_name} ({model_spec.model_type.name}); all "
+                "supported workflows route to the v2 engine."
+            )
         if all(result.return_code == 0 for result in workflow_results):
             logger.info("Completed run.py.")
         else:
@@ -964,7 +967,7 @@ def main():
             main_return_code = 1
     else:
         logger.info(
-            f"Completed {runtime_config.workflow} workflow, skipping run_workflows()."
+            f"Completed {runtime_config.workflow} workflow, skipping workflow run."
         )
 
     logger.info(
