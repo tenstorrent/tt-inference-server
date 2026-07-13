@@ -63,8 +63,18 @@ _V2_ROUTED_MODELS = frozenset(
 )
 
 
+_V2_ROUTED_MODEL_TYPES = frozenset(
+    {
+        ModelType.CNN,
+    }
+)
+
+
 def is_v2_routed_model(model_spec) -> bool:
-    return model_spec.model_name in _V2_ROUTED_MODELS
+    return (
+        model_spec.model_type in _V2_ROUTED_MODEL_TYPES
+        or model_spec.model_name in _V2_ROUTED_MODELS
+    )
 
 
 def _is_prefix_cache_run(wf, runtime_config) -> bool:
@@ -145,6 +155,8 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
         return True
     if _is_llm_eval_run(wf, model_spec):
         return True
+    if model_spec.model_type == ModelType.VIDEO:
+        return wf in _V2_WORKFLOW_NAMES
     if not is_v2_routed_model(model_spec):
         return False
     return wf in _V2_WORKFLOW_NAMES

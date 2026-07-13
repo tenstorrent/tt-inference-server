@@ -247,6 +247,7 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `Qwen3-8B` | p300 |
 | `Qwen3-8B` | t3k |
 | `Qwen3-VL-32B-Instruct` | t3k |
+| `Qwen3.6-27B` | p300x2 |
 | `gemma-3-1b-it` | n150 |
 | `gemma-3-27b-it` | galaxy |
 | `gemma-3-27b-it` | galaxy_t3k |
@@ -256,6 +257,7 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `gemma-3-4b-it` | n300 |
 | `gemma-3-4b-it` | p150 |
 | `gemma-3-4b-it` | t3k |
+| `gemma-4-31B-it` | p300x2 |
 | `gpt-oss-120b` | galaxy |
 | `gpt-oss-120b` | p300x2 |
 | `gpt-oss-120b` | t3k |

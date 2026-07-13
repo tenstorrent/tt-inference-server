@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "transport/i_storage_backend.hpp"
 #include "transport/i_transfer_engine.hpp"
@@ -72,6 +73,9 @@ class MooncakeTransferEngine : public ITransferEngine {
                        const std::string& value) override;
   std::optional<std::string> lookupMetadata(const std::string& key) override;
   TransferStatus submitAndWait(const TransferRequest& request) override;
+  TransferHandle submitBatch(
+      const std::vector<TransferRequest>& requests) override;
+  TransferStatus waitBatch(TransferHandle handle) override;
 
  private:
   std::shared_ptr<IStorageBackend> storage_;
