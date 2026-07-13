@@ -57,6 +57,7 @@ bool KvControlChannel::send(const KvControlMessage& message) {
         "[KvControlChannel] send: serialization failed (oversized field)");
     return false;
   }
+  std::lock_guard<std::mutex> lock(ioMutex_);
   // Same wall-clock budget as receive: TABLE_EXCHANGE send can block on the
   // decode accept backlog; without a deadline that pins socketMutex forever.
   IoBudgetGuard budget(transport_.get(), receive_timeout_);
@@ -70,6 +71,7 @@ KvControlChannel::ReceiveOutcome KvControlChannel::receiveMessage(
     return ReceiveOutcome::Closed;
   }
 
+  std::lock_guard<std::mutex> lock(ioMutex_);
   // One budget for the whole wait (idle NO_DATA polls + in-flight payload).
   // TcpSocketTransport enforces it inside tryReceiveMessage so mid-payload
   // stalls cannot make the deadline check below unreachable.

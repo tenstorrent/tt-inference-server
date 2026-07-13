@@ -38,9 +38,9 @@ class WorkerHealth;
  *     in production, with no change to this class.
  *
  * The injected map defines the known decode cluster at construction. addHost()
- * exists for tests and a possible future hot-add path; the production worker
- * builds the full mesh at startup (fail-closed) and does not call addHost().
- * Owns no threads; the per-host receivers run in their own processes.
+ * upserts a host and refreshes the control-channel pointer (metadata rediscovery
+ * after a decode restart). Owns no threads; the per-host receivers run in their
+ * own processes.
  */
 class KvMigrationMultiHostSender {
  public:
@@ -59,12 +59,12 @@ class KvMigrationMultiHostSender {
       WorkerHealth* health = nullptr);
 
   /**
-   * @brief Register a late-resolved decode host (test / future hot-add).
-   * @return true if the host is present after the call (added now or earlier).
-   *         false if @p channel is null.
+   * @brief Upsert a decode host and bind/refresh its control channel.
+   * @return true if the host is present after the call. false if @p channel is
+   *         null.
    *
-   * Thread-safe vs migrate(). Not used by the production worker today (startup
-   * barrier opens the full peer set before Ready).
+   * Thread-safe vs migrate(). Re-binding the channel pointer is required when
+   * the connector replaceChannel()s after metadata republishes a new endpoint.
    */
   bool addHost(const std::string& host, KvControlChannel* channel);
 

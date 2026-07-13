@@ -62,6 +62,28 @@ bool KvControlChannelConnector::openChannel(const std::string& name,
   return openChannelLocked(name, endpoint);
 }
 
+bool KvControlChannelConnector::replaceChannelLocked(const std::string& name,
+                                                     const Endpoint& endpoint) {
+  channels_.erase(name);
+  owned_.erase(name);
+  endpoints_.erase(name);
+  return openChannelLocked(name, endpoint);
+}
+
+bool KvControlChannelConnector::replaceChannel(const std::string& name,
+                                               const Endpoint& endpoint) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto it = endpoints_.find(name);
+  if (it != endpoints_.end() && it->second == endpoint &&
+      owned_.count(name) != 0) {
+    return true;  // already dialing / dialed this endpoint
+  }
+  TT_LOG_INFO(
+      "[KvControlChannelConnector] replacing channel to '{}' -> {}:{}", name,
+      endpoint.host, endpoint.port);
+  return replaceChannelLocked(name, endpoint);
+}
+
 std::size_t KvControlChannelConnector::awaitConnected(
     std::chrono::milliseconds timeout) {
   const auto deadline = std::chrono::steady_clock::now() + timeout;
@@ -91,6 +113,16 @@ std::unordered_map<std::string, KvControlChannel*>
 KvControlChannelConnector::channels() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return channels_;
+}
+
+std::optional<KvControlChannelConnector::Endpoint>
+KvControlChannelConnector::endpoint(const std::string& name) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto it = endpoints_.find(name);
+  if (it == endpoints_.end()) {
+    return std::nullopt;
+  }
+  return it->second;
 }
 
 std::size_t KvControlChannelConnector::channelCount() const {

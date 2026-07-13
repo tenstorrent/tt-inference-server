@@ -152,6 +152,37 @@ TEST(KvControlChannelConnectorTest, OpenChannelAddsLatePeer) {
   EXPECT_EQ(connector.channelCount(), 2u);
 }
 
+TEST(KvControlChannelConnectorTest, ReplaceChannelMovesEndpoint) {
+  std::unordered_map<std::string, Endpoint> eps{{"D0", {"10.0.0.1", 7001}}};
+  int factoryCalls = 0;
+
+  KvControlChannelConnector connector(
+      eps,
+      [&](const Endpoint& /*ep*/) -> std::shared_ptr<sockets::ISocketTransport> {
+        ++factoryCalls;
+        return std::make_shared<BlockingFakeTransport>(
+            std::make_shared<Pipe>(), std::make_shared<Pipe>());
+      });
+
+  ASSERT_TRUE(connector.openChannels());
+  EXPECT_EQ(factoryCalls, 1);
+  auto* first = connector.channels().at("D0");
+
+  // Same endpoint: no rebuild.
+  EXPECT_TRUE(connector.replaceChannel("D0", Endpoint{"10.0.0.1", 7001}));
+  EXPECT_EQ(factoryCalls, 1);
+  EXPECT_EQ(connector.channels().at("D0"), first);
+
+  // New host:port: tear down and dial again.
+  EXPECT_TRUE(connector.replaceChannel("D0", Endpoint{"10.0.0.9", 7009}));
+  EXPECT_EQ(factoryCalls, 2);
+  EXPECT_NE(connector.channels().at("D0"), first);
+  auto ep = connector.endpoint("D0");
+  ASSERT_TRUE(ep.has_value());
+  EXPECT_EQ(ep->host, "10.0.0.9");
+  EXPECT_EQ(ep->port, 7009);
+}
+
 TEST(KvMigrationMultiHostSenderTest, AddHostWiresLatePeerForMigrate) {
   auto reg = std::make_shared<FakeRegistry>();
   auto senderEngine = std::make_shared<FakeTransferEngine>(reg, "P");

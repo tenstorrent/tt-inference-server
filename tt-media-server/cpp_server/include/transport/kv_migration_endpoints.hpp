@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -39,24 +40,27 @@ namespace tt::transport {
  * the peers are reachable (e.g. the prefill worker before it starts consuming
  * Kafka) should follow openChannels() with awaitConnected().
  *
- * Scope: openChannels() / openChannel() create client transports; TCP connect
- * runs asynchronously. Production prefill uses a fail-closed startup barrier
- * (resolve all peers → connect all → TABLE_EXCHANGE) before Ready/Kafka.
- * openChannel() remains for tests and a possible future hot-add path; it is not
- * driven by a discovery thread in the worker today. A channel that drops
- * mid-run is surfaced per-migration (that host's migrate() fails).
+ * Scope: openChannels() / openChannel() / replaceChannel() create client
+ * transports; TCP connect runs asynchronously. Production prefill uses a
+ * fail-closed startup barrier, then a mesh watch that re-resolves
+ * kv_control/<name> from metadata when a peer drops so a restarted decode with
+ * a new host:port gets a fresh channel (not only sticky TCP reconnect).
  *
  * Lifetime: the connector owns the channels (and, via them, the transports), so
  * it must outlive the `KvMigrationMultiHostSender` built from `channels()`.
- * openChannel() is thread-safe vs channels() / channelCount() / awaitConnected()
- * so a background discovery thread *could* add peers while the worker runs —
- * that wiring is not present in the current worker.
+ * openChannel() / replaceChannel() are thread-safe vs channels() /
+ * channelCount() / awaitConnected().
  */
 class KvControlChannelConnector {
  public:
   struct Endpoint {
     std::string host;  ///< IP / DNS name to connect to.
     uint16_t port = 0;
+
+    bool operator==(const Endpoint& other) const {
+      return host == other.host && port == other.port;
+    }
+    bool operator!=(const Endpoint& other) const { return !(*this == other); }
   };
 
   /// Create a CLIENT transport aimed at `endpoint` (already
@@ -91,10 +95,18 @@ class KvControlChannelConnector {
    * @return true if the channel exists after the call (created now or earlier).
    *         false if the factory failed for a new peer.
    *
-   * Used by continuous discovery when a configured --peer appears in metadata
-   * after the startup window.
+   * Does not replace an existing channel — use replaceChannel() when metadata
+   * republishes a different host:port after a peer restart.
    */
   bool openChannel(const std::string& name, const Endpoint& endpoint);
+
+  /**
+   * @brief Tear down any existing channel for @p name and open @p endpoint.
+   * @return true if a channel to @p endpoint exists after the call.
+   *
+   * Used by the post-Ready mesh watch when kv_control/<name> moves (new IP).
+   */
+  bool replaceChannel(const std::string& name, const Endpoint& endpoint);
 
   /**
    * @brief Block until every created channel reports a live connection, or the
@@ -113,6 +125,9 @@ class KvControlChannelConnector {
   /// host → channel. Contains only hosts whose transport was created.
   std::unordered_map<std::string, KvControlChannel*> channels() const;
 
+  /// Last endpoint registered for @p name, if any.
+  std::optional<Endpoint> endpoint(const std::string& name) const;
+
   /// Number of channels created (NOT the number currently TCP-connected —
   /// see awaitConnected() / connectedCount()).
   std::size_t channelCount() const;
@@ -122,6 +137,7 @@ class KvControlChannelConnector {
 
  private:
   bool openChannelLocked(const std::string& name, const Endpoint& endpoint);
+  bool replaceChannelLocked(const std::string& name, const Endpoint& endpoint);
 
   mutable std::mutex mutex_;
   std::unordered_map<std::string, Endpoint> endpoints_;

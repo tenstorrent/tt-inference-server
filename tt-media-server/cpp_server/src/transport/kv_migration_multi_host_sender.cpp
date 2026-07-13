@@ -44,16 +44,20 @@ bool KvMigrationMultiHostSender::addHost(const std::string& host,
     return false;
   }
   std::lock_guard<std::mutex> lock(mutex_);
-  if (senders_.count(host) != 0) {
-    return true;  // already present
-  }
+  const bool isNew = senders_.count(host) == 0;
   channels_[host] = channel;
-  senders_[host] = std::make_unique<MooncakeKvSender>(
-      engine_, device_, prefill_table_, decode_table_, prefill_host_, host,
-      staging_, health_);
-  TT_LOG_INFO(
-      "[KvMigrationMultiHostSender] added late decode host '{}' (hosts={})",
-      host, senders_.size());
+  if (isNew) {
+    senders_[host] = std::make_unique<MooncakeKvSender>(
+        engine_, device_, prefill_table_, decode_table_, prefill_host_, host,
+        staging_, health_);
+    TT_LOG_INFO(
+        "[KvMigrationMultiHostSender] added late decode host '{}' (hosts={})",
+        host, senders_.size());
+  } else {
+    TT_LOG_INFO(
+        "[KvMigrationMultiHostSender] refreshed control channel for '{}'",
+        host);
+  }
   return true;
 }
 

@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <optional>
 
 #include "sockets/i_socket_transport.hpp"
@@ -38,6 +39,9 @@ namespace tt::transport {
  * The transport is injected so this is independent of the socket factory and
  * usable over a loopback pair in tests. The receive timeout/poll interval are
  * injectable so tests can keep the not-ready/timeout path fast.
+ *
+ * send() / receiveMessage() share an IO mutex so a post-Ready mesh watch can
+ * re-run TABLE_EXCHANGE on reconnect without interleaving frames with migrate().
  */
 class KvControlChannel {
  public:
@@ -83,6 +87,7 @@ class KvControlChannel {
   std::shared_ptr<sockets::ISocketTransport> transport_;
   std::chrono::milliseconds receive_timeout_;
   std::chrono::milliseconds poll_interval_;
+  mutable std::mutex ioMutex_;
 };
 
 }  // namespace tt::transport

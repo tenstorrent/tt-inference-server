@@ -18,9 +18,10 @@
 // actually moves KV on a Kafka trigger.
 //
 // Table source: each worker loads ONLY its own .pb. Prefill and decode swap
-// tables once over the control channel (TABLE_EXCHANGE / #4295): prefill keeps
-// the fleet decode table; decode stores the peer prefill table. TE/Mooncake
-// moves KV bytes only — not table provisioning. The engine→worker
+// tables over the control channel (TABLE_EXCHANGE / #4295) at bring-up and
+// again whenever a decode control session reconnects after a restart; prefill
+// keeps the fleet decode table; decode stores the peer prefill table.
+// TE/Mooncake moves KV bytes only — not table provisioning. The engine→worker
 // handoff (engine_table_handoff) can later replace the local .pb behind the
 // same IKvTable. Device IO: MultiDeviceUmd; FabricNode→ASIC chip resolution
 // comes from an optional --device-map file, falling back to the placeholder
@@ -706,8 +707,12 @@ int runPrefill(const WorkerConfig& cfg) {
   tt::worker::KvMigrationWorker worker(std::move(consumer), std::move(producer),
                                        std::move(executor));
 
-  // Full mesh is up: Ready. Peer death after this does not flip readiness
-  // (migrations to that host fail); see WorkerHealth.
+  // Full mesh is up: Ready. Prefill /readyz stays latched (a peer outage must
+  // not remove this worker from service — that peer's own probe handles it).
+  // Mesh watch: re-resolve kv_control/<name> from metadata (same path as
+  // bring-up). If the endpoint moved, replaceChannel + refresh the sender's
+  // channel pointer; when TCP is up again, re-run TABLE_EXCHANGE. Same-host
+  // restarts can still heal via sticky TCP reconnect without a metadata change.
   health.setLifecycle(WorkerLifecycle::Ready);
   TT_LOG_INFO(
       "[worker] prefill '{}' READY: {}/{} decode channels connected, "
@@ -715,8 +720,112 @@ int runPrefill(const WorkerConfig& cfg) {
       cfg.name, connector.connectedCount(), connector.channelCount(), brokers,
       reqTopic, ackTopic);
   worker.start();
+
+  std::vector<std::string> peerNames;
+  peerNames.reserve(peers.size());
+  for (const auto& [name, _] : peers) {
+    peerNames.push_back(name);
+  }
+
+  std::unordered_map<std::string, bool> wasConnected;
+  for (const auto& name : peerNames) {
+    const auto channels = connector.channels();
+    const auto it = channels.find(name);
+    wasConnected[name] =
+        it != channels.end() && it->second != nullptr && it->second->isConnected();
+  }
+  auto lastMeshWarn = std::chrono::steady_clock::now();
+
   while (!gStop.load()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(K_IDLE_POLL_MS));
+    for (const auto& name : peerNames) {
+      KvControlChannelConnector::Endpoint ep;
+      // Static --peer-control wins; otherwise re-read kv_control/<name> (and
+      // rpc_meta fallback) every poll — same resolveOnePeer as bring-up.
+      const bool resolved = (cfg.peers.count(name) != 0)
+                                ? (ep = cfg.peers.at(name), true)
+                                : resolveOnePeer(*engine, cfg, name, ep);
+      if (!resolved) {
+        if (wasConnected[name]) {
+          TT_LOG_WARN(
+              "[worker] prefill '{}': decode peer '{}' LOST (control endpoint "
+              "not in metadata; {}/{} connected)",
+              cfg.name, name, connector.connectedCount(),
+              connector.channelCount());
+        }
+        wasConnected[name] = false;
+        continue;
+      }
+
+      const auto currentEp = connector.endpoint(name);
+      if (!currentEp || *currentEp != ep) {
+        TT_LOG_INFO(
+            "[worker] prefill '{}': rediscovered peer '{}' control {}:{} "
+            "(was {}) — replacing channel",
+            cfg.name, name, ep.host, ep.port,
+            currentEp ? (currentEp->host + ":" + std::to_string(currentEp->port))
+                      : std::string("none"));
+        if (!connector.replaceChannel(name, ep)) {
+          wasConnected[name] = false;
+          continue;
+        }
+        const auto channels = connector.channels();
+        const auto chIt = channels.find(name);
+        if (chIt == channels.end() ||
+            !sender.addHost(name, chIt->second)) {
+          wasConnected[name] = false;
+          continue;
+        }
+        // New dial: wait until connected before TABLE_EXCHANGE.
+        wasConnected[name] = false;
+      }
+
+      const auto channels = connector.channels();
+      const auto chIt = channels.find(name);
+      KvControlChannel* channel =
+          (chIt != channels.end()) ? chIt->second : nullptr;
+      const bool now = channel != nullptr && channel->isConnected();
+      const bool before = wasConnected[name];
+
+      if (before && !now) {
+        TT_LOG_WARN(
+            "[worker] prefill '{}': decode peer '{}' control channel LOST "
+            "({}/{} still connected; rediscovering metadata)",
+            cfg.name, name, connector.connectedCount(),
+            connector.channelCount());
+      } else if (!before && now) {
+        TT_LOG_INFO(
+            "[worker] prefill '{}': decode peer '{}' control channel UP "
+            "({}/{}) — TABLE_EXCHANGE",
+            cfg.name, name, connector.connectedCount(),
+            connector.channelCount());
+        if (!provisionPeerTable(*channel, TableExchangeRole::Sender,
+                                prefill->blob)) {
+          TT_LOG_WARN(
+              "[worker] TABLE_EXCHANGE with peer '{}' failed; will retry",
+              name);
+          continue;
+        }
+        TT_LOG_INFO("[worker] TABLE_EXCHANGE with peer '{}' succeeded", name);
+      }
+      wasConnected[name] = now;
+    }
+
+    const std::size_t connected = connector.connectedCount();
+    const std::size_t total = connector.channelCount();
+    if (total > 0 && connected < total) {
+      const auto now = std::chrono::steady_clock::now();
+      if (now - lastMeshWarn >=
+          std::chrono::milliseconds(K_DISCOVERY_TIMEOUT_MS)) {
+        TT_LOG_WARN(
+            "[worker] prefill '{}': control mesh degraded {}/{} connected "
+            "(readyz stays ready; waiting on metadata republish / TCP / "
+            "TABLE_EXCHANGE)",
+            cfg.name, connected, total);
+        lastMeshWarn = now;
+      }
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
   }
   worker.stop();
   health.setLifecycle(WorkerLifecycle::ShuttingDown);
