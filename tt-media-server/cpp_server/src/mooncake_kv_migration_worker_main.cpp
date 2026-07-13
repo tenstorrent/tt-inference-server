@@ -73,11 +73,6 @@ using namespace tt::transport;
 
 constexpr int K_IDLE_POLL_MS = 100;
 
-// How long the prefill worker waits for its decode control channels to finish
-// their (asynchronous) TCP connect before it declares READY and starts
-// consuming Kafka. On timeout it proceeds degraded (see runPrefill).
-constexpr int K_CONNECT_TIMEOUT_MS = 30000;
-
 // Control-channel receive budget must cover one TABLE_EXCHANGE of a large
 // decode .pb (100–350+ MiB) at bring-up, not only tiny migrate messages.
 constexpr int K_CONTROL_RECEIVE_TIMEOUT_MS = 300000;
@@ -95,10 +90,10 @@ constexpr uint16_t K_DEFAULT_CONTROL_PORT = 18650;
 // service instead of a static convention.
 constexpr const char* K_CONTROL_KEY_PREFIX = "kv_control/";
 
-// Peer discovery retry loop (mirrors main's PeerDiscoveryService): keep
-// sweeping the metadata service every K_DISCOVERY_POLL_MS until every peer
-// resolves or K_DISCOVERY_TIMEOUT_MS elapses, so a peer that registers slightly
-// later still wires up instead of being lost to a one-shot lookup.
+// Peer discovery: poll metadata until every configured peer resolves, or
+// SIGTERM. K_DISCOVERY_TIMEOUT_MS is only the WARN heartbeat cadence (k8s
+// readiness stays 503; liveness stays up) — we never give up and proceed
+// degraded. Same cadence for the TCP connect barrier after openChannels().
 constexpr int K_DISCOVERY_TIMEOUT_MS = 30000;
 constexpr int K_DISCOVERY_POLL_MS = 1000;
 
@@ -465,70 +460,142 @@ bool resolveOnePeer(ITransferEngine& engine, const WorkerConfig& cfg,
   return true;
 }
 
-// Resolve every peer this worker was given (role-agnostic — a worker is just a
-// migration worker with a peer list) to its control endpoint via the metadata
-// service, retrying until all resolve or the timeout elapses. Static
-// --peer-control entries win and skip resolution; a SIGTERM (@p stop) aborts
-// the wait promptly. Returns the name->endpoint map, possibly partial on
-// timeout.
-std::unordered_map<std::string, KvControlChannelConnector::Endpoint>
-resolvePeers(ITransferEngine& engine, const WorkerConfig& cfg,
-             const std::atomic<bool>& stop) {
-  auto peers = cfg.peers;
+// Resolve every configured peer before bring-up continues. Static
+// --peer-control entries win. Blocks until pending is empty or @p stop fires;
+// logs a WARN heartbeat every K_DISCOVERY_TIMEOUT_MS while still waiting.
+// Returns nullopt if stopped with peers still unresolved (caller should exit
+// without becoming Ready).
+std::optional<
+    std::unordered_map<std::string, KvControlChannelConnector::Endpoint>>
+resolveAllPeers(ITransferEngine& engine, const WorkerConfig& cfg,
+                const std::atomic<bool>& stop) {
+  auto resolved = cfg.peers;
   std::vector<std::string> pending;
-  for (const auto& name : cfg.discover_peers)
-    if (peers.count(name) == 0) pending.push_back(name);
+  for (const auto& name : cfg.discover_peers) {
+    if (resolved.count(name) == 0) pending.push_back(name);
+  }
+  if (pending.empty()) return resolved;
 
-  const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::milliseconds(K_DISCOVERY_TIMEOUT_MS);
+  auto lastWarn = std::chrono::steady_clock::now();
+  TT_LOG_INFO("[worker] waiting for {} peer(s) to publish control endpoints",
+              pending.size());
   while (!pending.empty() && !stop.load()) {
     std::vector<std::string> unresolved;
     for (const auto& name : pending) {
       KvControlChannelConnector::Endpoint ep;
       if (resolveOnePeer(engine, cfg, name, ep)) {
-        peers[name] = ep;
+        resolved[name] = ep;
       } else {
         unresolved.push_back(name);
       }
     }
     pending.swap(unresolved);
-    if (pending.empty() || std::chrono::steady_clock::now() >= deadline) break;
+    if (pending.empty()) break;
+
+    const auto now = std::chrono::steady_clock::now();
+    if (now - lastWarn >= std::chrono::milliseconds(K_DISCOVERY_TIMEOUT_MS)) {
+      std::string missing;
+      for (const auto& name : pending) {
+        if (!missing.empty()) missing += ", ";
+        missing += name;
+      }
+      TT_LOG_WARN(
+          "[worker] still waiting for peer(s) to register: {} "
+          "(resolved={} pending={}; readyz stays not-ready)",
+          missing, resolved.size(), pending.size());
+      lastWarn = now;
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
   }
-  // Startup-only discovery: unresolved names are dropped from the returned map
-  // and never retried in-process. A late-registering decode stays unreachable
-  // until this prefill restarts (steady-state re-resolve is future work).
-  for (const auto& name : pending)
+
+  if (!pending.empty()) {
     TT_LOG_WARN(
-        "[worker] peer '{}' unresolved after {}ms; no control channel will be "
-        "opened for it until this worker restarts after the peer registers",
-        name, K_DISCOVERY_TIMEOUT_MS);
-  return peers;
+        "[worker] peer discovery cancelled with {} peer(s) still unresolved",
+        pending.size());
+    return std::nullopt;
+  }
+  TT_LOG_INFO("[worker] all {} peer(s) resolved", resolved.size());
+  return resolved;
 }
 
-// Pull the one fleet decode table from the first connected decode control
-// channel (TABLE_EXCHANGE). All decodes share the same .pb — one successful
-// exchange is enough.
-std::shared_ptr<const IKvTable> provisionDecodeTableFromControl(
-    const std::unordered_map<std::string, KvControlChannel*>& channels,
-    const std::vector<uint8_t>& prefillBlob) {
-  for (const auto& [host, channel] : channels) {
-    if (channel == nullptr || !channel->isConnected()) {
-      continue;
+// Block until every created control channel is TCP-connected, or @p stop.
+// Short await slices so SIGTERM is prompt; WARN heartbeat matches discovery.
+bool awaitAllChannelsConnected(KvControlChannelConnector& connector,
+                               const std::atomic<bool>& stop) {
+  const std::size_t total = connector.channelCount();
+  if (total == 0) return true;
+
+  auto lastWarn = std::chrono::steady_clock::now();
+  TT_LOG_INFO("[worker] waiting for {}/{} decode control channel(s) to connect",
+              total, total);
+  while (!stop.load()) {
+    const std::size_t connected = connector.awaitConnected(
+        std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
+    if (connected >= total) {
+      TT_LOG_INFO("[worker] all {} decode control channel(s) connected", total);
+      return true;
     }
-    auto table =
-        provisionPeerTable(*channel, TableExchangeRole::Sender, prefillBlob);
-    if (table) {
-      TT_LOG_INFO(
-          "[worker] got decode table via control TABLE_EXCHANGE with '{}' "
-          "({} B local prefill blob)",
-          host, prefillBlob.size());
-      return table;
+    const auto now = std::chrono::steady_clock::now();
+    if (now - lastWarn >= std::chrono::milliseconds(K_DISCOVERY_TIMEOUT_MS)) {
+      TT_LOG_WARN(
+          "[worker] still waiting for decode control channels: {}/{} connected "
+          "(readyz stays not-ready; not proceeding degraded)",
+          connected, total);
+      lastWarn = now;
     }
-    TT_LOG_WARN(
-        "[worker] TABLE_EXCHANGE with '{}' failed; trying next connected peer",
-        host);
   }
+  TT_LOG_WARN(
+      "[worker] connect barrier cancelled with {}/{} channels connected",
+      connector.connectedCount(), total);
+  return false;
+}
+
+// Pull the one fleet decode table from a connected decode control channel
+// (TABLE_EXCHANGE). All decodes share the same .pb — one successful exchange is
+// enough. Block until success or @p stop: a single failed attempt races decode
+// accept/session setup and must not tear the process down (readyz stays 503).
+std::shared_ptr<const IKvTable> awaitDecodeTableFromControl(
+    KvControlChannelConnector& connector, const std::vector<uint8_t>& prefillBlob,
+    const std::atomic<bool>& stop) {
+  auto lastWarn = std::chrono::steady_clock::now();
+  TT_LOG_INFO(
+      "[worker] waiting for control TABLE_EXCHANGE (local prefill blob {} B)",
+      prefillBlob.size());
+
+  while (!stop.load()) {
+    connector.awaitConnected(std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
+    for (const auto& [host, channel] : connector.channels()) {
+      if (channel == nullptr || !channel->isConnected()) {
+        continue;
+      }
+      auto table =
+          provisionPeerTable(*channel, TableExchangeRole::Sender, prefillBlob);
+      if (table) {
+        TT_LOG_INFO(
+            "[worker] got decode table via control TABLE_EXCHANGE with '{}' "
+            "({} B local prefill blob)",
+            host, prefillBlob.size());
+        return table;
+      }
+      TT_LOG_WARN(
+          "[worker] TABLE_EXCHANGE with '{}' failed; will retry connected peers",
+          host);
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (now - lastWarn >= std::chrono::milliseconds(K_DISCOVERY_TIMEOUT_MS)) {
+      TT_LOG_WARN(
+          "[worker] still waiting for control TABLE_EXCHANGE "
+          "({}/{} channels connected; readyz stays not-ready)",
+          connector.connectedCount(), connector.channelCount());
+      lastWarn = now;
+    }
+    // Unconditional backoff: do not depend on awaitConnected() alone to avoid
+    // a hot loop if that call is refactored away.
+    std::this_thread::sleep_for(std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
+  }
+
+  TT_LOG_WARN("[worker] TABLE_EXCHANGE cancelled before a decode table arrived");
   return nullptr;
 }
 
@@ -552,45 +619,53 @@ int runPrefill(const WorkerConfig& cfg) {
   const DeviceMap deviceMap = loadDeviceMapFile(cfg.device_map_path);
   auto device = buildDeviceIo(*prefill->table, cfg.host, deviceMap);
 
-  // Discover every decode peer's control endpoint through the metadata service
-  // (host AND port from its published "kv_control/<name>"), retrying until they
-  // resolve — this is what lets --peer be a logical tag like "decode-0" instead
-  // of a hardcoded endpoint. The prefill is the sender, so it ACTS on the
-  // peers: openChannels() below creates a control channel to each (the TCP
-  // connect then runs asynchronously in each transport's background loop).
-  auto peers = resolvePeers(*engine, cfg, gStop);
+  // Full-mesh barrier (k8s-friendly): stay alive with /healthz up and /readyz
+  // 503 until EVERY configured decode peer is resolved AND TCP-connected. Never
+  // proceed degraded — migrate() needs the full host set anyway. SIGTERM aborts
+  // the wait and exits without Ready.
+  auto peersOpt = resolveAllPeers(*engine, cfg, gStop);
+  if (!peersOpt) {
+    TT_LOG_WARN("[worker] prefill '{}' shutting down during peer discovery",
+                cfg.name);
+    return 0;
+  }
+  auto& peers = *peersOpt;
+
+  std::size_t configuredPeers = cfg.peers.size();
+  for (const auto& name : cfg.discover_peers) {
+    if (cfg.peers.count(name) == 0) ++configuredPeers;
+  }
 
   KvControlChannelConnector connector(
       peers, makeClientTransport,
       std::chrono::milliseconds(K_CONTROL_RECEIVE_TIMEOUT_MS));
-  if (!connector.openChannels()) {
-    TT_LOG_WARN(
-        "[worker] not every decode peer got a transport; involved-but-missing "
-        "hosts will fail their slice");
+  if (!connector.openChannels() ||
+      (configuredPeers > 0 && connector.channelCount() < configuredPeers)) {
+    TT_LOG_ERROR(
+        "[worker] failed to open control channels for all configured peers "
+        "(opened={}/{})",
+        connector.channelCount(), configuredPeers);
+    return 1;
   }
-
-  // Startup barrier: wait for control channels before TABLE_EXCHANGE / Kafka.
-  const std::size_t total = connector.channelCount();
-  const std::size_t connected =
-      connector.awaitConnected(std::chrono::milliseconds(K_CONNECT_TIMEOUT_MS));
-  if (connected < total) {
-    TT_LOG_WARN(
-        "[worker] only {}/{} decode control channels connected within {}ms; "
-        "migrations to unconnected hosts will fail until they connect",
-        connected, total, K_CONNECT_TIMEOUT_MS);
+  if (!awaitAllChannelsConnected(connector, gStop)) {
+    TT_LOG_WARN("[worker] prefill '{}' shutting down during connect barrier",
+                cfg.name);
+    return 0;
   }
 
   // One fleet decode table: pull once from any connected decode, or disk
-  // fallback when running without peers.
+  // fallback when running without peers. Same barrier policy as discovery /
+  // connect: stay alive with readyz 503 until exchange succeeds (or SIGTERM).
   std::shared_ptr<const IKvTable> decodeTable;
-  const bool wantsExchange = !cfg.discover_peers.empty() || !cfg.peers.empty();
+  const bool wantsExchange = configuredPeers > 0;
   if (wantsExchange) {
     decodeTable =
-        provisionDecodeTableFromControl(connector.channels(), prefill->blob);
+        awaitDecodeTableFromControl(connector, prefill->blob, gStop);
     if (!decodeTable) {
-      TT_LOG_ERROR(
-          "[worker] control TABLE_EXCHANGE failed (need >=1 connected decode)");
-      return 1;
+      TT_LOG_WARN(
+          "[worker] prefill '{}' shutting down during TABLE_EXCHANGE",
+          cfg.name);
+      return 0;
     }
   } else if (!cfg.decode_table_path.empty()) {
     auto decode = loadKvTableFile(cfg.decode_table_path);
@@ -631,41 +706,14 @@ int runPrefill(const WorkerConfig& cfg) {
   tt::worker::KvMigrationWorker worker(std::move(consumer), std::move(producer),
                                        std::move(executor));
 
-  // Readiness is gated on the CONFIGURED peer set, not only channels that were
-  // created: resolvePeers() drops unresolved names, so channelCount() can be 0
-  // even when --peer was given. Treating that as Ready 0/0 would start Kafka
-  // with no way to reach any decode. Connect await already ran above (before
-  // TABLE_EXCHANGE); reuse those counts here.
-  std::size_t configuredPeers = cfg.peers.size();
-  for (const auto& name : cfg.discover_peers) {
-    if (cfg.peers.count(name) == 0) ++configuredPeers;
-  }
-  if (total < configuredPeers) {
-    TT_LOG_WARN(
-        "[worker] only {}/{} configured decode peers resolved at startup; "
-        "unresolved peers stay unreachable until restart",
-        total, configuredPeers);
-  }
-
-  // Ready only when at least one control channel is actually connected. Zero
-  // connected channels with any configured peers (including all unresolved) is
-  // not-ready so an orchestrator won't route work here.
-  const bool isReady = !(configuredPeers > 0 && connected == 0);
-  if (isReady) {
-    health.setLifecycle(WorkerLifecycle::Ready);
-  } else {
-    health.setProcessHealthy(true);
-    TT_LOG_WARN(
-        "[worker] prefill '{}' has 0 connected decode channels "
-        "(resolved={}/configured={}); staying not-ready",
-        cfg.name, total, configuredPeers);
-  }
-
+  // Full mesh is up: Ready. Peer death after this does not flip readiness
+  // (migrations to that host fail); see WorkerHealth.
+  health.setLifecycle(WorkerLifecycle::Ready);
   TT_LOG_INFO(
-      "[worker] prefill '{}' {}: {}/{} decode channels connected "
-      "(configured={}), brokers={} req={} ack={}",
-      cfg.name, isReady ? "READY" : "not-ready", connected, total,
-      configuredPeers, brokers, reqTopic, ackTopic);
+      "[worker] prefill '{}' READY: {}/{} decode channels connected, "
+      "brokers={} req={} ack={}",
+      cfg.name, connector.connectedCount(), connector.channelCount(), brokers,
+      reqTopic, ackTopic);
   worker.start();
   while (!gStop.load()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(K_IDLE_POLL_MS));
@@ -745,18 +793,15 @@ int runDecode(const WorkerConfig& cfg) {
         cfg.name, controlKey);
   }
 
-  // Role-agnostic peer discovery (mirrors main: a worker is just a migration
-  // worker with a peer list). A decode is normally a pure receiver with no
-  // peers, but if it was given some via --peer we resolve them through the same
-  // metadata path as any worker. They are only held today — the receiver never
-  // initiates a migration — so this is the single seam to flip for a symmetric
-  // data plane: hand `resolved` to a sender exactly as runPrefill does.
+  // Role-agnostic peer discovery is available for a future symmetric data
+  // plane, but a decode is a pure receiver today: unused --peer entries must
+  // NOT gate Ready. Prefill needs this decode's control port up; blocking on
+  // resolveAllPeers here wedged rolling deploys when a listed peer was missing.
   if (!cfg.peers.empty() || !cfg.discover_peers.empty()) {
-    const auto resolved = resolvePeers(*engine, cfg, gStop);
     TT_LOG_INFO(
-        "[worker] decode '{}' resolved {} peer(s) (held; receiver role does "
-        "not initiate migrations)",
-        cfg.name, resolved.size());
+        "[worker] decode '{}' ignoring {} configured peer(s) for readiness "
+        "(receiver does not initiate migrations)",
+        cfg.name, cfg.peers.size() + cfg.discover_peers.size());
   }
 
   // Mirror registered, control server listening, endpoint published: the decode
