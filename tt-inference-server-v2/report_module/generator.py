@@ -20,17 +20,11 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
 from report_module import renderers
 from report_module.acceptance_criteria import ACCEPTANCE_EXPORT_KEYS
+from report_module.markdown_table import build_markdown_table
 from report_module.report_file_saver import ReportFileSaver
 from report_module.schema import Block, ReportSchema, SchemaLike
+from report_module.status import STATUS_GLYPHS as _STATUS_GLYPHS
 from report_module.status import TestStatus
-
-_STATUS_GLYPHS = {
-    TestStatus.PASS: "✅",
-    TestStatus.FAIL: "❌",
-    TestStatus.ERROR: "❌",
-    TestStatus.SKIP: "⏭️",
-    TestStatus.NA: "🟨",
-}
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +67,10 @@ class ReportGenerator:
         section_markdowns = [
             self._render_block(block, normalized.metadata) for block in render_sections
         ]
+        # Keep empty-md blocks here: a metrics-less spec block renders to ""
+        # but still carries the runs that seed the injected summary. Empties
+        # are dropped after injection.
         rendered_pairs = list(zip(render_sections, section_markdowns))
-        rendered_pairs = [(block, md) for block, md in rendered_pairs if md]
 
         release_md = _assemble_release_markdown(normalized, rendered_pairs)
 
@@ -177,16 +173,24 @@ def _inject_spec_test_summary(
             first_spec_idx = idx
         runs.extend(block_runs)
 
-    sections = [md for _block, md in rendered_pairs]
-    if first_spec_idx is None or not runs:
-        return sections
-
-    summary_md = _build_spec_test_summary_markdown(
-        runs, str(metadata.get("generated_at") or "")
+    summary_md = (
+        _build_spec_test_summary_markdown(runs, str(metadata.get("generated_at") or ""))
+        if runs
+        else ""
     )
-    if not summary_md:
-        return sections
-    return sections[:first_spec_idx] + [summary_md] + sections[first_spec_idx:]
+    if first_spec_idx is None or not summary_md:
+        return [md for _block, md in rendered_pairs if md]
+
+    # Insert the summary just before the first spec block, then drop empty
+    # block markdown (e.g. a spec block whose only fields moved into the
+    # summary renders to "").
+    sections: List[str] = []
+    for idx, (_block, md) in enumerate(rendered_pairs):
+        if idx == first_spec_idx:
+            sections.append(summary_md)
+        if md:
+            sections.append(md)
+    return sections
 
 
 def _spec_test_runs(block: Block) -> List[Mapping[str, Any]]:
@@ -213,6 +217,10 @@ def _run_status(run: Mapping[str, Any]) -> TestStatus:
     if resolved is not None:
         return resolved
     return TestStatus.from_legacy(run.get("success"), skipped=bool(run.get("skipped")))
+
+
+def _status_cell(status: TestStatus) -> str:
+    return f"{_STATUS_GLYPHS.get(status, '❌')} {status.value.upper()}"  # noqa: E501
 
 
 def _run_description(run: Mapping[str, Any], status: TestStatus) -> str:
@@ -262,26 +270,23 @@ def _build_spec_test_summary_markdown(
         ("Total Attempts", str(total_attempts)),
         ("Generated", generated_at or "-"),
     ]
-    summary_table = "\n".join(
-        ["| Metric | Value |", "|:-------|------:|"]
-        + [f"| {metric} | {value} |" for metric, value in summary_rows]
+
+    summary_table = build_markdown_table(
+        [{"Metric": metric, "Value": value} for metric, value in summary_rows]
     )
 
-    result_header = (
-        "| Status | Test Name | Duration | Attempts | Description |\n"
-        "|:------:|:----------|---------:|---------:|:------------|"
+    results_table = build_markdown_table(
+        [
+            {
+                "Status": _status_cell(status),
+                "Test Name": str(run.get("test_name") or ""),
+                "Duration": f"{_coerce_float(run.get('elapsed_seconds')):.2f}s",
+                "Attempts": str(_coerce_int(run.get("attempts"))),
+                "Description": _run_description(run, status),
+            }
+            for run, status in zip(runs, statuses)
+        ]
     )
-    result_rows = [
-        "| {status} | {name} | {duration:.2f}s | {attempts} | {description} |".format(
-            status=_STATUS_GLYPHS.get(status, "❌"),
-            name=str(run.get("test_name") or ""),
-            duration=_coerce_float(run.get("elapsed_seconds")),
-            attempts=_coerce_int(run.get("attempts")),
-            description=_run_description(run, status),
-        )
-        for run, status in zip(runs, statuses)
-    ]
-    results_table = "\n".join([result_header] + result_rows)
 
     return f"## 📋 Summary\n\n{summary_table}\n\n## 🧪 Test Results\n\n{results_table}"
 

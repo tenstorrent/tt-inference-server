@@ -8,6 +8,7 @@ import stat
 from pathlib import Path
 
 from benchmarking.benchmark_config import get_benchmark_config
+from workflows.v2_bridge import can_route_to_v2
 from evals.eval_config import EVAL_CONFIGS
 from server_tests.test_config import TEST_CONFIGS
 from workflows.model_spec import MODEL_SPECS
@@ -109,6 +110,7 @@ def validate_runtime_args(model_spec, runtime_config):
         workflow_type == WorkflowType.BENCHMARKS
         and not getattr(args, "prefix_cache", False)
         and not getattr(args, "spec_decode", False)
+        and not can_route_to_v2(model_spec, runtime_config)
     ):
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
@@ -149,7 +151,8 @@ def validate_runtime_args(model_spec, runtime_config):
         assert model_spec.model_name in EVAL_CONFIGS, (
             f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
         )
-        get_benchmark_config(model_spec)
+        if not can_route_to_v2(model_spec, runtime_config):
+            get_benchmark_config(model_spec)
 
     if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
         if args.docker_server or args.local_server:

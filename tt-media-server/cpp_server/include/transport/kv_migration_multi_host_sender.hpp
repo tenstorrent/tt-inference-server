@@ -76,6 +76,11 @@ class KvMigrationMultiHostSender {
  private:
   std::shared_ptr<const IKvTable> decode_table_;
   std::unordered_map<std::string, KvControlChannel*> channels_;
+  // One staging pool shared by all per-host senders: the fan-out is serial, so
+  // only one sender stages at a time, and sharing avoids N * 2 * 32 MiB of
+  // registered host memory across the decode hosts. Declared before senders_ so
+  // it outlives them.
+  std::shared_ptr<KvStagingPool> staging_;
   std::unordered_map<std::string, std::unique_ptr<MooncakeKvSender>> senders_;
 };
 

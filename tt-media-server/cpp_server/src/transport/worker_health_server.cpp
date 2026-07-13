@@ -107,12 +107,21 @@ std::string buildResponse(const Route& r) {
   return out;
 }
 
+// MSG_NOSIGNAL: a probe that disconnects before reading must not raise SIGPIPE
+// and kill the whole worker (this process only handles SIGTERM/SIGINT). Match
+// tcp_socket_transport.cpp. EINTR is a brief interruption — retry; EPIPE /
+// ECONNRESET mean the client is gone — drop this response and keep serving.
 bool sendAll(int fd, const std::string& data) {
   std::size_t sent = 0;
   while (sent < data.size()) {
-    const ssize_t n = ::send(fd, data.data() + sent, data.size() - sent, 0);
-    if (n <= 0) return false;
-    sent += static_cast<std::size_t>(n);
+    const ssize_t n =
+        ::send(fd, data.data() + sent, data.size() - sent, MSG_NOSIGNAL);
+    if (n > 0) {
+      sent += static_cast<std::size_t>(n);
+      continue;
+    }
+    if (n < 0 && errno == EINTR) continue;
+    return false;
   }
   return true;
 }

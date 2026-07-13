@@ -95,6 +95,10 @@ constexpr uint16_t K_DEFAULT_CONTROL_PORT = 18650;
 // service instead of a static convention.
 constexpr const char* K_CONTROL_KEY_PREFIX = "kv_control/";
 
+// Peer discovery retry loop (mirrors main's PeerDiscoveryService): keep
+// sweeping the metadata service every K_DISCOVERY_POLL_MS until every peer
+// resolves or K_DISCOVERY_TIMEOUT_MS elapses, so a peer that registers slightly
+// later still wires up instead of being lost to a one-shot lookup.
 constexpr int K_DISCOVERY_TIMEOUT_MS = 30000;
 constexpr int K_DISCOVERY_POLL_MS = 1000;
 
@@ -491,10 +495,13 @@ resolvePeers(ITransferEngine& engine, const WorkerConfig& cfg,
     if (pending.empty() || std::chrono::steady_clock::now() >= deadline) break;
     std::this_thread::sleep_for(std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
   }
+  // Startup-only discovery: unresolved names are dropped from the returned map
+  // and never retried in-process. A late-registering decode stays unreachable
+  // until this prefill restarts (steady-state re-resolve is future work).
   for (const auto& name : pending)
     TT_LOG_WARN(
-        "[worker] peer '{}' unresolved after {}ms; its slice fails until it "
-        "registers and is re-resolved",
+        "[worker] peer '{}' unresolved after {}ms; no control channel will be "
+        "opened for it until this worker restarts after the peer registers",
         name, K_DISCOVERY_TIMEOUT_MS);
   return peers;
 }
@@ -624,21 +631,41 @@ int runPrefill(const WorkerConfig& cfg) {
   tt::worker::KvMigrationWorker worker(std::move(consumer), std::move(producer),
                                        std::move(executor));
 
-  // Readiness gate: only after connect + table provision do we flip Ready.
-  if (connected == 0 && total > 0) {
+  // Readiness is gated on the CONFIGURED peer set, not only channels that were
+  // created: resolvePeers() drops unresolved names, so channelCount() can be 0
+  // even when --peer was given. Treating that as Ready 0/0 would start Kafka
+  // with no way to reach any decode. Connect await already ran above (before
+  // TABLE_EXCHANGE); reuse those counts here.
+  std::size_t configuredPeers = cfg.peers.size();
+  for (const auto& name : cfg.discover_peers) {
+    if (cfg.peers.count(name) == 0) ++configuredPeers;
+  }
+  if (total < configuredPeers) {
+    TT_LOG_WARN(
+        "[worker] only {}/{} configured decode peers resolved at startup; "
+        "unresolved peers stay unreachable until restart",
+        total, configuredPeers);
+  }
+
+  // Ready only when at least one control channel is actually connected. Zero
+  // connected channels with any configured peers (including all unresolved) is
+  // not-ready so an orchestrator won't route work here.
+  const bool isReady = !(configuredPeers > 0 && connected == 0);
+  if (isReady) {
+    health.setLifecycle(WorkerLifecycle::Ready);
+  } else {
     health.setProcessHealthy(true);
     TT_LOG_WARN(
-        "[worker] prefill '{}' has 0/{} decode channels connected; staying "
-        "not-ready until a peer connects",
-        cfg.name, total);
-  } else {
-    health.setLifecycle(WorkerLifecycle::Ready);
+        "[worker] prefill '{}' has 0 connected decode channels "
+        "(resolved={}/configured={}); staying not-ready",
+        cfg.name, total, configuredPeers);
   }
 
   TT_LOG_INFO(
-      "[worker] prefill '{}' READY: {}/{} decode channels connected, "
-      "brokers={} req={} ack={}",
-      cfg.name, connected, total, brokers, reqTopic, ackTopic);
+      "[worker] prefill '{}' {}: {}/{} decode channels connected "
+      "(configured={}), brokers={} req={} ack={}",
+      cfg.name, isReady ? "READY" : "not-ready", connected, total,
+      configuredPeers, brokers, reqTopic, ackTopic);
   worker.start();
   while (!gStop.load()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(K_IDLE_POLL_MS));
@@ -668,13 +695,17 @@ int runDecode(const WorkerConfig& cfg) {
 
   // Segment name the sender opens for the data plane. With a metadata service
   // the mirror is registered under — and resolvable by — the worker's LOGICAL
-  // name (cfg.name). Only P2PHANDSHAKE falls back to the engine's live IP:port.
-  // An explicit --segment always overrides.
+  // name (cfg.name): the same register-by-name / resolve-by-name discovery the
+  // bringup worker uses on main (PeerDiscoveryService), so the sender finds the
+  // peer through the metadata service instead of a hard-coded endpoint. Only
+  // P2PHANDSHAKE (no metadata registry to resolve a logical name) falls back to
+  // the engine's live IP:port. An explicit --segment always overrides.
   std::string segment = cfg.segment;
   if (segment.empty()) {
     segment = (cfg.metadata_uri == "P2PHANDSHAKE") ? engine->localServerName()
                                                    : cfg.name;
   }
+  // The mirror is registered as the Mooncake segment inside MooncakeKvReceiver.
   MooncakeKvReceiver receiver(engine, *device, decode->table, cfg.host,
                               segment);
   if (!receiver.registered()) {
@@ -695,6 +726,12 @@ int runDecode(const WorkerConfig& cfg) {
     return 1;
   }
 
+  // Publish our KV control endpoint (host + bound port) into the metadata
+  // service, keyed by our logical name, so prefill discovers where to open the
+  // control channel — the same register-by-name / resolve-by-name path the data
+  // plane already uses. The host mirrors what Mooncake advertised in rpc_meta.
+  // Only meaningful with a real metadata service; under P2PHANDSHAKE this
+  // no-ops and prefill falls back to a static endpoint.
   const std::string controlEndpoint = hostOf(engine->localServerName()) + ":" +
                                       std::to_string(cfg.control_port);
   const std::string controlKey = std::string(K_CONTROL_KEY_PREFIX) + cfg.name;
@@ -708,6 +745,22 @@ int runDecode(const WorkerConfig& cfg) {
         cfg.name, controlKey);
   }
 
+  // Role-agnostic peer discovery (mirrors main: a worker is just a migration
+  // worker with a peer list). A decode is normally a pure receiver with no
+  // peers, but if it was given some via --peer we resolve them through the same
+  // metadata path as any worker. They are only held today — the receiver never
+  // initiates a migration — so this is the single seam to flip for a symmetric
+  // data plane: hand `resolved` to a sender exactly as runPrefill does.
+  if (!cfg.peers.empty() || !cfg.discover_peers.empty()) {
+    const auto resolved = resolvePeers(*engine, cfg, gStop);
+    TT_LOG_INFO(
+        "[worker] decode '{}' resolved {} peer(s) (held; receiver role does "
+        "not initiate migrations)",
+        cfg.name, resolved.size());
+  }
+
+  // Mirror registered, control server listening, endpoint published: the decode
+  // worker has finished its own bring-up, so flip it Ready.
   health.setLifecycle(WorkerLifecycle::Ready);
   TT_LOG_INFO("[worker] decode '{}' READY: segment={} control_port={}",
               cfg.name, segment, cfg.control_port);

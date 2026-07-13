@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "transport/i_storage_backend.hpp"
 #include "transport/transfer_types.hpp"
@@ -164,6 +165,45 @@ class ITransferEngine {
    * Convenience over the batched Mooncake API for the PoC's one-tensor path.
    */
   virtual TransferStatus submitAndWait(const TransferRequest& request) = 0;
+
+  /**
+   * @brief Submit many transfers as one batch and return immediately.
+   *
+   * The requests are issued inside a single underlying batch (one
+   * allocateBatchID / submitTransfer) and run concurrently on the engine's own
+   * threads; this call does NOT block. The caller can do other work — e.g.
+   * stage the next window from device DRAM into a second buffer — and later
+   * block on the returned handle with waitBatch(). That read/transfer overlap
+   * is the point of the async pair. Every request's `local_addr` must stay
+   * registered and unmodified until the matching waitBatch() returns.
+   *
+   * @return a valid handle to await, or an invalid handle (valid==false) if the
+   *         batch could not be dispatched (bad request / not initialized).
+   */
+  virtual TransferHandle submitBatch(
+      const std::vector<TransferRequest>& requests) = 0;
+
+  /**
+   * @brief Block until a submitBatch() batch finishes, then release it.
+   *
+   * @return COMPLETED with the summed transferred_bytes iff *every* request in
+   *         the batch completed; FAILED otherwise (including an invalid
+   * handle).
+   */
+  virtual TransferStatus waitBatch(TransferHandle handle) = 0;
+
+  /**
+   * @brief Submit a batch and block until it completes. Convenience over
+   *        submitBatch + waitBatch for callers that do not overlap with other
+   *        work. An empty request list is COMPLETED with 0 bytes.
+   */
+  virtual TransferStatus submitBatchAndWait(
+      const std::vector<TransferRequest>& requests) {
+    if (requests.empty()) return TransferStatus{TransferState::COMPLETED, 0};
+    const TransferHandle handle = submitBatch(requests);
+    if (!handle.valid) return TransferStatus{TransferState::FAILED, 0};
+    return waitBatch(handle);
+  }
 };
 
 }  // namespace tt::transport
