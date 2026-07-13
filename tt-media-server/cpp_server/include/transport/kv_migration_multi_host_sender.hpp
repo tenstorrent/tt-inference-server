@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -36,9 +37,10 @@ class WorkerHealth;
  *     standalone tests and the e2e; a discovery service supplies the same map
  *     in production, with no change to this class.
  *
- * The injected map defines the known decode cluster; each migrate() drives only
- * the subset of hosts the request actually touches. Owns no threads; the
- * per-host receivers run in their own processes.
+ * The injected map defines the known decode cluster at construction. addHost()
+ * exists for tests and a possible future hot-add path; the production worker
+ * builds the full mesh at startup (fail-closed) and does not call addHost().
+ * Owns no threads; the per-host receivers run in their own processes.
  */
 class KvMigrationMultiHostSender {
  public:
@@ -57,6 +59,16 @@ class KvMigrationMultiHostSender {
       WorkerHealth* health = nullptr);
 
   /**
+   * @brief Register a late-resolved decode host (test / future hot-add).
+   * @return true if the host is present after the call (added now or earlier).
+   *         false if @p channel is null.
+   *
+   * Thread-safe vs migrate(). Not used by the production worker today (startup
+   * barrier opens the full peer set before Ready).
+   */
+  bool addHost(const std::string& host, KvControlChannel* channel);
+
+  /**
    * @brief Drive the migration to every decode host the request touches.
    *
    * Hosts are driven in a deterministic (sorted) order. A host involved in the
@@ -71,10 +83,17 @@ class KvMigrationMultiHostSender {
   bool migrate(uint64_t uuid, const MigrationRequest& request);
 
   /// Number of known decode hosts (channel-map size).
-  std::size_t hostCount() const { return senders_.size(); }
+  std::size_t hostCount() const;
 
  private:
+  std::shared_ptr<ITransferEngine> engine_;
+  IDeviceIo& device_;
+  std::shared_ptr<const IKvTable> prefill_table_;
   std::shared_ptr<const IKvTable> decode_table_;
+  std::string prefill_host_;
+  WorkerHealth* health_ = nullptr;
+
+  mutable std::mutex mutex_;
   std::unordered_map<std::string, KvControlChannel*> channels_;
   // One staging pool shared by all per-host senders: the fan-out is serial, so
   // only one sender stages at a time, and sharing avoids N * 2 * 32 MiB of

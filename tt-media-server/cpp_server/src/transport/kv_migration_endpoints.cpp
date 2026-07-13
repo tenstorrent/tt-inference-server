@@ -22,29 +22,44 @@ KvControlChannelConnector::KvControlChannelConnector(
       receive_timeout_(receiveTimeout),
       poll_interval_(pollInterval) {}
 
+bool KvControlChannelConnector::openChannelLocked(const std::string& name,
+                                                  const Endpoint& endpoint) {
+  if (owned_.count(name) != 0) {
+    return true;  // already created (idempotent)
+  }
+  auto transport = factory_ ? factory_(endpoint) : nullptr;
+  if (!transport) {
+    TT_LOG_ERROR(
+        "[KvControlChannelConnector] no transport for decode host '{}' "
+        "({}:{})",
+        name, endpoint.host, endpoint.port);
+    return false;
+  }
+  endpoints_[name] = endpoint;
+  auto channel = std::make_unique<KvControlChannel>(
+      std::move(transport), receive_timeout_, poll_interval_);
+  channels_[name] = channel.get();
+  owned_[name] = std::move(channel);
+  TT_LOG_INFO("[KvControlChannelConnector] opened channel to '{}' ({}:{})",
+              name, endpoint.host, endpoint.port);
+  return true;
+}
+
 bool KvControlChannelConnector::openChannels() {
+  std::lock_guard<std::mutex> lock(mutex_);
   bool allCreated = true;
   for (const auto& [host, endpoint] : endpoints_) {
-    if (owned_.count(host) != 0) {
-      continue;  // already created (idempotent re-open)
-    }
-    auto transport = factory_ ? factory_(endpoint) : nullptr;
-    if (!transport) {
-      TT_LOG_ERROR(
-          "[KvControlChannelConnector] no transport for decode host '{}' "
-          "({}:{})",
-          host, endpoint.host, endpoint.port);
+    if (!openChannelLocked(host, endpoint)) {
       allCreated = false;
-      continue;
     }
-    auto channel = std::make_unique<KvControlChannel>(
-        std::move(transport), receive_timeout_, poll_interval_);
-    channels_[host] = channel.get();
-    owned_[host] = std::move(channel);
-    TT_LOG_INFO("[KvControlChannelConnector] opened channel to '{}' ({}:{})",
-                host, endpoint.host, endpoint.port);
   }
   return allCreated;
+}
+
+bool KvControlChannelConnector::openChannel(const std::string& name,
+                                            const Endpoint& endpoint) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return openChannelLocked(name, endpoint);
 }
 
 std::size_t KvControlChannelConnector::awaitConnected(
@@ -52,12 +67,17 @@ std::size_t KvControlChannelConnector::awaitConnected(
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   for (;;) {
     std::size_t connected = 0;
-    for (const auto& [host, channel] : channels_) {
-      if (channel->isConnected()) {
-        ++connected;
+    std::size_t total = 0;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      total = channels_.size();
+      for (const auto& [host, channel] : channels_) {
+        if (channel->isConnected()) {
+          ++connected;
+        }
       }
     }
-    if (connected == channels_.size()) {
+    if (connected == total) {
       return connected;  // all created channels are up (trivially true if none)
     }
     if (std::chrono::steady_clock::now() >= deadline) {
@@ -69,7 +89,24 @@ std::size_t KvControlChannelConnector::awaitConnected(
 
 std::unordered_map<std::string, KvControlChannel*>
 KvControlChannelConnector::channels() const {
+  std::lock_guard<std::mutex> lock(mutex_);
   return channels_;
+}
+
+std::size_t KvControlChannelConnector::channelCount() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return channels_.size();
+}
+
+std::size_t KvControlChannelConnector::connectedCount() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  std::size_t connected = 0;
+  for (const auto& [host, channel] : channels_) {
+    if (channel->isConnected()) {
+      ++connected;
+    }
+  }
+  return connected;
 }
 
 // ---------------------------------------------------------------------------

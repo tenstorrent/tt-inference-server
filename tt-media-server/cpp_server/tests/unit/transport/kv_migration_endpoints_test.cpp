@@ -128,6 +128,71 @@ TEST(KvControlChannelConnectorTest, SkipsHostWhenFactoryFailsButKeepsRest) {
   EXPECT_FALSE(channels.count("D1"));
 }
 
+TEST(KvControlChannelConnectorTest, OpenChannelAddsLatePeer) {
+  std::unordered_map<std::string, Endpoint> eps{{"D0", {"10.0.0.1", 7001}}};
+
+  KvControlChannelConnector connector(
+      eps,
+      [](const Endpoint& /*ep*/) -> std::shared_ptr<sockets::ISocketTransport> {
+        return std::make_shared<BlockingFakeTransport>(
+            std::make_shared<Pipe>(), std::make_shared<Pipe>());
+      });
+
+  ASSERT_TRUE(connector.openChannels());
+  EXPECT_EQ(connector.channelCount(), 1u);
+
+  EXPECT_TRUE(connector.openChannel("D1", Endpoint{"10.0.0.2", 7002}));
+  EXPECT_EQ(connector.channelCount(), 2u);
+  auto channels = connector.channels();
+  ASSERT_TRUE(channels.count("D1"));
+  EXPECT_NE(channels["D1"], nullptr);
+
+  // Idempotent: second open of the same name is a no-op success.
+  EXPECT_TRUE(connector.openChannel("D1", Endpoint{"10.0.0.2", 7002}));
+  EXPECT_EQ(connector.channelCount(), 2u);
+}
+
+TEST(KvMigrationMultiHostSenderTest, AddHostWiresLatePeerForMigrate) {
+  auto reg = std::make_shared<FakeRegistry>();
+  auto senderEngine = std::make_shared<FakeTransferEngine>(reg, "P");
+  auto prefill = std::make_shared<InMemoryKvTable>(
+      buildTable("P", {1, 0}, {1, 1}, {1, 2}, {1, 3}, 0x1000, 0, 0x2000, 0));
+  auto decode = std::make_shared<InMemoryKvTable>(buildTableSplitHosts(
+      "D0", "D1", {2, 0}, {2, 1}, {3, 0}, {3, 1}, 0x8000, 0, 0x9000, 1));
+
+  FakeDeviceIo prefillDev;
+  seedPrefill(prefillDev);
+  FakeDeviceIo devD0, devD1;
+  DecodeHost d0(reg, decode, "D0", "segD0", devD0);
+  DecodeHost d1(reg, decode, "D1", "segD1", devD1);
+
+  std::unordered_map<std::string, Endpoint> eps{{"D0", {"127.0.0.1", 7001}}};
+  std::unordered_map<uint16_t, std::shared_ptr<BlockingFakeTransport>> clients{
+      {7001, d0.clientTp}, {7002, d1.clientTp}};
+  KvControlChannelConnector connector(
+      eps,
+      [&](const Endpoint& ep) -> std::shared_ptr<sockets::ISocketTransport> {
+        return clients.at(ep.port);
+      },
+      K_RECV_TIMEOUT, K_POLL_INTERVAL);
+  ASSERT_TRUE(connector.openChannels());
+
+  KvMigrationMultiHostSender multiHost(senderEngine, prefillDev, prefill,
+                                       decode, "P", connector.channels());
+  EXPECT_EQ(multiHost.hostCount(), 1u);
+  // Without D1 the fan-out must fail (layer 1 lives on D1).
+  EXPECT_FALSE(multiHost.migrate(0xAB, wholeSlot5()));
+
+  ASSERT_TRUE(connector.openChannel("D1", Endpoint{"127.0.0.1", 7002}));
+  auto channels = connector.channels();
+  ASSERT_TRUE(multiHost.addHost("D1", channels.at("D1")));
+  EXPECT_EQ(multiHost.hostCount(), 2u);
+  EXPECT_TRUE(multiHost.migrate(0xAC, wholeSlot5()));
+
+  d0.server->stop();
+  d1.server->stop();
+}
+
 // ---------------------------------------------------------------------------
 // KvMigrationReceiverServer — start failure
 // ---------------------------------------------------------------------------

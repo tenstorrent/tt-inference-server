@@ -16,17 +16,50 @@ KvMigrationMultiHostSender::KvMigrationMultiHostSender(
     std::shared_ptr<const IKvTable> decodeTable, std::string prefillHost,
     std::unordered_map<std::string, KvControlChannel*> channels,
     WorkerHealth* health)
-    : decode_table_(std::move(decodeTable)), channels_(std::move(channels)) {
+    : engine_(std::move(engine)),
+      device_(device),
+      prefill_table_(std::move(prefillTable)),
+      decode_table_(std::move(decodeTable)),
+      prefill_host_(std::move(prefillHost)),
+      health_(health),
+      channels_(std::move(channels)) {
   // One staging pool, registered once, shared by every per-host sender (safe
   // because the fan-out in migrate() is serial).
-  staging_ = std::make_shared<KvStagingPool>(engine);
+  staging_ = std::make_shared<KvStagingPool>(engine_);
   // One per-host sender, built once: each holds the destination addressing for
   // its decode host (whole-table-stable), reused across migrations.
   for (const auto& [host, channel] : channels_) {
     senders_[host] = std::make_unique<MooncakeKvSender>(
-        engine, device, prefillTable, decode_table_, prefillHost, host,
-        staging_, health);
+        engine_, device_, prefill_table_, decode_table_, prefill_host_, host,
+        staging_, health_);
   }
+}
+
+bool KvMigrationMultiHostSender::addHost(const std::string& host,
+                                         KvControlChannel* channel) {
+  if (channel == nullptr) {
+    TT_LOG_ERROR(
+        "[KvMigrationMultiHostSender] addHost('{}'): null control channel",
+        host);
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (senders_.count(host) != 0) {
+    return true;  // already present
+  }
+  channels_[host] = channel;
+  senders_[host] = std::make_unique<MooncakeKvSender>(
+      engine_, device_, prefill_table_, decode_table_, prefill_host_, host,
+      staging_, health_);
+  TT_LOG_INFO(
+      "[KvMigrationMultiHostSender] added late decode host '{}' (hosts={})",
+      host, senders_.size());
+  return true;
+}
+
+std::size_t KvMigrationMultiHostSender::hostCount() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return senders_.size();
 }
 
 bool KvMigrationMultiHostSender::migrate(uint64_t uuid,
@@ -49,27 +82,41 @@ bool KvMigrationMultiHostSender::migrate(uint64_t uuid,
     return false;
   }
 
+  // Snapshot host → channel/sender under the lock so a concurrent addHost()
+  // cannot invalidate iterators mid-fan-out. migrate() itself stays serial
+  // (executor), but discovery may add hosts at any time.
+  struct HostLeg {
+    std::string host;
+    KvControlChannel* channel = nullptr;
+    MooncakeKvSender* sender = nullptr;
+  };
+  std::vector<HostLeg> legs;
+  legs.reserve(hosts.size());
   bool ok = true;
-  for (const std::string& host : hosts) {
-    const auto chIt = channels_.find(host);
-    const auto sIt = senders_.find(host);
-    if (chIt == channels_.end() || sIt == senders_.end()) {
-      TT_LOG_ERROR(
-          "[KvMigrationMultiHostSender] migrate(uuid={}): no control channel "
-          "for "
-          "decode host '{}' (resolution missing)",
-          uuid, host);
-      ok = false;
-      continue;  // attempt the rest so the report is comprehensive
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const std::string& host : hosts) {
+      const auto chIt = channels_.find(host);
+      const auto sIt = senders_.find(host);
+      if (chIt == channels_.end() || sIt == senders_.end()) {
+        TT_LOG_ERROR(
+            "[KvMigrationMultiHostSender] migrate(uuid={}): no control "
+            "channel for decode host '{}' (resolution missing)",
+            uuid, host);
+        ok = false;
+        continue;
+      }
+      legs.push_back(HostLeg{host, chIt->second, sIt->second.get()});
     }
-    // Reuse the single-host orchestrator for this host's Begin/MirrorReady/
-    // Done/Ack sequence over its own channel.
-    KvMigrationSender perHost(*chIt->second, *sIt->second);
+  }
+
+  for (const HostLeg& leg : legs) {
+    KvMigrationSender perHost(*leg.channel, *leg.sender);
     if (!perHost.migrate(uuid, request)) {
       TT_LOG_ERROR(
           "[KvMigrationMultiHostSender] migrate(uuid={}): decode host '{}' "
           "failed",
-          uuid, host);
+          uuid, leg.host);
       ok = false;
     }
   }

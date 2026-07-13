@@ -39,12 +39,18 @@ namespace tt::transport {
  * the peers are reachable (e.g. the prefill worker before it starts consuming
  * Kafka) should follow openChannels() with awaitConnected().
  *
- * Scope: this handles the STARTUP connect only. A channel that drops mid-run is
- * surfaced per-migration (that host's `migrate()` fails and acks FAILED);
- * steady-state re-connection / peer-drop recovery is out of scope here.
+ * Scope: openChannels() / openChannel() create client transports; TCP connect
+ * runs asynchronously. Production prefill uses a fail-closed startup barrier
+ * (resolve all peers → connect all → TABLE_EXCHANGE) before Ready/Kafka.
+ * openChannel() remains for tests and a possible future hot-add path; it is not
+ * driven by a discovery thread in the worker today. A channel that drops
+ * mid-run is surfaced per-migration (that host's migrate() fails).
  *
  * Lifetime: the connector owns the channels (and, via them, the transports), so
  * it must outlive the `KvMigrationMultiHostSender` built from `channels()`.
+ * openChannel() is thread-safe vs channels() / channelCount() / awaitConnected()
+ * so a background discovery thread *could* add peers while the worker runs —
+ * that wiring is not present in the current worker.
  */
 class KvControlChannelConnector {
  public:
@@ -81,6 +87,16 @@ class KvControlChannelConnector {
   bool openChannels();
 
   /**
+   * @brief Create (or no-op if already present) a control channel for one peer.
+   * @return true if the channel exists after the call (created now or earlier).
+   *         false if the factory failed for a new peer.
+   *
+   * Used by continuous discovery when a configured --peer appears in metadata
+   * after the startup window.
+   */
+  bool openChannel(const std::string& name, const Endpoint& endpoint);
+
+  /**
    * @brief Block until every created channel reports a live connection, or the
    *        timeout elapses.
    * @param timeout maximum time to wait for the asynchronous TCP connects.
@@ -94,15 +110,20 @@ class KvControlChannelConnector {
    */
   std::size_t awaitConnected(std::chrono::milliseconds timeout);
 
-  /// host → channel, for KvMigrationMultiHostSender. Contains only the hosts
-  /// whose transport was created by openChannels().
+  /// host → channel. Contains only hosts whose transport was created.
   std::unordered_map<std::string, KvControlChannel*> channels() const;
 
-  /// Number of channels created by openChannels() (NOT the number currently
-  /// TCP-connected — see awaitConnected()).
-  std::size_t channelCount() const { return channels_.size(); }
+  /// Number of channels created (NOT the number currently TCP-connected —
+  /// see awaitConnected() / connectedCount()).
+  std::size_t channelCount() const;
+
+  /// How many created channels currently report isConnected().
+  std::size_t connectedCount() const;
 
  private:
+  bool openChannelLocked(const std::string& name, const Endpoint& endpoint);
+
+  mutable std::mutex mutex_;
   std::unordered_map<std::string, Endpoint> endpoints_;
   TransportFactory factory_;
   std::chrono::milliseconds receive_timeout_;
