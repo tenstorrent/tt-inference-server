@@ -464,6 +464,7 @@ log "starting frontend ($FRONTEND_IMAGE)"
 docker run -d --name "$FRONTEND_NAME" --network "$NETWORK_NAME" -p "${FRONTEND_HOST_PORT}:8000" \
     -e DYN_DISCOVERY_BACKEND=etcd \
     -e ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
+    -e DYN_REQUEST_PLANE_CODEC="${DYN_REQUEST_PLANE_CODEC:-json}" \
     -e MODEL_NAME="$MODEL_NAME" \
     -e HF_TOKEN="${HF_TOKEN:-}" \
     -e DYN_CHAT_PROCESSOR="${DYN_CHAT_PROCESSOR:-dynamo}" \

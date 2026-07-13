@@ -134,6 +134,7 @@ start_frontend() {
     setsid nohup env \
         DYN_DISCOVERY_BACKEND=etcd ETCD_ENDPOINTS="${ETCD_ENDPOINTS}" \
         DYN_REQUEST_PLANE=tcp DYN_EVENT_PLANE=zmq \
+        DYN_REQUEST_PLANE_CODEC="${DYN_REQUEST_PLANE_CODEC:-json}" \
         DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
         "${DYN_VENV}/bin/python3" -m dynamo.frontend \
             --http-port "${HTTP_PORT}" \
@@ -192,11 +193,45 @@ wait_ready() {
     log "waiting for /v1/models to list ${MODEL}"
     for i in $(seq 1 40); do
         if curl -s "http://127.0.0.1:${HTTP_PORT}/v1/models" 2>/dev/null | grep -q "${MODEL}"; then
-            log "ready after ${i}s"; return 0
+            log "/v1/models ready after ${i}s"
+            break
         fi
         sleep 1
+        if [[ "${i}" == "40" ]]; then
+            die "frontend never listed ${MODEL}; see ${FRONTEND_LOG} and worker logs"
+        fi
     done
-    die "frontend never listed ${MODEL}; see ${FRONTEND_LOG} and worker logs"
+
+    log "waiting for /v1/chat/completions route"
+    for i in $(seq 1 40); do
+        local status
+        status="$(curl -s -o /dev/null -w "%{http_code}" \
+            -H 'Content-Type: application/json' \
+            -d '{}' \
+            "http://127.0.0.1:${HTTP_PORT}/v1/chat/completions" 2>/dev/null || true)"
+        if [[ "${status}" != "000" && "${status}" != "404" ]]; then
+            log "chat completions route ready after ${i}s"
+            break
+        fi
+        sleep 1
+        if [[ "${i}" == "40" ]]; then
+            die "frontend chat completions route did not become ready; see ${FRONTEND_LOG}"
+        fi
+    done
+
+    if [[ "${DYNAMO_NATIVE_ROUTING}" == "1" ]]; then
+        log "waiting for native Dynamo router activation"
+        for i in $(seq 1 40); do
+            if grep -aq "Prefill router activated successfully" "${FRONTEND_LOG}"; then
+                log "native router ready after ${i}s"
+                return 0
+            fi
+            sleep 1
+        done
+        die "native Dynamo router did not finish activation; see ${FRONTEND_LOG}"
+    fi
+
+    log "ready"
 }
 
 wait_worker_healthy() {
