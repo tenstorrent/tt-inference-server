@@ -122,8 +122,6 @@ def generate_tts_report_data(model_spec, eval_run_id):
     return file_name_pattern
 
 
-
-
 def get_audio_benchmark_targets(model_spec, device_str, logger):
     """Get audio-specific benchmark targets.
 

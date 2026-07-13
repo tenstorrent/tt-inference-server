@@ -149,9 +149,7 @@ def run_workflows(model_spec, runtime_config, json_fpath):
     # with no v2 driver yet (tests, stress_tests, LLM/VLM spec_tests) plus the
     # follow-up REPORTS step.
     workflow_results = []
-    workflow_results.append(
-        run_single_workflow(model_spec, runtime_config, json_fpath)
-    )
+    workflow_results.append(run_single_workflow(model_spec, runtime_config, json_fpath))
     if WorkflowType.from_string(runtime_config.workflow) != WorkflowType.REPORTS:
         runtime_config.workflow = WorkflowType.REPORTS.name
         workflow_results.append(
