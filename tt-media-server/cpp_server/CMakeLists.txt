@@ -829,6 +829,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/model_service_registration.cpp
     src/services/session_manager.cpp
     src/services/session_resolution.cpp
+    src/services/decode_slot_reservation.cpp
     src/services/memory_services/memory_manager.cpp
     src/domain/session.cpp
     src/runtime/worker/worker_manager.cpp
@@ -924,6 +925,33 @@ target_include_directories(prefill_integration_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
+add_executable(decode_slot_reservation_integration_test
+    tests/integration/server/decode_slot_reservation_integration_test.cpp
+    ${INTEGRATION_TEST_COMMON_SOURCES}
+)
+target_link_libraries(decode_slot_reservation_integration_test PRIVATE
+    llm_runner_lib
+    Drogon::Drogon
+    cereal::cereal
+    prometheus-cpp::core
+    pybind11::embed
+    stb_image_write
+    xxhash_lib
+    GTest::gtest_main)
+if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+    target_link_libraries(decode_slot_reservation_integration_test PRIVATE PkgConfig::ZMQ)
+elseif(TARGET libzmq-static)
+    target_link_libraries(decode_slot_reservation_integration_test PRIVATE libzmq-static)
+elseif(TARGET libzmq)
+    target_link_libraries(decode_slot_reservation_integration_test PRIVATE libzmq)
+endif()
+target_include_directories(decode_slot_reservation_integration_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cppzmq_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
 add_executable(disaggregated_e2e_test
     tests/e2e/disaggregated_e2e_test.cpp
     ${INTEGRATION_TEST_COMMON_SOURCES}
@@ -959,10 +987,13 @@ include(GoogleTest)
 # times AND exposing a racy teardown. Run all six tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
 add_test(NAME PrefillIntegrationTest COMMAND prefill_integration_test)
+add_test(NAME DecodeSlotReservationIntegrationTest
+         COMMAND decode_slot_reservation_integration_test)
 add_test(NAME DisaggregatedE2ETest COMMAND disaggregated_e2e_test)
 # Integration tests boot the full server stack and share ports/resources.
 # Prevent parallel execution via RESOURCE_LOCK.
-set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2ETest PROPERTIES
+set_tests_properties(MainIntegrationTest PrefillIntegrationTest
+                     DecodeSlotReservationIntegrationTest DisaggregatedE2ETest PROPERTIES
     TIMEOUT 120
     RESOURCE_LOCK integration_server
 )
@@ -1100,6 +1131,7 @@ set(SOURCES
     src/services/llm_service.cpp
     src/services/session_manager.cpp
     src/services/session_resolution.cpp
+    src/services/decode_slot_reservation.cpp
     src/domain/session.cpp
     src/runtime/worker/single_process_worker.cpp
     src/runtime/worker/worker_manager.cpp

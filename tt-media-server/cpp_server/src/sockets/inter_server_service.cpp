@@ -303,7 +303,7 @@ void InterServerService::setupMessageHandlers() {
         [this](const SlotReservationResponseMessage& message) {
           TT_LOG_INFO(
               "[InterServerService] Received slot reservation response: "
-              "taskId={} error={} (handler only; phase 0)",
+              "taskId={} error={}",
               message.taskId, message.error);
           if (slotReservationResponseCallback) {
             slotReservationResponseCallback(message);
@@ -348,7 +348,7 @@ void InterServerService::setupMessageHandlers() {
         [this](const SlotReservationRequestMessage& message) {
           TT_LOG_INFO(
               "[InterServerService] Received slot reservation request: "
-              "taskId={} hashes={} (handler only; phase 0)",
+              "taskId={} hashes={}",
               message.taskId, message.registrationHashes.size());
           if (slotReservationRequestCallback) {
             slotReservationRequestCallback(message);

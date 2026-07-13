@@ -143,6 +143,14 @@ void LLMPipeline::resolveSession(
 
   SessionInfo info;
 
+  if (tt::config::llmMode() == tt::config::LLMMode::PREFILL_ONLY &&
+      tt::config::usePrefillFirstDisaggregation()) {
+    auto routingInfo = computeRoutingInfo(*req);
+    info.registrationHashes = routingInfo.hashes();
+    onResolved(info);
+    return;
+  }
+
   if (!sessionManager_) {
     TT_LOG_WARN("[LLMPipeline] SessionManager not available");
     onResolved(info);
@@ -523,6 +531,22 @@ void LLMPipeline::dispatchGeneration(
       disaggregationService_->handleStreamingRequest(
           request, sessionInfo.registrationHashes, cb);
     }
+    return;
+  }
+
+  if (mode == tt::config::LLMMode::PREFILL_ONLY) {
+    if (!tt::config::usePrefillFirstDisaggregation()) {
+      throw std::runtime_error(
+          "LLM Mode must be regular or decode only for chat completions");
+    }
+    if (!disaggregationService_) {
+      throw std::runtime_error(
+          "[LLMPipeline] Prefill-first disaggregation requires "
+          "DisaggregationService");
+    }
+    request.max_tokens = 1;
+    disaggregationService_->handlePrefillFirstStreamingRequest(
+        request, sessionInfo.registrationHashes, cb);
     return;
   }
 

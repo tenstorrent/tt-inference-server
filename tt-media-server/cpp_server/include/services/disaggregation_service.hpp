@@ -17,8 +17,9 @@
 
 namespace tt::sockets {
 
-using namespace tt::domain::llm;
 class InterServerService;
+struct SlotReservationRequestMessage;
+struct SlotReservationResponseMessage;
 }  // namespace tt::sockets
 
 namespace tt::services {
@@ -44,6 +45,12 @@ class DisaggregationService {
   void handleStreamingRequest(LLMRequest& request,
                               const std::vector<uint64_t>& registrationHashes,
                               const StreamCallback& callback);
+
+  /** Prefill-first path: reserve a decode slot, then run one prefill token. */
+  void handlePrefillFirstStreamingRequest(
+      LLMRequest& request, const std::vector<uint64_t>& registrationHashes,
+      const StreamCallback& callback);
+
   void abortRequest(uint32_t taskId);
 
   /// Resolve a prefill-side session via prefix-cache lookup.
@@ -60,7 +67,27 @@ class DisaggregationService {
   }
 
  private:
+  struct PrefillWorkContext {
+    std::shared_ptr<LLMRequest> request;
+    std::vector<int> fullPromptTokenIds;
+    uint32_t decodeSlotId = tt::domain::INVALID_SLOT_ID;
+    std::optional<int> maxTokens;
+  };
+
+  struct PrefillFirstPending {
+    PrefillWorkContext work;
+    StreamCallback callback;
+    std::vector<uint64_t> registrationHashes;
+  };
+
   void setupSocketHandlers();
+  void handleSlotReservationRequest(
+      const tt::sockets::SlotReservationRequestMessage& message);
+  void handleSlotReservationResponse(
+      const tt::sockets::SlotReservationResponseMessage& message);
+  void launchPrefillWork(PrefillWorkContext work,
+                         std::function<void(const LLMStreamChunk&, bool)> onChunk);
+  void failPrefillFirstPending(uint32_t taskId, std::string_view errorText);
 
   tt::config::LLMMode mode;
   std::shared_ptr<LLMService> llmService;
@@ -68,6 +95,7 @@ class DisaggregationService {
   std::shared_ptr<SessionManager> sessionManager;
   trantor::EventLoopThread eventLoopThread;
   utils::ConcurrentMap<uint32_t, StreamCallback> streamCallbacks;
+  utils::ConcurrentMap<uint32_t, PrefillFirstPending> pendingSlotReservations;
 };
 
 }  // namespace tt::services
