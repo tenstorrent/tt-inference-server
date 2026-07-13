@@ -604,6 +604,8 @@ add_library(transport_lib
     src/transport/mooncake_transfer_engine.cpp
     src/transport/mooncake_migration_worker.cpp
     src/transport/peer_discovery_service.cpp
+    src/transport/worker_health.cpp
+    src/transport/worker_health_server.cpp
     # Real KV-cache addressing: physical mirror layout + sender/receiver views +
     # multi-device UMD I/O. Dependency-free host code (no tt-metal/Mooncake), so
     # transport_lib still builds in every configuration.
@@ -637,8 +639,10 @@ add_library(transport_lib
 )
 target_include_directories(transport_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
 )
-target_link_libraries(transport_lib PUBLIC spdlog::spdlog)
+# worker_health.cpp owns a Prometheus registry for the worker's /metrics surface.
+target_link_libraries(transport_lib PUBLIC spdlog::spdlog prometheus-cpp::core)
 if(USE_EXTERNAL_FMT)
     target_link_libraries(transport_lib PUBLIC fmt::fmt)
 endif()
@@ -905,6 +909,13 @@ target_include_directories(transport_test PRIVATE
 
 # KV-cache addressing unit tests: mirror layout / offset math, sender-receiver
 # offset parity, multi-device UMD dispatch. Host-only, runs in any build config.
+add_executable(worker_health_server_test
+    tests/unit/transport/worker_health_server_test.cpp)
+target_link_libraries(worker_health_server_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(worker_health_server_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(kv_cache_addressing_test
     tests/unit/transport/kv_cache_addressing_test.cpp)
 target_link_libraries(kv_cache_addressing_test PRIVATE transport_lib GTest::gtest_main)
@@ -1363,6 +1374,7 @@ set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2E
 gtest_discover_tests(transport_test)
 gtest_discover_tests(dynamo_protocol_test)
 gtest_discover_tests(kv_cache_addressing_test)
+gtest_discover_tests(worker_health_server_test)
 gtest_discover_tests(kv_table_adapter_test)
 gtest_discover_tests(kv_control_channel_test)
 gtest_discover_tests(mooncake_kv_migration_test)

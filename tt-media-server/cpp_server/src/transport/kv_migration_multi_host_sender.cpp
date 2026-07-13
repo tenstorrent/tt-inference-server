@@ -14,7 +14,8 @@ KvMigrationMultiHostSender::KvMigrationMultiHostSender(
     std::shared_ptr<ITransferEngine> engine, IDeviceIo& device,
     std::shared_ptr<const IKvTable> prefillTable,
     std::shared_ptr<const IKvTable> decodeTable, std::string prefillHost,
-    std::unordered_map<std::string, KvControlChannel*> channels)
+    std::unordered_map<std::string, KvControlChannel*> channels,
+    WorkerHealth* health)
     : decode_table_(std::move(decodeTable)), channels_(std::move(channels)) {
   // One staging pool, registered once, shared by every per-host sender (safe
   // because the fan-out in migrate() is serial).
@@ -24,7 +25,7 @@ KvMigrationMultiHostSender::KvMigrationMultiHostSender(
   for (const auto& [host, channel] : channels_) {
     senders_[host] = std::make_unique<MooncakeKvSender>(
         engine, device, prefillTable, decode_table_, prefillHost, host,
-        staging_);
+        staging_, health);
   }
 }
 

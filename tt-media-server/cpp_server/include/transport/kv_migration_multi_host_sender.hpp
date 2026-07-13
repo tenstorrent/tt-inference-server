@@ -17,6 +17,8 @@
 
 namespace tt::transport {
 
+class WorkerHealth;
+
 /**
  * @brief Sender-side fan-out across the N decode hosts a slot spans (n->m).
  *
@@ -44,11 +46,15 @@ class KvMigrationMultiHostSender {
   ///        host's receiver. One per-host MooncakeKvSender is built up front
   ///        for each key (destination layout is whole-table-stable, so it is
   ///        reused across migrations).
+  /// @param health optional; forwarded to each per-host sender so a stale-peer
+  ///        transfer failure bumps the re-resolve counters (observability
+  ///        only).
   KvMigrationMultiHostSender(
       std::shared_ptr<ITransferEngine> engine, IDeviceIo& device,
       std::shared_ptr<const IKvTable> prefillTable,
       std::shared_ptr<const IKvTable> decodeTable, std::string prefillHost,
-      std::unordered_map<std::string, KvControlChannel*> channels);
+      std::unordered_map<std::string, KvControlChannel*> channels,
+      WorkerHealth* health = nullptr);
 
   /**
    * @brief Drive the migration to every decode host the request touches.

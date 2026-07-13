@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -72,6 +73,76 @@ class ITransferEngine {
    * @return a handle, or K_INVALID_SEGMENT on failure.
    */
   virtual SegmentHandle openSegment(const std::string& segmentName) = 0;
+
+  /**
+   * @brief Force-refresh a peer's segment descriptor from the metadata service
+   *        and return its (possibly new) handle.
+   *
+   * After a peer restarts on a fresh dynamic port it re-publishes under the
+   * same logical name with a new address. RDMA force-updates the cached
+   * descriptor on its own retry path, but TCP reads a stale cached descriptor
+   * and would keep targeting the dead address. Senders call this after a
+   * transfer fails to pick up the peer's current address before retrying.
+   * @return a usable handle, or K_INVALID_SEGMENT if the peer is unresolvable.
+   */
+  virtual SegmentHandle refreshSegment(const std::string& segmentName) = 0;
+
+  /**
+   * @brief Resolve a peer's routable host from the metadata service, given its
+   *        server name.
+   *
+   * The metadata service stores each worker's routable address in its rpc_meta
+   * registry, keyed by the worker's server name (which it published via
+   * MC_TCP_BIND_ADDRESS). This surfaces that host so a caller can discover a
+   * peer at bring-up instead of hard-coding it — e.g. the prefill worker
+   * resolving where each decode host lives before opening its control channel.
+   * With a metadata server @p serverName may be a LOGICAL tag (e.g.
+   * "decode-0"); under P2PHANDSHAKE Mooncake parses host:port from the name.
+   * The returned host is where the peer's control server also lives (same
+   * node); the peer's Mooncake rpc_port is deliberately dropped since the
+   * caller pairs the host with the separate KV control port.
+   *
+   * @return the peer's host (IP or hostname), or empty string if unresolvable.
+   *         The base implementation returns empty so engines without a metadata
+   *         service (test fakes) need not override it.
+   */
+  virtual std::string resolveServerName(const std::string& /*serverName*/) {
+    return {};
+  }
+
+  /**
+   * @brief Publish an arbitrary fact about this worker into the metadata
+   *        service so peers can discover it — the *same* store openSegment /
+   *        resolveServerName read from.
+   *
+   * Mooncake's segment and rpc_meta registries only carry the data plane (a
+   * peer's segment + its Mooncake rpc host:port). Anything else a peer must
+   * learn at bring-up — e.g. a worker's KV *control* endpoint — has nowhere to
+   * live otherwise, forcing a hard-coded convention. This routes those facts
+   * through the metadata service too, so discovery stays the single source of
+   * truth. Keys are raw; the caller namespaces them (e.g.
+   * "kv_control/decode-0").
+   *
+   * @return true on success. The base implementation is a no-op returning false
+   *         so engines without a metadata service (P2PHANDSHAKE / test fakes)
+   *         need not override it; the caller then falls back to a static
+   *         convention.
+   */
+  virtual bool publishMetadata(const std::string& /*key*/,
+                               const std::string& /*value*/) {
+    return false;
+  }
+
+  /**
+   * @brief Look up a value previously stored with publishMetadata.
+   * @return the value, or std::nullopt if the key is absent / unresolvable /
+   *         there is no metadata service. The base implementation returns
+   *         std::nullopt.
+   */
+  virtual std::optional<std::string> lookupMetadata(
+      const std::string& /*key*/) {
+    return std::nullopt;
+  }
 
   /**
    * @brief Submit a single transfer and block until it completes or fails.
