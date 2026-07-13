@@ -1,0 +1,210 @@
+name: Release Automation (promote specs, docs & helm)
+
+run-name: >-
+  Release automation ${{ github.event.inputs.version || '0.18.0' }}
+  (iteration 1 — check only, no commit)
+
+# ---------------------------------------------------------------------------
+# Automates the middle of scripts/release/README_MANUAL.md:
+#   1. promote_dev_spec_to_prod.py  (dev -> prod model specs, release-scoped)
+#   2. export_model_spec.py         (docs/model_support + release_model_spec.json)
+#   3. python -m workflows.helm_generator  (charts/.../values.yaml)
+#   4. helm-docs                    (chart README / supported-models docs)
+#
+# ITERATION 1 IS A CHECK ONLY: it runs all four steps and prints exactly what
+# WOULD be `git add`/`commit`/`push`'d (git status + diff + an artifact). It
+# never writes to the repo, so `contents: read` is sufficient. Wiring the
+# actual commit/push is the next iteration.
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, e.g. 0.18.0 (no 'v' prefix)"
+        required: true
+        default: "0.18.0"
+        type: string
+      tt-metal-commit:
+        description: "tt-metal commit SHA pinned into the promoted prod specs"
+        required: true
+        default: "c49bb76"
+        type: string
+      vllm-commit:
+        description: "vLLM commit SHA (needed for LLM / VLLM models)"
+        required: false
+        default: "6b4a3a7"
+        type: string
+      tt-shield-run-id:
+        description: "tt-shield Release run ID (reserved for the later artifact step; NOT used by the four commands in this iteration)"
+        required: false
+        default: "29037835062"
+        type: string
+  push:
+    branches:
+      - test-release-automation-for-v0180
+
+# Check only — nothing is committed, so read access is all we need.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-automation-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+  HELM_DOCS_VERSION: "1.14.2"
+
+jobs:
+  release-prep-check:
+    name: Promote specs, regenerate docs & helm (check only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # The release scripts self-insert the repo root, and `python -m` adds the
+      # CWD; PYTHONPATH is set defensively to match the repo's other workflows.
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install Python dependencies
+        # requirements-dev.txt provides ruamel.yaml + jsonschema for the helm
+        # generator and (transitively, via pre-commit) PyYAML for the promote /
+        # export scripts. One environment serves all four commands — CI does not
+        # need the throwaway .venv the manual laptop steps create.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Install helm-docs
+        # helm-docs is a Go binary and is not present on ubuntu-latest.
+        run: |
+          curl -fsSL -o /tmp/helm-docs.tar.gz \
+            "https://github.com/norwoodj/helm-docs/releases/download/v${HELM_DOCS_VERSION}/helm-docs_${HELM_DOCS_VERSION}_Linux_x86_64.tar.gz"
+          sudo tar -xzf /tmp/helm-docs.tar.gz -C /usr/local/bin helm-docs
+          helm-docs --version
+
+      - name: Resolve inputs (dispatch values, or defaults on push)
+        # Map the (untrusted) dispatch inputs into env via the `env:` block so no
+        # user value is interpolated straight into the shell. On `push` the
+        # inputs are empty, so the shell `:-default` fallbacks apply.
+        env:
+          IN_VERSION: ${{ github.event.inputs.version }}
+          IN_TT_METAL_COMMIT: ${{ github.event.inputs['tt-metal-commit'] }}
+          IN_VLLM_COMMIT: ${{ github.event.inputs['vllm-commit'] }}
+          IN_TT_SHIELD_RUN_ID: ${{ github.event.inputs['tt-shield-run-id'] }}
+        run: |
+          {
+            echo "RELEASE_VERSION=${IN_VERSION:-0.18.0}"
+            echo "TT_METAL_COMMIT=${IN_TT_METAL_COMMIT:-c49bb76}"
+            echo "VLLM_COMMIT=${IN_VLLM_COMMIT:-6b4a3a7}"
+            echo "TT_SHIELD_RUN_ID=${IN_TT_SHIELD_RUN_ID:-29037835062}"
+          } >> "$GITHUB_ENV"
+
+      - name: Show effective parameters
+        run: |
+          echo "version          = ${RELEASE_VERSION}"
+          echo "tt-metal-commit  = ${TT_METAL_COMMIT}"
+          echo "vllm-commit      = ${VLLM_COMMIT}"
+          echo "tt-shield-run-id = ${TT_SHIELD_RUN_ID}  (not used in this iteration)"
+
+      # ----- Step 1: promote dev model specs -> prod (release-scoped only) -----
+      - name: "Step 1 — promote dev specs to prod"
+        run: |
+          python3 scripts/release/promote_dev_spec_to_prod.py \
+            --version "${RELEASE_VERSION}" \
+            --tt-metal-commit "${TT_METAL_COMMIT}" \
+            --vllm-commit "${VLLM_COMMIT}"
+
+      # ----- Step 2: regenerate model-support docs + release_model_spec.json ----
+      - name: "Step 2 — export model spec (docs + JSON)"
+        run: python3 scripts/release/export_model_spec.py
+
+      # ----- Step 3: regenerate charts/tt-inference-server/values.yaml ---------
+      - name: "Step 3 — generate Helm values.yaml"
+        run: python -m workflows.helm_generator
+
+      # ----- Step 4: regenerate chart README / supported-models docs ----------
+      - name: "Step 4 — generate Helm chart docs (helm-docs)"
+        run: |
+          helm-docs \
+            --chart-search-root=charts/tt-inference-server \
+            --template-files=_supportedModels.gotmpl \
+            --template-files=README.md.gotmpl
+
+      # ----- Report: print what WOULD be committed (no add / commit / push) ----
+      - name: "Report pending changes (check only — nothing committed)"
+        if: always()
+        run: |
+          echo "=============================================================="
+          echo " CHECK ONLY — the four scripts above ran, but NOTHING was"
+          echo " git add / commit / push'd. The next iteration would commit"
+          echo " exactly the files listed below."
+          echo "=============================================================="
+          echo
+          echo "=== Files that WOULD be git add/commit/push (git status) ==="
+          git status --short --untracked-files=all
+
+          echo
+          echo "=== Summary of changes to tracked files (git diff --stat) ==="
+          git diff --stat
+
+          echo
+          echo "=== New (untracked) files that would be added ==="
+          git ls-files --others --exclude-standard || true
+
+          # ---- Job summary (rendered on the run's page) ----
+          {
+            echo "## Release automation — iteration 1 (check only)"
+            echo
+            echo "Ran with **version=\`${RELEASE_VERSION}\`**, "
+            echo "**tt-metal-commit=\`${TT_METAL_COMMIT}\`**, "
+            echo "**vllm-commit=\`${VLLM_COMMIT}\`**."
+            echo
+            echo "> Nothing was committed or pushed. The next iteration would "
+            echo "> \`git add\` / \`git commit\` / \`git push\` the files below."
+            echo
+            if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
+              echo '<details open><summary>Files that would be committed</summary>'
+              echo
+              echo '```'
+              git status --short --untracked-files=all
+              echo '```'
+              echo
+              echo '```'
+              git diff --stat
+              echo '```'
+              echo '</details>'
+            else
+              echo "_No changes were produced by the release-prep scripts._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: "Print full diff of tracked changes (what would be committed)"
+        if: always()
+        run: git --no-pager diff
+
+      # Preserve the generated files so they can be inspected / downloaded.
+      - name: "Upload generated changes as an artifact"
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-automation-generated-changes
+          path: |
+            workflows/model_specs/prod/**
+            release_model_spec.json
+            docs/model_support/**
+            charts/tt-inference-server/values.yaml
+            charts/tt-inference-server/README.md
+            README.md
+          if-no-files-found: warn
+          retention-days: 7
