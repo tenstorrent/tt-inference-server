@@ -9,9 +9,12 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <chrono>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <stop_token>
 #include <string>
@@ -68,6 +71,9 @@ class TcpSocketTransport : public ISocketTransport,
   std::vector<uint8_t> receiveRawData() override;
   ReceiveResult tryReceiveMessage() override;
 
+  void beginIoBudget(std::chrono::milliseconds budget) override;
+  void clearIoBudget() override;
+
   void setConnectionLostCallback(std::function<void()> callback) override;
   void setConnectionEstablishedCallback(
       std::function<void()> callback) override;
@@ -75,13 +81,14 @@ class TcpSocketTransport : public ISocketTransport,
                            std::chrono::milliseconds maxDelay) override;
 
  private:
-  enum class ReadResult { COMPLETE, NO_DATA, DISCONNECTED };
+  enum class ReadResult { COMPLETE, NO_DATA, DISCONNECTED, TIMED_OUT };
 
   void serverLoop(std::stop_token stopToken);
   void clientLoop(std::stop_token stopToken);
   bool sendAll(int fd, const void* buffer, size_t size);
   ReadResult receiveExact(int fd, uint8_t* buffer, size_t size, int maxRetries,
                           bool returnIfNoInitialData);
+  bool isIoBudgetExpired() const;
 
   std::string host;
   uint16_t port = 0;
@@ -89,6 +96,8 @@ class TcpSocketTransport : public ISocketTransport,
   tt::utils::ScopedFd serverSocket;
   tt::utils::ScopedFd clientSocket;
   std::atomic<int> peerSocket{-1};
+  // 0 = no budget; else steady_clock epoch nanos. Set outside socketMutex.
+  std::atomic<std::int64_t> ioDeadlineNs_{0};
 
   std::jthread connectionThread;
   AcceptHandler acceptHandler_;

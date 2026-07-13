@@ -10,6 +10,30 @@
 
 namespace tt::transport {
 
+namespace {
+
+// Arms the transport's wall-clock IO budget for one send/recv burst so a
+// mid-payload stall cannot pin the socket mutex past receive_timeout_.
+struct IoBudgetGuard {
+  sockets::ISocketTransport* transport = nullptr;
+  explicit IoBudgetGuard(sockets::ISocketTransport* t,
+                         std::chrono::milliseconds budget)
+      : transport(t) {
+    if (transport != nullptr) {
+      transport->beginIoBudget(budget);
+    }
+  }
+  ~IoBudgetGuard() {
+    if (transport != nullptr) {
+      transport->clearIoBudget();
+    }
+  }
+  IoBudgetGuard(const IoBudgetGuard&) = delete;
+  IoBudgetGuard& operator=(const IoBudgetGuard&) = delete;
+};
+
+}  // namespace
+
 KvControlChannel::KvControlChannel(
     std::shared_ptr<sockets::ISocketTransport> transport,
     std::chrono::milliseconds receiveTimeout,
@@ -33,6 +57,9 @@ bool KvControlChannel::send(const KvControlMessage& message) {
         "[KvControlChannel] send: serialization failed (oversized field)");
     return false;
   }
+  // Same wall-clock budget as receive: TABLE_EXCHANGE send can block on the
+  // decode accept backlog; without a deadline that pins socketMutex forever.
+  IoBudgetGuard budget(transport_.get(), receive_timeout_);
   return transport_->sendRawData(bytes);
 }
 
@@ -43,6 +70,10 @@ KvControlChannel::ReceiveOutcome KvControlChannel::receiveMessage(
     return ReceiveOutcome::Closed;
   }
 
+  // One budget for the whole wait (idle NO_DATA polls + in-flight payload).
+  // TcpSocketTransport enforces it inside tryReceiveMessage so mid-payload
+  // stalls cannot make the deadline check below unreachable.
+  IoBudgetGuard budget(transport_.get(), receive_timeout_);
   const auto deadline = std::chrono::steady_clock::now() + receive_timeout_;
   for (;;) {
     sockets::ReceiveResult result = transport_->tryReceiveMessage();

@@ -18,10 +18,13 @@ namespace {
 constexpr int KEEPALIVE_IDLE_SECONDS = 10;
 constexpr int KEEPALIVE_INTERVAL_SECONDS = 5;
 constexpr int KEEPALIVE_MAX_PROBES = 3;
-constexpr int MAX_SEND_RETRIES = 100;
+// Header probes only: a missing peer must not spin forever in tryReceive.
 constexpr int MAX_HEADER_RETRIES = 100;
-constexpr int MAX_PAYLOAD_RETRIES = 1000;
-constexpr uint32_t MAX_MESSAGE_SIZE_BYTES = 1024 * 1024;
+// TABLE_EXCHANGE carries full prefill/decode .pb blobs (~80–350+ MiB observed).
+// Cap below a round GiB so a desynced length prefix cannot force a 1 GiB alloc.
+constexpr uint32_t MAX_MESSAGE_SIZE_BYTES = 512u * 1024u * 1024u;  // 512 MiB
+// Grow the receive buffer in chunks so a lying length does not pre-commit RAM.
+constexpr size_t PAYLOAD_CHUNK_BYTES = 4u * 1024u * 1024u;  // 4 MiB
 constexpr auto RETRY_SLEEP = std::chrono::milliseconds(1);
 constexpr auto CONNECTION_POLL_INTERVAL = std::chrono::milliseconds(100);
 
@@ -363,6 +366,22 @@ bool TcpSocketTransport::sendRawData(std::span<const uint8_t> data) {
   std::lock_guard<std::mutex> lock(socketMutex);
   if (!connected) return false;
 
+  // Empty frames are invalid on this transport: the length-prefix protocol
+  // rejects size==0 on receive (would desync). Callers must not use empty
+  // sends as heartbeats — use TCP keepalive / higher-level pings instead.
+  if (data.empty()) {
+    TT_LOG_ERROR(
+        "[TcpSocketTransport] Refusing empty send (zero-length frames are "
+        "invalid)");
+    return false;
+  }
+  if (data.size() > MAX_MESSAGE_SIZE_BYTES) {
+    TT_LOG_ERROR(
+        "[TcpSocketTransport] Refusing send: size {} exceeds max frame {} B",
+        data.size(), MAX_MESSAGE_SIZE_BYTES);
+    return false;
+  }
+
   int fd = peerSocket.load(std::memory_order_acquire);
   if (fd < 0) return false;
 
@@ -377,14 +396,24 @@ bool TcpSocketTransport::sendRawData(std::span<const uint8_t> data) {
 
 bool TcpSocketTransport::sendAll(int fd, const void* buffer, size_t size) {
   size_t sent = 0;
-  int retries = 0;
   const auto* data = static_cast<const uint8_t*>(buffer);
 
+  // Wait on EAGAIN until the peer drains, stop(), or the IoBudget deadline.
+  // A fixed ~100ms retry budget raced the decode accept path: connect() landed
+  // in the listen backlog, TABLE_EXCHANGE filled the socket buffer, then we
+  // gave up before accept()+recv. The budget (from KvControlChannel) is what
+  // keeps this from pinning socketMutex until process death.
   while (sent < size) {
+    if (isIoBudgetExpired()) {
+      TT_LOG_ERROR("[TcpSocketTransport] send timed out after {} / {} B", sent,
+                   size);
+      markDisconnected();
+      return false;
+    }
+
     ssize_t n = send(fd, data + sent, size - sent, MSG_NOSIGNAL);
     if (n > 0) {
       sent += static_cast<size_t>(n);
-      retries = 0;
       continue;
     }
 
@@ -392,8 +421,7 @@ bool TcpSocketTransport::sendAll(int fd, const void* buffer, size_t size) {
       markDisconnected();
       return false;
     }
-
-    if (++retries > MAX_SEND_RETRIES) {
+    if (!running) {
       markDisconnected();
       return false;
     }
@@ -431,24 +459,43 @@ ReceiveResult TcpSocketTransport::tryReceiveMessage() {
   if (headerStatus == ReadResult::NO_DATA) {
     return {ReceiveStatus::NO_DATA, {}};
   }
-  if (headerStatus == ReadResult::DISCONNECTED) {
+  if (headerStatus != ReadResult::COMPLETE) {
     markDisconnected();
     return {ReceiveStatus::CLOSED, {}};
   }
 
   uint32_t size = ntohl(netSize);
   if (size == 0 || size > MAX_MESSAGE_SIZE_BYTES) {
+    TT_LOG_ERROR(
+        "[TcpSocketTransport] Rejecting frame length {} (max {} B)", size,
+        MAX_MESSAGE_SIZE_BYTES);
     markDisconnected();
     return {ReceiveStatus::CLOSED, {}};
   }
 
-  std::vector<uint8_t> data(size);
-  auto payloadStatus =
-      receiveExact(fd, data.data(), data.size(), MAX_PAYLOAD_RETRIES,
-                   /*returnIfNoInitialData=*/false);
-  if (payloadStatus != ReadResult::COMPLETE) {
-    markDisconnected();
-    return {ReceiveStatus::CLOSED, {}};
+  // Chunked grow: a desynced/lying length must not allocate `size` up front.
+  // Mid-chunk deadline expiry disconnects (partial frame → stream unsync).
+  std::vector<uint8_t> data;
+  data.reserve(std::min(static_cast<size_t>(size), PAYLOAD_CHUNK_BYTES));
+  while (data.size() < size) {
+    if (isIoBudgetExpired()) {
+      TT_LOG_ERROR(
+          "[TcpSocketTransport] receive timed out after {} / {} B payload",
+          data.size(), size);
+      markDisconnected();
+      return {ReceiveStatus::CLOSED, {}};
+    }
+    const size_t chunk =
+        std::min(PAYLOAD_CHUNK_BYTES, static_cast<size_t>(size) - data.size());
+    const size_t offset = data.size();
+    data.resize(offset + chunk);
+    auto chunkStatus =
+        receiveExact(fd, data.data() + offset, chunk, /*maxRetries=*/0,
+                     /*returnIfNoInitialData=*/false);
+    if (chunkStatus != ReadResult::COMPLETE) {
+      markDisconnected();
+      return {ReceiveStatus::CLOSED, {}};
+    }
   }
 
   return {ReceiveStatus::DATA, std::move(data)};
@@ -461,6 +508,10 @@ TcpSocketTransport::ReadResult TcpSocketTransport::receiveExact(
   int retries = 0;
 
   while (receivedTotal < size) {
+    if (isIoBudgetExpired()) {
+      return ReadResult::TIMED_OUT;
+    }
+
     const int flags =
         receivedTotal == 0 && returnIfNoInitialData ? MSG_DONTWAIT : 0;
     ssize_t received =
@@ -480,13 +531,47 @@ TcpSocketTransport::ReadResult TcpSocketTransport::receiveExact(
       return ReadResult::NO_DATA;
     }
 
-    if (++retries > maxRetries) {
+    if (!running) {
+      return ReadResult::DISCONNECTED;
+    }
+    // Header probes keep a small retry cap; payload uses IoBudget (maxRetries
+    // <= 0) so a 350 MiB transfer is not killed by a 1s stall counter.
+    if (maxRetries > 0 && ++retries > maxRetries) {
       return ReadResult::DISCONNECTED;
     }
     std::this_thread::sleep_for(RETRY_SLEEP);
   }
 
   return ReadResult::COMPLETE;
+}
+
+void TcpSocketTransport::beginIoBudget(std::chrono::milliseconds budget) {
+  if (budget.count() <= 0) {
+    clearIoBudget();
+    return;
+  }
+  const auto deadline = std::chrono::steady_clock::now() + budget;
+  ioDeadlineNs_.store(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+          deadline.time_since_epoch())
+          .count(),
+      std::memory_order_release);
+}
+
+void TcpSocketTransport::clearIoBudget() {
+  ioDeadlineNs_.store(0, std::memory_order_release);
+}
+
+bool TcpSocketTransport::isIoBudgetExpired() const {
+  const std::int64_t deadlineNs =
+      ioDeadlineNs_.load(std::memory_order_acquire);
+  if (deadlineNs == 0) {
+    return false;
+  }
+  const auto nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                         std::chrono::steady_clock::now().time_since_epoch())
+                         .count();
+  return nowNs >= deadlineNs;
 }
 
 bool TcpSocketTransport::isConnected() const { return isConnectedState(); }

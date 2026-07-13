@@ -52,6 +52,17 @@ class ISocketTransport {
   virtual bool sendRawData(std::span<const uint8_t> data) = 0;
 
   /**
+   * @brief Bound the next send/recv burst to a wall-clock budget.
+   *
+   * Used by KvControlChannel so TABLE_EXCHANGE (and migrate control) cannot pin
+   * the transport mutex forever on a slow/stalled peer. Default is a no-op;
+   * TcpSocketTransport enforces the deadline inside send/recv. A mid-message
+   * expiry must tear the connection down (partial frame = unsynchronized).
+   */
+  virtual void beginIoBudget(std::chrono::milliseconds /*budget*/) {}
+  virtual void clearIoBudget() {}
+
+  /**
    * @brief Ownership-transfer send: hands the payload buffer to the transport.
    *
    * Lets transports avoid copying large payloads (e.g. pass the buffer straight

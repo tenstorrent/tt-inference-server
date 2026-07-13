@@ -28,8 +28,12 @@ namespace tt::transport {
  * aborted healthy migrations. So receive() uses the transport's tri-state
  * tryReceiveMessage() instead: DATA is delivered, CLOSED fails, and NO_DATA
  * (live connection, peer hasn't replied yet) is retried up to a configurable
- * timeout. The transport reports the true recv() status directly, so the
- * channel never has to guess "not ready vs closed" by polling isConnected().
+ * timeout. The same timeout is armed as a transport IoBudget around send() and
+ * receiveMessage() so a mid-frame stall cannot pin the socket mutex past the
+ * advertised deadline (retry counts alone are the wrong unit for 100–350+ MiB
+ * TABLE_EXCHANGE payloads). The transport reports the true recv() status
+ * directly, so the channel never has to guess "not ready vs closed" by polling
+ * isConnected().
  *
  * The transport is injected so this is independent of the socket factory and
  * usable over a loopback pair in tests. The receive timeout/poll interval are
