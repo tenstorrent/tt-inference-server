@@ -444,8 +444,12 @@ While the migration is in progress, v1 stays the entry point for everything
 that hasn't been ported yet. The routing rules live in
 [`workflows/v2_bridge.py`](../workflows/v2_bridge.py):
 
-- `_V2_ROUTED_MODELS` lists the model names that are validated end-to-end on
-  v2. Today: SDXL base + img2img + inpainting.
+- `_V2_ROUTED_MODEL_TYPES` lists the model *types* fully onboarded to v2. Every
+  model of these types routes to v2 by `model_type` — no per-name allowlist, so
+  new models are picked up automatically. Today: image, video, audio,
+  text-to-speech, CNN, embedding.
+- `_LLM_LIKE_TYPES` (LLM + VLM) share the LLM code path rather than a media
+  runner; they route to v2 per-workflow rather than by `_V2_ROUTED_MODEL_TYPES`.
 - `_V2_WORKFLOW_NAMES` maps v1 `WorkflowType` → v2 workflow name
   (`BENCHMARKS` / `EVALS` / `SPEC_TESTS` / `RELEASE`).
 - `can_route_to_v2(model_spec, runtime_config)` is the predicate v1's runner
@@ -454,8 +458,8 @@ that hasn't been ported yet. The routing rules live in
   defined in `workflows/workflow_venvs.py`), shells out to `run.py`, and
   forwards stdout/stderr.
 
-When you're ready to move a model from v1 to v2, add it to
-`_V2_ROUTED_MODELS` and make sure v2 has the runners and suites needed.
+When you're ready to move a new model type to v2, add it to
+`_V2_ROUTED_MODEL_TYPES` and make sure v2 has the runners and suites needed.
 
 ## Adding things to v2
 

@@ -36,6 +36,9 @@ _LLM_EVAL_TASK_LABEL = "llm_eval"
 _SPEC_DECODE_TASK_LABEL = "spec_decode"
 
 
+_LLM_LIKE_TYPES = frozenset({ModelType.LLM, ModelType.VLM})
+
+
 def _has_agentic_tasks(ctx) -> bool:
     """True if the run's eval tasks include any EVALS_AGENTIC task."""
     from workflows.workflow_types import WorkflowVenvType
@@ -52,7 +55,7 @@ class EvalsWorkflow(WorkflowExecution):
     task_types = (MediaTaskType.EVALUATION,)
 
     def run_tasks(self) -> List[TaskOutcome]:
-        if self.ctx.model_spec.model_type == ModelType.LLM:
+        if self.ctx.model_spec.model_type in _LLM_LIKE_TYPES:
             return [self._run_llm_eval_task()]
         return super().run_tasks()
 
@@ -202,7 +205,7 @@ class BenchmarksWorkflow(WorkflowExecution):
         spec_decode_opts = self.orchestrator_metadata.spec_decode
         if spec_decode_opts is not None:
             return [self._run_spec_decode_task(spec_decode_opts)]
-        if self.ctx.model_spec.model_type == ModelType.LLM:
+        if self.ctx.model_spec.model_type in _LLM_LIKE_TYPES:
             opts = self.orchestrator_metadata.llm_bench or LLMBenchOptions()
             return [self._run_llm_bench_task(opts)]
         return super().run_tasks()
@@ -375,7 +378,7 @@ class ReleaseWorkflow(WorkflowExecution):
     llm_children: ClassVar[Sequence[str]] = ("evals", "benchmarks", "spec_tests")
 
     def run_tasks(self) -> List[TaskOutcome]:
-        if self.ctx.model_spec.model_type == ModelType.LLM:
+        if self.ctx.model_spec.model_type in _LLM_LIKE_TYPES:
             return self._run_llm_tasks()
         children = self.children
         outcomes: List[TaskOutcome] = []
