@@ -553,11 +553,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
     # Combine sections: text, image, audio, then cnn (matching original order)
     markdown_sections = (
-        text_sections
-        + image_sections
-        + audio_sections
-        + tts_sections
-        + cnn_sections
+        text_sections + image_sections + audio_sections + tts_sections + cnn_sections
     )
 
     # Combine all sections
