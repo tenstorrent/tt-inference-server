@@ -2,22 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""VLM handling in the v2 LLM benchmark-config builder (``get_llm_configs``).
-
-Context: in v1, VLM benchmarks flowed through ``benchmark_config``'s
-concurrency sweeps, which fold image ("vision") tokens into ``total_seq_len``
-and cap ``max_concurrency`` accordingly (v1 tests
-``tests/test_benchmark_concurrency_sweeps.py::test_expand_concurrency_sweeps_image_accounts_for_vision_tokens``
-and ``tests/test_benchmark_config.py``). v2 does NOT reproduce that path: the
-LLM benchmark runner is text-only and drops every non-``text`` param
-(``llm_module/benchmark_configs.py`` — ``params.task_type != "text"``), while
-VLM image/text perf is driven separately by the guidellm ``omni_modal_image``
-scenario over a real HF dataset (see ``test_guidellm_scenarios.py``).
-
-These tests lock in that v2-side contract: a VLM spec's ``vlm`` (image) and
-``structured_output`` params must be excluded from the text sweep so uncapped
-image params never leak into the text driver — only the ``text`` params survive.
-"""
+"""The LLM benchmark runner is text-only and drops every non-``text`` param,
+while VLM image/text perf is driven separately by the guidellm ``omni_modal_image`` scenario over a real HF dataset (see ``test_guidellm_scenarios.py``)."""
 
 from __future__ import annotations
 

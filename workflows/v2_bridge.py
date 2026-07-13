@@ -45,8 +45,7 @@ _V2_EVAL_VENV_BY_MODEL_TYPE = {
     ModelType.AUDIO: WorkflowVenvType.EVALS_AUDIO,
 }
 
-# Model types that share v2's LLM code path (vLLM serving + llm_module eval /
-# benchmark drivers) rather than a media runner.
+# Model types that share LLM code path rather than a media runner.
 _LLM_LIKE_TYPES = frozenset({ModelType.LLM, ModelType.VLM})
 
 # Only models actually validated end-to-end against v2's engine are routed here.
