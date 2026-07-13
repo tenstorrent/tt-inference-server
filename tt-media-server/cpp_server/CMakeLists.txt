@@ -604,6 +604,8 @@ add_library(transport_lib
     src/transport/mooncake_transfer_engine.cpp
     src/transport/mooncake_migration_worker.cpp
     src/transport/peer_discovery_service.cpp
+    src/transport/worker_health.cpp
+    src/transport/worker_health_server.cpp
     # Real KV-cache addressing: physical mirror layout + sender/receiver views +
     # multi-device UMD I/O. Dependency-free host code (no tt-metal/Mooncake), so
     # transport_lib still builds in every configuration.
@@ -637,8 +639,10 @@ add_library(transport_lib
 )
 target_include_directories(transport_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
 )
-target_link_libraries(transport_lib PUBLIC spdlog::spdlog)
+# worker_health.cpp owns a Prometheus registry for the worker's /metrics surface.
+target_link_libraries(transport_lib PUBLIC spdlog::spdlog prometheus-cpp::core)
 if(USE_EXTERNAL_FMT)
     target_link_libraries(transport_lib PUBLIC fmt::fmt)
 endif()
@@ -905,6 +909,13 @@ target_include_directories(transport_test PRIVATE
 
 # KV-cache addressing unit tests: mirror layout / offset math, sender-receiver
 # offset parity, multi-device UMD dispatch. Host-only, runs in any build config.
+add_executable(worker_health_server_test
+    tests/unit/transport/worker_health_server_test.cpp)
+target_link_libraries(worker_health_server_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(worker_health_server_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(kv_cache_addressing_test
     tests/unit/transport/kv_cache_addressing_test.cpp)
 target_link_libraries(kv_cache_addressing_test PRIVATE transport_lib GTest::gtest_main)
@@ -1128,6 +1139,22 @@ add_executable(session_test
 target_link_libraries(session_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(session_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(prefix_cache_router_test
+    tests/unit/services/prefix_cache_router_test.cpp
+    src/domain/session.cpp
+    src/domain/prefix_cache/prefix_index.cpp
+    src/domain/prefix_cache/block_matcher.cpp
+    src/domain/prefix_cache/response_id_index.cpp
+    src/services/prefix_cache_router.cpp
+    src/metrics/metrics.cpp
+)
+target_link_libraries(prefix_cache_router_test PRIVATE
+    llm_runner_lib Drogon::Drogon prometheus-cpp::core GTest::gtest_main)
+target_include_directories(prefix_cache_router_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
 add_executable(mock_remote_kv_manager_test
@@ -1363,6 +1390,7 @@ set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2E
 gtest_discover_tests(transport_test)
 gtest_discover_tests(dynamo_protocol_test)
 gtest_discover_tests(kv_cache_addressing_test)
+gtest_discover_tests(worker_health_server_test)
 gtest_discover_tests(kv_table_adapter_test)
 gtest_discover_tests(kv_control_channel_test)
 gtest_discover_tests(mooncake_kv_migration_test)
@@ -1387,6 +1415,7 @@ gtest_discover_tests(structured_output_test)
 gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
+gtest_discover_tests(prefix_cache_router_test)
 gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)
 gtest_discover_tests(llm_service_test)
@@ -1423,24 +1452,23 @@ target_include_directories(prefix_cache_e2e_test PRIVATE
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)
 target_link_libraries(tokenizer_benchmark PRIVATE llm_runner_lib)
 
-# Session manager microbenchmark (Google Benchmark)
-add_executable(session_manager_benchmark
-    benchmarks/session_manager_benchmark.cpp
+# Prefix cache router microbenchmark (Google Benchmark)
+add_executable(prefix_cache_router_benchmark
+    benchmarks/prefix_cache_router_benchmark.cpp
     src/domain/session.cpp
     src/domain/prefix_cache/prefix_index.cpp
     src/domain/prefix_cache/block_matcher.cpp
     src/domain/prefix_cache/response_id_index.cpp
-    src/services/session_manager.cpp
     src/services/prefix_cache_router.cpp
     src/metrics/metrics.cpp
 )
-target_link_libraries(session_manager_benchmark PRIVATE
+target_link_libraries(prefix_cache_router_benchmark PRIVATE
     llm_runner_lib Drogon::Drogon prometheus-cpp::core benchmark::benchmark benchmark::benchmark_main)
-target_include_directories(session_manager_benchmark PRIVATE
+target_include_directories(prefix_cache_router_benchmark PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
-add_test(NAME SessionManagerBenchmark COMMAND session_manager_benchmark --benchmark_min_time=0.1s)
+add_test(NAME PrefixCacheRouterBenchmark COMMAND prefix_cache_router_benchmark --benchmark_min_time=0.1s)
 
 # Kafka messaging support (optional)
 if(KAFKA_ENABLED)
@@ -1477,8 +1505,15 @@ if(KAFKA_ENABLED)
     # Note: disaggregation/migration/include is needed for migration_client.hpp
     # which migration_client_interface.hpp includes for event types.
     if(ENABLE_BLAZE)
+        # CompositeMigrationClient joins the Kafka RemoteKVManagerAdapter (burst
+        # path) with the shmem/mock MigrationLayerClient (migrate/loopback
+        # path) behind a single MigrationClientInterface so the PrefillScheduler
+        # can still service ALLOCATE(migrate_from_slot) prefix-cache copies —
+        # the Kafka adapter intentionally throws on that entry point, so
+        # composing is what makes PREFILL_USE_REMOTE_KV_MANAGER safe.
         add_library(remote_kv_adapter
             src/services/remote_kv_manager_adapter.cpp
+            src/services/composite_migration_client.cpp
         )
         target_include_directories(remote_kv_adapter PUBLIC
             ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -1490,6 +1525,33 @@ if(KAFKA_ENABLED)
             spdlog::spdlog
         )
         message(STATUS "remote_kv_adapter: ENABLED (ENABLE_BLAZE=ON)")
+
+        # Wire the Kafka-backed RemoteKVManagerAdapter into the PrefillScheduler factory (blaze_utils.hpp)
+        target_link_libraries(llm_runner_lib PUBLIC remote_kv_adapter)
+        target_compile_definitions(llm_runner_lib PUBLIC KAFKA_ENABLED)
+        message(STATUS
+            "llm_runner_lib: PREFILL_USE_REMOTE_KV_MANAGER path ENABLED "
+            "(linked against remote_kv_adapter, KAFKA_ENABLED define set)")
+
+        # Unit test for CompositeMigrationClient. Uses two in-process
+        # FakeBackends (defined inline in the test) so it does not need
+        # Kafka or shmem; the whole point is to pin down the composite's
+        # routing / fan-out behavior in isolation. gtest_discover_tests
+        # registers each TEST() case with ctest individually so the PR
+        # gate picks them up (unlike some sibling Kafka unit tests in
+        # this file that are only built, not ctest-registered — a
+        # pre-existing gap that should be closed separately).
+        add_executable(composite_migration_client_test
+            tests/unit/services/composite_migration_client_test.cpp
+        )
+        target_link_libraries(composite_migration_client_test PRIVATE
+            remote_kv_adapter
+            GTest::gtest_main
+        )
+        target_include_directories(composite_migration_client_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        gtest_discover_tests(composite_migration_client_test)
     else()
         message(STATUS "remote_kv_adapter: DISABLED (requires ENABLE_BLAZE=ON)")
     endif()

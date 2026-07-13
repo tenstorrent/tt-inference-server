@@ -8,7 +8,9 @@
 # src/transport/README.md.
 #
 # Env: METADATA (use an existing service), HTTP_PORT (8080), BYTES (65536),
-# TIMEOUT_SEC (30), RECV_NAME/SEND_NAME (kv-receiver-0/kv-sender-0).
+# TIMEOUT_SEC (30), RECV_NAME/SEND_NAME (kv-receiver-0/kv-sender-0),
+# CHECK_RESOLVE (1 => also assert the sender resolves the receiver's HOST via
+# resolveServerName — the rpc_meta lookup the real prefill worker uses).
 set -uo pipefail
 
 BIN="${1:-./build/migration_worker_discovery}"
@@ -83,8 +85,12 @@ recv_pid=$!
 # Let the receiver register before the sender looks it up.
 sleep 1
 
+send_extra=()
+[[ "${CHECK_RESOLVE:-0}" == "1" ]] && send_extra+=(--check-resolve)
+
 echo "Launching sender (name=${SEND_NAME} -> peer ${RECV_NAME})..."
-"${BIN}" --role sender --name "${SEND_NAME}" --peer "${RECV_NAME}" "${base[@]}"
+"${BIN}" --role sender --name "${SEND_NAME}" --peer "${RECV_NAME}" \
+  "${base[@]}" "${send_extra[@]+"${send_extra[@]}"}"
 send_rc=$?
 
 wait "${recv_pid}"

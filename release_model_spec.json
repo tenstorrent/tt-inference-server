@@ -1,6 +1,6 @@
 {
   "schema_version": "0.1.0",
-  "release_version": "0.17.0",
+  "release_version": "0.18.0",
   "model_specs": {
     "openai/gpt-oss-20b": {
       "T3K": {
@@ -9874,18 +9874,18 @@
               "MESH_DEVICE": "P100",
               "ARCH_NAME": "blackhole"
             },
-            "tt_metal_commit": "55fd115",
-            "vllm_commit": "aa4ae1e",
+            "tt_metal_commit": "c49bb76",
+            "vllm_commit": "6b4a3a7",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
             "min_disk_gb": 36,
             "min_ram_gb": 20.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-55fd115-aa4ae1e",
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 90000000
             },
@@ -9972,16 +9972,44 @@
                 "max_num_batched_tokens": "65536",
                 "max-log-len": "32",
                 "seed": "9472",
-                "additional_config": "{\"tt\": {}}"
+                "additional_config": "{\"tt\": {\"trace_region_size\": 900000000}}"
               },
-              "override_tt_config": {},
+              "override_tt_config": {
+                "trace_region_size": 900000000
+              },
               "env_vars": {
                 "MESH_DEVICE": "P150",
                 "ARCH_NAME": "blackhole"
               },
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
-              "known_issues": [],
+              "known_issues": [
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "meta_ifeval measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610.",
+                  "task_name": "meta_ifeval"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "meta_gpqa_cot measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610.",
+                  "task_name": "meta_gpqa_cot"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_fewshot_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_fewshot_e"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_summarization_e measured score is ~94% which does not satisfy the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_summarization_e"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_code_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_code_e"
+                }
+              ],
               "eval_max_retries": null
             },
             "system_requirements": null,
@@ -9993,19 +10021,21 @@
               "MESH_DEVICE": "P150",
               "ARCH_NAME": "blackhole"
             },
-            "tt_metal_commit": "55fd115",
-            "vllm_commit": "aa4ae1e",
+            "tt_metal_commit": "c49bb76",
+            "vllm_commit": "6b4a3a7",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
             "min_disk_gb": 36,
             "min_ram_gb": 20.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-55fd115-aa4ae1e",
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
-            "override_tt_config": {},
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/tt_transformers",
+            "override_tt_config": {
+              "trace_region_size": 900000000
+            },
             "supported_modalities": [
               "text"
             ],
@@ -11370,18 +11400,18 @@
               "MESH_DEVICE": "P100",
               "ARCH_NAME": "blackhole"
             },
-            "tt_metal_commit": "55fd115",
-            "vllm_commit": "aa4ae1e",
+            "tt_metal_commit": "c49bb76",
+            "vllm_commit": "6b4a3a7",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
             "min_disk_gb": 36,
             "min_ram_gb": 20.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-55fd115-aa4ae1e",
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 90000000
             },
@@ -11468,16 +11498,44 @@
                 "max_num_batched_tokens": "65536",
                 "max-log-len": "32",
                 "seed": "9472",
-                "additional_config": "{\"tt\": {}}"
+                "additional_config": "{\"tt\": {\"trace_region_size\": 900000000}}"
               },
-              "override_tt_config": {},
+              "override_tt_config": {
+                "trace_region_size": 900000000
+              },
               "env_vars": {
                 "MESH_DEVICE": "P150",
                 "ARCH_NAME": "blackhole"
               },
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
-              "known_issues": [],
+              "known_issues": [
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "meta_ifeval measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610.",
+                  "task_name": "meta_ifeval"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "meta_gpqa_cot measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610.",
+                  "task_name": "meta_gpqa_cot"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_fewshot_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_fewshot_e"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_summarization_e measured score is ~94% which does not satisfy the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_summarization_e"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_code_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_code_e"
+                }
+              ],
               "eval_max_retries": null
             },
             "system_requirements": null,
@@ -11489,19 +11547,21 @@
               "MESH_DEVICE": "P150",
               "ARCH_NAME": "blackhole"
             },
-            "tt_metal_commit": "55fd115",
-            "vllm_commit": "aa4ae1e",
+            "tt_metal_commit": "c49bb76",
+            "vllm_commit": "6b4a3a7",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
             "min_disk_gb": 36,
             "min_ram_gb": 20.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-55fd115-aa4ae1e",
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
-            "override_tt_config": {},
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/tt_transformers",
+            "override_tt_config": {
+              "trace_region_size": 900000000
+            },
             "supported_modalities": [
               "text"
             ],
@@ -12498,6 +12558,197 @@
             "has_builtin_warmup": false,
             "metadata": {
               "tool_call_parser_name": "hermes"
+            },
+            "cli_args": {}
+          }
+        }
+      }
+    },
+    "google/gemma-4-31B-it": {
+      "P300X2": {
+        "vLLM": {
+          "tt_transformers": {
+            "model_id": "id_tt-transformers_gemma-4-31B-it_p300x2",
+            "impl": {
+              "impl_id": "tt_transformers",
+              "impl_name": "tt-transformers",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/tt_transformers"
+            },
+            "hf_model_repo": "google/gemma-4-31B-it",
+            "model_name": "gemma-4-31B-it",
+            "inference_engine": "vLLM",
+            "device_type": "P300X2",
+            "device_model_spec": {
+              "device": "P300X2",
+              "max_concurrency": 1,
+              "max_context": 49152,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [],
+              "vllm_args": {
+                "model": "google/gemma-4-31B-it",
+                "block_size": "64",
+                "max_model_len": "49152",
+                "max_num_seqs": "1",
+                "max_num_batched_tokens": "49152",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {\"fabric_config\": \"FABRIC_1D\", \"trace_region_size\": 200000000, \"sample_on_device_mode\": \"decode_only\"}}",
+                "enable-auto-tool-choice": true,
+                "tool-call-parser": "gemma4",
+                "default-chat-template-kwargs": "{\"enable_thinking\": true}",
+                "reasoning-parser": "gemma4"
+              },
+              "override_tt_config": {
+                "fabric_config": "FABRIC_1D",
+                "trace_region_size": 200000000,
+                "sample_on_device_mode": "decode_only"
+              },
+              "env_vars": {
+                "MESH_DEVICE": "P150x4",
+                "ARCH_NAME": "blackhole",
+                "GEMMA4_PAGE_BLOCK_SIZE": "64",
+                "GEMMA4_MAX_TOKENS_ALL_USERS": "49152"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "VLLM_CONFIGURE_LOGGING": "1",
+              "VLLM_RPC_TIMEOUT": "900000",
+              "VLLM_TARGET_DEVICE": "tt",
+              "TORCHDYNAMO_DISABLE": "1",
+              "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+              "MESH_DEVICE": "P150x4",
+              "ARCH_NAME": "blackhole",
+              "GEMMA4_PAGE_BLOCK_SIZE": "64",
+              "GEMMA4_MAX_TOKENS_ALL_USERS": "49152"
+            },
+            "tt_metal_commit": "c49bb76",
+            "vllm_commit": "6b4a3a7",
+            "hf_weights_repo": "google/gemma-4-31B-it",
+            "param_count": 31,
+            "min_disk_gb": 82,
+            "min_ram_gb": 77.5,
+            "model_type": "LLM",
+            "repacked": 0,
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/tt_transformers",
+            "override_tt_config": {
+              "fabric_config": "FABRIC_1D",
+              "trace_region_size": 200000000,
+              "sample_on_device_mode": "decode_only"
+            },
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": true,
+            "metadata": {
+              "reasoning_parser_name": "gemma4",
+              "tool_call_parser_name": "gemma4"
+            },
+            "cli_args": {}
+          }
+        }
+      }
+    },
+    "Qwen/Qwen3.6-27B": {
+      "P300X2": {
+        "vLLM": {
+          "qwen36_blackhole": {
+            "model_id": "id_qwen36-blackhole_Qwen3.6-27B_p300x2",
+            "impl": {
+              "impl_id": "qwen36_blackhole",
+              "impl_name": "qwen36-blackhole",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/demos/blackhole/qwen36"
+            },
+            "hf_model_repo": "Qwen/Qwen3.6-27B",
+            "model_name": "Qwen3.6-27B",
+            "inference_engine": "vLLM",
+            "device_type": "P300X2",
+            "device_model_spec": {
+              "device": "P300X2",
+              "max_concurrency": 1,
+              "max_context": 262144,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [],
+              "vllm_args": {
+                "model": "Qwen/Qwen3.6-27B",
+                "block_size": "64",
+                "max_model_len": "262144",
+                "max_num_seqs": "1",
+                "max_num_batched_tokens": "262144",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {\"fabric_config\": \"FABRIC_1D\", \"trace_region_size\": 268435456}}",
+                "async_scheduling": true,
+                "enable_auto_tool_choice": true,
+                "reasoning_parser": "qwen3",
+                "tool_call_parser": "qwen3_coder"
+              },
+              "override_tt_config": {
+                "fabric_config": "FABRIC_1D",
+                "trace_region_size": 268435456
+              },
+              "env_vars": {
+                "MESH_DEVICE": "(1, 4)",
+                "ARCH_NAME": "blackhole",
+                "TT_QWEN35_TEXT_VER": "qwen36_blackhole",
+                "HF_MODEL": "Qwen/Qwen3.6-27B",
+                "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "VLLM_CONFIGURE_LOGGING": "1",
+              "VLLM_RPC_TIMEOUT": "900000",
+              "VLLM_TARGET_DEVICE": "tt",
+              "TORCHDYNAMO_DISABLE": "1",
+              "MESH_DEVICE": "(1, 4)",
+              "ARCH_NAME": "blackhole",
+              "TT_QWEN35_TEXT_VER": "qwen36_blackhole",
+              "HF_MODEL": "Qwen/Qwen3.6-27B",
+              "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+            },
+            "tt_metal_commit": "c49bb76",
+            "vllm_commit": "6b4a3a7",
+            "hf_weights_repo": "Qwen/Qwen3.6-27B",
+            "param_count": 27,
+            "min_disk_gb": 74,
+            "min_ram_gb": 67.5,
+            "model_type": "LLM",
+            "repacked": 0,
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/demos/blackhole/qwen36",
+            "override_tt_config": {
+              "fabric_config": "FABRIC_1D",
+              "trace_region_size": 268435456
+            },
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": true,
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "qwen3_coder"
             },
             "cli_args": {}
           }
@@ -19312,9 +19563,11 @@
                 "max_num_batched_tokens": "65536",
                 "max-log-len": "32",
                 "seed": "9472",
-                "additional_config": "{\"tt\": {}}"
+                "additional_config": "{\"tt\": {\"trace_region_size\": 55000000}}"
               },
-              "override_tt_config": {},
+              "override_tt_config": {
+                "trace_region_size": 55000000
+              },
               "env_vars": {
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
@@ -19329,7 +19582,7 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "tt_metal_commit": "555f240",
+            "tt_metal_commit": "c49bb76",
             "vllm_commit": null,
             "hf_weights_repo": "black-forest-labs/FLUX.1-schnell",
             "param_count": null,
@@ -19337,11 +19590,13 @@
             "min_ram_gb": 6,
             "model_type": "IMAGE",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.10.1-555f240",
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.18.0-c49bb76",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
-            "override_tt_config": {},
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/tt_transformers",
+            "override_tt_config": {
+              "trace_region_size": 55000000
+            },
             "supported_modalities": [
               "text"
             ],
@@ -25093,6 +25348,365 @@
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "override_tt_config": {},
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": false,
+            "metadata": {},
+            "cli_args": {}
+          }
+        }
+      }
+    },
+    "tiiuae/Falcon3-7B-Instruct": {
+      "P150": {
+        "forge": {
+          "forge_vllm_plugin": {
+            "model_id": "id_forge-vllm-plugin_Falcon3-7B-Instruct_p150",
+            "impl": {
+              "impl_id": "forge_vllm_plugin",
+              "impl_name": "forge-vllm-plugin",
+              "repo_url": "https://github.com/tenstorrent/tt-xla/tree/main",
+              "code_path": "integrations/vllm_plugin"
+            },
+            "hf_model_repo": "tiiuae/Falcon3-7B-Instruct",
+            "model_name": "Falcon3-7B-Instruct",
+            "inference_engine": "forge",
+            "device_type": "P150",
+            "device_model_spec": {
+              "device": "P150",
+              "max_concurrency": 32,
+              "max_context": 32768,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [
+                {
+                  "isl": 128,
+                  "osl": 128,
+                  "max_concurrency": 1,
+                  "num_prompts": 8,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 260.0,
+                      "tput_user": 4.3,
+                      "tput": 4.3,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 52.0,
+                      "tput_user": 21.5,
+                      "tput": 21.5,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 26.0,
+                      "tput_user": 43.0,
+                      "tput": 43.0,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                }
+              ],
+              "vllm_args": {
+                "model": "tiiuae/Falcon3-7B-Instruct",
+                "block_size": "64",
+                "max_model_len": "32768",
+                "max_num_seqs": "32",
+                "max_num_batched_tokens": "32768",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "MESH_DEVICE": "P150",
+                "ARCH_NAME": "blackhole",
+                "MAX_MODEL_LENGTH": "32768",
+                "MAX_NUM_SEQS": "32",
+                "GPU_MEMORY_UTILIZATION": "0.35",
+                "TT_KV_POOL_GB": "32",
+                "OPTIMIZATION_LEVEL": "1",
+                "CPU_SAMPLING": "false",
+                "ENABLE_TRACE": "true",
+                "KV_CACHE_DTYPE": "bfp_bf8",
+                "PREFILL_CHUNK_SIZE": "1024",
+                "MIN_NUM_SEQS": "1",
+                "PREFILL_BATCH_THRESHOLD": "16"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": 1
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "MESH_DEVICE": "P150",
+              "ARCH_NAME": "blackhole",
+              "MAX_MODEL_LENGTH": "32768",
+              "MAX_NUM_SEQS": "32",
+              "GPU_MEMORY_UTILIZATION": "0.35",
+              "TT_KV_POOL_GB": "32",
+              "OPTIMIZATION_LEVEL": "1",
+              "CPU_SAMPLING": "false",
+              "ENABLE_TRACE": "true",
+              "KV_CACHE_DTYPE": "bfp_bf8",
+              "PREFILL_CHUNK_SIZE": "1024",
+              "MIN_NUM_SEQS": "1",
+              "PREFILL_BATCH_THRESHOLD": "16"
+            },
+            "tt_metal_commit": "c49bb76",
+            "vllm_commit": null,
+            "hf_weights_repo": "tiiuae/Falcon3-7B-Instruct",
+            "param_count": 7,
+            "min_disk_gb": 20,
+            "min_ram_gb": 12,
+            "model_type": "LLM",
+            "repacked": 0,
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.18.0-c49bb76",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/c49bb76/integrations/vllm_plugin",
+            "override_tt_config": {},
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": false,
+            "has_builtin_warmup": false,
+            "metadata": {},
+            "cli_args": {}
+          }
+        }
+      }
+    },
+    "yolox_nano": {
+      "N150": {
+        "forge": {
+          "tt_transformers": {
+            "model_id": "id_tt-transformers_yolox_nano_n150",
+            "impl": {
+              "impl_id": "tt_transformers",
+              "impl_name": "tt-transformers",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/tt_transformers"
+            },
+            "hf_model_repo": "yolox_nano",
+            "model_name": "yolox_nano",
+            "inference_engine": "forge",
+            "device_type": "N150",
+            "device_model_spec": {
+              "device": "N150",
+              "max_concurrency": 1,
+              "max_context": 65536,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [
+                {
+                  "isl": null,
+                  "osl": null,
+                  "max_concurrency": 1,
+                  "num_prompts": null,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "cnn",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 2680.0,
+                      "tput_user": 0.37200000000000005,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 536.0,
+                      "tput_user": 1.86,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 268.0,
+                      "tput_user": 3.72,
+                      "tput": null,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                }
+              ],
+              "vllm_args": {
+                "model": "yolox_nano",
+                "block_size": "64",
+                "max_model_len": "65536",
+                "max_num_seqs": "1",
+                "max_num_batched_tokens": "65536",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "MESH_DEVICE": "N150",
+                "ARCH_NAME": "wormhole_b0"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "MESH_DEVICE": "N150",
+              "ARCH_NAME": "wormhole_b0"
+            },
+            "tt_metal_commit": "c49bb76",
+            "vllm_commit": null,
+            "hf_weights_repo": "yolox_nano",
+            "param_count": null,
+            "min_disk_gb": 15,
+            "min_ram_gb": 6,
+            "model_type": "CNN",
+            "repacked": 0,
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.18.0-c49bb76",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/tt_transformers",
+            "override_tt_config": {},
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": false,
+            "metadata": {},
+            "cli_args": {}
+          }
+        }
+      },
+      "P150": {
+        "forge": {
+          "tt_transformers": {
+            "model_id": "id_tt-transformers_yolox_nano_p150",
+            "impl": {
+              "impl_id": "tt_transformers",
+              "impl_name": "tt-transformers",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/tt_transformers"
+            },
+            "hf_model_repo": "yolox_nano",
+            "model_name": "yolox_nano",
+            "inference_engine": "forge",
+            "device_type": "P150",
+            "device_model_spec": {
+              "device": "P150",
+              "max_concurrency": 1,
+              "max_context": 65536,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [
+                {
+                  "isl": null,
+                  "osl": null,
+                  "max_concurrency": 1,
+                  "num_prompts": null,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "cnn",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 1480.0,
+                      "tput_user": 0.672,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 296.0,
+                      "tput_user": 3.36,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 148.0,
+                      "tput_user": 6.72,
+                      "tput": null,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                }
+              ],
+              "vllm_args": {
+                "model": "yolox_nano",
+                "block_size": "64",
+                "max_model_len": "65536",
+                "max_num_seqs": "1",
+                "max_num_batched_tokens": "65536",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "MESH_DEVICE": "P150",
+                "ARCH_NAME": "blackhole"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "MESH_DEVICE": "P150",
+              "ARCH_NAME": "blackhole"
+            },
+            "tt_metal_commit": "c49bb76",
+            "vllm_commit": null,
+            "hf_weights_repo": "yolox_nano",
+            "param_count": null,
+            "min_disk_gb": 15,
+            "min_ram_gb": 6,
+            "model_type": "CNN",
+            "repacked": 0,
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.18.0-c49bb76",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"

@@ -85,10 +85,6 @@ def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
         return (
             "vlm"  # VLMs (Vision-Language Models) use "vlm" task_type for benchmarking
         )
-    if model_type == ModelType.EMBEDDING:
-        return "embedding"
-    if model_type == ModelType.VIDEO:
-        return "video"
     if model_type == ModelType.TEXT_TO_SPEECH:
         return "tts"
 
@@ -381,66 +377,6 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         }
         return format_metrics(metrics)
 
-    if params.get("task_type") == "embedding":
-        # For EMBEDDING benchmarks, extract data from JSON content
-        benchmarks_data = data.get("benchmarks: ", data)
-        metrics = {
-            "timestamp": params["timestamp"],
-            "model": data.get("model", ""),
-            "model_name": data.get("model", ""),
-            "model_id": data.get("model", ""),
-            "backend": "embedding",
-            "device": params["device"],
-            "filename": filename,
-            "task_type": "embedding",
-            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-            "input_sequence_length": benchmarks_data.get("benchmarks").get("isl", 0),
-            "output_sequence_length": NOT_MEASURED_STR,  # Not applicable for embeddings
-            "max_con": benchmarks_data.get("benchmarks").get("concurrency", 0),
-            "embedding_dimension": benchmarks_data.get("benchmarks").get(
-                "embedding_dimension", NOT_MEASURED_STR
-            ),
-            "mean_ttft_ms": NOT_MEASURED_STR,  # Not applicable for embeddings
-            "mean_tpot_ms": NOT_MEASURED_STR,  # Not applicable for embeddings
-            "mean_tps": benchmarks_data.get("benchmarks").get("tput_user", 0.0),
-            "tps_decode_throughput": NOT_MEASURED_STR,  # Not applicable for embeddings
-            "tps_prefill_throughput": benchmarks_data.get("benchmarks").get(
-                "tput_prefill", 0.0
-            ),
-            "mean_e2el_ms": benchmarks_data.get("benchmarks").get("e2el", 0.0),
-            "request_throughput": benchmarks_data.get("benchmarks").get(
-                "req_tput", 0.0
-            ),
-            "performance_check": data.get("performance_check", ReportCheckTypes.NA),
-        }
-        return format_metrics(metrics)
-
-    if params.get("task_type") == "video":
-        # For VIDEO benchmarks, extract data from JSON content
-        logger.info(f"Processing VIDEO benchmark file: {filename}")
-        benchmarks_data = data.get("benchmarks: ", data)
-        video_benchmarks = benchmarks_data.get("benchmarks", {})
-        metrics = {
-            "timestamp": params["timestamp"],
-            "model": data.get("model", ""),
-            "model_name": data.get("model", ""),
-            "model_id": data.get("model", ""),
-            "backend": "video",
-            "device": params["device"],
-            "filename": filename,
-            "task_type": "video",
-            "num_requests": video_benchmarks.get("num_requests", 0),
-            "mean_latency_ms": video_benchmarks.get("latency", 0) * 1000,
-            "inference_steps_per_second": video_benchmarks.get(
-                "inference_steps_per_second", 0
-            ),
-            "num_inference_steps": video_benchmarks.get("num_inference_steps", 0),
-            "throughput_rps": video_benchmarks.get("throughput_rps"),
-            "performance_check": data.get("performance_check", ReportCheckTypes.NA),
-            **_extract_tail_latencies_ms(video_benchmarks),
-        }
-        return format_metrics(metrics)
-
     if params.get("task_type") == "structured_output":
         logger.info(f"Processing STRUCTURED OUTPUT benchmark file: {filename}")
         # Filename omits isl for structured-output runs; derive mean ISL from
@@ -721,32 +657,6 @@ def create_tts_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     return display_dict
 
 
-def create_embedding_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
-    # Define display columns mapping for embedding benchmarks
-    display_cols: List[Tuple[str, str]] = [
-        ("input_sequence_length", "ISL"),
-        ("output_sequence_length", "OSL"),
-        ("max_con", "Max Concurrency"),
-        ("embedding_dimension", "Embedding Dimension"),
-        ("num_requests", "Num Requests"),
-        ("mean_ttft_ms", "TTFT (ms)"),
-        ("mean_tpot_ms", "TPOT (ms)"),
-        ("mean_tps", "Tput User (TPS)"),
-        ("tps_decode_throughput", "Tput Decode (TPS)"),
-        ("tps_prefill_throughput", "Tput Prefill (TPS)"),
-        ("mean_e2el_ms", "E2EL (ms)"),
-        ("request_throughput", "Req Tput (RPS)"),
-        ("performance_check", "Performance Check"),
-    ]
-
-    display_dict = {}
-    for col_name, display_header in display_cols:
-        value = result.get(col_name, NOT_MEASURED_STR)
-        display_dict[display_header] = str(value)
-
-    return display_dict
-
-
 def create_image_generation_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     """Create display dictionary for image generation benchmarks (SDXL, Flux, etc)."""
     display_cols: List[Tuple[str, str]] = [
@@ -784,29 +694,6 @@ def create_cnn_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("p95_latency_ms", "P95 Latency (ms)"),
         ("throughput_rps", "Tput (RPS)"),
         ("task_type", "Task Type"),
-        ("performance_check", "Performance Check"),
-    ]
-
-    display_dict = {}
-    for col_name, display_header in display_cols:
-        value = result.get(col_name, NOT_MEASURED_STR)
-        display_dict[display_header] = str(value)
-
-    return display_dict
-
-
-def create_video_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
-    """Create display dictionary for video benchmarks."""
-    logger.info(f"Video result: {json.dumps(result, indent=2)}")
-    display_cols: List[Tuple[str, str]] = [
-        ("backend", "Source"),
-        ("num_requests", "Num Requests"),
-        ("num_inference_steps", "Num Inference Steps"),
-        ("mean_latency_ms", "Latency (ms)"),
-        ("p50_latency_ms", "P50 Latency (ms)"),
-        ("p90_latency_ms", "P90 Latency (ms)"),
-        ("p95_latency_ms", "P95 Latency (ms)"),
-        ("throughput_rps", "Tput (RPS)"),
         ("performance_check", "Performance Check"),
     ]
 
@@ -1108,15 +995,13 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
-    # Separate text, vlm, image, asr, embedding, cnn and video benchmarks
+    # Separate text, vlm, image, asr and cnn benchmarks
     text_results = [r for r in results if r.get("task_type") == "text"]
     vlm_results = [r for r in results if r.get("task_type") == "vlm"]
     image_results = [r for r in results if r.get("task_type") == "image"]
     audio_results = [r for r in results if r.get("task_type") == "asr"]
     tts_results = [r for r in results if r.get("task_type") == "tts"]
-    embedding_results = [r for r in results if r.get("task_type") == "embedding"]
     cnn_results = [r for r in results if r.get("task_type") == "cnn"]
-    video_results = [r for r in results if r.get("task_type") == "video"]
     structured_results = [
         r for r in results if r.get("task_type") == "structured_output"
     ]
@@ -1170,29 +1055,12 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         tts_section = f"#### Text-to-Speech Benchmark Sweeps for {model_name} on {device}\n\n{tts_markdown_str}"
         markdown_sections.append(tts_section)
 
-    # Generate embedding benchmarks section if any exist
-    if embedding_results:
-        embedding_display_results = [
-            create_embedding_display_dict(res) for res in embedding_results
-        ]
-        embedding_markdown_str = get_markdown_table(embedding_display_results)
-        embedding_section = f"#### Embedding Benchmark Sweeps for {model_name} on {device}\n\n{embedding_markdown_str}"
-        markdown_sections.append(embedding_section)
-
     # Generate cnn benchmarks section if any exist
     if cnn_results:
         cnn_display_results = [create_cnn_display_dict(res) for res in cnn_results]
         cnn_markdown_str = get_markdown_table(cnn_display_results)
         cnn_section = f"#### CNN Benchmark Sweeps for {model_name} on {device}\n\n{cnn_markdown_str}"
         markdown_sections.append(cnn_section)
-
-    if video_results:
-        video_display_results = [
-            create_video_display_dict(res) for res in video_results
-        ]
-        video_markdown_str = get_markdown_table(video_display_results)
-        video_section = f"#### Video Benchmark Sweeps for {model_name} on {device}\n\n{video_markdown_str}"
-        markdown_sections.append(video_section)
 
     # Combine sections
     if markdown_sections:
