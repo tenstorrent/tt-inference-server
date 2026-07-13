@@ -207,7 +207,8 @@ the prefill pool. The script should show both etcd registrations:
 show the decode worker with `worker_type="Decode"` and the prefill worker with
 `worker_type="Prefill"`, `needs=[["Decode"]]`, `model_input="Tokens"`, and an
 explicit `model_type="Prefill"` value for compatibility with the released
-`ai-dynamo` discovery watcher.
+`ai-dynamo` discovery watcher. Decode does not advertise a prefill dependency,
+because it can serve decode-local prefill routes without a prefill pool.
 
 To run more native prefill workers:
 
