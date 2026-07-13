@@ -141,11 +141,18 @@ Prometheus scrapes `prefill-gateway:9091`.
 
    ```bash
    DYN_ROUTER_CONDITIONAL_DISAGG=1 \
-   DYN_ROUTER_CONDITIONAL_DISAGG_POLICY=isl_bounding \
+   DYN_ROUTER_CONDITIONAL_DISAGG_POLICY=isl_or_load \
    DYN_ROUTER_CONDITIONAL_DISAGG_EFF_ISL_THRESHOLD=256 \
    DYN_ROUTER_CONDITIONAL_DISAGG_EFF_ISL_RATIO_THRESHOLD=0.7 \
+   DYN_ROUTER_CONDITIONAL_DISAGG_PREFILL_BUSY_THRESHOLD=0.5 \
      ./deploy.sh --deepseek --dynamo-native-routing --frontend-image <image-with-dynamo-conditional-disagg>
    ```
+
+   `isl_or_load` preserves the effective-ISL bypass behavior and also lets
+   Dynamo bypass remote prefill when the selected prefill worker is busy. Set
+   `DYN_ROUTER_CONDITIONAL_DISAGG_DECODE_BUSY_THRESHOLD` as an optional
+   decode-side circuit breaker if decode-local bypass should be denied when the
+   chosen decode worker is busy.
 
    The default frontend image currently installs the released `ai-dynamo`
    version from `Dockerfile.frontend`; conditional-disagg variables are ignored
