@@ -118,16 +118,16 @@ tt::sockets::PrefillRequestMessage buildPrefillRequest(
   message.topP = dyn.top_p;
   message.topK = dyn.top_k;
 
-  const Json::Value& hints = dyn.raw.isMember("extra_args")
-                               ? dyn.raw["extra_args"]
-                               : dyn.raw;
+  const Json::Value& hints =
+      dyn.raw.isMember("extra_args") ? dyn.raw["extra_args"] : dyn.raw;
   if (hints.isObject() && hints.isMember("tt_prefill_request") &&
       hints["tt_prefill_request"].isObject()) {
     const auto& ttReq = hints["tt_prefill_request"];
     message.slotId = optionalUInt(ttReq["slot_id"]);
-    message.maxTokens = optionalInt(ttReq["max_tokens"]).value_or(dyn.max_tokens);
-    message.decodePositionId =
-        ttReq.get("decode_position_id", 0).asInt();
+    if (auto maxTokens = optionalInt(ttReq["max_tokens"])) {
+      message.maxTokens = *maxTokens;
+    }
+    message.decodePositionId = ttReq.get("decode_position_id", 0).asInt();
     message.decodeSkipTokens = ttReq.get("decode_skip_tokens", 0).asInt();
     message.fastMode = ttReq.get("fast_mode", false).asBool();
   }
@@ -224,7 +224,7 @@ std::optional<tt::sockets::PrefillResultMessage> prefillResultFromJson(
 }
 
 bool shouldAllocateMockDecodeSlot() {
-  const auto runnerType = tt::config::llmEngineConfig().runner_type;
+  const auto runnerType = tt::config::blazeConfig().runner_type;
   return runnerType == tt::config::ModelRunnerType::MOCK_PIPELINE ||
          runnerType == tt::config::ModelRunnerType::MOCK_SCHEDULER ||
          runnerType == tt::config::ModelRunnerType::MOCK;
@@ -242,7 +242,8 @@ tt::domain::llm::LLMRequest buildDisaggregatedDecodeRequest(
     request.prompt.emplace<std::vector<uint32_t>>(message.tokenIds.end() - 1,
                                                   message.tokenIds.end());
     request.prompt_tokens_count = 1;
-    request.full_prompt_tokens_count = static_cast<int>(message.tokenIds.size());
+    request.full_prompt_tokens_count =
+        static_cast<int>(message.tokenIds.size());
   } else {
     request.prompt = std::vector<uint32_t>{};
   }
@@ -376,8 +377,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
   auto disaggregation = disaggregation_;
   trantor::EventLoopThreadPool* pool = loop_pool_.get();
 
-  return [pipeline, disaggregation, pool](const GenerateRequest& dynReq,
-                                          const TcpStreamConnectionInfo& connInfo) {
+  return [pipeline, disaggregation, pool](
+             const GenerateRequest& dynReq,
+             const TcpStreamConnectionInfo& connInfo) {
     using SteadyClock = std::chrono::steady_clock;
     const auto recvT = SteadyClock::now();
     const std::string probeId = dynReq.raw.get("request_id", "").asString();
@@ -457,9 +459,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       auto prefillMessage = buildPrefillRequest(dynReq);
       auto prefillDone = std::make_shared<std::atomic<bool>>(false);
       disaggregation->handlePrefillRequest(
-          prefillMessage,
-          [sendChunk, signalDone, prefillDone](
-              const tt::sockets::PrefillResultMessage& result) {
+          prefillMessage, [sendChunk, signalDone, prefillDone](
+                              const tt::sockets::PrefillResultMessage& result) {
             bool expected = false;
             if (!prefillDone->compare_exchange_strong(expected, true)) {
               return;
@@ -503,38 +504,38 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                 std::shared_ptr<services::SessionManager> sessionManager,
                 std::string sessionIdToRelease = "") {
               pipeline->submitResolvedStreamingRequest(
-                  *decodeReq,
-                  [pipeline, decodeReq, sendChunk, signalDone, usage,
-                   sessionManager, sessionIdToRelease](
-                const tt::domain::llm::LLMStreamChunk& chunk, bool isFinal) {
-              if (chunk.cached_prompt_tokens.has_value()) {
-                usage->cachedTokens = *chunk.cached_prompt_tokens;
-              }
-              if (!chunk.choices.empty() && chunk.choices[0].token_id) {
-                usage->completion += 1;
-              }
-              TokenChunk out = toTokenChunk(chunk, isFinal);
-              if (isFinal) {
-                DynamoUsage du;
-                du.prompt_tokens = decodeReq->full_prompt_tokens_count;
-                du.completion_tokens = usage->completion;
-                du.total_tokens = du.prompt_tokens + du.completion_tokens;
-                du.cached_tokens = usage->cachedTokens;
-                out.completion_usage = du;
-              }
-              const bool sent = sendChunk(out);
-              if (isFinal) {
-                if (sessionManager && !sessionIdToRelease.empty()) {
-                  sessionManager->releaseInFlight(sessionIdToRelease);
-                }
-                signalDone();
-              } else if (!sent) {
-                if (sessionManager && !sessionIdToRelease.empty()) {
-                  sessionManager->releaseInFlight(sessionIdToRelease);
-                }
-                pipeline->abortRequest(decodeReq->task_id);
-              }
-            });
+                  *decodeReq, [pipeline, decodeReq, sendChunk, signalDone,
+                               usage, sessionManager, sessionIdToRelease](
+                                  const tt::domain::llm::LLMStreamChunk& chunk,
+                                  bool isFinal) {
+                    if (chunk.cached_prompt_tokens.has_value()) {
+                      usage->cachedTokens = *chunk.cached_prompt_tokens;
+                    }
+                    if (!chunk.choices.empty() && chunk.choices[0].token_id) {
+                      usage->completion += 1;
+                    }
+                    TokenChunk out = toTokenChunk(chunk, isFinal);
+                    if (isFinal) {
+                      DynamoUsage du;
+                      du.prompt_tokens = decodeReq->full_prompt_tokens_count;
+                      du.completion_tokens = usage->completion;
+                      du.total_tokens = du.prompt_tokens + du.completion_tokens;
+                      du.cached_tokens = usage->cachedTokens;
+                      out.completion_usage = du;
+                    }
+                    const bool sent = sendChunk(out);
+                    if (isFinal) {
+                      if (sessionManager && !sessionIdToRelease.empty()) {
+                        sessionManager->releaseInFlight(sessionIdToRelease);
+                      }
+                      signalDone();
+                    } else if (!sent) {
+                      if (sessionManager && !sessionIdToRelease.empty()) {
+                        sessionManager->releaseInFlight(sessionIdToRelease);
+                      }
+                      pipeline->abortRequest(decodeReq->task_id);
+                    }
+                  });
             };
 
         auto decodeReq = std::make_shared<tt::domain::llm::LLMRequest>(
@@ -543,7 +544,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           if (!shouldAllocateMockDecodeSlot()) {
             sendErrorAndDone(
                 "DYNAMO_NATIVE_ROUTING=1: prefill result did not include a "
-                "reserved decode slot_id; slot reservation must be wired before "
+                "reserved decode slot_id; slot reservation must be wired "
+                "before "
                 "native remote prefill can continue on decode",
                 500);
             return;
@@ -561,12 +563,11 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               "allocating mock_pipeline decode-local slot for taskId={}",
               decodeReq->task_id);
           sessionManager->createSession(
-              [decodeReq, sessionManager, submitDecode](
-                  const tt::domain::Session& session) {
+              [decodeReq, sessionManager,
+               submitDecode](const tt::domain::Session& session) {
                 decodeReq->sessionId = session.getSessionId();
-                decodeReq->slotId =
-                    sessionManager->acquireInFlight(session.getSessionId(),
-                                                    nullptr);
+                decodeReq->slotId = sessionManager->acquireInFlight(
+                    session.getSessionId(), nullptr);
                 decodeReq->session =
                     sessionManager->getSession(session.getSessionId());
                 submitDecode(decodeReq, sessionManager, session.getSessionId());

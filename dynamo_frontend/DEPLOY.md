@@ -24,7 +24,7 @@ worker instead of the image's, e.g. on a box without a Tenstorrent card — a
 build made without `TT_METAL_HOME` runs the mock backend):
 
 ```bash
-cd ../tt-media-server/cpp_server && ./build.sh  --blaze      # produces build/tt_media_server_cpp
+cd ../tt-media-server/cpp_server && ./build.sh --blaze       # produces build/tt_media_server_cpp
 cd ../../dynamo_frontend
 PROMETHEUS_HOST_PORT=9091 GRAFANA_HOST_PORT=3001 \
   ./deploy.sh --deepseek --local-build --llm-device-backend mock_pipeline
@@ -71,9 +71,10 @@ frontend host port `8080`,
 
 `HF_TOKEN` (for gated models) and perf knobs (`ROUTER_MODE`, `DYN_TOKENIZER`,
 `RAYON_NUM_THREADS`, `DYN_RUNTIME_*`, `RUST_LOG`, `DYN_TX_TRACE`,
-`DYN_ENABLE_ANTHROPIC_API`) are read from the calling shell's environment if
-set. `ROUTER_MODE` defaults to `kv` in this deployment so Dynamo frontend
-timing metrics are emitted; override it if you need a different router.
+`DYN_ENABLE_ANTHROPIC_API`, and Dynamo conditional-disagg
+`DYN_ROUTER_CONDITIONAL_*` variables) are read from the calling shell's
+environment if set. `ROUTER_MODE` defaults to `kv` in this deployment so Dynamo
+frontend timing metrics are emitted; override it if you need a different router.
 `LLM_DEVICE_BACKEND` is also read from the environment and can be overridden
 with `--llm-device-backend`.
 
@@ -133,6 +134,22 @@ Prometheus scrapes `prefill-gateway:9091`.
    `MAX_TOKENS_TO_PREFILL_ON_DECODE`. When Dynamo routes remotely, the prefill
    worker returns `disaggregated_params.tt_prefill_result`, carrying the same
    `PrefillResultMessage` contract the ZMQ path used.
+
+   To exercise Dynamo's upstream conditional-disaggregation policy from
+   `ai-dynamo/dynamo#11357`, use a frontend image built from a Dynamo revision
+   that includes that PR and pass the matching router env vars, for example:
+
+   ```bash
+   DYN_ROUTER_CONDITIONAL_DISAGG=1 \
+   DYN_ROUTER_CONDITIONAL_DISAGG_POLICY=isl_bounding \
+   DYN_ROUTER_CONDITIONAL_DISAGG_EFF_ISL_THRESHOLD=256 \
+   DYN_ROUTER_CONDITIONAL_DISAGG_EFF_ISL_RATIO_THRESHOLD=0.7 \
+     ./deploy.sh --deepseek --dynamo-native-routing --frontend-image <image-with-dynamo-conditional-disagg>
+   ```
+
+   The default frontend image currently installs the released `ai-dynamo`
+   version from `Dockerfile.frontend`; conditional-disagg variables are ignored
+   unless that image contains the upstream feature.
 8. **Monitoring** — starts Prometheus + Grafana, with Prometheus attached to
    `dynamo-net` and scraping the frontend's `/metrics`.
 9. **Logs** — `docker logs -f tt-cpp-worker`, blocking until you Ctrl+C.

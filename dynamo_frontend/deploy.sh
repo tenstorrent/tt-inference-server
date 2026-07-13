@@ -347,9 +347,13 @@ if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
 fi
 
 WORKER_ROUTING_ENV=()
-if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
+if [[ "$PREFILL_GATEWAY_ENABLED" == "1" || "$PREFILL_DIRECT_ENABLED" == "1" || "$DYNAMO_NATIVE_ROUTING_ENABLED" == "1" ]]; then
     WORKER_ROUTING_ENV+=(
         -e LLM_MODE=decode
+    )
+fi
+if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
+    WORKER_ROUTING_ENV+=(
         -e USE_PREFILL_GATEWAY=1
         -e MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-0}"
         -e SOCKET_HOST="$PREFILL_GATEWAY_NAME"
@@ -357,7 +361,6 @@ if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
     )
 elif [[ "$PREFILL_DIRECT_ENABLED" == "1" ]]; then
     WORKER_ROUTING_ENV+=(
-        -e LLM_MODE=decode
         -e USE_PREFILL_GATEWAY=0
         -e MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
         -e SOCKET_HOST=0.0.0.0
@@ -370,7 +373,6 @@ elif [[ "$DYNAMO_NATIVE_ROUTING_ENABLED" == "1" ]]; then
         -e DYNAMO_ENDPOINT_NAME=generate
         -e DYNAMO_MODEL_TYPE=Chat
         -e DYNAMO_WORKER_TYPE=Decode
-        -e LLM_MODE=decode
         -e USE_PREFILL_GATEWAY=0
         -e DYNAMO_NATIVE_ROUTING=1
     )
@@ -445,6 +447,19 @@ fi
 # The frontend image bakes the tokenizer tree at the path each worker advertises
 # in its MDC, so the run is model-agnostic: it resolves every discovered model's
 # tokenizer locally and serves whatever workers register in etcd.
+FRONTEND_EXTRA_ENV=()
+for env_name in \
+    DYN_ROUTER_CONDITIONAL_DISAGG \
+    DYN_ROUTER_CONDITIONAL_DISAGG_POLICY \
+    DYN_ROUTER_CONDITIONAL_DISAGG_EFF_ISL_THRESHOLD \
+    DYN_ROUTER_CONDITIONAL_DISAGG_EFF_ISL_RATIO_THRESHOLD \
+    DYN_ROUTER_CONDITIONAL_DISAGG_PREFILL_BUSY_THRESHOLD \
+    DYN_ROUTER_CONDITIONAL_DISAGG_DECODE_BUSY_THRESHOLD; do
+    if [[ -n "${!env_name:-}" ]]; then
+        FRONTEND_EXTRA_ENV+=(-e "${env_name}=${!env_name}")
+    fi
+done
+
 log "starting frontend ($FRONTEND_IMAGE)"
 docker run -d --name "$FRONTEND_NAME" --network "$NETWORK_NAME" -p "${FRONTEND_HOST_PORT}:8000" \
     -e DYN_DISCOVERY_BACKEND=etcd \
@@ -460,6 +475,7 @@ docker run -d --name "$FRONTEND_NAME" --network "$NETWORK_NAME" -p "${FRONTEND_H
     -e DYN_DEBUG_PERF="${DYN_DEBUG_PERF:-0}" \
     -e DYN_ENABLE_ANTHROPIC_API="${DYN_ENABLE_ANTHROPIC_API:-true}" \
     -e ROUTER_MODE="${ROUTER_MODE:-kv}" \
+    "${FRONTEND_EXTRA_ENV[@]}" \
     -e RUST_LOG="${RUST_LOG:-}" \
     "$FRONTEND_IMAGE" >/dev/null
 
