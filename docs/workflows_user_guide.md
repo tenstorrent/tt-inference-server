@@ -395,13 +395,20 @@ Output is written to `workflow_logs/tests_output/`.
 
 > **Internal workflow.** `stress_tests` is used for release validation and CI. It requires a running inference server.
 
-The `stress_tests` workflow runs sustained load tests against the inference server to measure server stability and throughput over time. The run script is `stress_tests/run_stress_tests.py`.
+The `stress_tests` workflow runs sustained load tests against the inference server to measure server stability and throughput over time. The run script is `tt-inference-server-v2/test_module/stress_tests/run_stress_tests.py`, and it generates its report in-process via `report_module`.
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow stress_tests
 ```
 
-Output is written to `workflow_logs/stress_tests_output/`.
+Endurance mode (repeat the sweep for 24h) and other knobs are passed via `--workflow-args`:
+
+```bash
+python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow stress_tests \
+  --workflow-args "endurance-mode=true max-context-length=4096"
+```
+
+Output (per-sweep result JSONs plus the generated `report_<id>.md` / `data/report_data_<id>.json`) is written to `workflow_logs/stress_tests_output/`.
 
 ## Logs
 
