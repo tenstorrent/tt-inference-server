@@ -277,9 +277,9 @@ The Docker image for each model is listed in the per-model model support pages, 
 For the same model-device combination, the `release` workflow runs in sequence:
 1. `evals` workflow
 2. `benchmarks` workflow
-3. `spec_tests` workflow
-4. `tests` workflow (only for models with entries in `server_tests/test_config.py`)
-5. `reports` workflow
+3. `spec_tests` workflow (includes the vLLM API parameter-conformance tests for LLM/VLM models)
+
+Each workflow generates its own summary report as it runs, and the release run produces a combined release report.
 
 This is a convenience so that a single run on device executes all workflows required to certify a model implementation on Tenstorrent hardware is working correctly and ready for release.
 
@@ -365,7 +365,7 @@ The `spec_tests` workflow runs server/model integration tests against the infere
 python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow spec_tests
 ```
 
-Each test case entry in `server_tests_config.json` specifies:
+Test suites and cases are defined in `tt-inference-server-v2/test_module/` (`server_tests_config.json` and `test_suites/*.json`). Each test case entry specifies:
 - `name` / `module`: the test class and its Python module path.
 - `enabled`: set to `false` to skip a test case.
 - `test_config`: execution settings — `test_timeout`, `retry_attempts`, `retry_delay`, `break_on_failure`, `mock_mode`.

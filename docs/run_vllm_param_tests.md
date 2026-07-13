@@ -1,8 +1,14 @@
 # Running vLLM parameter tests
 
-How to run vLLM parameters specific tests for development and debugging.
+How to run the vLLM parameter-conformance tests for development and debugging.
 
-### step 1: first create venv by running workflow
+These are the LLM/VLM API parameter tests that run as part of `--workflow spec_tests`
+(routed to the v2 engine). The suites live in the v2 package:
+`tt-inference-server-v2/llm_module/test_vllm_chat_completions.py` and
+`test_vllm_responses.py`. Models are mapped to suites in
+`tt-inference-server-v2/test_module/test_suites/llm.json`.
+
+### step 1: first create the venv by running the workflow
 This will fail out if no server is running.
 ```bash
 python3 run.py --model Qwen3-32B --device galaxy --workflow spec_tests
@@ -18,7 +24,12 @@ You can run directly using tt-inference-server docker as an alternative to runni
 python3 run.py --model Qwen3-32B --device galaxy --workflow server --docker-server --dev-mode
 ```
 
-### step 3: using venv_tests_run_script venv for local dev
+### step 3: run the suite directly against a running server
+The `spec_tests` workflow runs the suite in a child pytest process; you can
+reproduce that manually. The suite imports fixtures from `server_tests.conftest`
+and `report_module`, so put both the repo root and the v2 package root on
+`PYTHONPATH`:
+
 ```bash
 cd $TT_INFERENCE_SERVER_REPO_ROOT
 source .workflow_venvs/.venv_tests_run_script/bin/activate
@@ -27,54 +38,18 @@ source .workflow_venvs/.venv_tests_run_script/bin/activate
 # note: if you used VLLM_API_KEY env var you can set that.
 export JWT_SECRET=<my-secret>
 
-# the example below runs the determinism tests, these test top_k or top_p, and temperature are working.
-pytest server_tests/test_cases/test_vllm_server_parameters.py -sv \
--k "test_determinism" \
---endpoint-url http://127.0.0.1:8000/v1/chat/completions \
---model-name Qwen/Qwen3-32B \
---model-backend tt-transformers \
---output-path ./workflow_logs/tests_output/test_my_output_path
-```
-The default pytest args are defined in `test_config.py` for each model, e.g.: https://github.com/tenstorrent/tt-inference-server/blob/dev/server_tests/test_config.py#L45
-
-
-#### step 3[alternative]: run pytest binary without 'source'
-```bash
-cd $TT_INFERENCE_SERVER_REPO_ROOT
-
-# add authorization env var if server was started with authorization
-# note: if you used VLLM_API_KEY env var you can set that.
-export JWT_SECRET=<my-secret>
-
-# the example below runs the determinism tests, these test top_k or top_p, and temperature are working.
-.workflow_venvs/.venv_tests_run_script/bin/pytest server_tests/test_cases/test_vllm_server_parameters.py -sv \
--k "test_determinism" \
---endpoint-url http://127.0.0.1:8000/v1/chat/completions \
---model-name Qwen/Qwen3-32B \
---model-backend tt-transformers \
---output-path ./workflow_logs/tests_output/test_my_output_path
+# the example below runs the determinism tests (top_k / top_p / temperature)
+PYTHONPATH="$PWD:$PWD/tt-inference-server-v2" \
+pytest tt-inference-server-v2/llm_module/test_vllm_chat_completions.py -sv \
+  -k "test_determinism" \
+  --endpoint-url http://127.0.0.1:8000/v1/chat/completions \
+  --model-name Qwen/Qwen3-32B \
+  --task-name vllm_chat_completions \
+  --output-path ./workflow_logs/reports_output/spec_tests/test_my_output_path
 ```
 
-Example output:
-```log
-tstesco@xxxxxxxxxxx ~/software/tt-inference-server[tstesco/test-manual-run-doc]$ export JWT_SECRET=<my-secret>
-tstesco@xxxxxxxxxxx ~/software/tt-inference-server[tstesco/test-manual-run-doc]$ .workflow_venvs/.venv_tests_run_script/bin/pytest server_tests/test_cases/test_vllm_server_parameters.py -sv -k "test_determinism" --endpoint-url http://127.0.0.1:8000/v1/chat/completions --model-name Qwen/Qwen3-32B --model-backend tt-transformers --output-path ./workflow_logs/tests_output/test_my_output_path
-================================================================================ test session starts =================================================================================
-platform linux -- Python 3.10.19, pytest-8.3.5, pluggy-1.6.0 -- /home/tstesco/software/tt-inference-server/.workflow_venvs/.venv_tests_run_script/bin/python
-cachedir: .pytest_cache
-rootdir: /home/tstesco/software/tt-inference-server
-configfile: pyproject.toml
-plugins: anyio-4.12.0
-collected 20 items / 17 deselected / 3 selected
+The supported pytest options (`--endpoint-url`, `--model-name`, `--task-name`,
+`--output-path`) are declared in `tt-inference-server-v2/llm_module/conftest.py`.
 
-server_tests/test_cases/test_vllm_server_parameters.py::test_determinism_parameters[temperature-0.0] PASSED
-server_tests/test_cases/test_vllm_server_parameters.py::test_determinism_parameters[top_k-1] PASSED
-server_tests/test_cases/test_vllm_server_parameters.py::test_determinism_parameters[top_p-0.01] PASSED
-Generating parameter_report.json...
-parameter_report.json generated.
-
-
-========================================================================= 3 passed, 17 deselected in 57.53s ==========================================================================
-```
-
-You will see outputs in where you specify `--output-path`, e.g. `$TT_INFERENCE_SERVER_REPO_ROOT/workflow_logs/tests_output/test_my_output_path/parameter_report.json`
+You will see outputs where you specify `--output-path`, e.g.
+`$TT_INFERENCE_SERVER_REPO_ROOT/workflow_logs/reports_output/spec_tests/test_my_output_path/parameter_report_vllm_chat_completions.json`
