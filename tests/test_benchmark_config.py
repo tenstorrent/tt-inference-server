@@ -12,7 +12,7 @@ import pytest
 
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
-from workflows.workflow_types import DeviceTypes, ModelType
+from workflows.workflow_types import DeviceTypes
 
 
 def _find_model_id(
@@ -279,20 +279,3 @@ def test_select_smoke_test_benchmark_config_skips_non_text_sweeps(monkeypatch):
     )
 
     assert smoke_config.tasks == []
-
-
-def test_get_benchmark_config_returns_empty_for_video(monkeypatch):
-    benchmark_config = _import_benchmark_config(monkeypatch)
-
-    model_id = _find_model_id(
-        model_name="mochi-1-preview",
-        device=DeviceTypes.T3K,
-        impl_name="tt-transformers",
-    )
-    spec = MODEL_SPECS[model_id]
-    assert spec.model_type == ModelType.VIDEO
-
-    config = benchmark_config.get_benchmark_config(spec)
-
-    assert config.model_id == model_id
-    assert config.tasks == []

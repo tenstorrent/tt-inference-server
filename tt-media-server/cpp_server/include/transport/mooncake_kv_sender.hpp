@@ -17,6 +17,8 @@
 
 namespace tt::transport {
 
+class WorkerHealth;
+
 /// Default size of ONE staging buffer in a KvStagingPool. Two are held (for
 /// double-buffering), so a pool holds 2 * this. Sized to be a large window that
 /// batches many chunks; a slot larger than a window is transferred in several.
@@ -112,11 +114,14 @@ class MooncakeKvSender {
   /// @param staging optional pre-registered staging pool to reuse across
   ///        senders (the multi-host fan-out shares one). If null, the sender
   ///        lazily creates and owns its own on first transferSlot.
+  /// @param health optional; when set, a transfer failure bumps the transfer/
+  ///        re-resolve counters (pure observability, never gates readiness).
   MooncakeKvSender(std::shared_ptr<ITransferEngine> engine, IDeviceIo& device,
                    std::shared_ptr<const IKvTable> prefillTable,
                    std::shared_ptr<const IKvTable> decodeTable,
                    std::string prefillHost, std::string decodeHost,
-                   std::shared_ptr<KvStagingPool> staging = nullptr);
+                   std::shared_ptr<KvStagingPool> staging = nullptr,
+                   WorkerHealth* health = nullptr);
 
   /**
    * @brief Transfer one slot's chunks into the decode mirror segment.
@@ -128,8 +133,15 @@ class MooncakeKvSender {
                     const std::string& segmentName);
 
  private:
+  // Force-refresh the peer's segment descriptor after a failed transfer so the
+  // NEXT request re-resolves its current address. A TCP sender caches the
+  // descriptor at openSegment() time, so a peer that restarted on a fresh
+  // dynamic port would otherwise be targeted at its dead address forever.
+  void refreshPeerSegment(const std::string& segmentName);
+
   std::shared_ptr<ITransferEngine> engine_;
   IDeviceIo& device_;
+  WorkerHealth* health_ = nullptr;
   std::shared_ptr<const IKvTable> prefill_table_;
   std::shared_ptr<const IKvTable> decode_table_;
   std::string prefill_host_;

@@ -604,6 +604,8 @@ add_library(transport_lib
     src/transport/mooncake_transfer_engine.cpp
     src/transport/mooncake_migration_worker.cpp
     src/transport/peer_discovery_service.cpp
+    src/transport/worker_health.cpp
+    src/transport/worker_health_server.cpp
     # Real KV-cache addressing: physical mirror layout + sender/receiver views +
     # multi-device UMD I/O. Dependency-free host code (no tt-metal/Mooncake), so
     # transport_lib still builds in every configuration.
@@ -637,8 +639,10 @@ add_library(transport_lib
 )
 target_include_directories(transport_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
 )
-target_link_libraries(transport_lib PUBLIC spdlog::spdlog)
+# worker_health.cpp owns a Prometheus registry for the worker's /metrics surface.
+target_link_libraries(transport_lib PUBLIC spdlog::spdlog prometheus-cpp::core)
 if(USE_EXTERNAL_FMT)
     target_link_libraries(transport_lib PUBLIC fmt::fmt)
 endif()
@@ -905,6 +909,13 @@ target_include_directories(transport_test PRIVATE
 
 # KV-cache addressing unit tests: mirror layout / offset math, sender-receiver
 # offset parity, multi-device UMD dispatch. Host-only, runs in any build config.
+add_executable(worker_health_server_test
+    tests/unit/transport/worker_health_server_test.cpp)
+target_link_libraries(worker_health_server_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(worker_health_server_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(kv_cache_addressing_test
     tests/unit/transport/kv_cache_addressing_test.cpp)
 target_link_libraries(kv_cache_addressing_test PRIVATE transport_lib GTest::gtest_main)
@@ -1128,6 +1139,22 @@ add_executable(session_test
 target_link_libraries(session_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(session_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(prefix_cache_router_test
+    tests/unit/services/prefix_cache_router_test.cpp
+    src/domain/session.cpp
+    src/domain/prefix_cache/prefix_index.cpp
+    src/domain/prefix_cache/block_matcher.cpp
+    src/domain/prefix_cache/response_id_index.cpp
+    src/services/prefix_cache_router.cpp
+    src/metrics/metrics.cpp
+)
+target_link_libraries(prefix_cache_router_test PRIVATE
+    llm_runner_lib Drogon::Drogon prometheus-cpp::core GTest::gtest_main)
+target_include_directories(prefix_cache_router_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
 add_executable(mock_remote_kv_manager_test
@@ -1363,6 +1390,7 @@ set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2E
 gtest_discover_tests(transport_test)
 gtest_discover_tests(dynamo_protocol_test)
 gtest_discover_tests(kv_cache_addressing_test)
+gtest_discover_tests(worker_health_server_test)
 gtest_discover_tests(kv_table_adapter_test)
 gtest_discover_tests(kv_control_channel_test)
 gtest_discover_tests(mooncake_kv_migration_test)
@@ -1387,6 +1415,7 @@ gtest_discover_tests(structured_output_test)
 gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
+gtest_discover_tests(prefix_cache_router_test)
 gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)
 gtest_discover_tests(llm_service_test)
@@ -1423,24 +1452,23 @@ target_include_directories(prefix_cache_e2e_test PRIVATE
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)
 target_link_libraries(tokenizer_benchmark PRIVATE llm_runner_lib)
 
-# Session manager microbenchmark (Google Benchmark)
-add_executable(session_manager_benchmark
-    benchmarks/session_manager_benchmark.cpp
+# Prefix cache router microbenchmark (Google Benchmark)
+add_executable(prefix_cache_router_benchmark
+    benchmarks/prefix_cache_router_benchmark.cpp
     src/domain/session.cpp
     src/domain/prefix_cache/prefix_index.cpp
     src/domain/prefix_cache/block_matcher.cpp
     src/domain/prefix_cache/response_id_index.cpp
-    src/services/session_manager.cpp
     src/services/prefix_cache_router.cpp
     src/metrics/metrics.cpp
 )
-target_link_libraries(session_manager_benchmark PRIVATE
+target_link_libraries(prefix_cache_router_benchmark PRIVATE
     llm_runner_lib Drogon::Drogon prometheus-cpp::core benchmark::benchmark benchmark::benchmark_main)
-target_include_directories(session_manager_benchmark PRIVATE
+target_include_directories(prefix_cache_router_benchmark PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
-add_test(NAME SessionManagerBenchmark COMMAND session_manager_benchmark --benchmark_min_time=0.1s)
+add_test(NAME PrefixCacheRouterBenchmark COMMAND prefix_cache_router_benchmark --benchmark_min_time=0.1s)
 
 # Kafka messaging support (optional)
 if(KAFKA_ENABLED)
