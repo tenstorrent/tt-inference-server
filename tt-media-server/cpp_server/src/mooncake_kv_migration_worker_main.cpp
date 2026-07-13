@@ -34,6 +34,8 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -57,6 +59,8 @@
 #include "transport/multi_device_umd.hpp"
 #include "transport/transfer_types.hpp"
 #include "transport/umd_device_access.hpp"
+#include "transport/worker_health.hpp"
+#include "transport/worker_health_server.hpp"
 #include "utils/logger.hpp"
 
 namespace {
@@ -69,6 +73,26 @@ constexpr int K_IDLE_POLL_MS = 100;
 // their (asynchronous) TCP connect before it declares READY and starts
 // consuming Kafka. On timeout it proceeds degraded (see runPrefill).
 constexpr int K_CONNECT_TIMEOUT_MS = 30000;
+
+// Default KV migration control port a decode binds when --control-port is
+// omitted. The endpoint is published to the metadata service (see
+// K_CONTROL_KEY_PREFIX), so prefill discovers host AND port from there rather
+// than assuming this value; it only backstops mixed/old deploys that predate
+// control-endpoint publishing.
+constexpr uint16_t K_DEFAULT_CONTROL_PORT = 18650;
+
+// Metadata key a worker publishes its KV control endpoint under, and a peer
+// resolves it from: "kv_control/<name>" -> "<host>:<port>". This keeps every
+// peer fact (segment, rpc host, and the control endpoint) in the one metadata
+// service instead of a static convention.
+constexpr const char* K_CONTROL_KEY_PREFIX = "kv_control/";
+
+// Peer discovery retry loop (mirrors main's PeerDiscoveryService): keep
+// sweeping the metadata service every K_DISCOVERY_POLL_MS until every peer
+// resolves or K_DISCOVERY_TIMEOUT_MS elapses, so a peer that registers slightly
+// later still wires up instead of being lost to a one-shot lookup.
+constexpr int K_DISCOVERY_TIMEOUT_MS = 30000;
+constexpr int K_DISCOVERY_POLL_MS = 1000;
 
 std::atomic<bool> gStop{false};
 static_assert(std::atomic<bool>::is_always_lock_free,
@@ -90,26 +114,58 @@ struct WorkerConfig {
   std::string device_map_path;  // FabricNode->UMD chip map (both roles); empty
                                 // => placeholder (device & 0xFFFF).
 
-  // prefill:
+  // Peers (any role — a worker is just a migration worker with a peer list).
+  // Static peer control endpoints (NAME=host:port). An explicit entry always
+  // wins over discovery for the same NAME.
+  std::unordered_map<std::string, KvControlChannelConnector::Endpoint> peers;
+  // Peers to DISCOVER via the metadata service, by the peer's logical name (its
+  // --name). Both the routable host and the control port come from the peer's
+  // published "kv_control/<name>" entry. So each --peer TAG must match the
+  // corresponding peer's --name (e.g. "decode-0"); with a metadata server that
+  // TAG can be logical (no IP), which is the whole point. The prefill acts on
+  // these (opens control channels); a decode only resolves + holds them.
+  std::vector<std::string> discover_peers;
+  // Fallback control port, used only for a discovered peer whose control
+  // endpoint is not (yet) published — otherwise the port comes from metadata.
+  uint16_t peer_control_port = 0;
+
+  // prefill tables:
   std::string prefill_table_path;
   std::string decode_table_path;
-  std::unordered_map<std::string, KvControlChannelConnector::Endpoint> peers;
 
   // decode:
   std::string table_path;  // this decode node's table.
   std::string segment;     // advertised segment (defaults to `name`).
   uint16_t control_port = 0;
+
+  // HTTP health surface (/healthz, /readyz, /metrics). 0 == disabled so local
+  // runs and the e2e stay port-free unless a port is explicitly requested.
+  uint16_t health_port = 0;
+  std::string health_host = "0.0.0.0";
 };
 
 void usage() {
   std::cerr
-      << "usage: mooncake_kv_migration_worker --role prefill|decode "
-         "--metadata URI --name NAME --host HOST_TAG\n"
-         "  prefill: --prefill-table P.pb --decode-table D.pb "
-         "--peer-control NAME=host:port (repeatable)\n"
-         "  decode:  --table D.pb --control-port N [--segment NAME]\n"
+      << "usage: mooncake_kv_migration_worker --metadata URI --name NAME "
+         "--host HOST_TAG [--role prefill|decode]\n"
+         "  --role is inferred from NAME's prefix (prefill*/decode*) when "
+         "omitted.\n"
+         "  peers (any role): --peer NAME (repeatable; NAME==a peer's --name, "
+         "its control host:port is discovered via metadata) and/or\n"
+         "           --peer-control NAME=host:port (repeatable, static)\n"
+         "           [--peer-control-port N]  fallback control port for a "
+         "discovered peer that hasn't published its endpoint (default 18650).\n"
+         "           The prefill (sender) opens a control channel to each "
+         "peer; "
+         "a decode (receiver) resolves+holds them but does not initiate.\n"
+         "  prefill: --prefill-table P.pb --decode-table D.pb (+ >=1 peer)\n"
+         "  decode:  --table D.pb [--control-port N] (default 18650) "
+         "[--segment NAME]\n"
          "  both:    [--device-map FILE]  ('mesh chip umd' per line; needed "
          "when this host's table spans multiple meshes)\n"
+         "  both:    [--health-port N] [--health-host HOST]  serve "
+         "/healthz /readyz /metrics (0=off, default off; host default "
+         "0.0.0.0)\n"
          "  Kafka (prefill) via env: KAFKA_BROKERS, "
          "KAFKA_MIGRATION_REQUEST_TOPIC, KAFKA_MIGRATION_ACK_TOPIC, "
          "KAFKA_GROUP_ID\n";
@@ -133,7 +189,30 @@ bool parsePeer(const std::string& spec, std::string& name,
   return !name.empty() && !ep.host.empty() && ep.port != 0;
 }
 
+// Parse "host:port" (a published control endpoint) into an Endpoint.
+bool parseEndpoint(const std::string& spec,
+                   KvControlChannelConnector::Endpoint& ep) {
+  const auto colon = spec.rfind(':');
+  if (colon == std::string::npos || colon == 0) return false;
+  ep.host = spec.substr(0, colon);
+  try {
+    ep.port = static_cast<uint16_t>(std::stoi(spec.substr(colon + 1)));
+  } catch (...) {
+    return false;
+  }
+  return !ep.host.empty() && ep.port != 0;
+}
+
+// The host part of the engine's advertised "host:port" server name — the same
+// routable host Mooncake registered in rpc_meta, so a peer reaches our control
+// server at exactly the address it reaches our data plane.
+std::string hostOf(const std::string& serverName) {
+  const auto colon = serverName.rfind(':');
+  return colon == std::string::npos ? serverName : serverName.substr(0, colon);
+}
+
 bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
+  bool roleGiven = false;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     auto next = [&](std::string& dst) {
@@ -151,6 +230,7 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
         std::cerr << "--role must be prefill|decode\n";
         return false;
       }
+      roleGiven = true;
       continue;
     }
     if (a == "--metadata" && next(cfg.metadata_uri)) continue;
@@ -181,6 +261,33 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
       cfg.peers[name] = ep;
       continue;
     }
+    if (a == "--peer" && next(v)) {
+      cfg.discover_peers.push_back(v);
+      continue;
+    }
+    if (a == "--peer-control-port" && next(v)) {
+      try {
+        const int port = std::stoi(v);
+        if (port <= 0 || port > 65535) throw std::out_of_range("range");
+        cfg.peer_control_port = static_cast<uint16_t>(port);
+      } catch (...) {
+        std::cerr << "--peer-control-port must be 1..65535, got: " << v << "\n";
+        return false;
+      }
+      continue;
+    }
+    if (a == "--health-port" && next(v)) {
+      try {
+        const int port = std::stoi(v);
+        if (port < 0 || port > 65535) throw std::out_of_range("range");
+        cfg.health_port = static_cast<uint16_t>(port);
+      } catch (...) {
+        std::cerr << "--health-port must be 0..65535, got: " << v << "\n";
+        return false;
+      }
+      continue;
+    }
+    if (a == "--health-host" && next(cfg.health_host)) continue;
     std::cerr << "unknown/incomplete arg: " << a << "\n";
     return false;
   }
@@ -189,16 +296,34 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
     std::cerr << "--metadata, --name and --host are required\n";
     return false;
   }
+  // Infer the role from the name prefix when --role was omitted (the deploy
+  // names workers prefill-N / decode-N), so the common launch needs no --role.
+  if (!roleGiven) {
+    if (cfg.name.rfind("prefill", 0) == 0) {
+      cfg.role = Role::PREFILL;
+    } else if (cfg.name.rfind("decode", 0) == 0) {
+      cfg.role = Role::DECODE;
+    } else {
+      std::cerr << "--role is required when --name does not start with "
+                   "'prefill' or 'decode'\n";
+      return false;
+    }
+  }
+  // One shared control port per host: decode listens here, prefill dials it for
+  // discovered peers. Fixed (not per-peer), matching the bringup-era deploy.
+  if (cfg.control_port == 0) cfg.control_port = K_DEFAULT_CONTROL_PORT;
+  if (cfg.peer_control_port == 0)
+    cfg.peer_control_port = K_DEFAULT_CONTROL_PORT;
+
   if (cfg.role == Role::PREFILL &&
       (cfg.prefill_table_path.empty() || cfg.decode_table_path.empty() ||
-       cfg.peers.empty())) {
+       (cfg.peers.empty() && cfg.discover_peers.empty()))) {
     std::cerr << "prefill needs --prefill-table, --decode-table and at least "
-                 "one --peer-control\n";
+                 "one --peer NAME (or --peer-control NAME=host:port)\n";
     return false;
   }
-  if (cfg.role == Role::DECODE &&
-      (cfg.table_path.empty() || cfg.control_port == 0)) {
-    std::cerr << "decode needs --table and --control-port\n";
+  if (cfg.role == Role::DECODE && cfg.table_path.empty()) {
+    std::cerr << "decode needs --table\n";
     return false;
   }
   // NB: segment defaults to the engine's real local server name at runtime
@@ -278,7 +403,105 @@ std::shared_ptr<tt::sockets::ISocketTransport> makeServerTransport(
   return t;
 }
 
+// Bring up the optional HTTP health surface (/healthz /readyz /metrics) before
+// the worker's own bring-up, so a k8s liveness probe succeeds during the
+// (possibly slow) connect/register phase while /readyz stays 503 until we flip
+// the worker Ready. A port of 0 means disabled (success, no server). @p out
+// must outlive @p health's server; both are the caller's stack locals so the
+// server is torn down first. Returns false only on a real bind failure.
+bool startHealthServer(WorkerHealth& health, const WorkerConfig& cfg,
+                       std::optional<WorkerHealthServer>& out) {
+  if (cfg.health_port == 0) return true;
+  out.emplace(health, cfg.health_host, cfg.health_port);
+  if (!out->start()) {
+    TT_LOG_ERROR("[worker] '{}' health server failed to bind {}:{}", cfg.name,
+                 cfg.health_host, cfg.health_port);
+    return false;
+  }
+  TT_LOG_INFO("[worker] '{}' health surface on {}:{}", cfg.name,
+              cfg.health_host, out->port());
+  return true;
+}
+
+// One attempt to resolve a single peer's control endpoint. Primary source is
+// the peer's published "kv_control/<name>" (host AND port); the fallback is
+// resolveServerName's rpc_meta host paired with the fixed peer_control_port,
+// for a peer that registered its data plane but hasn't published a control
+// endpoint (mixed/old deploy). Returns false if neither source resolves it yet.
+bool resolveOnePeer(ITransferEngine& engine, const WorkerConfig& cfg,
+                    const std::string& name,
+                    KvControlChannelConnector::Endpoint& ep) {
+  if (auto endpoint =
+          engine.lookupMetadata(std::string(K_CONTROL_KEY_PREFIX) + name)) {
+    if (parseEndpoint(*endpoint, ep)) {
+      TT_LOG_INFO("[worker] discovered peer '{}' -> control {}:{} (metadata)",
+                  name, ep.host, ep.port);
+      return true;
+    }
+    TT_LOG_WARN(
+        "[worker] peer '{}' published a malformed control endpoint '{}'; "
+        "ignoring",
+        name, *endpoint);
+  }
+  const std::string host = engine.resolveServerName(name);
+  if (host.empty()) return false;
+  ep = KvControlChannelConnector::Endpoint{host, cfg.peer_control_port};
+  TT_LOG_INFO(
+      "[worker] discovered peer '{}' -> control {}:{} (rpc_meta host + fixed "
+      "port; control endpoint not published)",
+      name, host, cfg.peer_control_port);
+  return true;
+}
+
+// Resolve every peer this worker was given (role-agnostic — a worker is just a
+// migration worker with a peer list) to its control endpoint via the metadata
+// service, retrying until all resolve or the timeout elapses. Static
+// --peer-control entries win and skip resolution; a SIGTERM (@p stop) aborts
+// the wait promptly. Returns the name->endpoint map, possibly partial on
+// timeout.
+std::unordered_map<std::string, KvControlChannelConnector::Endpoint>
+resolvePeers(ITransferEngine& engine, const WorkerConfig& cfg,
+             const std::atomic<bool>& stop) {
+  auto peers = cfg.peers;
+  std::vector<std::string> pending;
+  for (const auto& name : cfg.discover_peers)
+    if (peers.count(name) == 0) pending.push_back(name);
+
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(K_DISCOVERY_TIMEOUT_MS);
+  while (!pending.empty() && !stop.load()) {
+    std::vector<std::string> unresolved;
+    for (const auto& name : pending) {
+      KvControlChannelConnector::Endpoint ep;
+      if (resolveOnePeer(engine, cfg, name, ep)) {
+        peers[name] = ep;
+      } else {
+        unresolved.push_back(name);
+      }
+    }
+    pending.swap(unresolved);
+    if (pending.empty() || std::chrono::steady_clock::now() >= deadline) break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
+  }
+  // Startup-only discovery: unresolved names are dropped from the returned map
+  // and never retried in-process. A late-registering decode stays unreachable
+  // until this prefill restarts (steady-state re-resolve is future work).
+  for (const auto& name : pending)
+    TT_LOG_WARN(
+        "[worker] peer '{}' unresolved after {}ms; no control channel will be "
+        "opened for it until this worker restarts after the peer registers",
+        name, K_DISCOVERY_TIMEOUT_MS);
+  return peers;
+}
+
 int runPrefill(const WorkerConfig& cfg) {
+  // Declared before the health server so the server (which borrows this) is
+  // destroyed first; liveness is up immediately, readiness stays false until
+  // the connect barrier below flips us Ready.
+  WorkerHealth health(cfg.name);
+  std::optional<WorkerHealthServer> healthServer;
+  if (!startHealthServer(health, cfg, healthServer)) return 1;
+
   auto engine = makeEngine(cfg);
   if (!engine) return 1;
 
@@ -292,11 +515,15 @@ int runPrefill(const WorkerConfig& cfg) {
   const DeviceMap deviceMap = loadDeviceMapFile(cfg.device_map_path);
   auto device = buildDeviceIo(*prefill->table, cfg.host, deviceMap);
 
-  // Open one control channel per decode host (static resolution for now; the
-  // map is the interface a discovery service fills later). openChannels() only
-  // CREATES the channels -- the TCP connect runs asynchronously in each
-  // transport's background loop.
-  KvControlChannelConnector connector(cfg.peers, makeClientTransport);
+  // Discover every decode peer's control endpoint through the metadata service
+  // (host AND port from its published "kv_control/<name>"), retrying until they
+  // resolve — this is what lets --peer be a logical tag like "decode-0" instead
+  // of a hardcoded endpoint. The prefill is the sender, so it ACTS on the
+  // peers: openChannels() below creates a control channel to each (the TCP
+  // connect then runs asynchronously in each transport's background loop).
+  auto peers = resolvePeers(*engine, cfg, gStop);
+
+  KvControlChannelConnector connector(peers, makeClientTransport);
   if (!connector.openChannels()) {
     TT_LOG_WARN(
         "[worker] not every decode peer got a transport; involved-but-missing "
@@ -305,7 +532,7 @@ int runPrefill(const WorkerConfig& cfg) {
 
   KvMigrationMultiHostSender sender(engine, *device, prefill->table,
                                     decode->table, cfg.host,
-                                    connector.channels());
+                                    connector.channels(), &health);
   auto executor = std::make_unique<MooncakeMigrationExecutor>(sender);
 
   const std::string brokers =
@@ -337,6 +564,15 @@ int runPrefill(const WorkerConfig& cfg) {
   // and ack FAILED (they succeed once that host connects). NOTE: this covers
   // STARTUP only -- a peer that drops AFTER connecting is out of scope for now
   // (that migration acks FAILED; steady-state re-connect is future work).
+  //
+  // Readiness is gated on the CONFIGURED peer set, not only channels that were
+  // created: resolvePeers() drops unresolved names, so channelCount() can be 0
+  // even when --peer was given. Treating that as Ready 0/0 would start Kafka
+  // with no way to reach any decode.
+  std::size_t configuredPeers = cfg.peers.size();
+  for (const auto& name : cfg.discover_peers) {
+    if (cfg.peers.count(name) == 0) ++configuredPeers;
+  }
   const std::size_t total = connector.channelCount();
   const std::size_t connected =
       connector.awaitConnected(std::chrono::milliseconds(K_CONNECT_TIMEOUT_MS));
@@ -346,21 +582,47 @@ int runPrefill(const WorkerConfig& cfg) {
         "migrations to unconnected hosts will fail until they connect",
         connected, total, K_CONNECT_TIMEOUT_MS);
   }
+  if (total < configuredPeers) {
+    TT_LOG_WARN(
+        "[worker] only {}/{} configured decode peers resolved at startup; "
+        "unresolved peers stay unreachable until restart",
+        total, configuredPeers);
+  }
+
+  // Ready only when at least one control channel is actually connected. Zero
+  // connected channels with any configured peers (including all unresolved) is
+  // not-ready so an orchestrator won't route work here.
+  const bool isReady = !(configuredPeers > 0 && connected == 0);
+  if (isReady) {
+    health.setLifecycle(WorkerLifecycle::Ready);
+  } else {
+    health.setProcessHealthy(true);
+    TT_LOG_WARN(
+        "[worker] prefill '{}' has 0 connected decode channels "
+        "(resolved={}/configured={}); staying not-ready",
+        cfg.name, total, configuredPeers);
+  }
 
   TT_LOG_INFO(
-      "[worker] prefill '{}' READY: {}/{} decode channels connected, "
-      "brokers={} req={} ack={}",
-      cfg.name, connected, total, brokers, reqTopic, ackTopic);
+      "[worker] prefill '{}' {}: {}/{} decode channels connected "
+      "(configured={}), brokers={} req={} ack={}",
+      cfg.name, isReady ? "READY" : "not-ready", connected, total,
+      configuredPeers, brokers, reqTopic, ackTopic);
   worker.start();
   while (!gStop.load()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(K_IDLE_POLL_MS));
   }
   worker.stop();
+  health.setLifecycle(WorkerLifecycle::ShuttingDown);
   TT_LOG_INFO("[worker] prefill '{}' stopping", cfg.name);
   return 0;
 }
 
 int runDecode(const WorkerConfig& cfg) {
+  WorkerHealth health(cfg.name);
+  std::optional<WorkerHealthServer> healthServer;
+  if (!startHealthServer(health, cfg, healthServer)) return 1;
+
   auto engine = makeEngine(cfg);
   if (!engine) return 1;
 
@@ -373,11 +635,18 @@ int runDecode(const WorkerConfig& cfg) {
   const DeviceMap deviceMap = loadDeviceMapFile(cfg.device_map_path);
   auto device = buildDeviceIo(*decode->table, cfg.host, deviceMap);
 
-  // The sender opens the engine's actual segment (its live local server name);
-  // under P2PHANDSHAKE that's an auto-assigned endpoint, not cfg.name. An
-  // explicit --segment overrides (e.g. a metadata-server deployment).
-  const std::string segment =
-      cfg.segment.empty() ? engine->localServerName() : cfg.segment;
+  // Segment name the sender opens for the data plane. With a metadata service
+  // the mirror is registered under — and resolvable by — the worker's LOGICAL
+  // name (cfg.name): the same register-by-name / resolve-by-name discovery the
+  // bringup worker uses on main (PeerDiscoveryService), so the sender finds the
+  // peer through the metadata service instead of a hard-coded endpoint. Only
+  // P2PHANDSHAKE (no metadata registry to resolve a logical name) falls back to
+  // the engine's live IP:port. An explicit --segment always overrides.
+  std::string segment = cfg.segment;
+  if (segment.empty()) {
+    segment = (cfg.metadata_uri == "P2PHANDSHAKE") ? engine->localServerName()
+                                                   : cfg.name;
+  }
   // The mirror is registered as the Mooncake segment inside MooncakeKvReceiver.
   MooncakeKvReceiver receiver(engine, *device, decode->table, cfg.host,
                               segment);
@@ -394,12 +663,50 @@ int runDecode(const WorkerConfig& cfg) {
                  cfg.name, cfg.control_port);
     return 1;
   }
+
+  // Publish our KV control endpoint (host + bound port) into the metadata
+  // service, keyed by our logical name, so prefill discovers where to open the
+  // control channel — the same register-by-name / resolve-by-name path the data
+  // plane already uses. The host mirrors what Mooncake advertised in rpc_meta.
+  // Only meaningful with a real metadata service; under P2PHANDSHAKE this
+  // no-ops and prefill falls back to a static endpoint.
+  const std::string controlEndpoint = hostOf(engine->localServerName()) + ":" +
+                                      std::to_string(cfg.control_port);
+  const std::string controlKey = std::string(K_CONTROL_KEY_PREFIX) + cfg.name;
+  if (engine->publishMetadata(controlKey, controlEndpoint)) {
+    TT_LOG_INFO("[worker] decode '{}' published control endpoint {} -> {}",
+                cfg.name, controlKey, controlEndpoint);
+  } else if (cfg.metadata_uri != "P2PHANDSHAKE") {
+    TT_LOG_WARN(
+        "[worker] decode '{}' could not publish control endpoint to metadata "
+        "({}); prefill must fall back to the fixed control port",
+        cfg.name, controlKey);
+  }
+
+  // Role-agnostic peer discovery (mirrors main: a worker is just a migration
+  // worker with a peer list). A decode is normally a pure receiver with no
+  // peers, but if it was given some via --peer we resolve them through the same
+  // metadata path as any worker. They are only held today — the receiver never
+  // initiates a migration — so this is the single seam to flip for a symmetric
+  // data plane: hand `resolved` to a sender exactly as runPrefill does.
+  if (!cfg.peers.empty() || !cfg.discover_peers.empty()) {
+    const auto resolved = resolvePeers(*engine, cfg, gStop);
+    TT_LOG_INFO(
+        "[worker] decode '{}' resolved {} peer(s) (held; receiver role does "
+        "not initiate migrations)",
+        cfg.name, resolved.size());
+  }
+
+  // Mirror registered, control server listening, endpoint published: the decode
+  // worker has finished its own bring-up, so flip it Ready.
+  health.setLifecycle(WorkerLifecycle::Ready);
   TT_LOG_INFO("[worker] decode '{}' READY: segment={} control_port={}",
               cfg.name, segment, cfg.control_port);
   while (!gStop.load()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(K_IDLE_POLL_MS));
   }
   server.stop();
+  health.setLifecycle(WorkerLifecycle::ShuttingDown);
   TT_LOG_INFO("[worker] decode '{}' stopping", cfg.name);
   return 0;
 }

@@ -238,12 +238,14 @@ def test_any_audio_tts_model_routes_to_v2(model_type, model_name, workflow):
     assert v2_bridge.can_route_to_v2(spec, rc) is True
 
 
+@pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
 @pytest.mark.parametrize("model_type", [ModelType.CNN, ModelType.EMBEDDING])
-def test_non_media_non_llm_stays_on_v1(model_type):
-    """CNN / EMBEDDING models are not media and not LLM, so they stay on v1."""
-    spec, rc = _spec(model_type, name="some-model"), _rc(workflow="spec_tests")
-    assert v2_bridge.is_v2_routed_model(spec) is False
-    assert v2_bridge.can_route_to_v2(spec, rc) is False
+def test_cnn_embedding_routes_to_v2(model_type, workflow):
+    """CNN / EMBEDDING models are fully onboarded to v2 and route by model_type
+    — no per-name allowlist — matching the IMAGE/VIDEO/AUDIO behavior."""
+    spec, rc = _spec(model_type, name="some-model"), _rc(workflow=workflow)
+    assert v2_bridge.is_v2_routed_model(spec) is True
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
 
 
 def test_build_llm_bench_cmd_forwards_tools_and_jwt():

@@ -2,21 +2,6 @@
     "_version": "1.0.0",
     "_description": "Server tests schema configuration. Test suites are in test_suites/*.json",
     "model_categories": {
-        "CNN": [
-            "resnet-50",
-            "vovnet",
-            "mobilenetv2",
-            "efficientnet",
-            "segformer",
-            "unet",
-            "vit"
-        ],
-        "EMBEDDING": [
-            "bge-large-en-v1.5",
-            "Qwen3-Embedding-4B",
-            "Qwen3-Embedding-8B",
-            "bge-m3"
-        ]
     },
     "available_markers": {
         "test_types": {
@@ -42,108 +27,12 @@
             "p300x2": "Tests for P300x2 device (4 chips)"
         },
         "model_categories": {
-            "cnn": "CNN model tests",
-            "llm": "Large Language Model tests",
-            "embedding": "Embedding model tests"
+            "llm": "Large Language Model tests"
         },
         "specific_models": {
-            "bge": "BGE embedding model tests",
-            "qwen3_emb": "Qwen3 embedding model tests",
-            "mobilenetv2": "MobileNetV2 CNN model tests",
-            "bge_m3": "BGE-M3 embedding model tests"
         }
     },
     "model_configs": {
-        "mobilenetv2": {
-            "weights": [
-                "mobilenetv2"
-            ],
-            "category": "CNN",
-            "compatible_devices": [
-                "n150",
-                "n300"
-            ]
-        },
-        "resnet": {
-            "id_name": "resnet-50",
-            "weights": [
-                "resnet-50"
-            ],
-            "category": "CNN",
-            "compatible_devices": [
-                "n150",
-                "n300"
-            ]
-        },
-        "efficientnet": {
-            "weights": [
-                "efficientnet"
-            ],
-            "category": "CNN",
-            "compatible_devices": [
-                "n150"
-            ]
-        },
-        "segformer": {
-            "weights": [
-                "segformer"
-            ],
-            "category": "CNN",
-            "compatible_devices": [
-                "n150"
-            ]
-        },
-        "unet": {
-            "weights": [
-                "unet"
-            ],
-            "category": "CNN",
-            "compatible_devices": [
-                "n150"
-            ]
-        },
-        "vit": {
-            "weights": [
-                "vit"
-            ],
-            "category": "CNN",
-            "compatible_devices": [
-                "n150"
-            ]
-        },
-        "vovnet": {
-            "weights": [
-                "vovnet"
-            ],
-            "category": "CNN",
-            "compatible_devices": [
-                "n150"
-            ]
-        },
-        "bge": {
-            "weights": [
-                "bge-large-en-v1.5"
-            ],
-            "category": "EMBEDDING",
-            "compatible_devices": [
-                "n150",
-                "t3k",
-                "galaxy"
-            ]
-        },
-        "qwen3_emb": {
-            "id_name": "qwen3-emb-8b",
-            "weights": [
-                "Qwen3-Embedding-8B",
-                "Qwen3-Embedding-4B"
-            ],
-            "category": "EMBEDDING",
-            "compatible_devices": [
-                "n150",
-                "t3k",
-                "galaxy"
-            ]
-        }
     },
     "hardware_defaults": {
         "n150": {
@@ -225,48 +114,6 @@
                 "e2e",
                 "slow",
                 "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "CnnLoadTest": {
-            "module": "server_tests.test_cases.cnn_load_test",
-            "markers": [
-                "load",
-                "e2e"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "CnnParamTest": {
-            "module": "server_tests.test_cases.cnn_param_test",
-            "markers": [
-                "param",
-                "e2e"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "EmbeddingLoadTest": {
-            "module": "server_tests.test_cases.embedding_load_test",
-            "markers": [
-                "load",
-                "e2e"
             ],
             "test_config": {
                 "test_timeout": 3600,

@@ -31,10 +31,14 @@
 # 4), NUM_DECODE (default 16), KAFKA_GROUP_ID_PREFIX (default
 # `migration-workers-prefill`; one-group-per-rank suffix is appended),
 # MC_TCP_BIND_ADDRESS (unset/"auto" => detect this host's primary IP),
-# LAYER_START / LAYER_END (global model layer span, real count. The count is
-# padded up to the next power of two (e.g. DeepSeek's 61 -> 64) then divided
-# into NUM_PREFILL contiguous slices for prefill and NUM_DECODE for decode, each
-# worker getting its role_index'th slice in order; unset/0 => worker owns all).
+# LAYER_START / LAYER_END (global model layer span, real count. Divided into
+# NUM_PREFILL contiguous slices for prefill and NUM_DECODE for decode: every
+# worker gets ceil(count/shards) layers except the last, which takes the
+# remainder — e.g. DeepSeek's 61 over 16 decode => fifteen own 4, the last owns
+# 1; each worker gets its role_index'th slice; unset/0 => worker owns all).
+# HEALTH_PORT (fixed health port, one-worker-per-host deploy) or
+# HEALTH_PORT_BASE (per-worker port = BASE + global-index, for many workers on
+# one host); unset/0 on both => no health server.
 set -euo pipefail
 
 # Single exit path for every unrecoverable misconfiguration: log to stderr with
@@ -78,32 +82,23 @@ if [[ -z "${MC_TCP_BIND_ADDRESS:-}" || "${MC_TCP_BIND_ADDRESS}" == "auto" ]]; th
 fi
 
 # Divide the global [start, end) layer span into `count` contiguous parts and
-# echo "<sliceStart> <sliceEnd>" for part `index` (0-based). The remainder goes
-# to the lowest-indexed parts, so the slices tile the range exactly — no gaps
-# (which would hang a request) and no overlaps (which would double-ack).
+# echo "<sliceStart> <sliceEnd>" for part `index` (0-based). Every part except
+# the last gets ceil(total/count) layers; the last part takes whatever remains.
+# So DeepSeek's 61 layers over 16 decode workers => fifteen own 4 and the last
+# owns 1. The slices tile the range exactly — no gaps (which would hang a
+# request) and no overlaps (which would double-ack).
 computeLayerSlice() {
   local start="$1" end="$2" count="$3" index="$4"
   local total=$(( end - start ))
-  local base=$(( total / count ))
-  local rem=$(( total % count ))
-  local off size
-  if (( index < rem )); then
-    off=$(( index * (base + 1) ))
-    size=$(( base + 1 ))
+  local per=$(( (total + count - 1) / count ))   # ceil(total / count)
+  local slice_start=$(( start + index * per ))
+  local slice_end
+  if (( index == count - 1 )); then
+    slice_end="${end}"
   else
-    off=$(( rem * (base + 1) + (index - rem) * base ))
-    size="${base}"
+    slice_end=$(( start + (index + 1) * per ))
   fi
-  echo "$(( start + off )) $(( start + off + size ))"
-}
-
-# Smallest power of two >= n (returns n unchanged when it is already one). Used
-# to pad a model's real layer count up to an aligned size before slicing, so
-# every worker gets an equal span (DeepSeek's 61 -> 64).
-nextPowerOfTwo() {
-  local n="$1" p=1
-  while (( p < n )); do p=$(( p * 2 )); done
-  echo "$p"
+  echo "${slice_start} ${slice_end}"
 }
 
 # Resolve (role, role-local index) from rank under whichever launch mode is
@@ -172,24 +167,41 @@ if [[ -n "${LAYER_END:-}" && "${LAYER_END}" != "0" ]]; then
   fi
   if [[ "${role}" == "prefill" ]]; then shard_count="${NUM_PREFILL}"; else shard_count="${NUM_DECODE}"; fi
 
-  # Pad the real layer count up to the next power of two before slicing so every
-  # worker gets an equal, aligned span. The pad is global and deterministic, so
-  # prefill and decode agree on the same layer space regardless of their worker
-  # counts. Padded layers beyond the real count (e.g. 61,62,63) never receive a
-  # request, so they are inert.
+  # Slice the REAL layer span (no padding): each worker owns ceil(count/shards)
+  # layers except the last, which takes the remainder. Layer indices are
+  # absolute, so prefill and decode agree on which layer is which regardless of
+  # how many slices each role uses.
   raw_count=$(( LAYER_END - layer_start_global ))
-  padded_count="$(nextPowerOfTwo "${raw_count}")"
-  padded_end=$(( layer_start_global + padded_count ))
-  if (( padded_count != raw_count )); then
-    echo "[rank-launch] padding layer count ${raw_count} -> ${padded_count} for even division on $(hostname -s)" >&2
+  if (( raw_count < shard_count )); then
+    die "cannot shard ${raw_count} layer(s) across ${shard_count} ${role} worker(s)"
   fi
-
-  if (( padded_count < shard_count )); then
-    die "cannot shard ${padded_count} padded layer(s) across ${shard_count} ${role} worker(s)"
+  per_shard=$(( (raw_count + shard_count - 1) / shard_count ))
+  if (( (shard_count - 1) * per_shard >= raw_count )); then
+    die "layer split leaves the last ${role} worker empty (${raw_count} layers, ${shard_count} shards, ${per_shard}/shard); pick a layer/worker count that divides more evenly"
   fi
   read -r slice_start slice_end \
-    < <(computeLayerSlice "${layer_start_global}" "${padded_end}" "${shard_count}" "${role_index}")
+    < <(computeLayerSlice "${layer_start_global}" "${LAYER_END}" "${shard_count}" "${role_index}")
   layer_args+=(--layer-start "${slice_start}" --layer-end "${slice_end}")
+fi
+
+# Optional HTTP health surface (/healthz, /readyz, /metrics). Two modes:
+#   HEALTH_PORT       fixed port passed verbatim — for the cluster deploy, where
+#                     one worker per host means every worker can share a port.
+#   HEALTH_PORT_BASE  per-worker port = BASE + global-index, so many workers on
+#                     ONE host (the single-host MPI harness) don't collide. The
+#                     global-index mirrors single-launch rank ordering:
+#                     prefill-p -> p, decode-d -> NUM_PREFILL + d.
+# HEALTH_PORT wins when both are set; unset/0 => no health server.
+health_args=()
+if [[ -n "${HEALTH_PORT:-}" && "${HEALTH_PORT}" != "0" ]]; then
+  health_args+=(--health-port "${HEALTH_PORT}")
+elif [[ -n "${HEALTH_PORT_BASE:-}" && "${HEALTH_PORT_BASE}" != "0" ]]; then
+  if [[ "${role}" == "prefill" ]]; then
+    health_port=$(( HEALTH_PORT_BASE + role_index ))
+  else
+    health_port=$(( HEALTH_PORT_BASE + NUM_PREFILL + role_index ))
+  fi
+  health_args+=(--health-port "${health_port}")
 fi
 
 # ${peer_args[@]+...} keeps `set -u` happy when a prefill ends up with no peers.
@@ -200,4 +212,5 @@ exec "${WORKER_BIN}" \
   --host-dram-bytes "${HOST_DRAM_BYTES}" \
   --discovery-timeout-sec "${DISCOVERY_TIMEOUT_SEC}" \
   ${layer_args[@]+"${layer_args[@]}"} \
+  ${health_args[@]+"${health_args[@]}"} \
   ${extra_args[@]+"${extra_args[@]}"}

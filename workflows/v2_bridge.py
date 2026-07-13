@@ -43,23 +43,26 @@ _V2_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
 
 _V2_EVAL_VENV_BY_MODEL_TYPE = {
     ModelType.AUDIO: WorkflowVenvType.EVALS_AUDIO,
+    ModelType.EMBEDDING: WorkflowVenvType.EVALS_EMBEDDING,
 }
 
-# Model types fully onboarded to v2's media engine. Every model of these types
-# routes to v2 by model_type
-_V2_MEDIA_MODEL_TYPES = frozenset(
+# Model types fully onboarded to v2. Every model of these types routes to v2 by
+# model_type — no per-name allowlist, so new models are picked up automatically.
+_V2_ROUTED_MODEL_TYPES = frozenset(
     {
         ModelType.IMAGE,
         ModelType.VIDEO,
         ModelType.AUDIO,
         ModelType.TEXT_TO_SPEECH,
+        ModelType.CNN,
+        ModelType.EMBEDDING,
     }
 )
 
 
 def is_v2_routed_model(model_spec) -> bool:
     """True if the model routes to v2 purely by its model_type."""
-    return model_spec.model_type in _V2_MEDIA_MODEL_TYPES
+    return model_spec.model_type in _V2_ROUTED_MODEL_TYPES
 
 
 def _is_prefix_cache_run(wf, runtime_config) -> bool:
@@ -140,9 +143,10 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
         return True
     if _is_llm_eval_run(wf, model_spec):
         return True
-    # IMAGE / VIDEO / AUDIO / TEXT_TO_SPEECH are fully onboarded to v2, so every
-    # model of those types routes by model_type — no per-name allowlist, so new
-    # media models (e.g. Qwen-Image) are picked up automatically.
+    # IMAGE / VIDEO / AUDIO / TEXT_TO_SPEECH / CNN / EMBEDDING are fully
+    # onboarded to v2, so every model of those types routes by model_type — no
+    # per-name allowlist, so new models (e.g. Qwen-Image) are picked up
+    # automatically. The v1 eval/benchmark paths for these types are retired.
     if is_v2_routed_model(model_spec):
         return wf in _V2_WORKFLOW_NAMES
     return False
