@@ -19,7 +19,7 @@ class EventLoopThreadPool;
 namespace tt::services {
 class DisaggregationService;
 class LLMPipeline;
-}
+}  // namespace tt::services
 
 namespace tt::dynamo {
 
@@ -71,9 +71,10 @@ class DynamoEndpoint {
     size_t num_loops = 0;
   };
 
-  DynamoEndpoint(std::shared_ptr<services::LLMPipeline> pipeline,
-                 std::shared_ptr<services::DisaggregationService> disaggregation,
-                 Options options);
+  DynamoEndpoint(
+      std::shared_ptr<services::LLMPipeline> pipeline,
+      std::shared_ptr<services::DisaggregationService> disaggregation,
+      Options options);
   ~DynamoEndpoint();
 
   DynamoEndpoint(const DynamoEndpoint&) = delete;
