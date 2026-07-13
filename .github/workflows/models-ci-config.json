@@ -17,11 +17,6 @@
           "devices": [
             "P150"
           ]
-        },
-        "release": {
-          "devices": [
-            "P150"
-          ]
         }
       }
     },
@@ -37,6 +32,7 @@
                 "N300",
                 "P100",
                 "P150",
+                "P300",
                 "P150X4",
                 "P300X2",
                 "T3K"
@@ -49,7 +45,7 @@
             },
             "release": {
               "devices": [
-                "P150"
+                "P300"
               ]
             }
           }
@@ -271,6 +267,11 @@
                 "T3K"
               ]
             },
+            "release": {
+                "devices": [
+                "P300X2"
+              ]
+            },            
             "weekly": {
               "devices": [
                 "GALAXY"
@@ -453,11 +454,6 @@
             "P150X4",
             "T3K"
           ]
-        },
-        "release": {
-            "devices": [
-            "P300X2"
-          ]
         }
       }
     },
@@ -516,11 +512,6 @@
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
-          "devices": [
-            "P300X2"
-          ]
-        },
-        "release": {
           "devices": [
             "P300X2"
           ]
@@ -584,11 +575,6 @@
       "inference_engine": "FORGE",
       "ci": {
         "nightly": {
-          "devices": [
-            "P150"
-          ]
-        },
-        "release": {
           "devices": [
             "P150"
           ]
