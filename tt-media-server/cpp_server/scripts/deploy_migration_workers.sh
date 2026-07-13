@@ -371,6 +371,12 @@ clearRpcMeta() {
 # (DECODE_TAG_LIST), a decode peers with nothing (pure receiver). Prefill reads a
 # complete DECODE_TAG_LIST because initWorkerSlots builds it before adding any
 # prefill slot.
+#
+# IMPORTANT: TcpSocketTransport::serverLoop accepts ONE client and holds it for
+# the worker lifetime, and each prefill uses a distinct Kafka group (broadcast).
+# Default all-to-all is therefore only safe with NUM_PREFILL=1. With multiple
+# prefills, set WORKER_PEERS so each decode appears in at most one prefill's
+# peer list (assertExclusiveDecodePeers enforces this), or keep a single prefill.
 peersForWorker() {
   local role="$1" tag="$2"
   if [[ -n "${WORKER_PEERS[$tag]:-}" ]]; then
@@ -378,6 +384,31 @@ peersForWorker() {
   elif [[ "${role}" == "prefill" ]]; then
     printf '%s' "${DECODE_TAG_LIST}"
   fi
+}
+
+# Fail fast when two prefills would open a long-lived control client to the same
+# decode. Decode accepts one peer socket; Kafka broadcast means every prefill
+# also tries the same migration UUID. Shared decode peers are therefore unsafe
+# until the control plane supports multi-client fan-in (or an explicit single
+# Kafka owner). See migration_worker_rank_launch.sh for a round-robin pattern.
+assertExclusiveDecodePeers() {
+  declare -A decodeOwner=()
+  local s peers peer
+  for (( s = 0; s < ${#WK_ROLE[@]}; s++ )); do
+    [[ "${WK_ROLE[$s]}" == "prefill" ]] || continue
+    IFS=',' read -ra peers <<<"${WK_PEERS[$s]}"
+    for peer in "${peers[@]}"; do
+      [[ -n "${peer}" ]] || continue
+      if [[ -n "${decodeOwner[$peer]:-}" ]]; then
+        die "decode peer '${peer}' assigned to both '${decodeOwner[$peer]}' and '${WK_TAG[$s]}'. \
+TcpSocketTransport accepts one client for the worker lifetime, and each prefill \
+has its own Kafka group (broadcast), so two prefills cannot safely share a decode. \
+Use one prefill, or set WORKER_PEERS so each decode has a single prefill owner \
+(see migration_worker_rank_launch.sh round-robin)."
+      fi
+      decodeOwner[$peer]="${WK_TAG[$s]}"
+    done
+  done
 }
 
 addWorkerSlot() {
@@ -560,6 +591,7 @@ main() {
   trap cleanup EXIT INT TERM
   startDiscoveryService || exit 1
   initWorkerSlots
+  assertExclusiveDecodePeers
 
   if (( DRY_RUN )); then
     local s

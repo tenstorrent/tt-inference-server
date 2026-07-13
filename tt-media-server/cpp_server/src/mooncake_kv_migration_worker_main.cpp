@@ -483,10 +483,13 @@ resolvePeers(ITransferEngine& engine, const WorkerConfig& cfg,
     if (pending.empty() || std::chrono::steady_clock::now() >= deadline) break;
     std::this_thread::sleep_for(std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
   }
+  // Startup-only discovery: unresolved names are dropped from the returned map
+  // and never retried in-process. A late-registering decode stays unreachable
+  // until this prefill restarts (steady-state re-resolve is future work).
   for (const auto& name : pending)
     TT_LOG_WARN(
-        "[worker] peer '{}' unresolved after {}ms; its slice fails until it "
-        "registers and is re-resolved",
+        "[worker] peer '{}' unresolved after {}ms; no control channel will be "
+        "opened for it until this worker restarts after the peer registers",
         name, K_DISCOVERY_TIMEOUT_MS);
   return peers;
 }
@@ -561,6 +564,15 @@ int runPrefill(const WorkerConfig& cfg) {
   // and ack FAILED (they succeed once that host connects). NOTE: this covers
   // STARTUP only -- a peer that drops AFTER connecting is out of scope for now
   // (that migration acks FAILED; steady-state re-connect is future work).
+  //
+  // Readiness is gated on the CONFIGURED peer set, not only channels that were
+  // created: resolvePeers() drops unresolved names, so channelCount() can be 0
+  // even when --peer was given. Treating that as Ready 0/0 would start Kafka
+  // with no way to reach any decode.
+  std::size_t configuredPeers = cfg.peers.size();
+  for (const auto& name : cfg.discover_peers) {
+    if (cfg.peers.count(name) == 0) ++configuredPeers;
+  }
   const std::size_t total = connector.channelCount();
   const std::size_t connected =
       connector.awaitConnected(std::chrono::milliseconds(K_CONNECT_TIMEOUT_MS));
@@ -570,26 +582,32 @@ int runPrefill(const WorkerConfig& cfg) {
         "migrations to unconnected hosts will fail until they connect",
         connected, total, K_CONNECT_TIMEOUT_MS);
   }
+  if (total < configuredPeers) {
+    TT_LOG_WARN(
+        "[worker] only {}/{} configured decode peers resolved at startup; "
+        "unresolved peers stay unreachable until restart",
+        total, configuredPeers);
+  }
 
-  // Readiness gate (addresses the review note): only now, after the connect
-  // barrier, do we flip Ready and start consuming Kafka. A fully-degraded
-  // worker (no channel connected, e.g. all peers down) stays not-ready so an
-  // orchestrator won't route to it; a partially-connected one is Ready and
-  // serves the hosts it reached (unreachable ones ack FAILED, as before).
-  if (connected == 0 && total > 0) {
+  // Ready only when at least one control channel is actually connected. Zero
+  // connected channels with any configured peers (including all unresolved) is
+  // not-ready so an orchestrator won't route work here.
+  const bool isReady = !(configuredPeers > 0 && connected == 0);
+  if (isReady) {
+    health.setLifecycle(WorkerLifecycle::Ready);
+  } else {
     health.setProcessHealthy(true);
     TT_LOG_WARN(
-        "[worker] prefill '{}' has 0/{} decode channels connected; staying "
-        "not-ready until a peer connects",
-        cfg.name, total);
-  } else {
-    health.setLifecycle(WorkerLifecycle::Ready);
+        "[worker] prefill '{}' has 0 connected decode channels "
+        "(resolved={}/configured={}); staying not-ready",
+        cfg.name, total, configuredPeers);
   }
 
   TT_LOG_INFO(
-      "[worker] prefill '{}' READY: {}/{} decode channels connected, "
-      "brokers={} req={} ack={}",
-      cfg.name, connected, total, brokers, reqTopic, ackTopic);
+      "[worker] prefill '{}' {}: {}/{} decode channels connected "
+      "(configured={}), brokers={} req={} ack={}",
+      cfg.name, isReady ? "READY" : "not-ready", connected, total,
+      configuredPeers, brokers, reqTopic, ackTopic);
   worker.start();
   while (!gStop.load()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(K_IDLE_POLL_MS));
