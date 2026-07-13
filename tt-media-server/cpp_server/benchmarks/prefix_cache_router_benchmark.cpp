@@ -281,13 +281,13 @@ BENCHMARK_REGISTER_F(PrefixHashFixture, MultiCandidate_4Sessions)
 struct ResponseIdFixture : benchmark::Fixture {
   RouterBenchHarness harness;
 
-  static constexpr size_t numSessions = 100;
+  static constexpr size_t NUM_SESSIONS = 100;
   std::string targetResponseId;
 
   void SetUp(const benchmark::State& /*state*/) override {
     if (!targetResponseId.empty()) return;
 
-    for (size_t i = 0; i < numSessions; ++i) {
+    for (size_t i = 0; i < NUM_SESSIONS; ++i) {
       const auto sessionId = harness.addSession(static_cast<uint32_t>(i + 100));
       harness.registerBlocks(sessionId, {{static_cast<uint64_t>(i + 5000), 0}});
       const std::string responseId = "resp-" + std::to_string(i);
