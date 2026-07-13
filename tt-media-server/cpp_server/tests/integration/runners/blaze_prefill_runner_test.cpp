@@ -28,7 +28,7 @@ class BlazePrefillRunnerHarness
     : public test::RunnerTestHarness<BlazePrefillRunner> {
  public:
   BlazePrefillRunnerHarness()
-      : test::RunnerTestHarness<BlazePrefillRunner>(config::LLMConfig{}) {}
+      : test::RunnerTestHarness<BlazePrefillRunner>(config::BlazeConfig{}) {}
 
  protected:
   void setKVCacheSlot(domain::llm::Sequence& seq, uint32_t slotId) override {

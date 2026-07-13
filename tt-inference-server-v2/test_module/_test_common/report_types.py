@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from enum import IntEnum, auto
 
-from report_module.status import TestStatus
+from report_module.status import TestStatus, glyph_for
 
 
 class ReportCheckTypes(IntEnum):
@@ -26,9 +26,9 @@ class ReportCheckTypes(IntEnum):
     @classmethod
     def to_display_string(cls, check_type: "ReportCheckTypes") -> str:
         disp_map = {
-            ReportCheckTypes.NA: "N/A",
-            ReportCheckTypes.PASS: "PASS ✅",
-            ReportCheckTypes.FAIL: "FAIL ⛔",
+            ReportCheckTypes.NA: f"{glyph_for(TestStatus.NA)} N/A",
+            ReportCheckTypes.PASS: f"{glyph_for(TestStatus.PASS)} PASS",
+            ReportCheckTypes.FAIL: f"{glyph_for(TestStatus.FAIL)} FAIL",
         }
         return disp_map[check_type]
 

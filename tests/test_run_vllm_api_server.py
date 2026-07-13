@@ -6,6 +6,7 @@
 import argparse
 import importlib.util
 import json
+import os
 import sys
 import types
 from pathlib import Path
@@ -284,3 +285,65 @@ def test_main_passes_passthrough_port_to_trace_capture(
         disable_trace_capture=False,
         service_port=9001,
     )
+
+
+def _weights_spec():
+    return {
+        "model_name": "Mistral-7B-Instruct-v0.3",
+        "hf_model_repo": "mistralai/Mistral-7B-Instruct-v0.3",
+    }
+
+
+def test_ensure_weights_available_resumes_partial_download(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    """A non-empty (partially-downloaded) weights dir must still trigger
+    snapshot_download so missing files are fetched, rather than being treated
+    as complete."""
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    spec = _weights_spec()
+    weights_path = tmp_path / "weights" / spec["model_name"]
+    weights_path.mkdir(parents=True)
+    (weights_path / "config.json").write_text("{}")  # partial download
+
+    result = run_vllm_api_server_module.ensure_weights_available(spec)
+
+    run_vllm_api_server_module.snapshot_download.assert_called_once()
+    kwargs = run_vllm_api_server_module.snapshot_download.call_args.kwargs
+    assert kwargs["repo_id"] == spec["hf_model_repo"]
+    assert Path(kwargs["local_dir"]) == weights_path
+    assert result == weights_path
+    assert os.environ["MODEL_WEIGHTS_DIR"] == str(weights_path)
+
+
+def test_ensure_weights_available_falls_back_when_hub_unreachable(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    """If the hub is unreachable but weights already exist locally, startup
+    proceeds with the existing weights instead of crashing."""
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    run_vllm_api_server_module.snapshot_download.side_effect = RuntimeError("offline")
+    spec = _weights_spec()
+    weights_path = tmp_path / "weights" / spec["model_name"]
+    weights_path.mkdir(parents=True)
+    (weights_path / "config.json").write_text("{}")
+
+    result = run_vllm_api_server_module.ensure_weights_available(spec)
+
+    assert result == weights_path
+    assert os.environ["MODEL_WEIGHTS_DIR"] == str(weights_path)
+
+
+def test_ensure_weights_available_raises_when_unreachable_and_no_weights(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    """If the hub is unreachable and nothing is cached locally, the failure
+    must surface rather than starting with no weights."""
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    run_vllm_api_server_module.snapshot_download.side_effect = RuntimeError("offline")
+
+    with pytest.raises(RuntimeError):
+        run_vllm_api_server_module.ensure_weights_available(_weights_spec())

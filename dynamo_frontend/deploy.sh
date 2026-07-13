@@ -165,7 +165,7 @@ if [[ -n "$LOCAL_BUILD" ]]; then
     CPP_SERVER_DIR_ABS="$(readlink -f "$CPP_SERVER_DIR" 2>/dev/null || true)"
     [[ -d "$CPP_SERVER_DIR_ABS" ]] || die "cpp_server directory not found: $CPP_SERVER_DIR"
     [[ -f "$CPP_SERVER_DIR_ABS/build/tt_media_server_cpp" ]] \
-        || die "no binary at $CPP_SERVER_DIR_ABS/build/tt_media_server_cpp — run ./build.sh first"
+        || die "no binary at $CPP_SERVER_DIR_ABS/build/tt_media_server_cpp — run ./build.sh --blaze first"
     log "using local build from $CPP_SERVER_DIR_ABS"
     LOCAL_BUILD_MOUNT+=(-v "${CPP_SERVER_DIR_ABS}/build:/home/container_app_user/app/server/cpp_server/build:ro")
     WORKER_ENTRYPOINT+=(--entrypoint /bin/bash)

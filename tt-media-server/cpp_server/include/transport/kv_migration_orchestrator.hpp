@@ -59,7 +59,8 @@ class KvMigrationSender {
  *
  * Reacts to inbound control messages: BeginMigration -> prepareMirror +
  * MirrorReady; DoneMarker -> drain + Ack. run() services messages until the
- * channel closes; serveOne() handles a single message (for stepwise tests).
+ * channel closes, waiting indefinitely (idle) between requests; serveOne()
+ * handles a single message with a bounded wait (for stepwise tests).
  */
 class KvMigrationReceiver {
  public:
@@ -69,13 +70,21 @@ class KvMigrationReceiver {
   std::optional<std::vector<uint8_t>> exchangeTables(
       const std::vector<uint8_t>& localTableBlob);
 
-  /// Handle one inbound message. @return false when the channel has closed.
+  /// Handle one inbound message (bounded wait). @return false when the channel
+  /// has closed OR the wait times out — so a long idle gap ends serving. Kept
+  /// for stepwise tests where the peer sends immediately; run() is the
+  /// long-lived path that tolerates idle timeouts.
   bool serveOne();
 
-  /// Service messages until the channel closes.
+  /// Service messages until the channel closes. Unlike serveOne(), an idle
+  /// receive timeout is not a close: run() keeps waiting for the next request.
   void run();
 
  private:
+  /// Dispatch a received message (prepareMirror/MirrorReady, drain/Ack).
+  /// @return false only if a reply send fails (peer would wedge — stop).
+  bool handle(const KvControlMessage& msg);
+
   KvControlChannel& channel_;
   MooncakeKvReceiver& receiver_;
 };

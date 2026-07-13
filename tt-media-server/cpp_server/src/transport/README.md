@@ -21,7 +21,7 @@ Origin/PoC rationale (the storage/transport split, `#3890`): see
 ```
  multi-host       KvMigrationMultiHostSender (n→m fan-out)        kv_migration_multi_host_sender.*
  orchestration   KvMigrationSender / KvMigrationReceiver         kv_migration_orchestrator.*
- control plane    KvControlChannel  / KvControlMessage           over ISocketTransport (TCP; blocking, empty⇔closed)
+ control plane    KvControlChannel  / KvControlMessage           over ISocketTransport (TCP; tri-state recv: DATA / NO_DATA=retry / CLOSED)
  data plane       MooncakeKvSender  / MooncakeKvReceiver         mooncake_kv_{sender,receiver}.*
  addressing       IKvTable → allHostLocations → KvCacheLayout (full table, once)
                             → KvCacheMirror (receiver) ≡ sender dst layout
@@ -153,12 +153,42 @@ sequenceDiagram
     Note over RCV,ENG: ~MooncakeKvReceiver → unregisterLocalMemory(mirror)
 ```
 
+## Integration: the Kafka migration worker
+
+`mooncake_kv_migration_worker` (`src/mooncake_kv_migration_worker_main.cpp`) is
+the deployable binary that drives this data plane from a Kafka trigger — one
+process, `--role prefill|decode`. The transport-lib pieces it composes:
+
+- **`MooncakeMigrationExecutor`** (`mooncake_migration_executor.*`) — an
+  `IMigrationExecutor` that runs `KvMigrationMultiHostSender::migrate` on a
+  background thread and acks the terminal status. The Kafka consume-loop
+  (`KvMigrationWorker`) hands each parsed request to it.
+- **`KvControlChannelConnector` / `KvMigrationReceiverServer`**
+  (`kv_migration_endpoints.*`) — prefill opens one control channel per decode
+  host (injected `TcpSocketTransport` factory); decode runs
+  `KvMigrationReceiver::run()` behind a server transport. `run()` waits
+  indefinitely between requests (an idle receive is retried) and exits only when
+  the connection closes.
+- **Tables & device map** — `loadKvTableFile` (`kv_table_provisioning.*`) loads
+  each side's `.pb`; chip resolution uses an optional `--device-map`
+  (`device_map.hpp`) — **required** when a decode host's table spans multiple
+  meshes, or the placeholder `chip = chip_id` aliases meshes onto the same
+  physical chips and a multi-layer migration silently corrupts. In production the
+  table + device map arrive from the engine via `engine_table_handoff.*`; the
+  file paths are a bring-up stand-in.
+
+The worker does **no** byte-verify of its own (it moves real KV). To validate the
+data plane end-to-end without a model, bracket a migration with the standalone
+`kv_seed_verify` helper (seed the prefill source, verify the decode dest). Full
+two-galaxy procedure: `tests/e2e/TRANSPORT_KV_MIGRATION_E2E.md` §13.
+
 ## Contract for a higher-layer caller
 
 This module moves bytes and reports success; it deliberately does **not** decide
 slot readiness, retry policy, or fault tolerance. A caller wiring it into a
-migration worker (the not-yet-built integration) must uphold all of the
-following — most are not enforced in code:
+migration worker — `mooncake_kv_migration_worker` does this (see **Integration**
+above and the run guide `tests/e2e/TRANSPORT_KV_MIGRATION_E2E.md` §13) — must
+uphold all of the following (most are not enforced in code):
 
 1. **Build both sides from byte-identical decode tables.** The sender's decode
    table and the receiver's local table must be the *same* table (exchange it via
@@ -204,13 +234,15 @@ following — most are not enforced in code:
    per request). Host DRAM cost ≈ the full decode-side KV image for this host;
    ensure headroom before constructing the receiver.
 
-8. **Tear down (or time-bound) the control connection on give-up.** The receiver
-   unblocks from a stuck migration when the peer closes the control connection
-   (orderly FIN → `receive()` returns `nullopt` → `serveOne()`/`run()` exit) or a
-   read timeout fires. A caller that abandons a migration must close the
-   connection (or set a control-socket read timeout); production
-   `TcpSocketTransport` also has TCP keepalive as a backstop. Do not keep a dead
-   connection open expecting the receiver to notice on its own.
+8. **Close the control connection on give-up.** `run()` (the long-lived decode
+   server) waits indefinitely for the next request and exits **only when the
+   control connection closes** (`receiveMessage()` → `Closed`; an idle read
+   timeout is retried, not treated as a close — so the server survives arbitrary
+   gaps between requests). A caller that abandons a migration must therefore
+   **close the connection** to unblock the receiver; production
+   `TcpSocketTransport` also has TCP keepalive as a backstop. (`serveOne()`, the
+   stepwise/test entry, still returns on either a close or a timeout.) Do not keep
+   a dead connection open expecting the receiver to notice on its own.
 
 9. **Drive one migration at a time per `migrate()` call.** The control sequence is
    `Begin → MirrorReady → Done → Ack`; `migrate()` runs it synchronously and owns
@@ -218,14 +250,17 @@ following — most are not enforced in code:
    (matching the existing MPI/DCN worker) are the caller's responsibility — this
    module implements none of them.
 
-10. **Use a blocking, TCP-style control transport (TCP-only).** `KvControlChannel`
-    requires an `ISocketTransport` whose `receiveRawData()` blocks until a full
-    message and returns empty **only** on close (`TcpSocketTransport` / the e2e
-    `TcpControl`). `receive()` treats an empty read as "closed". A non-blocking
-    transport that returns empty to mean "no message yet" — notably
-    `ZmqSocketTransport` (recv returns empty whenever its queue is momentarily
-    empty) — is **not** compatible: the channel would abort a healthy migration on
-    the first gap between messages. Use a blocking TCP-style transport for the
+10. **Use a TCP-style control transport with a tri-state receive (TCP-only).**
+    `KvControlChannel` drives the transport's `tryReceiveMessage()`, which must
+    distinguish **DATA** / **NO_DATA** (live connection, nothing buffered yet —
+    including a server still awaiting its client) / **CLOSED**. `NO_DATA` is
+    retried up to the channel's timeout; only `CLOSED` ends a `receive()` (and
+    ends `run()`). `TcpSocketTransport` (and the e2e `TcpControl`) provide this. A
+    transport that returns *empty* for both "no message yet" and "closed" —
+    notably `ZmqSocketTransport` (recv returns empty whenever its queue is
+    momentarily empty) — is **not** compatible: the channel can't tell an idle gap
+    from a real close, so it would abort a healthy migration on the first gap (or
+    never notice a genuine close). Use a blocking TCP-style transport for the
     migration control path. (ZMQ is unrelated to Mooncake, which carries the bulk
     bytes over its own TCP/RDMA transport.)
 
@@ -295,10 +330,14 @@ retry-the-whole-request applies). The `Begin→…→Done→Ack` ordering is una
 | | `kv_cache_mirror.*` / `remote_region.*` | receiver mirror buffer / sender's dst view — share `KvCacheLayout` |
 | device I/O | `i_device_io.hpp`, `multi_device_umd.*`, `umd_device_access.*` | per-`(device,NocAddr)` DRAM I/O via UMD |
 | transport | `i_transfer_engine.hpp`, `mooncake_transfer_engine.*` | Mooncake engine wrapper (pimpl) |
-| control | `kv_control_message.*`, `kv_control_channel.*` | wire messages + framed channel over a blocking `ISocketTransport` (TCP; empty read ⇔ closed) |
+| control | `kv_control_message.*`, `kv_control_channel.*` | wire messages + framed channel over an `ISocketTransport` (TCP; tri-state recv: DATA / NO_DATA=retry / CLOSED) |
 | data plane | `mooncake_kv_sender.*`, `mooncake_kv_receiver.*` | read→WRITE(fan-out) / register full mirror once at init + per-uuid selective drain |
 | orchestration | `kv_migration_orchestrator.*` | `migrate()` / `serveOne()`+`run()` over the control channel |
 | multi-host | `kv_migration_multi_host_sender.*` | sender-side n→m fan-out: route via `hostsForRequest`, one per-host sender + orchestrator per decode host |
+| integration | `mooncake_migration_executor.*` | `IMigrationExecutor` driving `KvMigrationMultiHostSender` — the Kafka worker's trigger→data-plane bridge |
+| | `kv_migration_endpoints.*` | prefill control-channel connector + decode receiver-server (injected socket transport) |
+| | `kv_table_provisioning.*` | `loadKvTableFile` (+ optional table-blob exchange over the control channel) |
+| | `device_map.hpp`, `engine_table_handoff.*` | `FabricNode→UMD chip` map + engine→worker `{table, device map}` handoff contract |
 | PoC (#3890) | `i_storage_backend.hpp`, `*_storage_backend.*`, `mooncake_migration_worker.*` | original dummy-tensor storage/transport split |
 
 ## Build guards
@@ -345,7 +384,7 @@ TABLE=prefill_kv_table.pb DECODE_TABLE=decoder_kv_table.pb \
 | orchestration (Begin/MirrorReady/Done/Ack) over a threaded channel | unit-tested |
 | multi-host n→m fan-out (routing via `hostsForRequest`, per-host orchestration, partial-failure reporting) | unit-tested (fakes) |
 | real Mooncake TCP, host store (full round trip, fan-out) | ctest `TransportKvMigrationE2E` (`--mooncake` build, no HW) |
-| real UMD device DRAM / real `.pb` table / multi-host scale-out | manual shell-harness run (+`--blaze`/HW/`ENABLE_KV_TABLE`) |
+| real UMD device DRAM / real `.pb` table / multi-host scale-out | **validated across 2 galaxies** — byte-verified (shell harness + `mooncake_kv_migration_worker`, `--blaze`/HW/`ENABLE_KV_TABLE`) |
 
 The sender computing both `mirror_offset` **and** the dst `NocAddr` is what makes
 device→device RDMA a localized swap: drop the mirror, WRITE straight to the
@@ -428,7 +467,8 @@ WORKER_BIN=./build/bringup_mooncake_worker \
 | Interfaces + host-DRAM round-trip + worker staging (`transport_test`, any build) | impl |
 | Device-DRAM backend single-galaxy round-trip (UMD, `--blaze`) | impl |
 | Mooncake transport loopback TCP (host backend, `--mooncake`) | impl |
-| Two-galaxy acceptance, both backends enabled | pending a two-process HW run |
+| Two-galaxy acceptance, both backends enabled | **validated** — byte-verified 1→1 across 2 galaxies (real `.pb`, device DRAM, Mooncake TCP) |
+| Unified worker `mooncake_kv_migration_worker` (Kafka→migration→ack), 2 galaxies | **validated** — real Kafka trigger, byte-verified via `kv_seed_verify` (run guide §13) |
 | Metadata-service worker discovery, two hosts, host RAM (#4209, `migration_worker_discovery`) | **validated** (two hosts, 1 MiB tensor, byte-verified MATCH) |
 | Productionized discovery worker (#4294, `bringup_mooncake_worker`) | **validated locally** (single host, MPI `-np 20` = 4 prefill + 16 decode, all `CONNECTED`→`READY`; run manually, not yet wired into CI) |
 

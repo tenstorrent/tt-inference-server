@@ -10,7 +10,6 @@ from utils.media_clients.test_status import (
     EmbeddingTestStatus,
     ImageGenerationTestStatus,
     TtsTestStatus,
-    VideoGenerationTestStatus,
 )
 
 
@@ -110,38 +109,5 @@ class TestTtsTestStatus(unittest.TestCase):
                 "elapsed": 3.0,
                 "latency": 0.120,
                 "rtr": 1.5,
-            },
-        )
-
-
-class TestVideoGenerationTestStatus(unittest.TestCase):
-    """Tests for VideoGenerationTestStatus class.
-
-    The previous ``ttft`` field was never populated; ``elapsed`` (the
-    full request lifecycle including submit + poll loop + download) is
-    the only timing the API exposes today.
-    """
-
-    def test_to_dict(self):
-        status = VideoGenerationTestStatus(
-            status=True,
-            elapsed=10.0,
-            num_inference_steps=50,
-            inference_steps_per_second=5.0,
-            job_id="job-123",
-            video_path="/tmp/job-123.mp4",
-        )
-
-        result = status.to_dict()
-
-        self.assertEqual(
-            result,
-            {
-                "status": True,
-                "elapsed": 10.0,
-                "num_inference_steps": 50,
-                "inference_steps_per_second": 5.0,
-                "job_id": "job-123",
-                "video_path": "/tmp/job-123.mp4",
             },
         )
