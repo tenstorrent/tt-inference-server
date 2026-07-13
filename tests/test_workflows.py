@@ -3,7 +3,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-import importlib
 import json
 import os
 import tempfile
@@ -101,7 +100,6 @@ class TestWorkflowConfigurationValidation:
             WorkflowType.BENCHMARKS,
             WorkflowType.EVALS,
             WorkflowType.SERVER,
-            WorkflowType.REPORTS,
         ]
 
         for workflow_type in required_workflows:
@@ -134,7 +132,6 @@ class TestWorkflowVenvValidation:
         workflows_requiring_venv = [
             WorkflowType.BENCHMARKS,
             WorkflowType.EVALS,
-            WorkflowType.REPORTS,
         ]
 
         for workflow_type in workflows_requiring_venv:
@@ -897,96 +894,6 @@ class TestMainWorkflowIntegration:
         with patch("sys.argv", test_args):
             with pytest.raises(SystemExit):  # argparse should exit on invalid choice
                 main()
-
-
-class TestSpecTestsBehavior:
-    """Test spec-tests return codes for missing config and interruption."""
-
-    def test_spec_tests_no_matching_suites_returns_one(self):
-        spec_tests_run = importlib.import_module("server_tests.run_spec_tests")
-        args = Namespace(
-            runtime_model_spec_json="runtime.json",
-            model="missing-model",
-            device="n150",
-            model_category=None,
-            markers=None,
-            match_all_markers=False,
-            exclude_markers=None,
-            test_name=None,
-            suite_category=None,
-            skip_prerequisites=False,
-            list_markers=False,
-            list_tests=False,
-            output_path=None,
-            hf_token="",
-        )
-
-        with patch.object(spec_tests_run, "_configure_logging"), patch.object(
-            spec_tests_run, "parse_args", return_value=args
-        ), patch.object(
-            spec_tests_run.TestFrameworkRunner, "apply_filters", return_value=[]
-        ):
-            result = spec_tests_run.main()
-
-        assert result == 1
-
-    def test_spec_tests_keyboard_interrupt_returns_130(self):
-        spec_tests_run = importlib.import_module("server_tests.run_spec_tests")
-        args = Namespace(
-            runtime_model_spec_json="runtime.json",
-            model="stable-diffusion-xl-base-1.0",
-            device="n150",
-            model_category=None,
-            markers=None,
-            match_all_markers=False,
-            exclude_markers=None,
-            test_name=None,
-            suite_category=None,
-            skip_prerequisites=False,
-            list_markers=False,
-            list_tests=False,
-            output_path=None,
-            hf_token="",
-        )
-
-        fake_suite = {
-            "id": "fake",
-            "weights": ["fake"],
-            "device": "n150",
-            "test_cases": [
-                {
-                    "name": "FakeCase",
-                    "module": "fake_server_tests_module",
-                    "test_config": {},
-                    "targets": {},
-                    "markers": [],
-                    "description": "",
-                    "enabled": True,
-                }
-            ],
-        }
-
-        class FakeCase:
-            def __init__(self, config, targets):
-                self.config = config
-                self.targets = targets
-                self.description = ""
-
-        fake_module = Namespace(FakeCase=FakeCase)
-
-        with patch.object(spec_tests_run, "_configure_logging"), patch.object(
-            spec_tests_run, "parse_args", return_value=args
-        ), patch.object(
-            spec_tests_run.TestFrameworkRunner,
-            "apply_filters",
-            return_value=[fake_suite],
-        ), patch.object(
-            spec_tests_run.importlib, "import_module", return_value=fake_module
-        ), patch.object(spec_tests_run, "ServerRunner") as mock_runner:
-            mock_runner.return_value.run.side_effect = KeyboardInterrupt
-            result = spec_tests_run.main()
-
-        assert result == 130
 
 
 if __name__ == "__main__":

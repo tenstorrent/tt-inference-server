@@ -23,12 +23,12 @@ flowchart TD
 `--workflow` options:
 - `benchmarks`: Send random data prompts to the inference server, profile throughput and latency.
 - `evals`: Send evaluation dataset prompts to the inference server, score output for accuracy.
-- `reports`: Generate summary reports from `benchmarks` and `evals` output data.
-- `release`: Run `evals`, `benchmarks`, `spec_tests`, `tests`, and `reports` in sequence for release certification.
+- `release`: Run `evals`, `benchmarks`, and `spec_tests` in sequence for release certification.
 - `server`: Start the inference server only (requires `--docker-server`).
-- `spec_tests` (internal): Run server integration tests (device liveness, load tests) against the inference server.
+- `spec_tests` (internal): Run server/model integration tests against the inference server — device-liveness and load tests for media models, and vLLM API parameter-conformance tests for LLM/VLM models.
 - `stress_tests` (internal): Run sustained load tests to measure server stability and throughput.
-- `tests` (internal): Run pytest-based vLLM API parameter tests against the inference server (model-dependent).
+
+Every workflow generates its own summary report automatically when it finishes, so there is no separate `reports` workflow.
 
 For example, start the vLLM server in a Docker container and run client-side benchmarks against it:
 
@@ -347,23 +347,19 @@ See [evals docs](../evals/README.md) for more detail on code.
 
 ## Reports
 
-The `reports` workflow generates summary log files from the raw data collected by `benchmarks` and `evals` workflows.
+Reports are generated **automatically** at the end of every workflow — each of `benchmarks`, `evals`, `spec_tests`, `stress_tests`, and `release` writes its own markdown + JSON summary (via the v2 `report_module`) when it completes. There is no separate `reports` workflow to run.
 
-```bash
-python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow reports
-```
-
-This report summarizes metrics and uses defined tolerance thresholds to determine if models pass or fail validation.
+Report output is written under `workflow_logs/reports_output/<workflow>/` (and `workflow_logs/stress_tests_output/` for stress tests). The `release` report summarizes `benchmarks` and `evals` results and uses defined tolerance thresholds to determine if models pass or fail validation.
 
 See [Logs](#logs) section below for example format of the report files generated.
 
-> Running reports against a GPU/CUDA backend has additional setup requirements (per-model `DeviceModelSpec` entry, external vLLM server). See [GPU Report Generation](gpu_workflows.md).
+> Running against a GPU/CUDA backend has additional setup requirements (per-model `DeviceModelSpec` entry, external vLLM server). See [GPU Report Generation](gpu_workflows.md).
 
 ## Server Spec Tests
 
 > **Internal workflow.** `spec_tests` is used for release validation and CI. It requires a running inference server.
 
-The `spec_tests` workflow runs server integration tests against the inference server. Tests are defined in `server_tests/server_tests_config.json` and matched by model name and device. Test classes (e.g. `DeviceLivenessTest`, `CnnLoadTest`) are loaded dynamically and executed via `server_tests/run_spec_tests.py`.
+The `spec_tests` workflow runs server/model integration tests against the inference server. For media models these are device-liveness and load tests (e.g. `DeviceLivenessTest`, `CnnLoadTest`); for LLM/VLM models it runs the vLLM API parameter-conformance suite (see [API Parameter Tests](#api-parameter-tests) below). Tests are matched by model name and device and executed by the v2 test engine (`tt-inference-server-v2/`), which emits the report in-process.
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow spec_tests
@@ -375,21 +371,19 @@ Each test case entry in `server_tests_config.json` specifies:
 - `test_config`: execution settings — `test_timeout`, `retry_attempts`, `retry_delay`, `break_on_failure`, `mock_mode`.
 - `targets`: test-specific numerical thresholds. Common keys include `image_generation_time`, `audio_transcription_time`, `num_concurrent_requests` (client-side concurrency for `*LoadTest`), and `num_of_devices` (physical chip count, used by `DeviceLivenessTest`/`DeviceStabilityTest`). `num_of_devices` is also accepted as a deprecated fallback for `num_concurrent_requests` inside load tests.
 
-Output is written as JSON and Markdown reports to `workflow_logs/spec_tests_output/`.
+Output is written as JSON and Markdown reports to `workflow_logs/reports_output/spec_tests/`.
 
 ## API Parameter Tests
 
-> **Internal workflow.** `tests` is used for release validation and CI. It requires a running inference server. Not all models have test entries defined.
+> **Internal.** vLLM API parameter-conformance tests run as part of `spec_tests` — there is no longer a separate `tests` workflow. Used for release validation and CI; requires a running inference server. Not all models have entries defined.
 
-The `tests` workflow runs pytest-based tests that exercise vLLM API sampling parameters (`n`, `max_tokens`, `stop`, `seed`, `logprobs`, `temperature`, `top_k`, `top_p`, and penalty parameters). Model support is defined in `server_tests/test_config.py` (`TEST_CONFIGS`); models not listed there will skip this workflow.
+For LLM/VLM models, `--workflow spec_tests` runs pytest-based tests that exercise vLLM API sampling parameters (`n`, `max_tokens`, `stop`, `seed`, `logprobs`, `temperature`, `top_k`, `top_p`, penalty parameters, and a coherence check). The suites live in `tt-inference-server-v2/llm_module/` and are mapped to models via `tt-inference-server-v2/test_module/test_suites/llm.json`; models without an entry produce no results.
 
 ```bash
-python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow tests
+python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow spec_tests
 ```
 
-The run script (`server_tests/run_tests.py`) iterates over `TestTask` entries for the model, invoking `pytest` with `-s -v` on `server_tests/test_cases/test_vllm_server_parameters.py`.
-
-Output is written to `workflow_logs/tests_output/`.
+The run routes to the v2 test engine, which emits the report in-process to `workflow_logs/reports_output/spec_tests/`.
 
 ## Stress Tests
 

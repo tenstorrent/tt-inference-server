@@ -74,14 +74,9 @@ WORKFLOW_STRESS_TESTS_CONFIG = WorkflowConfig(
     / "run_stress_tests.py",
     workflow_run_script_venv_type=WorkflowVenvType.STRESS_TESTS_RUN_SCRIPT,
 )
-WORKFLOW_TESTS_CONFIG = WorkflowConfig(
-    workflow_type=WorkflowType.TESTS,
-    run_script_path=get_repo_root_path() / "server_tests" / "run_tests.py",
-    workflow_run_script_venv_type=WorkflowVenvType.TESTS_RUN_SCRIPT,
-)
 WORKFLOW_SPEC_TESTS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.SPEC_TESTS,
-    run_script_path=get_repo_root_path() / "server_tests" / "run_spec_tests.py",
+    run_script_path=get_repo_root_path() / "tt-inference-server-v2" / "run.py",
     workflow_run_script_venv_type=WorkflowVenvType.TESTS_RUN_SCRIPT,
 )
 WORKFLOW_SERVER_CONFIG = WorkflowConfig(
@@ -93,21 +88,13 @@ WORKFLOW_SERVER_CONFIG = WorkflowConfig(
     workflow_run_script_venv_type=None,
 )
 
-WORKFLOW_REPORT_CONFIG = WorkflowConfig(
-    workflow_type=WorkflowType.REPORTS,
-    run_script_path=get_repo_root_path() / "workflows" / "run_reports.py",
-    workflow_run_script_venv_type=WorkflowVenvType.REPORTS_RUN_SCRIPT,
-)
-
 # Define WorkflowConfig instances in a list
 workflow_config_list = [
     WORKFLOW_BENCHMARKS_CONFIG,
     WORKFLOW_EVALS_CONFIG,
     WORKFLOW_STRESS_TESTS_CONFIG,
-    WORKFLOW_TESTS_CONFIG,
     WORKFLOW_SERVER_CONFIG,
     WORKFLOW_SPEC_TESTS_CONFIG,
-    WORKFLOW_REPORT_CONFIG,
 ]
 
 # Generate a dictionary keyed by the workflow name for each WorkflowConfig instance

@@ -639,9 +639,7 @@ def handle_secrets(runtime_config):
         WorkflowType.BENCHMARKS,
         WorkflowType.EVALS,
         WorkflowType.STRESS_TESTS,
-        WorkflowType.TESTS,
         WorkflowType.SPEC_TESTS,
-        WorkflowType.REPORTS,
         WorkflowType.SERVING_BENCH,
     }
     # --docker-server requires the HF_TOKEN env var to be available

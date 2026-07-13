@@ -132,6 +132,14 @@ def _is_llm_eval_run(wf, model_spec) -> bool:
     )
 
 
+def _is_llm_spec_test_run(wf, model_spec) -> bool:
+    """LLM/VLM ``--workflow spec_tests`` routes to parameter-conformance
+    suite (``test_module/llm_tests/vllm_param_conformance_test.py``), registered
+    under the ``spec_tests`` workflow via ``test_suites/llm.json``.
+    """
+    return model_spec.model_type in _LLM_LIKE_TYPES and wf == WorkflowType.SPEC_TESTS
+
+
 def can_route_to_v2(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
     # Agentic evals, serving-bench benchmark suites, and the prefix-cache /
@@ -146,6 +154,8 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
     if _is_llm_benchmark_run(wf, model_spec, runtime_config):
         return True
     if _is_llm_eval_run(wf, model_spec):
+        return True
+    if _is_llm_spec_test_run(wf, model_spec):
         return True
     # IMAGE / VIDEO / AUDIO / TEXT_TO_SPEECH / CNN / EMBEDDING are fully
     # onboarded to v2, so every model of those types routes by model_type — no
@@ -227,9 +237,12 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
             _extend_if_set(
                 cmd, "--serving-bench-suites", runtime_config.serving_bench_suites
             )
-        elif _is_llm_eval_run(wf, model_spec):
-            # Standard evals (and release) need the bearer token to reach a
-            # JWT-protected server; run.py mints it from --jwt-secret/$JWT_SECRET.
+        elif _is_llm_eval_run(wf, model_spec) or _is_llm_spec_test_run(
+            wf, model_spec
+        ):
+            # Standard evals/release and LLM/VLM parameter-conformance
+            # (spec_tests) need the bearer token to reach a JWT-protected
+            # server; run.py mints it from --jwt-secret/$JWT_SECRET.
             _forward_jwt(cmd, runtime_config)
             if wf == WorkflowType.RELEASE:
                 _forward_prefix_cache(cmd, runtime_config)

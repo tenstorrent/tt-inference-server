@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 from benchmarking.benchmark_config import get_benchmark_config
 from evals.eval_config import EVAL_CONFIGS
-from server_tests.test_config import TEST_CONFIGS
 from workflows.utils import ensure_readwriteable_dir, run_command
 from workflows.workflow_config import (
     WORKFLOW_CONFIGS,
@@ -59,8 +58,6 @@ class WorkflowSetup:
             _config = EVAL_CONFIGS.get(self.model_spec.model_name, {})
         elif _workflow_type == WorkflowType.BENCHMARKS:
             _config = get_benchmark_config(self.model_spec)
-        elif _workflow_type == WorkflowType.TESTS:
-            _config = TEST_CONFIGS.get(self.model_spec.model_name, {})
         elif _workflow_type == WorkflowType.STRESS_TESTS:
             _config = {}
         else:
@@ -86,8 +83,6 @@ class WorkflowSetup:
         if self.workflow_config.workflow_type == WorkflowType.BENCHMARKS:
             pass
         elif self.workflow_config.workflow_type == WorkflowType.EVALS:
-            pass
-        elif self.workflow_config.workflow_type == WorkflowType.TESTS:
             pass
         elif self.workflow_config.workflow_type == WorkflowType.SPEC_TESTS:
             pass
@@ -144,18 +139,8 @@ def run_single_workflow(model_spec, runtime_config, json_fpath):
 
 
 def run_workflows(model_spec, runtime_config, json_fpath):
-    # RELEASE and all v2-onboarded workflows are routed to the v2 engine by
-    # run.py via can_route_to_v2(); this v1 path now only handles the workflows
-    # with no v2 driver yet (tests, stress_tests, LLM/VLM spec_tests) plus the
-    # follow-up REPORTS step.
-    workflow_results = []
-    wf = WorkflowType.from_string(runtime_config.workflow)
-    workflow_results.append(run_single_workflow(model_spec, runtime_config, json_fpath))
-    # STRESS_TESTS now generates its own report in-process via report_module
-    if wf not in (WorkflowType.REPORTS, WorkflowType.STRESS_TESTS):
-        runtime_config.workflow = WorkflowType.REPORTS.name
-        workflow_results.append(
-            run_single_workflow(model_spec, runtime_config, json_fpath)
-        )
-
-    return workflow_results
+    # v1 fallback path. Everything with a v2 driver (benchmarks, evals, release,
+    # agentic, serving_bench, and LLM/VLM spec_tests) is routed to the v2 engine
+    # by run.py via can_route_to_v2(); only stress_tests still runs here, and it
+    # generates its own report in-process via report_module.
+    return [run_single_workflow(model_spec, runtime_config, json_fpath)]

@@ -5,7 +5,7 @@ How to run vLLM parameters specific tests for development and debugging.
 ### step 1: first create venv by running workflow
 This will fail out if no server is running.
 ```bash
-python3 run.py --model Qwen3-32B --device galaxy --workflow tests
+python3 run.py --model Qwen3-32B --device galaxy --workflow spec_tests
 ```
 
 ### step 2: run server
