@@ -173,6 +173,7 @@ class AIPerfSpecDecodeDriver:
             url=url,
             artifact_dir=str(artifact_dir),
             auth_token=server.auth_token,
+            tokenizer_trust_remote_code=server.tokenizer_trust_remote_code,
         )
         logger.info(
             "[spec-decode] %s: concurrency=%d num_prompts=%s",
@@ -253,6 +254,7 @@ def _build_aiperf_cmd(
     url: str,
     artifact_dir: str,
     auth_token: str,
+    tokenizer_trust_remote_code: bool = False,
 ) -> List[str]:
     """Construct the AIPerf CLI command for one spec-decode run.
 
@@ -294,6 +296,10 @@ def _build_aiperf_cmd(
         "--concurrency",
         str(run.max_concurrency),
     ]
+    # Required for tokenizers with custom Hub code (e.g. Kimi). Bare
+    # store-true flag (aiperf defines it with negative=False).
+    if tokenizer_trust_remote_code:
+        cmd.append("--tokenizer-trust-remote-code")
     if run.num_prompts is not None:
         cmd += ["--request-count", str(run.num_prompts)]
     if run.output_len is not None:

@@ -2,20 +2,27 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+"""Lazy facade for the per-media-type eval runners."""
 
-from .audio_eval_tests import run_audio_eval
-from .cnn_eval_tests import run_cnn_eval
-from .embedding_eval_tests import run_embedding_eval
-from .image_eval_tests import IMAGE_EVAL_DISPATCH, run_image_eval
-from .tts_eval_tests import run_tts_eval
-from .video_eval_tests import run_video_eval
+import importlib
 
-__all__ = [
-    "IMAGE_EVAL_DISPATCH",
-    "run_audio_eval",
-    "run_cnn_eval",
-    "run_embedding_eval",
-    "run_image_eval",
-    "run_tts_eval",
-    "run_video_eval",
-]
+_LAZY_ATTRS = {
+    "run_audio_eval": ".audio_eval_tests",
+    "run_cnn_eval": ".cnn_eval_tests",
+    "run_embedding_eval": ".embedding_eval_tests",
+    "run_image_eval": ".image_eval_tests",
+    "IMAGE_EVAL_DISPATCH": ".image_eval_tests",
+    "run_tts_eval": ".tts_eval_tests",
+    "run_video_eval": ".video_eval_tests",
+}
+
+
+def __getattr__(name):
+    module_path = _LAZY_ATTRS.get(name)
+    if module_path is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module = importlib.import_module(module_path, __name__)
+    return getattr(module, name)
+
+
+__all__ = sorted(_LAZY_ATTRS)

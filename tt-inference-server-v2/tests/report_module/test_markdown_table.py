@@ -35,17 +35,26 @@ def test_basic_table_has_header_separator_and_rows():
     lines = table.splitlines()
     assert len(lines) == 4  # header, separator, two rows
     assert lines[0].startswith("|") and lines[0].endswith("|")
-    assert set(lines[1]) <= {"|", "-"}
+    assert set(lines[1]) <= {"|", "-", ":"}
 
 
-def test_numeric_columns_align_on_decimal_point():
+def test_separator_marks_every_column_left_aligned():
+    table = build_markdown_table([{"A": "1", "B": "2"}])
+    separator = table.splitlines()[1]
+    # One ``:---`` marker per column requests left alignment.
+    assert separator.count(":") == 2
+    assert all(seg.startswith(":") for seg in separator.strip("|").split("|"))
+
+
+def test_numeric_column_left_aligned_not_decimal_aligned():
     table = build_markdown_table(
         [{"Metric": "10.5"}, {"Metric": "1.25"}, {"Metric": "100"}]
     )
     # Single-column rows: the cell is everything between the bordering pipes.
     cells = [r.split("|")[1] for r in table.splitlines()[2:]]
-    # The integer part is right-justified, so the decimal points line up.
-    assert cells[0].index(".") == cells[1].index(".")
+    # Left-aligned: each value sits flush left (after the single "| " pad).
+    assert [c.strip() for c in cells] == ["10.5", "1.25", "100"]
+    assert all(c.startswith(" " + c.strip()) for c in cells)
     # All cells share one width (the column is rectangular).
     assert len({len(c) for c in cells}) == 1
 

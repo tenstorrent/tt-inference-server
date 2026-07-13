@@ -368,10 +368,8 @@ void LLMService::produceStream(
   }
 
   auto sequence = std::make_unique<tt::domain::llm::Sequence>(
-      taskId,
-      static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
-      std::move(tokenIds), prompt.size(), request.slotId, request.prefillSlotId,
-      request.continuation, request.disaggregated,
+      taskId, std::move(tokenIds), prompt.size(), request.slotId,
+      request.prefillSlotId, request.continuation, request.disaggregated,
       std::make_unique<tt::domain::llm::SamplingParams>(
           tt::utils::mapper::mapSamplingParams(request)),
       request.kv_position_id, request.decode_position_id,

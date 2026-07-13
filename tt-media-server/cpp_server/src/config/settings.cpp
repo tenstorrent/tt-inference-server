@@ -320,19 +320,25 @@ size_t memoryQueueCapacity() {
   return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
 }
 
-bool useMockScheduler() {
-  return envBool("MOCK_USE_SCHEDULER", defaults::MOCK_USE_SCHEDULER);
-}
-
 unsigned mockPrefillLatencyMs() {
   return static_cast<unsigned>(
       envUlong("MOCK_PREFILL_CHUNK_LATENCY_MS",
                defaults::MOCK_PREFILL_CHUNK_LATENCY_MS));
 }
 
-unsigned mockDecodeTokenLatencyUs() {
-  return static_cast<unsigned>(envUlong(
-      "MOCK_DECODE_TOKEN_LATENCY_US", defaults::MOCK_DECODE_TOKEN_LATENCY_US));
+unsigned mockStageLatencyUs() {
+  return static_cast<unsigned>(
+      envUlong("MOCK_STAGE_LATENCY_US", defaults::MOCK_STAGE_LATENCY_US));
+}
+
+uint32_t mockPipelineStages() {
+  return static_cast<uint32_t>(
+      envUlong("MOCK_PIPELINE_STAGES", defaults::MOCK_PIPELINE_STAGES));
+}
+
+uint32_t mockPrefillChunkSize() {
+  return static_cast<uint32_t>(
+      envUlong("MOCK_PREFILL_RR_TOKENS", defaults::MOCK_PREFILL_CHUNK_SIZE));
 }
 
 uint32_t mockDecodeTokenId() {
@@ -340,20 +346,52 @@ uint32_t mockDecodeTokenId() {
       envUlong("MOCK_DECODE_TOKEN_ID", defaults::MOCK_DECODE_TOKEN_ID));
 }
 
-LLMConfig llmEngineConfig() {
-  static const LLMConfig cached = [] {
-    LLMConfig cfg;
-    cfg.stop_token_ids = utils::tokenizers::staticInfo().stopTokenIds;
-    cfg.max_in_flight_count = maxInFlightCount();
+BlazeConfig blazeConfig() {
+  static const BlazeConfig cached = [] {
+    BlazeConfig cfg;
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
     if (backend == "pipeline_manager") {
       cfg.runner_type = ModelRunnerType::PIPELINE_MANAGER;
+    } else if (backend == "mock_scheduler") {
+      cfg.runner_type = ModelRunnerType::MOCK_SCHEDULER;
     } else {
       // Default and "mock_pipeline" both route through the blaze mock pipeline.
       cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
     }
-    cfg.scheduling_policy = schedulingPolicy();
+
+    // Sizing & timeouts
+    cfg.maxUsers = pmMaxUsers();
+    cfg.warmupTimeoutMs = warmupTimeoutMs();
+    cfg.outputHangTimeoutMs = outputHangTimeoutMs();
+
+    // Scheduler params
+    cfg.modelNumLayers = modelNumLayers();
+    cfg.prefillChunkSize = prefillChunkSize();
+    cfg.enableMigration = enableMigration();
+    cfg.prefillUseRemoteKvManager = prefillUseRemoteKvManager();
+    cfg.migrationPrefillEndpointId = migrationPrefillEndpointId();
+    cfg.migrationDecodeEndpointId = migrationDecodeEndpointId();
+    cfg.specDecodeMode = specDecodeMode();
+    cfg.mtpLevel = mtpLevel();
+
+    // Pipeline / channel config
+    cfg.blazeSocketDescriptorPrefix = blazeSocketDescriptorPrefix();
+    cfg.pmConnectTimeoutMs = pmConnectTimeoutMs();
+    cfg.wireFormat = wireFormat();
+    cfg.prefillAckChannelName = prefillAckChannelName();
+    cfg.migrationCmdQueueName = migrationCmdQueueName();
+    cfg.migrationTableQueueName = migrationTableQueueName();
+    cfg.migrationRespQueueName = migrationRespQueueName();
+
+    // Mock pipeline knobs
+    cfg.numPipelineStages = mockPipelineStages();
+    cfg.mockStageLatencyUs = mockStageLatencyUs();
+    cfg.mockPrefillLatencyMs = mockPrefillLatencyMs();
+    cfg.mockDecodeTokenId = mockDecodeTokenId();
+
+    // Generation fallbacks read by blaze_utils
+    cfg.maxContextLength = maxContextLength();
     return cfg;
   }();
   return cached;
@@ -473,7 +511,7 @@ RunnerConfig workerRunnerConfig(size_t workerIndex) {
       return EmbeddingConfig{};
     case ModelService::LLM:
     default:
-      return llmEngineConfig();
+      return blazeConfig();
   }
 }
 
@@ -501,33 +539,9 @@ Model model() {
   return cached;
 }
 
-bool sampleOnlyInReasoning() {
-  switch (modelType()) {
-    // DeepSeek samples only inside the reasoning phase; argmax otherwise.
-    case ModelType::DEEPSEEK_R1_0528:
-      return true;
-    case ModelType::LLAMA_3_1_8B_INSTRUCT:
-    case ModelType::KIMI_K2_6:
-    case ModelType::KIMI_K2_7_CODE:
-    case ModelType::GPT_OSS_120B:
-    case ModelType::MINIMAX_M2_7:
-    case ModelType::GLM_5_1:
-    case ModelType::GLM_5_2:
-    case ModelType::DEEPSEEK_V4_PRO:
-      return false;
-  }
-  return false;
-}
-
 LLMMode llmMode() {
   static const LLMMode cached =
       llmModeFromString(envStringLower("LLM_MODE", defaults::LLM_MODE));
-  return cached;
-}
-
-SchedulingPolicy schedulingPolicy() {
-  static const SchedulingPolicy cached = schedulingPolicyFromString(
-      envStringLower("SCHEDULING_POLICY", defaults::SCHEDULING_POLICY));
   return cached;
 }
 
@@ -643,24 +657,30 @@ size_t maxISL() {
   return cached;
 }
 
+size_t taskQueueMaxMsgSize() {
+  static const size_t cached = maxContextLength() * sizeof(uint32_t) +
+                               defaults::MAX_SEQUENCE_NON_TOKEN_BYTES;
+  return cached;
+}
+
 size_t minTokensToCopy() {
   static const size_t cached = static_cast<size_t>(
       envUlong("MIN_TOKENS_TO_COPY", defaults::MIN_TOKENS_TO_COPY));
   return cached;
 }
 
-size_t kvCacheBlockSize() {
+size_t prefixCacheBlockSize() {
   static const size_t cached = []() {
     return kvCacheSizeFromEnv("KV_CACHE_BLOCK_SIZE",
-                              defaults::KV_CACHE_BLOCK_SIZE);
+                              defaults::PREFIX_CACHE_BLOCK_SIZE);
   }();
   return cached;
 }
 
-size_t kvCacheFirstBlockSize() {
+size_t prefixCacheFirstBlockSize() {
   static const size_t cached = []() {
     return kvCacheSizeFromEnv("KV_CACHE_FIRST_BLOCK_SIZE",
-                              defaults::KV_CACHE_FIRST_BLOCK_SIZE);
+                              defaults::PREFIX_CACHE_FIRST_BLOCK_SIZE);
   }();
   return cached;
 }
@@ -684,6 +704,11 @@ bool useFastMode() {
 
 bool enableMigration() {
   return envBool("ENABLE_MIGRATION", defaults::ENABLE_MIGRATION);
+}
+
+bool prefillUseRemoteKvManager() {
+  return envBool("PREFILL_USE_REMOTE_KV_MANAGER",
+                 defaults::PREFILL_USE_REMOTE_KV_MANAGER);
 }
 
 std::string migrationCmdQueueName() {

@@ -51,7 +51,7 @@ void registerLLM() {
          ipc::ITaskQueue* taskQueue,
          ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
     TT_LOG_INFO("[RunnerRegistry] Creating Blaze runner (pipeline_manager)");
-    const auto& llm = std::get<config::LLMConfig>(cfg);
+    const auto& llm = std::get<config::BlazeConfig>(cfg);
     if (config::llmMode() != config::LLMMode::PREFILL_ONLY) {
       return std::make_unique<runners::blaze::BlazeDecodeRunner>(
           llm, runners::blaze::makeDecodeScheduler(llm), resultQueue, taskQueue,
@@ -67,6 +67,9 @@ void registerLLM() {
                             blazeFactory);
   runners.registerIpcRunner(config::ModelService::LLM,
                             config::ModelRunnerType::MOCK_PIPELINE,
+                            blazeFactory);
+  runners.registerIpcRunner(config::ModelService::LLM,
+                            config::ModelRunnerType::MOCK_SCHEDULER,
                             blazeFactory);
 #endif
 

@@ -18,7 +18,6 @@ namespace tt::runners::llm_engine {
 using namespace tt::domain::llm;
 using SamplingParams = tt::domain::llm::SamplingParams;
 using Sequence = tt::domain::llm::Sequence;
-using SequenceStatus = tt::domain::llm::SequenceStatus;
 namespace {
 
 TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {
@@ -178,21 +177,15 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   params.stop_token_ids = {10, 20};
   params.allowed_token_ids = {1, 2, 3};
 
-  Sequence orig(tt::utils::TaskIDGenerator::generate(), 128, {1, 2, 3, 4, 5},
-                params);
-  orig.setNumCachedTokens(128);
-  orig.getMutableBlockTable() = {0, 1};
-  orig.setStatus(SequenceStatus::IN_FLIGHT);
-  orig.setLastToken(5);
-  orig.setKVCacheSlot(42);
-  orig.setContinuation(true);
-  orig.setDisaggregated(true);
-  orig.setKVPositionId(17);
-  orig.setDecodePositionId(18);
-  orig.setDecodeSkipTokens(11);
-  orig.setMigrationId(0xDEADBEEFCAFE1234ULL);
-  orig.setStartsInThinking(true);
-  orig.setMigrationStartPosition(128);
+  Sequence orig(tt::utils::TaskIDGenerator::generate(), {1, 2, 3, 4, 5},
+                /*numPromptTokens=*/3, std::optional<uint32_t>{42},
+                std::optional<uint32_t>{7},
+                /*continuation=*/true, /*disaggregated=*/true,
+                std::make_unique<SamplingParams>(params),
+                std::optional<uint32_t>{17}, /*decodePositionId=*/18,
+                /*decodeSkipTokens=*/11,
+                std::optional<uint64_t>{0xDEADBEEFCAFE1234ULL},
+                /*startsInThinking=*/true, std::optional<uint32_t>{128});
 
   std::ostringstream os;
   orig.serialize(os);
@@ -201,20 +194,16 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   Sequence restored = Sequence::deserialize(is);
 
   EXPECT_EQ(restored.taskId, orig.taskId);
-  EXPECT_EQ(restored.getLastToken(), orig.getLastToken());
   EXPECT_EQ(restored.getNumPromptTokens(), orig.getNumPromptTokens());
-  EXPECT_EQ(restored.getNumCachedTokens(), orig.getNumCachedTokens());
   EXPECT_EQ(restored.getTokenIds(), orig.getTokenIds());
-  EXPECT_EQ(restored.getBlockTable(), orig.getBlockTable());
-  EXPECT_EQ(restored.getStatus(), orig.getStatus());
   EXPECT_EQ(restored.getKVCacheSlot(), orig.getKVCacheSlot());
+  EXPECT_EQ(restored.getPrefillKVCacheSlot(), orig.getPrefillKVCacheSlot());
   EXPECT_EQ(restored.isContinuation(), orig.isContinuation());
   EXPECT_EQ(restored.isDisaggregated(), orig.isDisaggregated());
   ASSERT_TRUE(restored.getKVPositionId().has_value());
   EXPECT_EQ(*restored.getKVPositionId(), *orig.getKVPositionId());
   EXPECT_EQ(restored.getDecodePositionId(), orig.getDecodePositionId());
   EXPECT_EQ(restored.getDecodeSkipTokens(), orig.getDecodeSkipTokens());
-  EXPECT_EQ(restored.numCachedBlocks(), orig.numCachedBlocks());
   ASSERT_TRUE(restored.getMigrationId().has_value());
   EXPECT_EQ(*restored.getMigrationId(), *orig.getMigrationId());
   EXPECT_EQ(restored.getStartsInThinking(), orig.getStartsInThinking());
@@ -237,8 +226,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
 }
 
 TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
-  Sequence orig(12345, 256, {}, SamplingParams{.max_tokens = 10});
-  orig.setLastToken(0);
+  Sequence orig(12345, {}, SamplingParams{.max_tokens = 10});
 
   std::ostringstream os;
   orig.serialize(os);
@@ -249,36 +237,12 @@ TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
   EXPECT_EQ(restored.taskId, orig.taskId);
   EXPECT_TRUE(restored.getTokenIds().empty());
   EXPECT_EQ(restored.getNumPromptTokens(), 0u);
-  EXPECT_EQ(restored.getLastToken(), 0);
   EXPECT_FALSE(restored.getKVPositionId().has_value());
   EXPECT_FALSE(restored.getMigrationId().has_value());
 }
 
-TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
-  Sequence orig(12345, 256, {10, 20}, SamplingParams{.max_tokens = 5});
-  orig.appendToken(30);
-  orig.appendToken(40);
-  orig.setNumCachedTokens(256);
-
-  std::ostringstream os;
-  orig.serialize(os);
-  std::istringstream is(os.str());
-
-  Sequence restored = Sequence::deserialize(is);
-
-  EXPECT_EQ(restored.size(), 4u);
-  EXPECT_EQ(restored[0], 10);
-  EXPECT_EQ(restored[1], 20);
-  EXPECT_EQ(restored[2], 30);
-  EXPECT_EQ(restored[3], 40);
-  EXPECT_EQ(restored.getLastToken(), 40);
-  EXPECT_EQ(restored.getNumPromptTokens(), 2u);
-  EXPECT_EQ(restored.getNumCachedTokens(), 256u);
-  EXPECT_FALSE(restored.getMigrationId().has_value());
-}
-
 TEST(SequenceTest, SerializeDeserialize_MigrationIdUnsetRemainsNullopt) {
-  Sequence orig(12345, 256, {10, 20}, SamplingParams{.max_tokens = 5});
+  Sequence orig(12345, {10, 20}, SamplingParams{.max_tokens = 5});
   ASSERT_FALSE(orig.getMigrationId().has_value());
   ASSERT_FALSE(orig.getMigrationStartPosition().has_value());
 

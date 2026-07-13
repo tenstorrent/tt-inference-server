@@ -28,7 +28,7 @@ namespace ds = tt_llm_engine::scheduler::decode;
 class BlazeDecodeRunner : public IRunner {
  public:
   BlazeDecodeRunner(
-      const tt::config::LLMConfig& config,
+      const tt::config::BlazeConfig& config,
       std::unique_ptr<IDecodeScheduler> decodeScheduler,
       ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
       tt::ipc::ICancelQueue* cancelQueue,
@@ -66,7 +66,7 @@ class BlazeDecodeRunner : public IRunner {
   void handleTask(std::unique_ptr<tt::domain::llm::Sequence> task);
   void checkOutputHang();
 
-  tt::config::LLMConfig config;
+  tt::config::BlazeConfig config;
   ipc::IResultQueue* resultQueue;
   tt::ipc::ITaskQueue* taskQueue;
   tt::ipc::ICancelQueue* stopQueue;
