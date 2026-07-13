@@ -2,19 +2,24 @@ name: Release Automation (promote specs, docs & helm)
 
 run-name: >-
   Release automation ${{ github.event.inputs.version || '0.18.0' }}
-  (iteration 1 — check only, no commit)
+  (promote + commit + tag from pipeline)
 
 # ---------------------------------------------------------------------------
-# Automates the middle of scripts/release/README_MANUAL.md:
+# Automates the middle of scripts/release/README_MANUAL.md, entirely from the
+# pipeline (nothing is run from a developer terminal):
 #   1. promote_dev_spec_to_prod.py  (dev -> prod model specs, release-scoped)
 #   2. export_model_spec.py         (docs/model_support + release_model_spec.json)
 #   3. python -m workflows.helm_generator  (charts/.../values.yaml)
 #   4. helm-docs                    (chart README / supported-models docs)
+# then, from the runner:
+#   git add . && git commit -m "v<version><suffix>" && git push
+#   git tag v<version><suffix> && git push origin v<version><suffix>
 #
-# ITERATION 1 IS A CHECK ONLY: it runs all four steps and prints exactly what
-# WOULD be `git add`/`commit`/`push`'d (git status + diff + an artifact). It
-# never writes to the repo, so `contents: read` is sufficient. Wiring the
-# actual commit/push is the next iteration.
+# The commit/push/tag run only if the four generators succeeded, and the commit
+# is skipped if they produced no changes. `tag-suffix` defaults to "-temp" for
+# safe testing (clear it on a workflow_dispatch run to cut a real "v<version>").
+# Pushing uses the default GITHUB_TOKEN, whose pushes do NOT re-trigger this
+# workflow, so there is no push -> run -> push loop.
 # ---------------------------------------------------------------------------
 
 on:
@@ -36,17 +41,22 @@ on:
         default: "6b4a3a7"
         type: string
       tt-shield-run-id:
-        description: "tt-shield Release run ID (reserved for the later artifact step; NOT used by the four commands in this iteration)"
+        description: "tt-shield Release run ID (reserved for the later artifact step; NOT used by the four commands here)"
         required: false
         default: "29037835062"
+        type: string
+      tag-suffix:
+        description: "Suffix appended to the commit message & tag. Keep '-temp' while testing; clear it for a real release."
+        required: false
+        default: "-temp"
         type: string
   push:
     branches:
       - test-release-automation-for-v0180
 
-# Check only — nothing is committed, so read access is all we need.
+# The pipeline commits generated files and pushes a tag back to the branch.
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: release-automation-${{ github.ref }}
@@ -57,8 +67,8 @@ env:
   HELM_DOCS_VERSION: "1.14.2"
 
 jobs:
-  release-prep-check:
-    name: Promote specs, regenerate docs & helm (check only)
+  release-prep:
+    name: Promote specs, regenerate docs & helm, then commit + tag
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -67,7 +77,13 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}
     steps:
       - name: Checkout
+        # Check out the branch (not a detached SHA) with credentials persisted,
+        # so the runner can commit and push back to it. fetch-depth: 0 avoids
+        # shallow-push edge cases.
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -98,10 +114,12 @@ jobs:
         # user value is interpolated straight into the shell. On `push` the
         # inputs are empty, so the shell `:-default` fallbacks apply.
         env:
+          EVENT_NAME: ${{ github.event_name }}
           IN_VERSION: ${{ github.event.inputs.version }}
           IN_TT_METAL_COMMIT: ${{ github.event.inputs['tt-metal-commit'] }}
           IN_VLLM_COMMIT: ${{ github.event.inputs['vllm-commit'] }}
           IN_TT_SHIELD_RUN_ID: ${{ github.event.inputs['tt-shield-run-id'] }}
+          IN_TAG_SUFFIX: ${{ github.event.inputs['tag-suffix'] }}
         run: |
           {
             echo "RELEASE_VERSION=${IN_VERSION:-0.18.0}"
@@ -109,13 +127,21 @@ jobs:
             echo "VLLM_COMMIT=${IN_VLLM_COMMIT:-6b4a3a7}"
             echo "TT_SHIELD_RUN_ID=${IN_TT_SHIELD_RUN_ID:-29037835062}"
           } >> "$GITHUB_ENV"
+          # Tag suffix: on dispatch use the input verbatim (may be empty for a
+          # real release); on push default to -temp for safe testing.
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "TAG_SUFFIX=${IN_TAG_SUFFIX}" >> "$GITHUB_ENV"
+          else
+            echo "TAG_SUFFIX=-temp" >> "$GITHUB_ENV"
+          fi
 
       - name: Show effective parameters
         run: |
           echo "version          = ${RELEASE_VERSION}"
           echo "tt-metal-commit  = ${TT_METAL_COMMIT}"
           echo "vllm-commit      = ${VLLM_COMMIT}"
-          echo "tt-shield-run-id = ${TT_SHIELD_RUN_ID}  (not used in this iteration)"
+          echo "tt-shield-run-id = ${TT_SHIELD_RUN_ID}  (not used here)"
+          echo "commit/tag       = v${RELEASE_VERSION}${TAG_SUFFIX}"
 
       # ----- Step 1: promote dev model specs -> prod (release-scoped only) -----
       - name: "Step 1 — promote dev specs to prod"
@@ -141,57 +167,56 @@ jobs:
             --template-files=_supportedModels.gotmpl \
             --template-files=README.md.gotmpl
 
-      # ----- Report: print what WOULD be committed (no add / commit / push) ----
-      - name: "Report pending changes (check only — nothing committed)"
+      # ----- Show what the generators produced (before committing) ------------
+      - name: "Show generated changes"
         if: always()
         run: |
-          echo "=============================================================="
-          echo " CHECK ONLY — the four scripts above ran, but NOTHING was"
-          echo " git add / commit / push'd. The next iteration would commit"
-          echo " exactly the files listed below."
-          echo "=============================================================="
-          echo
-          echo "=== Files that WOULD be git add/commit/push (git status) ==="
+          echo "=== git status ==="
           git status --short --untracked-files=all
-
           echo
-          echo "=== Summary of changes to tracked files (git diff --stat) ==="
+          echo "=== git diff --stat ==="
           git diff --stat
-
-          echo
-          echo "=== New (untracked) files that would be added ==="
-          git ls-files --others --exclude-standard || true
-
-          # ---- Job summary (rendered on the run's page) ----
           {
-            echo "## Release automation — iteration 1 (check only)"
+            echo "## Release automation — v${RELEASE_VERSION}${TAG_SUFFIX}"
             echo
-            echo "Ran with **version=\`${RELEASE_VERSION}\`**, "
-            echo "**tt-metal-commit=\`${TT_METAL_COMMIT}\`**, "
-            echo "**vllm-commit=\`${VLLM_COMMIT}\`**."
+            echo "version=\`${RELEASE_VERSION}\`, tt-metal-commit=\`${TT_METAL_COMMIT}\`, vllm-commit=\`${VLLM_COMMIT}\`"
             echo
-            echo "> Nothing was committed or pushed. The next iteration would "
-            echo "> \`git add\` / \`git commit\` / \`git push\` the files below."
-            echo
-            if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
-              echo '<details open><summary>Files that would be committed</summary>'
-              echo
-              echo '```'
-              git status --short --untracked-files=all
-              echo '```'
-              echo
-              echo '```'
-              git diff --stat
-              echo '```'
-              echo '</details>'
-            else
-              echo "_No changes were produced by the release-prep scripts._"
-            fi
+            echo '```'
+            git status --short --untracked-files=all
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: "Print full diff of tracked changes (what would be committed)"
-        if: always()
-        run: git --no-pager diff
+      # ----- Commit + push + tag, from the pipeline (only if steps 1-4 ok) -----
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: "git add + git commit -m v<version><suffix>"
+        run: |
+          TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
+          git add .
+          if git diff --cached --quiet; then
+            echo "No changes produced by the release-prep scripts — nothing to commit."
+            echo "COMMITTED=false" >> "$GITHUB_ENV"
+          else
+            git commit -m "${TAG}"
+            echo "Committed as '${TAG}'."
+            echo "COMMITTED=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: "git push (branch)"
+        if: env.COMMITTED == 'true'
+        run: git push origin "HEAD:${{ github.ref_name }}"
+
+      - name: "git tag v<version><suffix> + git push origin <tag>"
+        # Force so re-runs of the pipeline re-point/replace the (temp) tag
+        # instead of failing on an already-existing tag.
+        run: |
+          TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
+          git tag -f "${TAG}"
+          git push -f origin "refs/tags/${TAG}"
+          echo "Tagged HEAD and pushed '${TAG}'."
 
       # Preserve the generated files so they can be inspected / downloaded.
       - name: "Upload generated changes as an artifact"
