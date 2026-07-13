@@ -46,36 +46,23 @@ _V2_EVAL_VENV_BY_MODEL_TYPE = {
     ModelType.EMBEDDING: WorkflowVenvType.EVALS_EMBEDDING,
 }
 
-# Only models actually validated end-to-end against v2's engine are routed here.
-_V2_ROUTED_MODELS = frozenset(
-    {
-        "stable-diffusion-xl-base-1.0",
-        "stable-diffusion-xl-base-1.0-img-2-img",
-        "stable-diffusion-xl-1.0-inpainting-0.1",
-        "stable-diffusion-3.5-large",
-        "FLUX.1-dev",
-        "FLUX.1-schnell",
-        "Motif-Image-6B-Preview",
-        "whisper-large-v3",
-        "distil-large-v3",
-        "Z-Image-Turbo",
-        "speecht5_tts",
-    }
-)
-
-
+# Model types fully onboarded to v2. Every model of these types routes to v2 by
+# model_type — no per-name allowlist, so new models are picked up automatically.
 _V2_ROUTED_MODEL_TYPES = frozenset(
     {
+        ModelType.IMAGE,
+        ModelType.VIDEO,
+        ModelType.AUDIO,
+        ModelType.TEXT_TO_SPEECH,
         ModelType.CNN,
+        ModelType.EMBEDDING,
     }
 )
 
 
 def is_v2_routed_model(model_spec) -> bool:
-    return (
-        model_spec.model_type in _V2_ROUTED_MODEL_TYPES
-        or model_spec.model_name in _V2_ROUTED_MODELS
-    )
+    """True if the model routes to v2 purely by its model_type."""
+    return model_spec.model_type in _V2_ROUTED_MODEL_TYPES
 
 
 def _is_prefix_cache_run(wf, runtime_config) -> bool:
@@ -145,7 +132,7 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
     # Agentic evals, serving-bench benchmark suites, and the prefix-cache /
     # spec-decode benchmarks are v2-only features with no v1 driver. They route
-    # to v2 for ANY model (not just the image/audio set in _V2_ROUTED_MODELS).
+    # to v2 for ANY model, regardless of model_type.
     if (
         wf in (WorkflowType.AGENTIC, WorkflowType.SERVING_BENCH)
         or _is_prefix_cache_run(wf, runtime_config)
@@ -156,15 +143,13 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
         return True
     if _is_llm_eval_run(wf, model_spec):
         return True
-    # Embedding models route to v2 by type (like LLM); the v1 embedding
-    # eval/benchmark path has been retired.
-    if model_spec.model_type == ModelType.EMBEDDING:
+    # IMAGE / VIDEO / AUDIO / TEXT_TO_SPEECH / CNN / EMBEDDING are fully
+    # onboarded to v2, so every model of those types routes by model_type — no
+    # per-name allowlist, so new models (e.g. Qwen-Image) are picked up
+    # automatically. The v1 eval/benchmark paths for these types are retired.
+    if is_v2_routed_model(model_spec):
         return wf in _V2_WORKFLOW_NAMES
-    if model_spec.model_type == ModelType.VIDEO:
-        return wf in _V2_WORKFLOW_NAMES
-    if not is_v2_routed_model(model_spec):
-        return False
-    return wf in _V2_WORKFLOW_NAMES
+    return False
 
 
 def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowResult]:

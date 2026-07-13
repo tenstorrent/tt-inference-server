@@ -4,6 +4,8 @@
 
 This document describes the test marking system implemented for the TT Inference Server test suite. The system enables selective test execution based on test characteristics, hardware requirements, and model categories.
 
+This is the v1 (`server_tests/`) test-marking guide. The v1 suite covers the **CNN** and **EMBEDDING** model categories (plus **AUDIO** metadata). Image/diffusion models (e.g. Stable Diffusion) have been fully onboarded to the v2 engine and are no longer part of this v1 suite, so all examples below use CNN/embedding/audio models.
+
 ## Architecture
 
 The marking system is implemented through:
@@ -28,8 +30,8 @@ The marking system is implemented through:
 
 Markers are automatically derived from context, reducing manual configuration:
 
-- **Model category** → `image`, `audio`, `cnn`, `llm`
-- **Specific model** → `sdxl`, `whisper`, `distil_whisper`, etc.
+- **Model category** → `cnn`, `audio`, `llm`, `embedding`
+- **Specific model** → `mobilenetv2`, `whisper`, `distil_whisper`, etc.
 - **Hardware target** → `n150`, `n300`, `t3k`, `galaxy`
 - **Template markers** → `load`, `param`, `smoke`, etc.
 
@@ -39,7 +41,7 @@ DeviceLivenessTest automatically runs before all other tests for each model/devi
 
 To skip prerequisites:
 ```bash
-python run.py --model sdxl --device n150 --skip-prerequisites
+python run.py --model resnet-50 --device n150 --skip-prerequisites
 ```
 
 ### Test Templates
@@ -48,9 +50,9 @@ Common test configurations are defined once in `test_templates` and referenced i
 
 ```json
 "test_templates": {
-    "ImageGenerationLoadTest": {
-        "module": "tests.server_tests.test_cases.image_generation_load_test",
-        "markers": ["load", "e2e", "slow", "heavy"],
+    "CnnLoadTest": {
+        "module": "server_tests.test_cases.cnn_load_test",
+        "markers": ["load", "e2e"],
         "test_config": {
             "test_timeout": 3600,
             "retry_attempts": 1
@@ -62,11 +64,11 @@ Common test configurations are defined once in `test_templates` and referenced i
 Test suites reference templates with overrides:
 ```json
 {
-    "template": "ImageGenerationLoadTest",
-    "description": "Test image generation time for 20 iterations",
+    "template": "CnnLoadTest",
+    "description": "CNN image classification load test",
     "targets": {
-        "num_inference_steps": 20,
-        "image_generation_time": 10
+        "cnn_time": 5,
+        "top_k": 3
     }
 }
 ```
@@ -104,37 +106,37 @@ Test suites reference templates with overrides:
 ### Model Categories
 | Marker | Description |
 |--------|-------------|
-| `image` | Image generation/processing |
+| `cnn` | CNN model tests |
 | `audio` | Audio transcription |
-| `cnn` | CNN models |
 | `llm` | Large Language Models |
+| `embedding` | Embedding model tests |
 
 ### Specific Models
 | Marker | Description |
 |--------|-------------|
-| `sdxl` | Stable Diffusion XL |
-| `sdxl_img2img` | SDXL img2img |
-| `sdxl_inpaint` | SDXL inpainting |
-| `sd35` | Stable Diffusion 3.5 |
+| `mobilenetv2` | MobileNetV2 CNN model |
 | `whisper` | Whisper model |
 | `distil_whisper` | Distil Whisper |
+| `bge` | BGE embedding model |
+| `bge_m3` | BGE-M3 embedding model |
+| `qwen3_emb` | Qwen3 embedding model |
 
 ## Usage Examples
 
-### Use Case 1: Run All IMAGE/AUDIO Tests on Specific Hardware
+### Use Case 1: Run All CNN/AUDIO Tests on Specific Hardware
 
 ```bash
-# All IMAGE tests on N150
-python run.py --model-category IMAGE --device n150
+# All CNN tests on N150
+python run.py --model-category CNN --device n150
 
-# All IMAGE and AUDIO tests on all hardware
-python run.py --model-category IMAGE AUDIO
+# All CNN and AUDIO tests on all hardware
+python run.py --model-category CNN AUDIO
 
 # Programmatically
 from tests.server_tests.test_categorization_system import TestFilter
 
 filter = TestFilter()
-tests = filter.filter_by_model_category(["IMAGE", "AUDIO"]) \
+tests = filter.filter_by_model_category(["CNN", "AUDIO"]) \
               .filter_by_device("n150") \
               .get_tests()
 ```
@@ -142,12 +144,12 @@ tests = filter.filter_by_model_category(["IMAGE", "AUDIO"]) \
 ### Use Case 2: Run Specific Model on Specific Hardware with Category
 
 ```bash
-# SDXL load tests on N150
-python run.py --model stable-diffusion-xl-base-1.0 --device n150 --markers load
+# ResNet-50 load tests on N150
+python run.py --model resnet-50 --device n150 --markers load
 
 # Programmatically
 filter = TestFilter()
-tests = filter.filter_by_model("stable-diffusion-xl-base-1.0") \
+tests = filter.filter_by_model("resnet-50") \
               .filter_by_device("n150") \
               .filter_by_markers(["load"]) \
               .get_tests()
@@ -156,15 +158,15 @@ tests = filter.filter_by_model("stable-diffusion-xl-base-1.0") \
 ### Use Case 3: Run Specific Tests with Full Filtering
 
 ```bash
-# Specific test class for SDXL on N150
-python run.py --model stable-diffusion-xl-base-1.0 --device n150 --markers load --test-name ImageGenerationLoadTest
+# Specific test class for ResNet-50 on N150
+python run.py --model resnet-50 --device n150 --markers load --test-name CnnLoadTest
 
 # Programmatically
 filter = TestFilter()
-tests = filter.filter_by_model("stable-diffusion-xl-base-1.0") \
+tests = filter.filter_by_model("resnet-50") \
               .filter_by_device("n150") \
               .filter_by_markers(["load"]) \
-              .filter_by_test_name("ImageGenerationLoadTest") \
+              .filter_by_test_name("CnnLoadTest") \
               .get_tests()
 ```
 
@@ -195,7 +197,7 @@ python run.py --device n150 --exclude-markers slow heavy
 python run.py --list-markers
 
 # Preview which tests would run (dry-run)
-python run.py --model-category IMAGE --device n150 --list-tests
+python run.py --model-category CNN --device n150 --list-tests
 ```
 
 ## CLI Reference
@@ -211,7 +213,7 @@ usage: run.py [-h] [--model MODEL] [--device DEVICE]
 Arguments:
   --model MODEL           Filter by model name
   --device DEVICE         Filter by device (n150, n300, t3k, galaxy)
-  --model-category        Filter by model category (IMAGE, AUDIO, CNN)
+  --model-category        Filter by model category (CNN, AUDIO, EMBEDDING)
   --markers               Filter by test markers
   --match-all-markers     Require ALL markers to match
   --exclude-markers       Exclude tests with these markers
@@ -229,7 +231,7 @@ If your test type doesn't exist, add a template to `test_templates`:
 
 ```json
 "NewTestType": {
-    "module": "tests.server_tests.test_cases.new_test_type",
+    "module": "server_tests.test_cases.new_test_type",
     "markers": ["e2e", "slow"],
     "test_config": {
         "test_timeout": 3600,
@@ -256,8 +258,8 @@ Add your test case to the appropriate suite in `test_suites`:
 
 Markers are **automatically derived**:
 - From the template (`e2e`, `slow`)
-- From model category (`image`, `audio`, etc.)
-- From model marker (`sdxl`, `whisper`, etc.)
+- From model category (`cnn`, `audio`, etc.)
+- From model marker (`mobilenetv2`, `whisper`, etc.)
 - From device (`n150`, `t3k`, etc.)
 
 ### Step 3: Add Custom Markers (Optional)
@@ -313,11 +315,11 @@ deprecation warning is logged. Please migrate to `num_concurrent_requests`.
 
 ```json
 {
-    "id": "sdxl-n150",           // Unique identifier
-    "weights": ["model-name"],   // Model(s) this suite tests
-    "device": "n150",            // Target hardware
-    "model_marker": "sdxl",      // Specific model marker
-    "test_cases": [...]          // List of test case configs
+    "id": "cnn-n150",                 // Unique identifier
+    "weights": ["mobilenetv2"],       // Model(s) this suite tests
+    "device": "n150",                 // Target hardware
+    "model_marker": "mobilenetv2",    // Specific model marker
+    "test_cases": [...]               // List of test case configs
 }
 ```
 
@@ -331,11 +333,11 @@ from tests.server_tests.test_categorization_system import TestFilter
 filter = TestFilter()
 
 # Filtering methods (chainable)
-filter.filter_by_model_category(["IMAGE", "AUDIO"])
-filter.filter_by_model("stable-diffusion-xl-base-1.0")
+filter.filter_by_model_category(["CNN", "AUDIO"])
+filter.filter_by_model("resnet-50")
 filter.filter_by_device("n150")
 filter.filter_by_markers(["load", "smoke"], match_all=False)
-filter.filter_by_test_name("ImageGenerationLoadTest")
+filter.filter_by_test_name("CnnLoadTest")
 filter.exclude_markers(["slow", "heavy"])
 filter.include_prerequisites(True)
 
@@ -382,11 +384,11 @@ jobs:
 ### Environment Variables
 
 ```bash
-SERVICE_PORT=8000      # Service port for tests
-TEST_TIMEOUT=60        # Default test timeout
-TEST_RETRIES=2         # Default retry count
-MODEL=sdxl             # Default model filter
-DEVICE=n150            # Default device filter
+SERVICE_PORT=8000        # Service port for tests
+TEST_TIMEOUT=60          # Default test timeout
+TEST_RETRIES=2           # Default retry count
+MODEL=resnet-50          # Default model filter
+DEVICE=n150              # Default device filter
 ```
 
 ## Best Practices
@@ -409,7 +411,7 @@ python run.py --list-markers
 python run.py --list-tests
 
 # Check filter results
-python run.py --model-category IMAGE --list-tests
+python run.py --model-category CNN --list-tests
 ```
 
 ### Test not loading

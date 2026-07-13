@@ -13,8 +13,10 @@ There are two independent copies of these files:
 - `tt-inference-server-v2/test_module/` — the canonical, complete set
   (CNN, EMBEDDING, IMAGE, AUDIO, TTS, VIDEO, LLM). **The video/audio/image
   examples in this guide refer to files here.**
-- `server_tests/` — the legacy v1 set (CNN, EMBEDDING, IMAGE only). It has no
-  `video.json`/`audio.json`; only edit here for the v1 spec-test suites.
+- `server_tests/` — the legacy v1 set (CNN, EMBEDDING only). IMAGE models are
+  fully onboarded to v2 (routed by model_type), so v1 has no `image.json`; it
+  also has no `video.json`/`audio.json`. Only edit here for the v1 CNN/EMBEDDING
+  spec-test suites.
 
 ## How it works
 

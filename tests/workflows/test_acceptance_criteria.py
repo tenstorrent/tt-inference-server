@@ -509,7 +509,7 @@ def _make_server_tests_payload(failed_test_name="DeviceLivenessTest", error="OOM
             },
             "tests": [
                 {
-                    "test_name": "ImageGenerationLoadTest",
+                    "test_name": "CnnLoadTest",
                     "success": True,
                     "error": None,
                 },
