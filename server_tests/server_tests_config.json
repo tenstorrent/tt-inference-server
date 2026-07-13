@@ -398,20 +398,6 @@
                 "break_on_failure": false,
                 "mock_mode": false
             }
-        },
-        "EmbeddingLoadTest": {
-            "module": "server_tests.test_cases.embedding_load_test",
-            "markers": [
-                "load",
-                "e2e"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
         }
     },
     "_comment": "test_suites are loaded from test_suites/*.json files",

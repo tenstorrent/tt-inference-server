@@ -428,59 +428,6 @@ class TestExpandTestMatrices:
         assert b_suite["test_cases"][0]["targets"] == {"shared": 99}
 
 
-class TestEmbeddingMatrixExpansion:
-    """Validate that the migrated embedding.json produces the same suites as before."""
-
-    ORIGINAL_IDS = {
-        "bge-n150",
-        "bge-t3k",
-        "bge-galaxy",
-        "qwen3-emb-8b-n150",
-        "qwen3-emb-8b-t3k",
-        "qwen3-emb-8b-galaxy",
-    }
-
-    def test_embedding_suite_count(self):
-        suites = load_suite_files_by_category("embedding")
-        assert len(suites) == 6
-
-    def test_embedding_suite_ids(self):
-        suites = load_suite_files_by_category("embedding")
-        ids = {s["id"] for s in suites}
-        assert ids == self.ORIGINAL_IDS
-
-    def test_embedding_n150_targets(self):
-        suites = load_suite_files_by_category("embedding")
-        suite_map = {s["id"]: s for s in suites}
-
-        for suite_id in ["bge-n150", "qwen3-emb-8b-n150"]:
-            tc = suite_map[suite_id]["test_cases"][0]
-            assert tc["targets"]["embedding_time"] == 0.1
-
-    def test_embedding_other_device_targets(self):
-        suites = load_suite_files_by_category("embedding")
-        suite_map = {s["id"]: s for s in suites}
-
-        for suite_id in [
-            "bge-t3k",
-            "bge-galaxy",
-            "qwen3-emb-8b-t3k",
-            "qwen3-emb-8b-galaxy",
-        ]:
-            tc = suite_map[suite_id]["test_cases"][0]
-            assert tc["targets"]["embedding_time"] == 1
-
-    def test_embedding_weights(self):
-        suites = load_suite_files_by_category("embedding")
-        suite_map = {s["id"]: s for s in suites}
-
-        assert suite_map["bge-n150"]["weights"] == ["bge-large-en-v1.5"]
-        assert suite_map["qwen3-emb-8b-t3k"]["weights"] == [
-            "Qwen3-Embedding-8B",
-            "Qwen3-Embedding-4B",
-        ]
-
-
 class TestImageMatrixExpansion:
     """Validate image.json expansion.
 
@@ -615,7 +562,7 @@ class TestAllSuitesLoad:
 
     def test_total_suite_count(self):
         all_suites = load_suite_files()
-        assert len(all_suites) == 26
+        assert len(all_suites) == 20
 
     def test_no_duplicate_ids(self):
         all_suites = load_suite_files()
