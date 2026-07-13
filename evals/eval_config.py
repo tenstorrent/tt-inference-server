@@ -1571,6 +1571,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="humaneval_instruct",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
                 score=EvalTaskScore(
                     published_score=88.41,
                     published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503",
@@ -1594,41 +1595,6 @@ _eval_config_list = [
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.5,
                     EvalLimitMode.SMOKE_TEST: 0.05,
-                },
-            ),
-            EvalTask(
-                eval_class="openai_compatible",
-                task_name="chartqa",
-                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
-                apply_chat_template=False,
-                use_chat_api=True,
-                score=EvalTaskScore(
-                    published_score=86.24,
-                    published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "relaxed_overall,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "max_retries": 1,
-                    "tokenized_requests": "False",
-                    "add_bos_token": "True",
-                    "timeout": "9999",
-                    "eos_string": "<|end_of_text|>",
-                },
-                gen_kwargs={
-                    "stop": "</s>",
-                    "stream": "False",
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
