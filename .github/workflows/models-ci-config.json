@@ -173,7 +173,6 @@
           "ci": {
             "nightly": {
               "devices": [
-                "GALAXY",
                 "BH_GALAXY"
               ]
             }

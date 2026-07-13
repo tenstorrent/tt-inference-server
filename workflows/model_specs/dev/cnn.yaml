@@ -207,14 +207,11 @@ templates:
         TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
 
 - weights:
-    # Mistral-Small-3.1-24B-Instruct-2503 Forge LLM (tensor-parallel) on galaxy,
+    # Mistral-Small-3.1-24B-Instruct-2503 Forge LLM (tensor-parallel) on blackhole galaxy,
     # mirroring gemma-4-31b above. basename matches tt-media-server
     # ModelNames.MISTRAL_SMALL_3_1_24B_INSTRUCT_2503. Pixtral-based multimodal
     # model served text-only (runner zeros limit_mm_per_prompt). Config mirrors
-    # the tt-xla Stage 1 vLLM benchmark: b32 / 8K context / bfp8 weights+KV. Two
-    # device specs: GALAXY (Wormhole, where Stage 1 was validated) and
-    # BLACKHOLE_GALAXY (the serving bringup target). Both are 8x4 / 32-chip TP;
-    # dims are env-driven here (constants.py only carries the mesh topology).
+    # the tt-xla vLLM benchmark: b32 / 8K context / bfp8 weights+KV.
     - mistralai/Mistral-Small-3.1-24B-Instruct-2503
   impl: forge_vllm_plugin
   min_disk_gb: 80
@@ -224,24 +221,6 @@ templates:
   uses_tensor_model_cache: false
   status: EXPERIMENTAL
   device_model_specs:
-    - device: GALAXY
-      max_concurrency: 32  # 8 * 4
-      max_context: 8192
-      default_impl: true
-      eval_max_retries: 1
-      env_vars:
-        MAX_MODEL_LENGTH: "8192"
-        MAX_NUM_SEQS: "32"
-        GPU_MEMORY_UTILIZATION: "0.65"
-        # opt=1 validated in Stage 1 on WH galaxy; opt>=1 + trace requires CPU
-        # sampling (see runner). To get on-device sampling, drop OPTIMIZATION_LEVEL
-        # to 0 and set CPU_SAMPLING to false together.
-        OPTIMIZATION_LEVEL: "1"
-        ENABLE_TRACE: "true"
-        CPU_SAMPLING: "true"
-        # WH galaxy 8x4 (32-chip) TP mesh descriptor; without this the image maps
-        # galaxy incorrectly and stablehlo fails with "unknown mesh: @mesh".
-        TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/single_galaxy_mesh_graph_descriptor.textproto"
     - device: BLACKHOLE_GALAXY
       max_concurrency: 32  # 8 * 4
       max_context: 8192
@@ -251,14 +230,9 @@ templates:
         MAX_MODEL_LENGTH: "8192"
         MAX_NUM_SEQS: "32"
         GPU_MEMORY_UTILIZATION: "0.65"
-        # opt=0 on Blackhole: opt>=1 aborted in tt-mlir OpModel worker-grid
-        # validation on Blackhole (tt-mlir#8767, fixed by #8769 - flip to 1 once
-        # the forge wheel includes it). opt=0 allows on-device sampling, so
-        # CPU_SAMPLING=false here (unlike the WH/opt=1 spec above).
-        OPTIMIZATION_LEVEL: "0"
+        OPTIMIZATION_LEVEL: "1"
         ENABLE_TRACE: "true"
-        CPU_SAMPLING: "false"
-        # BH galaxy 8x4 (32-chip) TP mesh descriptor.
+        CPU_SAMPLING: "true"
         TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/single_bh_galaxy_mesh_graph_descriptor.textproto"
 
 - weights:
