@@ -114,8 +114,8 @@ std::string buildResponse(const Route& r) {
 bool sendAll(int fd, const std::string& data) {
   std::size_t sent = 0;
   while (sent < data.size()) {
-    const ssize_t n = ::send(fd, data.data() + sent, data.size() - sent,
-                             MSG_NOSIGNAL);
+    const ssize_t n =
+        ::send(fd, data.data() + sent, data.size() - sent, MSG_NOSIGNAL);
     if (n > 0) {
       sent += static_cast<std::size_t>(n);
       continue;
