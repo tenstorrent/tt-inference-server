@@ -246,9 +246,7 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
             _extend_if_set(
                 cmd, "--serving-bench-suites", runtime_config.serving_bench_suites
             )
-        elif _is_llm_eval_run(wf, model_spec) or _is_llm_spec_test_run(
-            wf, model_spec
-        ):
+        elif _is_llm_eval_run(wf, model_spec) or _is_llm_spec_test_run(wf, model_spec):
             # Standard evals/release and LLM/VLM parameter-conformance
             # (spec_tests) need the bearer token to reach a JWT-protected
             # server; run.py mints it from --jwt-secret/$JWT_SECRET.
@@ -395,9 +393,9 @@ def _forward_spec_decode(cmd, runtime_config) -> None:
 def _build_stress_cmd(model_spec, runtime_config, json_fpath):
     """Launch the v2 stress-tests script under its own venv."""
     venv_config = VENV_CONFIGS[WorkflowVenvType.STRESS_TESTS_RUN_SCRIPT]
-    assert venv_config.setup(
-        model_spec=model_spec
-    ), "Failed to setup venv: STRESS_TESTS_RUN_SCRIPT"
+    assert venv_config.setup(model_spec=model_spec), (
+        "Failed to setup venv: STRESS_TESTS_RUN_SCRIPT"
+    )
     repo_root = Path(__file__).resolve().parent.parent
     script = (
         repo_root
