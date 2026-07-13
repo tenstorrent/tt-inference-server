@@ -207,7 +207,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--prefix-cache-preset",
         type=str,
-        choices=["ci", "full", "highcache_50k"],
+        choices=[
+            "ci",
+            "full",
+            "highcache_50k",
+            "highcache_55k_c64",
+            "highcache_256k_c64",
+        ],
         default="full",
         help=(
             "Preset for --prefix-cache (default: full). 'ci' is a short "
@@ -215,7 +221,10 @@ def parse_args() -> argparse.Namespace:
             "validation sweep, 'highcache_50k' simulates the customer "
             "trillion-scale shape (50K shared/cacheable prefix + 5K new ISL + "
             "500 OSL at concurrency 32; ~90.9%% steady-state hit-rate) with a "
-            "matched zero-prefix baseline for TTFT-uplift comparison."
+            "matched zero-prefix baseline for TTFT-uplift comparison. "
+            "'highcache_55k_c64' / 'highcache_256k_c64' characterize a 90%% "
+            "prefix ratio at mean ISL 55K / 256K at concurrency 64 (P50 = warm, "
+            "P99 = cold TTFT), each paired with a matched zero-prefix baseline."
         ),
     )
     parser.add_argument(

@@ -248,7 +248,8 @@ selects the per-workflow venv externally for image-model runs, keeping venv
 selection out of `run.py`.
 
 Scenarios (`shared_system`, `prefix_pool`, `multi_turn`, `baseline`,
-`mooncake_trace`) and per-preset grids (`ci`, `full`, `highcache_50k`) are
+`mooncake_trace`) and per-preset grids (`ci`, `full`, `highcache_50k`,
+`highcache_55k_c64`, `highcache_256k_c64`) are
 JSON-defined and overridable with `--prefix-cache-scenarios-json`. Override the
 mooncake trace input with `--prefix-cache-trace`; the in-tree fixture at
 [`llm_module/prefix_cache/sample_traces/ci_mooncake.jsonl`](llm_module/prefix_cache/sample_traces/ci_mooncake.jsonl)
@@ -345,6 +346,33 @@ scrapes into `server_metrics_export.jsonl`; on Tenstorrent hardware the
 `tt-vllm-plugin` currently disables prefix caching, so the hit-rate column
 renders as `null` until that's lifted (validation work was done against a
 reference GPU vLLM).
+
+### `highcache_55k_c64` / `highcache_256k_c64` presets (90% prefix @ c64)
+
+Two concurrency-64 presets characterize prefix-caching at a fixed **90% prefix
+ratio** for two mean-ISL points, each pairing a `shared_system` run with a matched
+zero-prefix `baseline`:
+
+| Preset | Shared prefix | New ISL | OSL | Total ISL | Hit-rate | Concurrency | Requests |
+|---|---|---|---|---|---|---|---|
+| `highcache_55k_c64`  | 49 500  | 5 500  | 500 | 55 000  | 49500/55000 = 90.0%   | 64 | 512 (8 waves) |
+| `highcache_256k_c64` | 230 400 | 25 600 | 500 | 256 000 | 230400/256000 = 90.0% | 64 | 256 (4 waves) |
+
+Within the `shared_system` run the **P50 TTFT** reads the warm/cache-hit path and
+the **P99 TTFT** reads the cold/first-touch tail, so a single run reports both cold
+and warm behavior; the matched `baseline` isolates the caching uplift. The
+`highcache_256k_c64` total of 256 500 tokens/request stays under the 256K
+(`262144`) context with headroom. The default `time_to_first_token:4000` goodput
+bar is not meaningful for a 256K cold prompt — override it with
+`--prefix-cache-goodput` when validating that shape.
+
+```bash
+python run.py --model Kimi-K2.6 --workflow benchmarks --tt-device super_cluster \
+    --server-url <endpoint> --service-port 443 \
+    --prefix-cache --prefix-cache-preset highcache_55k_c64 \
+    --prefix-cache-scenarios shared_system,baseline \
+    --prefix-cache-metrics-url <worker-host:port>
+```
 
 ## Speculative-decoding benchmark
 

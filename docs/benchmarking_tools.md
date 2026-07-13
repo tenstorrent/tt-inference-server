@@ -325,6 +325,19 @@ Scenarios and per-preset grids are defined in
 `--prefix-cache-scenarios-json`, subset with `--prefix-cache-scenarios`, and
 point `mooncake_trace` at a production trace via `--prefix-cache-trace`.
 
+### Presets (`--prefix-cache-preset`)
+
+| Preset | Shape |
+|--------|-------|
+| `ci` | Tiny regression sweep. |
+| `full` | Comprehensive serving-validation sweep (default). |
+| `highcache_50k` | 50K shared + 5K ISL + 500 OSL @ c32, ~90.9% hit-rate. |
+| `highcache_55k_c64` | 90% prefix @ mean ISL 55K, c64 (49.5K shared + 5.5K ISL + 500 OSL), 512 reqs. `shared_system` + matched `baseline`. |
+| `highcache_256k_c64` | 90% prefix @ mean ISL 256K, c64 (230.4K shared + 25.6K ISL + 500 OSL), 256 reqs. `shared_system` + matched `baseline`. |
+
+For the c64 presets, the `shared_system` run's **P50 TTFT** reads the warm
+(cache-hit) path and its **P99 TTFT** reads the cold (first-touch) tail.
+
 See [tt-inference-server-v2/README.md](../tt-inference-server-v2/README.md#prefix-caching-benchmark)
 for flags, report layout, and TT hardware notes (prefix caching may be disabled
 in `tt-vllm-plugin` until lifted).
