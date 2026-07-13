@@ -43,7 +43,6 @@ EVAL_TASK_TYPES = [
     ModelType.IMAGE,
     ModelType.CNN,
     ModelType.AUDIO,
-    ModelType.EMBEDDING,
     ModelType.TEXT_TO_SPEECH,
 ]
 

@@ -2,12 +2,15 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Standalone MTEB runner executed inside the EVALS_EMBEDDING venv.
+"""MTEB runner executed inside the EVALS_EMBEDDING venv.
 
-Invoked as a subprocess by ``embedding_eval_tests.run_embedding_eval`` so the
-heavy ``mteb`` dependency stays out of the shared V2_RUN_SCRIPT venv (mirrors
-the audio lmms-eval venv-targeting pattern). Emits parsed metrics as a JSON
-object between the marker lines below.
+The heavy ``mteb`` dependency is provisioned into its own venv, so it cannot be imported into the
+shared V2_RUN_SCRIPT venv. ``embedding_eval_tests.run_embedding_eval`` therefore
+launches this module as a subprocess in that venv; the ``__main__`` guard below
+is only a thin CLI adapter that hands off to :class:`MtebEvalRunner`.
+
+Metrics are emitted as a JSON object between the marker lines so the parent
+process can recover them from stdout.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import dataclass
 
 import mteb
 import numpy as np
@@ -25,92 +29,160 @@ from openai import OpenAI
 MTEB_RESULT_START = "===MTEB_RESULT_JSON_START==="
 MTEB_RESULT_END = "===MTEB_RESULT_JSON_END==="
 
-_SCORE_KEYS = [
-    "pearson",
-    "spearman",
-    "cosine_pearson",
-    "cosine_spearman",
-    "manhattan_pearson",
-    "manhattan_spearman",
-    "euclidean_pearson",
-    "euclidean_spearman",
-    "main_score",
-    "languages",
-]
 
+class SingleStringOpenAIModel(OpenAIModel):
+    """``OpenAIModel`` that embeds one sentence per request.
 
-def _parse_scores(results) -> dict:
-    scores = results.task_results[0].scores["test"]
-    if isinstance(scores, list) and len(scores) > 0:
-        scores = scores[0]
-    return {k: scores.get(k) for k in _SCORE_KEYS if k in scores}
+    MTEB hands ``encode`` a batch of inputs, but the served endpoint expects a
+    single string per request. Overriding ``encode`` in a subclass replaces the
+    previous instance-level monkeypatch (``model.encode = fn.__get__(...)``).
+    """
 
+    def __init__(
+        self,
+        *,
+        model_name: str,
+        max_tokens: int,
+        embed_dim: int,
+        client: OpenAI,
+    ) -> None:
+        super().__init__(
+            model_name=model_name,
+            max_tokens=max_tokens,
+            embed_dim=embed_dim,
+            client=client,
+        )
+        # OpenAIModel keeps the name privately; hold our own copy so ``encode``
+        # does not depend on the base class's attribute naming.
+        self._eval_model_name = model_name
+        self.mteb_model_meta = self._build_model_meta(model_name, embed_dim, max_tokens)
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--base-url", required=True)
-    ap.add_argument("--model", required=True)
-    ap.add_argument("--isl", type=int, required=True)
-    ap.add_argument("--dimensions", type=int, required=True)
-    ap.add_argument("--api-key", required=True)
-    ap.add_argument("--tasks", nargs="+", required=True)
-    args = ap.parse_args()
+    @staticmethod
+    def _build_model_meta(
+        model_name: str, embed_dim: int, max_tokens: int
+    ) -> ModelMeta:
+        return ModelMeta(
+            name=model_name,
+            revision=None,
+            embed_dim=embed_dim,
+            max_tokens=max_tokens,
+            open_weights=False,
+            loader=None,
+            loader_kwargs={},
+            framework=[],
+            similarity_fn_name=None,
+            use_instructions=None,
+            release_date=None,
+            languages=[],
+            n_parameters=None,
+            memory_usage_mb=None,
+            license=None,
+            public_training_code=None,
+            public_training_data=None,
+            training_datasets=None,
+        )
 
-    def single_string_encode(self, inputs, **kwargs):
+    def encode(self, inputs, **kwargs) -> np.ndarray:
         sentences = [text for batch in inputs for text in batch["text"]]
-        all_embeddings = []
+        embeddings = []
         for sentence in sentences:
             response = self._client.embeddings.create(
                 input=sentence,
-                model=args.model,
+                model=self._eval_model_name,
                 encoding_format="float",
                 dimensions=self._embed_dim if self._embed_dim else None,
             )
-            all_embeddings.extend(self._to_numpy(response))
-        return np.array(all_embeddings)
+            embeddings.extend(self._to_numpy(response))
+        return np.array(embeddings)
 
-    client = OpenAI(base_url=f"{args.base_url}/v1", api_key=args.api_key)
 
-    model = OpenAIModel(
-        model_name=args.model,
-        max_tokens=args.isl,
-        embed_dim=args.dimensions,
-        client=client,
+@dataclass
+class MtebEvalConfig:
+    """Parameters for a single MTEB evaluation run."""
+
+    base_url: str
+    model: str
+    isl: int
+    dimensions: int
+    api_key: str
+    tasks: list[str]
+
+    @classmethod
+    def from_argv(cls, argv: list[str] | None = None) -> "MtebEvalConfig":
+        ap = argparse.ArgumentParser(description="Run an MTEB embedding evaluation.")
+        ap.add_argument("--base-url", required=True)
+        ap.add_argument("--model", required=True)
+        ap.add_argument("--isl", type=int, required=True)
+        ap.add_argument("--dimensions", type=int, required=True)
+        ap.add_argument("--api-key", required=True)
+        ap.add_argument("--tasks", nargs="+", required=True)
+        args = ap.parse_args(argv)
+        return cls(
+            base_url=args.base_url,
+            model=args.model,
+            isl=args.isl,
+            dimensions=args.dimensions,
+            api_key=args.api_key,
+            tasks=args.tasks,
+        )
+
+
+class MtebEvalRunner:
+    """Runs an MTEB evaluation against an OpenAI-compatible embedding endpoint."""
+
+    _SCORE_KEYS = (
+        "pearson",
+        "spearman",
+        "cosine_pearson",
+        "cosine_spearman",
+        "manhattan_pearson",
+        "manhattan_spearman",
+        "euclidean_pearson",
+        "euclidean_spearman",
+        "main_score",
+        "languages",
     )
-    model.encode = single_string_encode.__get__(model, type(model))
 
-    model.mteb_model_meta = ModelMeta(
-        name=args.model,
-        revision=None,
-        embed_dim=args.dimensions,
-        max_tokens=args.isl,
-        open_weights=False,
-        loader=None,
-        loader_kwargs={},
-        framework=[],
-        similarity_fn_name=None,
-        use_instructions=None,
-        release_date=None,
-        languages=[],
-        n_parameters=None,
-        memory_usage_mb=None,
-        license=None,
-        public_training_code=None,
-        public_training_data=None,
-        training_datasets=None,
-    )
+    def __init__(self, config: MtebEvalConfig) -> None:
+        self.config = config
 
-    tasks = mteb.get_tasks(tasks=args.tasks)
-    results = mteb.evaluate(
-        model,
-        tasks=tasks,
-        encode_kwargs={"batch_size": 1},
-        cache=None,
-        overwrite_strategy="always",
-    )
+    def _build_model(self) -> SingleStringOpenAIModel:
+        client = OpenAI(
+            base_url=f"{self.config.base_url}/v1", api_key=self.config.api_key
+        )
+        return SingleStringOpenAIModel(
+            model_name=self.config.model,
+            max_tokens=self.config.isl,
+            embed_dim=self.config.dimensions,
+            client=client,
+        )
 
+    def run(self) -> dict:
+        """Execute the evaluation and return the parsed metric scores."""
+        model = self._build_model()
+        tasks = mteb.get_tasks(tasks=self.config.tasks)
+        results = mteb.evaluate(
+            model,
+            tasks=tasks,
+            encode_kwargs={"batch_size": 1},
+            cache=None,
+            overwrite_strategy="always",
+        )
+        return self._parse_scores(results)
+
+    @classmethod
+    def _parse_scores(cls, results) -> dict:
+        scores = results.task_results[0].scores["test"]
+        if isinstance(scores, list) and scores:
+            scores = scores[0]
+        return {k: scores[k] for k in cls._SCORE_KEYS if k in scores}
+
+
+def main(argv: list[str] | None = None) -> int:
+    config = MtebEvalConfig.from_argv(argv)
+    scores = MtebEvalRunner(config).run()
     print(MTEB_RESULT_START)
-    print(json.dumps(_parse_scores(results)))
+    print(json.dumps(scores))
     print(MTEB_RESULT_END)
     return 0
 

@@ -44,10 +44,8 @@ class WorkflowVenvType(IntEnum):
     EVALS_META = auto()
     EVALS_VISION = auto()
     EVALS_AUDIO = auto()
-    EVALS_VIDEO = auto()
     EVALS_EMBEDDING = auto()
     EVALS_AGENTIC = auto()
-    BENCHMARKS_VIDEO = auto()
     BENCHMARKS_VLLM = auto()
     BENCHMARKS_VLLM_FORGE = auto()
     BENCHMARKS_GENAI_PERF = auto()
@@ -60,7 +58,6 @@ class WorkflowVenvType(IntEnum):
 class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
     HTTP_CLIENT_CNN_API = auto()
-    HTTP_CLIENT_VIDEO_API = auto()
     HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API = auto()
 
 
