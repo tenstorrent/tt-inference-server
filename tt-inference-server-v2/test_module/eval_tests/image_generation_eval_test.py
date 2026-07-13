@@ -15,7 +15,7 @@ import aiohttp
 from .._test_common import BaseTest
 from report_module.schema import Block
 from server_tests.test_cases.server_helper import DEFAULT_AUTHORIZATION
-from server_tests.test_classes import TestConfig
+from .._test_common import TestConfig
 from utils.media_clients.test_status import ImageGenerationTestStatus
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     calculate_accuracy_check,

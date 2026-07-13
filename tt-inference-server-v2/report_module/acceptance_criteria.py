@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from .schema import Block, ReportSchema
-from .status import TestStatus
+from .status import TestStatus, glyph_for_label
 
 # Three canonical kinds emitted by every runner. Acceptance routes by
 # this field alone — no substring matching, no frozensets, no regex.
@@ -24,11 +24,20 @@ STATUS_PASS = "PASS"
 STATUS_FAIL = "FAIL"
 STATUS_NA = "NA"
 
+
+def _status_badge(status: str) -> str:
+    """Render a status as ``<emoji> `STATUS```, or just the label if unknown."""
+    emoji = glyph_for_label(status)
+    return f"{emoji} `{status}`" if emoji else f"`{status}`"
+
+
 CATEGORY_BENCHMARKS = "Benchmarks"
 CATEGORY_EVALS = "Evals"
 CATEGORY_SPEC_TESTS = "Spec Tests"
 
 INFRA_TASK_TYPES = frozenset({"health", "infra", "unit", "stability", "integration"})
+
+TASK_BLOCKER_PREFIX = "task"
 
 
 @dataclass(frozen=True)
@@ -74,6 +83,32 @@ def acceptance_criteria_check(
     for category in categories:
         blockers.update(category.blockers)
     return len(blockers) == 0, blockers, categories
+
+
+def task_failure_blockers(
+    outcomes: Iterable[Tuple[str, int, bool]],
+) -> Dict[str, str]:
+    """Blockers for workflow tasks whose process exited non-zero.
+
+    Each outcome is ``(task_type, exit_code, produced_block)``. A task that
+    crashes without emitting a report block is invisible to the block-based category checks above, which treat a
+    missing category as ``NA`` rather than a failure. Surfacing the raw task
+    exit code here keeps the acceptance verdict consistent with the workflow's
+    return code so a crash can never be laundered into a silent ``PASS``.
+    """
+    blockers: Dict[str, str] = {}
+    for task_type, exit_code, produced_block in outcomes:
+        if exit_code == 0:
+            continue
+        detail = (
+            "and produced no report block"
+            if not produced_block
+            else "after producing a report block"
+        )
+        blockers[f"{TASK_BLOCKER_PREFIX}:{task_type}"] = (
+            f"Task '{task_type}' failed (exit={exit_code}) {detail}."
+        )
+    return blockers
 
 
 def _find_waiver(
@@ -148,12 +183,14 @@ def format_acceptance_summary_markdown(
     lines = [
         "### Acceptance Criteria",
         "",
-        f"- Acceptance status: `{STATUS_PASS if accepted else STATUS_FAIL}`",
+        f"- Acceptance status: {_status_badge(STATUS_PASS if accepted else STATUS_FAIL)}",
     ]
     if model_status:
         lines.append(f"- Model status: `{model_status}`")
     for category in categories:
-        lines.append(f"- {category.name}: `{category.status}` ({_detail(category)})")
+        lines.append(
+            f"- {category.name}: {_status_badge(category.status)} ({_detail(category)})"
+        )
 
     if not blockers:
         lines.append("- All acceptance criteria passed.")
@@ -520,6 +557,7 @@ def _check_state(check_value: Any) -> str:
 
 __all__ = [
     "acceptance_criteria_check",
+    "task_failure_blockers",
     "build_acceptance_export",
     "format_acceptance_summary_markdown",
     "ACCEPTANCE_EXPORT_KEYS",

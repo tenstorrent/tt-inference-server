@@ -117,32 +117,3 @@ class TtsTestStatus(BaseTestStatus):
             "latency": self.latency,
             "rtr": self.rtr,
         }
-
-
-class VideoGenerationTestStatus(BaseTestStatus):
-    """Test status for video generation models (Mochi, WAN, etc.)."""
-
-    def __init__(
-        self,
-        status: bool,
-        elapsed: float,
-        num_inference_steps: int = 0,
-        inference_steps_per_second: float = 0,
-        job_id: Optional[str] = None,
-        video_path: Optional[str] = None,
-    ):
-        super().__init__(status, elapsed)
-        self.num_inference_steps = num_inference_steps
-        self.inference_steps_per_second = inference_steps_per_second
-        self.job_id = job_id
-        self.video_path = video_path
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "status": self.status,
-            "elapsed": self.elapsed,
-            "num_inference_steps": self.num_inference_steps,
-            "inference_steps_per_second": self.inference_steps_per_second,
-            "job_id": self.job_id,
-            "video_path": self.video_path,
-        }

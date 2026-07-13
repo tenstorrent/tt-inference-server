@@ -23,6 +23,13 @@
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
 #include "tt_llm_engine/scheduler/migration_client_interface.hpp"
 #include "utils/logger.hpp"
+#ifdef KAFKA_ENABLED
+#include "messaging/kafka_consumer.hpp"
+#include "messaging/kafka_producer.hpp"
+#include "services/composite_migration_client.hpp"
+#include "services/remote_kv_manager_adapter.hpp"
+#include "services/remote_kv_manager_impl.hpp"
+#endif
 
 namespace {
 
@@ -62,8 +69,7 @@ inline void logISRequest(const sch::ISRequest& req) {
       "migration_start_position={} migrate_from_slot={} "
       "gen.max_new_tokens={} gen.spec_decode={} gen.ignore_eos={} "
       "gen.sampling.temp={} gen.sampling.top_p={} gen.sampling.top_k={} "
-      "gen.reasoning_sampling.temp={} gen.reasoning_sampling.top_p={} "
-      "gen.reasoning_sampling.top_k={} gen.disaggregated_decode={} "
+      "gen.disaggregated_decode={} "
       "gen.starts_in_thinking={} gen.await_kv_migration={} gen.prefill_only={} "
       "gen.relaxed_acceptance_threshold={} gen.stop_token_count={}",
       requestTypeToString(req.type), req.request_id, req.slot_id,
@@ -72,9 +78,7 @@ inline void logISRequest(const sch::ISRequest& req) {
       formatOptional(req.migration_start_position),
       formatOptional(req.migrate_from_slot), gen.max_new_tokens,
       gen.spec_decode, gen.ignore_eos, gen.sampling.temperature,
-      gen.sampling.top_p, gen.sampling.top_k,
-      gen.reasoning_sampling.temperature, gen.reasoning_sampling.top_p,
-      gen.reasoning_sampling.top_k, gen.disaggregated_decode,
+      gen.sampling.top_p, gen.sampling.top_k, gen.disaggregated_decode,
       gen.starts_in_thinking, gen.await_kv_migration, gen.prefill_only,
       gen.relaxed_acceptance_threshold, gen.stop_tokens.size());
 }
@@ -117,7 +121,7 @@ inline sch::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
 inline sch::GenerationParams makeGenerationParams(
     const tt::config::BlazeConfig& config,
     const tt::domain::llm::Sequence& seq) {
-  const sch::PhaseSamplingParams userSampling{
+  const sch::SamplingParams sampling{
       .temperature = seq.getSamplingParams().temperature,
       .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
       .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
@@ -128,21 +132,11 @@ inline sch::GenerationParams makeGenerationParams(
               static_cast<int>(config.maxContextLength))),
       .spec_decode = seq.getSamplingParams().fast_mode,
       .ignore_eos = seq.getSamplingParams().ignore_eos,
-      .sampling = userSampling,
-      .reasoning_sampling = userSampling,
+      .sampling = sampling,
       .disaggregated_decode = config.enableMigration && seq.isDisaggregated(),
       .starts_in_thinking = seq.getStartsInThinking(),
       .stop_tokens = seq.getSamplingParams().stop_token_ids,
   };
-}
-
-inline void postProcessSamplingParams(const tt::config::BlazeConfig& config,
-                                      sch::GenerationParams& params) {
-  if (config.sampleOnlyInReasoning) {
-    // We argmax outside the reasoning phase
-    params.sampling = sch::PhaseSamplingParams{
-        .temperature = 1.0f, .top_p = 1.0f, .top_k = 1};
-  }
 }
 
 inline void fillSequenceFields(const tt::config::BlazeConfig& config,
@@ -153,7 +147,6 @@ inline void fillSequenceFields(const tt::config::BlazeConfig& config,
   if (seq.getKVPositionId().has_value()) {  // override position id
     req.position_id = *seq.getKVPositionId();
   }
-  postProcessSamplingParams(config, req.gen);
   if (config.enableMigration) {
     req.migration_uuid = seq.getMigrationId();
   }
@@ -325,8 +318,20 @@ inline MockDecodeSchedulerConfig makeMockDecodeSchedulerConfig(
   };
 }
 
+// Runner-type-driven migration client factory that hands out the shmem-backed
+// MigrationLayerClientAdapter for real device runs, or a MockMigrationClient
+// for the mock pipeline. This is the client the PrefillScheduler gets when
+// PREFILL_USE_REMOTE_KV_MANAGER is off, AND — when it is on — the loopback
+// backend that a CompositeMigrationClient uses to serve migrate() calls the
+// Kafka RemoteKVManagerAdapter cannot handle (ALLOCATE(migrate_from_slot)
+// prefix-cache slot copies). Kept as a separate helper so both callers share
+// exactly one runner_type switch.
+//
+// NOTE: this is not the top-level factory called by the scheduler factory —
+// that is makeMigrationClientInterface() below, which dispatches to either
+// this helper or the Kafka path.
 inline std::unique_ptr<sch::MigrationClientInterface>
-makeMigrationClientInterface(const tt::config::BlazeConfig& config) {
+makeShmemOrMockMigrationClient(const tt::config::BlazeConfig& config) {
   if (!config.enableMigration) {
     return nullptr;
   }
@@ -344,8 +349,95 @@ makeMigrationClientInterface(const tt::config::BlazeConfig& config) {
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return std::make_unique<sch::MockMigrationClient>();
     default:
-      throw std::runtime_error("Invalid blaze decode runner type");
+      throw std::runtime_error("Invalid blaze prefill runner type");
   }
+}
+
+// Kafka-backed migration client for the PrefillScheduler. Builds two
+// backends and hands them to a CompositeMigrationClient:
+//
+//   burst backend (Kafka):
+//     RemoteKVManagerAdapter wraps a RemoteKVManagerImpl wired to a Kafka
+//     producer (request topic) and Kafka consumer (ack topic). Handles the
+//     start_burst / enqueue_migration_in_burst / finish_burst path used for
+//     cross-endpoint P->D KV migration on a migrating SUBMIT.
+//
+//   loopback backend (shmem or mock, per runner_type):
+//     Whatever makeShmemOrMockMigrationClient would return for the current
+//     runner_type. Serves the single-shot migrate() path used for
+//     ALLOCATE(migrate_from_slot) prefix-cache slot copies, which the Kafka
+//     adapter intentionally does not implement (RemoteKVManagerAdapter::
+//     migrate() throws). Without this, a single IS request with
+//     migrate_from_slot would crash the prefill worker.
+//
+// Only compiled when the binary was built with KAFKA_ENABLED=ON; the
+// non-Kafka build surfaces a clear error at scheduler construction (in
+// makeMigrationClientInterface below) instead of silently downgrading to
+// the shmem-only path.
+#ifdef KAFKA_ENABLED
+inline std::unique_ptr<sch::MigrationClientInterface>
+makePrefillKafkaMigrationClient(const tt::config::BlazeConfig& config) {
+  auto requestProducer = std::make_unique<tt::messaging::KafkaProducer>(
+      tt::messaging::KafkaProducerConfig{
+          .brokers = tt::config::kafkaBrokers(),
+          .topic = tt::config::kafkaMigrationRequestTopic(),
+      });
+  auto ackConsumer = std::make_unique<tt::messaging::KafkaConsumer>(
+      tt::messaging::KafkaConsumerConfig{
+          .brokers = tt::config::kafkaBrokers(),
+          .topic = tt::config::kafkaMigrationAckTopic(),
+          // Shared with the worker's request-topic subscription: group.id is
+          // scoped per topic, so worker (request topic) and client (ack topic)
+          // do not fight over partitions. If multiple PrefillScheduler
+          // processes need to consume acks independently, they must set
+          // KAFKA_GROUP_ID to distinct values at deploy time — sharing a
+          // group here would split ack partitions across processes and
+          // silently starve some bursts of their completion event.
+          .group_id = tt::config::kafkaGroupId(),
+      });
+  auto kvManager = std::make_unique<tt::services::RemoteKVManagerImpl>(
+      std::move(requestProducer), std::move(ackConsumer),
+      std::chrono::milliseconds(tt::config::kvMigrationTimeoutMs()),
+      std::chrono::milliseconds(tt::config::kvMigrationSweepIntervalMs()),
+      static_cast<int>(tt::config::kvMigrationDrainPollMs()));
+  auto burst = std::make_unique<tt::services::RemoteKVManagerAdapter>(
+      std::move(kvManager));
+  auto loopback = makeShmemOrMockMigrationClient(config);
+  TT_LOG_INFO(
+      "makePrefillKafkaMigrationClient: CompositeMigrationClient wired "
+      "(brokers={}, request_topic={}, ack_topic={}, group_id={}); burst = "
+      "RemoteKVManagerAdapter, loopback per runner_type",
+      tt::config::kafkaBrokers(), tt::config::kafkaMigrationRequestTopic(),
+      tt::config::kafkaMigrationAckTopic(), tt::config::kafkaGroupId());
+  return std::make_unique<tt::services::CompositeMigrationClient>(
+      std::move(burst), std::move(loopback));
+}
+#endif  // KAFKA_ENABLED
+
+// Top-level migration-client factory for the PrefillScheduler. Dispatches
+// on the (env-derived) prefillUseRemoteKvManager flag carried on the config:
+// when true, the burst path goes through the Kafka-backed
+// RemoteKVManagerAdapter (composed with a shmem/mock loopback for migrate()
+// calls the adapter cannot service); when false, the scheduler talks directly
+// to the shmem/mock client. This function is what
+// blaze_scheduler_factory::makePrefillScheduler calls; the two helpers above
+// are private-in-spirit implementation details.
+inline std::unique_ptr<sch::MigrationClientInterface>
+makeMigrationClientInterface(const tt::config::BlazeConfig& config) {
+  if (!config.enableMigration) {
+    return nullptr;
+  }
+  if (config.prefillUseRemoteKvManager) {
+#ifdef KAFKA_ENABLED
+    return makePrefillKafkaMigrationClient(config);
+#else
+    throw std::runtime_error(
+        "PREFILL_USE_REMOTE_KV_MANAGER=1 but this binary was built without "
+        "KAFKA_ENABLED=ON. Rebuild with -DKAFKA_ENABLED=ON or unset "
+        "PREFILL_USE_REMOTE_KV_MANAGER to use the shmem MigrationLayerClient.");
+#endif
+  }
+  return makeShmemOrMockMigrationClient(config);
 }
 
 inline std::unique_ptr<sch::MigrationClientInterface>

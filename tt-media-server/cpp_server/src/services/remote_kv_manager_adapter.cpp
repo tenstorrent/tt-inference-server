@@ -50,16 +50,16 @@ RemoteKVManagerAdapter::BurstId RemoteKVManagerAdapter::start_burst(
 }
 
 void RemoteKVManagerAdapter::enqueue_migration_in_burst(
-    BurstId burst, int /*remote_endpoint_id*/, uint32_t src_slot,
-    uint32_t dst_slot, uint32_t layer_start, uint32_t layer_end_exclusive,
-    uint32_t pos_start, uint32_t pos_end_exclusive) {
+    BurstId burst, int /*remote_endpoint_id*/, uint32_t srcSlot,
+    uint32_t dstSlot, uint32_t layerStart, uint32_t layerEndExclusive,
+    uint32_t posStart, uint32_t posEndExclusive) {
   // remote_endpoint_id ignored: Kafka topic routing is not endpoint-specific.
-  if (layer_end_exclusive <= layer_start) {
+  if (layerEndExclusive <= layerStart) {
     throw std::invalid_argument(
         "[RemoteKVManagerAdapter] enqueue_migration_in_burst(): empty layer "
         "range");
   }
-  if (pos_end_exclusive <= pos_start) {
+  if (posEndExclusive <= posStart) {
     throw std::invalid_argument(
         "[RemoteKVManagerAdapter] enqueue_migration_in_burst(): empty position "
         "range");
@@ -88,16 +88,16 @@ void RemoteKVManagerAdapter::enqueue_migration_in_burst(
         std::to_string(burst) + " is already closed (finish_burst was called)");
   }
 
-  for (uint32_t layer = layer_start; layer < layer_end_exclusive; ++layer) {
+  for (uint32_t layer = layerStart; layer < layerEndExclusive; ++layer) {
     const MigrationRequest request{
-        .src_slot = src_slot,
-        .dst_slot = dst_slot,
+        .src_slot = srcSlot,
+        .dst_slot = dstSlot,
         .layer_begin = layer,
         .layer_end = layer + 1,
-        .src_position_begin = pos_start,
-        .src_position_end = pos_end_exclusive,
-        .dst_position_begin = pos_start,
-        .dst_position_end = pos_end_exclusive,
+        .src_position_begin = posStart,
+        .src_position_end = posEndExclusive,
+        .dst_position_begin = posStart,
+        .dst_position_end = posEndExclusive,
     };
     const uint64_t kafkaId = kvManager_->migrate(request);
     group.pendingKafkaIds.insert(kafkaId);
@@ -108,8 +108,8 @@ void RemoteKVManagerAdapter::enqueue_migration_in_burst(
       "[RemoteKVManagerAdapter] enqueue_migration_in_burst: uuid={}, slot "
       "{}->{}, layers [{},{}) fanned out ({} pending Kafka req(s) total), "
       "pos [{},{})",
-      burst, src_slot, dst_slot, layer_start, layer_end_exclusive,
-      group.pendingKafkaIds.size(), pos_start, pos_end_exclusive);
+      burst, srcSlot, dstSlot, layerStart, layerEndExclusive,
+      group.pendingKafkaIds.size(), posStart, posEndExclusive);
 }
 
 RemoteKVManagerAdapter::MigrationToken RemoteKVManagerAdapter::finish_burst(
@@ -303,7 +303,7 @@ void RemoteKVManagerAdapter::on_endpoint_disconnected(
 }
 
 void RemoteKVManagerAdapter::on_connection_received(
-    std::function<void(int remote_endpoint_id)> cb) {
+    std::function<void(int /*remote_endpoint_id*/)> cb) {
   onConnectionReceived_ = std::move(cb);
 }
 
