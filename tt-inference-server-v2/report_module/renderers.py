@@ -19,6 +19,7 @@ from report_module.display import (
 from report_module.formatting import format_value
 from report_module.markdown_table import build_markdown_table
 from report_module.schema import Block
+from report_module.status import glyph_for_label
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,18 @@ GENERIC_KINDS: tuple[str, ...] = (
     "spec_tests",
     "stress_tests",
 )
+
+# Per-kind columns hidden on top of HIDDEN_COLUMNS. For test blocks the
+# pass/fail wrapper fields duplicate the 🧪 Test Results summary table, so we
+# drop them here and let the block table carry only the metrics.
+_KIND_EXTRA_HIDDEN: Dict[str, frozenset] = {
+    kind: frozenset({"status", "success", "attempts"}) for kind in GENERIC_KINDS
+}
+
+
+def _hidden_columns(kind: str) -> frozenset:
+    return HIDDEN_COLUMNS | _KIND_EXTRA_HIDDEN.get(kind, frozenset())
+
 
 EVALS_KIND = "evals"
 
@@ -153,11 +166,13 @@ def _heading(
     return f"### {label} for {' on '.join(suffix_bits)}"
 
 
-def _ordered_display_columns(records: Sequence[Mapping[str, Any]]) -> List[str]:
+def _ordered_display_columns(
+    records: Sequence[Mapping[str, Any]], hidden: frozenset = HIDDEN_COLUMNS
+) -> List[str]:
     seen: Dict[str, None] = {}
     for record in records:
         for key in record.keys():
-            if key in HIDDEN_COLUMNS or key in seen:
+            if key in hidden or key in seen:
                 continue
             seen[key] = None
     columns = list(seen.keys())
@@ -193,7 +208,13 @@ def _format_cell(column: str, value: Any) -> str:
         and not isinstance(value, bool)
         and value in _CHECK_INT_TO_LABEL
     ):
-        return _CHECK_INT_TO_LABEL[value]
+        label = _CHECK_INT_TO_LABEL[value]
+        emoji = glyph_for_label(label)
+        return f"{emoji} {label}" if emoji else label
+    if column == "status" and isinstance(value, str) and value:
+        label = value.upper()
+        emoji = glyph_for_label(value)
+        return f"{emoji} {label}" if emoji else label
     places = decimal_places(column)
     if places is not None and isinstance(value, float) and value == value:
         return f"{value:.{places}f}"
@@ -220,8 +241,9 @@ def _pivot_single_record(
 def _build_table(
     records: Sequence[Mapping[str, Any]],
     header_fn: Callable[[str], str] = display_name,
+    hidden: frozenset = HIDDEN_COLUMNS,
 ) -> str:
-    columns = _ordered_display_columns(records)
+    columns = _ordered_display_columns(records, hidden)
     if not columns:
         return ""
     display_rows = [
@@ -279,9 +301,10 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
         block.kind, model, device, block.title or "", block.task_type or ""
     )
     footnote = FOOTNOTES.get(block.kind)
+    hidden = _hidden_columns(block.kind)
 
     if len(records) > 1:
-        table = _build_table(records)
+        table = _build_table(records, hidden=hidden)
         if not table:
             return ""
         parts = [heading, table]
@@ -293,7 +316,7 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
     scalar_fields: Dict[str, Any] = {}
     nested_fields: List[tuple[str, Any]] = []
     for key, value in record.items():
-        if key in HIDDEN_COLUMNS:
+        if key in hidden:
             continue
         if _is_subtable_value(value):
             nested_fields.append((key, value))
@@ -302,7 +325,7 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
 
     parts: List[str] = [heading]
     if scalar_fields:
-        scalar_table = _build_table([scalar_fields])
+        scalar_table = _build_table([scalar_fields], hidden=hidden)
         if scalar_table:
             parts.append(scalar_table)
 

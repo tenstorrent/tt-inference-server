@@ -3069,12 +3069,20 @@ _eval_config_list = [
             )
         ],
     ),
+    # VIDEO models (Mochi, Wan2.2 T2V/I2V) are served by the v2 engine (routed
+    # via workflows/v2_bridge.can_route_to_v2); the actual eval runs in v2's
+    # test_module, and ModelType.VIDEO is not in EVAL_TASK_TYPES (evals/run_evals.py),
+    # so the v1 lm-eval path never dispatches this "load_video" task and the
+    # workflow_venv_type below is never provisioned for video. These entries must
+    # still exist: workflows/validate_setup.py asserts every EVALS/RELEASE model
+    # is registered in EVAL_CONFIGS *before* v2 routing, so removing them breaks
+    # `run.py --workflow evals/release` for video at the validation gate.
     EvalConfig(
         hf_model_repo="genmo/mochi-1-preview",
         tasks=[
             EvalTask(
                 task_name="load_video",
-                workflow_venv_type=WorkflowVenvType.EVALS_VIDEO,
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
@@ -3091,7 +3099,7 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="load_video",
-                workflow_venv_type=WorkflowVenvType.EVALS_VIDEO,
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
@@ -3108,7 +3116,7 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="load_video",
-                workflow_venv_type=WorkflowVenvType.EVALS_VIDEO,
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,

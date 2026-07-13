@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image
 
 from .._test_common import BaseTest
-from server_tests.test_config import TestConfig
+from .._test_common import TestConfig
 
 logger = logging.getLogger(__name__)
 
