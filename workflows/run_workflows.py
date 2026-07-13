@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 from benchmarking.benchmark_config import get_benchmark_config
 from evals.eval_config import EVAL_CONFIGS
-from server_tests.test_categorization_system import TestFilter
 from server_tests.test_config import TEST_CONFIGS
 from workflows.utils import ensure_readwriteable_dir, run_command
 from workflows.workflow_config import (
@@ -15,7 +14,6 @@ from workflows.workflow_config import (
     WorkflowType,
     get_default_workflow_root_log_dir,
 )
-from workflows.workflow_types import WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
@@ -145,75 +143,19 @@ def run_single_workflow(model_spec, runtime_config, json_fpath):
     )
 
 
-def has_spec_tests_configured(model_name, device):
-    return bool(
-        TestFilter().filter_by_model(model_name).filter_by_device(device).get_tests()
-    )
-
-
-def has_agentic_tasks_configured(model_name):
-    """True if the model's EvalConfig has any task owned by the v2 agentic workflow."""
-    eval_config = EVAL_CONFIGS.get(model_name)
-    if not eval_config:
-        return False
-    return any(
-        task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
-        for task in eval_config.tasks
-    )
-
-
 def run_workflows(model_spec, runtime_config, json_fpath):
+    # RELEASE and all v2-onboarded workflows are routed to the v2 engine by
+    # run.py via can_route_to_v2(); this v1 path now only handles the workflows
+    # with no v2 driver yet (tests, stress_tests, LLM/VLM spec_tests) plus the
+    # follow-up REPORTS step.
     workflow_results = []
-    if WorkflowType.from_string(runtime_config.workflow) == WorkflowType.RELEASE:
-        logger.info("Running release workflow ...")
-        done_trace_capture = False
-        workflows_to_run = [
-            WorkflowType.EVALS,
-            WorkflowType.BENCHMARKS,
-        ]
-        if has_agentic_tasks_configured(model_spec.model_name):
-            workflows_to_run.insert(1, WorkflowType.AGENTIC)
-        else:
-            logger.info(
-                f"Skipping agentic for {model_spec.model_name}: "
-                "no EVALS_AGENTIC tasks configured."
-            )
-        if has_spec_tests_configured(model_spec.model_name, runtime_config.device):
-            workflows_to_run.append(WorkflowType.SPEC_TESTS)
-        else:
-            logger.info(
-                f"Skipping spec_tests for {model_spec.model_name} on "
-                f"{runtime_config.device}: no matching spec test suite configured."
-            )
-        if model_spec.model_name in TEST_CONFIGS:
-            workflows_to_run.append(WorkflowType.TESTS)
-        workflows_to_run.append(WorkflowType.REPORTS)
-        for wf in workflows_to_run:
-            if done_trace_capture:
-                runtime_config.disable_trace_capture = True
-            logger.info(f"Next workflow in release: {wf.name}")
-            runtime_config.workflow = wf.name
-            if wf == WorkflowType.AGENTIC:
-                # Agentic evals are v2-owned; reports merge their Harbor result.json.
-                from workflows.v2_bridge import run_v2_workflows
-
-                workflow_results.extend(
-                    run_v2_workflows(model_spec, runtime_config, json_fpath)
-                )
-            else:
-                workflow_results.append(
-                    run_single_workflow(model_spec, runtime_config, json_fpath)
-                )
-            done_trace_capture = True
-        return workflow_results
-    else:
+    workflow_results.append(
+        run_single_workflow(model_spec, runtime_config, json_fpath)
+    )
+    if WorkflowType.from_string(runtime_config.workflow) != WorkflowType.REPORTS:
+        runtime_config.workflow = WorkflowType.REPORTS.name
         workflow_results.append(
             run_single_workflow(model_spec, runtime_config, json_fpath)
         )
-        if WorkflowType.from_string(runtime_config.workflow) != WorkflowType.REPORTS:
-            runtime_config.workflow = WorkflowType.REPORTS.name
-            workflow_results.append(
-                run_single_workflow(model_spec, runtime_config, json_fpath)
-            )
 
     return workflow_results

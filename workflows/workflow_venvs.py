@@ -365,7 +365,7 @@ STRUCTURED_OUTPUT_FETCH_FILES = (
 
 # Filename of the structured-output benchmark script downloaded into the
 # BENCHMARKS_VLLM venv work_dir by fetch_structured_output_scripts().
-# Imported by benchmarking/run_benchmarks.py to locate the script at run time.
+# Used to locate the structured-output benchmark script at run time.
 STRUCTURED_OUTPUT_SCRIPT_NAME = "benchmark_serving_structured_output.py"
 
 
