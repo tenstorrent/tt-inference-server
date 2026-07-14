@@ -1371,8 +1371,8 @@ templates:
   metadata:
     moonshotai/Kimi-K2.6:
       remote_api_model: moonshotai/Kimi-K2.6
-      reasoning_parser_name: deepseek_r1
-      tool_call_parser_name: hermes
+      reasoning_parser_name: kimi_k2
+      tool_call_parser_name: kimi_k2
       # Kimi ships a custom tokenizer; AIPerf-driven sweeps (prefix-cache,
       # spec-decode) must trust remote code to load it.
       tokenizer_trust_remote_code: true
@@ -1416,3 +1416,24 @@ templates:
       remote_api_model: openai/gpt-oss-120b
       reasoning_parser_name: openai_gptoss
       tool_call_parser_name: openai
+
+- weights:
+    - moonshotai/Kimi-K2.7-Code
+  impl: tt_transformers
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 64
+      max_context: 262144  # 256 * 1024; 
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    moonshotai/Kimi-K2.7-Code:
+      remote_api_model: moonshotai/Kimi-K2.7-Code
+      reasoning_parser_name: kimi_k2
+      tool_call_parser_name: kimi_k2
+      # Kimi ships a custom tokenizer; AIPerf-driven sweeps (prefix-cache,
+      # spec-decode) must trust remote code to load it.
+      tokenizer_trust_remote_code: true
