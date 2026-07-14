@@ -518,10 +518,6 @@ void DynamoEndpoint::start() {
       options_.bind_host, server_->port(), dc.tcp_address, dc.model_name,
       backendName, discoveryTarget);
 
-  // Refresh the registration periodically for backends that need it (etcd
-  // renews its lease so the frontend keeps seeing us). A backend that returns
-  // interval 0 (kubernetes) has no lease — Kubernetes owns liveness via
-  // EndpointSlice readiness + owner-reference GC — so no keep-alive thread runs.
   const int interval = discovery_->keepAliveIntervalSecs();
   if (interval > 0) {
     keepalive_thread_ = std::thread([this, interval]() {

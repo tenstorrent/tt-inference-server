@@ -7,7 +7,7 @@
  * Discovery registration for Dynamo backends.
  *
  * Two backends, both wire-compatible with NVIDIA Dynamo (the frontend reads the
- * same JSON payloads regardless):
+ * same JSON payloads):
  *   - Etcd: PUTs instance + Model Descriptor Card JSON under keys
  *     `v1/instances/<key>` and `v1/mdc/<key>` attached to a lease. Keep-alive
  *     refreshes the lease; unregister revokes it.

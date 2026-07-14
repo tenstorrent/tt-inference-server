@@ -405,8 +405,6 @@ class KubernetesDiscoveryRegistration : public DiscoveryRegistration {
   }
 
   void unregisterSelf() override {
-    // Best-effort fast-path. If the process is killed this never runs, and
-    // Kubernetes removes us via readiness + owner-reference GC anyway.
     try {
       client->deleteCr(cfg.pod_namespace, cfg.cr_name);
       TT_LOG_INFO("[KubernetesDiscoveryRegistration] Deleted CR name={} ns={}", cfg.cr_name,
@@ -416,11 +414,6 @@ class KubernetesDiscoveryRegistration : public DiscoveryRegistration {
                   cfg.cr_name, e.what());
     }
   }
-
-  // keepAlive()/keepAliveIntervalSecs() use the base defaults (no-op,
-  // interval 0), so the endpoint spawns no keep-alive thread. The CR lives as
-  // long as the pod; removal is owned by Kubernetes (owner-reference GC on pod
-  // deletion + EndpointSlice readiness).
 
  private:
   void apply() {

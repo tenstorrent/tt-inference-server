@@ -16,8 +16,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <future>
 #include <sstream>
+#include <thread>
 #include <utility>
 
 #include "utils/logger.hpp"
@@ -27,14 +29,14 @@ namespace tt::dynamo {
 namespace {
 
 // DynamoWorkerMetadata CRD coordinates (deploy/helm .../nvidia.com_*.yaml).
-constexpr const char* kGroup = "nvidia.com";
-constexpr const char* kVersion = "v1alpha1";
-constexpr const char* kPlural = "dynamoworkermetadatas";
+constexpr const char* KUBE_API_GROUP = "nvidia.com";
+constexpr const char* KUBE_API_VERSION = "v1alpha1";
+constexpr const char* KUBE_API_PLURAL = "dynamoworkermetadatas";
 // Field manager identifying this writer in server-side apply.
-constexpr const char* kFieldManager = "dynamo-worker";
+constexpr const char* KUBE_API_FIELD_MANAGER = "dynamo-worker";
 // K8s server-side apply content type. The JSON body is valid apply YAML, which
 // Kubernetes accepts under this type (matches kube-rs Patch::Apply).
-constexpr const char* kApplyPatchContentType = "application/apply-patch+yaml";
+constexpr const char* KUBE_API_APPLY_PATCH_CONTENT_TYPE = "application/apply-patch+yaml";
 
 std::string serializeCompact(const Json::Value& v) {
   Json::StreamWriterBuilder b;
@@ -50,12 +52,14 @@ std::string trimTrailingWhitespace(std::string s) {
   return s;
 }
 
-/// Send `req` on `client` and block until the response arrives, translating
-/// drogon's async callback into EtcdClient-style synchronous semantics. The
+/// Send `req` on `client` once and block until the response arrives,
+/// translating drogon's async callback into EtcdClient-style synchronous
+/// semantics. Never throws: a transport failure or future-timeout is reported
+/// as a non-Ok ReqResult (with a null response) for the caller to classify. The
 /// promise is shared so a late callback after a future-timeout can't dangle.
-drogon::HttpResponsePtr sendBlocking(const drogon::HttpClientPtr& client,
-                                     const drogon::HttpRequestPtr& req,
-                                     int timeoutMs) {
+std::pair<drogon::ReqResult, drogon::HttpResponsePtr> sendOnce(
+    const drogon::HttpClientPtr& client, const drogon::HttpRequestPtr& req,
+    int timeoutMs) {
   auto prom = std::make_shared<
       std::promise<std::pair<drogon::ReqResult, drogon::HttpResponsePtr>>>();
   auto fut = prom->get_future();
@@ -69,14 +73,48 @@ drogon::HttpResponsePtr sendBlocking(const drogon::HttpClientPtr& client,
   // surface a clean ReqResult rather than a future-timeout.
   if (fut.wait_for(std::chrono::milliseconds(timeoutMs + 2000)) !=
       std::future_status::ready) {
-    throw KubeError("KubeClient: request did not complete in time");
+    return {drogon::ReqResult::Timeout, nullptr};
   }
-  auto [result, resp] = fut.get();
-  if (result != drogon::ReqResult::Ok || !resp) {
-    throw KubeError("KubeClient: transport error (ReqResult=" +
-                    std::to_string(static_cast<int>(result)) + ")");
+  return fut.get();
+}
+
+bool isRetryable(drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
+  if (result != drogon::ReqResult::Ok || !resp) return true;
+  const int code = static_cast<int>(resp->getStatusCode());
+  return code == 429 || (code >= 500 && code < 600);
+}
+
+drogon::HttpResponsePtr sendWithRetry(
+    const drogon::HttpClientPtr& client, const KubeClientConfig& cfg,
+    const std::function<drogon::HttpRequestPtr()>& makeReq) {
+  for (int attempt = 0;; ++attempt) {
+    auto [result, resp] = sendOnce(client, makeReq(), cfg.timeout_ms);
+    if (!isRetryable(result, resp)) {
+      return resp;
+    }
+    const bool transportOk = (result == drogon::ReqResult::Ok && resp);
+    if (attempt >= cfg.max_retries) {
+      if (transportOk) {
+        return resp;  // exhausted on 5xx/429 — let caller surface status + body
+      }
+      throw KubeError(
+          std::string("KubeClient: apply CR failed after ") +
+          std::to_string(cfg.max_retries + 1) +
+          " attempt(s): transport error (ReqResult=" +
+          std::to_string(static_cast<int>(result)) + ")");
+    }
+    const int backoffMs = cfg.retry_base_delay_ms * (1 << attempt);
+    const std::string reason =
+        transportOk
+            ? ("HTTP " + std::to_string(
+                             static_cast<int>(resp->getStatusCode())))
+            : ("transport ReqResult=" + std::to_string(
+                                            static_cast<int>(result)));
+    TT_LOG_WARN(
+        "[KubeClient] apply CR attempt {}/{} failed ({}); retrying in {} ms",
+        attempt + 1, cfg.max_retries + 1, reason, backoffMs);
+    std::this_thread::sleep_for(std::chrono::milliseconds(backoffMs));
   }
-  return resp;
 }
 
 }  // namespace
@@ -122,7 +160,7 @@ Json::Value buildDynamoWorkerMetadataCr(const std::string& crName,
   spec["data"] = std::move(data);
 
   Json::Value cr(Json::objectValue);
-  cr["apiVersion"] = std::string(kGroup) + "/" + kVersion;
+  cr["apiVersion"] = std::string(KUBE_API_GROUP) + "/" + KUBE_API_VERSION;
   cr["kind"] = "DynamoWorkerMetadata";
   cr["metadata"] = std::move(metadata);
   cr["spec"] = std::move(spec);
@@ -131,8 +169,8 @@ Json::Value buildDynamoWorkerMetadataCr(const std::string& crName,
 
 std::string KubeClient::crPath(const std::string& ns,
                                const std::string& crName) {
-  return "/apis/" + std::string(kGroup) + "/" + kVersion + "/namespaces/" + ns +
-         "/" + kPlural + "/" + crName;
+  return "/apis/" + std::string(KUBE_API_GROUP) + "/" + KUBE_API_VERSION + "/namespaces/" + ns +
+         "/" + KUBE_API_PLURAL + "/" + crName;
 }
 
 KubeClient::KubeClient(KubeClientConfig config) : cfg_(std::move(config)) {
@@ -142,17 +180,7 @@ KubeClient::KubeClient(KubeClientConfig config) : cfg_(std::move(config)) {
 
   // drogon 1.9.12's HttpClient has no per-client trusted-CA setter, so when we
   // validate certs we steer OpenSSL's default trust store at the mounted cluster
-  // CA via SSL_CERT_FILE. OpenSSL's SSL_CTX_set_default_verify_paths (which
-  // trantor calls for validateCert=true) honors it, so the in-cluster API server
-  // cert validates without baking the CA into the image trust store. Guards:
-  //   - only when validating;
-  //   - never override an operator-provided SSL_CERT_FILE;
-  //   - only if the CA file exists, so we don't point OpenSSL at a missing file
-  //     (which would otherwise fail ALL validation).
-  // NOTE: SSL_CERT_FILE is process-wide, and this runs single-threaded at
-  // startup. Safe here because the worker's only TLS client is this API-server
-  // call (the Dynamo request plane is plain TCP). Must be set before
-  // newHttpClient so it is in effect when the SSL context is built.
+  // CA via SSL_CERT_FILE.
   if (cfg_.validate_cert && !cfg_.ca_cert_path.empty()) {
     const char* existing = std::getenv("SSL_CERT_FILE");
     if (existing == nullptr || *existing == '\0') {
@@ -221,21 +249,23 @@ std::string KubeClient::readToken() const {
 
 void KubeClient::applyCr(const std::string& ns, const std::string& crName,
                          const Json::Value& body) {
-  auto req = drogon::HttpRequest::newHttpRequest();
-  req->setMethod(drogon::Patch);
-  req->setPath(crPath(ns, crName));
-  // Server-side apply requires the field manager, and force lets us take
-  // ownership of fields on conflict (there is only ever one writer per CR).
-  // drogon appends these as the request-line query string (non-form body).
-  req->setParameter("fieldManager", kFieldManager);
-  req->setParameter("force", "true");
-  req->addHeader("Authorization", "Bearer " + readToken());
-  req->addHeader("Accept", "application/json");
-  req->setContentTypeString(kApplyPatchContentType,
-                            std::strlen(kApplyPatchContentType));
-  req->setBody(serializeCompact(body));
+  const std::string path = crPath(ns, crName);
+  const std::string payload = serializeCompact(body);
+  auto makeReq = [&]() {
+    auto req = drogon::HttpRequest::newHttpRequest();
+    req->setMethod(drogon::Patch);
+    req->setPath(path);s
+    req->setParameter("fieldManager", KUBE_API_FIELD_MANAGER);
+    req->setParameter("force", "true");
+    req->addHeader("Authorization", "Bearer " + readToken());
+    req->addHeader("Accept", "application/json");
+    req->setContentTypeString(KUBE_API_APPLY_PATCH_CONTENT_TYPE,
+                              std::strlen(KUBE_API_APPLY_PATCH_CONTENT_TYPE));
+    req->setBody(payload);
+    return req;
+  };
 
-  auto resp = sendBlocking(http_, req, cfg_.timeout_ms);
+  auto resp = sendWithRetry(http_, cfg_, makeReq);
   const int code = static_cast<int>(resp->getStatusCode());
   if (code < 200 || code >= 300) {
     throw KubeError("KubeClient: apply CR '" + crName + "' failed: HTTP " +
@@ -251,10 +281,15 @@ void KubeClient::deleteCr(const std::string& ns, const std::string& crName) {
   req->addHeader("Authorization", "Bearer " + readToken());
   req->addHeader("Accept", "application/json");
 
-  auto resp = sendBlocking(http_, req, cfg_.timeout_ms);
+  auto [result, resp] = sendOnce(http_, req, cfg_.timeout_ms);
+  if (result != drogon::ReqResult::Ok || !resp) {
+    throw KubeError("KubeClient: delete CR '" + crName +
+                    "' transport error (ReqResult=" +
+                    std::to_string(static_cast<int>(result)) + ")");
+  }
   const int code = static_cast<int>(resp->getStatusCode());
   if (code == 404) {
-    return;  // Already gone — nothing to do.
+    return;
   }
   if (code < 200 || code >= 300) {
     throw KubeError("KubeClient: delete CR '" + crName + "' failed: HTTP " +

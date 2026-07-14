@@ -886,25 +886,7 @@ std::string dynamoPodName() { return envString("POD_NAME", ""); }
 
 std::string dynamoPodUid() { return envString("POD_UID", ""); }
 
-std::string dynamoPodNamespace() {
-  // Downward-API env takes precedence.
-  if (const char* v = std::getenv("POD_NAMESPACE"); v && *v) {
-    return v;
-  }
-  // Every in-cluster pod mounts its namespace at the ServiceAccount path.
-  std::ifstream f(defaults::DYNAMO_KUBE_NAMESPACE_PATH);
-  if (f) {
-    std::string ns;
-    std::getline(f, ns);
-    while (!ns.empty() &&
-           std::isspace(static_cast<unsigned char>(ns.back()))) {
-      ns.pop_back();
-    }
-    if (!ns.empty()) return ns;
-  }
-  // Fall back to the Dynamo discovery namespace key.
-  return dynamoNamespace();
-}
+std::string dynamoPodNamespace() { return envString("POD_NAMESPACE", ""); }
 
 /**
  * Mooncake KV Migration configuration.

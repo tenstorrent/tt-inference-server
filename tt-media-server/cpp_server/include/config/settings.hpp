@@ -381,8 +381,8 @@ std::string dynamoKubeTokenPath();
  * DYNAMO_KUBE_VALIDATE_CERT. Default: defaults::DYNAMO_KUBE_VALIDATE_CERT. */
 bool dynamoKubeValidateCert();
 
-/** Kubernetes namespace the worker's CR is created in. From POD_NAMESPACE, else
- * the ServiceAccount namespace file, else dynamoNamespace(). */
+/** Kubernetes namespace the worker's CR is created in. From POD_NAMESPACE.
+ * Empty if unset. */
 std::string dynamoPodNamespace();
 
 /** Pod name (downward API), used as the CR name in pod mode and in the CR's
