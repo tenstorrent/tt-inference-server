@@ -800,6 +800,19 @@ std::string dynamoBindHost() {
   return envString("DYNAMO_BIND_HOST", defaults::DYNAMO_BIND_HOST);
 }
 
+uint16_t dynamoBindPort() {
+  const unsigned long port =
+      envUlong("DYNAMO_BIND_PORT", defaults::DYNAMO_BIND_PORT);
+  if (port > 65535) {
+    TT_LOG_WARN(
+        "[Config] DYNAMO_BIND_PORT={} is out of range [0, 65535], using "
+        "default={}",
+        port, defaults::DYNAMO_BIND_PORT);
+    return defaults::DYNAMO_BIND_PORT;
+  }
+  return static_cast<uint16_t>(port);
+}
+
 std::string dynamoEtcdEndpoints() {
   // Prefer DYNAMO_ETCD_ENDPOINTS (cpp_server-specific). Fall back to
   // ETCD_ENDPOINTS — Dynamo's Rust runtime reads the same name, so a single
