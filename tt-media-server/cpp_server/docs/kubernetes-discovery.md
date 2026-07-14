@@ -45,8 +45,6 @@ wiring — add it by hand on the worker pod:
 env:
   - name: DYNAMO_DISCOVERY_BACKEND
     value: "kubernetes"
-  - name: DYN_KUBE_DISCOVERY_MODE      # pod mode
-    value: "pod"
   - name: POD_NAME
     valueFrom: { fieldRef: { fieldPath: metadata.name } }
   - name: POD_UID
@@ -56,7 +54,9 @@ env:
   - name: POD_IP
     valueFrom: { fieldRef: { fieldPath: status.podIP } }
 ```
-Drop `DYNAMO_ETCD_ENDPOINTS`.
+Drop `DYNAMO_ETCD_ENDPOINTS`. The worker only supports **pod mode** (CR name = pod
+name), so `DYN_KUBE_DISCOVERY_MODE` is not read here — it's a frontend/daemon
+setting, and the daemon defaults to pod mode when it's unset.
 
 ### 2. Pod labels (so the frontend's daemon discovers the pod)
 ```yaml
@@ -72,9 +72,14 @@ kind: Role
 rules:
   - apiGroups: ["nvidia.com"]
     resources: ["dynamoworkermetadatas"]
-    verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+    # Least privilege: the worker only writes its own CR.
+    #   create + patch → server-side apply (registerSelf)
+    #   delete         → unregisterSelf on graceful shutdown
+    verbs: ["create", "patch", "delete"]
 ```
 Bind it to the worker's ServiceAccount and set `serviceAccountName` on the pod.
+The read verbs (`get`/`list`/`watch`) are **not** needed here — those belong to
+the frontend's discovery daemon (granted by the operator on the DGD side).
 
 ### 4. Service for readiness
 Create a Service selecting the worker pod(s) by the discovery labels, targeting
@@ -121,8 +126,7 @@ traffic**, pin the port so it can be allow-listed: set `DYNAMO_BIND_PORT=<fixed>
 declare a matching `containerPort`, and add a NetworkPolicy allowing
 frontend→worker on that port. Otherwise the request-plane connect is silently
 dropped while discovery still looks healthy (CR present + pod Ready), and requests
-hang. (Note: `DYNAMO_BIND_PORT` is only wired on the branch where port pinning
-was added; on branches without it the port is always OS-assigned.)
+hang. `DYNAMO_BIND_PORT` defaults to `0` (OS-assigned).
 
 ## TLS / CA validation
 

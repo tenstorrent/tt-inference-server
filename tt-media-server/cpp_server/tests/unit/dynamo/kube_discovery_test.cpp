@@ -41,7 +41,7 @@ Json::Value makeMdcJson() {
   return v;
 }
 
-constexpr const char* kKey = "default/backend/generate/1234abcd";
+constexpr const char* K_KEY = "default/backend/generate/1234abcd";
 
 TEST(KubeDiscovery, CrPathIsNamespacedApiRoute) {
   EXPECT_EQ(KubeClient::crPath("my-ns", "worker-0"),
@@ -52,7 +52,7 @@ TEST(KubeDiscovery, CrPathIsNamespacedApiRoute) {
 TEST(KubeDiscovery, CrEnvelopeShape) {
   const Json::Value cr = buildDynamoWorkerMetadataCr(
       /*crName=*/"worker-0", /*podName=*/"worker-0", /*podUid=*/"uid-123",
-      /*instanceKey=*/kKey, makeInstanceJson(), makeMdcJson());
+      /*instanceKey=*/K_KEY, makeInstanceJson(), makeMdcJson());
 
   EXPECT_EQ(cr["apiVersion"].asString(), "nvidia.com/v1alpha1");
   EXPECT_EQ(cr["kind"].asString(), "DynamoWorkerMetadata");
@@ -61,7 +61,7 @@ TEST(KubeDiscovery, CrEnvelopeShape) {
 
 TEST(KubeDiscovery, OwnerReferencePointsAtPodAndControls) {
   const Json::Value cr =
-      buildDynamoWorkerMetadataCr("worker-0", "worker-0", "uid-123", kKey,
+      buildDynamoWorkerMetadataCr("worker-0", "worker-0", "uid-123", K_KEY,
                                   makeInstanceJson(), makeMdcJson());
 
   const Json::Value& owners = cr["metadata"]["ownerReferences"];
@@ -82,13 +82,13 @@ TEST(KubeDiscovery, NonControllerWhenCrNameDiffersFromPod) {
   // controller (only one owner reference per pod may control).
   const Json::Value cr =
       buildDynamoWorkerMetadataCr("worker-0-engine-1", "worker-0", "uid-123",
-                                  kKey, makeInstanceJson(), makeMdcJson());
+                                  K_KEY, makeInstanceJson(), makeMdcJson());
   EXPECT_FALSE(cr["metadata"]["ownerReferences"][0]["controller"].asBool());
 }
 
 TEST(KubeDiscovery, SpecDataBundlesInstanceAndModelCardUnderKey) {
   const Json::Value cr =
-      buildDynamoWorkerMetadataCr("worker-0", "worker-0", "uid-123", kKey,
+      buildDynamoWorkerMetadataCr("worker-0", "worker-0", "uid-123", K_KEY,
                                   makeInstanceJson(), makeMdcJson());
 
   const Json::Value& data = cr["spec"]["data"];
@@ -101,15 +101,15 @@ TEST(KubeDiscovery, SpecDataBundlesInstanceAndModelCardUnderKey) {
   EXPECT_EQ(data["event_channels"].size(), 0u);
 
   // endpoints/model_cards keyed by "<ns>/<component>/<endpoint>/<id_hex>".
-  ASSERT_TRUE(data["endpoints"].isMember(kKey));
-  ASSERT_TRUE(data["model_cards"].isMember(kKey));
+  ASSERT_TRUE(data["endpoints"].isMember(K_KEY));
+  ASSERT_TRUE(data["model_cards"].isMember(K_KEY));
 
   // Values are the per-instance JSON verbatim.
-  EXPECT_EQ(data["endpoints"][kKey]["type"].asString(), "Endpoint");
-  EXPECT_EQ(data["endpoints"][kKey]["transport"]["tcp"].asString(),
+  EXPECT_EQ(data["endpoints"][K_KEY]["type"].asString(), "Endpoint");
+  EXPECT_EQ(data["endpoints"][K_KEY]["transport"]["tcp"].asString(),
             "10.0.0.5:9345/generate");
-  EXPECT_EQ(data["model_cards"][kKey]["type"].asString(), "Model");
-  EXPECT_EQ(data["model_cards"][kKey]["card_json"]["display_name"].asString(),
+  EXPECT_EQ(data["model_cards"][K_KEY]["type"].asString(), "Model");
+  EXPECT_EQ(data["model_cards"][K_KEY]["card_json"]["display_name"].asString(),
             "deepseek-ai/DeepSeek-R1");
 }
 
