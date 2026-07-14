@@ -13,7 +13,7 @@ namespace tt::transport {
 namespace {
 
 // Arms the transport's wall-clock IO budget for one send/recv burst so a
-// mid-payload stall cannot pin the socket mutex past receive_timeout_.
+// mid-payload stall cannot pin the socket mutex past the call's timeout.
 struct IoBudgetGuard {
   sockets::ISocketTransport* transport = nullptr;
   explicit IoBudgetGuard(sockets::ISocketTransport* t,
@@ -54,6 +54,11 @@ bool KvControlChannel::isConnected() const {
 }
 
 bool KvControlChannel::send(const KvControlMessage& message) {
+  return send(message, receive_timeout_);
+}
+
+bool KvControlChannel::send(const KvControlMessage& message,
+                            std::chrono::milliseconds ioTimeout) {
   if (!transport_) {
     TT_LOG_ERROR("[KvControlChannel] send with no transport");
     return false;
@@ -65,25 +70,35 @@ bool KvControlChannel::send(const KvControlMessage& message) {
     return false;
   }
   std::lock_guard<std::recursive_mutex> lock(txnMutex_);
-  // Same wall-clock budget as receive: TABLE_EXCHANGE send can block on the
-  // decode accept backlog; without a deadline that pins socketMutex forever.
-  IoBudgetGuard budget(transport_.get(), receive_timeout_);
+  // TABLE_EXCHANGE send can block on the decode accept backlog; migrate Begin
+  // stays on the short channel default. Without a deadline that pins
+  // socketMutex forever.
+  IoBudgetGuard budget(transport_.get(), ioTimeout);
   return transport_->sendRawData(bytes);
 }
 
 KvControlChannel::ReceiveOutcome KvControlChannel::receiveMessage(
     KvControlMessage& out) {
+  return receiveMessage(out, receive_timeout_);
+}
+
+KvControlChannel::ReceiveOutcome KvControlChannel::receiveMessage(
+    KvControlMessage& out, std::chrono::milliseconds ioTimeout) {
   if (!transport_) {
     TT_LOG_ERROR("[KvControlChannel] receive with no transport");
     return ReceiveOutcome::Closed;
   }
-
   std::lock_guard<std::recursive_mutex> lock(txnMutex_);
+  return receiveMessageLocked(out, ioTimeout);
+}
+
+KvControlChannel::ReceiveOutcome KvControlChannel::receiveMessageLocked(
+    KvControlMessage& out, std::chrono::milliseconds ioTimeout) {
   // One budget for the whole wait (idle NO_DATA polls + in-flight payload).
   // TcpSocketTransport enforces it inside tryReceiveMessage so mid-payload
   // stalls cannot make the deadline check below unreachable.
-  IoBudgetGuard budget(transport_.get(), receive_timeout_);
-  const auto deadline = std::chrono::steady_clock::now() + receive_timeout_;
+  IoBudgetGuard budget(transport_.get(), ioTimeout);
+  const auto deadline = std::chrono::steady_clock::now() + ioTimeout;
   for (;;) {
     sockets::ReceiveResult result = transport_->tryReceiveMessage();
     switch (result.status) {
@@ -117,15 +132,20 @@ KvControlChannel::ReceiveOutcome KvControlChannel::receiveMessage(
 }
 
 std::optional<KvControlMessage> KvControlChannel::receive() {
+  return receive(receive_timeout_);
+}
+
+std::optional<KvControlMessage> KvControlChannel::receive(
+    std::chrono::milliseconds ioTimeout) {
   KvControlMessage msg;
-  switch (receiveMessage(msg)) {
+  switch (receiveMessage(msg, ioTimeout)) {
     case ReceiveOutcome::Message:
       return msg;
     case ReceiveOutcome::TimedOut:
       // A bounded wait (the sender awaiting MirrorReady/Ack) that expires is an
       // error for that caller; log it here, where the timeout is unexpected.
       TT_LOG_ERROR("[KvControlChannel] receive timed out after {} ms",
-                   receive_timeout_.count());
+                   ioTimeout.count());
       return std::nullopt;
     case ReceiveOutcome::Closed:
       return std::nullopt;

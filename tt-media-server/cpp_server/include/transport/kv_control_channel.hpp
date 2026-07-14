@@ -73,7 +73,11 @@ class KvControlChannel {
   bool isConnected() const;
 
   /// Serialize and send a message. @return false if the transport rejects it.
+  /// @p ioTimeout overrides the channel default for this send's wall-clock
+  /// IoBudget (TABLE_EXCHANGE needs minutes; migrate Begin/Done stays short).
   bool send(const KvControlMessage& message);
+  bool send(const KvControlMessage& message,
+            std::chrono::milliseconds ioTimeout);
 
   /**
    * @brief Wait for the next message.
@@ -84,6 +88,7 @@ class KvControlChannel {
    * when the caller must distinguish an idle timeout from a real close.
    */
   std::optional<KvControlMessage> receive();
+  std::optional<KvControlMessage> receive(std::chrono::milliseconds ioTimeout);
 
   /**
    * @brief Tri-state receive: fills `out` and returns Message, or reports
@@ -92,9 +97,17 @@ class KvControlChannel {
    *        error here — it is normal for a server idling between requests.
    */
   ReceiveOutcome receiveMessage(KvControlMessage& out);
+  ReceiveOutcome receiveMessage(KvControlMessage& out,
+                                std::chrono::milliseconds ioTimeout);
+
+  /// Channel-default IO / receive budget (migrate MirrorReady/Ack on prefill).
+  std::chrono::milliseconds receiveTimeout() const { return receive_timeout_; }
 
  private:
   friend class Transaction;
+
+  ReceiveOutcome receiveMessageLocked(KvControlMessage& out,
+                                      std::chrono::milliseconds ioTimeout);
 
   std::shared_ptr<sockets::ISocketTransport> transport_;
   std::chrono::milliseconds receive_timeout_;

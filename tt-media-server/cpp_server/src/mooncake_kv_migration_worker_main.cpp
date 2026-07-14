@@ -74,9 +74,10 @@ using namespace tt::transport;
 
 constexpr int K_IDLE_POLL_MS = 100;
 
-// Control-channel receive budget must cover one TABLE_EXCHANGE of a large
-// decode .pb (100–350+ MiB) at bring-up, not only tiny migrate messages.
-constexpr int K_CONTROL_RECEIVE_TIMEOUT_MS = 300000;
+// TABLE_EXCHANGE moves large .pb blobs (~80–350+ MiB); migrate MirrorReady/Ack
+// are tiny and must fail fast (not wait out the exchange budget).
+constexpr int K_TABLE_EXCHANGE_TIMEOUT_MS = 300000;
+constexpr int K_MIGRATE_CONTROL_TIMEOUT_MS = 30000;
 
 // Default KV migration control port a decode binds when --control-port is
 // omitted. The endpoint is published to the metadata service (see
@@ -590,7 +591,8 @@ std::shared_ptr<const IKvTable> awaitDecodeTableFromControl(
         break;
       }
       auto table =
-          provisionPeerTable(*channel, TableExchangeRole::Sender, prefillBlob);
+          provisionPeerTable(*channel, TableExchangeRole::Sender, prefillBlob,
+                             std::chrono::milliseconds(K_TABLE_EXCHANGE_TIMEOUT_MS));
       if (!table) {
         TT_LOG_WARN(
             "[worker] TABLE_EXCHANGE with '{}' failed; retrying all peers",
@@ -664,7 +666,7 @@ int runPrefill(const WorkerConfig& cfg) {
 
   KvControlChannelConnector connector(
       peers, makeClientTransport,
-      std::chrono::milliseconds(K_CONTROL_RECEIVE_TIMEOUT_MS));
+      std::chrono::milliseconds(K_MIGRATE_CONTROL_TIMEOUT_MS));
   if (!connector.openChannels() ||
       (configuredPeers > 0 && connector.channelCount() < configuredPeers)) {
     TT_LOG_ERROR(
@@ -826,8 +828,9 @@ int runPrefill(const WorkerConfig& cfg) {
         // try_lock: if migrate() holds the channel transaction, skip and retry
         // next poll — never interleave TABLE_EXCHANGE with
         // Begin/Ready/Done/Ack.
-        if (!tryProvisionPeerTable(*channel, TableExchangeRole::Sender,
-                                   prefill->blob)) {
+        if (!tryProvisionPeerTable(
+                *channel, TableExchangeRole::Sender, prefill->blob,
+                std::chrono::milliseconds(K_TABLE_EXCHANGE_TIMEOUT_MS))) {
           TT_LOG_WARN(
               "[worker] TABLE_EXCHANGE with peer '{}' deferred or failed; "
               "will retry",
@@ -905,7 +908,7 @@ int runDecode(const WorkerConfig& cfg) {
   // covers large table provisioning.
   KvMigrationReceiverServer server(
       cfg.control_port, makeServerTransport, receiver, decode->blob,
-      std::chrono::milliseconds(K_CONTROL_RECEIVE_TIMEOUT_MS));
+      std::chrono::milliseconds(K_TABLE_EXCHANGE_TIMEOUT_MS));
   if (!server.start()) {
     TT_LOG_ERROR("[worker] decode '{}' failed to start control server on :{}",
                  cfg.name, cfg.control_port);

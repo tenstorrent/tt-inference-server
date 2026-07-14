@@ -62,24 +62,39 @@ bool KvMigrationSender::migrate(uint64_t uuid,
     return false;
   }
 
-  const auto ready = channel_.receive();
-  if (!ready || ready->type != KvControlType::MIRROR_READY ||
-      ready->uuid != uuid) {
+  KvControlMessage ready;
+  switch (channel_.receiveMessage(ready)) {
+    case KvControlChannel::ReceiveOutcome::TimedOut:
+      TT_LOG_ERROR(
+          "[KvMigrationSender] migrate(uuid={}): timed out waiting for "
+          "MirrorReady ({} ms)",
+          uuid, channel_.receiveTimeout().count());
+      return false;
+    case KvControlChannel::ReceiveOutcome::Closed:
+      TT_LOG_ERROR(
+          "[KvMigrationSender] migrate(uuid={}): control channel closed while "
+          "waiting for MirrorReady",
+          uuid);
+      return false;
+    case KvControlChannel::ReceiveOutcome::Message:
+      break;
+  }
+  if (ready.type != KvControlType::MIRROR_READY || ready.uuid != uuid) {
     TT_LOG_ERROR(
         "[KvMigrationSender] migrate(uuid={}): expected MirrorReady, got "
-        "something else",
-        uuid);
+        "type={} uuid={}",
+        uuid, static_cast<int>(ready.type), ready.uuid);
     return false;
   }
-  if (!ready->ok || ready->segment_name.empty()) {
+  if (!ready.ok || ready.segment_name.empty()) {
     TT_LOG_ERROR(
         "[KvMigrationSender] migrate(uuid={}): receiver failed to prepare "
         "mirror (ok={}, segment empty={})",
-        uuid, ready->ok, ready->segment_name.empty());
+        uuid, ready.ok, ready.segment_name.empty());
     return false;
   }
 
-  if (!sender_.transferSlot(request, ready->segment_name)) {
+  if (!sender_.transferSlot(request, ready.segment_name)) {
     TT_LOG_ERROR("[KvMigrationSender] migrate(uuid={}): transferSlot failed",
                  uuid);
     return false;
@@ -94,12 +109,31 @@ bool KvMigrationSender::migrate(uint64_t uuid,
     return false;
   }
 
-  const auto ack = channel_.receive();
-  if (!ack || ack->type != KvControlType::ACK || ack->uuid != uuid) {
-    TT_LOG_ERROR("[KvMigrationSender] migrate(uuid={}): expected Ack", uuid);
+  KvControlMessage ack;
+  switch (channel_.receiveMessage(ack)) {
+    case KvControlChannel::ReceiveOutcome::TimedOut:
+      TT_LOG_ERROR(
+          "[KvMigrationSender] migrate(uuid={}): timed out waiting for Ack "
+          "({} ms)",
+          uuid, channel_.receiveTimeout().count());
+      return false;
+    case KvControlChannel::ReceiveOutcome::Closed:
+      TT_LOG_ERROR(
+          "[KvMigrationSender] migrate(uuid={}): control channel closed while "
+          "waiting for Ack",
+          uuid);
+      return false;
+    case KvControlChannel::ReceiveOutcome::Message:
+      break;
+  }
+  if (ack.type != KvControlType::ACK || ack.uuid != uuid) {
+    TT_LOG_ERROR(
+        "[KvMigrationSender] migrate(uuid={}): expected Ack, got type={} "
+        "uuid={}",
+        uuid, static_cast<int>(ack.type), ack.uuid);
     return false;
   }
-  if (!ack->ok) {
+  if (!ack.ok) {
     TT_LOG_ERROR(
         "[KvMigrationSender] migrate(uuid={}): receiver reported drain failure",
         uuid);
@@ -148,7 +182,9 @@ bool KvMigrationReceiver::handleTableExchange(const KvControlMessage& msg) {
   out.type = KvControlType::TABLE_EXCHANGE;
   out.role = static_cast<uint8_t>(TableExchangeRole::Receiver);
   out.table_blob = local_table_blob_;
-  if (!channel_.send(out)) {
+  // Large decode .pb reply — use the exchange budget, not a short migrate
+  // default if the channel was constructed that way.
+  if (!channel_.send(out, kDefaultTableExchangeTimeout)) {
     TT_LOG_ERROR("[KvMigrationReceiver] TABLE_EXCHANGE reply failed");
     return false;
   }
