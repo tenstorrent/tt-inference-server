@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   cleanup:
@@ -32,6 +33,8 @@ jobs:
         run: |
           set -euo pipefail
 
+          STALE_COMMENT_MARKER='<!-- stale-branch-reminder -->'
+
           is_protected() {
             case "$1" in
               main|master|develop) return 0 ;;
@@ -44,25 +47,71 @@ jobs:
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
 
           # Open PRs include drafts in GitHub (state=open, draft=true).
+          # Map head branch -> space-separated open PR numbers.
           declare -A ACTIVE_PR_BRANCHES=()
-          while IFS= read -r head_branch; do
-            [[ -z "${head_branch}" ]] && continue
-            ACTIVE_PR_BRANCHES["${head_branch}"]=1
+          while IFS=$'\t' read -r head_branch pr_number; do
+            [[ -z "${head_branch}" || -z "${pr_number}" ]] && continue
+            if [[ -n "${ACTIVE_PR_BRANCHES[${head_branch}]+x}" ]]; then
+              ACTIVE_PR_BRANCHES["${head_branch}"]+=" ${pr_number}"
+            else
+              ACTIVE_PR_BRANCHES["${head_branch}"]="${pr_number}"
+            fi
           done < <(
             gh pr list -R "${GITHUB_REPOSITORY}" --state open --limit 1000 \
-              --json headRefName --jq '.[].headRefName'
+              --json headRefName,number \
+              --jq '.[] | [.headRefName, (.number|tostring)] | @tsv'
           )
 
           has_open_or_draft_pr() {
             [[ -n "${ACTIVE_PR_BRANCHES[$1]+x}" ]]
           }
 
+          pr_already_has_stale_reminder() {
+            local pr_number="$1"
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${pr_number}/comments" --paginate \
+              --jq '.[].body' \
+              | grep -Fq "${STALE_COMMENT_MARKER}"
+          }
+
+          remind_stale_pr() {
+            local branch="$1"
+            local commit_date="$2"
+            local pr_number
+            for pr_number in ${ACTIVE_PR_BRANCHES["${branch}"]}; do
+              if pr_already_has_stale_reminder "${pr_number}"; then
+                echo "PR #${pr_number} already has a stale-branch reminder; skipping comment"
+                skipped_existing_comment=$((skipped_existing_comment + 1))
+                continue
+              fi
+
+              local body
+              body="$(cat <<EOF
+${STALE_COMMENT_MARKER}
+This PR's branch (\`${branch}\`) has had no new commits since **${commit_date}** (more than **${STALE_DAYS}** days) and would be eligible for automatic stale-branch cleanup.
+
+It was kept only because this PR is still open (including draft). Please merge, close, or push an update if you still need it.
+EOF
+)"
+
+              if [[ "${DRY_RUN}" == "true" ]]; then
+                echo "Would comment on PR #${pr_number} (stale branch ${branch} since ${commit_date})"
+                reminded=$((reminded + 1))
+              else
+                echo "Commenting on PR #${pr_number} (stale branch ${branch} since ${commit_date})"
+                gh pr comment "${pr_number}" -R "${GITHUB_REPOSITORY}" --body "${body}"
+                reminded=$((reminded + 1))
+              fi
+            done
+          }
+
           stale_candidates=0
           deleted=0
+          reminded=0
           skipped_protected=0
           skipped_active_pr=0
           skipped_recent=0
           skipped_missing_date=0
+          skipped_existing_comment=0
 
           cutoff_epoch="$(date -u -d "${STALE_DAYS} days ago" +%s)"
 
@@ -141,6 +190,7 @@ jobs:
             if has_open_or_draft_pr "${branch}"; then
               echo "Skipping branch with open or draft PR: ${branch}"
               skipped_active_pr=$((skipped_active_pr + 1))
+              remind_stale_pr "${branch}" "${commit_date}"
               continue
             fi
 
@@ -161,7 +211,9 @@ jobs:
           echo "Stale threshold (days): ${STALE_DAYS}"
           echo "Stale candidates: ${stale_candidates}"
           echo "Deleted: ${deleted}"
+          echo "Reminded (open/draft PR comment): ${reminded}"
           echo "Skipped (protected): ${skipped_protected}"
           echo "Skipped (open/draft PR): ${skipped_active_pr}"
           echo "Skipped (recent): ${skipped_recent}"
           echo "Skipped (missing date): ${skipped_missing_date}"
+          echo "Skipped (existing reminder comment): ${skipped_existing_comment}"
