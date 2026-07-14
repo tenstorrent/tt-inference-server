@@ -64,6 +64,27 @@ std::string resolveBlazeSocketDescriptorPrefix() {
   }
 }
 
+uint32_t resolveBlazeNumberOfPipelineStages() {
+  switch (modelType()) {
+    case ModelType::DEEPSEEK_R1_0528:
+      return 64;
+    case ModelType::LLAMA_3_1_8B_INSTRUCT:
+      return 40;
+    case ModelType::KIMI_K2_6:
+    case ModelType::KIMI_K2_7_CODE:
+      return 64;
+    case ModelType::GPT_OSS_120B:
+      return 64;
+    case ModelType::MINIMAX_M2_7:
+      return 64;
+    case ModelType::GLM_5_1:
+    case ModelType::GLM_5_2:
+      return 80;
+    default:
+      return defaults::BLAZE_NUMBER_OF_PIPELINE_STAGES;
+  }
+}
+
 /** Read env string and convert to lowercase for case-insensitive parsing. */
 std::string envStringLower(const char* name, const std::string& defaultValue) {
   return toLower(envString(name, defaultValue));
@@ -374,6 +395,7 @@ BlazeConfig blazeConfig() {
     cfg.migrationDecodeEndpointId = migrationDecodeEndpointId();
     cfg.specDecodeMode = specDecodeMode();
     cfg.mtpLevel = mtpLevel();
+    cfg.blazeNumberOfPipelineStages = blazeNumberOfPipelineStages();
 
     // Pipeline / channel config
     cfg.blazeSocketDescriptorPrefix = blazeSocketDescriptorPrefix();
@@ -794,6 +816,11 @@ std::string dynamoEtcdEndpoints() {
 
 std::string specDecodeMode() {
   return envString("SPEC_DECODE_MODE", defaults::SPEC_DECODE_MODE);
+}
+
+uint32_t blazeNumberOfPipelineStages() {
+  return static_cast<uint32_t>(envUlong("BLAZE_NUMBER_OF_PIPELINE_STAGES",
+                                        resolveBlazeNumberOfPipelineStages()));
 }
 
 size_t mtpLevel() {
