@@ -263,18 +263,18 @@ class MultiAcceptListenFake : public sockets::ISocketTransport {
   void setConnectionLostCallback(std::function<void()>) override {}
   void setConnectionEstablishedCallback(std::function<void()>) override {}
 
-  bool enableMultiAccept(AcceptHandler handler) override {
-    handler_ = std::move(handler);
+  bool enableMultiAccept(AcceptHandler acceptHandler) override {
+    handler = std::move(acceptHandler);
     return true;
   }
 
   void fireAccept(std::shared_ptr<sockets::ISocketTransport> peer) {
-    ASSERT_TRUE(handler_);
-    handler_(std::move(peer));
+    ASSERT_TRUE(handler);
+    handler(std::move(peer));
   }
 
  private:
-  AcceptHandler handler_;
+  AcceptHandler handler;
 };
 
 // Peer that reports CLOSED immediately so KvMigrationReceiver::run() exits.
