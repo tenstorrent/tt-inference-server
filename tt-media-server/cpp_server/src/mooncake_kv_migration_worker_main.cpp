@@ -590,9 +590,9 @@ std::shared_ptr<const IKvTable> awaitDecodeTableFromControl(
         allOk = false;
         break;
       }
-      auto table =
-          provisionPeerTable(*channel, TableExchangeRole::Sender, prefillBlob,
-                             std::chrono::milliseconds(K_TABLE_EXCHANGE_TIMEOUT_MS));
+      auto table = provisionPeerTable(
+          *channel, TableExchangeRole::Sender, prefillBlob,
+          std::chrono::milliseconds(K_TABLE_EXCHANGE_TIMEOUT_MS));
       if (!table) {
         TT_LOG_WARN(
             "[worker] TABLE_EXCHANGE with '{}' failed; retrying all peers",
