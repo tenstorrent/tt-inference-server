@@ -504,6 +504,7 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="MiniMaxAI/MiniMax-M3",
         tasks=[
+            # TODO: we had issues with outputs parsing on GPU with M3!!
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
@@ -533,7 +534,8 @@ _eval_config_list = [
                 },
                 gen_kwargs={
                     "max_gen_toks": 200 * 1024,
-                    "until": [],
+                    # https://huggingface.co/MiniMaxAI/MiniMax-M3/blob/main/special_tokens_map.json
+                    "until": "[e~[",
                     "do_sample": "true",
                     "temperature": 1.0,
                     "top_p": 0.95,
