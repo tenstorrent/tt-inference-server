@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -196,16 +197,23 @@ class KvMigrationReceiverServer {
 
   bool running() const { return running_; }
 
+  /// Live (not yet finished) multi-accept sessions. Test/observability aid.
+  std::size_t activeSessionCount() const;
+
  private:
   struct Session {
     std::shared_ptr<sockets::ISocketTransport> transport;
     std::unique_ptr<KvControlChannel> channel;
     std::unique_ptr<KvMigrationReceiver> orchestrator;
     std::thread thread;
+    std::atomic<bool> finished{false};
   };
 
   void startSingleSession(std::shared_ptr<sockets::ISocketTransport> transport);
   void onAccept(std::shared_ptr<sockets::ISocketTransport> peer);
+  /// Join + erase sessions whose run() has returned. Caller holds
+  /// sessionsMutex_.
+  void reapFinishedSessionsLocked();
 
   uint16_t port_;
   ServerTransportFactory factory_;
@@ -220,7 +228,7 @@ class KvMigrationReceiverServer {
   std::unique_ptr<KvMigrationReceiver> orchestrator_;
   std::thread thread_;
 
-  std::mutex sessionsMutex_;
+  mutable std::mutex sessionsMutex_;
   std::vector<std::unique_ptr<Session>> sessions_;
   bool running_ = false;
 };

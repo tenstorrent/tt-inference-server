@@ -31,7 +31,12 @@ namespace tt::transport {
  * remote address; the sender owns all addressing.
  *
  * One MooncakeKvReceiver serves one decode host and is shared across every
- * prefill control session on that host — prepareMirror/drain are mutex-guarded.
+ * prefill control session on that host — prepareMirror/drain are mutex-guarded
+ * for the pending-uuid map. Concurrent RDMA WRITEs into the shared mirror_ are
+ * safe only when migrations touch disjoint address ranges (table-driven slot /
+ * layer routing must not overlap). Overlapping concurrent migrations are an
+ * unstated invariant violation — do not rely on pendingMutex_ to serialize
+ * mirror bytes.
  */
 class MooncakeKvReceiver {
  public:
