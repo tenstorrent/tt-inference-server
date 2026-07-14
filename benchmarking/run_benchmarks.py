@@ -24,6 +24,7 @@ if project_root not in sys.path:
 
 from benchmarking.benchmark_config import (
     BenchmarkConfig,
+    SUPER_CLUSTER_MIN_NUM_PROMPTS,
     expand_concurrency_sweep_params,
     get_benchmark_config,
     powers_of_two_up_to,
@@ -174,6 +175,11 @@ def main():
         max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
         model_max_concurrency = model_spec.device_model_spec.max_concurrency
         candidate_concurrencies = powers_of_two_up_to(model_max_concurrency)
+        sweep_min_num_prompts = (
+            SUPER_CLUSTER_MIN_NUM_PROMPTS
+            if device == DeviceTypes.SUPER_CLUSTER
+            else 0
+        )
         # TODO: get the number of perf targets from the model config instead of 1
         for task in benchmark_config.tasks[1:]:
             if device not in task.param_map:
@@ -185,6 +191,7 @@ def main():
                 model_max_concurrency=model_max_concurrency,
                 model_name=model_spec.model_name,
                 candidate_concurrencies=candidate_concurrencies,
+                min_num_prompts=sweep_min_num_prompts,
             )
 
     # check for any benchmarks to run for model on given device
