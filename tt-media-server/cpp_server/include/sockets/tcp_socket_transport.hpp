@@ -36,7 +36,8 @@ namespace tt::sockets {
  *   - multi-accept: when enableMultiAccept() is set after initializeAsServer()
  *     and before start(), every accepted FD becomes a peer transport handed to
  *     the handler and the loop keeps accepting — required so multiple prefills
- *     can TCP to one decode port (Kafka ownership may still require exclusivity).
+ *     can TCP to one decode port (Kafka ownership may still require
+ * exclusivity).
  */
 class TcpSocketTransport : public ISocketTransport,
                            protected SocketTransportState {

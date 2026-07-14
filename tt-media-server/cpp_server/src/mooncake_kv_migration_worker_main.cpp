@@ -589,9 +589,9 @@ std::shared_ptr<const IKvTable> awaitDecodeTableFromControl(
         allOk = false;
         break;
       }
-      auto table = provisionPeerTable(
-          *channel, TableExchangeRole::Sender, prefillBlob,
-          kDefaultTableExchangeTimeout);
+      auto table =
+          provisionPeerTable(*channel, TableExchangeRole::Sender, prefillBlob,
+                             kDefaultTableExchangeTimeout);
       if (!table) {
         TT_LOG_WARN(
             "[worker] TABLE_EXCHANGE with '{}' failed; retrying all peers",
@@ -827,9 +827,9 @@ int runPrefill(const WorkerConfig& cfg) {
         // try_lock: if migrate() holds the channel transaction, skip and retry
         // next poll — never interleave TABLE_EXCHANGE with
         // Begin/Ready/Done/Ack.
-        if (!tryProvisionPeerTable(
-                *channel, TableExchangeRole::Sender, prefill->blob,
-                kDefaultTableExchangeTimeout)) {
+        if (!tryProvisionPeerTable(*channel, TableExchangeRole::Sender,
+                                   prefill->blob,
+                                   kDefaultTableExchangeTimeout)) {
           TT_LOG_WARN(
               "[worker] TABLE_EXCHANGE with peer '{}' deferred or failed; "
               "will retry",
@@ -905,9 +905,9 @@ int runDecode(const WorkerConfig& cfg) {
   // Control server stores peer prefill .pb on TABLE_EXCHANGE, replies with
   // this decode .pb, then serves migrate Begin/Done. Long receive timeout
   // covers large table provisioning.
-  KvMigrationReceiverServer server(
-      cfg.control_port, makeServerTransport, receiver, decode->blob,
-      kDefaultTableExchangeTimeout);
+  KvMigrationReceiverServer server(cfg.control_port, makeServerTransport,
+                                   receiver, decode->blob,
+                                   kDefaultTableExchangeTimeout);
   if (!server.start()) {
     TT_LOG_ERROR("[worker] decode '{}' failed to start control server on :{}",
                  cfg.name, cfg.control_port);
