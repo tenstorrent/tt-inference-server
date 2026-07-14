@@ -376,11 +376,13 @@ clearRpcMeta() {
 # nothing (pure receiver). Prefill reads a complete DECODE_TAG_LIST because
 # initWorkerSlots builds it before adding any prefill slot.
 #
-# IMPORTANT: TcpSocketTransport::serverLoop accepts ONE client and holds it for
-# the worker lifetime, and each prefill uses a distinct Kafka group (broadcast).
-# Default all-to-all is therefore only safe with NUM_PREFILL=1. With multiple
-# prefills, set WORKER_PEERS so each decode appears in at most one prefill's
-# peer list (assertExclusiveDecodePeers enforces this), or keep a single prefill.
+# IMPORTANT: decode control now multi-accepts (N prefills can TCP to one decode),
+# but each prefill still uses a distinct Kafka group (broadcast). Every prefill
+# would then attempt the same migration UUID against a shared decode — unsafe
+# until Kafka ownership is exclusive. Default all-to-all is therefore only safe
+# with NUM_PREFILL=1. With multiple prefills, set WORKER_PEERS so each decode
+# appears in at most one prefill's peer list (assertExclusiveDecodePeers), or
+# keep a single prefill.
 peersForWorker() {
   local role="$1" tag="$2"
   if [[ -n "${WORKER_PEERS[$tag]:-}" ]]; then
@@ -390,11 +392,11 @@ peersForWorker() {
   fi
 }
 
-# Fail fast when two prefills would open a long-lived control client to the same
-# decode. Decode accepts one peer socket; Kafka broadcast means every prefill
-# also tries the same migration UUID. Shared decode peers are therefore unsafe
-# until the control plane supports multi-client fan-in (or an explicit single
-# Kafka owner). See migration_worker_rank_launch.sh for a round-robin pattern.
+# Fail fast when two prefills would share the same decode peer. Control TCP
+# multi-accept allows N sessions, but Kafka broadcast means every prefill
+# consumes/acks the same migration UUID — shared decode peers stay unsafe until
+# there is an explicit single Kafka owner. See migration_worker_rank_launch.sh
+# for a round-robin WORKER_PEERS pattern.
 assertExclusiveDecodePeers() {
   declare -A decodeOwner=()
   local s peers peer
@@ -405,9 +407,9 @@ assertExclusiveDecodePeers() {
       [[ -n "${peer}" ]] || continue
       if [[ -n "${decodeOwner[$peer]:-}" ]]; then
         die "decode peer '${peer}' assigned to both '${decodeOwner[$peer]}' and '${WK_TAG[$s]}'. \
-TcpSocketTransport accepts one client for the worker lifetime, and each prefill \
-has its own Kafka group (broadcast), so two prefills cannot safely share a decode. \
-Use one prefill, or set WORKER_PEERS so each decode has a single prefill owner \
+Each prefill has its own Kafka group (broadcast), so two prefills cannot safely \
+share a decode even though control TCP multi-accepts. Use one prefill, or set \
+WORKER_PEERS so each decode has a single prefill owner \
 (see migration_worker_rank_launch.sh round-robin)."
       fi
       decodeOwner[$peer]="${WK_TAG[$s]}"

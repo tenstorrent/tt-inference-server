@@ -74,9 +74,8 @@ using namespace tt::transport;
 
 constexpr int K_IDLE_POLL_MS = 100;
 
-// TABLE_EXCHANGE moves large .pb blobs (~80–350+ MiB); migrate MirrorReady/Ack
-// are tiny and must fail fast (not wait out the exchange budget).
-constexpr int K_TABLE_EXCHANGE_TIMEOUT_MS = 300000;
+// TABLE_EXCHANGE uses kDefaultTableExchangeTimeout (large .pb blobs). Migrate
+// MirrorReady/Ack stay on the shorter channel receiveTimeout below.
 constexpr int K_MIGRATE_CONTROL_TIMEOUT_MS = 30000;
 
 // Default KV migration control port a decode binds when --control-port is
@@ -592,7 +591,7 @@ std::shared_ptr<const IKvTable> awaitDecodeTableFromControl(
       }
       auto table = provisionPeerTable(
           *channel, TableExchangeRole::Sender, prefillBlob,
-          std::chrono::milliseconds(K_TABLE_EXCHANGE_TIMEOUT_MS));
+          kDefaultTableExchangeTimeout);
       if (!table) {
         TT_LOG_WARN(
             "[worker] TABLE_EXCHANGE with '{}' failed; retrying all peers",
@@ -830,7 +829,7 @@ int runPrefill(const WorkerConfig& cfg) {
         // Begin/Ready/Done/Ack.
         if (!tryProvisionPeerTable(
                 *channel, TableExchangeRole::Sender, prefill->blob,
-                std::chrono::milliseconds(K_TABLE_EXCHANGE_TIMEOUT_MS))) {
+                kDefaultTableExchangeTimeout)) {
           TT_LOG_WARN(
               "[worker] TABLE_EXCHANGE with peer '{}' deferred or failed; "
               "will retry",
@@ -908,7 +907,7 @@ int runDecode(const WorkerConfig& cfg) {
   // covers large table provisioning.
   KvMigrationReceiverServer server(
       cfg.control_port, makeServerTransport, receiver, decode->blob,
-      std::chrono::milliseconds(K_TABLE_EXCHANGE_TIMEOUT_MS));
+      kDefaultTableExchangeTimeout);
   if (!server.start()) {
     TT_LOG_ERROR("[worker] decode '{}' failed to start control server on :{}",
                  cfg.name, cfg.control_port);

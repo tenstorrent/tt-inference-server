@@ -33,9 +33,10 @@ namespace tt::sockets {
  * Length-prefixed framing with keepalive. Client mode auto-reconnects.
  * Server mode either:
  *   - legacy single-peer (default): accept one client, hold until disconnect;
- *   - multi-accept: when enableMultiAccept() is set before start(), every
- *     accepted FD becomes a peer transport handed to the handler and the loop
- *     keeps accepting — required so multiple prefills share one decode port.
+ *   - multi-accept: when enableMultiAccept() is set after initializeAsServer()
+ *     and before start(), every accepted FD becomes a peer transport handed to
+ *     the handler and the loop keeps accepting — required so multiple prefills
+ *     can TCP to one decode port (Kafka ownership may still require exclusivity).
  */
 class TcpSocketTransport : public ISocketTransport,
                            protected SocketTransportState {
@@ -57,8 +58,10 @@ class TcpSocketTransport : public ISocketTransport,
   bool initializeAsServer(uint16_t port) override;
   bool initializeAsClient(const std::string& host, uint16_t port) override;
 
-  /// Multi-accept mode: must be set BEFORE start(). Each accept builds a
-  /// fromConnectedFd peer and invokes the handler; the listen loop continues.
+  /// Multi-accept mode: must be set AFTER initializeAsServer() and BEFORE
+  /// start(). Returns false unless mode is SERVER with a live listen FD.
+  /// Each accept builds a fromConnectedFd peer and invokes the handler; the
+  /// listen loop continues.
   bool enableMultiAccept(AcceptHandler handler) override;
 
   void start() override;

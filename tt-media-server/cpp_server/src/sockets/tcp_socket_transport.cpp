@@ -179,6 +179,9 @@ std::shared_ptr<TcpSocketTransport> TcpSocketTransport::fromConnectedFd(
 }
 
 bool TcpSocketTransport::enableMultiAccept(AcceptHandler handler) {
+  if (mode != Mode::SERVER || !serverSocket) {
+    return false;
+  }
   acceptHandler_ = std::move(handler);
   return true;
 }

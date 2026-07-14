@@ -105,8 +105,8 @@ class ISocketTransport {
 
   /// Optional multi-accept for listen sockets. Handler receives a connected
   /// peer transport (ownership shared). Default returns false (single-peer /
-  /// fake transports). TcpSocketTransport returns true after arming the
-  /// accept loop — caller must start() afterward.
+  /// fake transports). TcpSocketTransport returns true only when already
+  /// initialized as SERVER with a live listen FD — caller must start() after.
   using AcceptHandler =
       std::function<void(std::shared_ptr<ISocketTransport> peer)>;
   virtual bool enableMultiAccept(AcceptHandler /*handler*/) { return false; }
