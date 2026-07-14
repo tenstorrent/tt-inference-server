@@ -3,10 +3,12 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
+import json
 import math
 from collections import Counter
 
 import pytest
+import requests
 
 
 # --- Helper Functions ---
@@ -57,6 +59,38 @@ PENALTY_PROMPTS = {
         }
     ],
 }
+
+# --- Tool-calling + reasoning repro (issue: Qwen3-32B streaming) ---
+# Weather tool matching the issue repro; a thinking-enabled prompt that should
+# reliably trigger a single tool call.
+WEATHER_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_current_weather",
+        "description": "Get the current weather in a given location",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string"},
+                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
+            },
+            "required": ["location", "unit"],
+        },
+    },
+}
+THINKING_TOOL_MESSAGES = [
+    {
+        "role": "system",
+        "content": (
+            "You must think before every response. First write at least one "
+            "sentence of reasoning, then give a concise final answer in plain text."
+        ),
+    },
+    {
+        "role": "user",
+        "content": "What is the weather like in Boston, MA in fahrenheit?",
+    },
+]
 
 
 # --- Test Functions ---
@@ -330,3 +364,130 @@ def test_penalties(
     except AssertionError as e:
         msg = f"Test failed: {str(e)}. Base: {text_base}, Test: {text_test}"
         raise AssertionError(msg)
+
+
+def _stream_chat_completion(api_client, payload):
+    """Send a streaming chat-completion and reconstruct the single choice.
+
+    Returns a dict with the accumulated ``reasoning_content``, ``content``,
+    aggregated ``tool_calls`` (indexed by their delta index), and the terminal
+    ``finish_reason`` seen on the stream. Raises the underlying HTTPError so
+    callers can distinguish an unsupported request (e.g. a model that does not
+    accept ``chat_template_kwargs``) from a bad completion.
+    """
+    response = api_client(payload, stream=True, timeout=120)
+
+    reasoning_parts = []
+    content_parts = []
+    tool_calls = {}
+    finish_reason = None
+
+    for line in response.iter_lines(decode_unicode=True):
+        if not line or not line.startswith("data: "):
+            continue
+        data = line[len("data: ") :]
+        if data.strip() == "[DONE]":
+            break
+        chunk = json.loads(data)
+        choices = chunk.get("choices") or []
+        if not choices:
+            continue
+        choice = choices[0]
+        delta = choice.get("delta") or {}
+
+        if delta.get("reasoning_content"):
+            reasoning_parts.append(delta["reasoning_content"])
+        if delta.get("content"):
+            content_parts.append(delta["content"])
+
+        for tc in delta.get("tool_calls") or []:
+            idx = tc.get("index", 0)
+            slot = tool_calls.setdefault(idx, {"name": "", "arguments": ""})
+            fn = tc.get("function") or {}
+            if fn.get("name"):
+                slot["name"] = fn["name"]
+            if fn.get("arguments"):
+                slot["arguments"] += fn["arguments"]
+
+        if choice.get("finish_reason"):
+            finish_reason = choice["finish_reason"]
+
+    return {
+        "reasoning_content": "".join(reasoning_parts),
+        "content": "".join(content_parts),
+        "tool_calls": tool_calls,
+        "finish_reason": finish_reason,
+    }
+
+
+# Number of repetitions. The failure is intermittent (~40% in the issue), so a
+# single run can pass by luck; repeating makes the regression deterministic.
+_TOOL_THINKING_RUNS = 20
+
+
+def test_streaming_tool_call_with_thinking(report_test, api_client, request):
+    """Streaming + tools + enable_thinking must still emit the tool call.
+
+    Reproduces the Qwen3-32B serving-side bug where the qwen3 reasoning parser
+    and the hermes tool parser interact so that, after a ``<think>`` block, the
+    tool call is dropped and the stream ends with ``finish_reason: "stop"`` and
+    an empty ``tool_calls`` array. A correctly-behaving host emits
+    ``finish_reason: "tool_calls"`` with a populated ``tool_calls`` array every
+    time (the issue's Nebius reference passes 20/20).
+
+    The test runs the exact repro payload multiple times and fails if ANY run
+    drops the tool call, so it catches the intermittent failure today and will
+    pass once the parser interaction is fixed.
+    """
+    base_payload = {
+        "messages": THINKING_TOOL_MESSAGES,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+        "temperature": 1,
+        "top_p": 1,
+        "max_tokens": 4096,
+        "tools": [WEATHER_TOOL],
+        "chat_template_kwargs": {"thinking": True, "enable_thinking": True},
+    }
+
+    # If the server/model does not support thinking via chat_template_kwargs,
+    # this scenario is not applicable — skip rather than fail so the shared
+    # suite stays green for non-reasoning models.
+    try:
+        first = _stream_chat_completion(api_client, base_payload)
+    except requests.exceptions.HTTPError as e:
+        pytest.skip(
+            "Server rejected the streaming tools + enable_thinking payload; "
+            f"model likely does not support chat_template_kwargs thinking: {e}"
+        )
+
+    failures = []
+    results = [first]
+    for _ in range(_TOOL_THINKING_RUNS - 1):
+        results.append(_stream_chat_completion(api_client, base_payload))
+
+    for i, result in enumerate(results):
+        has_tool_call = any(
+            slot["name"] for slot in result["tool_calls"].values()
+        )
+        if result["finish_reason"] != "tool_calls" or not has_tool_call:
+            failures.append(
+                f"run {i}: finish_reason={result['finish_reason']!r}, "
+                f"tool_calls={result['tool_calls']!r}, "
+                f"reasoning_len={len(result['reasoning_content'])}, "
+                f"content={result['content']!r}"
+            )
+
+    assert not failures, (
+        f"{len(failures)}/{len(results)} streaming runs dropped the tool call "
+        "after the reasoning block (expected finish_reason='tool_calls' with a "
+        "populated tool_calls array on every run). Failing runs:\n"
+        + "\n".join(failures)
+    )
+
+    # Sanity-check the emitted tool call targets the provided tool.
+    first_call = next(iter(first["tool_calls"].values()))
+    assert first_call["name"] == WEATHER_TOOL["function"]["name"], (
+        f"Expected tool call '{WEATHER_TOOL['function']['name']}', "
+        f"got '{first_call['name']}'."
+    )
