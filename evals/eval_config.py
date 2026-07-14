@@ -407,6 +407,208 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="moonshotai/Kimi-K2.7-Code",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=64,
+                # This vLLM server only exposes /v1/chat/completions; the legacy
+                # text /v1/completions endpoint returns 404. use_chat_api switches
+                # lm-eval's eval_class from "local-completions" to
+                # "local-chat-completions" so requests go to the right route.
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=89.6,
+                    published_score_ref="https://artificialanalysis.ai/evaluations/gpqa-diamond?models=kimi-k2-7-code",
+                    gpu_reference_score=85.3,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4271#issuecomment-4841263402",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 256 * 1024,
+                    # Per-request HTTP timeout (lm-eval default 1800s). Long
+                    # reasoning generations on the shared console can exceed
+                    # 30min under load, so allow up to 2h before giving up.
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 256 * 1024,
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=67.4,
+                    published_score_ref="https://artificialanalysis.ai/evaluations/terminalbench-v2-1?models=kimi-k2-7-code",
+                    gpu_reference_score=65.2,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4271#issuecomment-4854374547",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=4,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=32 * 1024,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 256 * 1024,
+                            "max_output_tokens": 64 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 64 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="tau3_bench_banking",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=18.1,
+                    published_score_ref="https://artificialanalysis.ai/evaluations/tau3-banking?models=kimi-k2-7-code",
+                    gpu_reference_score=11.3,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4271#issuecomment-4950368694",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    # A single served instance is shared by the agent,
+                    # the simulated user, and the Natural Language verifier.
+                    n_concurrent_trials=4,
+                    n_attempts=1,
+                    n_tasks=97,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        "max_steps": 200,
+                        # Default is 120s; a single reasoning user-sim turn under
+                        # load can exceed that and trip an MCP request timeout.
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    # NOTE: values injected here are passed to the Harbor
+                    # container verbatim. Unlike the task.toml env, the
+                    # "${VAR:-default}" template syntax is NOT resolved on this
+                    # path, so use literal values -- a templated model name
+                    # reaches litellm unexpanded and fails with "LLM Provider
+                    # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
+                    # intentionally omitted: the task's docker-compose already
+                    # substitutes those from the launching shell env.
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/moonshotai/Kimi-K2.7-Code",
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/moonshotai/Kimi-K2.7-Code",
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-001",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-022",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-050",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-075",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-100",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=69.0,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4271#issuecomment-4950368694",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=6,
+                    max_workers=24,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=0.95,
+                    max_input_tokens=256 * 1024,
+                    max_output_tokens=64 * 1024,
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-12143",
+                            "pytest-dev__pytest-5262",
+                            "django__django-14672",
+                            "sympy__sympy-13551",
+                            "sphinx-doc__sphinx-9281",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="MiniMaxAI/MiniMax-M2.7",
         tasks=[
             EvalTask(
