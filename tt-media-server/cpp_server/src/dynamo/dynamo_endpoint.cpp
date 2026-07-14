@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -230,7 +231,8 @@ bool shouldAllocateMockDecodeSlot() {
 }
 
 tt::domain::llm::LLMRequest buildDisaggregatedDecodeRequest(
-    const tt::sockets::PrefillResultMessage& message) {
+    const tt::sockets::PrefillResultMessage& message,
+    std::optional<int> decodeMaxTokensOverride = std::nullopt) {
   auto request = tt::domain::llm::LLMRequest(message.taskId);
   request.disaggregated = true;
   request.migrationId = message.migrationId;
@@ -245,7 +247,14 @@ tt::domain::llm::LLMRequest buildDisaggregatedDecodeRequest(
   } else {
     request.prompt = std::vector<uint32_t>{};
   }
-  request.max_tokens = message.remainingTokens;
+  // Dynamo's remote-prefill hop is force-capped at max_tokens=1. The follow-up
+  // decode GenerateRequest carries the client's real budget; prefer that over
+  // remaining_tokens from tt_prefill_result (which often echoes the prefill cap).
+  if (decodeMaxTokensOverride.has_value()) {
+    request.max_tokens = decodeMaxTokensOverride;
+  } else {
+    request.max_tokens = message.remainingTokens;
+  }
   request.slotId = message.slotId;
   request.temperature = message.temperature;
   request.top_p = message.topP;
@@ -453,10 +462,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
             500);
         return;
       }
-      auto prefillMessage = buildPrefillRequest(dynReq);
       auto prefillDone = std::make_shared<std::atomic<bool>>(false);
-      disaggregation->handlePrefillRequest(
-          prefillMessage,
+      auto onPrefillResult =
           [sendChunk, signalDone, prefillDone](
               const tt::sockets::PrefillResultMessage& result) {
             bool expected = false;
@@ -483,7 +490,26 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
             out.completion_usage = du;
             sendChunk(out);
             signalDone();
-          });
+          };
+
+      try {
+        if (tt::config::usePrefillFirstDisaggregation()) {
+          // Prefill-first: reserve decode slot over inter-server socket, then
+          // return tt_prefill_result (including slot_id) for Dynamo to continue
+          // on decode.
+          TT_LOG_INFO(
+              "[DynamoEndpoint] Native prefill-first path taskId={} tokens={}",
+              req->task_id, dynReq.token_ids.size());
+          const auto hashes = computeRegistrationHashes(dynReq.token_ids);
+          disaggregation->handlePrefillFirstRequest(*req, hashes,
+                                                    onPrefillResult);
+        } else {
+          auto prefillMessage = buildPrefillRequest(dynReq);
+          disaggregation->handlePrefillRequest(prefillMessage, onPrefillResult);
+        }
+      } catch (const std::exception& e) {
+        sendErrorAndDone(e.what(), 500);
+      }
       return;
     }
 
@@ -537,7 +563,14 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
             };
 
         auto decodeReq = std::make_shared<tt::domain::llm::LLMRequest>(
-            buildDisaggregatedDecodeRequest(*prefillResult));
+            buildDisaggregatedDecodeRequest(*prefillResult, dynReq.max_tokens));
+        if (prefillResult->remainingTokens.has_value() &&
+            *prefillResult->remainingTokens != dynReq.max_tokens) {
+          TT_LOG_INFO(
+              "[DynamoEndpoint] Using decode max_tokens={} (prefill "
+              "remaining_tokens={} was ignored)",
+              dynReq.max_tokens, *prefillResult->remainingTokens);
+        }
         if (!prefillResult->slotId.has_value()) {
           if (!shouldAllocateMockDecodeSlot()) {
             sendErrorAndDone(

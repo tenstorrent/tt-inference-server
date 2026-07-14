@@ -629,11 +629,18 @@ void LLMPipeline::abortRequest(uint32_t taskId) const {
 bool LLMPipeline::willPrefillOnDecode(
     const tt::domain::llm::LLMRequest& request, size_t deltaTokens) const {
   const size_t threshold = tt::config::maxTokensToPrefillOnDecode();
+  // When Dynamo already handed decode a remote tt_prefill_result, the
+  // DynamoEndpoint decode path uses submitResolvedStreamingRequest and never
+  // calls willPrefillOnDecode. Reaching here under native routing means Dynamo
+  // selected local (decode-side) prefill.
   if (tt::config::dynamoNativeRoutingEnabled()) {
     TT_LOG_INFO(
         "[LLMPipeline] DYNAMO_NATIVE_ROUTING=1 taskId={} deltaTokens={} "
-        "accepting Dynamo decode route; local prefill will run on decode",
-        request.task_id, deltaTokens);
+        "accepting Dynamo decode route; local prefill will run on decode{}",
+        request.task_id, deltaTokens,
+        tt::config::usePrefillFirstDisaggregation()
+            ? " (prefill-first enabled for remote prefills)"
+            : "");
     return true;
   }
 

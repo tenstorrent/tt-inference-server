@@ -55,6 +55,15 @@ class DisaggregationService {
   void handlePrefillFirstStreamingRequest(
       LLMRequest& request, const std::vector<uint64_t>& registrationHashes,
       const StreamCallback& callback);
+
+  /**
+   * Prefill-first path for Dynamo native routing: reserve a decode slot, run
+   * one prefill token, then invoke callback with a PrefillResultMessage
+   * (same contract as handlePrefillRequest / tt_prefill_result).
+   */
+  void handlePrefillFirstRequest(
+      LLMRequest& request, const std::vector<uint64_t>& registrationHashes,
+      std::function<void(const tt::sockets::PrefillResultMessage&)> callback);
   void abortRequest(uint32_t taskId);
 
   /// Resolve a prefill-side session via prefix-cache lookup.
@@ -81,7 +90,8 @@ class DisaggregationService {
 
   struct PrefillFirstPending {
     PrefillWorkContext work;
-    StreamCallback callback;
+    StreamCallback streamCallback;
+    std::function<void(const tt::sockets::PrefillResultMessage&)> resultCallback;
     std::vector<uint64_t> registrationHashes;
   };
 
@@ -92,6 +102,11 @@ class DisaggregationService {
       const tt::sockets::SlotReservationResponseMessage& message);
   void launchPrefillWork(PrefillWorkContext work,
                          std::function<void(const LLMStreamChunk&, bool)> onChunk);
+  void enqueuePrefillFirstReservation(
+      LLMRequest& request, const std::vector<uint64_t>& registrationHashes,
+      StreamCallback streamCallback,
+      std::function<void(const tt::sockets::PrefillResultMessage&)>
+          resultCallback);
   void failPrefillFirstPending(uint32_t taskId, std::string_view errorText);
 
   tt::config::LLMMode mode;

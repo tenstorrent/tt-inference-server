@@ -10,6 +10,8 @@
 #   ./run_stack.sh up                      # direct cpp_server socket split
 #   DYNAMO_NATIVE_ROUTING=1 ./run_stack.sh up
 #                                          # native Dynamo decode/prefill split
+#   DYNAMO_NATIVE_ROUTING=1 USE_PREFILL_FIRST_DISAGGREGATION=1 ./run_stack.sh up
+#                                          # native + prefill-first (1P1D sockets)
 #   ./run_stack.sh down                    # tear everything down
 #
 # Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; frontend -> /tmp/tt_frontend.log.
@@ -33,6 +35,9 @@ SOCKET_PORT="${SOCKET_PORT:-9000}"       # decode<->prefill inter-server socket
 MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
 DYNAMO_NATIVE_ROUTING="${DYNAMO_NATIVE_ROUTING:-0}"
 DYNAMO_NATIVE_NAMESPACE="${DYNAMO_NATIVE_NAMESPACE:-dynamo}"
+# Combined with DYNAMO_NATIVE_ROUTING=1: prefill reserves decode slots over the
+# cpp_server inter-server socket (1P1D via SOCKET_HOST/PORT). No PrefillGateway.
+USE_PREFILL_FIRST_DISAGGREGATION="${USE_PREFILL_FIRST_DISAGGREGATION:-0}"
 ETCD_NAME="${ETCD_NAME:-etcd}"
 PIDFILE="/tmp/tt_stack.pids"
 
@@ -224,20 +229,41 @@ up() {
     ensure_etcd
 
     if [[ "${DYNAMO_NATIVE_ROUTING}" == "1" ]]; then
-        log "native Dynamo routing: decode :${SERVER_PORT}, prefill :${PREFILL_PORT}"
-        start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
-            $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" decode Decode Chat) \
-            $(worker_ipc_env native_decode) \
-            LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
-            USE_PREFILL_GATEWAY=0 DYNAMO_NATIVE_ROUTING=1
-        wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
-        start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
-            $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" prefill Prefill Prefill) \
-            $(worker_ipc_env native_prefill) \
-            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
-            USE_PREFILL_GATEWAY=0 DYNAMO_NATIVE_ROUTING=1 \
-            DYNAMO_MODEL_INPUT=Tokens
-        wait_worker_healthy "prefill" "${PREFILL_PORT}" "${PREFILL_LOG}"
+        if [[ "${USE_PREFILL_FIRST_DISAGGREGATION}" == "1" ]]; then
+            log "native Dynamo + prefill-first: decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
+            start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
+                $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" decode Decode Chat) \
+                $(worker_ipc_env native_decode) \
+                LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
+                USE_PREFILL_GATEWAY=0 DYNAMO_NATIVE_ROUTING=1 \
+                USE_PREFILL_FIRST_DISAGGREGATION=1 \
+                SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}"
+            wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
+            start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
+                $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" prefill Prefill Prefill) \
+                $(worker_ipc_env native_prefill) \
+                LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
+                USE_PREFILL_GATEWAY=0 DYNAMO_NATIVE_ROUTING=1 \
+                USE_PREFILL_FIRST_DISAGGREGATION=1 \
+                DYNAMO_MODEL_INPUT=Tokens \
+                SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}"
+            wait_worker_healthy "prefill" "${PREFILL_PORT}" "${PREFILL_LOG}"
+        else
+            log "native Dynamo routing: decode :${SERVER_PORT}, prefill :${PREFILL_PORT}"
+            start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
+                $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" decode Decode Chat) \
+                $(worker_ipc_env native_decode) \
+                LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
+                USE_PREFILL_GATEWAY=0 DYNAMO_NATIVE_ROUTING=1
+            wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
+            start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
+                $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" prefill Prefill Prefill) \
+                $(worker_ipc_env native_prefill) \
+                LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
+                USE_PREFILL_GATEWAY=0 DYNAMO_NATIVE_ROUTING=1 \
+                DYNAMO_MODEL_INPUT=Tokens
+            wait_worker_healthy "prefill" "${PREFILL_PORT}" "${PREFILL_LOG}"
+        fi
     else
         log "direct cpp_server socket routing: decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
         start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
