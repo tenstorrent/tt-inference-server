@@ -506,13 +506,14 @@ and already moves KV cache galaxy-to-galaxy over **MPI/DCN** with ULFM fault
 tolerance. It routes all transport through an abstract `SenderBackend` /
 `ReceiverBackend` interface (today only `DcnSenderBackend`). Add a 
 `MooncakeSenderBackend` implementing that same interface. Mooncake fills
-*capability* gaps (multi-NIC RDMA bandwidth, dynamic membership, a pooled global
-KV-cache store with cross-request prefix reuse), not a correctness hole. 
+*capability* gaps (multi-NIC RDMA bandwidth, a pooled global KV-cache store with
+cross-request prefix reuse), not a correctness hole. 
 
-**Discovery lifecycle (post-merge):** discovery resolves peers once at bring-up and the
-worker then holds the handles until SIGTERM. Steady-state membership changes are not yet
-handled — if a peer crashes and restarts on a new dynamic port, its cached `SegmentHandle`
-goes stale. Production needs periodic peer health checks and re-discovery/reconnection on
-peer restart (plus metrics: peer count, time-to-ready, reconnection events). Discovery is
-already cancellable (a SIGTERM during bring-up aborts the poll loop promptly); wiring the
-MPI e2e into CI is also pending.
+**Discovery lifecycle (current + remaining):** Prefill bring-up resolves peers
+from metadata, opens control channels, and fail-closes Ready until
+TABLE_EXCHANGE succeeds with every configured decode. After Ready, a mesh watch
+re-resolves `kv_control/<name>`, `replaceChannel`s when the endpoint moves, and
+re-runs TABLE_EXCHANGE when TCP comes back (skipping via try_lock when migrate
+owns the channel). Still open: TE `SegmentHandle` refresh metrics, peer-count /
+time-to-ready / reconnection dashboards, and wiring the MPI discovery e2e into
+CI. Discovery remains cancellable (SIGTERM during bring-up aborts promptly).
