@@ -39,6 +39,7 @@ jobs:
             case "$1" in
               main|master|develop) return 0 ;;
               release/*) return 0 ;;
+              v[0-9]*.[0-9]*.[0-9]*) return 0 ;;
             esac
             return 1
           }
