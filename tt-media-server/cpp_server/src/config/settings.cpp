@@ -801,8 +801,16 @@ std::string dynamoBindHost() {
 }
 
 uint16_t dynamoBindPort() {
-  return static_cast<uint16_t>(
-      envUlong("DYNAMO_BIND_PORT", defaults::DYNAMO_BIND_PORT));
+  const unsigned long port =
+      envUlong("DYNAMO_BIND_PORT", defaults::DYNAMO_BIND_PORT);
+  if (port > 65535) {
+    TT_LOG_WARN(
+        "[Config] DYNAMO_BIND_PORT={} is out of range [0, 65535], using "
+        "default={}",
+        port, defaults::DYNAMO_BIND_PORT);
+    return defaults::DYNAMO_BIND_PORT;
+  }
+  return static_cast<uint16_t>(port);
 }
 
 std::string dynamoEtcdEndpoints() {
