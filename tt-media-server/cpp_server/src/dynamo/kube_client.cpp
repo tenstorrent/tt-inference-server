@@ -36,7 +36,8 @@ constexpr const char* KUBE_API_PLURAL = "dynamoworkermetadatas";
 constexpr const char* KUBE_API_FIELD_MANAGER = "dynamo-worker";
 // K8s server-side apply content type. The JSON body is valid apply YAML, which
 // Kubernetes accepts under this type (matches kube-rs Patch::Apply).
-constexpr const char* KUBE_API_APPLY_PATCH_CONTENT_TYPE = "application/apply-patch+yaml";
+constexpr const char* KUBE_API_APPLY_PATCH_CONTENT_TYPE =
+    "application/apply-patch+yaml";
 
 std::string serializeCompact(const Json::Value& v) {
   Json::StreamWriterBuilder b;
@@ -78,7 +79,8 @@ std::pair<drogon::ReqResult, drogon::HttpResponsePtr> sendOnce(
   return fut.get();
 }
 
-bool isRetryable(drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
+bool isRetryable(drogon::ReqResult result,
+                 const drogon::HttpResponsePtr& resp) {
   if (result != drogon::ReqResult::Ok || !resp) return true;
   const int code = static_cast<int>(resp->getStatusCode());
   return code == 429 || (code >= 500 && code < 600);
@@ -97,19 +99,17 @@ drogon::HttpResponsePtr sendWithRetry(
       if (transportOk) {
         return resp;  // exhausted on 5xx/429 — let caller surface status + body
       }
-      throw KubeError(
-          std::string("KubeClient: apply CR failed after ") +
-          std::to_string(cfg.max_retries + 1) +
-          " attempt(s): transport error (ReqResult=" +
-          std::to_string(static_cast<int>(result)) + ")");
+      throw KubeError(std::string("KubeClient: apply CR failed after ") +
+                      std::to_string(cfg.max_retries + 1) +
+                      " attempt(s): transport error (ReqResult=" +
+                      std::to_string(static_cast<int>(result)) + ")");
     }
     const int backoffMs = cfg.retry_base_delay_ms * (1 << attempt);
     const std::string reason =
-        transportOk
-            ? ("HTTP " + std::to_string(
-                             static_cast<int>(resp->getStatusCode())))
-            : ("transport ReqResult=" + std::to_string(
-                                            static_cast<int>(result)));
+        transportOk ? ("HTTP " +
+                       std::to_string(static_cast<int>(resp->getStatusCode())))
+                    : ("transport ReqResult=" +
+                       std::to_string(static_cast<int>(result)));
     TT_LOG_WARN(
         "[KubeClient] apply CR attempt {}/{} failed ({}); retrying in {} ms",
         attempt + 1, cfg.max_retries + 1, reason, backoffMs);
@@ -169,8 +169,8 @@ Json::Value buildDynamoWorkerMetadataCr(const std::string& crName,
 
 std::string KubeClient::crPath(const std::string& ns,
                                const std::string& crName) {
-  return "/apis/" + std::string(KUBE_API_GROUP) + "/" + KUBE_API_VERSION + "/namespaces/" + ns +
-         "/" + KUBE_API_PLURAL + "/" + crName;
+  return "/apis/" + std::string(KUBE_API_GROUP) + "/" + KUBE_API_VERSION +
+         "/namespaces/" + ns + "/" + KUBE_API_PLURAL + "/" + crName;
 }
 
 KubeClient::KubeClient(KubeClientConfig config) : cfg_(std::move(config)) {
@@ -179,8 +179,8 @@ KubeClient::KubeClient(KubeClientConfig config) : cfg_(std::move(config)) {
   }
 
   // drogon 1.9.12's HttpClient has no per-client trusted-CA setter, so when we
-  // validate certs we steer OpenSSL's default trust store at the mounted cluster
-  // CA via SSL_CERT_FILE.
+  // validate certs we steer OpenSSL's default trust store at the mounted
+  // cluster CA via SSL_CERT_FILE.
   if (cfg_.validate_cert && !cfg_.ca_cert_path.empty()) {
     const char* existing = std::getenv("SSL_CERT_FILE");
     if (existing == nullptr || *existing == '\0') {
@@ -188,7 +188,8 @@ KubeClient::KubeClient(KubeClientConfig config) : cfg_(std::move(config)) {
       if (caFile.good()) {
         ::setenv("SSL_CERT_FILE", cfg_.ca_cert_path.c_str(), /*overwrite=*/0);
         TT_LOG_INFO(
-            "[KubeClient] SSL_CERT_FILE set to {} for API server TLS validation",
+            "[KubeClient] SSL_CERT_FILE set to {} for API server TLS "
+            "validation",
             cfg_.ca_cert_path);
       } else {
         TT_LOG_WARN(
@@ -254,8 +255,8 @@ void KubeClient::applyCr(const std::string& ns, const std::string& crName,
   auto makeReq = [&]() {
     auto req = drogon::HttpRequest::newHttpRequest();
     req->setMethod(drogon::Patch);
-    req->setPath(path);s
-    req->setParameter("fieldManager", KUBE_API_FIELD_MANAGER);
+    req->setPath(path);
+    s req->setParameter("fieldManager", KUBE_API_FIELD_MANAGER);
     req->setParameter("force", "true");
     req->addHeader("Authorization", "Bearer " + readToken());
     req->addHeader("Accept", "application/json");

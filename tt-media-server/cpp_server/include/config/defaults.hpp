@@ -160,8 +160,8 @@ constexpr const char* DYNAMO_KUBE_NAMESPACE_PATH =
 // Validate the API server's TLS certificate. Secure by default: KubeClient
 // points OpenSSL at the mounted ServiceAccount CA (via SSL_CERT_FILE) so
 // validation works in-cluster without baking the CA into the image trust store.
-// Set DYNAMO_KUBE_VALIDATE_CERT=0 to skip validation (only acceptable in-cluster,
-// where the API server is reached over the pod network).
+// Set DYNAMO_KUBE_VALIDATE_CERT=0 to skip validation (only acceptable
+// in-cluster, where the API server is reached over the pod network).
 constexpr bool DYNAMO_KUBE_VALIDATE_CERT = true;
 
 constexpr unsigned MOCK_PREFILL_CHUNK_LATENCY_MS = 1353;

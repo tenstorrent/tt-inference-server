@@ -407,11 +407,12 @@ class KubernetesDiscoveryRegistration : public DiscoveryRegistration {
   void unregisterSelf() override {
     try {
       client->deleteCr(cfg.pod_namespace, cfg.cr_name);
-      TT_LOG_INFO("[KubernetesDiscoveryRegistration] Deleted CR name={} ns={}", cfg.cr_name,
-                  cfg.pod_namespace);
+      TT_LOG_INFO("[KubernetesDiscoveryRegistration] Deleted CR name={} ns={}",
+                  cfg.cr_name, cfg.pod_namespace);
     } catch (const std::exception& e) {
-      TT_LOG_WARN("[KubernetesDiscoveryRegistration] delete failed (name={}): {}",
-                  cfg.cr_name, e.what());
+      TT_LOG_WARN(
+          "[KubernetesDiscoveryRegistration] delete failed (name={}): {}",
+          cfg.cr_name, e.what());
     }
   }
 

@@ -37,8 +37,10 @@ class KubeError : public std::runtime_error {
 struct KubeClientConfig {
   /// API server base URL, e.g. "https://10.0.0.1:443".
   std::string api_server;
-  /// Path to the ServiceAccount bearer token (re-read per request for rotation).
-  std::string token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token";
+  /// Path to the ServiceAccount bearer token (re-read per request for
+  /// rotation).
+  std::string token_path =
+      "/var/run/secrets/kubernetes.io/serviceaccount/token";
   /// Path to the CA certificate for TLS validation.
   std::string ca_cert_path =
       "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt";

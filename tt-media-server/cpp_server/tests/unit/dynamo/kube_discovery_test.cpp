@@ -44,9 +44,9 @@ Json::Value makeMdcJson() {
 constexpr const char* kKey = "default/backend/generate/1234abcd";
 
 TEST(KubeDiscovery, CrPathIsNamespacedApiRoute) {
-  EXPECT_EQ(
-      KubeClient::crPath("my-ns", "worker-0"),
-      "/apis/nvidia.com/v1alpha1/namespaces/my-ns/dynamoworkermetadatas/worker-0");
+  EXPECT_EQ(KubeClient::crPath("my-ns", "worker-0"),
+            "/apis/nvidia.com/v1alpha1/namespaces/my-ns/dynamoworkermetadatas/"
+            "worker-0");
 }
 
 TEST(KubeDiscovery, CrEnvelopeShape) {
@@ -60,9 +60,9 @@ TEST(KubeDiscovery, CrEnvelopeShape) {
 }
 
 TEST(KubeDiscovery, OwnerReferencePointsAtPodAndControls) {
-  const Json::Value cr = buildDynamoWorkerMetadataCr(
-      "worker-0", "worker-0", "uid-123", kKey, makeInstanceJson(),
-      makeMdcJson());
+  const Json::Value cr =
+      buildDynamoWorkerMetadataCr("worker-0", "worker-0", "uid-123", kKey,
+                                  makeInstanceJson(), makeMdcJson());
 
   const Json::Value& owners = cr["metadata"]["ownerReferences"];
   ASSERT_TRUE(owners.isArray());
@@ -80,16 +80,16 @@ TEST(KubeDiscovery, OwnerReferencePointsAtPodAndControls) {
 TEST(KubeDiscovery, NonControllerWhenCrNameDiffersFromPod) {
   // Container-mode-style CR name (not equal to pod name): must NOT be marked
   // controller (only one owner reference per pod may control).
-  const Json::Value cr = buildDynamoWorkerMetadataCr(
-      "worker-0-engine-1", "worker-0", "uid-123", kKey, makeInstanceJson(),
-      makeMdcJson());
+  const Json::Value cr =
+      buildDynamoWorkerMetadataCr("worker-0-engine-1", "worker-0", "uid-123",
+                                  kKey, makeInstanceJson(), makeMdcJson());
   EXPECT_FALSE(cr["metadata"]["ownerReferences"][0]["controller"].asBool());
 }
 
 TEST(KubeDiscovery, SpecDataBundlesInstanceAndModelCardUnderKey) {
-  const Json::Value cr = buildDynamoWorkerMetadataCr(
-      "worker-0", "worker-0", "uid-123", kKey, makeInstanceJson(),
-      makeMdcJson());
+  const Json::Value cr =
+      buildDynamoWorkerMetadataCr("worker-0", "worker-0", "uid-123", kKey,
+                                  makeInstanceJson(), makeMdcJson());
 
   const Json::Value& data = cr["spec"]["data"];
 
