@@ -352,14 +352,16 @@ sweepWorkerOnHost() {
   fi
 }
 
-# A worker that died without deregistering leaves a mooncake/rpc_meta/<name>
-# entry, and the discovery service rejects the restart with "Duplicate rpc_meta
-# key not allowed" (TransferEngine::init fails). Clear it so the relaunch
-# registers cleanly. Harmless on a first launch (the key won't exist yet).
+# A worker that died without deregistering leaves mooncake/rpc_meta/<name> (and
+# often kv_control/<name>). Discovery rejects the restart with "Duplicate
+# rpc_meta key not allowed" (TransferEngine::init fails). Clear both so a
+# relaunch registers cleanly. Harmless on a first launch (keys won't exist).
+# Manual revive MUST call this too — skipping it is a common bring-up failure.
 clearRpcMeta() {
   curl -sS -X DELETE "${META_URI}?key=mooncake/rpc_meta/$1" >/dev/null 2>&1 || \
     echo "[deploy] WARN: could not clear rpc_meta for '$1' (discovery unreachable?);" \
          "launch may fail on a duplicate rpc_meta key" >&2
+  curl -sS -X DELETE "${META_URI}?key=kv_control/$1" >/dev/null 2>&1 || true
 }
 
 # Register one worker slot (role, role-local index, host, tag) in the arrays.

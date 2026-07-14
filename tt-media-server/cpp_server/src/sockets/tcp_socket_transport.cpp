@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/tcp.h>
+#include <poll.h>
 
 #include <algorithm>
 #include <cstring>
@@ -107,6 +108,48 @@ tt::utils::ScopedFd acceptClient(int serverSocket,
 void configureSocket(int socketFd) {
   setNonBlocking(socketFd);
   setSocketKeepAlive(socketFd);
+}
+
+// clientLoop/serverLoop only flip connected=false on send/recv errors. Idle
+// control channels never I/O, so a killed peer left connected=true forever and
+// never redialed (mesh watch saw sticky isConnected). Poll for hangup / SO_ERROR
+// / peer FIN; leave pending bytes unread (MSG_PEEK) for tryReceive.
+bool isPeerConnectionAlive(int fd) {
+  if (fd < 0) {
+    return false;
+  }
+  pollfd pfd{};
+  pfd.fd = fd;
+  pfd.events = POLLIN | POLLERR | POLLHUP;
+  const int pollResult =
+      ::poll(&pfd, 1, static_cast<int>(CONNECTION_POLL_INTERVAL.count()));
+  if (pollResult < 0) {
+    return errno == EINTR;
+  }
+
+  int socketError = 0;
+  socklen_t errorLen = sizeof(socketError);
+  if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &socketError, &errorLen) == 0 &&
+      socketError != 0) {
+    return false;
+  }
+  if (pollResult == 0) {
+    return true;
+  }
+  if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+    return false;
+  }
+  if (pfd.revents & POLLIN) {
+    char peekByte = 0;
+    const ssize_t n = ::recv(fd, &peekByte, 1, MSG_PEEK | MSG_DONTWAIT);
+    if (n == 0) {
+      return false;
+    }
+    if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+      return false;
+    }
+  }
+  return true;
 }
 }  // namespace
 
@@ -282,7 +325,11 @@ void TcpSocketTransport::serverLoop(std::stop_token stopToken) {
     notifyConnectionEstablished();
 
     while (running && connected && !stopToken.stop_requested()) {
-      std::this_thread::sleep_for(CONNECTION_POLL_INTERVAL);
+      const int fd = peerSocket.load(std::memory_order_acquire);
+      if (!isPeerConnectionAlive(fd)) {
+        markDisconnected();
+        break;
+      }
     }
 
     {
@@ -346,8 +393,14 @@ void TcpSocketTransport::clientLoop(std::stop_token stopToken) {
     TT_LOG_INFO("[TcpSocketTransport] Connected to server");
     notifyConnectionEstablished();
 
+    // Detect peer death without waiting for migrate I/O — otherwise a decode
+    // restart on the same host:port never triggers clientLoop redial.
     while (running && connected && !stopToken.stop_requested()) {
-      std::this_thread::sleep_for(CONNECTION_POLL_INTERVAL);
+      const int fd = peerSocket.load(std::memory_order_acquire);
+      if (!isPeerConnectionAlive(fd)) {
+        markDisconnected();
+        break;
+      }
     }
 
     {

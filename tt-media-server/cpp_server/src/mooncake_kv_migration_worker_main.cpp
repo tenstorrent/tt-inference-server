@@ -436,14 +436,25 @@ bool startHealthServer(WorkerHealth& health, const WorkerConfig& cfg,
 // resolveServerName's rpc_meta host paired with the fixed peer_control_port,
 // for a peer that registered its data plane but hasn't published a control
 // endpoint (mixed/old deploy). Returns false if neither source resolves it yet.
-bool resolveOnePeer(ITransferEngine& engine, const WorkerConfig& cfg,
-                    const std::string& name,
-                    KvControlChannelConnector::Endpoint& ep) {
+//
+// INFO only when the endpoint is new or changed vs @p previousEp — mesh watch
+// re-resolves every poll and must not spam "discovered peer" for sticky peers.
+bool resolveOnePeer(
+    ITransferEngine& engine, const WorkerConfig& cfg, const std::string& name,
+    KvControlChannelConnector::Endpoint& ep,
+    const KvControlChannelConnector::Endpoint* previousEp = nullptr) {
+  auto logIfChanged = [&](const char* source) {
+    if (previousEp != nullptr && *previousEp == ep) {
+      return;
+    }
+    TT_LOG_INFO("[worker] discovered peer '{}' -> control {}:{} ({})", name,
+                ep.host, ep.port, source);
+  };
+
   if (auto endpoint =
           engine.lookupMetadata(std::string(K_CONTROL_KEY_PREFIX) + name)) {
     if (parseEndpoint(*endpoint, ep)) {
-      TT_LOG_INFO("[worker] discovered peer '{}' -> control {}:{} (metadata)",
-                  name, ep.host, ep.port);
+      logIfChanged("metadata");
       return true;
     }
     TT_LOG_WARN(
@@ -454,10 +465,7 @@ bool resolveOnePeer(ITransferEngine& engine, const WorkerConfig& cfg,
   const std::string host = engine.resolveServerName(name);
   if (host.empty()) return false;
   ep = KvControlChannelConnector::Endpoint{host, cfg.peer_control_port};
-  TT_LOG_INFO(
-      "[worker] discovered peer '{}' -> control {}:{} (rpc_meta host + fixed "
-      "port; control endpoint not published)",
-      name, host, cfg.peer_control_port);
+  logIfChanged("rpc_meta host + fixed port; control endpoint not published");
   return true;
 }
 
@@ -757,9 +765,12 @@ int runPrefill(const WorkerConfig& cfg) {
       KvControlChannelConnector::Endpoint ep;
       // Static --peer-control wins; otherwise re-read kv_control/<name> (and
       // rpc_meta fallback) every poll — same resolveOnePeer as bring-up.
-      const bool resolved = (cfg.peers.count(name) != 0)
-                                ? (ep = cfg.peers.at(name), true)
-                                : resolveOnePeer(*engine, cfg, name, ep);
+      const auto currentEp = connector.endpoint(name);
+      const bool resolved =
+          (cfg.peers.count(name) != 0)
+              ? (ep = cfg.peers.at(name), true)
+              : resolveOnePeer(*engine, cfg, name, ep,
+                               currentEp ? &*currentEp : nullptr);
       if (!resolved) {
         if (wasConnected[name]) {
           TT_LOG_WARN(
@@ -772,7 +783,6 @@ int runPrefill(const WorkerConfig& cfg) {
         continue;
       }
 
-      const auto currentEp = connector.endpoint(name);
       if (!currentEp || *currentEp != ep) {
         TT_LOG_INFO(
             "[worker] prefill '{}': rediscovered peer '{}' control {}:{} "
