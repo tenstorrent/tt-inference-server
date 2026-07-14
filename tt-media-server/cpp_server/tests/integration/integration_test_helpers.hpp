@@ -16,6 +16,7 @@
 #include <future>
 #include <memory>
 #include <numeric>
+#include <span>
 #include <string>
 #include <thread>
 #include <type_traits>
@@ -38,6 +39,7 @@
 #include "runtime/runners/blaze_runner/blaze_prefill_runner.hpp"
 #include "runtime/runners/blaze_runner/blaze_scheduler_factory.hpp"
 #endif
+#include "../support/session_manager_helpers.hpp"
 #include "services/memory_services/memory_manager.hpp"
 #include "services/session_manager.hpp"
 #include "utils/conversation_hasher.hpp"
@@ -99,9 +101,10 @@ inline config::BlazeConfig makeBlazeConfig(
 
 inline uint32_t generateTaskId() { return utils::TaskIDGenerator::generate(); }
 
-inline std::vector<uint32_t> makeSequentialPrompt(size_t length) {
+inline std::vector<uint32_t> makeSequentialPrompt(size_t length,
+                                                  uint32_t start = 0) {
   std::vector<uint32_t> prompt(length);
-  std::iota(prompt.begin(), prompt.end(), 0);
+  std::iota(prompt.begin(), prompt.end(), start);
   return prompt;
 }
 
@@ -126,35 +129,6 @@ inline std::vector<ipc::SharedToken> collectTokensUntilFinal(
   }
   return tokens;
 }
-
-// ---------------------------------------------------------------------------
-// Trantor event loop fixture
-// ---------------------------------------------------------------------------
-
-// Trantor requires an EventLoop to be created and run on the same thread.
-struct TrantorLoopFixture {
-  std::promise<trantor::EventLoop*> promise_;
-  trantor::EventLoop* loop{nullptr};
-  std::thread loopThread;
-
-  TrantorLoopFixture() {
-    auto future = promise_.get_future();
-    loopThread = std::thread([this]() {
-      trantor::EventLoop eventLoop;
-      promise_.set_value(&eventLoop);
-      eventLoop.loop();
-    });
-    loop = future.get();
-  }
-
-  ~TrantorLoopFixture() {
-    if (loop) loop->quit();
-    if (loopThread.joinable()) loopThread.join();
-  }
-
-  TrantorLoopFixture(const TrantorLoopFixture&) = delete;
-  TrantorLoopFixture& operator=(const TrantorLoopFixture&) = delete;
-};
 
 // ---------------------------------------------------------------------------
 // Session manager helpers
@@ -201,6 +175,25 @@ inline std::string createTestSession(
 inline uint32_t acquireInFlight(services::SessionManager& manager,
                                 const std::string& sessionId) {
   return manager.acquireInFlight(sessionId, nullptr);
+}
+
+inline void releaseSlot(services::SessionManager& manager,
+                        const std::string& sessionId) {
+  if (auto session = manager.getSession(sessionId)) {
+    session->release();
+  }
+}
+
+// Simulates a completed turn-1 session registered under responseId.
+inline std::string bootstrapSessionWithResponseId(
+    services::SessionManager& manager, trantor::EventLoop* loop,
+    uint32_t slotId, const std::string& responseId,
+    const std::vector<utils::BlockHashInfo>& blockInfos = {}) {
+  auto sessionId = blockInfos.empty()
+                       ? createTestSession(manager, loop, slotId)
+                       : createTestSession(manager, loop, slotId, blockInfos);
+  manager.registerResponseId(sessionId, responseId);
+  return sessionId;
 }
 
 // ---------------------------------------------------------------------------

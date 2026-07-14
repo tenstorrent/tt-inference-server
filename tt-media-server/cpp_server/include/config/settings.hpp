@@ -117,6 +117,9 @@ std::string logInstanceTag(int workerIndex = -1);
 /** Capacity hint for the gateway, 0 = unlimited. From PREFILL_MAX_IN_FLIGHT. */
 uint32_t prefillMaxInFlight();
 
+// Number of pipeline stages for the Blaze Decode runner.
+uint32_t blazeNumberOfPipelineStages();
+
 /** Max in-flight requests before 429. From MAX_QUEUE_SIZE. Default:
  * defaults::MAX_QUEUE_SIZE. */
 size_t maxQueueSize();
@@ -338,6 +341,10 @@ bool dynamoEndpointEnabled();
 /** Bind host for the Dynamo listener. From DYNAMO_BIND_HOST. Default:
  * defaults::DYNAMO_BIND_HOST. */
 std::string dynamoBindHost();
+
+/** Bind port for the Dynamo listener. From DYNAMO_BIND_PORT. Default:
+ * defaults::DYNAMO_BIND_PORT (0 = OS-assigned). */
+uint16_t dynamoBindPort();
 
 /** Etcd endpoint(s) the discovery client dials. From DYNAMO_ETCD_ENDPOINTS,
  * falling back to ETCD_ENDPOINTS (the env var Dynamo's own runtime reads).

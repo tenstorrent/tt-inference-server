@@ -43,38 +43,29 @@ _V2_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
 
 _V2_EVAL_VENV_BY_MODEL_TYPE = {
     ModelType.AUDIO: WorkflowVenvType.EVALS_AUDIO,
+    ModelType.EMBEDDING: WorkflowVenvType.EVALS_EMBEDDING,
 }
 
-# Only models actually validated end-to-end against v2's engine are routed here.
-_V2_ROUTED_MODELS = frozenset(
-    {
-        "stable-diffusion-xl-base-1.0",
-        "stable-diffusion-xl-base-1.0-img-2-img",
-        "stable-diffusion-xl-1.0-inpainting-0.1",
-        "stable-diffusion-3.5-large",
-        "FLUX.1-dev",
-        "FLUX.1-schnell",
-        "Motif-Image-6B-Preview",
-        "whisper-large-v3",
-        "distil-large-v3",
-        "Z-Image-Turbo",
-        "speecht5_tts",
-    }
-)
+# Model types that share LLM code path rather than a media runner.
+_LLM_LIKE_TYPES = frozenset({ModelType.LLM, ModelType.VLM})
 
-
+# Model types fully onboarded to v2. Every model of these types routes to v2 by
+# model_type — no per-name allowlist, so new models are picked up automatically.
 _V2_ROUTED_MODEL_TYPES = frozenset(
     {
+        ModelType.IMAGE,
+        ModelType.VIDEO,
+        ModelType.AUDIO,
+        ModelType.TEXT_TO_SPEECH,
         ModelType.CNN,
+        ModelType.EMBEDDING,
     }
 )
 
 
 def is_v2_routed_model(model_spec) -> bool:
-    return (
-        model_spec.model_type in _V2_ROUTED_MODEL_TYPES
-        or model_spec.model_name in _V2_ROUTED_MODELS
-    )
+    """True if the model routes to v2 purely by its model_type."""
+    return model_spec.model_type in _V2_ROUTED_MODEL_TYPES
 
 
 def _is_prefix_cache_run(wf, runtime_config) -> bool:
@@ -90,13 +81,13 @@ def _is_spec_decode_run(wf, runtime_config) -> bool:
 
 
 def _is_llm_benchmark_run(wf, model_spec, runtime_config) -> bool:
-    """Any LLM model + ``--workflow benchmarks`` routes to v2's ``llm_module``;
+    """Any LLM/VLM model + ``--workflow benchmarks`` routes to v2's ``llm_module``;
     the ``--tools`` value selects the driver. The prefix-cache and spec-decode
     variants have their own dispatch and are handled separately.
     """
     return (
         wf == WorkflowType.BENCHMARKS
-        and model_spec.model_type == ModelType.LLM
+        and model_spec.model_type in _LLM_LIKE_TYPES
         and not _is_prefix_cache_run(wf, runtime_config)
         and not _is_spec_decode_run(wf, runtime_config)
     )
@@ -112,7 +103,7 @@ def _llm_release_includes_agentic(model_spec) -> bool:
     provisioning of the EVALS_AGENTIC venv; the release engine itself decides
     whether to run the agentic child (see ReleaseWorkflow._llm_children).
     """
-    if model_spec.model_type != ModelType.LLM:
+    if model_spec.model_type not in _LLM_LIKE_TYPES:
         return False
     try:
         from evals.eval_config import EVAL_CONFIGS
@@ -128,13 +119,14 @@ def _llm_release_includes_agentic(model_spec) -> bool:
 
 
 def _is_llm_eval_run(wf, model_spec) -> bool:
-    """LLM ``--workflow evals`` / ``--workflow release`` route to v2.
+    """LLM/VLM ``--workflow evals`` / ``--workflow release`` route to v2.
 
-    Standard evals run lm-eval / lmms-eval through ``EvalsWorkflow``; release
-    additionally runs the perf benchmark. Both go through the generic run.py
-    branch (no launcher) — the eval subprocess uses the per-task venv binary.
+    Standard evals run lm-eval / lmms-eval through ``EvalsWorkflow`` (VLMs use
+    the lmms-eval / EVALS_VISION tasks); release additionally runs the perf
+    benchmark. Both go through the generic run.py branch (no launcher) — the
+    eval subprocess uses the per-task venv binary.
     """
-    return model_spec.model_type == ModelType.LLM and wf in (
+    return model_spec.model_type in _LLM_LIKE_TYPES and wf in (
         WorkflowType.EVALS,
         WorkflowType.RELEASE,
     )
@@ -144,7 +136,7 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
     # Agentic evals, serving-bench benchmark suites, and the prefix-cache /
     # spec-decode benchmarks are v2-only features with no v1 driver. They route
-    # to v2 for ANY model (not just the image/audio set in _V2_ROUTED_MODELS).
+    # to v2 for ANY model, regardless of model_type.
     if (
         wf in (WorkflowType.AGENTIC, WorkflowType.SERVING_BENCH)
         or _is_prefix_cache_run(wf, runtime_config)
@@ -155,11 +147,13 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
         return True
     if _is_llm_eval_run(wf, model_spec):
         return True
-    if model_spec.model_type == ModelType.VIDEO:
+    # IMAGE / VIDEO / AUDIO / TEXT_TO_SPEECH / CNN / EMBEDDING are fully
+    # onboarded to v2, so every model of those types routes by model_type — no
+    # per-name allowlist, so new models (e.g. Qwen-Image) are picked up
+    # automatically. The v1 eval/benchmark paths for these types are retired.
+    if is_v2_routed_model(model_spec):
         return wf in _V2_WORKFLOW_NAMES
-    if not is_v2_routed_model(model_spec):
-        return False
-    return wf in _V2_WORKFLOW_NAMES
+    return False
 
 
 def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowResult]:
@@ -543,11 +537,11 @@ def _v2_dependency_venv_types(
         eval_venv = _V2_EVAL_VENV_BY_MODEL_TYPE.get(model_spec.model_type)
         if eval_venv is not None:
             venv_types.append(eval_venv)
-        if model_spec.model_type == ModelType.LLM:
+        if model_spec.model_type in _LLM_LIKE_TYPES:
             venv_types.extend(_llm_eval_venv_types(model_spec, runtime_config))
     # The release benchmark child runs the default perf tool (vllm) in-process
     # under V2_RUN_SCRIPT, so its tool venv must exist up front.
-    if wf == WorkflowType.RELEASE and model_spec.model_type == ModelType.LLM:
+    if wf == WorkflowType.RELEASE and model_spec.model_type in _LLM_LIKE_TYPES:
         venv_types.append(WorkflowVenvType.V2_LLM_VLLM)
         if getattr(runtime_config, "prefix_cache", False):
             venv_types.append(WorkflowVenvType.V2_PREFIX_CACHE)
