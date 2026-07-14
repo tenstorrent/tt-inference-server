@@ -288,6 +288,11 @@ bool MooncakeTransferEngine::publishMetadata(const std::string& key,
   return impl_->metaStore->set(key, Json::Value(value));
 }
 
+bool MooncakeTransferEngine::removeMetadata(const std::string& key) {
+  if (!impl_->metaStore) return false;
+  return impl_->metaStore->remove(key);
+}
+
 std::optional<std::string> MooncakeTransferEngine::lookupMetadata(
     const std::string& key) {
   if (!impl_->metaStore) return std::nullopt;
@@ -588,6 +593,13 @@ bool MooncakeTransferEngine::publishMetadata(const std::string& /*key*/,
                                              const std::string& /*value*/) {
   TT_LOG_WARN(
       "[MooncakeTransferEngine] publishMetadata unavailable (built without "
+      "Mooncake)");
+  return false;
+}
+
+bool MooncakeTransferEngine::removeMetadata(const std::string& /*key*/) {
+  TT_LOG_WARN(
+      "[MooncakeTransferEngine] removeMetadata unavailable (built without "
       "Mooncake)");
   return false;
 }

@@ -536,6 +536,10 @@ superviseLoop() {
            "(${WK_FAILS[$s]}/${RESTART_AFTER:-inf})" >&2
       if (( RESTART_AFTER > 0 && WK_FAILS[$s] >= RESTART_AFTER )); then
         echo "[deploy] restarting ${WK_ROLE[$s]}-${WK_INDEX[$s]} on ${WK_HOST[$s]}" >&2
+        # Clear metadata *before* kill/sweep so live prefills stop resolving this
+        # peer while the host is torn down. launchWorkerSlot clears again before
+        # relaunch (idempotent; covers SIGKILL'd workers that never unregistered).
+        clearRpcMeta "${WK_TAG[$s]}"
         # Drop the local ssh handle, then hard-sweep the host. Only relaunch once
         # the port is confirmed free — otherwise a survivor squats it, the new
         # worker fails to bind, and the "restart" just churns launchers. If the
@@ -556,6 +560,11 @@ cleanup() {
   echo ""
   echo "[deploy] tearing down..."
   local s
+  # Unpublish before kill so peers do not keep resolving dead workers if the
+  # metadata service outlives this deploy.
+  for (( s = 0; s < ${#WK_TAG[@]}; s++ )); do
+    clearRpcMeta "${WK_TAG[$s]}"
+  done
   for (( s = 0; s < ${#WK_PID[@]}; s++ )); do
     [[ -n "${WK_PID[$s]:-}" ]] && kill "${WK_PID[$s]}" 2>/dev/null
   done

@@ -952,6 +952,14 @@ int runDecode(const WorkerConfig& cfg) {
   }
   server.stop();
   health.setLifecycle(WorkerLifecycle::ShuttingDown);
+  // Drop our control endpoint before destructors so prefills stop resolving
+  // this host immediately. rpc_meta is cleared by TransferEngine::freeEngine
+  // when `engine`/`receiver` shared_ptrs die — SIGKILL still needs deploy/
+  // watchdog clearRpcMeta.
+  if (engine->removeMetadata(controlKey)) {
+    TT_LOG_INFO("[worker] decode '{}' cleared control endpoint {}", cfg.name,
+                controlKey);
+  }
   TT_LOG_INFO("[worker] decode '{}' stopping", cfg.name);
   return 0;
 }

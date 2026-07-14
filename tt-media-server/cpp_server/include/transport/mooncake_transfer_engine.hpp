@@ -73,6 +73,7 @@ class MooncakeTransferEngine : public ITransferEngine {
   std::string resolveServerName(const std::string& segmentName) override;
   bool publishMetadata(const std::string& key,
                        const std::string& value) override;
+  bool removeMetadata(const std::string& key) override;
   std::optional<std::string> lookupMetadata(const std::string& key) override;
   TransferStatus submitAndWait(const TransferRequest& request) override;
   TransferHandle submitBatch(

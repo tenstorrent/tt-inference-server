@@ -149,6 +149,17 @@ class ITransferEngine {
   }
 
   /**
+   * @brief Delete a key previously stored with publishMetadata.
+   *
+   * Call on graceful shutdown so peers stop resolving a dead worker (e.g.
+   * clear "kv_control/<name>"). Mooncake's own rpc_meta entry is removed by
+   * TransferEngine::freeEngine on destroy; this covers *our* keys only.
+   * @return true if the store accepted the delete (or the key was already
+   *         absent). Base implementation returns false.
+   */
+  virtual bool removeMetadata(const std::string& /*key*/) { return false; }
+
+  /**
    * @brief Look up a value previously stored with publishMetadata.
    * @return the value, or std::nullopt if the key is absent / unresolvable /
    *         there is no metadata service. The base implementation returns
