@@ -85,13 +85,10 @@ jobs:
               fi
 
               local body
-              body="$(cat <<EOF
-${STALE_COMMENT_MARKER}
-This PR's branch (\`${branch}\`) has had no new commits since **${commit_date}** (more than **${STALE_DAYS}** days) and would be eligible for automatic stale-branch cleanup.
-
-It was kept only because this PR is still open (including draft). Please merge, close, or push an update if you still need it.
-EOF
-)"
+              body="$(printf '%s\n%s\n\n%s\n' \
+                "${STALE_COMMENT_MARKER}" \
+                "This PR's branch (\`${branch}\`) has had no new commits since **${commit_date}** (more than **${STALE_DAYS}** days) and would be eligible for automatic stale-branch cleanup." \
+                "It was kept only because this PR is still open (including draft). Please merge, close, or push an update if you still need it.")"
 
               if [[ "${DRY_RUN}" == "true" ]]; then
                 echo "Would comment on PR #${pr_number} (stale branch ${branch} since ${commit_date})"
