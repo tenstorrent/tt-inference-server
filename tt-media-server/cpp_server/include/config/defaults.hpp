@@ -70,7 +70,7 @@ constexpr unsigned KV_MIGRATION_DRAIN_POLL_MS = 100;
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 
 constexpr const char* SPEC_DECODE_MODE = "none";
-constexpr size_t MTP_LEVEL = 1;
+constexpr size_t SPEC_LEVEL = 1;
 
 // number of pipeline stages of the Blaze Decode Model.
 constexpr uint32_t BLAZE_NUMBER_OF_PIPELINE_STAGES = 64;

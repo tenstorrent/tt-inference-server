@@ -394,7 +394,7 @@ BlazeConfig blazeConfig() {
     cfg.migrationPrefillEndpointId = migrationPrefillEndpointId();
     cfg.migrationDecodeEndpointId = migrationDecodeEndpointId();
     cfg.specDecodeMode = specDecodeMode();
-    cfg.mtpLevel = mtpLevel();
+    cfg.specLevel = specLevel();
     cfg.blazeNumberOfPipelineStages = blazeNumberOfPipelineStages();
 
     // Pipeline / channel config
@@ -836,11 +836,8 @@ uint32_t blazeNumberOfPipelineStages() {
                                         resolveBlazeNumberOfPipelineStages()));
 }
 
-size_t mtpLevel() {
-  auto val = static_cast<size_t>(envUlong("MTP_LEVEL", defaults::MTP_LEVEL));
-  if (val > 4) {
-    throw std::runtime_error("MTP_LEVEL must be <= 4");
-  }
+size_t specLevel() {
+  auto val = static_cast<size_t>(envUlong("SPEC_LEVEL", defaults::SPEC_LEVEL));
   return val;
 }
 

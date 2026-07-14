@@ -289,8 +289,8 @@ std::string ttCancelQueueName();
  */
 std::string specDecodeMode();
 
-/** MTP level from MTP_LEVEL. Default: defaults::MTP_LEVEL. */
-size_t mtpLevel();
+/** Spec level from SPEC_LEVEL. Default: defaults::SPEC_LEVEL. */
+size_t specLevel();
 
 /** Media payload task queue name from TT_MEDIA_TASK_QUEUE. */
 std::string ttMediaTaskQueueName();
