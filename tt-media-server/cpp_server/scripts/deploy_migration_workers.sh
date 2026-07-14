@@ -554,6 +554,7 @@ superviseLoop() {
         # relaunch (idempotent; covers SIGKILL'd workers that never unregistered).
         clearRpcMeta "${WK_TAG[$s]}"
         # Drop the local ssh handle, then hard-sweep the host. Only relaunch once
+
         # the port is confirmed free — otherwise a survivor squats it, the new
         # worker fails to bind, and the "restart" just churns launchers. If the
         # sweep can't free it, keep WK_FAILS so the next cycle retries the sweep.
