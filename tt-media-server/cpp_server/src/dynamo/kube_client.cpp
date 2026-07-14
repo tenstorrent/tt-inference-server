@@ -256,7 +256,7 @@ void KubeClient::applyCr(const std::string& ns, const std::string& crName,
     auto req = drogon::HttpRequest::newHttpRequest();
     req->setMethod(drogon::Patch);
     req->setPath(path);
-    s req->setParameter("fieldManager", KUBE_API_FIELD_MANAGER);
+    req->setParameter("fieldManager", KUBE_API_FIELD_MANAGER);
     req->setParameter("force", "true");
     req->addHeader("Authorization", "Bearer " + readToken());
     req->addHeader("Accept", "application/json");
