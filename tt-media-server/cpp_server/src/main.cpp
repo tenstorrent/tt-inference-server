@@ -377,6 +377,7 @@ int main(int argc, char* argv[]) {
 
       tt::dynamo::DynamoEndpoint::Options opts;
       opts.bind_host = tt::config::dynamoBindHost();
+      opts.bind_port = tt::config::dynamoBindPort();
       opts.namespace_name = tt::config::dynamoNamespace();
       opts.component = tt::config::dynamoComponent();
       opts.endpoint = tt::config::dynamoEndpointName();
