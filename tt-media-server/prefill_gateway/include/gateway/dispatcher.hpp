@@ -38,6 +38,11 @@ class Dispatcher {
         sendCancelToPrefill;
     std::function<bool(const tt::sockets::PrefillResultMessage&)>
         sendResultToDecode;
+    std::function<bool(const tt::sockets::SlotReservationRequestMessage&)>
+        sendSlotReservationToDecode;
+    std::function<bool(const std::string& prefillServerId,
+                       const tt::sockets::SlotReservationResponseMessage&)>
+        sendSlotReservationToPrefill;
   };
 
   struct Options {
@@ -63,6 +68,13 @@ class Dispatcher {
   void onCacheBlocksAdded(
       const tt::sockets::PrefillCacheBlocksAddedMessage& msg);
 
+  void onSlotReservationRequest(
+      const std::string& fromPrefillServerId,
+      const tt::sockets::SlotReservationRequestMessage& msg);
+
+  void onSlotReservationResponse(
+      const tt::sockets::SlotReservationResponseMessage& msg);
+
   // Fails all in-flight tasks assigned to `serverId`.
   void onPrefillDown(const std::string& serverId);
 
@@ -84,6 +96,8 @@ class Dispatcher {
 
   std::mutex inflightMutex;
   std::unordered_map<uint32_t, InFlightEntry> inFlight;
+  std::mutex slotReservationMutex;
+  std::unordered_map<uint32_t, std::string> slotReservationRoutes;
   std::mutex timeoutStateMutex;
   std::unordered_map<std::string, std::deque<Clock::time_point>>
       prefillTimeoutHistory;

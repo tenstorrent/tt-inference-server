@@ -26,6 +26,15 @@ struct CapturedCancel {
   uint32_t taskId;
 };
 
+struct CapturedSlotReservationRequest {
+  uint32_t taskId;
+};
+
+struct CapturedSlotReservationResponse {
+  std::string prefillServerId;
+  uint32_t taskId;
+};
+
 // Test fixture wires the dispatcher to capture-only senders that record
 // each outbound message in vectors. No sockets, no threads.
 class DispatcherTest : public ::testing::Test {
@@ -52,6 +61,17 @@ class DispatcherTest : public ::testing::Test {
         [this](const tt::sockets::PrefillResultMessage& m) {
           results.push_back(m);
           return true;
+        };
+    senders.sendSlotReservationToDecode =
+        [this](const tt::sockets::SlotReservationRequestMessage& m) {
+          slotReservationRequests.push_back({m.taskId});
+          return slotReservationToDecodeSucceeds;
+        };
+    senders.sendSlotReservationToPrefill =
+        [this](const std::string& serverId,
+               const tt::sockets::SlotReservationResponseMessage& m) {
+          slotReservationResponses.push_back({serverId, m.taskId});
+          return slotReservationToPrefillSucceeds;
         };
 
     dispatcher = std::make_unique<Dispatcher>(registry, senders);
@@ -83,8 +103,12 @@ class DispatcherTest : public ::testing::Test {
   std::vector<CapturedRequest> requests;
   std::vector<CapturedCancel> cancels;
   std::vector<tt::sockets::PrefillResultMessage> results;
+  std::vector<CapturedSlotReservationRequest> slotReservationRequests;
+  std::vector<CapturedSlotReservationResponse> slotReservationResponses;
   bool prefillSendSucceeds = true;
   bool prefillCancelSucceeds = true;
+  bool slotReservationToDecodeSucceeds = true;
+  bool slotReservationToPrefillSucceeds = true;
 };
 
 TEST_F(DispatcherTest, NoHealthyPrefillsFailsTaskToDecode) {
@@ -372,6 +396,42 @@ TEST_F(DispatcherTest, RecordsRoutingAndOutcomeMetrics) {
   EXPECT_NE(text.find("outcome=\"success\""), std::string::npos);
   EXPECT_NE(text.find("server_id=\"" + requests[0].prefillServerId + "\""),
             std::string::npos);
+}
+
+TEST_F(DispatcherTest, ForwardsSlotReservationRequestToDecode) {
+  tt::sockets::SlotReservationRequestMessage request;
+  request.taskId = 55;
+  request.prefillServerId = "A";
+  request.registrationHashes = {0x1, 0x2};
+
+  dispatcher->onSlotReservationRequest("A", request);
+
+  ASSERT_EQ(slotReservationRequests.size(), 1u);
+  EXPECT_EQ(slotReservationRequests[0].taskId, 55u);
+}
+
+TEST_F(DispatcherTest, ForwardsSlotReservationResponseToPrefill) {
+  tt::sockets::SlotReservationRequestMessage request;
+  request.taskId = 56;
+  dispatcher->onSlotReservationRequest("B", request);
+
+  tt::sockets::SlotReservationResponseMessage response;
+  response.taskId = 56;
+  response.hasSlot = true;
+  response.slotId = 2;
+  dispatcher->onSlotReservationResponse(response);
+
+  ASSERT_EQ(slotReservationResponses.size(), 1u);
+  EXPECT_EQ(slotReservationResponses[0].prefillServerId, "B");
+  EXPECT_EQ(slotReservationResponses[0].taskId, 56u);
+}
+
+TEST_F(DispatcherTest, DropsUnknownSlotReservationResponse) {
+  tt::sockets::SlotReservationResponseMessage response;
+  response.taskId = 57;
+  dispatcher->onSlotReservationResponse(response);
+
+  EXPECT_TRUE(slotReservationResponses.empty());
 }
 
 }  // namespace

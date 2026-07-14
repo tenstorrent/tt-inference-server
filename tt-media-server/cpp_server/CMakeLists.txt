@@ -1050,6 +1050,15 @@ target_include_directories(concurrent_map_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(socket_messages_test tests/unit/sockets/socket_messages_test.cpp)
+target_link_libraries(socket_messages_test PRIVATE
+    cereal::cereal
+    GTest::gtest_main)
+target_include_directories(socket_messages_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cereal_SOURCE_DIR}/include
+)
+
 add_executable(session_test
     tests/unit/services/session_test.cpp
     src/domain/session.cpp
@@ -1146,6 +1155,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/session_manager.cpp
     src/services/prefix_cache_router.cpp
     src/services/session_resolution.cpp
+    src/services/decode_slot_reservation.cpp
     src/services/memory_services/memory_manager.cpp
     src/domain/session.cpp
     src/domain/prefix_cache/prefix_index.cpp
@@ -1242,6 +1252,33 @@ target_include_directories(prefill_integration_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
+add_executable(decode_slot_reservation_integration_test
+    tests/integration/server/decode_slot_reservation_integration_test.cpp
+    ${INTEGRATION_TEST_COMMON_SOURCES}
+)
+target_link_libraries(decode_slot_reservation_integration_test PRIVATE
+    llm_runner_lib
+    Drogon::Drogon
+    cereal::cereal
+    prometheus-cpp::core
+    pybind11::embed
+    stb_image_write
+    xxhash_lib
+    GTest::gtest_main)
+if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+    target_link_libraries(decode_slot_reservation_integration_test PRIVATE PkgConfig::ZMQ)
+elseif(TARGET libzmq-static)
+    target_link_libraries(decode_slot_reservation_integration_test PRIVATE libzmq-static)
+elseif(TARGET libzmq)
+    target_link_libraries(decode_slot_reservation_integration_test PRIVATE libzmq)
+endif()
+target_include_directories(decode_slot_reservation_integration_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cppzmq_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
 add_executable(disaggregated_e2e_test
     tests/e2e/disaggregated_e2e_test.cpp
     ${INTEGRATION_TEST_COMMON_SOURCES}
@@ -1277,6 +1314,8 @@ include(GoogleTest)
 # times AND exposing a racy teardown. Run all six tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
 add_test(NAME PrefillIntegrationTest COMMAND prefill_integration_test)
+add_test(NAME DecodeSlotReservationIntegrationTest
+         COMMAND decode_slot_reservation_integration_test)
 add_test(NAME DisaggregatedE2ETest COMMAND disaggregated_e2e_test)
 # Only built under Mooncake (TARGET transfer_engine); register its host+builtin
 # gtest round trip when present.
@@ -1285,7 +1324,8 @@ if(TARGET transport_kv_migration_e2e)
 endif()
 # Integration tests boot the full server stack and share ports/resources.
 # Prevent parallel execution via RESOURCE_LOCK.
-set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2ETest PROPERTIES
+set_tests_properties(MainIntegrationTest PrefillIntegrationTest
+                     DecodeSlotReservationIntegrationTest DisaggregatedE2ETest PROPERTIES
     TIMEOUT 120
     RESOURCE_LOCK integration_server
 )
@@ -1312,6 +1352,7 @@ gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(structured_output_test)
 gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
+gtest_discover_tests(socket_messages_test)
 gtest_discover_tests(session_test)
 gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)
@@ -1585,6 +1626,7 @@ set(SOURCES
     src/services/session_manager.cpp
     src/services/prefix_cache_router.cpp
     src/services/session_resolution.cpp
+    src/services/decode_slot_reservation.cpp
     src/domain/session.cpp
     src/runtime/worker/single_process_worker.cpp
     src/runtime/worker/worker_manager.cpp

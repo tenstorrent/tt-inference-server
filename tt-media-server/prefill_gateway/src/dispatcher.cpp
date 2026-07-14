@@ -168,7 +168,72 @@ void Dispatcher::onCacheBlocksAdded(
   GatewayMetrics::instance().recordCacheBlocksAdded(msg.blockHashes.size());
 }
 
+void Dispatcher::onSlotReservationRequest(
+    const std::string& fromPrefillServerId,
+    const tt::sockets::SlotReservationRequestMessage& msg) {
+  TT_LOG_INFO(
+      "[Dispatcher] taskId={} slot reservation request from prefill='{}' "
+      "hashes={} (passthrough only; phase 0)",
+      msg.taskId, fromPrefillServerId, msg.registrationHashes.size());
+
+  {
+    std::lock_guard<std::mutex> lock(slotReservationMutex);
+    slotReservationRoutes[msg.taskId] = fromPrefillServerId;
+  }
+
+  if (!senders.sendSlotReservationToDecode ||
+      !senders.sendSlotReservationToDecode(msg)) {
+    TT_LOG_WARN(
+        "[Dispatcher] taskId={} failed to forward slot reservation to decode",
+        msg.taskId);
+    std::lock_guard<std::mutex> lock(slotReservationMutex);
+    slotReservationRoutes.erase(msg.taskId);
+  }
+}
+
+void Dispatcher::onSlotReservationResponse(
+    const tt::sockets::SlotReservationResponseMessage& msg) {
+  std::optional<std::string> prefillId;
+  {
+    std::lock_guard<std::mutex> lock(slotReservationMutex);
+    auto it = slotReservationRoutes.find(msg.taskId);
+    if (it != slotReservationRoutes.end()) {
+      prefillId = it->second;
+      slotReservationRoutes.erase(it);
+    }
+  }
+
+  if (!prefillId.has_value()) {
+    TT_LOG_WARN(
+        "[Dispatcher] Dropping slot reservation response for unknown "
+        "taskId={}",
+        msg.taskId);
+    return;
+  }
+
+  TT_LOG_INFO(
+      "[Dispatcher] taskId={} slot reservation response -> prefill='{}' "
+      "error={} (passthrough only; phase 0)",
+      msg.taskId, *prefillId, msg.error);
+
+  if (!senders.sendSlotReservationToPrefill ||
+      !senders.sendSlotReservationToPrefill(*prefillId, msg)) {
+    TT_LOG_WARN(
+        "[Dispatcher] taskId={} failed to forward slot reservation response "
+        "to prefill='{}'",
+        msg.taskId, *prefillId);
+  }
+}
+
 void Dispatcher::onPrefillDown(const std::string& serverId) {
+  {
+    std::lock_guard<std::mutex> lock(slotReservationMutex);
+    std::erase_if(slotReservationRoutes,
+                  [&serverId](const auto& route) {
+                    return route.second == serverId;
+                  });
+  }
+
   std::vector<std::pair<uint32_t, InFlightEntry>> orphaned;
   {
     std::lock_guard<std::mutex> lock(inflightMutex);
