@@ -58,7 +58,7 @@ std::optional<LoadedKvTable> loadKvTableFile(const std::string& path) {
   return LoadedKvTable{std::move(table), std::move(blob)};
 }
 
-std::optional<std::vector<uint8_t>> exchangeTableBlob(
+std::optional<std::vector<uint8_t>> exchangeTableBlobUnlocked(
     KvControlChannel& channel, TableExchangeRole role,
     const std::vector<uint8_t>& localBlob) {
   auto sendLocal = [&]() -> bool {
@@ -96,10 +96,37 @@ std::optional<std::vector<uint8_t>> exchangeTableBlob(
   return peer;
 }
 
+std::optional<std::vector<uint8_t>> exchangeTableBlob(
+    KvControlChannel& channel, TableExchangeRole role,
+    const std::vector<uint8_t>& localBlob) {
+  KvControlChannel::Transaction txn(channel);
+  return exchangeTableBlobUnlocked(channel, role, localBlob);
+}
+
+std::optional<std::vector<uint8_t>> tryExchangeTableBlob(
+    KvControlChannel& channel, TableExchangeRole role,
+    const std::vector<uint8_t>& localBlob) {
+  KvControlChannel::Transaction txn(channel, std::try_to_lock);
+  if (!txn.ownsLock()) {
+    return std::nullopt;
+  }
+  return exchangeTableBlobUnlocked(channel, role, localBlob);
+}
+
 std::shared_ptr<const IKvTable> provisionPeerTable(
     KvControlChannel& channel, TableExchangeRole role,
     const std::vector<uint8_t>& localBlob) {
   auto peerBlob = exchangeTableBlob(channel, role, localBlob);
+  if (!peerBlob) {
+    return nullptr;
+  }
+  return deserializeKvTable(*peerBlob);
+}
+
+std::shared_ptr<const IKvTable> tryProvisionPeerTable(
+    KvControlChannel& channel, TableExchangeRole role,
+    const std::vector<uint8_t>& localBlob) {
+  auto peerBlob = tryExchangeTableBlob(channel, role, localBlob);
   if (!peerBlob) {
     return nullptr;
   }

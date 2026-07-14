@@ -53,8 +53,15 @@ std::shared_ptr<const IKvTable> deserializeKvTable(
     const std::vector<uint8_t>& blob);
 
 /// Swap serialized-table blobs over `channel` (one TABLE_EXCHANGE each way).
+/// Holds a channel Transaction for the full send/recv (blocking).
 /// @return the peer's blob, or nullopt on protocol error / channel close.
 std::optional<std::vector<uint8_t>> exchangeTableBlob(
+    KvControlChannel& channel, TableExchangeRole role,
+    const std::vector<uint8_t>& localBlob);
+
+/// Like exchangeTableBlob, but uses try_lock. Returns nullopt if a migrate (or
+/// another exchange) already owns the channel — caller should retry later.
+std::optional<std::vector<uint8_t>> tryExchangeTableBlob(
     KvControlChannel& channel, TableExchangeRole role,
     const std::vector<uint8_t>& localBlob);
 
@@ -62,6 +69,11 @@ std::optional<std::vector<uint8_t>> exchangeTableBlob(
 /// The prefill side calls this (role=Sender) to obtain the decode table before
 /// building its MooncakeKvSender / KvMigrationMultiHostSender.
 std::shared_ptr<const IKvTable> provisionPeerTable(
+    KvControlChannel& channel, TableExchangeRole role,
+    const std::vector<uint8_t>& localBlob);
+
+/// tryExchangeTableBlob + deserialize. nullptr if lock busy or exchange fails.
+std::shared_ptr<const IKvTable> tryProvisionPeerTable(
     KvControlChannel& channel, TableExchangeRole role,
     const std::vector<uint8_t>& localBlob);
 

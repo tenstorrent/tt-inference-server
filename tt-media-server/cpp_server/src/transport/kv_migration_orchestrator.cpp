@@ -49,6 +49,12 @@ std::optional<std::vector<uint8_t>> KvMigrationSender::exchangeTables(
 
 bool KvMigrationSender::migrate(uint64_t uuid,
                                 const MigrationRequest& request) {
+  // Hold the prefill-side channel transaction for the full control sequence so
+  // mesh-watch TABLE_EXCHANGE cannot steal MirrorReady/Ack on this channel.
+  // (Decode uses a separate KvControlChannel/mutex on its end of the TCP link,
+  // so this does not block the receiver's run() loop.)
+  KvControlChannel::Transaction txn(channel_);
+
   if (!channel_.send(beginMessage(uuid, request.dstSlice()))) {
     TT_LOG_ERROR(
         "[KvMigrationSender] migrate(uuid={}): send BeginMigration failed",
@@ -140,7 +146,7 @@ bool KvMigrationReceiver::handleTableExchange(const KvControlMessage& msg) {
 
   KvControlMessage out;
   out.type = KvControlType::TABLE_EXCHANGE;
-  out.role = 1;  // receiver
+  out.role = static_cast<uint8_t>(TableExchangeRole::Receiver);
   out.table_blob = local_table_blob_;
   if (!channel_.send(out)) {
     TT_LOG_ERROR("[KvMigrationReceiver] TABLE_EXCHANGE reply failed");

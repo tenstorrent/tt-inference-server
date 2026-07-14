@@ -22,26 +22,14 @@ namespace tt::transport {
  * segment name, done-marker, and ack — never the bulk KV bytes, which move
  * one-sided over Mooncake.
  *
- * The bare receiveRawData() returns an empty buffer for BOTH "connection
- * closed" and "no message ready yet" (a non-blocking transport such as
- * TcpSocketTransport returns empty whenever nothing is buffered yet). Mapping
- * every empty read to "closed" raced with a normal few-millisecond reply and
- * aborted healthy migrations. So receive() uses the transport's tri-state
- * tryReceiveMessage() instead: DATA is delivered, CLOSED fails, and NO_DATA
- * (live connection, peer hasn't replied yet) is retried up to a configurable
- * timeout. The same timeout is armed as a transport IoBudget around send() and
- * receiveMessage() so a mid-frame stall cannot pin the socket mutex past the
- * advertised deadline (retry counts alone are the wrong unit for 100–350+ MiB
- * TABLE_EXCHANGE payloads). The transport reports the true recv() status
- * directly, so the channel never has to guess "not ready vs closed" by polling
- * isConnected().
+ * Multi-message protocols (migrate: Begin→MirrorReady→Done→Ack; TABLE_EXCHANGE:
+ * send→recv) must run under Transaction: a recursive mutex held across the
+ * whole sequence. Per-call locking alone is not enough — releasing between
+ * send and receive lets another thread steal the peer's reply.
  *
  * The transport is injected so this is independent of the socket factory and
  * usable over a loopback pair in tests. The receive timeout/poll interval are
  * injectable so tests can keep the not-ready/timeout path fast.
- *
- * send() / receiveMessage() share an IO mutex so a post-Ready mesh watch can
- * re-run TABLE_EXCHANGE on reconnect without interleaving frames with migrate().
  */
 class KvControlChannel {
  public:
@@ -58,6 +46,28 @@ class KvControlChannel {
   /// waiting on the former but stop on the latter, which the std::optional
   /// receive() cannot express (it collapses both to nullopt).
   enum class ReceiveOutcome { Message, TimedOut, Closed };
+
+  /**
+   * @brief Holds the channel transaction mutex for a multi-message protocol.
+   *
+   * Prefer this around migrate() / TABLE_EXCHANGE. send()/receive() also take
+   * the same recursive mutex so single-message decode serve loops stay correct
+   * without an explicit Transaction.
+   */
+  class Transaction {
+   public:
+    explicit Transaction(KvControlChannel& channel);
+    Transaction(KvControlChannel& channel, std::try_to_lock_t);
+    Transaction(const Transaction&) = delete;
+    Transaction& operator=(const Transaction&) = delete;
+    Transaction(Transaction&&) noexcept = default;
+    Transaction& operator=(Transaction&&) noexcept = default;
+
+    bool ownsLock() const { return lock_.owns_lock(); }
+
+   private:
+    std::unique_lock<std::recursive_mutex> lock_;
+  };
 
   /// True if the underlying transport reports a live connection.
   bool isConnected() const;
@@ -84,10 +94,13 @@ class KvControlChannel {
   ReceiveOutcome receiveMessage(KvControlMessage& out);
 
  private:
+  friend class Transaction;
+
   std::shared_ptr<sockets::ISocketTransport> transport_;
   std::chrono::milliseconds receive_timeout_;
   std::chrono::milliseconds poll_interval_;
-  mutable std::mutex ioMutex_;
+  // Recursive: Transaction holds across migrate/exchange; send/receive re-lock.
+  mutable std::recursive_mutex txnMutex_;
 };
 
 }  // namespace tt::transport

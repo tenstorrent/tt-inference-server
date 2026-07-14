@@ -551,36 +551,54 @@ bool awaitAllChannelsConnected(KvControlChannelConnector& connector,
   return false;
 }
 
-// Pull the one fleet decode table from a connected decode control channel
-// (TABLE_EXCHANGE). All decodes share the same .pb — one successful exchange is
-// enough. Block until success or @p stop: a single failed attempt races decode
-// accept/session setup and must not tear the process down (readyz stays 503).
+// TABLE_EXCHANGE with every connected decode: prefill keeps one fleet decode
+// .pb (identical on all peers); each decode stores the prefill .pb. Block until
+// all succeed or @p stop (readyz stays 503).
 std::shared_ptr<const IKvTable> awaitDecodeTableFromControl(
     KvControlChannelConnector& connector, const std::vector<uint8_t>& prefillBlob,
     const std::atomic<bool>& stop) {
   auto lastWarn = std::chrono::steady_clock::now();
   TT_LOG_INFO(
-      "[worker] waiting for control TABLE_EXCHANGE (local prefill blob {} B)",
+      "[worker] waiting for control TABLE_EXCHANGE with all decode peers "
+      "(local prefill blob {} B)",
       prefillBlob.size());
 
   while (!stop.load()) {
     connector.awaitConnected(std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
+    if (connector.channelCount() == 0) {
+      return nullptr;
+    }
+    if (connector.connectedCount() < connector.channelCount()) {
+      std::this_thread::sleep_for(
+          std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
+      continue;
+    }
+
+    std::shared_ptr<const IKvTable> decodeTable;
+    bool allOk = true;
     for (const auto& [host, channel] : connector.channels()) {
       if (channel == nullptr || !channel->isConnected()) {
-        continue;
+        allOk = false;
+        break;
       }
       auto table =
           provisionPeerTable(*channel, TableExchangeRole::Sender, prefillBlob);
-      if (table) {
-        TT_LOG_INFO(
-            "[worker] got decode table via control TABLE_EXCHANGE with '{}' "
-            "({} B local prefill blob)",
-            host, prefillBlob.size());
-        return table;
+      if (!table) {
+        TT_LOG_WARN(
+            "[worker] TABLE_EXCHANGE with '{}' failed; retrying all peers",
+            host);
+        allOk = false;
+        break;
       }
-      TT_LOG_WARN(
-          "[worker] TABLE_EXCHANGE with '{}' failed; will retry connected peers",
-          host);
+      if (!decodeTable) {
+        decodeTable = std::move(table);
+      }
+      TT_LOG_INFO(
+          "[worker] TABLE_EXCHANGE with '{}' ok ({} B local prefill blob)",
+          host, prefillBlob.size());
+    }
+    if (allOk && decodeTable) {
+      return decodeTable;
     }
 
     const auto now = std::chrono::steady_clock::now();
@@ -591,8 +609,6 @@ std::shared_ptr<const IKvTable> awaitDecodeTableFromControl(
           connector.connectedCount(), connector.channelCount());
       lastWarn = now;
     }
-    // Unconditional backoff: do not depend on awaitConnected() alone to avoid
-    // a hot loop if that call is refactored away.
     std::this_thread::sleep_for(std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
   }
 
@@ -798,10 +814,13 @@ int runPrefill(const WorkerConfig& cfg) {
             "({}/{}) — TABLE_EXCHANGE",
             cfg.name, name, connector.connectedCount(),
             connector.channelCount());
-        if (!provisionPeerTable(*channel, TableExchangeRole::Sender,
-                                prefill->blob)) {
+        // try_lock: if migrate() holds the channel transaction, skip and retry
+        // next poll — never interleave TABLE_EXCHANGE with Begin/Ready/Done/Ack.
+        if (!tryProvisionPeerTable(*channel, TableExchangeRole::Sender,
+                                   prefill->blob)) {
           TT_LOG_WARN(
-              "[worker] TABLE_EXCHANGE with peer '{}' failed; will retry",
+              "[worker] TABLE_EXCHANGE with peer '{}' deferred or failed; "
+              "will retry",
               name);
           continue;
         }

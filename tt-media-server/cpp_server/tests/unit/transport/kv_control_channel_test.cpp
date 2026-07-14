@@ -5,12 +5,14 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <deque>
 #include <memory>
 #include <span>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "sockets/i_socket_transport.hpp"
@@ -157,6 +159,41 @@ TEST(KvControlChannel, LoopbackDeliversMessage) {
   const auto reply = senderCh.receive();
   ASSERT_TRUE(reply.has_value());
   EXPECT_EQ(reply->segment_name, "seg-1");
+}
+
+// B2: a Transaction held across send+receive must block try_lock from another
+// thread — migrate and TABLE_EXCHANGE must not interleave message boundaries.
+TEST(KvControlChannel, TransactionTryLockFailsWhileHeld) {
+  Queue aToB, bToA;
+  auto sender = std::make_shared<FakeTransport>(&bToA, &aToB);
+  KvControlChannel ch(sender);
+
+  KvControlChannel::Transaction held(ch);
+  ASSERT_TRUE(held.ownsLock());
+
+  std::atomic<bool> tryStarted{false};
+  std::atomic<bool> tryOwned{true};
+  std::thread other([&] {
+    tryStarted.store(true);
+    KvControlChannel::Transaction probe(ch, std::try_to_lock);
+    tryOwned.store(probe.ownsLock());
+  });
+  while (!tryStarted.load()) {
+    std::this_thread::yield();
+  }
+  // Give the other thread a moment to attempt try_lock while we hold.
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  other.join();
+  EXPECT_FALSE(tryOwned.load());
+}
+
+TEST(KvControlChannel, TransactionTryLockSucceedsWhenFree) {
+  Queue aToB, bToA;
+  auto sender = std::make_shared<FakeTransport>(&bToA, &aToB);
+  KvControlChannel ch(sender);
+
+  KvControlChannel::Transaction probe(ch, std::try_to_lock);
+  EXPECT_TRUE(probe.ownsLock());
 }
 
 // A closed transport (tryReceiveMessage reports CLOSED) yields nullopt
