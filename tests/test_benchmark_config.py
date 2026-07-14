@@ -336,6 +336,14 @@ def test_super_cluster_sweep_enforces_min_num_prompts(monkeypatch):
         if p.max_concurrency > 1:
             assert p.num_prompts >= floor
 
+    # Single-user latency points use the normal length-based count (1-8);
+    # applying the throughput floor here would waste 256 serial requests.
+    single_user = [p for p in text_params if p.max_concurrency == 1]
+    assert single_user
+    for p in single_user:
+        assert p.num_prompts == benchmark_config.get_num_prompts(p.isl, p.osl, 1)
+        assert p.num_prompts < floor
+
     # The high-ISL extension points must be present and respect the floor
     # (their base 1x concurrency count would otherwise fall well below it).
     high_isl = [p for p in text_params if p.isl >= 196608 and p.max_concurrency > 1]

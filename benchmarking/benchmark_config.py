@@ -186,7 +186,10 @@ def _expand_text_sweep_params(
             osl=osl,
             max_concurrency=concurrency,
             num_prompts=get_num_prompts(
-                isl, osl, concurrency, min_num_prompts=min_num_prompts
+                isl,
+                osl,
+                concurrency,
+                min_num_prompts=min_num_prompts if concurrency > 1 else 0,
             ),
         )
         for concurrency in concurrencies
@@ -475,7 +478,10 @@ def expand_concurrency_sweep_params(
             new_data = dict(base_data)
             new_data["max_concurrency"] = int(concurrency)
             new_data["num_prompts"] = get_num_prompts(
-                isl, osl, int(concurrency), min_num_prompts=min_num_prompts
+                isl,
+                osl,
+                int(concurrency),
+                min_num_prompts=min_num_prompts if concurrency > 1 else 0,
             )
 
             new_params = BenchmarkTaskParams(**new_data)
