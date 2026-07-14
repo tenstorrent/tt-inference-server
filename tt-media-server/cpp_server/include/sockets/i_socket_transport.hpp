@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -51,6 +52,17 @@ class ISocketTransport {
   virtual bool sendRawData(std::span<const uint8_t> data) = 0;
 
   /**
+   * @brief Bound the next send/recv burst to a wall-clock budget.
+   *
+   * Used by KvControlChannel so TABLE_EXCHANGE (and migrate control) cannot pin
+   * the transport mutex forever on a slow/stalled peer. Default is a no-op;
+   * TcpSocketTransport enforces the deadline inside send/recv. A mid-message
+   * expiry must tear the connection down (partial frame = unsynchronized).
+   */
+  virtual void beginIoBudget(std::chrono::milliseconds /*budget*/) {}
+  virtual void clearIoBudget() {}
+
+  /**
    * @brief Ownership-transfer send: hands the payload buffer to the transport.
    *
    * Lets transports avoid copying large payloads (e.g. pass the buffer straight
@@ -90,6 +102,14 @@ class ISocketTransport {
 
   virtual void setReconnectBackoff(std::chrono::milliseconds /*initialDelay*/,
                                    std::chrono::milliseconds /*maxDelay*/) {}
+
+  /// Optional multi-accept for listen sockets. Handler receives a connected
+  /// peer transport (ownership shared). Default returns false (single-peer /
+  /// fake transports). TcpSocketTransport returns true after arming the
+  /// accept loop — caller must start() afterward.
+  using AcceptHandler =
+      std::function<void(std::shared_ptr<ISocketTransport> peer)>;
+  virtual bool enableMultiAccept(AcceptHandler /*handler*/) { return false; }
 };
 
 }  // namespace tt::sockets
