@@ -12,7 +12,9 @@ model ceiling:
 
     bench_concurrency = max_concurrency - n_concurrent_trials
 
-The synthetic ISL is chosen to mirror the agentic load:
+The default synthetic workload varies ISL and OSL around equal base lengths.
+Its maximum combined length stays below the model context by a safety buffer.
+The previous task-aware behavior remains available as an internal opt-in:
 
 * Harbor tasks (terminal-bench, tau3): steered live from the running trial
   logs via :class:`~llm_module.agentic.live_isl.LiveISLTracker`.
@@ -29,6 +31,7 @@ import logging
 import os
 import shutil
 import threading
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 
@@ -38,6 +41,12 @@ from .live_isl import LiveISLTracker
 
 logger = logging.getLogger(__name__)
 
+# Default random workload. vLLM 0.13 accepts one symmetric ratio for both ISL
+# and OSL, so choose equal bases whose independent maxima each consume at most
+# half of the context remaining after the safety buffer.
+RANDOM_CONTEXT_BUFFER = 15 * 1024
+RANDOM_RANGE_RATIO = 0.5
+
 # Fixed synthetic point for SWE-bench (mini-swe-agent) parallel load.
 SWEBENCH_PARALLEL_ISL = 200 * 1024  # 200K
 SWEBENCH_PARALLEL_OSL = 4 * 1024  # 4K
@@ -45,6 +54,35 @@ SWEBENCH_PARALLEL_OSL = 4 * 1024  # 4K
 HARBOR_PARALLEL_OSL = 128
 # ISL used before the live reader has its first sample.
 HARBOR_DEFAULT_ISL = 8192
+
+
+class ParallelBenchStrategy(str, Enum):
+    """Synthetic request-shape strategy for the parallel load."""
+
+    RANDOM_RANGE = "random_range"
+    TASK_AWARE = "task_aware"
+
+
+def _random_workload_lengths(
+    max_context: int,
+    *,
+    context_buffer: int = RANDOM_CONTEXT_BUFFER,
+    range_ratio: float = RANDOM_RANGE_RATIO,
+) -> tuple[int, int]:
+    """Return equal ISL/OSL bases whose sampled maxima fit the context budget."""
+    if context_buffer < 0:
+        raise ValueError("context_buffer must be non-negative")
+    if not 0 <= range_ratio < 1:
+        raise ValueError("range_ratio must be in [0, 1)")
+
+    usable_context = int(max_context) - int(context_buffer)
+    max_per_length = usable_context // 2
+    base_length = int(max_per_length / (1 + range_ratio))
+    if base_length < 1:
+        raise ValueError(
+            f"max_context={max_context} is too small for buffer={context_buffer}"
+        )
+    return base_length, base_length
 
 
 def _resolve_vllm_binary() -> str:
@@ -83,6 +121,7 @@ class ParallelBenchLoad:
         osl: int,
         fixed_isl: Optional[int],
         tracker: Optional[LiveISLTracker],
+        random_range_ratio: Optional[float] = None,
     ) -> None:
         self._driver = driver
         self._server = server
@@ -92,6 +131,7 @@ class ParallelBenchLoad:
         self._osl = int(osl)
         self._fixed_isl = fixed_isl
         self._tracker = tracker
+        self._random_range_ratio = random_range_ratio
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -102,12 +142,23 @@ class ParallelBenchLoad:
             target=self._loop, name="parallel-bench-load", daemon=True
         )
         self._thread.start()
-        logger.info(
-            "Started parallel bench load: concurrency=%d osl=%d (%s ISL)",
-            self._bench_concurrency,
-            self._osl,
-            "fixed" if self._fixed_isl is not None else "live",
-        )
+        if self._random_range_ratio is not None:
+            logger.info(
+                "Started random-range parallel bench load: concurrency=%d "
+                "base_isl=%d base_osl=%d ratio=%.2f",
+                self._bench_concurrency,
+                self._fixed_isl,
+                self._osl,
+                self._random_range_ratio,
+            )
+        else:
+            logger.info(
+                "Started task-aware parallel bench load: concurrency=%d osl=%d "
+                "(%s ISL)",
+                self._bench_concurrency,
+                self._osl,
+                "fixed" if self._fixed_isl is not None else "live",
+            )
         return self
 
     def stop(self, timeout_s: float = 30.0) -> None:
@@ -136,9 +187,9 @@ class ParallelBenchLoad:
 
     def _loop(self) -> None:
         # Overwrite one stable file each segment: we only keep the latest run,
-        # not thousands of per-segment files. The ISL used is still recoverable
-        # from the file (total_input_tokens / completed) and the concurrency
-        # from max_concurrency.
+        # not thousands of per-segment files. Detailed output preserves the
+        # realized randomized request lengths; fixed/task-aware runs retain
+        # their configured ISL in the aggregate token counts.
         result_filename = self._context.output_dir / "parallel_bench.json"
         while not self._stop.is_set():
             isl = self._current_isl()
@@ -147,6 +198,8 @@ class ParallelBenchLoad:
                 osl=self._osl,
                 max_concurrency=self._bench_concurrency,
                 num_prompts=self._bench_concurrency,
+                random_range_ratio=self._random_range_ratio,
+                ignore_eos=self._random_range_ratio is not None,
             )
             try:
                 self._driver.run(
@@ -168,12 +221,15 @@ def start_parallel_bench(
     *,
     watch_dir: Path,
     sidecar_dir: Path,
+    strategy: ParallelBenchStrategy = ParallelBenchStrategy.RANDOM_RANGE,
 ) -> Optional[ParallelBenchLoad]:
     """Build and start a :class:`ParallelBenchLoad` for ``task``, or ``None``.
 
     Returns ``None`` (no-op) when the feature does not apply: non
     SUPER_CLUSTER models, or when the agentic trials already saturate the
-    model concurrency (``bench_concurrency < 1``).
+    model concurrency (``bench_concurrency < 1``). ``RANDOM_RANGE`` is the
+    default; ``TASK_AWARE`` preserves live Harbor ISL tracking and the fixed
+    SWE-bench request shape.
     """
     from workflows.workflow_types import DeviceTypes
 
@@ -184,6 +240,7 @@ def start_parallel_bench(
     device_spec = ctx.model_spec.device_model_spec
     model_max = int(device_spec.max_concurrency)
     max_context = int(device_spec.max_context)
+    strategy = ParallelBenchStrategy(strategy)
 
     is_swebench = getattr(task, "swebench_eval_config", None) is not None
     eval_cfg = task.agentic_eval_config or task.swebench_eval_config
@@ -214,10 +271,19 @@ def start_parallel_bench(
     )
     driver = VLLMBenchDriver(vllm_binary=_resolve_vllm_binary())
 
-    if is_swebench:
-        osl = SWEBENCH_PARALLEL_OSL
-        fixed_isl: Optional[int] = SWEBENCH_PARALLEL_ISL
+    random_range_ratio: Optional[float] = None
+    if strategy == ParallelBenchStrategy.RANDOM_RANGE:
+        try:
+            fixed_isl, osl = _random_workload_lengths(max_context)
+        except ValueError as e:
+            logger.warning("Skipping random-range parallel bench: %s", e)
+            return None
         tracker: Optional[LiveISLTracker] = None
+        random_range_ratio = RANDOM_RANGE_RATIO
+    elif is_swebench:
+        osl = SWEBENCH_PARALLEL_OSL
+        fixed_isl = SWEBENCH_PARALLEL_ISL
+        tracker = None
     else:
         osl = HARBOR_PARALLEL_OSL
         fixed_isl = None
@@ -236,8 +302,9 @@ def start_parallel_bench(
         osl=osl,
         fixed_isl=fixed_isl,
         tracker=tracker,
+        random_range_ratio=random_range_ratio,
     )
     return load.start()
 
 
-__all__ = ["ParallelBenchLoad", "start_parallel_bench"]
+__all__ = ["ParallelBenchLoad", "ParallelBenchStrategy", "start_parallel_bench"]
