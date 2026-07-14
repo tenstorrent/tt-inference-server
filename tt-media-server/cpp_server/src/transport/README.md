@@ -460,6 +460,27 @@ WORKER_BIN=./build/bringup_mooncake_worker \
   tests/e2e/scripts/run_migration_workers_mpi.sh
 ```
 
+## KV table exchange at bring-up (#4295)
+
+Production path is `mooncake_kv_migration_worker` (deployed by
+`scripts/deploy_migration_workers.sh`). There is **one** prefill `.pb` and
+**one** decode `.pb` for the fleet. Each role loads only its own file, then
+both sides exchange tables over control `TABLE_EXCHANGE` (prefill dials;
+decode listens and replies):
+
+```
+decode:  load decode.pb → register mirror → control server
+       → on TABLE_EXCHANGE: store prefill.pb, reply with decode.pb
+prefill: load prefill.pb → resolvePeers → openChannels → awaitConnected
+       → TABLE_EXCHANGE with one decode (send prefill.pb, recv decode.pb)
+       → build sender → READY / Kafka
+```
+
+TE/Mooncake moves **KV bytes** only. `--decode-table` on prefill remains a
+no-peer fallback. Deploy default: prefill peers every decode; decode peers none.
+Control receive timeout on the worker is raised so a 100–350+ MiB exchange can
+finish at bring-up.
+
 ## Validation status
 
 | Step | Status |
