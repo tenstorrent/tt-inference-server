@@ -20,10 +20,12 @@
 #      fabric_node_host names the decode that owns it. --prefill-table /
 #      --decode-table (or the config) supply the tables; --layer-start/--layer-end
 #      are no longer used here.
-#   6. A watchdog then polls every worker's /healthz and, when one dies or hangs,
-#      relaunches ONLY that worker in place. It re-registers under the same name
-#      and peers re-resolve it on their next request. The watchdog loop is also
-#      what holds the deploy open, so the whole thing tears down on Ctrl-C.
+#   6. A watchdog then polls every worker's /healthz (HTTP is the health signal).
+#      After N consecutive misses it relaunches ONLY that worker in place. The
+#      launch PID is only a kill handle for processes this script started — it
+#      is NOT required for "healthy" (manual revive / dead ssh must not look
+#      like a down worker). The watchdog loop also holds the deploy open so
+#      Ctrl-C tears the stack down.
 #
 # Why per-worker (not mpirun): the workers never talk over MPI — discovery is
 # HTTP and KV moves over Mooncake TCP — so mpirun was only a launcher, and its
@@ -470,10 +472,11 @@ ${devmap:+DEVICE_MAP=${devmap} }PEERS=${peers} \
 MC_TCP_BIND_ADDRESS=auto bash ${RANK_LAUNCH}"
 }
 
-# (Re)launch the worker in slot $1, locally or over ssh, tracking its PID. For
-# ssh the PID is the local ssh client: it exits when the remote worker does, so
-# it is a valid liveness handle; for local hosts bash exec's into the worker so
-# the PID is the worker itself.
+# (Re)launch the worker in slot $1, locally or over ssh, tracking its PID as a
+# kill handle only. For ssh the PID is the local ssh client (exits when the
+# remote worker exits *if* that ssh session still owns it); for local hosts
+# bash runs the worker in the background. Health probing uses /healthz, not
+# this PID — see workerSlotHealthy.
 launchWorkerSlot() {
   local s="$1" role="${WK_ROLE[$s]}" index="${WK_INDEX[$s]}" host="${WK_HOST[$s]}"
   local log="${WK_LOG[$s]}" cmd
@@ -495,12 +498,22 @@ launchAllWorkers() {
   for (( s = 0; s < ${#WK_ROLE[@]}; s++ )); do launchWorkerSlot "${s}"; done
 }
 
-# A slot is healthy if its launcher PID is alive AND /healthz answers 2xx — the
-# HTTP check is what catches a hung-but-alive worker the PID check would miss.
+# Health = /healthz only. The launch PID is deploy's kill/sweep handle for a
+# process *this script* started — not a liveness oracle. Requiring both made
+# deploy lie after kill+manual-revive or a dead ssh client: /readyz true on the
+# host, while supervise counted forever-unhealthy against a stale WK_PID
+# (especially with --restart-after 0, which never refreshes the PID).
 workerSlotHealthy() {
-  local s="$1" pid="${WK_PID[$s]}" host="${WK_HOST[$s]}" port="${WK_PORT[$s]}"
-  [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null || return 1
-  curl -fsS --max-time 2 "http://${host}:${port}/healthz" >/dev/null 2>&1 || return 1
+  local s="$1" pid="${WK_PID[$s]:-}" host="${WK_HOST[$s]}" port="${WK_PORT[$s]}"
+  if ! curl -fsS --max-time 2 "http://${host}:${port}/healthz" >/dev/null 2>&1; then
+    return 1
+  fi
+  if [[ -n "${pid}" ]] && ! kill -0 "${pid}" 2>/dev/null; then
+    echo "[deploy] ${WK_ROLE[$s]}-${WK_INDEX[$s]} on ${host}: /healthz ok but" \
+         "launch pid ${pid} is gone (external revive or ssh drop) — adopting;" \
+         "not unhealthy" >&2
+    WK_PID[$s]=""
+  fi
   return 0
 }
 
