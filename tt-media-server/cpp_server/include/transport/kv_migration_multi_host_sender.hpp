@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -36,9 +37,10 @@ class WorkerHealth;
  *     standalone tests and the e2e; a discovery service supplies the same map
  *     in production, with no change to this class.
  *
- * The injected map defines the known decode cluster; each migrate() drives only
- * the subset of hosts the request actually touches. Owns no threads; the
- * per-host receivers run in their own processes.
+ * The injected map defines the known decode cluster at construction. addHost()
+ * upserts a host and refreshes the control-channel pointer (metadata
+ * rediscovery after a decode restart). Owns no threads; the per-host receivers
+ * run in their own processes.
  */
 class KvMigrationMultiHostSender {
  public:
@@ -57,6 +59,16 @@ class KvMigrationMultiHostSender {
       WorkerHealth* health = nullptr);
 
   /**
+   * @brief Upsert a decode host and bind/refresh its control channel.
+   * @return true if the host is present after the call. false if @p channel is
+   *         null.
+   *
+   * Thread-safe vs migrate(). Re-binding the channel pointer is required when
+   * the connector replaceChannel()s after metadata republishes a new endpoint.
+   */
+  bool addHost(const std::string& host, KvControlChannel* channel);
+
+  /**
    * @brief Drive the migration to every decode host the request touches.
    *
    * Hosts are driven in a deterministic (sorted) order. A host involved in the
@@ -71,10 +83,17 @@ class KvMigrationMultiHostSender {
   bool migrate(uint64_t uuid, const MigrationRequest& request);
 
   /// Number of known decode hosts (channel-map size).
-  std::size_t hostCount() const { return senders_.size(); }
+  std::size_t hostCount() const;
 
  private:
+  std::shared_ptr<ITransferEngine> engine_;
+  IDeviceIo& device_;
+  std::shared_ptr<const IKvTable> prefill_table_;
   std::shared_ptr<const IKvTable> decode_table_;
+  std::string prefill_host_;
+  WorkerHealth* health_ = nullptr;
+
+  mutable std::mutex mutex_;
   std::unordered_map<std::string, KvControlChannel*> channels_;
   // One staging pool shared by all per-host senders: the fan-out is serial, so
   // only one sender stages at a time, and sharing avoids N * 2 * 32 MiB of
