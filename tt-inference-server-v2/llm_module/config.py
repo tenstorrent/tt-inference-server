@@ -32,6 +32,8 @@ class LLMRunConfig:
     osl: int
     max_concurrency: int
     num_prompts: int
+    random_range_ratio: Optional[float] = None
+    ignore_eos: bool = False
 
 
 @dataclass(frozen=True)

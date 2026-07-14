@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import shutil
 from datetime import datetime
@@ -82,6 +83,14 @@ def build_vllm_bench_serve_argv(
         str(result_filename),
     ]
 
+    if config.random_range_ratio is not None:
+        ratio = float(config.random_range_ratio)
+        if not 0 <= ratio < 1:
+            raise ValueError("random_range_ratio must be in [0, 1)")
+        cmd.extend(["--random-range-ratio", str(ratio)])
+    if config.ignore_eos:
+        cmd.append("--ignore-eos")
+
     if uses_remote_base_url(server.url_with_port, server.is_remote):
         cmd.extend(["--base-url", server.url_with_port])
         cmd.extend(["--ready-check-timeout-sec", "0"])
@@ -90,10 +99,15 @@ def build_vllm_bench_serve_argv(
             headers.append(f"Authorization=Bearer {auth_token}")
     else:
         cmd.extend(["--host", server.host, "--port", str(server.service_port)])
+        truncate_prompt_tokens = config.isl
+        if config.random_range_ratio is not None:
+            truncate_prompt_tokens = math.ceil(
+                config.isl * (1 + config.random_range_ratio)
+            )
         cmd.extend(
             [
                 "--extra-body",
-                json.dumps({"truncate_prompt_tokens": str(config.isl)}),
+                json.dumps({"truncate_prompt_tokens": str(truncate_prompt_tokens)}),
             ]
         )
 
