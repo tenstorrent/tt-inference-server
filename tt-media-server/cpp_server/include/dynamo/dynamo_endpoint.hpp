@@ -44,12 +44,24 @@ class DynamoEndpoint {
     std::string component = "backend";
     std::string endpoint = "generate";
 
-    /// Discovery backend ("file" or "etcd"). Must match the frontend's
-    /// DYN_DISCOVERY_BACKEND.
+    /// Discovery backend. Must match the frontend's DYN_DISCOVERY_BACKEND.
+    DiscoveryBackend backend = DiscoveryBackend::ETCD;
+
     /// Etcd backend: endpoint URL (or comma-separated list).
     std::string etcd_endpoints = "http://localhost:2379";
     /// Etcd backend: lease TTL in seconds (keep-alive runs at half this).
     int64_t etcd_lease_ttl_secs = 10;
+
+    /// Kubernetes backend: API server base URL and ServiceAccount token path.
+    std::string kube_api_server;
+    std::string kube_token_path =
+        "/var/run/secrets/kubernetes.io/serviceaccount/token";
+    bool kube_validate_cert = true;
+    /// Kubernetes backend: namespace + pod identity (downward API). In pod mode
+    /// the CR name equals pod_name.
+    std::string pod_namespace = "default";
+    std::string pod_name;
+    std::string pod_uid;
 
     /// Slug shown in /v1/models. When empty, the active tokenizer's
     /// modelName() is used.

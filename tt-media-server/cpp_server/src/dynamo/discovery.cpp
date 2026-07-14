@@ -17,6 +17,7 @@
 
 #include "config/settings.hpp"
 #include "dynamo/etcd_client.hpp"
+#include "dynamo/kube_client.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::dynamo {
@@ -372,10 +373,81 @@ class EtcdDiscoveryRegistration : public DiscoveryRegistration {
   int64_t leaseId = 0;
 };
 
+// ---------------------------------------------------------------------------
+// Kubernetes backend
+// ---------------------------------------------------------------------------
+
+class KubernetesDiscoveryRegistration : public DiscoveryRegistration {
+ public:
+  explicit KubernetesDiscoveryRegistration(DiscoveryConfig config)
+      : cfg(std::move(config)) {
+    if (cfg.pod_name.empty()) {
+      throw std::runtime_error(
+          "[KubernetesDiscoveryRegistration] POD_NAME is required (downward "
+          "API) for the kubernetes discovery backend");
+    }
+    if (cfg.cr_name.empty()) {
+      cfg.cr_name = cfg.pod_name;  // pod mode: one CR per pod.
+    }
+    KubeClientConfig kc;
+    kc.api_server = cfg.kube_api_server;
+    kc.token_path = cfg.kube_token_path;
+    kc.validate_cert = cfg.kube_validate_cert;
+    client = std::make_unique<KubeClient>(std::move(kc));
+  }
+
+  void registerSelf() override {
+    apply();
+    TT_LOG_INFO(
+        "[KubernetesDiscoveryRegistration] Applied CR name={} namespace={} "
+        "model={} api server={}",
+        cfg.cr_name, cfg.pod_namespace, cfg.model_name, cfg.kube_api_server);
+  }
+
+  void unregisterSelf() override {
+    // Best-effort fast-path. If the process is killed this never runs, and
+    // Kubernetes removes us via readiness + owner-reference GC anyway.
+    try {
+      client->deleteCr(cfg.pod_namespace, cfg.cr_name);
+      TT_LOG_INFO("[KubernetesDiscoveryRegistration] Deleted CR name={} ns={}", cfg.cr_name,
+                  cfg.pod_namespace);
+    } catch (const std::exception& e) {
+      TT_LOG_WARN("[KubernetesDiscoveryRegistration] delete failed (name={}): {}",
+                  cfg.cr_name, e.what());
+    }
+  }
+
+  // keepAlive()/keepAliveIntervalSecs() use the base defaults (no-op,
+  // interval 0), so the endpoint spawns no keep-alive thread. The CR lives as
+  // long as the pod; removal is owned by Kubernetes (owner-reference GC on pod
+  // deletion + EndpointSlice readiness).
+
+ private:
+  void apply() {
+    client->applyCr(
+        cfg.pod_namespace, cfg.cr_name,
+        buildDynamoWorkerMetadataCr(cfg.cr_name, cfg.pod_name, cfg.pod_uid,
+                                    instanceKey(cfg), buildInstanceJson(cfg),
+                                    buildMdcJson(cfg)));
+  }
+
+  DiscoveryConfig cfg;
+  std::unique_ptr<KubeClient> client;
+};
+
 }  // namespace
 
 std::unique_ptr<DiscoveryRegistration> DiscoveryRegistration::create(
     const DiscoveryConfig& config) {
+  switch (config.backend) {
+    case DiscoveryBackend::KUBERNETES:
+      return std::make_unique<KubernetesDiscoveryRegistration>(config);
+    case DiscoveryBackend::ETCD:
+      return std::make_unique<EtcdDiscoveryRegistration>(config);
+  }
+  // Fallback for an unspecified/out-of-range backend value. config.backend
+  // defaults to ETCD, so etcd is also the "not set" default. No `default:` case
+  // above, so adding a new DiscoveryBackend triggers a -Wswitch warning here.
   return std::make_unique<EtcdDiscoveryRegistration>(config);
 }
 

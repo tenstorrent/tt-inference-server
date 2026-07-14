@@ -380,8 +380,28 @@ int main(int argc, char* argv[]) {
       opts.namespace_name = tt::config::dynamoNamespace();
       opts.component = tt::config::dynamoComponent();
       opts.endpoint = tt::config::dynamoEndpointName();
+      const std::string discoveryBackend = tt::config::dynamoDiscoveryBackend();
+      if (discoveryBackend == "kubernetes") {
+        opts.backend = tt::dynamo::DiscoveryBackend::KUBERNETES;
+      } else if (discoveryBackend == "etcd") {
+        opts.backend = tt::dynamo::DiscoveryBackend::ETCD;
+      } else {
+        TT_LOG_ERROR(
+            "[Main] Unknown DYNAMO_DISCOVERY_BACKEND='{}'; expected 'etcd' or "
+            "'kubernetes'. Falling back to 'etcd'.",
+            discoveryBackend);
+        opts.backend = tt::dynamo::DiscoveryBackend::ETCD;
+      }
+      // Etcd backend.
       opts.etcd_endpoints = tt::config::dynamoEtcdEndpoints();
       opts.etcd_lease_ttl_secs = tt::config::dynamoEtcdLeaseTtlSecs();
+      // Kubernetes backend.
+      opts.kube_api_server = tt::config::dynamoKubeApiServer();
+      opts.kube_token_path = tt::config::dynamoKubeTokenPath();
+      opts.kube_validate_cert = tt::config::dynamoKubeValidateCert();
+      opts.pod_namespace = tt::config::dynamoPodNamespace();
+      opts.pod_name = tt::config::dynamoPodName();
+      opts.pod_uid = tt::config::dynamoPodUid();
 
       try {
         dynamoEndpoint =

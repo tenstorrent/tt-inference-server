@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -851,6 +852,58 @@ std::string dynamoComponent() {
 
 std::string dynamoEndpointName() {
   return envString("DYNAMO_ENDPOINT_NAME", defaults::DYNAMO_ENDPOINT_NAME);
+}
+
+std::string dynamoDiscoveryBackend() {
+  return envString("DYNAMO_DISCOVERY_BACKEND",
+                   defaults::DYNAMO_DISCOVERY_BACKEND);
+}
+
+std::string dynamoKubeApiServer() {
+  if (const char* v = std::getenv("DYNAMO_KUBE_API_SERVER"); v && *v) {
+    return v;
+  }
+  // Standard in-cluster discovery of the API server.
+  const char* host = std::getenv("KUBERNETES_SERVICE_HOST");
+  if (host && *host) {
+    const char* port = std::getenv("KUBERNETES_SERVICE_PORT");
+    const std::string portStr = (port && *port) ? port : "443";
+    return "https://" + std::string(host) + ":" + portStr;
+  }
+  return "https://kubernetes.default.svc";
+}
+
+std::string dynamoKubeTokenPath() {
+  return envString("DYNAMO_KUBE_TOKEN_PATH", defaults::DYNAMO_KUBE_TOKEN_PATH);
+}
+
+bool dynamoKubeValidateCert() {
+  return envBool("DYNAMO_KUBE_VALIDATE_CERT",
+                 defaults::DYNAMO_KUBE_VALIDATE_CERT);
+}
+
+std::string dynamoPodName() { return envString("POD_NAME", ""); }
+
+std::string dynamoPodUid() { return envString("POD_UID", ""); }
+
+std::string dynamoPodNamespace() {
+  // Downward-API env takes precedence.
+  if (const char* v = std::getenv("POD_NAMESPACE"); v && *v) {
+    return v;
+  }
+  // Every in-cluster pod mounts its namespace at the ServiceAccount path.
+  std::ifstream f(defaults::DYNAMO_KUBE_NAMESPACE_PATH);
+  if (f) {
+    std::string ns;
+    std::getline(f, ns);
+    while (!ns.empty() &&
+           std::isspace(static_cast<unsigned char>(ns.back()))) {
+      ns.pop_back();
+    }
+    if (!ns.empty()) return ns;
+  }
+  // Fall back to the Dynamo discovery namespace key.
+  return dynamoNamespace();
 }
 
 /**
