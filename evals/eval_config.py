@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -16,6 +17,28 @@ from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
 
 
 @dataclass(frozen=True)
+class ModeReferenceScore:
+    """Reference score measured on a specific EvalLimitMode's fixed subset.
+
+    When a run uses --limit-samples-mode / --ci-mode, the acceptance check
+    compares the subset score against the matching subset reference instead of
+    the full-dataset gpu_reference_score (apples-to-apples). ``score`` is in the
+    same unit as the task score (typically percent).
+
+    The acceptance check for a subset reference is sample-count-aware (see
+    ``accept_eval_score``): PASS when
+    ``round(score/100 * n) >= floor(n * ref/100 * (1 - tolerance))``. The
+    integer floor gives small subsets the right leniency automatically (a 5-item
+    subset moves in 20% steps), so no separate absolute-margin knob is needed.
+    """
+
+    score: float
+    ref: str = ""
+    # Falls back to EvalTaskScore.tolerance when None.
+    tolerance: Optional[float] = None
+
+
+@dataclass(frozen=True)
 class EvalTaskScore:
     published_score: float
     published_score_ref: str
@@ -24,6 +47,87 @@ class EvalTaskScore:
     gpu_reference_score_ref: str = None
     score_func_kwargs: Dict[str, str] = field(default_factory=dict)
     tolerance: float = 0.05
+    # Per-limit-mode references measured on that mode's fixed subset. Used by
+    # the release report's accuracy check when the run sets --limit-samples-mode
+    # (or --ci-mode). The full-set gpu_reference_score remains the baseline for
+    # unrestricted --workflow evals runs.
+    mode_reference_scores: Dict["EvalLimitMode", "ModeReferenceScore"] = field(
+        default_factory=dict
+    )
+
+
+def resolve_eval_reference(score_obj, limit_mode):
+    """Select the reference the accuracy check should compare against.
+
+    When a run uses a limit mode (--limit-samples-mode / --ci-mode) and the
+    task defines a matching entry in ``mode_reference_scores``, return that
+    subset-specific reference (apples-to-apples with the subset score).
+    Otherwise return the full-dataset ``gpu_reference_score`` baseline.
+
+    Shared by the v1 release report (workflows/run_reports.py) and the v2
+    engine scorers (tt-inference-server-v2) so both paths agree.
+
+    Returns a dict: reference_score, reference_ref, tolerance,
+    is_subset_reference (bool: True when the returned reference is a
+    limit-mode subset reference rather than the full-dataset baseline).
+    """
+    mode_ref = None
+    if limit_mode is not None:
+        mode_ref = (getattr(score_obj, "mode_reference_scores", None) or {}).get(
+            limit_mode
+        )
+
+    full_ref_label = getattr(score_obj, "gpu_reference_score_ref", None)
+
+    if mode_ref is not None:
+        label = mode_ref.ref or full_ref_label or ""
+        suffix = f"[{limit_mode.name} subset]"
+        return {
+            "reference_score": mode_ref.score,
+            "reference_ref": f"{label} {suffix}".strip(),
+            "tolerance": mode_ref.tolerance
+            if mode_ref.tolerance is not None
+            else score_obj.tolerance,
+            "is_subset_reference": True,
+        }
+
+    return {
+        "reference_score": score_obj.gpu_reference_score,
+        "reference_ref": full_ref_label,
+        "tolerance": score_obj.tolerance,
+        "is_subset_reference": False,
+    }
+
+
+def accept_eval_score(ref, score, n_total=None):
+    """Decide PASS/FAIL for an observed percent ``score`` against ``ref``.
+
+    ``ref`` is a dict from ``resolve_eval_reference``. Returns True (PASS),
+    False (FAIL), or None when no reference is defined (caller renders N/A).
+
+    For a subset (mode) reference with a known sample count ``n_total`` the
+    check is sample-count-aware:
+
+        n_correct_obs = round(score/100 * n_total)
+        threshold     = floor(n_total * reference/100 * (1 - tolerance))
+        PASS iff n_correct_obs >= threshold
+
+    The integer floor lets tiny subsets tolerate one flipped item without a
+    hand-tuned absolute margin. When ``n_total`` is unknown, or for the
+    full-dataset reference path, it falls back to the percent ratio check
+    (score / reference >= 1 - tolerance), preserving prior behavior.
+    """
+    reference = ref["reference_score"]
+    tolerance = ref["tolerance"]
+    if not reference:
+        return None
+    assert reference > 0, "Reference score is not > 0"
+    if ref.get("is_subset_reference") and n_total:
+        ref_rate = reference / 100.0
+        threshold = math.floor(n_total * ref_rate * (1.0 - tolerance))
+        observed = round(score / 100.0 * n_total)
+        return observed >= threshold
+    return (score / reference) >= (1.0 - tolerance)
 
 
 @dataclass(frozen=True)
@@ -3729,6 +3833,18 @@ _eval_config_list = [
                     # channel that suppresses native reasoning.)
                     gpu_reference_score=83.33,
                     gpu_reference_score_ref="run.py --workflow evals r1_gpqa_diamond full (198), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-16",
+                    # CI subset (--ci-mode -> ci-nightly limit 0.2 = doc_ids
+                    # 0-39). The full run scores only ~75% on these same 40
+                    # harder-than-average questions, and temp=1.0 adds ~+/-2.5
+                    # pts jitter, so compare against the subset measurement with
+                    # a looser 10% tolerance instead of the full-set 83.33.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=80.00,
+                            ref="ci-nightly r1_gpqa_diamond (doc_ids 0-39), H100 gemma-4-31B-it, 2026-06-29",
+                            tolerance=0.10,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3928,13 +4044,21 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Use the chat endpoint so the server applies the chat template
+                # (and thus --default-chat-template-kwargs '{"enable_thinking":
+                # true}'); client-side apply_chat_template on /v1/completions
+                # would render with the default enable_thinking=false and
+                # suppress native reasoning (see gemma-4-31B-it note above).
+                use_chat_api=True,
                 model_kwargs={
                     "max_length": 131072,
                 },
                 # Thinking-mode sampling (Qwen3.6 page, general tasks):
                 # temperature=1.0, top_p=0.95, top_k=20.
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={
-                    "stream": "true",
+                    "stream": "false",
                     "max_gen_toks": 32 * 1024,
                     "until": [],
                     "do_sample": "true",
@@ -4070,13 +4194,21 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Use the chat endpoint so the server applies the chat template
+                # (and thus --default-chat-template-kwargs '{"enable_thinking":
+                # true}'); client-side apply_chat_template on /v1/completions
+                # would render with the default enable_thinking=false and
+                # suppress native reasoning (see gemma-4-31B-it note above).
+                use_chat_api=True,
                 model_kwargs={
                     "max_length": 131072,
                 },
                 # Thinking-mode sampling (Qwen3.6 page, general tasks):
                 # temperature=1.0, top_p=0.95, top_k=20.
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={
-                    "stream": "true",
+                    "stream": "false",
                     "max_gen_toks": 32 * 1024,
                     "until": [],
                     "do_sample": "true",
@@ -4212,13 +4344,21 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Use the chat endpoint so the server applies the chat template
+                # (and thus --default-chat-template-kwargs '{"enable_thinking":
+                # true}'); client-side apply_chat_template on /v1/completions
+                # would render with the default enable_thinking=false and
+                # suppress native reasoning (see gemma-4-31B-it note above).
+                use_chat_api=True,
                 model_kwargs={
                     "max_length": 131072,
                 },
                 # Thinking-mode sampling (Qwen3.6 page, general tasks):
                 # temperature=1.0, top_p=0.95, top_k=20.
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={
-                    "stream": "true",
+                    "stream": "false",
                     "max_gen_toks": 32 * 1024,
                     "until": [],
                     "do_sample": "true",
@@ -4354,13 +4494,21 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Use the chat endpoint so the server applies the chat template
+                # (and thus --default-chat-template-kwargs '{"enable_thinking":
+                # true}'); client-side apply_chat_template on /v1/completions
+                # would render with the default enable_thinking=false and
+                # suppress native reasoning (see gemma-4-31B-it note above).
+                use_chat_api=True,
                 model_kwargs={
                     "max_length": 131072,
                 },
                 # Thinking-mode sampling (Qwen3.6 page, general tasks):
                 # temperature=1.0, top_p=0.95, top_k=20.
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={
-                    "stream": "true",
+                    "stream": "false",
                     "max_gen_toks": 32 * 1024,
                     "until": [],
                     "do_sample": "true",

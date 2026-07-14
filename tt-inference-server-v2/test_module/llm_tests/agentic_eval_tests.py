@@ -29,7 +29,16 @@ logger = logging.getLogger(__name__)
 
 
 def _select_agentic_tasks(ctx: MediaContext) -> list:
-    """Return only EVALS_AGENTIC tasks for the dedicated agentic workflow."""
+    """Return the EVALS_AGENTIC tasks for this model.
+
+    Standard (lm-eval) tasks in the same EvalConfig are owned by
+    ``--workflow evals`` (which conversely filters out agentic tasks), so the
+    agentic runner simply selects the agentic tasks and skips the rest. Mixed
+    configs are a normal pattern (e.g. a model with GPQA + Terminal-Bench +
+    SWE-bench), and ``--eval-samples`` cannot be combined with ``--ci-mode``
+    (they are mutually exclusive in run.py), so failing hard on mixed configs
+    would leave no way to run agentic evals in CI.
+    """
     tasks = getattr(ctx.all_params, "tasks", []) or []
     agentic = [
         t for t in tasks if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
@@ -39,7 +48,9 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
     ]
     if non_agentic:
         logger.info(
-            "Skipping non-agentic eval task(s) in v2 agentic workflow: %s",
+            "Skipping %d non-agentic task(s) under --workflow agentic "
+            "(run them via --workflow evals): %s",
+            len(non_agentic),
             [t.task_name for t in non_agentic],
         )
     return agentic
