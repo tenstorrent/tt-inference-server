@@ -68,6 +68,12 @@ class PrefixCacheRun:
     arrival_smoothness: Optional[float] = None
     request_rate: Optional[float] = None
 
+    # AIPerf ``--goodput`` SLO string, e.g.
+    # ``"time_to_first_token:4000 output_token_throughput_per_user:45"``.
+    # When set the driver forwards it verbatim so AIPerf reports the
+    # fraction of requests meeting every threshold (goodput, req/s).
+    goodput: Optional[str] = None
+
     # Mutually exclusive prefix knobs.
     shared_system_prompt_length: Optional[int] = None
     num_prefix_prompts: Optional[int] = None
@@ -570,6 +576,7 @@ def build_runs(
     request_rate: Optional[float] = None,
     manifest_path: Optional[Path] = None,
     trace_path_override: Optional[str] = None,
+    goodput: Optional[str] = None,
 ) -> List[PrefixCacheRun]:
     """Expand the requested scenarios from the manifest into runs.
 
@@ -590,6 +597,11 @@ def build_runs(
     trace_path_override:
         Optional path to a mooncake JSONL trace file. When supplied this
         replaces every ``mooncake_trace`` scenario's manifest-declared trace.
+    goodput:
+        Optional AIPerf ``--goodput`` SLO string (space-separated
+        ``KEY:VALUE`` pairs). When supplied it overrides every run's
+        goodput, taking precedence over the manifest's scenario-level and
+        preset-level ``"goodput"`` keys.
     """
     manifest = load_manifest(manifest_path)
     if preset not in manifest["presets"]:
@@ -604,6 +616,7 @@ def build_runs(
     osl_mean = int(preset_cfg.get("osl_mean", 128))
     osl_stddev = int(preset_cfg.get("osl_stddev", 0))
     preset_request_count = int(preset_cfg.get("request_count", 256))
+    preset_goodput = preset_cfg.get("goodput")
 
     selected = _normalize_scenario_filter(scenarios)
     arrival_overrides = _build_arrival_overrides(arrival_pattern, request_rate)
@@ -625,7 +638,19 @@ def build_runs(
         )
         if scenario == "mooncake_trace":
             kwargs["trace_path_override"] = trace_path_override
-        runs.extend(expander(scenario_cfg, **kwargs))
+        scenario_runs = expander(scenario_cfg, **kwargs)
+        # Resolve effective goodput SLO: CLI override > scenario-level >
+        # preset-level. Applied post-expansion so every expander stays
+        # agnostic of the goodput knob.
+        effective_goodput = (
+            goodput
+            if goodput is not None
+            else scenario_cfg.get("goodput", preset_goodput)
+        )
+        if effective_goodput:
+            for run in scenario_runs:
+                run.goodput = effective_goodput
+        runs.extend(scenario_runs)
     return runs
 
 

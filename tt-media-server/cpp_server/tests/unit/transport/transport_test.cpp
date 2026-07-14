@@ -272,6 +272,12 @@ class FakeTransferEngine : public ITransferEngine {
   TransferStatus submitAndWait(const TransferRequest&) override {
     return {TransferState::COMPLETED, 0};
   }
+  TransferHandle submitBatch(const std::vector<TransferRequest>&) override {
+    return {/*value=*/1, /*valid=*/true};
+  }
+  TransferStatus waitBatch(TransferHandle) override {
+    return {TransferState::COMPLETED, 0};
+  }
 };
 
 // Fast tunables so the polling path runs in milliseconds, not seconds.

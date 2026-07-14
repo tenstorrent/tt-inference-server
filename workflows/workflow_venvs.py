@@ -154,9 +154,13 @@ def setup_evals_agentic(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
 ) -> bool:
-    """Hook for EVALS_AGENTIC: clone SWE-agent and install it as editable.
+    """Hook for EVALS_AGENTIC: clone + editable-install SWE-agent and Harbor.
 
-    Other deps (harbor, mini-swe-agent, epoch SWE-bench) are in requirements/evals-agentic.txt.
+    Other deps (mini-swe-agent, epoch SWE-bench) are in requirements/evals-agentic.txt.
+
+    Harbor is cloned and installed editable so its top-level ``adapters/`` directory
+    is available on disk. The adapters are not part of the Harbor wheel and live
+    outside ``src/``, so a ``.pth`` file exposes the repo root to Python imports.
     """
     sweagent_dir = venv_config.venv_path / "SWE-agent"
     if not sweagent_dir.exists():
@@ -172,7 +176,48 @@ def setup_evals_agentic(
         f"-e {sweagent_dir}",
         logger=logger,
     )
-    return return_code == 0
+    if return_code != 0:
+        return False
+
+    harbor_dir = venv_config.venv_path / "harbor"
+    harbor_tag = "v0.6.5"
+    if not harbor_dir.exists():
+        clone_return_code = run_command(
+            "git clone --depth 1 --branch "
+            f"{harbor_tag} https://github.com/harbor-framework/harbor.git {harbor_dir}",
+            logger=logger,
+        )
+        if clone_return_code != 0:
+            return False
+
+    return_code = run_command(
+        f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
+        f"-e {harbor_dir}",
+        logger=logger,
+    )
+    if return_code != 0:
+        return False
+
+    return _write_harbor_adapters_pth(venv_config, harbor_dir)
+
+
+def _write_harbor_adapters_pth(
+    venv_config: VenvConfig,
+    harbor_dir: Path,
+) -> bool:
+    site_packages = next(
+        (venv_config.venv_path / "lib").glob("python*/site-packages"), None
+    )
+    if site_packages is None:
+        logger.error(
+            "Could not locate site-packages under %s to write harbor-adapters.pth",
+            venv_config.venv_path,
+        )
+        return False
+    pth_file = site_packages / "harbor-adapters.pth"
+    pth_file.write_text(f"{harbor_dir}\n")
+    logger.info("Wrote %s pointing to %s", pth_file, harbor_dir)
+    return True
 
 
 def check_docker_available(
@@ -324,6 +369,31 @@ STRUCTURED_OUTPUT_FETCH_FILES = (
 STRUCTURED_OUTPUT_SCRIPT_NAME = "benchmark_serving_structured_output.py"
 
 
+def _force_identity_encoding(client_path: Path) -> None:
+    """Add Accept-Encoding: identity to the vendored benchmark client.
+
+    The downloaded backend_request_func.py sends aiohttp's default headers,
+    which advertise gzip. Gateways (e.g. console.tenstorrent.com) compress SSE
+    for gzip-accepting clients and buffer each response until generation
+    completes, so every chunk arrives at once and TTFT/TPOT/ITL are garbage.
+    The script has no --header passthrough, so patch the headers dict instead.
+    """
+    text = client_path.read_text()
+    if '"Accept-Encoding"' in text:
+        return
+    anchor = '"Content-Type": "application/json",'
+    patched = text.replace(
+        anchor, anchor + '\n            "Accept-Encoding": "identity",'
+    )
+    if patched == text:
+        logger.warning(
+            f"could not patch Accept-Encoding into {client_path}; "
+            "streaming metrics may be invalid behind compressing gateways"
+        )
+        return
+    client_path.write_text(patched)
+
+
 def _fetch_structured_output_scripts(
     venv_config: "VenvConfig",
     pin_version: str,
@@ -345,6 +415,176 @@ def _fetch_structured_output_scripts(
         )
         if return_code != 0:
             return False
+        if dst_rel == "backend_request_func.py":
+            _force_identity_encoding(dst)
+    return True
+
+
+# Sentinel marker appended to lm_eval's api_models.py so the streaming patch is
+# applied at most once per venv (idempotent across repeated setup runs).
+_LM_EVAL_CHAT_STREAM_SENTINEL = "# === TT patch: chat-completions SSE streaming ==="
+
+# Monkeypatch appended to the END of lm_eval/models/api_models.py (after
+# TemplateAPI is defined). Stock _consume_sse_stream only handled text-completion
+# chunks (choice["text"]) and emitted {"index","text"}. Chat-completions stream
+# tokens in choice["delta"]["content"] and the chat parser reads
+# choice["message"]["content"], so streamed chat responses raised
+# KeyError: 'message'. This makes streaming handle both shapes, and teaches the
+# synchronous model_call() path to consume SSE (stock sync path had none).
+_LM_EVAL_CHAT_STREAM_PATCH = """
+
+# === TT patch: chat-completions SSE streaming ===
+# Applied post-install by workflows.workflow_venvs.patch_evals_common_chat_streaming.
+def _tt_stream_chunk_text(choice: dict):
+    delta = choice.get("delta") or {}
+    if "content" in delta:
+        return delta.get("content") or "", True
+    return choice.get("text", ""), False
+
+
+def _tt_format_sse_response(accumulated_text: dict, uses_chat_chunks: bool) -> dict:
+    choices = []
+    for index, text in sorted(accumulated_text.items()):
+        if uses_chat_chunks:
+            choices.append({"index": index, "message": {"content": text}})
+        else:
+            choices.append({"index": index, "text": text})
+    return {"choices": choices}
+
+
+async def _tt_consume_sse_stream(self, response) -> dict:
+    accumulated_text = {}
+    uses_chat_chunks = False
+    try:
+        while True:
+            line_bytes = await response.content.readline()
+            if not line_bytes:
+                break
+            line = line_bytes.decode("utf-8").strip()
+            if not line or not line.startswith("data:"):
+                continue
+            data = line[len("data:"):].strip()
+            if data == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            for choice in chunk.get("choices", []):
+                index = choice.get("index", 0)
+                text, is_chat_chunk = _tt_stream_chunk_text(choice)
+                uses_chat_chunks = uses_chat_chunks or is_chat_chunk
+                accumulated_text[index] = accumulated_text.get(index, "") + text
+    except BaseException as exc:
+        if not accumulated_text:
+            raise
+        prefix = "__PARTIAL_OUTPUT__ (" + repr(exc) + "): "
+        accumulated_text = {i: prefix + t for i, t in accumulated_text.items()}
+    return _tt_format_sse_response(accumulated_text, uses_chat_chunks)
+
+
+def _tt_consume_requests_sse_stream(response) -> dict:
+    accumulated_text = {}
+    uses_chat_chunks = False
+    try:
+        for line in response.iter_lines(decode_unicode=True):
+            if isinstance(line, bytes):
+                line = line.decode("utf-8")
+            line = str(line or "").strip()
+            if not line or not line.startswith("data:"):
+                continue
+            data = line[len("data:"):].strip()
+            if data == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            for choice in chunk.get("choices", []):
+                index = choice.get("index", 0)
+                text, is_chat_chunk = _tt_stream_chunk_text(choice)
+                uses_chat_chunks = uses_chat_chunks or is_chat_chunk
+                accumulated_text[index] = accumulated_text.get(index, "") + text
+    except BaseException as exc:
+        if not accumulated_text:
+            raise
+        prefix = "__PARTIAL_OUTPUT__ (" + repr(exc) + "): "
+        accumulated_text = {i: prefix + t for i, t in accumulated_text.items()}
+    return _tt_format_sse_response(accumulated_text, uses_chat_chunks)
+
+
+def _tt_model_call(self, messages, *, generate: bool = True, gen_kwargs: dict = None, **kwargs):
+    gen_kwargs = copy.deepcopy(gen_kwargs)
+    payload = self._create_payload(
+        self.create_message(messages),
+        generate=generate,
+        gen_kwargs=gen_kwargs,
+        seed=self._seed,
+        eos=self.eos_string,
+        **kwargs,
+    )
+    is_streaming = generate and str(payload.get("stream", False)).lower() == "true"
+    try:
+        response = requests.post(
+            self.base_url,
+            json=payload,
+            headers=self.header,
+            verify=self.verify_certificate,
+            stream=is_streaming,
+        )
+        if not response.ok:
+            eval_logger.warning(
+                "API request failed with error message: " + response.text + ". Retrying..."
+            )
+        response.raise_for_status()
+        if is_streaming:
+            return _tt_consume_requests_sse_stream(response)
+        return response.json()
+    except RetryError:
+        eval_logger.error(
+            "API request failed after multiple retries. Please check the API status."
+        )
+        return None
+
+
+TemplateAPI._consume_sse_stream = _tt_consume_sse_stream
+TemplateAPI.model_call = _tt_model_call
+# === end TT patch ===
+"""
+
+
+def patch_evals_common_chat_streaming(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",
+) -> bool:
+    """Hook for EVALS_COMMON: fix lm-eval chat-completions SSE streaming.
+
+    lm-eval's streaming path was written for the text-completions API and breaks
+    chat-completions streaming (KeyError: 'message'). Streaming is required
+    against the remote console to avoid 504s on long reasoning generations, so we
+    patch the installed package in place rather than disabling streaming. The
+    patch is appended once (guarded by a sentinel) to the module so it survives as
+    long as the venv exists; venv rebuilds re-apply it.
+    """
+    matches = sorted(
+        venv_config.venv_path.glob(
+            "lib/python*/site-packages/lm_eval/models/api_models.py"
+        )
+    )
+    if not matches:
+        logger.warning(
+            "Could not locate lm_eval/models/api_models.py under "
+            f"{venv_config.venv_path}; chat-completions streaming patch not "
+            "applied. Streaming evals may fail to parse generations."
+        )
+        return True
+    api_models_path = matches[0]
+    text = api_models_path.read_text()
+    if _LM_EVAL_CHAT_STREAM_SENTINEL in text:
+        logger.info(f"chat-streaming patch already present in {api_models_path}")
+        return True
+    api_models_path.write_text(text + _LM_EVAL_CHAT_STREAM_PATCH)
+    logger.info(f"applied chat-streaming patch to {api_models_path}")
     return True
 
 
@@ -391,6 +631,7 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_COMMON,
         requirements_file="evals-common.txt",
+        setup_function=patch_evals_common_chat_streaming,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION,
@@ -471,11 +712,6 @@ _venv_config_list = [
     ),
     # Pip install + sub-directory
     VenvConfig(
-        venv_type=WorkflowVenvType.EVALS_VIDEO,
-        requirements_file="evals-video.txt",
-        extra_dirs=("work_dir",),
-    ),
-    VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_VLLM,
         requirements_file="benchmarks-vllm.txt",
         extra_dirs=("work_dir",),
@@ -490,11 +726,6 @@ _venv_config_list = [
         extra_dirs=("work_dir",),
         python_version="3.11",
         setup_function=fetch_structured_output_scripts_forge,
-    ),
-    # No pip; directory and/or runtime check
-    VenvConfig(
-        venv_type=WorkflowVenvType.BENCHMARKS_VIDEO,
-        extra_dirs=("work_dir",),
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_GENAI_PERF,

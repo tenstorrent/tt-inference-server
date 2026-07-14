@@ -117,13 +117,12 @@ std::string logInstanceTag(int workerIndex = -1);
 /** Capacity hint for the gateway, 0 = unlimited. From PREFILL_MAX_IN_FLIGHT. */
 uint32_t prefillMaxInFlight();
 
+// Number of pipeline stages for the Blaze Decode runner.
+uint32_t blazeNumberOfPipelineStages();
+
 /** Max in-flight requests before 429. From MAX_QUEUE_SIZE. Default:
  * defaults::MAX_QUEUE_SIZE. */
 size_t maxQueueSize();
-
-/** Scheduling policy from SCHEDULING_POLICY. Default:
- * defaults::SCHEDULING_POLICY ("prefill_first"). */
-SchedulingPolicy schedulingPolicy();
 
 /** Max in-flight requests from MAX_IN_FLIGHT_COUNT. Default:
  * defaults::MAX_IN_FLIGHT_COUNT. */
@@ -158,17 +157,25 @@ size_t maxContextLength();
  * defaults::MAX_ISL. */
 size_t maxISL();
 
+/** Per-message capacity (bytes) of the IPC task queue, derived at runtime from
+ * maxContextLength() so overriding MAX_CONTEXT_LENGTH also resizes the queue
+ * buffer (mirrors defaults::TASK_QUEUE_MAX_MSG_SIZE, which is only the
+ * default). Sized to hold maxContextLength() token ids plus non-token sequence
+ * fields. */
+size_t taskQueueMaxMsgSize();
+
 /** Minimum matched tokens required to justify a slot copy operation.
  * From MIN_TOKENS_TO_COPY. Default: defaults::MIN_TOKENS_TO_COPY. */
 size_t minTokensToCopy();
 
-/** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
- * defaults::KV_CACHE_BLOCK_SIZE. */
-size_t kvCacheBlockSize();
+/** Prefix-cache block size from KV_CACHE_BLOCK_SIZE. Default:
+ * defaults::PREFIX_CACHE_BLOCK_SIZE. The memory layout is contiguous slots;
+ * "block size" only exists as a fiction for prefix-cache hashing. */
+size_t prefixCacheBlockSize();
 
-/** KV cache first block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
- * defaults::KV_CACHE_FIRST_BLOCK_SIZE. */
-size_t kvCacheFirstBlockSize();
+/** Prefix-cache first-block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
+ * defaults::PREFIX_CACHE_FIRST_BLOCK_SIZE. */
+size_t prefixCacheFirstBlockSize();
 
 /** Minimum match percentage for prefix cache hit from
  * PREFIX_CACHE_HIT_THRESHOLD. Default: defaults::PREFIX_CACHE_HIT_THRESHOLD.
@@ -227,6 +234,12 @@ uint32_t prefillChunkSize();
 /** Enable migration from ENABLE_MIGRATION. Default:
  * defaults::ENABLE_MIGRATION. */
 bool enableMigration();
+
+/**
+ * Route the PrefillScheduler's cross-endpoint (P->D) KV migration through the
+ * Kafka-backed RemoteKVManagerAdapter.
+ */
+bool prefillUseRemoteKvManager();
 
 /** Migration cmd queue name from MIGRATION_CMD_QUEUE_NAME. Default:
  * defaults::MIGRATION_CMD_QUEUE_NAME. */
@@ -329,6 +342,10 @@ bool dynamoEndpointEnabled();
  * defaults::DYNAMO_BIND_HOST. */
 std::string dynamoBindHost();
 
+/** Bind port for the Dynamo listener. From DYNAMO_BIND_PORT. Default:
+ * defaults::DYNAMO_BIND_PORT (0 = OS-assigned). */
+uint16_t dynamoBindPort();
+
 /** Etcd endpoint(s) the discovery client dials. From DYNAMO_ETCD_ENDPOINTS,
  * falling back to ETCD_ENDPOINTS (the env var Dynamo's own runtime reads).
  * Default: defaults::DYNAMO_ETCD_ENDPOINTS. */
@@ -350,29 +367,31 @@ std::string dynamoComponent();
  * defaults::DYNAMO_ENDPOINT_NAME. */
 std::string dynamoEndpointName();
 
-/** When true and LLM_DEVICE_BACKEND=mock_pipeline, Blaze runners use
- * single-threaded MockSchedulers instead of tt-llm-engine schedulers.
- * From MOCK_USE_SCHEDULER. Default: defaults::MOCK_USE_SCHEDULER. */
-bool useMockScheduler();
-
 /** Prefill completion latency for MockSchedulers. From
  * MOCK_PREFILL_CHUNK_LATENCY_MS. Default:
  * defaults::MOCK_PREFILL_CHUNK_LATENCY_MS. */
 unsigned mockPrefillLatencyMs();
 
-/** Per-decode-token spacing for MockSchedulers. From
- * MOCK_DECODE_TOKEN_LATENCY_US. Default:
- * defaults::MOCK_DECODE_TOKEN_LATENCY_US.
- */
-unsigned mockDecodeTokenLatencyUs();
+/** Time one token spends in a single pipeline stage, for the
+ * MockDecodeScheduler.
+ * defaults::MOCK_STAGE_LATENCY_US. */
+unsigned mockStageLatencyUs();
+
+/** Transformer pipeline depth modeled by the MockDecodeScheduler.
+ * defaults::MOCK_PIPELINE_STAGES. */
+uint32_t mockPipelineStages();
+
+/** Returns how many tokens are used for prefill before moving to the next
+ * slot. Default: defaults::MOCK_PREFILL_CHUNK_SIZE. */
+uint32_t mockPrefillChunkSize();
 
 /** Fixed decode token id emitted by MockSchedulers. From MOCK_DECODE_TOKEN_ID.
  * Default: defaults::MOCK_DECODE_TOKEN_ID. */
 uint32_t mockDecodeTokenId();
 
-/** Build LLMConfig from environment variables and runtime settings. Implemented
- * in src/config/settings.cpp. */
-LLMConfig llmEngineConfig();
+/** Build BlazeConfig from environment variables and runtime settings.
+ * Implemented in src/config/settings.cpp. */
+BlazeConfig blazeConfig();
 
 /** Build ImageConfig from environment variables and runtime settings. Reads
  * MODEL_RUNNER_TYPE, MAX_BATCH_SIZE, SDXL_IMAGE_RESOLUTION. Implemented in

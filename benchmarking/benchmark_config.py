@@ -47,20 +47,6 @@ class BenchmarkTaskCNN(BenchmarkTask):
 
 
 @dataclass(frozen=True)
-class BenchmarkTaskEmbedding(BenchmarkTask):
-    param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
-    task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_VLLM_API
-    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.BENCHMARKS_VLLM
-
-
-@dataclass(frozen=True)
-class BenchmarkTaskVideo(BenchmarkTask):
-    param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
-    task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_VIDEO_API
-    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.BENCHMARKS_VIDEO
-
-
-@dataclass(frozen=True)
 class BenchmarkTaskTTS(BenchmarkTask):
     param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
     task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_CNN_API
@@ -112,6 +98,7 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (16384, 128),
     (32768, 128),
     (65536, 128),
+    (131072, 128),
 ]
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
@@ -570,13 +557,6 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     # Create performance reference task with capped values
     if model_spec.model_type == ModelType.CNN:
         perf_ref_task = BenchmarkTaskCNN(param_map={device: capped_perf_reference})
-    elif model_spec.model_type == ModelType.EMBEDDING:
-        perf_ref_task = BenchmarkTaskEmbedding(
-            param_map={device: capped_perf_reference},
-            workflow_venv_type=vllm_benchmark_venv,
-        )
-    elif model_spec.model_type == ModelType.VIDEO:
-        perf_ref_task = BenchmarkTaskVideo(param_map={device: capped_perf_reference})
     elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
         perf_ref_task = BenchmarkTaskTTS(param_map={device: capped_perf_reference})
     elif model_spec.model_type == ModelType.IMAGE:
@@ -600,15 +580,6 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                         BenchmarkTaskParamsCNN(num_inference_steps=20, num_eval_runs=15)
                     ]
                 }
-            )
-        elif model_spec.model_type == ModelType.EMBEDDING:
-            benchmark_task_runs = BenchmarkTaskEmbedding(
-                param_map={device: [BenchmarkTaskParams()]},
-                workflow_venv_type=vllm_benchmark_venv,
-            )
-        elif model_spec.model_type == ModelType.VIDEO:
-            benchmark_task_runs = BenchmarkTaskVideo(
-                param_map={device: [BenchmarkTaskParams()]}
             )
         elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
             benchmark_task_runs = BenchmarkTaskTTS(
@@ -703,5 +674,4 @@ def get_benchmark_config(model_spec) -> BenchmarkConfig:
     this helper runs. Do not consult the import-time catalog here: the runtime
     JSON must override even when its ``model_id`` collides with a built-in spec.
     """
-
     return build_benchmark_config(model_spec)

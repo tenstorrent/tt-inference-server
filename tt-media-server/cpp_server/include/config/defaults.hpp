@@ -30,10 +30,9 @@ constexpr const char* PREFILL_SERVER_ID = "";
 constexpr uint32_t PREFILL_MAX_IN_FLIGHT = 0;
 
 constexpr size_t MAX_QUEUE_SIZE = 1000;
-constexpr const char* SCHEDULING_POLICY =
-    "prefill_first";  // "prefill_first" or "max_occupancy"
 constexpr const char* LLM_DEVICE_BACKEND =
-    "mock_pipeline";  // "mock_pipeline" or "pipeline_manager"
+    "mock_scheduler";  // "mock_pipeline", "mock_scheduler", or
+                       // "pipeline_manager"
 constexpr size_t MAX_IN_FLIGHT_COUNT = 32;
 constexpr size_t MAX_SESSIONS_COUNT = 128;
 constexpr unsigned SESSION_EVICTION_RATE = 90;
@@ -43,11 +42,14 @@ constexpr size_t MAX_CONTEXT_LENGTH = 65536;  // 64k
 constexpr size_t MAX_ISL = 256000;  // 2000k (max input sequence length)
 constexpr size_t MIN_TOKENS_TO_COPY =
     1024;  // min matched tokens to justify slot copy
-constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
-constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
+constexpr size_t PREFIX_CACHE_BLOCK_SIZE = 32;
+constexpr size_t PREFIX_CACHE_FIRST_BLOCK_SIZE = 128;
 constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 40;
 constexpr bool USE_FAST_MODE = false;
 constexpr bool ENABLE_MIGRATION = false;
+// PrefillScheduler drives cross-endpoint (P->D) KV migration via the
+// Kafka-backed RemoteKVManagerAdapter
+constexpr bool PREFILL_USE_REMOTE_KV_MANAGER = false;
 constexpr const char* MIGRATION_CMD_QUEUE_NAME = "mig_ep0_cmd";
 constexpr const char* MIGRATION_TABLE_QUEUE_NAME = "mig_ep0_table";
 constexpr const char* MIGRATION_RESP_QUEUE_NAME = "mig_ep0_resp";
@@ -69,6 +71,9 @@ constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 
 constexpr const char* SPEC_DECODE_MODE = "none";
 constexpr size_t MTP_LEVEL = 1;
+
+// number of pipeline stages of the Blaze Decode Model.
+constexpr uint32_t BLAZE_NUMBER_OF_PIPELINE_STAGES = 64;
 
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
 constexpr const char* TT_RESULT_QUEUE = "tt_results";
@@ -134,6 +139,7 @@ constexpr int DECODE_MAX_TOKEN_IDS = 1;
 // off unless DYNAMO_ENDPOINT_ENABLED=1.
 constexpr bool DYNAMO_ENDPOINT_ENABLED = false;
 constexpr const char* DYNAMO_BIND_HOST = "0.0.0.0";
+constexpr uint16_t DYNAMO_BIND_PORT = 0;  // 0 = OS-assigned ephemeral port.
 constexpr const char* DYNAMO_NAMESPACE = "default";
 constexpr const char* DYNAMO_COMPONENT = "backend";
 constexpr const char* DYNAMO_ENDPOINT_NAME = "generate";
@@ -145,11 +151,10 @@ constexpr const char* DYNAMO_ETCD_ENDPOINTS = "http://etcd:2379/";
 // the reaper.
 constexpr int64_t DYNAMO_ETCD_LEASE_TTL_SECS = 10;
 
-// MockSchedulers (MOCK_USE_SCHEDULER=1 on mock_pipeline backend).
-constexpr bool MOCK_USE_SCHEDULER = false;
 constexpr unsigned MOCK_PREFILL_CHUNK_LATENCY_MS = 1353;
-constexpr unsigned MOCK_DECODE_TOKEN_LATENCY_US =
-    64 * 44;  // 64 * 44us = 2816us
+constexpr unsigned MOCK_STAGE_LATENCY_US = 44;
+constexpr uint32_t MOCK_PIPELINE_STAGES = 64;
+constexpr uint32_t MOCK_PREFILL_CHUNK_SIZE = 24;
 constexpr unsigned MOCK_DECODE_TOKEN_ID = 12345;
 
 }  // namespace tt::config::defaults

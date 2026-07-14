@@ -53,7 +53,8 @@ std::shared_ptr<tt::domain::llm::LLMRequest> buildLLMRequest(
   req->full_prompt_tokens_count = req->prompt_tokens_count;
 
   if (!dyn.model.empty()) req->model = dyn.model;
-  req->max_tokens = dyn.max_tokens;
+  req->max_tokens =
+      dyn.max_tokens.value_or(static_cast<int>(tt::config::maxContextLength()));
   if (dyn.min_tokens.has_value()) req->min_tokens = *dyn.min_tokens;
   req->stop_token_ids = dyn.stop_token_ids;
   req->stop = dyn.stop;
@@ -451,8 +452,8 @@ void DynamoEndpoint::start() {
 
   ServerConfig sc;
   sc.bind_host = options_.bind_host;
-  sc.bind_port = 0;  // OS-assigned: the discovery file advertises the
-                     // resolved port.
+  sc.bind_port = options_.bind_port;  // 0 = OS-assigned; discovery
+                                      // advertises the resolved port.
   sc.namespace_name = options_.namespace_name;
   sc.component = options_.component;
   sc.endpoint = options_.endpoint;

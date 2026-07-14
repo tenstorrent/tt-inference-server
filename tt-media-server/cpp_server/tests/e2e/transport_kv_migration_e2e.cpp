@@ -62,8 +62,10 @@
 #include <chrono>
 #include <csignal>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <map>
@@ -72,6 +74,7 @@
 #include <string>
 #include <thread>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -81,6 +84,8 @@
 #include "transport/in_memory_kv_table.hpp"
 #include "transport/kv_chunk_address_table_adapter.hpp"
 #include "transport/kv_control_channel.hpp"
+#include "transport/kv_migration_endpoints.hpp"
+#include "transport/kv_migration_multi_host_sender.hpp"
 #include "transport/kv_migration_orchestrator.hpp"
 #include "transport/kv_table_adapter.hpp"
 #include "transport/kv_table_view.hpp"
@@ -89,6 +94,17 @@
 #include "transport/mooncake_transfer_engine.hpp"
 #include "transport/multi_device_umd.hpp"
 #include "transport/transfer_types.hpp"
+
+// Kafka-trigger mode: drive the migration through the same components as the
+// unified worker (KvMigrationWorker + MooncakeMigrationExecutor). Compiled only
+// in a KAFKA_ENABLED build; the default cli trigger needs none of this.
+#ifdef TT_E2E_WITH_KAFKA
+#include "messaging/kafka_consumer.hpp"
+#include "messaging/kafka_producer.hpp"
+#include "messaging/migration_message.hpp"
+#include "runtime/worker/kv_migration_worker.hpp"
+#include "transport/mooncake_migration_executor.hpp"
+#endif
 
 namespace {
 
@@ -245,10 +261,17 @@ class HostDeviceIo : public IDeviceIo {
 };
 
 // --- Options ---------------------------------------------------------------
+// One decode host the sender fans out to (multi-host mode).
+struct Peer {
+  std::string host;  // logical host tag in the decode table.
+  std::string ip;    // control-channel address.
+  uint16_t port = 0;
+};
+
 struct Options {
   std::string role;               // sender | receiver
   std::string mode = "host";      // host | device
-  std::string table = "builtin";  // builtin | <protobuf path> (local table)
+  std::string table = "builtin";  // builtin | builtin2 | <protobuf path>
   std::string decode_table;       // sender, real-table mode: decode .pb path
   std::string control_host = "127.0.0.1";
   uint16_t control_port = 18650;
@@ -265,6 +288,26 @@ struct Options {
   uint32_t dst_pos_begin = UINT32_MAX, dst_pos_end = UINT32_MAX;
   uint64_t uuid = 0x5151;
   int timeout_sec = 60;
+  // Seed a deterministic dummy blob at the source and byte-verify the
+  // destination even in real-table mode (a mechanism test with NO model loaded:
+  // the table's addresses are used as scratch). Always on for builtin.
+  bool seed_verify = false;
+  // Sender multi-host fan-out: one decode peer per --peer-control HOST=ip:port.
+  // Empty => single-host path (--control-host/--control-port/--decode-host).
+  std::vector<Peer> peers;
+  // Optional FabricNode -> UMD chip map file for device mode. Each line
+  // "mesh chip umd_chip_id"; absent => placeholder chip = device & 0xFFFF.
+  std::string device_map;
+  // How the sender's migration is triggered: "cli" = call migrate() directly
+  // (default); "kafka" = drive it through KvMigrationWorker +
+  // MooncakeMigrationExecutor (the unified worker's data path), self-producing
+  // the request and waiting for the ack. Kafka mode needs a KAFKA_ENABLED
+  // build.
+  std::string trigger = "cli";
+  std::string kafka_brokers = "localhost:9092";
+  std::string kafka_request_topic = "kv-migration-requests";
+  std::string kafka_ack_topic = "kv-migration-acks";
+  std::string kafka_group = "migration-workers";
 };
 
 void usage() {
@@ -273,13 +316,21 @@ void usage() {
          "--mooncake-name HOST:PORT\n"
          "  --control-host H (sender; default 127.0.0.1)  --control-port P "
          "(default 18650)\n"
-         "  --mode host|device   --table builtin|<protobuf-path>\n"
+         "  --mode host|device   --table builtin|builtin2|<protobuf-path>\n"
          "  --prefill-host NAME  --decode-host NAME\n"
+         "  --peer-control HOST=ip:port  (sender, repeatable) fan out to N "
+         "decode hosts\n"
+         "  --device-map FILE   (device mode) 'mesh chip umd_chip_id' per "
+         "line\n"
          "  --slot N  --layer-begin N --layer-end N  --pos-begin N --pos-end "
          "N\n"
          "  (asymmetric overrides) --src-slot N --dst-slot N "
          "--src-pos-begin N --src-pos-end N --dst-pos-begin N --dst-pos-end N\n"
-         "  --uuid N  --timeout-sec S\n";
+         "  --uuid N  --timeout-sec S\n"
+         "  --seed-verify   seed a dummy blob at the source + byte-verify the\n"
+         "                  destination even for a real table (no model "
+         "needed;\n"
+         "                  uses the real addresses as scratch)\n";
 }
 
 bool parseArgs(int argc, char** argv, Options& o) {
@@ -323,6 +374,35 @@ bool parseArgs(int argc, char** argv, Options& o) {
     if (a == "--dst-pos-end" && nextU(o.dst_pos_end)) continue;
     if (a == "--uuid" && nextU(o.uuid)) continue;
     if (a == "--timeout-sec" && nextU(o.timeout_sec)) continue;
+    if (a == "--seed-verify") {
+      o.seed_verify = true;
+      continue;
+    }
+    if (a == "--device-map" && nextStr(o.device_map)) continue;
+    if (a == "--trigger" && nextStr(o.trigger)) continue;
+    if (a == "--kafka-brokers" && nextStr(o.kafka_brokers)) continue;
+    if (a == "--kafka-request-topic" && nextStr(o.kafka_request_topic))
+      continue;
+    if (a == "--kafka-ack-topic" && nextStr(o.kafka_ack_topic)) continue;
+    if (a == "--kafka-group" && nextStr(o.kafka_group)) continue;
+    if (a == "--peer-control") {
+      std::string spec;
+      if (!nextStr(spec)) return false;
+      const auto eq = spec.find('=');
+      const auto colon = spec.rfind(':');
+      if (eq == std::string::npos || colon == std::string::npos || colon < eq) {
+        std::cerr << "--peer-control must be HOST=ip:port, got: " << spec
+                  << "\n";
+        return false;
+      }
+      Peer p;
+      p.host = spec.substr(0, eq);
+      p.ip = spec.substr(eq + 1, colon - eq - 1);
+      p.port = static_cast<uint16_t>(
+          std::strtoul(spec.substr(colon + 1).c_str(), nullptr, 10));
+      o.peers.push_back(p);
+      continue;
+    }
     std::cerr << "unknown/incomplete arg: " << a << "\n";
     return false;
   }
@@ -347,9 +427,12 @@ MigrationRequest requestOf(const Options& o) {
 // --- Built-in reduced tables (no protobuf needed) --------------------------
 constexpr uint32_t K_CHUNK = 64;
 
-std::vector<uint8_t> pattern(uint32_t layer, uint32_t pos) {
-  std::vector<uint8_t> v(K_CHUNK);
-  for (uint32_t i = 0; i < K_CHUNK; ++i) {
+// Deterministic content of `size` bytes for a (layer, position) chunk. `size`
+// is the chunk's real size (K_CHUNK for builtin, chunk_size_bytes for the real
+// table), so this seeds/verifies whatever chunk size the table declares.
+std::vector<uint8_t> patternN(uint32_t layer, uint32_t pos, uint64_t size) {
+  std::vector<uint8_t> v(size);
+  for (uint64_t i = 0; i < size; ++i) {
     v[i] = static_cast<uint8_t>(layer * 40 + pos + i);
   }
   return v;
@@ -359,12 +442,66 @@ std::vector<uint8_t> pattern(uint32_t layer, uint32_t pos) {
 // *src* position — chunks pair by ordinal within their ranges. Map dst -> src
 // so verification matches under a position shift (symmetric => srcPos==dstPos).
 std::vector<uint8_t> expectedForDst(const MigrationRequest& req, uint32_t step,
-                                    uint32_t layer, uint32_t dstPos) {
+                                    uint32_t layer, uint32_t dstPos,
+                                    uint64_t size) {
   const uint32_t srcStart =
       req.src_position_begin - (req.src_position_begin % step);
   const uint32_t dstStart =
       req.dst_position_begin - (req.dst_position_begin % step);
-  return pattern(layer, srcStart + (dstPos - dstStart));
+  return patternN(layer, srcStart + (dstPos - dstStart), size);
+}
+
+// GB/s for `bytes` moved in `ns` (1 byte/ns == 1 GB/s), 0 if ns==0.
+double gbps(uint64_t bytes, uint64_t ns) {
+  return ns == 0 ? 0.0 : static_cast<double>(bytes) / static_cast<double>(ns);
+}
+double ms(uint64_t ns) { return static_cast<double>(ns) / 1.0e6; }
+
+uint64_t nsSince(std::chrono::steady_clock::time_point start) {
+  return static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::steady_clock::now() - start)
+          .count());
+}
+
+// Logical KV volume of a plan: one copy per chunk (ignores replica fan-out) —
+// the "useful" bytes migrated, derived from the plan (no data-plane counters).
+uint64_t planLogicalBytes(const HostKvPlan& plan) {
+  uint64_t b = 0;
+  for (const auto& c : plan.chunks) {
+    if (!c.targets.empty()) b += c.targets.front().size_bytes;
+  }
+  return b;
+}
+
+// Total wire/device bytes (fan-out included): every replica target.
+uint64_t planWireBytes(const HostKvPlan& plan) {
+  uint64_t b = 0;
+  for (const auto& c : plan.chunks) {
+    for (const auto& t : c.targets) b += t.size_bytes;
+  }
+  return b;
+}
+
+// FabricNode -> UMD chip map, keyed by encodeDevice. Empty on no path /
+// unreadable, so callers fall back to the placeholder (device & 0xFFFF).
+std::unordered_map<LocalDeviceId, int> loadDeviceMap(const std::string& path) {
+  std::unordered_map<LocalDeviceId, int> m;
+  if (path.empty()) return m;
+  std::ifstream f(path);
+  if (!f.good()) {
+    std::cerr << "[device-map] cannot open " << path
+              << "; falling back to placeholder chip ids\n";
+    return m;
+  }
+  uint32_t mesh = 0, chip = 0;
+  uint64_t umd = 0;
+  while (f >> mesh >> chip >> umd) {
+    m[encodeDevice(FabricNode{mesh, chip})] = static_cast<int>(umd);
+  }
+  std::cerr << "[device-map] loaded " << m.size() << " entries from " << path
+            << "\n";
+  return m;
 }
 
 KvTableConfig builtinConfig() {
@@ -408,14 +545,48 @@ std::shared_ptr<InMemoryKvTable> builtinDecode() {
                       K_DRAM_BASE + 0x2000, 0, K_DRAM_BASE + 0x3000, 1);
 }
 
-// Build a real device-I/O over the devices touched by `plan` (chip id = the
-// FabricNode chip id encoded in the LocalDeviceId low 16 bits).
-std::unique_ptr<MultiDeviceUmd> makeUmd(const HostKvPlan& plan) {
+// Two-host split decode table for the multi-host path: layer 0 lives on
+// "decode-0" (mesh 2), layer 1 on "decode-1" (mesh 3). A 2-layer request fans
+// out to both hosts. Fixed tags so sender and both receivers build the same
+// table from their own --decode-host.
+constexpr const char* K_DECODE0 = "decode-0";
+constexpr const char* K_DECODE1 = "decode-1";
+std::shared_ptr<InMemoryKvTable> builtinDecodeSplit() {
+  auto t = std::make_shared<InMemoryKvTable>(builtinConfig());
+  const FabricNode l0a{2, 0}, l0b{2, 1}, l1a{3, 0}, l1b{3, 1};
+  const uint32_t g0 = t->addDeviceGroup({l0a, l0b});
+  const uint32_t g1 = t->addDeviceGroup({l1a, l1b});
+  t->setHost(l0a, K_DECODE0);
+  t->setHost(l0b, K_DECODE0);
+  t->setHost(l1a, K_DECODE1);
+  t->setHost(l1b, K_DECODE1);
+  for (uint32_t p = 0; p < 128; p += 32) {
+    const uint32_t idx = p / 32;
+    t->setChunk(
+        5, 0, p,
+        {makeNocAddr(0, K_DRAM_BASE + 0x2000 + idx * K_CHUNK), K_CHUNK, g0});
+    t->setChunk(
+        5, 1, p,
+        {makeNocAddr(1, K_DRAM_BASE + 0x3000 + idx * K_CHUNK), K_CHUNK, g1});
+  }
+  return t;
+}
+
+// Build a real device-I/O over the devices touched by `plan`. The UMD chip id
+// comes from the device map when present, else the placeholder (the
+// FabricNode chip id in the LocalDeviceId low 16 bits) — which is correct only
+// where the host's local UMD indexing matches the table's chip ids.
+std::unique_ptr<MultiDeviceUmd> makeUmd(
+    const HostKvPlan& plan,
+    const std::unordered_map<LocalDeviceId, int>& devmap) {
   auto umd = std::make_unique<MultiDeviceUmd>();
   for (const auto& chunk : plan.chunks) {
     for (const auto& t : chunk.targets) {
       if (!umd->hasDevice(t.device)) {
-        const int chip = static_cast<int>(t.device & 0xFFFFu);
+        const auto it = devmap.find(t.device);
+        const int chip = (it != devmap.end())
+                             ? it->second
+                             : static_cast<int>(t.device & 0xFFFFu);
         umd->addDevice(t.device, std::make_shared<UmdDeviceAccess>(chip));
       }
     }
@@ -423,9 +594,74 @@ std::unique_ptr<MultiDeviceUmd> makeUmd(const HostKvPlan& plan) {
   return umd;
 }
 
+#ifdef TT_E2E_WITH_KAFKA
+// Trigger the migration through the unified worker's data path: a
+// KvMigrationWorker consumes the request and runs MooncakeMigrationExecutor
+// over the multi-host sender, then publishes the ack. Self-produces the request
+// (an external producer like migration_cli.py works the same — real topic) and
+// waits for the SUCCESSFUL ack. Returns migration success.
+bool driveViaKafka(KvMigrationMultiHostSender& multiHost,
+                   const MigrationRequest& req, const Options& o) {
+  using namespace tt::messaging;
+  // Ack reader first (fresh group, read from the start) so it can't miss an ack
+  // produced before its group assignment settles.
+  KafkaConsumer ackConsumer(KafkaConsumerConfig{
+      o.kafka_brokers, o.kafka_ack_topic, o.kafka_group + "-e2e-ackwait"});
+  (void)ackConsumer.receive(200);  // prime subscription/assignment.
+
+  auto executor =
+      std::make_unique<tt::transport::MooncakeMigrationExecutor>(multiHost);
+  auto consumer = std::make_unique<KafkaConsumer>(KafkaConsumerConfig{
+      o.kafka_brokers, o.kafka_request_topic, o.kafka_group});
+  auto ackProducer = std::make_unique<KafkaProducer>(
+      KafkaProducerConfig{o.kafka_brokers, o.kafka_ack_topic});
+  tt::worker::KvMigrationWorker worker(
+      std::move(consumer), std::move(ackProducer), std::move(executor));
+  worker.start();
+
+  KafkaProducer reqProducer(
+      KafkaProducerConfig{o.kafka_brokers, o.kafka_request_topic});
+  const MigrationRequestMessage m{o.uuid,
+                                  req.src_slot,
+                                  req.dst_slot,
+                                  req.layer_begin,
+                                  req.layer_end,
+                                  req.src_position_begin,
+                                  req.src_position_end,
+                                  req.dst_position_begin,
+                                  req.dst_position_end};
+  std::string err;
+  if (!reqProducer.send(serialize(m), &err)) {
+    std::cerr << "[sender] kafka produce failed: " << err << "\n";
+    worker.stop();
+    return false;
+  }
+  std::cout << "[sender] produced migration request uuid=" << o.uuid << " -> "
+            << o.kafka_request_topic << "\n";
+
+  bool ok = false;
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(o.timeout_sec);
+  while (std::chrono::steady_clock::now() < deadline) {
+    auto raw = ackConsumer.receive(200);
+    if (!raw) continue;
+    auto ack = parseMigrationResponse(*raw);
+    if (ack && ack->migration_id == o.uuid) {
+      ok = ack->status == tt::services::MigrationStatus::SUCCESSFUL;
+      std::cout << "[sender] ack uuid=" << o.uuid
+                << " status=" << static_cast<int>(ack->status) << "\n";
+      break;
+    }
+  }
+  if (!ok) std::cerr << "[sender] no SUCCESSFUL ack before timeout\n";
+  worker.stop();
+  return ok;
+}
+#endif  // TT_E2E_WITH_KAFKA
+
 // --- Sender ----------------------------------------------------------------
 int runSender(const Options& o) {
-  // Local (prefill) table + the request.
+  // Local (prefill) table + the decode table (whole cluster) + the request.
   std::shared_ptr<const IKvTable> prefill;
   std::shared_ptr<const IKvTable> decode;
   std::string prefillHost = o.prefill_host;
@@ -436,6 +672,10 @@ int runSender(const Options& o) {
     decode = builtinDecode();
     prefillHost = "prefill";
     decodeHost = "decode";
+  } else if (o.table == "builtin2") {
+    prefill = builtinPrefill();
+    decode = builtinDecodeSplit();
+    prefillHost = "prefill";
   } else {
     auto pre = KvChunkAddressTableAdapter::fromProtobufFile(o.table);
     auto dec =
@@ -453,15 +693,11 @@ int runSender(const Options& o) {
   }
   const MigrationRequest req = requestOf(o);
 
-  // Control channel (connect to the receiver).
-  auto control = std::make_shared<TcpControl>(o.timeout_sec);
-  std::cout << "[sender] connecting control -> " << o.control_host << ":"
-            << o.control_port << "\n";
-  if (!control->initializeAsClient(o.control_host, o.control_port)) {
-    std::cerr << "[sender] control connect failed\n";
+  if (o.trigger == "kafka" && o.peers.empty()) {
+    std::cerr << "[sender] --trigger kafka requires at least one "
+                 "--peer-control (it drives the multi-host sender)\n";
     return 1;
   }
-  KvControlChannel channel(control);
 
   // Device or host I/O for the prefill side.
   HostDeviceIo hostIo;
@@ -473,16 +709,19 @@ int runSender(const Options& o) {
               << prefillHost << "'\n";
     return 1;
   }
-  if (o.mode == "device") umd = makeUmd(srcPlan);
+  if (o.mode == "device") umd = makeUmd(srcPlan, loadDeviceMap(o.device_map));
   IDeviceIo& dev = (o.mode == "device") ? static_cast<IDeviceIo&>(*umd)
                                         : static_cast<IDeviceIo&>(hostIo);
 
-  // Built-in mode: seed the source with the deterministic pattern so the
-  // receiver can verify. (Real-table mode reads whatever is already on device.)
-  if (o.table == "builtin") {
+  // Seed the source with the deterministic pattern so the receiver can verify.
+  // Always for builtin(2); for a real table only under --seed-verify (a
+  // no-model mechanism test that uses the table's real addresses as scratch).
+  const bool seed =
+      o.table == "builtin" || o.table == "builtin2" || o.seed_verify;
+  if (seed) {
     for (const auto& chunk : srcPlan.chunks) {
-      const auto bytes = pattern(chunk.layer, chunk.position);
       for (const auto& t : chunk.targets) {
+        const auto bytes = patternN(chunk.layer, chunk.position, t.size_bytes);
         dev.write(t.device, t.noc_addr, bytes.data(), bytes.size());
       }
     }
@@ -499,11 +738,69 @@ int runSender(const Options& o) {
     return 1;
   }
 
-  MooncakeKvSender sender(engine, dev, prefill, decode, prefillHost,
-                          decodeHost);
-  KvMigrationSender orch(channel, sender);
-  const bool ok = orch.migrate(o.uuid, req);
+  const uint64_t bytes = planLogicalBytes(srcPlan);  // logical KV volume moved.
+  bool ok = false;
+  uint64_t migNs = 0;
+
+  if (!o.peers.empty()) {
+    // Multi-host fan-out: one control channel per decode host, opened by the
+    // connector (production resolution is injected the same way).
+    std::unordered_map<std::string, KvControlChannelConnector::Endpoint> eps;
+    for (const Peer& p : o.peers) eps[p.host] = {p.ip, p.port};
+    const int timeout = o.timeout_sec;
+    KvControlChannelConnector connector(
+        eps,
+        [timeout](const KvControlChannelConnector::Endpoint& e)
+            -> std::shared_ptr<tt::sockets::ISocketTransport> {
+          auto t = std::make_shared<TcpControl>(timeout);
+          if (!t->initializeAsClient(e.host, e.port)) return nullptr;
+          return t;
+        });
+    if (!connector.openChannels()) {
+      std::cerr << "[sender] warning: not all decode peers got a transport\n";
+    }
+    KvMigrationMultiHostSender multiHost(engine, dev, prefill, decode,
+                                         prefillHost, connector.channels());
+    std::cout << "[sender] fan-out to " << multiHost.hostCount()
+              << " decode host(s), trigger=" << o.trigger << "\n";
+    const auto t0 = std::chrono::steady_clock::now();
+    if (o.trigger == "kafka") {
+#ifdef TT_E2E_WITH_KAFKA
+      ok = driveViaKafka(multiHost, req, o);
+#else
+      std::cerr << "[sender] --trigger kafka needs a KAFKA_ENABLED build "
+                   "(./build.sh --kafka)\n";
+      return 1;
+#endif
+    } else {
+      ok = multiHost.migrate(o.uuid, req);
+    }
+    migNs = nsSince(t0);
+  } else {
+    // Single decode host over one control channel.
+    auto control = std::make_shared<TcpControl>(o.timeout_sec);
+    std::cout << "[sender] connecting control -> " << o.control_host << ":"
+              << o.control_port << "\n";
+    if (!control->initializeAsClient(o.control_host, o.control_port)) {
+      std::cerr << "[sender] control connect failed\n";
+      return 1;
+    }
+    KvControlChannel channel(control);
+    MooncakeKvSender sender(engine, dev, prefill, decode, prefillHost,
+                            decodeHost);
+    KvMigrationSender orch(channel, sender);
+    const auto t0 = std::chrono::steady_clock::now();
+    ok = orch.migrate(o.uuid, req);
+    migNs = nsSince(t0);
+  }
+
   std::cout << "[sender] migrate -> " << (ok ? "OK" : "FAIL") << "\n";
+  // Boundary timing + plan-derived volume (no data-plane instrumentation).
+  std::printf(
+      "[migration] sender: chunks=%zu bytes=%llu | migrate_total=%.3f ms "
+      "(%.2f GB/s)\n",
+      srcPlan.chunks.size(), (unsigned long long)bytes, ms(migNs),
+      gbps(bytes, migNs));
   return ok ? 0 : 1;
 }
 
@@ -514,6 +811,8 @@ int runReceiver(const Options& o) {
   if (o.table == "builtin") {
     decode = builtinDecode();
     decodeHost = "decode";
+  } else if (o.table == "builtin2") {
+    decode = builtinDecodeSplit();  // this proc's host = --decode-host tag.
   } else {
     auto adapter = KvChunkAddressTableAdapter::fromProtobufFile(o.table);
     if (!adapter) {
@@ -534,7 +833,7 @@ int runReceiver(const Options& o) {
   // Device or host I/O for the decode side.
   HostDeviceIo hostIo;
   std::unique_ptr<MultiDeviceUmd> umd;
-  if (o.mode == "device") umd = makeUmd(plan);
+  if (o.mode == "device") umd = makeUmd(plan, loadDeviceMap(o.device_map));
   IDeviceIo& dev = (o.mode == "device") ? static_cast<IDeviceIo&>(*umd)
                                         : static_cast<IDeviceIo&>(hostIo);
 
@@ -564,6 +863,7 @@ int runReceiver(const Options& o) {
   KvMigrationReceiver orch(channel, receiver);
 
   // Serve exactly the two control messages of one migration.
+  const auto serveStart = std::chrono::steady_clock::now();
   if (!orch.serveOne()) {  // BeginMigration -> prepareMirror + MirrorReady
     std::cerr << "[receiver] control closed before BeginMigration\n";
     return 1;
@@ -572,31 +872,43 @@ int runReceiver(const Options& o) {
     std::cerr << "[receiver] control closed before DoneMarker\n";
     return 1;
   }
+  const uint64_t serveNs = nsSince(serveStart);
 
-  // Built-in mode: verify the decode devices hold the agreed pattern. Under a
+  // Boundary timing + plan-derived volume (no data-plane instrumentation).
+  const uint64_t bytes = planWireBytes(plan);  // includes replica fan-out.
+  std::printf(
+      "[migration] receiver[%s]: chunks=%zu bytes=%llu | serve_total=%.3f ms "
+      "(%.2f GB/s)\n",
+      decodeHost.c_str(), plan.chunks.size(), (unsigned long long)bytes,
+      ms(serveNs), gbps(bytes, serveNs));
+
+  // Verify the decode devices hold the agreed pattern (builtin(2) always; real
+  // table only under --seed-verify — see the sender's seeding note). Under a
   // position shift the bytes now at a dst position were seeded at the matching
   // *src* position, so map dst -> src by ordinal before computing the expected
-  // pattern (srcStart + (dst_pos - dstStart)). Symmetric => srcPos == dst_pos.
-  if (o.table == "builtin") {
-    bool ok = true;
-    std::vector<uint8_t> buf(K_CHUNK);
-    const uint32_t step = decode->config().chunk_n_tokens;
-    for (const auto& chunk : plan.chunks) {
+  // pattern. Symmetric => srcPos == dst_pos.
+  const bool verify =
+      o.table == "builtin" || o.table == "builtin2" || o.seed_verify;
+  if (!verify) {
+    std::cout
+        << "[receiver] migration drained (real-table mode; no byte verify)\n";
+    return 0;
+  }
+  bool ok = true;
+  const uint32_t step = decode->config().chunk_n_tokens;
+  for (const auto& chunk : plan.chunks) {
+    for (const auto& t : chunk.targets) {
       const auto expected =
-          expectedForDst(req, step, chunk.layer, chunk.position);
-      for (const auto& t : chunk.targets) {
-        if (!dev.read(t.device, t.noc_addr, K_CHUNK, buf.data()) ||
-            buf != expected) {
-          ok = false;
-        }
+          expectedForDst(req, step, chunk.layer, chunk.position, t.size_bytes);
+      std::vector<uint8_t> buf(t.size_bytes);
+      if (!dev.read(t.device, t.noc_addr, t.size_bytes, buf.data()) ||
+          buf != expected) {
+        ok = false;
       }
     }
-    std::cout << "[receiver] verification: " << (ok ? "PASS" : "FAIL") << "\n";
-    return ok ? 0 : 1;
   }
-  std::cout
-      << "[receiver] migration drained (real-table mode; no byte verify)\n";
-  return 0;
+  std::cout << "[receiver] verification: " << (ok ? "PASS" : "FAIL") << "\n";
+  return ok ? 0 : 1;
 }
 
 // --- gtest driver (host + builtin) -----------------------------------------
@@ -766,7 +1078,7 @@ void runHostBuiltinMigration(Options o, uint16_t controlPort,
   ASSERT_FALSE(plan.chunks.empty()) << "decode plan unexpectedly empty";
   for (const auto& chunk : plan.chunks) {
     const auto expected =
-        expectedForDst(req, step, chunk.layer, chunk.position);
+        expectedForDst(req, step, chunk.layer, chunk.position, K_CHUNK);
     for (const auto& t : chunk.targets) {
       ASSERT_TRUE(dev.read(t.device, t.noc_addr, K_CHUNK, buf.data()))
           << "decode read failed at layer=" << chunk.layer

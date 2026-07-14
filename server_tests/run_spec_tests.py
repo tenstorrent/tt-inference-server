@@ -12,22 +12,22 @@ Usage examples:
     python run_spec_tests.py --model stable-diffusion-xl-base-1.0 --device n150
 
     # Filter by test markers
-    python run_spec_tests.py --model stable-diffusion-xl-base-1.0 --device n150 --markers load
+    python run_spec_tests.py --model resnet-50 --device n150 --markers load
 
     # Filter by model category on specific hardware
-    python run_spec_tests.py --model-category IMAGE --device n150
+    python run_spec_tests.py --model-category CNN --device n150
 
     # Run all load tests across all models/devices
     python run_spec_tests.py --markers load
 
     # Exclude slow tests
-    python run_spec_tests.py --model stable-diffusion-xl-base-1.0 --device n150 --exclude-markers slow heavy
+    python run_spec_tests.py --model resnet-50 --device n150 --exclude-markers slow heavy
 
     # Run specific test
-    python run_spec_tests.py --model stable-diffusion-xl-base-1.0 --device n150 --test-name ImageGenerationLoadTest
+    python run_spec_tests.py --model resnet-50 --device n150 --test-name CnnLoadTest
 
     # Skip prerequisite tests (DeviceLivenessTest)
-    python run_spec_tests.py --model stable-diffusion-xl-base-1.0 --device n150 --skip-prerequisites
+    python run_spec_tests.py --model resnet-50 --device n150 --skip-prerequisites
 """
 
 import argparse
@@ -255,7 +255,7 @@ def parse_args():
     parser.add_argument(
         "--suite-category",
         type=str,
-        help="Load suites for a specific category (e.g., image, audio, forge)",
+        help="Load suites for a specific category (e.g., cnn, embedding)",
         default=None,
     )
 
@@ -276,7 +276,7 @@ def parse_args():
         "--model-category",
         type=str,
         nargs="+",
-        help="Filter by model category (IMAGE, AUDIO, CNN)",
+        help="Filter by model category (CNN, EMBEDDING)",
         default=None,
     )
 
@@ -305,7 +305,7 @@ def parse_args():
     parser.add_argument(
         "--test-name",
         type=str,
-        help="Filter by specific test class name (e.g., ImageGenerationLoadTest)",
+        help="Filter by specific test class name (e.g., CnnLoadTest)",
         default=None,
     )
 

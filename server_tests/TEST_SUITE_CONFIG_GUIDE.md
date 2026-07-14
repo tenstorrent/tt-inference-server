@@ -3,9 +3,20 @@
 This guide shows how to add models, devices, and tests using the test matrix system.
 All changes are JSON-only — no Python code required.
 
-Two files are involved:
-- `server_tests/server_tests_config.json` — model definitions (`model_configs` section)
-- `server_tests/test_suites/<category>.json` — test suite definitions per category
+Two files are involved, and they live **alongside the test framework you are
+editing** — paths in every example below are relative to that package
+directory, not to the repo root:
+- `<pkg>/server_tests_config.json` — model definitions (`model_configs` section)
+- `<pkg>/test_suites/<category>.json` — test suite definitions per category
+
+There are two independent copies of these files:
+- `tt-inference-server-v2/test_module/` — the canonical, complete set
+  (CNN, EMBEDDING, IMAGE, AUDIO, TTS, VIDEO, LLM). **The video/audio/image
+  examples in this guide refer to files here.**
+- `server_tests/` — the legacy v1 set (CNN, EMBEDDING only). IMAGE models are
+  fully onboarded to v2 (routed by model_type), so v1 has no `image.json`; it
+  also has no `video.json`/`audio.json`. Only edit here for the v1 CNN/EMBEDDING
+  spec-test suites.
 
 ## How it works
 

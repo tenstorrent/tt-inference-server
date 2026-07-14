@@ -23,7 +23,7 @@ worker instead of the image's, e.g. on a box without a Tenstorrent card — a
 build made without `TT_METAL_HOME` runs the mock backend):
 
 ```bash
-cd ../tt-media-server/cpp_server && ./build.sh        # produces build/tt_media_server_cpp
+cd ../tt-media-server/cpp_server && ./build.sh  --blaze      # produces build/tt_media_server_cpp
 cd ../../dynamo_frontend
 PROMETHEUS_HOST_PORT=9091 GRAFANA_HOST_PORT=3001 \
   ./deploy.sh --deepseek --local-build --llm-device-backend mock_pipeline

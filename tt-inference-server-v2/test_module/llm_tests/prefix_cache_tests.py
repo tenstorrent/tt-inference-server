@@ -68,7 +68,9 @@ def run_prefix_cache(
     request_rate: Optional[float] = None,
     scenarios_json: Optional[str] = None,
     trace_path: Optional[str] = None,
+    goodput: Optional[str] = None,
     auth_token: str = "",
+    metrics_urls: Sequence[str] = (),
     venv_python: Optional[Path] = None,
     server_controller: Optional[ServerController] = None,
     output_subdir: str = "prefix_cache",
@@ -88,6 +90,13 @@ def run_prefix_cache(
     auth_token:
         Bearer token sent to the inference server (JWT, OPENAI_API_KEY).
         Empty string disables auth.
+    metrics_urls:
+        Extra Prometheus ``/metrics`` endpoints (cpp_server workers)
+        scraped by AIPerf via ``--server-metrics`` for the
+        ``tt_prefix_cache_*`` counters, independent of the load target.
+        Repeatable for multi-worker (KV-routed) deployments. Empty keeps
+        AIPerf's auto-derived ``/metrics`` from ``ctx.server_host`` (the
+        Dynamo frontend), which does not expose the counters.
     venv_python:
         Python interpreter that has ``aiperf`` installed. Falls back to
         ``sys.executable``.
@@ -118,6 +127,7 @@ def run_prefix_cache(
         request_rate=request_rate,
         manifest_path=Path(scenarios_json) if scenarios_json else None,
         trace_path_override=trace_path,
+        goodput=goodput,
     )
     if not runs:
         logger.error(
@@ -138,6 +148,12 @@ def run_prefix_cache(
     model_repo = getattr(spec, "hf_model_repo", "") or ""
     model_id = getattr(spec, "model_id", "") or model_repo
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
+    # Models whose HF repo ships a custom tokenizer (e.g. Kimi) need
+    # AIPerf's tokenizer load to trust remote code; opt in per model via
+    # spec metadata so we don't execute Hub code for every model.
+    tokenizer_trust_remote_code = bool(
+        getattr(spec, "metadata", {}).get("tokenizer_trust_remote_code", False)
+    )
 
     driver = AIPerfPrefixCacheDriver(
         venv_python=Path(venv_python) if venv_python else Path(sys.executable),
@@ -157,6 +173,8 @@ def run_prefix_cache(
         model=model_repo,
         tokenizer=model_repo,
         auth_token=auth_token,
+        tokenizer_trust_remote_code=tokenizer_trust_remote_code,
+        prefix_cache_metrics_urls=tuple(metrics_urls or ()),
     )
     context = DriverContext(output_dir=output_root, device=device_label)
 

@@ -248,17 +248,99 @@ selects the per-workflow venv externally for image-model runs, keeping venv
 selection out of `run.py`.
 
 Scenarios (`shared_system`, `prefix_pool`, `multi_turn`, `baseline`,
-`mooncake_trace`) and per-preset grids are JSON-defined and overridable with
-`--prefix-cache-scenarios-json`. Override the mooncake trace input with
-`--prefix-cache-trace`; the in-tree fixture at
+`mooncake_trace`) and per-preset grids (`ci`, `full`, `highcache_50k`) are
+JSON-defined and overridable with `--prefix-cache-scenarios-json`. Override the
+mooncake trace input with `--prefix-cache-trace`; the in-tree fixture at
 [`llm_module/prefix_cache/sample_traces/ci_mooncake.jsonl`](llm_module/prefix_cache/sample_traces/ci_mooncake.jsonl)
 ships with the repo for reproducible CI runs.
 
+### `highcache_50k` preset (trillion-scale customer shape)
+
+`--prefix-cache-preset highcache_50k` encodes a high-reuse, large-context
+serving shape: a **50K shared (cacheable) system prefix + 5K new ISL + 500 OSL
+at concurrency 32** (one SC16 decode unit). Once warm the per-session KV cache
+hit-rate is `50000 / (50000 + 5000) = ~90.9%` — meeting the ≥ 90% target — and
+total input is ~55K tokens/request. The shape is modeled **two ways** under one
+preset, plus a control:
+
+- **`shared_system`** (synthetic): `shared_system_prompt_length=50000` is sent as
+  an identical system message across every session (100% prefix reuse). Exact and
+  deterministic.
+- **`mooncake_trace`** (trace-driven, AIPerf prefix-synthesis Use Case 3/4):
+  replays the in-tree
+  [`customer_mooncake.jsonl`](llm_module/prefix_cache/sample_traces/customer_mooncake.jsonl)
+  whose 98-block (~50K) root is shared across all sessions, exercising a realistic
+  radix-tree reuse pattern. Scalable via the `--synthesis-*` multipliers. Override
+  the trace with `--prefix-cache-trace`; regenerate the fixture with
+  [`generate_customer_mooncake.py`](llm_module/prefix_cache/sample_traces/generate_customer_mooncake.py).
+- **`baseline`** (control): a matched zero-prefix run (same 5K ISL / 500 OSL / c32)
+  so the report's *Uplift vs baseline* table isolates the TTFT P50/P90/P99
+  improvement attributable to prefix caching.
+
+#### Goodput SLO enforcement (`--prefix-cache-goodput`)
+
+The preset ships a default AIPerf [`--goodput`](https://docs.nvidia.com/aiperf/getting-started/ai-perf-comprehensive-llm-benchmarking#use-case-4-goodput-analysis---measuring-sla-compliance)
+SLO that turns the customer KPIs into a per-request "good" bar:
+
+```
+time_to_first_token:4000 output_token_throughput_per_user:45
+```
+
+i.e. a request is *good* when its TTFT ≤ 4000 ms (the P50 target used as the
+per-request bar) **and** its output speed ≥ 45 tokens/s/user. AIPerf reports the
+fraction of good requests as the **Goodput (req/s)** column. Override the bar
+with `--prefix-cache-goodput "<KEY:VALUE …>"` (valid tags: `time_to_first_token`,
+`request_latency`, `inter_token_latency` in ms; `output_token_throughput_per_user`
+in tokens/s).
+
+Because goodput is a single-threshold metric it can't express percentiles, so the
+report also emits an **SLA Compliance vs Customer Targets** sub-table that grades
+each run PASS/FAIL against the full KPI set — TTFT P50 < 4s, P90 < 10s, P99 < 35s;
+output speed ≥ 45 t/s/u; hit-rate ≥ 90% — with an **Overall** verdict (PASS only
+when every target is met, `N/A` when a metric wasn't captured, e.g. hit-rate when
+the worker `/metrics` endpoint is unreachable).
+
+`request_count=256` (8 waves of 32) gives usable TTFT percentiles including a
+rough P99; bump it in
+[`llm_module/prefix_cache/manifest.json`](llm_module/prefix_cache/manifest.json)
+for a tighter P99. Pair it with `--prefix-cache-metrics-url` (below) so the
+worker `tt_prefix_cache_*` counters populate the hit-rate column:
+
+```bash
+python tt-inference-server-v2/run_prefix_cache.py \
+    --model <trillion-class-model> --workflow benchmarks --device tt \
+    --service-port 8000 --prefix-cache --prefix-cache-preset highcache_50k \
+    --prefix-cache-metrics-url <cpp_server-worker-host:port> \
+    --jwt-secret "$JWT_SECRET"
+```
+
+By default AIPerf auto-derives the `/metrics` scrape from the load target
+(`--service-port`). In a Dynamo deployment that target is the prefix-unaware
+frontend, which does not aggregate the worker prefix-cache counters, so the
+hit-rate column would render `null`. Point the scrape at the cpp_server
+worker(s) with `--prefix-cache-metrics-url` (forwarded to AIPerf's
+`--server-metrics`), keeping load on the frontend. It accepts a full URL,
+`host:port`, or `host:port/metrics`, and is repeatable for multi-worker
+(KV-routed) deployments — the parser sums hit/query deltas across the
+`endpoint_url`-tagged series:
+
+```bash
+python tt-inference-server-v2/run_prefix_cache.py \
+    --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
+    --service-port 8000 --prefix-cache --prefix-cache-preset ci \
+    --prefix-cache-metrics-url bh-glx-120-a03u08.exabox.tenstorrent.com:9000 \
+    --jwt-secret "$JWT_SECRET"
+```
+
 Each AIPerf run emits a `Block(kind="aiperf_prefix_cache")`, which the report
-generator collapses into three Markdown tables (Synthetic, Trace-Driven, Uplift
-vs zero-prefix baseline) via the renderer registered in
+generator collapses into Markdown tables (Synthetic, Trace-Driven, *SLA Compliance
+vs Customer Targets*, and Uplift vs zero-prefix baseline) via the renderer
+registered in
 [`report_module/prefix_cache_renderer.py`](report_module/prefix_cache_renderer.py).
-vLLM prefix-cache hit-rate is derived from the Prometheus counters AIPerf
+The synthetic/trace tables include `TTFT P90`, `Output Tok/s/User`, and
+`Goodput (req/s)` columns alongside the existing percentiles.
+Prefix-cache hit-rate is derived from the worker Prometheus counters
+(`tt_prefix_cache_*` on cpp_server, or `vllm:prefix_cache_*` on vLLM) AIPerf
 scrapes into `server_metrics_export.jsonl`; on Tenstorrent hardware the
 `tt-vllm-plugin` currently disables prefix caching, so the hit-rate column
 renders as `null` until that's lifted (validation work was done against a
@@ -362,8 +444,12 @@ While the migration is in progress, v1 stays the entry point for everything
 that hasn't been ported yet. The routing rules live in
 [`workflows/v2_bridge.py`](../workflows/v2_bridge.py):
 
-- `_V2_ROUTED_MODELS` lists the model names that are validated end-to-end on
-  v2. Today: SDXL base + img2img + inpainting.
+- `_V2_ROUTED_MODEL_TYPES` lists the model *types* fully onboarded to v2. Every
+  model of these types routes to v2 by `model_type` — no per-name allowlist, so
+  new models are picked up automatically. Today: image, video, audio,
+  text-to-speech, CNN, embedding.
+- `_LLM_LIKE_TYPES` (LLM + VLM) share the LLM code path rather than a media
+  runner; they route to v2 per-workflow rather than by `_V2_ROUTED_MODEL_TYPES`.
 - `_V2_WORKFLOW_NAMES` maps v1 `WorkflowType` → v2 workflow name
   (`BENCHMARKS` / `EVALS` / `SPEC_TESTS` / `RELEASE`).
 - `can_route_to_v2(model_spec, runtime_config)` is the predicate v1's runner
@@ -372,8 +458,8 @@ that hasn't been ported yet. The routing rules live in
   defined in `workflows/workflow_venvs.py`), shells out to `run.py`, and
   forwards stdout/stderr.
 
-When you're ready to move a model from v1 to v2, add it to
-`_V2_ROUTED_MODELS` and make sure v2 has the runners and suites needed.
+When you're ready to move a new model type to v2, add it to
+`_V2_ROUTED_MODEL_TYPES` and make sure v2 has the runners and suites needed.
 
 ## Adding things to v2
 

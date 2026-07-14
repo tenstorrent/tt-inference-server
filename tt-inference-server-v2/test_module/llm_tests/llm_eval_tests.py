@@ -14,7 +14,7 @@ from glob import glob
 from pathlib import Path
 from typing import List, Tuple, Union
 
-from llm_module import HttpServerController
+from llm_module import HttpServerController, RemoteOpenAIController
 from llm_module.eval_command import build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
 from report_module.schema import Block
@@ -298,11 +298,17 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         )
         return []
 
-    server = HttpServerController(
-        base_url=ctx.server_host,
-        service_port=ctx.server_port,
-        auth_token=auth_token,
-    )
+    if ctx.remote_server:
+        server = RemoteOpenAIController(
+            base_url=ctx.server_url,
+            auth_token=auth_token,
+        )
+    else:
+        server = HttpServerController(
+            base_url=ctx.server_host,
+            service_port=ctx.server_port,
+            auth_token=auth_token,
+        )
     health_timeout = (
         getattr(
             getattr(ctx.model_spec, "device_model_spec", None),

@@ -21,6 +21,7 @@ from report_module.acceptance_criteria import (
     acceptance_criteria_check,
     build_acceptance_export,
     format_acceptance_summary_markdown,
+    task_failure_blockers,
 )
 from report_module.schema import Block, ReportSchema
 
@@ -49,7 +50,40 @@ def test_category_result_passed_and_to_dict():
         "na": 1,
         "skipped": 1,
         "blockers": {},
+        "waived": {},
     }
+
+
+# --- Task failure blockers ------------------------------------------------
+
+
+def test_task_failure_blockers_ignores_successful_tasks():
+    assert (
+        task_failure_blockers([("evaluation", 0, True), ("benchmark", 0, True)]) == {}
+    )
+
+
+def test_task_failure_blockers_flags_crash_with_no_block():
+    blockers = task_failure_blockers([("evaluation", 1, False)])
+    assert set(blockers) == {"task:evaluation"}
+    assert "produced no report block" in blockers["task:evaluation"]
+    assert "exit=1" in blockers["task:evaluation"]
+
+
+def test_task_failure_blockers_flags_failure_with_block():
+    blockers = task_failure_blockers([("spec_tests", 1, True)])
+    assert "after producing a report block" in blockers["task:spec_tests"]
+
+
+def test_task_failure_blocker_fails_acceptance_when_category_is_na():
+    schema = _schema(
+        _bench({"functional": {"ttft_check": 2, "ttft": 100, "ttft_ratio": 0.8}})
+    )
+    accepted, blockers, _ = acceptance_criteria_check(schema)
+    assert accepted is True and blockers == {}
+
+    crash = task_failure_blockers([("evaluation", 1, False)])
+    assert crash and (accepted and not crash) is False
 
 
 # --- Benchmarks -----------------------------------------------------------
@@ -127,6 +161,40 @@ def test_eval_accuracy_check_pass():
 def test_eval_accuracy_check_fail():
     _, blockers, _ = acceptance_criteria_check(_schema(_eval({"accuracy_check": 3})))
     assert "Accuracy check failed" in blockers["evals:E"]
+
+
+def test_eval_known_issue_waives_blocker():
+    # A failed eval whose task_name matches an EVALS known_issue is demoted to a
+    # non-fatal waiver, so acceptance passes. Works with dict-shaped waivers.
+    schema = _schema(_eval({"task_name": "longbench_code_e", "accuracy_check": 3}))
+    known_issues = [
+        {"workflow_type": "EVALS", "task_name": "longbench_code_e", "reason": "flaky"}
+    ]
+    accepted, blockers, cats = acceptance_criteria_check(schema, known_issues)
+    by_name = {c.name: c for c in cats}
+    assert accepted is True and blockers == {}
+    assert by_name[CATEGORY_EVALS].status == STATUS_PASS
+    assert "evals:E" in by_name[CATEGORY_EVALS].waived
+
+
+def test_eval_known_issue_wrong_task_still_blocks():
+    # Waiver only matches its declared task_name; an unlisted failure blocks.
+    schema = _schema(_eval({"task_name": "longbench_single_e", "accuracy_check": 3}))
+    known_issues = [
+        {"workflow_type": "EVALS", "task_name": "longbench_code_e", "reason": "flaky"}
+    ]
+    accepted, blockers, _ = acceptance_criteria_check(schema, known_issues)
+    assert accepted is False and "evals:E" in blockers
+
+
+def test_eval_known_issue_wrong_workflow_still_blocks():
+    # A BENCHMARKS-scoped waiver must not mask an eval blocker.
+    schema = _schema(_eval({"task_name": "longbench_code_e", "accuracy_check": 3}))
+    known_issues = [
+        {"workflow_type": "BENCHMARKS", "task_name": "longbench_code_e", "reason": "x"}
+    ]
+    accepted, _, _ = acceptance_criteria_check(schema, known_issues)
+    assert accepted is False
 
 
 def test_eval_all_na_is_na_status_not_failure():
@@ -313,7 +381,7 @@ def test_benchmark_mixed_skip_and_pass_is_pass():
 def test_summary_markdown_passing():
     categories = [CategoryResult(CATEGORY_BENCHMARKS, STATUS_PASS, total=2, failed=0)]
     md = format_acceptance_summary_markdown(True, {}, categories)
-    assert "Acceptance status: `PASS`" in md
+    assert "Acceptance status: ✅ `PASS`" in md
     assert "All acceptance criteria passed." in md
     assert "2/2 passed" in md
 
@@ -330,7 +398,7 @@ def test_summary_markdown_detail_shows_skipped():
 def test_summary_markdown_includes_model_status():
     categories = [CategoryResult(CATEGORY_BENCHMARKS, STATUS_PASS, total=1, failed=0)]
     md = format_acceptance_summary_markdown(True, {}, categories, "COMPLETE")
-    assert "Acceptance status: `PASS`" in md
+    assert "Acceptance status: ✅ `PASS`" in md
     assert "Model status: `COMPLETE`" in md
 
 
@@ -339,7 +407,7 @@ def test_summary_markdown_lists_blockers():
     md = format_acceptance_summary_markdown(
         False, {"benchmarks:B.target.ttft_check": "ttft too slow"}, categories
     )
-    assert "Acceptance status: `FAIL`" in md
+    assert "Acceptance status: ❌ `FAIL`" in md
     assert "#### Blockers" in md
     assert "`benchmarks:B.target.ttft_check`: ttft too slow" in md
 
@@ -353,7 +421,7 @@ def test_build_acceptance_export_shape():
     assert metadata["enforcement_result"] == "PASS"
     assert metadata["model_status"] == "COMPLETE"
     assert metadata["categories"][0]["name"] == CATEGORY_BENCHMARKS
-    assert "Acceptance status: `PASS`" in export["acceptance_summary_markdown"]
+    assert "Acceptance status: ✅ `PASS`" in export["acceptance_summary_markdown"]
 
 
 def test_build_acceptance_export_failure_defaults_model_status():
