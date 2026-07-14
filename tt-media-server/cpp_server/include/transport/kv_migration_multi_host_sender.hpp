@@ -38,9 +38,9 @@ class WorkerHealth;
  *     in production, with no change to this class.
  *
  * The injected map defines the known decode cluster at construction. addHost()
- * upserts a host and refreshes the control-channel pointer (metadata rediscovery
- * after a decode restart). Owns no threads; the per-host receivers run in their
- * own processes.
+ * upserts a host and refreshes the control-channel pointer (metadata
+ * rediscovery after a decode restart). Owns no threads; the per-host receivers
+ * run in their own processes.
  */
 class KvMigrationMultiHostSender {
  public:

@@ -112,8 +112,8 @@ void configureSocket(int socketFd) {
 
 // clientLoop/serverLoop only flip connected=false on send/recv errors. Idle
 // control channels never I/O, so a killed peer left connected=true forever and
-// never redialed (mesh watch saw sticky isConnected). Poll for hangup / SO_ERROR
-// / peer FIN; leave pending bytes unread (MSG_PEEK) for tryReceive.
+// never redialed (mesh watch saw sticky isConnected). Poll for hangup /
+// SO_ERROR / peer FIN; leave pending bytes unread (MSG_PEEK) for tryReceive.
 bool isPeerConnectionAlive(int fd) {
   if (fd < 0) {
     return false;
@@ -519,9 +519,8 @@ ReceiveResult TcpSocketTransport::tryReceiveMessage() {
 
   uint32_t size = ntohl(netSize);
   if (size == 0 || size > MAX_MESSAGE_SIZE_BYTES) {
-    TT_LOG_ERROR(
-        "[TcpSocketTransport] Rejecting frame length {} (max {} B)", size,
-        MAX_MESSAGE_SIZE_BYTES);
+    TT_LOG_ERROR("[TcpSocketTransport] Rejecting frame length {} (max {} B)",
+                 size, MAX_MESSAGE_SIZE_BYTES);
     markDisconnected();
     return {ReceiveStatus::CLOSED, {}};
   }
@@ -604,11 +603,10 @@ void TcpSocketTransport::beginIoBudget(std::chrono::milliseconds budget) {
     return;
   }
   const auto deadline = std::chrono::steady_clock::now() + budget;
-  ioDeadlineNs_.store(
-      std::chrono::duration_cast<std::chrono::nanoseconds>(
-          deadline.time_since_epoch())
-          .count(),
-      std::memory_order_release);
+  ioDeadlineNs_.store(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          deadline.time_since_epoch())
+                          .count(),
+                      std::memory_order_release);
 }
 
 void TcpSocketTransport::clearIoBudget() {
@@ -616,8 +614,7 @@ void TcpSocketTransport::clearIoBudget() {
 }
 
 bool TcpSocketTransport::isIoBudgetExpired() const {
-  const std::int64_t deadlineNs =
-      ioDeadlineNs_.load(std::memory_order_acquire);
+  const std::int64_t deadlineNs = ioDeadlineNs_.load(std::memory_order_acquire);
   if (deadlineNs == 0) {
     return false;
   }

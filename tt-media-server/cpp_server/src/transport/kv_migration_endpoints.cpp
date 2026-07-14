@@ -78,9 +78,8 @@ bool KvControlChannelConnector::replaceChannel(const std::string& name,
       owned_.count(name) != 0) {
     return true;  // already dialing / dialed this endpoint
   }
-  TT_LOG_INFO(
-      "[KvControlChannelConnector] replacing channel to '{}' -> {}:{}", name,
-      endpoint.host, endpoint.port);
+  TT_LOG_INFO("[KvControlChannelConnector] replacing channel to '{}' -> {}:{}",
+              name, endpoint.host, endpoint.port);
   return replaceChannelLocked(name, endpoint);
 }
 

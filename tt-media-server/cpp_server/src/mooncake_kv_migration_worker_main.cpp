@@ -563,8 +563,8 @@ bool awaitAllChannelsConnected(KvControlChannelConnector& connector,
 // .pb (identical on all peers); each decode stores the prefill .pb. Block until
 // all succeed or @p stop (readyz stays 503).
 std::shared_ptr<const IKvTable> awaitDecodeTableFromControl(
-    KvControlChannelConnector& connector, const std::vector<uint8_t>& prefillBlob,
-    const std::atomic<bool>& stop) {
+    KvControlChannelConnector& connector,
+    const std::vector<uint8_t>& prefillBlob, const std::atomic<bool>& stop) {
   auto lastWarn = std::chrono::steady_clock::now();
   TT_LOG_INFO(
       "[worker] waiting for control TABLE_EXCHANGE with all decode peers "
@@ -620,7 +620,8 @@ std::shared_ptr<const IKvTable> awaitDecodeTableFromControl(
     std::this_thread::sleep_for(std::chrono::milliseconds(K_DISCOVERY_POLL_MS));
   }
 
-  TT_LOG_WARN("[worker] TABLE_EXCHANGE cancelled before a decode table arrived");
+  TT_LOG_WARN(
+      "[worker] TABLE_EXCHANGE cancelled before a decode table arrived");
   return nullptr;
 }
 
@@ -684,12 +685,10 @@ int runPrefill(const WorkerConfig& cfg) {
   std::shared_ptr<const IKvTable> decodeTable;
   const bool wantsExchange = configuredPeers > 0;
   if (wantsExchange) {
-    decodeTable =
-        awaitDecodeTableFromControl(connector, prefill->blob, gStop);
+    decodeTable = awaitDecodeTableFromControl(connector, prefill->blob, gStop);
     if (!decodeTable) {
-      TT_LOG_WARN(
-          "[worker] prefill '{}' shutting down during TABLE_EXCHANGE",
-          cfg.name);
+      TT_LOG_WARN("[worker] prefill '{}' shutting down during TABLE_EXCHANGE",
+                  cfg.name);
       return 0;
     }
   } else if (!cfg.decode_table_path.empty()) {
@@ -755,8 +754,8 @@ int runPrefill(const WorkerConfig& cfg) {
   for (const auto& name : peerNames) {
     const auto channels = connector.channels();
     const auto it = channels.find(name);
-    wasConnected[name] =
-        it != channels.end() && it->second != nullptr && it->second->isConnected();
+    wasConnected[name] = it != channels.end() && it->second != nullptr &&
+                         it->second->isConnected();
   }
   auto lastMeshWarn = std::chrono::steady_clock::now();
 
@@ -788,16 +787,16 @@ int runPrefill(const WorkerConfig& cfg) {
             "[worker] prefill '{}': rediscovered peer '{}' control {}:{} "
             "(was {}) — replacing channel",
             cfg.name, name, ep.host, ep.port,
-            currentEp ? (currentEp->host + ":" + std::to_string(currentEp->port))
-                      : std::string("none"));
+            currentEp
+                ? (currentEp->host + ":" + std::to_string(currentEp->port))
+                : std::string("none"));
         if (!connector.replaceChannel(name, ep)) {
           wasConnected[name] = false;
           continue;
         }
         const auto channels = connector.channels();
         const auto chIt = channels.find(name);
-        if (chIt == channels.end() ||
-            !sender.addHost(name, chIt->second)) {
+        if (chIt == channels.end() || !sender.addHost(name, chIt->second)) {
           wasConnected[name] = false;
           continue;
         }
@@ -825,7 +824,8 @@ int runPrefill(const WorkerConfig& cfg) {
             cfg.name, name, connector.connectedCount(),
             connector.channelCount());
         // try_lock: if migrate() holds the channel transaction, skip and retry
-        // next poll — never interleave TABLE_EXCHANGE with Begin/Ready/Done/Ack.
+        // next poll — never interleave TABLE_EXCHANGE with
+        // Begin/Ready/Done/Ack.
         if (!tryProvisionPeerTable(*channel, TableExchangeRole::Sender,
                                    prefill->blob)) {
           TT_LOG_WARN(

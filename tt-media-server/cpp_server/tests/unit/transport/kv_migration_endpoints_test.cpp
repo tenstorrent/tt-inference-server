@@ -161,7 +161,8 @@ TEST(KvControlChannelConnectorTest, ReplaceChannelMovesEndpoint) {
 
   KvControlChannelConnector connector(
       eps,
-      [&](const Endpoint& /*ep*/) -> std::shared_ptr<sockets::ISocketTransport> {
+      [&](const Endpoint& /*ep*/)
+          -> std::shared_ptr<sockets::ISocketTransport> {
         ++factoryCalls;
         return std::make_shared<BlockingFakeTransport>(
             std::make_shared<Pipe>(), std::make_shared<Pipe>());
