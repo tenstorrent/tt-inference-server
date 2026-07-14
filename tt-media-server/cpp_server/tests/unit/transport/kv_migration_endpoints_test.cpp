@@ -7,8 +7,11 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <span>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -240,6 +243,91 @@ TEST(KvMigrationReceiverServerTest, StartFailsWhenTransportFactoryReturnsNull) {
       /*port=*/0, [](uint16_t) { return nullptr; }, receiver);
   EXPECT_FALSE(server.start());
   EXPECT_FALSE(server.running());
+}
+
+// Listen transport that supports multi-accept: each fireAccept() hands a new
+// peer to the server's onAccept path (same as TcpSocketTransport).
+class MultiAcceptListenFake : public sockets::ISocketTransport {
+ public:
+  bool initializeAsServer(uint16_t) override { return true; }
+  bool initializeAsClient(const std::string&, uint16_t) override {
+    return true;
+  }
+  void start() override {}
+  void stop() override {}
+  bool isConnected() const override { return true; }
+  std::string getStatus() const override { return "multi-accept-fake"; }
+  bool sendRawData(std::span<const uint8_t>) override { return false; }
+  std::vector<uint8_t> receiveRawData() override { return {}; }
+  void setConnectionLostCallback(std::function<void()>) override {}
+  void setConnectionEstablishedCallback(std::function<void()>) override {}
+
+  bool enableMultiAccept(AcceptHandler handler) override {
+    handler_ = std::move(handler);
+    return true;
+  }
+
+  void fireAccept(std::shared_ptr<sockets::ISocketTransport> peer) {
+    ASSERT_TRUE(handler_);
+    handler_(std::move(peer));
+  }
+
+ private:
+  AcceptHandler handler_;
+};
+
+// Peer that reports CLOSED immediately so KvMigrationReceiver::run() exits.
+class ImmediatelyClosedPeer : public sockets::ISocketTransport {
+ public:
+  bool initializeAsServer(uint16_t) override { return true; }
+  bool initializeAsClient(const std::string&, uint16_t) override {
+    return true;
+  }
+  void start() override {}
+  void stop() override {}
+  bool isConnected() const override { return false; }
+  std::string getStatus() const override { return "closed-peer"; }
+  bool sendRawData(std::span<const uint8_t>) override { return false; }
+  std::vector<uint8_t> receiveRawData() override { return {}; }
+  sockets::ReceiveResult tryReceiveMessage() override {
+    return {sockets::ReceiveStatus::CLOSED, {}};
+  }
+  void setConnectionLostCallback(std::function<void()>) override {}
+  void setConnectionEstablishedCallback(std::function<void()>) override {}
+};
+
+// B1: finished sessions must be reaped on the next accept (no fd/thread leak).
+TEST(KvMigrationReceiverServerTest, ReapsFinishedSessionsOnAccept) {
+  auto reg = std::make_shared<FakeRegistry>();
+  auto table = std::make_shared<InMemoryKvTable>(
+      buildTable("D0", {2, 0}, {2, 1}, {2, 2}, {2, 3}, 0x8000, 0, 0x9000, 1));
+  auto engine = std::make_shared<FakeTransferEngine>(reg, "segD0");
+  FakeDeviceIo dev;
+  MooncakeKvReceiver receiver(engine, dev, table, "D0", "segD0");
+
+  auto listen = std::make_shared<MultiAcceptListenFake>();
+  KvMigrationReceiverServer server(
+      /*port=*/18650, [listen](uint16_t) { return listen; }, receiver,
+      /*localTableBlob=*/{}, K_RECV_TIMEOUT, K_POLL_INTERVAL);
+  ASSERT_TRUE(server.start());
+
+  listen->fireAccept(std::make_shared<ImmediatelyClosedPeer>());
+  // run() should observe CLOSED and finish quickly.
+  for (int i = 0; i < 200 && server.activeSessionCount() > 0; ++i) {
+    std::this_thread::sleep_for(1ms);
+  }
+
+  listen->fireAccept(std::make_shared<ImmediatelyClosedPeer>());
+  for (int i = 0; i < 200 && server.activeSessionCount() > 0; ++i) {
+    std::this_thread::sleep_for(1ms);
+  }
+
+  // After the second accept, the first finished session was reaped; at most
+  // one (the latest, possibly still exiting) may remain briefly.
+  EXPECT_LE(server.activeSessionCount(), 1u);
+
+  server.stop();
+  EXPECT_EQ(server.activeSessionCount(), 0u);
 }
 
 // ---------------------------------------------------------------------------

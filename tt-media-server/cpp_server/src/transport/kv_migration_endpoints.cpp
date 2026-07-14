@@ -168,6 +168,30 @@ void KvMigrationReceiverServer::startSingleSession(
   thread_ = std::thread([this] { orchestrator_->run(); });
 }
 
+void KvMigrationReceiverServer::reapFinishedSessionsLocked() {
+  for (auto it = sessions_.begin(); it != sessions_.end();) {
+    if (!(*it)->finished.load(std::memory_order_acquire)) {
+      ++it;
+      continue;
+    }
+    if ((*it)->thread.joinable()) {
+      (*it)->thread.join();
+    }
+    it = sessions_.erase(it);
+  }
+}
+
+std::size_t KvMigrationReceiverServer::activeSessionCount() const {
+  std::lock_guard<std::mutex> lock(sessionsMutex_);
+  std::size_t active = 0;
+  for (const auto& session : sessions_) {
+    if (!session->finished.load(std::memory_order_acquire)) {
+      ++active;
+    }
+  }
+  return active;
+}
+
 void KvMigrationReceiverServer::onAccept(
     std::shared_ptr<sockets::ISocketTransport> peer) {
   if (!peer) {
@@ -182,14 +206,23 @@ void KvMigrationReceiverServer::onAccept(
       session->transport, receive_timeout_, poll_interval_);
   session->orchestrator = std::make_unique<KvMigrationReceiver>(
       *session->channel, receiver_, local_table_blob_);
+  Session* raw = session.get();
   auto* orch = session->orchestrator.get();
-  session->thread = std::thread([orch] { orch->run(); });
+  session->thread = std::thread([orch, raw] {
+    orch->run();
+    raw->finished.store(true, std::memory_order_release);
+  });
 
   std::size_t active = 0;
   {
     std::lock_guard<std::mutex> lock(sessionsMutex_);
+    reapFinishedSessionsLocked();
     sessions_.push_back(std::move(session));
-    active = sessions_.size();
+    for (const auto& s : sessions_) {
+      if (!s->finished.load(std::memory_order_acquire)) {
+        ++active;
+      }
+    }
   }
   TT_LOG_INFO(
       "[KvMigrationReceiverServer] accepted prefill control session on :{} "
