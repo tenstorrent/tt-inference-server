@@ -47,6 +47,9 @@ constexpr size_t PREFIX_CACHE_FIRST_BLOCK_SIZE = 128;
 constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 40;
 constexpr bool USE_FAST_MODE = false;
 constexpr bool ENABLE_MIGRATION = false;
+// PrefillScheduler drives cross-endpoint (P->D) KV migration via the
+// Kafka-backed RemoteKVManagerAdapter
+constexpr bool PREFILL_USE_REMOTE_KV_MANAGER = false;
 constexpr const char* MIGRATION_CMD_QUEUE_NAME = "mig_ep0_cmd";
 constexpr const char* MIGRATION_TABLE_QUEUE_NAME = "mig_ep0_table";
 constexpr const char* MIGRATION_RESP_QUEUE_NAME = "mig_ep0_resp";
@@ -68,6 +71,9 @@ constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 
 constexpr const char* SPEC_DECODE_MODE = "none";
 constexpr size_t MTP_LEVEL = 1;
+
+// number of pipeline stages of the Blaze Decode Model.
+constexpr uint32_t BLAZE_NUMBER_OF_PIPELINE_STAGES = 64;
 
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
 constexpr const char* TT_RESULT_QUEUE = "tt_results";

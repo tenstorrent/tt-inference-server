@@ -397,19 +397,19 @@ def parse_arguments():
         "--model-category",
         type=str,
         nargs="+",
-        help="Filter by model category (IMAGE, AUDIO, CNN)",
+        help="Filter by model category (CNN, EMBEDDING)",
         default=None,
     )
     spec_tests_group.add_argument(
         "--suite-category",
         type=str,
-        help="Load suites for a specific category (e.g., image, audio)",
+        help="Load suites for a specific category (e.g., cnn, embedding)",
         default=None,
     )
     spec_tests_group.add_argument(
         "--test-name",
         type=str,
-        help="Filter by specific test class name (e.g., ImageGenerationLoadTest)",
+        help="Filter by specific test class name (e.g., CnnLoadTest)",
         default=None,
     )
     spec_tests_group.add_argument(

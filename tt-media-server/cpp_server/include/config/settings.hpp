@@ -117,6 +117,9 @@ std::string logInstanceTag(int workerIndex = -1);
 /** Capacity hint for the gateway, 0 = unlimited. From PREFILL_MAX_IN_FLIGHT. */
 uint32_t prefillMaxInFlight();
 
+// Number of pipeline stages for the Blaze Decode runner.
+uint32_t blazeNumberOfPipelineStages();
+
 /** Max in-flight requests before 429. From MAX_QUEUE_SIZE. Default:
  * defaults::MAX_QUEUE_SIZE. */
 size_t maxQueueSize();
@@ -231,6 +234,12 @@ uint32_t prefillChunkSize();
 /** Enable migration from ENABLE_MIGRATION. Default:
  * defaults::ENABLE_MIGRATION. */
 bool enableMigration();
+
+/**
+ * Route the PrefillScheduler's cross-endpoint (P->D) KV migration through the
+ * Kafka-backed RemoteKVManagerAdapter.
+ */
+bool prefillUseRemoteKvManager();
 
 /** Migration cmd queue name from MIGRATION_CMD_QUEUE_NAME. Default:
  * defaults::MIGRATION_CMD_QUEUE_NAME. */

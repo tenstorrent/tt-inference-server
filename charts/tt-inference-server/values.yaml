@@ -2949,7 +2949,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-55fd115-aa4ae1e
+              tag: 0.18.0-c49bb76-6b4a3a7
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -2978,7 +2978,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-55fd115-aa4ae1e
+              tag: 0.18.0-c49bb76-6b4a3a7
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3312,7 +3312,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-55fd115-aa4ae1e
+              tag: 0.18.0-c49bb76-6b4a3a7
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3341,7 +3341,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-55fd115-aa4ae1e
+              tag: 0.18.0-c49bb76-6b4a3a7
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5778,7 +5778,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.10.1-555f240
+              tag: 0.18.0-c49bb76
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -7295,7 +7295,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
-              tag: 0.13.0-079a2c2
+              tag: 0.18.0-c49bb76
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -7317,7 +7317,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
-              tag: 0.13.0-079a2c2
+              tag: 0.18.0-c49bb76
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -7563,8 +7563,8 @@ models:
           forge_vllm_plugin:
             progressDeadlineSeconds: 5400
             image:
-              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
-              tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.18.0-c49bb76
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -7577,14 +7577,30 @@ models:
             env:
               - name: ARCH_NAME
                 value: blackhole
+              - name: CPU_SAMPLING
+                value: 'false'
+              - name: ENABLE_TRACE
+                value: 'true'
               - name: GPU_MEMORY_UTILIZATION
-                value: '0.6'
+                value: '0.35'
+              - name: KV_CACHE_DTYPE
+                value: bfp_bf8
               - name: MAX_MODEL_LENGTH
-                value: '4096'
+                value: '32768'
               - name: MAX_NUM_SEQS
-                value: '16'
+                value: '32'
               - name: MESH_DEVICE
                 value: P150
+              - name: MIN_NUM_SEQS
+                value: '1'
+              - name: OPTIMIZATION_LEVEL
+                value: '1'
+              - name: PREFILL_BATCH_THRESHOLD
+                value: '16'
+              - name: PREFILL_CHUNK_SIZE
+                value: '1024'
+              - name: TT_KV_POOL_GB
+                value: '32'
     defaultEngine: forge
   Z-Image-Turbo:
     media:
@@ -7611,3 +7627,79 @@ models:
               - name: MESH_DEVICE
                 value: P300x2
     defaultEngine: media
+  gemma-4-31B-it:
+    vllm:
+      p300x2:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.18.0-c49bb76-6b4a3a7
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 77Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: GEMMA4_MAX_TOKENS_ALL_USERS
+                value: '49152'
+              - name: GEMMA4_PAGE_BLOCK_SIZE
+                value: '64'
+              - name: MESH_DEVICE
+                value: P150x4
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+    defaultEngine: vllm
+  Qwen3.6-27B:
+    vllm:
+      p300x2:
+        defaultImpl: qwen36_blackhole
+        impls:
+          qwen36_blackhole:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.18.0-c49bb76-6b4a3a7
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 67Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: HF_MODEL
+                value: Qwen/Qwen3.6-27B
+              - name: MESH_DEVICE
+                value: (1, 4)
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: TT_MESH_GRAPH_DESC_PATH
+                value: ../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto
+              - name: TT_QWEN35_TEXT_VER
+                value: qwen36_blackhole
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+    defaultEngine: vllm

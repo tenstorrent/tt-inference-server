@@ -45,6 +45,8 @@ the model because `eos_token_id` is absent (model carries it only in
    id in `src/config/settings.cpp` `modelType()`
    (`if (m == "<hf-id>") return ModelType::X;`) — without it the worker silently
    serves as DeepSeek.
+   In src/config/settings.cpp, in resolveBlazeNumberOfPipelineStages, add the case for the model
+   Ask the user for the number of stages, if he did not already specify this
 
 3. **Fetch tokenizer files** in `scripts/fetch_tokenizers.sh` so
    `tokenizers/<hf-id>/` has **tokenizer.json, tokenizer_config.json, config.json,

@@ -21,7 +21,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from report_module.schema import Block
 
-from server_tests.test_classes import TestConfig as ServerTestConfig
+from .._test_common import TestConfig as ServerTestConfig
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     calculate_accuracy_check,
     calculate_metrics,

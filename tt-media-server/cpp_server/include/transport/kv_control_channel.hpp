@@ -45,6 +45,12 @@ class KvControlChannel {
       std::chrono::milliseconds receiveTimeout = kDefaultReceiveTimeout,
       std::chrono::milliseconds pollInterval = kDefaultPollInterval);
 
+  /// Outcome of a receive attempt. Distinguishes a *timeout* (connection still
+  /// live, no message yet) from a *close* — a long-lived server must keep
+  /// waiting on the former but stop on the latter, which the std::optional
+  /// receive() cannot express (it collapses both to nullopt).
+  enum class ReceiveOutcome { Message, TimedOut, Closed };
+
   /// True if the underlying transport reports a live connection.
   bool isConnected() const;
 
@@ -56,9 +62,18 @@ class KvControlChannel {
    *
    * Retries while the transport reports NO_DATA (peer hasn't replied yet).
    * Returns std::nullopt on transport close (CLOSED), a malformed message, or
-   * if no message arrives within the receive timeout.
+   * if no message arrives within the receive timeout. Prefer receiveMessage()
+   * when the caller must distinguish an idle timeout from a real close.
    */
   std::optional<KvControlMessage> receive();
+
+  /**
+   * @brief Tri-state receive: fills `out` and returns Message, or reports
+   *        TimedOut / Closed. A malformed frame is reported as Closed (the
+   *        stream is unusable). Unlike receive(), a timeout is not logged as an
+   *        error here — it is normal for a server idling between requests.
+   */
+  ReceiveOutcome receiveMessage(KvControlMessage& out);
 
  private:
   std::shared_ptr<sockets::ISocketTransport> transport_;

@@ -65,4 +65,22 @@ class TestStatus(str, Enum):
 _BLOCKING_STATUSES = frozenset({TestStatus.FAIL, TestStatus.ERROR})
 
 
-__all__ = ["TestStatus"]
+STATUS_GLYPHS: dict[TestStatus, str] = {
+    TestStatus.PASS: "✅",
+    TestStatus.FAIL: "❌",
+    TestStatus.ERROR: "❌",
+    TestStatus.SKIP: "⏭️",
+    TestStatus.NA: "🟨",
+}
+
+
+def glyph_for(status: TestStatus) -> str:
+    return STATUS_GLYPHS.get(status, "❌")
+
+
+def glyph_for_label(label: str) -> str:
+    status = TestStatus.from_value(label)
+    return STATUS_GLYPHS.get(status, "") if status else ""
+
+
+__all__ = ["TestStatus", "STATUS_GLYPHS", "glyph_for", "glyph_for_label"]

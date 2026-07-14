@@ -604,6 +604,8 @@ add_library(transport_lib
     src/transport/mooncake_transfer_engine.cpp
     src/transport/mooncake_migration_worker.cpp
     src/transport/peer_discovery_service.cpp
+    src/transport/worker_health.cpp
+    src/transport/worker_health_server.cpp
     # Real KV-cache addressing: physical mirror layout + sender/receiver views +
     # multi-device UMD I/O. Dependency-free host code (no tt-metal/Mooncake), so
     # transport_lib still builds in every configuration.
@@ -619,12 +621,28 @@ add_library(transport_lib
     src/transport/mooncake_kv_receiver.cpp
     src/transport/kv_migration_orchestrator.cpp
     src/transport/kv_migration_multi_host_sender.cpp
+    # The real IMigrationExecutor: bridges the Kafka trigger (tt::worker /
+    # tt::services, header-only here) to the multi-host data plane.
+    src/transport/mooncake_migration_executor.cpp
+    # Endpoint wiring: resolution -> live control channels (prefill connector +
+    # decode receiver server). Socket transport is injected, so no src/sockets
+    # link dependency leaks into transport_lib.
+    src/transport/kv_migration_endpoints.cpp
+    # Table provisioning: load a worker's own .pb + exchange tables over
+    # the control channel (the prefill side obtains the decode table).
+    src/transport/kv_table_provisioning.cpp
+    # Engine -> worker handoff: the engine (authority) ships the device-built
+    # table + device map (FabricNode -> ASIC id) to the worker. Our own contract,
+    # not the disaggregation shmem client.
+    src/transport/engine_table_handoff.cpp
     src/utils/logger.cpp
 )
 target_include_directories(transport_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
 )
-target_link_libraries(transport_lib PUBLIC spdlog::spdlog)
+# worker_health.cpp owns a Prometheus registry for the worker's /metrics surface.
+target_link_libraries(transport_lib PUBLIC spdlog::spdlog prometheus-cpp::core)
 if(USE_EXTERNAL_FMT)
     target_link_libraries(transport_lib PUBLIC fmt::fmt)
 endif()
@@ -847,7 +865,36 @@ if(TARGET transfer_engine)
     target_link_libraries(transport_kv_migration_e2e PRIVATE transport_lib GTest::gtest)
     target_include_directories(transport_kv_migration_e2e PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    # --trigger kafka: drive the migration through the unified worker's data path
+    # (KvMigrationWorker + MooncakeMigrationExecutor). Only when Kafka is built;
+    # the default cli trigger links none of it.
+    if(KAFKA_ENABLED)
+        target_link_libraries(transport_kv_migration_e2e PRIVATE
+            messaging kv_migration_worker)
+        target_compile_definitions(transport_kv_migration_e2e PRIVATE
+            TT_E2E_WITH_KAFKA)
+        message(STATUS "transport_kv_migration_e2e: Kafka trigger ENABLED")
+    endif()
     message(STATUS "transport_kv_migration_e2e: ENABLED (real KV migration harness)")
+
+    # Standalone seed/verify helper for the production mooncake_kv_migration_
+    # worker (which moves real KV and does no seed/verify of its own). --mode
+    # seed writes the known pattern into prefill source DRAM before a migration;
+    # --mode verify reads decode dest DRAM back after and compares. Reuses the
+    # real tables + device map + the harness's pattern, so it byte-checks a
+    # Kafka-triggered worker migration. Links only transport_lib.
+    add_executable(kv_seed_verify
+        tests/e2e/kv_seed_verify.cpp)
+    target_link_libraries(kv_seed_verify PRIVATE transport_lib)
+    target_include_directories(kv_seed_verify PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    if(USE_EXTERNAL_FMT)
+        target_link_libraries(kv_seed_verify PRIVATE spdlog::spdlog fmt::fmt)
+    else()
+        target_link_libraries(kv_seed_verify PRIVATE spdlog::spdlog)
+    endif()
+    target_compile_options(kv_seed_verify PRIVATE -Wall -Wextra -Wpedantic)
+    message(STATUS "kv_seed_verify: ENABLED (seed/verify helper for unified worker)")
 endif()
 
 # Unit tests (link llm_runner_lib)
@@ -862,6 +909,13 @@ target_include_directories(transport_test PRIVATE
 
 # KV-cache addressing unit tests: mirror layout / offset math, sender-receiver
 # offset parity, multi-device UMD dispatch. Host-only, runs in any build config.
+add_executable(worker_health_server_test
+    tests/unit/transport/worker_health_server_test.cpp)
+target_link_libraries(worker_health_server_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(worker_health_server_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(kv_cache_addressing_test
     tests/unit/transport/kv_cache_addressing_test.cpp)
 target_link_libraries(kv_cache_addressing_test PRIVATE transport_lib GTest::gtest_main)
@@ -905,10 +959,41 @@ target_include_directories(kv_migration_orchestrator_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# Mooncake-backed IMigrationExecutor: async dispatch, exactly-once terminal
+# callback, services->transport request passthrough, and (via the orchestrator
+# loopback in the same suite) driving the real multi-host data plane.
+add_executable(mooncake_migration_executor_test
+    tests/unit/transport/mooncake_migration_executor_test.cpp)
+target_link_libraries(mooncake_migration_executor_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(mooncake_migration_executor_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Endpoint wiring: control-channel connector (prefill) + receiver server (decode)
+# over a loopback fake transport, end to end through the multi-host data plane.
+add_executable(kv_migration_endpoints_test
+    tests/unit/transport/kv_migration_endpoints_test.cpp)
+target_link_libraries(kv_migration_endpoints_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(kv_migration_endpoints_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Engine->worker table+devmap handoff: serialize/parse + send/receive over a
+# loopback fake. The real-table case is gated on ENABLE_KV_TABLE and only runs
+# when the KV_TABLE_DECODE_PB env var points at a real table (else it SKIPs);
+# no table path is baked into the build.
+add_executable(engine_table_handoff_test
+    tests/unit/transport/engine_table_handoff_test.cpp)
+target_link_libraries(engine_table_handoff_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(engine_table_handoff_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 # Real-table adapter test: loads an actual serialized KvChunkAddressTable (.pb)
 # and checks real NoC addresses resolve. Only built when ENABLE_KV_TABLE=ON
-# (otherwise the adapter is the no-op fallback). Reads KV_TABLE_PB env var, else
-# the default below; SKIPs if neither file is present.
+# (otherwise the adapter is the no-op fallback). Reads the KV_TABLE_PB env var
+# for the table path; SKIPs when it is unset or the file is absent (no table
+# path is baked into the build).
 if(ENABLE_KV_TABLE)
     add_executable(kv_chunk_address_table_adapter_test
         tests/unit/transport/kv_chunk_address_table_adapter_test.cpp)
@@ -916,9 +1001,6 @@ if(ENABLE_KV_TABLE)
     target_include_directories(kv_chunk_address_table_adapter_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
-    # Repo-root tables emitted by the model runner (cpp_server -> tt-media-server -> repo root).
-    target_compile_definitions(kv_chunk_address_table_adapter_test PRIVATE
-        KV_TABLE_PB_DEFAULT="${CMAKE_CURRENT_SOURCE_DIR}/../../decoder_kv_table.pb")
 endif()
 
 add_executable(dynamo_protocol_test
@@ -1057,6 +1139,22 @@ add_executable(session_test
 target_link_libraries(session_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(session_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(prefix_cache_router_test
+    tests/unit/services/prefix_cache_router_test.cpp
+    src/domain/session.cpp
+    src/domain/prefix_cache/prefix_index.cpp
+    src/domain/prefix_cache/block_matcher.cpp
+    src/domain/prefix_cache/response_id_index.cpp
+    src/services/prefix_cache_router.cpp
+    src/metrics/metrics.cpp
+)
+target_link_libraries(prefix_cache_router_test PRIVATE
+    llm_runner_lib Drogon::Drogon prometheus-cpp::core GTest::gtest_main)
+target_include_directories(prefix_cache_router_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
 add_executable(mock_remote_kv_manager_test
@@ -1292,10 +1390,14 @@ set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2E
 gtest_discover_tests(transport_test)
 gtest_discover_tests(dynamo_protocol_test)
 gtest_discover_tests(kv_cache_addressing_test)
+gtest_discover_tests(worker_health_server_test)
 gtest_discover_tests(kv_table_adapter_test)
 gtest_discover_tests(kv_control_channel_test)
 gtest_discover_tests(mooncake_kv_migration_test)
 gtest_discover_tests(kv_migration_orchestrator_test)
+gtest_discover_tests(mooncake_migration_executor_test)
+gtest_discover_tests(kv_migration_endpoints_test)
+gtest_discover_tests(engine_table_handoff_test)
 if(ENABLE_KV_TABLE)
     gtest_discover_tests(kv_chunk_address_table_adapter_test)
 endif()
@@ -1313,6 +1415,7 @@ gtest_discover_tests(structured_output_test)
 gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
+gtest_discover_tests(prefix_cache_router_test)
 gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)
 gtest_discover_tests(llm_service_test)
@@ -1349,24 +1452,23 @@ target_include_directories(prefix_cache_e2e_test PRIVATE
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)
 target_link_libraries(tokenizer_benchmark PRIVATE llm_runner_lib)
 
-# Session manager microbenchmark (Google Benchmark)
-add_executable(session_manager_benchmark
-    benchmarks/session_manager_benchmark.cpp
+# Prefix cache router microbenchmark (Google Benchmark)
+add_executable(prefix_cache_router_benchmark
+    benchmarks/prefix_cache_router_benchmark.cpp
     src/domain/session.cpp
     src/domain/prefix_cache/prefix_index.cpp
     src/domain/prefix_cache/block_matcher.cpp
     src/domain/prefix_cache/response_id_index.cpp
-    src/services/session_manager.cpp
     src/services/prefix_cache_router.cpp
     src/metrics/metrics.cpp
 )
-target_link_libraries(session_manager_benchmark PRIVATE
+target_link_libraries(prefix_cache_router_benchmark PRIVATE
     llm_runner_lib Drogon::Drogon prometheus-cpp::core benchmark::benchmark benchmark::benchmark_main)
-target_include_directories(session_manager_benchmark PRIVATE
+target_include_directories(prefix_cache_router_benchmark PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
-add_test(NAME SessionManagerBenchmark COMMAND session_manager_benchmark --benchmark_min_time=0.1s)
+add_test(NAME PrefixCacheRouterBenchmark COMMAND prefix_cache_router_benchmark --benchmark_min_time=0.1s)
 
 # Kafka messaging support (optional)
 if(KAFKA_ENABLED)
@@ -1403,8 +1505,15 @@ if(KAFKA_ENABLED)
     # Note: disaggregation/migration/include is needed for migration_client.hpp
     # which migration_client_interface.hpp includes for event types.
     if(ENABLE_BLAZE)
+        # CompositeMigrationClient joins the Kafka RemoteKVManagerAdapter (burst
+        # path) with the shmem/mock MigrationLayerClient (migrate/loopback
+        # path) behind a single MigrationClientInterface so the PrefillScheduler
+        # can still service ALLOCATE(migrate_from_slot) prefix-cache copies —
+        # the Kafka adapter intentionally throws on that entry point, so
+        # composing is what makes PREFILL_USE_REMOTE_KV_MANAGER safe.
         add_library(remote_kv_adapter
             src/services/remote_kv_manager_adapter.cpp
+            src/services/composite_migration_client.cpp
         )
         target_include_directories(remote_kv_adapter PUBLIC
             ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -1416,6 +1525,33 @@ if(KAFKA_ENABLED)
             spdlog::spdlog
         )
         message(STATUS "remote_kv_adapter: ENABLED (ENABLE_BLAZE=ON)")
+
+        # Wire the Kafka-backed RemoteKVManagerAdapter into the PrefillScheduler factory (blaze_utils.hpp)
+        target_link_libraries(llm_runner_lib PUBLIC remote_kv_adapter)
+        target_compile_definitions(llm_runner_lib PUBLIC KAFKA_ENABLED)
+        message(STATUS
+            "llm_runner_lib: PREFILL_USE_REMOTE_KV_MANAGER path ENABLED "
+            "(linked against remote_kv_adapter, KAFKA_ENABLED define set)")
+
+        # Unit test for CompositeMigrationClient. Uses two in-process
+        # FakeBackends (defined inline in the test) so it does not need
+        # Kafka or shmem; the whole point is to pin down the composite's
+        # routing / fan-out behavior in isolation. gtest_discover_tests
+        # registers each TEST() case with ctest individually so the PR
+        # gate picks them up (unlike some sibling Kafka unit tests in
+        # this file that are only built, not ctest-registered — a
+        # pre-existing gap that should be closed separately).
+        add_executable(composite_migration_client_test
+            tests/unit/services/composite_migration_client_test.cpp
+        )
+        target_link_libraries(composite_migration_client_test PRIVATE
+            remote_kv_adapter
+            GTest::gtest_main
+        )
+        target_include_directories(composite_migration_client_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        gtest_discover_tests(composite_migration_client_test)
     else()
         message(STATUS "remote_kv_adapter: DISABLED (requires ENABLE_BLAZE=ON)")
     endif()
@@ -1488,6 +1624,31 @@ if(KAFKA_ENABLED)
         target_include_directories(bringup_mooncake_worker PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include)
         message(STATUS "bringup_mooncake_worker: ENABLED (#4294 production worker)")
+
+        # Unified Kafka->migration worker: one --role prefill|decode binary that
+        # drives the real data plane on a Kafka trigger (supersedes
+        # bringup_mooncake_worker's log-only loop and tt_kv_migration_consumer's
+        # stub executor). Compiles tcp_socket_transport.cpp directly for the
+        # control channels (the connector + receiver server take an injected
+        # ISocketTransport, so transport_lib stays socket-decoupled).
+        add_executable(mooncake_kv_migration_worker
+            src/mooncake_kv_migration_worker_main.cpp
+            src/sockets/tcp_socket_transport.cpp)
+        target_link_libraries(mooncake_kv_migration_worker PRIVATE
+            transport_lib
+            messaging
+            kv_migration_worker)
+        target_include_directories(mooncake_kv_migration_worker PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        if(USE_EXTERNAL_FMT)
+            target_link_libraries(mooncake_kv_migration_worker PRIVATE
+                spdlog::spdlog fmt::fmt)
+        else()
+            target_link_libraries(mooncake_kv_migration_worker PRIVATE spdlog::spdlog)
+        endif()
+        target_compile_options(mooncake_kv_migration_worker PRIVATE
+            -Wall -Wextra -Wpedantic)
+        message(STATUS "mooncake_kv_migration_worker: ENABLED (unified Kafka->migration worker)")
 
         # MPI discovery e2e test: launches 4 prefill + 16 decode
         # bringup_mooncake_worker processes on one host and checks every worker
