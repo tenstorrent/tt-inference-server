@@ -65,6 +65,14 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p150x4.md) |
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p150x4.md) |
 
+## [BH P300](https://tenstorrent.com/hardware/blackhole)
+
+| Status | Type | Model |
+|--------|------|-------|
+| 🟢 Complete | Image | [FLUX.1-dev](image/FLUX.1-dev_p300.md) |
+| 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p300.md) |
+| 🟡 Functional | LLM | [Qwen3-8B](llm/Qwen3-8B_p300.md) |
+
 ## [BH QuietBox 2](https://tenstorrent.com/hardware/tt-quietbox)
 
 | Status | Type | Model |
@@ -75,9 +83,13 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | Image | [Motif-Image-6B-Preview](image/Motif-Image-6B-Preview_p300x2.md) |
 | 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_p300x2.md) |
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p300x2.md) |
+| 🟡 Functional | Image | [Z-Image-Turbo](image/Z-Image-Turbo_p300x2.md) |
 | 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p300x2.md) |
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p300x2.md) |
 | 🟡 Functional | LLM | [Qwen3-32B](llm/Qwen3-32B_p300x2.md) |
+| 🛠️ Experimental | LLM | [gemma-4-31B-it](llm/gemma-4-31B-it_p300x2.md) |
+| 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_p300x2.md) |
+| 🛠️ Experimental | LLM | [Qwen3.6-27B](llm/Qwen3.6-27B_p300x2.md) |
 | 🛠️ Experimental | TTS | [speecht5_tts](tts/speecht5_tts_p300x2.md) |
 
 ## [p100](https://tenstorrent.com/hardware/blackhole)
@@ -91,6 +103,8 @@ This page lists all supported models organized by hardware type.
 | Status | Type | Model |
 |--------|------|-------|
 | 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_p150.md) |
+| 🟢 Complete | CNN | [yolox_nano](cnn/yolox_nano_p150.md) |
+| 🛠️ Experimental | LLM | [Falcon3-7B-Instruct](llm/Falcon3-7B-Instruct_p150.md) |
 | 🛠️ Experimental | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p150.md) |
 | 🛠️ Experimental | TTS | [speecht5_tts](tts/speecht5_tts_p150.md) |
 
@@ -138,6 +152,7 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | CNN | [mobilenetv2](cnn/mobilenetv2_n150.md) |
 | 🟢 Complete | CNN | [vit](cnn/vit_n150.md) |
 | 🟢 Complete | CNN | [vovnet](cnn/vovnet_n150.md) |
+| 🟢 Complete | CNN | [yolox_nano](cnn/yolox_nano_n150.md) |
 | 🟢 Complete | Image | [stable-diffusion-xl-1.0-inpainting-0.1](image/stable-diffusion-xl-1.0-inpainting-0.1_n150.md) |
 | 🟢 Complete | Image | [stable-diffusion-xl-base-1.0](image/stable-diffusion-xl-base-1.0_n150.md) |
 | 🟢 Complete | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_n150.md) |

@@ -363,7 +363,7 @@ See [Logs](#logs) section below for example format of the report files generated
 
 > **Internal workflow.** `spec_tests` is used for release validation and CI. It requires a running inference server.
 
-The `spec_tests` workflow runs server integration tests against the inference server. Tests are defined in `server_tests/server_tests_config.json` and matched by model name and device. Test classes (e.g. `DeviceLivenessTest`, `ImageGenerationLoadTest`) are loaded dynamically and executed via `server_tests/run_spec_tests.py`.
+The `spec_tests` workflow runs server integration tests against the inference server. Tests are defined in `server_tests/server_tests_config.json` and matched by model name and device. Test classes (e.g. `DeviceLivenessTest`, `CnnLoadTest`) are loaded dynamically and executed via `server_tests/run_spec_tests.py`.
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow spec_tests

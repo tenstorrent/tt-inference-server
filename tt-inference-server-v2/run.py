@@ -28,6 +28,16 @@ Agentic evals (LLM-only, --workflow agentic):
         python tt-inference-server-v2/run_agentic.py \
             --model Qwen3.6-27B --workflow agentic --device gpu \
             --service-port 8000
+
+Speculative-decoding benchmark (LLM-only, --workflow benchmarks):
+    Requires the dedicated ``V2_SPEC_DECODE`` venv (aiperf>=0.8 for the
+    SPEED-Bench dataset plugins). Use the thin launcher
+    ``run_spec_decode.py``. Server-side speculative config is out of scope:
+    the sweep measures whatever server it is pointed at.
+
+        python tt-inference-server-v2/run_spec_decode.py \
+            --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
+            --spec-decode --spec-decode-preset ci --service-port 8000
 """
 
 from __future__ import annotations
@@ -177,9 +187,10 @@ def parse_args() -> argparse.Namespace:
     # ----- Prefix-caching benchmark (LLM-only) -----------------------
     # When --prefix-cache is set, BenchmarksWorkflow swaps its default
     # media-task dispatch for the AIPerf prefix-cache scenario sweep (wired
-    # through CommandFactory -> OrchestratorMetadata.prefix_cache). Validated
-    # below to require --workflow benchmarks. Run via run_prefix_cache.py so
-    # the V2_PREFIX_CACHE venv is in place before these heavy deps are needed.
+    # through CommandFactory -> OrchestratorMetadata.prefix_cache). Standalone
+    # benchmarks run through run_prefix_cache.py so the V2_PREFIX_CACHE venv is
+    # in place before these heavy deps are needed; release pins that venv
+    # explicitly for its in-process benchmark child.
     parser.add_argument(
         "--prefix-cache",
         action="store_true",
@@ -189,18 +200,22 @@ def parse_args() -> argparse.Namespace:
             "baseline, mooncake_trace). Captures vLLM "
             "prefix_cache_hits/queries via Prometheus and reports "
             "P50/P95/P99 for TTFT/TPOT/ITL/E2EL alongside cache hit-rate. "
-            "Requires --workflow benchmarks. Launch through run_prefix_cache.py."
+            "Requires --workflow benchmarks or release. Standalone benchmark "
+            "runs should launch through run_prefix_cache.py."
         ),
     )
     parser.add_argument(
         "--prefix-cache-preset",
         type=str,
-        choices=["ci", "full"],
+        choices=["ci", "full", "highcache_50k"],
         default="full",
         help=(
             "Preset for --prefix-cache (default: full). 'ci' is a short "
             "regression-friendly sweep, 'full' is the comprehensive serving "
-            "validation sweep."
+            "validation sweep, 'highcache_50k' simulates the customer "
+            "trillion-scale shape (50K shared/cacheable prefix + 5K new ISL + "
+            "500 OSL at concurrency 32; ~90.9%% steady-state hit-rate) with a "
+            "matched zero-prefix baseline for TTFT-uplift comparison."
         ),
     )
     parser.add_argument(
@@ -253,13 +268,121 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--prefix-cache-goodput",
+        type=str,
+        default=None,
+        metavar="SLO",
+        help=(
+            "AIPerf --goodput SLO string: space-separated KEY:VALUE pairs "
+            "where KEY is a metric tag and VALUE is in the metric's display "
+            "unit. Reports the fraction of requests meeting every threshold. "
+            "Valid tags include time_to_first_token (ms), request_latency "
+            "(ms), inter_token_latency (ms), output_token_throughput_per_user "
+            "(tokens/s). Overrides the preset/scenario goodput. Example: "
+            "'time_to_first_token:4000 output_token_throughput_per_user:45'."
+        ),
+    )
+    parser.add_argument(
+        "--prefix-cache-metrics-url",
+        type=str,
+        action="append",
+        default=None,
+        metavar="URL",
+        help=(
+            "Worker Prometheus /metrics endpoint holding the "
+            "tt_prefix_cache_* counters, forwarded to AIPerf as "
+            "--server-metrics. Load still targets --service-port (the "
+            "Dynamo frontend); this only redirects the metrics scrape to "
+            "the cpp_server worker, which the prefix-unaware frontend does "
+            "not aggregate. Accepts a full URL, host:port, or "
+            "host:port/metrics (http:// and /metrics are added if missing). "
+            "Repeat for multi-worker (KV-routed) deployments; the parser "
+            "sums hit/query deltas across endpoints. Without it the scrape "
+            "hits the frontend and the hit-rate column is null."
+        ),
+    )
+    # ----- Speculative-decoding benchmark (LLM-only) ------------------
+    # When --spec-decode is set, BenchmarksWorkflow swaps its default
+    # media-task dispatch for the AIPerf SPEED-Bench spec-decode sweep (wired
+    # through CommandFactory -> OrchestratorMetadata.spec_decode). Standalone
+    # benchmarks run through run_spec_decode.py so the V2_SPEC_DECODE venv
+    # (aiperf>=0.8 for the SPEED-Bench dataset plugins) is in place before
+    # these heavy deps are needed; release pins that venv explicitly for its
+    # in-process benchmark child.
+    parser.add_argument(
+        "--spec-decode",
+        action="store_true",
+        help=(
+            "Switch the benchmarks workflow to the AIPerf speculative-"
+            "decoding sweep over SPEED-Bench (all 11 qualitative "
+            "categories plus the throughput concurrency sweep). Scrapes "
+            "the vLLM vllm:spec_decode_* Prometheus counters per run for "
+            "acceptance rate / mean accepted length. The server's "
+            "speculative_config is out of scope and must be set by "
+            "whoever launched it. Requires --workflow benchmarks or release. "
+            "Standalone benchmark runs should launch through run_spec_decode.py."
+        ),
+    )
+    parser.add_argument(
+        "--spec-decode-preset",
+        type=str,
+        choices=["ci", "full"],
+        default="full",
+        help=(
+            "Preset for --spec-decode (default: full). 'ci' is a short "
+            "regression-friendly sweep (the 'coding' qualitative category "
+            "plus speed_bench_throughput_32k at concurrency 1/16/64), "
+            "'full' is every SPEED-Bench qualitative category plus the "
+            "whole throughput ISL x concurrency grid."
+        ),
+    )
+    parser.add_argument(
+        "--spec-decode-warmup-requests",
+        type=int,
+        default=4,
+        help=(
+            "Short chat-completion warmup requests sent before the "
+            "spec-decode sweep (default: 4; 0 disables)."
+        ),
+    )
+    parser.add_argument(
         "--jwt-secret",
         type=str,
         default=None,
         help=(
-            "JWT secret for prefix-cache runs that hit an inference server "
-            "behind JWT auth. Mints a 'debug-test' token internally and sets "
-            "OPENAI_API_KEY for AIPerf. Reads $JWT_SECRET when omitted."
+            "JWT secret for prefix-cache / spec-decode runs that hit an "
+            "inference server behind JWT auth. Mints a 'debug-test' token "
+            "internally and sets OPENAI_API_KEY for AIPerf. Reads "
+            "$JWT_SECRET when omitted."
+        ),
+    )
+
+    parser.add_argument(
+        "--tools",
+        type=str,
+        choices=["vllm", "aiperf", "genai", "genai_perf", "guidellm"],
+        default="vllm",
+        help=(
+            "LLM benchmark tool/driver to use for LLM models: 'vllm' "
+            "(vllm bench serve, default), 'aiperf', 'genai'/'genai_perf' "
+            "(genai-perf via Docker), or 'guidellm'."
+        ),
+    )
+    parser.add_argument(
+        "--goodput",
+        type=str,
+        default=None,
+        metavar="SLO",
+        help=(
+            "AIPerf --goodput SLO string applied to the LLM benchmark sweep: "
+            "space-separated KEY:VALUE pairs where KEY is a metric tag and "
+            "VALUE is in the metric's display unit. Reports the fraction of "
+            "requests meeting every threshold. Valid tags include "
+            "time_to_first_token (ms), request_latency (ms), "
+            "inter_token_latency (ms), output_token_throughput_per_user "
+            "(tokens/s). Only used by --tools aiperf; ignored by "
+            "vllm/genai/guidellm. Example: "
+            "'time_to_first_token:4000 output_token_throughput_per_user:45'."
         ),
     )
 
@@ -287,9 +410,14 @@ def parse_args() -> argparse.Namespace:
             args.server_url = normalize_server_url(args.server_url)
         except ValueError as e:
             parser.error(str(e))
-    if args.prefix_cache and args.workflow != "benchmarks":
+    if args.prefix_cache and args.workflow not in ("benchmarks", "release"):
         parser.error(
-            "--prefix-cache currently requires --workflow benchmarks "
+            "--prefix-cache currently requires --workflow benchmarks or release "
+            f"(got --workflow {args.workflow})."
+        )
+    if args.spec_decode and args.workflow not in ("benchmarks", "release"):
+        parser.error(
+            "--spec-decode currently requires --workflow benchmarks or release "
             f"(got --workflow {args.workflow})."
         )
     if args.serving_bench_suites and args.workflow != "serving_bench":

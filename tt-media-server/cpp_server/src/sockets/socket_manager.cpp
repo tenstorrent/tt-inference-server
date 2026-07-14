@@ -5,85 +5,97 @@
 
 #include <cstring>
 
+#include "sockets/zmq_socket_transport.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {
 
 namespace {
-constexpr auto MESSAGE_LOOP_SLEEP = std::chrono::milliseconds(10);
-}
+// Idle backoff only — applied when no message is pending. A burst of concurrent
+// messages is drained in a single pass (see messageLoop)
+constexpr auto MESSAGE_LOOP_IDLE_WAIT = std::chrono::milliseconds(1);
+}  // namespace
 
 SocketManager::~SocketManager() { stop(); }
 
 void SocketManager::applyPendingSettings() {
-  if (!transport_) return;
-  if (pendingConnectionLostCallback_) {
-    transport_->setConnectionLostCallback(
-        std::move(pendingConnectionLostCallback_));
+  if (!transport) return;
+  if (pendingConnectionLostCallback) {
+    transport->setConnectionLostCallback(
+        std::move(pendingConnectionLostCallback));
   }
-  if (pendingConnectionEstablishedCallback_) {
-    transport_->setConnectionEstablishedCallback(
-        std::move(pendingConnectionEstablishedCallback_));
+  if (pendingConnectionEstablishedCallback) {
+    transport->setConnectionEstablishedCallback(
+        std::move(pendingConnectionEstablishedCallback));
   }
-  if (reconnectBackoffSet_) {
-    transport_->setReconnectBackoff(reconnectInitialDelay_, reconnectMaxDelay_);
+  if (reconnectBackoffSet) {
+    transport->setReconnectBackoff(reconnectInitialDelay, reconnectMaxDelay);
   }
 }
 
 bool SocketManager::initializeAsServer(uint16_t port) {
-  transport_ = createSocketTransport();
+  transport = std::make_unique<ZmqSocketTransport>();
   applyPendingSettings();
-  return transport_->initializeAsServer(port);
+  return transport->initializeAsServer(port);
 }
 
 bool SocketManager::initializeAsClient(const std::string& host, uint16_t port) {
-  transport_ = createSocketTransport();
+  transport = std::make_unique<ZmqSocketTransport>();
   applyPendingSettings();
-  return transport_->initializeAsClient(host, port);
+  return transport->initializeAsClient(host, port);
 }
 
 void SocketManager::start() {
-  if (running_) {
+  if (running) {
     return;
   }
 
-  running_ = true;
-  transport_->start();
-  messageThread_ = std::jthread(
+  running = true;
+  transport->start();
+  messageThread = std::jthread(
       [this](std::stop_token stopToken) { messageLoop(stopToken); });
 }
 
 void SocketManager::stop() {
-  if (!running_) {
+  if (!running) {
     return;
   }
 
-  running_ = false;
+  running = false;
 
-  if (messageThread_.joinable()) {
-    messageThread_.request_stop();
-    messageThread_.join();
+  if (messageThread.joinable()) {
+    messageThread.request_stop();
+    messageThread.join();
   }
 
-  if (transport_) {
-    transport_->stop();
+  if (transport) {
+    transport->stop();
   }
 
   TT_LOG_INFO("[SocketManager] Stopped");
 }
 
 void SocketManager::messageLoop(std::stop_token stopToken) {
-  while (running_ && !stopToken.stop_requested()) {
+  while (running && !stopToken.stop_requested()) {
+    bool drainedAny = false;
     try {
-      auto data = transport_->receiveRawData();
-      if (!data.empty()) {
+      // Drain every message the transport currently has buffered in one pass.
+      while (running && !stopToken.stop_requested()) {
+        auto data = transport->receiveRawData();
+        if (data.empty()) {
+          break;
+        }
         handleIncomingMessage(data);
+        drainedAny = true;
       }
     } catch (const std::exception& e) {
       TT_LOG_ERROR("[SocketManager] Message loop error: {}", e.what());
     }
 
-    std::this_thread::sleep_for(MESSAGE_LOOP_SLEEP);
+    // Back off only when idle
+    if (!drainedAny) {
+      std::this_thread::sleep_for(MESSAGE_LOOP_IDLE_WAIT);
+    }
   }
 }
 
@@ -105,47 +117,47 @@ void SocketManager::handleIncomingMessage(const std::vector<uint8_t>& data) {
 
 std::function<void(const std::vector<uint8_t>&)> SocketManager::getHandler(
     std::string_view messageType) const {
-  std::lock_guard<std::mutex> lock(handlersMutex_);
-  auto it = handlers_.find(messageType);
-  if (it == handlers_.end()) {
+  std::lock_guard<std::mutex> lock(handlersMutex);
+  auto it = handlers.find(messageType);
+  if (it == handlers.end()) {
     return {};
   }
   return it->second;
 }
 
 bool SocketManager::isConnected() const {
-  return transport_ && transport_->isConnected();
+  return transport && transport->isConnected();
 }
 
 std::string SocketManager::getStatus() const {
-  return transport_ ? transport_->getStatus() : "uninitialized";
+  return transport ? transport->getStatus() : "uninitialized";
 }
 
 void SocketManager::setConnectionLostCallback(std::function<void()> callback) {
-  if (transport_) {
-    transport_->setConnectionLostCallback(std::move(callback));
+  if (transport) {
+    transport->setConnectionLostCallback(std::move(callback));
   } else {
-    pendingConnectionLostCallback_ = std::move(callback);
+    pendingConnectionLostCallback = std::move(callback);
   }
 }
 
 void SocketManager::setConnectionEstablishedCallback(
     std::function<void()> callback) {
-  if (transport_) {
-    transport_->setConnectionEstablishedCallback(std::move(callback));
+  if (transport) {
+    transport->setConnectionEstablishedCallback(std::move(callback));
   } else {
-    pendingConnectionEstablishedCallback_ = std::move(callback);
+    pendingConnectionEstablishedCallback = std::move(callback);
   }
 }
 
 void SocketManager::setReconnectBackoff(std::chrono::milliseconds initialDelay,
                                         std::chrono::milliseconds maxDelay) {
-  if (transport_) {
-    transport_->setReconnectBackoff(initialDelay, maxDelay);
+  if (transport) {
+    transport->setReconnectBackoff(initialDelay, maxDelay);
   } else {
-    reconnectBackoffSet_ = true;
-    reconnectInitialDelay_ = initialDelay;
-    reconnectMaxDelay_ = maxDelay;
+    reconnectBackoffSet = true;
+    reconnectInitialDelay = initialDelay;
+    reconnectMaxDelay = maxDelay;
   }
 }
 

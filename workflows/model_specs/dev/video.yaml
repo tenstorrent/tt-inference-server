@@ -7,8 +7,6 @@ templates:
 # =============================================================================
 - weights:
     - genmo/mochi-1-preview
-  version: "0.10.0"
-  tt_metal_commit: 555f240
   impl: tt_transformers
   min_disk_gb: 60
   min_ram_gb: 32
@@ -51,8 +49,84 @@ templates:
 
 - weights:
     - Wan-AI/Wan2.2-T2V-A14B-Diffusers
-  version: "0.14.0"
-  tt_metal_commit: 80180b9
+  impl: tt_transformers
+  min_disk_gb: 60
+  min_ram_gb: 32
+  model_type: VIDEO
+  inference_engine: MEDIA
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: GALAXY
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: P150X4
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 30000000
+  status: COMPLETE
+
+- weights:
+    - Wan-AI/Wan2.2-T2V-A14B-Diffusers
+  impl: tt_transformers
+  min_disk_gb: 60
+  min_ram_gb: 32
+  model_type: VIDEO
+  inference_engine: MEDIA
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 30000000
+  status: COMPLETE
+
+- weights:
+    - Wan-AI/Wan2.2-T2V-A14B-Diffusers
+  impl: tt_transformers
+  min_disk_gb: 60
+  min_ram_gb: 32
+  model_type: VIDEO
+  inference_engine: MEDIA
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 30000000
+  status: COMPLETE
+
+- weights:
+    - Wan-AI/Wan2.2-T2V-A14B-Diffusers
+  impl: tt_transformers
+  min_disk_gb: 60
+  min_ram_gb: 32
+  model_type: VIDEO
+  inference_engine: MEDIA
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+
+- weights:
+    - Wan-AI/Wan2.2-I2V-A14B-Diffusers
   impl: tt_transformers
   min_disk_gb: 60
   min_ram_gb: 32
@@ -93,46 +167,73 @@ templates:
         trace_region_size: 30000000
   status: COMPLETE
 
+# Wan2.2 I2V variants share the base I2V weights, so hf_weights_repo points at the real download repo
+# while the distinct product name in `weights` becomes the resolvable
+# model_name
 - weights:
-    - Wan-AI/Wan2.2-I2V-A14B-Diffusers
-  version: "0.10.0"
-  tt_metal_commit: 555f240
+    - Wan-AI/Wan2.2-I2V-A14B-Prodia
   impl: tt_transformers
   min_disk_gb: 60
   min_ram_gb: 32
   model_type: VIDEO
   inference_engine: MEDIA
+  hf_weights_repo: Wan-AI/Wan2.2-I2V-A14B-Diffusers
   env_vars:
     TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
   device_model_specs:
-    - device: T3K
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
     - device: GALAXY
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
+  status: FUNCTIONAL
+
+- weights:
+    - Wan-AI/Wan2.2-I2V-AniSora-V3.2
+  impl: tt_transformers
+  min_disk_gb: 60
+  min_ram_gb: 32
+  model_type: VIDEO
+  inference_engine: MEDIA
+  hf_weights_repo: Wan-AI/Wan2.2-I2V-A14B-Diffusers
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  device_model_specs:
     - device: BLACKHOLE_GALAXY
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
-    - device: P150X4
+  status: FUNCTIONAL
+
+- weights:
+    - Wan-AI/Wan2.2-I2V-Distill-LightX2V
+  impl: tt_transformers
+  min_disk_gb: 60
+  min_ram_gb: 32
+  model_type: VIDEO
+  inference_engine: MEDIA
+  hf_weights_repo: Wan-AI/Wan2.2-I2V-A14B-Diffusers
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
-      override_tt_config:
-        trace_region_size: 30000000
-    - device: P150X8
+  status: FUNCTIONAL
+
+- weights:
+    - Wan-AI/Wan2.2-I2V-LoRA
+  impl: tt_transformers
+  min_disk_gb: 60
+  min_ram_gb: 32
+  model_type: VIDEO
+  inference_engine: MEDIA
+  hf_weights_repo: Wan-AI/Wan2.2-I2V-A14B-Diffusers
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
-      override_tt_config:
-        trace_region_size: 30000000
-    - device: P300X2
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-      override_tt_config:
-        trace_region_size: 30000000
-  status: COMPLETE
+  status: FUNCTIONAL

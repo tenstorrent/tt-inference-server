@@ -19,15 +19,25 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
 from report_module import renderers
+from report_module.acceptance_criteria import ACCEPTANCE_EXPORT_KEYS
+from report_module.markdown_table import build_markdown_table
 from report_module.report_file_saver import ReportFileSaver
 from report_module.schema import Block, ReportSchema, SchemaLike
+from report_module.status import STATUS_GLYPHS as _STATUS_GLYPHS
+from report_module.status import TestStatus
 
 logger = logging.getLogger(__name__)
 
 
-_METADATA_RENDERING_KEYS = frozenset(
-    {"acceptance_summary_markdown", "acceptance_criteria"}
-)
+_METADATA_RENDERING_KEYS = frozenset(ACCEPTANCE_EXPORT_KEYS)
+
+_EVALS_KIND = "evals"
+_CONSOLIDATED_EVALS_TITLE = "Accuracy Evaluations"
+
+# Divider placed between the preamble and each top-level result section so
+# adjacent sections (e.g. a benchmark table and the "📋 Summary" block) are
+# visually separated in both raw CI logs and rendered markdown.
+_SECTION_SEPARATOR = "\n\n---\n\n"
 
 
 @dataclass(frozen=True)
@@ -53,11 +63,14 @@ class ReportGenerator:
         out_dir.mkdir(parents=True, exist_ok=True)
 
         render_sections = _collapse_same_heading_blocks(normalized.sections)
+        render_sections = _consolidate_eval_blocks(render_sections)
         section_markdowns = [
             self._render_block(block, normalized.metadata) for block in render_sections
         ]
+        # Keep empty-md blocks here: a metrics-less spec block renders to ""
+        # but still carries the runs that seed the injected summary. Empties
+        # are dropped after injection.
         rendered_pairs = list(zip(render_sections, section_markdowns))
-        rendered_pairs = [(block, md) for block, md in rendered_pairs if md]
 
         release_md = _assemble_release_markdown(normalized, rendered_pairs)
 
@@ -66,11 +79,10 @@ class ReportGenerator:
 
         self._file_saver.write_markdown(release_md, md_path, strict=True)
         json_payload = normalized.to_dict()
-        json_payload["metadata"] = {
-            k: v
-            for k, v in json_payload.get("metadata", {}).items()
-            if k not in _METADATA_RENDERING_KEYS
-        }
+        metadata = json_payload.get("metadata", {})
+        for key in ACCEPTANCE_EXPORT_KEYS:
+            if key in metadata:
+                json_payload[key] = metadata.pop(key)
         self._file_saver.write_json(json_payload, json_path, strict=True)
         self._write_report_data(out_dir, json_payload)
         logger.info("Generated report: md=%s, json=%s", md_path, json_path)
@@ -135,7 +147,7 @@ def _assemble_release_markdown(
     }
     metadata_json = json.dumps(visible_metadata, indent=4, default=str)
     metadata_block = (
-        f"### Metadata: {schema.model_name} on {schema.device}\n"
+        f"### Metadata: {schema.model_name} on {schema.device}\n\n"
         f"```json\n{metadata_json}\n```"
     )
     preamble = [header, metadata_block]
@@ -146,7 +158,8 @@ def _assemble_release_markdown(
         preamble.append(acceptance_md)
 
     sections = _inject_spec_test_summary(rendered_pairs, schema.metadata)
-    return "\n\n".join(preamble + sections)
+    preamble_md = "\n\n".join(preamble)
+    return _SECTION_SEPARATOR.join([preamble_md] + sections)
 
 
 def _inject_spec_test_summary(
@@ -160,16 +173,24 @@ def _inject_spec_test_summary(
             first_spec_idx = idx
         runs.extend(block_runs)
 
-    sections = [md for _block, md in rendered_pairs]
-    if first_spec_idx is None or not runs:
-        return sections
-
-    summary_md = _build_spec_test_summary_markdown(
-        runs, str(metadata.get("generated_at") or "")
+    summary_md = (
+        _build_spec_test_summary_markdown(runs, str(metadata.get("generated_at") or ""))
+        if runs
+        else ""
     )
-    if not summary_md:
-        return sections
-    return sections[:first_spec_idx] + [summary_md] + sections[first_spec_idx:]
+    if first_spec_idx is None or not summary_md:
+        return [md for _block, md in rendered_pairs if md]
+
+    # Insert the summary just before the first spec block, then drop empty
+    # block markdown (e.g. a spec block whose only fields moved into the
+    # summary renders to "").
+    sections: List[str] = []
+    for idx, (_block, md) in enumerate(rendered_pairs):
+        if idx == first_spec_idx:
+            sections.append(summary_md)
+        if md:
+            sections.append(md)
+    return sections
 
 
 def _spec_test_runs(block: Block) -> List[Mapping[str, Any]]:
@@ -190,6 +211,33 @@ def _spec_test_runs(block: Block) -> List[Mapping[str, Any]]:
     return []
 
 
+def _run_status(run: Mapping[str, Any]) -> TestStatus:
+    """Resolve a run's :class:`TestStatus`, falling back to legacy fields."""
+    resolved = TestStatus.from_value(run.get("status"))
+    if resolved is not None:
+        return resolved
+    return TestStatus.from_legacy(run.get("success"), skipped=bool(run.get("skipped")))
+
+
+def _status_cell(status: TestStatus) -> str:
+    return f"{_STATUS_GLYPHS.get(status, '❌')} {status.value.upper()}"  # noqa: E501
+
+
+def _run_description(run: Mapping[str, Any], status: TestStatus) -> str:
+    """Description column: append the reason/error for non-pass outcomes."""
+    description = str(run.get("description") or "")
+    if status is TestStatus.SKIP or status is TestStatus.NA:
+        reason = str(run.get("reason") or "")
+        if reason:
+            return f"{description} — {status.value.upper()}: {reason}".lstrip(" —")
+    if status is TestStatus.ERROR:
+        error = run.get("error")
+        message = error.get("message") if isinstance(error, Mapping) else None
+        if message:
+            return f"{description} — ERROR: {message}".lstrip(" —")
+    return description
+
+
 def _build_spec_test_summary_markdown(
     runs: Sequence[Mapping[str, Any]], generated_at: str
 ) -> str:
@@ -198,47 +246,49 @@ def _build_spec_test_summary_markdown(
         return ""
 
     total = len(runs)
-    passed = sum(1 for r in runs if r.get("success") is True)
-    failed = sum(1 for r in runs if r.get("success") is False)
-    skipped = 0
+    statuses = [_run_status(run) for run in runs]
+    passed = sum(1 for s in statuses if s is TestStatus.PASS)
+    failed = sum(1 for s in statuses if s.is_blocking)
+    skipped = sum(1 for s in statuses if s is TestStatus.SKIP)
+    na = sum(1 for s in statuses if s is TestStatus.NA)
     attempted = passed + failed
     total_duration = sum(_coerce_float(r.get("elapsed_seconds")) for r in runs)
     total_attempts = sum(_coerce_int(r.get("attempts")) for r in runs)
-    success_rate = (passed / total * 100.0) if total else 0.0
+    # Success rate excludes non-blocking skips/NA — they weren't graded.
+    gradable = passed + failed
+    success_rate = (passed / gradable * 100.0) if gradable else 0.0
 
     summary_rows = [
         ("Total Tests", str(total)),
         ("Passed", str(passed)),
         ("Failed", str(failed)),
         ("Skipped", str(skipped)),
+        ("NA", str(na)),
         ("Attempted", str(attempted)),
         ("Success Rate", f"{success_rate:.1f}%"),
         ("Total Duration", f"{total_duration:.2f}s"),
         ("Total Attempts", str(total_attempts)),
         ("Generated", generated_at or "-"),
     ]
-    summary_table = "\n".join(
-        ["| Metric | Value |", "|:-------|------:|"]
-        + [f"| {metric} | {value} |" for metric, value in summary_rows]
+
+    summary_table = build_markdown_table(
+        [{"Metric": metric, "Value": value} for metric, value in summary_rows]
     )
 
-    result_header = (
-        "| Status | Test Name | Duration | Attempts | Description |\n"
-        "|:------:|:----------|---------:|---------:|:------------|"
+    results_table = build_markdown_table(
+        [
+            {
+                "Status": _status_cell(status),
+                "Test Name": str(run.get("test_name") or ""),
+                "Duration": f"{_coerce_float(run.get('elapsed_seconds')):.2f}s",
+                "Attempts": str(_coerce_int(run.get("attempts"))),
+                "Description": _run_description(run, status),
+            }
+            for run, status in zip(runs, statuses)
+        ]
     )
-    result_rows = [
-        "| {status} | {name} | {duration:.2f}s | {attempts} | {description} |".format(
-            status="✅" if run.get("success") is True else "❌",
-            name=str(run.get("test_name") or ""),
-            duration=_coerce_float(run.get("elapsed_seconds")),
-            attempts=_coerce_int(run.get("attempts")),
-            description=str(run.get("description") or ""),
-        )
-        for run in runs
-    ]
-    results_table = "\n".join([result_header] + result_rows)
 
-    return f"## 📋 Summary\n{summary_table}\n\n## 🧪 Test Results\n{results_table}"
+    return f"## 📋 Summary\n\n{summary_table}\n\n## 🧪 Test Results\n\n{results_table}"
 
 
 def _coerce_float(value: Any) -> float:
@@ -262,6 +312,35 @@ def generate_report(
 ) -> GenerateResult:
     """Convenience functional wrapper around :class:`ReportGenerator`."""
     return ReportGenerator(file_saver=file_saver).generate(schema, output_dir)
+
+
+def _consolidate_eval_blocks(sections: List[Block]) -> List[Block]:
+    """Merge every ``evals`` block into one consolidated table block."""
+    eval_blocks = [block for block in sections if block.kind == _EVALS_KIND]
+    if len(eval_blocks) <= 1:
+        return sections
+
+    records: List[Dict[str, Any]] = []
+    for block in eval_blocks:
+        records.extend(renderers._extract_records(block))
+    merged = Block(
+        kind=_EVALS_KIND,
+        title=_CONSOLIDATED_EVALS_TITLE,
+        task_type=None,
+        id=eval_blocks[0].id,
+        targets={},
+        data={"records": records},
+    )
+
+    out: List[Block] = []
+    inserted = False
+    for block in sections:
+        if block.kind != _EVALS_KIND:
+            out.append(block)
+        elif not inserted:
+            out.append(merged)
+            inserted = True
+    return out
 
 
 def _collapse_same_heading_blocks(sections: List[Block]) -> List[Block]:

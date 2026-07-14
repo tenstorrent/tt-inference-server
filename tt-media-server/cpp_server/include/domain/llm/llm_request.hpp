@@ -5,6 +5,7 @@
 
 #include <json/json.h>
 
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -16,8 +17,6 @@
 #include "domain/llm/chat_message.hpp"
 #include "domain/response_format.hpp"
 #include "domain/session.hpp"
-#include "domain/tool_calls/tool.hpp"
-#include "domain/tool_calls/tool_choice.hpp"
 
 namespace tt::domain::llm {
 
@@ -71,7 +70,7 @@ struct LLMRequest : BaseRequest {
 
   // Prompt can be a string or a list of token ids
   // Can be either the original prompt or delta
-  std::variant<std::string, std::vector<int>> prompt;
+  std::variant<std::string, std::vector<uint32_t>> prompt;
 
   // Original chat messages used to derive `prompt`. Kept here so downstream
   // steps (session resolution, prefix-cache routing) don't need a separate
@@ -126,13 +125,24 @@ struct LLMRequest : BaseRequest {
 
   // Unique 64-bit migration ID correlating a prefill request with the KV
   // transfer / result. Generated on the prefill server and echoed back.
-  uint64_t migrationId = 0;
+  std::optional<uint64_t> migrationId;
 
-  // For disaggregated decode: position in KV Cache of the migrated token (the
-  // first token produced by the prefill server) in the per-user KV cache. The
-  // decode scheduler uses this as `position_id` so the migrated token lands at
-  // the correct KV slot and `current_position` advances to it + 1. Set iff
-  // `disaggregated == true`.
+  // Per-request KV migration start position for disaggregated prefill. Set by
+  // the prefill server after comparing prefill-side and decode-side matched
+  // prefix lengths.
+  std::optional<uint32_t> migrationStartPosition;
+
+  // First free index in the per-user KV cache: the absolute KV position where
+  // the worker writes the next token's KV, equal to the position of the first
+  // token handed to the worker. The runner forwards it verbatim as
+  // `position_id`. Set on continuations (prefix-cache hits, response-id hits,
+  // slot copies) to `matched_tokens + accumulated_think_tokens`, where
+  // `matched_tokens` is the trimmed prefix length.
+  //
+  // One intentional exception: a disaggregated decode handoff reprocesses the
+  // last prompt token (the prefill-generated token is not migrated), so it is
+  // set to `tokenIds.size() - 1` — the index that last token already occupies —
+  // rather than the next free slot.
   std::optional<uint32_t> kv_position_id;
 
   // Number of tokens already in the decode-side KV cache that the prefill
@@ -151,11 +161,6 @@ struct LLMRequest : BaseRequest {
 
   std::optional<bool> disaggregation_override;
 
-  bool parallel_tool_calls = true;
-
-  std::optional<std::vector<tool_calls::Tool>> tools;
-  std::optional<tool_calls::ToolChoice> tool_choice;
-
   // Structured output constraint
   std::optional<ResponseFormat> response_format;
 
@@ -163,7 +168,7 @@ struct LLMRequest : BaseRequest {
   bool skip_apply_chat_template = false;
 
   // When true, the consumer emits chunks carrying only `token_id` and
-  // skips decode / tool-call parsing. Used by transports that forward raw
+  // skips decode. Used by transports that forward raw
   // token_ids and handle detokenization downstream (e.g. Dynamo).
   bool skip_text_decode = false;
 
@@ -171,8 +176,10 @@ struct LLMRequest : BaseRequest {
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;
   std::optional<uint32_t> prefillSlotId;
-  tt::domain::Session* session =
-      nullptr;  // Pointer to session in SessionManager
+  // Shared ownership of the session: SessionManager's map holds one ref;
+  // requests/callbacks hold their own, so a session can't be freed mid-use
+  // even if eviction drops the map entry.
+  std::shared_ptr<tt::domain::Session> session;
   bool continuation =
       false;  // True if this request continues an existing session
 
@@ -185,7 +192,7 @@ struct LLMRequest : BaseRequest {
       promptInfo =
           "\"" + detail::truncate(*s, detail::MAX_PROMPT_LOG_LENGTH) + "\"";
     } else {
-      auto& tokens = std::get<std::vector<int>>(prompt);
+      auto& tokens = std::get<std::vector<uint32_t>>(prompt);
       promptInfo = "<" + std::to_string(tokens.size()) + " token ids>";
     }
 

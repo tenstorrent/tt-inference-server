@@ -4,6 +4,7 @@
 
 import json
 import logging
+import math
 import shutil
 import statistics
 import time
@@ -19,9 +20,17 @@ from server_tests.test_cases.server_helper import (
     DEFAULT_AUTHORIZATION,
     SERVER_BASE_URL,
 )
-from server_tests.test_classes import TestConfig
+from .._test_common import TestConfig
 from utils.sdxl_accuracy_utils.clip_encoder import CLIPEncoder
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import sdxl_get_prompts
+
+from .._test_common import (
+    VIDEO_GENERATION_ENDPOINT,
+    _load_fixture_image_base64,
+    build_video_generation_payload,
+    get_video_generation_submit_endpoint,
+    is_i2v_video_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +41,10 @@ VIDEO_JOB_STATUS_CANCELLED = "cancelled"
 DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
 DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
 ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_reference.json"
-VIDEO_GENERATION_ENDPOINT = "v1/videos/generations"
 DATASET_DIR = "server_tests/datasets/videos"
+# accuracy_check codes returned by _check_accuracy.
+ACCURACY_CHECK_FAIL = 3
+MIN_GENERATION_SUCCESS_RATIO = 1.0
 
 
 @dataclass
@@ -89,9 +100,11 @@ class VideoGenerationEvalsTest(BaseTest):
         logger.info("Step 2: Generating videos")
         videos_info = self._generate_videos(
             prompts=prompts,
+            model_name=request.model_name,
             server_url=request.server_url,
             num_inference_steps=request.num_inference_steps,
         )
+        num_generated = len(videos_info)
 
         # Step 3: Calculate CLIP scores
         logger.info("Step 3: Calculating CLIP scores for video frames")
@@ -109,9 +122,22 @@ class VideoGenerationEvalsTest(BaseTest):
             num_prompts=request.num_prompts,
         )
 
+        # A run that failed to generate the requested videos is not a valid
+        # PASS, regardless of the CLIP score computed over the surviving subset.
+        min_required = max(
+            1, math.ceil(request.num_prompts * MIN_GENERATION_SUCCESS_RATIO)
+        )
+        if num_generated < min_required:
+            logger.error(
+                f"Only {num_generated}/{request.num_prompts} videos generated "
+                f"(minimum required: {min_required}); failing accuracy check."
+            )
+            accuracy_check = ACCURACY_CHECK_FAIL
+
         results = {
             "model": request.model_name,
             "num_prompts": request.num_prompts,
+            "num_generated": num_generated,
             "num_inference_steps": request.num_inference_steps,
             "clip_results": clip_results,
             "accuracy_check": accuracy_check,
@@ -127,6 +153,7 @@ class VideoGenerationEvalsTest(BaseTest):
     def _generate_videos(
         self,
         prompts: list[str],
+        model_name: str,
         server_url: str | None,
         num_inference_steps: int,
     ) -> list[dict]:
@@ -134,13 +161,20 @@ class VideoGenerationEvalsTest(BaseTest):
 
         Args:
             prompts: List of text prompts
+            model_name: Model name used to select T2V vs I2V endpoint/payload
             server_url: Base server URL (e.g., http://localhost:8000)
             num_inference_steps: Number of inference steps for generation
 
         Returns:
             List of dicts with video information: {'prompt': str, 'video_path': str, 'job_id': str}
         """
-        logger.info(f"Generating {len(prompts)} videos")
+        is_i2v = is_i2v_video_model(model_name)
+        submit_endpoint = get_video_generation_submit_endpoint(model_name)
+        logger.info(
+            f"Generating {len(prompts)} videos using "
+            f"{'I2V' if is_i2v else 'T2V'} endpoint: {submit_endpoint}"
+        )
+        image_b64 = _load_fixture_image_base64() if is_i2v else None
 
         # Remove any stale videos from previous runs so FVD/FVMD only sees
         # outputs produced in the current eval.
@@ -165,16 +199,18 @@ class VideoGenerationEvalsTest(BaseTest):
         for idx, prompt in enumerate(prompts):
             logger.info(f"Generating video {idx + 1}/{len(prompts)}: {prompt[:50]}...")
 
-            payload = {
-                "prompt": prompt,
-                "num_inference_steps": num_inference_steps,
-            }
+            payload = build_video_generation_payload(
+                prompt=prompt,
+                num_inference_steps=num_inference_steps,
+                model_name=model_name,
+                image_b64=image_b64,
+            )
 
             generation_start = time.time()
             try:
                 # Submit video generation job
                 response = requests.post(
-                    f"{base_url}/{VIDEO_GENERATION_ENDPOINT}",
+                    f"{base_url}/{submit_endpoint}",
                     json=payload,
                     headers=headers,
                     timeout=90,

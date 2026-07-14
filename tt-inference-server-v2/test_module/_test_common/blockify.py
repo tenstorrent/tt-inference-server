@@ -26,20 +26,22 @@ if TYPE_CHECKING:
 
 
 def sweep_envelope(ctx: "MediaContext") -> Dict[str, Any]:
-    """Sweep-level metadata recorded once for the whole report."""
+    """Sweep-level metadata recorded once for the whole report.
+
+    Identity / provenance fields (``model_id``, ``model_repo``,
+    ``model_impl``, ``inference_engine``, ``tt_metal_commit``,
+    ``vllm_commit``) are injected centrally from the runtime model spec by
+    :meth:`workflow_module.execution.WorkflowExecution.inject_metadata`, so
+    they are not duplicated here. This envelope only carries what the
+    accumulator needs before that step: model name, device, timestamp, and a
+    synthesized ``report_id``.
+    """
     spec = ctx.model_spec
-    impl = getattr(spec, "impl", None)
     model_id = getattr(spec, "model_id", None)
     generated_at = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     envelope: Dict[str, Any] = {
         "model_name": getattr(spec, "model_name", ""),
-        "model_id": model_id,
-        "model_repo": getattr(spec, "hf_model_repo", None),
-        "model_impl": getattr(impl, "impl_name", None) if impl else None,
-        "inference_engine": getattr(spec, "inference_engine", None),
         "device": ctx.device.name,
-        "tt_metal_commit": getattr(spec, "tt_metal_commit", None),
-        "vllm_commit": getattr(spec, "vllm_commit", None),
         "generated_at": generated_at,
     }
     if model_id:

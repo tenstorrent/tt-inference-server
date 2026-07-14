@@ -50,6 +50,7 @@ class TcpSocketTransport : public ISocketTransport,
 
   bool sendRawData(std::span<const uint8_t> data) override;
   std::vector<uint8_t> receiveRawData() override;
+  ReceiveResult tryReceiveMessage() override;
 
   void setConnectionLostCallback(std::function<void()> callback) override;
   void setConnectionEstablishedCallback(
@@ -58,24 +59,24 @@ class TcpSocketTransport : public ISocketTransport,
                            std::chrono::milliseconds maxDelay) override;
 
  private:
-  enum class ReceiveResult { COMPLETE, NO_DATA, DISCONNECTED };
+  enum class ReadResult { COMPLETE, NO_DATA, DISCONNECTED };
 
   void serverLoop(std::stop_token stopToken);
   void clientLoop(std::stop_token stopToken);
   bool sendAll(int fd, const void* buffer, size_t size);
-  ReceiveResult receiveExact(int fd, uint8_t* buffer, size_t size,
-                             int maxRetries, bool returnIfNoInitialData);
+  ReadResult receiveExact(int fd, uint8_t* buffer, size_t size, int maxRetries,
+                          bool returnIfNoInitialData);
 
-  std::string host_;
-  uint16_t port_;
+  std::string host;
+  uint16_t port;
 
-  tt::utils::ScopedFd serverSocket_;
-  tt::utils::ScopedFd clientSocket_;
-  std::atomic<int> peerSocket_{-1};
+  tt::utils::ScopedFd serverSocket;
+  tt::utils::ScopedFd clientSocket;
+  std::atomic<int> peerSocket{-1};
 
-  std::jthread connectionThread_;
+  std::jthread connectionThread;
 
-  mutable std::mutex socketMutex_;
+  mutable std::mutex socketMutex;
 };
 
 }  // namespace tt::sockets

@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# Dependencies for the V2_LLM_VLLM workflow venv (Python 3.11).
+# Used by tt-inference-server-v2/run_llm_bench.py for --tools vllm and
+# --tools inferencemax, both of which drive the `vllm bench serve` CLI as a
+# client against an already-running inference server (no GPU needed locally).
+#
+# vllm is pinned to match v1's requirements/benchmarks-vllm.txt; keep it in
+# sync with VLLM_PIN_VERSION in workflow_venvs.py. `aiohttp` covers the v2
+# orchestrator's eager import chain (workflow_module -> test_module.context ->
+# health_tests); `requests`/`pyjwt` back the health checks + JWT minting.
+#
+# transformers is NOT pinned here: vllm==0.13.0 transitively caps it at <5, but
+# gemma-4's tokenizer needs 5.x (see v2-llm-vllm-overrides.txt). It is forced
+# past that cap via uv --override, wired onto this venv in workflow_venvs.py.
+# Keeping vllm at 0.13.0 means the `vllm bench serve` client (CLI flags, result
+# schema, tokenization path) is unchanged for every other model — only the
+# tokenizer library moves, and 5.x still loads legacy tokenizers.
+
+-c constraints.txt
+
+vllm==0.13.0
+torch
+datasets==5.0.0
+pyarrow==24.0.0
+aiohttp
+requests
+pyjwt

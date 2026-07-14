@@ -20,8 +20,6 @@
 
 namespace tt::services {
 
-using tt::services::ToolCallTokenResult;
-
 LLMService::LLMService() {
   const size_t numWorkers = tt::config::numWorkers();
   auto qm =
@@ -56,12 +54,11 @@ void LLMService::init(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
 
   this->taskQueue = std::move(taskQueue);
   this->workerManager = std::move(workerManager);
-  this->jsonToolCallParser = createJsonToolCallParser();
   this->queueManager = std::move(queueManager);
   this->maxQueueSize = maxQueueSize;
 
   const auto& stopIds = tt::utils::tokenizers::staticInfo().stopTokenIds;
-  stopTokenSet = std::unordered_set<int64_t>(stopIds.begin(), stopIds.end());
+  stopTokenSet = std::unordered_set<uint32_t>(stopIds.begin(), stopIds.end());
 
   TT_LOG_INFO("[LLMService] Initialized (workers={})",
               this->workerManager->numWorkers());
@@ -96,58 +93,6 @@ std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
 
 void LLMService::preProcess(LLMRequest& request) const {
   enforceQueueCapacity();
-
-  if (request.tool_choice.has_value()) {
-    const auto& type = request.tool_choice->type;
-    if (type != "auto" && type != "none" && type != "function" &&
-        type != "required") {
-      throw std::invalid_argument(
-          "tool_choice='" + type +
-          "' is not yet supported by this server; only 'auto', 'none', "
-          "'function', and 'required' are currently implemented");
-    }
-
-    // Validate named function call
-    if (type == "function") {
-      if (!request.tool_choice->function.has_value() ||
-          request.tool_choice->function.value().empty()) {
-        throw std::invalid_argument(
-            "tool_choice.function.name is required when type is 'function'. "
-            "Expected format: {\"type\": \"function\", \"function\": "
-            "{\"name\": \"function_name\"}}");
-      }
-
-      if (!request.tools.has_value()) {
-        throw std::invalid_argument(
-            "tools array is required when tool_choice type is 'function'");
-      }
-
-      // Validate function name exists in tools
-      const auto& functionName = request.tool_choice->function.value();
-      bool found = false;
-      for (const auto& tool : request.tools.value()) {
-        if (tool.functionDefinition.name == functionName) {
-          found = true;
-          break;
-        }
-      }
-
-      if (!found) {
-        throw std::invalid_argument("tool_choice.function.name '" +
-                                    functionName + "' not found in tools");
-      }
-    }
-
-    // Validate required tool choice
-    if (type == "required") {
-      if (!request.tools.has_value() || request.tools->empty()) {
-        throw std::invalid_argument(
-            "tools array is required and must not be empty when tool_choice "
-            "type is 'required'");
-      }
-    }
-  }
-
   if (std::holds_alternative<std::string>(request.prompt)) {
     request.prompt = tt::utils::tokenizers::activeTokenizer().encode(
         std::get<std::string>(request.prompt));
@@ -201,14 +146,14 @@ std::string decodeToken(
     decoder = tt::utils::tokenizers::activeTokenizer().createStreamDecoder(
         skipSpecial);
   }
-  std::string delta = decoder->step(static_cast<int>(tokenId));
+  std::string delta = decoder->step(tokenId);
   if (isFinal) delta += decoder->flush();
   return delta;
 }
 
 LLMStreamChunk buildStreamChunk(
     const ipc::SharedToken& token, const std::string& delta,
-    const std::unordered_set<int64_t>& stopTokenSet) {
+    const std::unordered_set<uint32_t>& stopTokenSet) {
   LLMStreamChunk response{token.task_id};
   response.id = std::to_string(token.task_id);
   response.created = std::chrono::duration_cast<std::chrono::seconds>(
@@ -219,36 +164,13 @@ LLMStreamChunk buildStreamChunk(
   choice.index = token.token_index;
   choice.text = delta;
 
-  choice.token_id = static_cast<int64_t>(token.token_id);
+  choice.token_id = static_cast<uint32_t>(token.token_id);
   choice.spec_accepts = token.spec_accepts;
   choice.spec_rejects = token.spec_rejects;
   if (token.isFinal()) {
-    bool isStop = stopTokenSet.count(static_cast<int64_t>(token.token_id)) > 0;
+    bool isStop = stopTokenSet.count(static_cast<uint32_t>(token.token_id)) > 0;
     choice.finish_reason = isStop ? "stop" : "length";
   }
-  response.choices.push_back(std::move(choice));
-  return response;
-}
-
-// Build streaming chunk for tool call deltas using pre-built tool_calls JSON
-LLMStreamChunk buildToolCallStreamChunk(const ipc::SharedToken& token,
-                                        const Json::Value& toolCallsDelta,
-                                        bool isFinal) {
-  LLMStreamChunk response{token.task_id};
-  response.id = std::to_string(token.task_id);
-  response.created = std::chrono::duration_cast<std::chrono::seconds>(
-                         std::chrono::system_clock::now().time_since_epoch())
-                         .count();
-
-  LLMChoice choice;
-  choice.index = 0;
-  choice.text = "";
-  choice.tool_calls = toolCallsDelta;
-
-  if (isFinal) {
-    choice.finish_reason = "tool_calls";
-  }
-
   response.choices.push_back(std::move(choice));
   return response;
 }
@@ -319,8 +241,6 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         // The client never aborted, so we must close the SSE stream ourselves
         // with a final abort chunk.
         streamDecoders.erase(taskId);
-        toolChoiceMap.take(taskId);
-        if (jsonToolCallParser) jsonToolCallParser->finalizeTask(taskId);
         tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId,
                                                                   "abort");
         auto abortChunk = makeAbortChunk(taskId);
@@ -339,16 +259,6 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         streamDecoders.erase(taskId);
         tt::metrics::ServerMetrics::instance().onRequestCompleted(
             taskId, finishReasonForError(errorReason));
-        // Finalize the appropriate parser based on tool_choice
-        auto toolChoiceOptErr = toolChoiceMap.get(taskId);
-        std::string toolChoiceTypeErr =
-            toolChoiceOptErr.has_value() ? toolChoiceOptErr.value().type : "";
-        bool useJsonParserErr =
-            toolChoiceTypeErr == "function" || toolChoiceTypeErr == "required";
-        if (useJsonParserErr && jsonToolCallParser) {
-          jsonToolCallParser->finalizeTask(taskId);
-        }
-        toolChoiceMap.take(taskId);  // Clean up
         auto errorChunk = makeErrorChunk(taskId,
                                          errorReason == LLMErrorReason::TIMEOUT
                                              ? "runner timeout"
@@ -358,22 +268,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         continue;
       }
 
-      // Dynamo path short-circuit. The wire-level TokenChunk only carries
-      // raw token_ids (see dynamo/dynamo_protocol.hpp), so decoding the
-      // token to text and running it through tool-call parsers here would be
-      // dead work. Skipping the decode also avoids
-      // ever calling createStreamDecoder() — the only remaining
-      // request-path call site that would synchronously parse
-      // tokenizer.json on a cold consumer thread.
-      //
-      // resolveCallback() above has already pulled the StreamCallbackEntry
-      // off streamCallbacks and decremented pendingTasks when isFinal=true,
-      // so the per-task bookkeeping here only needs to mirror the cleanup
-      // that the regular branch does at the end of this iteration: clear
-      // the small per-task maps. Tool-call parsers were never initialized for
-      // this task in the first place (Dynamo requests don't go through
-      // produceStream's parser init paths in a way that matters here) so no
-      // finalize calls are needed either.
+      // Dynamo path: skip decode (raw token_ids only).
       if (entry->skip_text_decode) {
         tt::metrics::ServerMetrics::instance().onToken(taskId);
         auto response = buildStreamChunk(token, /*delta=*/"", stopTokenSet);
@@ -387,7 +282,6 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
           tt::metrics::ServerMetrics::instance().onRequestCompleted(
               taskId, finalReason.value_or("error"));
           streamDecoders.erase(taskId);
-          toolChoiceMap.take(taskId);
         }
         continue;
       }
@@ -396,12 +290,6 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
                                       isFinal, entry->skip_special_tokens);
       tt::metrics::ServerMetrics::instance().onToken(taskId);
 
-      // Process explicit structured tool output for OpenAI-style deltas.
-      auto toolChoiceOpt = toolChoiceMap.get(taskId);
-      std::string toolChoiceType =
-          toolChoiceOpt.has_value() ? toolChoiceOpt.value().type : "";
-      bool useJsonParser =
-          toolChoiceType == "function" || toolChoiceType == "required";
       std::optional<std::string> finalFinishReason;
       auto captureFinalFinishReason =
           [&finalFinishReason](const LLMStreamChunk& response) {
@@ -411,52 +299,14 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
             }
           };
 
-      std::optional<ToolCallTokenResult> toolCallResult;
-      bool inToolCall = false;
-
-      // Handle structured output (tool_choice="function" or "required") via
-      // JsonToolCallParser
-      if (useJsonParser && jsonToolCallParser) {
-        toolCallResult = jsonToolCallParser->processToken(
-            taskId, static_cast<int64_t>(token.token_id), delta);
-        inToolCall = jsonToolCallParser->isInToolCall(taskId);
-      }
-
-      // Emit tool call delta, suppress if in tool call, or emit regular content
-      if (toolCallResult.has_value()) {
-        // Emit tool call delta
-        auto response = buildToolCallStreamChunk(
-            token, toolCallResult->tool_calls_delta, isFinal);
-        entry->callback(response, isFinal);
-        if (isFinal) {
-          captureFinalFinishReason(response);
-        }
-
-      } else if (inToolCall) {
-        // Inside tool call parsing, suppress regular output
-        if (isFinal) {
-          // Final token - emit empty chunk with finish_reason
-          Json::Value emptyDelta(Json::arrayValue);
-          Json::Value emptyCall;
-          emptyCall["index"] = 0;
-          emptyCall["function"]["arguments"] = "";
-          emptyDelta.append(emptyCall);
-          auto response = buildToolCallStreamChunk(token, emptyDelta, true);
-          entry->callback(response, isFinal);
-          captureFinalFinishReason(response);
-        }
-        // else: suppress, don't emit
-
-      } else {
-        // Regular content.
-        // Always emit chunks with token_id for Session hash tracking, even if
-        // decoded text is empty. The controller callback uses token_id to
-        // accumulate hashes; skipping here breaks prefix cache.
-        auto response = buildStreamChunk(token, delta, stopTokenSet);
-        entry->callback(response, isFinal);
-        if (isFinal) {
-          captureFinalFinishReason(response);
-        }
+      // Regular content.
+      // Always emit chunks with token_id for Session hash tracking, even if
+      // decoded text is empty. The controller callback uses token_id to
+      // accumulate hashes; skipping here breaks prefix cache.
+      auto response = buildStreamChunk(token, delta, stopTokenSet);
+      entry->callback(response, isFinal);
+      if (isFinal) {
+        captureFinalFinishReason(response);
       }
 
       // Cleanup at finalization
@@ -470,12 +320,6 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         tt::metrics::ServerMetrics::instance().onRequestCompleted(
             taskId, finalFinishReason.value_or("error"));
         streamDecoders.erase(taskId);
-        toolChoiceMap.take(taskId);  // Clean up tool choice
-
-        // Finalize parsers
-        if (useJsonParser && jsonToolCallParser) {
-          jsonToolCallParser->finalizeTask(taskId);
-        }
 
         TRACY_PLOT("pending_tasks", static_cast<double>(pendingTasks.load()));
       }
@@ -511,49 +355,27 @@ void LLMService::produceStream(
                             request.skip_text_decode};
   streamCallbacks.insert(taskId, std::move(entry));
 
-  // Initialize the JSON tool call parser only for explicit structured output.
-  bool hasTools = request.tools.has_value() && !request.tools->empty();
-  if (hasTools) {
-    // Determine effective tool_choice (default to "auto" if not specified)
-    tt::domain::tool_calls::ToolChoice effectiveToolChoice;
-    if (request.tool_choice.has_value()) {
-      effectiveToolChoice = request.tool_choice.value();
-    } else {
-      effectiveToolChoice.type = "auto";
-    }
-
-    if (effectiveToolChoice.type == "function" ||
-        effectiveToolChoice.type == "required") {
-      toolChoiceMap.insert(taskId, effectiveToolChoice);
-      if (jsonToolCallParser) {
-        std::string functionName =
-            effectiveToolChoice.function.value_or("unknown");
-        jsonToolCallParser->initializeTask(taskId, functionName);
-      }
-    }
-  }
-
-  auto prompt = std::get<std::vector<int>>(request.prompt);
-  std::vector<int64_t> tokenIds(prompt.begin(), prompt.end());
+  auto prompt = std::get<std::vector<uint32_t>>(request.prompt);
+  std::vector<uint32_t> tokenIds(prompt.begin(), prompt.end());
 
   tt::metrics::ServerMetrics::instance().onRequestSubmitted(
       taskId, static_cast<int>(tokenIds.size()));
 
+  bool startsInThinking = false;
+  if (!tokenIds.empty() &&
+      tokenIds.back() == tt::utils::tokenizers::thinkTokenIds().first) {
+    startsInThinking = true;
+  }
+
   auto sequence = std::make_unique<tt::domain::llm::Sequence>(
-      taskId,
-      static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
-      std::move(tokenIds), prompt.size(), request.slotId, request.prefillSlotId,
-      request.continuation, request.disaggregated,
+      taskId, std::move(tokenIds), prompt.size(), request.slotId,
+      request.prefillSlotId, request.continuation, request.disaggregated,
       std::make_unique<tt::domain::llm::SamplingParams>(
           tt::utils::mapper::mapSamplingParams(request)),
       request.kv_position_id, request.decode_position_id,
-      request.decode_skip_tokens, request.migrationId);
+      request.decode_skip_tokens, request.migrationId, startsInThinking,
+      request.migrationStartPosition);
   taskQueue->push(*std::move(sequence));
-}
-
-void LLMService::postProcess(LLMResponse& response) const {
-  // Clean up tool choice map entry if present
-  toolChoiceMap.take(response.task_id);
 }
 
 void LLMService::abortRequest(uint32_t taskId) {
@@ -573,13 +395,6 @@ void LLMService::abortRequest(uint32_t taskId) {
   if (entry.has_value()) {
     auto abortChunk = makeAbortChunk(taskId);
     entry->callback(abortChunk, /*isFinal=*/true);
-  }
-
-  // Clean up parser state so task maps do not leak.
-  toolChoiceMap.take(taskId);
-
-  if (jsonToolCallParser) {
-    jsonToolCallParser->finalizeTask(taskId);
   }
 
   for (auto& cq : queueManager->cancelQueues) {

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, Mapping, Optional
 
 from report_module.schema import Block
 
@@ -26,7 +26,9 @@ class LLMResultParser(ABC):
     def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
         """Convert a raw result dict into a single Block for the report."""
 
-    def _wrap_record(self, record: Dict[str, Any]) -> Block:
+    def _wrap_record(
+        self, record: Dict[str, Any], *, title: Optional[str] = None
+    ) -> Block:
         """Wrap a flat report record in the canonical Block shape.
 
         ``data`` carries the report sections only — never a duplicate of
@@ -36,6 +38,9 @@ class LLMResultParser(ABC):
         of section data, while the renderer pulls model/device from the
         schema's metadata via its existing fallback in
         :func:`report_module.renderers._resolve_model_device`.
+
+        ``title`` sets the section heading the generic renderer emits;
+        leave it ``None`` to fall back to the kind-derived heading.
         """
         model = str(record.get("model", ""))
         device = str(record.get("device", ""))
@@ -56,9 +61,30 @@ class LLMResultParser(ABC):
         return Block(
             kind=self.kind,
             id=block_id or None,
+            title=title,
             data=section_data,
             targets=targets,
         )
+
+
+def round_metric(value: Any, digits: int) -> Any:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return round(value, digits)
+    return value
+
+
+def metric_stat(raw: Mapping[str, Any], key: str, stat: str = "avg") -> Any:
+    metric = raw.get(key)
+    if not isinstance(metric, Mapping):
+        return None
+    return round_metric(metric.get(stat), 4)
+
+
+def metric_stat_int(raw: Mapping[str, Any], key: str) -> Any:
+    value = metric_stat(raw, key)
+    return int(value) if isinstance(value, (int, float)) else None
 
 
 def _slugify_block_id(model: str, device: str) -> str:

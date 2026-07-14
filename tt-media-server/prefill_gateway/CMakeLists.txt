@@ -88,13 +88,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(prometheus-cpp)
 
-# Gateway core library: selector + registry + affinity cache + dispatcher.
+# Gateway core library: selector + registry + dispatcher.
 # All pure C++; no socket I/O is performed inside the library. The dispatcher
 # receives Senders (std::function objects) which production main() wires to
 # real SocketManager instances and tests wire to capture-only lambdas.
 set(GATEWAY_CORE_SOURCES
     src/prefill_selector.cpp
-    src/affinity_cache.cpp
     src/prefill_registry.cpp
     src/dispatcher.cpp
     src/gateway_metrics.cpp
@@ -157,16 +156,11 @@ FetchContent_MakeAvailable(cppzmq)
 
 # Socket + logger sources pulled from cpp_server — shared implementation so
 # the gateway uses exactly the same wire format and logger as the inference
-# servers, without introducing a second copy of the code. The gateway ships
-# its own factory (src/socket_transport_factory.cpp) so that it can honor
-# SOCKET_TRANSPORT without pulling cpp_server's settings.cpp (and its
-# tokenizer/runner deps).
+# servers, without introducing a second copy of the code.
 add_library(prefill_gateway_io STATIC
     ${CPP_SERVER_DIR}/src/sockets/socket_manager.cpp
-    ${CPP_SERVER_DIR}/src/sockets/tcp_socket_transport.cpp
     ${CPP_SERVER_DIR}/src/sockets/zmq_socket_transport.cpp
     src/prefill_connection_wiring.cpp
-    src/socket_transport_factory.cpp
     src/zmq_prefill_router.cpp
 )
 target_include_directories(prefill_gateway_io PUBLIC
@@ -240,7 +234,6 @@ function(_gateway_add_e2e_test name)
 endfunction()
 
 _gateway_add_unit_test(prefill_selector_test)
-_gateway_add_unit_test(affinity_cache_test)
 _gateway_add_unit_test(prefill_registry_test)
 _gateway_add_unit_test(dispatcher_test)
 _gateway_add_unit_test(gateway_metrics_test)

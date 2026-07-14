@@ -17,8 +17,6 @@
 #include "domain/llm/chat_message.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "domain/response_format.hpp"
-#include "domain/tool_calls/tool.hpp"
-#include "domain/tool_calls/tool_choice.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
@@ -84,11 +82,6 @@ struct ChatCompletionRequest : BaseRequest {
 
   // Session management
   std::optional<std::string> sessionId;
-
-  // Tool calling support
-  std::optional<std::vector<tool_calls::Tool>> tools;
-  std::optional<tool_calls::ToolChoice> tool_choice;
-  bool parallel_tool_calls = true;
 
   // When false, reasoning models skip chain-of-thought (e.g. DeepSeek-R1).
   bool enable_reasoning = true;
@@ -202,22 +195,6 @@ struct ChatCompletionRequest : BaseRequest {
     if (json.isMember("session_id") && !json["session_id"].isNull())
       req.sessionId = getString(json["session_id"], "session_id");
 
-    if (json.isMember("tool_choice") && !json["tool_choice"].isNull()) {
-      req.tool_choice = tool_calls::ToolChoice::fromJson(json["tool_choice"]);
-    }
-
-    if (json.isMember("tools") && json["tools"].isArray()) {
-      std::vector<tool_calls::Tool> toolList;
-      for (const auto& tool : json["tools"]) {
-        toolList.push_back(tool_calls::Tool::fromJson(tool));
-      }
-      req.tools = toolList;
-    }
-    if (json.isMember("parallel_tool_calls") &&
-        !json["parallel_tool_calls"].isNull())
-      req.parallel_tool_calls =
-          getBool(json["parallel_tool_calls"], "parallel_tool_calls");
-
     if (json.isMember("enable_reasoning") && !json["enable_reasoning"].isNull())
       req.enable_reasoning =
           getBool(json["enable_reasoning"], "enable_reasoning");
@@ -230,9 +207,6 @@ struct ChatCompletionRequest : BaseRequest {
     if (json.isMember("disaggregation") && !json["disaggregation"].isNull())
       req.disaggregation_override =
           getBool(json["disaggregation"], "disaggregation");
-
-    validateToolFields(req);
-    validateToolMessages(req);
     return req;
   }
 
@@ -273,7 +247,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.skip_apply_chat_template = skip_apply_chat_template;
     const auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
     auto promptStr = tokenizer.applyChatTemplate(
-        messages, true, tools, enable_reasoning, skip_apply_chat_template);
+        messages, true, enable_reasoning, skip_apply_chat_template);
     TT_LOG_INFO("Prompt: {}",
                 detail::truncate(promptStr, detail::MAX_PROMPT_LOG_LENGTH));
     auto promptTokens = tokenizer.encode(promptStr);
@@ -300,9 +274,6 @@ struct ChatCompletionRequest : BaseRequest {
     out.repetition_penalty = repetition_penalty;
     out.length_penalty = length_penalty;
     out.stop_token_ids = stop_token_ids;
-    out.parallel_tool_calls = parallel_tool_calls;
-    out.tools = tools;
-    out.tool_choice = tool_choice;
     out.include_stop_str_in_output = include_stop_str_in_output;
     out.ignore_eos = ignore_eos;
     out.min_tokens = min_tokens;
@@ -316,144 +287,6 @@ struct ChatCompletionRequest : BaseRequest {
     out.sessionId = sessionId;
     out.disaggregation_override = disaggregation_override;
     return out;
-  }
-
- private:
-  static void validateToolFields(const ChatCompletionRequest& req) {
-    if (!req.tool_choice.has_value()) return;
-
-    const auto& toolChoice = req.tool_choice.value();
-    const auto& type = toolChoice.type;
-    const bool toolsMissing = !req.tools.has_value() || req.tools->empty();
-
-    if (type != "none" && toolsMissing) {
-      throw std::invalid_argument("tool_choice='" + type +
-                                  "' requires non-empty 'tools'");
-    }
-
-    if (type == "function") {
-      if (!toolChoice.function.has_value()) {
-        throw std::invalid_argument(
-            "tool_choice.function.name is required when type is 'function'. "
-            "Expected format: {\"type\": \"function\", \"function\": "
-            "{\"name\": \"function_name\"}}");
-      }
-
-      const auto& functionName = toolChoice.function.value();
-      const auto& tools = req.tools.value();
-      const bool found = std::any_of(
-          tools.begin(), tools.end(), [&](const tool_calls::Tool& tool) {
-            return tool.functionDefinition.name == functionName;
-          });
-      if (!found) {
-        throw std::invalid_argument("tool_choice.function.name '" +
-                                    functionName + "' not found in tools");
-      }
-    }
-  }
-
-  static void validateToolMessages(const ChatCompletionRequest& req) {
-    if (req.messages.size() < 2) return;
-
-    // Find the last assistant message
-    size_t lastAssistantIdx = req.messages.size();
-    for (size_t i = req.messages.size(); i-- > 0;) {
-      if (req.messages[i].role == "assistant") {
-        lastAssistantIdx = i;
-        break;
-      }
-    }
-
-    if (lastAssistantIdx == req.messages.size()) return;
-
-    const auto& lastAssistant = req.messages[lastAssistantIdx];
-
-    if (!lastAssistant.tool_calls.has_value() ||
-        lastAssistant.tool_calls->empty()) {
-      return;
-    }
-
-    if (lastAssistantIdx + 1 >= req.messages.size()) {
-      throw std::invalid_argument(
-          "Expected message with role='tool' after assistant message with "
-          "tool_calls, but didn't get any new messages");
-    }
-
-    const auto& toolCalls = *lastAssistant.tool_calls;
-
-    std::vector<std::string> expectedToolCallIds;
-    for (const auto& toolCall : toolCalls) {
-      expectedToolCallIds.push_back(toolCall.id);
-    }
-
-    std::vector<std::string> actualToolCallIds;
-    for (size_t i = lastAssistantIdx + 1; i < req.messages.size(); ++i) {
-      const auto& msg = req.messages[i];
-
-      if (msg.role != "tool") {
-        break;
-      }
-
-      if (!msg.tool_call_id.has_value()) {
-        throw std::invalid_argument(
-            "Message with role='tool' must include 'tool_call_id' field");
-      }
-
-      actualToolCallIds.push_back(*msg.tool_call_id);
-    }
-
-    if (actualToolCallIds.size() < expectedToolCallIds.size()) {
-      std::ostringstream err;
-      err << "Incomplete tool call conversation: assistant requested "
-          << expectedToolCallIds.size() << " tool call(s) but only received "
-          << actualToolCallIds.size() << " tool response(s). "
-          << "Missing tool_call_id(s): ";
-
-      bool first = true;
-      for (const auto& expectedId : expectedToolCallIds) {
-        if (std::find(actualToolCallIds.begin(), actualToolCallIds.end(),
-                      expectedId) == actualToolCallIds.end()) {
-          if (!first) err << ", ";
-          err << "'" << expectedId << "'";
-          first = false;
-        }
-      }
-      throw std::invalid_argument(err.str());
-    }
-
-    if (actualToolCallIds.size() > expectedToolCallIds.size()) {
-      std::ostringstream err;
-      err << "Too many tool call responses: assistant requested "
-          << expectedToolCallIds.size() << " tool call(s) but received "
-          << actualToolCallIds.size() << " tool response(s). "
-          << "Unexpected tool_call_id(s): ";
-
-      bool first = true;
-      for (const auto& actualId : actualToolCallIds) {
-        if (std::find(expectedToolCallIds.begin(), expectedToolCallIds.end(),
-                      actualId) == expectedToolCallIds.end()) {
-          if (!first) err << ", ";
-          err << "'" << actualId << "'";
-          first = false;
-        }
-      }
-      throw std::invalid_argument(err.str());
-    }
-    for (const auto& expectedId : expectedToolCallIds) {
-      size_t count = std::count(actualToolCallIds.begin(),
-                                actualToolCallIds.end(), expectedId);
-
-      if (count == 0) {
-        throw std::invalid_argument("Missing tool response for tool_call_id '" +
-                                    expectedId + "'");
-      }
-
-      if (count > 1) {
-        throw std::invalid_argument(
-            "Duplicate tool response for tool_call_id '" + expectedId +
-            "': found " + std::to_string(count) + " responses");
-      }
-    }
   }
 };
 

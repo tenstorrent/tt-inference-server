@@ -660,20 +660,21 @@ class TestRuntimeValidation:
             ("stress_tests", True),
         ],
     )
-    def test_workflow_validation(
-        self, mock_model_spec, mock_runtime_config, workflow, should_pass
-    ):
+    def test_workflow_validation(self, mock_runtime_config, workflow, should_pass):
         """Test validation for different workflows."""
         mock_runtime_config.workflow = workflow
+        model_spec, _, _ = get_runtime_model_spec(
+            model="Mistral-7B-Instruct-v0.3", device="n150"
+        )
         with patch.dict(
             "workflows.validate_setup.MODEL_SPECS",
-            {mock_model_spec.model_id: mock_model_spec},
+            {model_spec.model_id: model_spec},
         ):
             if should_pass:
-                validate_runtime_args(mock_model_spec, mock_runtime_config)
+                validate_runtime_args(model_spec, mock_runtime_config)
             else:
                 with pytest.raises(AssertionError):
-                    validate_runtime_args(mock_model_spec, mock_runtime_config)
+                    validate_runtime_args(model_spec, mock_runtime_config)
 
     def test_server_workflow_validation(self, mock_model_spec, mock_runtime_config):
         """Test server workflow specific validation."""
@@ -711,6 +712,17 @@ class TestRuntimeValidation:
                 AssertionError, match="Cannot run --docker-server and --local-server"
             ):
                 validate_runtime_args(mock_model_spec, mock_runtime_config)
+
+    def test_external_runtime_model_spec_skips_catalog_membership(
+        self, mock_model_spec, mock_runtime_config
+    ):
+        """A supplied runtime spec is the source of truth for model/device support."""
+        mock_model_spec.model_id = "id_autoport_Mistral-7B-Instruct-v0.3_n150"
+        mock_runtime_config.workflow = "reports"
+        mock_runtime_config.runtime_model_spec_json = "/tmp/custom-runtime-spec.json"
+
+        with patch.dict("workflows.validate_setup.MODEL_SPECS", {}):
+            validate_runtime_args(mock_model_spec, mock_runtime_config)
 
 
 class TestOverrideArgsIntegration:
@@ -1060,6 +1072,19 @@ class TestMediaServerDockerEnvVars:
         assert env_vars["MODEL_SERVICE"] == "image"
         assert env_vars["MODEL_RUNNER_TYPE"] == "tt_sdxl_generate"
         assert env_vars["DEVICE_IDS"].replace(" ", "").count("(") > 1
+
+    def test_non_cpp_media_persists_hf_cache_on_cache_root(self):
+        """Whisper (uvicorn media server) must place HF_HOME on the cache_root
+        volume so weights survive container restarts."""
+        model_spec, _, _ = get_runtime_model_spec(
+            model="whisper-large-v3",
+            device="n150",
+        )
+
+        env_vars = get_media_server_docker_env_vars(model_spec)
+
+        assert env_vars.get("SERVER_MODE") != "cpp"
+        assert env_vars["HF_HOME"] == "/home/container_app_user/cache_root/huggingface"
 
 
 class TestSecretsHandling:

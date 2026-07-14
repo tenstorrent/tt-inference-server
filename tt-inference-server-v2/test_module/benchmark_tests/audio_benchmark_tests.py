@@ -346,7 +346,7 @@ def _run_whisper_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Block:
             f"Whisper sweep must include {GATE_LABEL!r} (got {list(metrics_by_label)})"
         )
     ttft_value, tsu_value, rtr_value = metrics_by_label[GATE_LABEL]
-    target_checks, _accuracy_check = _audio_target_checks(
+    target_checks, _target_check = _audio_target_checks(
         ctx, ttft_value, tsu_value, rtr_value
     )
 
@@ -388,7 +388,7 @@ def run_audio_benchmark(ctx: MediaContext) -> Block:
     ttft_value = _audio_avg(status_list, "ttft")
     rtr_value = _audio_avg(status_list, "rtr")
     tsu_value = _audio_avg(status_list, "tsu")
-    target_checks, accuracy_check = _audio_target_checks(
+    target_checks, target_check = _audio_target_checks(
         ctx, ttft_value, tsu_value, rtr_value
     )
 
@@ -412,7 +412,7 @@ def run_audio_benchmark(ctx: MediaContext) -> Block:
                 "rtr": rtr_value,
                 "streaming_enabled": is_streaming_enabled_for_whisper(ctx),
                 "preprocessing_enabled": is_preprocessing_enabled_for_whisper(ctx),
-                "accuracy_check": accuracy_check,
+                "target_check": target_check,
                 "target_checks": target_checks,
             },
         },

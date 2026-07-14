@@ -1,5 +1,5 @@
 # Model spec catalog: LLM templates.
-# Edit this file to add or modify a LLM model spec.
+# Do not edit manually. This file is updated through the automated release process.
 # Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
 templates:
 # =============================================================================
@@ -45,10 +45,10 @@ templates:
 
 - weights:
     - openai/gpt-oss-120b
+  version: "0.17.0"
+  tt_metal_commit: "8c48a10"
+  vllm_commit: "f52987a"
   impl: gpt_oss
-  version: "0.12.0"
-  tt_metal_commit: 805f43d
-  vllm_commit: a45c614
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
@@ -73,6 +73,13 @@ templates:
       override_tt_config:
         sample_on_device_mode: all
         trace_region_size: 134217728  # 128 MB; vLLM default 50 MB is too small for long prefill
+      known_issues:
+        - workflow_type: EVALS
+          task_name: aime25
+          reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
+        - workflow_type: EVALS
+          task_name: gpqa_diamond_cot_zeroshot
+          reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -305,6 +312,9 @@ templates:
 
 - weights:
     - Qwen/Qwen3-32B
+  version: "0.17.0"
+  tt_metal_commit: "8c48a10"
+  vllm_commit: "f52987a"
   impl: tt_transformers
   system_requirements:
     firmware:
@@ -313,9 +323,6 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.14.0"
-  tt_metal_commit: 80180b9
-  vllm_commit: 7678b70
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
@@ -830,7 +837,7 @@ templates:
     - device: GPU
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
-      default_impl: false
+      default_impl: true
   status: COMPLETE
   metadata:
     meta-llama/Llama-3.1-8B:
@@ -841,10 +848,10 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
     - meta-llama/Llama-3.1-8B-Instruct
+  version: "0.18.0"
+  tt_metal_commit: "c49bb76"
+  vllm_commit: "6b4a3a7"
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: 55fd115
-  vllm_commit: aa4ae1e
   inference_engine: VLLM
   device_model_specs:
     - device: P100
@@ -857,6 +864,24 @@ templates:
       max_concurrency: 32
       max_context: 65536  # 64 * 1024
       default_impl: true
+      override_tt_config:
+        trace_region_size: 900000000  # match P100 (single BH chip); 50MB default too small for prefill trace (#4005)
+      known_issues:
+        - workflow_type: EVALS
+          task_name: meta_ifeval
+          reason: "meta_ifeval measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
+        - workflow_type: EVALS
+          task_name: meta_gpqa_cot
+          reason: "meta_gpqa_cot measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
+        - workflow_type: EVALS
+          task_name: longbench_fewshot_e
+          reason: "longbench_fewshot_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_summarization_e
+          reason: "longbench_summarization_e measured score is ~94% which does not satisfy the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_code_e
+          reason: "longbench_code_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
   status: EXPERIMENTAL
   metadata:
     meta-llama/Llama-3.1-8B:
@@ -921,6 +946,9 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
     - meta-llama/Llama-3.1-8B-Instruct
+  version: "0.17.0"
+  tt_metal_commit: "8c48a10"
+  vllm_commit: "f52987a"
   impl: tt_transformers
   system_requirements:
     firmware:
@@ -929,9 +957,6 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.10.1"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
@@ -941,6 +966,22 @@ templates:
       override_tt_config:
         sample_on_device_mode: decode_only
         trace_region_size: 155000000
+      known_issues:
+        - workflow_type: EVALS
+          task_name: meta_ifeval
+          reason: "meta_ifeval measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
+        - workflow_type: EVALS
+          task_name: meta_gpqa_cot
+          reason: "meta_gpqa_cot measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
+        - workflow_type: EVALS
+          task_name: longbench_code_e
+          reason: "longbench_code_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_fewshot_e
+          reason: "longbench_fewshot_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_summarization_e
+          reason: "longbench_summarization_e measured score is ~94% which does not satisfy the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
     - device: P300
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
@@ -1029,3 +1070,142 @@ templates:
   metadata:
     Qwen/Qwen2.5-Coder-32B-Instruct:
       tool_call_parser_name: hermes
+- weights:
+    - openai/gpt-oss-120b
+  version: "0.17.0"
+  tt_metal_commit: "8c48a10"
+  vllm_commit: "f52987a"
+  impl: gpt_oss
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      env_vars:
+        MESH_DEVICE: "(1, 4)"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+      override_tt_config:
+        trace_region_size: 58000000
+        sample_on_device_mode: decode_only
+      known_issues:
+        - workflow_type: EVALS
+          task_name: aime25
+          reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
+        - workflow_type: EVALS
+          task_name: gpqa_diamond_cot_zeroshot
+          reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    openai/gpt-oss-120b:
+      reasoning_parser_name: openai_gptoss
+      tool_call_parser_name: openai
+- weights:
+    - google/gemma-4-31B-it
+  version: "0.18.0"
+  tt_metal_commit: "c49bb76"
+  vllm_commit: "6b4a3a7"
+  impl: tt_transformers
+  # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
+  # them; only prod specs carry commits). The image is supplied at runtime via
+  # --override-docker-image; the prod gemma4 specs pin the build commits.
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
+      max_concurrency: 1
+      # Hybrid-off DRAM ceiling on QB2: with hybrid KV groups disabled every one
+      # of the 60 layers allocates a full-length KV buffer, so the largest pool
+      # that fits in DRAM (and leaves prefill scratch headroom) is ~49K, not 131K.
+      # Drives max_model_len + max_num_batched_tokens; the matching KV-pool size is
+      # set via GEMMA4_MAX_TOKENS_ALL_USERS below. Servable prompt tops out at the
+      # 32768 power-of-2 prefill bucket (next bucket, 65536, exceeds this pool).
+      max_context: 49152  # 48 * 1024
+      default_impl: true
+      env_vars:
+        # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
+        # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
+        # laid the TP collectives over the wrong fabric links and corrupted decode
+        # logits; the default p150_x4 descriptor (selected from MESH_DEVICE) is correct.
+        MESH_DEVICE: "P150x4"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        # Size the hybrid-off all-user KV pool to fit QB2 DRAM. The container
+        # sizes the pool from Gemma4ForCausalLM.get_max_tokens_all_users, which
+        # honors this env override (value kept here, gated by device + model,
+        # rather than hardcoded in tt-metal).
+        GEMMA4_MAX_TOKENS_ALL_USERS: "49152"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 200000000
+        # On-device decode sampling is required on the TP mesh so token ids
+        # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
+        sample_on_device_mode: decode_only
+      vllm_args:
+        # Sampling params (temp=1.0 / top_k=64 / top_p=0.95) load from the
+        # model's HF generation_config.json; evals override per-request. No
+        # override_generation_config here -- it would just restate the HF default.
+        # Activate the gemma4 tool_call_parser so tool_choice:"auto" clients
+        # (mini-swe-agent / SWE-Bench) work on a flag-free release run. vLLM
+        # requires --tool-call-parser alongside --enable-auto-tool-choice, so it
+        # is passed explicitly here; the gemma4 parser is registered by the
+        # vllm-tt-plugin entry point (tenstorrent/vllm #431).
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        # Enable gemma-4 thinking server-side so the r1_gpqa_diamond /
+        # terminal-bench-2 / swe-bench-verified evals (methodology matched to
+        # tenstorrent/tt-inference-server#4331) get the reasoning channel the
+        # chat template otherwise suppresses (gemma-4 scores ~10pts lower w/o it).
+        # --reasoning-parser separates the thought channel into reasoning_content.
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-31B-it:
+      reasoning_parser_name: gemma4
+      # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; activated
+      # by enable-auto-tool-choice in vllm_args above.
+      tool_call_parser_name: gemma4
+- weights:
+    - Qwen/Qwen3.6-27B
+  version: "0.18.0"
+  tt_metal_commit: "c49bb76"
+  vllm_commit: "6b4a3a7"
+  impl: qwen36_blackhole
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        HF_MODEL: Qwen/Qwen3.6-27B
+        MESH_DEVICE: "(1, 4)"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+      vllm_args:
+        async_scheduling: true
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        # Magic number; follows vllm nightly:
+        # https://github.com/tenstorrent/tt-metal/actions/runs/28493777891/job/84457052459#step:10:1
+        trace_region_size: 268435456
+  # EXPERIMENTAL: no target performance has been set yet, so we can't classify
+  # this as FUNCTIONAL, COMPLETE, or top-perf.
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.6-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder

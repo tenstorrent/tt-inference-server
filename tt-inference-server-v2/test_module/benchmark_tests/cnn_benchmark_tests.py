@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import base64
+import itertools
 import json
 import logging
 import sys
@@ -40,6 +41,14 @@ IMAGENET_METADATA_FILE = "metadata.json"
 # downloaded, the benchmark sends one request per image found in the dataset
 # (so the request count equals len(metadata), not this constant).
 DEFAULT_DATASET_DOWNLOAD_COUNT = 20
+
+# --- YOLOX COCO benchmark images --------------------------------------------
+COCO_HF_DATASET = "detection-datasets/coco"
+COCO_HF_SPLIT = "val"
+# Benchmark (latency/throughput timing only) reuses COCO images for YOLOX so it
+# doesn't also pull the ImageNet subset. Materialized once from the same HF
+# dataset the eval streams (parquet already cached).
+COCO_BENCHMARK_DATASET_DIR = "server_tests/datasets/coco_bench"
 
 
 def _ensure_imagenet_dataset() -> tuple[Path, list[dict]]:
@@ -78,7 +87,7 @@ def _ensure_imagenet_dataset() -> tuple[Path, list[dict]]:
     )
 
     # Lazy import to avoid loading 'datasets' library at module import time
-    from server_tests.test_classes import TestConfig
+    from .._test_common import TestConfig
 
     from ..eval_tests.vision_evals_test import (
         VisionEvalsTest,
@@ -100,6 +109,59 @@ def _ensure_imagenet_dataset() -> tuple[Path, list[dict]]:
         raise RuntimeError(
             f"ImageNet metadata at {metadata_path} is empty after download."
         )
+    return dataset_path, metadata
+
+
+def _is_yolox(ctx: MediaContext) -> bool:
+    """True for YOLOX detection models (they eval/benchmark on COCO)."""
+    return "yolox" in (ctx.model_spec.hf_model_repo or "").lower()
+
+
+def _ensure_coco_benchmark_images(
+    count: int = DEFAULT_DATASET_DOWNLOAD_COUNT,
+) -> tuple[Path, list[dict]]:
+    """Materialize a small COCO image set for benchmark timing.
+
+    The benchmark only needs images to POST for latency/throughput timing (it
+    ignores labels), so YOLOX reuses COCO here instead of pulling the ImageNet
+    subset. Streamed from the same HF dataset the eval uses (so the parquet is
+    already cached); images are saved once and reused. Returns
+    ``(dataset_path, metadata)`` matching ``_ensure_imagenet_dataset``.
+    """
+    dataset_path = Path(COCO_BENCHMARK_DATASET_DIR)
+    metadata_path = dataset_path / IMAGENET_METADATA_FILE
+    if metadata_path.exists():
+        try:
+            with metadata_path.open("r", encoding="utf-8") as f:
+                metadata = json.load(f)
+            if metadata:
+                return dataset_path, metadata
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    logger.info(
+        "COCO benchmark images missing at %s; materializing %d images.",
+        dataset_path,
+        count,
+    )
+    # Lazy import to avoid loading 'datasets' at module import time.
+    from datasets import load_dataset
+
+    ds = load_dataset(COCO_HF_DATASET, split=COCO_HF_SPLIT, streaming=True)
+    dataset_path.mkdir(parents=True, exist_ok=True)
+    metadata: list[dict] = []
+    for i, sample in enumerate(itertools.islice(ds, count)):
+        image = sample["image"]
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        filename = f"coco_{i:03d}.jpg"
+        image.save(dataset_path / filename)
+        metadata.append({"filename": filename})
+
+    if not metadata:
+        raise RuntimeError("No COCO benchmark images could be materialized.")
+    with metadata_path.open("w", encoding="utf-8") as f:
+        json.dump(metadata, f)
     return dataset_path, metadata
 
 
@@ -137,11 +199,16 @@ def _run_image_analysis_benchmark(ctx: MediaContext) -> list[CnnGenerationTestSt
     request - no accuracy comparison. Aggregate metrics such as TTFT are
     computed downstream from ``len(status_list)``.
     """
-    dataset_path, metadata = _ensure_imagenet_dataset()
+    # The benchmark only needs images to time inference (accuracy-agnostic).
+    # YOLOX reuses COCO so it doesn't also download the ImageNet subset; other
+    # CNNs keep using the shared ImageNet subset.
+    if _is_yolox(ctx):
+        dataset_path, metadata = _ensure_coco_benchmark_images()
+    else:
+        dataset_path, metadata = _ensure_imagenet_dataset()
     total_requests = len(metadata)
     logger.info(
-        "Running image analysis benchmark over ImageNet subset at %s "
-        "(%d images -> %d requests).",
+        "Running image analysis benchmark over %s (%d images -> %d requests).",
         dataset_path,
         total_requests,
         total_requests,
@@ -153,7 +220,16 @@ def _run_image_analysis_benchmark(ctx: MediaContext) -> list[CnnGenerationTestSt
         logger.info(f"Analyzing image {i}/{total_requests}: {sample['filename']}")
         status, elapsed = _analyze_image(ctx, image_file)
         logger.info(f"Analyzed image in {elapsed:.2f} seconds.")
-        status_list.append(CnnGenerationTestStatus(status=status, elapsed=elapsed))
+        # Single-user, one inference per request, so tput_user (images/sec/user)
+        # = 1/elapsed. Set it here or it defaults to 0 and the enforced
+        # tput_user_check fails for every CNN.
+        status_list.append(
+            CnnGenerationTestStatus(
+                status=status,
+                elapsed=elapsed,
+                inference_steps_per_second=(1.0 / elapsed if elapsed > 0 else 0),
+            )
+        )
 
     logger.info(
         "Completed image analysis benchmark: %d requests sent.",
@@ -211,7 +287,7 @@ def run_cnn_benchmark(ctx: MediaContext) -> Block:
         else 0
     )
     # Sequential single-user benchmark, so tput_user = total throughput.
-    target_checks, accuracy_check = _cnn_target_checks(
+    target_checks, target_check = _cnn_target_checks(
         ctx, ttft_value, inference_steps_per_second
     )
     return Block(
@@ -234,7 +310,7 @@ def run_cnn_benchmark(ctx: MediaContext) -> Block:
                 "ttft": ttft_value,
                 "inference_steps_per_second": inference_steps_per_second,
                 "tput_user": inference_steps_per_second,
-                "accuracy_check": accuracy_check,
+                "target_check": target_check,
                 "target_checks": target_checks,
             },
         },

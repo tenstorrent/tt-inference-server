@@ -19,7 +19,9 @@ from report_module.schema import Block
 from utils.url_helpers import DEFAULT_DEPLOY_URL, build_base_url
 
 from .blockify import block_id
+from .exceptions import SkipTest, TestOutcomeSignal
 from .hardware_requirements import HardwareRequirement
+from .report_types import TestStatus
 from .test_classes import TestConfig
 
 if TYPE_CHECKING:
@@ -143,12 +145,41 @@ class BaseTest(ABC):
             data=data,
         )
 
-    def _assert_hardware_ready(self) -> Optional[Dict[str, Any]]:
+    def _outcome_block(
+        self,
+        signal: TestOutcomeSignal,
+        attempts: int,
+        run_started: float,
+    ) -> Block:
+        """Build a Block for an intentional non-error outcome (SKIP / NA).
+
+        Shared by the retry loop (a test raised ``SkipTest``/``NotApplicable``)
+        and the pre-loop hardware gate. Envelope keys are authoritative; any
+        structured ``signal.data`` diagnostics are merged underneath them.
+        """
+        status = TestStatus.SKIP if isinstance(signal, SkipTest) else TestStatus.NA
+        logger.info("⏭  %s -> %s: %s", type(self).__name__, status.value, signal.reason)
+        data: Dict[str, Any] = {
+            "success": False,
+            "status": status.value,
+            "skipped": isinstance(signal, SkipTest),
+            "reason": signal.reason,
+            "attempts": attempts,
+            "logs": list(self.logs),
+            "elapsed_seconds": time.monotonic() - run_started,
+            "test_name": type(self).__name__,
+            "description": self.description,
+        }
+        for key, value in signal.data.items():
+            data.setdefault(key, value)
+        return self._block(data)
+
+    def _assert_hardware_ready(self) -> None:
         """Hardware-readiness gate consulted by :meth:`run_tests`.
 
         Returns ``None`` if the board has enough ready chips for this test's
-        :attr:`HARDWARE_REQUIREMENT`, else a "skipped" dict that
-        :meth:`run_tests` wraps into a Block.
+        :attr:`HARDWARE_REQUIREMENT`, else raises :class:`SkipTest` so the test
+        is reported as SKIP (never run) rather than a failure.
 
         The check is intentionally non-fatal on "we can't tell" failure modes
         (server unreachable, non-200 response, non-JSON body): those return
@@ -205,16 +236,15 @@ class BaseTest(ABC):
             f"{type(self).__name__} requires {required} ready chip(s) "
             f"({self.HARDWARE_REQUIREMENT.value}); found {ready}/{total} ready."
         )
-        logger.warning("⏭  Skipping %s — %s", type(self).__name__, reason)
-        return {
-            "success": False,
-            "skipped": True,
-            "reason": reason,
-            "hardware_requirement": self.HARDWARE_REQUIREMENT.value,
-            "ready_count": ready,
-            "total_workers": total,
-            "required_count": required,
-        }
+        raise SkipTest(
+            reason,
+            data={
+                "hardware_requirement": self.HARDWARE_REQUIREMENT.value,
+                "ready_count": ready,
+                "total_workers": total,
+                "required_count": required,
+            },
+        )
 
     def run_tests(self) -> Block:
         """Run the test with retry/log accounting and return a Block.
@@ -249,14 +279,10 @@ class BaseTest(ABC):
         attempts_used = 0
         run_started = time.monotonic()
 
-        skip_data = self._assert_hardware_ready()
-        if skip_data is not None:
-            skip_data.setdefault("attempts", 0)
-            skip_data.setdefault("logs", list(self.logs))
-            skip_data.setdefault("elapsed_seconds", time.monotonic() - run_started)
-            skip_data.setdefault("test_name", type(self).__name__)
-            skip_data.setdefault("description", self.description)
-            return self._block(skip_data)
+        try:
+            self._assert_hardware_ready()
+        except TestOutcomeSignal as e:
+            return self._outcome_block(e, attempts=0, run_started=run_started)
 
         for attempt in range(self.retry_attempts + 1):
             attempts_used = attempt + 1
@@ -289,6 +315,12 @@ class BaseTest(ABC):
                     data: Dict[str, Any] = {**result}
                 else:
                     data = {"result": result}
+                # A test may self-declare NA/SKIP in its result dict; otherwise
+                # derive the status from the boolean success it reported.
+                status = TestStatus.from_value(data.get("status")) or (
+                    TestStatus.PASS if success else TestStatus.FAIL
+                )
+                data["status"] = status.value
                 data["success"] = success
                 data["attempts"] = attempts_used
                 data["logs"] = list(self.logs)
@@ -317,6 +349,10 @@ class BaseTest(ABC):
                         "exception": str(e),
                     }
                 )
+
+            except TestOutcomeSignal as e:
+                # Intentional non-error outcome: do not retry, do not fail.
+                return self._outcome_block(e, attempts_used, run_started)
 
             except SystemExit as e:
                 last_exception = e
@@ -383,9 +419,12 @@ class BaseTest(ABC):
                 "message": "Tests failed after all retry attempts",
             }
         )
+        # Reaching here means every attempt raised or timed out — the test
+        # never ran to a clean verdict, so this is an ERROR, not a FAIL.
         failure_block = self._block(
             {
                 "success": False,
+                "status": TestStatus.ERROR.value,
                 "attempts": attempts_used,
                 "logs": list(self.logs),
                 "elapsed_seconds": time.monotonic() - run_started,

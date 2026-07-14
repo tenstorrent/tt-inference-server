@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Mapping, Sequence
 
 from report_module.display import (
     DISPLAY_NAMES,
+    FOOTNOTES,
     decimal_places,
     display_name,
     target_checks_header,
@@ -18,6 +19,7 @@ from report_module.display import (
 from report_module.formatting import format_value
 from report_module.markdown_table import build_markdown_table
 from report_module.schema import Block
+from report_module.status import glyph_for_label
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +39,40 @@ HIDDEN_COLUMNS = frozenset(
 )
 
 GENERIC_KINDS: tuple[str, ...] = (
-    "benchmarks",
-    "evals",
     "spec_tests",
     "stress_tests",
+)
+
+# Per-kind columns hidden on top of HIDDEN_COLUMNS. For test blocks the
+# pass/fail wrapper fields duplicate the 🧪 Test Results summary table, so we
+# drop them here and let the block table carry only the metrics.
+_KIND_EXTRA_HIDDEN: Dict[str, frozenset] = {
+    kind: frozenset({"status", "success", "attempts"}) for kind in GENERIC_KINDS
+}
+
+
+def _hidden_columns(kind: str) -> frozenset:
+    return HIDDEN_COLUMNS | _KIND_EXTRA_HIDDEN.get(kind, frozenset())
+
+
+EVALS_KIND = "evals"
+
+BENCHMARKS_KIND = "benchmarks"
+
+EVALS_METHODOLOGY_NOTE = (
+    "Note: The ratio to published scores defines if eval ran roughly correctly, "
+    "as the exact methodology of the model publisher cannot always be reproduced. "
+    "For this reason the accuracy check is based first on being equivalent to the "
+    "GPU reference within a +/- tolerance. If a value GPU reference is not "
+    "available, the accuracy check is based on the direct ratio to the published "
+    "score."
+)
+
+BENCHMARK_TIER_NOTE = (
+    "Note: The Target Check column reflects only the strictest `target` tier. "
+    "The Target Checks table grades three tiers — functional, complete, and "
+    "target — from most to least lenient. Acceptance criteria pass a benchmark "
+    "when any single tier meets all of its checks."
 )
 
 _REGISTRY: Dict[str, RendererFn] = {}
@@ -134,11 +166,13 @@ def _heading(
     return f"### {label} for {' on '.join(suffix_bits)}"
 
 
-def _ordered_display_columns(records: Sequence[Mapping[str, Any]]) -> List[str]:
+def _ordered_display_columns(
+    records: Sequence[Mapping[str, Any]], hidden: frozenset = HIDDEN_COLUMNS
+) -> List[str]:
     seen: Dict[str, None] = {}
     for record in records:
         for key in record.keys():
-            if key in HIDDEN_COLUMNS or key in seen:
+            if key in hidden or key in seen:
                 continue
             seen[key] = None
     columns = list(seen.keys())
@@ -174,7 +208,13 @@ def _format_cell(column: str, value: Any) -> str:
         and not isinstance(value, bool)
         and value in _CHECK_INT_TO_LABEL
     ):
-        return _CHECK_INT_TO_LABEL[value]
+        label = _CHECK_INT_TO_LABEL[value]
+        emoji = glyph_for_label(label)
+        return f"{emoji} {label}" if emoji else label
+    if column == "status" and isinstance(value, str) and value:
+        label = value.upper()
+        emoji = glyph_for_label(value)
+        return f"{emoji} {label}" if emoji else label
     places = decimal_places(column)
     if places is not None and isinstance(value, float) and value == value:
         return f"{value:.{places}f}"
@@ -201,8 +241,9 @@ def _pivot_single_record(
 def _build_table(
     records: Sequence[Mapping[str, Any]],
     header_fn: Callable[[str], str] = display_name,
+    hidden: frozenset = HIDDEN_COLUMNS,
 ) -> str:
-    columns = _ordered_display_columns(records)
+    columns = _ordered_display_columns(records, hidden)
     if not columns:
         return ""
     display_rows = [
@@ -259,16 +300,23 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
     heading = _heading(
         block.kind, model, device, block.title or "", block.task_type or ""
     )
+    footnote = FOOTNOTES.get(block.kind)
+    hidden = _hidden_columns(block.kind)
 
     if len(records) > 1:
-        table = _build_table(records)
-        return f"{heading}\n\n{table}" if table else ""
+        table = _build_table(records, hidden=hidden)
+        if not table:
+            return ""
+        parts = [heading, table]
+        if footnote:
+            parts.append(footnote)
+        return "\n\n".join(parts)
 
     record = records[0]
     scalar_fields: Dict[str, Any] = {}
     nested_fields: List[tuple[str, Any]] = []
     for key, value in record.items():
-        if key in HIDDEN_COLUMNS:
+        if key in hidden:
             continue
         if _is_subtable_value(value):
             nested_fields.append((key, value))
@@ -277,7 +325,7 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
 
     parts: List[str] = [heading]
     if scalar_fields:
-        scalar_table = _build_table([scalar_fields])
+        scalar_table = _build_table([scalar_fields], hidden=hidden)
         if scalar_table:
             parts.append(scalar_table)
 
@@ -291,7 +339,57 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
             continue
         parts.append(f"#### {_humanize_key(key)}\n\n{sub_table}")
 
-    return "\n\n".join(parts) if len(parts) > 1 else ""
+    if len(parts) <= 1:
+        return ""
+    if footnote:
+        parts.append(footnote)
+    return "\n\n".join(parts)
+
+
+@register(EVALS_KIND)
+def render_evals(block: Block, metadata: Mapping[str, Any]) -> str:
+    """Render eval results as one table followed by the methodology note."""
+    records = _extract_records(block)
+    if not records:
+        return ""
+    model, device = _resolve_model_device(block, metadata, records)
+    heading = _heading(
+        block.kind, model, device, block.title or "", block.task_type or ""
+    )
+    table = _build_table(records)
+    if not table:
+        return ""
+    return f"{heading}\n\n{table}\n\n{EVALS_METHODOLOGY_NOTE}"
+
+
+def _has_target_checks(block: Block) -> bool:
+    """Whether the block carries a tiered ``target_checks`` mapping.
+
+    Handles both shapes: top-level (audio sweep, run summaries) and nested
+    one level under a section dict (image/video/cnn/etc. "Benchmarks").
+    """
+    data = block.data
+    if not isinstance(data, Mapping):
+        return False
+    if isinstance(data.get(_TARGET_CHECKS_KEY), Mapping):
+        return True
+    return any(
+        isinstance(value, Mapping)
+        and isinstance(value.get(_TARGET_CHECKS_KEY), Mapping)
+        for value in data.values()
+    )
+
+
+@register(BENCHMARKS_KIND)
+def render_benchmarks(block: Block, metadata: Mapping[str, Any]) -> str:
+    """Render a benchmark block, appending the tier note when tiered
+    ``target_checks`` are present (LLM benchmarks without tiers get none)."""
+    table = render_generic_table(block, metadata)
+    if not table:
+        return ""
+    if _has_target_checks(block):
+        return f"{table}\n\n{BENCHMARK_TIER_NOTE}"
+    return table
 
 
 for _kind in GENERIC_KINDS:
@@ -299,7 +397,8 @@ for _kind in GENERIC_KINDS:
 
 
 # Side-effect import: register the AIPerf prefix-cache renderer so any
-# report_module consumer picks it up without needing to import the
-# submodule explicitly. Placed after GENERIC_KINDS so all decorators
-# from this file run first.
+# report_module consumer picks it up without importing the submodule
+# explicitly. Placed after GENERIC_KINDS so all decorators from this file
+# run first. The spec-decode renderer now lives in ``llm_module.parsers``
+# and self-registers when that package is imported.
 from report_module import prefix_cache_renderer as _prefix_cache_renderer  # noqa: E402,F401

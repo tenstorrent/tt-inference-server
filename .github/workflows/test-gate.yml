@@ -330,8 +330,70 @@ jobs:
         if: always()
         run: exit "$(cat media_exit_code.txt 2>/dev/null || echo 1)"
 
+  unit-tests-v2:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.should-test == 'true' }}
+    name: Unit Tests (tt-inference-server-v2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      # The v2 modules under test (report_module, test_module, workflow_module,
+      # llm_module) live in the v2 dir, but the utils/ and workflows/ packages
+      # they import live at the repo root -- both must be importable.
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tt-inference-server-v2
+    defaults:
+      run:
+        working-directory: tt-inference-server-v2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements-dev.txt
+            tt-media-server/requirements.txt
+
+      - name: Install dependencies
+        # requirements live at the repo root; this step runs from the v2 dir,
+        # so reference them via the workspace path.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r "${{ github.workspace }}/requirements-dev.txt"
+          python -m pip install -r "${{ github.workspace }}/tt-media-server/requirements.txt"
+
+      - name: Run tt-inference-server-v2 tests
+        run: |
+          echo "Running tests from tt-inference-server-v2/tests/ ..."
+          set +e
+          pytest tests/ -v --tb=short --continue-on-collection-errors > v2_test_output.txt 2>&1
+          V2_EXIT_CODE=$?
+          set -e
+          cat v2_test_output.txt
+          echo "$V2_EXIT_CODE" > v2_exit_code.txt
+
+      - name: Upload v2 test output
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: v2-test-output
+          path: |
+            tt-inference-server-v2/v2_test_output.txt
+            tt-inference-server-v2/v2_exit_code.txt
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Fail if v2 tests failed
+        if: always()
+        run: exit "$(cat v2_exit_code.txt 2>/dev/null || echo 1)"
+
   unit-tests-summary:
-    needs: [detect-changes, unit-tests-main, unit-tests-media]
+    needs: [detect-changes, unit-tests-main, unit-tests-media, unit-tests-v2]
     if: ${{ always() && needs.detect-changes.outputs.should-test == 'true' }}
     name: Unit Test Summary
     runs-on: ubuntu-latest
@@ -352,6 +414,13 @@ jobs:
         continue-on-error: true
         with:
           name: media-test-output
+          path: .
+
+      - name: Download v2 test output
+        uses: actions/download-artifact@v7
+        continue-on-error: true
+        with:
+          name: v2-test-output
           path: .
 
       - name: Test Results Summary
@@ -400,8 +469,15 @@ jobs:
           MEDIA_TOTAL_FAILED=$(echo "$MEDIA_VALUES" | cut -d'|' -f6)
           MEDIA_TOTAL=$(echo "$MEDIA_VALUES" | cut -d'|' -f7)
 
+          V2_VALUES=$(parse_summary v2_test_output.txt)
+          V2_PASSED=$(echo "$V2_VALUES" | cut -d'|' -f1)
+          V2_SKIPPED=$(echo "$V2_VALUES" | cut -d'|' -f2)
+          V2_TOTAL_FAILED=$(echo "$V2_VALUES" | cut -d'|' -f6)
+          V2_TOTAL=$(echo "$V2_VALUES" | cut -d'|' -f7)
+
           MAIN_EXIT_CODE=$(cat main_exit_code.txt 2>/dev/null || echo 1)
           MEDIA_EXIT_CODE=$(cat media_exit_code.txt 2>/dev/null || echo 1)
+          V2_EXIT_CODE=$(cat v2_exit_code.txt 2>/dev/null || echo 1)
           EXIT_ONLY_FAILURES=0
           if [ "$MAIN_EXIT_CODE" -ne 0 ] && [ "$MAIN_TOTAL_FAILED" -eq 0 ]; then
             EXIT_ONLY_FAILURES=$(( EXIT_ONLY_FAILURES + 1 ))
@@ -409,11 +485,14 @@ jobs:
           if [ "$MEDIA_EXIT_CODE" -ne 0 ] && [ "$MEDIA_TOTAL_FAILED" -eq 0 ]; then
             EXIT_ONLY_FAILURES=$(( EXIT_ONLY_FAILURES + 1 ))
           fi
+          if [ "$V2_EXIT_CODE" -ne 0 ] && [ "$V2_TOTAL_FAILED" -eq 0 ]; then
+            EXIT_ONLY_FAILURES=$(( EXIT_ONLY_FAILURES + 1 ))
+          fi
 
-          TOTAL_TESTS=$(( MAIN_TOTAL + MEDIA_TOTAL ))
-          TOTAL_PASSED=$(( MAIN_PASSED + MEDIA_PASSED ))
-          TOTAL_SKIPPED=$(( MAIN_SKIPPED + MEDIA_SKIPPED ))
-          TOTAL_FAILED=$(( MAIN_TOTAL_FAILED + MEDIA_TOTAL_FAILED + EXIT_ONLY_FAILURES ))
+          TOTAL_TESTS=$(( MAIN_TOTAL + MEDIA_TOTAL + V2_TOTAL ))
+          TOTAL_PASSED=$(( MAIN_PASSED + MEDIA_PASSED + V2_PASSED ))
+          TOTAL_SKIPPED=$(( MAIN_SKIPPED + MEDIA_SKIPPED + V2_SKIPPED ))
+          TOTAL_FAILED=$(( MAIN_TOTAL_FAILED + MEDIA_TOTAL_FAILED + V2_TOTAL_FAILED + EXIT_ONLY_FAILURES ))
 
           MAIN_STATUS="✅"
           if [ "$MAIN_TOTAL_FAILED" -gt 0 ] || [ "$MAIN_EXIT_CODE" -ne 0 ]; then
@@ -423,6 +502,10 @@ jobs:
           if [ "$MEDIA_TOTAL_FAILED" -gt 0 ] || [ "$MEDIA_EXIT_CODE" -ne 0 ]; then
             MEDIA_STATUS="❌"
           fi
+          V2_STATUS="✅"
+          if [ "$V2_TOTAL_FAILED" -gt 0 ] || [ "$V2_EXIT_CODE" -ne 0 ]; then
+            V2_STATUS="❌"
+          fi
           OVERALL_STATUS="✅"
           [ "$TOTAL_FAILED" -gt 0 ] && OVERALL_STATUS="❌"
 
@@ -431,6 +514,7 @@ jobs:
             echo "|-----------|------:|-------:|--------:|-------:|:------:|"
             echo "| **tt-inference-server** | $MAIN_TOTAL | $MAIN_PASSED | $MAIN_SKIPPED | $MAIN_TOTAL_FAILED | $MAIN_STATUS |"
             echo "| **tt-media-server** | $MEDIA_TOTAL | $MEDIA_PASSED | $MEDIA_SKIPPED | $MEDIA_TOTAL_FAILED | $MEDIA_STATUS |"
+            echo "| **tt-inference-server-v2** | $V2_TOTAL | $V2_PASSED | $V2_SKIPPED | $V2_TOTAL_FAILED | $V2_STATUS |"
             echo "| **Overall** | **$TOTAL_TESTS** | **$TOTAL_PASSED** | **$TOTAL_SKIPPED** | **$TOTAL_FAILED** | $OVERALL_STATUS |"
           } >> $GITHUB_STEP_SUMMARY
 
@@ -446,6 +530,10 @@ jobs:
           echo "FINAL_MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
           echo "FINAL_MEDIA_SKIPPED=$MEDIA_SKIPPED" >> $GITHUB_ENV
           echo "FINAL_MEDIA_TOTAL_FAILED=$MEDIA_TOTAL_FAILED" >> $GITHUB_ENV
+          echo "FINAL_V2_TOTAL=$V2_TOTAL" >> $GITHUB_ENV
+          echo "FINAL_V2_PASSED=$V2_PASSED" >> $GITHUB_ENV
+          echo "FINAL_V2_SKIPPED=$V2_SKIPPED" >> $GITHUB_ENV
+          echo "FINAL_V2_TOTAL_FAILED=$V2_TOTAL_FAILED" >> $GITHUB_ENV
 
       - name: Comment on PR
         if: always() && github.event_name == 'pull_request'
@@ -455,7 +543,8 @@ jobs:
           script: |
             const { FINAL_TOTAL_TESTS, FINAL_TOTAL_PASSED, FINAL_TOTAL_SKIPPED, FINAL_TOTAL_FAILED,
                     FINAL_MAIN_TOTAL, FINAL_MAIN_PASSED, FINAL_MAIN_SKIPPED, FINAL_MAIN_TOTAL_FAILED,
-                    FINAL_MEDIA_TOTAL, FINAL_MEDIA_PASSED, FINAL_MEDIA_SKIPPED, FINAL_MEDIA_TOTAL_FAILED } = process.env;
+                    FINAL_MEDIA_TOTAL, FINAL_MEDIA_PASSED, FINAL_MEDIA_SKIPPED, FINAL_MEDIA_TOTAL_FAILED,
+                    FINAL_V2_TOTAL, FINAL_V2_PASSED, FINAL_V2_SKIPPED, FINAL_V2_TOTAL_FAILED } = process.env;
 
             const overallPassed = parseInt(FINAL_TOTAL_FAILED) === 0;
             const statusIcon = overallPassed ? '✅' : '❌';
@@ -467,6 +556,7 @@ jobs:
             |-----------|-------|--------|---------|--------|--------|
             | **tt-inference-server** | ${FINAL_MAIN_TOTAL} | ${FINAL_MAIN_PASSED} | ${FINAL_MAIN_SKIPPED} | ${FINAL_MAIN_TOTAL_FAILED} | ${parseInt(FINAL_MAIN_TOTAL_FAILED) === 0 ? '✅' : '❌'} |
             | **tt-media-server** | ${FINAL_MEDIA_TOTAL} | ${FINAL_MEDIA_PASSED} | ${FINAL_MEDIA_SKIPPED} | ${FINAL_MEDIA_TOTAL_FAILED} | ${parseInt(FINAL_MEDIA_TOTAL_FAILED) === 0 ? '✅' : '❌'} |
+            | **tt-inference-server-v2** | ${FINAL_V2_TOTAL} | ${FINAL_V2_PASSED} | ${FINAL_V2_SKIPPED} | ${FINAL_V2_TOTAL_FAILED} | ${parseInt(FINAL_V2_TOTAL_FAILED) === 0 ? '✅' : '❌'} |
             | **Overall** | ${FINAL_TOTAL_TESTS} | ${FINAL_TOTAL_PASSED} | ${FINAL_TOTAL_SKIPPED} | ${FINAL_TOTAL_FAILED} | ${statusIcon} |
 
             ### Details
@@ -605,19 +695,19 @@ jobs:
   cpp-build:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
-    name: C++ Build, Unit Tests & Benchmarks
-    # Per-commit compile + unit-test + mock benchmark gate on
-    # ubuntu-latest. Build and bench run in ONE job: the freshly built binary in
-    # cpp_server/build is benchmarked in place, so there is no build artifact to
-    # archive/upload/download/unpack (that round-trip used to cost ~5 min on the
-    # critical path). The heavier benches/sanitizers run in cpp-heavy-checks.yml.
+    name: C++ Build & Unit Tests
+    # Per-commit compile + unit-test gate on ubuntu-latest. Build runs in ONE
+    # job; the freshly built binary in cpp_server/build is unit-tested in place
+    # via ctest, so there is no build artifact to archive/upload/download/unpack
+    # (that round-trip used to cost ~5 min on the critical path). The heavier
+    # benches/sanitizers run in cpp-heavy-checks.yml.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
     env:
-      # Bench steps import the tt-media-server package (pytest helpers + the
-      # non-streaming smoke test), so the build job now needs PYTHONPATH too.
+      # ctest E2E steps (e.g. CancellationE2E) import the tt-media-server
+      # package's pytest helpers, so the build job needs PYTHONPATH too.
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
       # Loopback must bypass any injected HTTP proxy so curl/requests probes
       # to a server on 127.0.0.1 (e.g. CancellationE2E's /tt-liveness) resolve
@@ -669,153 +759,203 @@ jobs:
           ctest --output-on-failure
           cd ../..
 
-      # ── Mock backend benchmarks (same job) ───────────────────────────
-      # The binary just built in cpp_server/build is benchmarked in place, so
-      # there is no build artifact to archive/upload/download/unpack -- that
-      # round-trip (gzip + boost re-install on the consumer) previously cost
-      # ~5 min of wall-clock on the build -> bench critical path.
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
+  mooncake-mpi-e2e:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: Mooncake MPI Discovery E2E
+    # #4294: builds bringup_mooncake_worker with the Mooncake Transfer Engine
+    # (--mooncake) and runs the single-host MPI discovery test
+    # (run_migration_workers_mpi.sh, registered as the MooncakeMpiDiscovery
+    # ctest). Mooncake isn't part of the --blaze build, so this is a dedicated
+    # job rather than another step in cpp-build. The TCP+HTTP-only subset
+    # (USE_TCP/USE_HTTP, no etcd/redis/rust) keeps the system deps minimal.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      # Loopback must bypass any injected HTTP proxy so the metadata service
+      # probe and the workers' openSegment calls reach 127.0.0.1 directly.
+      no_proxy: "localhost,127.0.0.1,::1"
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+          # Shares the cpp_server compile ccache with cpp-build / cpp-format-check.
+          ccache-key-suffix: server
+
+      - name: Restore cached tokenizer files
+        uses: actions/cache@v5
+        with:
+          path: tt-media-server/cpp_server/tokenizers
+          key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
+          restore-keys: |
+            cpp-server-tokenizers-
+
+      # The Mooncake submodule's .gitmodules URL is SSH (git@github.com:...);
+      # rewrite it to anonymous HTTPS so the runner can fetch it (and its
+      # nested pybind11 / yalantinglibs submodules) without an SSH key.
+      - name: Init Mooncake submodule (recursive)
+        run: |
+          git -c url."https://github.com/".insteadOf="git@github.com:" \
+              submodule update --init --recursive \
+              cpp_server/third_party/Mooncake
+
+      # Transfer Engine system deps for the TCP+HTTP-only subset build. The full
+      # third_party/Mooncake/dependencies.sh also pulls Go/gRPC/redis we don't
+      # need (USE_ETCD/USE_REDIS are OFF), so install just the required set.
+      # Open MPI provides mpirun, which gates the MooncakeMpiDiscovery ctest.
+      - name: Install Mooncake + MPI system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libibverbs-dev libnuma-dev libgoogle-glog-dev libgflags-dev \
+            libjsoncpp-dev libyaml-cpp-dev libcurl4-openssl-dev \
+            openmpi-bin libopenmpi-dev
+
+      # yalantinglibs is resolved via find_package(yalantinglibs CONFIG) and has
+      # no apt package, so build + install it from Mooncake's vendored submodule
+      # (same flags as dependencies.sh, minus examples/benchmarks/tests).
+      - name: Build & install yalantinglibs
+        run: |
+          cd cpp_server/third_party/Mooncake/extern/yalantinglibs
+          cmake -B build -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARK=OFF -DBUILD_UNIT_TESTS=OFF
+          cmake --build build -j "$(nproc)"
+          sudo cmake --install build
+
+      - name: Build C++ server with Mooncake
+        run: |
+          cd cpp_server
+          ./build.sh --mooncake
+
+      # The metadata service is the wheel's http_metadata_server.py (started by
+      # run_mooncake_metadata_server.sh via the in-tree fallback copy); it needs
+      # aiohttp. setup-python puts python/pip on PATH so the launcher resolves.
+      - name: Set up Python for metadata service
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          enable-cache: true
 
-      - name: Install Python test dependencies
-        run: bash cpp_server/scripts/ci/install_bench_client.sh
+      - name: Install metadata service dependencies
+        run: python -m pip install aiohttp
 
-      # ── Mock backend benchmarks ──────────────────────────────────────
-      - name: Start C++ server (mock backend)
+      - name: Run Mooncake MPI discovery e2e
+        # Smaller mesh than the local default (4 prefill + 16 decode): 20
+        # oversubscribed MPI ranks thrash a 4-core GitHub runner. 2+6 still
+        # exercises the round-robin fan-out (each decode -> one prefill, each
+        # prefill -> its assigned decodes). Bump via these envs if needed.
+        env:
+          NUM_PREFILL: "2"
+          NUM_DECODE: "6"
+          DISCOVERY_TIMEOUT_SEC: "90"
         run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock backend"
           cd cpp_server/build
-          LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock.log 2>&1 &
-          echo $! > ../../cpp_server.pid
-          cd ../..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8000 --pid-file cpp_server.pid --label "mock backend"
+          ctest -R MooncakeMpiDiscovery --output-on-failure
 
-      # Pre-warm the Drogon IO thread pool so each thread pays its per-thread
-      # tokenizer init cost (#3179) before the measured bench starts. Without
-      # this, mean_ttft_ms on the first bench is dominated by the cold-start
-      # P99 tail. Concurrency of 16 across 4 IO threads reliably touches every
-      # thread.
-      - name: Warm up mock backend
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
-            --num-prompts 32 \
-            --max-concurrency 16 \
-            > /dev/null
-
-      - name: Bench mock backend
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
-            --num-prompts 1000 \
-            --max-concurrency 64 \
-            --save-result \
-            --result-filename "vllm-bench-mock.json" \
-            2>&1 | tee bench_mock_output.txt
-
-      # `vllm bench serve` hard-codes stream=True, so cover stream=False with a
-      # small smoke test that asserts the response shape (no perf thresholds —
-      # the non-streaming path is gated on correctness, not latency).
-      - name: Smoke test mock backend (non-streaming)
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: python cpp_server/tests/test_non_streaming_chat.py
-
-      - name: Stop mock server
-        if: always()
-        run: |
-          PID="$([ -f cpp_server.pid ] && cat cpp_server.pid || true)"
-          [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
-          [ -n "$PID" ] && bash cpp_server/scripts/ci/wait_for_command.sh \
-            --command "! kill -0 $PID 2>/dev/null" --label "mock backend exit"
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock backend"
-
-      # NOTE: the mock_pipeline benchmark lives in its own self-hosted job
-      # (cpp-server-mock-pipeline-bench). Its tt-llm-engine decode_scheduler
-      # pins 3 CPU cores, which starves a 4-core GitHub runner and makes the
-      # throughput thresholds unmeetable — so it stays on the xlarge
-      # self-hosted runner while the mock bench here runs on ubuntu-latest.
-
-      # ── Check thresholds ─────────────────────────────────────────────
-      - name: Check all benchmark thresholds
-        run: |
-          CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
-          CHECK=cpp_server/scripts/ci/check_vllm_result.py
-          THRESHOLD_LOG=benchmark_thresholds.log
-          FAIL=0
-          : > "$THRESHOLD_LOG"
-
-          set +e
-          python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock \
-            --result vllm-bench-mock.json 2>&1 | tee -a "$THRESHOLD_LOG"
-          STATUS=${PIPESTATUS[0]}
-          set -e
-
-          if [[ "$STATUS" -ne 0 ]]; then
-            FAIL=1
-          fi
-          echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
-          echo "BENCH_THRESHOLD_LOG=$THRESHOLD_LOG" >> "$GITHUB_ENV"
-
-      # ── Artifacts & logs ─────────────────────────────────────────────
-      - name: Show server logs
-        if: always()
-        run: |
-          echo "=== Mock Server Logs ==="
-          [ -f cpp_server_mock.log ] && cat cpp_server_mock.log || echo "No log"
-
-      - name: Upload benchmark results
+      - name: Upload MPI discovery logs
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: cpp-server-bench-results
+          name: mooncake-mpi-e2e-logs
           path: |
-            tt-media-server/vllm-bench-mock.json
+            /tmp/tt_mc_mpi_workers.log
+            /tmp/tt_mc_metadata_mpi.log
           retention-days: 1
           if-no-files-found: warn
 
-      - name: Upload server logs
-        if: always()
-        uses: actions/upload-artifact@v6
+  remote-kv-manager-kafka-e2e:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: RemoteKVManager Kafka E2E
+    # Builds cpp_server with --kafka and runs remote_kv_manager_e2e_test
+    # (see cpp_server/tests/e2e/remote_kv_manager_e2e_test.cpp) against a
+    # real Kafka broker started via cpp_server/scripts/dev-kafka.sh. The
+    # test is not registered with add_test() (opt-in), so it's invoked
+    # directly as a binary rather than via ctest.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      # The broker advertises listener as kafka:9092, so the test binary
+      # (running on the runner host, not inside tt_net) redirects to
+      # 'kafka' after its initial connect. /etc/hosts maps kafka ->
+      # 127.0.0.1; keep any injected HTTP proxy out of the loop for it.
+      no_proxy: "localhost,127.0.0.1,::1,kafka"
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
         with:
-          name: cpp-server-bench-logs
-          path: |
-            tt-media-server/cpp_server_mock.log
-          retention-days: 1
-          if-no-files-found: warn
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
-      - name: Check benchmark result
-        if: always()
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+          # Shares the cpp_server compile ccache with cpp-build / cpp-format-check.
+          ccache-key-suffix: server
+
+      - name: Install librdkafka-dev
         run: |
-          if [[ "${BENCH_FAIL:-0}" -ne 0 ]]; then
-            LOG="${BENCH_THRESHOLD_LOG:-benchmark_thresholds.log}"
-            echo "::error::Benchmark threshold check failed. Details from $LOG:"
-            if [[ -f "$LOG" ]]; then
-              cat "$LOG"
-            else
-              echo "No benchmark threshold log found; see the 'Check all benchmark thresholds' step."
-            fi
-            exit 1
-          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends librdkafka-dev
+
+      - name: Restore cached tokenizer files
+        uses: actions/cache@v5
+        with:
+          path: tt-media-server/cpp_server/tokenizers
+          key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
+          restore-keys: |
+            cpp-server-tokenizers-
+
+      - name: Build C++ server with Kafka enabled
+        run: |
+          cd cpp_server
+          ./build.sh --blaze --kafka
+
+      - name: Start dev Kafka broker
+        # KAFKA_PUBLISH_PORT publishes 9092 to the host so the test binary,
+        # which runs on the runner (not inside tt_net), can dial the broker.
+        env:
+          KAFKA_PUBLISH_PORT: "1"
+        run: bash cpp_server/scripts/dev-kafka.sh up
+
+      - name: Make 'kafka' resolvable on the runner
+        # advertised.listeners=kafka:9092 means the broker's metadata
+        # response redirects clients to that DNS name after their initial
+        # localhost:9092 connect. Point it at loopback.
+        run: echo "127.0.0.1 kafka" | sudo tee -a /etc/hosts
+
+      - name: Run remote_kv_manager_e2e_test
+        env:
+          KAFKA_BROKERS: "kafka:9092"
+        run: ./cpp_server/build/remote_kv_manager_e2e_test
+
+      - name: Show Kafka broker logs on failure
+        if: failure()
+        run: bash cpp_server/scripts/dev-kafka.sh logs --tail 200
+
+      - name: Stop dev Kafka broker
+        if: always()
+        run: bash cpp_server/scripts/dev-kafka.sh down
 
   prefill-gateway-build:
     needs: detect-changes
@@ -1175,22 +1315,33 @@ jobs:
           import yaml
           with open('charts/tt-inference-server/values.yaml') as f:
               v = yaml.safe_load(f)
-          for model, cfg in v['models'].items():
-              for key in cfg:
-                  if key != 'serverType':
-                      print(f"{model},{key}")
+          # models[model][engine][device]; skip scalar metadata (e.g. defaultEngine)
+          for model, engines in v['models'].items():
+              for engine, devices in engines.items():
+                  if not isinstance(devices, dict):
+                      continue
+                  for device, dev_cfg in devices.items():
+                      if not isinstance(dev_cfg, dict):
+                          continue
+                      print(f"{model},{engine},{device}")
           EOF
 
       - name: Helm template validation
         run: |
+          set -o pipefail
+          if [ ! -s /tmp/helm-matrix.txt ]; then
+            echo "::error::model-device matrix is empty — nothing to validate"
+            exit 1
+          fi
           FAILED=0
-          while IFS=',' read -r model device; do
-            echo "--- Validating: $model / $device"
+          while IFS=',' read -r model engine device; do
+            echo "--- Validating: $model / $engine / $device"
             if ! helm template ci-test charts/tt-inference-server \
                 --set "model=$model" \
+                --set "engine=$engine" \
                 --set "device=$device" \
                 | kubeconform -strict -summary; then
-              echo "FAILED: $model / $device"
+              echo "FAILED: $model / $engine / $device"
               FAILED=1
             fi
           done < /tmp/helm-matrix.txt
@@ -1218,12 +1369,15 @@ jobs:
       - verify-media-server-install
       - unit-tests-main
       - unit-tests-media
+      - unit-tests-v2
       - unit-tests-summary
       - forge-runner-changes
       - forge-runner-cpu-tests
       - test-coverage
       - cpp-format-check
       - cpp-build
+      - mooncake-mpi-e2e
+      - remote-kv-manager-kafka-e2e
       - prefill-gateway-format-check
       - prefill-gateway-build
       - helm-chart-validate
@@ -1243,7 +1397,7 @@ jobs:
 
           skipped_reason() {
             case "$1" in
-              lint|unit-tests-main|unit-tests-media|unit-tests-summary)
+              lint|unit-tests-main|unit-tests-media|unit-tests-v2|unit-tests-summary)
                 if [[ "$SHOULD_TEST" != "true" ]]; then
                   echo "no Python, dependency, or workflow paths matched"
                 else
@@ -1266,7 +1420,7 @@ jobs:
                   echo "job condition evaluated false"
                 fi
                 ;;
-              cpp-format-check|cpp-build)
+              cpp-format-check|cpp-build|mooncake-mpi-e2e|remote-kv-manager-kafka-e2e)
                 if [[ "$CPP_SERVER" != "true" ]]; then
                   echo "cpp_server paths did not change"
                 else
@@ -1308,12 +1462,15 @@ jobs:
             verify-media-server-install
             unit-tests-main
             unit-tests-media
+            unit-tests-v2
             unit-tests-summary
             forge-runner-changes
             forge-runner-cpu-tests
             test-coverage
             cpp-format-check
             cpp-build
+            mooncake-mpi-e2e
+            remote-kv-manager-kafka-e2e
             prefill-gateway-format-check
             prefill-gateway-build
             helm-chart-validate
@@ -1324,12 +1481,15 @@ jobs:
             [verify-media-server-install]="${{ needs.verify-media-server-install.result }}"
             [unit-tests-main]="${{ needs.unit-tests-main.result }}"
             [unit-tests-media]="${{ needs.unit-tests-media.result }}"
+            [unit-tests-v2]="${{ needs.unit-tests-v2.result }}"
             [unit-tests-summary]="${{ needs.unit-tests-summary.result }}"
             [forge-runner-changes]="${{ needs.forge-runner-changes.result }}"
             [forge-runner-cpu-tests]="${{ needs.forge-runner-cpu-tests.result }}"
             [test-coverage]="${{ needs.test-coverage.result }}"
             [cpp-format-check]="${{ needs.cpp-format-check.result }}"
             [cpp-build]="${{ needs.cpp-build.result }}"
+            [mooncake-mpi-e2e]="${{ needs.mooncake-mpi-e2e.result }}"
+            [remote-kv-manager-kafka-e2e]="${{ needs.remote-kv-manager-kafka-e2e.result }}"
             [prefill-gateway-format-check]="${{ needs.prefill-gateway-format-check.result }}"
             [prefill-gateway-build]="${{ needs.prefill-gateway-build.result }}"
             [helm-chart-validate]="${{ needs.helm-chart-validate.result }}"

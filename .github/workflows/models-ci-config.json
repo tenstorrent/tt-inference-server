@@ -32,6 +32,7 @@
                 "N300",
                 "P100",
                 "P150",
+                "P300",
                 "P150X4",
                 "P300X2",
                 "T3K"
@@ -40,6 +41,11 @@
             "weekly": {
               "devices": [
                 "GALAXY"
+              ]
+            },
+            "release": {
+              "devices": [
+                "P300"
               ]
             }
           }
@@ -130,11 +136,6 @@
         "weekly": {
           "devices": [
             "GALAXY"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P300X2"
           ]
         }
       }
@@ -266,6 +267,11 @@
                 "T3K"
               ]
             },
+            "release": {
+                "devices": [
+                "GALAXY"
+              ]
+            },            
             "weekly": {
               "devices": [
                 "GALAXY"
@@ -316,6 +322,21 @@
           }
         }
       ]
+    },
+    "Qwen3.6-27B": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        },
+        "release": {
+          "devices": [
+            "P300X2"
+          ]
+        }
+      }
     },
     "Qwen3-4B": {
       "inference_engine": "FORGE",
@@ -385,6 +406,17 @@
             "P150X4",
             "P300X2",
             "T3K"
+          ]
+        }
+      }
+    },
+    "bge-large-en-v1.5": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "GALAXY",
+            "N150"
           ]
         }
       }
@@ -476,8 +508,28 @@
         }
       }
     },
+    "gemma-4-31B-it": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        }
+      }
+    },
     "gemma-4-31b-it": {
       "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        }
+      }
+    },
+    "gemma-4-12B-it": {
+      "inference_engine": "vLLM",
       "ci": {
         "nightly": {
           "devices": [
@@ -519,6 +571,16 @@
         }
       }
     },
+    "yolox_nano": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P150"
+          ]
+        }
+      }
+    },
     "mochi-1-preview": {
       "inference_engine": "MEDIA",
       "ci": {
@@ -529,6 +591,17 @@
             "P150X4",
             "P300X2",
             "T3K"
+          ]
+        }
+      }
+    },
+    "distil-large-v3": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P150",
+            "GALAXY"
           ]
         }
       }
@@ -549,6 +622,19 @@
         "nightly": {
           "devices": [
             "N150"
+          ]
+        }
+      }
+    },
+    "speecht5_tts": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "N150",
+            "N300",
+            "P150",
+            "P300X2"
           ]
         }
       }
@@ -603,7 +689,12 @@
             "nightly": {
               "devices": [
                 "N150"
-              ]
+              ],
+              "device-args": {
+                "N150": {
+                  "additional-args": "--impl sdxl-forge"
+                }
+              }
             }
           }
         }
@@ -647,8 +738,7 @@
             "GALAXY",
             "BH_GALAXY",
             "N150",
-            "P150",
-            "P300X2"
+            "P150"
           ]
         },
         "weekly": {

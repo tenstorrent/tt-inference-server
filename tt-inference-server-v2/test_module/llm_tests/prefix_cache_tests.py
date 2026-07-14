@@ -25,7 +25,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Optional, Sequence
 
 from llm_module import ServerConnection
 from llm_module.config import DriverContext
@@ -39,8 +39,8 @@ from llm_module.prefix_cache import (
     build_runs as build_prefix_cache_runs,
     summarize_runs as summarize_prefix_cache_runs,
 )
+from llm_module.runner import RunnerResult
 from llm_module.server_control import ServerController
-from report_module.schema import Block
 from workflow_module import accept_blocks
 
 from ..context import MediaContext
@@ -68,12 +68,14 @@ def run_prefix_cache(
     request_rate: Optional[float] = None,
     scenarios_json: Optional[str] = None,
     trace_path: Optional[str] = None,
+    goodput: Optional[str] = None,
     auth_token: str = "",
+    metrics_urls: Sequence[str] = (),
     venv_python: Optional[Path] = None,
     server_controller: Optional[ServerController] = None,
     output_subdir: str = "prefix_cache",
     inter_run_sleep_s: float = 2.0,
-) -> List[Block]:
+) -> RunnerResult:
     """Run the prefix-cache sweep end-to-end.
 
     Parameters
@@ -88,6 +90,13 @@ def run_prefix_cache(
     auth_token:
         Bearer token sent to the inference server (JWT, OPENAI_API_KEY).
         Empty string disables auth.
+    metrics_urls:
+        Extra Prometheus ``/metrics`` endpoints (cpp_server workers)
+        scraped by AIPerf via ``--server-metrics`` for the
+        ``tt_prefix_cache_*`` counters, independent of the load target.
+        Repeatable for multi-worker (KV-routed) deployments. Empty keeps
+        AIPerf's auto-derived ``/metrics`` from ``ctx.server_host`` (the
+        Dynamo frontend), which does not expose the counters.
     venv_python:
         Python interpreter that has ``aiperf`` installed. Falls back to
         ``sys.executable``.
@@ -102,12 +111,15 @@ def run_prefix_cache(
 
     Returns
     -------
-    list[Block]
-        One Block per successful run (kind ``aiperf_prefix_cache``).
-        The same Blocks are also forwarded to
+    RunnerResult
+        ``blocks`` holds one Block per successful run (kind
+        ``aiperf_prefix_cache``); ``return_codes`` records every planned
+        run's exit code so a partial sweep failure does not read as
+        success. The Blocks are also forwarded to
         :func:`workflow_module.accept_blocks` so the unified report
         generator picks them up.
     """
+    result = RunnerResult()
     runs = build_prefix_cache_runs(
         preset=preset,
         scenarios=scenarios,
@@ -115,6 +127,7 @@ def run_prefix_cache(
         request_rate=request_rate,
         manifest_path=Path(scenarios_json) if scenarios_json else None,
         trace_path_override=trace_path,
+        goodput=goodput,
     )
     if not runs:
         logger.error(
@@ -122,7 +135,7 @@ def run_prefix_cache(
             preset,
             scenarios,
         )
-        return []
+        return result
 
     logger.info(summarize_prefix_cache_runs(runs))
 
@@ -135,6 +148,12 @@ def run_prefix_cache(
     model_repo = getattr(spec, "hf_model_repo", "") or ""
     model_id = getattr(spec, "model_id", "") or model_repo
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
+    # Models whose HF repo ships a custom tokenizer (e.g. Kimi) need
+    # AIPerf's tokenizer load to trust remote code; opt in per model via
+    # spec metadata so we don't execute Hub code for every model.
+    tokenizer_trust_remote_code = bool(
+        getattr(spec, "metadata", {}).get("tokenizer_trust_remote_code", False)
+    )
 
     driver = AIPerfPrefixCacheDriver(
         venv_python=Path(venv_python) if venv_python else Path(sys.executable),
@@ -154,12 +173,15 @@ def run_prefix_cache(
         model=model_repo,
         tokenizer=model_repo,
         auth_token=auth_token,
+        tokenizer_trust_remote_code=tokenizer_trust_remote_code,
+        prefix_cache_metrics_urls=tuple(metrics_urls or ()),
     )
     context = DriverContext(output_dir=output_root, device=device_label)
 
     if server_controller is not None and not server_controller.wait_for_healthy():
         logger.error("Inference server not healthy; aborting prefix-cache sweep.")
-        return []
+        result.return_codes.append(1)
+        return result
 
     parser = AIPerfPrefixCacheParser()
     runs_sorted = sorted(
@@ -172,7 +194,6 @@ def run_prefix_cache(
         ),
     )
 
-    blocks: List[Block] = []
     for i, run in enumerate(runs_sorted, 1):
         if server_controller is not None:
             try:
@@ -182,9 +203,11 @@ def run_prefix_cache(
                         "Server unhealthy mid-sweep (status %s); aborting.",
                         getattr(health, "status_code", "?"),
                     )
+                    result.return_codes.append(1)
                     break
             except Exception as exc:  # noqa: BLE001 -- log and abort
                 logger.error("Health check raised: %s -- aborting sweep.", exc)
+                result.return_codes.append(1)
                 break
 
         logger.info(
@@ -198,6 +221,7 @@ def run_prefix_cache(
             time.sleep(inter_run_sleep_s)
 
         outcome: PrefixCacheDriverResult = driver.run(run, server, context)
+        result.return_codes.append(outcome.return_code)
         if outcome.return_code != 0 or outcome.payload is None:
             logger.error(
                 "[prefix-cache] %s/%s failed (rc=%d); continuing.",
@@ -207,14 +231,14 @@ def run_prefix_cache(
             )
             continue
 
-        blocks.append(parser.parse(outcome.payload, device=device_label))
+        result.blocks.append(parser.parse(outcome.payload, device=device_label))
 
-    if not blocks:
+    if not result.blocks:
         logger.error("[prefix-cache] No blocks produced -- sweep had zero successes.")
-        return []
+        return result
 
     accept_blocks(
-        blocks,
+        result.blocks,
         envelope={
             "model_name": getattr(spec, "model_name", "") or model_repo,
             "device": device_label,
@@ -222,11 +246,12 @@ def run_prefix_cache(
         },
     )
     logger.info(
-        "[prefix-cache] Sweep complete: %d successful run(s) / %d planned",
-        len(blocks),
+        "[prefix-cache] Sweep complete: %d successful run(s) / %d planned (ok=%s)",
+        len(result.blocks),
         len(runs_sorted),
+        result.ok,
     )
-    return blocks
+    return result
 
 
 __all__ = ["run_prefix_cache"]

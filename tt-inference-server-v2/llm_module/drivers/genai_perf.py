@@ -85,6 +85,12 @@ class GenAIPerfDriver(LLMDriver):
         ]
         if server.auth_token:
             cmd.extend(["-e", f"AUTH_TOKEN={server.auth_token}"])
+        # genai-perf downloads the tokenizer to count tokens; gated repos
+        # (e.g. meta-llama/*) need HF_TOKEN inside the SDK container or the
+        # hub HEAD request 401s and the whole sweep fails.
+        hf_token = os.getenv("HF_TOKEN")
+        if hf_token:
+            cmd.extend(["-e", f"HF_TOKEN={hf_token}"])
         cmd.extend([
             self.docker_image,
             "genai-perf", "profile",
@@ -92,7 +98,6 @@ class GenAIPerfDriver(LLMDriver):
             "--tokenizer", server.tokenizer,
             "--endpoint-type", "chat",
             "--streaming",
-            "--service-kind", "openai",
             "--url", url,
             "--concurrency", str(config.max_concurrency),
             "--num-prompts", str(config.num_prompts),
