@@ -420,40 +420,90 @@ def _fetch_structured_output_scripts(
     return True
 
 
-# Sentinel marker appended to lm_eval's api_models.py so the streaming patch is
-# applied at most once per venv (idempotent across repeated setup runs).
-_LM_EVAL_CHAT_STREAM_SENTINEL = "# === TT patch: chat-completions SSE streaming ==="
+# Sentinel markers appended to lm-eval so the patches are applied at most once
+# per venv (idempotent across repeated setup runs). Version the API sentinel so
+# venvs containing the original streaming-only patch receive the reasoning
+# preservation update too.
+_LM_EVAL_CHAT_STREAM_SENTINEL = (
+    "# === TT patch: chat-completions SSE streaming + reasoning v2 ==="
+)
+_LM_EVAL_REASONING_LOG_SENTINEL = (
+    "# === TT patch: preserve chat reasoning in sample logs ==="
+)
 
 # Monkeypatch appended to the END of lm_eval/models/api_models.py (after
 # TemplateAPI is defined). Stock _consume_sse_stream only handled text-completion
 # chunks (choice["text"]) and emitted {"index","text"}. Chat-completions stream
 # tokens in choice["delta"]["content"] and the chat parser reads
 # choice["message"]["content"], so streamed chat responses raised
-# KeyError: 'message'. This makes streaming handle both shapes, and teaches the
-# synchronous model_call() path to consume SSE (stock sync path had none).
+# KeyError: 'message'. This makes streaming handle both shapes, teaches the
+# synchronous model_call() path to consume SSE (stock sync path had none), and
+# carries reasoning_content alongside the final answer without exposing it to
+# task filters or metrics.
 _LM_EVAL_CHAT_STREAM_PATCH = """
 
-# === TT patch: chat-completions SSE streaming ===
+# === TT patch: chat-completions SSE streaming + reasoning v2 ===
 # Applied post-install by workflows.workflow_venvs.patch_evals_common_chat_streaming.
-def _tt_stream_chunk_text(choice: dict):
+class _TTChatGeneration(str):
+    def __new__(cls, content: str, reasoning_content: str):
+        value = super().__new__(cls, content)
+        value.reasoning_content = reasoning_content
+        return value
+
+
+def _tt_wrap_chat_response_reasoning(response: dict) -> dict:
+    for choice in response.get("choices", []):
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            continue
+        if "reasoning_content" in message:
+            reasoning = message.get("reasoning_content")
+        elif "reasoning" in message:
+            reasoning = message.get("reasoning")
+        else:
+            continue
+        message["content"] = _TTChatGeneration(
+            message.get("content") or "",
+            reasoning or "",
+        )
+    return response
+
+
+def _tt_stream_chunk_parts(choice: dict):
     delta = choice.get("delta") or {}
-    if "content" in delta:
-        return delta.get("content") or "", True
-    return choice.get("text", ""), False
+    if "delta" in choice:
+        if "reasoning_content" in delta:
+            reasoning = delta.get("reasoning_content")
+        elif "reasoning" in delta:
+            reasoning = delta.get("reasoning")
+        else:
+            reasoning = None
+        return delta.get("content") or "", reasoning, True
+    return choice.get("text", ""), None, False
 
 
-def _tt_format_sse_response(accumulated_text: dict, uses_chat_chunks: bool) -> dict:
+def _tt_format_sse_response(
+    accumulated_text: dict,
+    accumulated_reasoning: dict,
+    uses_chat_chunks: bool,
+) -> dict:
     choices = []
-    for index, text in sorted(accumulated_text.items()):
+    indexes = sorted(set(accumulated_text) | set(accumulated_reasoning))
+    for index in indexes:
+        text = accumulated_text.get(index, "")
         if uses_chat_chunks:
-            choices.append({"index": index, "message": {"content": text}})
+            message = {"content": text}
+            if index in accumulated_reasoning:
+                message["reasoning_content"] = accumulated_reasoning[index]
+            choices.append({"index": index, "message": message})
         else:
             choices.append({"index": index, "text": text})
-    return {"choices": choices}
+    return _tt_wrap_chat_response_reasoning({"choices": choices})
 
 
 async def _tt_consume_sse_stream(self, response) -> dict:
     accumulated_text = {}
+    accumulated_reasoning = {}
     uses_chat_chunks = False
     try:
         while True:
@@ -472,19 +522,31 @@ async def _tt_consume_sse_stream(self, response) -> dict:
                 continue
             for choice in chunk.get("choices", []):
                 index = choice.get("index", 0)
-                text, is_chat_chunk = _tt_stream_chunk_text(choice)
+                text, reasoning, is_chat_chunk = _tt_stream_chunk_parts(choice)
                 uses_chat_chunks = uses_chat_chunks or is_chat_chunk
                 accumulated_text[index] = accumulated_text.get(index, "") + text
+                if reasoning is not None:
+                    accumulated_reasoning[index] = (
+                        accumulated_reasoning.get(index, "") + reasoning
+                    )
     except BaseException as exc:
-        if not accumulated_text:
+        if not accumulated_text and not accumulated_reasoning:
             raise
         prefix = "__PARTIAL_OUTPUT__ (" + repr(exc) + "): "
-        accumulated_text = {i: prefix + t for i, t in accumulated_text.items()}
-    return _tt_format_sse_response(accumulated_text, uses_chat_chunks)
+        indexes = set(accumulated_text) | set(accumulated_reasoning)
+        accumulated_text = {
+            i: prefix + accumulated_text.get(i, "") for i in indexes
+        }
+    return _tt_format_sse_response(
+        accumulated_text,
+        accumulated_reasoning,
+        uses_chat_chunks,
+    )
 
 
 def _tt_consume_requests_sse_stream(response) -> dict:
     accumulated_text = {}
+    accumulated_reasoning = {}
     uses_chat_chunks = False
     try:
         for line in response.iter_lines(decode_unicode=True):
@@ -502,15 +564,26 @@ def _tt_consume_requests_sse_stream(response) -> dict:
                 continue
             for choice in chunk.get("choices", []):
                 index = choice.get("index", 0)
-                text, is_chat_chunk = _tt_stream_chunk_text(choice)
+                text, reasoning, is_chat_chunk = _tt_stream_chunk_parts(choice)
                 uses_chat_chunks = uses_chat_chunks or is_chat_chunk
                 accumulated_text[index] = accumulated_text.get(index, "") + text
+                if reasoning is not None:
+                    accumulated_reasoning[index] = (
+                        accumulated_reasoning.get(index, "") + reasoning
+                    )
     except BaseException as exc:
-        if not accumulated_text:
+        if not accumulated_text and not accumulated_reasoning:
             raise
         prefix = "__PARTIAL_OUTPUT__ (" + repr(exc) + "): "
-        accumulated_text = {i: prefix + t for i, t in accumulated_text.items()}
-    return _tt_format_sse_response(accumulated_text, uses_chat_chunks)
+        indexes = set(accumulated_text) | set(accumulated_reasoning)
+        accumulated_text = {
+            i: prefix + accumulated_text.get(i, "") for i in indexes
+        }
+    return _tt_format_sse_response(
+        accumulated_text,
+        accumulated_reasoning,
+        uses_chat_chunks,
+    )
 
 
 def _tt_model_call(self, messages, *, generate: bool = True, gen_kwargs: dict = None, **kwargs):
@@ -539,7 +612,7 @@ def _tt_model_call(self, messages, *, generate: bool = True, gen_kwargs: dict = 
         response.raise_for_status()
         if is_streaming:
             return _tt_consume_requests_sse_stream(response)
-        return response.json()
+        return _tt_wrap_chat_response_reasoning(response.json())
     except RetryError:
         eval_logger.error(
             "API request failed after multiple retries. Please check the API status."
@@ -549,6 +622,39 @@ def _tt_model_call(self, messages, *, generate: bool = True, gen_kwargs: dict = 
 
 TemplateAPI._consume_sse_stream = _tt_consume_sse_stream
 TemplateAPI.model_call = _tt_model_call
+# === end TT patch ===
+"""
+
+_LM_EVAL_REASONING_LOG_PATCH = """
+
+# === TT patch: preserve chat reasoning in sample logs ===
+# Applied post-install by workflows.workflow_venvs.patch_evals_common_chat_streaming.
+def _tt_extract_reasoning(value):
+    if isinstance(value, (list, tuple)):
+        found = False
+        extracted = []
+        for item in value:
+            item_found, item_reasoning = _tt_extract_reasoning(item)
+            found = found or item_found
+            extracted.append(item_reasoning)
+        return found, extracted
+    if hasattr(value, "reasoning_content"):
+        return True, value.reasoning_content
+    return False, None
+
+
+_tt_original_save_results_samples = EvaluationTracker.save_results_samples
+
+
+def _tt_save_results_samples(self, task_name: str, samples: dict) -> None:
+    for sample in samples:
+        found, reasoning = _tt_extract_reasoning(sample.get("resps", []))
+        if found:
+            sample["reasoning_content"] = reasoning
+    return _tt_original_save_results_samples(self, task_name, samples)
+
+
+EvaluationTracker.save_results_samples = _tt_save_results_samples
 # === end TT patch ===
 """
 
@@ -579,12 +685,26 @@ def patch_evals_common_chat_streaming(
         )
         return True
     api_models_path = matches[0]
-    text = api_models_path.read_text()
-    if _LM_EVAL_CHAT_STREAM_SENTINEL in text:
+    api_models_text = api_models_path.read_text()
+    if _LM_EVAL_CHAT_STREAM_SENTINEL in api_models_text:
         logger.info(f"chat-streaming patch already present in {api_models_path}")
+    else:
+        api_models_path.write_text(api_models_text + _LM_EVAL_CHAT_STREAM_PATCH)
+        logger.info(f"applied chat-streaming patch to {api_models_path}")
+
+    tracker_path = api_models_path.parents[1] / "loggers" / "evaluation_tracker.py"
+    if not tracker_path.is_file():
+        logger.warning(
+            f"Could not locate {tracker_path}; reasoning content will not be "
+            "included in lm-eval sample logs."
+        )
         return True
-    api_models_path.write_text(text + _LM_EVAL_CHAT_STREAM_PATCH)
-    logger.info(f"applied chat-streaming patch to {api_models_path}")
+    tracker_text = tracker_path.read_text()
+    if _LM_EVAL_REASONING_LOG_SENTINEL in tracker_text:
+        logger.info(f"reasoning-log patch already present in {tracker_path}")
+    else:
+        tracker_path.write_text(tracker_text + _LM_EVAL_REASONING_LOG_PATCH)
+        logger.info(f"applied reasoning-log patch to {tracker_path}")
     return True
 
 
