@@ -2577,6 +2577,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_code_e",
                 min_context_required=16384,
+                max_concurrent=16,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2592,6 +2593,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_fewshot_e",
                 min_context_required=16384,
+                max_concurrent=16,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
