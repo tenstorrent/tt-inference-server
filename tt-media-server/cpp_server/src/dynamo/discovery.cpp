@@ -9,10 +9,10 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <exception>
 #include <string>
 
 #include "config/settings.hpp"
