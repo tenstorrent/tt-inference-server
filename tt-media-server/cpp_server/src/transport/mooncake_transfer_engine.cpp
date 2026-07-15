@@ -3,6 +3,7 @@
 
 #include "transport/mooncake_transfer_engine.hpp"
 
+#include <algorithm>
 #include <utility>
 
 #include "utils/logger.hpp"
@@ -182,6 +183,7 @@ bool MooncakeTransferEngine::registerLocalMemory(void* addr,
         length, rc);
     return false;
   }
+  registeredLocalBuffers_.push_back(addr);
   return true;
 }
 
@@ -196,7 +198,21 @@ bool MooncakeTransferEngine::unregisterLocalMemory(void* addr) {
         "[MooncakeTransferEngine] unregisterLocalMemory failed (rc={})", rc);
     return false;
   }
+  const auto it = std::find(registeredLocalBuffers_.begin(),
+                            registeredLocalBuffers_.end(), addr);
+  if (it != registeredLocalBuffers_.end()) {
+    registeredLocalBuffers_.erase(it);
+  }
   return true;
+}
+
+void* MooncakeTransferEngine::firstRegisteredLocalBuffer() const {
+  return registeredLocalBuffers_.empty() ? nullptr
+                                         : registeredLocalBuffers_.front();
+}
+
+std::size_t MooncakeTransferEngine::registeredLocalBufferCount() const {
+  return registeredLocalBuffers_.size();
 }
 
 SegmentHandle MooncakeTransferEngine::openSegment(
@@ -270,6 +286,11 @@ bool MooncakeTransferEngine::publishMetadata(const std::string& key,
   // Store the raw string as a JSON string so lookupMetadata reads it back
   // verbatim; the HTTP metadata server keeps the body as-is under `key`.
   return impl_->metaStore->set(key, Json::Value(value));
+}
+
+bool MooncakeTransferEngine::removeMetadata(const std::string& key) {
+  if (!impl_->metaStore) return false;
+  return impl_->metaStore->remove(key);
 }
 
 std::optional<std::string> MooncakeTransferEngine::lookupMetadata(
@@ -532,6 +553,15 @@ bool MooncakeTransferEngine::unregisterLocalMemory(void* /*addr*/) {
   return false;
 }
 
+void* MooncakeTransferEngine::firstRegisteredLocalBuffer() const {
+  return registeredLocalBuffers_.empty() ? nullptr
+                                         : registeredLocalBuffers_.front();
+}
+
+std::size_t MooncakeTransferEngine::registeredLocalBufferCount() const {
+  return registeredLocalBuffers_.size();
+}
+
 SegmentHandle MooncakeTransferEngine::openSegment(
     const std::string& segmentName) {
   TT_LOG_WARN(
@@ -563,6 +593,13 @@ bool MooncakeTransferEngine::publishMetadata(const std::string& /*key*/,
                                              const std::string& /*value*/) {
   TT_LOG_WARN(
       "[MooncakeTransferEngine] publishMetadata unavailable (built without "
+      "Mooncake)");
+  return false;
+}
+
+bool MooncakeTransferEngine::removeMetadata(const std::string& /*key*/) {
+  TT_LOG_WARN(
+      "[MooncakeTransferEngine] removeMetadata unavailable (built without "
       "Mooncake)");
   return false;
 }

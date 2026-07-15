@@ -55,7 +55,9 @@ std::string resolveBlazeSocketDescriptorPrefix() {
     case ModelType::GPT_OSS_120B:
       return "gpt-oss";
     case ModelType::MINIMAX_M2_7:
-      return "minimax";
+      return "minimax-m2";
+    case ModelType::MINIMAX_M3:
+      return "minimax-m3";
     case ModelType::GLM_5_1:
     case ModelType::GLM_5_2:
       return "glm";
@@ -76,6 +78,7 @@ uint32_t resolveBlazeNumberOfPipelineStages() {
     case ModelType::GPT_OSS_120B:
       return 64;
     case ModelType::MINIMAX_M2_7:
+    case ModelType::MINIMAX_M3:
       return 64;
     case ModelType::GLM_5_1:
     case ModelType::GLM_5_2:
@@ -547,6 +550,7 @@ ModelType modelType() {
       return ModelType::LLAMA_3_1_8B_INSTRUCT;
     if (m == "openai/gpt-oss-120b") return ModelType::GPT_OSS_120B;
     if (m == "MiniMaxAI/MiniMax-M2.7") return ModelType::MINIMAX_M2_7;
+    if (m == "MiniMaxAI/MiniMax-M3") return ModelType::MINIMAX_M3;
     if (m == "zai-org/GLM-5.1") return ModelType::GLM_5_1;
     if (m == "zai-org/GLM-5.2") return ModelType::GLM_5_2;
     if (m == "deepseek-ai/DeepSeek-V4-Pro") return ModelType::DEEPSEEK_V4_PRO;
@@ -798,6 +802,19 @@ bool dynamoEndpointEnabled() {
 
 std::string dynamoBindHost() {
   return envString("DYNAMO_BIND_HOST", defaults::DYNAMO_BIND_HOST);
+}
+
+uint16_t dynamoBindPort() {
+  const unsigned long port =
+      envUlong("DYNAMO_BIND_PORT", defaults::DYNAMO_BIND_PORT);
+  if (port > 65535) {
+    TT_LOG_WARN(
+        "[Config] DYNAMO_BIND_PORT={} is out of range [0, 65535], using "
+        "default={}",
+        port, defaults::DYNAMO_BIND_PORT);
+    return defaults::DYNAMO_BIND_PORT;
+  }
+  return static_cast<uint16_t>(port);
 }
 
 std::string dynamoEtcdEndpoints() {

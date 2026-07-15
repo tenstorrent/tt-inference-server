@@ -66,11 +66,14 @@ class MooncakeTransferEngine : public ITransferEngine {
   bool init(const EngineConfig& config) override;
   bool registerLocalMemory(void* addr, std::size_t length) override;
   bool unregisterLocalMemory(void* addr) override;
+  void* firstRegisteredLocalBuffer() const override;
+  std::size_t registeredLocalBufferCount() const override;
   SegmentHandle openSegment(const std::string& segmentName) override;
   SegmentHandle refreshSegment(const std::string& segmentName) override;
   std::string resolveServerName(const std::string& segmentName) override;
   bool publishMetadata(const std::string& key,
                        const std::string& value) override;
+  bool removeMetadata(const std::string& key) override;
   std::optional<std::string> lookupMetadata(const std::string& key) override;
   TransferStatus submitAndWait(const TransferRequest& request) override;
   TransferHandle submitBatch(
@@ -79,6 +82,9 @@ class MooncakeTransferEngine : public ITransferEngine {
 
  private:
   std::shared_ptr<IStorageBackend> storage_;
+  // Mirrors Mooncake's local buffer list order (append / erase-by-addr) so we
+  // can assert buffers[0] after table-exchange → mirror handoff.
+  std::vector<void*> registeredLocalBuffers_;
 
   // Hides the underlying mooncake::TransferEngine from this header.
   struct Impl;

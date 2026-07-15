@@ -206,6 +206,14 @@ templates:
         # --reasoning-parser separates the thought channel into reasoning_content.
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
+    # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
+    # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
+    # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
+    # (the bring-your-own-server path builds no tt-metal docker image).
+    - device: GPU
+      max_concurrency: 32
+      max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL (94GB, bf16 KV) caps servable ctx at ~205K (KV cache = 210,605 tokens)
+      default_impl: true
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -269,6 +277,14 @@ templates:
         # --reasoning-parser separates the thought channel into reasoning_content.
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
+    # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
+    # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
+    # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
+    # (the bring-your-own-server path builds no tt-metal docker image).
+    - device: GPU
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -375,6 +391,7 @@ templates:
         # Magic number; follows vllm nightly:
         # https://github.com/tenstorrent/tt-metal/actions/runs/28493777891/job/84457052459#step:10:1
         trace_region_size: 268435456
+        sample_on_device_mode: decode_only
   # EXPERIMENTAL: no target performance has been set yet, so we can't classify
   # this as FUNCTIONAL, COMPLETE, or top-perf.
   status: EXPERIMENTAL
@@ -1273,25 +1290,10 @@ templates:
 # =============================================================================
 # Gemma 4 family - GPU reference specs (bring-your-own vLLM server; see
 # docs/gpu_workflows.md). Used to collect GPU reference eval scores for
-# GPQA-Diamond, Terminal-Bench 2.0, and SWE-Bench Verified.
-# tt_metal_commit 2521a03 == tt-metal release v0.72.0 (> 0.12); it only feeds
-# docker-tag synthesis and is unused on the GPU bring-your-own-server path.
+# GPQA-Diamond, Terminal-Bench 2.0, and SWE-Bench Verified. These are dev-only
+# entries; the dev catalog does not require tt_metal_commit/version pins (the
+# GPU bring-your-own-server path doesn't build a tt-metal docker image).
 # =============================================================================
-- weights:
-    - google/gemma-4-31B-it
-  impl: tt_transformers
-  inference_engine: VLLM
-  device_model_specs:
-    - device: GPU
-      max_concurrency: 32
-      max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL (94GB, bf16 KV) caps servable ctx at ~205K (KV cache = 210,605 tokens)
-      default_impl: true
-  status: EXPERIMENTAL
-  metadata:
-    google/gemma-4-31B-it:
-      reasoning_parser_name: gemma4
-      tool_call_parser_name: gemma4
-
 - weights:
     - google/gemma-4-26B-A4B-it
   impl: tt_transformers
@@ -1304,21 +1306,6 @@ templates:
   status: EXPERIMENTAL
   metadata:
     google/gemma-4-26B-A4B-it:
-      reasoning_parser_name: gemma4
-      tool_call_parser_name: gemma4
-
-- weights:
-    - google/gemma-4-12B-it
-  impl: tt_transformers
-  inference_engine: VLLM
-  device_model_specs:
-    - device: GPU
-      max_concurrency: 32
-      max_context: 131072  # 128 * 1024
-      default_impl: true
-  status: EXPERIMENTAL
-  metadata:
-    google/gemma-4-12B-it:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
 
@@ -1371,8 +1358,8 @@ templates:
   metadata:
     moonshotai/Kimi-K2.6:
       remote_api_model: moonshotai/Kimi-K2.6
-      reasoning_parser_name: deepseek_r1
-      tool_call_parser_name: hermes
+      reasoning_parser_name: kimi_k2
+      tool_call_parser_name: kimi_k2
       # Kimi ships a custom tokenizer; AIPerf-driven sweeps (prefix-cache,
       # spec-decode) must trust remote code to load it.
       tokenizer_trust_remote_code: true

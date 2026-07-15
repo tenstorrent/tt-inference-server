@@ -667,8 +667,11 @@ void DynamoServer::start() {
 
   running_.store(true);
   trantor::InetAddress addr(config_.bind_host, config_.bind_port);
-  tcp_server_ = std::make_unique<trantor::TcpServer>(ioLoops.front(), addr,
-                                                     "DynamoServer");
+  // Disable SO_REUSEPORT for fixed ports so a collision fails instead of
+  // silently sharing the port; keep it for OS-assigned (port 0) binds.
+  tcp_server_ = std::make_unique<trantor::TcpServer>(
+      ioLoops.front(), addr, "DynamoServer",
+      /*reUseAddr=*/true, /*reUsePort=*/config_.bind_port == 0);
   tcp_server_->setIoLoops(ioLoops);
   // Port 0 is resolved during the acceptor's bind, which happens in the
   // TcpServer constructor — so the assigned port is available synchronously.

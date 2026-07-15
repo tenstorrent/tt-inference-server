@@ -20,10 +20,12 @@
 #      fabric_node_host names the decode that owns it. --prefill-table /
 #      --decode-table (or the config) supply the tables; --layer-start/--layer-end
 #      are no longer used here.
-#   6. A watchdog then polls every worker's /healthz and, when one dies or hangs,
-#      relaunches ONLY that worker in place. It re-registers under the same name
-#      and peers re-resolve it on their next request. The watchdog loop is also
-#      what holds the deploy open, so the whole thing tears down on Ctrl-C.
+#   6. A watchdog then polls every worker's /healthz (HTTP is the health signal).
+#      After N consecutive misses it relaunches ONLY that worker in place. The
+#      launch PID is only a kill handle for processes this script started — it
+#      is NOT required for "healthy" (manual revive / dead ssh must not look
+#      like a down worker). The watchdog loop also holds the deploy open so
+#      Ctrl-C tears the stack down.
 #
 # Why per-worker (not mpirun): the workers never talk over MPI — discovery is
 # HTTP and KV moves over Mooncake TCP — so mpirun was only a launcher, and its
@@ -255,7 +257,7 @@ declare -a WK_ROLE=() WK_INDEX=() WK_HOST=() WK_TAG=() WK_DEVMAP=() WK_PORT=() W
 # list this worker is launched with. See peersForWorker() for how it's derived.
 declare -a WK_PEERS=()
 # CSV of every decode's tag, in order — the default peer set for a prefill (fan-
-# out is table-driven and may touch any decode).
+# out is table-driven and may touch any decode; also used for TABLE_EXCHANGE).
 DECODE_TAG_LIST=""
 # Optional per-worker peer override, keyed by tag: WORKER_PEERS[<tag>]="p1,p2".
 # A worker is just a migration worker with a peer list, so this lets you hand
@@ -352,14 +354,16 @@ sweepWorkerOnHost() {
   fi
 }
 
-# A worker that died without deregistering leaves a mooncake/rpc_meta/<name>
-# entry, and the discovery service rejects the restart with "Duplicate rpc_meta
-# key not allowed" (TransferEngine::init fails). Clear it so the relaunch
-# registers cleanly. Harmless on a first launch (the key won't exist yet).
+# A worker that died without deregistering leaves mooncake/rpc_meta/<name> (and
+# often kv_control/<name>). Discovery rejects the restart with "Duplicate
+# rpc_meta key not allowed" (TransferEngine::init fails). Clear both so a
+# relaunch registers cleanly. Harmless on a first launch (keys won't exist).
+# Manual revive MUST call this too — skipping it is a common bring-up failure.
 clearRpcMeta() {
   curl -sS -X DELETE "${META_URI}?key=mooncake/rpc_meta/$1" >/dev/null 2>&1 || \
     echo "[deploy] WARN: could not clear rpc_meta for '$1' (discovery unreachable?);" \
          "launch may fail on a duplicate rpc_meta key" >&2
+  curl -sS -X DELETE "${META_URI}?key=kv_control/$1" >/dev/null 2>&1 || true
 }
 
 # Register one worker slot (role, role-local index, host, tag) in the arrays.
@@ -368,15 +372,17 @@ clearRpcMeta() {
 # map opens the wrong chip). Empty when unset => discovery-only, no transfer.
 # Peer CSV for a worker, role-agnostic: an explicit WORKER_PEERS[<tag>] override
 # always wins; otherwise the role default — a prefill peers with every decode
-# (DECODE_TAG_LIST), a decode peers with nothing (pure receiver). Prefill reads a
-# complete DECODE_TAG_LIST because initWorkerSlots builds it before adding any
-# prefill slot.
+# (DECODE_TAG_LIST) for control TABLE_EXCHANGE + migrate; a decode peers with
+# nothing (pure receiver). Prefill reads a complete DECODE_TAG_LIST because
+# initWorkerSlots builds it before adding any prefill slot.
 #
-# IMPORTANT: TcpSocketTransport::serverLoop accepts ONE client and holds it for
-# the worker lifetime, and each prefill uses a distinct Kafka group (broadcast).
-# Default all-to-all is therefore only safe with NUM_PREFILL=1. With multiple
-# prefills, set WORKER_PEERS so each decode appears in at most one prefill's
-# peer list (assertExclusiveDecodePeers enforces this), or keep a single prefill.
+# IMPORTANT: decode control now multi-accepts (N prefills can TCP to one decode),
+# but each prefill still uses a distinct Kafka group (broadcast). Every prefill
+# would then attempt the same migration UUID against a shared decode — unsafe
+# until Kafka ownership is exclusive. Default all-to-all is therefore only safe
+# with NUM_PREFILL=1. With multiple prefills, set WORKER_PEERS so each decode
+# appears in at most one prefill's peer list (assertExclusiveDecodePeers), or
+# keep a single prefill.
 peersForWorker() {
   local role="$1" tag="$2"
   if [[ -n "${WORKER_PEERS[$tag]:-}" ]]; then
@@ -386,11 +392,11 @@ peersForWorker() {
   fi
 }
 
-# Fail fast when two prefills would open a long-lived control client to the same
-# decode. Decode accepts one peer socket; Kafka broadcast means every prefill
-# also tries the same migration UUID. Shared decode peers are therefore unsafe
-# until the control plane supports multi-client fan-in (or an explicit single
-# Kafka owner). See migration_worker_rank_launch.sh for a round-robin pattern.
+# Fail fast when two prefills would share the same decode peer. Control TCP
+# multi-accept allows N sessions, but Kafka broadcast means every prefill
+# consumes/acks the same migration UUID — shared decode peers stay unsafe until
+# there is an explicit single Kafka owner. See migration_worker_rank_launch.sh
+# for a round-robin WORKER_PEERS pattern.
 assertExclusiveDecodePeers() {
   declare -A decodeOwner=()
   local s peers peer
@@ -401,9 +407,9 @@ assertExclusiveDecodePeers() {
       [[ -n "${peer}" ]] || continue
       if [[ -n "${decodeOwner[$peer]:-}" ]]; then
         die "decode peer '${peer}' assigned to both '${decodeOwner[$peer]}' and '${WK_TAG[$s]}'. \
-TcpSocketTransport accepts one client for the worker lifetime, and each prefill \
-has its own Kafka group (broadcast), so two prefills cannot safely share a decode. \
-Use one prefill, or set WORKER_PEERS so each decode has a single prefill owner \
+Each prefill has its own Kafka group (broadcast), so two prefills cannot safely \
+share a decode even though control TCP multi-accepts. Use one prefill, or set \
+WORKER_PEERS so each decode has a single prefill owner \
 (see migration_worker_rank_launch.sh round-robin)."
       fi
       decodeOwner[$peer]="${WK_TAG[$s]}"
@@ -468,10 +474,11 @@ ${devmap:+DEVICE_MAP=${devmap} }PEERS=${peers} \
 MC_TCP_BIND_ADDRESS=auto bash ${RANK_LAUNCH}"
 }
 
-# (Re)launch the worker in slot $1, locally or over ssh, tracking its PID. For
-# ssh the PID is the local ssh client: it exits when the remote worker does, so
-# it is a valid liveness handle; for local hosts bash exec's into the worker so
-# the PID is the worker itself.
+# (Re)launch the worker in slot $1, locally or over ssh, tracking its PID as a
+# kill handle only. For ssh the PID is the local ssh client (exits when the
+# remote worker exits *if* that ssh session still owns it); for local hosts
+# bash runs the worker in the background. Health probing uses /healthz, not
+# this PID — see workerSlotHealthy.
 launchWorkerSlot() {
   local s="$1" role="${WK_ROLE[$s]}" index="${WK_INDEX[$s]}" host="${WK_HOST[$s]}"
   local log="${WK_LOG[$s]}" cmd
@@ -493,12 +500,22 @@ launchAllWorkers() {
   for (( s = 0; s < ${#WK_ROLE[@]}; s++ )); do launchWorkerSlot "${s}"; done
 }
 
-# A slot is healthy if its launcher PID is alive AND /healthz answers 2xx — the
-# HTTP check is what catches a hung-but-alive worker the PID check would miss.
+# Health = /healthz only. The launch PID is deploy's kill/sweep handle for a
+# process *this script* started — not a liveness oracle. Requiring both made
+# deploy lie after kill+manual-revive or a dead ssh client: /readyz true on the
+# host, while supervise counted forever-unhealthy against a stale WK_PID
+# (especially with --restart-after 0, which never refreshes the PID).
 workerSlotHealthy() {
-  local s="$1" pid="${WK_PID[$s]}" host="${WK_HOST[$s]}" port="${WK_PORT[$s]}"
-  [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null || return 1
-  curl -fsS --max-time 2 "http://${host}:${port}/healthz" >/dev/null 2>&1 || return 1
+  local s="$1" pid="${WK_PID[$s]:-}" host="${WK_HOST[$s]}" port="${WK_PORT[$s]}"
+  if ! curl -fsS --max-time 2 "http://${host}:${port}/healthz" >/dev/null 2>&1; then
+    return 1
+  fi
+  if [[ -n "${pid}" ]] && ! kill -0 "${pid}" 2>/dev/null; then
+    echo "[deploy] ${WK_ROLE[$s]}-${WK_INDEX[$s]} on ${host}: /healthz ok but" \
+         "launch pid ${pid} is gone (external revive or ssh drop) — adopting;" \
+         "not unhealthy" >&2
+    WK_PID[$s]=""
+  fi
   return 0
 }
 
@@ -534,7 +551,12 @@ superviseLoop() {
            "(${WK_FAILS[$s]}/${RESTART_AFTER:-inf})" >&2
       if (( RESTART_AFTER > 0 && WK_FAILS[$s] >= RESTART_AFTER )); then
         echo "[deploy] restarting ${WK_ROLE[$s]}-${WK_INDEX[$s]} on ${WK_HOST[$s]}" >&2
+        # Clear metadata *before* kill/sweep so live prefills stop resolving this
+        # peer while the host is torn down. launchWorkerSlot clears again before
+        # relaunch (idempotent; covers SIGKILL'd workers that never unregistered).
+        clearRpcMeta "${WK_TAG[$s]}"
         # Drop the local ssh handle, then hard-sweep the host. Only relaunch once
+
         # the port is confirmed free — otherwise a survivor squats it, the new
         # worker fails to bind, and the "restart" just churns launchers. If the
         # sweep can't free it, keep WK_FAILS so the next cycle retries the sweep.
@@ -554,6 +576,11 @@ cleanup() {
   echo ""
   echo "[deploy] tearing down..."
   local s
+  # Unpublish before kill so peers do not keep resolving dead workers if the
+  # metadata service outlives this deploy.
+  for (( s = 0; s < ${#WK_TAG[@]}; s++ )); do
+    clearRpcMeta "${WK_TAG[$s]}"
+  done
   for (( s = 0; s < ${#WK_PID[@]}; s++ )); do
     [[ -n "${WK_PID[$s]:-}" ]] && kill "${WK_PID[$s]}" 2>/dev/null
   done
