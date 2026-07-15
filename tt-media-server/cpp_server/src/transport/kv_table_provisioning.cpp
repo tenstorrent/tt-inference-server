@@ -58,18 +58,19 @@ std::optional<LoadedKvTable> loadKvTableFile(const std::string& path) {
   return LoadedKvTable{std::move(table), std::move(blob)};
 }
 
-std::optional<std::vector<uint8_t>> exchangeTableBlob(
+std::optional<std::vector<uint8_t>> exchangeTableBlobUnlocked(
     KvControlChannel& channel, TableExchangeRole role,
-    const std::vector<uint8_t>& localBlob) {
+    const std::vector<uint8_t>& localBlob,
+    std::chrono::milliseconds ioTimeout) {
   auto sendLocal = [&]() -> bool {
     KvControlMessage out;
     out.type = KvControlType::TABLE_EXCHANGE;
     out.role = (role == TableExchangeRole::Sender) ? 0 : 1;
     out.table_blob = localBlob;
-    return channel.send(out);
+    return channel.send(out, ioTimeout);
   };
   auto receivePeer = [&]() -> std::optional<std::vector<uint8_t>> {
-    const auto peer = channel.receive();
+    const auto peer = channel.receive(ioTimeout);
     if (!peer || peer->type != KvControlType::TABLE_EXCHANGE) {
       TT_LOG_ERROR(
           "[kv_table_provisioning] exchange: bad/absent peer table message");
@@ -96,10 +97,41 @@ std::optional<std::vector<uint8_t>> exchangeTableBlob(
   return peer;
 }
 
+std::optional<std::vector<uint8_t>> exchangeTableBlob(
+    KvControlChannel& channel, TableExchangeRole role,
+    const std::vector<uint8_t>& localBlob,
+    std::chrono::milliseconds ioTimeout) {
+  KvControlChannel::Transaction txn(channel);
+  return exchangeTableBlobUnlocked(channel, role, localBlob, ioTimeout);
+}
+
+std::optional<std::vector<uint8_t>> tryExchangeTableBlob(
+    KvControlChannel& channel, TableExchangeRole role,
+    const std::vector<uint8_t>& localBlob,
+    std::chrono::milliseconds ioTimeout) {
+  KvControlChannel::Transaction txn(channel, std::try_to_lock);
+  if (!txn.ownsLock()) {
+    return std::nullopt;
+  }
+  return exchangeTableBlobUnlocked(channel, role, localBlob, ioTimeout);
+}
+
 std::shared_ptr<const IKvTable> provisionPeerTable(
     KvControlChannel& channel, TableExchangeRole role,
-    const std::vector<uint8_t>& localBlob) {
-  auto peerBlob = exchangeTableBlob(channel, role, localBlob);
+    const std::vector<uint8_t>& localBlob,
+    std::chrono::milliseconds ioTimeout) {
+  auto peerBlob = exchangeTableBlob(channel, role, localBlob, ioTimeout);
+  if (!peerBlob) {
+    return nullptr;
+  }
+  return deserializeKvTable(*peerBlob);
+}
+
+std::shared_ptr<const IKvTable> tryProvisionPeerTable(
+    KvControlChannel& channel, TableExchangeRole role,
+    const std::vector<uint8_t>& localBlob,
+    std::chrono::milliseconds ioTimeout) {
+  auto peerBlob = tryExchangeTableBlob(channel, role, localBlob, ioTimeout);
   if (!peerBlob) {
     return nullptr;
   }
