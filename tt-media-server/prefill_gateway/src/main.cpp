@@ -359,22 +359,11 @@ int main(int argc, char** argv) {
   };
 
   senders.sendSlotReservationToPrefill =
-      [&registry, &zmqPrefillRouter, useZmqPrefillRouter](
+      [&zmqPrefillRouter](
           const std::string& serverId,
           const tt::sockets::SlotReservationResponseMessage& msg) -> bool {
-    if (useZmqPrefillRouter) {
-      return zmqPrefillRouter.sendObject(
-          serverId, tt::sockets::tags::SLOT_RESERVATION_RESPONSE, msg);
-    }
-
-    auto* sm = registry.getSocketManager(serverId);
-    if (!sm) {
-      TT_LOG_WARN(
-          "[Gateway] sendSlotReservationToPrefill: no socket for '{}'",
-          serverId);
-      return false;
-    }
-    return sm->sendObject(tt::sockets::tags::SLOT_RESERVATION_RESPONSE, msg);
+    return zmqPrefillRouter.sendObject(
+        serverId, tt::sockets::tags::SLOT_RESERVATION_RESPONSE, msg);
   };
 
   tt::gateway::Dispatcher::Options dispatcherOptions{
