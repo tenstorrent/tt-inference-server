@@ -375,6 +375,7 @@ templates:
         # Magic number; follows vllm nightly:
         # https://github.com/tenstorrent/tt-metal/actions/runs/28493777891/job/84457052459#step:10:1
         trace_region_size: 268435456
+        sample_on_device_mode: decode_only
   # EXPERIMENTAL: no target performance has been set yet, so we can't classify
   # this as FUNCTIONAL, COMPLETE, or top-perf.
   status: EXPERIMENTAL
