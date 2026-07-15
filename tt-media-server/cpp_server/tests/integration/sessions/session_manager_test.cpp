@@ -18,11 +18,7 @@
 namespace {
 
 using tt::test::acquireInFlight;
-using tt::test::bootstrapSessionWithResponseId;
-using tt::test::callGetSlot;
 using tt::test::createTestSession;
-using tt::test::makeSequentialPrompt;
-using tt::test::releaseSlot;
 using tt::test::runConcurrently;
 using tt::test::TrantorLoopFixture;
 
@@ -471,293 +467,256 @@ TEST(SessionManagerConcurrency,
 }
 
 // ---------------------------------------------------------------------------
-// getSlot() routing tests
+// Response-id continuation tests
 //
-// These cover the unified slot acquisition path used by LLMPipeline:
-// response-id continuation, prefix-cache fallback, and in-flight / cancel
-// semantics. Turn-1 sessions are bootstrapped with createTestSession +
-// registerResponseId (IPC allocation is not available in these unit tests).
+// These cover the OpenAI Responses API routing path: registerResponseId stores
+// a session under a response id for the first time, updateResponseId re-keys
+// from one id to another, and tryAcquireByResponseId resolves that id back to
+// the session/slot. The prefix delta is derived from block matching
+// (computeMatchedTokens), not stored in the response-id index.
 // ---------------------------------------------------------------------------
 
-namespace {
-
-// Three full prefix blocks with default KV cache block sizes (128 + 32 + 32).
-std::vector<uint32_t> makeThreeBlockPrompt() {
-  return makeSequentialPrompt(128 + 32 + 32);
-}
-
-std::vector<uint32_t> makeFourBlockPrompt() {
-  auto prompt = makeThreeBlockPrompt();
-  auto tail = makeSequentialPrompt(32, prompt.size());
-  prompt.insert(prompt.end(), tail.begin(), tail.end());
-  return prompt;
-}
-
-}  // namespace
-
-TEST(SessionManagerGetSlot, ResponseIdHit_ReturnsSessionAndSlot) {
+TEST(SessionManagerResponseId, RegisterThenAcquire_ReturnsSessionAndSlot) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId =
-      bootstrapSessionWithResponseId(manager, lf.loop, 50u, "resp-1");
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 50u);
   ASSERT_FALSE(sessionId.empty());
 
-  auto prompt = makeThreeBlockPrompt();
-  tt::services::GetSlotOptions opts;
-  opts.previousResponseId = "resp-1";
+  manager.registerResponseId(sessionId, "resp-1");
 
-  auto outcome = callGetSlot(manager, lf.loop, prompt, opts);
-  ASSERT_TRUE(outcome.result.has_value());
-  EXPECT_EQ(outcome.result->sessionId, sessionId);
-  EXPECT_EQ(outcome.result->slotId, 50u);
-  EXPECT_FALSE(outcome.result->isNewSession);
+  auto acquired = manager.tryAcquireByResponseId("resp-1", nullptr);
+  ASSERT_TRUE(acquired.has_value());
+  EXPECT_EQ(acquired->sessionId, sessionId);
+  EXPECT_EQ(acquired->slotId, 50u);
 
-  releaseSlot(manager, sessionId);
+  auto session = manager.getSession(sessionId);
+  ASSERT_TRUE(session);
+  session->release();
 }
 
-TEST(SessionManagerGetSlot,
-     UnknownPreviousResponseId_FallsThroughToPrefixCache) {
+TEST(SessionManagerResponseId, AcquireUnknownId_ReturnsNullopt) {
+  tt::services::SessionManager manager;
+  EXPECT_FALSE(
+      manager.tryAcquireByResponseId("no-such-id", nullptr).has_value());
+}
+
+TEST(SessionManagerResponseId, AcquireEmptyId_ReturnsNullopt) {
+  tt::services::SessionManager manager;
+  EXPECT_FALSE(manager.tryAcquireByResponseId("", nullptr).has_value());
+}
+
+TEST(SessionManagerResponseId, RegisterEmptyId_IsNoOp) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto prompt = makeThreeBlockPrompt();
-  auto blocks = manager.computeBlockInfos(prompt);
-  auto sessionId = createTestSession(manager, lf.loop, 51u, blocks);
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 51u);
   ASSERT_FALSE(sessionId.empty());
 
-  tt::services::GetSlotOptions opts;
-  opts.previousResponseId = "no-such-id";
+  manager.registerResponseId(sessionId, "");
 
-  auto outcome = callGetSlot(manager, lf.loop, prompt, opts);
-  ASSERT_TRUE(outcome.result.has_value());
-  EXPECT_EQ(outcome.result->sessionId, sessionId);
-  EXPECT_FALSE(outcome.result->isNewSession);
-
-  releaseSlot(manager, sessionId);
+  auto session = manager.getSession(sessionId);
+  ASSERT_TRUE(session);
+  EXPECT_TRUE(session->getResponseId().empty());
 }
 
-TEST(SessionManagerGetSlot, NoPreviousResponseId_UsesPrefixCache) {
+TEST(SessionManagerResponseId, ReKey_MovesSessionToNewId) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto prompt = makeThreeBlockPrompt();
-  auto blocks = manager.computeBlockInfos(prompt);
-  auto sessionId = createTestSession(manager, lf.loop, 52u, blocks);
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 52u);
   ASSERT_FALSE(sessionId.empty());
 
-  auto outcome = callGetSlot(manager, lf.loop, prompt, {});
-  ASSERT_TRUE(outcome.result.has_value());
-  EXPECT_EQ(outcome.result->sessionId, sessionId);
-  EXPECT_FALSE(outcome.result->isNewSession);
+  manager.registerResponseId(sessionId, "resp-1");
+  manager.updateResponseId("resp-1", "resp-2");
 
-  releaseSlot(manager, sessionId);
+  // The previous turn's id no longer resolves once re-keyed.
+  EXPECT_FALSE(manager.tryAcquireByResponseId("resp-1", nullptr).has_value());
+
+  // The new id resolves.
+  auto acquired = manager.tryAcquireByResponseId("resp-2", nullptr);
+  ASSERT_TRUE(acquired.has_value());
+  EXPECT_EQ(acquired->sessionId, sessionId);
+
+  manager.getSession(sessionId)->release();
 }
 
-TEST(SessionManagerGetSlot, ReKey_MovesSessionToNewId) {
+TEST(SessionManagerResponseId, AcquireMarksInFlight_SecondAcquireThrows) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId =
-      bootstrapSessionWithResponseId(manager, lf.loop, 53u, "resp-1");
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 53u);
   ASSERT_FALSE(sessionId.empty());
 
-  auto prompt = makeThreeBlockPrompt();
-  tt::services::GetSlotOptions opts;
-  opts.previousResponseId = "resp-1";
-  opts.responseId = "resp-2";
+  manager.registerResponseId(sessionId, "resp-1");
 
-  auto outcome = callGetSlot(manager, lf.loop, prompt, opts);
-  ASSERT_TRUE(outcome.result.has_value());
-  EXPECT_EQ(outcome.result->sessionId, sessionId);
-  releaseSlot(manager, sessionId);
+  auto acquired = manager.tryAcquireByResponseId("resp-1", nullptr);
+  ASSERT_TRUE(acquired.has_value());
 
-  // resp-1 is no longer in the response-id index; getSlot falls through to
-  // prefix-cache and still finds the same session.
-  tt::services::GetSlotOptions stale;
-  stale.previousResponseId = "resp-1";
-  auto staleOutcome = callGetSlot(manager, lf.loop, prompt, stale);
-  ASSERT_TRUE(staleOutcome.result.has_value());
-  EXPECT_EQ(staleOutcome.result->sessionId, sessionId);
-  releaseSlot(manager, sessionId);
+  // The only session under this id is now in-flight → maps to HTTP 429.
+  EXPECT_THROW(manager.tryAcquireByResponseId("resp-1", nullptr),
+               tt::services::SessionInFlightException);
 
-  tt::services::GetSlotOptions fresh;
-  fresh.previousResponseId = "resp-2";
-  auto freshOutcome = callGetSlot(manager, lf.loop, prompt, fresh);
-  ASSERT_TRUE(freshOutcome.result.has_value());
-  EXPECT_EQ(freshOutcome.result->sessionId, sessionId);
-
-  releaseSlot(manager, sessionId);
+  manager.getSession(sessionId)->release();
 }
 
-TEST(SessionManagerGetSlot, SecondAcquireWhileInFlight_RateLimited) {
+TEST(SessionManagerResponseId, AcquireAfterRelease_Succeeds) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId =
-      bootstrapSessionWithResponseId(manager, lf.loop, 54u, "resp-1");
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 54u);
   ASSERT_FALSE(sessionId.empty());
 
-  auto prompt = makeThreeBlockPrompt();
-  tt::services::GetSlotOptions opts;
-  opts.previousResponseId = "resp-1";
+  manager.registerResponseId(sessionId, "resp-1");
 
-  auto first = callGetSlot(manager, lf.loop, prompt, opts);
-  ASSERT_TRUE(first.result.has_value());
+  auto first = manager.tryAcquireByResponseId("resp-1", nullptr);
+  ASSERT_TRUE(first.has_value());
+  manager.getSession(sessionId)->release();
 
-  auto second = callGetSlot(manager, lf.loop, prompt, opts);
-  EXPECT_TRUE(second.rateLimited);
-
-  releaseSlot(manager, sessionId);
+  auto second = manager.tryAcquireByResponseId("resp-1", nullptr);
+  ASSERT_TRUE(second.has_value());
+  EXPECT_EQ(second->sessionId, sessionId);
+  manager.getSession(sessionId)->release();
 }
 
-TEST(SessionManagerGetSlot, AcquireAfterRelease_Succeeds) {
+TEST(SessionManagerResponseId, CloseSession_RemovesFromResponseIdIndex) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId =
-      bootstrapSessionWithResponseId(manager, lf.loop, 55u, "resp-1");
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 56u);
   ASSERT_FALSE(sessionId.empty());
 
-  auto prompt = makeThreeBlockPrompt();
-  tt::services::GetSlotOptions opts;
-  opts.previousResponseId = "resp-1";
-
-  auto first = callGetSlot(manager, lf.loop, prompt, opts);
-  ASSERT_TRUE(first.result.has_value());
-  releaseSlot(manager, sessionId);
-
-  auto second = callGetSlot(manager, lf.loop, prompt, opts);
-  ASSERT_TRUE(second.result.has_value());
-  EXPECT_EQ(second.result->sessionId, sessionId);
-  releaseSlot(manager, sessionId);
-}
-
-TEST(SessionManagerGetSlot, CloseSession_RemovesFromResponseIdIndex) {
-  tt::services::SessionManager manager;
-  LoopFixture lf;
-
-  auto prompt = makeThreeBlockPrompt();
-  auto blocks = manager.computeBlockInfos(prompt);
-  auto sessionId =
-      bootstrapSessionWithResponseId(manager, lf.loop, 56u, "resp-1", blocks);
-  ASSERT_FALSE(sessionId.empty());
-
+  manager.registerResponseId(sessionId, "resp-1");
   ASSERT_EQ(manager.closeSession(sessionId),
             tt::services::CloseSessionResult::SUCCESS);
 
-  // A live session with the same prefix should be acquired via prefix-cache,
-  // not the closed session via the stale response-id entry.
-  auto replacementId = createTestSession(manager, lf.loop, 561u, blocks);
-  tt::services::GetSlotOptions opts;
-  opts.previousResponseId = "resp-1";
-  auto outcome = callGetSlot(manager, lf.loop, prompt, opts);
-  ASSERT_TRUE(outcome.result.has_value());
-  EXPECT_EQ(outcome.result->sessionId, replacementId);
-  releaseSlot(manager, replacementId);
+  // The index entry must be gone after the session is closed.
+  EXPECT_FALSE(manager.tryAcquireByResponseId("resp-1", nullptr).has_value());
 }
 
-TEST(SessionManagerGetSlot, CloseWhileAcquired_FiresCancelFn) {
+TEST(SessionManagerResponseId, CloseWhileAcquired_FiresCancelFn) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId =
-      bootstrapSessionWithResponseId(manager, lf.loop, 57u, "resp-1");
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 57u);
   ASSERT_FALSE(sessionId.empty());
 
-  auto prompt = makeThreeBlockPrompt();
+  manager.registerResponseId(sessionId, "resp-1");
+
   std::atomic<bool> cancelCalled{false};
-  tt::services::GetSlotOptions opts;
-  opts.previousResponseId = "resp-1";
-  opts.cancelFn = [&cancelCalled]() { cancelCalled = true; };
+  auto acquired = manager.tryAcquireByResponseId(
+      "resp-1", [&cancelCalled]() { cancelCalled = true; });
+  ASSERT_TRUE(acquired.has_value());
 
-  auto outcome = callGetSlot(manager, lf.loop, prompt, opts);
-  ASSERT_TRUE(outcome.result.has_value());
-
+  // The cancel fn registered atomically with the in-flight mark must fire.
   manager.closeSession(sessionId);
   EXPECT_TRUE(cancelCalled.load());
   EXPECT_FALSE(manager.getSession(sessionId));
 }
 
-TEST(SessionManagerGetSlot, TwoTurnContinuation_ReKeysAcrossIds) {
+TEST(SessionManagerResponseId, TwoTurnContinuation_ReKeysAcrossIds) {
+  // Simulates the two-turn response-id flow: turn 1 registers the session
+  // under id "r1"; turn 2 acquires by "r1", re-keys under "r2" for turn 3.
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId = bootstrapSessionWithResponseId(manager, lf.loop, 58u, "r1");
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 58u);
   ASSERT_FALSE(sessionId.empty());
 
-  auto turn1Prompt = makeThreeBlockPrompt();
+  manager.registerResponseId(sessionId, "r1");
 
-  tt::services::GetSlotOptions turn2;
-  turn2.previousResponseId = "r1";
-  turn2.responseId = "r2";
-  auto t2 = callGetSlot(manager, lf.loop, turn1Prompt, turn2);
-  ASSERT_TRUE(t2.result.has_value());
-  EXPECT_EQ(t2.result->sessionId, sessionId);
-  releaseSlot(manager, sessionId);
+  // Turn 2: arrives with previous_response_id="r1".
+  auto t2 = manager.tryAcquireByResponseId("r1", nullptr);
+  ASSERT_TRUE(t2.has_value());
+  EXPECT_EQ(t2->sessionId, sessionId);
+  // Re-key under turn 2's own id.
+  manager.updateResponseId("r1", "r2");
+  manager.getSession(sessionId)->release();
 
-  tt::services::GetSlotOptions turn3;
-  turn3.previousResponseId = "r2";
-  auto t3 = callGetSlot(manager, lf.loop, turn1Prompt, turn3);
-  ASSERT_TRUE(t3.result.has_value());
-  EXPECT_EQ(t3.result->sessionId, sessionId);
-  releaseSlot(manager, sessionId);
+  // Turn 3: arrives with previous_response_id="r2".
+  auto t3 = manager.tryAcquireByResponseId("r2", nullptr);
+  ASSERT_TRUE(t3.has_value());
+  EXPECT_EQ(t3->sessionId, sessionId);
+  EXPECT_FALSE(manager.tryAcquireByResponseId("r1", nullptr).has_value());
+  manager.getSession(sessionId)->release();
 }
 
-TEST(SessionManagerGetSlot, PrefixCacheIndex_SurvivesResponseIdContinuation) {
+TEST(SessionManagerResponseId,
+     PrefixCacheIndex_HitAndUpdated_ViaResponseIdPath) {
+  // Verifies that the prefix cache index is populated when a session is
+  // created with block infos, remains queryable after acquisition through the
+  // response-id path, and reflects updated blocks after re-registration.
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto turn1Prompt = makeThreeBlockPrompt();
-  auto turn1Blocks = manager.computeBlockInfos(turn1Prompt);
-  ASSERT_EQ(turn1Blocks.size(), 3u);
-
-  auto sessionId =
-      bootstrapSessionWithResponseId(manager, lf.loop, 60u, "r1", turn1Blocks);
+  // --- Turn 1: create session with 3 initial blocks ---
+  std::vector<tt::utils::BlockHashInfo> turn1Blocks = {
+      {100, 0},  // key block
+      {200, 0},  // remaining block 1
+      {300, 0},  // remaining block 2
+  };
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 60u, turn1Blocks);
   ASSERT_FALSE(sessionId.empty());
 
+  // Prefix index should reflect all 3 blocks for this session.
   auto [matchedTokens1, thinkTokens1] =
       manager.computeMatchedTokens(sessionId, turn1Blocks);
-  EXPECT_GT(matchedTokens1, 0u);
+  EXPECT_GT(matchedTokens1, 0u)
+      << "prefixCacheIndex should have been populated by createSession";
 
-  tt::services::GetSlotOptions turn2;
-  turn2.previousResponseId = "r1";
-  turn2.responseId = "r2";
-  auto t2 = callGetSlot(manager, lf.loop, turn1Prompt, turn2);
-  ASSERT_TRUE(t2.result.has_value());
-  EXPECT_EQ(t2.result->sessionId, sessionId);
-  EXPECT_EQ(t2.result->slotId, 60u);
+  // Register the session under response id "r1" and prefix hash.
+  manager.registerResponseId(sessionId, "r1");
 
+  manager.registerPrefixHash(sessionId, turn1Blocks);
+  // --- Turn 2: arrive via previous_response_id="r1" ---
+  auto t2 = manager.tryAcquireByResponseId("r1", nullptr);
+  ASSERT_TRUE(t2.has_value());
+  EXPECT_EQ(t2->sessionId, sessionId);
+  EXPECT_EQ(t2->slotId, 60u);
+
+  // While acquired through the response-id path, the prefix cache index
+  // should still be intact and report the same match.
   auto [matchedTokens2, thinkTokens2] =
       manager.computeMatchedTokens(sessionId, turn1Blocks);
-  EXPECT_EQ(matchedTokens2, matchedTokens1);
+  EXPECT_EQ(matchedTokens2, matchedTokens1)
+      << "prefixCacheIndex should still be queryable after response-id acquire";
 
-  releaseSlot(manager, sessionId);
+  // Simulate turn 2 producing more tokens: update the prefix hash with an
+  // extended block sequence (original 3 blocks + 1 new block).
+  std::vector<tt::utils::BlockHashInfo> turn2Blocks = {
+      {100, 0},  // same key block
+      {200, 0},  // same remaining block 1
+      {300, 0},  // same remaining block 2
+      {400, 0},  // new block from turn 2's output
+  };
+  manager.registerPrefixHash(sessionId, turn2Blocks);
+  manager.updateResponseId("r1", "r2");
+  manager.getSession(sessionId)->release();
 
-  auto turn2Prompt = makeFourBlockPrompt();
-  auto turn2Blocks = manager.computeBlockInfos(turn2Prompt);
-  ASSERT_EQ(turn2Blocks.size(), 4u);
-
+  // The prefix index should now match all 4 blocks.
   auto [matchedTokens3, thinkTokens3] =
       manager.computeMatchedTokens(sessionId, turn2Blocks);
-  EXPECT_EQ(matchedTokens3, matchedTokens1)
-      << "index still reflects turn-1 blocks before turn 3 acquire";
+  EXPECT_GT(matchedTokens3, matchedTokens1)
+      << "prefixCacheIndex should reflect the updated (longer) block sequence";
 
-  tt::services::GetSlotOptions turn3;
-  turn3.previousResponseId = "r2";
-  auto t3 = callGetSlot(manager, lf.loop, turn2Prompt, turn3);
-  ASSERT_TRUE(t3.result.has_value());
-  EXPECT_EQ(t3.result->sessionId, sessionId);
-
+  // The original 3-block query should still match its 3 blocks (prefix).
   auto [matchedTokens4, thinkTokens4] =
-      manager.computeMatchedTokens(sessionId, turn2Blocks);
-  EXPECT_GT(matchedTokens4, matchedTokens1);
-
-  auto [matchedTokens5, thinkTokens5] =
       manager.computeMatchedTokens(sessionId, turn1Blocks);
-  EXPECT_EQ(matchedTokens5, matchedTokens1);
+  EXPECT_EQ(matchedTokens4, matchedTokens1)
+      << "shorter prefix query should still match the original blocks";
 
-  releaseSlot(manager, sessionId);
+  // --- Turn 3: arrive via previous_response_id="r2" ---
+  auto t3 = manager.tryAcquireByResponseId("r2", nullptr);
+  ASSERT_TRUE(t3.has_value());
+  EXPECT_EQ(t3->sessionId, sessionId);
+
+  // Prefix index should still be consistent after the second response-id hop.
+  auto [matchedTokens5, thinkTokens5] =
+      manager.computeMatchedTokens(sessionId, turn2Blocks);
+  EXPECT_EQ(matchedTokens5, matchedTokens3)
+      << "prefixCacheIndex should survive re-keying across response ids";
+
+  manager.getSession(sessionId)->release();
 }
 
 // ---------------------------------------------------------------------------

@@ -86,27 +86,6 @@ SessionManager::SessionManager() {
                 return setSessionResponseId(sessionId, responseId);
               },
           .onSessionInFlight = [] { throw SessionInFlightException(); },
-          .createSession =
-              [this](std::function<void(const domain::Session&)> onCompletion,
-                     std::function<void(std::string_view)> onError,
-                     trantor::EventLoop* eventLoop,
-                     std::vector<utils::BlockHashInfo> initialBlockInfos,
-                     std::optional<uint32_t> slotIdToCopyFrom) {
-                createSession(std::move(onCompletion), std::move(onError),
-                              eventLoop, std::move(initialBlockInfos),
-                              std::nullopt, slotIdToCopyFrom);
-              },
-          .acquireInFlight =
-              [this](const std::string& sessionId,
-                     std::function<void()> cancelFn) {
-                return acquireInFlight(sessionId, std::move(cancelFn));
-              },
-          .lockSlot = [this](uint32_t slotId) { lockSlot(slotId); },
-          .unlockSlot = [this](uint32_t slotId) { unlockSlot(slotId); },
-          .shrinkResidentPrefixToMatchedTokens =
-              [this](const std::string& sessionId, uint32_t matchedTokens) {
-                shrinkResidentPrefixToMatchedTokens(sessionId, matchedTokens);
-              },
       });
   try {
     memoryRequestQueue = std::make_unique<ipc::boost::MemoryRequestQueue>(
@@ -674,11 +653,6 @@ SessionManager::tryAcquireByPrefixHash(
                                                    std::move(cancelFn));
 }
 
-std::vector<utils::BlockHashInfo> SessionManager::computeBlockInfos(
-    std::span<const uint32_t> promptTokenIds) const {
-  return prefixCacheRouter->computeBlockInfos(promptTokenIds);
-}
-
 void SessionManager::setResidentPrefixBlocks(const std::string& sessionId,
                                              uint32_t residentBlocks) {
   bool found = sessions.modify(
@@ -743,23 +717,6 @@ void SessionManager::clearSessionBlockThinkTokens(
 void SessionManager::updateSessionCountMetric() {
   tt::metrics::ServerMetrics::instance().setActiveSessionsCount(
       static_cast<double>(getActiveSessionCount()));
-}
-
-void SessionManager::getSlot(std::span<const uint32_t> promptTokenIds,
-                             GetSlotOptions opts, trantor::EventLoop* loop,
-                             std::function<void(SlotAcquireResult)> onResolved,
-                             std::function<void(const std::string&)> onError) {
-  // Delegate to PrefixCacheRouter which owns all routing logic
-  prefixCacheRouter->getSlot(
-      promptTokenIds, std::move(opts), loop,
-      [loop, onResolved](SlotAcquireResult result) {
-        loop->runInLoop([onResolved, result = std::move(result)]() mutable {
-          onResolved(std::move(result));
-        });
-      },
-      [loop, onError](const std::string& msg) {
-        loop->runInLoop([onError, msg]() { onError(msg); });
-      });
 }
 
 }  // namespace tt::services

@@ -35,17 +35,6 @@ class ConcurrentMap {
     return std::nullopt;
   }
 
-  template <typename Func>
-  bool withValue(const Key& key, Func&& func) const {
-    std::lock_guard lock(mutex);
-    auto it = map_.find(key);
-    if (it == map_.end()) {
-      return false;
-    }
-    func(it->second);
-    return true;
-  }
-
   void erase(const Key& key) {
     std::lock_guard lock(mutex);
     map_.erase(key);

@@ -7,22 +7,11 @@
 #include "domain/prefix_cache/block_matcher.hpp"
 #include "metrics/metrics.hpp"
 #include "utils/logger.hpp"
-#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::services {
 
 PrefixCacheRouter::PrefixCacheRouter(PrefixCacheRouterCallbacks callbacks)
     : callbacks(std::move(callbacks)) {}
-
-std::vector<utils::BlockHashInfo> PrefixCacheRouter::computeBlockInfos(
-    std::span<const uint32_t> promptTokenIds) const {
-  if (promptTokenIds.empty()) {
-    return {};
-  }
-  auto [thinkStart, thinkEnd] = utils::tokenizers::thinkTokenIds();
-  return utils::getPrefixCacheHashesByBlocksWithThinking(promptTokenIds,
-                                                         thinkStart, thinkEnd);
-}
 
 std::optional<PrefixCacheRouter::AcquireResult>
 PrefixCacheRouter::tryAcquireByPrefixHash(
@@ -37,13 +26,10 @@ PrefixCacheRouter::tryAcquireByPrefixHash(
 
   const uint64_t keyHash = blockInfos.front().hash;
 
-  std::vector<Candidate> candidates;
-  prefixIndex.withEntriesForKey(
-      keyHash,
-      [&](const std::vector<domain::prefix_cache::PrefixIndexEntry>& entries) {
-        candidates = domain::prefix_cache::BlockMatcher::buildCandidates(
-            blockInfos, entries);
-      });
+  const std::vector<domain::prefix_cache::PrefixIndexEntry> entries =
+      prefixIndex.getEntriesForKey(keyHash);
+  std::vector<Candidate> candidates =
+      domain::prefix_cache::BlockMatcher::buildCandidates(blockInfos, entries);
   domain::prefix_cache::BlockMatcher::sortCandidates(candidates);
 
   if (candidates.empty()) {
@@ -264,17 +250,11 @@ std::pair<uint32_t, uint32_t> PrefixCacheRouter::computeMatchedTokens(
     return {0, 0};
   }
 
-  std::size_t matchedBlocks = 0;
-  std::uint32_t thinkTokens = 0;
-  prefixIndex.withEntriesForKey(
-      blockInfos.front().hash,
-      [&](const std::vector<domain::prefix_cache::PrefixIndexEntry>& entries) {
-        const auto match =
-            domain::prefix_cache::BlockMatcher::computeMatchedBlocksForSession(
-                sessionId, blockInfos, entries);
-        matchedBlocks = match.first;
-        thinkTokens = match.second;
-      });
+  const std::vector<domain::prefix_cache::PrefixIndexEntry> entries =
+      prefixIndex.getEntriesForKey(blockInfos.front().hash);
+  const auto [matchedBlocks, thinkTokens] =
+      domain::prefix_cache::BlockMatcher::computeMatchedBlocksForSession(
+          sessionId, blockInfos, entries);
 
   if (matchedBlocks == 0) {
     return {0, 0};
@@ -311,153 +291,6 @@ void PrefixCacheRouter::onSessionClosed(const std::string& sessionId,
                                         const std::string& responseId) {
   prefixIndex.remove(sessionId, keyHash);
   responseIdIndex.removeIf(sessionId, responseId);
-}
-
-void PrefixCacheRouter::getSlot(
-    std::span<const uint32_t> promptTokenIds, GetSlotOptions opts,
-    trantor::EventLoop* eventLoop,
-    std::function<void(SlotAcquireResult)> onResolved,
-    std::function<void(const std::string&)> onError) {
-  // Step 1: Compute block hashes from tokens
-  auto blocks = computeBlockInfos(promptTokenIds);
-  TT_LOG_INFO("[PrefixCacheRouter::getSlot] tokens={} blocks={}",
-              promptTokenIds.size(), blocks.size());
-
-  // Step 2: Try response-id path first (if provided)
-  const bool useResponseId =
-      opts.previousResponseId.has_value() && !opts.previousResponseId->empty();
-
-  if (useResponseId) {
-    auto acquired =
-        tryAcquireByResponseId(*opts.previousResponseId, opts.cancelFn);
-
-    if (acquired.has_value()) {
-      TT_LOG_INFO(
-          "[PrefixCacheRouter::getSlot] Response-id HIT prevId={} sessionId={} "
-          "slotId={}",
-          *opts.previousResponseId, acquired->sessionId, acquired->slotId);
-
-      auto [matchedTokens, thinkTokens] =
-          computeMatchedTokens(acquired->sessionId, blocks);
-
-      registerPrefixHash(acquired->sessionId, blocks);
-      callbacks.shrinkResidentPrefixToMatchedTokens(acquired->sessionId,
-                                                    matchedTokens);
-
-      if (opts.responseId.has_value()) {
-        updateResponseId(*opts.previousResponseId, *opts.responseId);
-      }
-
-      SlotAcquireResult result;
-      result.sessionId = acquired->sessionId;
-      result.slotId = acquired->slotId;
-      result.matchedTokens = matchedTokens;
-      result.accumulatedThinkTokens = thinkTokens;
-      result.isNewSession = false;
-      result.blocks = std::move(blocks);
-
-      onResolved(std::move(result));
-      return;
-    }
-
-    TT_LOG_INFO(
-        "[PrefixCacheRouter::getSlot] Response-id MISS prevId={} → trying "
-        "prefix-hash",
-        *opts.previousResponseId);
-  }
-
-  // Step 3: Try prefix-hash lookup
-  std::optional<AcquireResult> acquired;
-  if (!blocks.empty()) {
-    acquired = tryAcquireByPrefixHash(blocks, opts.cancelFn);
-
-    if (acquired.has_value() && acquired->sessionFound) {
-      TT_LOG_INFO(
-          "[PrefixCacheRouter::getSlot] Prefix-cache HIT sessionId={} "
-          "slotId={} "
-          "matchedTokens={} thinkTokens={}",
-          acquired->sessionId, acquired->slotId,
-          acquired->numberOfMatchedTokens, acquired->accumulatedThinkTokens);
-
-      registerPrefixHash(acquired->sessionId, blocks);
-      callbacks.shrinkResidentPrefixToMatchedTokens(
-          acquired->sessionId, acquired->numberOfMatchedTokens);
-
-      SlotAcquireResult result;
-      result.sessionId = acquired->sessionId;
-      result.slotId = acquired->slotId;
-      result.matchedTokens = acquired->numberOfMatchedTokens;
-      result.accumulatedThinkTokens = acquired->accumulatedThinkTokens;
-      result.isNewSession = false;
-      result.blocks = std::move(blocks);
-
-      onResolved(std::move(result));
-      return;
-    }
-
-    TT_LOG_INFO(
-        "[PrefixCacheRouter::getSlot] Prefix-cache MISS blocks={} → "
-        "allocating new session",
-        blocks.size());
-  }
-
-  // Step 4: Allocate new session
-  // Slot copies require migration workers that only exist in decode-only mode.
-  std::optional<uint32_t> slotToCopyFrom;
-  uint32_t copyMatchedTokens = 0;
-  if (tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY &&
-      acquired.has_value() && !acquired->candidatesList.empty()) {
-    const auto& best = acquired->candidatesList.front();
-    if (domain::prefix_cache::BlockMatcher::passesHitThreshold(best)) {
-      auto session = callbacks.getSession(best.sessionId);
-      if (session) {
-        slotToCopyFrom = session->getSlotId();
-        copyMatchedTokens = domain::prefix_cache::BlockMatcher::blocksToTokens(
-            best.matchedBlocks);
-        callbacks.lockSlot(*slotToCopyFrom);
-        TT_LOG_INFO(
-            "[PrefixCacheRouter::getSlot] Will copy from slotId={} "
-            "matchedTokens={}",
-            *slotToCopyFrom, copyMatchedTokens);
-      }
-    }
-  }
-
-  callbacks.createSession(
-      [this, blocks = std::move(blocks), opts = std::move(opts), onResolved,
-       slotToCopyFrom,
-       copyMatchedTokens](const domain::Session& session) mutable {
-        // Unlock source slot now that allocation is complete
-        if (slotToCopyFrom.has_value()) {
-          callbacks.unlockSlot(*slotToCopyFrom);
-        }
-
-        auto slotId =
-            callbacks.acquireInFlight(session.getSessionId(), opts.cancelFn);
-
-        if (opts.responseId.has_value()) {
-          registerResponseId(session.getSessionId(), *opts.responseId);
-        }
-
-        registerPrefixHash(session.getSessionId(), blocks);
-
-        SlotAcquireResult result;
-        result.sessionId = session.getSessionId();
-        result.slotId = slotId;
-        result.matchedTokens = copyMatchedTokens;
-        result.accumulatedThinkTokens = 0;
-        result.isNewSession = (copyMatchedTokens == 0);
-        result.blocks = std::move(blocks);
-
-        onResolved(std::move(result));
-      },
-      [onError, slotToCopyFrom, this](std::string_view errorMessage) {
-        if (slotToCopyFrom.has_value()) {
-          callbacks.unlockSlot(*slotToCopyFrom);
-        }
-        onError(std::string(errorMessage));
-      },
-      eventLoop, {}, slotToCopyFrom);
 }
 
 }  // namespace tt::services
