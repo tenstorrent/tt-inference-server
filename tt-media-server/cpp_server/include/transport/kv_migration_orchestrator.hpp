@@ -67,9 +67,12 @@ class KvMigrationSender {
 class KvMigrationReceiver {
  public:
   /// @param localTableBlob this decode's serialized `.pb` (replied on
-  ///        TABLE_EXCHANGE). Empty disables table provisioning on this channel.
-  KvMigrationReceiver(KvControlChannel& channel, MooncakeKvReceiver& receiver,
-                      std::vector<uint8_t> localTableBlob = {});
+  ///        TABLE_EXCHANGE). Shared across multi-accept sessions — immutable
+  ///        and identical for every prefill peer. Empty/null disables table
+  ///        provisioning on this channel.
+  KvMigrationReceiver(
+      KvControlChannel& channel, MooncakeKvReceiver& receiver,
+      std::shared_ptr<const std::vector<uint8_t>> localTableBlob = nullptr);
 
   /// Init-time table exchange: receive the peer's table, then send ours.
   /// Also stores the peer blob via peerTableBlob() / peerTable().
@@ -107,7 +110,7 @@ class KvMigrationReceiver {
 
   KvControlChannel& channel_;
   MooncakeKvReceiver& receiver_;
-  std::vector<uint8_t> local_table_blob_;
+  std::shared_ptr<const std::vector<uint8_t>> local_table_blob_;
   std::vector<uint8_t> peer_table_blob_;
   std::shared_ptr<const IKvTable> peer_table_;
 };

@@ -145,9 +145,9 @@ bool KvMigrationSender::migrate(uint64_t uuid,
 
 // --- Receiver --------------------------------------------------------------
 
-KvMigrationReceiver::KvMigrationReceiver(KvControlChannel& channel,
-                                         MooncakeKvReceiver& receiver,
-                                         std::vector<uint8_t> localTableBlob)
+KvMigrationReceiver::KvMigrationReceiver(
+    KvControlChannel& channel, MooncakeKvReceiver& receiver,
+    std::shared_ptr<const std::vector<uint8_t>> localTableBlob)
     : channel_(channel),
       receiver_(receiver),
       local_table_blob_(std::move(localTableBlob)) {}
@@ -170,7 +170,7 @@ bool KvMigrationReceiver::handleTableExchange(const KvControlMessage& msg) {
         "blob");
     return false;
   }
-  if (local_table_blob_.empty()) {
+  if (!local_table_blob_ || local_table_blob_->empty()) {
     TT_LOG_ERROR(
         "[KvMigrationReceiver] TABLE_EXCHANGE with no local table blob "
         "configured");
@@ -181,7 +181,7 @@ bool KvMigrationReceiver::handleTableExchange(const KvControlMessage& msg) {
   KvControlMessage out;
   out.type = KvControlType::TABLE_EXCHANGE;
   out.role = static_cast<uint8_t>(TableExchangeRole::Receiver);
-  out.table_blob = local_table_blob_;
+  out.table_blob = *local_table_blob_;
   // Large decode .pb reply — use the exchange budget, not a short migrate
   // default if the channel was constructed that way.
   if (!channel_.send(out, kDefaultTableExchangeTimeout)) {
@@ -191,7 +191,7 @@ bool KvMigrationReceiver::handleTableExchange(const KvControlMessage& msg) {
   TT_LOG_INFO(
       "[KvMigrationReceiver] TABLE_EXCHANGE: stored peer table ({} B), "
       "replied with local ({} B)",
-      peer_table_blob_.size(), local_table_blob_.size());
+      peer_table_blob_.size(), local_table_blob_->size());
   return true;
 }
 

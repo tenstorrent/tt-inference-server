@@ -151,7 +151,8 @@ KvMigrationReceiverServer::KvMigrationReceiverServer(
     : port_(port),
       factory_(std::move(factory)),
       receiver_(receiver),
-      local_table_blob_(std::move(localTableBlob)),
+      local_table_blob_(std::make_shared<const std::vector<uint8_t>>(
+          std::move(localTableBlob))),
       receive_timeout_(receiveTimeout),
       poll_interval_(pollInterval) {}
 
@@ -166,16 +167,38 @@ void KvMigrationReceiverServer::startSingleSession(
   thread_ = std::thread([this] { orchestrator_->run(); });
 }
 
+void KvMigrationReceiverServer::reapFinishedSessions() {
+  // try_lock: stop() may hold sessionsMutex_ while joining us — never block
+  // the session thread on that lock (deadlock). stop()/onAccept will reap.
+  std::unique_lock<std::mutex> lock(sessionsMutex_, std::try_to_lock);
+  if (!lock.owns_lock()) {
+    return;
+  }
+  reapFinishedSessionsLocked();
+}
+
 void KvMigrationReceiverServer::reapFinishedSessionsLocked() {
+  const auto selfId = std::this_thread::get_id();
+  std::thread toDetach;
   for (auto it = sessions_.begin(); it != sessions_.end();) {
     if (!(*it)->finished.load(std::memory_order_acquire)) {
       ++it;
+      continue;
+    }
+    // Session thread cannot join itself — detach so we can free the Session
+    // (and its peer-table blob) without waiting for the next accept.
+    if ((*it)->thread.joinable() && (*it)->thread.get_id() == selfId) {
+      toDetach = std::move((*it)->thread);
+      it = sessions_.erase(it);
       continue;
     }
     if ((*it)->thread.joinable()) {
       (*it)->thread.join();
     }
     it = sessions_.erase(it);
+  }
+  if (toDetach.joinable()) {
+    toDetach.detach();
   }
 }
 
@@ -206,9 +229,12 @@ void KvMigrationReceiverServer::onAccept(
       *session->channel, receiver_, local_table_blob_);
   Session* raw = session.get();
   auto* orch = session->orchestrator.get();
-  session->thread = std::thread([orch, raw] {
+  session->thread = std::thread([this, orch, raw] {
     orch->run();
     raw->finished.store(true, std::memory_order_release);
+    // Free finished sessions (including this one) without waiting for another
+    // prefill to connect — peer table blobs are large.
+    reapFinishedSessions();
   });
 
   std::size_t active = 0;

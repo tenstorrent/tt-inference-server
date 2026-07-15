@@ -327,7 +327,33 @@ class ImmediatelyClosedPeer : public sockets::ISocketTransport {
   void setConnectionEstablishedCallback(std::function<void()>) override {}
 };
 
-// B1: finished sessions must be reaped on the next accept (no fd/thread leak).
+// Finished sessions free themselves when run() exits (no wait for the next
+// accept) so large peer-table blobs are not retained indefinitely.
+TEST(KvMigrationReceiverServerTest, ReapsFinishedSessionsWithoutNextAccept) {
+  auto reg = std::make_shared<FakeRegistry>();
+  auto table = std::make_shared<InMemoryKvTable>(
+      buildTable("D0", {2, 0}, {2, 1}, {2, 2}, {2, 3}, 0x8000, 0, 0x9000, 1));
+  auto engine = std::make_shared<FakeTransferEngine>(reg, "segD0");
+  FakeDeviceIo dev;
+  MooncakeKvReceiver receiver(engine, dev, table, "D0", "segD0");
+
+  auto listen = std::make_shared<MultiAcceptListenFake>();
+  KvMigrationReceiverServer server(
+      /*port=*/18650, [listen](uint16_t) { return listen; }, receiver,
+      /*localTableBlob=*/{}, K_RECV_TIMEOUT, K_POLL_INTERVAL);
+  ASSERT_TRUE(server.start());
+
+  listen->fireAccept(std::make_shared<ImmediatelyClosedPeer>());
+  for (int i = 0; i < 200 && server.activeSessionCount() > 0; ++i) {
+    std::this_thread::sleep_for(1ms);
+  }
+  EXPECT_EQ(server.activeSessionCount(), 0u);
+
+  server.stop();
+}
+
+// B1: finished sessions must also be reaped on the next accept (belt+suspenders
+// if a session's self-reap raced with try_lock failure under stop()).
 TEST(KvMigrationReceiverServerTest, ReapsFinishedSessionsOnAccept) {
   auto reg = std::make_shared<FakeRegistry>();
   auto table = std::make_shared<InMemoryKvTable>(

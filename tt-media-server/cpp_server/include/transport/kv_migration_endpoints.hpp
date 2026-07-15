@@ -177,7 +177,8 @@ class KvMigrationReceiverServer {
       std::function<std::shared_ptr<sockets::ISocketTransport>(uint16_t port)>;
 
   /// @param localTableBlob decode `.pb` bytes for init-time TABLE_EXCHANGE
-  ///        replies (empty = migrate-only; no table provisioning).
+  ///        replies (empty = migrate-only; no table provisioning). Held once
+  ///        and shared by every accepted prefill session.
   KvMigrationReceiverServer(uint16_t port, ServerTransportFactory factory,
                             MooncakeKvReceiver& receiver,
                             std::vector<uint8_t> localTableBlob = {},
@@ -215,14 +216,16 @@ class KvMigrationReceiverServer {
 
   void startSingleSession(std::shared_ptr<sockets::ISocketTransport> transport);
   void onAccept(std::shared_ptr<sockets::ISocketTransport> peer);
-  /// Join + erase sessions whose run() has returned. Caller holds
-  /// sessionsMutex_.
+  /// Join + erase finished sessions. Skips the calling thread's own session
+  /// (detach+erase that one). Caller may hold sessionsMutex_ via the Locked
+  /// overload; the public entry takes the lock.
+  void reapFinishedSessions();
   void reapFinishedSessionsLocked();
 
   uint16_t port_;
   ServerTransportFactory factory_;
   MooncakeKvReceiver& receiver_;
-  std::vector<uint8_t> local_table_blob_;
+  std::shared_ptr<const std::vector<uint8_t>> local_table_blob_;
   std::chrono::milliseconds receive_timeout_;
   std::chrono::milliseconds poll_interval_;
 
