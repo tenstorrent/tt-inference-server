@@ -204,12 +204,7 @@ wait_ready() {
 
     log "waiting for /v1/chat/completions route"
     for i in $(seq 1 40); do
-        local status
-        status="$(curl -s -o /dev/null -w "%{http_code}" \
-            -H 'Content-Type: application/json' \
-            -d '{}' \
-            "http://127.0.0.1:${HTTP_PORT}/v1/chat/completions" 2>/dev/null || true)"
-        if [[ "${status}" != "000" && "${status}" != "404" ]]; then
+        if grep -aq "chat endpoints enabled" "${FRONTEND_LOG}"; then
             log "chat completions route ready after ${i}s"
             break
         fi
