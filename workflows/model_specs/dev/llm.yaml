@@ -1424,7 +1424,7 @@ templates:
   device_model_specs:
     - device: SUPER_CLUSTER
       max_concurrency: 64
-      max_context: 262144
+      max_context: 262144  # 256 * 1024; 
       default_impl: true
   status: EXPERIMENTAL
   env_vars:
@@ -1434,6 +1434,8 @@ templates:
       remote_api_model: moonshotai/Kimi-K2.7-Code
       reasoning_parser_name: kimi_k2
       tool_call_parser_name: kimi_k2
+      # Kimi ships a custom tokenizer; AIPerf-driven sweeps (prefix-cache,
+      # spec-decode) must trust remote code to load it.
       tokenizer_trust_remote_code: true
 
 - weights:
