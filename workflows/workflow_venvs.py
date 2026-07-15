@@ -659,6 +659,47 @@ EvaluationTracker.save_results_samples = _tt_save_results_samples
 """
 
 
+# Sentinel marker appended to lm_eval/models/openai_completions.py so the
+# reasoning-effort patch is applied at most once per venv (idempotent across
+# repeated setup runs).
+_LM_EVAL_REASONING_EFFORT_SENTINEL = (
+    "# === TT patch: gpt-oss reasoning_effort -> chat_template_kwargs ==="
+)
+
+# Monkeypatch appended to the END of lm_eval/models/openai_completions.py (after
+# LocalChatCompletion is defined). The eval sends `reasoning_effort` as a
+# top-level chat-completions field. vLLM applies it directly (build_chat_params
+# folds it into chat_template_kwargs, and the gpt-oss Harmony path reads
+# request.reasoning_effort). The NVIDIA-Dynamo frontend used by the blaze /
+# tt-media-server deployment does NOT: it validates `reasoning_effort` but only
+# forwards `chat_template_kwargs` into the chat-template render context, so
+# gpt-oss renders at the template's default effort ("medium") regardless of what
+# is requested. Mirror vLLM's build_chat_params principle by folding the
+# top-level field into `chat_template_kwargs` at payload-build time. The
+# top-level value is preserved so the vLLM path is unchanged; each backend uses
+# whichever it understands.
+_LM_EVAL_REASONING_EFFORT_PATCH = """
+
+# === TT patch: gpt-oss reasoning_effort -> chat_template_kwargs ===
+# Applied post-install by workflows.workflow_venvs.patch_evals_common_chat_streaming.
+_tt_orig_create_payload = LocalChatCompletion._create_payload
+
+
+def _tt_create_payload_with_reasoning_effort(self, *args, **kwargs):
+    payload = _tt_orig_create_payload(self, *args, **kwargs)
+    effort = payload.get("reasoning_effort")
+    if effort is not None:
+        cta = payload.setdefault("chat_template_kwargs", {})
+        if isinstance(cta, dict):
+            cta.setdefault("reasoning_effort", effort)
+    return payload
+
+
+LocalChatCompletion._create_payload = _tt_create_payload_with_reasoning_effort
+# === end TT patch ===
+"""
+
+
 def patch_evals_common_chat_streaming(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",
@@ -691,6 +732,24 @@ def patch_evals_common_chat_streaming(
     else:
         api_models_path.write_text(api_models_text + _LM_EVAL_CHAT_STREAM_PATCH)
         logger.info(f"applied chat-streaming patch to {api_models_path}")
+
+    # Route gpt-oss reasoning_effort into chat_template_kwargs so the NVIDIA-Dynamo
+    # frontend (blaze / tt-media-server deployment) renders the requested reasoning
+    # effort instead of the chat-template default. See _LM_EVAL_REASONING_EFFORT_PATCH.
+    oai_path = api_models_path.parent / "openai_completions.py"
+    if not oai_path.is_file():
+        logger.warning(
+            f"Could not locate {oai_path}; gpt-oss reasoning_effort will not be "
+            "routed into chat_template_kwargs (the Dynamo/blaze path renders at "
+            "the chat-template default reasoning effort)."
+        )
+    else:
+        oai_text = oai_path.read_text()
+        if _LM_EVAL_REASONING_EFFORT_SENTINEL in oai_text:
+            logger.info(f"reasoning-effort patch already present in {oai_path}")
+        else:
+            oai_path.write_text(oai_text + _LM_EVAL_REASONING_EFFORT_PATCH)
+            logger.info(f"applied reasoning-effort patch to {oai_path}")
 
     tracker_path = api_models_path.parents[1] / "loggers" / "evaluation_tracker.py"
     if not tracker_path.is_file():
