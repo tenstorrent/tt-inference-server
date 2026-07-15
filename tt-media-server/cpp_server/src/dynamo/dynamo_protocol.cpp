@@ -8,6 +8,7 @@
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <trantor/net/EventLoop.h>
+#include <trantor/net/EventLoopThreadPool.h>
 #include <trantor/net/InetAddress.h>
 #include <trantor/net/TcpClient.h>
 #include <trantor/net/TcpConnection.h>
@@ -20,9 +21,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <sstream>
-#include <thread>
+#include <string_view>
 #include <utility>
 
+#include "domain/llm/llm_error_reason.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::dynamo {
@@ -46,11 +48,176 @@ Json::Value parseJsonBytes(const uint8_t* data, size_t len) {
   return outt;
 }
 
+std::string dumpJsonCompact(const Json::Value& v);  // defined below
+
+/// Scan a flat JSON array of integers. `s[start]` must be '['. Appends each
+/// value to `out` and returns the index just past the matching ']'. Returns
+/// std::string_view::npos if the array is not a clean flat int array (nested
+/// arrays, strings, floats, etc.) so the caller can fall back to the full JSON
+/// parser. Tolerates whitespace, negative ints, and a trailing comma.
+size_t scanIntArray(const char* s, size_t start, size_t n,
+                    std::vector<uint32_t>& out) {
+  if (start >= n || s[start] != '[') return std::string_view::npos;
+  size_t i = start + 1;
+  auto isWs = [](char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+  };
+  while (i < n) {
+    char c = s[i];
+    if (isWs(c) || c == ',') {
+      ++i;
+      continue;
+    }
+    if (c == ']') return i + 1;
+    bool neg = false;
+    if (c == '-') {
+      neg = true;
+      ++i;
+    }
+    if (i >= n || s[i] < '0' || s[i] > '9') {
+      return std::string_view::npos;  // not a plain integer element
+    }
+    long long v = 0;
+    while (i < n && s[i] >= '0' && s[i] <= '9') {
+      v = v * 10 + (s[i] - '0');
+      ++i;
+    }
+    out.push_back(static_cast<uint32_t>(neg ? -v : v));
+  }
+  return std::string_view::npos;  // unterminated array
+}
+
+/// Locate the object value for the top-level `"token_ids"` key and return the
+/// index of its opening '['. Distinguishes the key from look-alikes such as
+/// `"stop_token_ids_hidden"` by requiring the exact quoted key, immediately
+/// preceded by '{' or ',' (an object key, not text inside a string value) and
+/// followed by ':' then '['. Returns false if no such array is found.
+bool findTokenIdsArray(std::string_view body, size_t& arrayStart) {
+  static constexpr std::string_view kKey = "\"token_ids\"";
+  auto isWs = [](char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+  };
+  size_t pos = body.find(kKey);
+  while (pos != std::string_view::npos) {
+    // The char before the key (skipping whitespace) must open an object member.
+    size_t b = pos;
+    while (b > 0 && isWs(body[b - 1])) --b;
+    const bool keyContext = b == 0 || body[b - 1] == '{' || body[b - 1] == ',';
+    if (keyContext) {
+      size_t i = pos + kKey.size();
+      while (i < body.size() && isWs(body[i])) ++i;
+      if (i < body.size() && body[i] == ':') {
+        ++i;
+        while (i < body.size() && isWs(body[i])) ++i;
+        if (i < body.size() && body[i] == '[') {
+          arrayStart = i;
+          return true;
+        }
+      }
+    }
+    pos = body.find(kKey, pos + 1);
+  }
+  return false;
+}
+
+/// Populate every GenerateRequest field except `token_ids` from a parsed body.
+/// Shared by the fast path (which parses a token_ids-elided copy) and the
+/// jsoncpp fallback.
+void populateGenerateFields(GenerateRequest& req, const Json::Value& j) {
+  req.raw = j;
+  req.model = j.get("model", "").asString();
+
+  if (j.isMember("stop_conditions") && j["stop_conditions"].isObject()) {
+    const auto& sc = j["stop_conditions"];
+    if (sc.isMember("max_tokens") && !sc["max_tokens"].isNull()) {
+      req.max_tokens = sc["max_tokens"].asInt();
+    }
+    if (sc.isMember("min_tokens") && !sc["min_tokens"].isNull()) {
+      req.min_tokens = sc["min_tokens"].asInt();
+    }
+    // Dynamo's StopConditions serializes the token-id stop list as
+    // `stop_token_ids_hidden` (see lib/llm/src/protocols/common.rs — the Rust
+    // field has no serde rename). Prefer that key, but also accept the plain
+    // `stop_token_ids` name for forward-compatibility / other senders.
+    const Json::Value* stopIds = nullptr;
+    if (sc.isMember("stop_token_ids_hidden") &&
+        sc["stop_token_ids_hidden"].isArray()) {
+      stopIds = &sc["stop_token_ids_hidden"];
+    } else if (sc.isMember("stop_token_ids") &&
+               sc["stop_token_ids"].isArray()) {
+      stopIds = &sc["stop_token_ids"];
+    }
+    if (stopIds != nullptr) {
+      for (const auto& t : *stopIds) {
+        req.stop_token_ids.push_back(t.asInt());
+      }
+    }
+    if (sc.isMember("stop") && sc["stop"].isArray()) {
+      for (const auto& s : sc["stop"]) {
+        req.stop.push_back(s.asString());
+      }
+    }
+    if (sc.isMember("ignore_eos") && sc["ignore_eos"].isBool()) {
+      req.ignore_eos = sc["ignore_eos"].asBool();
+    }
+  }
+
+  if (j.isMember("sampling_options") && j["sampling_options"].isObject()) {
+    const auto& so = j["sampling_options"];
+    auto getOptFloat = [&](const char* k) -> std::optional<float> {
+      if (so.isMember(k) && !so[k].isNull()) return so[k].asFloat();
+      return std::nullopt;
+    };
+    auto getOptInt = [&](const char* k) -> std::optional<int> {
+      if (so.isMember(k) && !so[k].isNull()) return so[k].asInt();
+      return std::nullopt;
+    };
+    req.temperature = getOptFloat("temperature");
+    req.top_p = getOptFloat("top_p");
+    req.top_k = getOptInt("top_k");
+    req.seed = getOptInt("seed");
+    req.frequency_penalty = getOptFloat("frequency_penalty");
+    req.presence_penalty = getOptFloat("presence_penalty");
+    req.repetition_penalty = getOptFloat("repetition_penalty");
+  }
+
+  if (j.isMember("mm_processor_kwargs") && !j["mm_processor_kwargs"].isNull()) {
+    req.mm_processor_kwargs = j["mm_processor_kwargs"];
+    TT_LOG_INFO("[DynamoRx] mm_processor_kwargs received: {}",
+                dumpJsonCompact(req.mm_processor_kwargs));
+  }
+}
+
 std::string dumpJsonCompact(const Json::Value& v) {
   Json::StreamWriterBuilder writer;
   writer["indentation"] = "";
   writer["emitUTF8"] = true;
   return Json::writeString(writer, v);
+}
+
+std::vector<uint8_t> encodeAnnotatedError(const std::string& message,
+                                          uint16_t code) {
+  // Encode the error message as a JSON payload with a status code so the
+  // Dynamo frontend's extract_backend_error_if_present() can parse it and
+  // return the correct HTTP status (e.g. 400 instead of default 500).
+  Json::Value errorPayload(Json::objectValue);
+  errorPayload["message"] = message;
+  errorPayload["code"] = code;
+  std::string errorJson = dumpJsonCompact(errorPayload);
+
+  Json::Value annotated(Json::objectValue);
+  annotated["data"] = Json::Value::null;
+  annotated["event"] = "error";
+  Json::Value comment(Json::arrayValue);
+  comment.append(errorJson);
+  annotated["comment"] = std::move(comment);
+
+  Json::Value wrapper(Json::objectValue);
+  wrapper["data"] = std::move(annotated);
+  wrapper["complete_final"] = false;
+
+  std::string s = dumpJsonCompact(wrapper);
+  return std::vector<uint8_t>(s.begin(), s.end());
 }
 
 std::string framedString(const TwoPartMessage& tp) {
@@ -137,79 +304,41 @@ TcpStreamConnectionInfo parse_connection_info(const ConnectionInfo& info) {
 
 GenerateRequest parse_generate_request(const std::vector<uint8_t>& bodyBytes) {
   GenerateRequest req;
-  Json::Value j = parseJsonBytes(bodyBytes.data(), bodyBytes.size());
+  if (bodyBytes.empty()) return req;
+  const char* data = reinterpret_cast<const char*>(bodyBytes.data());
+  const size_t n = bodyBytes.size();
+  const std::string_view body(data, n);
+
+  size_t arrayStart = 0;
+  if (findTokenIdsArray(body, arrayStart)) {
+    std::vector<uint32_t> ids;
+    const size_t arrayEnd = scanIntArray(data, arrayStart, n, ids);
+    if (arrayEnd != std::string_view::npos) {
+      std::string reduced;
+      reduced.reserve(arrayStart + 2 + (n - arrayEnd));
+      reduced.append(data, arrayStart);
+      reduced.append("[]");
+      reduced.append(data + arrayEnd, n - arrayEnd);
+      Json::Value j = parseJsonBytes(
+          reinterpret_cast<const uint8_t*>(reduced.data()), reduced.size());
+      if (j.isObject()) {
+        req.token_ids = std::move(ids);
+        populateGenerateFields(req, j);
+        return req;
+      }
+    }
+  }
+
+  // Fallback: full jsoncpp parse (handles any body the fast path declined).
+  Json::Value j = parseJsonBytes(bodyBytes.data(), n);
   if (!j.isObject()) return req;
-
-  req.raw = j;
-  req.model = j.get("model", "").asString();
-
   if (j.isMember("token_ids") && j["token_ids"].isArray()) {
     req.token_ids.reserve(j["token_ids"].size());
     for (const auto& t : j["token_ids"]) {
-      req.token_ids.push_back(t.asInt());
+      req.token_ids.push_back(static_cast<uint32_t>(t.asUInt()));
     }
   }
-
-  if (j.isMember("stop_conditions") && j["stop_conditions"].isObject()) {
-    const auto& sc = j["stop_conditions"];
-    if (sc.isMember("max_tokens") && !sc["max_tokens"].isNull()) {
-      req.max_tokens = sc["max_tokens"].asInt();
-    }
-    if (sc.isMember("min_tokens") && !sc["min_tokens"].isNull()) {
-      req.min_tokens = sc["min_tokens"].asInt();
-    }
-    // Dynamo's StopConditions serializes the token-id stop list as
-    // `stop_token_ids_hidden` (see lib/llm/src/protocols/common.rs — the Rust
-    // field has no serde rename). Prefer that key, but also accept the plain
-    // `stop_token_ids` name for forward-compatibility / other senders.
-    const Json::Value* stopIds = nullptr;
-    if (sc.isMember("stop_token_ids_hidden") &&
-        sc["stop_token_ids_hidden"].isArray()) {
-      stopIds = &sc["stop_token_ids_hidden"];
-    } else if (sc.isMember("stop_token_ids") &&
-               sc["stop_token_ids"].isArray()) {
-      stopIds = &sc["stop_token_ids"];
-    }
-    if (stopIds != nullptr) {
-      for (const auto& t : *stopIds) {
-        req.stop_token_ids.push_back(t.asInt());
-      }
-    }
-    if (sc.isMember("stop") && sc["stop"].isArray()) {
-      for (const auto& s : sc["stop"]) {
-        req.stop.push_back(s.asString());
-      }
-    }
-    if (sc.isMember("ignore_eos") && sc["ignore_eos"].isBool()) {
-      req.ignore_eos = sc["ignore_eos"].asBool();
-    }
-  }
-
-  if (j.isMember("sampling_options") && j["sampling_options"].isObject()) {
-    const auto& so = j["sampling_options"];
-    auto getOptFloat = [&](const char* k) -> std::optional<float> {
-      if (so.isMember(k) && !so[k].isNull()) return so[k].asFloat();
-      return std::nullopt;
-    };
-    auto getOptInt = [&](const char* k) -> std::optional<int> {
-      if (so.isMember(k) && !so[k].isNull()) return so[k].asInt();
-      return std::nullopt;
-    };
-    req.temperature = getOptFloat("temperature");
-    req.top_p = getOptFloat("top_p");
-    req.top_k = getOptInt("top_k");
-    req.seed = getOptInt("seed");
-    req.frequency_penalty = getOptFloat("frequency_penalty");
-    req.presence_penalty = getOptFloat("presence_penalty");
-    req.repetition_penalty = getOptFloat("repetition_penalty");
-  }
-
-  if (j.isMember("mm_processor_kwargs") && !j["mm_processor_kwargs"].isNull()) {
-    req.mm_processor_kwargs = j["mm_processor_kwargs"];
-    TT_LOG_INFO("[DynamoRx] mm_processor_kwargs received: {}",
-                dumpJsonCompact(req.mm_processor_kwargs));
-  }
-
+  populateGenerateFields(req, j);
   return req;
 }
 
@@ -217,32 +346,17 @@ std::vector<uint8_t> encode_stream_chunk(const TokenChunk& chunk) {
   // If this chunk carries an error, encode as Annotated::error format
   // so the Dynamo frontend's check_for_backend_error can intercept it.
   if (chunk.error.has_value()) {
-    // Encode the error message as a JSON payload with a status code so the
-    // Dynamo frontend's extract_backend_error_if_present() can parse it and
-    // return the correct HTTP status (e.g. 400 instead of default 500).
-    Json::Value errorPayload(Json::objectValue);
-    errorPayload["message"] = *chunk.error;
-    errorPayload["code"] = chunk.error_code.value_or(500);
-    std::string errorJson = dumpJsonCompact(errorPayload);
+    return encodeAnnotatedError(*chunk.error, chunk.error_code.value_or(500));
+  }
 
-    Json::Value annotated(Json::objectValue);
-    annotated["data"] = Json::Value::null;
-    annotated["event"] = "error";
-    Json::Value comment(Json::arrayValue);
-    comment.append(errorJson);
-    annotated["comment"] = std::move(comment);
-
-    Json::Value wrapper(Json::objectValue);
-    wrapper["data"] = std::move(annotated);
-    wrapper["complete_final"] = false;
-
-    std::string s = dumpJsonCompact(wrapper);
-    return std::vector<uint8_t>(s.begin(), s.end());
+  if (chunk.finish_reason.has_value() &&
+      tt::domain::llm::isErrorFinishReason(*chunk.finish_reason)) {
+    return encodeAnnotatedError(*chunk.finish_reason, 500);
   }
 
   Json::Value tokenData(Json::objectValue);
   Json::Value tokenIds(Json::arrayValue);
-  for (int t : chunk.token_ids) tokenIds.append(t);
+  for (uint32_t t : chunk.token_ids) tokenIds.append(t);
   tokenData["token_ids"] = std::move(tokenIds);
   if (chunk.finish_reason.has_value()) {
     tokenData["finish_reason"] = *chunk.finish_reason;
@@ -303,10 +417,10 @@ std::vector<uint8_t> encode_stream_final() {
 // ---------------------------------------------------------------------------
 
 DynamoServer::DynamoServer(ServerConfig config, GenerateHandler handler,
-                           std::vector<trantor::EventLoop*> ioLoops)
+                           trantor::EventLoopThreadPool* loopPool)
     : config_(std::move(config)),
       handler_(std::move(handler)),
-      io_loops_(std::move(ioLoops)) {
+      loop_pool_(loopPool) {
   if (config_.instance_id == 0) {
     std::srand(static_cast<unsigned>(std::time(nullptr) ^ ::getpid()));
     config_.instance_id = (static_cast<uint64_t>(std::rand()) << 32) |
@@ -369,21 +483,29 @@ void DynamoServer::process_request(const trantor::TcpConnectionPtr& conn,
                                    const TcpRequestMessage& msg) {
   TwoPartMessage twoPart = decode_two_part(msg.payload);
   auto ctrl = parse_control_message(twoPart.header);
-  auto genReq = parse_generate_request(twoPart.body);
   auto connInfo = parse_connection_info(ctrl.connection_info);
 
-  TT_LOG_DEBUG(
-      "[DynamoServer] Request id={} input_tokens={} max_tokens={} address={}",
-      ctrl.id, genReq.token_ids.size(), genReq.max_tokens, connInfo.address);
-
-  // ACK on the inbound connection. onMessage runs on the connection's io
-  // loop, so sends stay in the FIFO order the frontend pipelined requests in.
   auto ack = encode_tcp_response();
   conn->send(reinterpret_cast<const char*>(ack.data()), ack.size());
 
-  // The handler creates the async call-home writer and returns without
-  // blocking, so dispatch runs inline on the io loop — no per-request thread.
-  handler_(genReq, connInfo);
+  trantor::EventLoop* loop = loop_pool_->getNextLoop();
+  loop->queueInLoop([this, body = std::move(twoPart.body),
+                     connInfo = std::move(connInfo), id = ctrl.id]() mutable {
+    try {
+      GenerateRequest genReq = parse_generate_request(body);
+      TT_LOG_DEBUG(
+          "[DynamoServer] Request id={} input_tokens={} max_tokens={} "
+          "address={}",
+          id, genReq.token_ids.size(),
+          genReq.max_tokens.has_value() ? std::to_string(*genReq.max_tokens)
+                                        : "None",
+          connInfo.address);
+      handler_(genReq, connInfo);
+    } catch (const std::exception& e) {
+      TT_LOG_ERROR("[DynamoServer] request dispatch failed id={}: {}", id,
+                   e.what());
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -537,15 +659,20 @@ void DynamoStreamWriter::finalize() {
 }
 
 void DynamoServer::start() {
-  if (io_loops_.empty()) {
+  const auto ioLoops =
+      loop_pool_ ? loop_pool_->getLoops() : std::vector<trantor::EventLoop*>{};
+  if (ioLoops.empty()) {
     throw std::runtime_error("DynamoServer: no io loops provided");
   }
 
   running_.store(true);
   trantor::InetAddress addr(config_.bind_host, config_.bind_port);
-  tcp_server_ = std::make_unique<trantor::TcpServer>(io_loops_.front(), addr,
-                                                     "DynamoServer");
-  tcp_server_->setIoLoops(io_loops_);
+  // Disable SO_REUSEPORT for fixed ports so a collision fails instead of
+  // silently sharing the port; keep it for OS-assigned (port 0) binds.
+  tcp_server_ = std::make_unique<trantor::TcpServer>(
+      ioLoops.front(), addr, "DynamoServer",
+      /*reUseAddr=*/true, /*reUsePort=*/config_.bind_port == 0);
+  tcp_server_->setIoLoops(ioLoops);
   // Port 0 is resolved during the acceptor's bind, which happens in the
   // TcpServer constructor — so the assigned port is available synchronously.
   actual_port_ = tcp_server_->address().toPort();

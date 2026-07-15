@@ -47,23 +47,29 @@ Requirements: Python 3.8+, the GitHub CLI ``gh`` installed and authenticated
 
 Usage
 -----
-Reproduce the v0.15.0 release (uses the embedded defaults below):
+By default the model+device scope is read from the ``release`` entries in
+``.github/workflows/models-ci-config.json`` (the same release list
+promote_dev_spec_to_prod.py consumes), so a normal release run needs only the
+run id and version:
 
-    python3 build_release_artifacts.py
+    python3 build_release_artifacts.py \
+        --run-id 26592936143 \
+        --version v0.15.0 \
+        --output-dir .
 
-Run for a new release / different models (CLI overrides the defaults):
+Override the scope with one or more --model flags (e.g. to rebuild a single
+model, or to package models that are not in the release list):
 
     python3 build_release_artifacts.py \
         --run-id 26592936143 \
         --version v0.15.0 \
         --model speecht5_tts=p150,p300x2 \
         --model whisper-large-v3=p150,p300x2 \
-        --model distil-large-v3=p150,p300x2 \
         --output-dir .
 
-Other flags: --repo, --output-dir, --keep-temp, --strict (turn the internal
-device-token check from a warning into a hard error), --reference-zip <prev.zip>
-(sanity-check the output layout against a previous release package).
+Other flags: --repo, --ci-config, --output-dir, --keep-temp, --strict (turn the
+internal device-token check from a warning into a hard error), --reference-zip
+<prev.zip> (sanity-check the output layout against a previous release package).
 """
 
 from __future__ import annotations
@@ -78,20 +84,59 @@ import time
 import zipfile
 from pathlib import Path
 
+# Make the repo root importable so we can reuse the canonical DeviceTypes enum
+# (scripts/release/ -> repo root is three parents up).
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+from workflows.workflow_types import DeviceTypes  # noqa: E402
+
 ARTIFACT_PREFIX = "workflow_logs_release_"
 DEFAULT_REPO = "tenstorrent/tt-shield"
+DEFAULT_CI_CONFIG = REPO_ROOT / ".github" / "workflows" / "models-ci-config.json"
 
 # ---------------------------------------------------------------------------
-# Defaults — running the script with no CLI args reproduces this release.
-# Edit these, or override any of them on the command line.
+# Defaults — override any of them on the command line.
 # ---------------------------------------------------------------------------
 DEFAULT_VERSION = "v0.15.0"
 DEFAULT_RUN_ID = "26592936143"
-DEFAULT_MODELS: dict[str, list[str]] = {
-    "speecht5_tts": ["p150", "p300x2"],
-    "whisper-large-v3": ["p150", "p300x2"],
-    "distil-large-v3": ["p150", "p300x2"],
-}
+
+
+# ---------------------------------------------------------------------------
+# release scope from models-ci-config.json
+# ---------------------------------------------------------------------------
+def iter_implementations(model_entry: dict):
+    """Yield each implementation dict for a CI-config model entry.
+
+    Handles both the flat shape ({inference_engine, ci}) and the
+    implementations:[...] array shape (mirrors promote_dev_spec_to_prod.py).
+    """
+    if "implementations" in model_entry:
+        yield from model_entry["implementations"]
+    else:
+        yield model_entry
+
+
+def collect_release_models(ci_config: dict) -> dict[str, list[str]]:
+    """Build {model: [device, ...]} from the entries marked ``release`` in
+    models-ci-config.json.
+
+    Device tokens are the lowercased canonical device names (``p150``,
+    ``p300x2``, ``galaxy``) — the same tokens run.py, the tt-shield release job
+    names, and the release-package inner-zip names use. Devices are aggregated
+    across a model's implementations and de-duplicated, preserving config order.
+    """
+    models: dict[str, list[str]] = {}
+    for model_name, entry in ci_config.get("models", {}).items():
+        for impl in iter_implementations(entry):
+            release = impl.get("ci", {}).get("release")
+            if not release:
+                continue
+            for device in release.get("devices", []):
+                token = DeviceTypes.from_string(device).name.lower()
+                bucket = models.setdefault(model_name, [])
+                if token not in bucket:
+                    bucket.append(token)
+    return models
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +387,12 @@ def main() -> None:
     ap.add_argument(
         "--repo", default=DEFAULT_REPO, help=f"GitHub repo (default: {DEFAULT_REPO})"
     )
+    ap.add_argument(
+        "--ci-config",
+        default=str(DEFAULT_CI_CONFIG),
+        help="CI config JSON providing the default release model list "
+        f"(default: {DEFAULT_CI_CONFIG}). Ignored when --model is given.",
+    )
     ap.add_argument("--run-id", default=DEFAULT_RUN_ID, help="Actions run ID")
     ap.add_argument(
         "--version", default=DEFAULT_VERSION, help="Release version, e.g. v0.15.0"
@@ -351,7 +402,8 @@ def main() -> None:
         action="append",
         default=[],
         metavar="MODEL=dev1,dev2",
-        help="Model and its devices. Repeatable. If omitted, the embedded DEFAULT_MODELS is used.",
+        help="Model and its devices, e.g. Qwen3-32B=galaxy. Repeatable. If omitted, "
+        "the scope is read from the 'release' entries in --ci-config.",
     )
     ap.add_argument(
         "--output-dir",
@@ -377,7 +429,21 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    models = parse_model_specs(args.model) if args.model else dict(DEFAULT_MODELS)
+    if args.model:
+        models = parse_model_specs(args.model)
+    else:
+        ci_config_path = Path(args.ci_config).expanduser()
+        try:
+            ci_config = json.loads(ci_config_path.read_text())
+        except FileNotFoundError:
+            sys.exit(f"ERROR: CI config not found: {ci_config_path}")
+        models = collect_release_models(ci_config)
+        if not models:
+            sys.exit(
+                f"ERROR: no models are marked 'release' in {ci_config_path}.\n"
+                f"       Add a ci.release entry, or pass --model MODEL=dev1,dev2 explicitly."
+            )
+
     out_dir = Path(args.output_dir).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     reference = (

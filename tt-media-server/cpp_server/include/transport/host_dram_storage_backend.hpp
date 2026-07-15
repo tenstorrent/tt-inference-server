@@ -21,7 +21,7 @@ namespace tt::transport {
  */
 class HostDramStorageBackend : public IStorageBackend {
  public:
-  StorageMedium medium() const override { return StorageMedium::HostDram; }
+  StorageMedium medium() const override { return StorageMedium::HOST_DRAM; }
 
   bool readInto(uint64_t addr, std::size_t size, void* hostBuffer) override;
   bool writeFrom(uint64_t addr, const void* hostBuffer,

@@ -9,7 +9,6 @@
 `Wan2.2-T2V-A14B-Diffusers` is also supported on hardware:
 
 - [WH Galaxy](Wan2.2-T2V-A14B-Diffusers_galaxy.md)
-- [BH Galaxy](Wan2.2-T2V-A14B-Diffusers_blackhole_galaxy.md)
 - [BH LoudBox](Wan2.2-T2V-A14B-Diffusers_p150x8.md)
 - [BH 4xP150](Wan2.2-T2V-A14B-Diffusers_p150x4.md)
 - [WH LoudBox/QuietBox](Wan2.2-T2V-A14B-Diffusers_t3k.md)
@@ -34,6 +33,6 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Weights | [Wan-AI/Wan2.2-T2V-A14B-Diffusers](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers) |
 | Model Status | 🟢 Complete |
 | Max Batch Size | 1 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/80180b9/models/tt_transformers) |
-| tt-metal Commit | `80180b9` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.14.0-80180b9` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers) |
+| tt-metal Commit | `8c48a10` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.17.0-8c48a10` |

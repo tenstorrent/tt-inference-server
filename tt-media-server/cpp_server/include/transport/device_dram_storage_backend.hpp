@@ -29,7 +29,7 @@ class DeviceDramStorageBackend : public IStorageBackend {
  public:
   explicit DeviceDramStorageBackend(std::shared_ptr<UmdDeviceAccess> device);
 
-  StorageMedium medium() const override { return StorageMedium::DeviceDram; }
+  StorageMedium medium() const override { return StorageMedium::DEVICE_DRAM; }
 
   bool readInto(uint64_t addr, std::size_t size, void* hostBuffer) override;
   bool writeFrom(uint64_t addr, const void* hostBuffer,

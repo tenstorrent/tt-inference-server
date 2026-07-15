@@ -15,8 +15,8 @@
 
 numpy
 scipy
-torch
-torchvision
+torch==2.7.1+cpu
+torchvision==0.22.1+cpu
 requests
 transformers
 protobuf
@@ -25,6 +25,7 @@ datasets
 open-clip-torch
 pyjwt
 pillow
+pycocotools
 imageio
 imageio-ffmpeg
 mteb[openai]>=2.6.6

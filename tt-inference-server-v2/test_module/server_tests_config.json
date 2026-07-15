@@ -37,6 +37,12 @@
             "Wan2.2-T2V-A14B-Diffusers",
             "Wan2.2-I2V-A14B-Diffusers",
             "mochi-1-preview"
+        ],
+        "LLM": [
+            "Qwen3-32B",
+            "Llama-3.1-8B-Instruct",
+            "Llama-3.3-70B-Instruct",
+            "gpt-oss-20b"
         ]
     },
     "available_markers": {
@@ -56,6 +62,7 @@
             "n300": "Tests for N300 device (2 chips)",
             "t3k": "Tests for T3K device (4 chips)",
             "galaxy": "Tests for Galaxy device (32 chips)",
+            "blackhole_galaxy": "Tests for Blackhole Galaxy device (32 P150 chips)",
             "p150": "Tests for P150 device (1 chip)",
             "p150x4": "Tests for P150x4 device (4 chips)",
             "p150x8": "Tests for P150x8 device (8 chips)",
@@ -179,7 +186,8 @@
             "compatible_devices": [
                 "n150",
                 "t3k",
-                "galaxy"
+                "galaxy",
+                "blackhole_galaxy"
             ]
         },
         "wan": {
@@ -355,6 +363,68 @@
                 "n150",
                 "p150"
             ]
+        },
+        "gpt_oss_20b": {
+            "id_name": "gpt-oss-20b",
+            "weights": [
+                "gpt-oss-20b"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "t3k",
+                "galaxy_t3k",
+                "galaxy"
+            ]
+        },
+        "qwen3_32b": {
+            "id_name": "qwen3-32b",
+            "weights": [
+                "Qwen3-32B"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "galaxy",
+                "t3k",
+                "galaxy_t3k",
+                "p150x8",
+                "p300x2"
+            ]
+        },
+        "llama_70b_family": {
+            "id_name": "llama-70b",
+            "weights": [
+                "Llama-3.3-70B-Instruct"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "galaxy",
+                "t3k",
+                "galaxy_t3k",
+                "p150x4",
+                "p150x8",
+                "p300x2"
+            ]
+        },
+        "llama_3_1_8b": {
+            "id_name": "llama-3.1-8b",
+            "weights": [
+                "Llama-3.1-8B-Instruct"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "n150",
+                "n300",
+                "t3k",
+                "gpu",
+                "p100",
+                "p150",
+                "p150x4",
+                "p150x8",
+                "p300",
+                "p300x2",
+                "galaxy",
+                "galaxy_t3k"
+            ]
         }
     },
     "hardware_defaults": {
@@ -371,6 +441,10 @@
             "liveness_retry_attempts": 120
         },
         "galaxy": {
+            "num_of_devices": 32,
+            "liveness_retry_attempts": 220
+        },
+        "blackhole_galaxy": {
             "num_of_devices": 32,
             "liveness_retry_attempts": 220
         },
@@ -400,6 +474,13 @@
             "name": "DeviceLivenessTest",
             "module": "test_module.health_tests.device_liveness_test",
             "description": "Test for device liveness checks - runs before all other tests",
+            "engines": [
+                "media",
+                "forge"
+            ],
+            "exclude_categories": [
+                "LLM"
+            ],
             "markers": [
                 "fast",
                 "prerequisite"
@@ -410,7 +491,7 @@
                 "break_on_failure": true,
                 "mock_mode": false
             },
-            "_comment": "retry_attempts and num_of_devices derived from hardware_defaults"
+            "_comment": "retry_attempts and num_of_devices derived from hardware_defaults. Gated by both 'engines' and 'exclude_categories' (LLM suites run bare vllm serve, which has no /tt-liveness route; the LLM path gates on /health)."
         },
         {
             "name": "LoggerForkSafetyTest",
@@ -657,7 +738,7 @@
                 "mock_mode": false
             }
         },
-        "TestTTSServerHealth": {
+        "TTSLoadTest": {
             "module": "test_module.load_param_tests.tts_load_test",
             "markers": [
                 "load",
@@ -741,6 +822,52 @@
                 "test_timeout": 3600,
                 "retry_attempts": 1,
                 "retry_delay": 60,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "VideoGenerationI2VParamTest": {
+            "module": "test_module.load_param_tests.video_generation_i2v_param_test",
+            "markers": [
+                "param",
+                "e2e",
+                "slow",
+                "heavy"
+            ],
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 1,
+                "retry_delay": 60,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "VLLMParamConformanceTest": {
+            "module": "test_module.llm_tests.vllm_param_conformance_test",
+            "markers": [
+                "param",
+                "e2e",
+                "slow"
+            ],
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 0,
+                "retry_delay": 10,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "VLLMResponsesParamConformanceTest": {
+            "module": "test_module.llm_tests.vllm_param_conformance_test",
+            "markers": [
+                "param",
+                "e2e",
+                "slow"
+            ],
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 0,
+                "retry_delay": 10,
                 "break_on_failure": false,
                 "mock_mode": false
             }

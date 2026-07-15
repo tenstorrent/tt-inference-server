@@ -184,13 +184,13 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   // fewer tokens than the full prompt are sent.
   EXPECT_TRUE(followUpSeq->getNumPromptTokens() > 0)
       << "continuation should still send some tokens";
-  // Verify kv_position_id matches (matched_tokens - 1) for the 0-indexed KV
-  // position. With block_size=32, first block matched = 32 tokens, so
-  // kv_position_id = 31 (0-indexed position of last matched token).
+  // Verify kv_position_id is the first free KV index (== matched_tokens). With
+  // block_size=32, the first block matched = 32 tokens, so the next token's KV
+  // is written at index 32.
   ASSERT_TRUE(followUpSeq->getKVPositionId().has_value())
       << "continuation should have kv_position_id set";
-  EXPECT_EQ(*followUpSeq->getKVPositionId(), 31u)
-      << "kv_position_id should be one less than matched tokens (0-indexed)";
+  EXPECT_EQ(*followUpSeq->getKVPositionId(), 32u)
+      << "kv_position_id should equal matched tokens (first free KV index)";
   tt::test::WorkerResponse(followUpSeq->taskId)
       .token(43)
       .finalize()
@@ -260,15 +260,15 @@ TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
     if (i == 0) {
       EXPECT_EQ(seq->getTokenIds().size(), 72u) << "turn 0 tokenIds size";
     } else if (i == 1) {
-      // 2nd turn is 96 tokens -> 63 from cache, 33 new
-      EXPECT_EQ(seq->getTokenIds().size(), 33u) << "turn 1 tokenIds size";
+      // 2nd turn is 96 tokens -> 64 from cache (2 blocks), 32 new
+      EXPECT_EQ(seq->getTokenIds().size(), 32u) << "turn 1 tokenIds size";
       ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 1 kvPositionId";
-      EXPECT_EQ(*seq->getKVPositionId(), 63u) << "turn 1 kvPositionId value";
+      EXPECT_EQ(*seq->getKVPositionId(), 64u) << "turn 1 kvPositionId value";
     } else if (i == 2) {
-      // 3rd turn is 123 tokens -> 95 from cache, 28 new
-      EXPECT_EQ(seq->getTokenIds().size(), 28u) << "turn 2 tokenIds size";
+      // 3rd turn is 123 tokens -> 96 from cache (3 blocks), 27 new
+      EXPECT_EQ(seq->getTokenIds().size(), 27u) << "turn 2 tokenIds size";
       ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 2 kvPositionId";
-      EXPECT_EQ(*seq->getKVPositionId(), 95u) << "turn 2 kvPositionId value";
+      EXPECT_EQ(*seq->getKVPositionId(), 96u) << "turn 2 kvPositionId value";
     }
     // after first turn it should be a continuation
     EXPECT_EQ(seq->isContinuation(), i > 0) << "turn " << i;
@@ -297,12 +297,12 @@ TEST_F(MainIntegrationTest, MultiTurn_MatchedTokensEqualPriorPromptBlocks) {
   // We don't hardcode any tokenizer output: each turn's full prompt length is
   // reconstructed from the server's own reported numbers
   //     full_prompt = delta_tokens_sent_to_worker + kv_position_id
-  // (the worker is sent the prompt minus the first matched_tokens-1 tokens).
-  // In general kv_position_id == matched_tokens-1 + accumulated_think_tokens.
-  // Think-filtering IS active in this harness (it defaults to DeepSeek-R1,
-  // whose think ids 128798/128799 are live), but this conversation is plain
-  // text and contains no <think>/</think> marker tokens, so
-  // accumulated_think_tokens is 0 and kv_position_id == matched_tokens-1. The
+  // (the worker is sent the prompt minus the first matched_tokens tokens).
+  // In general kv_position_id == matched_tokens + accumulated_think_tokens
+  // (the first free KV index). Think-filtering IS active in this harness (it
+  // defaults to DeepSeek-R1, whose think ids 128798/128799 are live), but this
+  // conversation is plain text and contains no <think>/</think> marker tokens,
+  // so accumulated_think_tokens is 0 and kv_position_id == matched_tokens. The
   // assertions are therefore exact yet independent of the active tokenizer.
   // This is the regression guard for the multiturn matched-token accounting:
   // the pre-fix bug registered corrupt blocks past the matched prefix, so the
@@ -357,8 +357,9 @@ TEST_F(MainIntegrationTest, MultiTurn_MatchedTokensEqualPriorPromptBlocks) {
       ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn " << turn;
 
       // No think-marker tokens in this plain-text conversation, so
-      // accumulated_think_tokens == 0 and matched == kv_position_id + 1.
-      const uint32_t matched = *seq->getKVPositionId() + 1;
+      // accumulated_think_tokens == 0 and matched == kv_position_id (the first
+      // free KV index).
+      const uint32_t matched = *seq->getKVPositionId();
       const uint32_t expected =
           kBlock * static_cast<uint32_t>(priorFullPrompt / kBlock);
 
@@ -437,18 +438,17 @@ TEST_F(MainIntegrationTest,
   setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);  // restore suite default
 }
 
-TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
-  // Verifies that a slot copy is triggered when a new request shares a prefix
-  // with a session that is currently in-flight (busy generating tokens).
+TEST_F(MainIntegrationTest, SlotCopy_NotTriggeredInRegularMode) {
+  // Verifies that in regular mode (no migration workers), a new request that
+  // shares a prefix with an in-flight session does NOT trigger a slot copy.
+  // Instead it simply allocates a fresh slot without slotIdToCopyFrom.
   //
   // Flow:
   //   1. Send request A (long opener) → allocates slot 0, registers session
   //   2. Send request B (continuation of A) → acquires A's session (in-flight)
   //   3. While B is in-flight, send request C with same prefix but different
   //      suffix → prefix cache finds the session but it's busy → ALLOCATE
-  //      with slotIdToCopyFrom = slot of request A
-  //   4. Mock the allocate response and verify the sequence is a continuation
-  setenv("MIN_TOKENS_TO_COPY", "32", 1);
+  //      WITHOUT slotIdToCopyFrom (no migration workers in regular mode)
   server->setMemoryAutoRespond(false);
 
   const std::string opener =
@@ -521,15 +521,13 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
           .stream());
 
   // The session is in-flight (B holds it), so C falls through to ALLOCATE.
-  // The memory request should have slotIdToCopyFrom pointing to slot A.
+  // In regular mode (no migration workers), no slot copy is requested.
   tt::domain::ManageMemoryTask memReqC{};
   server->memoryRequestQueue().receive(memReqC);
   EXPECT_EQ(memReqC.action, tt::domain::MemoryManagementAction::ALLOCATE)
       << "request C should ALLOCATE (session is in-flight)";
-  ASSERT_TRUE(memReqC.slotIdToCopyFrom.has_value())
-      << "ALLOCATE should request a slot copy from the in-flight session";
-  EXPECT_EQ(*memReqC.slotIdToCopyFrom, slotA)
-      << "slotIdToCopyFrom should be the slot of request A";
+  EXPECT_FALSE(memReqC.slotIdToCopyFrom.has_value())
+      << "ALLOCATE should NOT request a slot copy in regular mode";
 
   // Mock the allocate response for C: assign slot 1.
   tt::domain::ManageMemoryResult memResC{};
@@ -538,15 +536,12 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
   memResC.slotId = 1;
   server->memoryResultQueue().push(memResC);
 
-  // The sequence for C should be flagged as a continuation (slot copy sets it).
+  // Without slot copy, C is NOT a continuation — it prefills from scratch.
   auto seqC = server->taskQueue().receive();
   ASSERT_NE(seqC, nullptr);
-  EXPECT_TRUE(seqC->isContinuation())
-      << "request C should be a continuation (slot copy)";
-  EXPECT_EQ(seqC->getTokenIds().size(), 66u) << "request C tokenIds size";
-  ASSERT_TRUE(seqC->getKVPositionId().has_value())
-      << "slot copy should set kv_position_id";
-  EXPECT_EQ(*seqC->getKVPositionId(), 63u) << "request C kvPositionId value";
+  EXPECT_FALSE(seqC->isContinuation())
+      << "request C should NOT be a continuation in regular mode (no slot "
+         "copy)";
 
   // Complete request C.
   tt::test::WorkerResponse(seqC->taskId)
@@ -562,48 +557,7 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
       .sendTo(server->resultQueue());
   futureB.get();
 
-  // --- Request D: follow-up to C's session → confirms slot 1 is reused ---
-  // Both sessions (slot 0 and slot 1) are now free. The session manager must
-  // pick slot 1 (C's session) as the better fit because D's prompt shares
-  // more blocks with C's registered session than with A/B's.
-  auto futureD = asyncRequest(
-      ChatRequest()
-          .user("slot-copy-test-unique-opener with enough words to produce at "
-                "least more than we expect to have which is thirty two tokens "
-                "after tokenization so that the prefix cache can form a block "
-                "and the follow-up request can match it and reuse the session "
-                "properly and here are even more words to extend the shared "
-                "prefix past a second block boundary so that the slot copy "
-                "test exercises multi-block matching behavior with a longer "
-                "common prefix region but this request diverges here with "
-                "different content and we need even more words to push this "
-                "request past multiple block boundaries so that the follow-up "
-                "request D can match more than one block from this session "
-                "and confirm reuse works")
-          .assistant("ok")
-          .user("this is the follow-up to request C")
-          .maxTokens(1)
-          .stream());
-
-  auto seqD = server->taskQueue().receive();
-  ASSERT_NE(seqD, nullptr);
-  EXPECT_TRUE(seqD->isContinuation())
-      << "request D should hit C's session (slot 1)";
-  EXPECT_EQ(seqD->getKVCacheSlot(), 1u)
-      << "request D should reuse slot 1 from request C";
-  EXPECT_EQ(seqD->getTokenIds().size(), 14u) << "request D tokenIds size";
-  ASSERT_TRUE(seqD->getKVPositionId().has_value())
-      << "request D should have kv_position_id set";
-  EXPECT_EQ(*seqD->getKVPositionId(), 127u) << "request D kvPositionId value";
-
-  tt::test::WorkerResponse(seqD->taskId)
-      .token(101)
-      .finalize()
-      .sendTo(server->resultQueue());
-  futureD.get();
-
   server->setMemoryAutoRespond(true);
-  unsetenv("MIN_TOKENS_TO_COPY");
 }
 
 TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
@@ -643,7 +597,8 @@ TEST_F(MainIntegrationTest, SamplingParams_MaxTokensAndTemperature) {
 }
 
 TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
-  // LLM_MODE=regular: every request is served locally, never disaggregated.
+  // LLM_MODE=decode_only without a socket: falls back to prefill-on-decode
+  // (local), so the request is never disaggregated.
   auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
 
   auto seq = server->taskQueue().receive();
@@ -655,15 +610,15 @@ TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
 }
 
 TEST_F(MainIntegrationTest, MigrationId_IsNulloptInRegularMode) {
-  // In regular (non-disaggregated) mode, no migration ID is generated.
+  // Without a connected prefill server, no migration ID is generated.
   // Verify the field survives IPC serialization as nullopt (not garbage).
   auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
 
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
   EXPECT_FALSE(seq->getMigrationId().has_value())
-      << "migrationId must be nullopt in regular mode (only prefill generates "
-         "it)";
+      << "migrationId must be nullopt without a prefill server (only prefill "
+         "generates it)";
 
   mockWorkerResponse(seq->taskId);
   future.get();

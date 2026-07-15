@@ -6,7 +6,6 @@ import os
 from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Tuple
 
-from workflows.model_spec import MODEL_SPECS
 from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import (
     BenchmarkTaskType,
@@ -45,20 +44,6 @@ class BenchmarkTaskCNN(BenchmarkTask):
     workflow_venv_type: WorkflowVenvType = (
         None  # no workflow venv needed for CNN benchmarks
     )
-
-
-@dataclass(frozen=True)
-class BenchmarkTaskEmbedding(BenchmarkTask):
-    param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
-    task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_VLLM_API
-    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.BENCHMARKS_VLLM
-
-
-@dataclass(frozen=True)
-class BenchmarkTaskVideo(BenchmarkTask):
-    param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
-    task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_VIDEO_API
-    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.BENCHMARKS_VIDEO
 
 
 @dataclass(frozen=True)
@@ -113,6 +98,7 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (16384, 128),
     (32768, 128),
     (65536, 128),
+    (131072, 128),
 ]
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
@@ -539,13 +525,14 @@ def cap_benchmark_params(
     return params
 
 
-# define benchmark configs for each model and each device configuration
-# uses:
-# 1. BENCHMARK_ISL_OSL_PAIRS
-# 2. ISL_OSL_IMAGE_RESOLUTION_PAIRS
-# num_prompts is set dynamically based on OSL because that mostly sets how long the benchmark takes
-BENCHMARK_CONFIGS = {}
-for model_id, model_spec in MODEL_SPECS.items():
+def build_benchmark_config(model_spec) -> BenchmarkConfig:
+    """Build benchmark tasks directly from a resolved model spec.
+
+    Runtime model specs supplied through ``--runtime-model-spec-json`` may not be
+    present in import-time ``MODEL_SPECS``. They still carry the same
+    ``device_model_spec`` fields needed to generate benchmark tasks.
+    """
+
     # Since each ModelConfig now represents a single device, use that device and its max_concurrency
     device = model_spec.device_type
     model_max_concurrency = model_spec.device_model_spec.max_concurrency
@@ -570,13 +557,6 @@ for model_id, model_spec in MODEL_SPECS.items():
     # Create performance reference task with capped values
     if model_spec.model_type == ModelType.CNN:
         perf_ref_task = BenchmarkTaskCNN(param_map={device: capped_perf_reference})
-    elif model_spec.model_type == ModelType.EMBEDDING:
-        perf_ref_task = BenchmarkTaskEmbedding(
-            param_map={device: capped_perf_reference},
-            workflow_venv_type=vllm_benchmark_venv,
-        )
-    elif model_spec.model_type == ModelType.VIDEO:
-        perf_ref_task = BenchmarkTaskVideo(param_map={device: capped_perf_reference})
     elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
         perf_ref_task = BenchmarkTaskTTS(param_map={device: capped_perf_reference})
     elif model_spec.model_type == ModelType.IMAGE:
@@ -600,15 +580,6 @@ for model_id, model_spec in MODEL_SPECS.items():
                         BenchmarkTaskParamsCNN(num_inference_steps=20, num_eval_runs=15)
                     ]
                 }
-            )
-        elif model_spec.model_type == ModelType.EMBEDDING:
-            benchmark_task_runs = BenchmarkTaskEmbedding(
-                param_map={device: [BenchmarkTaskParams()]},
-                workflow_venv_type=vllm_benchmark_venv,
-            )
-        elif model_spec.model_type == ModelType.VIDEO:
-            benchmark_task_runs = BenchmarkTaskVideo(
-                param_map={device: [BenchmarkTaskParams()]}
             )
         elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
             benchmark_task_runs = BenchmarkTaskTTS(
@@ -693,4 +664,14 @@ for model_id, model_spec in MODEL_SPECS.items():
             )
         )
 
-    BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(model_id=model_id, tasks=tasks)
+    return BenchmarkConfig(model_id=model_spec.model_id, tasks=tasks)
+
+
+def get_benchmark_config(model_spec) -> BenchmarkConfig:
+    """Build benchmark tasks from the resolved model spec.
+
+    ``--runtime-model-spec-json`` is already resolved into ``model_spec`` before
+    this helper runs. Do not consult the import-time catalog here: the runtime
+    JSON must override even when its ``model_id`` collides with a built-in spec.
+    """
+    return build_benchmark_config(model_spec)

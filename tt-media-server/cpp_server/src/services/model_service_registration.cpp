@@ -14,7 +14,6 @@
 #include "ipc/media_payload_ipc.hpp"
 #include "runtime/runners/embedding_runner.hpp"
 #include "runtime/runners/image_ipc_runner.hpp"
-#include "runtime/runners/llm_runner.hpp"
 #include "runtime/runners/runner_registry.hpp"
 #include "runtime/runners/sdxl/sdxl_edit_runner.hpp"
 #include "runtime/runners/sdxl/sdxl_generate_runner.hpp"
@@ -29,6 +28,7 @@
 #ifdef ENABLE_BLAZE
 #include "runtime/runners/blaze_runner/blaze_decode_runner.hpp"
 #include "runtime/runners/blaze_runner/blaze_prefill_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_scheduler_factory.hpp"
 #endif
 
 namespace tt::services {
@@ -45,35 +45,21 @@ void registerLLM() {
 
   auto& runners = utils::RunnerRegistry::instance();
 
-  // MOCK and LLAMA share LLMRunner; the inner IModelRunner is picked from
-  // cfg.runner_type in llm_runner/model_runner.cpp.
-  auto llmFactory =
-      [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
-         ipc::ITaskQueue* taskQueue,
-         ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
-    const auto& llm = std::get<config::LLMConfig>(cfg);
-    TT_LOG_INFO("[RunnerRegistry] Creating LLM runner ({})",
-                config::toString(llm.runner_type));
-    return std::make_unique<runners::LLMRunner>(llm, resultQueue, taskQueue,
-                                                cancelQueue);
-  };
-  runners.registerIpcRunner(config::ModelService::LLM,
-                            config::ModelRunnerType::MOCK, llmFactory);
-  runners.registerIpcRunner(config::ModelService::LLM,
-                            config::ModelRunnerType::LLAMA, llmFactory);
 #ifdef ENABLE_BLAZE
   auto blazeFactory =
       [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
          ipc::ITaskQueue* taskQueue,
          ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
     TT_LOG_INFO("[RunnerRegistry] Creating Blaze runner (pipeline_manager)");
-    const auto& llm = std::get<config::LLMConfig>(cfg);
+    const auto& llm = std::get<config::BlazeConfig>(cfg);
     if (config::llmMode() != config::LLMMode::PREFILL_ONLY) {
       return std::make_unique<runners::blaze::BlazeDecodeRunner>(
-          llm, resultQueue, taskQueue, cancelQueue);
+          llm, runners::blaze::makeDecodeScheduler(llm), resultQueue, taskQueue,
+          cancelQueue);
     } else {
       return std::make_unique<runners::blaze::BlazePrefillRunner>(
-          llm, resultQueue, taskQueue, cancelQueue);
+          llm, runners::blaze::makePrefillScheduler(llm), resultQueue,
+          taskQueue, cancelQueue);
     }
   };
   runners.registerIpcRunner(config::ModelService::LLM,
@@ -81,6 +67,9 @@ void registerLLM() {
                             blazeFactory);
   runners.registerIpcRunner(config::ModelService::LLM,
                             config::ModelRunnerType::MOCK_PIPELINE,
+                            blazeFactory);
+  runners.registerIpcRunner(config::ModelService::LLM,
+                            config::ModelRunnerType::MOCK_SCHEDULER,
                             blazeFactory);
 #endif
 

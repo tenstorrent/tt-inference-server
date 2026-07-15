@@ -45,6 +45,10 @@ from .inpainting_generation_param_test import (
 )
 from .tts_load_test import TTSLoadTest, run_tts_load
 from .tts_param_test import TTSParamTest, run_tts_param
+from .video_generation_i2v_param_test import (
+    VideoGenerationI2VParamTest,
+    run_video_generation_i2v_param,
+)
 from .video_generation_i2v_test import (
     VideoGenerationI2VTest,
     run_video_generation_i2v,
@@ -80,6 +84,7 @@ __all__ = [
     "TestConfig",
     "TestReport",
     "TestTarget",
+    "VideoGenerationI2VParamTest",
     "VideoGenerationI2VTest",
     "VideoGenerationLoadTest",
     "VideoGenerationParamTest",
@@ -99,6 +104,7 @@ __all__ = [
     "run_tts_load",
     "run_tts_param",
     "run_video_generation_i2v",
+    "run_video_generation_i2v_param",
     "run_video_generation_load",
     "run_video_generation_param",
 ]

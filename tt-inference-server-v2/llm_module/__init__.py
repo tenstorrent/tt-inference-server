@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
 from .config import DriverContext, LLMRunConfig, ServerConnection
+from .guidellm_scenarios import GuideLLMScenario, build_guidellm_scenarios
 from .drivers import (
     AgenticEvalDriver,
     AIPerfDriver,
@@ -11,7 +12,6 @@ from .drivers import (
     DriverResult,
     GenAIPerfDriver,
     GuideLLMDriver,
-    InferenceMaxDriver,
     LLMDriver,
     PrefixCacheDriverResult,
     SpecDecodeDriverResult,
@@ -22,11 +22,17 @@ from .drivers import (
 )
 from .prefix_cache import PrefixCacheRun, build_runs as build_prefix_cache_runs
 from .runner import LLMPerformanceRunner, RunnerResult
-from .server_control import ServerController
+from .server_control import (
+    HttpServerController,
+    RemoteOpenAIController,
+    ServerController,
+)
 from .spec_decode import SpecDecodeRun, build_runs as build_spec_decode_runs
 
 __all__ = [
     "LLMRunConfig",
+    "GuideLLMScenario",
+    "build_guidellm_scenarios",
     "ServerConnection",
     "DriverContext",
     "LLMDriver",
@@ -43,7 +49,6 @@ __all__ = [
     "build_spec_decode_runs",
     "GenAIPerfDriver",
     "GuideLLMDriver",
-    "InferenceMaxDriver",
     "SWEbenchAgenticDriver",
     "TerminalBenchAgenticDriver",
     "VLLMBenchDriver",
@@ -51,4 +56,6 @@ __all__ = [
     "LLMPerformanceRunner",
     "RunnerResult",
     "ServerController",
+    "HttpServerController",
+    "RemoteOpenAIController",
 ]

@@ -61,13 +61,13 @@ std::string LlamaTokenizer::applyChatTemplate(
   return out.str();
 }
 
-std::vector<int> LlamaTokenizer::assistantHeaderSequence() const {
+std::vector<uint32_t> LlamaTokenizer::assistantHeaderSequence() const {
   // Llama-3 chat template ends every assistant generation prompt with the
   // multi-token sequence `<|start_header_id|>assistant<|end_header_id|>\n\n`.
   // Encode it once on first use; the result is stable for the process
   // lifetime so it's safe to cache (per Tokenizer instance — Tokenizer is
   // thread-local).
-  static thread_local std::vector<int> cached;
+  static thread_local std::vector<uint32_t> cached;
   if (cached.empty()) {
     std::string header =
         std::string(llamaHeaderStart) + "assistant" + llamaHeaderEnd + "\n\n";

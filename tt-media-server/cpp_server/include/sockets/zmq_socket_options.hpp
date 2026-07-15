@@ -10,7 +10,7 @@ namespace tt::sockets::zmq_options {
 constexpr int CONTEXT_IO_THREADS = 1;
 constexpr int RECEIVE_TIMEOUT_MS = 100;
 constexpr int HEARTBEAT_INTERVAL_MS = 1000;
-constexpr int HEARTBEAT_TIMEOUT_MS = 3000;
+constexpr int HEARTBEAT_TIMEOUT_MS = 300000;
 constexpr int HEARTBEAT_TTL_MS = 3000;
 
 inline void applyCommonOptions(zmq::socket_t& socket,

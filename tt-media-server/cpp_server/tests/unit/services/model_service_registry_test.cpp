@@ -113,19 +113,19 @@ TEST(RunnerRegistryTest, IpcExactMatchPreferredOverFallback) {
         return std::make_unique<FakeIpcRunner>("mock");
       });
   RunnerRegistry::instance().registerIpcRunner(
-      ModelService::LLM, ModelRunnerType::LLAMA,
+      ModelService::LLM, ModelRunnerType::MOCK_PIPELINE,
       [](const tt::config::RunnerConfig&, tt::ipc::IResultQueue*,
          tt::ipc::ITaskQueue*,
          tt::ipc::ICancelQueue*) -> std::unique_ptr<tt::runners::IRunner> {
-        return std::make_unique<FakeIpcRunner>("llama");
+        return std::make_unique<FakeIpcRunner>("mock_pipeline");
       });
 
-  tt::config::RunnerConfig cfg = tt::config::LLMConfig{};
-  auto llama = RunnerRegistry::instance().createIpc(ModelService::LLM,
-                                                    ModelRunnerType::LLAMA, cfg,
-                                                    nullptr, nullptr, nullptr);
-  ASSERT_NE(llama, nullptr);
-  EXPECT_STREQ(llama->runnerType(), "llama");
+  tt::config::RunnerConfig cfg = tt::config::BlazeConfig{};
+  auto pipeline = RunnerRegistry::instance().createIpc(
+      ModelService::LLM, ModelRunnerType::MOCK_PIPELINE, cfg, nullptr, nullptr,
+      nullptr);
+  ASSERT_NE(pipeline, nullptr);
+  EXPECT_STREQ(pipeline->runnerType(), "mock_pipeline");
 }
 
 TEST(RunnerRegistryTest, IpcFallsBackToMockWhenTypeNotRegistered) {
@@ -138,7 +138,7 @@ TEST(RunnerRegistryTest, IpcFallsBackToMockWhenTypeNotRegistered) {
         return std::make_unique<FakeIpcRunner>("mock");
       });
 
-  tt::config::RunnerConfig cfg = tt::config::LLMConfig{};
+  tt::config::RunnerConfig cfg = tt::config::BlazeConfig{};
   auto runner = RunnerRegistry::instance().createIpc(
       ModelService::LLM, ModelRunnerType::PIPELINE_MANAGER, cfg, nullptr,
       nullptr, nullptr);
@@ -148,7 +148,7 @@ TEST(RunnerRegistryTest, IpcFallsBackToMockWhenTypeNotRegistered) {
 
 TEST(RunnerRegistryTest, IpcNoMatchReturnsNullptr) {
   RunnerRegistry::instance().clear();
-  tt::config::RunnerConfig cfg = tt::config::LLMConfig{};
+  tt::config::RunnerConfig cfg = tt::config::BlazeConfig{};
   EXPECT_EQ(RunnerRegistry::instance().createIpc(ModelService::LLM,
                                                  ModelRunnerType::MOCK, cfg,
                                                  nullptr, nullptr, nullptr),

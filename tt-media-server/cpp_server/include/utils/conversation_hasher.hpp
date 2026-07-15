@@ -139,7 +139,7 @@ struct PrefixCachingInfo {
  * representation of the int sequence so two callers produce matching hashes
  * iff the underlying token ids are identical.
  */
-uint64_t hashTokenPrefix(std::span<const int> tokens);
+uint64_t hashTokenPrefix(std::span<const uint32_t> tokens);
 
 /**
  * Compute prefix caching routing information from a tokenized prompt.
@@ -149,12 +149,12 @@ uint64_t hashTokenPrefix(std::span<const int> tokens);
  * @return Complete routing information for prefix caching (per-block hashes).
  */
 PrefixCachingInfo computePrefixCachingInfoFromTokens(
-    std::span<const int> tokens);
+    std::span<const uint32_t> tokens);
 
 /**
  * Compute per-block KV cache hashes using vLLM's prefix caching approach.
  *
- * Tokens are divided into blocks of `kvCacheBlockSize` (from config). Each
+ * Tokens are divided into blocks of `prefixCacheBlockSize` (from config). Each
  * block's hash is computed as `xxh64(block_tokens, seed=parent_hash)`, where
  * `parent_hash` is the hash of the previous block (0 for the first block).
  * This chaining ensures that two sequences sharing a common prefix produce
@@ -170,8 +170,8 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
  * @return Vector of per-block hashes (one per full block). Empty if the
  *         sequence is shorter than one block.
  */
-std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens,
-                                                   uint64_t parentHash = 0);
+std::vector<uint64_t> getPrefixCacheHashesByBlocks(
+    std::span<const uint32_t> tokens, uint64_t parentHash = 0);
 
 /**
  * Compute per-block KV cache hashes, filtering out thinking tokens.
@@ -191,7 +191,8 @@ std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens,
  * @return Vector of BlockHashInfo (one per full block of non-thinking tokens).
  */
 std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
-    std::span<const int> tokens, int64_t thinkStartId, int64_t thinkEndId,
-    uint64_t parentHash = 0, uint32_t parentThinkCount = 0);
+    std::span<const uint32_t> tokens, uint32_t thinkStartId,
+    uint32_t thinkEndId, uint64_t parentHash = 0,
+    uint32_t parentThinkCount = 0);
 
 }  // namespace tt::utils

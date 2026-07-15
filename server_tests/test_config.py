@@ -37,6 +37,16 @@ class TestConfig:
 
 _test_config_list = [
     TestConfig(
+        hf_model_repo="Qwen/Qwen3.6-27B",
+        tasks=[
+            TestTask(
+                task_name="vllm_chat_completions",
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
+                test_args=("s", "v"),
+            ),
+        ],
+    ),
+    TestConfig(
         hf_model_repo="Qwen/Qwen3-32B",
         tasks=[
             TestTask(
@@ -67,6 +77,26 @@ _test_config_list = [
         ],
     ),
     TestConfig(
+        hf_model_repo="google/gemma-4-12B-it",
+        tasks=[
+            TestTask(
+                task_name="vllm_chat_completions",
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
+                test_args=("s", "v"),
+            ),
+        ],
+    ),
+    TestConfig(
+        hf_model_repo="google/gemma-4-31B-it",
+        tasks=[
+            TestTask(
+                task_name="vllm_chat_completions",
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
+                test_args=("s", "v"),
+            ),
+        ],
+    ),
+    TestConfig(
         hf_model_repo="openai/gpt-oss-20b",
         tasks=[
             TestTask(
@@ -77,6 +107,26 @@ _test_config_list = [
             TestTask(
                 task_name="vllm_responses",
                 test_path=Path("server_tests/test_cases/test_vllm_responses.py"),
+                test_args=("s", "v"),
+            ),
+        ],
+    ),
+    TestConfig(
+        hf_model_repo="moonshotai/Kimi-K2.6",
+        tasks=[
+            TestTask(
+                task_name="vllm_chat_completions",
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
+                test_args=("s", "v"),
+            ),
+        ],
+    ),
+    TestConfig(
+        hf_model_repo="MiniMaxAI/MiniMax-M2.7",
+        tasks=[
+            TestTask(
+                task_name="vllm_chat_completions",
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
                 test_args=("s", "v"),
             ),
         ],

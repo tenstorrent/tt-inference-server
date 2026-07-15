@@ -8,19 +8,20 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <functional>
 #include <list>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <unordered_set>
 #include <vector>
 
-#include "domain/session.hpp"
+#include "domain/session_manager_structs.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
+#include "services/prefix_cache_router.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/concurrent_queue.hpp"
 #include "utils/conversation_hasher.hpp"
@@ -48,23 +49,9 @@ enum class CloseSessionResult {
 
 class SessionManager {
  public:
-  struct Candidate {
-    std::string sessionId;
-    size_t
-        matchedBlocks;  // total matched blocks (1 for key + matched remaining)
-    size_t sessionBlocks;  // total blocks in the cached session
-    uint32_t thinkTokens;  // accumulated think tokens at matched block
-  };
-
-  // Result of tryAcquireByPrefixHash: the session's UUID and pre-assigned slot.
-  struct AcquiredSession {
-    bool sessionFound;
-    std::string sessionId;
-    uint32_t slotId;
-    uint32_t numberOfMatchedTokens = 0;
-    uint32_t accumulatedThinkTokens = 0;  // Think tokens at matched block
-    std::vector<Candidate> candidatesList;
-  };
+  using Candidate = domain::prefix_cache::Candidate;
+  using AcquiredSession = PrefixCacheAcquireResult;
+  using SlotResult = SlotAcquireResult;
 
   SessionManager();
   ~SessionManager();
@@ -83,6 +70,7 @@ class SessionManager {
   CloseSessionResult closeSession(const std::string& sessionId);
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
   uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
+  uint32_t getCommittedBlocks(const std::string& sessionId) const;
 
   // Marks the session in-flight and registers the cancel function atomically.
   // The cancel function is invoked if closeSession is called while in-flight.
@@ -97,9 +85,18 @@ class SessionManager {
   std::shared_ptr<domain::Session> getSession(const std::string& sessionId);
   size_t getActiveSessionCount() const;
 
-  // Lock/unlock a slot to prevent eviction.
-  void lockSlot(uint32_t slotId);
+  domain::MarkInFlightResult tryMarkInFlight(
+      const std::string& sessionId, std::function<void()>& cancelFn,
+      std::optional<uint64_t> expectedKeyHash = std::nullopt,
+      const std::string* expectedResponseId = nullptr);
+  std::optional<uint64_t> getSessionHash(const std::string& sessionId) const;
+  bool setSessionHash(const std::string& sessionId, uint64_t keyHash);
+  bool setSessionResponseId(const std::string& sessionId,
+                            const std::string& responseId);
   void unlockSlot(uint32_t slotId);
+
+  // Lock a slot to prevent eviction.
+  void lockSlot(uint32_t slotId);
 
   /**
    * Try to find a session whose registered prefix hash matches one of the
@@ -127,15 +124,39 @@ class SessionManager {
       std::function<void()> cancelFn);
 
   /**
-   * Given a list of candidates, find one whose matched token count exceeds
-   * the MIN_TOKENS_TO_COPY threshold. Matched tokens = firstBlockSize for
-   * the first block + kvCacheBlockSize for each subsequent matched block.
-   * Candidates are assumed sorted by matchedBlocks descending.
-   *
-   * @return The best qualifying candidate, or std::nullopt if none qualifies.
+   * Compute block hashes from prompt tokens.
+   * Convenience wrapper around PrefixCacheRouter::computeBlockInfos.
    */
-  std::optional<Candidate> findASlotToCopyFrom(
-      const std::vector<Candidate>& candidates) const;
+  std::vector<utils::BlockHashInfo> computeBlockInfos(
+      std::span<const uint32_t> promptTokenIds) const;
+
+  /**
+   * Unified slot acquisition - the main entry point for prefix cache routing.
+   *
+   * Internally handles all routing layers:
+   *   1. Response-id lookup (if previousResponseId provided)
+   *   2. Prefix-hash lookup
+   *   3. New session allocation (if no cache hit)
+   *
+   * All hashing, block splitting, and session creation happens inside.
+   *
+   * @param promptTokenIds  Token IDs from the request prompt.
+   * @param opts            Routing options (previousResponseId, responseId,
+   * cancelFn).
+   * @param loop            Event loop for async session creation callback.
+   * @param onResolved      Callback with the result (session found or created).
+   * @param onError         Callback for errors (e.g., rate limit).
+   *
+   * The result contains everything needed to set up the request:
+   *   - sessionId, slotId: the acquired session/slot
+   *   - matchedTokens, accumulatedThinkTokens: for delta computation
+   *   - isNewSession: whether this is a fresh session
+   *   - blocks: for token accumulator initialization
+   */
+  void getSlot(std::span<const uint32_t> promptTokenIds, GetSlotOptions opts,
+               trantor::EventLoop* loop,
+               std::function<void(SlotAcquireResult)> onResolved,
+               std::function<void(const std::string&)> onError);
 
   /**
    * Route future lookups to this session by registering the given block infos.
@@ -170,16 +191,16 @@ class SessionManager {
   /**
    * First-time registration: associate a brand-new session with a response id.
    */
-  void initResponseId(const std::string& sessionId,
-                      const std::string& responseId);
+  void registerResponseId(const std::string& sessionId,
+                          const std::string& responseId);
 
   /**
-   * Re-key an existing response-id index entry. Looks up the session currently
+   * Update the response-id index entry. Looks up the session currently
    * registered under `previousResponseId`, removes that entry, and inserts a
    * new entry under `responseId`. No-op when either id is empty.
    */
-  void registerResponseId(const std::string& previousResponseId,
-                          const std::string& responseId);
+  void updateResponseId(const std::string& previousResponseId,
+                        const std::string& responseId);
 
   /**
    * Compute how many tokens of `blockInfos` are already cached for `sessionId`
@@ -196,6 +217,25 @@ class SessionManager {
    * so that future lookups report zero cached think tokens for this session.
    */
   void clearSessionBlockThinkTokens(const std::string& sessionId);
+
+  /**
+   * Mark the leading `residentBlocks` blocks of `sessionId`'s prefix as
+   * resident (KV computed and safe to copy from). Called when a prefill
+   * completes. Sets the count outright — the whole prompt is resident at that
+   * point. See Session::committedBlocks.
+   */
+  void setResidentPrefixBlocks(const std::string& sessionId,
+                               uint32_t residentBlocks);
+
+  /**
+   * Eagerly shrink `sessionId`'s resident-prefix count to the block count that
+   * corresponds to `matchedTokens` (the common prefix this turn shares with the
+   * cached session). On a divergent "rewind" turn this drops the now-stale tail
+   * before the slot overwrites it; on a pure extension it is a no-op. Called on
+   * a prefix-cache / response-id continuation HIT.
+   */
+  void shrinkResidentPrefixToMatchedTokens(const std::string& sessionId,
+                                           uint32_t matchedTokens);
 
  private:
   struct PendingAllocation {
@@ -226,43 +266,10 @@ class SessionManager {
   void handleMemoryResult(const domain::ManageMemoryResult& result);
   void updateSessionCountMetric();
 
-  // Prefix index helpers: maintain prefixIndex alongside the sessions map.
-  void removeFromPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
-
-  // Drop the responseId -> session mapping when it points at `sessionId`
-  // (called on close/evict). No-op if the id is empty or has been re-pointed
-  // at a different session.
-  void removeFromResponseIdIndex(const std::string& sessionId,
-                                 const std::string& responseId);
+  mutable std::unique_ptr<PrefixCacheRouter> prefixCacheRouter;
 
   mutable utils::ConcurrentMap<std::string, std::shared_ptr<domain::Session>>
       sessions;
-
-  // An entry in the prefix index: a group of sessions sharing the same prefix
-  // path, together with the remaining block info that follows (used for deeper
-  // prefix matching / numberOfMatchedTokens calculation).
-  struct RemainingBlockInfo {
-    uint64_t hash;
-    uint32_t accumulatedThinkTokens;
-  };
-
-  struct PrefixIndexEntry {
-    std::list<std::string> sessionIds;              // sessions registered here
-    std::list<RemainingBlockInfo> remainingBlocks;  // subsequent block info
-    uint32_t keyBlockThinkTokens = 0;  // think tokens at key hash block
-  };
-
-  // Secondary index: block hash -> entries (each with different remaining
-  // hashes pointing to different sessions/slots).
-  // Used by tryAcquireByPrefixHash / registerPrefixHash for prefix caching.
-  utils::ConcurrentMap<uint64_t, std::vector<PrefixIndexEntry>> prefixIndex;
-
-  // Secondary index: previous_response_id -> the session registered under it.
-  // Unlike prefixIndex (where many sessions can share a content hash), response
-  // ids are unique per turn, so each id maps to exactly one session. The
-  // prefix delta is derived from block matching (computeMatchedTokens), not
-  // stored here. Used by tryAcquireByResponseId / registerResponseId.
-  utils::ConcurrentMap<std::string, std::string> responseIdIndex;
 
   std::unique_ptr<ipc::boost::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::boost::MemoryResultQueue> memoryResultQueue;

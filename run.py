@@ -312,7 +312,24 @@ def parse_arguments():
         default="vllm",
         help="Benchmarking tool to use: 'vllm' for vLLM benchmark_serving.py (default), "
         "'genai' for genai-perf (Triton SDK), 'aiperf' for AIPerf (https://github.com/ai-dynamo/aiperf), "
-        "'guidellm' for GuideLLM (https://github.com/vllm-project/guidellm).",
+        "'guidellm' for GuideLLM (https://github.com/vllm-project/guidellm). ",
+    )
+    parser.add_argument(
+        "--goodput",
+        type=str,
+        default=None,
+        metavar="SLO",
+        help=(
+            "AIPerf --goodput SLO string applied to the LLM benchmark sweep "
+            "(--workflow benchmarks --tools aiperf): space-separated KEY:VALUE "
+            "pairs where KEY is a metric tag and VALUE is in the metric's "
+            "display unit. Reports the fraction of requests meeting every "
+            "threshold. Valid tags include time_to_first_token (ms), "
+            "request_latency (ms), inter_token_latency (ms), "
+            "output_token_throughput_per_user (tokens/s). Only used by the "
+            "'aiperf' tool; ignored by vllm/genai/guidellm. Example: "
+            "'time_to_first_token:4000 output_token_throughput_per_user:45'."
+        ),
     )
     parser.add_argument(
         "--no-auth",
@@ -399,19 +416,19 @@ def parse_arguments():
         "--model-category",
         type=str,
         nargs="+",
-        help="Filter by model category (IMAGE, AUDIO, CNN)",
+        help="Filter by model category (CNN, EMBEDDING)",
         default=None,
     )
     spec_tests_group.add_argument(
         "--suite-category",
         type=str,
-        help="Load suites for a specific category (e.g., image, audio)",
+        help="Load suites for a specific category (e.g., cnn, embedding)",
         default=None,
     )
     spec_tests_group.add_argument(
         "--test-name",
         type=str,
-        help="Filter by specific test class name (e.g., ImageGenerationLoadTest)",
+        help="Filter by specific test class name (e.g., CnnLoadTest)",
         default=None,
     )
     spec_tests_group.add_argument(
@@ -471,9 +488,12 @@ def parse_arguments():
     prefix_cache_group.add_argument(
         "--prefix-cache-preset",
         type=str,
-        choices=["ci", "full"],
+        choices=["ci", "full", "highcache_50k"],
         default="full",
-        help="Preset for --prefix-cache (default: full). 'ci' is a short regression sweep.",
+        help="Preset for --prefix-cache (default: full). 'ci' is a short regression sweep; "
+        "'highcache_50k' simulates the customer trillion-scale shape (50K shared/cacheable "
+        "prefix + 5K new ISL + 500 OSL at concurrency 32, ~90.9%% steady-state hit-rate) "
+        "with a matched zero-prefix baseline for TTFT-uplift comparison.",
     )
     prefix_cache_group.add_argument(
         "--prefix-cache-scenarios",
@@ -506,6 +526,28 @@ def parse_arguments():
         type=str,
         default=None,
         help="Path to a mooncake-format JSONL trace file for mooncake_trace scenarios.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-goodput",
+        type=str,
+        default=None,
+        metavar="SLO",
+        help="AIPerf --goodput SLO string: space-separated KEY:VALUE pairs (metric tag : "
+        "value in display unit). Reports requests/sec meeting every threshold. Tags include "
+        "time_to_first_token (ms), request_latency (ms), inter_token_latency (ms), "
+        "output_token_throughput_per_user (tokens/s). Overrides the preset/scenario goodput. "
+        "Example: 'time_to_first_token:4000 output_token_throughput_per_user:45'.",
+    )
+    prefix_cache_group.add_argument(
+        "--prefix-cache-metrics-url",
+        type=str,
+        action="append",
+        default=None,
+        metavar="URL",
+        help="Worker /metrics endpoint with the tt_prefix_cache_* counters, forwarded to "
+        "AIPerf as --server-metrics (load stays on the frontend). Accepts a full URL, "
+        "host:port, or host:port/metrics. Repeatable for multi-worker deployments. "
+        "Without it the scrape hits the prefix-unaware frontend and hit-rate is null.",
     )
     prefix_cache_group.add_argument(
         "--jwt-secret",
@@ -607,15 +649,15 @@ def parse_arguments():
     if args.eval_samples and args.limit_samples_mode:
         parser.error("--eval-samples and --limit-samples-mode are mutually exclusive.")
 
-    if args.prefix_cache and args.workflow != "benchmarks":
+    if args.prefix_cache and args.workflow not in ("benchmarks", "release"):
         parser.error(
-            "--prefix-cache currently requires --workflow benchmarks "
+            "--prefix-cache currently requires --workflow benchmarks or release "
             f"(got --workflow {args.workflow})."
         )
 
-    if args.spec_decode and args.workflow != "benchmarks":
+    if args.spec_decode and args.workflow not in ("benchmarks", "release"):
         parser.error(
-            "--spec-decode currently requires --workflow benchmarks "
+            "--spec-decode currently requires --workflow benchmarks or release "
             f"(got --workflow {args.workflow})."
         )
 

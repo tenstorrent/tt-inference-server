@@ -9,10 +9,10 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 #include "config/settings.hpp"
@@ -22,8 +22,6 @@
 namespace tt::dynamo {
 
 namespace {
-
-constexpr int K_CONTEXT_LENGTH = 131072;
 
 /// Used only when a referenced file is missing/unreadable. The frontend
 /// blake3-validates every file it fetches from the MDC, so for files that
@@ -152,7 +150,16 @@ RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
     return {"gpt_oss", "harmony"};
   }
   if (modelType == "minimax_m2") {
-    return {"minimax_append_think", "minimax_m2"};
+    return {"basic", "minimax_m2"};
+  }
+  if (modelType == "minimax_m3_vl") {
+    return {"minimax_m3", "minimax_m3"};
+  }
+  if (modelType == "glm_moe_dsa") {
+    return {"glm45", "glm47"};
+  }
+  if (modelType == "deepseek_v4") {
+    return {"deepseek_v4", "deepseek_v4"};
   }
   // deepseek_v3 and unknown types default to DeepSeek R1 reasoning.
   return {"deepseek_r1", nullptr};
@@ -185,7 +192,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   Json::Value card(Json::objectValue);
   card["display_name"] = c.model_name;
   card["slug"] = sanitizeSlug(c.model_name);
-  card["source_path"] = c.model_path;
+  card["source_path"] = c.model_name;
 
   const std::string configPath = c.model_path + "/config.json";
   const std::string tokenizerJsonPath = c.model_path + "/tokenizer.json";
@@ -249,9 +256,9 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   promptFormatter["hf_tokenizer_config_json"] = std::move(hfTokCfg);
   card["prompt_formatter"] = std::move(promptFormatter);
 
-  card["context_length"] = K_CONTEXT_LENGTH;
+  card["context_length"] = static_cast<int>(tt::config::maxContextLength());
   card["kv_cache_block_size"] =
-      static_cast<int>(tt::config::kvCacheBlockSize());
+      static_cast<int>(tt::config::prefixCacheBlockSize());
   card["migration_limit"] = 0;
   card["model_type"] = "Chat";
   card["model_input"] = "Tokens";

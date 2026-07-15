@@ -5,17 +5,16 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from pathlib import Path
 from typing import List
-from urllib.error import URLError
-from urllib.request import urlopen
 
 from llm_module import (
     DriverContext,
+    HttpServerController,
     LLMRunConfig,
+    RemoteOpenAIController,
     ServerConnection,
     make_agentic_driver,
 )
@@ -30,7 +29,16 @@ logger = logging.getLogger(__name__)
 
 
 def _select_agentic_tasks(ctx: MediaContext) -> list:
-    """Return EVALS_AGENTIC tasks; raise loudly if mixed with non-agentic."""
+    """Return the EVALS_AGENTIC tasks for this model.
+
+    Standard (lm-eval) tasks in the same EvalConfig are owned by
+    ``--workflow evals`` (which conversely filters out agentic tasks), so the
+    agentic runner simply selects the agentic tasks and skips the rest. Mixed
+    configs are a normal pattern (e.g. a model with GPQA + Terminal-Bench +
+    SWE-bench), and ``--eval-samples`` cannot be combined with ``--ci-mode``
+    (they are mutually exclusive in run.py), so failing hard on mixed configs
+    would leave no way to run agentic evals in CI.
+    """
     tasks = getattr(ctx.all_params, "tasks", []) or []
     agentic = [
         t for t in tasks if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
@@ -38,12 +46,12 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
     non_agentic = [
         t for t in tasks if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
     ]
-    if agentic and non_agentic:
-        raise RuntimeError(
-            f"v2 agentic runner only supports EVALS_AGENTIC tasks. "
-            f"Got non-agentic tasks: {[t.task_name for t in non_agentic]}. "
-            f"Either port those to v2, remove {ctx.model_spec.model_name!r} from "
-            f"_V2_ROUTED_MODELS, or use --eval-samples to select agentic tasks only."
+    if non_agentic:
+        logger.info(
+            "Skipping %d non-agentic task(s) under --workflow agentic "
+            "(run them via --workflow evals): %s",
+            len(non_agentic),
+            [t.task_name for t in non_agentic],
         )
     return agentic
 
@@ -58,7 +66,17 @@ def _server_connection(ctx: MediaContext) -> ServerConnection:
 
 def _driver_context(ctx: MediaContext) -> DriverContext:
     device = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
-    return DriverContext(output_dir=Path(ctx.output_path), device=device)
+    # In a `release` run the agentic driver shares the run directory with the
+    # LLM benchmark ("llm/") and prefix-cache ("prefix_cache/") outputs, so
+    # group agentic results under a top-level "agentic/" dir (mirroring the
+    # LLM layout) via ``agentic_release_layout``. The standalone `agentic`
+    # workflow keeps its existing eval_<hf>/agentic/<task> layout.
+    release_layout = getattr(ctx.runtime_config, "workflow", None) == "release"
+    return DriverContext(
+        output_dir=Path(ctx.output_path),
+        device=device,
+        agentic_release_layout=release_layout,
+    )
 
 
 def _configure_openai_env(ctx: MediaContext) -> None:
@@ -70,34 +88,36 @@ def _configure_openai_env(ctx: MediaContext) -> None:
 
 
 def _require_openai_server(ctx: MediaContext) -> None:
-    """Check the OpenAI-compatible server path used by agentic harnesses."""
+    """Block until the inference server is ready for the agentic harnesses.
 
-    url = f"{ctx.base_url}/v1/models"
-    try:
-        with urlopen(url, timeout=30) as response:
-            if response.status != 200:
-                raise RuntimeError(
-                    f"Expected status 200 from {url}, got {response.status}"
-                )
-            payload = json.loads(response.read().decode("utf-8"))
-    except (OSError, URLError, json.JSONDecodeError) as exc:
-        raise RuntimeError(
-            f"OpenAI-compatible server health check failed: {url}"
-        ) from exc
+    Reuses the same readiness controllers as the LLM eval/benchmark paths
+    instead of a single-shot probe, so a server that is still coming up (or
+    hits a transient blip) is retried rather than failing the run instantly:
 
-    model_ids = [
-        item.get("id")
-        for item in payload.get("data", [])
-        if isinstance(item, dict) and item.get("id")
-    ]
-    expected = ctx.model_spec.hf_model_repo
-    if expected not in model_ids:
-        logger.warning(
-            "OpenAI server is healthy but %s was not listed by /v1/models: %s",
-            expected,
-            model_ids,
+    * local ``--docker-server`` (``--net host``) deployments are polled on
+      vLLM's ``/health`` via :class:`HttpServerController`;
+    * remote OpenAI-compatible endpoints, which do not expose ``/health``, are
+      polled on ``/v1/models`` via :class:`RemoteOpenAIController`.
+    """
+    auth_token = os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY") or ""
+    if ctx.remote_server:
+        controller = RemoteOpenAIController(
+            base_url=ctx.server_url,
+            auth_token=auth_token,
         )
-    logger.info("OpenAI-compatible server health check passed via %s", url)
+    else:
+        controller = HttpServerController(
+            base_url=ctx.server_host,
+            service_port=ctx.server_port,
+            auth_token=auth_token,
+        )
+
+    endpoint = getattr(controller, "health_url", None) or getattr(
+        controller, "models_url", ""
+    )
+    if not controller.wait_for_healthy():
+        raise RuntimeError(f"Inference server health check failed at {endpoint}")
+    logger.info("Inference server health check passed via %s", endpoint)
 
 
 def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:

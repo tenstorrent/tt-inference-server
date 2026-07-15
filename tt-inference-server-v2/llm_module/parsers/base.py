@@ -67,6 +67,26 @@ class LLMResultParser(ABC):
         )
 
 
+def round_metric(value: Any, digits: int) -> Any:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return round(value, digits)
+    return value
+
+
+def metric_stat(raw: Mapping[str, Any], key: str, stat: str = "avg") -> Any:
+    metric = raw.get(key)
+    if not isinstance(metric, Mapping):
+        return None
+    return round_metric(metric.get(stat), 4)
+
+
+def metric_stat_int(raw: Mapping[str, Any], key: str) -> Any:
+    value = metric_stat(raw, key)
+    return int(value) if isinstance(value, (int, float)) else None
+
+
 def _slugify_block_id(model: str, device: str) -> str:
     parts = [p for p in (model, device) if p]
     if not parts:

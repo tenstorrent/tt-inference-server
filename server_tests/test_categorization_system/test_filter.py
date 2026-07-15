@@ -424,7 +424,7 @@ class TestFilter:
         Filter tests by test class name.
 
         Args:
-            test_name: Test class name (e.g., "ImageGenerationLoadTest")
+            test_name: Test class name (e.g., "CnnLoadTest")
 
         Returns:
             Self for method chaining

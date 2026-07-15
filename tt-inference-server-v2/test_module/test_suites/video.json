@@ -84,6 +84,11 @@
                             "poll_timeout": 800
                         }
                     }
+                },
+                {
+                    "template": "VideoGenerationI2VParamTest",
+                    "enabled": true,
+                    "description": "Wan2.2 I2V parameter sweep"
                 }
             ]
         },
