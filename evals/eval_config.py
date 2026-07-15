@@ -4117,7 +4117,10 @@ _eval_config_list = [
                     n_concurrent_trials=1,  # TODO increase back to 5 when batch > 1 is supported
                     n_attempts=1,
                     n_tasks=None,  # full dataset
-                    override_cpus=32,
+                    # QB2 release runners expose only 16 CPUs; docker compose
+                    # rejects a higher --cpus reservation ("range of CPUs is
+                    # from 0.01 to 16.00"). The H100 reference run used 32.
+                    override_cpus=16,
                     override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     agent_kwargs={
