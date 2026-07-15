@@ -3,33 +3,16 @@
 
 #include "gateway/prefill_connection_wiring.hpp"
 
-#include <mutex>
 #include <string>
 
 #include "gateway/dispatcher.hpp"
 #include "gateway/prefill_registry.hpp"
 #include "gateway/zmq_prefill_router.hpp"
-#include "sockets/socket_manager.hpp"
 #include "sockets/socket_messages.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::gateway {
 namespace {
-
-struct PrefillConnectionState {
-  void setServerId(const std::string& serverId) {
-    std::lock_guard<std::mutex> lock(mutex);
-    this->serverId = serverId;
-  }
-
-  std::string getServerId() const {
-    std::lock_guard<std::mutex> lock(mutex);
-    return serverId;
-  }
-
-  mutable std::mutex mutex;
-  std::string serverId;
-};
 
 enum class RegistrationLogReason {
   NONE,
@@ -79,61 +62,6 @@ void logPrefillRegistrationIfNeeded(
 }
 
 }  // namespace
-
-void registerTcpPrefillHandlers(PrefillSocketManagers& prefillSms,
-                                PrefillRegistry& registry,
-                                Dispatcher& dispatcher) {
-  for (auto& smPtr : prefillSms) {
-    tt::sockets::SocketManager* sm = smPtr.get();
-
-    // Shared between callbacks that may run on different threads. The id is
-    // unknown until the first registration message.
-    auto state = std::make_shared<PrefillConnectionState>();
-
-    sm->registerHandler<tt::sockets::PrefillRegistrationMessage>(
-        tt::sockets::tags::PREFILL_REGISTRATION,
-        [&registry, sm,
-         state](const tt::sockets::PrefillRegistrationMessage& msg) {
-          const auto logReason = registrationLogReason(registry, msg);
-          state->setServerId(msg.serverId);
-          registry.preRegister(msg.serverId, sm);
-          bool ok = registry.markRegistered(msg.serverId, msg.maxInFlight);
-          if (!ok) {
-            TT_LOG_ERROR("[Gateway] markRegistered failed for '{}'",
-                         msg.serverId);
-          } else {
-            logPrefillRegistrationIfNeeded(logReason, msg);
-          }
-        });
-
-    sm->registerHandler<tt::sockets::PrefillResultMessage>(
-        tt::sockets::tags::PREFILL_RESULT,
-        [&dispatcher, state](const tt::sockets::PrefillResultMessage& msg) {
-          dispatcher.onPrefillResult(state->getServerId(), msg);
-        });
-
-    sm->registerHandler<tt::sockets::PrefillCacheBlocksAddedMessage>(
-        tt::sockets::tags::PREFILL_CACHE_BLOCKS_ADDED,
-        [&dispatcher](const tt::sockets::PrefillCacheBlocksAddedMessage& msg) {
-          dispatcher.onCacheBlocksAdded(msg);
-        });
-
-    sm->registerHandler<tt::sockets::SlotReservationRequestMessage>(
-        tt::sockets::tags::SLOT_RESERVATION_REQUEST,
-        [&dispatcher, state](const tt::sockets::SlotReservationRequestMessage&
-                                 msg) {
-          dispatcher.onSlotReservationRequest(state->getServerId(), msg);
-        });
-
-    sm->setConnectionLostCallback([&registry, state]() {
-      const std::string sid = state->getServerId();
-      if (!sid.empty()) {
-        TT_LOG_WARN("[Gateway] Prefill '{}' connection lost", sid);
-        registry.markDown(sid);
-      }
-    });
-  }
-}
 
 void registerZmqPrefillHandlers(ZmqPrefillRouter& zmqPrefillRouter,
                                 PrefillRegistry& registry,

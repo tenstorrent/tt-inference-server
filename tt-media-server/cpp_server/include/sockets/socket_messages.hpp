@@ -39,7 +39,7 @@ struct SerializableMessage {
 struct PrefillRequestMessage {
   uint32_t taskId;
   std::vector<uint64_t> registrationHashes;
-  std::vector<int64_t> tokenIds;
+  std::vector<uint32_t> tokenIds;
   std::optional<int> maxTokens;
   std::optional<uint32_t> slotId;
   std::optional<float> temperature;
@@ -69,7 +69,7 @@ struct PrefillRequestMessage {
   static PrefillRequestMessage read(Archive& ar) {
     uint32_t tid;
     std::vector<uint64_t> hashes;
-    std::vector<int64_t> tids;
+    std::vector<uint32_t> tids;
     int mt;
     uint32_t sid;
     bool hasTemp;
@@ -111,7 +111,7 @@ struct PrefillResultMessage {
   uint32_t taskId;
   std::string generatedText;
   bool error = false;
-  std::vector<int64_t> tokenIds;
+  std::vector<uint32_t> tokenIds;
   std::optional<int> remainingTokens;
   std::optional<uint32_t> slotId;
   std::optional<float> temperature;
@@ -146,7 +146,7 @@ struct PrefillResultMessage {
   static PrefillResultMessage read(Archive& ar) {
     uint32_t tid;
     std::string genText;
-    std::vector<int64_t> tids;
+    std::vector<uint32_t> tids;
     int rt;
     uint32_t sid;
     bool err;

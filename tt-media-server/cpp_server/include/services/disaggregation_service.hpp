@@ -69,9 +69,10 @@ class DisaggregationService {
  private:
   struct PrefillWorkContext {
     std::shared_ptr<LLMRequest> request;
-    std::vector<int> fullPromptTokenIds;
+    std::vector<uint32_t> fullPromptTokenIds;
     uint32_t decodeSlotId = tt::domain::INVALID_SLOT_ID;
     std::optional<int> maxTokens;
+    uint32_t registrationHashCount = 0;
   };
 
   struct PrefillFirstPending {

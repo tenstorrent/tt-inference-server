@@ -3,9 +3,18 @@
 This guide shows how to add models, devices, and tests using the test matrix system.
 All changes are JSON-only — no Python code required.
 
-Two files are involved:
-- `server_tests/server_tests_config.json` — model definitions (`model_configs` section)
-- `server_tests/test_suites/<category>.json` — test suite definitions per category
+Two files are involved, and they live **alongside the test framework you are
+editing** — paths in every example below are relative to that package
+directory, not to the repo root:
+- `<pkg>/server_tests_config.json` — model definitions (`model_configs` section)
+- `<pkg>/test_suites/<category>.json` — test suite definitions per category
+
+There are two independent copies of these files:
+- `tt-inference-server-v2/test_module/` — the canonical, complete set
+  (CNN, EMBEDDING, IMAGE, AUDIO, TTS, VIDEO, LLM). **The video/audio/image
+  examples in this guide refer to files here.**
+- `server_tests/` — the legacy v1 set (CNN, EMBEDDING, IMAGE only). It has no
+  `video.json`/`audio.json`; only edit here for the v1 spec-test suites.
 
 ## How it works
 
@@ -230,6 +239,32 @@ The `id_name` is used in suite IDs (`distil-whisper-t3k`), while `model_marker` 
 | Suites with unique test lists | `test_suites/<category>.json` → `test_suites` | explicit definition |
 | Client-side concurrency for a load test | `test_cases[].targets.num_concurrent_requests` | overrides matrix/suite default |
 | Physical chip count probed by liveness | `hardware_defaults.<device>.num_of_devices` | inherited by `DeviceLivenessTest` |
+| Restrict a prerequisite to certain engines | `prerequisite_tests[].engines` | e.g. `["media", "forge"]`; omit for engine-agnostic |
+| Restrict a prerequisite to certain model categories | `prerequisite_tests[].categories` / `prerequisite_tests[].exclude_categories` | e.g. `exclude_categories: ["LLM"]`; omit for category-agnostic |
+
+### Prerequisite gating
+
+Each entry in `prerequisite_tests` is gated by two orthogonal, config-driven
+axes. A prerequisite is injected for a suite only when *both* gates pass.
+
+**`engines` allow-list.** Values match
+`workflows.workflow_types.InferenceEngine` (`"vLLM"`, `"media"`, `"forge"`).
+An allow-list means the prereq runs only when the active engine (set by
+`TestFilter.filter_prerequisites_by_engine(...)`) is in the list. Omit for
+engine-agnostic.
+
+**`categories` / `exclude_categories`.** Values match keys in
+`model_categories` (`"LLM"`, `"IMAGE"`, `"AUDIO"`, ...). The suite's category
+is derived from its `weights`. `categories` is an allow-list; the prereq runs
+only for categories in the list. `exclude_categories` is a deny-list and wins
+over the allow-list. Omit both for category-agnostic.
+
+`DeviceLivenessTest` uses `engines: ["media", "forge"]` **and**
+`exclude_categories: ["LLM"]` because it probes the tt-media-server
+`/tt-liveness` endpoint. LLM suites run bare `vllm serve`, which exposes
+`/health` (probed by the LLM eval/benchmark path) but has no `/tt-liveness`
+route. The category deny-list guarantees the skip even for callers that don't
+wire up the engine filter (dry-runs, CLI listings, doc generation).
 
 ### `num_concurrent_requests` vs `num_of_devices`
 

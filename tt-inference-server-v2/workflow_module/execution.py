@@ -26,6 +26,7 @@ from report_module import (
     ReportSchema,
     acceptance_criteria_check,
     build_acceptance_export,
+    task_failure_blockers,
 )
 from test_module.task_types import MediaTaskType
 
@@ -35,6 +36,15 @@ if TYPE_CHECKING:
 from .blocks_sink import BlockAccumulator, get_default_accumulator
 
 logger = logging.getLogger(__name__)
+
+
+_SPEC_METADATA_FIELDS: Tuple[Tuple[str, str], ...] = (
+    ("model_id", "model_id"),
+    ("model_repo", "hf_model_repo"),
+    ("inference_engine", "inference_engine"),
+    ("tt_metal_commit", "tt_metal_commit"),
+    ("vllm_commit", "vllm_commit"),
+)
 
 
 @dataclass(frozen=True)
@@ -80,7 +90,16 @@ class PrefixCacheOptions:
     request_rate: Optional[float] = None
     scenarios_json: Optional[str] = None
     trace_path: Optional[str] = None
+    # AIPerf --goodput SLO string (space-separated KEY:VALUE pairs).
+    # Overrides the manifest preset/scenario goodput when set.
+    goodput: Optional[str] = None
     auth_token: str = ""
+    # Worker /metrics endpoints scraped by AIPerf (--server-metrics) for
+    # the prefix-cache counters, independent of the load target. Repeatable
+    # for multi-worker deployments. Empty keeps AIPerf's auto-derived
+    # /metrics from --url (the frontend), which lacks the counters.
+    metrics_urls: Tuple[str, ...] = ()
+    venv_python: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +113,7 @@ class SpecDecodeOptions:
     preset: str = "full"
     warmup_requests: int = 4
     auth_token: str = ""
+    venv_python: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -114,11 +134,26 @@ class LLMBenchOptions:
     ``tools`` value selecting the perf-tool driver
     (``vllm`` / ``aiperf`` / ``genai`` / ``guidellm``).
     ``auth_token`` is the bearer token (minted JWT) sent to the server.
+    ``venv_python`` pins the interpreter whose ``bin/`` holds the perf-tool
+    binary; set for the ``release`` path, where ``run.py`` runs in the
+    V2_RUN_SCRIPT venv rather than the tool venv (a standalone benchmarks run
+    is already inside the tool venv via run_llm_bench.py, so it stays ``None``).
     Threaded through ``OrchestratorMetadata`` so ``run.py`` stays decoupled
     from ``llm_module``.
     """
 
     tools: str = "vllm"
+    auth_token: str = ""
+    venv_python: Optional[str] = None
+    # AIPerf --goodput SLO string (space-separated KEY:VALUE pairs). Only the
+    # aiperf driver consumes it; other tools ignore it.
+    goodput: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class LLMEvalOptions:
+    """Standard-eval knobs forwarded to ``EvalsWorkflow`` for LLM models."""
+
     auth_token: str = ""
 
 
@@ -137,6 +172,7 @@ class OrchestratorMetadata:
     spec_decode: Optional[SpecDecodeOptions] = None
     serving_bench: Optional[ServingBenchOptions] = None
     llm_bench: Optional[LLMBenchOptions] = None
+    llm_eval: Optional[LLMEvalOptions] = None
 
 
 class WorkflowExecution(ABC):
@@ -200,7 +236,7 @@ class WorkflowExecution(ABC):
             )
 
         try:
-            accepted, _blockers = self.apply_acceptance_criteria(schema)
+            accepted, _blockers = self.apply_acceptance_criteria(schema, task_outcomes)
             self.inject_metadata(schema)
             gen = self.generate_report(schema)
         except Exception as e:
@@ -255,7 +291,7 @@ class WorkflowExecution(ABC):
 
         elapsed = time.time() - started
         block_kind = block.kind if block is not None else None
-        if exit_code != 0 or block is None:
+        if exit_code != 0:
             self.logger.error(
                 "❌ task=%s rc=%d block=%s (%.1fs)",
                 task_type.value,
@@ -263,6 +299,10 @@ class WorkflowExecution(ABC):
                 block_kind,
                 elapsed,
             )
+        elif block is None:
+            # Runner intentionally produced no block (e.g. spec_tests found
+            # no matching suites for this model+device)
+            self.logger.info("⏭  task=%s no-op rc=0 (%.1fs)", task_type.value, elapsed)
         else:
             self.logger.info(
                 "✅ task=%s block=%s (%.1fs)", task_type.value, block_kind, elapsed
@@ -274,8 +314,18 @@ class WorkflowExecution(ABC):
             return None
         return self.accumulator.build_schema()
 
-    def apply_acceptance_criteria(self, schema: ReportSchema) -> Tuple[bool, list]:
-        accepted, blockers, categories = acceptance_criteria_check(schema)
+    def apply_acceptance_criteria(
+        self, schema: ReportSchema, task_outcomes: Sequence[TaskOutcome]
+    ) -> Tuple[bool, dict]:
+        accepted, blockers, categories = acceptance_criteria_check(
+            schema, known_issues=self._known_issues()
+        )
+        crash_blockers = task_failure_blockers(
+            (o.task_type, o.exit_code, o.block_kind is not None) for o in task_outcomes
+        )
+        if crash_blockers:
+            blockers = {**blockers, **crash_blockers}
+            accepted = False
         schema.metadata.update(
             build_acceptance_export(
                 accepted, blockers, categories, self._model_status()
@@ -288,7 +338,18 @@ class WorkflowExecution(ABC):
         )
         return accepted, blockers
 
-    def _model_status(self) -> Optional[str]:
+    def _known_issues(self) -> Optional[list]:
+        """model_spec known_issues (waivers) for this device, or None.
+
+        Guarded with getattr so a spec that predates the field, or a differently
+        shaped ctx, degrades to "no waivers" rather than raising.
+        """
+        spec = getattr(self.ctx, "model_spec", None)
+        device_spec = getattr(spec, "device_model_spec", None)
+        return getattr(device_spec, "known_issues", None) or None
+
+    def _load_runtime_model_spec(self) -> Optional[dict]:
+        """Return the ``runtime_model_spec`` sub-dict from the spec JSON, if any."""
         path = self.orchestrator_metadata.runtime_model_spec_json
         if not path:
             return None
@@ -298,9 +359,11 @@ class WorkflowExecution(ABC):
         except (OSError, ValueError):
             return None
         spec = data.get("runtime_model_spec") if isinstance(data, dict) else None
-        if isinstance(spec, dict):
-            return spec.get("status")
-        return None
+        return spec if isinstance(spec, dict) else None
+
+    def _model_status(self) -> Optional[str]:
+        spec = self._load_runtime_model_spec()
+        return spec.get("status") if spec else None
 
     def inject_metadata(self, schema: ReportSchema) -> None:
         meta = schema.metadata
@@ -312,6 +375,26 @@ class WorkflowExecution(ABC):
             meta["run_command"] = m.run_command
         if m.runtime_model_spec_json is not None:
             meta["runtime_model_spec_json"] = m.runtime_model_spec_json
+        self._inject_model_spec_metadata(meta)
+
+    def _inject_model_spec_metadata(self, meta: dict) -> None:
+        """Populate identity/provenance fields from the runtime model spec.
+
+        Single source of truth for both media and LLM reports: every field is
+        written whenever the spec is available (``None`` when the spec omits
+        it, e.g. ``tt_metal_commit`` for a media image) so the report metadata
+        schema is stable across workflows. ``model_impl`` comes from the
+        nested ``impl.impl_name`` (the hyphenated display name, e.g.
+        ``tt-transformers``); the rest map verbatim per
+        :data:`_SPEC_METADATA_FIELDS`.
+        """
+        spec = self._load_runtime_model_spec()
+        if not spec:
+            return
+        for meta_key, spec_key in _SPEC_METADATA_FIELDS:
+            meta[meta_key] = spec.get(spec_key)
+        impl = spec.get("impl")
+        meta["model_impl"] = impl.get("impl_name") if isinstance(impl, dict) else None
 
     def generate_report(self, schema: ReportSchema) -> GenerateResult:
         report_dir = Path(self.ctx.output_path).parent
@@ -324,6 +407,7 @@ class WorkflowExecution(ABC):
 __all__ = [
     "ServingBenchOptions",
     "LLMBenchOptions",
+    "LLMEvalOptions",
     "OrchestratorMetadata",
     "PrefixCacheOptions",
     "SpecDecodeOptions",

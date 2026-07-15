@@ -196,6 +196,8 @@ class TestWorkflowExecution:
         with patch(
             "workflows.run_workflows.has_spec_tests_configured", return_value=True
         ), patch(
+            "workflows.run_workflows.has_agentic_tasks_configured", return_value=False
+        ), patch(
             "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
         ) as mock_run_single:
             workflow_results = run_workflows(
@@ -223,6 +225,107 @@ class TestWorkflowExecution:
             # First workflow should start without trace capture disabled
             # Subsequent workflows should have trace capture disabled
 
+    def test_release_llm_benchmarks_step_delegates_to_v2(self):
+        """Release keeps v1 evals/reports but routes LLM benchmarks through v2."""
+        from unittest.mock import MagicMock
+
+        from workflows.workflow_types import ModelType
+
+        model_spec = Namespace(
+            model_name="Kimi-K2.6",
+            model_type=ModelType.LLM,
+        )
+        runtime_config = RuntimeConfig(
+            model="Kimi-K2.6",
+            workflow="release",
+            device="SUPER_CLUSTER",
+            impl="tt-transformers",
+            disable_trace_capture=False,
+        )
+
+        def make_setup(_model_spec, runtime_config_arg, _json_fpath):
+            manager = MagicMock()
+            # Real WorkflowSetup exposes the lowercase workflow-config name;
+            # the loop assigns the uppercase enum name to runtime_config.workflow.
+            manager.workflow_config.name = runtime_config_arg.workflow.lower()
+            manager.run_workflow_script.return_value = 0
+            return manager
+
+        with patch(
+            "workflows.run_workflows.has_spec_tests_configured", return_value=False
+        ), patch(
+            "workflows.run_workflows.has_agentic_tasks_configured", return_value=False
+        ), patch(
+            # Kimi-K2.6 has server tests configured; isolate this test to
+            # the benchmarks-delegation behavior by dropping the TESTS step.
+            "workflows.run_workflows.TEST_CONFIGS",
+            {},
+        ), patch(
+            "workflows.v2_bridge.run_v2_llm_benchmark_workflow",
+            return_value=WorkflowResult(workflow_name="benchmarks", return_code=0),
+        ) as mock_v2_bench, patch(
+            "workflows.run_workflows.WorkflowSetup", side_effect=make_setup
+        ) as mock_setup:
+            workflow_results = run_workflows(
+                model_spec, runtime_config, "test_json_path.json"
+            )
+
+        mock_v2_bench.assert_called_once()
+        assert mock_setup.call_count == 2
+        assert [r.workflow_name for r in workflow_results] == [
+            "evals",
+            "benchmarks",
+            "reports",
+        ]
+
+    def test_release_agentic_step_delegates_to_v2(self):
+        """Release runs agentic tasks through the v2 agentic workflow."""
+        from workflows.workflow_types import ModelType
+
+        model_spec = Namespace(
+            model_name="Qwen3.6",
+            model_type=ModelType.LLM,
+        )
+        runtime_config = RuntimeConfig(
+            model="Qwen3.6",
+            workflow="release",
+            device="gpu",
+            impl="tt-transformers",
+            disable_trace_capture=False,
+        )
+        run_single_calls = []
+
+        def mock_run_single(_model_spec, runtime_config_arg, _json_fpath):
+            workflow_type = WorkflowType.from_string(runtime_config_arg.workflow)
+            run_single_calls.append(workflow_type.name)
+            return WorkflowResult(
+                workflow_name=workflow_type.name.lower(),
+                return_code=0,
+            )
+
+        with patch(
+            "workflows.run_workflows.has_spec_tests_configured", return_value=False
+        ), patch(
+            "workflows.run_workflows.has_agentic_tasks_configured", return_value=True
+        ), patch(
+            "workflows.v2_bridge.run_v2_workflows",
+            return_value=[WorkflowResult(workflow_name="agentic", return_code=0)],
+        ) as mock_v2, patch(
+            "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
+        ):
+            workflow_results = run_workflows(
+                model_spec, runtime_config, "test_json_path.json"
+            )
+
+        mock_v2.assert_called_once()
+        assert run_single_calls == ["EVALS", "BENCHMARKS", "REPORTS"]
+        assert [r.workflow_name for r in workflow_results] == [
+            "evals",
+            "agentic",
+            "benchmarks",
+            "reports",
+        ]
+
     def test_release_workflow_omits_optional_tests_when_unconfigured(self):
         """Test release skips optional workflows (pytest, spec_tests) when the model lacks config."""
         model_spec = Namespace(
@@ -247,6 +350,8 @@ class TestWorkflowExecution:
 
         with patch(
             "workflows.run_workflows.has_spec_tests_configured", return_value=False
+        ), patch(
+            "workflows.run_workflows.has_agentic_tasks_configured", return_value=False
         ), patch(
             "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
         ):
@@ -718,7 +823,7 @@ class TestMainWorkflowIntegration:
         ]
 
         with patch("sys.argv", test_args), patch(
-            "run.run_workflows",
+            "run.run_v2_workflows",
             side_effect=RuntimeError("venv setup failed"),
         ), patch(
             "run.validate_setup",
@@ -759,7 +864,7 @@ class TestMainWorkflowIntegration:
             "run.run_docker_server",
             return_value=mock_server_handle,
         ), patch(
-            "run.run_workflows",
+            "run.run_v2_workflows",
             return_value=[
                 WorkflowResult(workflow_name="evals", return_code=0),
                 WorkflowResult(workflow_name="benchmarks", return_code=0),

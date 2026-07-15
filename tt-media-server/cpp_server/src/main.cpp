@@ -37,11 +37,10 @@
 #include "utils/logger.hpp"
 #include "utils/service_factory.hpp"
 
-// Include OpenAPI controller (defined in openapi.cpp)
-// The controller auto-registers itself with Drogon
 namespace {
 
 volatile std::sig_atomic_t gShutdownRequested = 0;
+volatile std::sig_atomic_t gSignalCount = 0;
 
 // Returns true if the port is available, false if already in use.
 bool probePort(const std::string& host, uint16_t port) {
@@ -64,9 +63,14 @@ bool probePort(const std::string& host, uint16_t port) {
 }
 
 void signalHandler(int signal) {
-  TT_LOG_WARN("\n[Main] Received signal {}, initiating shutdown...", signal);
-  gShutdownRequested = 1;
-  drogon::app().quit();
+  bool firstSignal = (gSignalCount == 0);
+  gSignalCount = 1;
+  if (firstSignal) {
+    gShutdownRequested = 1;
+    return;
+  }
+  std::signal(signal, SIG_DFL);
+  std::raise(signal);
 }
 
 /** Map the runtime ModelService to the metrics layout this binary's runner
@@ -74,7 +78,7 @@ void signalHandler(int signal) {
 tt::worker::MetricsLayout metricsLayoutFromConfig() {
   switch (tt::config::modelService()) {
     case tt::config::ModelService::LLM:
-      return tt::worker::MetricsLayout::SP_PIPELINE_RUNNER;
+      return tt::worker::MetricsLayout::BLAZE_RUNNER;
     case tt::config::ModelService::EMBEDDING:
       return tt::worker::MetricsLayout::EMBEDDING;
     case tt::config::ModelService::IMAGE:
@@ -83,37 +87,42 @@ tt::worker::MetricsLayout metricsLayoutFromConfig() {
   return tt::worker::MetricsLayout::UNKNOWN;
 }
 
+void startWorker(int workerId) {
+  tracy_config::tracyStartupWorker(workerId);
+  tt::utils::ZeroOverheadLogger::initialize(
+      tt::config::logInstanceTag(workerId));
+
+  tt::worker::SingleProcessWorkerMetrics::instance().initialize(
+      workerId, metricsLayoutFromConfig());
+
+  tt::worker::WorkerConfig cfg =
+      tt::worker::makeWorkerConfigForProcess(workerId);
+  tt::worker::SingleProcessWorker worker(cfg);
+
+  static std::atomic<bool> workerShutdown{false};
+  std::signal(SIGTERM, [](int) { workerShutdown.store(true); });
+  std::signal(SIGINT, [](int) { workerShutdown.store(true); });
+
+  std::thread shutdownMonitor([&worker] {
+    while (!workerShutdown.load()) {
+      std::this_thread::sleep_for(
+          std::chrono::milliseconds(tt::config::defaults::SHUTDOWN_POLL_MS));
+    }
+    worker.stop();
+  });
+
+  worker.start();
+  workerShutdown.store(true);
+  if (shutdownMonitor.joinable()) shutdownMonitor.join();
+  return;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
   if (argc >= 3 && std::strcmp(argv[1], "--worker") == 0) {
     int workerId = std::atoi(argv[2]);
-    tracy_config::tracyStartupWorker(workerId);
-    tt::utils::ZeroOverheadLogger::initialize(
-        tt::config::logInstanceTag(workerId));
-
-    tt::worker::SingleProcessWorkerMetrics::instance().initialize(
-        workerId, metricsLayoutFromConfig());
-
-    tt::worker::WorkerConfig cfg =
-        tt::worker::makeWorkerConfigForProcess(workerId);
-    tt::worker::SingleProcessWorker worker(cfg);
-
-    static std::atomic<bool> workerShutdown{false};
-    std::signal(SIGTERM, [](int) { workerShutdown.store(true); });
-    std::signal(SIGINT, [](int) { workerShutdown.store(true); });
-
-    std::thread shutdownMonitor([&worker] {
-      while (!workerShutdown.load()) {
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(tt::config::defaults::SHUTDOWN_POLL_MS));
-      }
-      worker.stop();
-    });
-
-    worker.start();
-    workerShutdown.store(true);
-    if (shutdownMonitor.joinable()) shutdownMonitor.join();
+    startWorker(workerId);
     return 0;
   }
 
@@ -152,6 +161,15 @@ int main(int argc, char* argv[]) {
   // Setup signal handlers
   std::signal(SIGINT, signalHandler);
   std::signal(SIGTERM, signalHandler);
+
+  std::thread shutdownThread([&]() {
+    while (gShutdownRequested == 0) {
+      std::this_thread::sleep_for(
+          std::chrono::milliseconds(tt::config::defaults::SHUTDOWN_POLL_MS));
+    }
+    drogon::app().quit();
+  });
+  shutdownThread.detach();
 
   auto modelSvc = tt::config::modelService();
   std::string serviceName = tt::config::toString(modelSvc);
@@ -218,7 +236,7 @@ int main(int argc, char* argv[]) {
         numWorkers, metricsLayoutFromConfig());
     agg.initialize(shm.get(), mgr, std::move(layoutByWorker));
     agg.registerRenderer(
-        tt::worker::MetricsLayout::SP_PIPELINE_RUNNER,
+        tt::worker::MetricsLayout::BLAZE_RUNNER,
         std::make_unique<tt::worker::SpPipelineWorkerMetricsRenderer>());
     agg.prebuildAll();
   }
@@ -359,6 +377,7 @@ int main(int argc, char* argv[]) {
 
       tt::dynamo::DynamoEndpoint::Options opts;
       opts.bind_host = tt::config::dynamoBindHost();
+      opts.bind_port = tt::config::dynamoBindPort();
       opts.namespace_name = tt::config::dynamoNamespace();
       opts.component = tt::config::dynamoComponent();
       opts.endpoint = tt::config::dynamoEndpointName();

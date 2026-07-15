@@ -8,6 +8,7 @@
 
 #include "config/defaults.hpp"
 #include "config/runner_config.hpp"
+#include "config/settings.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
 
@@ -23,7 +24,8 @@ class TaskQueue : public tt::ipc::ITaskQueue {
 
   /** Create a new queue (main process). */
   TaskQueue(const std::string& name, int capacity)
-      : queue_(std::make_unique<Queue>(name, capacity)) {}
+      : queue_(std::make_unique<Queue>(name, capacity,
+                                       tt::config::taskQueueMaxMsgSize())) {}
 
   /** Open an existing queue (worker process). */
   explicit TaskQueue(const std::string& name)
@@ -34,13 +36,13 @@ class TaskQueue : public tt::ipc::ITaskQueue {
   }
 
   std::unique_ptr<tt::domain::llm::Sequence> tryPop() override {
-    tt::domain::llm::Sequence seq(0, 1, {});
+    tt::domain::llm::Sequence seq(0, {});
     if (!queue_->tryPop(seq)) return nullptr;
     return std::make_unique<tt::domain::llm::Sequence>(std::move(seq));
   }
 
   std::unique_ptr<tt::domain::llm::Sequence> receive() override {
-    tt::domain::llm::Sequence seq(0, 1, {});
+    tt::domain::llm::Sequence seq(0, {});
     queue_->receive(seq);
     return std::make_unique<tt::domain::llm::Sequence>(std::move(seq));
   }

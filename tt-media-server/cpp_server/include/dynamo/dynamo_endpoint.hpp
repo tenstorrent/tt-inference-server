@@ -37,6 +37,8 @@ class DynamoEndpoint {
  public:
   struct Options {
     std::string bind_host = "0.0.0.0";
+    /// TCP port the listener binds to. 0 = OS-assigned ephemeral port
+    uint16_t bind_port = 0;
     /// Address the discovery store advertises. When empty, the local IP is
     /// auto-detected.
     std::string advertise_host;
@@ -81,7 +83,11 @@ class DynamoEndpoint {
 
  private:
   GenerateHandler makeGenerateHandler();
-  std::string detectAdvertiseHost() const;
+  /// Resolve the address discovery should advertise. Precedence: the
+  /// `DYN_TCP_RPC_HOST` env var, then the source IP the kernel uses to route
+  /// to `etcdEndpoints` (correct on multi-interface hosts where etcd and the
+  /// frontend share a network), then the first non-loopback IPv4 interface.
+  std::string detectAdvertiseHost(const std::string& etcdEndpoints) const;
 
   std::shared_ptr<services::LLMPipeline> pipeline_;
   Options options_;

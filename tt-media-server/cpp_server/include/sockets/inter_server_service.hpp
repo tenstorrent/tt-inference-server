@@ -90,7 +90,7 @@ class InterServerService {
    */
   bool sendPrefillRequest(uint32_t taskId,
                           const std::vector<uint64_t>& registrationHashes,
-                          const std::vector<int64_t>& tokenIds,
+                          const std::vector<uint32_t>& tokenIds,
                           std::optional<int> maxTokens = std::nullopt,
                           std::optional<uint32_t> slotId = std::nullopt,
                           const tt::domain::llm::SamplingParams& sampling = {},

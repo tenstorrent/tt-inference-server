@@ -35,13 +35,11 @@ bool InterServerService::initializeFromConfig() {
   auto host = tt::config::socketHost();
   auto port = tt::config::socketPort();
   const bool useGatewayMode = tt::config::usePrefillGateway();
-  const bool zmqTransport =
-      tt::config::socketTransport() == tt::sockets::transport_names::ZMQ;
 
   bool success = false;
 
-  // Gateway mode always makes decode dial the gateway. TCP prefills listen for
-  // the gateway, while ZMQ prefills dial the gateway's shared ROUTER socket.
+  // Gateway mode always makes decode dial the gateway.
+  // ZMQ prefills dial the gateway's shared ROUTER socket.
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     if (useGatewayMode) {
       TT_LOG_INFO(
@@ -57,29 +55,19 @@ bool InterServerService::initializeFromConfig() {
     prefillHealthProbeMode = success;
   } else if (mode == tt::config::LLMMode::PREFILL_ONLY) {
     if (useGatewayMode) {
-      if (zmqTransport) {
-        TT_LOG_INFO(
-            "[InterServerService] Prefill (gateway ZMQ mode): connecting to "
-            "{}:{}",
-            host, port);
-        success = socketManager.initializeAsClient(host, port);
-        periodicRegistrationMode = success;
-      } else {
-        TT_LOG_INFO(
-            "[InterServerService] Prefill (gateway mode): listening on port {} "
-            "for gateway",
-            port);
-        success = socketManager.initializeAsServer(port);
-        periodicRegistrationMode = success;
-      }
+      TT_LOG_INFO(
+          "[InterServerService] Prefill (gateway mode): connecting to {}:{}",
+          host, port);
+      success = socketManager.initializeAsClient(host, port);
+      periodicRegistrationMode = success;
       gatewayMode = success;
     } else {
       TT_LOG_INFO(
           "[InterServerService] Prefill (direct mode): connecting to {}:{}",
           host, port);
       success = socketManager.initializeAsClient(host, port);
-      // Direct ZMQ needs one initial frame so decode can route back to prefill.
-      periodicRegistrationMode = success && zmqTransport;
+      // ZMQ needs one initial frame so decode can route back to prefill.
+      periodicRegistrationMode = success;
     }
   }
 
@@ -145,7 +133,7 @@ bool InterServerService::isEnabled() const { return enabled; }
 
 bool InterServerService::sendPrefillRequest(
     uint32_t taskId, const std::vector<uint64_t>& registrationHashes,
-    const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens,
+    const std::vector<uint32_t>& tokenIds, std::optional<int> maxTokens,
     std::optional<uint32_t> slotId,
     const tt::domain::llm::SamplingParams& sampling, int decodePositionId,
     int decodeSkipTokens) {

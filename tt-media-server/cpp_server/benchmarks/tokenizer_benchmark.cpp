@@ -96,7 +96,7 @@ BenchmarkResult benchmarkEncode(const Tokenizer& tokenizer,
   }
 
   auto start = std::chrono::high_resolution_clock::now();
-  std::vector<int> tokens;
+  std::vector<uint32_t> tokens;
 
   for (size_t i = 0; i < NUM_BENCHMARK_ITERATIONS; ++i) {
     tokens = tokenizer.encode(text);
@@ -115,7 +115,7 @@ BenchmarkResult benchmarkEncode(const Tokenizer& tokenizer,
 }
 
 BenchmarkResult benchmarkDecode(const Tokenizer& tokenizer, size_t numTokens) {
-  std::vector<int> tokens;
+  std::vector<uint32_t> tokens;
   for (size_t i = 0; i < numTokens; ++i) {
     tokens.push_back(100 + (i % 1000));
   }

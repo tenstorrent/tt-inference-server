@@ -7,17 +7,77 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 from report_module.generator import (
     ReportGenerator,
+    _build_spec_test_summary_markdown,
     _coerce_schema,
     _collapse_same_heading_blocks,
+    _consolidate_eval_blocks,
     generate_report,
 )
 from report_module.schema import Block, ReportSchema
+
+
+def _squash(md: str) -> str:
+    return re.sub(r" +", " ", md)
+
+
+def test_spec_summary_distinguishes_skip_error_from_pass_fail():
+    runs = [
+        {"test_name": "A", "status": "pass", "success": True, "attempts": 1},
+        {"test_name": "B", "status": "fail", "success": False, "attempts": 1},
+        {
+            "test_name": "C",
+            "status": "error",
+            "success": False,
+            "attempts": 0,
+            "error": {"message": "boom"},
+        },
+        {
+            "test_name": "D",
+            "status": "skip",
+            "success": False,
+            "reason": "no board",
+            "attempts": 0,
+        },
+        {"test_name": "E", "status": "na", "reason": "no dataset", "attempts": 0},
+    ]
+    md = _squash(_build_spec_test_summary_markdown(runs, "2026-07-05"))
+
+    assert "| Passed | 1 |" in md
+    assert "| Failed | 2 |" in md  # fail + error both blocking
+    assert "| Skipped | 1 |" in md
+    assert "| NA | 1 |" in md
+    # Success rate excludes non-blocking skip/NA: 1 pass / (1 pass + 2 blocking).
+    assert "| Success Rate | 33.3% |" in md
+    assert "✅ PASS" in md
+    assert "❌ FAIL" in md
+    assert "❌ ERROR" in md
+    assert "⏭️ SKIP" in md
+    assert "🟨 NA" in md
+    assert "no board" in md and "boom" in md
+
+
+def test_spec_summary_legacy_rows_without_status():
+    runs = [
+        {"test_name": "A", "success": True, "attempts": 1},
+        {"test_name": "B", "success": False, "attempts": 1},
+    ]
+    md = _squash(_build_spec_test_summary_markdown(runs, "2026-07-05"))
+    assert "| Passed | 1 |" in md
+    assert "| Failed | 1 |" in md
+
+
+def _eval_block(task: str, **data) -> Block:
+    payload = {"task_name": task, "tolerance": 0.05, **data}
+    return Block(
+        kind="evals", task_type="llm", title=f"LLM Eval — {task}", data=payload
+    )
 
 
 def _schema(*blocks: Block) -> ReportSchema:
@@ -59,6 +119,30 @@ class TestCollapseSameHeadingBlocks:
         assert len(_collapse_same_heading_blocks([a, b])) == 2
 
 
+class TestConsolidateEvalBlocks:
+    def test_multiple_evals_merge_into_one_block(self):
+        sections = [_eval_block("a", score=1.0), _eval_block("b", score=2.0)]
+        merged = _consolidate_eval_blocks(sections)
+        assert len(merged) == 1
+        assert merged[0].title == "Accuracy Evaluations"
+        assert merged[0].task_type is None
+        records = merged[0].data["records"]
+        assert [r["task_name"] for r in records] == ["a", "b"]
+
+    def test_single_eval_block_is_left_unchanged(self):
+        sections = [_eval_block("a", score=1.0)]
+        assert _consolidate_eval_blocks(sections) is sections
+
+    def test_non_eval_blocks_are_preserved_in_order(self):
+        head = Block(kind="benchmarks", title="B", data={"records": [{"x": 1}]})
+        tail = Block(kind="spec_tests", title="S", data={"records": [{"y": 2}]})
+        merged = _consolidate_eval_blocks(
+            [head, _eval_block("a"), _eval_block("b"), tail]
+        )
+        assert [b.kind for b in merged] == ["benchmarks", "evals", "spec_tests"]
+        assert merged[1].title == "Accuracy Evaluations"
+
+
 class TestGenerate:
     def test_writes_markdown_and_json(self, tmp_path: Path):
         result = generate_report(
@@ -74,6 +158,21 @@ class TestGenerate:
     def test_release_header_carries_model_and_device(self, tmp_path: Path):
         result = ReportGenerator().generate(_schema(), tmp_path)
         assert "Tenstorrent Model Release Summary: m on n300" in result.markdown
+
+    def test_evals_render_as_single_table_with_note(self, tmp_path: Path):
+        result = ReportGenerator().generate(
+            _schema(
+                _eval_block("meta_ifeval", gpu_reference_score=81.38, accuracy_check=2),
+                _eval_block("longbench_code_e", score=0.0, accuracy_check=3),
+            ),
+            tmp_path,
+        )
+        md = result.markdown
+        assert md.count("### Accuracy Evaluations for m on n300") == 1
+        assert "LLM Eval — meta_ifeval" not in md
+        assert "Note: The ratio to published scores" in md
+        # Both tasks live in the one consolidated table.
+        assert "meta_ifeval" in md and "longbench_code_e" in md
 
     def test_acceptance_criteria_promoted_to_top_level_json(self, tmp_path: Path):
         schema = ReportSchema(
@@ -140,3 +239,44 @@ class TestGenerate:
         assert "## 🧪 Test Results" in md
         assert "smoke" in md
         assert "Success Rate" in md
+
+    def test_spec_block_table_trims_wrapper_columns(self, tmp_path: Path):
+        """A spec block's metrics table drops status/success/attempts — those
+        live in the injected summary — and never renders a lowercase ``pass``."""
+        block = Block(
+            kind="spec_tests",
+            title="Tts Load",
+            data={
+                "test_name": "TTSLoadTest",
+                "attempts": 1,
+                "success": True,
+                "status": "pass",
+                "elapsed_seconds": 60.09,
+                "avg_duration_s": 1.92,
+                "ttft_ms": 1914.1,
+            },
+        )
+        md = ReportGenerator().generate(_schema(block), tmp_path).markdown
+        # Metrics table keeps the metrics...
+        assert "### Tts Load" in md
+        assert "1.92" in md and "1914.1" in md
+        # ...but drops the wrapper columns and their raw values.
+        block_table = md.split("### Tts Load", 1)[1]
+        assert "Success" not in block_table
+        assert "| pass " not in block_table and "| true " not in block_table.lower()
+        # Status casing is uppercased with a glyph in the summary above.
+        assert "✅ PASS" in md
+
+    def test_metrics_only_spec_block_still_injects_summary(self, tmp_path: Path):
+        """A spec block carrying only wrapper fields renders no table but must
+        still seed the summary (regression: empty md dropped the anchor)."""
+        block = Block(
+            kind="spec_tests",
+            title="Bare",
+            data={"test_name": "bare", "attempts": 1, "status": "pass"},
+        )
+        md = ReportGenerator().generate(_schema(block), tmp_path).markdown
+        assert "## 🧪 Test Results" in md
+        assert "✅ PASS" in md
+        # No metrics -> no per-block table heading.
+        assert "### Bare" not in md
