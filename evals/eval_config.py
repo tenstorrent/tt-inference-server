@@ -504,7 +504,7 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="MiniMaxAI/MiniMax-M3",
         tasks=[
-            # TODO: we had issues with outputs parsing on GPU with M3!!
+            # NOTE: we had issues with outputs parsing on GPU with M3!!
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
@@ -550,7 +550,7 @@ _eval_config_list = [
                 task_name="terminal_bench_2_1",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    published_score=65.2,
+                    published_score=66.0,
                     published_score_ref="https://huggingface.co/MiniMaxAI/MiniMax-M3",
                     gpu_reference_score=61.8,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4376#issuecomment-4901015676",
@@ -641,11 +641,10 @@ _eval_config_list = [
                     },
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-001",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-022",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-050",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-075",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-100",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002",
                         ],
                     },
                 ),
