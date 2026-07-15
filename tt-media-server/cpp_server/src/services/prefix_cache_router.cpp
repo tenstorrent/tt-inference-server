@@ -410,8 +410,7 @@ void PrefixCacheRouter::getSlot(
     const auto& best = acquired->candidatesList.front();
     const uint32_t bestMatchedTokens =
         domain::prefix_cache::BlockMatcher::blocksToTokens(best.matchedBlocks);
-    if (domain::prefix_cache::BlockMatcher::passesHitThreshold(best) &&
-        bestMatchedTokens >= tt::config::minTokensToCopy()) {
+    if (bestMatchedTokens >= tt::config::minTokensToCopy()) {
       auto session = callbacks.getSession(best.sessionId);
       if (session) {
         slotToCopyFrom = session->getSlotId();
