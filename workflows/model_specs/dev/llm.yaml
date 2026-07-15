@@ -1418,6 +1418,25 @@ templates:
       tool_call_parser_name: openai
 
 - weights:
+    - moonshotai/Kimi-K2.7-Code
+  impl: tt_transformers
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 64
+      max_context: 262144
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    moonshotai/Kimi-K2.7-Code:
+      remote_api_model: moonshotai/Kimi-K2.7-Code
+      reasoning_parser_name: kimi_k2
+      tool_call_parser_name: kimi_k2
+      tokenizer_trust_remote_code: true
+
+- weights:
     - MiniMaxAI/MiniMax-M3
   impl: tt_transformers
   inference_engine: MEDIA
