@@ -452,10 +452,17 @@ def test_streaming_tool_call_with_thinking(report_test, api_client, request):
 
     # If the server/model does not support thinking via chat_template_kwargs,
     # this scenario is not applicable — skip rather than fail so the shared
-    # suite stays green for non-reasoning models.
+    # suite stays green for non-reasoning models. Auth failures (401/403) are
+    # a configuration problem, not "unsupported", so let them surface.
     try:
         first = _stream_chat_completion(api_client, base_payload)
     except requests.exceptions.HTTPError as e:
+        # The api_client fixture re-raises a new HTTPError without .response, so
+        # detect auth failures from the message (requests uses "<code> Client
+        # Error"). Auth is a config problem — surface it instead of skipping.
+        msg = str(e)
+        if "401" in msg or "403" in msg:
+            raise
         pytest.skip(
             "Server rejected the streaming tools + enable_thinking payload; "
             f"model likely does not support chat_template_kwargs thinking: {e}"
@@ -467,9 +474,7 @@ def test_streaming_tool_call_with_thinking(report_test, api_client, request):
         results.append(_stream_chat_completion(api_client, base_payload))
 
     for i, result in enumerate(results):
-        has_tool_call = any(
-            slot["name"] for slot in result["tool_calls"].values()
-        )
+        has_tool_call = any(slot["name"] for slot in result["tool_calls"].values())
         if result["finish_reason"] != "tool_calls" or not has_tool_call:
             failures.append(
                 f"run {i}: finish_reason={result['finish_reason']!r}, "
