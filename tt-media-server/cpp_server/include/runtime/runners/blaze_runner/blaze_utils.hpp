@@ -24,6 +24,7 @@
 #include "tt_llm_engine/scheduler/migration_client_interface.hpp"
 #include "utils/logger.hpp"
 #ifdef KAFKA_ENABLED
+#include "config/settings.hpp"
 #include "messaging/kafka_consumer.hpp"
 #include "messaging/kafka_producer.hpp"
 #include "services/composite_migration_client.hpp"
