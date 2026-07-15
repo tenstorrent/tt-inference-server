@@ -515,6 +515,11 @@ ReceiveResult TcpSocketTransport::tryReceiveMessage() {
   if (headerStatus == ReadResult::NO_DATA) {
     return {ReceiveStatus::NO_DATA, {}};
   }
+  if (headerStatus == ReadResult::TIMED_OUT) {
+    // Partial header under IoBudget — stream unsynchronized.
+    markDisconnected();
+    return {ReceiveStatus::CLOSED, {}};
+  }
   if (headerStatus != ReadResult::COMPLETE) {
     markDisconnected();
     return {ReceiveStatus::CLOSED, {}};
@@ -564,6 +569,10 @@ TcpSocketTransport::ReadResult TcpSocketTransport::receiveExact(
 
   while (receivedTotal < size) {
     if (isIoBudgetExpired()) {
+      // Idle probe (no bytes yet, DONTWAIT path): budget hit ≠ stream desync.
+      if (receivedTotal == 0 && returnIfNoInitialData) {
+        return ReadResult::NO_DATA;
+      }
       return ReadResult::TIMED_OUT;
     }
 

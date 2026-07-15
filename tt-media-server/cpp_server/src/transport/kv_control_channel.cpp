@@ -100,6 +100,12 @@ KvControlChannel::ReceiveOutcome KvControlChannel::receiveMessageLocked(
   IoBudgetGuard budget(transport_.get(), ioTimeout);
   const auto deadline = std::chrono::steady_clock::now() + ioTimeout;
   for (;;) {
+    // Check BEFORE probing: a poll_interval_ sleep can cross the deadline
+    const auto now = std::chrono::steady_clock::now();
+    if (now >= deadline) {
+      return ReceiveOutcome::TimedOut;
+    }
+
     sockets::ReceiveResult result = transport_->tryReceiveMessage();
     switch (result.status) {
       case sockets::ReceiveStatus::DATA: {
@@ -124,10 +130,12 @@ KvControlChannel::ReceiveOutcome KvControlChannel::receiveMessageLocked(
         break;
     }
 
-    if (std::chrono::steady_clock::now() >= deadline) {
+    const auto remaining = deadline - std::chrono::steady_clock::now();
+    if (remaining <= std::chrono::milliseconds::zero()) {
       return ReceiveOutcome::TimedOut;
     }
-    std::this_thread::sleep_for(poll_interval_);
+    std::this_thread::sleep_for(
+        remaining < poll_interval_ ? remaining : poll_interval_);
   }
 }
 

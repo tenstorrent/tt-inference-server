@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <thread>
@@ -207,14 +208,76 @@ TEST(KvControlChannel, ReceiveClosedIsNullopt) {
   EXPECT_FALSE(ch.receive().has_value());
 }
 
-// Empty-but-connected reads throughout the timeout yield nullopt — but only
-// after waiting, never aborting on the first transient empty read.
+// Empty-but-connected reads throughout the timeout yield TimedOut — never
+// Closed — so decode's idle serve loop keeps the session (no reconnect /
+// TABLE_EXCHANGE).
 TEST(KvControlChannel, ReceiveTimesOutWhenNoData) {
   Queue a, b;
   auto t = std::make_shared<FakeTransport>(&a, &b);  // open, empty
   KvControlChannel ch(t, std::chrono::milliseconds(30),
                       std::chrono::milliseconds(1));
-  EXPECT_FALSE(ch.receive().has_value());
+  KvControlMessage msg;
+  EXPECT_EQ(ch.receiveMessage(msg),
+            KvControlChannel::ReceiveOutcome::TimedOut);
+  EXPECT_TRUE(ch.isConnected());
+}
+
+// Models the pre-fix TcpSocketTransport bug: IoBudget expiry on an idle
+// probe was reported as CLOSED (markDisconnected). The channel must check its
+// deadline before probing so a poll sleep that crosses the budget never
+// turns TimedOut into Closed.
+class BudgetDisconnectFake : public sockets::ISocketTransport {
+ public:
+  BudgetDisconnectFake() = default;
+
+  bool initializeAsServer(uint16_t) override { return true; }
+  bool initializeAsClient(const std::string&, uint16_t) override {
+    return true;
+  }
+  void start() override {}
+  void stop() override {}
+  bool isConnected() const override { return !closed_; }
+  std::string getStatus() const override { return "budget-fake"; }
+
+  void beginIoBudget(std::chrono::milliseconds budget) override {
+    if (budget.count() <= 0) {
+      clearIoBudget();
+      return;
+    }
+    deadline_ = std::chrono::steady_clock::now() + budget;
+  }
+  void clearIoBudget() override { deadline_.reset(); }
+
+  bool sendRawData(std::span<const uint8_t>) override { return true; }
+  std::vector<uint8_t> receiveRawData() override {
+    return std::move(tryReceiveMessage().data);
+  }
+  sockets::ReceiveResult tryReceiveMessage() override {
+    if (deadline_ && std::chrono::steady_clock::now() >= *deadline_) {
+      closed_ = true;
+      return {sockets::ReceiveStatus::CLOSED, {}};
+    }
+    return {sockets::ReceiveStatus::NO_DATA, {}};
+  }
+  void setConnectionLostCallback(std::function<void()>) override {}
+  void setConnectionEstablishedCallback(std::function<void()>) override {}
+
+ private:
+  bool closed_ = false;
+  std::optional<std::chrono::steady_clock::time_point> deadline_;
+};
+
+TEST(KvControlChannel, IdleTimeoutDoesNotDisconnect) {
+  auto t = std::make_shared<BudgetDisconnectFake>();
+  // poll_interval larger than remaining budget after first NO_DATA so the
+  // sleep overshoots the IoBudget — the bug path without a pre-probe check.
+  KvControlChannel ch(t, std::chrono::milliseconds(25),
+                      std::chrono::milliseconds(40));
+  KvControlMessage msg;
+  EXPECT_EQ(ch.receiveMessage(msg),
+            KvControlChannel::ReceiveOutcome::TimedOut);
+  EXPECT_TRUE(ch.isConnected())
+      << "idle TimedOut must not tear the transport down";
 }
 
 // The regression for the reported race: the peer replies after several empty
