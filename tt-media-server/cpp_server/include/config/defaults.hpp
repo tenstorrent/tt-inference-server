@@ -72,6 +72,9 @@ constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 constexpr const char* SPEC_DECODE_MODE = "none";
 constexpr size_t MTP_LEVEL = 1;
 
+// number of pipeline stages of the Blaze Decode Model.
+constexpr uint32_t BLAZE_NUMBER_OF_PIPELINE_STAGES = 64;
+
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
 constexpr const char* TT_RESULT_QUEUE = "tt_results";
 constexpr const char* TT_CANCEL_QUEUE = "tt_cancels";
@@ -137,6 +140,7 @@ constexpr int DECODE_MAX_TOKEN_IDS = 1;
 constexpr bool DYNAMO_ENDPOINT_ENABLED = false;
 constexpr bool DYNAMO_NATIVE_ROUTING = false;
 constexpr const char* DYNAMO_BIND_HOST = "0.0.0.0";
+constexpr uint16_t DYNAMO_BIND_PORT = 0;  // 0 = OS-assigned ephemeral port.
 constexpr const char* DYNAMO_NAMESPACE = "default";
 constexpr const char* DYNAMO_COMPONENT = "backend";
 constexpr const char* DYNAMO_ENDPOINT_NAME = "generate";

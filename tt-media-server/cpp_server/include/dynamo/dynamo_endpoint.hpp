@@ -39,6 +39,8 @@ class DynamoEndpoint {
  public:
   struct Options {
     std::string bind_host = "0.0.0.0";
+    /// TCP port the listener binds to. 0 = OS-assigned ephemeral port
+    uint16_t bind_port = 0;
     /// Address the discovery store advertises. When empty, the local IP is
     /// auto-detected.
     std::string advertise_host;
