@@ -735,8 +735,10 @@ int runPrefill(const WorkerConfig& cfg) {
   // not remove this worker from service — that peer's own probe handles it).
   // Mesh watch: re-resolve kv_control/<name> from metadata (same path as
   // bring-up). If the endpoint moved, replaceChannel + refresh the sender's
-  // channel pointer; when TCP is up again, re-run TABLE_EXCHANGE. Same-host
-  // restarts can still heal via sticky TCP reconnect without a metadata change.
+  // channel pointer; when TCP is up again, re-run TABLE_EXCHANGE and
+  // refreshSegment so Mooncake WRITEs do not target a pre-restart address.
+  // Same-host restarts can still heal sticky TCP without a metadata change;
+  // the UP path still force-refreshes the data-plane segment.
   health.setLifecycle(WorkerLifecycle::Ready);
   TT_LOG_INFO(
       "[worker] prefill '{}' READY: {}/{} decode channels connected, "
@@ -837,6 +839,17 @@ int runPrefill(const WorkerConfig& cfg) {
           continue;
         }
         TT_LOG_INFO("[worker] TABLE_EXCHANGE with peer '{}' succeeded", name);
+        if (engine->refreshSegment(name) == K_INVALID_SEGMENT) {
+          TT_LOG_WARN(
+              "[worker] refreshSegment('{}') after control UP failed; next "
+              "migrate may still hit a stale data-plane address until a "
+              "WRITE failure triggers reactive refresh",
+              name);
+        } else {
+          TT_LOG_INFO(
+              "[worker] refreshed Mooncake segment '{}' after control UP",
+              name);
+        }
       }
       wasConnected[name] = now;
     }

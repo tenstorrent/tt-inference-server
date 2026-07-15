@@ -514,6 +514,8 @@ from metadata, opens control channels, and fail-closes Ready until
 TABLE_EXCHANGE succeeds with every configured decode. After Ready, a mesh watch
 re-resolves `kv_control/<name>`, `replaceChannel`s when the endpoint moves, and
 re-runs TABLE_EXCHANGE when TCP comes back (skipping via try_lock when migrate
-owns the channel). Still open: TE `SegmentHandle` refresh metrics, peer-count /
-time-to-ready / reconnection dashboards, and wiring the MPI discovery e2e into
-CI. Discovery remains cancellable (SIGTERM during bring-up aborts promptly).
+owns the channel). After a successful exchange it also `refreshSegment`s the
+peer so Mooncake WRITEs do not keep a pre-restart SegmentDesc. Still open:
+TE refresh failure metrics, peer-count / time-to-ready / reconnection
+dashboards, and wiring the MPI discovery e2e into CI. Discovery remains
+cancellable (SIGTERM during bring-up aborts promptly).
