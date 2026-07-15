@@ -235,7 +235,7 @@ class BudgetDisconnectFake : public sockets::ISocketTransport {
   }
   void start() override {}
   void stop() override {}
-  bool isConnected() const override { return !closed_; }
+  bool isConnected() const override { return !closed; }
   std::string getStatus() const override { return "budget-fake"; }
 
   void beginIoBudget(std::chrono::milliseconds budget) override {
@@ -243,17 +243,17 @@ class BudgetDisconnectFake : public sockets::ISocketTransport {
       clearIoBudget();
       return;
     }
-    deadline_ = std::chrono::steady_clock::now() + budget;
+    deadline = std::chrono::steady_clock::now() + budget;
   }
-  void clearIoBudget() override { deadline_.reset(); }
+  void clearIoBudget() override { deadline.reset(); }
 
   bool sendRawData(std::span<const uint8_t>) override { return true; }
   std::vector<uint8_t> receiveRawData() override {
     return std::move(tryReceiveMessage().data);
   }
   sockets::ReceiveResult tryReceiveMessage() override {
-    if (deadline_ && std::chrono::steady_clock::now() >= *deadline_) {
-      closed_ = true;
+    if (deadline && std::chrono::steady_clock::now() >= *deadline) {
+      closed = true;
       return {sockets::ReceiveStatus::CLOSED, {}};
     }
     return {sockets::ReceiveStatus::NO_DATA, {}};
@@ -262,8 +262,8 @@ class BudgetDisconnectFake : public sockets::ISocketTransport {
   void setConnectionEstablishedCallback(std::function<void()>) override {}
 
  private:
-  bool closed_ = false;
-  std::optional<std::chrono::steady_clock::time_point> deadline_;
+  bool closed = false;
+  std::optional<std::chrono::steady_clock::time_point> deadline;
 };
 
 TEST(KvControlChannel, IdleTimeoutDoesNotDisconnect) {
