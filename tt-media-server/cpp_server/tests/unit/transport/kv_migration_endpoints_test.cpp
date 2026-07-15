@@ -170,7 +170,7 @@ TEST(KvControlChannelConnectorTest, ReplaceChannelMovesEndpoint) {
 
   ASSERT_TRUE(connector.openChannels());
   EXPECT_EQ(factoryCalls, 1);
-  auto* first = connector.channels().at("D0");
+  auto first = connector.channels().at("D0");
 
   // Same endpoint: no rebuild.
   EXPECT_TRUE(connector.replaceChannel("D0", Endpoint{"10.0.0.1", 7001}));
@@ -185,6 +185,36 @@ TEST(KvControlChannelConnectorTest, ReplaceChannelMovesEndpoint) {
   ASSERT_TRUE(ep.has_value());
   EXPECT_EQ(ep->host, "10.0.0.9");
   EXPECT_EQ(ep->port, 7009);
+}
+
+// Holding a channels() snapshot must keep the old channel alive across
+// replaceChannel() — mirrors migrate() / mesh-watch concurrent with rediscovery.
+TEST(KvControlChannelConnectorTest, ReplaceKeepsHeldChannelAlive) {
+  std::unordered_map<std::string, Endpoint> eps{{"D0", {"10.0.0.1", 7001}}};
+  int factoryCalls = 0;
+
+  KvControlChannelConnector connector(
+      eps,
+      [&](const Endpoint& /*ep*/)
+          -> std::shared_ptr<sockets::ISocketTransport> {
+        ++factoryCalls;
+        return std::make_shared<BlockingFakeTransport>(
+            std::make_shared<Pipe>(), std::make_shared<Pipe>());
+      });
+
+  ASSERT_TRUE(connector.openChannels());
+  auto held = connector.channels().at("D0");
+  ASSERT_NE(held, nullptr);
+  const KvControlChannel* raw = held.get();
+  EXPECT_GE(held.use_count(), 2);  // connector + held
+
+  ASSERT_TRUE(connector.replaceChannel("D0", Endpoint{"10.0.0.9", 7009}));
+  EXPECT_EQ(factoryCalls, 2);
+  // Connector dropped its ref; held keeps the old object alive.
+  EXPECT_EQ(held.get(), raw);
+  EXPECT_EQ(held.use_count(), 1);
+  EXPECT_NE(connector.channels().at("D0"), held);
+  EXPECT_NE(connector.channels().at("D0").get(), raw);
 }
 
 TEST(KvMigrationMultiHostSenderTest, AddHostWiresLatePeerForMigrate) {

@@ -807,7 +807,7 @@ int runPrefill(const WorkerConfig& cfg) {
 
       const auto channels = connector.channels();
       const auto chIt = channels.find(name);
-      KvControlChannel* channel =
+      const std::shared_ptr<KvControlChannel> channel =
           (chIt != channels.end()) ? chIt->second : nullptr;
       const bool now = channel != nullptr && channel->isConnected();
       const bool before = wasConnected[name];

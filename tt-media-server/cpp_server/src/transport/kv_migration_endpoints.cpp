@@ -24,7 +24,7 @@ KvControlChannelConnector::KvControlChannelConnector(
 
 bool KvControlChannelConnector::openChannelLocked(const std::string& name,
                                                   const Endpoint& endpoint) {
-  if (owned_.count(name) != 0) {
+  if (channels_.count(name) != 0) {
     return true;  // already created (idempotent)
   }
   auto transport = factory_ ? factory_(endpoint) : nullptr;
@@ -36,10 +36,8 @@ bool KvControlChannelConnector::openChannelLocked(const std::string& name,
     return false;
   }
   endpoints_[name] = endpoint;
-  auto channel = std::make_unique<KvControlChannel>(
+  channels_[name] = std::make_shared<KvControlChannel>(
       std::move(transport), receive_timeout_, poll_interval_);
-  channels_[name] = channel.get();
-  owned_[name] = std::move(channel);
   TT_LOG_INFO("[KvControlChannelConnector] opened channel to '{}' ({}:{})",
               name, endpoint.host, endpoint.port);
   return true;
@@ -64,8 +62,9 @@ bool KvControlChannelConnector::openChannel(const std::string& name,
 
 bool KvControlChannelConnector::replaceChannelLocked(const std::string& name,
                                                      const Endpoint& endpoint) {
+  // Drop the connector's strong ref. In-flight migrate() / mesh-watch holders
+  // keep the old channel alive via their own shared_ptr copies.
   channels_.erase(name);
-  owned_.erase(name);
   endpoints_.erase(name);
   return openChannelLocked(name, endpoint);
 }
@@ -75,7 +74,7 @@ bool KvControlChannelConnector::replaceChannel(const std::string& name,
   std::lock_guard<std::mutex> lock(mutex_);
   const auto it = endpoints_.find(name);
   if (it != endpoints_.end() && it->second == endpoint &&
-      owned_.count(name) != 0) {
+      channels_.count(name) != 0) {
     return true;  // already dialing / dialed this endpoint
   }
   TT_LOG_INFO("[KvControlChannelConnector] replacing channel to '{}' -> {}:{}",
@@ -108,7 +107,7 @@ std::size_t KvControlChannelConnector::awaitConnected(
   }
 }
 
-std::unordered_map<std::string, KvControlChannel*>
+std::unordered_map<std::string, std::shared_ptr<KvControlChannel>>
 KvControlChannelConnector::channels() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return channels_;

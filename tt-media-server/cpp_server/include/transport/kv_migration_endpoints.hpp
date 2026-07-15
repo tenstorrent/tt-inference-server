@@ -47,10 +47,12 @@ namespace tt::transport {
  * kv_control/<name> from metadata when a peer drops so a restarted decode with
  * a new host:port gets a fresh channel (not only sticky TCP reconnect).
  *
- * Lifetime: the connector owns the channels (and, via them, the transports), so
- * it must outlive the `KvMigrationMultiHostSender` built from `channels()`.
- * openChannel() / replaceChannel() are thread-safe vs channels() /
- * channelCount() / awaitConnected().
+ * Lifetime: channels are shared_ptr-owned. The connector keeps one strong
+ * reference per peer; callers (e.g. KvMigrationMultiHostSender::migrate) that
+ * snapshot a channel keep it alive across replaceChannel() so an in-flight
+ * migration cannot dereference a destroyed object. openChannel() /
+ * replaceChannel() are thread-safe vs channels() / channelCount() /
+ * awaitConnected().
  */
 class KvControlChannelConnector {
  public:
@@ -124,7 +126,10 @@ class KvControlChannelConnector {
   std::size_t awaitConnected(std::chrono::milliseconds timeout);
 
   /// host → channel. Contains only hosts whose transport was created.
-  std::unordered_map<std::string, KvControlChannel*> channels() const;
+  /// Shared ownership: holding a returned pointer keeps that channel alive
+  /// even if replaceChannel() later drops the connector's reference.
+  std::unordered_map<std::string, std::shared_ptr<KvControlChannel>> channels()
+      const;
 
   /// Last endpoint registered for @p name, if any.
   std::optional<Endpoint> endpoint(const std::string& name) const;
@@ -145,10 +150,9 @@ class KvControlChannelConnector {
   TransportFactory factory_;
   std::chrono::milliseconds receive_timeout_;
   std::chrono::milliseconds poll_interval_;
-  // The channel keeps its transport alive (it holds a shared_ptr), so we only
-  // need to own the channels.
-  std::unordered_map<std::string, std::unique_ptr<KvControlChannel>> owned_;
-  std::unordered_map<std::string, KvControlChannel*> channels_;
+  // Shared so migrate() / mesh-watch can keep a channel alive across
+  // replaceChannel() without coordinating with the connector mutex.
+  std::unordered_map<std::string, std::shared_ptr<KvControlChannel>> channels_;
 };
 
 /**

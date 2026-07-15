@@ -14,7 +14,7 @@ KvMigrationMultiHostSender::KvMigrationMultiHostSender(
     std::shared_ptr<ITransferEngine> engine, IDeviceIo& device,
     std::shared_ptr<const IKvTable> prefillTable,
     std::shared_ptr<const IKvTable> decodeTable, std::string prefillHost,
-    std::unordered_map<std::string, KvControlChannel*> channels,
+    std::unordered_map<std::string, std::shared_ptr<KvControlChannel>> channels,
     WorkerHealth* health)
     : engine_(std::move(engine)),
       device_(device),
@@ -35,9 +35,9 @@ KvMigrationMultiHostSender::KvMigrationMultiHostSender(
   }
 }
 
-bool KvMigrationMultiHostSender::addHost(const std::string& host,
-                                         KvControlChannel* channel) {
-  if (channel == nullptr) {
+bool KvMigrationMultiHostSender::addHost(
+    const std::string& host, std::shared_ptr<KvControlChannel> channel) {
+  if (!channel) {
     TT_LOG_ERROR(
         "[KvMigrationMultiHostSender] addHost('{}'): null control channel",
         host);
@@ -45,7 +45,7 @@ bool KvMigrationMultiHostSender::addHost(const std::string& host,
   }
   std::lock_guard<std::mutex> lock(mutex_);
   const bool isNew = senders_.count(host) == 0;
-  channels_[host] = channel;
+  channels_[host] = std::move(channel);
   if (isNew) {
     senders_[host] = std::make_unique<MooncakeKvSender>(
         engine_, device_, prefill_table_, decode_table_, prefill_host_, host,
@@ -87,11 +87,11 @@ bool KvMigrationMultiHostSender::migrate(uint64_t uuid,
   }
 
   // Snapshot host → channel/sender under the lock so a concurrent addHost()
-  // cannot invalidate iterators mid-fan-out. migrate() itself stays serial
-  // (executor), but discovery may add hosts at any time.
+  // cannot invalidate iterators mid-fan-out. Shared_ptr keeps each channel
+  // alive if the connector replaceChannel()s during this migrate().
   struct HostLeg {
     std::string host;
-    KvControlChannel* channel = nullptr;
+    std::shared_ptr<KvControlChannel> channel;
     MooncakeKvSender* sender = nullptr;
   };
   std::vector<HostLeg> legs;
@@ -102,7 +102,7 @@ bool KvMigrationMultiHostSender::migrate(uint64_t uuid,
     for (const std::string& host : hosts) {
       const auto chIt = channels_.find(host);
       const auto sIt = senders_.find(host);
-      if (chIt == channels_.end() || sIt == senders_.end()) {
+      if (chIt == channels_.end() || !chIt->second || sIt == senders_.end()) {
         TT_LOG_ERROR(
             "[KvMigrationMultiHostSender] migrate(uuid={}): no control "
             "channel for decode host '{}' (resolution missing)",
