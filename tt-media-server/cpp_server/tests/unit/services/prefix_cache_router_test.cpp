@@ -36,6 +36,7 @@ class PrefixCacheRouterTest : public ::testing::Test {
 
   void SetUp() override {
     setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
+    setenv("MIN_TOKENS_TO_COPY", "0", 1);
     setenv("KV_CACHE_FIRST_BLOCK_SIZE", "32", 1);
     setenv("KV_CACHE_BLOCK_SIZE", "32", 1);
 
