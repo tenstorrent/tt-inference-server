@@ -188,7 +188,8 @@ TEST(KvControlChannelConnectorTest, ReplaceChannelMovesEndpoint) {
 }
 
 // Holding a channels() snapshot must keep the old channel alive across
-// replaceChannel() — mirrors migrate() / mesh-watch concurrent with rediscovery.
+// replaceChannel() — mirrors migrate() / mesh-watch concurrent with
+// rediscovery.
 TEST(KvControlChannelConnectorTest, ReplaceKeepsHeldChannelAlive) {
   std::unordered_map<std::string, Endpoint> eps{{"D0", {"10.0.0.1", 7001}}};
   int factoryCalls = 0;

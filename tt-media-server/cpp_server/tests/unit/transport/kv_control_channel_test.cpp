@@ -217,8 +217,7 @@ TEST(KvControlChannel, ReceiveTimesOutWhenNoData) {
   KvControlChannel ch(t, std::chrono::milliseconds(30),
                       std::chrono::milliseconds(1));
   KvControlMessage msg;
-  EXPECT_EQ(ch.receiveMessage(msg),
-            KvControlChannel::ReceiveOutcome::TimedOut);
+  EXPECT_EQ(ch.receiveMessage(msg), KvControlChannel::ReceiveOutcome::TimedOut);
   EXPECT_TRUE(ch.isConnected());
 }
 
@@ -274,8 +273,7 @@ TEST(KvControlChannel, IdleTimeoutDoesNotDisconnect) {
   KvControlChannel ch(t, std::chrono::milliseconds(25),
                       std::chrono::milliseconds(40));
   KvControlMessage msg;
-  EXPECT_EQ(ch.receiveMessage(msg),
-            KvControlChannel::ReceiveOutcome::TimedOut);
+  EXPECT_EQ(ch.receiveMessage(msg), KvControlChannel::ReceiveOutcome::TimedOut);
   EXPECT_TRUE(ch.isConnected())
       << "idle TimedOut must not tear the transport down";
 }

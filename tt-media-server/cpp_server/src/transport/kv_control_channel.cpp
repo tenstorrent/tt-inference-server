@@ -134,8 +134,8 @@ KvControlChannel::ReceiveOutcome KvControlChannel::receiveMessageLocked(
     if (remaining <= std::chrono::milliseconds::zero()) {
       return ReceiveOutcome::TimedOut;
     }
-    std::this_thread::sleep_for(
-        remaining < poll_interval_ ? remaining : poll_interval_);
+    std::this_thread::sleep_for(remaining < poll_interval_ ? remaining
+                                                           : poll_interval_);
   }
 }
 
