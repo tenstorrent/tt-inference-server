@@ -6,9 +6,12 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "transport/device_dram_storage_backend.hpp"
@@ -286,12 +289,10 @@ PeerDiscoveryConfig fastDiscovery(int timeoutSec) {
                              /*timeout_sec=*/timeoutSec};
 }
 
-// A fast PeerDiscoveryService to inject into the worker under test.
 std::shared_ptr<PeerDiscoveryService> fastDiscoveryService(int timeoutSec) {
   return std::make_shared<PeerDiscoveryService>(fastDiscovery(timeoutSec));
 }
 
-// All peers already registered: a single sweep resolves every name.
 TEST(PeerDiscoveryService, ResolvesAllPeersInOneSweep) {
   FakeTransferEngine engine;
   engine.resolveAfterMisses = {{"a", 0}, {"b", 0}, {"c", 0}};
@@ -301,13 +302,11 @@ TEST(PeerDiscoveryService, ResolvesAllPeersInOneSweep) {
   ASSERT_TRUE(resolved.has_value());
   EXPECT_EQ(resolved->size(), 3u);
   for (const auto& name : {"a", "b", "c"}) {
-    EXPECT_EQ(engine.openAttempts[name], 1);  // resolved first try
+    EXPECT_EQ(engine.openAttempts[name], 1);
     EXPECT_NE(resolved->at(name), K_INVALID_SEGMENT);
   }
 }
 
-// A peer that isn't registered yet is retried; only the unresolved name is
-// re-polled, and discovery succeeds once it appears.
 TEST(PeerDiscoveryService, RetriesOnlyUnresolvedUntilTheyAppear) {
   FakeTransferEngine engine;
   engine.resolveAfterMisses = {{"ready", 0}, {"late", 2}};
@@ -316,23 +315,20 @@ TEST(PeerDiscoveryService, RetriesOnlyUnresolvedUntilTheyAppear) {
   const auto resolved = discovery.discover(engine, {"ready", "late"});
   ASSERT_TRUE(resolved.has_value());
   EXPECT_EQ(resolved->size(), 2u);
-  EXPECT_EQ(engine.openAttempts["ready"], 1);  // resolved once, not re-polled
-  EXPECT_GE(engine.openAttempts["late"], 3);   // 2 misses then a hit
+  EXPECT_EQ(engine.openAttempts["ready"], 1);
+  EXPECT_GE(engine.openAttempts["late"], 3);
 }
 
-// A peer that never registers makes discovery give up and return nullopt.
 TEST(PeerDiscoveryService, TimesOutWhenAPeerNeverResolves) {
   FakeTransferEngine engine;
-  engine.resolveAfterMisses = {{"present", 0}};  // "ghost" absent => never
+  engine.resolveAfterMisses = {{"present", 0}};
   PeerDiscoveryService discovery(fastDiscovery(1));
 
   const auto resolved = discovery.discover(engine, {"present", "ghost"});
   EXPECT_FALSE(resolved.has_value());
-  EXPECT_GE(engine.openAttempts["ghost"], 1);  // it did try
+  EXPECT_GE(engine.openAttempts["ghost"], 1);
 }
 
-// No peers configured: discover() short-circuits to an empty (success) map
-// without ever touching the engine.
 TEST(PeerDiscoveryService, NoPeersResolvesToEmptyMap) {
   FakeTransferEngine engine;
   PeerDiscoveryService discovery(fastDiscovery(5));
@@ -340,12 +336,9 @@ TEST(PeerDiscoveryService, NoPeersResolvesToEmptyMap) {
   const auto resolved = discovery.discover(engine, {});
   ASSERT_TRUE(resolved.has_value());
   EXPECT_TRUE(resolved->empty());
-  EXPECT_TRUE(engine.callLog.empty());  // no openSegment attempts
+  EXPECT_TRUE(engine.callLog.empty());
 }
 
-// Duplicate names must not inflate the expected count (which would wedge
-// discovery into a permanent false timeout): they collapse to one entry and
-// are polled once.
 TEST(PeerDiscoveryService, DeduplicatesRepeatedPeerNames) {
   FakeTransferEngine engine;
   engine.resolveAfterMisses = {{"a", 0}, {"b", 0}};
@@ -354,10 +347,9 @@ TEST(PeerDiscoveryService, DeduplicatesRepeatedPeerNames) {
   const auto resolved = discovery.discover(engine, {"a", "a", "b", "a"});
   ASSERT_TRUE(resolved.has_value());
   EXPECT_EQ(resolved->size(), 2u);
-  EXPECT_EQ(engine.openAttempts["a"], 1);  // resolved once despite repeats
+  EXPECT_EQ(engine.openAttempts["a"], 1);
 }
 
-// Empty names are ignored entirely — never passed to openSegment.
 TEST(PeerDiscoveryService, IgnoresEmptyPeerNames) {
   FakeTransferEngine engine;
   engine.resolveAfterMisses = {{"real", 0}};
@@ -366,24 +358,21 @@ TEST(PeerDiscoveryService, IgnoresEmptyPeerNames) {
   const auto resolved = discovery.discover(engine, {"", "real", ""});
   ASSERT_TRUE(resolved.has_value());
   EXPECT_EQ(resolved->size(), 1u);
-  EXPECT_EQ(engine.openAttempts.count(""), 0u);  // never tried to open ""
+  EXPECT_EQ(engine.openAttempts.count(""), 0u);
 }
 
-// A set cancel token aborts discovery after a single sweep, rather than
-// blocking until the (here, long) timeout — exactly one open attempt is made.
 TEST(PeerDiscoveryService, CancelTokenAbortsPromptly) {
-  FakeTransferEngine engine;                           // "ghost" never resolves
-  PeerDiscoveryService discovery(fastDiscovery(600));  // would block ~10min
+  FakeTransferEngine engine;
+  PeerDiscoveryService discovery(fastDiscovery(600));
   std::atomic<bool> cancel{true};
 
   const auto resolved = discovery.discover(engine, {"ghost"}, &cancel);
   EXPECT_FALSE(resolved.has_value());
-  EXPECT_EQ(engine.openAttempts["ghost"], 1);  // one sweep, then bailed out
+  EXPECT_EQ(engine.openAttempts["ghost"], 1);
 }
 
-// A 0s timeout still makes exactly one attempt (it is not a no-op).
 TEST(PeerDiscoveryService, ZeroTimeoutTriesExactlyOnce) {
-  FakeTransferEngine engine;  // "ghost" never resolves
+  FakeTransferEngine engine;
   PeerDiscoveryService discovery(fastDiscovery(0));
 
   const auto resolved = discovery.discover(engine, {"ghost"});
