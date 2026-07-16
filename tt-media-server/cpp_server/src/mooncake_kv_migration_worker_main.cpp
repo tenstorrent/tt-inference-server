@@ -17,15 +17,13 @@
 // tt_kv_migration_consumer (StubMigrationExecutor): it is the first binary that
 // actually moves KV on a Kafka trigger.
 //
-// Table source: each worker loads ONLY its own .pb. Prefill and decode swap
-// tables over the control channel (TABLE_EXCHANGE / #4295) at bring-up and
-// again whenever a decode control session reconnects after a restart; prefill
-// keeps the fleet decode table; decode stores the peer prefill table.
-// TE/Mooncake moves KV bytes only — not table provisioning. The engine→worker
-// handoff (engine_table_handoff) can later replace the local .pb behind the
-// same IKvTable. Device IO: MultiDeviceUmd; FabricNode→ASIC chip resolution
-// comes from an optional --device-map file, falling back to the placeholder
-// (device & 0xFFFF) for a single-mesh host when no map is given.
+// Table source: each worker brings up with its own table + device map, either
+// from the engine via --engine-handoff-port (engine_table_handoff /
+// resolveEngineTables) or from local --*-table / --device-map files. Prefill
+// and decode then swap tables over the control channel (TABLE_EXCHANGE /
+// #4295); the raw .pb blob from resolve is what gets exchanged. TE/Mooncake
+// moves KV bytes only. Device IO: MultiDeviceUmd; empty device map falls back
+// to the placeholder (device & 0xFFFF) for a single-mesh host.
 
 #include <unistd.h>
 
@@ -35,7 +33,6 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -52,6 +49,7 @@
 #include "runtime/worker/kv_migration_worker.hpp"
 #include "sockets/tcp_socket_transport.hpp"
 #include "transport/device_map.hpp"  // DeviceMap (FabricNode -> UMD chip)
+#include "transport/engine_table_resolve.hpp"
 #include "transport/host_dram_storage_backend.hpp"
 #include "transport/kv_migration_endpoints.hpp"
 #include "transport/kv_migration_multi_host_sender.hpp"
@@ -116,7 +114,11 @@ struct WorkerConfig {
   std::string name;             // this worker's Mooncake server/segment name.
   std::string host;             // this node's host tag in the table.
   std::string device_map_path;  // FabricNode->UMD chip map (both roles); empty
-                                // => placeholder (device & 0xFFFF).
+                                // => placeholder (device & 0xFFFF). Ignored when
+                                // engine_handoff_port != 0.
+  // When non-zero, listen for one engine_table_handoff (table + device map)
+  // instead of loading --*-table / --device-map from disk.
+  uint16_t engine_handoff_port = 0;
 
   // Peers (any role — a worker is just a migration worker with a peer list).
   // Static peer control endpoints (NAME=host:port). An explicit entry always
@@ -162,12 +164,16 @@ void usage() {
          "           The prefill (sender) opens a control channel to each "
          "peer; TABLE_EXCHANGE swaps tables once (prefill↔decode), then "
          "migrations use the same channels.\n"
-         "  prefill: --prefill-table P.pb (+ >=1 peer); decode table comes "
-         "from control TABLE_EXCHANGE (optional --decode-table fallback)\n"
-         "  decode:  --table D.pb [--control-port N] (default 18650) "
-         "[--segment NAME]; stores peer prefill table on TABLE_EXCHANGE\n"
-         "  both:    [--device-map FILE]  ('mesh chip umd' per line; needed "
-         "when this host's table spans multiple meshes)\n"
+         "  prefill: --prefill-table P.pb OR --engine-handoff-port N "
+         "(+ >=1 peer); decode table comes from control TABLE_EXCHANGE "
+         "(optional --decode-table fallback)\n"
+         "  decode:  --table D.pb OR --engine-handoff-port N "
+         "[--control-port N] (default 18650) [--segment NAME]; stores peer "
+         "prefill table on TABLE_EXCHANGE\n"
+         "  both:    [--engine-handoff-port N]  listen for engine table+"
+         "device-map handoff (ignores file table/map flags with a WARN)\n"
+         "  both:    [--device-map FILE]  ('mesh chip umd' per line; file mode "
+         "only; needed when this host's table spans multiple meshes)\n"
          "  both:    [--health-port N] [--health-host HOST]  serve "
          "/healthz /readyz /metrics (0=off, default off; host default "
          "0.0.0.0)\n"
@@ -245,6 +251,18 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
     if (a == "--decode-table" && next(cfg.decode_table_path)) continue;
     if (a == "--table" && next(cfg.table_path)) continue;
     if (a == "--device-map" && next(cfg.device_map_path)) continue;
+    if (a == "--engine-handoff-port" && next(v)) {
+      try {
+        const int port = std::stoi(v);
+        if (port <= 0 || port > 65535) throw std::out_of_range("range");
+        cfg.engine_handoff_port = static_cast<uint16_t>(port);
+      } catch (...) {
+        std::cerr << "--engine-handoff-port must be 1..65535, got: " << v
+                  << "\n";
+        return false;
+      }
+      continue;
+    }
     if (a == "--segment" && next(cfg.segment)) continue;
     if (a == "--control-port" && next(v)) {
       try {
@@ -320,17 +338,23 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
   if (cfg.peer_control_port == 0)
     cfg.peer_control_port = K_DEFAULT_CONTROL_PORT;
 
-  if (cfg.role == Role::PREFILL &&
-      (cfg.prefill_table_path.empty() ||
-       (cfg.peers.empty() && cfg.discover_peers.empty() &&
-        cfg.decode_table_path.empty()))) {
-    std::cerr << "prefill needs --prefill-table and either peers "
-                 "(--peer / --peer-control) for TABLE_EXCHANGE, or "
-                 "--decode-table as a local fallback\n";
-    return false;
+  const bool hasEngineHandoff = cfg.engine_handoff_port != 0;
+  if (cfg.role == Role::PREFILL) {
+    const bool hasLocalTable = !cfg.prefill_table_path.empty();
+    if (!hasEngineHandoff && !hasLocalTable) {
+      std::cerr << "prefill needs --prefill-table or --engine-handoff-port\n";
+      return false;
+    }
+    if (cfg.peers.empty() && cfg.discover_peers.empty() &&
+        cfg.decode_table_path.empty()) {
+      std::cerr << "prefill needs peers (--peer / --peer-control) for "
+                   "TABLE_EXCHANGE, or --decode-table as a local fallback\n";
+      return false;
+    }
   }
-  if (cfg.role == Role::DECODE && cfg.table_path.empty()) {
-    std::cerr << "decode needs --table\n";
+  if (cfg.role == Role::DECODE && !hasEngineHandoff &&
+      cfg.table_path.empty()) {
+    std::cerr << "decode needs --table or --engine-handoff-port\n";
     return false;
   }
   // NB: segment defaults to the engine's real local server name at runtime
@@ -354,31 +378,10 @@ std::shared_ptr<MooncakeTransferEngine> makeEngine(const WorkerConfig& cfg) {
   return engine;
 }
 
-// Load a 'mesh chip umd' device map (the same format the e2e harness uses).
-// Empty path => empty map => buildDeviceIo falls back to the placeholder.
-DeviceMap loadDeviceMapFile(const std::string& path) {
-  DeviceMap dm;
-  if (path.empty()) return dm;
-  std::ifstream f(path);
-  if (!f.good()) {
-    TT_LOG_WARN(
-        "[worker] cannot open --device-map {}; using placeholder chip ids",
-        path);
-    return dm;
-  }
-  uint32_t mesh = 0, chip = 0;
-  uint64_t umd = 0;
-  while (f >> mesh >> chip >> umd) dm.set(FabricNode{mesh, chip}, umd);
-  TT_LOG_INFO("[worker] device-map: {} entries from {}", dm.size(), path);
-  return dm;
-}
-
 // One UmdDeviceAccess per device this host owns in `table`. Chip resolution
-// uses `deviceMap` (the interface the engine fills; the file-based map is the
-// same contract) and falls back to the encodeDevice low bits (placeholder, as
-// in the e2e harness) for any device the map doesn't cover. The placeholder is
-// only correct when the host's table is single-mesh; a multi-mesh host (its KV
-// aliases chip ids across meshes) needs the map or its replicas collide.
+// uses `deviceMap` (engine handoff or --device-map file) and falls back to the
+// encodeDevice low bits (placeholder) for any device the map doesn't cover.
+// The placeholder is only correct when the host's table is single-mesh.
 std::unique_ptr<MultiDeviceUmd> buildDeviceIo(const IKvTable& table,
                                               const std::string& host,
                                               const DeviceMap& deviceMap) {
@@ -409,6 +412,34 @@ std::shared_ptr<tt::sockets::ISocketTransport> makeServerTransport(
   // Do NOT start() here — KvMigrationReceiverServer installs the multi-accept
   // handler first, then start()s, so every prefill gets its own session.
   return t;
+}
+
+// Same unstarted listen transport for engine handoff (enableMultiAccept first).
+std::shared_ptr<tt::sockets::ISocketTransport> makeHandoffListenTransport(
+    uint16_t port) {
+  return makeServerTransport(port);
+}
+
+void warnIgnoredFileFlags(const WorkerConfig& cfg) {
+  if (cfg.engine_handoff_port == 0) return;
+  const bool hasFileFlags =
+      !cfg.prefill_table_path.empty() || !cfg.table_path.empty() ||
+      !cfg.device_map_path.empty() || !cfg.decode_table_path.empty();
+  if (!hasFileFlags) return;
+  TT_LOG_WARN(
+      "[worker] --engine-handoff-port={} set; ignoring file table/device-map "
+      "flags (--prefill-table/--table/--device-map/--decode-table still listed "
+      "on the CLI)",
+      cfg.engine_handoff_port);
+}
+
+std::optional<ResolvedEngineTables> resolveWorkerTables(
+    const WorkerConfig& cfg) {
+  warnIgnoredFileFlags(cfg);
+  const std::string& tablePath =
+      (cfg.role == Role::PREFILL) ? cfg.prefill_table_path : cfg.table_path;
+  return resolveEngineTables(cfg.engine_handoff_port, makeHandoffListenTransport,
+                             tablePath, cfg.device_map_path, gStop);
 }
 
 // Bring up the optional HTTP health surface (/healthz /readyz /metrics) before
@@ -637,14 +668,18 @@ int runPrefill(const WorkerConfig& cfg) {
   auto engine = makeEngine(cfg);
   if (!engine) return 1;
 
-  auto prefill = loadKvTableFile(cfg.prefill_table_path);
-  if (!prefill) {
-    TT_LOG_ERROR("[worker] failed to load prefill table");
+  auto resolved = resolveWorkerTables(cfg);
+  if (!resolved) {
+    if (gStop.load()) {
+      TT_LOG_WARN(
+          "[worker] prefill '{}' shutting down during engine table resolve",
+          cfg.name);
+      return 0;
+    }
+    TT_LOG_ERROR("[worker] failed to resolve prefill table + device map");
     return 1;
   }
-
-  const DeviceMap deviceMap = loadDeviceMapFile(cfg.device_map_path);
-  auto device = buildDeviceIo(*prefill->table, cfg.host, deviceMap);
+  auto device = buildDeviceIo(*resolved->table, cfg.host, resolved->deviceMap);
 
   // Full-mesh barrier (k8s-friendly): stay alive with /healthz up and /readyz
   // 503 until EVERY configured decode peer is resolved AND TCP-connected. Never
@@ -686,7 +721,8 @@ int runPrefill(const WorkerConfig& cfg) {
   std::shared_ptr<const IKvTable> decodeTable;
   const bool wantsExchange = configuredPeers > 0;
   if (wantsExchange) {
-    decodeTable = awaitDecodeTableFromControl(connector, prefill->blob, gStop);
+    decodeTable =
+        awaitDecodeTableFromControl(connector, resolved->blob, gStop);
     if (!decodeTable) {
       TT_LOG_WARN("[worker] prefill '{}' shutting down during TABLE_EXCHANGE",
                   cfg.name);
@@ -705,7 +741,7 @@ int runPrefill(const WorkerConfig& cfg) {
     return 1;
   }
 
-  KvMigrationMultiHostSender sender(engine, *device, prefill->table,
+  KvMigrationMultiHostSender sender(engine, *device, resolved->table,
                                     decodeTable, cfg.host, connector.channels(),
                                     &health);
   auto executor = std::make_unique<MooncakeMigrationExecutor>(sender);
@@ -830,7 +866,7 @@ int runPrefill(const WorkerConfig& cfg) {
         // next poll — never interleave TABLE_EXCHANGE with
         // Begin/Ready/Done/Ack.
         if (!tryProvisionPeerTable(*channel, TableExchangeRole::Sender,
-                                   prefill->blob,
+                                   resolved->blob,
                                    kDefaultTableExchangeTimeout)) {
           TT_LOG_WARN(
               "[worker] TABLE_EXCHANGE with peer '{}' deferred or failed; "
@@ -885,14 +921,18 @@ int runDecode(const WorkerConfig& cfg) {
   auto engine = makeEngine(cfg);
   if (!engine) return 1;
 
-  auto decode = loadKvTableFile(cfg.table_path);
-  if (!decode) {
-    TT_LOG_ERROR("[worker] failed to load decode table {}", cfg.table_path);
+  auto resolved = resolveWorkerTables(cfg);
+  if (!resolved) {
+    if (gStop.load()) {
+      TT_LOG_WARN(
+          "[worker] decode '{}' shutting down during engine table resolve",
+          cfg.name);
+      return 0;
+    }
+    TT_LOG_ERROR("[worker] failed to resolve decode table + device map");
     return 1;
   }
-
-  const DeviceMap deviceMap = loadDeviceMapFile(cfg.device_map_path);
-  auto device = buildDeviceIo(*decode->table, cfg.host, deviceMap);
+  auto device = buildDeviceIo(*resolved->table, cfg.host, resolved->deviceMap);
 
   // Segment name the sender opens for the data plane. With a metadata service
   // the mirror is registered under — and resolvable by — the worker's LOGICAL
@@ -907,7 +947,7 @@ int runDecode(const WorkerConfig& cfg) {
                                                    : cfg.name;
   }
   // The mirror is registered as the Mooncake segment inside MooncakeKvReceiver.
-  MooncakeKvReceiver receiver(engine, *device, decode->table, cfg.host,
+  MooncakeKvReceiver receiver(engine, *device, resolved->table, cfg.host,
                               segment);
   if (!receiver.registered()) {
     TT_LOG_ERROR("[worker] decode '{}' failed to register mirror segment '{}'",
@@ -919,7 +959,7 @@ int runDecode(const WorkerConfig& cfg) {
   // this decode .pb, then serves migrate Begin/Done. Long receive timeout
   // covers large table provisioning.
   KvMigrationReceiverServer server(cfg.control_port, makeServerTransport,
-                                   receiver, decode->blob,
+                                   receiver, resolved->blob,
                                    kDefaultTableExchangeTimeout);
   if (!server.start()) {
     TT_LOG_ERROR("[worker] decode '{}' failed to start control server on :{}",
