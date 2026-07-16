@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -29,9 +30,13 @@ namespace tt::transport {
  * only those chunks back to device DRAM via UMD (drain). It never computes a
  * remote address; the sender owns all addressing.
  *
- * One MooncakeKvReceiver serves one decode host. The bulk bytes arrive
- * one-sided into the mirror; this class is driven by the control channel
- * (prepareMirror on BeginMigration, drain on DoneMarker).
+ * One MooncakeKvReceiver serves one decode host and is shared across every
+ * prefill control session on that host — prepareMirror/drain are mutex-guarded
+ * for the pending-uuid map. Concurrent RDMA WRITEs into the shared mirror_ are
+ * safe only when migrations touch disjoint address ranges (table-driven slot /
+ * layer routing must not overlap). Overlapping concurrent migrations are an
+ * unstated invariant violation — do not rely on pendingMutex_ to serialize
+ * mirror bytes.
  */
 class MooncakeKvReceiver {
  public:
@@ -77,7 +82,7 @@ class MooncakeKvReceiver {
   bool drain(uint64_t uuid);
 
   /// Number of migrations with a prepared (not yet drained) mirror.
-  std::size_t pendingCount() const { return pending_.size(); }
+  std::size_t pendingCount() const;
 
  private:
   std::shared_ptr<ITransferEngine> engine_;
@@ -88,6 +93,7 @@ class MooncakeKvReceiver {
   KvCacheMirror
       mirror_;  ///< Full-table image, registered once at construction.
   bool registered_ = false;
+  mutable std::mutex pendingMutex_;
   std::unordered_map<uint64_t, HostKvPlan>
       pending_;  ///< uuid -> chunks to drain.
 };

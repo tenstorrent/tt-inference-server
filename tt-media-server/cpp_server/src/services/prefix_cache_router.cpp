@@ -408,12 +408,13 @@ void PrefixCacheRouter::getSlot(
   if (tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY &&
       acquired.has_value() && !acquired->candidatesList.empty()) {
     const auto& best = acquired->candidatesList.front();
-    if (domain::prefix_cache::BlockMatcher::passesHitThreshold(best)) {
+    const uint32_t bestMatchedTokens =
+        domain::prefix_cache::BlockMatcher::blocksToTokens(best.matchedBlocks);
+    if (bestMatchedTokens >= tt::config::minTokensToCopy()) {
       auto session = callbacks.getSession(best.sessionId);
       if (session) {
         slotToCopyFrom = session->getSlotId();
-        copyMatchedTokens = domain::prefix_cache::BlockMatcher::blocksToTokens(
-            best.matchedBlocks);
+        copyMatchedTokens = bestMatchedTokens;
         callbacks.lockSlot(*slotToCopyFrom);
         TT_LOG_INFO(
             "[PrefixCacheRouter::getSlot] Will copy from slotId={} "

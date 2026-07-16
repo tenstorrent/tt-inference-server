@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -150,6 +151,9 @@ RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
   }
   if (modelType == "minimax_m2") {
     return {"basic", "minimax_m2"};
+  }
+  if (modelType == "minimax_m3_vl") {
+    return {"minimax_m3", "minimax_m3"};
   }
   if (modelType == "glm_moe_dsa") {
     return {"glm45", "glm47"};

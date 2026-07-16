@@ -808,114 +808,304 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="MiniMaxAI/MiniMax-M3",
+        tasks=[
+            # NOTE: we had issues with outputs parsing on GPU with M3!!
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=64,
+                # The remote Tenstorrent console only exposes /v1/chat/completions
+                # (text /v1/completions returns 404), so use the chat API.
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=92.9,
+                    published_score_ref="https://artificialanalysis.ai/models?models=minimax-m3",
+                    gpu_reference_score=93.9,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4376#issuecomment-4901015676",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 200 * 1024,
+                    # Per-request HTTP timeout (lm-eval default 1800s). Long
+                    # reasoning generations on the shared console can exceed
+                    # 30min under load, so allow up to 2h before giving up.
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 200 * 1024,
+                    # https://huggingface.co/MiniMaxAI/MiniMax-M3/blob/main/special_tokens_map.json
+                    "until": "[e~[",
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=66.0,
+                    published_score_ref="https://huggingface.co/MiniMaxAI/MiniMax-M3",
+                    gpu_reference_score=61.8,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4376#issuecomment-4901015676",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=8,
+                    override_memory_mb=32 * 1024,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 500 * 1024,
+                            "max_output_tokens": 64 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 64 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="tau3_bench_banking",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=13,
+                    published_score_ref="https://artificialanalysis.ai/models?models=minimax-m3",
+                    gpu_reference_score=16.5,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4376#issuecomment-4922484555",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    # A single served instance is shared by the agent,
+                    # the simulated user, and the Natural Language verifier.
+                    n_concurrent_trials=4,
+                    n_attempts=1,
+                    n_tasks=97,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        "max_steps": 200,
+                        # Default is 120s; a single reasoning user-sim turn under
+                        # load can exceed that and trip an MCP request timeout.
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/MiniMaxAI/MiniMax-M3",
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/MiniMaxAI/MiniMax-M3",
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=80.5,
+                    published_score_ref="https://huggingface.co/MiniMaxAI/MiniMax-M3",
+                    gpu_reference_score=65.4,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4324#issuecomment-4830558090",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=8,
+                    max_workers=24,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=0.95,
+                    max_input_tokens=500 * 1024,
+                    max_output_tokens=64 * 1024,
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-12143",
+                            "pytest-dev__pytest-5262",
+                            "django__django-14672",
+                            "sympy__sympy-13551",
+                            "sphinx-doc__sphinx-9281",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="Qwen/Qwen3.6-27B",
         tasks=[
-            # terminal_bench_2 / swe_bench_verified commented out (bgoelTT on #4603).
-            # Same release-CI agentic dispatch concern as gemma-4-31B-it after #4491.
-            # Keep configs for later re-enable; do not delete.
-            # EvalTask(
-            # task_name="terminal_bench_2",
-            # workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-            # score=EvalTaskScore(
-            # published_score=59.3,
-            # published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
-            # gpu_reference_score=53.9,
-            # gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4450842511",
-            # score_func=score_task_single_key,
-            # score_func_kwargs={
-            # "result_keys": ["accuracy"],
-            # "unit": "percent",
-            # },
-            # ),
-            # agentic_eval_config=TerminalBenchEvalConfig(
-            # dataset="terminal-bench/terminal-bench-2",
-            # agent="terminus-2",
-            # n_concurrent_trials=5,
-            # n_attempts=1,
-            # n_tasks=89,
-            # override_cpus=16,
-            # override_memory_mb=48 * 1024,
-            # agent_timeout_sec=3 * 60 * 60,
-            # agent_kwargs={
-            # "parser_name": "json",
-            # "temperature": 1.0,
-            # "model_info": {
-            # "max_input_tokens": 256 * 1024,
-            # "max_output_tokens": 80 * 1024,
-            # },
-            # "llm_kwargs": {
-            # "top_p": 0.95,
-            # "max_tokens": 80 * 1024,
-            # "timeout": 60 * 60,
-            # "extra_body": {
-            # "top_k": 20,
-            # },
-            # },
-            # },
-            # task_names_map={
-            # EvalLimitMode.CI_NIGHTLY: [
-            # "terminal-bench/caffe-cifar-10",
-            # "terminal-bench/password-recovery",
-            # "terminal-bench/portfolio-optimization",
-            # "terminal-bench/hf-model-inference",
-            # "terminal-bench/financial-document-processor",
-            # ],
-            # },
-            # ),
-            # limit_samples_map={
-            # EvalLimitMode.SMOKE_TEST: 5,
-            # },
-            # ),
-            # EvalTask(
-            # task_name="swe_bench_verified",
-            # workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-            # score=EvalTaskScore(
-            # published_score=77.2,
-            # published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
-            # gpu_reference_score=62.0,
-            # gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4427941401",
-            # score_func=score_task_single_key,
-            # score_func_kwargs={
-            # "result_keys": ["accuracy"],
-            # "unit": "percent",
-            # },
-            # ),
-            # swebench_eval_config=SWEbenchEvalConfig(
-            # dataset_name="SWE-bench/SWE-bench_Verified",
-            # sweagent_subset="verified",
-            # we will need to specify specific tasks
-            # for CI runs to keep runtime reasonable
-            # dataset_split="test",
-            # mini-swe-agent is preferred: simpler CLI
-            # The swe-agent backend is kept as a fallback.
-            # agent_backend="mini-swe-agent",
-            # n_concurrent_trials=5,
-            # max_workers=8,
-            # n_tasks=None,
-            # temperature=1.0,
-            # top_p=0.95,
-            # max_input_tokens=200 * 1024,
-            # max output tokens is not specifed in Qwen docs btw
-            # max_output_tokens=32 * 1024,
-            # completion_kwargs={
-            # "extra_body": {
-            # "top_k": 20,
-            # },
-            # },
-            # instance_ids_map={
-            # EvalLimitMode.CI_NIGHTLY: [
-            # "django__django-11299",
-            # "astropy__astropy-14096",
-            # "matplotlib__matplotlib-25332",
-            # "sympy__sympy-13551",
-            # "scikit-learn__scikit-learn-14629",
-            # ],
-            # },
-            # ),
-            # limit_samples_map={
-            # EvalLimitMode.SMOKE_TEST: 5,
-            # },
-            # ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=59.3,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=53.9,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4450842511",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=1,  # TODO increase back to 5 when batch > 1 is supported
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 256 * 1024,
+                            "max_output_tokens": 80 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 80 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=77.2,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=62.0,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4427941401",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    # we will need to specify specific tasks
+                    # for CI runs to keep runtime reasonable
+                    dataset_split="test",
+                    # mini-swe-agent is preferred: simpler CLI
+                    # The swe-agent backend is kept as a fallback.
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    max_workers=8,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=0.95,
+                    max_input_tokens=200 * 1024,
+                    # max output tokens is not specifed in Qwen docs btw
+                    max_output_tokens=32 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 20,
+                        },
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
         ],
     ),
     EvalConfig(
