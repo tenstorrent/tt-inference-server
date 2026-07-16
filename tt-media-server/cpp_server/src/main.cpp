@@ -385,7 +385,7 @@ int main(int argc, char* argv[]) {
       opts.etcd_lease_ttl_secs = tt::config::dynamoEtcdLeaseTtlSecs();
       if (const char* v = std::getenv("DYNAMO_MODEL_TYPE"); v && *v) {
         opts.model_type = v;
-      } else if (tt::config::dynamoNativeRoutingEnabled() &&
+      } else if (tt::config::dynamoRoutingEnabled() &&
                  tt::config::llmMode() == tt::config::LLMMode::PREFILL_ONLY) {
         // Released Dynamo rejects Tokens+Empty; advertise the compatible
         // Prefill capability while still setting worker_type=prefill.
@@ -396,7 +396,7 @@ int main(int argc, char* argv[]) {
       }
       if (const char* v = std::getenv("DYNAMO_WORKER_TYPE"); v && *v) {
         opts.worker_type = v;
-      } else if (tt::config::dynamoNativeRoutingEnabled()) {
+      } else if (tt::config::dynamoRoutingEnabled()) {
         switch (tt::config::llmMode()) {
           case tt::config::LLMMode::PREFILL_ONLY:
             opts.worker_type = "prefill";

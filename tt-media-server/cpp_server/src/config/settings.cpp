@@ -796,8 +796,8 @@ bool dynamoEndpointEnabled() {
   return envBool("DYNAMO_ENDPOINT_ENABLED", defaults::DYNAMO_ENDPOINT_ENABLED);
 }
 
-bool dynamoNativeRoutingEnabled() {
-  return envBool("DYNAMO_NATIVE_ROUTING", defaults::DYNAMO_NATIVE_ROUTING);
+bool dynamoRoutingEnabled() {
+  return envBool("DYNAMO_ROUTING", defaults::DYNAMO_ROUTING);
 }
 
 std::string dynamoBindHost() {

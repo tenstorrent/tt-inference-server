@@ -447,11 +447,11 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       signalDone();
     };
 
-    if (tt::config::dynamoNativeRoutingEnabled() &&
+    if (tt::config::dynamoRoutingEnabled() &&
         tt::config::llmMode() == tt::config::LLMMode::PREFILL_ONLY) {
       if (!disaggregation) {
         sendErrorAndDone(
-            "DYNAMO_NATIVE_ROUTING=1: prefill worker has no disaggregation "
+            "DYNAMO_ROUTING=1: prefill worker has no disaggregation "
             "contract service",
             500);
         return;
@@ -489,7 +489,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       return;
     }
 
-    if (tt::config::dynamoNativeRoutingEnabled() &&
+    if (tt::config::dynamoRoutingEnabled() &&
         tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY) {
       if (auto prefillResult = prefillResultFromJson(dynReq.raw)) {
         if (prefillResult->error) {
@@ -543,23 +543,23 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
         if (!prefillResult->slotId.has_value()) {
           if (!shouldAllocateMockDecodeSlot()) {
             sendErrorAndDone(
-                "DYNAMO_NATIVE_ROUTING=1: prefill result did not include a "
+                "DYNAMO_ROUTING=1: prefill result did not include a "
                 "reserved decode slot_id; slot reservation must be wired "
                 "before "
-                "native remote prefill can continue on decode",
+                "Dynamo-routed remote prefill can continue on decode",
                 500);
             return;
           }
           auto sessionManager = pipeline->sessionManager();
           if (!sessionManager) {
             sendErrorAndDone(
-                "DYNAMO_NATIVE_ROUTING=1: decode worker has no session manager "
+                "DYNAMO_ROUTING=1: decode worker has no session manager "
                 "for mock slot allocation",
                 500);
             return;
           }
           TT_LOG_INFO(
-              "[DynamoEndpoint] Native prefill result has no decode slot_id; "
+              "[DynamoEndpoint] Dynamo-routed prefill result has no decode slot_id; "
               "allocating mock_pipeline decode-local slot for taskId={}",
               decodeReq->task_id);
           sessionManager->createSession(
@@ -574,7 +574,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               },
               [sendErrorAndDone](std::string_view error) {
                 sendErrorAndDone(
-                    "DYNAMO_NATIVE_ROUTING=1: failed to allocate mock decode "
+                    "DYNAMO_ROUTING=1: failed to allocate mock decode "
                     "slot: " +
                         std::string(error),
                     503);

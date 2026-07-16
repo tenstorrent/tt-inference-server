@@ -304,9 +304,9 @@ void LLMPipeline::abortRequest(uint32_t taskId) const {
 bool LLMPipeline::willPrefillOnDecode(
     const tt::domain::llm::LLMRequest& request, size_t deltaTokens) const {
   const size_t threshold = tt::config::maxTokensToPrefillOnDecode();
-  if (tt::config::dynamoNativeRoutingEnabled()) {
+  if (tt::config::dynamoRoutingEnabled()) {
     TT_LOG_INFO(
-        "[LLMPipeline] DYNAMO_NATIVE_ROUTING=1 taskId={} deltaTokens={} "
+        "[LLMPipeline] DYNAMO_ROUTING=1 taskId={} deltaTokens={} "
         "accepting Dynamo decode route; local prefill will run on decode",
         request.task_id, deltaTokens);
     return true;

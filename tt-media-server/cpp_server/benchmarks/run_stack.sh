@@ -8,9 +8,12 @@
 # locally-built mock_pipeline binary. See benchmarks/test_prefill_decode.py.
 #
 #   ./run_stack.sh up                      # direct cpp_server socket split
-#   DYNAMO_NATIVE_ROUTING=1 ./run_stack.sh up
-#                                          # native Dynamo decode/prefill split
+#   DYNAMO_ROUTING=1 ./run_stack.sh up
+#                                          # Dynamo decode/prefill routing split
 #   ./run_stack.sh down                    # tear everything down
+#
+# This local mock stack supports the direct cpp_server split and Dynamo routing.
+# Use dynamo_frontend/deploy.sh when PrefillGateway is part of the test.
 #
 # Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; frontend -> /tmp/tt_frontend.log.
 
@@ -31,8 +34,8 @@ SERVER_PORT="${SERVER_PORT:-8001}"       # decode/regular REST + dynamo endpoint
 PREFILL_PORT="${PREFILL_PORT:-8002}"     # prefill REST
 SOCKET_PORT="${SOCKET_PORT:-9000}"       # decode<->prefill inter-server socket
 MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
-DYNAMO_NATIVE_ROUTING="${DYNAMO_NATIVE_ROUTING:-0}"
-DYNAMO_NATIVE_NAMESPACE="${DYNAMO_NATIVE_NAMESPACE:-dynamo}"
+DYNAMO_ROUTING="${DYNAMO_ROUTING:-0}"
+DYNAMO_ROUTING_NAMESPACE="${DYNAMO_ROUTING_NAMESPACE:-dynamo}"
 ETCD_NAME="${ETCD_NAME:-etcd}"
 PIDFILE="/tmp/tt_stack.pids"
 
@@ -98,8 +101,8 @@ ensure_etcd() {
 }
 
 # Dynamo registration env. Direct mode registers only the decode worker under
-# default/backend/generate. Native mode registers decode and prefill workers as
-# separate Dynamo worker types under dynamo/{decode,prefill}/generate.
+# default/backend/generate. Dynamo routing mode registers decode and prefill
+# workers as separate Dynamo worker types under dynamo/{decode,prefill}/generate.
 worker_dynamo_env() {
     local namespace="${1:-default}"
     local component="${2:-backend}"
@@ -214,16 +217,16 @@ wait_ready() {
         fi
     done
 
-    if [[ "${DYNAMO_NATIVE_ROUTING}" == "1" ]]; then
-        log "waiting for native Dynamo router activation"
+    if [[ "${DYNAMO_ROUTING}" == "1" ]]; then
+        log "waiting for Dynamo router activation"
         for i in $(seq 1 40); do
             if grep -aq "Prefill router activated successfully" "${FRONTEND_LOG}"; then
-                log "native router ready after ${i}s"
+                log "Dynamo router ready after ${i}s"
                 return 0
             fi
             sleep 1
         done
-        die "native Dynamo router did not finish activation; see ${FRONTEND_LOG}"
+        die "Dynamo router did not finish activation; see ${FRONTEND_LOG}"
     fi
 
     log "ready"
@@ -253,19 +256,19 @@ up() {
     : > "${PIDFILE}"
     ensure_etcd
 
-    if [[ "${DYNAMO_NATIVE_ROUTING}" == "1" ]]; then
-        log "native Dynamo routing: decode :${SERVER_PORT}, prefill :${PREFILL_PORT}"
+    if [[ "${DYNAMO_ROUTING}" == "1" ]]; then
+        log "Dynamo routing: decode :${SERVER_PORT}, prefill :${PREFILL_PORT}"
         start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
-            $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" decode decode Chat) \
-            $(worker_ipc_env native_decode) \
+            $(worker_dynamo_env "${DYNAMO_ROUTING_NAMESPACE}" decode decode Chat) \
+            $(worker_ipc_env dynamo_decode) \
             LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
-            USE_PREFILL_GATEWAY=0 DYNAMO_NATIVE_ROUTING=1
+            USE_PREFILL_GATEWAY=0 DYNAMO_ROUTING=1
         wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
         start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
-            $(worker_dynamo_env "${DYNAMO_NATIVE_NAMESPACE}" prefill prefill Prefill) \
-            $(worker_ipc_env native_prefill) \
+            $(worker_dynamo_env "${DYNAMO_ROUTING_NAMESPACE}" prefill prefill Prefill) \
+            $(worker_ipc_env dynamo_prefill) \
             LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
-            USE_PREFILL_GATEWAY=0 DYNAMO_NATIVE_ROUTING=1 \
+            USE_PREFILL_GATEWAY=0 DYNAMO_ROUTING=1 \
             DYNAMO_MODEL_INPUT=Tokens
         wait_worker_healthy "prefill" "${PREFILL_PORT}" "${PREFILL_LOG}"
     else
