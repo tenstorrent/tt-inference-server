@@ -557,7 +557,10 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
-            # swe_bench_verified disabled: currently times out
+            # TODO: swe_bench_verified disabled due to timeouts from model limitations,
+            # re-enable once prefix cache or equivalent is enabled.
+            # timeout: https://github.com/tenstorrent/tt-shield/actions/runs/29363864010/job/87190489361#step:11:5880
+            # ticket to re-enable: https://github.com/tenstorrent/tt-inference-server/issues/4675
             # EvalTask(
             #     task_name="swe_bench_verified",
             #     workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
