@@ -366,7 +366,7 @@ class DeviceModelSpec:
     # Default 3 × exponential backoff = hours of burn on permanent 4xx.
     eval_max_retries: Optional[int] = None
     # num_calls = num_batches * max_concurrency.
-    # Uniform default of 3 across all image models; override per model in the YAML spec 
+    # Uniform default of 3 across all image models; override per model in the YAML spec
     image_benchmark_num_batches: int = 3
 
     def __post_init__(self):
