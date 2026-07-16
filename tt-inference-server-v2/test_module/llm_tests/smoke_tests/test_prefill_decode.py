@@ -83,8 +83,8 @@ TOKENS_PER_WORD = float(os.environ.get("TOKENS_PER_WORD", "1.49"))
 USER_VARIES = os.environ.get("USER_VARIES", "1") not in ("", "0", "false", "no")
 
 _RECEIVED = re.compile(r"Received prefill request: \d+ \(tokens: (\d+)\)")
-_HIT = re.compile(r"Prefix cache HIT .*matchedTokens=(\d+)")
-_MISS = re.compile(r"Prefix cache MISS")
+_HIT = re.compile(r"Prefix[- ]cache HIT .*matchedTokens=(\d+)")
+_MISS = re.compile(r"Prefix[- ]cache MISS")
 
 
 def _log(msg):

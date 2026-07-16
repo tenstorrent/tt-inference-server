@@ -78,7 +78,48 @@ teardown() {
     log "down"
 }
 
+# No-docker etcd: run the upstream etcd binary directly on 127.0.0.1:2379.
+# Auto-selected when the docker daemon is unreachable (e.g. inside an
+# unprivileged container) or when ETCD_LOCAL=1 is set. Mirrors the CI
+# no-docker etcd setup (etcd-io release binary + local single-node cluster).
+ETCD_LOCAL_DATA="${ETCD_LOCAL_DATA:-/tmp/tt_etcd_data}"
+ETCD_LOCAL_LOG="${ETCD_LOCAL_LOG:-/tmp/tt_etcd.log}"
+
+docker_available() {
+    command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
+}
+
+ensure_etcd_local() {
+    ETCD_ENDPOINTS="http://127.0.0.1:2379"
+    if curl -fsS "${ETCD_ENDPOINTS}/health" >/dev/null 2>&1; then
+        log "reusing local etcd at ${ETCD_ENDPOINTS}"
+        return 0
+    fi
+    command -v etcd >/dev/null 2>&1 || die "etcd binary not found on PATH; install the etcd-io release binary (see CI) or start the docker daemon"
+    log "starting local etcd (no docker) at ${ETCD_ENDPOINTS}"
+    rm -rf "${ETCD_LOCAL_DATA}"
+    setsid nohup etcd \
+        --data-dir "${ETCD_LOCAL_DATA}" \
+        --advertise-client-urls http://127.0.0.1:2379 \
+        --listen-client-urls http://127.0.0.1:2379 \
+        --listen-peer-urls http://127.0.0.1:2380 \
+        --initial-advertise-peer-urls http://127.0.0.1:2380 \
+        --initial-cluster 'default=http://127.0.0.1:2380' \
+        > "${ETCD_LOCAL_LOG}" 2>&1 < /dev/null &
+    echo $! >> "${PIDFILE}"
+    for _ in $(seq 1 30); do
+        curl -fsS "${ETCD_ENDPOINTS}/health" >/dev/null 2>&1 && { log "etcd healthy at ${ETCD_ENDPOINTS}"; return 0; }
+        sleep 1
+    done
+    tail -n 50 "${ETCD_LOCAL_LOG}" >&2 2>/dev/null || true
+    die "local etcd never became healthy"
+}
+
 ensure_etcd() {
+    if [[ "${ETCD_LOCAL:-0}" == "1" ]] || ! docker_available; then
+        ensure_etcd_local
+        return 0
+    fi
     if ! docker ps --format '{{.Names}}' | grep -qx "${ETCD_NAME}"; then
         log "starting etcd"
         docker rm -f "${ETCD_NAME}" >/dev/null 2>&1 || true

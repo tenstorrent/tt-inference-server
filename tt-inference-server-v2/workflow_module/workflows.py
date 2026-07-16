@@ -209,9 +209,9 @@ class PrefillDecodeWorkflow(WorkflowExecution):
     name = "prefill_decode"
     task_types = ()
 
-    def apply_acceptance_criteria(self, schema):
+    def apply_acceptance_criteria(self, schema, task_outcomes):
         self.logger.info("Acceptance: N/A (prefill_decode has no acceptance gate)")
-        return True, []
+        return True, {}
 
     def run_tasks(self) -> List[TaskOutcome]:
         from test_module.llm_tests.smoke_tests.runner import run_smoke_tests
