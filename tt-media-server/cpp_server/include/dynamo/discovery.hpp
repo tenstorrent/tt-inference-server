@@ -64,7 +64,7 @@ struct DiscoveryConfig {
   /// Validate the API server's TLS certificate.
   bool kube_validate_cert = true;
   /// Namespace the DynamoWorkerMetadata CR is created in.
-  std::string pod_namespace = "default";
+  std::string pod_namespace;
   /// Pod identity for the CR name and owner reference (downward API).
   std::string pod_name;
   std::string pod_uid;

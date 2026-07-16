@@ -61,7 +61,7 @@ class DynamoEndpoint {
     bool kube_validate_cert = true;
     /// Kubernetes backend: namespace + pod identity (downward API). In pod mode
     /// the CR name equals pod_name.
-    std::string pod_namespace = "default";
+    std::string pod_namespace;
     std::string pod_name;
     std::string pod_uid;
 

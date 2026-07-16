@@ -386,6 +386,17 @@ class KubernetesDiscoveryRegistration : public DiscoveryRegistration {
           "[KubernetesDiscoveryRegistration] POD_NAME is required (downward "
           "API) for the kubernetes discovery backend");
     }
+    if (cfg.pod_uid.empty()) {
+      throw std::runtime_error(
+          "[KubernetesDiscoveryRegistration] POD_UID is required (downward "
+          "API) for the kubernetes discovery backend");
+    }
+    if (cfg.pod_namespace.empty()) {
+      throw std::runtime_error(
+          "[KubernetesDiscoveryRegistration] namespace is required for the "
+          "kubernetes discovery backend: set POD_NAMESPACE (downward API) or "
+          "ensure the ServiceAccount namespace file is mounted");
+    }
     if (cfg.cr_name.empty()) {
       cfg.cr_name = cfg.pod_name;  // pod mode: one CR per pod.
     }
