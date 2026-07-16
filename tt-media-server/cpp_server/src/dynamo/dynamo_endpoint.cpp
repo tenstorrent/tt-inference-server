@@ -26,6 +26,7 @@
 #include "domain/session.hpp"
 #include "dynamo/dynamo_llm_mapping.hpp"
 #include "dynamo/dynamo_prefill_result_json.hpp"
+#include "services/disaggregation_contract_mapping.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/llm_pipeline.hpp"
 #include "services/session_manager.hpp"
@@ -309,7 +310,10 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
             };
 
         auto decodeReq = std::make_shared<tt::domain::llm::LLMRequest>(
-            buildDecodeRequestFromPrefillResult(*prefillResult));
+            tt::services::buildDecodeRequestFromPrefillResult(
+                *prefillResult, {.skip_apply_chat_template = true,
+                                 .skip_text_decode = true,
+                                 .populate_token_counts = true}));
         if (!prefillResult->slotId.has_value()) {
           if (!shouldAllocateMockDecodeSlot()) {
             sendErrorAndDone(

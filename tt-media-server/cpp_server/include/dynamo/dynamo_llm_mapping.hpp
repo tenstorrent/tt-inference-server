@@ -18,9 +18,6 @@ std::shared_ptr<tt::domain::llm::LLMRequest> buildLLMRequestFromGenerateRequest(
 tt::sockets::PrefillRequestMessage buildPrefillRequestMessage(
     const GenerateRequest& dyn);
 
-tt::domain::llm::LLMRequest buildDecodeRequestFromPrefillResult(
-    const tt::sockets::PrefillResultMessage& message);
-
 TokenChunk tokenChunkFromStreamChunk(
     const tt::domain::llm::LLMStreamChunk& chunk, bool isFinal);
 

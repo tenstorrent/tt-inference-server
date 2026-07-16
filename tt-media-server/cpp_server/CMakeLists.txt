@@ -1279,6 +1279,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/api/response_writer/streaming_response_writer.cpp
     src/api/route_registry.cpp
     src/services/service_container.cpp
+    src/services/disaggregation_contract_mapping.cpp
     src/services/disaggregation_service.cpp
     src/services/llm_pipeline.cpp
     src/sockets/inter_server_service.cpp
@@ -1769,6 +1770,7 @@ set(SOURCES
     src/services/image_service.cpp
     src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
+    src/services/disaggregation_contract_mapping.cpp
     src/services/disaggregation_service.cpp
     src/services/llm_pipeline.cpp
     src/sockets/socket_manager.cpp

@@ -5,6 +5,7 @@
 
 #include "domain/llm/llm_request.hpp"
 #include "runtime/worker/worker_manager.hpp"
+#include "services/disaggregation_contract_mapping.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
 #include "services/session_resolution.hpp"
@@ -90,25 +91,7 @@ void DisaggregationService::setupSocketHandlers() {
                                 (!message.remainingTokens.has_value() ||
                                  message.remainingTokens.value() > 0);
           if (continueDecode) {
-            auto request = LLMRequest(message.taskId);
-            request.disaggregated = true;
-            request.migrationId = message.migrationId;
-            // Intentional exception to the first-free-index convention: the
-            // prefill-generated token is NOT migrated, so decode's first step
-            // reprocesses the last prompt token. That token already occupies
-            // KV index size-1, so decode resumes there rather than at the next
-            // free slot, and the prompt is just that single trailing token.
-            request.kv_position_id =
-                static_cast<uint32_t>(message.tokenIds.size() - 1);
-            request.prompt.emplace<std::vector<uint32_t>>(
-                message.tokenIds.end() - 1, message.tokenIds.end());
-            request.max_tokens = message.remainingTokens;
-            request.slotId = message.slotId;
-            // Restore the sampling subset echoed back from the prefill server.
-            request.temperature = message.temperature;
-            request.top_p = message.topP;
-            request.top_k = message.topK;
-            request.fast_mode = message.fastMode;
+            auto request = buildDecodeRequestFromPrefillResult(message);
             llmService->submitStreamingRequest(request, callback.value());
           } else {
             auto finalResponse = LLMStreamChunk(message.taskId);
