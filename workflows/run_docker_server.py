@@ -542,7 +542,7 @@ def run_docker_command(
         logger.error(f"Docker logs are streamed to: {docker_log_file_path}")
         raise RuntimeError("Docker container failed to start.")
 
-    skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
+    skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
 
         def teardown_docker():
@@ -830,7 +830,7 @@ def run_multihost_with_monitoring(
     logger.info(f"Workers: {'  '.join(worker_status)}")
 
     # Handle workflow-specific behavior (similar to single-node run_docker_command)
-    skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
+    skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
         # For release/benchmarks/evals/tests: register cleanup and return immediately
 

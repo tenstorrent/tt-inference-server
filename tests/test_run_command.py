@@ -520,56 +520,5 @@ class TestVenvConfigRegistry:
                 )
 
 
-# =============================================================================
-# Workflow execution with check=False (default)
-# =============================================================================
-
-
-class TestWorkflowExecutionCheckFalse:
-    """Test workflow execution commands use check=False to allow continuation."""
-
-    def test_run_workflow_script_does_not_raise_on_failure(self):
-        """Test run_workflow_script doesn't raise when workflow fails."""
-        from workflows.run_workflows import WorkflowSetup
-
-        mock_model_spec = MagicMock()
-        mock_model_spec.model_name = "test-model"
-        mock_model_spec.model_id = "test-model-id"
-        mock_runtime_config = RuntimeConfig(
-            model="test-model",
-            workflow="tests",
-            device="n150",
-        )
-
-        with patch("workflows.run_workflows.WorkflowType") as mock_wf_type, patch(
-            "workflows.run_workflows.WORKFLOW_CONFIGS"
-        ) as mock_configs, patch(
-            "workflows.run_workflows.VENV_CONFIGS"
-        ) as mock_venvs, patch(
-            "workflows.run_workflows.run_command", return_value=1
-        ) as mock_run, patch(
-            "workflows.run_workflows.get_default_workflow_root_log_dir"
-        ), patch("workflows.run_workflows.ensure_readwriteable_dir"):
-            mock_wf_type.from_string.return_value = MagicMock()
-            mock_config = MagicMock()
-            mock_config.workflow_run_script_venv_type = MagicMock()
-            mock_config.name = "tests"
-            mock_config.run_script_path = "/fake/script.py"
-            mock_configs.__getitem__.return_value = mock_config
-            mock_venv_config = MagicMock()
-            mock_venv_config.venv_python = "/fake/python"
-            mock_venvs.__getitem__.return_value = mock_venv_config
-
-            setup = WorkflowSetup(mock_model_spec, mock_runtime_config, "/fake/json")
-
-            # This should NOT raise - just return non-zero code
-            return_code = setup.run_workflow_script()
-
-            assert return_code == 1
-            # Verify check=False (default) was used
-            mock_run.assert_called_once()
-            assert mock_run.call_args[1].get("check", False) is False
-
-
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

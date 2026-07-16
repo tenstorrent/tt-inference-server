@@ -548,12 +548,12 @@ Usage:
         - Local: start the server in device mode for each model
 
 Example commands:
-    python server_tests/test_cases/vision_evals_test.py --download 20
-    python server_tests/test_cases/vision_evals_test.py --measure_cpu_accuracy
-    python server_tests/test_cases/vision_evals_test.py --measure_cpu_accuracy --model tt-xla-resnet
-    python server_tests/test_cases/vision_evals_test.py --measure_device_accuracy
-    python server_tests/test_cases/vision_evals_test.py --measure_device_accuracy --model tt-xla-resnet --server_url http://127.0.0.1:8000/v1/cnn/search-image
-    python server_tests/test_cases/vision_evals_test.py --compare_results
+    python tt-inference-server-v2/test_module/eval_tests/vision_evals_test.py --download 20
+    python tt-inference-server-v2/test_module/eval_tests/vision_evals_test.py --measure_cpu_accuracy
+    python tt-inference-server-v2/test_module/eval_tests/vision_evals_test.py --measure_cpu_accuracy --model tt-xla-resnet
+    python tt-inference-server-v2/test_module/eval_tests/vision_evals_test.py --measure_device_accuracy
+    python tt-inference-server-v2/test_module/eval_tests/vision_evals_test.py --measure_device_accuracy --model tt-xla-resnet --server_url http://127.0.0.1:8000/v1/cnn/search-image
+    python tt-inference-server-v2/test_module/eval_tests/vision_evals_test.py --compare_results
 """
 
 if __name__ == "__main__":

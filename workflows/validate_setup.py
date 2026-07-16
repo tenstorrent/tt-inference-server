@@ -10,7 +10,6 @@ from pathlib import Path
 from benchmarking.benchmark_config import get_benchmark_config
 from workflows.v2_bridge import can_route_to_v2
 from evals.eval_config import EVAL_CONFIGS
-from server_tests.test_config import TEST_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
     MIN_SUPPORTED_IMAGE_VERSION,
@@ -118,12 +117,6 @@ def validate_runtime_args(model_spec, runtime_config):
     if workflow_type == WorkflowType.STRESS_TESTS:
         pass  # Model support already validated via MODEL_SPECS check
 
-    if workflow_type == WorkflowType.TESTS:
-        assert model_spec.model_name in TEST_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in TEST_CONFIGS"
-        )
-    if workflow_type == WorkflowType.REPORTS:
-        pass
     if workflow_type == WorkflowType.SERVER:
         if not (args.docker_server or args.local_server):
             raise ValueError(

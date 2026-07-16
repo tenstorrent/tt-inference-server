@@ -65,7 +65,7 @@ struct DecodeNode {
   std::shared_ptr<Pipe> ba{std::make_shared<Pipe>()};  // receiver -> sender
   std::shared_ptr<BlockingFakeTransport> senderTp;
   std::shared_ptr<BlockingFakeTransport> receiverTp;
-  std::unique_ptr<KvControlChannel> senderCh;
+  std::shared_ptr<KvControlChannel> senderCh;
   std::unique_ptr<KvControlChannel> receiverCh;
   std::unique_ptr<MooncakeKvReceiver> receiver;
   std::unique_ptr<KvMigrationReceiver> orch;
@@ -77,7 +77,7 @@ struct DecodeNode {
     engine = std::make_shared<FakeTransferEngine>(reg, seg);
     senderTp = std::make_shared<BlockingFakeTransport>(/*in=*/ba, /*out=*/ab);
     receiverTp = std::make_shared<BlockingFakeTransport>(/*in=*/ab, /*out=*/ba);
-    senderCh = std::make_unique<KvControlChannel>(senderTp);
+    senderCh = std::make_shared<KvControlChannel>(senderTp);
     receiverCh = std::make_unique<KvControlChannel>(receiverTp);
     receiver =
         std::make_unique<MooncakeKvReceiver>(engine, dev, table, host, seg);
@@ -249,6 +249,7 @@ TEST(KvMigrationOrchestrator, ExchangesTableBlobs) {
   ASSERT_TRUE(gotOnReceiver.has_value());
   EXPECT_EQ(*gotOnSender, receiverBlob);
   EXPECT_EQ(*gotOnReceiver, senderBlob);
+  EXPECT_EQ(ro.peerTableBlob(), senderBlob);
 }
 
 // A prepareMirror failure (no local chunks for the request) is reported to the
@@ -362,7 +363,7 @@ TEST(KvMigrationMultiHost, FansOutToTwoDecodeHosts) {
 
   KvMigrationMultiHostSender multiHost(
       senderEngine, prefillDev, prefill, decode, "P",
-      {{"D0", d0.senderCh.get()}, {"D1", d1.senderCh.get()}});
+      {{"D0", d0.senderCh}, {"D1", d1.senderCh}});
   EXPECT_EQ(multiHost.hostCount(), 2u);
   EXPECT_TRUE(multiHost.migrate(0x5151, wholeSlot5()));
 
@@ -405,7 +406,7 @@ TEST(KvMigrationMultiHost, DrivesOnlyHostsInRequest) {
 
   KvMigrationMultiHostSender multiHost(
       senderEngine, prefillDev, prefill, decode, "P",
-      {{"D0", d0.senderCh.get()}, {"D1", d1.senderCh.get()}});
+      {{"D0", d0.senderCh}, {"D1", d1.senderCh}});
 
   // Layer [0,1) lives only on D0.
   EXPECT_TRUE(multiHost.migrate(0x1, symmetricReq(5, 0, 1, 0, 128)));
@@ -437,7 +438,7 @@ TEST(KvMigrationMultiHost, ReportsFailureWhenAHostFails) {
 
   KvMigrationMultiHostSender multiHost(
       senderEngine, prefillDev, prefill, decode, "P",
-      {{"D0", d0.senderCh.get()}, {"D1", d1.senderCh.get()}});
+      {{"D0", d0.senderCh}, {"D1", d1.senderCh}});
   EXPECT_FALSE(multiHost.migrate(0x9, wholeSlot5()));
 
   d0.shutdown();
@@ -464,8 +465,7 @@ TEST(KvMigrationMultiHost, FailsWhenAnInvolvedHostHasNoChannel) {
   DecodeNode d0(reg, decode, "D0", "segD0", devD0);  // only D0 has a channel
 
   KvMigrationMultiHostSender multiHost(senderEngine, prefillDev, prefill,
-                                       decode, "P",
-                                       {{"D0", d0.senderCh.get()}});
+                                       decode, "P", {{"D0", d0.senderCh}});
   EXPECT_EQ(multiHost.hostCount(), 1u);
   // Whole slot touches D0 and D1, but D1 is unresolved -> overall failure.
   EXPECT_FALSE(multiHost.migrate(0x2, wholeSlot5()));
@@ -500,7 +500,7 @@ TEST(KvMigrationMultiHost, DrivenThroughMooncakeExecutor) {
 
   KvMigrationMultiHostSender multiHost(
       senderEngine, prefillDev, prefill, decode, "P",
-      {{"D0", d0.senderCh.get()}, {"D1", d1.senderCh.get()}});
+      {{"D0", d0.senderCh}, {"D1", d1.senderCh}});
 
   MooncakeMigrationExecutor exec(multiHost);
 

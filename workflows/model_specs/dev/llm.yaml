@@ -391,6 +391,7 @@ templates:
         # Magic number; follows vllm nightly:
         # https://github.com/tenstorrent/tt-metal/actions/runs/28493777891/job/84457052459#step:10:1
         trace_region_size: 268435456
+        sample_on_device_mode: decode_only
   # EXPERIMENTAL: no target performance has been set yet, so we can't classify
   # this as FUNCTIONAL, COMPLETE, or top-perf.
   status: EXPERIMENTAL
@@ -913,7 +914,7 @@ templates:
       override_tt_config:
         trace_region_size: 402653184  # 384 * 1024 * 1024
       known_issues:
-        - workflow_type: TESTS
+        - workflow_type: SPEC_TESTS
           task_name: test_penalties
           reason: "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888."
   status: FUNCTIONAL
@@ -1423,3 +1424,21 @@ templates:
       # Kimi ships a custom tokenizer; AIPerf-driven sweeps (prefix-cache,
       # spec-decode) must trust remote code to load it.
       tokenizer_trust_remote_code: true
+
+- weights:
+    - MiniMaxAI/MiniMax-M3
+  impl: tt_transformers
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 64
+      max_context: 1048576  # 1024 * 1024; 
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    MiniMaxAI/MiniMax-M3:
+      remote_api_model: MiniMaxAI/MiniMax-M3
+      reasoning_parser_name: minimax_m3
+      tool_call_parser_name: minimax_m3
