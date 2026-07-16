@@ -876,13 +876,13 @@ std::string dynamoKubeApiServer() {
   if (const char* v = std::getenv("DYNAMO_KUBE_API_SERVER"); v && *v) {
     return v;
   }
-  // Standard in-cluster discovery of the API server.
   const char* host = std::getenv("KUBERNETES_SERVICE_HOST");
   if (host && *host) {
     const char* port = std::getenv("KUBERNETES_SERVICE_PORT");
     const std::string portStr = (port && *port) ? port : "443";
     return "https://" + std::string(host) + ":" + portStr;
   }
+  // DNS fallback
   return "https://kubernetes.default.svc";
 }
 

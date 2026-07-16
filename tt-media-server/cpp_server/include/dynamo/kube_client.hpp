@@ -35,22 +35,14 @@ class KubeError : public std::runtime_error {
 };
 
 struct KubeClientConfig {
-  /// API server base URL, e.g. "https://10.0.0.1:443".
   std::string api_server;
-  /// Path to the ServiceAccount bearer token (re-read per request for
-  /// rotation).
   std::string token_path =
       "/var/run/secrets/kubernetes.io/serviceaccount/token";
-  /// Path to the CA certificate for TLS validation.
   std::string ca_cert_path =
       "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt";
-  /// Validate the API server's TLS certificate.
   bool validate_cert = true;
-  /// Connect + read timeout per request.
   int timeout_ms = 5000;
-  /// Maximum number of retry attempts on transient failures.
   int max_retries = 3;
-  /// Base delay for exponential backoff between retries.
   int retry_base_delay_ms = 500;
 };
 
@@ -60,9 +52,6 @@ struct KubeClientConfig {
  * Bundles the per-instance JSON the etcd backend writes as separate keys into a
  * single CR: `spec.data.endpoints[<instance_key>] = instance_json`,
  * `spec.data.model_cards[<instance_key>] = mdc_json`, `event_channels = {}`.
- * The metadata carries a Pod owner reference so Kubernetes garbage-collects the
- * CR when the pod is deleted. `controller` is true only when `cr_name ==
- * pod_name` (pod mode), matching Dynamo's build_cr.
  */
 Json::Value buildDynamoWorkerMetadataCr(const std::string& crName,
                                         const std::string& podName,
@@ -79,9 +68,8 @@ class KubeClient {
   KubeClient(const KubeClient&) = delete;
   KubeClient& operator=(const KubeClient&) = delete;
 
-  /// Server-side apply (create-or-update) the DynamoWorkerMetadata CR named
-  /// `cr_name` in namespace `ns`. Throws KubeError on any non-2xx response or
-  /// transport failure.
+  /// Server-side apply the DynamoWorkerMetadata CR named `cr_name` in namespace `ns`.
+  /// Throws KubeError on any non-2xx response or transport failure.
   void applyCr(const std::string& ns, const std::string& crName,
                const Json::Value& body);
 
@@ -94,8 +82,7 @@ class KubeClient {
   static std::string crPath(const std::string& ns, const std::string& crName);
 
  private:
-  /// Read the (possibly rotated) ServiceAccount token from disk. Throws
-  /// KubeError if unreadable.
+  /// Read ServiceAccount token. Throws KubeError if unreadable.
   std::string readToken() const;
 
   KubeClientConfig cfg_;
