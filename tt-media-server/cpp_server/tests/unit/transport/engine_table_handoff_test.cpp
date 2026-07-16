@@ -145,6 +145,8 @@ TEST(EngineTableHandoffRealTable, EngineHandsRealTableAndDeviceMapToWorker) {
   auto tables = source.fetch();
   ASSERT_TRUE(tables.has_value());
   ASSERT_NE(tables->table, nullptr);
+  // Raw .pb bytes must survive for TABLE_EXCHANGE — never re-serialize.
+  EXPECT_EQ(tables->table_blob, tableBlob);
 
   // The wire-delivered table addresses identically to the directly-loaded one.
   auto direct = deserializeKvTable(tableBlob);
@@ -160,6 +162,16 @@ TEST(EngineTableHandoffRealTable, EngineHandsRealTableAndDeviceMapToWorker) {
   EXPECT_EQ(tables->device_map.umdChip(FabricNode{2, 0}),
             0xAAAA000000000001ull);
   EXPECT_EQ(tables->device_map.size(), engineDeviceMap.size());
+}
+
+TEST(EngineTableHandoff, ReceivePreservesTableBlobWithoutRealTable) {
+  // deserializeKvTable may fail when ENABLE_KV_TABLE is OFF — still exercise
+  // parse + engineTablesFromWire blob path via parseEngineHandoff.
+  const std::vector<uint8_t> tableBlob{9, 8, 7, 6};
+  const auto wire = serializeEngineHandoff(tableBlob, makeDeviceMap());
+  const auto parsed = parseEngineHandoff(wire);
+  ASSERT_TRUE(parsed.has_value());
+  EXPECT_EQ(parsed->table_blob, tableBlob);
 }
 
 }  // namespace

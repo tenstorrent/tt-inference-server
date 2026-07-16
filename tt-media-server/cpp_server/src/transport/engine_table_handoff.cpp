@@ -104,25 +104,36 @@ bool sendEngineHandoff(sockets::ISocketTransport& transport,
   return transport.sendRawData(bytes);
 }
 
-std::optional<EngineTables> receiveEngineHandoff(
-    sockets::ISocketTransport& transport) {
-  const std::vector<uint8_t> raw = transport.receiveRawData();
-  if (raw.empty()) {
-    TT_LOG_ERROR("[engine_table_handoff] empty/closed receive");
-    return std::nullopt;
-  }
-  auto payload = parseEngineHandoff(raw);
+std::optional<EngineTables> engineTablesFromWire(
+    std::span<const uint8_t> bytes) {
+  auto payload = parseEngineHandoff(bytes);
   if (!payload) {
     return std::nullopt;
   }
-  auto table = deserializeKvTable(payload->table_blob);
+  // Keep wire bytes before deserialize so TABLE_EXCHANGE still has a .pb blob.
+  std::vector<uint8_t> tableBlob = std::move(payload->table_blob);
+  auto table = deserializeKvTable(tableBlob);
   if (!table) {
     TT_LOG_ERROR(
         "[engine_table_handoff] table failed to parse (bad bytes, or "
         "ENABLE_KV_TABLE is OFF)");
     return std::nullopt;
   }
-  return EngineTables{std::move(table), std::move(payload->device_map)};
+  return EngineTables{std::move(table), std::move(tableBlob),
+                      std::move(payload->device_map)};
+}
+
+std::optional<EngineTables> receiveEngineHandoff(
+    sockets::ISocketTransport& transport) {
+  const sockets::ReceiveResult result = transport.tryReceiveMessage();
+  if (result.status == sockets::ReceiveStatus::NO_DATA) {
+    return std::nullopt;
+  }
+  if (result.status == sockets::ReceiveStatus::CLOSED) {
+    TT_LOG_ERROR("[engine_table_handoff] empty/closed receive");
+    return std::nullopt;
+  }
+  return engineTablesFromWire(result.data);
 }
 
 SocketEngineTableSource::SocketEngineTableSource(

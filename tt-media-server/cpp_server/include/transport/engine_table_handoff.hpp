@@ -38,9 +38,11 @@ namespace tt::transport {
  *   [u32 devmap_count]( [u32 mesh][u32 chip][u64 umd_chip_id] )*
  */
 
-/// What the worker receives: the parsed table and the device map.
+/// What the worker receives: parsed table, raw .pb bytes (for TABLE_EXCHANGE),
+/// and the device map.
 struct EngineTables {
   std::shared_ptr<const IKvTable> table;
+  std::vector<uint8_t> table_blob;
   DeviceMap device_map;
 };
 
@@ -65,9 +67,15 @@ bool sendEngineHandoff(sockets::ISocketTransport& transport,
                        const std::vector<uint8_t>& tableBlob,
                        const DeviceMap& deviceMap);
 
-/// Worker (consumer) side: receive one message, parse it, and deserialize the
-/// table. nullopt on transport close, malformed bytes, or a table that fails to
-/// parse (e.g. ENABLE_KV_TABLE is OFF).
+/// Parse + deserialize a already-framed handoff payload. Preserves table_blob.
+/// nullopt on malformed bytes or a table that fails to parse.
+std::optional<EngineTables> engineTablesFromWire(
+    std::span<const uint8_t> bytes);
+
+/// Worker (consumer) side: one tryReceiveMessage, then parse + deserialize.
+/// nullopt on NO_DATA, CLOSED, malformed bytes, or a table that fails to parse
+/// (e.g. ENABLE_KV_TABLE is OFF). Callers that need wait-until-ready should
+/// poll (see awaitEngineHandoffOnPeer in engine_table_resolve.hpp).
 std::optional<EngineTables> receiveEngineHandoff(
     sockets::ISocketTransport& transport);
 
@@ -80,7 +88,7 @@ class IEngineTableSource {
   virtual std::optional<EngineTables> fetch() = 0;
 };
 
-/// Pulls the handoff from the engine over an `ISocketTransport`.
+/// Pulls the handoff from the engine over an `ISocketTransport` (one attempt).
 class SocketEngineTableSource : public IEngineTableSource {
  public:
   explicit SocketEngineTableSource(
