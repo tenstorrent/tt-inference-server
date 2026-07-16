@@ -39,13 +39,6 @@ namespace tt::dynamo {
 
 namespace {
 
-bool shouldAllocateMockDecodeSlot() {
-  const auto runnerType = tt::config::blazeConfig().runner_type;
-  return runnerType == tt::config::ModelRunnerType::MOCK_PIPELINE ||
-         runnerType == tt::config::ModelRunnerType::MOCK_SCHEDULER ||
-         runnerType == tt::config::ModelRunnerType::MOCK;
-}
-
 /// Resolve the cpp_server tokenizers/<model>/ directory for the active
 /// tokenizer. `tokenizerPath()` returns an absolute tokenizer file path
 /// (`tokenizer.json` or `tiktoken.model`), so we strip the filename to get the
@@ -245,14 +238,20 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               signalDone();
               return;
             }
+            auto resultForDynamo = result;
+            if (!resultForDynamo.slotId.has_value()) {
+              resultForDynamo.slotId = tt::domain::INVALID_SLOT_ID;
+            }
             Json::Value params(Json::objectValue);
-            params["tt_prefill_result"] = prefillResultMessageToJson(result);
+            params["tt_prefill_result"] =
+                prefillResultMessageToJson(resultForDynamo);
             out.disaggregated_params = std::move(params);
             DynamoUsage du;
-            du.prompt_tokens = static_cast<int>(result.tokenIds.size());
+            du.prompt_tokens =
+                static_cast<int>(resultForDynamo.tokenIds.size());
             du.completion_tokens = 0;
             du.total_tokens = du.prompt_tokens;
-            du.cached_tokens = result.cachedTokens;
+            du.cached_tokens = resultForDynamo.cachedTokens;
             out.completion_usage = du;
             sendChunk(out);
             signalDone();
@@ -314,8 +313,16 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                 *prefillResult, {.skip_apply_chat_template = true,
                                  .skip_text_decode = true,
                                  .populate_token_counts = true}));
-        if (!prefillResult->slotId.has_value()) {
-          if (!shouldAllocateMockDecodeSlot()) {
+        const bool hasReservedDecodeSlot =
+            prefillResult->slotId.has_value() &&
+            *prefillResult->slotId != tt::domain::INVALID_SLOT_ID;
+        if (!hasReservedDecodeSlot) {
+          const auto runnerType = tt::config::blazeConfig().runner_type;
+          const bool isMockDecode =
+              runnerType == tt::config::ModelRunnerType::MOCK_PIPELINE ||
+              runnerType == tt::config::ModelRunnerType::MOCK_SCHEDULER ||
+              runnerType == tt::config::ModelRunnerType::MOCK;
+          if (!isMockDecode) {
             sendErrorAndDone(
                 "DYNAMO_ROUTING=1: prefill result did not include a "
                 "reserved decode slot_id; slot reservation must be wired "
