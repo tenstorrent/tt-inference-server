@@ -1781,6 +1781,8 @@ set(SOURCES
     src/runtime/worker/worker_metrics_aggregator.cpp
     src/runtime/worker/blaze_worker_metrics_renderer.cpp
     src/dynamo/dynamo_protocol.cpp
+    src/dynamo/dynamo_llm_mapping.cpp
+    src/dynamo/dynamo_prefill_result_json.cpp
     src/dynamo/discovery.cpp
     src/dynamo/etcd_client.cpp
     src/dynamo/dynamo_endpoint.cpp
