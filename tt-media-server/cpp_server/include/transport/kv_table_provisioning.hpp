@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -17,12 +18,10 @@ namespace tt::transport {
 /**
  * @brief Real KV-table loading + init-time exchange over the control channel.
  *
- * The data plane needs the sender (prefill) to hold BOTH the prefill table (its
- * own, for source reads) and the decode table (the peer's, for destination
- * addressing); the receiver (decode) needs only its own table. Rather than ship
- * the decode `.pb` to every prefill host, each worker loads ONLY its own table
- * from disk and the two swap serialized tables over the already-open control
- * channel — so the sender obtains the decode table over the wire.
+ * Each worker loads ONLY its own `.pb` from disk, then both sides swap
+ * serialized tables over the control channel (TABLE_EXCHANGE). Prefill keeps
+ * the peer decode table for destination addressing; decode keeps the peer
+ * prefill table from the same exchange.
  *
  * The exchanged blob is just the `.pb` file's bytes; the peer reconstructs the
  * table with `KvChunkAddressTableAdapter::fromProtobuf` (which is a no-op
@@ -54,17 +53,39 @@ std::optional<LoadedKvTable> loadKvTableFile(const std::string& path);
 std::shared_ptr<const IKvTable> deserializeKvTable(
     const std::vector<uint8_t>& blob);
 
+/// Default wall-clock budget for TABLE_EXCHANGE of large .pb blobs. Migrate
+/// MirrorReady/Ack use the channel's shorter receiveTimeout() instead.
+inline constexpr std::chrono::milliseconds kDefaultTableExchangeTimeout{300000};
+
 /// Swap serialized-table blobs over `channel` (one TABLE_EXCHANGE each way).
+/// Holds a channel Transaction for the full send/recv (blocking).
+/// @p ioTimeout covers large .pb payloads (minutes); migrate stays on the
+/// channel default (seconds).
 /// @return the peer's blob, or nullopt on protocol error / channel close.
 std::optional<std::vector<uint8_t>> exchangeTableBlob(
     KvControlChannel& channel, TableExchangeRole role,
-    const std::vector<uint8_t>& localBlob);
+    const std::vector<uint8_t>& localBlob,
+    std::chrono::milliseconds ioTimeout = kDefaultTableExchangeTimeout);
+
+/// Like exchangeTableBlob, but uses try_lock. Returns nullopt if a migrate (or
+/// another exchange) already owns the channel — caller should retry later.
+std::optional<std::vector<uint8_t>> tryExchangeTableBlob(
+    KvControlChannel& channel, TableExchangeRole role,
+    const std::vector<uint8_t>& localBlob,
+    std::chrono::milliseconds ioTimeout = kDefaultTableExchangeTimeout);
 
 /// exchangeTableBlob + deserialize: the peer's table, or nullptr on failure.
 /// The prefill side calls this (role=Sender) to obtain the decode table before
 /// building its MooncakeKvSender / KvMigrationMultiHostSender.
 std::shared_ptr<const IKvTable> provisionPeerTable(
     KvControlChannel& channel, TableExchangeRole role,
-    const std::vector<uint8_t>& localBlob);
+    const std::vector<uint8_t>& localBlob,
+    std::chrono::milliseconds ioTimeout = kDefaultTableExchangeTimeout);
+
+/// tryExchangeTableBlob + deserialize. nullptr if lock busy or exchange fails.
+std::shared_ptr<const IKvTable> tryProvisionPeerTable(
+    KvControlChannel& channel, TableExchangeRole role,
+    const std::vector<uint8_t>& localBlob,
+    std::chrono::milliseconds ioTimeout = kDefaultTableExchangeTimeout);
 
 }  // namespace tt::transport

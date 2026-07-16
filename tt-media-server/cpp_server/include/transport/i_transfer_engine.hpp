@@ -69,6 +69,21 @@ class ITransferEngine {
   virtual bool unregisterLocalMemory(void* addr) = 0;
 
   /**
+   * @brief Addr of the first still-registered local buffer (Mooncake
+   *        buffers[0]), or nullptr if none.
+   *
+   * Remote WRITEs resolve against the peer's buffers[0]
+   * (`mooncake_transfer_engine.cpp`). Table exchange + KV mirror both rely on
+   * that slot: exchange registers the recv region first, unregisters it, then
+   * the mirror must become buffers[0]. Engines that track registration order
+   * override this; the default returns nullptr (unknown).
+   */
+  virtual void* firstRegisteredLocalBuffer() const { return nullptr; }
+
+  /// How many local buffers are still registered (0 if unknown / untracked).
+  virtual std::size_t registeredLocalBufferCount() const { return 0; }
+
+  /**
    * @brief Resolve a peer's advertised segment by name.
    * @return a handle, or K_INVALID_SEGMENT on failure.
    */
@@ -132,6 +147,17 @@ class ITransferEngine {
                                const std::string& /*value*/) {
     return false;
   }
+
+  /**
+   * @brief Delete a key previously stored with publishMetadata.
+   *
+   * Call on graceful shutdown so peers stop resolving a dead worker (e.g.
+   * clear "kv_control/<name>"). Mooncake's own rpc_meta entry is removed by
+   * TransferEngine::freeEngine on destroy; this covers *our* keys only.
+   * @return true if the store accepted the delete (or the key was already
+   *         absent). Base implementation returns false.
+   */
+  virtual bool removeMetadata(const std::string& /*key*/) { return false; }
 
   /**
    * @brief Look up a value previously stored with publishMetadata.
