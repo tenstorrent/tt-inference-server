@@ -804,12 +804,12 @@ int runPrefill(const WorkerConfig& cfg) {
       // Static --peer-control wins; otherwise re-read kv_control/<name> (and
       // rpc_meta fallback) every poll — same resolveOnePeer as bring-up.
       const auto currentEp = connector.endpoint(name);
-      const bool resolved =
+      const bool peerResolved =
           (cfg.peers.count(name) != 0)
               ? (ep = cfg.peers.at(name), true)
               : resolveOnePeer(*engine, cfg, name, ep,
                                currentEp ? &*currentEp : nullptr);
-      if (!resolved) {
+      if (!peerResolved) {
         if (wasConnected[name]) {
           TT_LOG_WARN(
               "[worker] prefill '{}': decode peer '{}' LOST (control endpoint "
