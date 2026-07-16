@@ -49,9 +49,7 @@ BlazeDecodeRunner::BlazeDecodeRunner(
 
 BlazeDecodeRunner::~BlazeDecodeRunner() {
   stop();
-  if (decodeScheduler) {
-    decodeScheduler->stop();
-  }
+  shutdownScheduler();
 }
 
 void BlazeDecodeRunner::run() {
@@ -703,7 +701,14 @@ void BlazeDecodeRunner::checkOutputHang() {
 
     TT_LOG_CRITICAL("[BlazeRunner] State dump\n{}",
                     slotManager.dumpSlotStates());
+    shutdownScheduler();
     std::abort();
+  }
+}
+
+void BlazeDecodeRunner::shutdownScheduler() {
+  if (decodeScheduler) {
+    decodeScheduler->stop();
   }
 }
 
