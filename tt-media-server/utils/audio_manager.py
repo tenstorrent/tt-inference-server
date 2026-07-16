@@ -2,12 +2,15 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import atexit
 import base64
 import json
 import os
+import selectors
 import struct
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 from typing import List, Optional
 
@@ -31,25 +34,53 @@ AUDIO_VENV_PYTHON = os.getenv(
 DIARIZE_SCRIPT = Path(__file__).parent / "diarize.py"
 
 
-class AudioVenvClient:
-    """Runs `diarize.py` in the separate audio venv as a subprocess.
+class AudioVenvWorker:
+    """Long-lived subprocess bridge to `diarize.py --serve` in the audio venv.
 
-    Centralises the boilerplate around writing the audio array to a temp
-    `.npy`, building the CLI argv, executing the subprocess, parsing the
-    JSON response and surfacing errors via a logger. Both diarization and
-    VAD use the same wire protocol so the calling code only differs in the
-    mode and the timeout it allows.
+    The old design spawned a fresh Python interpreter for every audio
+    request, which paid the torch import (~1.5s) and pyannote/silero model
+    load (~500-800ms) cost on every single call. This class replaces that
+    with **one persistent subprocess per instance**: the subprocess stays
+    alive, torch and the models are lazy-loaded on first use, and every
+    subsequent :meth:`run` is a JSON round-trip over stdin/stdout on the
+    already-warm worker.
+
+    Concurrency contract: each :class:`AudioVenvWorker` is expected to have
+    a **single caller** (the parent :class:`AudioManager` living inside one
+    :mod:`CpuWorkloadHandler` worker process). There is no internal lock;
+    the media server already fans concurrent requests out to N independent
+    AudioManagers, so parallelism is achieved at the outer layer.
+
+    Failure recovery: if the worker dies (SIGKILL, segfault, unhandled
+    exception), the next call to :meth:`run` detects the dead pipe and
+    respawns automatically. Callers observe a single failed request; the
+    next request succeeds.
     """
+
+    # Time budget for the child to signal ready. The server no longer
+    # eager-loads models here (that happens lazily on first request, driven
+    # by the CpuWorkloadHandler warmup task), so all we're waiting for is
+    # Python interpreter startup + a tiny script import. 30s is plenty of
+    # headroom for a cold filesystem.
+    _READY_TIMEOUT_SECONDS = 30
 
     def __init__(
         self,
         logger: TTLogger,
+        model_name: Optional[str] = None,
+        hf_token: Optional[str] = None,
         python_executable: str = AUDIO_VENV_PYTHON,
         script_path: Path = DIARIZE_SCRIPT,
+        popen_factory=None,
     ):
         self._logger = logger
+        self._model_name = model_name
+        self._hf_token = hf_token
         self._python = python_executable
         self._script = script_path
+        # Injectable for tests (fake Popen). Default is subprocess.Popen.
+        self._popen_factory = popen_factory or subprocess.Popen
+        self._proc: Optional[subprocess.Popen] = None
 
     def is_available(self) -> bool:
         """Return True if both the audio venv Python and diarize script exist."""
@@ -62,92 +93,249 @@ class AudioVenvClient:
         if not self._script.exists():
             raise FileNotFoundError(f"Diarize script not found at {self._script}")
 
+    def is_running(self) -> bool:
+        return self._proc is not None and self._proc.poll() is None
+
+    def start(self) -> None:
+        """Spawn the worker and block until it signals ready.
+
+        Raises RuntimeError on spawn failure, ready timeout, or if the
+        worker exits before signalling ready.
+        """
+        if self.is_running():
+            return
+
+        self.assert_available()
+
+        cmd: List[str] = [self._python, str(self._script), "--serve"]
+        if self._model_name:
+            cmd.extend(["--model-name", self._model_name])
+        if self._hf_token:
+            cmd.extend(["--hf-token", self._hf_token])
+
+        try:
+            self._proc = self._popen_factory(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,  # line-buffered
+            )
+        except Exception as e:
+            self._proc = None
+            raise RuntimeError(f"Failed to spawn audio worker: {e}") from e
+
+        ready = self._read_response(timeout_seconds=self._READY_TIMEOUT_SECONDS)
+        if ready is None:
+            self._terminate_proc()
+            raise RuntimeError(
+                f"Audio worker did not signal ready within "
+                f"{self._READY_TIMEOUT_SECONDS}s"
+            )
+        if ready.get("status") != "ready":
+            self._terminate_proc()
+            raise RuntimeError(
+                f"Audio worker returned unexpected ready payload: {ready}"
+            )
+
+        self._logger.info("Audio venv worker is ready")
+
     def run(
         self,
         mode: str,
         audio_array: np.ndarray,
         timeout_seconds: int,
-        model_name: Optional[str] = None,
-        hf_token: Optional[str] = None,
     ) -> Optional[List[dict]]:
-        """Invoke the audio venv subprocess and return the parsed segments.
+        """Send one request, wait for the matching response.
 
-        Returns the list of segment dicts on success, or `None` on failure
-        (subprocess error, timeout, or non-success status payload).
+        Returns the segments list on success, or ``None`` on any failure
+        (worker not startable, dead worker, timeout, error payload, or id
+        mismatch). ``None`` is what the existing callers already treat as
+        "audio preprocessing unavailable for this request, skip it".
         """
+        if not self.is_running():
+            try:
+                self.start()
+            except Exception as e:
+                self._logger.error(f"Cannot start audio worker: {e}")
+                return None
+
+        request_id = str(uuid.uuid4())
+
         with tempfile.TemporaryDirectory() as tmpdir:
-            audio_file = os.path.join(tmpdir, "audio.npy")
-            output_file = os.path.join(tmpdir, "result.json")
+            audio_path = os.path.join(tmpdir, "audio.npy")
+            np.save(audio_path, audio_array)
 
-            np.save(audio_file, audio_array)
+            request = {"id": request_id, "mode": mode, "audio_path": audio_path}
 
-            cmd = [
-                self._python,
-                str(self._script),
-                "--audio",
-                audio_file,
-                "--output",
-                output_file,
-                "--mode",
-                mode,
-            ]
-            if model_name:
-                cmd.extend(["--model-name", model_name])
-            if hf_token:
-                cmd.extend(["--hf-token", hf_token])
+            if not self._send_request(request, mode):
+                return None
 
+            response = self._read_response(timeout_seconds=timeout_seconds)
+
+        if response is None:
+            self._logger.error(f"{mode} response timed out after {timeout_seconds}s")
+            self._terminate_proc()
+            return None
+
+        if response.get("id") != request_id:
+            self._logger.error(
+                f"{mode} response id mismatch (expected {request_id}, "
+                f"got {response.get('id')}); dropping worker"
+            )
+            self._terminate_proc()
+            return None
+
+        if response.get("status") != "success":
+            self._logger.error(f"{mode} error: {response.get('error')}")
+            return None
+
+        return response.get("segments", [])
+
+    def close(self) -> None:
+        """Cleanly shut down the worker: close stdin (EOF), wait briefly,
+        then hard-terminate if it didn't exit on its own."""
+        if self._proc is None:
+            return
+        try:
+            if self._proc.stdin and not self._proc.stdin.closed:
+                self._proc.stdin.close()
+        except Exception:
+            pass
+        try:
+            self._proc.wait(timeout=5.0)
+        except Exception:
+            pass
+        self._terminate_proc()
+
+    # -------------------------------------------------------------------------
+    # Low-level pipe I/O
+    # -------------------------------------------------------------------------
+
+    def _send_request(self, request: dict, mode_for_log: str) -> bool:
+        """Write one JSON line to the worker's stdin. Returns False on
+        failure (and drops the worker so the next call respawns)."""
+        try:
+            assert self._proc is not None and self._proc.stdin is not None
+            self._proc.stdin.write(json.dumps(request) + "\n")
+            self._proc.stdin.flush()
+            return True
+        except Exception as e:
+            self._logger.error(f"Failed to send {mode_for_log} request: {e}")
+            self._terminate_proc()
+            return False
+
+    def _read_response(self, timeout_seconds: float) -> Optional[dict]:
+        """Read one JSON line from the worker's stdout, blocking at most
+        ``timeout_seconds``. Returns:
+
+        * the parsed dict on success
+        * ``None`` on timeout
+        * ``None`` on EOF or malformed JSON (worker gets terminated so the
+          next call respawns)
+        """
+        if self._proc is None or self._proc.stdout is None:
+            return None
+
+        stdout = self._proc.stdout
+        sel = selectors.DefaultSelector()
+        sel.register(stdout, selectors.EVENT_READ)
+        try:
+            events = sel.select(timeout=timeout_seconds)
+        finally:
+            sel.unregister(stdout)
+
+        if not events:
+            return None  # timeout — caller decides whether to terminate
+
+        try:
+            # The server writes exactly one JSON payload per line and
+            # flushes, so once stdout is readable a full line is imminent.
+            line = stdout.readline()
+        except Exception as e:
+            self._logger.error(f"Error reading from audio worker stdout: {e}")
+            self._terminate_proc()
+            return None
+
+        if not line:
+            self._logger.error(
+                "Audio worker closed stdout unexpectedly (EOF); dropping worker"
+            )
+            self._terminate_proc()
+            return None
+
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError as e:
+            self._logger.error(
+                f"Audio worker sent malformed JSON: {e!r}; line={line!r}"
+            )
+            self._terminate_proc()
+            return None
+
+    def _terminate_proc(self) -> None:
+        """Best-effort hard-stop. Safe to call multiple times."""
+        proc = self._proc
+        if proc is None:
+            return
+        try:
+            if proc.stdin and not proc.stdin.closed:
+                proc.stdin.close()
+        except Exception:
+            pass
+        if proc.poll() is None:
             try:
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout_seconds,
-                )
-            except subprocess.TimeoutExpired:
-                self._logger.error(f"{mode} subprocess timed out")
-                return None
-            except Exception as e:
-                self._logger.error(f"{mode} subprocess failed to launch: {e}")
-                return None
-
-            if result.returncode != 0:
-                self._logger.error(f"{mode} subprocess failed: {result.stderr}")
-                return None
-
+                proc.terminate()
+                proc.wait(timeout=2.0)
+            except Exception:
+                pass
+        if proc.poll() is None:
             try:
-                with open(output_file) as f:
-                    data = json.load(f)
-            except Exception as e:
-                self._logger.error(f"Failed to read {mode} response: {e}")
-                return None
-
-            if data.get("status") != "success":
-                self._logger.error(f"{mode} error: {data.get('error')}")
-                return None
-
-            return data.get("segments", [])
+                proc.kill()
+                proc.wait(timeout=1.0)
+            except Exception:
+                pass
+        self._proc = None
 
 
 class AudioManager:
     _whisperx_device: str = "cpu"
 
-    # Subprocess timeouts (seconds). Diarization is significantly heavier
-    # than VAD because it runs the pyannote pipeline end-to-end.
+    # Per-request timeouts on the persistent worker. Diarization is heavier
+    # than VAD because it runs the pyannote pipeline end-to-end. These are
+    # generous ceilings — steady-state requests complete in well under a
+    # second now that models stay hot in the worker.
     _DIARIZATION_TIMEOUT_SECONDS = 300
     _VAD_TIMEOUT_SECONDS = 120
 
     def __init__(self):
         self._logger = TTLogger()
+        # `_diarization_model` and `_vad_model` are legacy sentinels that the
+        # rest of AudioManager checks as "is diarization/VAD available?".
+        # We set them to True after the worker is up and running.
         self._diarization_model = None
         self._diarization_model_name: Optional[str] = None
         self._vad_model = None
-        self._audio_venv_client = AudioVenvClient(self._logger)
+        self._audio_venv_worker: Optional[AudioVenvWorker] = None
+        self._atexit_registered = False
 
         if settings.allow_audio_preprocessing:
-            self._initialize_diarization_model()
-            self._initialize_vad_model()
+            self._initialize_audio_worker()
         else:
             self._logger.info("Audio preprocessing disabled")
+
+    def close(self) -> None:
+        """Terminate the audio venv worker. Safe to call multiple times.
+
+        Automatically registered as an ``atexit`` handler when the worker is
+        successfully started so the child process doesn't outlive the
+        parent under normal shutdown.
+        """
+        worker = self._audio_venv_worker
+        self._audio_venv_worker = None
+        if worker is not None:
+            worker.close()
 
     def to_audio_array(self, file, should_preprocess):
         """Convert audio file (base64 string or raw bytes) to numpy array for audio model inference."""
@@ -318,32 +506,41 @@ class AudioManager:
         self._logger.info(f"Created {len(chunks)} Whisper chunks")
         return chunks
 
-    def _initialize_diarization_model(self):
-        """Verify the audio venv is usable and remember the diarization model name.
+    def _initialize_audio_worker(self):
+        """Spawn the persistent audio venv worker.
 
-        Diarization runs in a separate venv (audio_venv) to avoid torch version
-        conflicts with vLLM. We don't load the model here; the actual load
-        happens on first use inside the subprocess. This method just makes
-        the manager fail closed when the audio venv is missing.
+        Called once from :meth:`__init__` when audio preprocessing is
+        enabled. Blocks until the worker signals ready (models fully
+        loaded) so the first real request doesn't pay the cold-start cost.
+
+        On failure we degrade gracefully: leave ``_diarization_model`` and
+        ``_vad_model`` as ``None`` so downstream code falls back to
+        VAD-only or no-preprocessing paths, and log actionable next steps.
         """
-        try:
-            self._logger.info("Checking audio venv for diarization...")
-            self._audio_venv_client.assert_available()
+        self._diarization_model_name = (
+            settings.preprocessing_model_weights_path
+            or SupportedModels.PYANNOTE_SPEAKER_DIARIZATION.value
+        )
 
-            self._diarization_model_name = (
-                settings.preprocessing_model_weights_path
-                or SupportedModels.PYANNOTE_SPEAKER_DIARIZATION.value
-            )
-            self._diarization_model = True
+        try:
             self._logger.info(
-                f"Audio venv ready for diarization with model: {self._diarization_model_name}"
+                f"Starting audio venv worker (model: {self._diarization_model_name})..."
             )
+            worker = AudioVenvWorker(
+                logger=self._logger,
+                model_name=self._diarization_model_name,
+                hf_token=os.getenv("HF_TOKEN"),
+            )
+            worker.start()
         except Exception as e:
             self._logger.warning(
-                f"Failed to initialize diarization: {e}. Continuing without audio preprocessing"
+                f"Failed to start audio worker: {e}. "
+                "Continuing without audio preprocessing"
             )
+            self._audio_venv_worker = None
             self._diarization_model = None
             self._diarization_model_name = None
+            self._vad_model = None
 
             self._logger.info("To enable audio preprocessing:")
             self._logger.info(
@@ -352,33 +549,39 @@ class AudioManager:
             self._logger.info(
                 "2. Accept model terms at: https://hf.co/pyannote/speaker-diarization-3.0 and https://hf.co/pyannote/segmentation-3.0"
             )
+            return
 
-    def _initialize_vad_model(self):
-        """Verify the audio venv is usable for VAD.
+        self._audio_venv_worker = worker
+        self._diarization_model = True
+        self._vad_model = True
 
-        Like diarization, VAD runs in the audio venv. The Silero model only
-        loads on first use inside the subprocess.
-        """
-        try:
-            self._logger.info("Checking audio venv for VAD...")
-            self._audio_venv_client.assert_available()
-            self._vad_model = True
-            self._logger.info("Audio venv ready for VAD")
-        except Exception as e:
-            self._logger.error(f"Failed to initialize VAD: {e}")
-            self._vad_model = None
+        # Best-effort cleanup on interpreter shutdown so the child doesn't
+        # outlive the parent. `CpuWorkloadHandler.stop_workers` terminates
+        # the outer worker process anyway; this is belt-and-braces for
+        # direct-instantiation paths (tests, notebooks).
+        if not self._atexit_registered:
+            atexit.register(self.close)
+            self._atexit_registered = True
+
+        self._logger.info(
+            f"Audio venv worker ready (diarization: {self._diarization_model_name})"
+        )
 
     @log_execution_time("Applying diarization")
     def _apply_diarization(self, audio_array):
-        """Run diarization via subprocess in the audio venv."""
-        self._logger.info("Performing speaker diarization via audio venv...")
+        """Run diarization on the persistent audio venv worker."""
+        if self._audio_venv_worker is None:
+            self._logger.warning(
+                "Diarization requested but audio worker not available, returning no segments"
+            )
+            return []
 
-        segments = self._audio_venv_client.run(
+        self._logger.info("Performing speaker diarization via audio venv worker...")
+
+        segments = self._audio_venv_worker.run(
             mode="diarize",
             audio_array=audio_array,
             timeout_seconds=self._DIARIZATION_TIMEOUT_SECONDS,
-            model_name=self._diarization_model_name,
-            hf_token=os.getenv("HF_TOKEN"),
         )
 
         if segments is None:
@@ -398,14 +601,14 @@ class AudioManager:
 
     @log_execution_time("Applying VAD")
     def _apply_vad(self, audio_array):
-        """Apply VAD via subprocess in the audio venv."""
-        if self._vad_model is None:
+        """Run VAD on the persistent audio venv worker."""
+        if self._vad_model is None or self._audio_venv_worker is None:
             self._logger.warning("VAD model not available, skipping VAD step")
             return None
 
-        self._logger.info("Applying VAD via audio venv...")
+        self._logger.info("Applying VAD via audio venv worker...")
 
-        segments = self._audio_venv_client.run(
+        segments = self._audio_venv_worker.run(
             mode="vad",
             audio_array=audio_array,
             timeout_seconds=self._VAD_TIMEOUT_SECONDS,

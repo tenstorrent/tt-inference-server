@@ -4,19 +4,42 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
 # Standalone diarization / VAD entry point that runs inside the audio_venv
-# (torch 2.7.x + whisperx + pyannote + silero_vad). It is invoked as a
+# (torch 2.7.x + whisperx + pyannote + silero_vad). It is spawned as a
 # subprocess from `utils/audio_manager.py` which runs inside the main venv
 # (torch 2.10 + vLLM 0.18.1). Splitting the two avoids the torch ABI clash
 # between vLLM 0.18 (>=2.10) and whisperx/pyannote (~2.7.x).
 #
-# Communication contract with the parent process:
-#   - audio is passed as a .npy file path
-#   - results are written as JSON to an output path
-#   - the schema is defined by `DiarizeResponse.to_dict()` below
+# Two run modes are supported:
+#
+#   --serve    (production)
+#       Long-lived worker. Emits a ready signal as soon as it starts reading
+#       stdin, then processes line-delimited JSON requests forever. Models
+#       (pyannote / silero_vad) are lazy-loaded on first use of each mode --
+#       torch itself is not imported until the first request. This avoids
+#       paying the model-load cost per request and is what `AudioVenvWorker`
+#       in the main venv talks to.
+#
+#       The eager preload was intentionally dropped: `CpuWorkloadHandler`
+#       already sends a warmup task per worker at server startup which flows
+#       through `AudioManager` -> this server, exercising both modes and
+#       triggering the lazy load exactly once before any real user traffic.
+#
+#       Ready signal:  {"status": "ready"}
+#       Request:       {"id": "<opaque>", "mode": "diarize"|"vad",
+#                       "audio_path": "/tmp/xxx.npy"}
+#       Response:      {"id": "<opaque>", "status": "success"|"error",
+#                       "segments": [...], "error": null | "..."}
+#       Shutdown:      the parent closes stdin (EOF); the server exits cleanly.
+#
+#   one-shot   (debugging / ad-hoc)
+#       Runs a single request from CLI flags and writes the JSON response to
+#       a file. Useful for reproducing an issue without spinning up the
+#       server. Kept for operator convenience.
 #
 # Usage:
-#   python diarize.py --audio <path.npy> --output <path.json> --mode {diarize,vad}
-#                     [--model-name <name>] [--hf-token <token>]
+#   python diarize.py --serve [--model-name <name>] [--hf-token <token>]
+#   python diarize.py --audio <path.npy> --output <path.json>
+#                     --mode {diarize,vad} [--model-name <name>] [--hf-token <token>]
 
 from __future__ import annotations
 
@@ -28,7 +51,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import IO, TYPE_CHECKING
 
 if TYPE_CHECKING:
     import numpy as np
@@ -65,7 +88,7 @@ class AudioSegment:
 
 @dataclass
 class DiarizeResponse:
-    """Response payload written by the subprocess and parsed by the parent."""
+    """Response payload written by the worker and parsed by the parent."""
 
     segments: list[AudioSegment] = field(default_factory=list)
     status: str = "success"
@@ -123,7 +146,18 @@ class AudioProcessor(ABC):
 
     @abstractmethod
     def process(self, audio_array: np.ndarray) -> list[AudioSegment]:
-        """Process the audio array and return a list of segments."""
+        """Process the audio array and return a list of segments.
+
+        Implementations should lazy-load their model on first call (via a
+        `_ensure_*` helper). Deferring the load means:
+
+        * the parent `AudioVenvWorker.start()` doesn't block on torch +
+          model download;
+        * the load runs during the CpuWorkloadHandler warmup task, which
+          already exists and would exercise the pipeline anyway;
+        * a mode that never receives traffic (e.g. VAD-only server that
+          skips diarize) never pays the cost.
+        """
 
 
 class DiarizationProcessor(AudioProcessor):
@@ -236,7 +270,9 @@ class ProcessorFactory:
 
 
 class DiarizeService:
-    """Runs one diarize/VAD job: load audio, process, write JSON response."""
+    """One-shot mode: load a `.npy`, run one operation, write a JSON response
+    and exit. Kept for ad-hoc / debugging use; production traffic goes via
+    :class:`DiarizeServer` instead."""
 
     def __init__(
         self,
@@ -265,12 +301,115 @@ class DiarizeService:
         return 0 if response.status == "success" else 1
 
 
-class DiarizeCLI:
-    """Argparse-based CLI wrapper around `DiarizeService`.
+class DiarizeServer:
+    """Persistent audio worker.
 
-    Encapsulating argv parsing here keeps `__main__` a one-liner and makes
-    the entry point unit-testable (just instantiate with an argv list).
+    :meth:`serve` emits a single JSON ``{"status": "ready"}`` line as soon
+    as it is ready to read requests, then loops on stdin reading one JSON
+    request per line. Processors (and their heavy torch / pyannote /
+    silero_vad dependencies) are constructed lazily on first use per mode
+    and cached — subsequent requests hit the already-loaded model.
+
+    The parent closes stdin (EOF) to trigger a clean shutdown.
+
+    Wire protocol (all requests and responses are single JSON lines):
+
+    * Request  ``{"id": <opaque>, "mode": "diarize"|"vad", "audio_path": "..."}``
+    * Response ``{"id": <opaque>, "status": "success"|"error",
+                  "segments": [...], "error": null | "..."}``
     """
+
+    def __init__(
+        self,
+        processor_factory: ProcessorFactory,
+        stdin: IO[str] | None = None,
+        stdout: IO[str] | None = None,
+        stderr: IO[str] | None = None,
+    ):
+        self._factory = processor_factory
+        self._stdin = stdin if stdin is not None else sys.stdin
+        self._stdout = stdout if stdout is not None else sys.stdout
+        self._stderr = stderr if stderr is not None else sys.stderr
+        self._processors: dict[OperationMode, AudioProcessor] = {}
+
+    def _emit(self, payload: dict) -> None:
+        self._stdout.write(json.dumps(payload) + "\n")
+        self._stdout.flush()
+
+    def _get_or_build_processor(self, mode: OperationMode) -> AudioProcessor:
+        processor = self._processors.get(mode)
+        if processor is None:
+            processor = self._factory.create(mode)
+            self._processors[mode] = processor
+        return processor
+
+    def _handle_request(self, req: dict) -> dict:
+        req_id = req.get("id")
+
+        try:
+            mode = OperationMode(req["mode"])
+        except (KeyError, ValueError):
+            return {
+                "id": req_id,
+                "status": "error",
+                "error": f"invalid mode: {req.get('mode')!r}",
+                "segments": [],
+            }
+
+        audio_path = req.get("audio_path")
+        if not audio_path:
+            return {
+                "id": req_id,
+                "status": "error",
+                "error": "missing audio_path",
+                "segments": [],
+            }
+
+        try:
+            import numpy as np
+
+            audio_array = np.load(audio_path)
+            processor = self._get_or_build_processor(mode)
+            segments = processor.process(audio_array)
+        except Exception as e:
+            return {
+                "id": req_id,
+                "status": "error",
+                "error": str(e),
+                "segments": [],
+            }
+
+        response = DiarizeResponse(segments=segments)
+        payload = response.to_dict()
+        payload["id"] = req_id
+        return payload
+
+    def serve(self) -> int:
+        """Blocking serve loop. Returns process exit code."""
+        self._emit({"status": "ready"})
+
+        for line in self._stdin:
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                req = json.loads(line)
+            except json.JSONDecodeError as e:
+                self._emit({"status": "error", "error": f"malformed request: {e}"})
+                continue
+
+            self._emit(self._handle_request(req))
+
+        return 0
+
+
+class DiarizeCLI:
+    """Argparse-based CLI wrapper. Dispatches to either the one-shot
+    :class:`DiarizeService` or the long-lived :class:`DiarizeServer`.
+
+    Encapsulating argv parsing here keeps ``__main__`` a one-liner and makes
+    both entry points unit-testable (just instantiate with an argv list)."""
 
     def __init__(self, argv: list[str] | None = None):
         self._argv = argv
@@ -278,28 +417,35 @@ class DiarizeCLI:
     def _build_parser(self) -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser(
             description=(
-                "Run diarization or VAD on a numpy audio file and write a "
-                "JSON response. Intended to be invoked as a subprocess from "
-                "the main media-server venv."
+                "Run diarization or VAD as a persistent worker (--serve) or "
+                "as a single one-shot invocation (--audio/--output/--mode). "
+                "Invoked from the main media-server venv, runs inside the "
+                "audio venv."
             )
         )
         parser.add_argument(
+            "--serve",
+            action="store_true",
+            help=(
+                "Run as a long-lived worker: preload models, then read "
+                "line-delimited JSON requests from stdin and write responses "
+                "to stdout until stdin is closed."
+            ),
+        )
+        parser.add_argument(
             "--audio",
-            required=True,
             type=Path,
-            help="Path to a .npy file containing a 1-D float32 audio array.",
+            help="[one-shot] Path to a .npy file with the audio array.",
         )
         parser.add_argument(
             "--output",
-            required=True,
             type=Path,
-            help="Path where the JSON response will be written.",
+            help="[one-shot] Path where the JSON response will be written.",
         )
         parser.add_argument(
             "--mode",
-            required=True,
             choices=OperationMode.values(),
-            help="Which operation to run.",
+            help="[one-shot] Which operation to run.",
         )
         parser.add_argument(
             "--model-name",
@@ -313,27 +459,56 @@ class DiarizeCLI:
             "--hf-token",
             default=None,
             help=(
-                "Hugging Face token for gated pyannote models. Falls back to "
-                "the HF_TOKEN environment variable when omitted."
+                "Hugging Face token for gated pyannote models. Falls back "
+                "to the HF_TOKEN environment variable when omitted."
             ),
         )
         return parser
 
+    def _factory(self, args: argparse.Namespace) -> ProcessorFactory:
+        hf_token = args.hf_token or os.getenv("HF_TOKEN")
+        return ProcessorFactory(model_name=args.model_name, hf_token=hf_token)
+
+    def build_serve(self) -> DiarizeServer:
+        args = self._build_parser().parse_args(self._argv)
+        if not args.serve:
+            raise SystemExit(
+                "build_serve called without --serve; use build_service for one-shot"
+            )
+        return DiarizeServer(processor_factory=self._factory(args))
+
     def build_service(self) -> DiarizeService:
         args = self._build_parser().parse_args(self._argv)
-        hf_token = args.hf_token or os.getenv("HF_TOKEN")
-        factory = ProcessorFactory(
-            model_name=args.model_name,
-            hf_token=hf_token,
-        )
+        if args.serve:
+            raise SystemExit(
+                "build_service called with --serve; use build_serve for server mode"
+            )
+        missing = [
+            name
+            for name, value in (
+                ("--audio", args.audio),
+                ("--output", args.output),
+                ("--mode", args.mode),
+            )
+            if value is None
+        ]
+        if missing:
+            raise SystemExit(
+                f"one-shot mode requires {', '.join(missing)} "
+                "(or use --serve for long-lived worker mode)"
+            )
         return DiarizeService(
             audio_file=args.audio,
             output_file=args.output,
             mode=OperationMode(args.mode),
-            processor_factory=factory,
+            processor_factory=self._factory(args),
         )
 
     def run(self) -> int:
+        args = self._build_parser().parse_args(self._argv)
+        if args.serve:
+            return DiarizeServer(processor_factory=self._factory(args)).serve()
+        # Re-use build_service for its argument validation
         return self.build_service().run()
 
 

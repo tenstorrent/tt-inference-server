@@ -3,6 +3,8 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import io
+import json
+import os
 import wave
 from unittest.mock import patch
 
@@ -10,9 +12,9 @@ import numpy as np
 import pytest
 
 # audio_manager no longer imports torch/whisperx at module load time; those
-# packages live in the separate audio_venv and are only invoked via the
-# subprocess client. We can import freely without any module-load workaround.
-from utils.audio_manager import AudioManager, AudioVenvClient
+# packages live in the separate audio_venv and are only invoked through the
+# persistent worker subprocess. We can import freely without any workaround.
+from utils.audio_manager import AudioManager, AudioVenvWorker
 
 
 class DummySettings:
@@ -100,12 +102,18 @@ def test_normalize_speaker_ids():
 
 
 # ---------------------------------------------------------------------------
-# AudioVenvClient
+# AudioVenvWorker
+#
+# AudioVenvWorker talks to a long-lived `diarize.py --serve` subprocess over
+# stdin/stdout. To test its I/O + respawn behaviour without spinning up an
+# actual audio venv we inject a fake Popen backed by a real `os.pipe()` for
+# stdout (so `selectors.select()` can see the fd become readable) and a plain
+# `StringIO` for stdin.
 # ---------------------------------------------------------------------------
 
 
 class _RecordingLogger:
-    """Minimal logger stand-in that just records messages so tests can assert."""
+    """Minimal logger stand-in that records messages so tests can assert."""
 
     def __init__(self):
         self.errors: list[str] = []
@@ -113,165 +121,454 @@ class _RecordingLogger:
         self.infos: list[str] = []
 
     def error(self, msg):
-        self.errors.append(msg)
+        self.errors.append(str(msg))
 
     def warning(self, msg):
-        self.warnings.append(msg)
+        self.warnings.append(str(msg))
 
     def info(self, msg):
-        self.infos.append(msg)
+        self.infos.append(str(msg))
 
 
-def test_audio_venv_client_assert_available_raises_when_missing(tmp_path):
-    client = AudioVenvClient(
+class _FakePopen:
+    """Real-pipe backed fake of `subprocess.Popen`.
+
+    Tests drive it via :meth:`emit` (write one JSON line to the readable side
+    of stdout) and :meth:`emit_eof` (simulate the worker closing stdout).
+    """
+
+    def __init__(self):
+        read_fd, self._write_fd = os.pipe()
+        self.stdout = os.fdopen(read_fd, "r", buffering=1, encoding="utf-8")
+        self.stdin = io.StringIO()
+        self.stderr = io.StringIO()
+        self.returncode = None
+        self._write_fd_closed = False
+
+    def emit(self, payload: dict) -> None:
+        os.write(self._write_fd, (json.dumps(payload) + "\n").encode())
+
+    def emit_line(self, line: str) -> None:
+        if not line.endswith("\n"):
+            line += "\n"
+        os.write(self._write_fd, line.encode())
+
+    def emit_eof(self) -> None:
+        if not self._write_fd_closed:
+            os.close(self._write_fd)
+            self._write_fd_closed = True
+
+    def poll(self):
+        return self.returncode
+
+    def terminate(self):
+        if self.returncode is None:
+            self.returncode = -15
+        self.emit_eof()
+
+    def kill(self):
+        if self.returncode is None:
+            self.returncode = -9
+        self.emit_eof()
+
+    def wait(self, timeout=None):
+        if self.returncode is None:
+            self.returncode = 0
+        return self.returncode
+
+    def cleanup(self) -> None:
+        try:
+            self.emit_eof()
+        except OSError:
+            pass
+        try:
+            self.stdout.close()
+        except Exception:
+            pass
+
+
+class _PopenFactory:
+    """Records every spawn and lets the test control what each fake worker
+    emits on start. Used as the `popen_factory` argument to AudioVenvWorker."""
+
+    def __init__(self):
+        self.spawned: list[_FakePopen] = []
+        self.commands: list[list[str]] = []
+        self._on_spawn = lambda proc: proc.emit({"status": "ready"})
+
+    def set_on_spawn(self, fn):
+        self._on_spawn = fn
+
+    def __call__(self, cmd, **kwargs):
+        proc = _FakePopen()
+        self.spawned.append(proc)
+        self.commands.append(cmd)
+        self._on_spawn(proc)
+        return proc
+
+    def cleanup(self) -> None:
+        for proc in self.spawned:
+            proc.cleanup()
+
+
+def _touch(path):
+    path.write_text("")
+    return path
+
+
+@pytest.fixture
+def worker_env(tmp_path):
+    """Yields (logger, popen_factory, python_path, script_path).
+    Cleans up all fake popen pipes at the end regardless of test outcome."""
+    logger = _RecordingLogger()
+    factory = _PopenFactory()
+    python_path = _touch(tmp_path / "python")
+    script_path = _touch(tmp_path / "diarize.py")
+    try:
+        yield logger, factory, str(python_path), script_path
+    finally:
+        factory.cleanup()
+
+
+def _make_worker(env, *, model_name="pyannote/test", hf_token="secret"):
+    logger, factory, python_path, script_path = env
+    return AudioVenvWorker(
+        logger=logger,
+        model_name=model_name,
+        hf_token=hf_token,
+        python_executable=python_path,
+        script_path=script_path,
+        popen_factory=factory,
+    )
+
+
+# ---------- availability / spawn -------------------------------------------
+
+
+def test_audio_venv_worker_assert_available_raises_when_python_missing(tmp_path):
+    worker = AudioVenvWorker(
         logger=_RecordingLogger(),
         python_executable=str(tmp_path / "does-not-exist"),
         script_path=tmp_path / "does-not-exist.py",
     )
-    assert client.is_available() is False
+    assert worker.is_available() is False
     with pytest.raises(FileNotFoundError):
-        client.assert_available()
+        worker.assert_available()
 
 
-def test_audio_venv_client_run_returns_segments_on_success(tmp_path, monkeypatch):
-    logger = _RecordingLogger()
-    fake_python = tmp_path / "python"
-    fake_script = tmp_path / "diarize.py"
-    fake_python.write_text("")
-    fake_script.write_text("")
+def test_start_spawns_with_expected_command_and_reads_ready(worker_env):
+    worker = _make_worker(worker_env)
+    worker.start()
 
-    expected_segments = [{"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"}]
+    _, factory, python_path, script_path = worker_env
+    assert len(factory.spawned) == 1
+    cmd = factory.commands[0]
+    assert cmd[:3] == [python_path, str(script_path), "--serve"]
+    assert "--model-name" in cmd and "pyannote/test" in cmd
+    assert "--hf-token" in cmd and "secret" in cmd
+    assert worker.is_running() is True
 
-    def fake_run(cmd, capture_output, text, timeout):
-        # cmd should contain --audio, --output, --mode, and our optional flags
-        assert "--audio" in cmd
-        assert "--output" in cmd
-        assert "--mode" in cmd
-        assert "diarize" in cmd
-        assert "--model-name" in cmd
-        assert "pyannote/test" in cmd
-        assert "--hf-token" in cmd
-        assert "secret" in cmd
-        # Simulate the subprocess writing its JSON response to the output path
-        output_idx = cmd.index("--output") + 1
-        import json as _json
 
-        with open(cmd[output_idx], "w") as f:
-            _json.dump({"status": "success", "segments": expected_segments}, f)
+def test_start_is_idempotent_when_worker_already_running(worker_env):
+    worker = _make_worker(worker_env)
+    worker.start()
+    worker.start()  # second call must be a no-op
 
-        class _Result:
-            returncode = 0
-            stderr = ""
+    _, factory, *_ = worker_env
+    assert len(factory.spawned) == 1
 
-        return _Result()
 
-    monkeypatch.setattr("utils.audio_manager.subprocess.run", fake_run)
+def test_start_raises_when_ready_never_comes(worker_env, monkeypatch):
+    logger, factory, *_ = worker_env
+    # Override on_spawn to write nothing, and shrink the ready timeout so the
+    # test doesn't hang.
+    factory.set_on_spawn(lambda _proc: None)
+    monkeypatch.setattr(AudioVenvWorker, "_READY_TIMEOUT_SECONDS", 0.1)
 
-    client = AudioVenvClient(
+    worker = _make_worker(worker_env)
+    with pytest.raises(RuntimeError, match="did not signal ready"):
+        worker.start()
+    assert worker.is_running() is False
+
+
+def test_start_raises_on_unexpected_ready_payload(worker_env):
+    _, factory, *_ = worker_env
+    factory.set_on_spawn(lambda proc: proc.emit({"status": "boom"}))
+
+    worker = _make_worker(worker_env)
+    with pytest.raises(RuntimeError, match="unexpected ready payload"):
+        worker.start()
+
+
+def test_start_omits_model_flags_when_not_configured(worker_env):
+    logger, factory, python_path, script_path = worker_env
+    worker = AudioVenvWorker(
         logger=logger,
-        python_executable=str(fake_python),
-        script_path=fake_script,
+        model_name=None,
+        hf_token=None,
+        python_executable=python_path,
+        script_path=script_path,
+        popen_factory=factory,
     )
-    segments = client.run(
+    worker.start()
+
+    cmd = factory.commands[0]
+    assert "--model-name" not in cmd
+    assert "--hf-token" not in cmd
+
+
+# ---------- run: happy path -------------------------------------------------
+
+
+def _last_request_from_stdin(proc: _FakePopen) -> dict:
+    lines = [line for line in proc.stdin.getvalue().splitlines() if line.strip()]
+    assert lines, "no request was written to worker stdin"
+    return json.loads(lines[-1])
+
+
+def test_run_returns_segments_on_success(worker_env):
+    worker = _make_worker(worker_env)
+    worker.start()
+    _, factory, *_ = worker_env
+    proc = factory.spawned[0]
+
+    expected = [{"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"}]
+
+    # Set up the "server side": echo back a success payload with the same id
+    # that AudioVenvWorker sends. We do this before calling run() by
+    # intercepting stdin — but the id is generated inside run(). Simpler:
+    # emit an "answer" that matches whatever id gets sent, by reading stdin
+    # inside a side-effect. Since our fake stdin is a StringIO written to
+    # synchronously, we can pre-arrange: patch stdin.write to react.
+    original_write = proc.stdin.write
+
+    def reactive_write(line):
+        result = original_write(line)
+        proc.stdin.flush()
+        req = json.loads(line)
+        proc.emit(
+            {
+                "id": req["id"],
+                "status": "success",
+                "error": None,
+                "segments": expected,
+            }
+        )
+        return result
+
+    proc.stdin.write = reactive_write
+
+    segments = worker.run(
         mode="diarize",
         audio_array=np.zeros(16, dtype=np.float32),
-        timeout_seconds=10,
-        model_name="pyannote/test",
-        hf_token="secret",
+        timeout_seconds=5,
     )
-    assert segments == expected_segments
-    assert logger.errors == []
+    assert segments == expected
+
+    sent = _last_request_from_stdin(proc)
+    assert sent["mode"] == "diarize"
+    assert sent["audio_path"].endswith(".npy")
+    assert "id" in sent
 
 
-def test_audio_venv_client_run_returns_none_on_nonzero_exit(tmp_path, monkeypatch):
-    logger = _RecordingLogger()
-    fake_python = tmp_path / "python"
-    fake_script = tmp_path / "diarize.py"
-    fake_python.write_text("")
-    fake_script.write_text("")
+def test_run_returns_none_on_error_payload(worker_env):
+    worker = _make_worker(worker_env)
+    worker.start()
+    _, factory, *_ = worker_env
+    proc = factory.spawned[0]
 
-    def fake_run(cmd, capture_output, text, timeout):
-        class _Result:
-            returncode = 1
-            stderr = "boom"
+    original_write = proc.stdin.write
 
-        return _Result()
+    def reactive_write(line):
+        result = original_write(line)
+        req = json.loads(line)
+        proc.emit(
+            {
+                "id": req["id"],
+                "status": "error",
+                "error": "model not found",
+                "segments": [],
+            }
+        )
+        return result
 
-    monkeypatch.setattr("utils.audio_manager.subprocess.run", fake_run)
+    proc.stdin.write = reactive_write
 
-    client = AudioVenvClient(
-        logger=logger,
-        python_executable=str(fake_python),
-        script_path=fake_script,
-    )
-    segments = client.run(
+    segments = worker.run(
         mode="vad",
         audio_array=np.zeros(16, dtype=np.float32),
-        timeout_seconds=10,
+        timeout_seconds=5,
     )
     assert segments is None
-    assert any("boom" in e for e in logger.errors)
+    logger = worker_env[0]
+    assert any("model not found" in e for e in logger.errors)
 
 
-def test_audio_venv_client_run_returns_none_on_timeout(tmp_path, monkeypatch):
-    import subprocess as _subprocess
+def test_run_returns_none_on_id_mismatch_and_drops_worker(worker_env):
+    worker = _make_worker(worker_env)
+    worker.start()
+    _, factory, *_ = worker_env
+    proc = factory.spawned[0]
 
-    logger = _RecordingLogger()
-    fake_python = tmp_path / "python"
-    fake_script = tmp_path / "diarize.py"
-    fake_python.write_text("")
-    fake_script.write_text("")
+    original_write = proc.stdin.write
 
-    def fake_run(cmd, capture_output, text, timeout):
-        raise _subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
+    def reactive_write(line):
+        result = original_write(line)
+        proc.emit(
+            {
+                "id": "wrong-id",
+                "status": "success",
+                "error": None,
+                "segments": [{"start": 0.0, "end": 1.0}],
+            }
+        )
+        return result
 
-    monkeypatch.setattr("utils.audio_manager.subprocess.run", fake_run)
+    proc.stdin.write = reactive_write
 
-    client = AudioVenvClient(
-        logger=logger,
-        python_executable=str(fake_python),
-        script_path=fake_script,
-    )
-    segments = client.run(
-        mode="diarize",
+    logger = worker_env[0]
+    segments = worker.run(
+        mode="vad",
         audio_array=np.zeros(16, dtype=np.float32),
-        timeout_seconds=1,
+        timeout_seconds=5,
+    )
+    assert segments is None
+    assert any("id mismatch" in e for e in logger.errors)
+    assert worker.is_running() is False
+
+
+def test_run_returns_none_on_timeout_and_terminates_worker(worker_env):
+    worker = _make_worker(worker_env)
+    worker.start()
+    _, factory, *_ = worker_env
+    proc = factory.spawned[0]
+    # Do NOT wire a reactive_write, so the worker "never responds".
+
+    logger = worker_env[0]
+    segments = worker.run(
+        mode="vad",
+        audio_array=np.zeros(16, dtype=np.float32),
+        timeout_seconds=0.1,
     )
     assert segments is None
     assert any("timed out" in e for e in logger.errors)
+    # After timeout the worker must be gone so the next call respawns.
+    assert worker.is_running() is False
+    assert proc.returncode is not None  # was terminated
 
 
-def test_audio_venv_client_run_returns_none_on_error_payload(tmp_path, monkeypatch):
-    logger = _RecordingLogger()
-    fake_python = tmp_path / "python"
-    fake_script = tmp_path / "diarize.py"
-    fake_python.write_text("")
-    fake_script.write_text("")
+def test_run_returns_none_on_worker_eof(worker_env):
+    worker = _make_worker(worker_env)
+    worker.start()
+    _, factory, *_ = worker_env
+    proc = factory.spawned[0]
 
-    def fake_run(cmd, capture_output, text, timeout):
-        output_idx = cmd.index("--output") + 1
-        import json as _json
+    original_write = proc.stdin.write
 
-        with open(cmd[output_idx], "w") as f:
-            _json.dump({"status": "error", "error": "model not found"}, f)
+    def reactive_write(line):
+        result = original_write(line)
+        proc.emit_eof()  # worker died mid-request
+        return result
 
-        class _Result:
-            returncode = 0
-            stderr = ""
+    proc.stdin.write = reactive_write
 
-        return _Result()
-
-    monkeypatch.setattr("utils.audio_manager.subprocess.run", fake_run)
-
-    client = AudioVenvClient(
-        logger=logger,
-        python_executable=str(fake_python),
-        script_path=fake_script,
-    )
-    segments = client.run(
-        mode="diarize",
+    logger = worker_env[0]
+    segments = worker.run(
+        mode="vad",
         audio_array=np.zeros(16, dtype=np.float32),
-        timeout_seconds=10,
+        timeout_seconds=5,
     )
     assert segments is None
-    assert any("model not found" in e for e in logger.errors)
+    assert any("closed stdout unexpectedly" in e for e in logger.errors)
+    assert worker.is_running() is False
+
+
+# ---------- respawn --------------------------------------------------------
+
+
+def test_run_respawns_worker_after_it_dies(worker_env):
+    """If the worker died between requests, the next run() call must spin up
+    a fresh subprocess automatically."""
+    worker = _make_worker(worker_env)
+    worker.start()
+    _, factory, *_ = worker_env
+    first = factory.spawned[0]
+
+    # Simulate death outside of any request.
+    first.terminate()
+    assert worker.is_running() is False
+
+    # Next request should transparently spawn a second Popen. Wire a
+    # reactive server on the *next* spawn so we can capture the successful
+    # response.
+    def on_next_spawn(proc):
+        proc.emit({"status": "ready"})
+        original_write = proc.stdin.write
+
+        def reactive_write(line):
+            result = original_write(line)
+            req = json.loads(line)
+            proc.emit(
+                {
+                    "id": req["id"],
+                    "status": "success",
+                    "error": None,
+                    "segments": [{"start": 0.5, "end": 1.0, "speaker": "SPEAKER_00"}],
+                }
+            )
+            return result
+
+        proc.stdin.write = reactive_write
+
+    factory.set_on_spawn(on_next_spawn)
+
+    segments = worker.run(
+        mode="diarize",
+        audio_array=np.zeros(8, dtype=np.float32),
+        timeout_seconds=5,
+    )
+
+    assert segments == [{"start": 0.5, "end": 1.0, "speaker": "SPEAKER_00"}]
+    assert len(factory.spawned) == 2  # original + respawn
+    assert worker.is_running() is True
+
+
+def test_run_returns_none_when_respawn_itself_fails(worker_env, monkeypatch):
+    """If the respawn attempt itself can't complete, run() surfaces None
+    instead of raising, and logs the failure."""
+    logger, factory, *_ = worker_env
+    monkeypatch.setattr(AudioVenvWorker, "_READY_TIMEOUT_SECONDS", 0.05)
+    factory.set_on_spawn(lambda _proc: None)  # never signal ready
+
+    worker = _make_worker(worker_env)
+    segments = worker.run(
+        mode="vad",
+        audio_array=np.zeros(4, dtype=np.float32),
+        timeout_seconds=5,
+    )
+    assert segments is None
+    assert any("Cannot start audio worker" in e for e in logger.errors)
+
+
+# ---------- close ----------------------------------------------------------
+
+
+def test_close_shuts_down_the_worker_cleanly(worker_env):
+    worker = _make_worker(worker_env)
+    worker.start()
+    _, factory, *_ = worker_env
+    proc = factory.spawned[0]
+
+    worker.close()
+
+    assert worker.is_running() is False
+    # stdin was closed, which is the EOF signal the real server watches for.
+    assert proc.stdin.closed is True
+
+
+def test_close_is_a_noop_when_worker_never_started(worker_env):
+    worker = _make_worker(worker_env)
+    # Must not raise, must not spawn anything.
+    worker.close()
+    _, factory, *_ = worker_env
+    assert factory.spawned == []
