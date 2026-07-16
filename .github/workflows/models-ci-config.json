@@ -538,6 +538,16 @@
         }
       }
     },
+    "diffusiongemma-26B-A4B-it": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "release": {
+          "devices": [
+            "P300X2"
+          ]
+        }
+      }
+    },
     "gpt-oss-120b": {
       "inference_engine": "vLLM",
       "ci": {
