@@ -169,13 +169,22 @@ process, `--role prefill|decode`. The transport-lib pieces it composes:
   `KvMigrationReceiver::run()` behind a server transport. `run()` waits
   indefinitely between requests (an idle receive is retried) and exits only when
   the connection closes.
-- **Tables & device map** — `loadKvTableFile` (`kv_table_provisioning.*`) loads
-  each side's `.pb`; chip resolution uses an optional `--device-map`
-  (`device_map.hpp`) — **required** when a decode host's table spans multiple
+- **Tables & device map** — `resolveEngineTables` (`engine_table_resolve.*`)
+  brings up each worker with a table + FabricNode→UMD map. Prefer
+  `--engine-handoff-port N`: the worker listens (one-shot multi-accept), the
+  co-located engine (or `engine_handoff_sender` bridge) calls
+  `sendEngineHandoff` with the `.pb` bytes + device map, and the raw blob is
+  kept for peer `TABLE_EXCHANGE`. File stand-in: `--prefill-table` /
+  `--table` + optional `--device-map` (`device_map_io.*`, `mesh chip umd`
+  lines). Device map is **required** when a host's table spans multiple
   meshes, or the placeholder `chip = chip_id` aliases meshes onto the same
-  physical chips and a multi-layer migration silently corrupts. In production the
-  table + device map arrive from the engine via `engine_table_handoff.*`; the
-  file paths are a bring-up stand-in.
+  physical chips. Until the model runner pushes handoff itself:
+
+  ```bash
+  mooncake_kv_migration_worker ... --engine-handoff-port 18700
+  print_local_device_map | engine_handoff_sender --host 127.0.0.1 --port 18700 \
+    --table /path/local.pb --device-map-stdin
+  ```
 
 The worker does **no** byte-verify of its own (it moves real KV). To validate the
 data plane end-to-end without a model, bracket a migration with the standalone
@@ -337,7 +346,7 @@ retry-the-whole-request applies). The `Begin→…→Done→Ack` ordering is una
 | integration | `mooncake_migration_executor.*` | `IMigrationExecutor` driving `KvMigrationMultiHostSender` — the Kafka worker's trigger→data-plane bridge |
 | | `kv_migration_endpoints.*` | prefill control-channel connector + decode receiver-server (injected socket transport) |
 | | `kv_table_provisioning.*` | `loadKvTableFile` (+ optional table-blob exchange over the control channel) |
-| | `device_map.hpp`, `engine_table_handoff.*` | `FabricNode→UMD chip` map + engine→worker `{table, device map}` handoff contract |
+| | `device_map.hpp`, `device_map_io.*`, `engine_table_handoff.*`, `engine_table_resolve.*` | `FabricNode→UMD chip` map + engine→worker `{table, blob, device map}` handoff / resolve |
 | PoC (#3890) | `i_storage_backend.hpp`, `*_storage_backend.*`, `mooncake_migration_worker.*` | original dummy-tensor storage/transport split |
 
 ## Build guards
