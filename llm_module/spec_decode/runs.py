@@ -5,7 +5,7 @@
 """Sweep definitions for the speculative-decoding benchmark.
 
 Self-contained port of v1 ``benchmarking/spec_decode_common.SpecDecodeRunSpec``
-plus the ``SPEC_DECODE_SWEEP`` from ``benchmarking/benchmark_config.py``. The
+plus the ``SPEC_DECODE_SWEEP`` from ``reference_config/benchmarking/benchmark_config.py``. The
 matching AIPerf driver lives in ``llm_module.drivers.aiperf_spec_decode``; the
 orchestrator that ties them together is
 :mod:`test_module.llm_tests.spec_decode_tests`.

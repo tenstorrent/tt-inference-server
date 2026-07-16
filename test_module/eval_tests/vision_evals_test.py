@@ -17,13 +17,13 @@ import requests
 from datasets import DownloadConfig, Image, load_dataset
 
 from .._test_common import BaseTest
-from server_tests.test_cases.server_helper import (
+from test_fixtures.server_helper import (
     DEFAULT_AUTHORIZATION,
     SERVER_DEFAULT_URL,
 )
 from .._test_common import TestConfig
 
-DATASET_DIR = "server_tests/datasets/imagenet_subset"
+DATASET_DIR = "test_fixtures/datasets/imagenet_subset"
 MODELS = [
     "tt-xla-resnet",
     "tt-xla-vovnet",
@@ -548,12 +548,12 @@ Usage:
         - Local: start the server in device mode for each model
 
 Example commands:
-    python tt-inference-server-v2/test_module/eval_tests/vision_evals_test.py --download 20
-    python tt-inference-server-v2/test_module/eval_tests/vision_evals_test.py --measure_cpu_accuracy
-    python tt-inference-server-v2/test_module/eval_tests/vision_evals_test.py --measure_cpu_accuracy --model tt-xla-resnet
-    python tt-inference-server-v2/test_module/eval_tests/vision_evals_test.py --measure_device_accuracy
-    python tt-inference-server-v2/test_module/eval_tests/vision_evals_test.py --measure_device_accuracy --model tt-xla-resnet --server_url http://127.0.0.1:8000/v1/cnn/search-image
-    python tt-inference-server-v2/test_module/eval_tests/vision_evals_test.py --compare_results
+    python test_module/eval_tests/vision_evals_test.py --download 20
+    python test_module/eval_tests/vision_evals_test.py --measure_cpu_accuracy
+    python test_module/eval_tests/vision_evals_test.py --measure_cpu_accuracy --model tt-xla-resnet
+    python test_module/eval_tests/vision_evals_test.py --measure_device_accuracy
+    python test_module/eval_tests/vision_evals_test.py --measure_device_accuracy --model tt-xla-resnet --server_url http://127.0.0.1:8000/v1/cnn/search-image
+    python test_module/eval_tests/vision_evals_test.py --compare_results
 """
 
 if __name__ == "__main__":

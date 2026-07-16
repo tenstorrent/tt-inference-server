@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from workflows.model_spec import MODEL_SPECS
-from evals.eval_config import EVAL_CONFIGS
+from reference_config.evals.eval_config import EVAL_CONFIGS
 from workflows.workflow_types import DeviceTypes
 from workflows.utils import get_repo_root_path
 

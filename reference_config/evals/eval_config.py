@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Union
 
-from evals.eval_utils import (
+from reference_config.evals.eval_utils import (
     score_multilevel_keys_mean,
     score_task_keys_mean,
     score_task_single_key,
@@ -65,7 +65,7 @@ def resolve_eval_reference(score_obj, limit_mode):
     Otherwise return the full-dataset ``gpu_reference_score`` baseline.
 
     Shared by the v1 release report (workflows/run_reports.py) and the v2
-    engine scorers (tt-inference-server-v2) so both paths agree.
+    engine scorers (run_workflows.py) so both paths agree.
 
     Returns a dict: reference_score, reference_ref, tolerance,
     is_subset_reference (bool: True when the returned reference is a
@@ -3566,7 +3566,7 @@ _eval_config_list = [
         ],
     ),
     # VIDEO models (Mochi, Wan2.2 T2V/I2V) are served by the v2 engine (routed
-    # via workflows/v2_bridge.can_route_to_v2); the actual eval runs in v2's
+    # via workflows/workflow_dispatch.can_dispatch_to_engine); the actual eval runs in v2's
     # test_module, and ModelType.VIDEO is not in EVAL_TASK_TYPES (evals/run_evals.py),
     # so the v1 lm-eval path never dispatches this "load_video" task and the
     # workflow_venv_type below is never provisioned for video. These entries must

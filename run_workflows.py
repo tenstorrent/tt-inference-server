@@ -6,7 +6,7 @@
 """v2 CLI entry point — drives a workflow against a running inference server.
 
 Usage:
-    python tt-inference-server-v2/run.py \
+    python run_workflows.py \
         --model stable-diffusion-xl-base-1.0 --workflow release \
         --device n150 --service-port 8000
 
@@ -16,7 +16,7 @@ Prefix-caching benchmark (LLM-only, --workflow benchmarks):
     ``run_prefix_cache.py`` (which selects/creates that venv and re-execs this
     script) rather than invoking run.py directly:
 
-        python tt-inference-server-v2/run_prefix_cache.py \
+        python launchers/run_prefix_cache.py \
             --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
             --prefix-cache --prefix-cache-preset ci --service-port 8000 \
             --jwt-secret "$JWT_SECRET"
@@ -25,7 +25,7 @@ Agentic evals (LLM-only, --workflow agentic):
     Agentic harnesses require the dedicated ``EVALS_AGENTIC`` venv. Use
     ``run_agentic.py`` to select/create that venv and re-exec this script:
 
-        python tt-inference-server-v2/run_agentic.py \
+        python launchers/run_agentic.py \
             --model Qwen3.6-27B --workflow agentic --device gpu \
             --service-port 8000
 
@@ -35,7 +35,7 @@ Speculative-decoding benchmark (LLM-only, --workflow benchmarks):
     ``run_spec_decode.py``. Server-side speculative config is out of scope:
     the sweep measures whatever server it is pointed at.
 
-        python tt-inference-server-v2/run_spec_decode.py \
+        python launchers/run_spec_decode.py \
             --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
             --spec-decode --spec-decode-preset ci --service-port 8000
 """
@@ -48,11 +48,9 @@ import sys
 from pathlib import Path
 from typing import List, Sequence
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-_V2_ROOT = Path(__file__).resolve().parent
-for _p in (_REPO_ROOT, _V2_ROOT):
-    if str(_p) not in sys.path:
-        sys.path.insert(0, str(_p))
+_REPO_ROOT = Path(__file__).resolve().parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from workflows.model_spec import MODEL_SPECS  # noqa: E402
 from workflows.workflow_types import DeviceTypes  # noqa: E402

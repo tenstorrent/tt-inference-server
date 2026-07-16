@@ -52,7 +52,7 @@ from workflows.utils import (
     load_dotenv,
     write_dotenv,
 )
-from workflows.v2_bridge import can_route_to_v2, run_v2_workflows
+from workflows.workflow_dispatch import can_dispatch_to_engine, dispatch_workflows
 from workflows.validate_setup import run_multihost_validation_subprocess, validate_setup
 from workflows.workflow_types import (
     DeviceTypes,
@@ -190,7 +190,7 @@ def parse_arguments():
             "Resolve the model spec from the dev catalog "
             "(workflows/model_specs/dev/) and forward it into the Docker "
             "container, overriding its prebuilt prod catalog. Also bind-mounts "
-            "host source dirs (benchmarking/, evals/, utils/, tests/, plus "
+            "host source dirs (reference_config/, utils/, tests/, plus "
             "vllm-tt-metal/src or tt-media-server/) so live host edits are "
             "picked up. Has no effect when --runtime-model-spec-json is given."
         ),
@@ -361,13 +361,6 @@ def parse_arguments():
         "Default release images use UID 1000. "
         "Override only when using a custom image built with a different UID.",
     )
-    parser.add_argument(
-        "--server-tests",
-        type=str,
-        default=os.getenv("SERVER_TESTS", "false"),
-        help="Run server tests using server_tests/run.py (true/false). Default is false.",
-    )
-
     # SPEC_TESTS workflow arguments (server tests filtering)
     spec_tests_group = parser.add_argument_group(
         "SPEC_TESTS workflow",
@@ -433,7 +426,7 @@ def parse_arguments():
         type=str,
         default=None,
         help="Comma-separated serving-bench suites to run (default: all suites under "
-        "tt-inference-server-v2/test_module/serving_bench, e.g. agentic_bench, "
+        "test_module/serving_bench, e.g. agentic_bench, "
         "benchmark). Suite knobs (DURATION, TARGET_CONCURRENCY, ...) are read from "
         "the environment; --limit-samples-mode selects a knob preset.",
     )
@@ -939,13 +932,13 @@ def main():
     # step 5: run workflows
     skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
-        if can_route_to_v2(model_spec, runtime_config):
+        if can_dispatch_to_engine(model_spec, runtime_config):
             logger.info(
                 "Model %s (model_type=%s) routes through v2 engine.",
                 model_spec.model_name,
                 model_spec.model_type.name,
             )
-            workflow_results = run_v2_workflows(model_spec, runtime_config, json_fpath)
+            workflow_results = dispatch_workflows(model_spec, runtime_config, json_fpath)
         else:
             raise ValueError(
                 f"No workflow driver for --workflow {runtime_config.workflow} on "

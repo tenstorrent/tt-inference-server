@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Union
 
-from evals.eval_config import accept_eval_score, resolve_eval_reference
+from reference_config.evals.eval_config import accept_eval_score, resolve_eval_reference
 from report_module.schema import Block
 from workflows.workflow_types import ReportCheckTypes
 

@@ -38,12 +38,11 @@ FAILED_STATUS = "failed"
 DEFAULT_MODEL_NAME = "unknown-model"
 MESSAGE_MAX_LEN = 250
 
-# test_module/llm_tests/<this file> -> parents[2] is the v2 package root.
-_V2_ROOT = Path(__file__).resolve().parents[2]
-_LLM_MODULE_DIR = _V2_ROOT / "llm_module"
-# The v1 repo root (parent of the v2 package) holds server_tests / utils /
-# workflows, which llm_module/conftest.py imports.
-_REPO_ROOT = _V2_ROOT.parent
+# test_module/llm_tests/<this file> -> parents[2] is the repo root, which now
+# holds llm_module / report_module / test_fixtures / utils / workflows (all of
+# which llm_module/conftest.py imports).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_LLM_MODULE_DIR = _REPO_ROOT / "llm_module"
 
 
 def _truncate_message(message: Any) -> str:
@@ -116,17 +115,17 @@ class VLLMParamConformanceTest(BaseTest):
 
         # The child pytest is a fresh interpreter and does NOT inherit run.py's
         # in-process sys.path additions. llm_module/conftest.py imports from
-        # server_tests / utils (repo root) and report_module (v2 root), so make
-        # both importable via PYTHONPATH.
+        # test_fixtures / utils / report_module, all now at the repo root, so
+        # make the repo root importable via PYTHONPATH.
         env = dict(os.environ)
         existing = env.get("PYTHONPATH")
         env["PYTHONPATH"] = os.pathsep.join(
-            [str(_REPO_ROOT), str(_V2_ROOT)] + ([existing] if existing else [])
+            [str(_REPO_ROOT)] + ([existing] if existing else [])
         )
 
         process = await asyncio.create_subprocess_exec(
             *command,
-            cwd=str(_V2_ROOT),
+            cwd=str(_REPO_ROOT),
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,

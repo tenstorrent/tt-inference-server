@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Constants
-ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_reference.json"
+ACCURACY_REFERENCE_PATH = "reference_config/evals/eval_targets/model_accuracy_reference.json"
 
 # Base payload with default parameters
 default_payload = {

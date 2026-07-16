@@ -288,7 +288,7 @@ orchestrator against an already-running vLLM-compatible server:
 
 ```bash
 # CI smoke (~12 runs)
-python tt-inference-server-v2/run.py \
+python run_workflows.py \
   --model Llama-3.1-8B-Instruct \
   --workflow benchmarks \
   --device gpu \
@@ -298,7 +298,7 @@ python tt-inference-server-v2/run.py \
   --jwt-secret "$JWT_SECRET"
 
 # Full validation sweep
-python tt-inference-server-v2/run.py \
+python run_workflows.py \
   --model Llama-3.1-8B-Instruct \
   --workflow benchmarks \
   --device gpu \
@@ -321,11 +321,11 @@ its dependencies are available without manual setup.
 | `baseline` | Zero shared prefix (control) | Reference for measuring uplift |
 
 Scenarios and per-preset grids are defined in
-`tt-inference-server-v2/llm_module/prefix_cache/manifest.json`. Override with
+`llm_module/prefix_cache/manifest.json`. Override with
 `--prefix-cache-scenarios-json`, subset with `--prefix-cache-scenarios`, and
 point `mooncake_trace` at a production trace via `--prefix-cache-trace`.
 
-See [tt-inference-server-v2/README.md](../tt-inference-server-v2/README.md#prefix-caching-benchmark)
+See [the workflow development guide](workflow_development.md#prefix-caching-benchmark)
 for flags, report layout, and TT hardware notes (prefix caching may be disabled
 in `tt-vllm-plugin` until lifted).
 

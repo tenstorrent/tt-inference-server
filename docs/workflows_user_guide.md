@@ -323,7 +323,7 @@ Initial test run completed. Starting main benchmark run...
 Benchmark output files are saved to `workflow_logs/benchmarks_output/`, for example:
 `benchmark_Llama-3.2-1B-Instruct_n300_<timestamp>_isl-128_osl-128_maxcon-1_n-8.json`
 
-See [benchmarking docs](../benchmarking/README.md) for more detail on code.
+See [benchmarking docs](../reference_config/benchmarking/README.md) for more detail on code.
 
 ## Accuracy Evaluations
 
@@ -343,7 +343,7 @@ In smoke-test mode, `evals` runs only the first configured eval task and limits 
 
 Outputs are stored in: `workflow_logs/evals_output/eval_Llama-3.2-1B-Instruct_n300/meta-llama__Llama-3.2-1B-Instruct`
 
-See [evals docs](../evals/README.md) for more detail on code.
+See [evals docs](../reference_config/evals/README.md) for more detail on code.
 
 ## Reports
 
@@ -359,13 +359,13 @@ See [Logs](#logs) section below for example format of the report files generated
 
 > **Internal workflow.** `spec_tests` is used for release validation and CI. It requires a running inference server.
 
-The `spec_tests` workflow runs server/model integration tests against the inference server. For media models these are device-liveness and load tests (e.g. `DeviceLivenessTest`, `CnnLoadTest`); for LLM/VLM models it runs the vLLM API parameter-conformance suite (see [API Parameter Tests](#api-parameter-tests) below). Tests are matched by model name and device and executed by the v2 test engine (`tt-inference-server-v2/`), which emits the report in-process.
+The `spec_tests` workflow runs server/model integration tests against the inference server. For media models these are device-liveness and load tests (e.g. `DeviceLivenessTest`, `CnnLoadTest`); for LLM/VLM models it runs the vLLM API parameter-conformance suite (see [API Parameter Tests](#api-parameter-tests) below). Tests are matched by model name and device and executed by the v2 test engine (`run_workflows.py`), which emits the report in-process.
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow spec_tests
 ```
 
-Test suites and cases are defined in `tt-inference-server-v2/test_module/` (`server_tests_config.json` and `test_suites/*.json`). Each test case entry specifies:
+Test suites and cases are defined in `test_module/` (`server_tests_config.json` and `test_suites/*.json`). Each test case entry specifies:
 - `name` / `module`: the test class and its Python module path.
 - `enabled`: set to `false` to skip a test case.
 - `test_config`: execution settings — `test_timeout`, `retry_attempts`, `retry_delay`, `break_on_failure`, `mock_mode`.
@@ -377,7 +377,7 @@ Output is written as JSON and Markdown reports to `workflow_logs/reports_output/
 
 > **Internal.** vLLM API parameter-conformance tests run as part of `spec_tests` — there is no longer a separate `tests` workflow. Used for release validation and CI; requires a running inference server. Not all models have entries defined.
 
-For LLM/VLM models, `--workflow spec_tests` runs pytest-based tests that exercise vLLM API sampling parameters (`n`, `max_tokens`, `stop`, `seed`, `logprobs`, `temperature`, `top_k`, `top_p`, penalty parameters, and a coherence check). The suites live in `tt-inference-server-v2/llm_module/` and are mapped to models via `tt-inference-server-v2/test_module/test_suites/llm.json`; models without an entry produce no results.
+For LLM/VLM models, `--workflow spec_tests` runs pytest-based tests that exercise vLLM API sampling parameters (`n`, `max_tokens`, `stop`, `seed`, `logprobs`, `temperature`, `top_k`, `top_p`, penalty parameters, and a coherence check). The suites live in `llm_module/` and are mapped to models via `test_module/test_suites/llm.json`; models without an entry produce no results.
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow spec_tests
@@ -389,7 +389,7 @@ The run routes to the v2 test engine, which emits the report in-process to `work
 
 > **Internal workflow.** `stress_tests` is used for release validation and CI. It requires a running inference server.
 
-The `stress_tests` workflow runs sustained load tests against the inference server to measure server stability and throughput over time. The run script is `tt-inference-server-v2/test_module/stress_tests/run_stress_tests.py`, and it generates its report in-process via `report_module`.
+The `stress_tests` workflow runs sustained load tests against the inference server to measure server stability and throughput over time. The run script is `test_module/stress_tests/run_stress_tests.py`, and it generates its report in-process via `report_module`.
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow stress_tests
@@ -465,6 +465,6 @@ The logs have the following structure:
 - [Container Interface](../vllm-tt-metal/README.md#container-interface-direct-docker-run) -- Direct Docker run, container CLI args
 - [GPU Report Generation](gpu_workflows.md) -- running `reports` / `benchmarks` / `evals` against a CUDA/NVIDIA vLLM server
 - [Development](development.md)
-- [Benchmarking](../benchmarking/README.md)
-- [Evals](../evals/README.md)
+- [Benchmarking](../reference_config/benchmarking/README.md)
+- [Evals](../reference_config/evals/README.md)
 - [Tests](../tests/README.md)

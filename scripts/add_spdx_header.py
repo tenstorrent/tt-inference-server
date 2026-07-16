@@ -33,8 +33,7 @@ if __name__ == "__main__":
         repo_root / "tt-metal-yolov4",
         repo_root / "tests",
         repo_root / "utils",
-        repo_root / "evals",
-        repo_root / "benchmarking",
+        repo_root / "reference_config",
         repo_root / "workflows",
         repo_root / "tt-media-server",
     ]

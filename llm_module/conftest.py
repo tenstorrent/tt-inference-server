@@ -9,7 +9,7 @@ are run as a child pytest process by
 ``test_module.llm_tests.vllm_param_conformance_test``.
 """
 
-from server_tests.conftest import (  # noqa: F401
+from test_fixtures.conftest import (  # noqa: F401
     api_client,
     endpoint_url,
     max_context,

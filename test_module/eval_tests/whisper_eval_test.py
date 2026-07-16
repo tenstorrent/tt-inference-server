@@ -335,7 +335,7 @@ class WhisperEvalTest(BaseTest):
                 return current
             current = current.parent
 
-        # Fallback to using relative path - go up from server_tests/test_cases/
+        # Fallback to using relative path - go up from test_fixtures/
         # to reach the actual repo root (3 levels up)
         return Path(__file__).parent.parent.parent
 

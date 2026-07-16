@@ -27,8 +27,6 @@ from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
 
-_V2_DIR_NAME = "tt-inference-server-v2"
-
 _V2_WORKFLOW_NAMES = {
     WorkflowType.BENCHMARKS: "benchmarks",
     WorkflowType.EVALS: "evals",
@@ -64,7 +62,7 @@ _V2_ROUTED_MODEL_TYPES = frozenset(
 )
 
 
-def is_v2_routed_model(model_spec) -> bool:
+def is_engine_routed_model(model_spec) -> bool:
     """True if the model routes to v2 purely by its model_type."""
     return model_spec.model_type in _V2_ROUTED_MODEL_TYPES
 
@@ -107,7 +105,7 @@ def _llm_release_includes_agentic(model_spec) -> bool:
     if model_spec.model_type not in _LLM_LIKE_TYPES:
         return False
     try:
-        from evals.eval_config import EVAL_CONFIGS
+        from reference_config.evals.eval_config import EVAL_CONFIGS
     except Exception as e:  # pragma: no cover - defensive
         logger.warning("Could not import EVAL_CONFIGS (%s); skipping agentic.", e)
         return False
@@ -141,7 +139,7 @@ def _is_llm_spec_test_run(wf, model_spec) -> bool:
     return model_spec.model_type in _LLM_LIKE_TYPES and wf == WorkflowType.SPEC_TESTS
 
 
-def can_route_to_v2(model_spec, runtime_config) -> bool:
+def can_dispatch_to_engine(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
     # Agentic evals, serving-bench benchmark suites, and the prefix-cache /
     # spec-decode benchmarks are v2-only features with no v1 driver. They route
@@ -167,12 +165,12 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
     # onboarded to v2, so every model of those types routes by model_type — no
     # per-name allowlist, so new models (e.g. Qwen-Image) are picked up
     # automatically. The v1 eval/benchmark paths for these types are retired.
-    if is_v2_routed_model(model_spec):
+    if is_engine_routed_model(model_spec):
         return wf in _V2_WORKFLOW_NAMES
     return False
 
 
-def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowResult]:
+def dispatch_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowResult]:
     wf = WorkflowType.from_string(runtime_config.workflow)
     v2_workflow = _V2_WORKFLOW_NAMES.get(wf)
     if v2_workflow is None:
@@ -182,7 +180,6 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
         )
 
     repo_root = Path(__file__).resolve().parent.parent
-    v2_dir = repo_root / _V2_DIR_NAME
 
     output_dir = get_default_workflow_root_log_dir() / "reports_output" / v2_workflow
     ensure_readwriteable_dir(output_dir)
@@ -195,30 +192,30 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
     # helpers before re-execing.
     if wf == WorkflowType.AGENTIC:
         cmd = _build_agentic_cmd(
-            v2_dir, model_spec, runtime_config, json_fpath, output_dir
+            repo_root, model_spec, runtime_config, json_fpath, output_dir
         )
         delegate_desc = "agentic (run_agentic.py)"
     elif _is_prefix_cache_run(wf, runtime_config):
         cmd = _build_prefix_cache_cmd(
-            v2_dir, model_spec, runtime_config, json_fpath, output_dir
+            repo_root, model_spec, runtime_config, json_fpath, output_dir
         )
         delegate_desc = "prefix-cache (run_prefix_cache.py)"
     elif _is_spec_decode_run(wf, runtime_config):
         cmd = _build_spec_decode_cmd(
-            v2_dir, model_spec, runtime_config, json_fpath, output_dir
+            repo_root, model_spec, runtime_config, json_fpath, output_dir
         )
         delegate_desc = "spec-decode (run_spec_decode.py)"
     elif _is_llm_benchmark_run(wf, model_spec, runtime_config):
-        return [run_v2_llm_benchmark_workflow(model_spec, runtime_config, json_fpath)]
+        return [run_llm_benchmark_workflow(model_spec, runtime_config, json_fpath)]
     elif wf == WorkflowType.STRESS_TESTS:
         cmd = _build_stress_cmd(model_spec, runtime_config, json_fpath)
         delegate_desc = "stress-tests (run_stress_tests.py)"
     else:
-        v2_run_py = v2_dir / "run.py"
+        v2_run_py = repo_root / "run_workflows.py"
         if not v2_run_py.is_file():
             raise FileNotFoundError(
-                f"v2 entry point not found at {v2_run_py}. "
-                "The tt-inference-server-v2/ directory is required for image-model workflows."
+                f"Workflow entry point not found at {v2_run_py}. "
+                "run_workflows.py is required for image-model workflows."
             )
         venv_python = _ensure_v2_venv(model_spec)
         _ensure_v2_dependency_venvs(model_spec, wf, runtime_config)
@@ -280,22 +277,21 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
     return [WorkflowResult(workflow_name=v2_workflow, return_code=return_code)]
 
 
-def run_v2_llm_benchmark_workflow(
+def run_llm_benchmark_workflow(
     model_spec, runtime_config, json_fpath
 ) -> WorkflowResult:
     """Run LLM benchmarks through v2's ``run_llm_bench.py`` launcher.
 
     Only reached for ``--workflow benchmarks`` (see ``_is_llm_benchmark_run``).
     Release does not call this: its perf benchmark runs inside the v2 release
-    engine via the generic run.py path in :func:`run_v2_workflows`.
+    engine via the generic run.py path in :func:`dispatch_workflows`.
     """
     repo_root = Path(__file__).resolve().parent.parent
-    v2_dir = repo_root / _V2_DIR_NAME
     output_dir = get_default_workflow_root_log_dir() / "reports_output" / "benchmarks"
     ensure_readwriteable_dir(output_dir)
 
     cmd = _build_llm_bench_cmd(
-        v2_dir, model_spec, runtime_config, json_fpath, output_dir
+        repo_root, model_spec, runtime_config, json_fpath, output_dir
     )
     env = os.environ.copy()
     env["TT_V1_RUN_COMMAND"] = "python " + shlex.join(sys.argv)
@@ -339,10 +335,10 @@ def _base_v2_cmd(
     return cmd
 
 
-def _resolve_launcher(v2_dir, filename, label):
-    launcher = v2_dir / filename
+def _resolve_launcher(repo_root, filename, label):
+    launcher = repo_root / "launchers" / filename
     if not launcher.is_file():
-        raise FileNotFoundError(f"v2 {label} launcher not found at {launcher}.")
+        raise FileNotFoundError(f"{label} launcher not found at {launcher}.")
     return launcher
 
 
@@ -399,7 +395,6 @@ def _build_stress_cmd(model_spec, runtime_config, json_fpath):
     repo_root = Path(__file__).resolve().parent.parent
     script = (
         repo_root
-        / _V2_DIR_NAME
         / "test_module"
         / "stress_tests"
         / "run_stress_tests.py"
@@ -420,8 +415,8 @@ def _build_stress_cmd(model_spec, runtime_config, json_fpath):
     ]
 
 
-def _build_agentic_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):
-    launcher = _resolve_launcher(v2_dir, "run_agentic.py", "agentic")
+def _build_agentic_cmd(repo_root, model_spec, runtime_config, json_fpath, output_dir):
+    launcher = _resolve_launcher(repo_root, "run_agentic.py", "agentic")
     cmd = _base_v2_cmd(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "agentic"
     )
@@ -429,8 +424,8 @@ def _build_agentic_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_di
     return cmd
 
 
-def _build_prefix_cache_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):
-    launcher = _resolve_launcher(v2_dir, "run_prefix_cache.py", "prefix-cache")
+def _build_prefix_cache_cmd(repo_root, model_spec, runtime_config, json_fpath, output_dir):
+    launcher = _resolve_launcher(repo_root, "run_prefix_cache.py", "prefix-cache")
     cmd = _base_v2_cmd(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"
     )
@@ -458,8 +453,8 @@ def _build_prefix_cache_cmd(v2_dir, model_spec, runtime_config, json_fpath, outp
     return cmd
 
 
-def _build_llm_bench_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):
-    launcher = _resolve_launcher(v2_dir, "run_llm_bench.py", "llm-bench")
+def _build_llm_bench_cmd(repo_root, model_spec, runtime_config, json_fpath, output_dir):
+    launcher = _resolve_launcher(repo_root, "run_llm_bench.py", "llm-bench")
     cmd = _base_v2_cmd(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"
     )
@@ -469,8 +464,8 @@ def _build_llm_bench_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_
     return cmd
 
 
-def _build_spec_decode_cmd(v2_dir, model_spec, runtime_config, json_fpath, output_dir):
-    launcher = _resolve_launcher(v2_dir, "run_spec_decode.py", "spec-decode")
+def _build_spec_decode_cmd(repo_root, model_spec, runtime_config, json_fpath, output_dir):
+    launcher = _resolve_launcher(repo_root, "run_spec_decode.py", "spec-decode")
     cmd = _base_v2_cmd(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"
     )
@@ -562,7 +557,7 @@ def _llm_eval_venv_types(model_spec, runtime_config=None) -> List[WorkflowVenvTy
     the (heavy) venvs of tasks it won't execute.
     """
     try:
-        from evals.eval_config import EVAL_CONFIGS
+        from reference_config.evals.eval_config import EVAL_CONFIGS
     except Exception as e:  # pragma: no cover - defensive
         logger.warning("Could not import EVAL_CONFIGS (%s); skipping eval venvs.", e)
         return []

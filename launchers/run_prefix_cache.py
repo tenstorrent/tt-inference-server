@@ -6,10 +6,10 @@
 """Thin launcher for the v2 prefix-caching benchmark.
 
 Selects/creates the dedicated ``V2_PREFIX_CACHE`` virtual environment and
-re-execs ``run.py`` inside it, then forwards every CLI argument verbatim.
+re-execs ``run_workflows.py`` inside it, then forwards every CLI argument verbatim.
 
-Usage (all flags are passed straight through to run.py):
-    python tt-inference-server-v2/run_prefix_cache.py \
+Usage (all flags are passed straight through to run_workflows.py):
+    python launchers/run_prefix_cache.py \
         --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
         --prefix-cache --prefix-cache-preset ci --service-port 8000 \
         --jwt-secret "$JWT_SECRET"

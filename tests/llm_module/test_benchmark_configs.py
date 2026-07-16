@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from benchmarking.benchmark_config import get_benchmark_config
+from reference_config.benchmarking.benchmark_config import get_benchmark_config
 from llm_module.benchmark_configs import get_llm_configs
 from workflows.model_spec import MODEL_SPECS
 from workflows.workflow_types import ModelType

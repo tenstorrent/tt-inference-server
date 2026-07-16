@@ -20,7 +20,8 @@ SERVER_BASE_URL = build_base_url(
 # Full URL to CNN search-image endpoint
 SERVER_DEFAULT_URL = f"{SERVER_BASE_URL}/v1/cnn/search-image"
 DEFAULT_AUTHORIZATION = "your-secret-key"
-TT_MEDIA_SERVER_DIR = Path(__file__).resolve().parents[3] / "tt-media-server"
+# test_fixtures/<this file> -> parents[1] is the repo root (holds tt-media-server/).
+TT_MEDIA_SERVER_DIR = Path(__file__).resolve().parents[1] / "tt-media-server"
 READY_LOG_TEXT = "All devices are warmed up and ready"
 LOG_DIR = Path(__file__).resolve().parent / "server_logs"
 

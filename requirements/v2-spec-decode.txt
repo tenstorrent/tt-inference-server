@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
 # Dependencies for the V2_SPEC_DECODE workflow venv (Python 3.11).
-# Used by direct invocations of tt-inference-server-v2/run.py when
+# Used by direct invocations of run_workflows.py when
 # --spec-decode is set (via the run_spec_decode.py launcher).
 #
 # Mirrors requirements/benchmarks-spec-decode.txt (the v1 spec-decode

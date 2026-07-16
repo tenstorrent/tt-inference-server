@@ -15,7 +15,7 @@ from pathlib import Path
 
 import requests
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 # Reuse the ImageNet subset prepared by VisionEvalsTest so benchmarks and
 # accuracy evals exercise the model with the exact same inputs.
-IMAGENET_DATASET_DIR = "server_tests/datasets/imagenet_subset"
+IMAGENET_DATASET_DIR = "test_fixtures/datasets/imagenet_subset"
 IMAGENET_METADATA_FILE = "metadata.json"
 # Number of images to fetch when the ImageNet subset is missing on disk. Once
 # downloaded, the benchmark sends one request per image found in the dataset
@@ -48,7 +48,7 @@ COCO_HF_SPLIT = "val"
 # Benchmark (latency/throughput timing only) reuses COCO images for YOLOX so it
 # doesn't also pull the ImageNet subset. Materialized once from the same HF
 # dataset the eval streams (parquet already cached).
-COCO_BENCHMARK_DATASET_DIR = "server_tests/datasets/coco_bench"
+COCO_BENCHMARK_DATASET_DIR = "test_fixtures/datasets/coco_bench"
 
 
 def _ensure_imagenet_dataset() -> tuple[Path, list[dict]]:

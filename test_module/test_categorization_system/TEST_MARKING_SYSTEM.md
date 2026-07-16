@@ -49,7 +49,7 @@ Common test configurations are defined once in `test_templates` and referenced i
 ```json
 "test_templates": {
     "ImageGenerationLoadTest": {
-        "module": "tests.server_tests.test_cases.image_generation_load_test",
+        "module": "test_module.<category>.image_generation_load_test",
         "markers": ["load", "e2e", "slow", "heavy"],
         "test_config": {
             "test_timeout": 3600,
@@ -131,7 +131,7 @@ python run.py --model-category IMAGE --device n150
 python run.py --model-category IMAGE AUDIO
 
 # Programmatically
-from tests.server_tests.test_categorization_system import TestFilter
+from test_module.test_categorization_system import TestFilter
 
 filter = TestFilter()
 tests = filter.filter_by_model_category(["IMAGE", "AUDIO"]) \
@@ -229,7 +229,7 @@ If your test type doesn't exist, add a template to `test_templates`:
 
 ```json
 "NewTestType": {
-    "module": "tests.server_tests.test_cases.new_test_type",
+    "module": "test_module.<category>.new_test_type",
     "markers": ["e2e", "slow"],
     "test_config": {
         "test_timeout": 3600,
@@ -326,7 +326,7 @@ deprecation warning is logged. Please migrate to `num_concurrent_requests`.
 ### TestFilter Methods
 
 ```python
-from tests.server_tests.test_categorization_system import TestFilter
+from test_module.test_categorization_system import TestFilter
 
 filter = TestFilter()
 
@@ -362,21 +362,21 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Run smoke tests
-        run: python tests/server_tests/run.py --markers smoke --device n150
+        run: python run.py --model <model> --device n150 --workflow spec_tests --markers smoke
 
   load-tests:
     runs-on: self-hosted
     needs: smoke-tests
     steps:
       - name: Run load tests
-        run: python tests/server_tests/run.py --markers load --device n150
+        run: python run.py --model <model> --device n150 --workflow spec_tests --markers load
 
   full-suite:
     runs-on: self-hosted
     needs: load-tests
     steps:
       - name: Run all tests
-        run: python tests/server_tests/run.py --device n150
+        run: python run.py --model <model> --device n150 --workflow spec_tests
 ```
 
 ### Environment Variables

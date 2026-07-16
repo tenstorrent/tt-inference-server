@@ -9,12 +9,9 @@ directory, not to the repo root:
 - `<pkg>/server_tests_config.json` — model definitions (`model_configs` section)
 - `<pkg>/test_suites/<category>.json` — test suite definitions per category
 
-There are two independent copies of these files:
-- `tt-inference-server-v2/test_module/` — the canonical, complete set
-  (CNN, EMBEDDING, IMAGE, AUDIO, TTS, VIDEO, LLM). **The video/audio/image
-  examples in this guide refer to files here.**
-- `server_tests/` — the legacy v1 set (CNN, EMBEDDING, IMAGE only). It has no
-  `video.json`/`audio.json`; only edit here for the v1 spec-test suites.
+These files live in `test_module/` — the canonical, complete set
+(CNN, EMBEDDING, IMAGE, AUDIO, TTS, VIDEO, LLM). All examples in this guide
+refer to files there.
 
 ## How it works
 

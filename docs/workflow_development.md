@@ -1,4 +1,4 @@
-# tt-inference-server-v2
+# Workflow development guide
 
 This document is the onboarding doc for people adding new workflows, runners,
 or test categories to v2. It assumes you already know what v1 does.
@@ -6,7 +6,7 @@ or test categories to v2. It assumes you already know what v1 does.
 ## TLDR
 
 ```bash
-python tt-inference-server-v2/run.py \
+python run_workflows.py \
     --model stable-diffusion-xl-base-1.0 \
     --workflow release \
     --device n150 \
@@ -24,7 +24,7 @@ To characterise run-to-run variance, repeat a workflow N times and emit one
 aggregated summary report on top of the per-run reports:
 
 ```bash
-python tt-inference-server-v2/run.py \
+python run_workflows.py \
     --model stable-diffusion-xl-base-1.0 \
     --workflow benchmarks \
     --device n150 \
@@ -219,7 +219,7 @@ spec decode.
 Run the AIPerf prefix-cache sweep directly against an already-up vLLM-compatible
 server (no v1 entry point involved). The workflow is `benchmarks`; the
 prefix-cache flag swaps the default media-task dispatch for the scenario sweep
-defined in [`llm_module/prefix_cache/manifest.json`](llm_module/prefix_cache/manifest.json).
+defined in [`llm_module/prefix_cache/manifest.json`](../llm_module/prefix_cache/manifest.json).
 
 `run.py` itself has no import-time side effects, so it must run inside the
 dedicated `V2_PREFIX_CACHE` venv. Use the thin launcher `run_prefix_cache.py`,
@@ -227,7 +227,7 @@ which selects/creates that venv and re-execs `run.py` inside it — no manual ve
 setup required:
 
 ```bash
-python tt-inference-server-v2/run_prefix_cache.py \
+python launchers/run_prefix_cache.py \
     --model Llama-3.1-8B-Instruct \
     --workflow benchmarks \
     --device gpu \
@@ -243,7 +243,7 @@ python tt-inference-server-v2/run_prefix_cache.py \
 [`requirements/v2-prefix-cache.txt`](../requirements/v2-prefix-cache.txt)), then
 `os.execv`s into `.workflow_venvs/.venv_v2_prefix_cache/bin/python`, forwarding
 every CLI argument to `run.py`. Setup is idempotent, so subsequent runs reuse
-the existing venv. This mirrors how [`workflows/v2_bridge.py`](../workflows/v2_bridge.py)
+the existing venv. This mirrors how [`workflows/workflow_dispatch.py`](../workflows/workflow_dispatch.py)
 selects the per-workflow venv externally for image-model runs, keeping venv
 selection out of `run.py`.
 
@@ -251,7 +251,7 @@ Scenarios (`shared_system`, `prefix_pool`, `multi_turn`, `baseline`,
 `mooncake_trace`) and per-preset grids (`ci`, `full`, `highcache_50k`) are
 JSON-defined and overridable with `--prefix-cache-scenarios-json`. Override the
 mooncake trace input with `--prefix-cache-trace`; the in-tree fixture at
-[`llm_module/prefix_cache/sample_traces/ci_mooncake.jsonl`](llm_module/prefix_cache/sample_traces/ci_mooncake.jsonl)
+[`llm_module/prefix_cache/sample_traces/ci_mooncake.jsonl`](../llm_module/prefix_cache/sample_traces/ci_mooncake.jsonl)
 ships with the repo for reproducible CI runs.
 
 ### `highcache_50k` preset (trillion-scale customer shape)
@@ -268,11 +268,11 @@ preset, plus a control:
   deterministic.
 - **`mooncake_trace`** (trace-driven, AIPerf prefix-synthesis Use Case 3/4):
   replays the in-tree
-  [`customer_mooncake.jsonl`](llm_module/prefix_cache/sample_traces/customer_mooncake.jsonl)
+  [`customer_mooncake.jsonl`](../llm_module/prefix_cache/sample_traces/customer_mooncake.jsonl)
   whose 98-block (~50K) root is shared across all sessions, exercising a realistic
   radix-tree reuse pattern. Scalable via the `--synthesis-*` multipliers. Override
   the trace with `--prefix-cache-trace`; regenerate the fixture with
-  [`generate_customer_mooncake.py`](llm_module/prefix_cache/sample_traces/generate_customer_mooncake.py).
+  [`generate_customer_mooncake.py`](../llm_module/prefix_cache/sample_traces/generate_customer_mooncake.py).
 - **`baseline`** (control): a matched zero-prefix run (same 5K ISL / 500 OSL / c32)
   so the report's *Uplift vs baseline* table isolates the TTFT P50/P90/P99
   improvement attributable to prefix caching.
@@ -302,12 +302,12 @@ the worker `/metrics` endpoint is unreachable).
 
 `request_count=256` (8 waves of 32) gives usable TTFT percentiles including a
 rough P99; bump it in
-[`llm_module/prefix_cache/manifest.json`](llm_module/prefix_cache/manifest.json)
+[`llm_module/prefix_cache/manifest.json`](../llm_module/prefix_cache/manifest.json)
 for a tighter P99. Pair it with `--prefix-cache-metrics-url` (below) so the
 worker `tt_prefix_cache_*` counters populate the hit-rate column:
 
 ```bash
-python tt-inference-server-v2/run_prefix_cache.py \
+python launchers/run_prefix_cache.py \
     --model <trillion-class-model> --workflow benchmarks --device tt \
     --service-port 8000 --prefix-cache --prefix-cache-preset highcache_50k \
     --prefix-cache-metrics-url <cpp_server-worker-host:port> \
@@ -325,7 +325,7 @@ worker(s) with `--prefix-cache-metrics-url` (forwarded to AIPerf's
 `endpoint_url`-tagged series:
 
 ```bash
-python tt-inference-server-v2/run_prefix_cache.py \
+python launchers/run_prefix_cache.py \
     --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
     --service-port 8000 --prefix-cache --prefix-cache-preset ci \
     --prefix-cache-metrics-url bh-glx-120-a03u08.exabox.tenstorrent.com:9000 \
@@ -336,7 +336,7 @@ Each AIPerf run emits a `Block(kind="aiperf_prefix_cache")`, which the report
 generator collapses into Markdown tables (Synthetic, Trace-Driven, *SLA Compliance
 vs Customer Targets*, and Uplift vs zero-prefix baseline) via the renderer
 registered in
-[`report_module/prefix_cache_renderer.py`](report_module/prefix_cache_renderer.py).
+[`report_module/prefix_cache_renderer.py`](../report_module/prefix_cache_renderer.py).
 The synthetic/trace tables include `TTFT P90`, `Output Tok/s/User`, and
 `Goodput (req/s)` columns alongside the existing percentiles.
 Prefix-cache hit-rate is derived from the worker Prometheus counters
@@ -351,7 +351,7 @@ reference GPU vLLM).
 Run the AIPerf SPEED-Bench spec-decode sweep directly against an already-up
 vLLM-compatible server (no v1 entry point involved). The workflow is
 `benchmarks`; the spec-decode flag swaps the default media-task dispatch for
-the sweep defined in [`llm_module/spec_decode/runs.py`](llm_module/spec_decode/runs.py):
+the sweep defined in [`llm_module/spec_decode/runs.py`](../llm_module/spec_decode/runs.py):
 all 11 SPEED-Bench qualitative categories at concurrency 1 plus a 1k–32k ISL
 throughput sweep at concurrency 1/16/64.
 
@@ -370,7 +370,7 @@ shared `constraints.txt` pin, hence the separate venv). Use the thin launcher
 re-execs `run.py` inside it:
 
 ```bash
-python tt-inference-server-v2/run_spec_decode.py \
+python launchers/run_spec_decode.py \
     --model Llama-3.1-8B-Instruct \
     --runtime-model-spec-json [spec_decode_runtime_spec.json] \
     --workflow benchmarks \
@@ -383,7 +383,7 @@ python tt-inference-server-v2/run_spec_decode.py \
 Each AIPerf run emits a `Block(kind="aiperf_spec_decode")`, which the report
 generator collapses into a per-run Markdown table (latency percentiles,
 throughput, acceptance metrics) via the renderer registered in
-[`report_module/spec_decode_renderer.py`](report_module/spec_decode_renderer.py).
+[`report_module/spec_decode_renderer.py`](../report_module/spec_decode_renderer.py).
 An acceptance rate of `0.000` means the target server is not actually running
 with speculative decoding enabled.
 
@@ -400,7 +400,7 @@ mini-swe-agent, SWE-bench, and related tools). Use the thin launcher
 it:
 
 ```bash
-MODEL_SPECS_ENV=dev python tt-inference-server-v2/run_agentic.py \
+MODEL_SPECS_ENV=dev python launchers/run_agentic.py \
     --model Qwen3.6-27B \
     --workflow agentic \
     --device gpu \
@@ -417,7 +417,7 @@ catalog. `run_agentic.py` calls
 `os.execv`s into `.workflow_venvs/.venv_evals_agentic/bin/python`, forwarding
 every CLI argument to `run.py`.
 
-Agentic task selection still comes from [`evals/eval_config.py`](../evals/eval_config.py).
+Agentic task selection still comes from [`reference_config/evals/eval_config.py`](../reference_config/evals/eval_config.py).
 The runtime config JSON is optional, but it is how limit modes are forwarded to
 the agentic drivers. For a nightly-limited run, include:
 
@@ -442,7 +442,7 @@ adapters.
 
 While the migration is in progress, v1 stays the entry point for everything
 that hasn't been ported yet. The routing rules live in
-[`workflows/v2_bridge.py`](../workflows/v2_bridge.py):
+[`workflows/workflow_dispatch.py`](../workflows/workflow_dispatch.py):
 
 - `_V2_ROUTED_MODEL_TYPES` lists the model *types* fully onboarded to v2. Every
   model of these types routes to v2 by `model_type` — no per-name allowlist, so
@@ -452,9 +452,9 @@ that hasn't been ported yet. The routing rules live in
   runner; they route to v2 per-workflow rather than by `_V2_ROUTED_MODEL_TYPES`.
 - `_V2_WORKFLOW_NAMES` maps v1 `WorkflowType` → v2 workflow name
   (`BENCHMARKS` / `EVALS` / `SPEC_TESTS` / `RELEASE`).
-- `can_route_to_v2(model_spec, runtime_config)` is the predicate v1's runner
+- `can_dispatch_to_engine(model_spec, runtime_config)` is the predicate v1's runner
   checks before delegating.
-- `run_v2_workflows(...)` materializes the v2 venv (`WorkflowVenvType.V2_RUN_SCRIPT`,
+- `dispatch_workflows(...)` materializes the v2 venv (`WorkflowVenvType.V2_RUN_SCRIPT`,
   defined in `workflows/workflow_venvs.py`), shells out to `run.py`, and
   forwards stdout/stderr.
 
@@ -499,9 +499,9 @@ When you're ready to move a new model type to v2, add it to
 Spec tests are pure data, driven by `test_suites/<category>.json` and the
 filter system. See:
 
-- [`test_module/test_categorization_system/TEST_SUITE_CONFIG_GUIDE.md`](test_module/test_categorization_system/TEST_SUITE_CONFIG_GUIDE.md)
+- [`test_module/test_categorization_system/TEST_SUITE_CONFIG_GUIDE.md`](../test_module/test_categorization_system/TEST_SUITE_CONFIG_GUIDE.md)
   for adding/removing test cases, matrices, model+device timing overrides.
-- [`test_module/test_categorization_system/TEST_MARKING_SYSTEM.md`](test_module/test_categorization_system/TEST_MARKING_SYSTEM.md)
+- [`test_module/test_categorization_system/TEST_MARKING_SYSTEM.md`](../test_module/test_categorization_system/TEST_MARKING_SYSTEM.md)
   for markers, prerequisites, and the `TestFilter` API.
 
 To author a new test class:
@@ -531,7 +531,7 @@ To author a new test class:
 
 | Area | Status |
 |---|---|
-| SDXL base / img2img / inpainting (eval, benchmark, release) | Routed to v2 today via `v2_bridge.py` |
+| SDXL base / img2img / inpainting (eval, benchmark, release) | Routed to v2 today via `workflow_dispatch.py` |
 | Other image models (Flux, Motif, SD3.5) | Runners exist in v2; not yet routed |
 | LLM benchmarking via `llm_module` | Work in progress — LLMs still run through v1, except prefix-caching which is end-to-end on v2 |
 | Prefix-caching benchmark | Implemented on v2 (`--workflow benchmarks --prefix-cache`); validated against reference GPU vLLM |
@@ -547,10 +547,11 @@ modules from the start rather than bolted onto v1.
 ## Layout reference
 
 ```
-tt-inference-server-v2/
-├── run.py                          # CLI entry point (no import-time side effects)
-├── run_prefix_cache.py             # thin launcher: ensures V2_PREFIX_CACHE venv, execs run.py
-├── run_agentic.py                  # thin launcher: ensures EVALS_AGENTIC venv, execs run.py
+<repo root>/
+├── run_workflows.py                # CLI entry point (no import-time side effects)
+├── launchers/
+│   ├── run_prefix_cache.py         # thin launcher: ensures V2_PREFIX_CACHE venv, execs run_workflows.py
+│   └── run_agentic.py              # thin launcher: ensures EVALS_AGENTIC venv, execs run_workflows.py
 ├── workflow_module/                # Workflow scaffolding + block accumulator
 │   ├── workflows.py                # Concrete workflows + WORKFLOW_REGISTRY
 │   ├── execution.py                # WorkflowExecution template + WorkflowResult
@@ -594,12 +595,12 @@ tt-inference-server-v2/
 
 ## In-tree references
 
-- [`test_module/test_categorization_system/TEST_SUITE_CONFIG_GUIDE.md`](test_module/test_categorization_system/TEST_SUITE_CONFIG_GUIDE.md)
+- [`test_module/test_categorization_system/TEST_SUITE_CONFIG_GUIDE.md`](../test_module/test_categorization_system/TEST_SUITE_CONFIG_GUIDE.md)
   — how to add models, devices, and test cases in suite JSON.
-- [`test_module/test_categorization_system/TEST_MARKING_SYSTEM.md`](test_module/test_categorization_system/TEST_MARKING_SYSTEM.md)
+- [`test_module/test_categorization_system/TEST_MARKING_SYSTEM.md`](../test_module/test_categorization_system/TEST_MARKING_SYSTEM.md)
   — markers, prerequisites, and the `TestFilter` CLI/API.
 - [`tests/report_module/SCHEMA_GUIDE.md`](tests/report_module/SCHEMA_GUIDE.md)
   — schema-authoring rules the generic renderer follows.
-- [`test_module/stress_tests/README.md`](test_module/stress_tests/README.md)
+- [`test_module/stress_tests/README.md`](../test_module/stress_tests/README.md)
   — stress-test specifics.
-- [`workflows/v2_bridge.py`](../workflows/v2_bridge.py) — v1 → v2 delegation.
+- [`workflows/workflow_dispatch.py`](../workflows/workflow_dispatch.py) — v1 → v2 delegation.

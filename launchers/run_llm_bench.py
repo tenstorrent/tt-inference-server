@@ -6,7 +6,7 @@
 """Thin launcher for the LLM performance benchmark.
 
 Selects/creates the per-tool virtual environment for the requested
-``--tools`` driver and re-execs ``run.py`` inside it, forwarding every CLI
+``--tools`` driver and re-execs ``run_workflows.py`` inside it, forwarding every CLI
 argument verbatim. Picks the venv from the tool so light tools (aiperf/guidellm) don't drag in the heavy vllm venv.
 """
 
@@ -35,7 +35,7 @@ def _venv_type_for_tool(tools: str):
 
 
 def _parse_tools(argv) -> str:
-    """Extract --tools from argv without consuming the rest (forwarded to run.py)."""
+    """Extract --tools from argv without consuming the rest (forwarded to run_workflows.py)."""
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--tools", default="vllm")
     known, _ = parser.parse_known_args(argv)

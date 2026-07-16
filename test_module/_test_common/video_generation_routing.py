@@ -16,7 +16,7 @@ from pathlib import Path
 VIDEO_GENERATION_ENDPOINT = "v1/videos/generations"
 VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT = "v1/videos/generations/i2v"
 FIXTURE_IMAGE_PATH = (
-    Path("server_tests") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
+    Path("test_fixtures") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
 )
 DEFAULT_I2V_NEGATIVE_PROMPT = "blurry, low quality, distorted"
 DEFAULT_I2V_SEED = 42
@@ -32,7 +32,7 @@ def _load_fixture_image_base64() -> str:
     if not FIXTURE_IMAGE_PATH.exists():
         raise FileNotFoundError(
             f"I2V fixture image missing at {FIXTURE_IMAGE_PATH}. "
-            "Expected a tracked sample from server_tests/datasets/imagenet_subset/."
+            "Expected a tracked sample from test_fixtures/datasets/imagenet_subset/."
         )
     return base64.b64encode(FIXTURE_IMAGE_PATH.read_bytes()).decode("ascii")
 

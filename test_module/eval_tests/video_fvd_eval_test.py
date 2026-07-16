@@ -16,7 +16,7 @@ from .._test_common import TestConfig
 
 logger = logging.getLogger(__name__)
 
-DATASET_DIR = "server_tests/datasets/video_fvd_subset"
+DATASET_DIR = "test_fixtures/datasets/video_fvd_subset"
 FVD_RESULTS_FILE = "fvd_results.json"
 
 

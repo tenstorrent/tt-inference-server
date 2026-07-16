@@ -75,7 +75,7 @@ def get_llm_eval_tasks(model_spec, runtime_config=None) -> List:
     selection. Returns ``[]`` when the model has no standard eval tasks so the
     caller can no-op cleanly (e.g. a model with only agentic evals).
     """
-    from evals.eval_config import EVAL_CONFIGS
+    from reference_config.evals.eval_config import EVAL_CONFIGS
 
     eval_config = EVAL_CONFIGS.get(model_spec.model_name)
     if eval_config is None or not eval_config.tasks:

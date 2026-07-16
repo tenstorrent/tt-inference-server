@@ -9,7 +9,7 @@ import logging
 import sys
 from pathlib import Path
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
@@ -76,7 +76,7 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
     logger.info("Running video FVD and FVMD eval.")
 
     reference_videos_path = str(Path(FVD_DATASET_DIR) / "videos")
-    generated_videos_path = str(Path("server_tests/datasets/videos").resolve())
+    generated_videos_path = str(Path("test_fixtures/datasets/videos").resolve())
     if not Path(generated_videos_path).exists():
         generated_videos_path = "/tmp/videos"
     logger.info(

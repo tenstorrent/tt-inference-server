@@ -14,17 +14,13 @@ import sys
 from pathlib import Path
 
 # Repo root (has workflows/, utils/, .workflow_venvs/) — used by subprocess cwd/PYTHONPATH and run-config defaults.
-project_root = Path(__file__).resolve().parents[3]
+project_root = Path(__file__).resolve().parents[2]
 
-# v2 test_module dir — makes `from stress_tests import ...` resolve to the v2 sibling
-# package (next to load_param_tests/, eval_tests/, …) rather than the v1 copy at repo root.
+# test_module dir — makes `from stress_tests import ...` resolve to the sibling
+# package (next to load_param_tests/, eval_tests/, …).
 test_module_dir = Path(__file__).resolve().parents[1]
 
-v2_root = Path(__file__).resolve().parents[2]
-
-# Order matters: test_module_dir first so the v2 stress_tests wins over the v1 one.
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(v2_root))
 sys.path.insert(0, str(test_module_dir))
 
 from stress_tests import StressTests

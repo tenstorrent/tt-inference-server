@@ -20,10 +20,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Shared performance targets JSON, owned by v1. Override at runtime by pointing
+# Shared performance targets JSON. Override at runtime by pointing
 # OVERRIDE_BENCHMARK_TARGETS at a different file.
 _DEFAULT_TARGETS_PATH = (
-    Path(__file__).resolve().parents[3]
+    Path(__file__).resolve().parents[2]
+    / "reference_config"
     / "benchmarking"
     / "benchmark_targets"
     / "model_performance_reference.json"

@@ -115,7 +115,7 @@ class TestImageMatrixExpansionSDXL:
 class TestVideoMatrixExpansion:
     """Regression coverage for video.json matrix expansion + per-device targets.
 
-    VIDEO is served exclusively by v2 (routed via workflows/v2_bridge), so this
+    VIDEO is served exclusively by v2 (routed via workflows/workflow_dispatch), so this
     suite is the only expansion/target guard for live video config — the v1
     server_tests video.json and its TestVideoMatrixExpansion were removed.
     """

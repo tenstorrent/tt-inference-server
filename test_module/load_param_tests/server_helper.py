@@ -14,7 +14,7 @@ SERVER_BASE_URL = "http://127.0.0.1:8000"
 # Full URL to CNN search-image endpoint
 SERVER_DEFAULT_URL = f"{SERVER_BASE_URL}/v1/cnn/search-image"
 DEFAULT_AUTHORIZATION = "your-secret-key"
-TT_MEDIA_SERVER_DIR = Path(__file__).resolve().parents[3] / "tt-media-server"
+TT_MEDIA_SERVER_DIR = Path(__file__).resolve().parents[2] / "tt-media-server"
 READY_LOG_TEXT = "All devices are warmed up and ready"
 LOG_DIR = Path(__file__).resolve().parent / "server_logs"
 

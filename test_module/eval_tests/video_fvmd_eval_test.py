@@ -17,7 +17,7 @@ from .._test_common import TestConfig
 logger = logging.getLogger(__name__)
 
 # Use same dataset directory as FVD test for consistency
-DATASET_DIR = "server_tests/datasets/video_fvd_subset"
+DATASET_DIR = "test_fixtures/datasets/video_fvd_subset"
 FVMD_RESULTS_FILE = "fvmd_results.json"
 
 # Motion feature histogram configuration

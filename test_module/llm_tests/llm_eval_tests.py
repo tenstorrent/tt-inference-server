@@ -14,7 +14,7 @@ from glob import glob
 from pathlib import Path
 from typing import List, Tuple, Union
 
-from evals.eval_config import accept_eval_score, resolve_eval_reference
+from reference_config.evals.eval_config import accept_eval_score, resolve_eval_reference
 from llm_module import HttpServerController, RemoteOpenAIController
 from llm_module.eval_command import build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks

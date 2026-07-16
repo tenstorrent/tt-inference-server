@@ -129,7 +129,7 @@ def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
     if not agentic_tasks:
         raise RuntimeError(
             f"No EVALS_AGENTIC tasks configured for {ctx.model_spec.model_name!r}. "
-            "Check evals/eval_config.py."
+            "Check reference_config/evals/eval_config.py."
         )
 
     runtime_config = getattr(ctx, "runtime_config", None)

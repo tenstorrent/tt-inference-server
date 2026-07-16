@@ -4,7 +4,7 @@ Performance Benchmarks for Tenstorrent LLM (model) implementations. These benchm
 
 ## Usage: `--workflow benchmarks`
 
-See [Model Readiness Workflows User Guide](../docs/workflows_user_guide.md#performance-benchmarks)
+See [Model Readiness Workflows User Guide](../../docs/workflows_user_guide.md#performance-benchmarks)
 
 ## Benchmarking Tools
 
@@ -28,11 +28,11 @@ python run.py --model <model> --device <device> --workflow benchmarks --docker-s
 
 #### Prefix-caching benchmark (v2 only)
 
-The prefix-caching AIPerf sweep lives in `tt-inference-server-v2/` — use
-`tt-inference-server-v2/run.py` with `--workflow benchmarks --prefix-cache`
+The prefix-caching AIPerf sweep lives in `llm_module/prefix_cache/` — use
+`run_workflows.py` with `--workflow benchmarks --prefix-cache`
 against an already-running vLLM server. See
-[tt-inference-server-v2/README.md](../tt-inference-server-v2/README.md#prefix-caching-benchmark)
-and [Prefix-Caching Benchmarks](../docs/benchmarking_tools.md#prefix-caching-benchmarks-v2).
+[the workflow development guide](../../docs/workflow_development.md#prefix-caching-benchmark)
+and [Prefix-Caching Benchmarks](../../docs/benchmarking_tools.md#prefix-caching-benchmarks-v2).
 
 ### GuideLLM - dataset-driven multi-turn and omni-modal benchmarking
 ```
@@ -41,7 +41,7 @@ python run.py --model <model> --device <device> --workflow benchmarks --docker-s
 
 **Key differences:** vLLM provides baseline metrics, GenAI-Perf validates against NVIDIA Triton standards, AIPerf adds detailed latency percentiles, and GuideLLM enables dataset-driven multi-turn/custom/omni-modal scenarios.
 
-For detailed comparison, TTFT measurement differences, and usage guide, see [Benchmarking Tools Guide](../docs/benchmarking_tools.md).
+For detailed comparison, TTFT measurement differences, and usage guide, see [Benchmarking Tools Guide](../../docs/benchmarking_tools.md).
 
 ### `run_benchmarks.py`
 
@@ -55,7 +55,7 @@ Purpose: Docker orchestration script for GenAI-Perf benchmarks using NVIDIA Trit
 
 Purpose: Main script for AIPerf benchmarks with detailed percentile metrics and warm-up logic.
 
-Prefix-caching benchmarks are implemented in `tt-inference-server-v2/` (see
+Prefix-caching benchmarks are implemented in `llm_module/prefix_cache/` (see
 `llm_module/prefix_cache/` and `run.py --prefix-cache`).
 
 ### `run_guidellm_benchmarks.py`

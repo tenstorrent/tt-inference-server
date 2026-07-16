@@ -16,7 +16,7 @@ import requests
 from PIL import Image
 
 from .._test_common import BaseTest
-from server_tests.test_cases.server_helper import (
+from test_fixtures.server_helper import (
     DEFAULT_AUTHORIZATION,
     SERVER_BASE_URL,
 )
@@ -40,8 +40,8 @@ VIDEO_JOB_STATUS_FAILED = "failed"
 VIDEO_JOB_STATUS_CANCELLED = "cancelled"
 DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
 DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
-ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_reference.json"
-DATASET_DIR = "server_tests/datasets/videos"
+ACCURACY_REFERENCE_PATH = "reference_config/evals/eval_targets/model_accuracy_reference.json"
+DATASET_DIR = "test_fixtures/datasets/videos"
 # accuracy_check codes returned by _check_accuracy.
 ACCURACY_CHECK_FAIL = 3
 MIN_GENERATION_SUCCESS_RATIO = 1.0

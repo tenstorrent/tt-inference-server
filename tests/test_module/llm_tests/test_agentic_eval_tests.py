@@ -245,7 +245,7 @@ class TestAgenticModeReference:
     (n_trials = subset size) instead of the full gpu_reference_score."""
 
     def _score(self):
-        from evals.eval_config import EvalTaskScore, ModeReferenceScore
+        from reference_config.evals.eval_config import EvalTaskScore, ModeReferenceScore
 
         return EvalTaskScore(
             published_score=None,
@@ -295,8 +295,8 @@ class TestStandardEvalModeReference:
     """Standard lm-eval scoring (_score_one) honors the CI-subset reference."""
 
     def _gpqa_score(self):
-        from evals.eval_config import EvalTaskScore, ModeReferenceScore
-        from evals.eval_utils import score_task_single_key
+        from reference_config.evals.eval_config import EvalTaskScore, ModeReferenceScore
+        from reference_config.evals.eval_utils import score_task_single_key
 
         return EvalTaskScore(
             published_score=84.3,
@@ -312,7 +312,7 @@ class TestStandardEvalModeReference:
         )
 
     def test_subset_score_fails_full_but_passes_ci_subset(self):
-        from evals.eval_config import resolve_eval_reference
+        from reference_config.evals.eval_config import resolve_eval_reference
         from test_module.llm_tests.llm_eval_tests import _score_one
 
         score = self._gpqa_score()

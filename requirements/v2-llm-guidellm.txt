@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
 # Dependencies for the V2_LLM_GUIDELLM workflow venv (Python 3.11).
-# Used by tt-inference-server-v2/run_llm_bench.py for --tools guidellm.
+# Used by launchers/run_llm_bench.py for --tools guidellm.
 #
 # Mirrors v1's requirements/benchmarks-guidellm.txt: `guidellm[all]` pulls in
 # every optional extra (the audio extra ships torchcodec, which pins its own

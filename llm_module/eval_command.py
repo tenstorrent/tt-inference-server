@@ -20,7 +20,7 @@ from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 if TYPE_CHECKING:
-    from evals.eval_config import EvalTask
+    from reference_config.evals.eval_config import EvalTask
 
 logger = logging.getLogger(__name__)
 

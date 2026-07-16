@@ -27,7 +27,7 @@ def get_llm_configs(
     text-only, so any param without both ``isl`` and ``osl`` is dropped.
     ``limit_samples_mode`` honours v1's smoke-test selection when set.
     """
-    from benchmarking.benchmark_config import (
+    from reference_config.benchmarking.benchmark_config import (
         get_benchmark_config,
         select_smoke_test_benchmark_config,
     )

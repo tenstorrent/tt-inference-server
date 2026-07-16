@@ -145,7 +145,7 @@ def _resolve_server_url(
 
 def _resolve_eval_config(model_name: str):
     try:
-        from evals.eval_config import EVAL_CONFIGS
+        from reference_config.evals.eval_config import EVAL_CONFIGS
     except Exception as e:
         logger.warning("Could not import v1 EVAL_CONFIGS (%s); evals will fail.", e)
         return None

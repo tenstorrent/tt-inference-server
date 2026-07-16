@@ -39,13 +39,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Constants
-ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_reference.json"
+ACCURACY_REFERENCE_PATH = "reference_config/evals/eval_targets/model_accuracy_reference.json"
 
-# Fixture is sourced from the v1 server_tests datasets directory, which is
+# Fixture is sourced from the test_fixtures datasets directory, which is
 # the canonical location used by other v2 vision tests as well
 # (see e.g. video_generation_i2v_test.py).
 FIXTURE_IMAGE_PATH = (
-    Path("server_tests") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
+    Path("test_fixtures") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
 )
 
 HTTP_ACCEPTED = 202
@@ -64,7 +64,7 @@ def _load_fixture_image_base64() -> str:
     if not FIXTURE_IMAGE_PATH.exists():
         raise FileNotFoundError(
             f"I2V fixture image missing at {FIXTURE_IMAGE_PATH}. "
-            "Expected a tracked sample from server_tests/datasets/imagenet_subset/."
+            "Expected a tracked sample from test_fixtures/datasets/imagenet_subset/."
         )
     return base64.b64encode(FIXTURE_IMAGE_PATH.read_bytes()).decode("ascii")
 

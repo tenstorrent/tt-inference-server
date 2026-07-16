@@ -47,7 +47,7 @@ done
 [ -n "$TEST" ]   || { echo "ERROR: --test required" >&2; exit 2; }
 [ -n "$TARGET" ] || { echo "ERROR: --target required" >&2; exit 2; }
 
-# These suites live at tt-inference-server-v2/test_module/serving_bench inside
+# These suites live at test_module/serving_bench inside
 # tt-inference-server, so the repo root three levels up is the default;
 # --inference-server-dir overrides it to run against a different checkout.
 if [ -z "$INFERENCE_SERVER_DIR" ]; then
