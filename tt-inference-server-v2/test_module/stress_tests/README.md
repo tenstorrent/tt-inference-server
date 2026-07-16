@@ -5,6 +5,40 @@ readiness and performance across different parameter configurations. The stress_
 single-parameter testing and exhaustive multi-parameter matrix testing to ensure models meet performance specifications
 before deployment.
 
+## Quick Start
+
+> **Prerequisite:** stress tests drive load against a **live inference server**, so a server for the target model must
+> already be running — or pass `--docker-server` to have the workflow bring one up for you.
+
+You do **not** invoke `run_stress_tests.py` directly. Launch it through the top-level CLI with
+`--workflow stress_tests`; `run.py` dispatches to this directory's `run_stress_tests.py` with the correct venv, model
+spec, device, and server settings.
+
+```bash
+# Default: comprehensive parameter matrix sweep
+python run.py --model "Llama-3.1-8B-Instruct" --workflow stress_tests --device n300 --docker-server
+
+# A single, quick configuration (load test: prompts == concurrency)
+python run.py --model "Llama-3.1-8B-Instruct" --workflow stress_tests --device n300 \
+  --workflow-args "run_mode=single max_concurrent=16 num_prompts=16" --docker-server
+
+# 24-hour endurance sweep
+python run.py --model "Llama-3.1-8B-Instruct" --workflow stress_tests --device n300 \
+  --workflow-args "endurance_mode=true" --docker-server
+```
+
+All tunables are passed via `--workflow-args` as space-separated `key=value` pairs — see
+[Parameter Reference](#parameter-reference) for the full list.
+
+**Output** lands in `workflow_logs/stress_tests_output/`:
+
+- `stress_test_<model_id>_<device>_<timestamp>_isl-..._osl-..._maxcon-..._n-....json` — one raw result JSON per sweep point
+- `report_<id>.md` — the human-readable report
+- `data/report_data_<id>.json` — the structured report data
+
+The report is generated **in-process** at the end of the run through `report_module` (the same
+Block → ReportSchema → ReportGenerator pipeline every other v2 workflow uses); there is no separate `reports` step.
+
 ## What is the Stress Tests Workflow?
 
 The Stress Tests workflow is a model validation system that:
@@ -249,6 +283,18 @@ specification (e.g., only custom-isl-values with auto-generated OSL).
 
 ## Output and Reports
 
+All artifacts are written to `workflow_logs/stress_tests_output/`:
+
+| File | Description |
+|------|-------------|
+| `stress_test_<model_id>_<device>_<ts>_isl-..._osl-..._maxcon-..._n-....json` | Raw result for a single sweep point (written by `stress_tests_benchmarking_script.py`) |
+| `report_<id>.md` | Rendered report — one sub-table per metric category (Configurations, TTFT, TPOT, ITL, E2EL, Throughput, Token Totals) |
+| `data/report_data_<id>.json` | Structured report data consumed by CI aggregation |
+
+The report is built after the sweep completes: `stress_tests_record_builder.to_block()` parses the per-sweep JSONs into
+a single `stress_tests` `Block`, which `report_module.ReportGenerator` renders. This is the same reporting pipeline used
+by every other v2 workflow — there is no dependency on the retired v1 `stress_tests_summary_report.py`.
+
 ### Test Execution Output
 
 ```
@@ -433,7 +479,8 @@ The `StressTests` class in `stress_tests_core.py` provides:
 - Compatible with existing model configuration system (MODEL_SPECS, performance_reference)
 - Maintains compatibility with workflow orchestration (run_workflows.py) and reporting systems (
   stress_tests_record_builder.py + report_module/)
-- Included in RELEASE workflow alongside evals and benchmarks
+- Runs as a standalone `--workflow stress_tests` run that self-generates its report (it is not part of the v2-routed
+  RELEASE flow, which owns evals and benchmarks)
 
 ---
 
