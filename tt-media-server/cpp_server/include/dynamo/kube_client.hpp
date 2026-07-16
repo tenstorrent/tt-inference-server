@@ -68,8 +68,8 @@ class KubeClient {
   KubeClient(const KubeClient&) = delete;
   KubeClient& operator=(const KubeClient&) = delete;
 
-  /// Server-side apply the DynamoWorkerMetadata CR named `cr_name` in namespace `ns`.
-  /// Throws KubeError on any non-2xx response or transport failure.
+  /// Server-side apply the DynamoWorkerMetadata CR named `cr_name` in namespace
+  /// `ns`. Throws KubeError on any non-2xx response or transport failure.
   void applyCr(const std::string& ns, const std::string& crName,
                const Json::Value& body);
 

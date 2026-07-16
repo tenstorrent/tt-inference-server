@@ -911,8 +911,7 @@ std::string dynamoPodNamespace() {
   if (f) {
     std::string ns;
     std::getline(f, ns);
-    while (!ns.empty() &&
-           std::isspace(static_cast<unsigned char>(ns.back()))) {
+    while (!ns.empty() && std::isspace(static_cast<unsigned char>(ns.back()))) {
       ns.pop_back();
     }
     return ns;
