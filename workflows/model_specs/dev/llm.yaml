@@ -296,6 +296,65 @@ templates:
       # by enable-auto-tool-choice in vllm_args above.
       tool_call_parser_name: gemma4
 
+# DiffusionGemma 26B-A4B-it: discrete text-diffusion LLM (encoder-decoder,
+# block-autoregressive multi-canvas), fine-tuned from google/gemma-4-26B-A4B so
+# the text backbone is identical to Gemma-4 26B-A4B MoE. tt-metal impl lives in
+# models/experimental/diffusion_gemma (branch diffusion-gemma-function); arch
+# DiffusionGemmaForBlockDiffusion, model_type=diffusion_gemma.
+# Readiness tracking: tt-inference-server#4669 / tt-metal#47452.
+# Precondition for serving: vLLM plugin registration for model_type=diffusion_gemma
+# (tt-metal#47488). The values below mirror the validated QB2 live-serving launch
+# command in models/experimental/diffusion_gemma/doc/vllm_integration/README.md.
+# On the TT path spec-decode and chunked prefill are unsupported and APC is
+# auto-disabled (model_capabilities: prefix_caching=False, sample_on_device=True;
+# tt-metal#47466). Text-only Functional milestone -- vision (SigLIP, #47467) is
+# Functional+ and not modeled here yet.
+- weights:
+    - google/diffusiongemma-26B-A4B-it
+  impl: diffusion_gemma
+  # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
+  # them; only prod specs carry commits). The image is supplied at runtime via
+  # --override-docker-image.
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2  # QB2 (2x P300 dual-Blackhole cards, 4-chip TP mesh) -- near-term target HW
+      max_concurrency: 1  # Functional milestone: batch 1 (--max-num-seqs 1)
+      # 256K = canvas_length(256) * max_blocks(1024); == HF max_position_embeddings
+      # (262144). This is the context contract; the 1024 in the serving doc was a
+      # bring-up-only KV shortcut. Backbone + batch-1 KV verified to fit QB2 DRAM
+      # (experts TP-sharded ~5.7GB/chip, measured 2026-06-22). batch>1 ceiling at
+      # 256K is device-measured and not asserted here.
+      max_context: 262144  # 256 * 1024
+      default_impl: true
+      env_vars:
+        # QB2's 4 Blackhole chips launch as a P150x4 (1,4) mesh label; TP=4 is
+        # derived from mesh_device.shape[1]. (The cards are p300, not p150 -- this
+        # is a tt-metal mesh-shape label, matching the gemma-4 QB2 entries.)
+        MESH_DEVICE: "P150x4"
+        # DiffusionGemma denoise blocks are ~minutes each (110s+ at full depth), so
+        # the 900000 default RPC timeout is too tight; the live server used 1800000.
+        VLLM_RPC_TIMEOUT: "1800000"
+        # Sampler memory strategy: argmax/chunked are the modes that fit the full
+        # 256K canvas; the live QB2 server ran DG_VLLM_GUMBEL_MODE=argmax.
+        DG_VLLM_GUMBEL_MODE: "argmax"
+      override_tt_config:
+        # On-device canvas sampling (Gumbel-max -> entropy-budget accept -> renoise
+        # over all 256 positions, no host readback). The plugin declares
+        # model_capabilities[supports_sample_on_device]=True; the live serve used
+        # sample_on_device_mode=all.
+        sample_on_device_mode: all
+        # Block-diffusion warms lazily on the first prefill/decode; the AR two-phase
+        # trace warmup is skipped.
+        enable_model_warmup: false
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/diffusiongemma-26B-A4B-it:
+      # transformers loads DiffusionGemmaForBlockDiffusion via remote code, and the
+      # tokenizer is loaded with trust_remote_code=True (checkpoint.py:load_tokenizer).
+      tokenizer_trust_remote_code: true
+
 - weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
