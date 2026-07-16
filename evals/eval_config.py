@@ -557,56 +557,57 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
-            EvalTask(
-                task_name="swe_bench_verified",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                score=EvalTaskScore(
-                    published_score=77.2,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
-                    gpu_reference_score=62.0,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4427941401",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["accuracy"],
-                        "unit": "percent",
-                    },
-                ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    # we will need to specify specific tasks
-                    # for CI runs to keep runtime reasonable
-                    dataset_split="test",
-                    # mini-swe-agent is preferred: simpler CLI
-                    # The swe-agent backend is kept as a fallback.
-                    agent_backend="mini-swe-agent",
-                    n_concurrent_trials=5,
-                    max_workers=8,
-                    n_tasks=None,
-                    temperature=1.0,
-                    top_p=0.95,
-                    max_input_tokens=200 * 1024,
-                    # max output tokens is not specifed in Qwen docs btw
-                    max_output_tokens=32 * 1024,
-                    completion_kwargs={
-                        "extra_body": {
-                            "top_k": 20,
-                        },
-                    },
-                    instance_ids_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-11299",
-                            "astropy__astropy-14096",
-                            "matplotlib__matplotlib-25332",
-                            "sympy__sympy-13551",
-                            "scikit-learn__scikit-learn-14629",
-                        ],
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
-                },
-            ),
+            # swe_bench_verified disabled: currently times out
+            # EvalTask(
+            #     task_name="swe_bench_verified",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+            #     score=EvalTaskScore(
+            #         published_score=77.2,
+            #         published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+            #         gpu_reference_score=62.0,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4427941401",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": ["accuracy"],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     swebench_eval_config=SWEbenchEvalConfig(
+            #         dataset_name="SWE-bench/SWE-bench_Verified",
+            #         sweagent_subset="verified",
+            #         # we will need to specify specific tasks
+            #         # for CI runs to keep runtime reasonable
+            #         dataset_split="test",
+            #         # mini-swe-agent is preferred: simpler CLI
+            #         # The swe-agent backend is kept as a fallback.
+            #         agent_backend="mini-swe-agent",
+            #         n_concurrent_trials=5,
+            #         max_workers=8,
+            #         n_tasks=None,
+            #         temperature=1.0,
+            #         top_p=0.95,
+            #         max_input_tokens=200 * 1024,
+            #         # max output tokens is not specifed in Qwen docs btw
+            #         max_output_tokens=32 * 1024,
+            #         completion_kwargs={
+            #             "extra_body": {
+            #                 "top_k": 20,
+            #             },
+            #         },
+            #         instance_ids_map={
+            #             EvalLimitMode.CI_NIGHTLY: [
+            #                 "django__django-11299",
+            #                 "astropy__astropy-14096",
+            #                 "matplotlib__matplotlib-25332",
+            #                 "sympy__sympy-13551",
+            #                 "scikit-learn__scikit-learn-14629",
+            #             ],
+            #         },
+            #     ),
+            #     limit_samples_map={
+            #         EvalLimitMode.SMOKE_TEST: 5,
+            #     },
+            # ),
         ],
     ),
     EvalConfig(
