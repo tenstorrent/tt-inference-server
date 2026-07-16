@@ -13,6 +13,7 @@
 #include "config/types.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
+#include "sockets/socket_messages.hpp"
 #include "utils/concurrent_map.hpp"
 
 namespace tt::sockets {
@@ -44,6 +45,9 @@ class DisaggregationService {
   void handleStreamingRequest(LLMRequest& request,
                               const std::vector<uint64_t>& registrationHashes,
                               const StreamCallback& callback);
+  void handlePrefillRequest(
+      const tt::sockets::PrefillRequestMessage& message,
+      std::function<void(const tt::sockets::PrefillResultMessage&)> callback);
   void abortRequest(uint32_t taskId);
 
   /// Resolve a prefill-side session via prefix-cache lookup.

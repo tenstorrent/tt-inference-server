@@ -260,9 +260,9 @@ uphold all of the following (most are not enforced in code):
     notably `ZmqSocketTransport` (recv returns empty whenever its queue is
     momentarily empty) — is **not** compatible: the channel can't tell an idle gap
     from a real close, so it would abort a healthy migration on the first gap (or
-    never notice a genuine close). Do not select the ZMQ backend
-    (`SOCKET_TRANSPORT=zmq`) for the migration control path. (ZMQ is unrelated to
-    Mooncake, which carries the bulk bytes over its own TCP/RDMA transport.)
+    never notice a genuine close). Use a blocking TCP-style transport for the
+    migration control path. (ZMQ is unrelated to Mooncake, which carries the bulk
+    bytes over its own TCP/RDMA transport.)
 
 ## Known optimizations & follow-ups
 

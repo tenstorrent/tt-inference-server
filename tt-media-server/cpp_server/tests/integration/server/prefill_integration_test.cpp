@@ -59,7 +59,6 @@ void configureEnv() {
   setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
 
   // Socket config: prefill connects as DEALER to our mock ROUTER (direct mode)
-  setenv("SOCKET_TRANSPORT", "zmq", 1);
   setenv("SOCKET_HOST", "127.0.0.1", 1);
   setenv("SOCKET_PORT", std::to_string(MOCK_DECODE_PORT).c_str(), 1);
   setenv("USE_PREFILL_GATEWAY", "0", 1);

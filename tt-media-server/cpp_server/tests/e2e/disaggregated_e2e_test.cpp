@@ -37,7 +37,6 @@
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
 #include "sockets/inter_server_service.hpp"
-#include "support/chat_completion_stream.hpp"
 #include "support/chat_request.hpp"
 #include "support/http_client.hpp"
 #include "support/http_response.hpp"
@@ -72,7 +71,6 @@ void configureCommonEnv() {
   setenv("LLM_DEVICE_BACKEND", "mock", 1);
   setenv("DEVICE_IDS", "(0)", 1);
   setenv("MAX_NUM_SESSIONS", "4", 1);
-  setenv("SOCKET_TRANSPORT", "zmq", 1);
   setenv("SOCKET_HOST", "127.0.0.1", 1);
   setenv("SOCKET_PORT", std::to_string(INTER_SERVER_PORT).c_str(), 1);
   setenv("USE_PREFILL_GATEWAY", "0", 1);
