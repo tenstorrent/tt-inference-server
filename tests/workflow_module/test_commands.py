@@ -11,10 +11,17 @@ error handling) is tested without running a real workflow.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
 
 from workflow_module import workflows as workflows_mod
-from workflow_module.commands import CommandResult, SummaryCommand, WorkflowCommand
+from workflow_module.commands import (
+    CommandResult,
+    ServerCommand,
+    ServerLaunchSpec,
+    SummaryCommand,
+    WorkflowCommand,
+)
 from workflow_module.execution import OrchestratorMetadata, WorkflowResult
 
 
@@ -65,6 +72,89 @@ class TestWorkflowCommand:
         assert result.return_code == 0
         # ...but the original error is still surfaced for logging.
         assert result.error == "boom"
+
+
+def _install_fake_launchers(monkeypatch, *, docker=None, local=None):
+    """Stand in fake launcher modules so ServerCommand's lazy imports resolve
+    to them without pulling the real docker/local server stack into the test.
+    """
+    docker_mod = ModuleType("workflows.run_docker_server")
+    docker_mod.run_docker_server = docker or (lambda *a, **k: {"ok": "docker"})
+    local_mod = ModuleType("workflows.run_local_server")
+    local_mod.run_local_server = local or (lambda *a, **k: {"ok": "local"})
+    monkeypatch.setitem(sys.modules, "workflows.run_docker_server", docker_mod)
+    monkeypatch.setitem(sys.modules, "workflows.run_local_server", local_mod)
+
+
+class TestServerCommand:
+    def test_docker_mode_invokes_docker_launcher(self, monkeypatch):
+        calls = {}
+
+        def fake_docker(model_spec, runtime_config, setup_config, json_fpath):
+            calls["args"] = (model_spec, runtime_config, setup_config, json_fpath)
+            return {"container_id": "abc"}
+
+        _install_fake_launchers(monkeypatch, docker=fake_docker)
+        spec = ServerLaunchSpec(
+            mode="docker",
+            model_spec="ms",
+            runtime_config="rc",
+            setup_config="sc",
+            json_fpath="/j.json",
+        )
+        result = ServerCommand(spec).execute()
+        assert result.return_code == 0
+        assert result.payload == {"container_id": "abc"}
+        assert calls["args"] == ("ms", "rc", "sc", "/j.json")
+
+    def test_local_mode_uses_local_launcher_arg_order(self, monkeypatch):
+        # run_local_server takes (model_spec, runtime_config, json_fpath,
+        # setup_config) -- json_fpath/setup_config are swapped vs the docker
+        # launcher, so this guards ServerCommand's per-mode arg wiring.
+        calls = {}
+
+        def fake_local(model_spec, runtime_config, json_fpath, setup_config):
+            calls["args"] = (model_spec, runtime_config, json_fpath, setup_config)
+            return {"port": 8000}
+
+        _install_fake_launchers(monkeypatch, local=fake_local)
+        spec = ServerLaunchSpec(
+            mode="local",
+            model_spec="ms",
+            runtime_config="rc",
+            setup_config="sc",
+            json_fpath="/j.json",
+        )
+        result = ServerCommand(spec).execute()
+        assert result.return_code == 0
+        assert calls["args"] == ("ms", "rc", "/j.json", "sc")
+
+    def test_unknown_mode_returns_error(self, monkeypatch):
+        _install_fake_launchers(monkeypatch)
+        spec = ServerLaunchSpec(
+            mode="bogus",
+            model_spec=None,
+            runtime_config=None,
+            setup_config=None,
+        )
+        result = ServerCommand(spec).execute()
+        assert result.return_code == 1
+        assert "bogus" in result.error
+
+    def test_launcher_exception_is_caught(self, monkeypatch):
+        def boom(*a, **k):
+            raise RuntimeError("no device")
+
+        _install_fake_launchers(monkeypatch, docker=boom)
+        spec = ServerLaunchSpec(
+            mode="docker",
+            model_spec=None,
+            runtime_config=None,
+            setup_config=None,
+        )
+        result = ServerCommand(spec).execute()
+        assert result.return_code == 1
+        assert "no device" in result.error
 
 
 class TestSummaryCommand:

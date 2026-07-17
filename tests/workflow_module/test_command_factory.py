@@ -29,6 +29,43 @@ from workflow_module.execution import (
 )
 
 
+class TestServerLaunchPrepend:
+    """``CommandFactory.build`` prepends a ServerCommand only when a launch
+    spec is supplied; the workflow-only list is otherwise unchanged. The
+    model-spec-dependent ``_workflow_commands`` is stubbed out here.
+    """
+
+    def test_no_server_launch_leaves_workflow_only_list(self, monkeypatch):
+        wf = object()
+        monkeypatch.setattr(
+            cf.CommandFactory,
+            "_workflow_commands",
+            staticmethod(lambda args: [wf]),
+        )
+        assert cf.CommandFactory.build(Namespace()) == [wf]
+
+    def test_server_launch_prepends_server_command(self, monkeypatch):
+        from workflow_module.commands import ServerCommand, ServerLaunchSpec
+
+        wf = object()
+        monkeypatch.setattr(
+            cf.CommandFactory,
+            "_workflow_commands",
+            staticmethod(lambda args: [wf]),
+        )
+        spec = ServerLaunchSpec(
+            mode="docker",
+            model_spec=None,
+            runtime_config=None,
+            setup_config=None,
+        )
+        out = cf.CommandFactory.build(Namespace(), server_launch=spec)
+        assert len(out) == 2
+        assert isinstance(out[0], ServerCommand)
+        assert out[0].launch is spec
+        assert out[1] is wf
+
+
 class TestResolveServerMode:
     def test_falls_back_to_cli_flag_without_runtime_config(self):
         assert cf._resolve_server_mode(Namespace(docker_server=True), None) == "docker"

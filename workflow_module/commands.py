@@ -36,6 +36,76 @@ class Command(ABC):
     def execute(self) -> CommandResult: ...
 
 
+@dataclass(frozen=True)
+class ServerLaunchSpec:
+    """Everything :class:`ServerCommand` needs to bring up an inference server.
+
+    Carries the launcher-side objects (``model_spec``, ``runtime_config``,
+    ``setup_config``) that :func:`workflows.run_docker_server.run_docker_server`
+    and :func:`workflows.run_local_server.run_local_server` expect. They are
+    typed ``Any`` here so the command model stays free of a hard import
+    dependency on the launcher stack; Phase B can thread the real types through.
+
+    ``mode`` selects the launcher: ``"docker"`` or ``"local"``. ``json_fpath``
+    is the runtime model-spec JSON path the launchers persist / read (the docker
+    launcher only forwards it in ``--dev-mode``).
+    """
+
+    mode: str
+    model_spec: Any
+    runtime_config: Any
+    setup_config: Any
+    json_fpath: Optional[str] = None
+
+
+class ServerCommand(Command):
+    """Bring up the inference server as the first step of a run.
+
+    Wraps ``workflows.run_docker_server`` / ``run_local_server`` so server
+    bring-up is a command in the same list the :class:`WorkflowRunner` executes.
+    """
+
+    name = "server"
+
+    def __init__(self, launch: ServerLaunchSpec) -> None:
+        self.launch = launch
+
+    def execute(self) -> CommandResult:
+        # Lazy import: keep the command model free of a launcher import at
+        # module load, and avoid pulling the docker/local stack into workflow-
+        # only entry points that never construct a ServerCommand.
+        from workflows.run_docker_server import run_docker_server
+        from workflows.run_local_server import run_local_server
+
+        spec = self.launch
+        try:
+            if spec.mode == "docker":
+                payload = run_docker_server(
+                    spec.model_spec,
+                    spec.runtime_config,
+                    spec.setup_config,
+                    spec.json_fpath,
+                )
+            elif spec.mode == "local":
+                payload = run_local_server(
+                    spec.model_spec,
+                    spec.runtime_config,
+                    spec.json_fpath,
+                    spec.setup_config,
+                )
+            else:
+                return CommandResult(
+                    command_name=self.name,
+                    return_code=1,
+                    error=f"unknown server mode: {spec.mode!r}",
+                )
+        except Exception as e:
+            logger.exception("Server bring-up failed: %s", e)
+            return CommandResult(command_name=self.name, return_code=1, error=str(e))
+
+        return CommandResult(command_name=self.name, return_code=0, payload=payload)
+
+
 class WorkflowCommand(Command):
     name = "workflow"
 
@@ -129,6 +199,8 @@ class SummaryCommand(Command):
 __all__ = [
     "Command",
     "CommandResult",
+    "ServerCommand",
+    "ServerLaunchSpec",
     "SummaryCommand",
     "WorkflowCommand",
 ]

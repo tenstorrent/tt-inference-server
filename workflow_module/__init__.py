@@ -28,6 +28,8 @@ _LAZY_FROM_WORKFLOWS = {
 _LAZY_FROM_COMMANDS = {
     "Command",
     "CommandResult",
+    "ServerCommand",
+    "ServerLaunchSpec",
     "SummaryCommand",
     "WorkflowCommand",
 }

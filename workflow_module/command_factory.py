@@ -21,7 +21,13 @@ from utils.url_helpers import is_remote_server, resolve_deploy_url
 
 from test_module import MediaContext
 
-from .commands import Command, SummaryCommand, WorkflowCommand
+from .commands import (
+    Command,
+    ServerCommand,
+    ServerLaunchSpec,
+    SummaryCommand,
+    WorkflowCommand,
+)
 from .execution import (
     LLMBenchOptions,
     LLMEvalOptions,
@@ -41,12 +47,24 @@ logger = logging.getLogger(__name__)
 class CommandFactory:
     """Builds the list of commands a WorkflowRunner will execute.
 
-    Currently emits a single ``WorkflowCommand``. A future ``ServerCommand``
-    will be prepended when inline server bring-up is requested.
+    Emits the workflow command(s) for ``args`` and, when ``server_launch`` is
+    supplied, prepends a :class:`ServerCommand` so the runner brings the server
+    up before running any workflow. 
     """
 
     @staticmethod
-    def build(args: argparse.Namespace) -> List[Command]:
+    def build(
+        args: argparse.Namespace,
+        *,
+        server_launch: Optional[ServerLaunchSpec] = None,
+    ) -> List[Command]:
+        commands = CommandFactory._workflow_commands(args)
+        if server_launch is not None:
+            commands.insert(0, ServerCommand(server_launch))
+        return commands
+
+    @staticmethod
+    def _workflow_commands(args: argparse.Namespace) -> List[Command]:
         metadata = _build_orchestrator_metadata(args)
         repeat = max(1, int(getattr(args, "repeat", 1) or 1))
         if repeat == 1:
