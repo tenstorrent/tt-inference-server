@@ -3,7 +3,7 @@
 How to run the vLLM parameter-conformance tests for development and debugging.
 
 These are the LLM/VLM API parameter tests that run as part of `--workflow spec_tests`
-(routed to the v2 engine). The suites live in the v2 package:
+(routed to the v2 engine). The suites live in `llm_module`:
 `llm_module/test_vllm_chat_completions.py` and
 `test_vllm_responses.py`. Models are mapped to suites in
 `test_module/test_suites/llm.json`.
@@ -27,7 +27,7 @@ python3 run.py --model Qwen3-32B --device galaxy --workflow server --docker-serv
 ### step 3: run the suite directly against a running server
 The `spec_tests` workflow runs the suite in a child pytest process; you can
 reproduce that manually. The suite imports fixtures from `test_fixtures.conftest`
-and `report_module`, so put both the repo root and the v2 package root on
+and `report_module`, so put the repo root on
 `PYTHONPATH`:
 
 ```bash

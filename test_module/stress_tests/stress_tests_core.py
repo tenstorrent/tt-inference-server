@@ -710,8 +710,8 @@ class StressTests:
         )
 
         # Build benchmark command
-        # Pin to the sibling script in this v2 package, independent of project_root
-        # (project_root is the repo root, which still has the v1 stress_tests/ as a child).
+        # Pin to the sibling script next to this module, independent of the
+        # current working directory / project_root.
         benchmark_script = str(
             Path(__file__).resolve().parent / "stress_tests_benchmarking_script.py"
         )

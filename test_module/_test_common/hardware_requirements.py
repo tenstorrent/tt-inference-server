@@ -16,11 +16,11 @@ Two tiers cover every existing test kind in the repo:
 The enum is consumed at two choke points:
 
 1. Workflow dispatch path
-   (:mod:`tt_inference_server_v2.test_module.context.require_health`) — each
+   (:mod:`test_module.context.require_health`) — each
    ``run_*_benchmark`` / ``run_*_eval`` callable passes the appropriate tier
    (or, for benchmarks, relies on ``FULL_BOARD`` being the default).
 2. Spec-tests pipeline
-   (:class:`tt_inference_server_v2.test_module._test_common.base_test.BaseTest`)
+   (:class:`test_module._test_common.base_test.BaseTest`)
    — each spec test class declares ``HARDWARE_REQUIREMENT`` and the base
    class's ``run_tests()`` self-gates before executing.
 """

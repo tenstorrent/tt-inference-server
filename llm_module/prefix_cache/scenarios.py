@@ -32,8 +32,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 
-# Default manifest lives next to this module so the v2 package is
-# self-contained (no implicit dependency on the v1 ``benchmarking/`` tree).
+# Default manifest lives next to this module so the ``prefix_cache`` package is
+# self-contained (no implicit dependency on the ``benchmarking/`` tree).
 DEFAULT_MANIFEST_PATH = Path(__file__).parent / "manifest.json"
 
 ALL_SCENARIOS = (
