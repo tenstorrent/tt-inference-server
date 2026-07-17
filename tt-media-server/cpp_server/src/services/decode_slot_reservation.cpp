@@ -12,7 +12,7 @@ namespace tt::services::decode_slot_reservation {
 
 namespace {
 
-constexpr std::string_view kLogPrefix = "[DecodeSlotReservation]";
+constexpr std::string_view K_LOG_PREFIX = "[DecodeSlotReservation]";
 
 void setDecodePositionFields(DecodeDestinationSlot& slot, uint32_t kvPositionId,
                              int accumulatedThinkTokens, bool continuation) {
@@ -75,7 +75,7 @@ void resolveDecodeDestinationSlot(
         TT_LOG_INFO(
             "{} taskId={} response-id HIT sessionId={} slotId={} "
             "decodePositionId={}",
-            kLogPrefix, input.taskId, slot.sessionId, slot.slotId,
+            K_LOG_PREFIX, input.taskId, slot.sessionId, slot.slotId,
             slot.decodePositionId);
         onResolved(std::move(slot));
         return;
@@ -84,9 +84,9 @@ void resolveDecodeDestinationSlot(
       tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(false);
       TT_LOG_INFO(
           "{} taskId={} response-id MISS prevId={} → allocating new session",
-          kLogPrefix, input.taskId, *input.previousResponseId);
+          K_LOG_PREFIX, input.taskId, *input.previousResponseId);
     } catch (const SessionInFlightException& e) {
-      TT_LOG_WARN("{} taskId={} response-id busy: {}", kLogPrefix, input.taskId,
+      TT_LOG_WARN("{} taskId={} response-id busy: {}", K_LOG_PREFIX, input.taskId,
                   e.what());
       onError(e.what());
       return;
@@ -105,7 +105,7 @@ void resolveDecodeDestinationSlot(
         TT_LOG_INFO(
             "{} taskId={} prefix HIT sessionId={} slotId={} "
             "decodePositionId={}",
-            kLogPrefix, input.taskId, slot.sessionId, slot.slotId,
+            K_LOG_PREFIX, input.taskId, slot.sessionId, slot.slotId,
             slot.decodePositionId);
         onResolved(std::move(slot));
         return;
@@ -113,9 +113,9 @@ void resolveDecodeDestinationSlot(
 
       tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(false);
       TT_LOG_INFO("{} taskId={} prefix MISS blocks={} → allocating new session",
-                  kLogPrefix, input.taskId, blockInfos.size());
+                  K_LOG_PREFIX, input.taskId, blockInfos.size());
     } catch (const SessionInFlightException& e) {
-      TT_LOG_WARN("{} taskId={} prefix candidates busy: {}", kLogPrefix,
+      TT_LOG_WARN("{} taskId={} prefix candidates busy: {}", K_LOG_PREFIX,
                   input.taskId, e.what());
       onError(e.what());
       return;
@@ -123,14 +123,14 @@ void resolveDecodeDestinationSlot(
   }
 
   if (blockInfos.empty()) {
-    TT_LOG_INFO("{} taskId={} no blocks → allocating new session", kLogPrefix,
+    TT_LOG_INFO("{} taskId={} no blocks → allocating new session", K_LOG_PREFIX,
                 input.taskId);
   }
 
   auto copyPlan = acquired.has_value()
                       ? session_resolution::prepareSlotCopy(
                             sessionManager, acquired->candidatesList,
-                            input.taskId, kLogPrefix)
+                            input.taskId, K_LOG_PREFIX)
                       : std::nullopt;
   std::optional<uint32_t> slotToCopyFrom =
       copyPlan.has_value() ? std::make_optional(copyPlan->slotToCopyFrom)
@@ -160,7 +160,7 @@ void resolveDecodeDestinationSlot(
 
         TT_LOG_INFO(
             "{} taskId={} new session sessionId={} slotId={} continuation={}",
-            kLogPrefix, taskId, slot.sessionId, slot.slotId, slot.continuation);
+            K_LOG_PREFIX, taskId, slot.sessionId, slot.slotId, slot.continuation);
         onResolved(std::move(slot));
       },
       [onError, &sessionManager, slotToCopyFrom](std::string_view err) {
