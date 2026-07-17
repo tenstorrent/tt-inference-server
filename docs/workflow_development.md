@@ -1,7 +1,12 @@
 # Workflow development guide
 
-This document is the onboarding doc for people adding new workflows, runners,
-or test categories to v2. It assumes you already know what v1 does.
+This document is the onboarding doc for people adding new workflows, runners, or
+test categories to the **workflow engine** — the `run_workflows.py` +
+`workflow_module` / `test_module` / `report_module` / `llm_module` stack. `run.py`
+(the user-facing CLI) brings up the inference server and drives the engine
+through a single `WorkflowRunner`; you can also invoke `run_workflows.py`
+directly against an already-running server, which is what this guide's examples
+do.
 
 ## TLDR
 
@@ -206,25 +211,24 @@ Renderer-agnostic schema and a registry-based renderer.
 
 ### `llm_module/`
 
-Work in progress — do not use yet, except for the **prefix-caching benchmark**
-and the **speculative-decoding benchmark** which are end-to-end on v2 today
-(see the matching sections below). The directory also holds early scaffolding
-for a driver/parser abstraction over the other LLM perf tools (GuideLLM,
-GenAIPerf, InferenceMax, vllm-bench); those aren't wired up yet and LLM
-benchmarking still happens through v1 for everything except prefix caching and
-spec decode.
+Server-control + driver/parser abstraction for the LLM perf tools. The
+**prefix-caching** and **speculative-decoding** benchmarks are end-to-end (see
+the matching sections below); the standard LLM perf benchmark runs through the
+`run_llm_bench.py` launcher (dispatched from `build_engine_commands`). The
+directory also holds earlier scaffolding for the other tools (GuideLLM,
+GenAIPerf, InferenceMax, vllm-bench) at varying maturity.
 
 ## Prefix-caching benchmark
 
 Run the AIPerf prefix-cache sweep directly against an already-up vLLM-compatible
-server (no v1 entry point involved). The workflow is `benchmarks`; the
-prefix-cache flag swaps the default media-task dispatch for the scenario sweep
-defined in [`llm_module/prefix_cache/manifest.json`](../llm_module/prefix_cache/manifest.json).
+server. The workflow is `benchmarks`; the prefix-cache flag swaps the default
+media-task dispatch for the scenario sweep defined in
+[`llm_module/prefix_cache/manifest.json`](../llm_module/prefix_cache/manifest.json).
 
-`run.py` itself has no import-time side effects, so it must run inside the
-dedicated `V2_PREFIX_CACHE` venv. Use the thin launcher `run_prefix_cache.py`,
-which selects/creates that venv and re-execs `run.py` inside it — no manual venv
-setup required:
+`run_workflows.py` has no import-time side effects, so it must run inside the
+dedicated `PREFIX_CACHE` venv. Use the thin launcher `run_prefix_cache.py`,
+which selects/creates that venv and re-execs `run_workflows.py` inside it — no
+manual venv setup required:
 
 ```bash
 python launchers/run_prefix_cache.py \
@@ -238,14 +242,14 @@ python launchers/run_prefix_cache.py \
 ```
 
 `run_prefix_cache.py` calls
-`VENV_CONFIGS[WorkflowVenvType.V2_PREFIX_CACHE].setup(...)` (declared in
+`VENV_CONFIGS[WorkflowVenvType.PREFIX_CACHE].setup(...)` (declared in
 [`workflows/workflow_venvs.py`](../workflows/workflow_venvs.py), requirements in
 [`requirements/prefix-cache.txt`](../requirements/prefix-cache.txt)), then
-`os.execv`s into `.workflow_venvs/.venv_v2_prefix_cache/bin/python`, forwarding
-every CLI argument to `run.py`. Setup is idempotent, so subsequent runs reuse
-the existing venv. This mirrors how [`workflows/workflow_dispatch.py`](../workflows/workflow_dispatch.py)
-selects the per-workflow venv externally for image-model runs, keeping venv
-selection out of `run.py`.
+`os.execv`s into `.workflow_venvs/.venv_prefix_cache/bin/python`, forwarding
+every CLI argument to `run_workflows.py`. Setup is idempotent, so subsequent runs
+reuse the existing venv. This mirrors how the `VenvCommand`s built by
+[`workflows/workflow_dispatch.py`](../workflows/workflow_dispatch.py) provision
+each workflow's venv at execute time.
 
 Scenarios (`shared_system`, `prefix_pool`, `multi_turn`, `baseline`,
 `mooncake_trace`) and per-preset grids (`ci`, `full`, `highcache_50k`) are
@@ -349,7 +353,7 @@ reference GPU vLLM).
 ## Speculative-decoding benchmark
 
 Run the AIPerf SPEED-Bench spec-decode sweep directly against an already-up
-vLLM-compatible server (no v1 entry point involved). The workflow is
+vLLM-compatible server. The workflow is
 `benchmarks`; the spec-decode flag swaps the default media-task dispatch for
 the sweep defined in [`llm_module/spec_decode/runs.py`](../llm_module/spec_decode/runs.py):
 all 11 SPEED-Bench qualitative categories at concurrency 1 plus a 1k–32k ISL
@@ -362,12 +366,12 @@ so acceptance rate and mean accepted length are per-run deltas. Note the TT
 backend (`tt-vllm-plugin`) does not support speculative decoding yet, so a
 spec-enabled target currently requires a reference GPU vLLM.
 
-`run.py` must run inside the dedicated `V2_SPEC_DECODE` venv (aiperf >= 0.8 for
-the SPEED-Bench dataset plugins — its pillow requirement conflicts with the
+`run_workflows.py` must run inside the dedicated `SPEC_DECODE` venv (aiperf >= 0.8
+for the SPEED-Bench dataset plugins — its pillow requirement conflicts with the
 shared `constraints.txt` pin, hence the separate venv). Use the thin launcher
 `run_spec_decode.py`, which selects/creates that venv (requirements in
 [`requirements/spec-decode.txt`](../requirements/spec-decode.txt)) and
-re-execs `run.py` inside it:
+re-execs `run_workflows.py` inside it:
 
 ```bash
 python launchers/run_spec_decode.py \
@@ -396,8 +400,8 @@ the same report/acceptance path as other evals.
 
 Agentic harnesses require the dedicated `EVALS_AGENTIC` venv (Harbor,
 mini-swe-agent, SWE-bench, and related tools). Use the thin launcher
-`run_agentic.py`, which selects/creates that venv and re-execs `run.py` inside
-it:
+`run_agentic.py`, which selects/creates that venv and re-execs `run_workflows.py`
+inside it:
 
 ```bash
 MODEL_SPECS_ENV=dev python launchers/run_agentic.py \
@@ -415,7 +419,7 @@ catalog. `run_agentic.py` calls
 [`workflows/workflow_venvs.py`](../workflows/workflow_venvs.py), requirements in
 [`requirements/evals-agentic.txt`](../requirements/evals-agentic.txt)), then
 `os.execv`s into `.workflow_venvs/.venv_evals_agentic/bin/python`, forwarding
-every CLI argument to `run.py`.
+every CLI argument to `run_workflows.py`.
 
 Agentic task selection still comes from [`reference_config/evals/eval_config.py`](../reference_config/evals/eval_config.py).
 The runtime config JSON is optional, but it is how limit modes are forwarded to
@@ -435,33 +439,43 @@ the agentic drivers. For a nightly-limited run, include:
 
 The workflow checks the server via `/v1/models`, sets OpenAI-compatible
 environment variables (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`),
-then runs each configured agentic task through the v2 LLM driver/parser
+then runs each configured agentic task through the LLM driver/parser
 adapters.
 
-## How v1 routes to v2
+## How run.py drives the workflow engine
 
-While the migration is in progress, v1 stays the entry point for everything
-that hasn't been ported yet. The routing rules live in
+`run.py` builds one command list and drives it with a single `WorkflowRunner`:
+a `ServerCommand` (when it's bringing up a docker/local server) followed by the
+engine command(s). The runner runs them in order and stops at the first failure,
+so a failed server bring-up aborts before any workflow runs. The routing +
+command building lives in
 [`workflows/workflow_dispatch.py`](../workflows/workflow_dispatch.py):
 
-- `_V2_ROUTED_MODEL_TYPES` lists the model *types* fully onboarded to v2. Every
-  model of these types routes to v2 by `model_type` — no per-name allowlist, so
-  new models are picked up automatically. Today: image, video, audio,
-  text-to-speech, CNN, embedding.
-- `_LLM_LIKE_TYPES` (LLM + VLM) share the LLM code path rather than a media
-  runner; they route to v2 per-workflow rather than by `_V2_ROUTED_MODEL_TYPES`.
-- `_V2_WORKFLOW_NAMES` maps v1 `WorkflowType` → v2 workflow name
-  (`BENCHMARKS` / `EVALS` / `SPEC_TESTS` / `RELEASE`).
-- `can_dispatch_to_engine(model_spec, runtime_config)` is the predicate v1's runner
-  checks before delegating.
-- `dispatch_workflows(...)` materializes the v2 venv (`WorkflowVenvType.V2_RUN_SCRIPT`,
-  defined in `workflows/workflow_venvs.py`), shells out to `run.py`, and
-  forwards stdout/stderr.
+- `can_dispatch_to_engine(model_spec, runtime_config)` is the predicate `run.py`
+  checks; everything supported routes to the engine.
+- `_ENGINE_ROUTED_MODEL_TYPES` lists the model *types* that route purely by
+  `model_type` — no per-name allowlist, so new models are picked up
+  automatically. Today: image, video, audio, text-to-speech, CNN, embedding.
+- `_LLM_LIKE_TYPES` (LLM + VLM) route per-workflow rather than by
+  `_ENGINE_ROUTED_MODEL_TYPES`.
+- `_ENGINE_WORKFLOW_NAMES` maps `WorkflowType` → engine workflow name
+  (`BENCHMARKS` / `EVALS` / `SPEC_TESTS` / `RELEASE` / …).
+- `build_engine_commands(model_spec, runtime_config, json_fpath)` is the **pure
+  builder**: it returns the `VenvCommand`(s) for the requested workflow — no
+  subprocess, no provisioning. `run.py` prepends the `ServerCommand` and runs
+  the whole list.
 
-When you're ready to move a new model type to v2, add it to
-`_V2_ROUTED_MODEL_TYPES` and make sure v2 has the runners and suites needed.
+Each `VenvCommand` handles venv isolation itself: on `execute()` it provisions
+the venv it declares (`WORKFLOW_RUN_SCRIPT` for the generic engine path, plus any
+`dependency_venvs`) and execs its script (`run_workflows.py`, or a launcher) in
+that interpreter — so provisioning only happens once the server is up. Launcher
+branches (agentic / prefix-cache / spec-decode / llm-bench) run in the current
+interpreter and re-exec into their own venv themselves.
 
-## Adding things to v2
+To onboard a new model type, add it to `_ENGINE_ROUTED_MODEL_TYPES` and make sure
+the engine has the runners and suites it needs.
+
+## Adding things to the workflow engine
 
 ### Add a new workflow
 
@@ -527,22 +541,21 @@ To author a new test class:
    with a `_check_<kind>(schema)` and add it to the category list in
    `acceptance_criteria_check`.
 
-## Status & migration roadmap
+## Status roadmap
 
 | Area | Status |
 |---|---|
-| SDXL base / img2img / inpainting (eval, benchmark, release) | Routed to v2 today via `workflow_dispatch.py` |
-| Other image models (Flux, Motif, SD3.5) | Runners exist in v2; not yet routed |
-| LLM benchmarking via `llm_module` | Work in progress — LLMs still run through v1, except prefix-caching which is end-to-end on v2 |
-| Prefix-caching benchmark | Implemented on v2 (`--workflow benchmarks --prefix-cache`); validated against reference GPU vLLM |
-| Agentic evals | Implemented on v2 (`--workflow agentic` via `run_agentic.py`); runs Terminal-Bench and SWE-bench against an external OpenAI-compatible server |
-| CNN / audio / TTS / video / embedding runners | Scaffolded; correctness gaps tracked as bugs |
-| Spec tests | Ported from v1's `server_tests/`; renamed consistently to `spec_tests` |
-| New workflows on the horizon | Spec-decode bench, structured-outputs bench |
+| Image (SDXL base / img2img / inpainting, Flux, Motif, SD3.5) | Routed by `model_type`; SDXL fully validated |
+| LLM / VLM benchmarks, evals, spec_tests, release | Routed through the engine (`build_engine_commands`) |
+| Prefix-caching benchmark | `--workflow benchmarks --prefix-cache`; validated against reference GPU vLLM |
+| Speculative-decoding benchmark | `--workflow benchmarks --spec-decode`; needs a spec-enabled (reference GPU) vLLM |
+| Agentic evals | `--workflow agentic` via `run_agentic.py`; Terminal-Bench + SWE-bench against an external OpenAI-compatible server |
+| CNN / audio / TTS / video / embedding runners | Routed by `model_type`; any correctness gaps tracked as bugs |
+| Spec tests | Consolidated under `spec_tests` |
+| New workflows on the horizon | Structured-outputs bench |
 
-Migration policy (current consensus): start using v2 right away for SDXL and
-treat anything missing as a bug. New benchmarks should be authored as v2
-modules from the start rather than bolted onto v1.
+Policy: new benchmarks and runners should be authored as engine modules
+(`workflow_module` / `test_module` / `llm_module`) from the start.
 
 ## Layout reference
 
@@ -550,7 +563,7 @@ modules from the start rather than bolted onto v1.
 <repo root>/
 ├── run_workflows.py                # CLI entry point (no import-time side effects)
 ├── launchers/
-│   ├── run_prefix_cache.py         # thin launcher: ensures V2_PREFIX_CACHE venv, execs run_workflows.py
+│   ├── run_prefix_cache.py         # thin launcher: ensures PREFIX_CACHE venv, execs run_workflows.py
 │   └── run_agentic.py              # thin launcher: ensures EVALS_AGENTIC venv, execs run_workflows.py
 ├── workflow_module/                # Workflow scaffolding + block accumulator
 │   ├── workflows.py                # Concrete workflows + WORKFLOW_REGISTRY
@@ -603,4 +616,4 @@ modules from the start rather than bolted onto v1.
   — schema-authoring rules the generic renderer follows.
 - [`test_module/stress_tests/README.md`](../test_module/stress_tests/README.md)
   — stress-test specifics.
-- [`workflows/workflow_dispatch.py`](../workflows/workflow_dispatch.py) — v1 → v2 delegation.
+- [`workflows/workflow_dispatch.py`](../workflows/workflow_dispatch.py) — `build_engine_commands` (engine command builder) + routing predicates.
