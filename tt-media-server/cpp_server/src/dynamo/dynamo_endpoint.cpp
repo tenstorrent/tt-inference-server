@@ -19,14 +19,18 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
-#include <variant>
 
 #include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
 #include "domain/session.hpp"
+#include "dynamo/dynamo_llm_mapping.hpp"
+#include "dynamo/dynamo_prefill_result_json.hpp"
+#include "services/disaggregation_contract_mapping.hpp"
+#include "services/disaggregation_service.hpp"
 #include "services/llm_pipeline.hpp"
-#include "utils/id_generator.hpp"
+#include "services/session_manager.hpp"
+#include "sockets/socket_messages.hpp"
 #include "utils/logger.hpp"
 #include "utils/net.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
@@ -34,72 +38,6 @@
 namespace tt::dynamo {
 
 namespace {
-
-/// Shape an LLMRequest from a Dynamo PreprocessedRequest. The frontend has
-/// already applied the chat template, so we forward token ids directly and
-/// leave `messages` empty — the pipeline picks up that signal and routes
-/// through the token-aware prefix-cache hashers.
-std::shared_ptr<tt::domain::llm::LLMRequest> buildLLMRequest(
-    const GenerateRequest& dyn) {
-  auto req = std::make_shared<tt::domain::llm::LLMRequest>(
-      tt::utils::TaskIDGenerator::generate());
-  req->stream = true;
-  req->skip_apply_chat_template = true;
-  // Dynamo's TokenChunk wire format carries only token_ids; the frontend
-  // handles detokenization. Skip decode + parser work on the consumer.
-  req->skip_text_decode = true;
-  req->prompt = dyn.token_ids;
-  req->prompt_tokens_count = static_cast<int>(dyn.token_ids.size());
-  req->full_prompt_tokens_count = req->prompt_tokens_count;
-
-  if (!dyn.model.empty()) req->model = dyn.model;
-  req->max_tokens =
-      dyn.max_tokens.value_or(static_cast<int>(tt::config::maxContextLength()));
-  if (dyn.min_tokens.has_value()) req->min_tokens = *dyn.min_tokens;
-  req->stop_token_ids = dyn.stop_token_ids;
-  req->stop = dyn.stop;
-  req->ignore_eos = dyn.ignore_eos;
-
-  if (dyn.temperature.has_value()) req->temperature = *dyn.temperature;
-  if (dyn.top_p.has_value()) req->top_p = *dyn.top_p;
-  if (dyn.top_k.has_value()) req->top_k = *dyn.top_k;
-  if (dyn.seed.has_value()) req->seed = *dyn.seed;
-  if (dyn.frequency_penalty.has_value())
-    req->frequency_penalty = *dyn.frequency_penalty;
-  if (dyn.presence_penalty.has_value())
-    req->presence_penalty = *dyn.presence_penalty;
-  if (dyn.repetition_penalty.has_value())
-    req->repetition_penalty = *dyn.repetition_penalty;
-
-  const std::string prevResponseId =
-      dyn.raw.get("previous_response_id", "").asString();
-  if (!prevResponseId.empty()) req->previousResponseId = prevResponseId;
-
-  std::string currentId = dyn.raw.get("id", "").asString();
-  if (currentId.empty()) currentId = dyn.raw.get("request_id", "").asString();
-  if (!currentId.empty()) req->responseId = currentId;
-
-  return req;
-}
-
-/// Translate one streaming chunk from the pipeline into a Dynamo TokenChunk.
-/// We forward `token_id` (single id per chunk; the engine emits one token at
-/// a time) and let the frontend assemble the OpenAI response.
-TokenChunk toTokenChunk(const tt::domain::llm::LLMStreamChunk& chunk,
-                        bool isFinal) {
-  TokenChunk out;
-  if (!chunk.choices.empty() && chunk.choices.front().token_id.has_value()) {
-    out.token_ids = {static_cast<uint32_t>(*chunk.choices.front().token_id)};
-  }
-  if (isFinal) {
-    if (!chunk.choices.empty()) {
-      out.finish_reason = chunk.choices.front().finish_reason.value_or("stop");
-    } else {
-      out.finish_reason = "stop";
-    }
-  }
-  return out;
-}
 
 /// Resolve the cpp_server tokenizers/<model>/ directory for the active
 /// tokenizer. `tokenizerPath()` returns an absolute tokenizer file path
@@ -113,9 +51,13 @@ std::string detectModelPath() {
 
 }  // namespace
 
-DynamoEndpoint::DynamoEndpoint(std::shared_ptr<services::LLMPipeline> pipeline,
-                               Options options)
-    : pipeline_(std::move(pipeline)), options_(std::move(options)) {
+DynamoEndpoint::DynamoEndpoint(
+    std::shared_ptr<services::LLMPipeline> pipeline,
+    std::shared_ptr<services::DisaggregationService> disaggregation,
+    Options options)
+    : pipeline_(std::move(pipeline)),
+      disaggregation_(std::move(disaggregation)),
+      options_(std::move(options)) {
   if (!pipeline_) {
     throw std::invalid_argument("DynamoEndpoint: pipeline must not be null");
   }
@@ -204,17 +146,19 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
   // requests across loops gives drogon-style per-IO-thread concurrency
   // and keeps a slow callback from head-of-line blocking other requests.
   auto pipeline = pipeline_;
+  auto disaggregation = disaggregation_;
   trantor::EventLoopThreadPool* pool = loop_pool_.get();
 
-  return [pipeline, pool](const GenerateRequest& dynReq,
-                          const TcpStreamConnectionInfo& connInfo) {
+  return [pipeline, disaggregation, pool](
+             const GenerateRequest& dynReq,
+             const TcpStreamConnectionInfo& connInfo) {
     using SteadyClock = std::chrono::steady_clock;
     const auto recvT = SteadyClock::now();
     const std::string probeId = dynReq.raw.get("request_id", "").asString();
     auto firstChunkSeen = std::make_shared<std::atomic<bool>>(false);
 
     trantor::EventLoop* loop = pool->getNextLoop();
-    auto req = buildLLMRequest(dynReq);
+    auto req = buildLLMRequestFromGenerateRequest(dynReq);
 
     // Reasoning/usage accounting for the Dynamo path. The worker doesn't decode
     // or run the response writer here (the frontend detokenizes), so we count
@@ -265,12 +209,173 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
     };
     auto signalDone = [writer]() { writer->finalize(); };
 
-    auto sendErrorAndDone = [sendChunk, signalDone]() {
+    auto sendErrorAndDone = [sendChunk, signalDone](
+                                const std::string& message = "backend error",
+                                uint16_t statusCode = 500) {
       TokenChunk err;
-      err.finish_reason = "error";
+      err.error = message;
+      err.error_code = statusCode;
       sendChunk(err);
       signalDone();
     };
+
+    if (tt::config::dynamoRoutingEnabled() &&
+        tt::config::llmMode() == tt::config::LLMMode::PREFILL_ONLY) {
+      if (!disaggregation) {
+        sendErrorAndDone(
+            "DYNAMO_ROUTING=1: prefill worker has no disaggregation "
+            "contract service",
+            500);
+        return;
+      }
+      auto prefillMessage = buildPrefillRequestMessage(dynReq);
+      auto prefillDone = std::make_shared<std::atomic<bool>>(false);
+      disaggregation->handlePrefillRequest(
+          prefillMessage, [sendChunk, signalDone, prefillDone](
+                              const tt::sockets::PrefillResultMessage& result) {
+            bool expected = false;
+            if (!prefillDone->compare_exchange_strong(expected, true)) {
+              return;
+            }
+            TokenChunk out;
+            if (result.error) {
+              out.error = result.generatedText.empty() ? "prefill error"
+                                                       : result.generatedText;
+              out.error_code = 500;
+              sendChunk(out);
+              signalDone();
+              return;
+            }
+            auto resultForDynamo = result;
+            if (!resultForDynamo.slotId.has_value()) {
+              resultForDynamo.slotId = tt::domain::INVALID_SLOT_ID;
+            }
+            Json::Value params(Json::objectValue);
+            params["tt_prefill_result"] =
+                prefillResultMessageToJson(resultForDynamo);
+            out.disaggregated_params = std::move(params);
+            DynamoUsage du;
+            du.prompt_tokens =
+                static_cast<int>(resultForDynamo.tokenIds.size());
+            du.completion_tokens = 0;
+            du.total_tokens = du.prompt_tokens;
+            du.cached_tokens = resultForDynamo.cachedTokens;
+            out.completion_usage = du;
+            sendChunk(out);
+            signalDone();
+          });
+      return;
+    }
+
+    if (tt::config::dynamoRoutingEnabled() &&
+        tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY) {
+      if (auto prefillResult = prefillResultMessageFromJson(dynReq.raw)) {
+        if (prefillResult->error) {
+          sendErrorAndDone(prefillResult->generatedText.empty()
+                               ? "prefill error"
+                               : prefillResult->generatedText);
+          return;
+        }
+        auto submitDecode =
+            [pipeline, sendChunk, signalDone, usage](
+                std::shared_ptr<tt::domain::llm::LLMRequest> decodeReq,
+                std::shared_ptr<services::SessionManager> sessionManager,
+                std::string sessionIdToRelease = "") {
+              pipeline->submitResolvedStreamingRequest(
+                  *decodeReq, [pipeline, decodeReq, sendChunk, signalDone,
+                               usage, sessionManager, sessionIdToRelease](
+                                  const tt::domain::llm::LLMStreamChunk& chunk,
+                                  bool isFinal) {
+                    if (chunk.cached_prompt_tokens.has_value()) {
+                      usage->cachedTokens = *chunk.cached_prompt_tokens;
+                    }
+                    if (!chunk.choices.empty() && chunk.choices[0].token_id) {
+                      usage->completion += 1;
+                    }
+                    TokenChunk out = tokenChunkFromStreamChunk(chunk, isFinal);
+                    if (isFinal) {
+                      DynamoUsage du;
+                      du.prompt_tokens = decodeReq->full_prompt_tokens_count;
+                      du.completion_tokens = usage->completion;
+                      du.total_tokens = du.prompt_tokens + du.completion_tokens;
+                      du.cached_tokens = usage->cachedTokens;
+                      out.completion_usage = du;
+                    }
+                    const bool sent = sendChunk(out);
+                    if (isFinal) {
+                      if (sessionManager && !sessionIdToRelease.empty()) {
+                        sessionManager->releaseInFlight(sessionIdToRelease);
+                      }
+                      signalDone();
+                    } else if (!sent) {
+                      if (sessionManager && !sessionIdToRelease.empty()) {
+                        sessionManager->releaseInFlight(sessionIdToRelease);
+                      }
+                      pipeline->abortRequest(decodeReq->task_id);
+                    }
+                  });
+            };
+
+        auto decodeReq = std::make_shared<tt::domain::llm::LLMRequest>(
+            tt::services::buildDecodeRequestFromPrefillResult(
+                *prefillResult, {.skip_apply_chat_template = true,
+                                 .skip_text_decode = true,
+                                 .populate_token_counts = true}));
+        const bool hasReservedDecodeSlot =
+            prefillResult->slotId.has_value() &&
+            *prefillResult->slotId != tt::domain::INVALID_SLOT_ID;
+        if (!hasReservedDecodeSlot) {
+          const auto runnerType = tt::config::blazeConfig().runner_type;
+          const bool isMockDecode =
+              runnerType == tt::config::ModelRunnerType::MOCK_PIPELINE ||
+              runnerType == tt::config::ModelRunnerType::MOCK_SCHEDULER ||
+              runnerType == tt::config::ModelRunnerType::MOCK;
+          if (!isMockDecode) {
+            sendErrorAndDone(
+                "DYNAMO_ROUTING=1: prefill result did not include a "
+                "reserved decode slot_id; slot reservation must be wired "
+                "before "
+                "Dynamo-routed remote prefill can continue on decode",
+                500);
+            return;
+          }
+          auto sessionManager = pipeline->sessionManager();
+          if (!sessionManager) {
+            sendErrorAndDone(
+                "DYNAMO_ROUTING=1: decode worker has no session manager "
+                "for mock slot allocation",
+                500);
+            return;
+          }
+          TT_LOG_INFO(
+              "[DynamoEndpoint] Dynamo-routed prefill result has no decode "
+              "slot_id; "
+              "allocating mock_pipeline decode-local slot for taskId={}",
+              decodeReq->task_id);
+          sessionManager->createSession(
+              [decodeReq, sessionManager,
+               submitDecode](const tt::domain::Session& session) {
+                decodeReq->sessionId = session.getSessionId();
+                decodeReq->slotId = sessionManager->acquireInFlight(
+                    session.getSessionId(), nullptr);
+                decodeReq->session =
+                    sessionManager->getSession(session.getSessionId());
+                submitDecode(decodeReq, sessionManager, session.getSessionId());
+              },
+              [sendErrorAndDone](std::string_view error) {
+                sendErrorAndDone(
+                    "DYNAMO_ROUTING=1: failed to allocate mock decode "
+                    "slot: " +
+                        std::string(error),
+                    503);
+              },
+              loop);
+          return;
+        }
+        submitDecode(decodeReq, nullptr);
+        return;
+      }
+    }
 
     // Reject requests whose prompt exceeds the maximum input sequence length.
     const size_t maxInputSeqLen = tt::config::maxISL();
@@ -322,7 +427,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                            std::shared_ptr<tt::domain::Session> sessionPtr) {
           TT_LOG_WARN("[DynamoEndpoint] preProcess failed: {}", e.what());
           if (sessionPtr) sessionPtr->release();
-          sendErrorAndDone();
+          sendErrorAndDone(std::string{"preProcess failed: "} + e.what());
         };
     handlers.onDispatchError =
         [sendErrorAndDone](const std::exception& e,
@@ -330,13 +435,15 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           TT_LOG_ERROR("[DynamoEndpoint] dispatchGeneration failed: {}",
                        e.what());
           if (sessionPtr) sessionPtr->release();
-          sendErrorAndDone();
+          sendErrorAndDone(std::string{"dispatchGeneration failed: "} +
+                           e.what());
         };
     handlers.onSessionError =
         [sendErrorAndDone](const services::LLMPipeline::SessionError& err) {
           TT_LOG_WARN("[DynamoEndpoint] Session resolution failed: {}",
                       err.message);
-          sendErrorAndDone();
+          sendErrorAndDone(std::string{"session resolution failed: "} +
+                           err.message);
         };
 
     pipeline->runStreamingRequest(
@@ -402,7 +509,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                   sessionPtr->release();
                 }
 
-                TokenChunk out = toTokenChunk(chunk, isFinal);
+                TokenChunk out = tokenChunkFromStreamChunk(chunk, isFinal);
                 if (isFinal) {
                   DynamoUsage du;
                   du.prompt_tokens = req->full_prompt_tokens_count;
@@ -495,6 +602,12 @@ void DynamoEndpoint::start() {
                    std::to_string(server_->port()) + "/" + options_.endpoint;
   dc.model_name = options_.model_name;
   dc.model_path = options_.model_path;
+  // Model Deployment Card capabilities (shared by both backends — buildMdcJson
+  // reads these, so they flow into the etcd MDC and the k8s CR alike).
+  dc.model_type = options_.model_type;
+  dc.model_input = options_.model_input;
+  dc.worker_type = options_.worker_type;
+  dc.needs = options_.needs;
   // Kubernetes backend fields (ignored by the etcd backend).
   dc.kube_api_server = options_.kube_api_server;
   dc.kube_token_path = options_.kube_token_path;

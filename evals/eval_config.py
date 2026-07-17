@@ -1056,56 +1056,60 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
-            EvalTask(
-                task_name="swe_bench_verified",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                score=EvalTaskScore(
-                    published_score=77.2,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
-                    gpu_reference_score=62.0,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4427941401",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["accuracy"],
-                        "unit": "percent",
-                    },
-                ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    # we will need to specify specific tasks
-                    # for CI runs to keep runtime reasonable
-                    dataset_split="test",
-                    # mini-swe-agent is preferred: simpler CLI
-                    # The swe-agent backend is kept as a fallback.
-                    agent_backend="mini-swe-agent",
-                    n_concurrent_trials=5,
-                    max_workers=8,
-                    n_tasks=None,
-                    temperature=1.0,
-                    top_p=0.95,
-                    max_input_tokens=200 * 1024,
-                    # max output tokens is not specifed in Qwen docs btw
-                    max_output_tokens=32 * 1024,
-                    completion_kwargs={
-                        "extra_body": {
-                            "top_k": 20,
-                        },
-                    },
-                    instance_ids_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-11299",
-                            "astropy__astropy-14096",
-                            "matplotlib__matplotlib-25332",
-                            "sympy__sympy-13551",
-                            "scikit-learn__scikit-learn-14629",
-                        ],
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
-                },
-            ),
+            # TODO: swe_bench_verified disabled due to timeouts from model limitations,
+            # re-enable once prefix cache or equivalent is enabled.
+            # timeout: https://github.com/tenstorrent/tt-shield/actions/runs/29363864010/job/87190489361#step:11:5880
+            # ticket to re-enable: https://github.com/tenstorrent/tt-inference-server/issues/4675
+            # EvalTask(
+            #     task_name="swe_bench_verified",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+            #     score=EvalTaskScore(
+            #         published_score=77.2,
+            #         published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+            #         gpu_reference_score=62.0,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4427941401",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": ["accuracy"],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     swebench_eval_config=SWEbenchEvalConfig(
+            #         dataset_name="SWE-bench/SWE-bench_Verified",
+            #         sweagent_subset="verified",
+            #         # we will need to specify specific tasks
+            #         # for CI runs to keep runtime reasonable
+            #         dataset_split="test",
+            #         # mini-swe-agent is preferred: simpler CLI
+            #         # The swe-agent backend is kept as a fallback.
+            #         agent_backend="mini-swe-agent",
+            #         n_concurrent_trials=5,
+            #         max_workers=8,
+            #         n_tasks=None,
+            #         temperature=1.0,
+            #         top_p=0.95,
+            #         max_input_tokens=200 * 1024,
+            #         # max output tokens is not specifed in Qwen docs btw
+            #         max_output_tokens=32 * 1024,
+            #         completion_kwargs={
+            #             "extra_body": {
+            #                 "top_k": 20,
+            #             },
+            #         },
+            #         instance_ids_map={
+            #             EvalLimitMode.CI_NIGHTLY: [
+            #                 "django__django-11299",
+            #                 "astropy__astropy-14096",
+            #                 "matplotlib__matplotlib-25332",
+            #                 "sympy__sympy-13551",
+            #                 "scikit-learn__scikit-learn-14629",
+            #             ],
+            #         },
+            #     ),
+            #     limit_samples_map={
+            #         EvalLimitMode.SMOKE_TEST: 5,
+            #     },
+            # ),
         ],
     ),
     EvalConfig(
@@ -4279,139 +4283,137 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            # terminal_bench_2 / swe_bench_verified commented out for release CI.
-            # After #4491, EVALS_AGENTIC tasks are dispatched as a v2 release child;
-            # those harnesses are sized for H100 (~200K ctx, 32 CPUs) and fail on
-            # QB2 release (max_context=49152, 16 CPUs). Keep configs for later
-            # re-enable; do not delete (bgoelTT review on #4603).
-            # EvalTask(
-            # task_name="terminal_bench_2",
-            # workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-            # score=EvalTaskScore(
-            # published_score=42.9,
-            # published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
-            # Full terminal-bench-2 (89 tasks), terminus-2, single
-            # H100 NVL bring-your-own vLLM (gemma-4-31B-it, max-model-len
-            # 204800, enable_thinking=true), temp=1.0/top_p=0.95/
-            # top_k=20, 112K in / 80K out, 2026-06-17. 40/89 solved =
-            # 44.94%, which exceeds the published 42.9. 16 tasks hit
-            # timeouts (15 AgentTimeoutError at the 3h/task limit + 1
-            # VerifierTimeoutError) and scored 0, so 44.94 is a floor;
-            # raising agent_timeout_sec could recover a few.
-            # gpu_reference_score=44.94,
-            # gpu_reference_score_ref="run.py --workflow evals terminal_bench_2 full (89), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-17",
-            # score_func=score_task_single_key,
-            # score_func_kwargs={
-            # "result_keys": ["accuracy"],
-            # "unit": "percent",
-            # },
-            # ),
-            # agentic_eval_config=TerminalBenchEvalConfig(
-            # dataset="terminal-bench/terminal-bench-2",
-            # agent="terminus-2",
-            # n_concurrent_trials=5,
-            # n_attempts=1,
-            # n_tasks=None,  # full dataset
-            # override_cpus=32,
-            # override_memory_mb=48 * 1024,
-            # agent_timeout_sec=3 * 60 * 60,
-            # agent_kwargs={
-            # "parser_name": "json",
-            # "temperature": 1.0,
-            # "model_info": {
-            # gemma-4-31B native ctx is 256K (model card), but a
-            # single H100 NVL (94GB, bf16 KV) only holds a
-            # 210,605-token KV cache, so a request can't exceed
-            # ~205K. We serve at --max-model-len 204800 (200K).
-            # The agent sends ~max_input + max_output per
-            # request, so keep them under 204800: 112K + 80K =
-            # 196K (~8K headroom for chat template + tool defs).
-            # SWE/Terminal prompts rarely approach 200K, so the
-            # 256K->200K cap should not affect scores.
-            # "max_input_tokens": 112 * 1024,
-            # "max_output_tokens": 80 * 1024,
-            # },
-            # "llm_kwargs": {
-            # "top_p": 0.95,
-            # "max_tokens": 80 * 1024,
-            # "timeout": 60 * 60,
-            # "extra_body": {
-            # "top_k": 20,
-            # },
-            # },
-            # },
-            # task_names_map={
-            # EvalLimitMode.CI_NIGHTLY: [
-            # "terminal-bench/caffe-cifar-10",
-            # "terminal-bench/password-recovery",
-            # "terminal-bench/portfolio-optimization",
-            # "terminal-bench/hf-model-inference",
-            # "terminal-bench/financial-document-processor",
-            # ],
-            # },
-            # ),
-            # limit_samples_map={
-            # EvalLimitMode.SMOKE_TEST: 5,
-            # },
-            # ),
-            # EvalTask(
-            # task_name="swe_bench_verified",
-            # workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-            # score=EvalTaskScore(
-            # published_score=52.0,
-            # published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
-            # Full SWE-bench Verified (500), mini-swe-agent, single
-            # H100 NVL bring-your-own vLLM (gemma-4-31B-it, max-model-len
-            # 204800, enable_thinking=true), temp=1.0/top_p=0.95/
-            # top_k=20, 160K in / 32K out, 2026-06-18. 324/500 resolved
-            # = 64.80%, which exceeds the published 52.0 (ratio 1.25).
-            # gpu_reference_score=64.80,
-            # gpu_reference_score_ref="run.py --workflow evals swe_bench_verified full (500), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-18",
-            # score_func=score_task_single_key,
-            # score_func_kwargs={
-            # "result_keys": ["accuracy"],
-            # "unit": "percent",
-            # },
-            # ),
-            # swebench_eval_config=SWEbenchEvalConfig(
-            # dataset_name="SWE-bench/SWE-bench_Verified",
-            # sweagent_subset="verified",
-            # dataset_split="test",
-            # agent_backend="mini-swe-agent",
-            # n_concurrent_trials=5,
-            # max_workers=8,
-            # n_tasks=None,  # full dataset
-            # temperature=1.0,
-            # top_p=0.95,
-            # gemma-4-31B native ctx is 256K (model card), but a single
-            # H100 NVL (94GB, bf16 KV) only holds a 210,605-token KV
-            # cache, so a request can't exceed ~205K. We serve at
-            # --max-model-len 204800 (200K). mini-swe-agent sends
-            # ~max_input + max_output per request, so keep under 204800:
-            # 160K + 32K = 192K (~8K headroom). SWE prompts rarely
-            # approach 200K, so the 256K->200K cap should not affect
-            # scores.
-            # max_input_tokens=160 * 1024,
-            # max_output_tokens=32 * 1024,
-            # completion_kwargs={
-            # "extra_body": {
-            # "top_k": 20,
-            # },
-            # },
-            # instance_ids_map={
-            # EvalLimitMode.CI_NIGHTLY: [
-            # "django__django-11299",
-            # "astropy__astropy-14096",
-            # "matplotlib__matplotlib-25332",
-            # "sympy__sympy-13551",
-            # "scikit-learn__scikit-learn-14629",
-            # ],
-            # },
-            # ),
-            # limit_samples_map={
-            # EvalLimitMode.SMOKE_TEST: 5,
-            # },
-            # ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=42.9,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    # Full terminal-bench-2 (89 tasks), terminus-2, single
+                    # H100 NVL bring-your-own vLLM (gemma-4-31B-it, max-model-len
+                    # 204800, enable_thinking=true), temp=1.0/top_p=0.95/
+                    # top_k=20, 112K in / 80K out, 2026-06-17. 40/89 solved =
+                    # 44.94%, which exceeds the published 42.9. 16 tasks hit
+                    # timeouts (15 AgentTimeoutError at the 3h/task limit + 1
+                    # VerifierTimeoutError) and scored 0, so 44.94 is a floor;
+                    # raising agent_timeout_sec could recover a few.
+                    gpu_reference_score=44.94,
+                    gpu_reference_score_ref="run.py --workflow evals terminal_bench_2 full (89), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-17",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=1,  # TODO increase back to 5 when batch > 1 is supported
+                    n_attempts=1,
+                    n_tasks=None,  # full dataset
+                    # QB2 release runners expose only 16 CPUs; docker compose
+                    # rejects a higher --cpus reservation ("range of CPUs is
+                    # from 0.01 to 16.00"). The H100 reference run used 32.
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            # gemma-4-31B native ctx is 256K (model card), but a
+                            # single H100 NVL (94GB, bf16 KV) only holds a
+                            # 210,605-token KV cache, so a request can't exceed
+                            # ~205K. We serve at --max-model-len 204800 (200K).
+                            # The agent sends ~max_input + max_output per
+                            # request, so keep them under 204800: 112K + 80K =
+                            # 196K (~8K headroom for chat template + tool defs).
+                            # SWE/Terminal prompts rarely approach 200K, so the
+                            # 256K->200K cap should not affect scores.
+                            "max_input_tokens": 112 * 1024,
+                            "max_output_tokens": 80 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 80 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=52.0,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    # Full SWE-bench Verified (500), mini-swe-agent, single
+                    # H100 NVL bring-your-own vLLM (gemma-4-31B-it, max-model-len
+                    # 204800, enable_thinking=true), temp=1.0/top_p=0.95/
+                    # top_k=20, 160K in / 32K out, 2026-06-18. 324/500 resolved
+                    # = 64.80%, which exceeds the published 52.0 (ratio 1.25).
+                    gpu_reference_score=64.80,
+                    gpu_reference_score_ref="run.py --workflow evals swe_bench_verified full (500), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-18",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    max_workers=8,
+                    n_tasks=None,  # full dataset
+                    temperature=1.0,
+                    top_p=0.95,
+                    # gemma-4-31B native ctx is 256K (model card), but a single
+                    # H100 NVL (94GB, bf16 KV) only holds a 210,605-token KV
+                    # cache, so a request can't exceed ~205K. We serve at
+                    # --max-model-len 204800 (200K). mini-swe-agent sends
+                    # ~max_input + max_output per request, so keep under 204800:
+                    # 160K + 32K = 192K (~8K headroom). SWE prompts rarely
+                    # approach 200K, so the 256K->200K cap should not affect
+                    # scores.
+                    max_input_tokens=160 * 1024,
+                    max_output_tokens=32 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 20,
+                        },
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
         ],
     ),
     EvalConfig(

@@ -396,6 +396,35 @@ int main(int argc, char* argv[]) {
       // Etcd backend.
       opts.etcd_endpoints = tt::config::dynamoEtcdEndpoints();
       opts.etcd_lease_ttl_secs = tt::config::dynamoEtcdLeaseTtlSecs();
+      // Model Deployment Card capabilities + Dynamo-native routing (shared by
+      // both discovery backends).
+      if (const char* v = std::getenv("DYNAMO_MODEL_TYPE"); v && *v) {
+        opts.model_type = v;
+      } else if (tt::config::dynamoRoutingEnabled() &&
+                 tt::config::llmMode() == tt::config::LLMMode::PREFILL_ONLY) {
+        // Released Dynamo rejects Tokens+Empty; advertise the compatible
+        // Prefill capability while still setting worker_type=prefill.
+        opts.model_type = "Prefill";
+      }
+      if (const char* v = std::getenv("DYNAMO_MODEL_INPUT"); v && *v) {
+        opts.model_input = v;
+      }
+      if (const char* v = std::getenv("DYNAMO_WORKER_TYPE"); v && *v) {
+        opts.worker_type = v;
+      } else if (tt::config::dynamoRoutingEnabled()) {
+        switch (tt::config::llmMode()) {
+          case tt::config::LLMMode::PREFILL_ONLY:
+            opts.worker_type = "prefill";
+            opts.needs = {{"decode"}};
+            break;
+          case tt::config::LLMMode::DECODE_ONLY:
+            opts.worker_type = "decode";
+            break;
+          case tt::config::LLMMode::REGULAR:
+            opts.worker_type = "aggregated";
+            break;
+        }
+      }
       // Kubernetes backend.
       opts.kube_api_server = tt::config::dynamoKubeApiServer();
       opts.kube_token_path = tt::config::dynamoKubeTokenPath();
@@ -405,8 +434,9 @@ int main(int argc, char* argv[]) {
       opts.pod_uid = tt::config::dynamoPodUid();
 
       try {
-        dynamoEndpoint =
-            std::make_unique<tt::dynamo::DynamoEndpoint>(pipeline, opts);
+        dynamoEndpoint = std::make_unique<tt::dynamo::DynamoEndpoint>(
+            pipeline,
+            tt::services::ServiceContainer::instance().disaggregation(), opts);
         dynamoEndpoint->start();
       } catch (const std::exception& e) {
         TT_LOG_ERROR("[Main] Dynamo endpoint failed to start: {}", e.what());
