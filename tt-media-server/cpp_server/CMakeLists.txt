@@ -1017,6 +1017,20 @@ target_include_directories(dynamo_protocol_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(kube_discovery_test
+    tests/unit/dynamo/kube_discovery_test.cpp
+    src/dynamo/kube_client.cpp
+    src/utils/logger.cpp
+)
+target_link_libraries(kube_discovery_test PRIVATE
+    Drogon::Drogon
+    JsonCpp::JsonCpp
+    spdlog::spdlog
+    GTest::gtest_main)
+target_include_directories(kube_discovery_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 if(ENABLE_BLAZE)
     add_executable(blaze_decode_runner_test
         tests/integration/runners/blaze_decode_runner_test.cpp
@@ -1390,6 +1404,7 @@ set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2E
 )
 gtest_discover_tests(transport_test)
 gtest_discover_tests(dynamo_protocol_test)
+gtest_discover_tests(kube_discovery_test)
 gtest_discover_tests(kv_cache_addressing_test)
 gtest_discover_tests(worker_health_server_test)
 gtest_discover_tests(kv_table_adapter_test)
@@ -1787,6 +1802,7 @@ set(SOURCES
     src/dynamo/prefill_result_mapping.cpp
     src/dynamo/discovery.cpp
     src/dynamo/etcd_client.cpp
+    src/dynamo/kube_client.cpp
     src/dynamo/worker_server.cpp
     src/dynamo/transport_server.cpp
     src/dynamo/request_handler.cpp

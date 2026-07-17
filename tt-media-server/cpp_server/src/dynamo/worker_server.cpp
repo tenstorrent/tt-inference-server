@@ -54,7 +54,11 @@ DynamoWorkerServer::DynamoWorkerServer(
         "DynamoWorkerServer: pipeline must not be null");
   }
   if (options_.advertise_host.empty()) {
-    options_.advertise_host = detectAdvertiseHost(options_.etcd_endpoints);
+    const std::string routeProbe =
+        options_.backend == DiscoveryBackend::KUBERNETES
+            ? std::string{}
+            : options_.etcd_endpoints;
+    options_.advertise_host = detectAdvertiseHost(routeProbe);
   }
   if (options_.model_name.empty()) {
     // Use MODEL env var value for etcd registration (frontend routes by model)
@@ -96,6 +100,14 @@ std::string DynamoWorkerServer::detectAdvertiseHost(
           "[DynamoWorkerServer] route-based advertise detection failed: {}",
           e.what());
     }
+  }
+
+  // Kubernetes: the downward-API POD_IP is the address the frontend dials over
+  // the flat pod network. In kubernetes mode the constructor skips etcd route
+  // probing, so POD_IP is preferred over interface heuristics.
+  if (const char* podIp = std::getenv("POD_IP"); podIp && *podIp) {
+    TT_LOG_INFO("[DynamoWorkerServer] advertise host from POD_IP={}", podIp);
+    return podIp;
   }
 
   // Fallback: pick the first non-loopback IPv4 interface (matches Dynamo's
@@ -172,6 +184,7 @@ void DynamoWorkerServer::start() {
   }
 
   DiscoveryConfig dc;
+  dc.backend = options_.backend;
   dc.etcd_endpoints = options_.etcd_endpoints;
   dc.etcd_lease_ttl_secs = options_.etcd_lease_ttl_secs;
   dc.namespace_name = options_.namespace_name;
@@ -191,27 +204,39 @@ void DynamoWorkerServer::start() {
   dc.model_input = options_.model_input;
   dc.worker_type = options_.worker_type;
   dc.needs = options_.needs;
+  dc.kube_api_server = options_.kube_api_server;
+  dc.kube_token_path = options_.kube_token_path;
+  dc.kube_validate_cert = options_.kube_validate_cert;
+  dc.pod_namespace = options_.pod_namespace;
+  dc.pod_name = options_.pod_name;
+  dc.pod_uid = options_.pod_uid;
+  dc.cr_name = options_.pod_name;  // pod mode: CR name == pod name.
 
   discovery_ = DiscoveryRegistration::create(dc);
   discovery_->registerSelf();
 
+  const char* backendName =
+      options_.backend == DiscoveryBackend::KUBERNETES ? "kubernetes" : "etcd";
+  const std::string discoveryTarget =
+      options_.backend == DiscoveryBackend::KUBERNETES ? dc.kube_api_server
+                                                       : dc.etcd_endpoints;
   TT_LOG_INFO(
       "[DynamoWorkerServer] Ready: bind={}:{} advertise={} model={} "
-      "discovery=etcd({})",
+      "discovery={}({})",
       options_.bind_host, server_->port(), dc.tcp_address, dc.model_name,
-      dc.etcd_endpoints);
+      backendName, discoveryTarget);
 
-  // Refresh the registration periodically so a frontend that prunes stale
-  // entries (file mtime) or expires unleased keys (etcd) keeps seeing us.
   const int interval = discovery_->keepAliveIntervalSecs();
-  keepalive_thread_ = std::thread([this, interval]() {
-    while (running_) {
-      for (int i = 0; i < interval * 10 && running_; ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  if (interval > 0) {
+    keepalive_thread_ = std::thread([this, interval]() {
+      while (running_) {
+        for (int i = 0; i < interval * 10 && running_; ++i) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        if (running_) discovery_->keepAlive();
       }
-      if (running_) discovery_->keepAlive();
-    }
-  });
+    });
+  }
 }
 
 void DynamoWorkerServer::stop() {
