@@ -331,51 +331,11 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
             prefillResult->slotId.has_value() &&
             *prefillResult->slotId != tt::domain::INVALID_SLOT_ID;
         if (!hasReservedDecodeSlot) {
-          const auto runnerType = tt::config::blazeConfig().runner_type;
-          const bool isMockDecode =
-              runnerType == tt::config::ModelRunnerType::MOCK_PIPELINE ||
-              runnerType == tt::config::ModelRunnerType::MOCK_SCHEDULER ||
-              runnerType == tt::config::ModelRunnerType::MOCK;
-          if (!isMockDecode) {
-            sendErrorAndDone(
-                "DYNAMO_ROUTING=1: prefill result did not include a "
-                "reserved decode slot_id; slot reservation must be wired "
-                "before "
-                "Dynamo-routed remote prefill can continue on decode",
-                500);
-            return;
-          }
-          auto sessionManager = pipeline->sessionManager();
-          if (!sessionManager) {
-            sendErrorAndDone(
-                "DYNAMO_ROUTING=1: decode worker has no session manager "
-                "for mock slot allocation",
-                500);
-            return;
-          }
-          TT_LOG_INFO(
-              "[DynamoEndpoint] Dynamo-routed prefill result has no decode "
-              "slot_id; "
-              "allocating mock_pipeline decode-local slot for taskId={}",
-              decodeReq->task_id);
-          sessionManager->createSession(
-              [decodeReq, sessionManager,
-               submitDecode](const tt::domain::Session& session) {
-                decodeReq->sessionId = session.getSessionId();
-                decodeReq->slotId = sessionManager->acquireInFlight(
-                    session.getSessionId(), nullptr);
-                decodeReq->session =
-                    sessionManager->getSession(session.getSessionId());
-                submitDecode(decodeReq, sessionManager, session.getSessionId());
-              },
-              [sendErrorAndDone](std::string_view error) {
-                sendErrorAndDone(
-                    "DYNAMO_ROUTING=1: failed to allocate mock decode "
-                    "slot: " +
-                        std::string(error),
-                    503);
-              },
-              loop);
+          sendErrorAndDone(
+              "DYNAMO_ROUTING=1: prefill result did not include a "
+              "reserved decode slot_id; slot reservation must complete "
+              "before decode can continue",
+              500);
           return;
         }
         submitDecode(decodeReq, nullptr);
