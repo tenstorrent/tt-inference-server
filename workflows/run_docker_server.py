@@ -452,6 +452,7 @@ def generate_docker_run_command(
                 ModelType.VIDEO,
                 ModelType.TEXT_TO_SPEECH,
                 ModelType.AUDIO,
+                ModelType.TRAINING,
             )
         ):
             docker_command += _media_server_dev_mounts(

@@ -1,0 +1,32 @@
+# Model spec catalog: Training templates.
+# Edit this file to add or modify a Training model spec.
+# Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
+# Dev entries carry no release pins (version / tt_metal_commit / docker_image);
+# the launch image is supplied at runtime (e.g. --override_docker_image).
+templates:
+# =============================================================================
+# Training templates
+# =============================================================================
+- weights:
+    - google/gemma-1.1-2b-it
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: TRAINING
+  inference_engine: FORGE
+  status: EXPERIMENTAL
+  uses_tensor_model_cache: false
+  env_vars:
+    MODEL_RUNNER: "training-gemma-lora"
+    TRAINING_MODEL: "gemma-1.1-2b-it"
+  device_model_specs:
+    - device: P150
+      max_concurrency: 1
+      max_context: 1024
+      default_impl: true
+    # P300 single-chip: the training runner supplies the p150 mesh graph
+    # descriptor automatically (see utils/runner_utils.py), so no explicit
+    # TT_MESH_GRAPH_DESC_PATH is needed here.
+    - device: P300
+      max_concurrency: 1
+      max_context: 1024

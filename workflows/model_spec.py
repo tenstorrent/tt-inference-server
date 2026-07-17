@@ -1173,6 +1173,7 @@ _CATALOG_FILES = (
     "audio_tts.yaml",
     "embedding.yaml",
     "cnn.yaml",
+    "training.yaml",
 )
 
 spec_templates: List["ModelSpecTemplate"] = [
