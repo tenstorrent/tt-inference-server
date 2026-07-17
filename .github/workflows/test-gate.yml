@@ -1278,7 +1278,6 @@ jobs:
       - verify-media-server-install
       - unit-tests-main
       - unit-tests-media
-      - unit-tests-v2
       - unit-tests-summary
       - forge-runner-changes
       - forge-runner-cpu-tests
@@ -1306,7 +1305,7 @@ jobs:
 
           skipped_reason() {
             case "$1" in
-              lint|unit-tests-main|unit-tests-media|unit-tests-v2|unit-tests-summary)
+              lint|unit-tests-main|unit-tests-media|unit-tests-summary)
                 if [[ "$SHOULD_TEST" != "true" ]]; then
                   echo "no Python, dependency, or workflow paths matched"
                 else
@@ -1371,7 +1370,6 @@ jobs:
             verify-media-server-install
             unit-tests-main
             unit-tests-media
-            unit-tests-v2
             unit-tests-summary
             forge-runner-changes
             forge-runner-cpu-tests
@@ -1390,7 +1388,6 @@ jobs:
             [verify-media-server-install]="${{ needs.verify-media-server-install.result }}"
             [unit-tests-main]="${{ needs.unit-tests-main.result }}"
             [unit-tests-media]="${{ needs.unit-tests-media.result }}"
-            [unit-tests-v2]="${{ needs.unit-tests-v2.result }}"
             [unit-tests-summary]="${{ needs.unit-tests-summary.result }}"
             [forge-runner-changes]="${{ needs.forge-runner-changes.result }}"
             [forge-runner-cpu-tests]="${{ needs.forge-runner-cpu-tests.result }}"
