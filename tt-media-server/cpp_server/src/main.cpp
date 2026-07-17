@@ -23,7 +23,7 @@
 #include "api/route_registry.hpp"
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
-#include "dynamo/dynamo_endpoint.hpp"
+#include "dynamo/worker_server.hpp"
 #include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
 #include "runtime/worker/blaze_worker_metrics_renderer.hpp"
@@ -358,7 +358,7 @@ int main(int argc, char* argv[]) {
   // enabled (it is a backend-worker plane, separate from the OpenAI HTTP
   // surface). Routes through the same LLMPipeline as HTTP so prefix caching,
   // session reuse, and disaggregation all apply.
-  std::unique_ptr<tt::dynamo::DynamoEndpoint> dynamoEndpoint;
+  std::unique_ptr<tt::dynamo::DynamoWorkerServer> dynamoWorkerServer;
   if (modelSvc == tt::config::ModelService::LLM &&
       tt::config::dynamoEndpointEnabled()) {
     auto llmService = std::dynamic_pointer_cast<tt::services::LLMService>(
@@ -367,7 +367,7 @@ int main(int argc, char* argv[]) {
     if (!llmService) {
       TT_LOG_ERROR(
           "[Main] DYNAMO_ENDPOINT_ENABLED=1 but LLM service is not "
-          "registered; skipping Dynamo endpoint.");
+          "registered; skipping Dynamo worker server.");
     } else {
       auto pipeline = std::make_shared<tt::services::LLMPipeline>(
           llmService,
@@ -375,7 +375,7 @@ int main(int argc, char* argv[]) {
           tt::services::ServiceContainer::instance().disaggregation(),
           tt::services::ServiceContainer::instance().socket());
 
-      tt::dynamo::DynamoEndpoint::Options opts;
+      tt::dynamo::DynamoWorkerServer::Options opts;
       opts.bind_host = tt::config::dynamoBindHost();
       opts.bind_port = tt::config::dynamoBindPort();
       opts.namespace_name = tt::config::dynamoNamespace();
@@ -434,22 +434,23 @@ int main(int argc, char* argv[]) {
       opts.pod_uid = tt::config::dynamoPodUid();
 
       try {
-        dynamoEndpoint = std::make_unique<tt::dynamo::DynamoEndpoint>(
+        dynamoWorkerServer = std::make_unique<tt::dynamo::DynamoWorkerServer>(
             pipeline,
             tt::services::ServiceContainer::instance().disaggregation(), opts);
-        dynamoEndpoint->start();
+        dynamoWorkerServer->start();
       } catch (const std::exception& e) {
-        TT_LOG_ERROR("[Main] Dynamo endpoint failed to start: {}", e.what());
-        dynamoEndpoint.reset();
+        TT_LOG_ERROR("[Main] Dynamo worker server failed to start: {}",
+                     e.what());
+        dynamoWorkerServer.reset();
       }
     }
   }
 
   drogon::app().run();
 
-  if (dynamoEndpoint) {
-    dynamoEndpoint->stop();
-    dynamoEndpoint.reset();
+  if (dynamoWorkerServer) {
+    dynamoWorkerServer->stop();
+    dynamoWorkerServer.reset();
   }
 
   // `shm`'s destructor runs on scope exit and handles munmap + shm_unlink.
