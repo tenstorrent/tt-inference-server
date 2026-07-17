@@ -1289,8 +1289,10 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/api/response_writer/streaming_response_writer.cpp
     src/api/route_registry.cpp
     src/services/service_container.cpp
+    src/services/disaggregation_contract_mapping.cpp
     src/services/disaggregation_service.cpp
     src/services/llm_pipeline.cpp
+    src/dynamo/etcd_client.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/zmq_socket_transport.cpp
@@ -1811,6 +1813,7 @@ set(SOURCES
     src/services/image_service.cpp
     src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
+    src/services/disaggregation_contract_mapping.cpp
     src/services/disaggregation_service.cpp
     src/services/llm_pipeline.cpp
     src/sockets/socket_manager.cpp
@@ -1823,6 +1826,8 @@ set(SOURCES
     src/runtime/worker/worker_metrics_aggregator.cpp
     src/runtime/worker/blaze_worker_metrics_renderer.cpp
     src/dynamo/dynamo_protocol.cpp
+    src/dynamo/dynamo_llm_mapping.cpp
+    src/dynamo/dynamo_prefill_result_json.cpp
     src/dynamo/discovery.cpp
     src/dynamo/etcd_client.cpp
     src/dynamo/dynamo_endpoint.cpp

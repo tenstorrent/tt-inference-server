@@ -260,9 +260,9 @@ uphold all of the following (most are not enforced in code):
     notably `ZmqSocketTransport` (recv returns empty whenever its queue is
     momentarily empty) — is **not** compatible: the channel can't tell an idle gap
     from a real close, so it would abort a healthy migration on the first gap (or
-    never notice a genuine close). Do not select the ZMQ backend
-    (`SOCKET_TRANSPORT=zmq`) for the migration control path. (ZMQ is unrelated to
-    Mooncake, which carries the bulk bytes over its own TCP/RDMA transport.)
+    never notice a genuine close). Use a blocking TCP-style transport for the
+    migration control path. (ZMQ is unrelated to Mooncake, which carries the bulk
+    bytes over its own TCP/RDMA transport.)
 
 ## Known optimizations & follow-ups
 
@@ -460,6 +460,27 @@ WORKER_BIN=./build/bringup_mooncake_worker \
   tests/e2e/scripts/run_migration_workers_mpi.sh
 ```
 
+## KV table exchange at bring-up (#4295)
+
+Production path is `mooncake_kv_migration_worker` (deployed by
+`scripts/deploy_migration_workers.sh`). There is **one** prefill `.pb` and
+**one** decode `.pb` for the fleet. Each role loads only its own file, then
+both sides exchange tables over control `TABLE_EXCHANGE` (prefill dials;
+decode listens and replies):
+
+```
+decode:  load decode.pb → register mirror → control server
+       → on TABLE_EXCHANGE: store prefill.pb, reply with decode.pb
+prefill: load prefill.pb → resolvePeers → openChannels → awaitConnected
+       → TABLE_EXCHANGE with one decode (send prefill.pb, recv decode.pb)
+       → build sender → READY / Kafka
+```
+
+TE/Mooncake moves **KV bytes** only. `--decode-table` on prefill remains a
+no-peer fallback. Deploy default: prefill peers every decode; decode peers none.
+Control receive timeout on the worker is raised so a 100–350+ MiB exchange can
+finish at bring-up.
+
 ## Validation status
 
 | Step | Status |
@@ -485,13 +506,16 @@ and already moves KV cache galaxy-to-galaxy over **MPI/DCN** with ULFM fault
 tolerance. It routes all transport through an abstract `SenderBackend` /
 `ReceiverBackend` interface (today only `DcnSenderBackend`). Add a 
 `MooncakeSenderBackend` implementing that same interface. Mooncake fills
-*capability* gaps (multi-NIC RDMA bandwidth, dynamic membership, a pooled global
-KV-cache store with cross-request prefix reuse), not a correctness hole. 
+*capability* gaps (multi-NIC RDMA bandwidth, a pooled global KV-cache store with
+cross-request prefix reuse), not a correctness hole. 
 
-**Discovery lifecycle (post-merge):** discovery resolves peers once at bring-up and the
-worker then holds the handles until SIGTERM. Steady-state membership changes are not yet
-handled — if a peer crashes and restarts on a new dynamic port, its cached `SegmentHandle`
-goes stale. Production needs periodic peer health checks and re-discovery/reconnection on
-peer restart (plus metrics: peer count, time-to-ready, reconnection events). Discovery is
-already cancellable (a SIGTERM during bring-up aborts the poll loop promptly); wiring the
-MPI e2e into CI is also pending.
+**Discovery lifecycle (current + remaining):** Prefill bring-up resolves peers
+from metadata, opens control channels, and fail-closes Ready until
+TABLE_EXCHANGE succeeds with every configured decode. After Ready, a mesh watch
+re-resolves `kv_control/<name>`, `replaceChannel`s when the endpoint moves, and
+re-runs TABLE_EXCHANGE when TCP comes back (skipping via try_lock when migrate
+owns the channel). After a successful exchange it also `refreshSegment`s the
+peer so Mooncake WRITEs do not keep a pre-restart SegmentDesc. Still open:
+TE refresh failure metrics, peer-count / time-to-ready / reconnection
+dashboards, and wiring the MPI discovery e2e into CI. Discovery remains
+cancellable (SIGTERM during bring-up aborts promptly).

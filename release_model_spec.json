@@ -4833,7 +4833,7 @@
               "system_requirements": null,
               "known_issues": [
                 {
-                  "workflow_type": "TESTS",
+                  "workflow_type": "SPEC_TESTS",
                   "reason": "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888.",
                   "task_name": "test_penalties"
                 }
@@ -5623,7 +5623,7 @@
               "system_requirements": null,
               "known_issues": [
                 {
-                  "workflow_type": "TESTS",
+                  "workflow_type": "SPEC_TESTS",
                   "reason": "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888.",
                   "task_name": "test_penalties"
                 }
@@ -6413,7 +6413,7 @@
               "system_requirements": null,
               "known_issues": [
                 {
-                  "workflow_type": "TESTS",
+                  "workflow_type": "SPEC_TESTS",
                   "reason": "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888.",
                   "task_name": "test_penalties"
                 }
@@ -7207,7 +7207,7 @@
               "system_requirements": null,
               "known_issues": [
                 {
-                  "workflow_type": "TESTS",
+                  "workflow_type": "SPEC_TESTS",
                   "reason": "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888.",
                   "task_name": "test_penalties"
                 }

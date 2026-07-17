@@ -655,7 +655,7 @@ class TestRuntimeValidation:
         [
             ("benchmarks", True),
             ("evals", True),  # Mistral-7B-Instruct-v0.3 is in EVAL_CONFIGS
-            ("reports", True),
+            ("agentic", True),
             ("release", True),  # Mistral-7B-Instruct-v0.3 is in both configs
             ("stress_tests", True),
         ],
@@ -718,7 +718,7 @@ class TestRuntimeValidation:
     ):
         """A supplied runtime spec is the source of truth for model/device support."""
         mock_model_spec.model_id = "id_autoport_Mistral-7B-Instruct-v0.3_n150"
-        mock_runtime_config.workflow = "reports"
+        mock_runtime_config.workflow = "agentic"
         mock_runtime_config.runtime_model_spec_json = "/tmp/custom-runtime-spec.json"
 
         with patch.dict("workflows.validate_setup.MODEL_SPECS", {}):
@@ -1100,7 +1100,7 @@ class TestSecretsHandling:
             ("server", True, True, False, False, False),  # Interactive mode
             ("server", True, False, True, False, True),  # Server with docker + no-auth
             ("release", False, False, False, False, True),  # Non-client workflow
-            ("reports", False, False, False, False, True),  # Non-client workflow
+            ("agentic", False, False, False, False, True),  # Non-client workflow
         ],
     )
     def test_secrets_requirements(

@@ -33,6 +33,17 @@ AuxiliaryServices buildAuxiliaryServices(
           std::dynamic_pointer_cast<services::LLMService>(activeService)) {
     const auto mode = tt::config::llmMode();
     if (mode != tt::config::LLMMode::REGULAR) {
+      if (tt::config::dynamoRoutingEnabled()) {
+        TT_LOG_INFO(
+            "[ServiceFactory] DYNAMO_ROUTING=1; constructing disaggregation "
+            "without cpp_server sockets{}",
+            tt::config::usePrefillFirstDisaggregation()
+                ? " (prefill-first uses etcd slot reservation)"
+                : "");
+        auto disagg = std::make_shared<services::DisaggregationService>(
+            mode, llm, nullptr);
+        return {/*socket=*/nullptr, std::move(disagg)};
+      }
       auto socket = std::make_shared<sockets::InterServerService>();
       socket->initializeFromConfig();
       auto disagg =

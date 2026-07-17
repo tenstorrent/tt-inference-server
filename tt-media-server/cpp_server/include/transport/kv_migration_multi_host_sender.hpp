@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -36,16 +37,18 @@ class WorkerHealth;
  *     standalone tests and the e2e; a discovery service supplies the same map
  *     in production, with no change to this class.
  *
- * The injected map defines the known decode cluster; each migrate() drives only
- * the subset of hosts the request actually touches. Owns no threads; the
- * per-host receivers run in their own processes.
+ * The injected map defines the known decode cluster at construction. addHost()
+ * upserts a host and refreshes the control-channel shared_ptr (metadata
+ * rediscovery after a decode restart). Owns no threads; the per-host receivers
+ * run in their own processes.
  */
 class KvMigrationMultiHostSender {
  public:
   /// @param channels host -> already-connected control channel for that decode
   ///        host's receiver. One per-host MooncakeKvSender is built up front
   ///        for each key (destination layout is whole-table-stable, so it is
-  ///        reused across migrations).
+  ///        reused across migrations). Shared ownership keeps an in-flight
+  ///        migrate() channel alive if the connector replaceChannel()s.
   /// @param health optional; forwarded to each per-host sender so a stale-peer
   ///        transfer failure bumps the re-resolve counters (observability
   ///        only).
@@ -53,8 +56,20 @@ class KvMigrationMultiHostSender {
       std::shared_ptr<ITransferEngine> engine, IDeviceIo& device,
       std::shared_ptr<const IKvTable> prefillTable,
       std::shared_ptr<const IKvTable> decodeTable, std::string prefillHost,
-      std::unordered_map<std::string, KvControlChannel*> channels,
+      std::unordered_map<std::string, std::shared_ptr<KvControlChannel>>
+          channels,
       WorkerHealth* health = nullptr);
+
+  /**
+   * @brief Upsert a decode host and bind/refresh its control channel.
+   * @return true if the host is present after the call. false if @p channel is
+   *         null.
+   *
+   * Thread-safe vs migrate(). Re-binding the channel is required when the
+   * connector replaceChannel()s after metadata republishes a new endpoint.
+   */
+  bool addHost(const std::string& host,
+               std::shared_ptr<KvControlChannel> channel);
 
   /**
    * @brief Drive the migration to every decode host the request touches.
@@ -71,11 +86,18 @@ class KvMigrationMultiHostSender {
   bool migrate(uint64_t uuid, const MigrationRequest& request);
 
   /// Number of known decode hosts (channel-map size).
-  std::size_t hostCount() const { return senders_.size(); }
+  std::size_t hostCount() const;
 
  private:
+  std::shared_ptr<ITransferEngine> engine_;
+  IDeviceIo& device_;
+  std::shared_ptr<const IKvTable> prefill_table_;
   std::shared_ptr<const IKvTable> decode_table_;
-  std::unordered_map<std::string, KvControlChannel*> channels_;
+  std::string prefill_host_;
+  WorkerHealth* health_ = nullptr;
+
+  mutable std::mutex mutex_;
+  std::unordered_map<std::string, std::shared_ptr<KvControlChannel>> channels_;
   // One staging pool shared by all per-host senders: the fan-out is serial, so
   // only one sender stages at a time, and sharing avoids N * 2 * 32 MiB of
   // registered host memory across the decode hosts. Declared before senders_ so
