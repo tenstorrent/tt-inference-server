@@ -633,7 +633,7 @@ void DynamoEndpoint::abandon() {
     discovery_->unregisterSelf();
   }
   if (keepalive_thread_.joinable()) {
-    keepalive_thread_.detach();
+    keepalive_thread_.join();
   }
   // In-flight Dynamo call-home streams can block loop_pool destruction;
   // the test process exits immediately after this.
