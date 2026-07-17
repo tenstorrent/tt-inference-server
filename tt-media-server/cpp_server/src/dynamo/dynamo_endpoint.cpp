@@ -105,6 +105,14 @@ std::string DynamoEndpoint::detectAdvertiseHost(
     }
   }
 
+  // Kubernetes: the downward-API POD_IP is the address the frontend dials over
+  // the flat pod network. Route-based detection above is skipped when
+  // etcd_endpoints is empty (the kubernetes backend), so prefer POD_IP here.
+  if (const char* podIp = std::getenv("POD_IP"); podIp && *podIp) {
+    TT_LOG_INFO("[DynamoEndpoint] advertise host from POD_IP={}", podIp);
+    return podIp;
+  }
+
   // Fallback: pick the first non-loopback IPv4 interface (matches Dynamo's
   // auto-detect for multi-host deployments). Fall back to 127.0.0.1.
   TT_LOG_INFO(
@@ -578,6 +586,7 @@ void DynamoEndpoint::start() {
   }
 
   DiscoveryConfig dc;
+  dc.backend = options_.backend;
   dc.etcd_endpoints = options_.etcd_endpoints;
   dc.etcd_lease_ttl_secs = options_.etcd_lease_ttl_secs;
   dc.namespace_name = options_.namespace_name;
@@ -593,31 +602,46 @@ void DynamoEndpoint::start() {
                    std::to_string(server_->port()) + "/" + options_.endpoint;
   dc.model_name = options_.model_name;
   dc.model_path = options_.model_path;
+  // Model Deployment Card capabilities (shared by both backends — buildMdcJson
+  // reads these, so they flow into the etcd MDC and the k8s CR alike).
   dc.model_type = options_.model_type;
   dc.model_input = options_.model_input;
   dc.worker_type = options_.worker_type;
   dc.needs = options_.needs;
+  // Kubernetes backend fields (ignored by the etcd backend).
+  dc.kube_api_server = options_.kube_api_server;
+  dc.kube_token_path = options_.kube_token_path;
+  dc.kube_validate_cert = options_.kube_validate_cert;
+  dc.pod_namespace = options_.pod_namespace;
+  dc.pod_name = options_.pod_name;
+  dc.pod_uid = options_.pod_uid;
+  dc.cr_name = options_.pod_name;  // pod mode: CR name == pod name.
 
   discovery_ = DiscoveryRegistration::create(dc);
   discovery_->registerSelf();
 
+  const char* backendName =
+      options_.backend == DiscoveryBackend::KUBERNETES ? "kubernetes" : "etcd";
+  const std::string discoveryTarget =
+      options_.backend == DiscoveryBackend::KUBERNETES ? dc.kube_api_server
+                                                       : dc.etcd_endpoints;
   TT_LOG_INFO(
       "[DynamoEndpoint] Ready: bind={}:{} advertise={} model={} "
-      "discovery=etcd({})",
+      "discovery={}({})",
       options_.bind_host, server_->port(), dc.tcp_address, dc.model_name,
-      dc.etcd_endpoints);
+      backendName, discoveryTarget);
 
-  // Refresh the registration periodically so a frontend that prunes stale
-  // entries (file mtime) or expires unleased keys (etcd) keeps seeing us.
   const int interval = discovery_->keepAliveIntervalSecs();
-  keepalive_thread_ = std::thread([this, interval]() {
-    while (running_) {
-      for (int i = 0; i < interval * 10 && running_; ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  if (interval > 0) {
+    keepalive_thread_ = std::thread([this, interval]() {
+      while (running_) {
+        for (int i = 0; i < interval * 10 && running_; ++i) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        if (running_) discovery_->keepAlive();
       }
-      if (running_) discovery_->keepAlive();
-    }
-  });
+    });
+  }
 }
 
 void DynamoEndpoint::stop() {
