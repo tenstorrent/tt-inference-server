@@ -4136,16 +4136,13 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="tiiuae/Falcon3-7B-Instruct",
         tasks=[
-            # tokenizer_backend defaults to "huggingface" — matches the Qwen3-*
-            # configs below. Don't set "none" here: without a tokenizer loaded
-            # lm-eval can't apply_chat_template host-side and instead sends the
-            # raw chat message list, which the server's CompletionRequest schema
-            # rejects with HTTP 422.
             EvalTask(
                 task_name="ifeval",
                 score=EvalTaskScore(
-                    published_score=None,
+                    published_score=76.5,
                     published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4090",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4161,11 +4158,74 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                score=EvalTaskScore(
+                    published_score=29.4,
+                    published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4090",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_main_generative_n_shot",
+                num_fewshot=0,
+                score=EvalTaskScore(
+                    published_score=31.9,
+                    published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4090",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=40.7,
+                    published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4090",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
                 num_fewshot=5,
                 score=EvalTaskScore(
                     published_score=None,
-                    published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4090",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [

@@ -122,6 +122,9 @@ templates:
   model_type: LLM
   inference_engine: FORGE
   uses_tensor_model_cache: false
+  # P150 forge: decode ~11 TPS vs 43 TPS theoretical (~26%), clearing the
+  # functional tier (>=10%). COMPLETE (>=50%) needs ~2x throughput first.
+  status: FUNCTIONAL
   device_model_specs:
     - device: P150
       max_concurrency: 32
@@ -142,6 +145,26 @@ templates:
         PREFILL_CHUNK_SIZE: "1024"
         MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
         PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
+
+- weights:
+    # Falcon3-7B-Instruct GPU reference spec (bring-your-own vLLM server; see
+    # docs/gpu_workflows.md). Separate template from the P150 forge_vllm_plugin
+    # entry above: the GPU path runs stock vLLM (tt_transformers / VLLM) served
+    # externally, so it carries its own impl/engine and a default GPU device
+    # entry. Dev-only; no commit pins (the GPU path builds no tt-metal image).
+    - tiiuae/Falcon3-7B-Instruct
+  impl: tt_transformers
+  min_disk_gb: 20
+  min_ram_gb: 12
+  model_type: LLM
+  inference_engine: VLLM
+  uses_tensor_model_cache: false
+  status: EXPERIMENTAL
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 32768  # Falcon3 native max_position_embeddings
+      default_impl: true
 
 - weights:
     # gemma-4-31b-it Forge LLM (tensor-parallel) on p300x2/QB2. Lowercase
