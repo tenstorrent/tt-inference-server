@@ -20,7 +20,6 @@
 #include "transport/device_map_io.hpp"
 #include "transport/engine_table_handoff.hpp"
 #include "transport/kv_chunk_address_table_adapter.hpp"
-#include "transport/kv_table_provisioning.hpp"
 #include "transport_test_fakes.hpp"
 
 #ifndef KV_TABLE_DECODE_PB_DEFAULT
@@ -94,7 +93,7 @@ TEST(EngineTableResolve, FileModeLoadsTableBlobAndDeviceMap) {
             0xAAAA000000000001ull);
 }
 
-TEST(EngineTableResolve, TcpSendThenCloseDeliversHandoff) {
+TEST(EngineTableResolve, TableFromFileDeviceMapFromSocket) {
   if (!KvChunkAddressTableAdapter::available()) {
     GTEST_SKIP() << "ENABLE_KV_TABLE is OFF";
   }
@@ -104,12 +103,9 @@ TEST(EngineTableResolve, TcpSendThenCloseDeliversHandoff) {
     GTEST_SKIP() << "missing decode .pb (set KV_TABLE_DECODE_PB)";
   }
 
-  const std::vector<uint8_t> tableBlob = readFile(tablePath);
   const DeviceMap deviceMap = makeDeviceMap();
   std::atomic<bool> stop{false};
 
-  // Bind port 0 is not supported by initializeAsServer — pick an ephemeral
-  // high port and skip if bind fails (busy CI host).
   constexpr uint16_t kPort = 18777;
   ListenTransportFactory factory =
       [](uint16_t port) -> std::shared_ptr<sockets::ISocketTransport> {
@@ -120,10 +116,10 @@ TEST(EngineTableResolve, TcpSendThenCloseDeliversHandoff) {
 
   std::optional<ResolvedEngineTables> resolved;
   std::thread listener([&] {
-    resolved = awaitEngineHandoffOnListen(kPort, factory, stop);
+    resolved = resolveEngineTables(kPort, factory, tablePath, /*deviceMapPath=*/"",
+                                   stop);
   });
 
-  // Retry connect until the accept thread is listening (or give up).
   std::shared_ptr<sockets::TcpSocketTransport> client;
   for (int attempt = 0; attempt < 50; ++attempt) {
     client = std::make_shared<sockets::TcpSocketTransport>();
@@ -139,50 +135,32 @@ TEST(EngineTableResolve, TcpSendThenCloseDeliversHandoff) {
     GTEST_SKIP() << "could not bind/connect handoff port " << kPort;
   }
   client->start();
-  ASSERT_TRUE(sendEngineHandoff(*client, tableBlob, deviceMap));
-  // Production race: bridge exits immediately after send (FIN with data).
+  ASSERT_TRUE(sendEngineHandoff(*client, deviceMap));
   client->stop();
 
   listener.join();
   ASSERT_TRUE(resolved.has_value());
   ASSERT_NE(resolved->table, nullptr);
-  EXPECT_EQ(resolved->blob, tableBlob);
+  EXPECT_EQ(resolved->blob, readFile(tablePath));
   EXPECT_EQ(resolved->deviceMap.umdChip(FabricNode{2, 0}),
             0xAAAA000000000001ull);
   EXPECT_EQ(resolved->deviceMap.size(), deviceMap.size());
 }
 
 TEST(EngineTableResolve, PeerPollSeesSendThenClose) {
-  // In-process fake: data already queued, then pipe closed — models FIN with
-  // buffered payload without needing ENABLE_KV_TABLE (parse-only via wire
-  // that fails deserialize is not enough). Use a minimal wire that only
-  // exercises awaitEngineHandoffOnPeer after DATA is available.
-  //
-  // When KV table is OFF, engineTablesFromWire fails deserialize — skip.
-  if (!KvChunkAddressTableAdapter::available()) {
-    GTEST_SKIP() << "ENABLE_KV_TABLE is OFF";
-  }
-  const std::string tablePath =
-      envOr("KV_TABLE_DECODE_PB", KV_TABLE_DECODE_PB_DEFAULT);
-  if (!readable(tablePath)) {
-    GTEST_SKIP() << "missing decode .pb";
-  }
-
-  const std::vector<uint8_t> tableBlob = readFile(tablePath);
   auto link = std::make_shared<test::Pipe>();
-  // Crossed pipes: producer.out == consumer.in
   test::BlockingFakeTransport producer(std::make_shared<test::Pipe>(), link);
-  auto consumer =
-      std::make_shared<test::BlockingFakeTransport>(link, std::make_shared<test::Pipe>());
+  auto consumer = std::make_shared<test::BlockingFakeTransport>(
+      link, std::make_shared<test::Pipe>());
 
-  ASSERT_TRUE(sendEngineHandoff(producer, tableBlob, makeDeviceMap()));
-  test::closePipe(link);  // FIN after send — bytes already queued
+  ASSERT_TRUE(sendEngineHandoff(producer, makeDeviceMap()));
+  test::closePipe(link);
 
   std::atomic<bool> stop{false};
-  auto resolved = awaitEngineHandoffOnPeer(*consumer, stop);
-  ASSERT_TRUE(resolved.has_value());
-  EXPECT_EQ(resolved->blob, tableBlob);
-  EXPECT_EQ(resolved->deviceMap.size(), 2u);
+  auto deviceMap = awaitEngineHandoffOnPeer(*consumer, stop);
+  ASSERT_TRUE(deviceMap.has_value());
+  EXPECT_EQ(deviceMap->size(), 2u);
+  EXPECT_EQ(deviceMap->umdChip(FabricNode{2, 0}), 0xAAAA000000000001ull);
 }
 
 }  // namespace

@@ -1002,8 +1002,8 @@ target_include_directories(engine_table_resolve_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/transport
 )
 
-# Host-local bridge: push table.pb + device map to a listening migration worker
-# via sendEngineHandoff. No Metal / ENABLE_KV_TABLE — sender only serializes.
+# Host-local bridge: push DeviceMap only to a listening migration worker via
+# sendEngineHandoff (worker loads .pb from disk). No Metal / ENABLE_KV_TABLE.
 # Compiles tcp_socket_transport.cpp directly (transport_lib stays socket-decoupled).
 add_executable(engine_handoff_sender
     src/engine_handoff_sender_main.cpp

@@ -20,12 +20,6 @@ namespace {
 constexpr auto kHandoffPoll = std::chrono::milliseconds(1000);
 constexpr auto kHandoffHeartbeat = std::chrono::milliseconds(30000);
 
-ResolvedEngineTables toResolved(EngineTables&& tables) {
-  return ResolvedEngineTables{std::move(tables.table),
-                              std::move(tables.table_blob),
-                              std::move(tables.device_map)};
-}
-
 }  // namespace
 
 std::optional<ResolvedEngineTables> resolveEngineTablesFromFiles(
@@ -40,28 +34,29 @@ std::optional<ResolvedEngineTables> resolveEngineTablesFromFiles(
                               loadDeviceMapFile(deviceMapPath)};
 }
 
-std::optional<ResolvedEngineTables> awaitEngineHandoffOnPeer(
+std::optional<DeviceMap> awaitEngineHandoffOnPeer(
     sockets::ISocketTransport& peer, const std::atomic<bool>& stop) {
   auto lastWarn = std::chrono::steady_clock::now();
   while (!stop.load(std::memory_order_relaxed)) {
     const sockets::ReceiveResult result = peer.tryReceiveMessage();
     switch (result.status) {
       case sockets::ReceiveStatus::DATA: {
-        auto tables = engineTablesFromWire(result.data);
-        if (!tables) {
+        auto payload = parseEngineHandoff(result.data);
+        if (!payload) {
           TT_LOG_ERROR(
-              "[engine_table_resolve] peer delivered malformed engine handoff");
+              "[engine_table_resolve] peer delivered malformed DeviceMap "
+              "handoff");
           return std::nullopt;
         }
         TT_LOG_INFO(
-            "[engine_table_resolve] engine handoff received: table_bytes={} "
+            "[engine_table_resolve] DeviceMap handoff received: "
             "device_map_entries={}",
-            tables->table_blob.size(), tables->device_map.size());
-        return toResolved(std::move(*tables));
+            payload->device_map.size());
+        return std::move(payload->device_map);
       }
       case sockets::ReceiveStatus::CLOSED:
         TT_LOG_ERROR(
-            "[engine_table_resolve] peer closed before a complete engine "
+            "[engine_table_resolve] peer closed before a complete DeviceMap "
             "handoff arrived");
         return std::nullopt;
       case sockets::ReceiveStatus::NO_DATA:
@@ -71,19 +66,19 @@ std::optional<ResolvedEngineTables> awaitEngineHandoffOnPeer(
     const auto now = std::chrono::steady_clock::now();
     if (now - lastWarn >= kHandoffHeartbeat) {
       TT_LOG_WARN(
-          "[engine_table_resolve] still waiting for engine handoff bytes on "
+          "[engine_table_resolve] still waiting for DeviceMap handoff bytes on "
           "accepted peer (readyz stays not-ready)");
       lastWarn = now;
     }
     std::this_thread::sleep_for(kHandoffPoll);
   }
   TT_LOG_WARN(
-      "[engine_table_resolve] cancelled while waiting for engine handoff on "
+      "[engine_table_resolve] cancelled while waiting for DeviceMap handoff on "
       "peer");
   return std::nullopt;
 }
 
-std::optional<ResolvedEngineTables> awaitEngineHandoffOnListen(
+std::optional<DeviceMap> awaitEngineHandoffOnListen(
     uint16_t port, const ListenTransportFactory& listenFactory,
     const std::atomic<bool>& stop) {
   if (!listenFactory) {
@@ -98,8 +93,6 @@ std::optional<ResolvedEngineTables> awaitEngineHandoffOnListen(
     return std::nullopt;
   }
 
-  // Host-local by contract; initializeAsServer still binds INADDR_ANY (same as
-  // the migration control port). A 127.0.0.1-only bind is future hardening.
   std::mutex peerMutex;
   std::condition_variable peerCv;
   std::shared_ptr<sockets::ISocketTransport> acceptedPeer;
@@ -122,7 +115,7 @@ std::optional<ResolvedEngineTables> awaitEngineHandoffOnListen(
 
   listenTransport->start();
   TT_LOG_INFO(
-      "[engine_table_resolve] listening for engine handoff on port {} "
+      "[engine_table_resolve] listening for DeviceMap handoff on port {} "
       "(readyz stays not-ready until received)",
       port);
 
@@ -143,7 +136,7 @@ std::optional<ResolvedEngineTables> awaitEngineHandoffOnListen(
     const auto now = std::chrono::steady_clock::now();
     if (now - lastWarn >= kHandoffHeartbeat) {
       TT_LOG_WARN(
-          "[engine_table_resolve] still waiting for engine to connect on port "
+          "[engine_table_resolve] still waiting for DeviceMap sender on port "
           "{} (readyz stays not-ready)",
           port);
       lastWarn = now;
@@ -153,25 +146,40 @@ std::optional<ResolvedEngineTables> awaitEngineHandoffOnListen(
   if (!peer) {
     listenTransport->stop();
     TT_LOG_WARN(
-        "[engine_table_resolve] cancelled before an engine connected on port "
-        "{}",
+        "[engine_table_resolve] cancelled before a DeviceMap sender connected "
+        "on port {}",
         port);
     return std::nullopt;
   }
 
-  auto resolved = awaitEngineHandoffOnPeer(*peer, stop);
+  auto deviceMap = awaitEngineHandoffOnPeer(*peer, stop);
   listenTransport->stop();
-  return resolved;
+  return deviceMap;
 }
 
 std::optional<ResolvedEngineTables> resolveEngineTables(
     uint16_t engineHandoffPort, const ListenTransportFactory& listenFactory,
     const std::string& tablePath, const std::string& deviceMapPath,
     const std::atomic<bool>& stop) {
-  if (engineHandoffPort != 0) {
-    return awaitEngineHandoffOnListen(engineHandoffPort, listenFactory, stop);
+  auto loaded = loadKvTableFile(tablePath);
+  if (!loaded || !loaded->table) {
+    TT_LOG_ERROR("[engine_table_resolve] failed to load table from {}",
+                 tablePath);
+    return std::nullopt;
   }
-  return resolveEngineTablesFromFiles(tablePath, deviceMapPath);
+
+  DeviceMap deviceMap;
+  if (engineHandoffPort != 0) {
+    auto handedOff =
+        awaitEngineHandoffOnListen(engineHandoffPort, listenFactory, stop);
+    if (!handedOff) return std::nullopt;
+    deviceMap = std::move(*handedOff);
+  } else {
+    deviceMap = loadDeviceMapFile(deviceMapPath);
+  }
+
+  return ResolvedEngineTables{std::move(loaded->table), std::move(loaded->blob),
+                              std::move(deviceMap)};
 }
 
 }  // namespace tt::transport

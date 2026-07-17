@@ -1,21 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-// engine_handoff_sender: host-local bridge that pushes a KV table .pb +
-// FabricNode→UMD device map to a waiting mooncake_kv_migration_worker via
-// sendEngineHandoff. Stand-in for the model runner until it calls the same API.
+// engine_handoff_sender: host-local bridge that pushes a FabricNode→UMD
+// DeviceMap to a waiting mooncake_kv_migration_worker via sendEngineHandoff.
+// The worker already has its KV table from a .pb file (often under /tmp); this
+// sender only supplies the live (or synthesized) chip map.
 //
 // Links transport_lib only (no Metal). For live maps, pipe print_local_device_map:
 //
 //   print_local_device_map | engine_handoff_sender --host 127.0.0.1 --port N \
-//       --table local.pb --device-map-stdin
+//       --device-map-stdin
+//
+// Or push a pre-built file (deploy / #4571 synth):
+//
+//   engine_handoff_sender --host 127.0.0.1 --port N --device-map tag.devmap
 
 #include <cstdint>
-#include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "sockets/tcp_socket_transport.hpp"
 #include "transport/device_map_io.hpp"
@@ -27,16 +30,15 @@ namespace {
 struct SenderConfig {
   std::string host = "127.0.0.1";
   uint16_t port = 0;
-  std::string tablePath;
   std::string deviceMapPath;
   bool deviceMapFromStdin = false;
 };
 
 void usage() {
   std::cerr
-      << "usage: engine_handoff_sender --host HOST --port N --table PATH.pb\n"
-         "  [--device-map PATH | --device-map-stdin]\n"
-         "  empty device map is allowed (synthetic / single-mesh placeholder)\n";
+      << "usage: engine_handoff_sender --host HOST --port N\n"
+         "  (--device-map PATH | --device-map-stdin)\n"
+         "  pushes DeviceMap only; worker loads .pb from --table /tmp path\n";
 }
 
 bool parseArgs(int argc, char** argv, SenderConfig& cfg) {
@@ -60,7 +62,6 @@ bool parseArgs(int argc, char** argv, SenderConfig& cfg) {
       }
       continue;
     }
-    if (a == "--table" && next(cfg.tablePath)) continue;
     if (a == "--device-map" && next(cfg.deviceMapPath)) continue;
     if (a == "--device-map-stdin") {
       cfg.deviceMapFromStdin = true;
@@ -69,33 +70,16 @@ bool parseArgs(int argc, char** argv, SenderConfig& cfg) {
     std::cerr << "unknown/incomplete arg: " << a << "\n";
     return false;
   }
-  if (cfg.host.empty() || cfg.port == 0 || cfg.tablePath.empty()) {
-    std::cerr << "--host, --port and --table are required\n";
+  if (cfg.host.empty() || cfg.port == 0) {
+    std::cerr << "--host and --port are required\n";
     return false;
   }
-  if (cfg.deviceMapFromStdin && !cfg.deviceMapPath.empty()) {
-    std::cerr << "use only one of --device-map / --device-map-stdin\n";
+  // Exactly one source: stdin XOR file path.
+  if (cfg.deviceMapFromStdin != cfg.deviceMapPath.empty()) {
+    std::cerr << "use exactly one of --device-map / --device-map-stdin\n";
     return false;
   }
   return true;
-}
-
-std::vector<uint8_t> readFileBytes(const std::string& path) {
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file.good()) {
-    return {};
-  }
-  const auto size = file.tellg();
-  if (size < 0) {
-    return {};
-  }
-  std::vector<uint8_t> bytes(static_cast<std::size_t>(size));
-  file.seekg(0);
-  file.read(reinterpret_cast<char*>(bytes.data()), size);
-  if (!file) {
-    return {};
-  }
-  return bytes;
 }
 
 tt::transport::DeviceMap loadDeviceMap(const SenderConfig& cfg) {
@@ -119,13 +103,6 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  const std::vector<uint8_t> tableBlob = readFileBytes(cfg.tablePath);
-  if (tableBlob.empty()) {
-    TT_LOG_ERROR("[engine_handoff_sender] failed to read --table {}",
-                 cfg.tablePath);
-    return 1;
-  }
-
   const tt::transport::DeviceMap deviceMap = loadDeviceMap(cfg);
 
   auto transport = std::make_shared<tt::sockets::TcpSocketTransport>();
@@ -136,18 +113,16 @@ int main(int argc, char** argv) {
   }
   transport->start();
 
-  if (!tt::transport::sendEngineHandoff(*transport, tableBlob, deviceMap)) {
+  if (!tt::transport::sendEngineHandoff(*transport, deviceMap)) {
     TT_LOG_ERROR("[engine_handoff_sender] sendEngineHandoff failed");
     transport->stop();
     return 1;
   }
 
   TT_LOG_INFO(
-      "[engine_handoff_sender] sent handoff to {}:{} table_bytes={} "
+      "[engine_handoff_sender] sent DeviceMap handoff to {}:{} "
       "device_map_entries={}",
-      cfg.host, cfg.port, tableBlob.size(), deviceMap.size());
-  // Close promptly — worker must still be able to read buffered bytes after FIN
-  // (multi-accept peer path, no background POLLHUP teardown).
+      cfg.host, cfg.port, deviceMap.size());
   transport->stop();
   return 0;
 }

@@ -18,10 +18,10 @@
 namespace tt::transport {
 
 /**
- * @brief Host-local table + device map used to bring up a migration worker.
+ * @brief Host-local table (from .pb file) + device map for worker bring-up.
  *
- * Mirrors LoadedKvTable (table + raw .pb blob for TABLE_EXCHANGE) plus the
- * FabricNode→UMD map needed by MultiDeviceUmd.
+ * The table always comes from disk (engine /tmp export or deploy path). The
+ * DeviceMap comes from a localhost socket handoff and/or a --device-map file.
  */
 struct ResolvedEngineTables {
   std::shared_ptr<const IKvTable> table;
@@ -32,38 +32,38 @@ struct ResolvedEngineTables {
 using ListenTransportFactory =
     std::function<std::shared_ptr<sockets::ISocketTransport>(uint16_t port)>;
 
-/// File-mode resolve: load .pb + optional device-map file.
+/// Load .pb + optional device-map file (empty path => empty DeviceMap).
 std::optional<ResolvedEngineTables> resolveEngineTablesFromFiles(
     const std::string& tablePath, const std::string& deviceMapPath);
 
 /**
- * @brief Wait on an already-accepted peer for one engine handoff.
+ * @brief Wait on an already-accepted peer for one DeviceMap handoff.
  *
  * Polls tryReceiveMessage (NO_DATA vs CLOSED). Wait-forever with WARN
  * heartbeats; returns nullopt on stop, CLOSED without data, or bad parse.
  */
-std::optional<ResolvedEngineTables> awaitEngineHandoffOnPeer(
+std::optional<DeviceMap> awaitEngineHandoffOnPeer(
     sockets::ISocketTransport& peer, const std::atomic<bool>& stop);
 
 /**
- * @brief Listen for one engine handoff via multi-accept (one-shot peer).
+ * @brief Listen for one DeviceMap handoff via multi-accept (one-shot peer).
  *
  * @p listenFactory must return an ISocketTransport that has already called
  * initializeAsServer(port) but has NOT start()ed yet (so enableMultiAccept can
  * be installed first — same pattern as KvMigrationReceiverServer).
- *
- * Binds INADDR_ANY like the control port; contract is host-local. Wait-forever
- * + WARN heartbeats; honors @p stop.
  */
-std::optional<ResolvedEngineTables> awaitEngineHandoffOnListen(
+std::optional<DeviceMap> awaitEngineHandoffOnListen(
     uint16_t port, const ListenTransportFactory& listenFactory,
     const std::atomic<bool>& stop);
 
 /**
- * @brief Resolve table + device map for worker bring-up.
+ * @brief Resolve table from @p tablePath; DeviceMap from socket and/or file.
  *
- * - engineHandoffPort != 0: awaitEngineHandoffOnListen (file paths ignored).
- * - engineHandoffPort == 0: resolveEngineTablesFromFiles.
+ * - Table is always loaded from @p tablePath (required).
+ * - engineHandoffPort != 0: await DeviceMap on the listen port (preferred).
+ * - Else: loadDeviceMapFile(deviceMapPath) (empty path => empty map).
+ * - If both handoff and deviceMapPath are set, handoff wins and the file is
+ *   ignored (caller should WARN).
  */
 std::optional<ResolvedEngineTables> resolveEngineTables(
     uint16_t engineHandoffPort, const ListenTransportFactory& listenFactory,

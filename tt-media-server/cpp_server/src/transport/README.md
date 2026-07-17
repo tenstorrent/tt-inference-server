@@ -170,20 +170,20 @@ process, `--role prefill|decode`. The transport-lib pieces it composes:
   indefinitely between requests (an idle receive is retried) and exits only when
   the connection closes.
 - **Tables & device map** — `resolveEngineTables` (`engine_table_resolve.*`)
-  brings up each worker with a table + FabricNode→UMD map. Prefer
-  `--engine-handoff-port N`: the worker listens (one-shot multi-accept), the
-  co-located engine (or `engine_handoff_sender` bridge) calls
-  `sendEngineHandoff` with the `.pb` bytes + device map, and the raw blob is
-  kept for peer `TABLE_EXCHANGE`. File stand-in: `--prefill-table` /
-  `--table` + optional `--device-map` (`device_map_io.*`, `mesh chip umd`
-  lines). Device map is **required** when a host's table spans multiple
-  meshes, or the placeholder `chip = chip_id` aliases meshes onto the same
-  physical chips. Until the model runner pushes handoff itself:
+  always loads the KV `.pb` from disk (`--prefill-table` / `--table`; production
+  path is typically the engine export under `/tmp`). The FabricNode→UMD
+  DeviceMap is separate: prefer `--engine-handoff-port N` (worker listens;
+  co-located engine or `engine_handoff_sender` / deploy pushes the map only),
+  else `--device-map` file (`device_map_io.*`, `mesh chip umd` lines). The raw
+  `.pb` blob is kept for peer `TABLE_EXCHANGE`. Device map is **required** when
+  a host's table spans multiple meshes — the `& 0xFFFF` placeholder collides
+  across meshes and is refused once a non-empty map is in play. Until the model
+  runner pushes the map itself:
 
   ```bash
-  mooncake_kv_migration_worker ... --engine-handoff-port 18700
+  mooncake_kv_migration_worker ... --table /tmp/local.pb --engine-handoff-port 18700
   print_local_device_map | engine_handoff_sender --host 127.0.0.1 --port 18700 \
-    --table /path/local.pb --device-map-stdin
+    --device-map-stdin
   ```
 
 The worker does **no** byte-verify of its own (it moves real KV). To validate the
@@ -346,7 +346,7 @@ retry-the-whole-request applies). The `Begin→…→Done→Ack` ordering is una
 | integration | `mooncake_migration_executor.*` | `IMigrationExecutor` driving `KvMigrationMultiHostSender` — the Kafka worker's trigger→data-plane bridge |
 | | `kv_migration_endpoints.*` | prefill control-channel connector + decode receiver-server (injected socket transport) |
 | | `kv_table_provisioning.*` | `loadKvTableFile` (+ optional table-blob exchange over the control channel) |
-| | `device_map.hpp`, `device_map_io.*`, `engine_table_handoff.*`, `engine_table_resolve.*` | `FabricNode→UMD chip` map + engine→worker `{table, blob, device map}` handoff / resolve |
+| | `device_map.hpp`, `device_map_io.*`, `engine_table_handoff.*`, `engine_table_resolve.*` | `FabricNode→UMD chip` map + file `.pb` resolve + socket DeviceMap handoff |
 | PoC (#3890) | `i_storage_backend.hpp`, `*_storage_backend.*`, `mooncake_migration_worker.*` | original dummy-tensor storage/transport split |
 
 ## Build guards
