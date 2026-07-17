@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import shlex
 import sys
 from pathlib import Path
@@ -16,7 +15,6 @@ from workflows.workflow_result import WorkflowResult
 from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
-    run_command,
 )
 from workflows.workflow_types import (
     ModelType,
@@ -192,47 +190,74 @@ def dispatch_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowR
     # venv and re-exec run.py inside it. They run from this interpreter
     # (sys.executable) — the launchers import only the lightweight workflows.*
     # helpers before re-execing.
+    # Each branch runs as a VenvCommand driven by a WorkflowRunner — the same
+    # command model as the generic path and run.py server bring-up
     if wf == WorkflowType.AGENTIC:
-        cmd = _build_agentic_cmd(
-            repo_root, model_spec, runtime_config, json_fpath, output_dir
+        command = VenvCommand(
+            None,
+            _build_agentic_cmd(
+                repo_root, model_spec, runtime_config, json_fpath, output_dir
+            ),
+            env=_engine_env(),
+            label=v2_workflow,
         )
-        delegate_desc = "agentic (run_agentic.py)"
     elif _is_prefix_cache_run(wf, runtime_config):
-        cmd = _build_prefix_cache_cmd(
-            repo_root, model_spec, runtime_config, json_fpath, output_dir
+        command = VenvCommand(
+            None,
+            _build_prefix_cache_cmd(
+                repo_root, model_spec, runtime_config, json_fpath, output_dir
+            ),
+            env=_engine_env(),
+            label=v2_workflow,
         )
-        delegate_desc = "prefix-cache (run_prefix_cache.py)"
     elif _is_spec_decode_run(wf, runtime_config):
-        cmd = _build_spec_decode_cmd(
-            repo_root, model_spec, runtime_config, json_fpath, output_dir
+        command = VenvCommand(
+            None,
+            _build_spec_decode_cmd(
+                repo_root, model_spec, runtime_config, json_fpath, output_dir
+            ),
+            env=_engine_env(),
+            label=v2_workflow,
         )
-        delegate_desc = "spec-decode (run_spec_decode.py)"
     elif _is_llm_benchmark_run(wf, model_spec, runtime_config):
         return [run_llm_benchmark_workflow(model_spec, runtime_config, json_fpath)]
     elif wf == WorkflowType.STRESS_TESTS:
-        cmd = _build_stress_cmd(model_spec, runtime_config, json_fpath)
-        delegate_desc = "stress-tests (run_stress_tests.py)"
+        command = VenvCommand(
+            WorkflowVenvType.STRESS_TESTS_RUN_SCRIPT,
+            _stress_argv(repo_root, model_spec, runtime_config, json_fpath),
+            model_spec=model_spec,
+            env=_engine_env(),
+            label=v2_workflow,
+        )
     else:
         return _dispatch_via_engine_venv(
             repo_root, model_spec, runtime_config, json_fpath, wf, v2_workflow, output_dir
         )
 
-    env = os.environ.copy()
-    env["TT_V1_RUN_COMMAND"] = "python " + shlex.join(sys.argv)
+    # Agentic evals run in-process as a release child (their Blocks are already
+    # in the report the engine wrote). Parameter tests will be added here once
+    # they are available on main as a v2 workflow.
+    return _run_engine_command(command, v2_workflow)
 
+
+def _engine_env() -> dict:
+    """Env overrides forwarded to every engine subprocess (VenvCommand merges
+    these over ``os.environ``)."""
+    return {"TT_V1_RUN_COMMAND": "python " + shlex.join(sys.argv)}
+
+
+def _run_engine_command(command, v2_workflow) -> List[WorkflowResult]:
+    """Execute one engine command via a WorkflowRunner and wrap the result."""
     logger.info(
-        "Delegating workflow %r to v2 engine via %s.", v2_workflow, delegate_desc
+        "Delegating workflow %r to v2 engine via %s.", v2_workflow, command.name
     )
-    return_code = run_command(cmd, logger=logger, env=env)
+    return_code = WorkflowRunner([command]).run()
     if return_code != 0:
         logger.error(
             f"⛔ v2 workflow: {v2_workflow}, failed with return code: {return_code}"
         )
     else:
         logger.info(f"✅ Completed v2 workflow: {v2_workflow}")
-    # Agentic evals run in-process as a release child (their Blocks are already
-    # in the report the engine wrote). Parameter tests will be added here once
-    # they are available on main as a v2 workflow.
     return [WorkflowResult(workflow_name=v2_workflow, return_code=return_code)]
 
 
@@ -307,18 +332,10 @@ def _dispatch_via_engine_venv(
         WorkflowVenvType.V2_RUN_SCRIPT,
         argv,
         model_spec=model_spec,
-        env={"TT_V1_RUN_COMMAND": "python " + shlex.join(sys.argv)},
+        env=_engine_env(),
         label=v2_workflow,
     )
-    logger.info("Delegating workflow %r to v2 engine via run_workflows.py.", v2_workflow)
-    return_code = WorkflowRunner([command]).run()
-    if return_code != 0:
-        logger.error(
-            f"⛔ v2 workflow: {v2_workflow}, failed with return code: {return_code}"
-        )
-    else:
-        logger.info(f"✅ Completed v2 workflow: {v2_workflow}")
-    return [WorkflowResult(workflow_name=v2_workflow, return_code=return_code)]
+    return _run_engine_command(command, v2_workflow)
 
 
 def run_llm_benchmark_workflow(
@@ -334,16 +351,18 @@ def run_llm_benchmark_workflow(
     output_dir = get_default_workflow_root_log_dir() / "reports_output" / "benchmarks"
     ensure_readwriteable_dir(output_dir)
 
-    cmd = _build_llm_bench_cmd(
-        repo_root, model_spec, runtime_config, json_fpath, output_dir
+    command = VenvCommand(
+        None,
+        _build_llm_bench_cmd(
+            repo_root, model_spec, runtime_config, json_fpath, output_dir
+        ),
+        env=_engine_env(),
+        label="benchmarks",
     )
-    env = os.environ.copy()
-    env["TT_V1_RUN_COMMAND"] = "python " + shlex.join(sys.argv)
-
     logger.info(
         "Delegating LLM benchmarks to v2 engine via llm-bench (run_llm_bench.py)."
     )
-    return_code = run_command(cmd, logger=logger, env=env)
+    return_code = WorkflowRunner([command]).run()
     if return_code != 0:
         logger.error(
             "⛔ v2 LLM benchmarks workflow failed with return code: %s", return_code
@@ -353,11 +372,11 @@ def run_llm_benchmark_workflow(
     return WorkflowResult(workflow_name="benchmarks", return_code=return_code)
 
 
-def _base_v2_cmd(
+def _base_engine_argv(
     launcher, model_spec, runtime_config, json_fpath, output_dir, v2_workflow
 ):
-    cmd = [
-        sys.executable,
+    """Common launcher argv (interpreter-agnostic; VenvCommand prepends python)."""
+    argv = [
         str(launcher),
         "--model",
         model_spec.model_name,
@@ -373,10 +392,10 @@ def _base_v2_cmd(
         str(output_dir),
     ]
     if runtime_config.docker_server:
-        cmd.append("--docker-server")
+        argv.append("--docker-server")
     if getattr(runtime_config, "server_url", None):
-        cmd.extend(["--server-url", runtime_config.server_url])
-    return cmd
+        argv.extend(["--server-url", runtime_config.server_url])
+    return argv
 
 
 def _resolve_launcher(repo_root, filename, label):
@@ -430,23 +449,13 @@ def _forward_spec_decode(cmd, runtime_config) -> None:
     )
 
 
-def _build_stress_cmd(model_spec, runtime_config, json_fpath):
-    """Launch the v2 stress-tests script under its own venv."""
-    venv_config = VENV_CONFIGS[WorkflowVenvType.STRESS_TESTS_RUN_SCRIPT]
-    assert venv_config.setup(model_spec=model_spec), (
-        "Failed to setup venv: STRESS_TESTS_RUN_SCRIPT"
-    )
-    repo_root = Path(__file__).resolve().parent.parent
-    script = (
-        repo_root
-        / "test_module"
-        / "stress_tests"
-        / "run_stress_tests.py"
-    )
+def _stress_argv(repo_root, model_spec, runtime_config, json_fpath):
+    """Argv for the stress-tests script (VenvCommand runs it in, and provisions,
+    the STRESS_TESTS_RUN_SCRIPT venv)."""
+    script = repo_root / "test_module" / "stress_tests" / "run_stress_tests.py"
     output_path = get_default_workflow_root_log_dir() / "stress_tests_output"
     ensure_readwriteable_dir(output_path)
     return [
-        str(venv_config.venv_python),
         str(script),
         "--runtime-model-spec-json",
         str(json_fpath),
@@ -461,7 +470,7 @@ def _build_stress_cmd(model_spec, runtime_config, json_fpath):
 
 def _build_agentic_cmd(repo_root, model_spec, runtime_config, json_fpath, output_dir):
     launcher = _resolve_launcher(repo_root, "run_agentic.py", "agentic")
-    cmd = _base_v2_cmd(
+    cmd = _base_engine_argv(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "agentic"
     )
     _forward_jwt(cmd, runtime_config)
@@ -470,7 +479,7 @@ def _build_agentic_cmd(repo_root, model_spec, runtime_config, json_fpath, output
 
 def _build_prefix_cache_cmd(repo_root, model_spec, runtime_config, json_fpath, output_dir):
     launcher = _resolve_launcher(repo_root, "run_prefix_cache.py", "prefix-cache")
-    cmd = _base_v2_cmd(
+    cmd = _base_engine_argv(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"
     )
     cmd.append("--prefix-cache")
@@ -499,7 +508,7 @@ def _build_prefix_cache_cmd(repo_root, model_spec, runtime_config, json_fpath, o
 
 def _build_llm_bench_cmd(repo_root, model_spec, runtime_config, json_fpath, output_dir):
     launcher = _resolve_launcher(repo_root, "run_llm_bench.py", "llm-bench")
-    cmd = _base_v2_cmd(
+    cmd = _base_engine_argv(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"
     )
     _extend_if_set(cmd, "--tools", runtime_config.tools)
@@ -510,7 +519,7 @@ def _build_llm_bench_cmd(repo_root, model_spec, runtime_config, json_fpath, outp
 
 def _build_spec_decode_cmd(repo_root, model_spec, runtime_config, json_fpath, output_dir):
     launcher = _resolve_launcher(repo_root, "run_spec_decode.py", "spec-decode")
-    cmd = _base_v2_cmd(
+    cmd = _base_engine_argv(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"
     )
     cmd.append("--spec-decode")

@@ -277,6 +277,28 @@ class TestVenvCommand:
         assert result.return_code == 2
         assert not result.succeeded
 
+    def test_none_venv_type_runs_current_interpreter(self, monkeypatch):
+        import sys
+
+        rec = {}
+        # Only workflows.utils is needed; VENV_CONFIGS must NOT be touched.
+        _install_fake_venv_stack(
+            monkeypatch,
+            venv_type="unused",
+            recorder=rec,
+        )
+        cmd = VenvCommand(None, ["run_agentic.py", "--workflow", "agentic"])
+        result = cmd.execute()
+        assert result.return_code == 0
+        # Runs in the current interpreter, no venv provisioning.
+        assert rec["command"] == [
+            sys.executable,
+            "run_agentic.py",
+            "--workflow",
+            "agentic",
+        ]
+        assert cmd.name == "venv[current]"
+
     def test_unknown_venv_type_returns_error(self, monkeypatch):
         from workflows.workflow_types import WorkflowVenvType
 

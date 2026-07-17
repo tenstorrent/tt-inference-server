@@ -305,13 +305,7 @@ def test_build_llm_bench_cmd_forwards_tools_and_jwt():
 
 def test_run_llm_benchmark_workflow_invokes_launcher(monkeypatch, tmp_path):
     spec, rc = _spec(ModelType.LLM), _rc(server_url="https://console.example.com")
-    calls = []
-
-    def fake_run_command(cmd, logger=None, env=None):
-        calls.append(cmd)
-        return 0
-
-    monkeypatch.setattr(workflow_dispatch, "run_command", fake_run_command)
+    monkeypatch.setattr(workflow_dispatch, "WorkflowRunner", _FakeRunner)
     monkeypatch.setattr(
         workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
     )
@@ -320,10 +314,15 @@ def test_run_llm_benchmark_workflow_invokes_launcher(monkeypatch, tmp_path):
 
     assert result.workflow_name == "benchmarks"
     assert result.return_code == 0
-    assert len(calls) == 1
-    cmd = calls[0]
-    assert "run_llm_bench.py" in cmd[1]
-    assert cmd[cmd.index("--server-url") + 1] == "https://console.example.com"
+    # Runs the launcher in the current interpreter (venv_type=None) via a
+    # VenvCommand; argv[0] is the launcher script (VenvCommand prepends python).
+    assert len(_FakeRunner.captured) == 1
+    command = _FakeRunner.captured[0]
+    assert command.venv_type is None
+    assert "run_llm_bench.py" in command.argv[0]
+    assert command.argv[command.argv.index("--server-url") + 1] == (
+        "https://console.example.com"
+    )
 
 
 def _patch_eval_configs(monkeypatch, *, agentic):

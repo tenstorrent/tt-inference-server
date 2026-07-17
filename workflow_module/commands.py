@@ -109,7 +109,7 @@ class ServerCommand(Command):
 
 
 class VenvCommand(Command):
-    """Run an argv inside a declared workflow venv, as a subprocess."""
+    """Run an argv as a subprocess, optionally inside a declared workflow venv."""
 
     def __init__(
         self,
@@ -124,34 +124,45 @@ class VenvCommand(Command):
         self.argv = list(argv)
         self.model_spec = model_spec
         self.env = dict(env) if env is not None else None
-        self.name = label or f"venv[{getattr(venv_type, 'name', venv_type)}]"
+        if label:
+            self.name = label
+        elif venv_type is None:
+            self.name = "venv[current]"
+        else:
+            self.name = f"venv[{getattr(venv_type, 'name', venv_type)}]"
 
     def execute(self) -> CommandResult:
         import os
+        import sys
 
         from workflows.utils import run_command
-        from workflows.workflow_venvs import VENV_CONFIGS
 
-        try:
-            venv_config = VENV_CONFIGS[self.venv_type]
-        except KeyError:
-            return CommandResult(
-                command_name=self.name,
-                return_code=1,
-                error=f"no venv config for {self.venv_type!r}",
-            )
+        if self.venv_type is None:
+            python = sys.executable
+        else:
+            from workflows.workflow_venvs import VENV_CONFIGS
 
-        if not venv_config.setup(model_spec=self.model_spec):
-            return CommandResult(
-                command_name=self.name,
-                return_code=1,
-                error=(
-                    f"failed to provision venv "
-                    f"{getattr(self.venv_type, 'name', self.venv_type)}"
-                ),
-            )
+            try:
+                venv_config = VENV_CONFIGS[self.venv_type]
+            except KeyError:
+                return CommandResult(
+                    command_name=self.name,
+                    return_code=1,
+                    error=f"no venv config for {self.venv_type!r}",
+                )
 
-        cmd = [str(venv_config.venv_python), *[str(a) for a in self.argv]]
+            if not venv_config.setup(model_spec=self.model_spec):
+                return CommandResult(
+                    command_name=self.name,
+                    return_code=1,
+                    error=(
+                        f"failed to provision venv "
+                        f"{getattr(self.venv_type, 'name', self.venv_type)}"
+                    ),
+                )
+            python = str(venv_config.venv_python)
+
+        cmd = [python, *[str(a) for a in self.argv]]
         env = {**os.environ, **self.env} if self.env else None
         try:
             return_code = run_command(cmd, logger=logger, env=env)
