@@ -23,7 +23,7 @@
 #include "api/route_registry.hpp"
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
-#include "dynamo/dynamo_endpoint.hpp"
+#include "dynamo/worker_server.hpp"
 #include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
 #include "runtime/worker/blaze_worker_metrics_renderer.hpp"
@@ -358,7 +358,7 @@ int main(int argc, char* argv[]) {
   // enabled (it is a backend-worker plane, separate from the OpenAI HTTP
   // surface). Routes through the same LLMPipeline as HTTP so prefix caching,
   // session reuse, and disaggregation all apply.
-  std::unique_ptr<tt::dynamo::DynamoEndpoint> dynamoEndpoint;
+  std::unique_ptr<tt::dynamo::DynamoWorkerServer> dynamoEndpoint;
   if (modelSvc == tt::config::ModelService::LLM &&
       tt::config::dynamoEndpointEnabled()) {
     auto llmService = std::dynamic_pointer_cast<tt::services::LLMService>(
@@ -375,7 +375,7 @@ int main(int argc, char* argv[]) {
           tt::services::ServiceContainer::instance().disaggregation(),
           tt::services::ServiceContainer::instance().socket());
 
-      tt::dynamo::DynamoEndpoint::Options opts;
+      tt::dynamo::DynamoWorkerServer::Options opts;
       opts.bind_host = tt::config::dynamoBindHost();
       opts.bind_port = tt::config::dynamoBindPort();
       opts.namespace_name = tt::config::dynamoNamespace();
@@ -412,7 +412,7 @@ int main(int argc, char* argv[]) {
       }
 
       try {
-        dynamoEndpoint = std::make_unique<tt::dynamo::DynamoEndpoint>(
+        dynamoEndpoint = std::make_unique<tt::dynamo::DynamoWorkerServer>(
             pipeline,
             tt::services::ServiceContainer::instance().disaggregation(), opts);
         dynamoEndpoint->start();

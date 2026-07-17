@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "dynamo/discovery.hpp"
+#include "dynamo/discovery/discovery.hpp"
 
 #include <blake3.h>
 #include <json/json.h>
@@ -16,7 +16,7 @@
 #include <string>
 
 #include "config/settings.hpp"
-#include "dynamo/etcd_client.hpp"
+#include "dynamo/discovery/etcd_client.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::dynamo {

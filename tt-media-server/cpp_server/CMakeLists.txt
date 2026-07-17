@@ -135,7 +135,7 @@ target_include_directories(xxhash_lib INTERFACE ${xxhash_SOURCE_DIR})
 # it fetches from a Model Descriptor Card (config.json, tokenizer, chat
 # template, tokenizer_config); a placeholder/zero checksum makes it reject the
 # model and the backend never becomes routable. We hash those files at
-# registration time in src/dynamo/discovery.cpp. SOURCE_SUBDIR points at the
+# registration time in src/dynamo/discovery/discovery.cpp. SOURCE_SUBDIR points at the
 # repo's c/ project, which enables the C/ASM languages it needs in its own scope.
 FetchContent_Declare(
     blake3
@@ -1005,7 +1005,7 @@ endif()
 
 add_executable(dynamo_protocol_test
     tests/unit/dynamo/dynamo_protocol_test.cpp
-    src/dynamo/dynamo_protocol.cpp
+    src/dynamo/transport/protocol.cpp
     src/utils/logger.cpp
 )
 target_link_libraries(dynamo_protocol_test PRIVATE
@@ -1782,12 +1782,14 @@ set(SOURCES
     src/runtime/worker/worker_metrics_shm.cpp
     src/runtime/worker/worker_metrics_aggregator.cpp
     src/runtime/worker/blaze_worker_metrics_renderer.cpp
-    src/dynamo/dynamo_protocol.cpp
-    src/dynamo/dynamo_llm_mapping.cpp
-    src/dynamo/dynamo_prefill_result_json.cpp
-    src/dynamo/discovery.cpp
-    src/dynamo/etcd_client.cpp
-    src/dynamo/dynamo_endpoint.cpp
+    src/dynamo/transport/protocol.cpp
+    src/dynamo/mapping/llm_mapping.cpp
+    src/dynamo/mapping/prefill_result_envelope.cpp
+    src/dynamo/discovery/discovery.cpp
+    src/dynamo/discovery/etcd_client.cpp
+    src/dynamo/worker_server.cpp
+    src/dynamo/transport/server.cpp
+    src/dynamo/request_handler.cpp
 )
 
 # Create executable
@@ -1849,7 +1851,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::embed)
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
 
-# BLAKE3 for Dynamo MDC file checksums (src/dynamo/discovery.cpp)
+# BLAKE3 for Dynamo MDC file checksums (src/dynamo/discovery/discovery.cpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE blake3)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE stb_image_write)

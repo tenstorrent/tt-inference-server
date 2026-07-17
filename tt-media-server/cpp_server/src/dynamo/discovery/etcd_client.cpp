@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "dynamo/etcd_client.hpp"
+#include "dynamo/discovery/etcd_client.hpp"
 
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -64,7 +64,7 @@ std::string base64Encode(const std::string& in) {
 
 // ---------------------------------------------------------------------------
 // URL parsing for etcd endpoints lives in include/utils/net.hpp (parseUrl) so
-// the DynamoEndpoint advertise-host detection can share it.
+// the DynamoWorkerServer advertise-host detection can share it.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

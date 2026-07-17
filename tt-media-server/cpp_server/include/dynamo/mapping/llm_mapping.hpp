@@ -7,7 +7,7 @@
 
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
-#include "dynamo/dynamo_protocol.hpp"
+#include "dynamo/transport/protocol.hpp"
 #include "sockets/socket_messages.hpp"
 
 namespace tt::dynamo {
