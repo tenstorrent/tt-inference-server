@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "dynamo/discovery.hpp"
 #include "dynamo/dynamo_protocol.hpp"
@@ -16,8 +17,9 @@ class EventLoopThreadPool;
 }
 
 namespace tt::services {
+class DisaggregationService;
 class LLMPipeline;
-}
+}  // namespace tt::services
 
 namespace tt::dynamo {
 
@@ -37,6 +39,8 @@ class DynamoEndpoint {
  public:
   struct Options {
     std::string bind_host = "0.0.0.0";
+    /// TCP port the listener binds to. 0 = OS-assigned ephemeral port
+    uint16_t bind_port = 0;
     /// Address the discovery store advertises. When empty, the local IP is
     /// auto-detected.
     std::string advertise_host;
@@ -57,6 +61,11 @@ class DynamoEndpoint {
     /// Filesystem dir containing config.json + tokenizer{.json,_config.json}.
     /// When empty, derived from the cpp_server tokenizers/ tree.
     std::string model_path;
+    /// Dynamo ModelType/ModelInput advertised in the Model Deployment Card.
+    std::string model_type = "Chat";
+    std::string model_input = "Tokens";
+    std::string worker_type;
+    std::vector<std::vector<std::string>> needs;
 
     /// Number of trantor loops used to resolve sessions and run streaming
     /// callbacks. Requests are round-robined across loops so a slow
@@ -64,8 +73,10 @@ class DynamoEndpoint {
     size_t num_loops = 0;
   };
 
-  DynamoEndpoint(std::shared_ptr<services::LLMPipeline> pipeline,
-                 Options options);
+  DynamoEndpoint(
+      std::shared_ptr<services::LLMPipeline> pipeline,
+      std::shared_ptr<services::DisaggregationService> disaggregation,
+      Options options);
   ~DynamoEndpoint();
 
   DynamoEndpoint(const DynamoEndpoint&) = delete;
@@ -93,6 +104,7 @@ class DynamoEndpoint {
   std::string detectAdvertiseHost(const std::string& etcdEndpoints) const;
 
   std::shared_ptr<services::LLMPipeline> pipeline_;
+  std::shared_ptr<services::DisaggregationService> disaggregation_;
   Options options_;
 
   std::unique_ptr<DynamoServer> server_;

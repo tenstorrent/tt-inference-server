@@ -6,7 +6,7 @@ set -euo pipefail
 
 VENV_PATH=".venv"
 PYTHON_BIN=""
-PACKAGES=(vllm "transformers<5.6")
+PACKAGES=("vllm==0.24.0" "transformers<5.6")
 
 usage() {
     cat <<'EOF'

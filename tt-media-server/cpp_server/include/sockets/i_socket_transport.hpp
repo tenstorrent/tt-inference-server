@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -49,6 +50,29 @@ class ISocketTransport {
   virtual std::string getStatus() const = 0;
 
   virtual bool sendRawData(std::span<const uint8_t> data) = 0;
+
+  /**
+   * @brief Bound the next send/recv burst to a wall-clock budget.
+   *
+   * Used by KvControlChannel so TABLE_EXCHANGE (and migrate control) cannot pin
+   * the transport mutex forever on a slow/stalled peer. Default is a no-op;
+   * TcpSocketTransport enforces the deadline inside send/recv. A mid-message
+   * expiry must tear the connection down (partial frame = unsynchronized).
+   */
+  virtual void beginIoBudget(std::chrono::milliseconds /*budget*/) {}
+  virtual void clearIoBudget() {}
+
+  /**
+   * @brief Ownership-transfer send: hands the payload buffer to the transport.
+   *
+   * Lets transports avoid copying large payloads (e.g. pass the buffer straight
+   * to a zero-copy zmq::message_t) on the hot decode->prefill path. The default
+   * copies via the span overload, so transports that don't care need no change.
+   */
+  virtual bool sendRawData(std::vector<uint8_t>&& data) {
+    return sendRawData(std::span<const uint8_t>(data.data(), data.size()));
+  }
+
   virtual std::vector<uint8_t> receiveRawData() = 0;
 
   /**
@@ -78,6 +102,14 @@ class ISocketTransport {
 
   virtual void setReconnectBackoff(std::chrono::milliseconds /*initialDelay*/,
                                    std::chrono::milliseconds /*maxDelay*/) {}
+
+  /// Optional multi-accept for listen sockets. Handler receives a connected
+  /// peer transport (ownership shared). Default returns false (single-peer /
+  /// fake transports). TcpSocketTransport returns true only when already
+  /// initialized as SERVER with a live listen FD — caller must start() after.
+  using AcceptHandler =
+      std::function<void(std::shared_ptr<ISocketTransport> peer)>;
+  virtual bool enableMultiAccept(AcceptHandler /*handler*/) { return false; }
 };
 
 }  // namespace tt::sockets

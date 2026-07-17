@@ -206,6 +206,14 @@ templates:
         # --reasoning-parser separates the thought channel into reasoning_content.
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
+    # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
+    # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
+    # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
+    # (the bring-your-own-server path builds no tt-metal docker image).
+    - device: GPU
+      max_concurrency: 32
+      max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL (94GB, bf16 KV) caps servable ctx at ~205K (KV cache = 210,605 tokens)
+      default_impl: true
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -269,6 +277,14 @@ templates:
         # --reasoning-parser separates the thought channel into reasoning_content.
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
+    # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
+    # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
+    # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
+    # (the bring-your-own-server path builds no tt-metal docker image).
+    - device: GPU
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -340,6 +356,8 @@ templates:
       max_concurrency: 32
       max_context: 40960
       default_impl: true
+      env_vars:
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
   status: FUNCTIONAL
   metadata:
     Qwen/Qwen3-8B:
@@ -373,6 +391,7 @@ templates:
         # Magic number; follows vllm nightly:
         # https://github.com/tenstorrent/tt-metal/actions/runs/28493777891/job/84457052459#step:10:1
         trace_region_size: 268435456
+        sample_on_device_mode: decode_only
   # EXPERIMENTAL: no target performance has been set yet, so we can't classify
   # this as FUNCTIONAL, COMPLETE, or top-perf.
   status: EXPERIMENTAL
@@ -895,7 +914,7 @@ templates:
       override_tt_config:
         trace_region_size: 402653184  # 384 * 1024 * 1024
       known_issues:
-        - workflow_type: TESTS
+        - workflow_type: SPEC_TESTS
           task_name: test_penalties
           reason: "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888."
   status: FUNCTIONAL
@@ -1171,9 +1190,27 @@ templates:
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
       default_impl: true
+      env_vars:
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
       override_tt_config:
         sample_on_device_mode: decode_only
         trace_region_size: 56000000
+      known_issues:
+        - workflow_type: EVALS
+          task_name: meta_ifeval
+          reason: "meta_ifeval measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
+        - workflow_type: EVALS
+          task_name: meta_gpqa_cot
+          reason: "meta_gpqa_cot measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
+        - workflow_type: EVALS
+          task_name: longbench_code_e
+          reason: "longbench_code_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_fewshot_e
+          reason: "longbench_fewshot_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_summarization_e
+          reason: "longbench_summarization_e measured score is ~94% which does not satisfy the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing."
   status: FUNCTIONAL
   metadata:
     meta-llama/Llama-3.1-8B:
@@ -1253,25 +1290,10 @@ templates:
 # =============================================================================
 # Gemma 4 family - GPU reference specs (bring-your-own vLLM server; see
 # docs/gpu_workflows.md). Used to collect GPU reference eval scores for
-# GPQA-Diamond, Terminal-Bench 2.0, and SWE-Bench Verified.
-# tt_metal_commit 2521a03 == tt-metal release v0.72.0 (> 0.12); it only feeds
-# docker-tag synthesis and is unused on the GPU bring-your-own-server path.
+# GPQA-Diamond, Terminal-Bench 2.0, and SWE-Bench Verified. These are dev-only
+# entries; the dev catalog does not require tt_metal_commit/version pins (the
+# GPU bring-your-own-server path doesn't build a tt-metal docker image).
 # =============================================================================
-- weights:
-    - google/gemma-4-31B-it
-  impl: tt_transformers
-  inference_engine: VLLM
-  device_model_specs:
-    - device: GPU
-      max_concurrency: 32
-      max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL (94GB, bf16 KV) caps servable ctx at ~205K (KV cache = 210,605 tokens)
-      default_impl: true
-  status: EXPERIMENTAL
-  metadata:
-    google/gemma-4-31B-it:
-      reasoning_parser_name: gemma4
-      tool_call_parser_name: gemma4
-
 - weights:
     - google/gemma-4-26B-A4B-it
   impl: tt_transformers
@@ -1284,21 +1306,6 @@ templates:
   status: EXPERIMENTAL
   metadata:
     google/gemma-4-26B-A4B-it:
-      reasoning_parser_name: gemma4
-      tool_call_parser_name: gemma4
-
-- weights:
-    - google/gemma-4-12B-it
-  impl: tt_transformers
-  inference_engine: VLLM
-  device_model_specs:
-    - device: GPU
-      max_concurrency: 32
-      max_context: 131072  # 128 * 1024
-      default_impl: true
-  status: EXPERIMENTAL
-  metadata:
-    google/gemma-4-12B-it:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
 
@@ -1331,3 +1338,107 @@ templates:
     google/gemma-4-E2B-it:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
+
+# Remote-served model: evaluated against an external OpenAI-compatible
+# endpoint via `--server-url` (e.g. Tenstorrent console). The device entry
+# is a placeholder so the model resolves through MODEL_SPECS / EVAL_CONFIGS;
+# no local TT serving is implied.
+- weights:
+    - moonshotai/Kimi-K2.6
+  impl: tt_transformers
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 64
+      max_context: 262144  # 256 * 1024; 
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    moonshotai/Kimi-K2.6:
+      remote_api_model: moonshotai/Kimi-K2.6
+      reasoning_parser_name: kimi_k2
+      tool_call_parser_name: kimi_k2
+      # Kimi ships a custom tokenizer; AIPerf-driven sweeps (prefix-cache,
+      # spec-decode) must trust remote code to load it.
+      tokenizer_trust_remote_code: true
+
+# Remote-served model: evaluated against an external OpenAI-compatible
+# endpoint via `--server-url` (e.g. Tenstorrent console). The  device entry
+# is a placeholder so the model resolves through MODEL_SPECS / EVAL_CONFIGS;
+# no local TT serving is implied.
+- weights:
+    - MiniMaxAI/MiniMax-M2.7
+  impl: tt_transformers
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 64
+      max_context: 204800  # 200 * 1024; 
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    MiniMaxAI/MiniMax-M2.7:
+      remote_api_model: MiniMaxAI/MiniMax-M2.7
+      reasoning_parser_name: minimax_m2
+      tool_call_parser_name: minimax_m2
+
+- weights:
+    - openai/gpt-oss-120b
+  impl: gpt_oss
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 38
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    openai/gpt-oss-120b:
+      remote_api_model: openai/gpt-oss-120b
+      reasoning_parser_name: openai_gptoss
+      tool_call_parser_name: openai
+
+- weights:
+    - moonshotai/Kimi-K2.7-Code
+  impl: tt_transformers
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 64
+      max_context: 262144  # 256 * 1024; 
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    moonshotai/Kimi-K2.7-Code:
+      remote_api_model: moonshotai/Kimi-K2.7-Code
+      reasoning_parser_name: kimi_k2
+      tool_call_parser_name: kimi_k2
+      # Kimi ships a custom tokenizer; AIPerf-driven sweeps (prefix-cache,
+      # spec-decode) must trust remote code to load it.
+      tokenizer_trust_remote_code: true
+
+- weights:
+    - MiniMaxAI/MiniMax-M3
+  impl: tt_transformers
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 64
+      max_context: 1048576  # 1024 * 1024; 
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    MiniMaxAI/MiniMax-M3:
+      remote_api_model: MiniMaxAI/MiniMax-M3
+      reasoning_parser_name: minimax_m3
+      tool_call_parser_name: minimax_m3

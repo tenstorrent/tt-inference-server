@@ -16,6 +16,7 @@
 #include <future>
 #include <memory>
 #include <numeric>
+#include <span>
 #include <string>
 #include <thread>
 #include <type_traits>
@@ -38,6 +39,7 @@
 #include "runtime/runners/blaze_runner/blaze_prefill_runner.hpp"
 #include "runtime/runners/blaze_runner/blaze_scheduler_factory.hpp"
 #endif
+#include "../support/session_manager_helpers.hpp"
 #include "services/memory_services/memory_manager.hpp"
 #include "services/session_manager.hpp"
 #include "utils/conversation_hasher.hpp"
@@ -51,7 +53,6 @@ namespace tt::test {
 
 constexpr auto kTestDeadline = std::chrono::seconds(10);
 constexpr auto kPollInterval = std::chrono::milliseconds(50);
-constexpr int kDefaultBlockSize = 1;
 
 // ---------------------------------------------------------------------------
 // Environment configuration
@@ -81,17 +82,16 @@ inline std::shared_ptr<ipc::ITaskQueue> makeInMemoryTaskQueue() {
   return std::make_shared<ipc::in_memory::TaskQueue>();
 }
 
-inline config::LLMConfig makeLLMConfig(
-    int numBlocks = 128, int blockSize = 8, int eos = 0,
-    std::vector<int64_t> stopTokenIds = {},
+inline config::BlazeConfig makeBlazeConfig(
     config::ModelRunnerType runnerType =
         config::ModelRunnerType::MOCK_PIPELINE) {
-  config::LLMConfig cfg{};
+  // Start from the env-backed builder so all scheduler/pipeline knobs reflect
+  // the current process env (set by configureProcess() before this call), then
+  // override the runner type per-test. `blazeConfig()` reads the same
+  // static-cached accessors the runners previously read directly, so this
+  // preserves the existing per-process caching semantics.
+  auto cfg = config::blazeConfig();
   cfg.runner_type = runnerType;
-  cfg.num_kvcache_blocks = numBlocks;
-  cfg.kvcache_block_size = blockSize;
-  cfg.eos = eos;
-  cfg.stop_token_ids = std::move(stopTokenIds);
   return cfg;
 }
 
@@ -101,9 +101,10 @@ inline config::LLMConfig makeLLMConfig(
 
 inline uint32_t generateTaskId() { return utils::TaskIDGenerator::generate(); }
 
-inline std::vector<int64_t> makeSequentialPrompt(size_t length) {
-  std::vector<int64_t> prompt(length);
-  std::iota(prompt.begin(), prompt.end(), 0);
+inline std::vector<uint32_t> makeSequentialPrompt(size_t length,
+                                                  uint32_t start = 0) {
+  std::vector<uint32_t> prompt(length);
+  std::iota(prompt.begin(), prompt.end(), start);
   return prompt;
 }
 
@@ -128,35 +129,6 @@ inline std::vector<ipc::SharedToken> collectTokensUntilFinal(
   }
   return tokens;
 }
-
-// ---------------------------------------------------------------------------
-// Trantor event loop fixture
-// ---------------------------------------------------------------------------
-
-// Trantor requires an EventLoop to be created and run on the same thread.
-struct TrantorLoopFixture {
-  std::promise<trantor::EventLoop*> promise_;
-  trantor::EventLoop* loop{nullptr};
-  std::thread loopThread;
-
-  TrantorLoopFixture() {
-    auto future = promise_.get_future();
-    loopThread = std::thread([this]() {
-      trantor::EventLoop eventLoop;
-      promise_.set_value(&eventLoop);
-      eventLoop.loop();
-    });
-    loop = future.get();
-  }
-
-  ~TrantorLoopFixture() {
-    if (loop) loop->quit();
-    if (loopThread.joinable()) loopThread.join();
-  }
-
-  TrantorLoopFixture(const TrantorLoopFixture&) = delete;
-  TrantorLoopFixture& operator=(const TrantorLoopFixture&) = delete;
-};
 
 // ---------------------------------------------------------------------------
 // Session manager helpers
@@ -205,6 +177,25 @@ inline uint32_t acquireInFlight(services::SessionManager& manager,
   return manager.acquireInFlight(sessionId, nullptr);
 }
 
+inline void releaseSlot(services::SessionManager& manager,
+                        const std::string& sessionId) {
+  if (auto session = manager.getSession(sessionId)) {
+    session->release();
+  }
+}
+
+// Simulates a completed turn-1 session registered under responseId.
+inline std::string bootstrapSessionWithResponseId(
+    services::SessionManager& manager, trantor::EventLoop* loop,
+    uint32_t slotId, const std::string& responseId,
+    const std::vector<utils::BlockHashInfo>& blockInfos = {}) {
+  auto sessionId = blockInfos.empty()
+                       ? createTestSession(manager, loop, slotId)
+                       : createTestSession(manager, loop, slotId, blockInfos);
+  manager.registerResponseId(sessionId, responseId);
+  return sessionId;
+}
+
 // ---------------------------------------------------------------------------
 // Concurrency helpers
 // ---------------------------------------------------------------------------
@@ -241,7 +232,8 @@ void runConcurrently(F&& f, int numThreads = 2) {
 template <typename RunnerType>
 class RunnerTestHarness {
  public:
-  explicit RunnerTestHarness(config::LLMConfig config = {}) : config_(config) {
+  explicit RunnerTestHarness(config::BlazeConfig config = {})
+      : config_(config) {
     if (config_.runner_type == config::ModelRunnerType::MOCK) {
       config_.runner_type = config::ModelRunnerType::MOCK_PIPELINE;
     }
@@ -271,10 +263,9 @@ class RunnerTestHarness {
   // Submit a sequence to the runner's task queue.
   // Derived classes may override to set the correct KV cache slot method.
   void submitSequence(uint32_t taskId, uint32_t slotId,
-                      const std::vector<int64_t>& promptTokens,
+                      const std::vector<uint32_t>& promptTokens,
                       const domain::llm::SamplingParams& samplingParams) {
-    domain::llm::Sequence seq(taskId, kDefaultBlockSize, promptTokens,
-                              samplingParams);
+    domain::llm::Sequence seq(taskId, promptTokens, samplingParams);
     setKVCacheSlot(seq, slotId);
     taskQueue_.push(seq);
   }
@@ -310,7 +301,7 @@ class RunnerTestHarness {
     seq.setKVCacheSlot(slotId);
   }
 
-  config::LLMConfig config_;
+  config::BlazeConfig config_;
 
  private:
   void init() {

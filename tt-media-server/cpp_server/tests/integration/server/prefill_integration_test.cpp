@@ -60,7 +60,6 @@ void configureEnv() {
   setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
 
   // Socket config: prefill connects as DEALER to our mock ROUTER (direct mode)
-  setenv("SOCKET_TRANSPORT", "zmq", 1);
   setenv("SOCKET_HOST", "127.0.0.1", 1);
   setenv("SOCKET_PORT", std::to_string(MOCK_DECODE_PORT).c_str(), 1);
   setenv("USE_PREFILL_GATEWAY", "0", 1);
@@ -431,7 +430,7 @@ TEST_F(PrefillIntegrationTest, MultiTurn_SubsequentRequestsAreContinuations) {
   server->setMemoryAutoRespond(false);
 
   // Generate a base set of 129 tokens (4 full blocks + 1) that grows each turn.
-  std::vector<int64_t> baseTokens;
+  std::vector<uint32_t> baseTokens;
   for (int i = 1; i <= 129; ++i) baseTokens.push_back(i * 100);
 
   // --- Turn 0: fresh ALLOCATE
@@ -575,8 +574,8 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
   uint32_t prefillSlotD = 0;
 
   // A long prefix (>= 2 blocks of 32 tokens each = 64+ tokens).
-  const std::vector<int64_t> baseTokens = [] {
-    std::vector<int64_t> t;
+  const std::vector<uint32_t> baseTokens = [] {
+    std::vector<uint32_t> t;
     for (int i = 1; i <= 96; ++i) t.push_back(i * 100);
     return t;
   }();
@@ -646,7 +645,7 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
   const uint32_t taskIdB = 99201;
   {
     // Extend the prompt by one block (32 tokens).
-    std::vector<int64_t> tokensB = baseTokens;
+    std::vector<uint32_t> tokensB = baseTokens;
     for (int i = 1; i <= 32; ++i) tokensB.push_back(10000 + i * 100);
 
     tt::sockets::PrefillRequestMessage req(taskIdB);
@@ -681,7 +680,7 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
   const uint32_t taskIdC = 99202;
   {
     // Same base tokens + different extension → same prefix but different tail.
-    std::vector<int64_t> tokensC = baseTokens;
+    std::vector<uint32_t> tokensC = baseTokens;
     for (int i = 1; i <= 32; ++i) tokensC.push_back(20000 + i * 100);
 
     tt::sockets::PrefillRequestMessage req(taskIdC);
@@ -751,7 +750,7 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
   {
     const uint32_t taskIdD = 99203;
     // Same tokens as C + one more block → extends C's prefix.
-    std::vector<int64_t> tokensD = baseTokens;
+    std::vector<uint32_t> tokensD = baseTokens;
     for (int i = 1; i <= 32; ++i) tokensD.push_back(20000 + i * 100);
     for (int i = 1; i <= 32; ++i) tokensD.push_back(30000 + i * 100);
 
@@ -829,8 +828,8 @@ TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
 TEST_F(PrefillIntegrationTest, SlotCopy_SkippedWhenSourceKvNotCommitted) {
   server->setMemoryAutoRespond(false);
 
-  const std::vector<int64_t> baseTokens = [] {
-    std::vector<int64_t> t;
+  const std::vector<uint32_t> baseTokens = [] {
+    std::vector<uint32_t> t;
     for (int i = 1; i <= 96; ++i) t.push_back(i * 100);
     return t;
   }();
@@ -880,7 +879,7 @@ TEST_F(PrefillIntegrationTest, SlotCopy_SkippedWhenSourceKvNotCommitted) {
   // --- Request C: same prefix, A is in-flight AND uncommitted → no copy. ---
   const uint32_t taskIdC = 99301;
   {
-    std::vector<int64_t> tokensC = baseTokens;
+    std::vector<uint32_t> tokensC = baseTokens;
     for (int i = 1; i <= 32; ++i) tokensC.push_back(20000 + i * 100);
 
     tt::sockets::PrefillRequestMessage req(taskIdC);
@@ -957,8 +956,8 @@ TEST_F(PrefillIntegrationTest, SlotCopy_CapsAtCommittedBlocksDuringExtension) {
   server->setMemoryAutoRespond(false);
 
   // 3 blocks of 32 tokens each = 96 tokens.
-  const std::vector<int64_t> baseTokens = [] {
-    std::vector<int64_t> t;
+  const std::vector<uint32_t> baseTokens = [] {
+    std::vector<uint32_t> t;
     for (int i = 1; i <= 96; ++i) t.push_back(i * 100);
     return t;
   }();
@@ -1014,7 +1013,7 @@ TEST_F(PrefillIntegrationTest, SlotCopy_CapsAtCommittedBlocksDuringExtension) {
   // The 4th block is registered for discovery but its KV is NOT resident.
   uint32_t a1TaskId = 0;
   {
-    std::vector<int64_t> tokensA1 = baseTokens;
+    std::vector<uint32_t> tokensA1 = baseTokens;
     for (int i = 1; i <= 32; ++i) tokensA1.push_back(10000 + i * 100);
 
     const uint32_t taskId = 99401;
@@ -1043,7 +1042,7 @@ TEST_F(PrefillIntegrationTest, SlotCopy_CapsAtCommittedBlocksDuringExtension) {
 
   // --- C: matches all 4 blocks; copy must be capped to the resident 3. ---
   {
-    std::vector<int64_t> tokensC = baseTokens;
+    std::vector<uint32_t> tokensC = baseTokens;
     for (int i = 1; i <= 32; ++i) tokensC.push_back(10000 + i * 100);
 
     const uint32_t taskId = 99402;

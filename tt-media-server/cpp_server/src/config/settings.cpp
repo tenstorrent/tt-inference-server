@@ -55,12 +55,36 @@ std::string resolveBlazeSocketDescriptorPrefix() {
     case ModelType::GPT_OSS_120B:
       return "gpt-oss";
     case ModelType::MINIMAX_M2_7:
-      return "minimax";
+      return "minimax-m2";
+    case ModelType::MINIMAX_M3:
+      return "minimax-m3";
     case ModelType::GLM_5_1:
     case ModelType::GLM_5_2:
       return "glm";
     case ModelType::DEEPSEEK_V4_PRO:
       return "deepseek";
+  }
+}
+
+uint32_t resolveBlazeNumberOfPipelineStages() {
+  switch (modelType()) {
+    case ModelType::DEEPSEEK_R1_0528:
+      return 64;
+    case ModelType::LLAMA_3_1_8B_INSTRUCT:
+      return 40;
+    case ModelType::KIMI_K2_6:
+    case ModelType::KIMI_K2_7_CODE:
+      return 64;
+    case ModelType::GPT_OSS_120B:
+      return 64;
+    case ModelType::MINIMAX_M2_7:
+    case ModelType::MINIMAX_M3:
+      return 64;
+    case ModelType::GLM_5_1:
+    case ModelType::GLM_5_2:
+      return 80;
+    default:
+      return defaults::BLAZE_NUMBER_OF_PIPELINE_STAGES;
   }
 }
 
@@ -320,19 +344,25 @@ size_t memoryQueueCapacity() {
   return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
 }
 
-bool useMockScheduler() {
-  return envBool("MOCK_USE_SCHEDULER", defaults::MOCK_USE_SCHEDULER);
-}
-
 unsigned mockPrefillLatencyMs() {
   return static_cast<unsigned>(
       envUlong("MOCK_PREFILL_CHUNK_LATENCY_MS",
                defaults::MOCK_PREFILL_CHUNK_LATENCY_MS));
 }
 
-unsigned mockDecodeTokenLatencyUs() {
-  return static_cast<unsigned>(envUlong(
-      "MOCK_DECODE_TOKEN_LATENCY_US", defaults::MOCK_DECODE_TOKEN_LATENCY_US));
+unsigned mockStageLatencyUs() {
+  return static_cast<unsigned>(
+      envUlong("MOCK_STAGE_LATENCY_US", defaults::MOCK_STAGE_LATENCY_US));
+}
+
+uint32_t mockPipelineStages() {
+  return static_cast<uint32_t>(
+      envUlong("MOCK_PIPELINE_STAGES", defaults::MOCK_PIPELINE_STAGES));
+}
+
+uint32_t mockPrefillChunkSize() {
+  return static_cast<uint32_t>(
+      envUlong("MOCK_PREFILL_RR_TOKENS", defaults::MOCK_PREFILL_CHUNK_SIZE));
 }
 
 uint32_t mockDecodeTokenId() {
@@ -340,27 +370,53 @@ uint32_t mockDecodeTokenId() {
       envUlong("MOCK_DECODE_TOKEN_ID", defaults::MOCK_DECODE_TOKEN_ID));
 }
 
-LLMConfig llmEngineConfig() {
-  static const LLMConfig cached = [] {
-    LLMConfig cfg;
-    cfg.stop_token_ids = utils::tokenizers::staticInfo().stopTokenIds;
-    cfg.max_in_flight_count = maxInFlightCount();
+BlazeConfig blazeConfig() {
+  static const BlazeConfig cached = [] {
+    BlazeConfig cfg;
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
-    if (backend == "llama") {
-      cfg.kvcache_block_size = 32;
-      cfg.max_num_batched_tokens = 16384;
-      cfg.runner_type = ModelRunnerType::LLAMA;
-    } else if (backend == "mock") {
-      cfg.runner_type = ModelRunnerType::MOCK;
-    } else if (backend == "mock_pipeline") {
-      cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
-    } else if (backend == "pipeline_manager") {
+    if (backend == "pipeline_manager") {
       cfg.runner_type = ModelRunnerType::PIPELINE_MANAGER;
+    } else if (backend == "mock_scheduler") {
+      cfg.runner_type = ModelRunnerType::MOCK_SCHEDULER;
     } else {
+      // Default and "mock_pipeline" both route through the blaze mock pipeline.
       cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
     }
-    cfg.scheduling_policy = schedulingPolicy();
+
+    // Sizing & timeouts
+    cfg.maxUsers = pmMaxUsers();
+    cfg.warmupTimeoutMs = warmupTimeoutMs();
+    cfg.outputHangTimeoutMs = outputHangTimeoutMs();
+
+    // Scheduler params
+    cfg.modelNumLayers = modelNumLayers();
+    cfg.prefillChunkSize = prefillChunkSize();
+    cfg.enableMigration = enableMigration();
+    cfg.prefillUseRemoteKvManager = prefillUseRemoteKvManager();
+    cfg.migrationPrefillEndpointId = migrationPrefillEndpointId();
+    cfg.migrationDecodeEndpointId = migrationDecodeEndpointId();
+    cfg.specDecodeMode = specDecodeMode();
+    cfg.mtpLevel = mtpLevel();
+    cfg.blazeNumberOfPipelineStages = blazeNumberOfPipelineStages();
+
+    // Pipeline / channel config
+    cfg.blazeSocketDescriptorPrefix = blazeSocketDescriptorPrefix();
+    cfg.pmConnectTimeoutMs = pmConnectTimeoutMs();
+    cfg.wireFormat = wireFormat();
+    cfg.prefillAckChannelName = prefillAckChannelName();
+    cfg.migrationCmdQueueName = migrationCmdQueueName();
+    cfg.migrationTableQueueName = migrationTableQueueName();
+    cfg.migrationRespQueueName = migrationRespQueueName();
+
+    // Mock pipeline knobs
+    cfg.numPipelineStages = mockPipelineStages();
+    cfg.mockStageLatencyUs = mockStageLatencyUs();
+    cfg.mockPrefillLatencyMs = mockPrefillLatencyMs();
+    cfg.mockDecodeTokenId = mockDecodeTokenId();
+
+    // Generation fallbacks read by blaze_utils
+    cfg.maxContextLength = maxContextLength();
     return cfg;
   }();
   return cached;
@@ -480,7 +536,7 @@ RunnerConfig workerRunnerConfig(size_t workerIndex) {
       return EmbeddingConfig{};
     case ModelService::LLM:
     default:
-      return llmEngineConfig();
+      return blazeConfig();
   }
 }
 
@@ -494,6 +550,7 @@ ModelType modelType() {
       return ModelType::LLAMA_3_1_8B_INSTRUCT;
     if (m == "openai/gpt-oss-120b") return ModelType::GPT_OSS_120B;
     if (m == "MiniMaxAI/MiniMax-M2.7") return ModelType::MINIMAX_M2_7;
+    if (m == "MiniMaxAI/MiniMax-M3") return ModelType::MINIMAX_M3;
     if (m == "zai-org/GLM-5.1") return ModelType::GLM_5_1;
     if (m == "zai-org/GLM-5.2") return ModelType::GLM_5_2;
     if (m == "deepseek-ai/DeepSeek-V4-Pro") return ModelType::DEEPSEEK_V4_PRO;
@@ -508,33 +565,9 @@ Model model() {
   return cached;
 }
 
-bool sampleOnlyInReasoning() {
-  switch (modelType()) {
-    // DeepSeek samples only inside the reasoning phase; argmax otherwise.
-    case ModelType::DEEPSEEK_R1_0528:
-      return true;
-    case ModelType::LLAMA_3_1_8B_INSTRUCT:
-    case ModelType::KIMI_K2_6:
-    case ModelType::KIMI_K2_7_CODE:
-    case ModelType::GPT_OSS_120B:
-    case ModelType::MINIMAX_M2_7:
-    case ModelType::GLM_5_1:
-    case ModelType::GLM_5_2:
-    case ModelType::DEEPSEEK_V4_PRO:
-      return false;
-  }
-  return false;
-}
-
 LLMMode llmMode() {
   static const LLMMode cached =
       llmModeFromString(envStringLower("LLM_MODE", defaults::LLM_MODE));
-  return cached;
-}
-
-SchedulingPolicy schedulingPolicy() {
-  static const SchedulingPolicy cached = schedulingPolicyFromString(
-      envStringLower("SCHEDULING_POLICY", defaults::SCHEDULING_POLICY));
   return cached;
 }
 
@@ -650,24 +683,30 @@ size_t maxISL() {
   return cached;
 }
 
+size_t taskQueueMaxMsgSize() {
+  static const size_t cached = maxContextLength() * sizeof(uint32_t) +
+                               defaults::MAX_SEQUENCE_NON_TOKEN_BYTES;
+  return cached;
+}
+
 size_t minTokensToCopy() {
   static const size_t cached = static_cast<size_t>(
       envUlong("MIN_TOKENS_TO_COPY", defaults::MIN_TOKENS_TO_COPY));
   return cached;
 }
 
-size_t kvCacheBlockSize() {
+size_t prefixCacheBlockSize() {
   static const size_t cached = []() {
     return kvCacheSizeFromEnv("KV_CACHE_BLOCK_SIZE",
-                              defaults::KV_CACHE_BLOCK_SIZE);
+                              defaults::PREFIX_CACHE_BLOCK_SIZE);
   }();
   return cached;
 }
 
-size_t kvCacheFirstBlockSize() {
+size_t prefixCacheFirstBlockSize() {
   static const size_t cached = []() {
     return kvCacheSizeFromEnv("KV_CACHE_FIRST_BLOCK_SIZE",
-                              defaults::KV_CACHE_FIRST_BLOCK_SIZE);
+                              defaults::PREFIX_CACHE_FIRST_BLOCK_SIZE);
   }();
   return cached;
 }
@@ -691,6 +730,11 @@ bool useFastMode() {
 
 bool enableMigration() {
   return envBool("ENABLE_MIGRATION", defaults::ENABLE_MIGRATION);
+}
+
+bool prefillUseRemoteKvManager() {
+  return envBool("PREFILL_USE_REMOTE_KV_MANAGER",
+                 defaults::PREFILL_USE_REMOTE_KV_MANAGER);
 }
 
 std::string migrationCmdQueueName() {
@@ -756,8 +800,25 @@ bool dynamoEndpointEnabled() {
   return envBool("DYNAMO_ENDPOINT_ENABLED", defaults::DYNAMO_ENDPOINT_ENABLED);
 }
 
+bool dynamoRoutingEnabled() {
+  return envBool("DYNAMO_ROUTING", defaults::DYNAMO_ROUTING);
+}
+
 std::string dynamoBindHost() {
   return envString("DYNAMO_BIND_HOST", defaults::DYNAMO_BIND_HOST);
+}
+
+uint16_t dynamoBindPort() {
+  const unsigned long port =
+      envUlong("DYNAMO_BIND_PORT", defaults::DYNAMO_BIND_PORT);
+  if (port > 65535) {
+    TT_LOG_WARN(
+        "[Config] DYNAMO_BIND_PORT={} is out of range [0, 65535], using "
+        "default={}",
+        port, defaults::DYNAMO_BIND_PORT);
+    return defaults::DYNAMO_BIND_PORT;
+  }
+  return static_cast<uint16_t>(port);
 }
 
 std::string dynamoEtcdEndpoints() {
@@ -776,6 +837,11 @@ std::string dynamoEtcdEndpoints() {
 
 std::string specDecodeMode() {
   return envString("SPEC_DECODE_MODE", defaults::SPEC_DECODE_MODE);
+}
+
+uint32_t blazeNumberOfPipelineStages() {
+  return static_cast<uint32_t>(envUlong("BLAZE_NUMBER_OF_PIPELINE_STAGES",
+                                        resolveBlazeNumberOfPipelineStages()));
 }
 
 size_t mtpLevel() {

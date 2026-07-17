@@ -27,8 +27,8 @@ PREFILL_GATEWAY_DECODE_PORT="${PREFILL_GATEWAY_DECODE_PORT:-7100}"
 PREFILL_GATEWAY_METRICS_PORT="${PREFILL_GATEWAY_METRICS_PORT:-9091}"
 PREFILL_GATEWAY_HEALTH_PORT="${PREFILL_GATEWAY_HEALTH_PORT:-9092}"
 PREFILL_GATEWAY_PREFILL_BIND="${PREFILL_GATEWAY_PREFILL_BIND:-0.0.0.0:7200}"
-PREFILL_GATEWAY_SOCKET_TRANSPORT="${PREFILL_GATEWAY_SOCKET_TRANSPORT:-zmq}"
 PREFILL_WORKER_PORT="${PREFILL_WORKER_PORT:-8001}"
+PREFILL_DIRECT_SOCKET_PORT="${PREFILL_DIRECT_SOCKET_PORT:-9000}"
 
 # Image defaults (override with the matching flag if needed).
 ETCD_IMAGE="quay.io/coreos/etcd:v3.5.13"
@@ -48,9 +48,11 @@ MONITORING_ENABLED=1
 MONITORING_STARTED=0
 WORKER_ENABLED=1
 PREFILL_GATEWAY_ENABLED=0
+PREFILL_DIRECT_ENABLED=0
+DYNAMO_ROUTING_ENABLED=0
 PREFILL_GATEWAY_STARTED=0
-PREFILL_WORKER_STARTED=0
-PREFILL_GATEWAY_PREFILLS=()
+PREFILL_WORKERS_STARTED=()
+PREFILL_WORKER_COUNT="${PREFILL_WORKER_COUNT:-1}"
 
 log() { printf '[deploy] %s\n' "$*"; }
 die() { printf '[deploy] %s\n' "$*" >&2; exit 1; }
@@ -109,10 +111,11 @@ Usage: $0 [options]
   --llm-device-backend <name>   cpp_server LLM_DEVICE_BACKEND (default: ${LLM_DEVICE_BACKEND})
   --prefill-gateway            start PrefillGateway and route decode prefill requests through it
   --prefill-gateway-image <img> (default: ${PREFILL_GATEWAY_IMAGE}; auto-builds default if missing)
-  --prefill-gateway-prefill <host:port>
-                               TCP prefill endpoint; repeatable, implies tcp transport
   --prefill-gateway-prefill-bind <host:port>
                                ZMQ prefill bind endpoint (default: ${PREFILL_GATEWAY_PREFILL_BIND})
+  --prefill-workers <count>    managed prefill worker count for gateway/Dynamo routing modes (default: ${PREFILL_WORKER_COUNT})
+  --prefill-direct             start one managed prefill worker connected directly to decode
+  --dynamo-routing             EXPERIMENTAL: register decode/prefill pools and let Dynamo own routing decisions
   --no-monitoring              skip Prometheus + Grafana deployment
   --no-worker                  etcd + frontend only (for cpp_server integration tests
                                that register their own mock DynamoEndpoint in-process)
@@ -143,22 +146,21 @@ while [[ $# -gt 0 ]]; do
         --llm-device-backend) LLM_DEVICE_BACKEND="$2";      shift 2 ;;
         --prefill-gateway) PREFILL_GATEWAY_ENABLED=1;       shift ;;
         --prefill-gateway-image) PREFILL_GATEWAY_IMAGE="$2"; shift 2 ;;
-        --prefill-gateway-prefill)
-            PREFILL_GATEWAY_ENABLED=1
-            PREFILL_GATEWAY_SOCKET_TRANSPORT=tcp
-            PREFILL_GATEWAY_PREFILLS+=(--prefill="$2")
-            shift 2
-            ;;
         --prefill-gateway-prefill-bind)
             PREFILL_GATEWAY_ENABLED=1
             PREFILL_GATEWAY_PREFILL_BIND="$2"
             shift 2
             ;;
+        --prefill-workers) PREFILL_WORKER_COUNT="$2"; shift 2 ;;
+        --prefill-direct) PREFILL_DIRECT_ENABLED=1;       shift ;;
+        --dynamo-routing) DYNAMO_ROUTING_ENABLED=1; shift ;;
         --no-monitoring)  MONITORING_ENABLED=0;             shift ;;
         --no-worker)      WORKER_ENABLED=0;                 shift ;;
         *) echo "Unknown argument: $1" >&2; usage ;;
     esac
 done
+
+[[ "$PREFILL_WORKER_COUNT" =~ ^[1-9][0-9]*$ ]] || die "--prefill-workers must be a positive integer"
 
 # Local-build: validate the binary and prepare the bind-mount + entrypoint.
 LOCAL_BUILD_MOUNT=()
@@ -167,7 +169,7 @@ if [[ -n "$LOCAL_BUILD" && "$WORKER_ENABLED" == "1" ]]; then
     CPP_SERVER_DIR_ABS="$(readlink -f "$CPP_SERVER_DIR" 2>/dev/null || true)"
     [[ -d "$CPP_SERVER_DIR_ABS" ]] || die "cpp_server directory not found: $CPP_SERVER_DIR"
     [[ -f "$CPP_SERVER_DIR_ABS/build/tt_media_server_cpp" ]] \
-        || die "no binary at $CPP_SERVER_DIR_ABS/build/tt_media_server_cpp — run ./build.sh first"
+        || die "no binary at $CPP_SERVER_DIR_ABS/build/tt_media_server_cpp — run ./build.sh --blaze first"
     log "using local build from $CPP_SERVER_DIR_ABS"
     LOCAL_BUILD_MOUNT+=(-v "${CPP_SERVER_DIR_ABS}/build:/home/container_app_user/app/server/cpp_server/build:ro")
     WORKER_ENTRYPOINT+=(--entrypoint /bin/bash)
@@ -177,13 +179,12 @@ if [[ "$MONITORING_ENABLED" == "1" ]]; then
     [[ -f "$MONITORING_COMPOSE" ]] || die "monitoring compose file not found: $MONITORING_COMPOSE"
     docker compose version >/dev/null 2>&1 || die "docker compose is required for monitoring"
 fi
+ROUTING_MODE_COUNT=$((PREFILL_GATEWAY_ENABLED + PREFILL_DIRECT_ENABLED + DYNAMO_ROUTING_ENABLED))
+[[ "$ROUTING_MODE_COUNT" -le 1 ]] || die "--prefill-direct, --prefill-gateway, and --dynamo-routing are mutually exclusive"
 if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
     [[ "$WORKER_ENABLED" == "1" ]] \
         || die "--prefill-gateway requires a worker; omit --no-worker"
     ensure_prefill_gateway_image
-    if [[ "$PREFILL_GATEWAY_SOCKET_TRANSPORT" == "tcp" && "${#PREFILL_GATEWAY_PREFILLS[@]}" -eq 0 ]]; then
-        die "--prefill-gateway-prefill is required when PREFILL_GATEWAY_SOCKET_TRANSPORT=tcp"
-    fi
 fi
 if [[ -n "$LOCAL_BUILD" && "$WORKER_ENABLED" == "0" ]]; then
     log "ignoring --local-build (--no-worker: integration tests supply their own backend)"
@@ -211,8 +212,8 @@ cleanup() {
     if [[ "${PREFILL_GATEWAY_STARTED:-0}" == "1" ]]; then
         docker rm -f "$PREFILL_GATEWAY_NAME" >/dev/null 2>&1 || true
     fi
-    if [[ "${PREFILL_WORKER_STARTED:-0}" == "1" ]]; then
-        docker rm -f "$PREFILL_WORKER_NAME" >/dev/null 2>&1 || true
+    if [[ "${#PREFILL_WORKERS_STARTED[@]}" -gt 0 ]]; then
+        docker rm -f "${PREFILL_WORKERS_STARTED[@]}" >/dev/null 2>&1 || true
     fi
     docker rm -f "$FRONTEND_NAME" "$WORKER_NAME" "$ETCD_NAME" >/dev/null 2>&1 || true
 }
@@ -262,16 +263,11 @@ if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
         --decode-port="$PREFILL_GATEWAY_DECODE_PORT"
         --metrics-port="$PREFILL_GATEWAY_METRICS_PORT"
         --health-port="$PREFILL_GATEWAY_HEALTH_PORT"
+        --prefill-bind="$PREFILL_GATEWAY_PREFILL_BIND"
     )
-    if [[ "$PREFILL_GATEWAY_SOCKET_TRANSPORT" == "tcp" ]]; then
-        PREFILL_GATEWAY_ARGS+=("${PREFILL_GATEWAY_PREFILLS[@]}")
-    else
-        PREFILL_GATEWAY_ARGS+=(--prefill-bind="$PREFILL_GATEWAY_PREFILL_BIND")
-    fi
 
     log "starting PrefillGateway ($PREFILL_GATEWAY_IMAGE)"
     docker run -d --name "$PREFILL_GATEWAY_NAME" --network "$NETWORK_NAME" \
-        -e SOCKET_TRANSPORT="$PREFILL_GATEWAY_SOCKET_TRANSPORT" \
         "$PREFILL_GATEWAY_IMAGE" \
         "${PREFILL_GATEWAY_ARGS[@]}" >/dev/null
     PREFILL_GATEWAY_STARTED=1
@@ -285,56 +281,125 @@ fi
 DEVICE_ARGS=()
 [[ -e /dev/tenstorrent ]] && DEVICE_ARGS+=(--device /dev/tenstorrent --cap-add=SYS_NICE)
 
-# Model-specific env: Kimi uses the 'kimi' blaze prefix + default MD format;
-# DeepSeek uses the legacy MD format + 'deepseek' prefix.
+# Model-specific env for Blaze prefix and metadata format.
 WORKER_MODEL_ENV=()
 case "$HF_MODEL_ID" in
     *[Kk]imi*) WORKER_MODEL_ENV+=(-e BLAZE_SOCKET_DESCRIPTOR_PREFIX=kimi) ;;
     *)         WORKER_MODEL_ENV+=(-e USE_DEEPSEEK_MD_FORMAT=1 -e BLAZE_SOCKET_DESCRIPTOR_PREFIX=deepseek) ;;
 esac
 
-if [[ "$PREFILL_GATEWAY_ENABLED" == "1" && "$PREFILL_GATEWAY_SOCKET_TRANSPORT" != "tcp" ]]; then
-    PREFILL_CONNECT_PORT="$(endpoint_port "$PREFILL_GATEWAY_PREFILL_BIND")"
-    PREFILL_WORKER_COMMAND=()
+prefill_worker_name() {
+    local idx="$1"
+    if [[ "$idx" == "0" ]]; then
+        printf '%s' "$PREFILL_WORKER_NAME"
+    else
+        printf '%s-%s' "$PREFILL_WORKER_NAME" "$idx"
+    fi
+}
+
+start_prefill_worker() {
+    local name="$1"
+    local label="$2"
+    local port="$3"
+    shift 3
+
+    local command=()
     if [[ -n "$LOCAL_BUILD" ]]; then
-        PREFILL_WORKER_COMMAND=(-c "cd cpp_server && ./build/tt_media_server_cpp -p ${PREFILL_WORKER_PORT}")
+        command=(-c "cd cpp_server && ./build/tt_media_server_cpp -p ${port}")
     fi
 
-    log "starting managed prefill worker ($WORKER_IMAGE)"
-    docker run -d --name "$PREFILL_WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
+    log "starting ${label} ($WORKER_IMAGE)"
+    docker run -d --name "$name" --network "$NETWORK_NAME" --shm-size=2g \
         "${DEVICE_ARGS[@]}" "${LOCAL_BUILD_MOUNT[@]}" "${WORKER_ENTRYPOINT[@]}" \
-        -e DYNAMO_ENDPOINT_ENABLED=0 \
         -e SERVER_MODE=cpp \
         -e MODEL="$HF_MODEL_ID" \
         -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
         -e LLM_MODE=prefill \
-        -e USE_PREFILL_GATEWAY=1 \
-        -e SOCKET_TRANSPORT="$PREFILL_GATEWAY_SOCKET_TRANSPORT" \
-        -e SOCKET_HOST="$PREFILL_GATEWAY_NAME" \
-        -e SOCKET_PORT="$PREFILL_CONNECT_PORT" \
-        -e PREFILL_SERVER_ID=managed-prefill-0 \
         -e DEVICE_IDS="$DEVICE_IDS" \
         "${WORKER_MODEL_ENV[@]}" \
         -e MAX_SESSIONS_COUNT=128 -e TT_LOG_LEVEL=debug -e USE_FAST_MODE=1 \
+        "$@" \
         "$WORKER_IMAGE" \
-        "${PREFILL_WORKER_COMMAND[@]}" \
+        "${command[@]}" \
         >/dev/null
-    PREFILL_WORKER_STARTED=1
+    PREFILL_WORKERS_STARTED+=("$name")
 
     sleep 2
-    docker ps --format '{{.Names}}' | grep -q "^${PREFILL_WORKER_NAME}\$" \
-        || { docker logs --tail 80 "$PREFILL_WORKER_NAME" >&2 || true; die "managed prefill worker exited during startup"; }
+    docker ps --format '{{.Names}}' | grep -q "^${name}\$" \
+        || { docker logs --tail 80 "$name" >&2 || true; die "${label} exited during startup"; }
+}
+
+wait_dynamo_prefill_workers() {
+    local expected="$1"
+    local prefix="v1/instances/${DYNAMO_ROUTING_NAMESPACE:-dynamo}/prefill/generate/"
+
+    log "waiting for ${expected} native prefill worker(s) to register with etcd (up to 60s)"
+    for _ in $(seq 1 60); do
+        local alive=1
+        for name in "${PREFILL_WORKERS_STARTED[@]}"; do
+            docker ps --format '{{.Names}}' | grep -q "^${name}\$" || alive=0
+        done
+        [[ "$alive" == "1" ]] || {
+            for name in "${PREFILL_WORKERS_STARTED[@]}"; do docker logs --tail 80 "$name" >&2 || true; done
+            die "native prefill worker exited before registering"
+        }
+
+        local registered
+        registered="$(docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only "$prefix" 2>/dev/null | grep -c "^${prefix}" || true)"
+        if (( registered >= expected )); then
+            log "native prefill worker(s) registered:"
+            docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only "v1/instances/${DYNAMO_ROUTING_NAMESPACE:-dynamo}/" | grep -v '^$' | sed 's/^/[deploy]   /'
+            return
+        fi
+        sleep 1
+    done
+
+    for name in "${PREFILL_WORKERS_STARTED[@]}"; do docker logs --tail 80 "$name" >&2 || true; done
+    die "native prefill worker(s) did not register within 60s"
+}
+
+if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
+    PREFILL_CONNECT_PORT="$(endpoint_port "$PREFILL_GATEWAY_PREFILL_BIND")"
+
+    for idx in $(seq 0 $((PREFILL_WORKER_COUNT - 1))); do
+        start_prefill_worker "$(prefill_worker_name "$idx")" "managed gateway prefill worker ${idx}" "$PREFILL_WORKER_PORT" \
+            -e DYNAMO_ENDPOINT_ENABLED=0 \
+            -e USE_PREFILL_GATEWAY=1 \
+            -e SOCKET_HOST="$PREFILL_GATEWAY_NAME" \
+            -e SOCKET_PORT="$PREFILL_CONNECT_PORT" \
+            -e PREFILL_SERVER_ID="managed-prefill-${idx}"
+    done
 fi
 
-WORKER_GATEWAY_ENV=()
-if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
-    WORKER_GATEWAY_ENV+=(
+WORKER_ROUTING_ENV=()
+if [[ "$PREFILL_GATEWAY_ENABLED" == "1" || "$PREFILL_DIRECT_ENABLED" == "1" || "$DYNAMO_ROUTING_ENABLED" == "1" ]]; then
+    WORKER_ROUTING_ENV+=(
         -e LLM_MODE=decode
+    )
+fi
+if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
+    WORKER_ROUTING_ENV+=(
         -e USE_PREFILL_GATEWAY=1
         -e MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-0}"
-        -e SOCKET_TRANSPORT="$PREFILL_GATEWAY_SOCKET_TRANSPORT"
         -e SOCKET_HOST="$PREFILL_GATEWAY_NAME"
         -e SOCKET_PORT="$PREFILL_GATEWAY_DECODE_PORT"
+    )
+elif [[ "$PREFILL_DIRECT_ENABLED" == "1" ]]; then
+    WORKER_ROUTING_ENV+=(
+        -e USE_PREFILL_GATEWAY=0
+        -e MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
+        -e SOCKET_HOST=0.0.0.0
+        -e SOCKET_PORT="$PREFILL_DIRECT_SOCKET_PORT"
+    )
+elif [[ "$DYNAMO_ROUTING_ENABLED" == "1" ]]; then
+    WORKER_ROUTING_ENV+=(
+        -e DYNAMO_NAMESPACE="${DYNAMO_ROUTING_NAMESPACE:-dynamo}"
+        -e DYNAMO_COMPONENT=decode
+        -e DYNAMO_ENDPOINT_NAME=generate
+        -e DYNAMO_MODEL_TYPE=Chat
+        -e DYNAMO_WORKER_TYPE=decode
+        -e USE_PREFILL_GATEWAY=0
+        -e DYNAMO_ROUTING=1
     )
 fi
 
@@ -350,7 +415,7 @@ if [[ "$WORKER_ENABLED" == "1" ]]; then
         -e MODEL="$HF_MODEL_ID" \
         -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
         -e DEVICE_IDS="$DEVICE_IDS" \
-        "${WORKER_GATEWAY_ENV[@]}" \
+        "${WORKER_ROUTING_ENV[@]}" \
         "${WORKER_MODEL_ENV[@]}" \
         -e MAX_SESSIONS_COUNT=128 -e TT_LOG_LEVEL=debug -e USE_FAST_MODE=1 \
         -e MIN_TOKENS_TO_COPY="${MIN_TOKENS_TO_COPY:-1024}" \
@@ -375,10 +440,55 @@ else
     log "skipping worker (--no-worker: integration tests register their own backend)"
 fi
 
+if [[ "$PREFILL_DIRECT_ENABLED" == "1" ]]; then
+    start_prefill_worker "$PREFILL_WORKER_NAME" "direct prefill worker" "$PREFILL_WORKER_PORT" \
+        -e DYNAMO_ENDPOINT_ENABLED=0 \
+        -e USE_PREFILL_GATEWAY=0 \
+        -e SOCKET_HOST="$WORKER_NAME" \
+        -e SOCKET_PORT="$PREFILL_DIRECT_SOCKET_PORT" \
+        -e TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
+        -e TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
+        -e TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill
+fi
+
+if [[ "$DYNAMO_ROUTING_ENABLED" == "1" ]]; then
+    for idx in $(seq 0 $((PREFILL_WORKER_COUNT - 1))); do
+        start_prefill_worker "$(prefill_worker_name "$idx")" "Dynamo-registered prefill worker ${idx}" "$PREFILL_WORKER_PORT" \
+            -e DYNAMO_ENDPOINT_ENABLED=1 \
+            -e DYNAMO_ROUTING=1 \
+            -e USE_PREFILL_GATEWAY=0 \
+            -e DYNAMO_DISCOVERY_BACKEND=etcd \
+            -e DYNAMO_ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
+            -e DYNAMO_NAMESPACE="${DYNAMO_ROUTING_NAMESPACE:-dynamo}" \
+            -e DYNAMO_COMPONENT=prefill \
+            -e DYNAMO_ENDPOINT_NAME=generate \
+            -e DYNAMO_MODEL_TYPE=Prefill \
+            -e DYNAMO_MODEL_INPUT=Tokens \
+            -e DYNAMO_WORKER_TYPE=prefill \
+            -e TT_MEMORY_REQUEST_QUEUE="tt_mem_requests_prefill_${idx}" \
+            -e TT_MEMORY_RESULT_QUEUE="tt_mem_results_prefill_${idx}" \
+            -e TT_WORKER_METRICS_SHM="/tt_worker_metrics_prefill_${idx}"
+    done
+    wait_dynamo_prefill_workers "$PREFILL_WORKER_COUNT"
+fi
+
 # ── frontend ────────────────────────────────────────────────────────────────
 # The frontend image bakes the tokenizer tree at the path each worker advertises
 # in its MDC, so the run is model-agnostic: it resolves every discovered model's
 # tokenizer locally and serves whatever workers register in etcd.
+FRONTEND_EXTRA_ENV=()
+for env_name in \
+    DYN_ROUTER_CONDITIONAL_DISAGG \
+    DYN_ROUTER_CONDITIONAL_DISAGG_POLICY \
+    DYN_ROUTER_CONDITIONAL_DISAGG_EFF_ISL_THRESHOLD \
+    DYN_ROUTER_CONDITIONAL_DISAGG_EFF_ISL_RATIO_THRESHOLD \
+    DYN_ROUTER_CONDITIONAL_DISAGG_PREFILL_BUSY_THRESHOLD \
+    DYN_ROUTER_CONDITIONAL_DISAGG_DECODE_BUSY_THRESHOLD; do
+    if [[ -n "${!env_name:-}" ]]; then
+        FRONTEND_EXTRA_ENV+=(-e "${env_name}=${!env_name}")
+    fi
+done
+
 TOKENIZER_DIR="${CPP_SERVER_DIR}/tokenizers/deepseek-ai/DeepSeek-R1-0528"
 if [[ "$WORKER_ENABLED" == "0" ]]; then
     [[ -d "$TOKENIZER_DIR" ]] \
@@ -388,6 +498,7 @@ if [[ "$WORKER_ENABLED" == "0" ]]; then
         -v "${TOKENIZER_DIR}:/app/model:ro" \
         -e DYN_DISCOVERY_BACKEND=etcd \
         -e ETCD_ENDPOINTS=http://127.0.0.1:2379 \
+        -e DYN_REQUEST_PLANE_CODEC="${DYN_REQUEST_PLANE_CODEC:-json}" \
         -e HTTP_PORT="${FRONTEND_HOST_PORT}" \
         -e MODEL_PATH=/app/model \
         -e MODEL_NAME="$HF_MODEL_ID" \
@@ -401,6 +512,7 @@ if [[ "$WORKER_ENABLED" == "0" ]]; then
         -e DYN_DEBUG_PERF="${DYN_DEBUG_PERF:-0}" \
         -e DYN_ENABLE_ANTHROPIC_API="${DYN_ENABLE_ANTHROPIC_API:-true}" \
         -e ROUTER_MODE="${ROUTER_MODE:-kv}" \
+        "${FRONTEND_EXTRA_ENV[@]}" \
         -e RUST_LOG="${RUST_LOG:-}" \
         "$FRONTEND_IMAGE" >/dev/null
 else
@@ -408,6 +520,7 @@ else
     docker run -d --name "$FRONTEND_NAME" --network "$NETWORK_NAME" -p "${FRONTEND_HOST_PORT}:8000" \
         -e DYN_DISCOVERY_BACKEND=etcd \
         -e ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
+        -e DYN_REQUEST_PLANE_CODEC="${DYN_REQUEST_PLANE_CODEC:-json}" \
         -e MODEL_NAME="$MODEL_NAME" \
         -e HF_TOKEN="${HF_TOKEN:-}" \
         -e DYN_CHAT_PROCESSOR="${DYN_CHAT_PROCESSOR:-dynamo}" \
@@ -419,6 +532,7 @@ else
         -e DYN_DEBUG_PERF="${DYN_DEBUG_PERF:-0}" \
         -e DYN_ENABLE_ANTHROPIC_API="${DYN_ENABLE_ANTHROPIC_API:-true}" \
         -e ROUTER_MODE="${ROUTER_MODE:-kv}" \
+        "${FRONTEND_EXTRA_ENV[@]}" \
         -e RUST_LOG="${RUST_LOG:-}" \
         "$FRONTEND_IMAGE" >/dev/null
 fi
@@ -453,6 +567,9 @@ if [[ "$MONITORING_ENABLED" == "1" ]]; then
 fi
 if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
     log "PrefillGateway metrics on ${PREFILL_GATEWAY_NAME}:${PREFILL_GATEWAY_METRICS_PORT} inside ${NETWORK_NAME}"
+fi
+if [[ "$DYNAMO_ROUTING_ENABLED" == "1" ]]; then
+    log "Dynamo routing enabled; Dynamo owns local-vs-remote prefill routing"
 fi
 if [[ "$WORKER_ENABLED" == "1" ]]; then
     log "tailing worker logs (Ctrl+C to tear down)"

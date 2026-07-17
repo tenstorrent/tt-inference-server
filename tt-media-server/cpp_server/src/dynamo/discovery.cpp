@@ -9,10 +9,10 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 #include "config/settings.hpp"
@@ -22,8 +22,6 @@
 namespace tt::dynamo {
 
 namespace {
-
-constexpr int K_CONTEXT_LENGTH = 131072;
 
 /// Used only when a referenced file is missing/unreadable. The frontend
 /// blake3-validates every file it fetches from the MDC, so for files that
@@ -154,6 +152,9 @@ RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
   if (modelType == "minimax_m2") {
     return {"basic", "minimax_m2"};
   }
+  if (modelType == "minimax_m3_vl") {
+    return {"minimax_m3", "minimax_m3"};
+  }
   if (modelType == "glm_moe_dsa") {
     return {"glm45", "glm47"};
   }
@@ -255,12 +256,26 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   promptFormatter["hf_tokenizer_config_json"] = std::move(hfTokCfg);
   card["prompt_formatter"] = std::move(promptFormatter);
 
-  card["context_length"] = K_CONTEXT_LENGTH;
+  card["context_length"] = static_cast<int>(tt::config::maxContextLength());
   card["kv_cache_block_size"] =
-      static_cast<int>(tt::config::kvCacheBlockSize());
+      static_cast<int>(tt::config::prefixCacheBlockSize());
   card["migration_limit"] = 0;
-  card["model_type"] = "Chat";
-  card["model_input"] = "Tokens";
+  card["model_type"] = c.model_type;
+  card["model_input"] = c.model_input;
+  if (!c.worker_type.empty()) {
+    card["worker_type"] = c.worker_type;
+  }
+  if (!c.needs.empty()) {
+    Json::Value needs(Json::arrayValue);
+    for (const auto& alternative : c.needs) {
+      Json::Value inner(Json::arrayValue);
+      for (const auto& workerType : alternative) {
+        inner.append(workerType);
+      }
+      needs.append(std::move(inner));
+    }
+    card["needs"] = std::move(needs);
+  }
 
   Json::Value runtime(Json::objectValue);
   runtime["total_kv_blocks"] = Json::Value::null;

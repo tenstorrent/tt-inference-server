@@ -167,7 +167,7 @@ struct DynamoUsage {
 };
 
 struct TokenChunk {
-  std::vector<int> token_ids;
+  std::vector<uint32_t> token_ids;
   std::optional<std::string> finish_reason;
   /// If set, signals a pre-stream error. stream_response will send this as an
   /// Annotated::error chunk so the Dynamo frontend can intercept it.
@@ -180,6 +180,9 @@ struct TokenChunk {
   /// the response `nvext.engine_data` when the client requests it via
   /// `nvext.extra_fields: ["engine_data"]`.
   Json::Value engine_data;
+  /// Prefill-only handoff payload. Dynamo's PrefillRouter extracts this field
+  /// and forwards it to decode as `prefill_result.disaggregated_params`.
+  Json::Value disaggregated_params;
 };
 
 /// Encode a TokenChunk as a NetworkStreamWrapper<Annotated<T>> JSON body.
@@ -196,10 +199,10 @@ std::vector<uint8_t> encode_stream_final();
 
 struct GenerateRequest {
   std::string model;
-  std::vector<int> token_ids;
+  std::vector<uint32_t> token_ids;
 
   // StopConditions ---------------------------------------------------------
-  int max_tokens = 128;
+  std::optional<int> max_tokens;
   std::optional<int> min_tokens;
   std::vector<int> stop_token_ids;
   std::vector<std::string> stop;

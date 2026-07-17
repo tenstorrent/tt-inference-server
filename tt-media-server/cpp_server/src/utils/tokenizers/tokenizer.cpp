@@ -23,8 +23,8 @@ namespace tt::utils::tokenizers {
 
 namespace {
 
-std::unordered_set<int> parseSpecialTokenIds(const std::string& jsonBlob) {
-  std::unordered_set<int> ids;
+std::unordered_set<uint32_t> parseSpecialTokenIds(const std::string& jsonBlob) {
+  std::unordered_set<uint32_t> ids;
   Json::CharReaderBuilder builder;
   Json::Value root;
   std::string errs;
@@ -37,7 +37,7 @@ std::unordered_set<int> parseSpecialTokenIds(const std::string& jsonBlob) {
   for (const auto& tok : added) {
     if (tok.isMember("special") && tok["special"].asBool() &&
         tok.isMember("id")) {
-      ids.insert(tok["id"].asInt());
+      ids.insert(static_cast<uint32_t>(tok["id"].asInt()));
     }
   }
   return ids;
@@ -88,15 +88,18 @@ Tokenizer::Tokenizer(const std::string& path) {
 
 bool Tokenizer::isLoaded() const { return tok_ != nullptr; }
 
-std::vector<int> Tokenizer::encode(const std::string& text) const {
+std::vector<uint32_t> Tokenizer::encode(const std::string& text) const {
   if (!tok_) {
     throw std::runtime_error(
         "[TokenizerUtil] Tokenizer not loaded, cannot encode");
   }
-  return tok_->Encode(text);
+  // tokenizers-cpp emits int32_t ids; token ids are non-negative and well
+  // within uint32_t range, so this widening conversion is lossless.
+  const std::vector<int32_t> ids = tok_->Encode(text);
+  return std::vector<uint32_t>(ids.begin(), ids.end());
 }
 
-std::string Tokenizer::decode(const std::vector<int>& tokenIds,
+std::string Tokenizer::decode(const std::vector<uint32_t>& tokenIds,
                               bool skipSpecialTokens) const {
   if (!tok_) {
     throw std::runtime_error(
@@ -104,9 +107,15 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds,
   }
   if (tokenIds.empty()) return "";
 
+  // tokenizers-cpp Decode takes int32_t ids; convert without any value change
+  // (token ids fit in both types).
+  auto toI32 = [](const std::vector<uint32_t>& v) {
+    return std::vector<int32_t>(v.begin(), v.end());
+  };
+
   // Fast path: no special tokens to filter
   if (!skipSpecialTokens || specialTokenIds_.empty()) {
-    return tok_->Decode(tokenIds);
+    return tok_->Decode(toI32(tokenIds));
   }
 
   // Fast path: single token, check if special
@@ -114,15 +123,15 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds,
     if (specialTokenIds_.find(tokenIds[0]) != specialTokenIds_.end()) {
       return "";  // Special token, skip it
     }
-    return tok_->Decode(tokenIds);
+    return tok_->Decode(toI32(tokenIds));
   }
 
   // Slow path: multiple tokens, filter special tokens
-  std::vector<int> filtered;
+  std::vector<int32_t> filtered;
   filtered.reserve(tokenIds.size());
-  for (int id : tokenIds) {
+  for (uint32_t id : tokenIds) {
     if (specialTokenIds_.find(id) == specialTokenIds_.end()) {
-      filtered.push_back(id);
+      filtered.push_back(static_cast<int32_t>(id));
     }
   }
   if (filtered.empty()) return "";
@@ -161,7 +170,7 @@ Tokenizer::StreamDecoder::StreamDecoder(const Tokenizer& tokenizer,
                                         bool skipSpecialTokens)
     : tokenizer_(tokenizer), skipSpecialTokens_(skipSpecialTokens) {}
 
-std::string Tokenizer::StreamDecoder::step(int tokenId) {
+std::string Tokenizer::StreamDecoder::step(uint32_t tokenId) {
   if (pending_.empty()) {
     std::string decoded = tokenizer_.decode({tokenId}, skipSpecialTokens_);
     if (!endsWithReplacementChar(decoded)) {
@@ -208,6 +217,8 @@ std::string tokenizerDirForModel(config::ModelType model) {
       return "openai/gpt-oss-120b";
     case config::ModelType::MINIMAX_M2_7:
       return "MiniMaxAI/MiniMax-M2.7";
+    case config::ModelType::MINIMAX_M3:
+      return "MiniMaxAI/MiniMax-M3";
     case config::ModelType::GLM_5_1:
       return "zai-org/GLM-5.1";
     case config::ModelType::GLM_5_2:
@@ -233,6 +244,7 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
       return std::make_unique<DeepseekTokenizer>(path);
     case config::ModelType::GPT_OSS_120B:
     case config::ModelType::MINIMAX_M2_7:
+    case config::ModelType::MINIMAX_M3:
     case config::ModelType::GLM_5_1:
     case config::ModelType::GLM_5_2:
       // These load their own model-specific files but currently reuse the
@@ -341,6 +353,22 @@ const StaticTokenizerInfo& minimaxM27Info() {
   return kInfo;
 }
 
+// IDs verified against the fetched MiniMax-M3 tokenizer. Same special-token
+// layout as M2.7 (eos 200020, <think>/</think> 200050/200051); the top-level
+// config.json carries no eos_token_id, so discovery.cpp publishes the
+// generation_config.json that contains it.
+const StaticTokenizerInfo& minimaxM3Info() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"MiniMaxAI/MiniMax-M3",
+      /*stopTokenIds=*/{},
+      /*eosTokenId=*/200020,  // [e~[
+      /*assistantHeaderSequence=*/{},
+      /*thinkStartTokenId=*/200050,  // <think>
+      /*thinkEndTokenId=*/200051,    // </think>
+  };
+  return kInfo;
+}
+
 // IDs verified against the fetched GLM-5.1 tokenizer (added_tokens in
 // tokenizer.json). Identical special-token layout to GLM-5.2: same eos set
 // [154820, 154827, 154829] and <think>/</think> 154841/154842, and the same
@@ -410,6 +438,8 @@ const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
       return gptOss120bInfo();
     case config::ModelType::MINIMAX_M2_7:
       return minimaxM27Info();
+    case config::ModelType::MINIMAX_M3:
+      return minimaxM3Info();
     case config::ModelType::GLM_5_1:
       return glm51Info();
     case config::ModelType::GLM_5_2:
@@ -426,12 +456,12 @@ const StaticTokenizerInfo& staticInfo() {
   return staticInfoFor(config::modelType());
 }
 
-std::pair<int64_t, int64_t> thinkTokenIdsFor(config::ModelType model) {
+std::pair<uint32_t, uint32_t> thinkTokenIdsFor(config::ModelType model) {
   const auto& info = staticInfoFor(model);
   return {info.thinkStartTokenId, info.thinkEndTokenId};
 }
 
-std::pair<int64_t, int64_t> thinkTokenIds() {
+std::pair<uint32_t, uint32_t> thinkTokenIds() {
   return thinkTokenIdsFor(config::modelType());
 }
 

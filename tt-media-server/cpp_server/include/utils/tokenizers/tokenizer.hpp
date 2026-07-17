@@ -22,8 +22,7 @@ namespace tt::utils::tokenizers {
 using namespace tt::domain::llm;
 
 // Matches tt_llm_engine EMPTY_TOKEN: disables thinking-phase token matching.
-constexpr int64_t kNoTokenId =
-    static_cast<int64_t>(std::numeric_limits<uint32_t>::max());
+constexpr uint32_t kNoTokenId = std::numeric_limits<uint32_t>::max();
 
 /**
  * Parsed tokenizer_config.json (Hugging Face format).
@@ -84,7 +83,7 @@ class Tokenizer {
    * Encode text to token IDs.
    * @throws std::runtime_error if tokenizer not loaded.
    */
-  std::vector<int> encode(const std::string& text) const;
+  std::vector<uint32_t> encode(const std::string& text) const;
 
   /**
    * Decode token IDs to text.
@@ -93,14 +92,14 @@ class Tokenizer {
    *   before decoding. If false, all tokens are decoded as-is.
    * @throws std::runtime_error if tokenizer not loaded.
    */
-  std::string decode(const std::vector<int>& tokenIds,
+  std::string decode(const std::vector<uint32_t>& tokenIds,
                      bool skipSpecialTokens = true) const;
 
   /** Check if tokenizer is loaded and ready. */
   bool isLoaded() const;
 
   virtual std::string modelName() const = 0;
-  virtual std::vector<int64_t> stopTokenIds() const = 0;
+  virtual std::vector<uint32_t> stopTokenIds() const = 0;
 
   /**
    * Token id sequence that ends an assistant generation prompt in the
@@ -117,7 +116,7 @@ class Tokenizer {
    * Returns an empty vector when the tokenizer does not expose a stable
    * assistant marker; callers must then treat every request as fresh.
    */
-  virtual std::vector<int> assistantHeaderSequence() const { return {}; }
+  virtual std::vector<uint32_t> assistantHeaderSequence() const { return {}; }
 
   /**
    * Apply the model-specific chat template to a list of messages.
@@ -145,7 +144,7 @@ class Tokenizer {
      * token is part of an incomplete multi-byte UTF-8 sequence still being
      * buffered.
      */
-    std::string step(int tokenId);
+    std::string step(uint32_t tokenId);
 
     /**
      * Flush any remaining buffered tokens (call on final token).
@@ -156,7 +155,7 @@ class Tokenizer {
 
    private:
     const Tokenizer& tokenizer_;
-    std::vector<int> pending_;
+    std::vector<uint32_t> pending_;
     bool skipSpecialTokens_;
   };
 
@@ -168,7 +167,7 @@ class Tokenizer {
  protected:
   std::unique_ptr<::tokenizers::Tokenizer> tok_;
   TokenizerConfig cfg_;
-  std::unordered_set<int> specialTokenIds_;
+  std::unordered_set<uint32_t> specialTokenIds_;
 };
 
 /**
@@ -205,16 +204,16 @@ const Tokenizer& activeTokenizer();
  */
 struct StaticTokenizerInfo {
   std::string_view modelName;
-  std::vector<int64_t> stopTokenIds;
-  int64_t eosTokenId = kNoTokenId;
-  std::vector<int> assistantHeaderSequence;
-  int64_t thinkStartTokenId = kNoTokenId;
-  int64_t thinkEndTokenId = kNoTokenId;
+  std::vector<uint32_t> stopTokenIds;
+  uint32_t eosTokenId = kNoTokenId;
+  std::vector<uint32_t> assistantHeaderSequence;
+  uint32_t thinkStartTokenId = kNoTokenId;
+  uint32_t thinkEndTokenId = kNoTokenId;
 };
 
 /** Per-model thinking marker token IDs (O(1), no tokenizer.json parse). */
-std::pair<int64_t, int64_t> thinkTokenIdsFor(config::ModelType model);
-std::pair<int64_t, int64_t> thinkTokenIds();
+std::pair<uint32_t, uint32_t> thinkTokenIdsFor(config::ModelType model);
+std::pair<uint32_t, uint32_t> thinkTokenIds();
 
 /**
  * Static constants for `model`. Throws std::invalid_argument if no entry

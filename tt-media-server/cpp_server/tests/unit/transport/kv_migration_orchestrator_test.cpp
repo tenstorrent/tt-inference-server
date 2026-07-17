@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -17,12 +18,14 @@
 #include <thread>
 #include <vector>
 
+#include "services/remote_kv_manager.hpp"
 #include "sockets/i_socket_transport.hpp"
 #include "transport/in_memory_kv_table.hpp"
 #include "transport/kv_control_channel.hpp"
 #include "transport/kv_migration_multi_host_sender.hpp"
 #include "transport/mooncake_kv_receiver.hpp"
 #include "transport/mooncake_kv_sender.hpp"
+#include "transport/mooncake_migration_executor.hpp"
 #include "transport/transfer_types.hpp"
 #include "transport_test_fakes.hpp"
 
@@ -30,77 +33,18 @@ namespace tt::transport {
 namespace {
 
 using test::asymmetricReq;
+using test::BlockingFakeTransport;
 using test::buildTable;
 using test::buildTableSplitHosts;
+using test::closePipe;
 using test::FakeDeviceIo;
 using test::FakeRegistry;
 using test::FakeTransferEngine;
 using test::K_CHUNK;
 using test::makeContent;
+using test::Pipe;
 using test::symmetricReq;
 using test::wholeSlot5;
-
-// A blocking, thread-safe channel end: receiveRawData blocks until a message
-// arrives or the inbound queue is closed — like a real socket. Two of them with
-// crossed queues form a connected pair across threads.
-struct Pipe {
-  std::mutex m;
-  std::condition_variable cv;
-  std::deque<std::vector<uint8_t>> q;
-  bool closed = false;
-};
-
-class BlockingFakeTransport : public sockets::ISocketTransport {
- public:
-  BlockingFakeTransport(std::shared_ptr<Pipe> in, std::shared_ptr<Pipe> out)
-      : in(std::move(in)), out(std::move(out)) {}
-
-  bool initializeAsServer(uint16_t) override { return true; }
-  bool initializeAsClient(const std::string&, uint16_t) override {
-    return true;
-  }
-  void start() override {}
-  void stop() override {}
-  // Reflects pipe closure so KvControlChannel::receive() can tell an
-  // empty-on-close read apart from "no data yet" (it disambiguates via
-  // isConnected()), like a real socket dropping its connection.
-  bool isConnected() const override {
-    std::lock_guard<std::mutex> lk(in->m);
-    return !in->closed;
-  }
-  std::string getStatus() const override { return "blocking-fake"; }
-
-  bool sendRawData(std::span<const uint8_t> data) override {
-    {
-      std::lock_guard<std::mutex> lk(out->m);
-      out->q.emplace_back(data.begin(), data.end());
-    }
-    out->cv.notify_one();
-    return true;
-  }
-  std::vector<uint8_t> receiveRawData() override {
-    std::unique_lock<std::mutex> lk(in->m);
-    in->cv.wait(lk, [&] { return !in->q.empty() || in->closed; });
-    if (in->q.empty()) return {};  // closed
-    std::vector<uint8_t> front = std::move(in->q.front());
-    in->q.pop_front();
-    return front;
-  }
-  void setConnectionLostCallback(std::function<void()>) override {}
-  void setConnectionEstablishedCallback(std::function<void()>) override {}
-
- private:
-  std::shared_ptr<Pipe> in;
-  std::shared_ptr<Pipe> out;
-};
-
-void closePipe(const std::shared_ptr<Pipe>& p) {
-  {
-    std::lock_guard<std::mutex> lk(p->m);
-    p->closed = true;
-  }
-  p->cv.notify_all();
-}
 
 // A decode device whose writes always fail, to drive the drain-failure path.
 class FailingWriteDeviceIo : public FakeDeviceIo {
@@ -121,7 +65,7 @@ struct DecodeNode {
   std::shared_ptr<Pipe> ba{std::make_shared<Pipe>()};  // receiver -> sender
   std::shared_ptr<BlockingFakeTransport> senderTp;
   std::shared_ptr<BlockingFakeTransport> receiverTp;
-  std::unique_ptr<KvControlChannel> senderCh;
+  std::shared_ptr<KvControlChannel> senderCh;
   std::unique_ptr<KvControlChannel> receiverCh;
   std::unique_ptr<MooncakeKvReceiver> receiver;
   std::unique_ptr<KvMigrationReceiver> orch;
@@ -133,7 +77,7 @@ struct DecodeNode {
     engine = std::make_shared<FakeTransferEngine>(reg, seg);
     senderTp = std::make_shared<BlockingFakeTransport>(/*in=*/ba, /*out=*/ab);
     receiverTp = std::make_shared<BlockingFakeTransport>(/*in=*/ab, /*out=*/ba);
-    senderCh = std::make_unique<KvControlChannel>(senderTp);
+    senderCh = std::make_shared<KvControlChannel>(senderTp);
     receiverCh = std::make_unique<KvControlChannel>(receiverTp);
     receiver =
         std::make_unique<MooncakeKvReceiver>(engine, dev, table, host, seg);
@@ -305,6 +249,7 @@ TEST(KvMigrationOrchestrator, ExchangesTableBlobs) {
   ASSERT_TRUE(gotOnReceiver.has_value());
   EXPECT_EQ(*gotOnSender, receiverBlob);
   EXPECT_EQ(*gotOnReceiver, senderBlob);
+  EXPECT_EQ(ro.peerTableBlob(), senderBlob);
 }
 
 // A prepareMirror failure (no local chunks for the request) is reported to the
@@ -418,7 +363,7 @@ TEST(KvMigrationMultiHost, FansOutToTwoDecodeHosts) {
 
   KvMigrationMultiHostSender multiHost(
       senderEngine, prefillDev, prefill, decode, "P",
-      {{"D0", d0.senderCh.get()}, {"D1", d1.senderCh.get()}});
+      {{"D0", d0.senderCh}, {"D1", d1.senderCh}});
   EXPECT_EQ(multiHost.hostCount(), 2u);
   EXPECT_TRUE(multiHost.migrate(0x5151, wholeSlot5()));
 
@@ -461,7 +406,7 @@ TEST(KvMigrationMultiHost, DrivesOnlyHostsInRequest) {
 
   KvMigrationMultiHostSender multiHost(
       senderEngine, prefillDev, prefill, decode, "P",
-      {{"D0", d0.senderCh.get()}, {"D1", d1.senderCh.get()}});
+      {{"D0", d0.senderCh}, {"D1", d1.senderCh}});
 
   // Layer [0,1) lives only on D0.
   EXPECT_TRUE(multiHost.migrate(0x1, symmetricReq(5, 0, 1, 0, 128)));
@@ -493,7 +438,7 @@ TEST(KvMigrationMultiHost, ReportsFailureWhenAHostFails) {
 
   KvMigrationMultiHostSender multiHost(
       senderEngine, prefillDev, prefill, decode, "P",
-      {{"D0", d0.senderCh.get()}, {"D1", d1.senderCh.get()}});
+      {{"D0", d0.senderCh}, {"D1", d1.senderCh}});
   EXPECT_FALSE(multiHost.migrate(0x9, wholeSlot5()));
 
   d0.shutdown();
@@ -520,8 +465,7 @@ TEST(KvMigrationMultiHost, FailsWhenAnInvolvedHostHasNoChannel) {
   DecodeNode d0(reg, decode, "D0", "segD0", devD0);  // only D0 has a channel
 
   KvMigrationMultiHostSender multiHost(senderEngine, prefillDev, prefill,
-                                       decode, "P",
-                                       {{"D0", d0.senderCh.get()}});
+                                       decode, "P", {{"D0", d0.senderCh}});
   EXPECT_EQ(multiHost.hostCount(), 1u);
   // Whole slot touches D0 and D1, but D1 is unresolved -> overall failure.
   EXPECT_FALSE(multiHost.migrate(0x2, wholeSlot5()));
@@ -530,6 +474,69 @@ TEST(KvMigrationMultiHost, FailsWhenAnInvolvedHostHasNoChannel) {
   // D0's layer still landed.
   EXPECT_EQ(devD0.get(encodeDevice({2, 0}), makeNocAddr(0, 0x8000)),
             makeContent(0, 0));
+}
+
+// End-to-end through the real executor: a Kafka-shaped tt::services::
+// MigrationRequest, handed to the real Mooncake-backed IMigrationExecutor,
+// drives the whole multi-host data plane and byte-lands on both decode hosts —
+// proving the executor is no longer a stub. Same fan-out as
+// FansOutToTwoDecodeHosts, but
+// triggered through MooncakeMigrationExecutor::execute() (async) instead of a
+// direct migrate() call.
+TEST(KvMigrationMultiHost, DrivenThroughMooncakeExecutor) {
+  auto reg = std::make_shared<FakeRegistry>();
+  auto senderEngine = std::make_shared<FakeTransferEngine>(reg, "P");
+
+  auto prefill = std::make_shared<InMemoryKvTable>(
+      buildTable("P", {1, 0}, {1, 1}, {1, 2}, {1, 3}, 0x1000, 0, 0x2000, 0));
+  auto decode = std::make_shared<InMemoryKvTable>(buildTableSplitHosts(
+      "D0", "D1", {2, 0}, {2, 1}, {3, 0}, {3, 1}, 0x8000, 0, 0x9000, 1));
+
+  FakeDeviceIo prefillDev;
+  seedPrefill(prefillDev);
+  FakeDeviceIo devD0, devD1;
+  DecodeNode d0(reg, decode, "D0", "segD0", devD0);
+  DecodeNode d1(reg, decode, "D1", "segD1", devD1);
+
+  KvMigrationMultiHostSender multiHost(
+      senderEngine, prefillDev, prefill, decode, "P",
+      {{"D0", d0.senderCh}, {"D1", d1.senderCh}});
+
+  MooncakeMigrationExecutor exec(multiHost);
+
+  // The whole-slot request expressed in the scheduler-facing (Kafka) shape;
+  // identical fields to wholeSlot5() == symmetricReq(5, 0, 2, 0, 128).
+  const tt::services::MigrationRequest api{
+      .src_slot = 5,
+      .dst_slot = 5,
+      .layer_begin = 0,
+      .layer_end = 2,
+      .src_position_begin = 0,
+      .src_position_end = 128,
+      .dst_position_begin = 0,
+      .dst_position_end = 128,
+  };
+
+  std::promise<tt::services::MigrationStatus> done;
+  auto fut = done.get_future();
+  exec.execute(0x5151, api,
+               [&](tt::services::MigrationStatus s) { done.set_value(s); });
+
+  ASSERT_EQ(fut.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+  EXPECT_EQ(fut.get(), tt::services::MigrationStatus::SUCCESSFUL);
+
+  d0.shutdown();
+  d1.shutdown();
+
+  for (uint32_t p = 0; p < 128; p += 32) {
+    const uint32_t idx = p / 32;
+    EXPECT_EQ(
+        devD0.get(encodeDevice({2, 0}), makeNocAddr(0, 0x8000 + idx * K_CHUNK)),
+        makeContent(0, p));
+    EXPECT_EQ(
+        devD1.get(encodeDevice({3, 0}), makeNocAddr(1, 0x9000 + idx * K_CHUNK)),
+        makeContent(1, p));
+  }
 }
 
 }  // namespace

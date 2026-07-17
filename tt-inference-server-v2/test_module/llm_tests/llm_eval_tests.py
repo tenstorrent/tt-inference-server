@@ -14,14 +14,16 @@ from glob import glob
 from pathlib import Path
 from typing import List, Tuple, Union
 
-from llm_module import HttpServerController
+from evals.eval_config import accept_eval_score, resolve_eval_reference
+from llm_module import HttpServerController, RemoteOpenAIController
 from llm_module.eval_command import build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
 from report_module.schema import Block
 from workflow_module import accept_blocks
 from workflows.utils import run_command
+from workflows.workflow_types import EvalLimitMode
 
-from .._test_common import ReportCheckTypes, block_id
+from .._test_common import ReportCheckTypes, TestStatus, block_id
 from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,17 @@ logger = logging.getLogger(__name__)
 # value comes from DeviceModelSpec.tensor_cache_timeout (first-compile/warmup for
 # large forge LLMs can exceed 1200s); bump it per model in the model spec.
 _DEFAULT_WAIT_HEALTHY_TIMEOUT_S = 3600.0
+
+
+def _limit_mode(ctx: MediaContext):
+    """Resolve the run's EvalLimitMode (from --ci-mode / --limit-samples-mode).
+
+    Returns None for unrestricted full runs, in which case scoring compares
+    against the full-dataset gpu_reference_score.
+    """
+    rc = getattr(ctx, "runtime_config", None)
+    mode_str = getattr(rc, "limit_samples_mode", None) if rc is not None else None
+    return EvalLimitMode.from_string(mode_str) if mode_str else None
 
 
 def _device_label(ctx: MediaContext) -> str:
@@ -99,6 +112,31 @@ def merge_eval_results(files) -> dict:
     return results
 
 
+def collect_sample_counts(files) -> dict:
+    """Map task_name -> effective sample count from lm-eval result JSONs.
+
+    Used for the sample-count-aware acceptance check on CI/limit-mode subsets.
+    lm-eval writes ``n-samples: {task: {original, effective}}``; ``effective`` is
+    the count actually scored (after ``--limit``). Returns ``{}`` for formats
+    without this field (e.g. some lmms-eval outputs), in which case scoring falls
+    back to the ratio check.
+    """
+    counts: dict = {}
+    for json_file in files:
+        try:
+            with Path(json_file).open("r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        for task_name, info in (data.get("n-samples", {}) or {}).items():
+            if task_name in counts or not isinstance(info, dict):
+                continue
+            eff = info.get("effective")
+            if isinstance(eff, int):
+                counts[task_name] = eff
+    return counts
+
+
 # --- scoring one task's results into Block(kind="evals") ---------------------
 
 
@@ -110,10 +148,16 @@ def _target_keys(task, results: dict) -> List[str]:
 
 
 def _score_one(
-    task, results: dict, t_key: str
+    task, results: dict, t_key: str, ref: dict, n_total=None
 ) -> Tuple[float, Union[float, str], Union[float, str], ReportCheckTypes]:
     """Compute (score, ratio_to_published, ratio_to_reference, accuracy_check)
-    for one task/subtask. Real copy of the v1 evals_release scoring."""
+    for one task/subtask. Real copy of the v1 evals_release scoring.
+
+    ``ref`` is the resolved reference dict from
+    ``evals.eval_config.resolve_eval_reference`` (full-set or, under a limit
+    mode, the matching subset reference). ``n_total`` is the effective sample
+    count, used for the sample-count-aware acceptance check on subset
+    references."""
     # Shallow-copy so kwargs["task_name"] = t_key doesn't mutate the shared
     # config dict for subsequent tasks in this process.
     kwargs = dict(task.score.score_func_kwargs)
@@ -144,8 +188,8 @@ def _score_one(
         score = 100 - score
 
     published = task.score.published_score
-    reference = task.score.gpu_reference_score
-    tolerance = task.score.tolerance
+    reference = ref["reference_score"]
+    tolerance = ref["tolerance"]
 
     if published:
         assert published > 0, "Published score is not > 0"
@@ -154,10 +198,10 @@ def _score_one(
         ratio_to_published = "N/A"
 
     if reference:
-        assert reference > 0, "Reference score is not > 0"
         ratio_to_reference: Union[float, str] = score / reference
+        # Sample-count-aware for subset references, ratio for full-set.
         accuracy_check = ReportCheckTypes.from_result(
-            ratio_to_reference >= (1.0 - tolerance)
+            accept_eval_score(ref, score, n_total=n_total)
         )
     else:
         ratio_to_reference = "N/A"
@@ -171,20 +215,34 @@ def _score_one(
     return score, ratio_to_published, ratio_to_reference, accuracy_check
 
 
-def blocks_for_task(ctx: MediaContext, task, results: dict) -> List[Block]:
+def blocks_for_task(
+    ctx: MediaContext, task, results: dict, sample_counts: dict = None
+) -> List[Block]:
     """Score ``task`` against ``results`` and build one Block per task/subtask.
 
-    Returns ``[]`` when the task has no score defined or produced no matching
-    results (the caller surfaces a FAIL block for a task that ran but scored
-    nothing).
+    A task that ran but has no score defined is not gradable -> one NA Block.
+    A task with a score but no matching results still returns ``[]`` so the
+    caller can surface a FAIL block for a task that ran but scored nothing.
+    ``sample_counts`` maps task_name -> effective sample count for the
+    sample-count-aware acceptance check on subset references.
     """
     if not task.score:
-        logger.info("Skipping %s: no eval score defined.", task.task_name)
-        return []
+        reason = "no eval score defined"
+        logger.info("%s ran but is not gradable: %s.", task.task_name, reason)
+        return [_status_block(ctx, task, TestStatus.NA, reason)]
+
+    sample_counts = sample_counts or {}
+
+    # Under --ci-mode / --limit-samples-mode, compare the subset score against
+    # the matching subset reference (mode_reference_scores) instead of the
+    # full-dataset gpu_reference_score.
+    ref = resolve_eval_reference(task.score, _limit_mode(ctx))
 
     blocks: List[Block] = []
     for t_key in _target_keys(task, results):
-        score, ratio_pub, ratio_ref, accuracy_check = _score_one(task, results, t_key)
+        score, ratio_pub, ratio_ref, accuracy_check = _score_one(
+            task, results, t_key, ref, n_total=sample_counts.get(t_key)
+        )
         blocks.append(
             Block(
                 kind="evals",
@@ -193,16 +251,17 @@ def blocks_for_task(ctx: MediaContext, task, results: dict) -> List[Block]:
                 id=block_id(ctx) or None,
                 targets={
                     "task_name": t_key,
-                    "tolerance": task.score.tolerance,
+                    "tolerance": ref["tolerance"],
                     "published_score": task.score.published_score,
                     "published_score_ref": task.score.published_score_ref,
                 },
                 data={
                     "task_name": t_key,
-                    "tolerance": task.score.tolerance,
+                    "tolerance": ref["tolerance"],
                     "published_score": task.score.published_score,
                     "published_score_ref": task.score.published_score_ref,
-                    "gpu_reference_score": task.score.gpu_reference_score,
+                    "gpu_reference_score": ref["reference_score"],
+                    "gpu_reference_score_ref": ref["reference_ref"],
                     "score": score,
                     "ratio_to_published": ratio_pub,
                     "ratio_to_reference": ratio_ref,
@@ -229,6 +288,33 @@ def _fail_block(ctx: MediaContext, task, error: str) -> Block:
             "score": None,
             "accuracy_check": ReportCheckTypes.FAIL,
             "error": error,
+        },
+    )
+
+
+def _status_block(ctx: MediaContext, task, status: TestStatus, reason: str) -> Block:
+    """Build a non-graded evals Block carrying an explicit ``status``.
+
+    Keeps a task that was intentionally not run (SKIP) or ran but couldn't be
+    graded (NA) *visible* in the report instead of silently vanishing. The
+    explicit ``status`` short-circuits acceptance grading, so the block is
+    non-blocking.
+    """
+    score = getattr(task, "score", None)
+    return Block(
+        kind="evals",
+        task_type="llm",
+        title=f"LLM Eval — {task.task_name}",
+        id=block_id(ctx) or None,
+        targets={"task_name": task.task_name},
+        data={
+            "task_name": task.task_name,
+            "status": status.value,
+            "skipped": status is TestStatus.SKIP,
+            "reason": reason,
+            "tolerance": getattr(score, "tolerance", None),
+            "published_score": getattr(score, "published_score", None),
+            "score": None,
         },
     )
 
@@ -270,11 +356,17 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         )
         return []
 
-    server = HttpServerController(
-        base_url=ctx.server_host,
-        service_port=ctx.server_port,
-        auth_token=auth_token,
-    )
+    if ctx.remote_server:
+        server = RemoteOpenAIController(
+            base_url=ctx.server_url,
+            auth_token=auth_token,
+        )
+    else:
+        server = HttpServerController(
+            base_url=ctx.server_host,
+            service_port=ctx.server_port,
+            auth_token=auth_token,
+        )
     health_timeout = (
         getattr(
             getattr(ctx.model_spec, "device_model_spec", None),
@@ -296,15 +388,16 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
     )
     ran_tasks = []
     rc_by_task = {}
+    skipped_blocks: List[Block] = []
     for task in tasks:
         min_ctx = getattr(task, "min_context_required", None)
         if min_ctx and device_max_context and device_max_context < min_ctx:
-            logger.warning(
-                "Skipping %s: requires max_context >= %s, device provides %s.",
-                task.task_name,
-                min_ctx,
-                device_max_context,
+            reason = (
+                f"requires max_context >= {min_ctx}, device provides "
+                f"{device_max_context}"
             )
+            logger.warning("⏭  Skipping %s: %s.", task.task_name, reason)
+            skipped_blocks.append(_status_block(ctx, task, TestStatus.SKIP, reason))
             continue
         health = server.get_health()
         if getattr(health, "status_code", 200) != 200:
@@ -318,10 +411,12 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         rc_by_task[task.task_name] = _run_eval_task(ctx, task, auth_token)
         ran_tasks.append(task)
 
-    results = merge_eval_results(discover_eval_results(ctx.output_path, ctx.model_spec))
-    blocks: List[Block] = []
+    result_files = discover_eval_results(ctx.output_path, ctx.model_spec)
+    results = merge_eval_results(result_files)
+    sample_counts = collect_sample_counts(result_files)
+    blocks: List[Block] = list(skipped_blocks)
     for task in ran_tasks:
-        task_blocks = blocks_for_task(ctx, task, results)
+        task_blocks = blocks_for_task(ctx, task, results, sample_counts)
         if task_blocks:
             blocks.extend(task_blocks)
         else:

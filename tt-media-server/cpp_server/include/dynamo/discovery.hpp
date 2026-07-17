@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace tt::dynamo {
 
@@ -43,6 +44,14 @@ struct DiscoveryConfig {
   /// Filesystem directory containing config.json + tokenizer.json +
   /// tokenizer_config.json.
   std::string model_path;
+  /// Dynamo ModelType capability advertised in the Model Deployment Card.
+  std::string model_type = "Chat";
+  /// Dynamo ModelInput advertised in the Model Deployment Card.
+  std::string model_input = "Tokens";
+  /// Dynamo WorkerType advertised in newer Model Deployment Cards.
+  std::string worker_type;
+  /// Peer WorkerTypes required for serving readiness, encoded as DNF.
+  std::vector<std::vector<std::string>> needs;
 };
 
 /**

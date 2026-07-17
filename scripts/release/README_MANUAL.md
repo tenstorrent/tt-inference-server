@@ -263,15 +263,28 @@ Once we clone the tt-shield repository, we can find the script at this path:
 As input properties we need to pass:
 - runId of the release job that contains our workflow logs uploaded
 - version of the release
-- all the models/devices combinations for which we want to download artifacts and zip it as the final asset for upload
+
+By default the script reads the model/device combinations to package from the
+`release` entries in `.github/workflows/models-ci-config.json` (the same release
+list `promote_dev_spec_to_prod.py` consumes), so the models no longer need to be
+listed by hand:
+
+```bash
+python3 build_release_artifacts.py \
+        --run-id 26592936143 \
+        --version v0.15.0 \
+        --output-dir .
+```
+
+To override the scope — e.g. to rebuild a single model, or to package models
+that are not in the release list — pass one or more `--model MODEL=dev1,dev2`
+flags instead:
 
 ```bash
 python3 build_release_artifacts.py \
         --run-id 26592936143 \
         --version v0.15.0 \
         --model speecht5_tts=p150,p300x2 \
-        --model whisper-large-v3=p150,p300x2 \
-        --model distil-large-v3=p150,p300x2 \
         --output-dir .
 ```
 

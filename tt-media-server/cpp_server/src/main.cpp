@@ -377,15 +377,44 @@ int main(int argc, char* argv[]) {
 
       tt::dynamo::DynamoEndpoint::Options opts;
       opts.bind_host = tt::config::dynamoBindHost();
+      opts.bind_port = tt::config::dynamoBindPort();
       opts.namespace_name = tt::config::dynamoNamespace();
       opts.component = tt::config::dynamoComponent();
       opts.endpoint = tt::config::dynamoEndpointName();
       opts.etcd_endpoints = tt::config::dynamoEtcdEndpoints();
       opts.etcd_lease_ttl_secs = tt::config::dynamoEtcdLeaseTtlSecs();
+      if (const char* v = std::getenv("DYNAMO_MODEL_TYPE"); v && *v) {
+        opts.model_type = v;
+      } else if (tt::config::dynamoRoutingEnabled() &&
+                 tt::config::llmMode() == tt::config::LLMMode::PREFILL_ONLY) {
+        // Released Dynamo rejects Tokens+Empty; advertise the compatible
+        // Prefill capability while still setting worker_type=prefill.
+        opts.model_type = "Prefill";
+      }
+      if (const char* v = std::getenv("DYNAMO_MODEL_INPUT"); v && *v) {
+        opts.model_input = v;
+      }
+      if (const char* v = std::getenv("DYNAMO_WORKER_TYPE"); v && *v) {
+        opts.worker_type = v;
+      } else if (tt::config::dynamoRoutingEnabled()) {
+        switch (tt::config::llmMode()) {
+          case tt::config::LLMMode::PREFILL_ONLY:
+            opts.worker_type = "prefill";
+            opts.needs = {{"decode"}};
+            break;
+          case tt::config::LLMMode::DECODE_ONLY:
+            opts.worker_type = "decode";
+            break;
+          case tt::config::LLMMode::REGULAR:
+            opts.worker_type = "aggregated";
+            break;
+        }
+      }
 
       try {
-        dynamoEndpoint =
-            std::make_unique<tt::dynamo::DynamoEndpoint>(pipeline, opts);
+        dynamoEndpoint = std::make_unique<tt::dynamo::DynamoEndpoint>(
+            pipeline,
+            tt::services::ServiceContainer::instance().disaggregation(), opts);
         dynamoEndpoint->start();
       } catch (const std::exception& e) {
         TT_LOG_ERROR("[Main] Dynamo endpoint failed to start: {}", e.what());

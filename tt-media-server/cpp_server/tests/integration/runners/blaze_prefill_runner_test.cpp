@@ -20,15 +20,15 @@ namespace tt::runners::blaze {
 
 namespace {
 
-constexpr uint64_t MOCK_DECODE_TOKEN_ID = 12345u;
-constexpr uint64_t EMPTY_TOKEN_ID = std::numeric_limits<uint32_t>::max();
+constexpr uint32_t MOCK_DECODE_TOKEN_ID = 12345u;
+constexpr uint32_t EMPTY_TOKEN_ID = std::numeric_limits<uint32_t>::max();
 
 // Specialized harness for prefill runner that uses setPrefillKVCacheSlot.
 class BlazePrefillRunnerHarness
     : public test::RunnerTestHarness<BlazePrefillRunner> {
  public:
   BlazePrefillRunnerHarness()
-      : test::RunnerTestHarness<BlazePrefillRunner>(config::LLMConfig{}) {}
+      : test::RunnerTestHarness<BlazePrefillRunner>(config::BlazeConfig{}) {}
 
  protected:
   void setKVCacheSlot(domain::llm::Sequence& seq, uint32_t slotId) override {
@@ -248,7 +248,7 @@ TEST(BlazePrefillRunnerIntegrationTest,
   for (size_t i = 0; i < userCount; ++i) {
     harness.submitSequence(
         taskIds[i], slotIds[i],
-        {static_cast<int64_t>(100 + i), static_cast<int64_t>(200 + i)},
+        {static_cast<uint32_t>(100 + i), static_cast<uint32_t>(200 + i)},
         samplingParams);
   }
 

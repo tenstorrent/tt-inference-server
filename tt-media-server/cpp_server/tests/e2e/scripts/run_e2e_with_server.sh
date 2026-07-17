@@ -42,7 +42,7 @@ trap cleanup EXIT
 # Build if binary is missing
 if [[ ! -x "$SERVER_BIN" ]]; then
     echo "Building server..."
-    cd "$PROJECT_DIR" && ./build.sh
+    cd "$PROJECT_DIR" && ./build.sh --blaze
 fi
 
 # Start server with mock backend

@@ -56,7 +56,7 @@ std::string dumpJsonCompact(const Json::Value& v);  // defined below
 /// arrays, strings, floats, etc.) so the caller can fall back to the full JSON
 /// parser. Tolerates whitespace, negative ints, and a trailing comma.
 size_t scanIntArray(const char* s, size_t start, size_t n,
-                    std::vector<int>& out) {
+                    std::vector<uint32_t>& out) {
   if (start >= n || s[start] != '[') return std::string_view::npos;
   size_t i = start + 1;
   auto isWs = [](char c) {
@@ -82,7 +82,7 @@ size_t scanIntArray(const char* s, size_t start, size_t n,
       v = v * 10 + (s[i] - '0');
       ++i;
     }
-    out.push_back(neg ? -static_cast<int>(v) : static_cast<int>(v));
+    out.push_back(static_cast<uint32_t>(neg ? -v : v));
   }
   return std::string_view::npos;  // unterminated array
 }
@@ -311,7 +311,7 @@ GenerateRequest parse_generate_request(const std::vector<uint8_t>& bodyBytes) {
 
   size_t arrayStart = 0;
   if (findTokenIdsArray(body, arrayStart)) {
-    std::vector<int> ids;
+    std::vector<uint32_t> ids;
     const size_t arrayEnd = scanIntArray(data, arrayStart, n, ids);
     if (arrayEnd != std::string_view::npos) {
       std::string reduced;
@@ -335,7 +335,7 @@ GenerateRequest parse_generate_request(const std::vector<uint8_t>& bodyBytes) {
   if (j.isMember("token_ids") && j["token_ids"].isArray()) {
     req.token_ids.reserve(j["token_ids"].size());
     for (const auto& t : j["token_ids"]) {
-      req.token_ids.push_back(t.asInt());
+      req.token_ids.push_back(static_cast<uint32_t>(t.asUInt()));
     }
   }
   populateGenerateFields(req, j);
@@ -356,7 +356,7 @@ std::vector<uint8_t> encode_stream_chunk(const TokenChunk& chunk) {
 
   Json::Value tokenData(Json::objectValue);
   Json::Value tokenIds(Json::arrayValue);
-  for (int t : chunk.token_ids) tokenIds.append(t);
+  for (uint32_t t : chunk.token_ids) tokenIds.append(t);
   tokenData["token_ids"] = std::move(tokenIds);
   if (chunk.finish_reason.has_value()) {
     tokenData["finish_reason"] = *chunk.finish_reason;
@@ -389,6 +389,9 @@ std::vector<uint8_t> encode_stream_chunk(const TokenChunk& chunk) {
 
   if (!chunk.engine_data.isNull()) {
     tokenData["engine_data"] = chunk.engine_data;
+  }
+  if (!chunk.disaggregated_params.isNull()) {
+    tokenData["disaggregated_params"] = chunk.disaggregated_params;
   }
 
   // Annotated<T>: {"data": <token_data>}
@@ -496,7 +499,10 @@ void DynamoServer::process_request(const trantor::TcpConnectionPtr& conn,
       TT_LOG_DEBUG(
           "[DynamoServer] Request id={} input_tokens={} max_tokens={} "
           "address={}",
-          id, genReq.token_ids.size(), genReq.max_tokens, connInfo.address);
+          id, genReq.token_ids.size(),
+          genReq.max_tokens.has_value() ? std::to_string(*genReq.max_tokens)
+                                        : "None",
+          connInfo.address);
       handler_(genReq, connInfo);
     } catch (const std::exception& e) {
       TT_LOG_ERROR("[DynamoServer] request dispatch failed id={}: {}", id,
@@ -664,8 +670,11 @@ void DynamoServer::start() {
 
   running_.store(true);
   trantor::InetAddress addr(config_.bind_host, config_.bind_port);
-  tcp_server_ = std::make_unique<trantor::TcpServer>(ioLoops.front(), addr,
-                                                     "DynamoServer");
+  // Disable SO_REUSEPORT for fixed ports so a collision fails instead of
+  // silently sharing the port; keep it for OS-assigned (port 0) binds.
+  tcp_server_ = std::make_unique<trantor::TcpServer>(
+      ioLoops.front(), addr, "DynamoServer",
+      /*reUseAddr=*/true, /*reUsePort=*/config_.bind_port == 0);
   tcp_server_->setIoLoops(ioLoops);
   // Port 0 is resolved during the acceptor's bind, which happens in the
   // TcpServer constructor — so the assigned port is available synchronously.

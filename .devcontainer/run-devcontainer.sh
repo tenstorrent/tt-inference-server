@@ -41,6 +41,7 @@ docker run --rm -it \
     --ipc=host \
     --mount source=/dev/hugepages-1G,target=/dev/hugepages-1G,type=bind \
     --mount source="${data_root}",target="${data_root}",type=bind \
+    --network host \
     -p 8000:8000 \
     -p 9000:9000 \
     -e "TT_METAL_HOME=${tt_metal_home}" \

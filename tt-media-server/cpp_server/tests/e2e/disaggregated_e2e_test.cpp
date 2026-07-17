@@ -77,7 +77,6 @@ void configureCommonEnv() {
   setenv("LLM_DEVICE_BACKEND", "mock", 1);
   setenv("DEVICE_IDS", "(0)", 1);
   setenv("MAX_NUM_SESSIONS", "4", 1);
-  setenv("SOCKET_TRANSPORT", "zmq", 1);
   setenv("SOCKET_HOST", "127.0.0.1", 1);
   setenv("SOCKET_PORT", std::to_string(INTER_SERVER_PORT).c_str(), 1);
   setenv("USE_PREFILL_GATEWAY", "0", 1);

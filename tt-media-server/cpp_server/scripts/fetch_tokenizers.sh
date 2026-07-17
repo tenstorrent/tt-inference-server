@@ -237,6 +237,17 @@ download_tokenizer \
     "json" \
     "true"
 
+# MiniMax M3 (public, no auth). Native multimodal model whose top-level
+# config.json uses model_type "minimax_m3_vl"; the text backbone shares the
+# MiniMax tokenizer layout with M2.7. Ships chat_template.jinja separately.
+download_tokenizer \
+    "MiniMaxAI/MiniMax-M3" \
+    "https://huggingface.co/MiniMaxAI/MiniMax-M3/resolve/main" \
+    "false" \
+    '{"model_type":"minimax_m3_vl","architectures":["MiniMaxM3SparseForConditionalGeneration"]}' \
+    "json" \
+    "true"
+
 # GLM-5.1 (public, no auth). Same glm_moe_dsa tokenizer/family as GLM-5.2
 # (same eos set + <think>/</think> ids), so it reuses the glm45/glm47 parser
 # branch in discovery.cpp. Ships its chat template as a separate
