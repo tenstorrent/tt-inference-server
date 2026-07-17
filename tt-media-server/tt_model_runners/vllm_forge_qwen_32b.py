@@ -34,22 +34,53 @@ class VLLMForgeQwen32BRunner(BaseDeviceRunner):
         prompt = "Hello, it's me"
         # Tunable per-run via env vars (mirrors vllm_runner.py /
         # vllm_forge_gemma4_31b.py). Defaults follow the gemma-4-31b TP
-        # measured-best:
+        # measured-best, applied to Qwen3-32B on the same P300X2 4-chip (1,4)
+        # mesh: native 40960 ctx, bfp8 weights+KV, chunk 1024, opt=1.
         #   ENABLE_TRACE=true     decode-graph replay (the dominant decode-speed
         #                         lever on gemma: greedy ~4.8 -> ~9.2 tok/s).
         #   CPU_SAMPLING=false    on-device sampling (TTConfig's own default;
         #                         the old hardcoded True was the deviation).
-        #   OPTIMIZATION_LEVEL=0  REQUIRED on the current (1.3.0) wheel: opt>=1
-        #                         aborts in tt-mlir OpModel worker-grid validation
-        #                         on Blackhole P300 (device {10,13} vs system-desc
-        #                         {10,11}; tt-xla#5204 / tt-mlir#8767). Fixed by
-        #                         tt-mlir#8769, which postdates this wheel -- flip
-        #                         to opt=1 once the forge wheel includes it.
-        # NOTE: these defaults were validated on gemma-4-31b, not yet on
-        # Qwen3-32B -- flip via env if a Qwen-specific issue appears.
-        optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
+        #   OPTIMIZATION_LEVEL=1  the tt-mlir OpModel worker-grid validation
+        #                         abort on Blackhole P300 (device {10,13} vs
+        #                         system-desc {10,11}; tt-xla#5204/tt-mlir#8767,
+        #                         fixed by tt-mlir#8769) does NOT reproduce on
+        #                         the current tt-xla build (qualified on
+        #                         gemma-4-31b's full ctx ladder). Override to 0
+        #                         only if a fresh Blackhole crash with that
+        #                         signature reappears.
+        # NOTE: these defaults were validated on gemma-4-31b, not yet
+        # independently on Qwen3-32B -- flip via env if a Qwen-specific issue
+        # appears.
+        optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "false").lower() == "true"
         enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
+        kv_cache_dtype = os.getenv("KV_CACHE_DTYPE", "bfp_bf8")
+        prefill_chunk_size = os.getenv("PREFILL_CHUNK_SIZE")
+        fp32_dest_acc_en = os.getenv("FP32_DEST_ACC_EN")
+        min_num_seqs = os.getenv("MIN_NUM_SEQS")
+        prefill_batch_threshold = os.getenv("PREFILL_BATCH_THRESHOLD")
+        num_hidden_layers = os.getenv("NUM_HIDDEN_LAYERS")
+        additional_config = {
+            "enable_const_eval": True,
+            "min_context_len": self.settings.vllm.min_context_length,
+            "enable_tensor_parallel": True,
+            "use_2d_mesh": False,
+            "experimental_weight_dtype": "bfp_bf8",
+            "experimental_kv_cache_dtype": kv_cache_dtype,
+            "cpu_sampling": cpu_sampling,
+            "optimization_level": optimization_level,
+            "enable_trace": enable_trace,
+        }
+        if prefill_chunk_size:
+            additional_config["prefill_chunk_size"] = int(prefill_chunk_size)
+        if fp32_dest_acc_en is not None:
+            additional_config["fp32_dest_acc_en"] = fp32_dest_acc_en.lower() == "true"
+        if min_num_seqs:
+            additional_config["min_num_seqs"] = int(min_num_seqs)
+        if prefill_batch_threshold:
+            additional_config["prefill_batch_threshold"] = int(prefill_batch_threshold)
+        if num_hidden_layers:
+            additional_config["num_hidden_layers"] = int(num_hidden_layers)
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
@@ -57,16 +88,7 @@ class VLLMForgeQwen32BRunner(BaseDeviceRunner):
             max_num_seqs=self.settings.vllm.max_num_seqs,
             enable_chunked_prefill=False,
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
-            additional_config={
-                "enable_const_eval": True,
-                "min_context_len": self.settings.vllm.min_context_length,
-                "enable_tensor_parallel": True,
-                "use_2d_mesh": False,
-                "experimental_weight_dtype": "bfp_bf8",
-                "cpu_sampling": cpu_sampling,
-                "optimization_level": optimization_level,
-                "enable_trace": enable_trace,
-            },
+            additional_config=additional_config,
         )
         self.logger.info(
             f"Device {self.device_id}: additional_config={engine_args.additional_config}"
