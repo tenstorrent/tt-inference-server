@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
-# uv --override file for the V2_LLM_VLLM venv (see requirements/v2-llm-vllm.txt
+# uv --override file for the V2_LLM_VLLM venv (see requirements/llm-vllm.txt
 # and the overrides_file hook in workflows/workflow_venvs.py).
 #
 # vllm==0.13.0 declares `transformers>=4.56.0,<5`, so the venv otherwise

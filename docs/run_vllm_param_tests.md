@@ -3,7 +3,7 @@
 How to run the vLLM parameter-conformance tests for development and debugging.
 
 These are the LLM/VLM API parameter tests that run as part of `--workflow spec_tests`
-(routed to the v2 engine). The suites live in `llm_module`:
+(routed to the workflow engine). The suites live in `llm_module`:
 `llm_module/test_vllm_chat_completions.py` and
 `test_vllm_responses.py`. Models are mapped to suites in
 `test_module/test_suites/llm.json`.

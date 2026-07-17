@@ -656,40 +656,40 @@ _venv_config_list = [
         setup_function=setup_evals_agentic,
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.V2_RUN_SCRIPT,
-        requirements_file="v2-run-script.txt",
+        venv_type=WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
+        requirements_file="workflow-run-script.txt",
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.V2_PREFIX_CACHE,
-        requirements_file="v2-prefix-cache.txt",
+        venv_type=WorkflowVenvType.PREFIX_CACHE,
+        requirements_file="prefix-cache.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.V2_LLM_VLLM,
-        requirements_file="v2-llm-vllm.txt",
+        venv_type=WorkflowVenvType.LLM_VLLM,
+        requirements_file="llm-vllm.txt",
         # Force transformers 5.x past vllm==0.13.0's `transformers<5` cap so the
         # gemma-4 tokenizer loads; keeps vllm (and the bench-serve client) at
-        # 0.13.0 for every other model. See v2-llm-vllm-overrides.txt.
-        overrides_file="v2-llm-vllm-overrides.txt",
+        # 0.13.0 for every other model. See llm-vllm-overrides.txt.
+        overrides_file="llm-vllm-overrides.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.V2_LLM_GUIDELLM,
-        requirements_file="v2-llm-guidellm.txt",
+        venv_type=WorkflowVenvType.LLM_GUIDELLM,
+        requirements_file="llm-guidellm.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.V2_LLM_AIPERF,
-        requirements_file="v2-llm-aiperf.txt",
+        venv_type=WorkflowVenvType.LLM_AIPERF,
+        requirements_file="llm-aiperf.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.V2_SPEC_DECODE,
-        requirements_file="v2-spec-decode.txt",
+        venv_type=WorkflowVenvType.SPEC_DECODE,
+        requirements_file="spec-decode.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),

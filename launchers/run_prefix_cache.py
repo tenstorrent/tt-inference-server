@@ -3,9 +3,9 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Thin launcher for the v2 prefix-caching benchmark.
+"""Thin launcher for the prefix-caching benchmark.
 
-Selects/creates the dedicated ``V2_PREFIX_CACHE`` virtual environment and
+Selects/creates the dedicated ``PREFIX_CACHE`` virtual environment and
 re-execs ``run_workflows.py`` inside it, then forwards every CLI argument verbatim.
 
 Usage (all flags are passed straight through to run_workflows.py):
@@ -22,7 +22,7 @@ import sys
 
 from _launcher_common import setup_venv_and_exec
 
-logger = logging.getLogger("tt_v2_prefix_cache_launcher")
+logger = logging.getLogger("tt_prefix_cache_launcher")
 
 
 def main() -> int:
@@ -32,7 +32,7 @@ def main() -> int:
     )
     from workflows.workflow_types import WorkflowVenvType
 
-    return setup_venv_and_exec(WorkflowVenvType.V2_PREFIX_CACHE, logger, "prefix-cache")
+    return setup_venv_and_exec(WorkflowVenvType.PREFIX_CACHE, logger, "prefix-cache")
 
 
 if __name__ == "__main__":

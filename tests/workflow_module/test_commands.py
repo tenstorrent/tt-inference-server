@@ -205,12 +205,12 @@ class TestVenvCommand:
         rec = {}
         config = _install_fake_venv_stack(
             monkeypatch,
-            venv_type=WorkflowVenvType.V2_RUN_SCRIPT,
+            venv_type=WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
             venv_python="/venv/bin/python",
             recorder=rec,
         )
         cmd = VenvCommand(
-            WorkflowVenvType.V2_RUN_SCRIPT,
+            WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
             ["run_workflows.py", "--workflow", "release"],
             model_spec="ms",
         )
@@ -228,9 +228,9 @@ class TestVenvCommand:
     def test_default_name_reflects_venv_type(self):
         from workflows.workflow_types import WorkflowVenvType
 
-        cmd = VenvCommand(WorkflowVenvType.V2_RUN_SCRIPT, ["x.py"])
-        assert cmd.name == "venv[V2_RUN_SCRIPT]"
-        assert VenvCommand(WorkflowVenvType.V2_RUN_SCRIPT, ["x.py"], label="w").name == "w"
+        cmd = VenvCommand(WorkflowVenvType.WORKFLOW_RUN_SCRIPT, ["x.py"])
+        assert cmd.name == "venv[WORKFLOW_RUN_SCRIPT]"
+        assert VenvCommand(WorkflowVenvType.WORKFLOW_RUN_SCRIPT, ["x.py"], label="w").name == "w"
 
     def test_env_is_merged_over_os_environ(self, monkeypatch):
         from workflows.workflow_types import WorkflowVenvType
@@ -239,11 +239,11 @@ class TestVenvCommand:
         rec = {}
         _install_fake_venv_stack(
             monkeypatch,
-            venv_type=WorkflowVenvType.V2_RUN_SCRIPT,
+            venv_type=WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
             recorder=rec,
         )
         VenvCommand(
-            WorkflowVenvType.V2_RUN_SCRIPT,
+            WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
             ["x.py"],
             env={"TT_V1_RUN_COMMAND": "python run.py"},
         ).execute()
@@ -256,11 +256,11 @@ class TestVenvCommand:
         rec = {}
         _install_fake_venv_stack(
             monkeypatch,
-            venv_type=WorkflowVenvType.V2_RUN_SCRIPT,
+            venv_type=WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
             setup_ok=False,
             recorder=rec,
         )
-        result = VenvCommand(WorkflowVenvType.V2_RUN_SCRIPT, ["x.py"]).execute()
+        result = VenvCommand(WorkflowVenvType.WORKFLOW_RUN_SCRIPT, ["x.py"]).execute()
         assert result.return_code == 1
         assert "provision" in result.error
         assert rec == {}  # run_command never reached
@@ -270,10 +270,10 @@ class TestVenvCommand:
 
         _install_fake_venv_stack(
             monkeypatch,
-            venv_type=WorkflowVenvType.V2_RUN_SCRIPT,
+            venv_type=WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
             run_rc=2,
         )
-        result = VenvCommand(WorkflowVenvType.V2_RUN_SCRIPT, ["x.py"]).execute()
+        result = VenvCommand(WorkflowVenvType.WORKFLOW_RUN_SCRIPT, ["x.py"]).execute()
         assert result.return_code == 2
         assert not result.succeeded
 
@@ -302,10 +302,10 @@ class TestVenvCommand:
     def test_unknown_venv_type_returns_error(self, monkeypatch):
         from workflows.workflow_types import WorkflowVenvType
 
-        # Fake stack only registers V2_RUN_SCRIPT; ask for a different type.
+        # Fake stack only registers WORKFLOW_RUN_SCRIPT; ask for a different type.
         _install_fake_venv_stack(
             monkeypatch,
-            venv_type=WorkflowVenvType.V2_RUN_SCRIPT,
+            venv_type=WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
         )
         result = VenvCommand(WorkflowVenvType.EVALS_COMMON, ["x.py"]).execute()
         assert result.return_code == 1

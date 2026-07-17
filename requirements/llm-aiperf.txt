@@ -12,7 +12,7 @@
 # pull in numpy via transformers / aiperf, but we leave that to pip's
 # resolver instead of pinning it ourselves.
 #
-# The V2_PREFIX_CACHE venv builds on this base via `-r v2-llm-aiperf.txt`.
+# The V2_PREFIX_CACHE venv builds on this base via `-r llm-aiperf.txt`.
 
 -c constraints.txt
 --extra-index-url https://download.pytorch.org/whl/cpu

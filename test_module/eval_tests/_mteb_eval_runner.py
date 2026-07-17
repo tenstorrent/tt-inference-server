@@ -5,7 +5,7 @@
 """MTEB runner executed inside the EVALS_EMBEDDING venv.
 
 The heavy ``mteb`` dependency is provisioned into its own venv, so it cannot be imported into the
-shared V2_RUN_SCRIPT venv. ``embedding_eval_tests.run_embedding_eval`` therefore
+shared WORKFLOW_RUN_SCRIPT venv. ``embedding_eval_tests.run_embedding_eval`` therefore
 launches this module as a subprocess in that venv; the ``__main__`` guard below
 is only a thin CLI adapter that hands off to :class:`MtebEvalRunner`.
 

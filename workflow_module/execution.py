@@ -136,7 +136,7 @@ class LLMBenchOptions:
     ``auth_token`` is the bearer token (minted JWT) sent to the server.
     ``venv_python`` pins the interpreter whose ``bin/`` holds the perf-tool
     binary; set for the ``release`` path, where ``run.py`` runs in the
-    V2_RUN_SCRIPT venv rather than the tool venv (a standalone benchmarks run
+    WORKFLOW_RUN_SCRIPT venv rather than the tool venv (a standalone benchmarks run
     is already inside the tool venv via run_llm_bench.py, so it stays ``None``).
     Threaded through ``OrchestratorMetadata`` so ``run.py`` stays decoupled
     from ``llm_module``.
@@ -266,7 +266,7 @@ class WorkflowExecution(ABC):
         )
 
     def prepare(self) -> None:
-        # v2 runs against an external inference server, so there's no venv
+        # the workflow engine runs against an external inference server, so there's no venv
         # / library install step to do here. Subclasses that need
         # environment prep (warmup pings, dataset downloads, etc.) override
         # this hook.

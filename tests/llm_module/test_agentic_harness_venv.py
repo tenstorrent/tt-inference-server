@@ -5,7 +5,7 @@
 """Agentic harness binaries resolve from the explicit ``venv_python``.
 
 When agentic runs as a release child it cannot rely on ``sys.executable``
-pointing at the EVALS_AGENTIC venv (the engine runs under V2_RUN_SCRIPT). These
+pointing at the EVALS_AGENTIC venv (the engine runs under WORKFLOW_RUN_SCRIPT). These
 tests pin that harbor / sweagent / mini-extra / swebench all resolve relative
 to the supplied ``venv_python`` instead.
 """

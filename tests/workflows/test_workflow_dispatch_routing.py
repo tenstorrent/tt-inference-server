@@ -102,9 +102,9 @@ def test_vlm_release_provisions_llm_venvs(monkeypatch):
         "_llm_eval_venv_types",
         lambda ms, rc=None: [WorkflowVenvType.EVALS_VISION],
     )
-    venvs = workflow_dispatch._v2_dependency_venv_types(spec, WorkflowType.RELEASE)
+    venvs = workflow_dispatch._engine_dependency_venv_types(spec, WorkflowType.RELEASE)
     assert WorkflowVenvType.EVALS_VISION in venvs
-    assert WorkflowVenvType.V2_LLM_VLLM in venvs
+    assert WorkflowVenvType.LLM_VLLM in venvs
 
 
 def test_release_provisions_eval_and_bench_venvs(monkeypatch):
@@ -119,10 +119,10 @@ def test_release_provisions_eval_and_bench_venvs(monkeypatch):
             WorkflowVenvType.EVALS_META,
         ],
     )
-    venvs = workflow_dispatch._v2_dependency_venv_types(spec, WorkflowType.RELEASE)
+    venvs = workflow_dispatch._engine_dependency_venv_types(spec, WorkflowType.RELEASE)
     assert WorkflowVenvType.EVALS_COMMON in venvs
     assert WorkflowVenvType.EVALS_META in venvs
-    assert WorkflowVenvType.V2_LLM_VLLM in venvs
+    assert WorkflowVenvType.LLM_VLLM in venvs
 
 
 def test_release_provisions_prefix_cache_and_spec_decode_venvs(monkeypatch):
@@ -133,11 +133,11 @@ def test_release_provisions_prefix_cache_and_spec_decode_venvs(monkeypatch):
     monkeypatch.setattr(workflow_dispatch, "_llm_eval_venv_types", lambda ms, rc=None: [])
     monkeypatch.setattr(workflow_dispatch, "_llm_release_includes_agentic", lambda ms: False)
 
-    venvs = workflow_dispatch._v2_dependency_venv_types(spec, WorkflowType.RELEASE, rc)
+    venvs = workflow_dispatch._engine_dependency_venv_types(spec, WorkflowType.RELEASE, rc)
 
-    assert WorkflowVenvType.V2_LLM_VLLM in venvs
-    assert WorkflowVenvType.V2_PREFIX_CACHE in venvs
-    assert WorkflowVenvType.V2_SPEC_DECODE in venvs
+    assert WorkflowVenvType.LLM_VLLM in venvs
+    assert WorkflowVenvType.PREFIX_CACHE in venvs
+    assert WorkflowVenvType.SPEC_DECODE in venvs
 
 
 def test_evals_provisions_only_eval_venvs(monkeypatch):
@@ -149,9 +149,9 @@ def test_evals_provisions_only_eval_venvs(monkeypatch):
         "_llm_eval_venv_types",
         lambda ms, rc=None: [WorkflowVenvType.EVALS_COMMON],
     )
-    venvs = workflow_dispatch._v2_dependency_venv_types(spec, WorkflowType.EVALS)
+    venvs = workflow_dispatch._engine_dependency_venv_types(spec, WorkflowType.EVALS)
     assert venvs == [WorkflowVenvType.EVALS_COMMON]
-    assert WorkflowVenvType.V2_LLM_VLLM not in venvs
+    assert WorkflowVenvType.LLM_VLLM not in venvs
 
 
 def _ev_task(name, venv):
@@ -387,10 +387,10 @@ def test_release_dispatches_only_engine(monkeypatch, tmp_path):
     assert [r.workflow_name for r in results] == ["release"]
     assert all(r.return_code == 0 for r in results)
     # The generic path builds a single VenvCommand for run_workflows.py in the
-    # V2_RUN_SCRIPT venv, driven by the WorkflowRunner.
+    # WORKFLOW_RUN_SCRIPT venv, driven by the WorkflowRunner.
     assert len(_FakeRunner.captured) == 1
     engine_cmd = _FakeRunner.captured[0]
-    assert engine_cmd.venv_type == WorkflowVenvType.V2_RUN_SCRIPT
+    assert engine_cmd.venv_type == WorkflowVenvType.WORKFLOW_RUN_SCRIPT
     assert any("run_workflows.py" in a for a in engine_cmd.argv)
     assert not any("run_agentic.py" in a for a in engine_cmd.argv)
     assert not any("run_release_merge.py" in a for a in engine_cmd.argv)

@@ -132,7 +132,7 @@ def _agentic_venv_python() -> Optional[Path]:
     """Interpreter of the EVALS_AGENTIC venv whose bin/ holds harbor/sweagent.
 
     Returned to the harness so it can locate its CLI even when the agentic
-    driver runs as a child of the V2_RUN_SCRIPT engine (release path) rather
+    driver runs as a child of the WORKFLOW_RUN_SCRIPT engine (release path) rather
     than after ``run_agentic.py`` re-execs into the agentic venv. Resolution
     failures fall back to ``None`` (current interpreter), preserving standalone
     behavior.

@@ -18,7 +18,7 @@ import sys
 
 from _launcher_common import setup_venv_and_exec
 
-logger = logging.getLogger("tt_v2_llm_bench_launcher")
+logger = logging.getLogger("tt_llm_bench_launcher")
 
 
 def _venv_type_for_tool(tools: str):
@@ -26,12 +26,12 @@ def _venv_type_for_tool(tools: str):
     from workflows.workflow_types import WorkflowVenvType
 
     return {
-        "aiperf": WorkflowVenvType.V2_LLM_AIPERF,
-        "guidellm": WorkflowVenvType.V2_LLM_GUIDELLM,
-        "vllm": WorkflowVenvType.V2_LLM_VLLM,
-        "genai": WorkflowVenvType.V2_RUN_SCRIPT,  # genai-perf runs via Docker
-        "genai_perf": WorkflowVenvType.V2_RUN_SCRIPT,
-    }.get(tools, WorkflowVenvType.V2_LLM_VLLM)
+        "aiperf": WorkflowVenvType.LLM_AIPERF,
+        "guidellm": WorkflowVenvType.LLM_GUIDELLM,
+        "vllm": WorkflowVenvType.LLM_VLLM,
+        "genai": WorkflowVenvType.WORKFLOW_RUN_SCRIPT,  # genai-perf runs via Docker
+        "genai_perf": WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
+    }.get(tools, WorkflowVenvType.LLM_VLLM)
 
 
 def _parse_tools(argv) -> str:

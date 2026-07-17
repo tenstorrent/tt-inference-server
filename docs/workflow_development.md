@@ -240,7 +240,7 @@ python launchers/run_prefix_cache.py \
 `run_prefix_cache.py` calls
 `VENV_CONFIGS[WorkflowVenvType.V2_PREFIX_CACHE].setup(...)` (declared in
 [`workflows/workflow_venvs.py`](../workflows/workflow_venvs.py), requirements in
-[`requirements/v2-prefix-cache.txt`](../requirements/v2-prefix-cache.txt)), then
+[`requirements/prefix-cache.txt`](../requirements/prefix-cache.txt)), then
 `os.execv`s into `.workflow_venvs/.venv_v2_prefix_cache/bin/python`, forwarding
 every CLI argument to `run.py`. Setup is idempotent, so subsequent runs reuse
 the existing venv. This mirrors how [`workflows/workflow_dispatch.py`](../workflows/workflow_dispatch.py)
@@ -366,7 +366,7 @@ spec-enabled target currently requires a reference GPU vLLM.
 the SPEED-Bench dataset plugins — its pillow requirement conflicts with the
 shared `constraints.txt` pin, hence the separate venv). Use the thin launcher
 `run_spec_decode.py`, which selects/creates that venv (requirements in
-[`requirements/v2-spec-decode.txt`](../requirements/v2-spec-decode.txt)) and
+[`requirements/spec-decode.txt`](../requirements/spec-decode.txt)) and
 re-execs `run.py` inside it:
 
 ```bash

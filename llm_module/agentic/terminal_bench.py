@@ -42,7 +42,7 @@ class TerminalBenchRunConfig:
     # Interpreter whose bin/ holds the ``harbor`` CLI. When ``None`` the current
     # interpreter is used (standalone ``run_agentic.py`` already re-execs into
     # the EVALS_AGENTIC venv). Set on the release path, where the harness runs
-    # as a child of the V2_RUN_SCRIPT engine and must reach harbor explicitly.
+    # as a child of the WORKFLOW_RUN_SCRIPT engine and must reach harbor explicitly.
     venv_python: Optional[Path] = None
 
 

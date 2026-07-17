@@ -3,7 +3,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""v2 CLI entry point — drives a workflow against a running inference server.
+"""workflow CLI entry point — drives a workflow against a running inference server.
 
 Usage:
     python run_workflows.py \
@@ -12,7 +12,7 @@ Usage:
 
 Prefix-caching benchmark (LLM-only, --workflow benchmarks):
     This entry point has no import-time side effects, so it must run inside the
-    dedicated ``V2_PREFIX_CACHE`` venv. Use the thin launcher
+    dedicated ``PREFIX_CACHE`` venv. Use the thin launcher
     ``run_prefix_cache.py`` (which selects/creates that venv and re-execs this
     script) rather than invoking run.py directly:
 
@@ -30,7 +30,7 @@ Agentic evals (LLM-only, --workflow agentic):
             --service-port 8000
 
 Speculative-decoding benchmark (LLM-only, --workflow benchmarks):
-    Requires the dedicated ``V2_SPEC_DECODE`` venv (aiperf>=0.8 for the
+    Requires the dedicated ``SPEC_DECODE`` venv (aiperf>=0.8 for the
     SPEED-Bench dataset plugins). Use the thin launcher
     ``run_spec_decode.py``. Server-side speculative config is out of scope:
     the sweep measures whatever server it is pointed at.
@@ -56,7 +56,7 @@ from workflows.workflow_types import DeviceTypes  # noqa: E402
 
 from workflow_module import CommandFactory, WorkflowRunner  # noqa: E402
 
-logger = logging.getLogger("tt_v2_runner")
+logger = logging.getLogger("tt_workflow_runner")
 
 _LOG_LEVELS = {
     "DEBUG": logging.DEBUG,
@@ -75,7 +75,7 @@ def parse_args() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(
         description=(
-            "Standalone CLI for the v2 WorkflowRunner — drives a v2 workflow "
+            "Standalone CLI for the WorkflowRunner — drives a workflow "
             "against an already-running inference server. For full server "
             "bring-up + workflow runs, invoke through v1 /run.py instead."
         ),
@@ -95,7 +95,7 @@ def parse_args() -> argparse.Namespace:
             "(e.g. 'http://192.168.1.10'). Overrides the default localhost "
             "host; combine with --service-port unless the URL carries an "
             "explicit port. Propagated from v1 run.py --server-url through "
-            "the v2 bridge."
+            "the workflow dispatch."
         ),
     )
     parser.add_argument(
@@ -153,7 +153,7 @@ def parse_args() -> argparse.Namespace:
     # When --prefix-cache is set, BenchmarksWorkflow swaps its default
     # media-task dispatch for the AIPerf prefix-cache scenario sweep (wired
     # through CommandFactory -> OrchestratorMetadata.prefix_cache). Standalone
-    # benchmarks run through run_prefix_cache.py so the V2_PREFIX_CACHE venv is
+    # benchmarks run through run_prefix_cache.py so the PREFIX_CACHE venv is
     # in place before these heavy deps are needed; release pins that venv
     # explicitly for its in-process benchmark child.
     parser.add_argument(
@@ -270,7 +270,7 @@ def parse_args() -> argparse.Namespace:
     # When --spec-decode is set, BenchmarksWorkflow swaps its default
     # media-task dispatch for the AIPerf SPEED-Bench spec-decode sweep (wired
     # through CommandFactory -> OrchestratorMetadata.spec_decode). Standalone
-    # benchmarks run through run_spec_decode.py so the V2_SPEC_DECODE venv
+    # benchmarks run through run_spec_decode.py so the SPEC_DECODE venv
     # (aiperf>=0.8 for the SPEED-Bench dataset plugins) is in place before
     # these heavy deps are needed; release pins that venv explicitly for its
     # in-process benchmark child.

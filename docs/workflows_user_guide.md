@@ -359,7 +359,7 @@ See [Logs](#logs) section below for example format of the report files generated
 
 > **Internal workflow.** `spec_tests` is used for release validation and CI. It requires a running inference server.
 
-The `spec_tests` workflow runs server/model integration tests against the inference server. For media models these are device-liveness and load tests (e.g. `DeviceLivenessTest`, `CnnLoadTest`); for LLM/VLM models it runs the vLLM API parameter-conformance suite (see [API Parameter Tests](#api-parameter-tests) below). Tests are matched by model name and device and executed by the v2 test engine (`run_workflows.py`), which emits the report in-process.
+The `spec_tests` workflow runs server/model integration tests against the inference server. For media models these are device-liveness and load tests (e.g. `DeviceLivenessTest`, `CnnLoadTest`); for LLM/VLM models it runs the vLLM API parameter-conformance suite (see [API Parameter Tests](#api-parameter-tests) below). Tests are matched by model name and device and executed by the workflow engine (`run_workflows.py`), which emits the report in-process.
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow spec_tests
@@ -383,7 +383,7 @@ For LLM/VLM models, `--workflow spec_tests` runs pytest-based tests that exercis
 python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow spec_tests
 ```
 
-The run routes to the v2 test engine, which emits the report in-process to `workflow_logs/reports_output/spec_tests/`.
+The run routes to the workflow engine, which emits the report in-process to `workflow_logs/reports_output/spec_tests/`.
 
 ## Stress Tests
 

@@ -415,9 +415,9 @@ def parse_arguments():
 
     # Serving-bench shell benchmark suites
     serving_bench_group = parser.add_argument_group(
-        "serving_bench workflow (v2)",
+        "serving_bench workflow",
         "Arguments for --workflow serving_bench (shell benchmark suites against a "
-        "running server, routed to v2)",
+        "running server, routed to the workflow engine)",
     )
     serving_bench_group.add_argument(
         "--serving-bench-suites",
@@ -430,14 +430,14 @@ def parse_arguments():
     )
 
     prefix_cache_group = parser.add_argument_group(
-        "Prefix-cache benchmark (v2)",
-        "Arguments for --workflow benchmarks --prefix-cache (routed to v2)",
+        "Prefix-cache benchmark",
+        "Arguments for --workflow benchmarks --prefix-cache (routed to the workflow engine)",
     )
     prefix_cache_group.add_argument(
         "--prefix-cache",
         action="store_true",
-        help="Switch --workflow benchmarks to the v2 AIPerf prefix-caching scenario sweep. "
-        "Routes the run through the v2 engine. Requires --workflow benchmarks.",
+        help="Switch --workflow benchmarks to the AIPerf prefix-caching scenario sweep. "
+        "Routes the run through the workflow engine. Requires --workflow benchmarks.",
     )
     prefix_cache_group.add_argument(
         "--prefix-cache-preset",
@@ -513,16 +513,16 @@ def parse_arguments():
 
     # Speculative-decoding benchmark
     spec_decode_group = parser.add_argument_group(
-        "Speculative-decoding benchmark (v2)",
-        "Arguments for --workflow benchmarks --spec-decode (routed to v2)",
+        "Speculative-decoding benchmark",
+        "Arguments for --workflow benchmarks --spec-decode (routed to the workflow engine)",
     )
     spec_decode_group.add_argument(
         "--spec-decode",
         action="store_true",
-        help="Switch --workflow benchmarks to the v2 AIPerf speculative-decoding sweep over "
+        help="Switch --workflow benchmarks to the AIPerf speculative-decoding sweep over "
         "SPEED-Bench. Scrapes the vLLM vllm:spec_decode_* counters per run for acceptance "
         "rate / mean accepted length. The server's speculative_config is out of scope and "
-        "must be set by whoever launched it. Routes the run through the v2 engine. "
+        "must be set by whoever launched it. Routes the run through the workflow engine. "
         "Requires --workflow benchmarks.",
     )
     spec_decode_group.add_argument(
@@ -537,7 +537,7 @@ def parse_arguments():
         type=int,
         default=None,
         help="Short chat-completion warmup requests sent before the spec-decode sweep "
-        "(v2 default: 4; 0 disables).",
+        "(default: 4; 0 disables).",
     )
 
     args = parser.parse_args()
@@ -957,10 +957,10 @@ def main():
             raise ValueError(
                 f"No workflow driver for --workflow {runtime_config.workflow} on "
                 f"{model_spec.model_name} ({model_spec.model_type.name}); all "
-                "supported workflows route to the v2 engine."
+                "supported workflows route to the workflow engine."
             )
         logger.info(
-            "Model %s (model_type=%s) routes through v2 engine.",
+            "Model %s (model_type=%s) routes through the workflow engine.",
             model_spec.model_name,
             model_spec.model_type.name,
         )

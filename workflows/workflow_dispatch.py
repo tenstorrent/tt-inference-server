@@ -26,7 +26,7 @@ from workflow_module import VenvCommand, WorkflowRunner
 
 logger = logging.getLogger("run_log")
 
-_V2_WORKFLOW_NAMES = {
+_ENGINE_WORKFLOW_NAMES = {
     WorkflowType.BENCHMARKS: "benchmarks",
     WorkflowType.EVALS: "evals",
     WorkflowType.SPEC_TESTS: "spec_tests",
@@ -36,10 +36,10 @@ _V2_WORKFLOW_NAMES = {
     WorkflowType.SERVING_BENCH: "serving_bench",
 }
 
-_V2_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
+_ENGINE_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
 
 
-_V2_EVAL_VENV_BY_MODEL_TYPE = {
+_ENGINE_EVAL_VENV_BY_MODEL_TYPE = {
     ModelType.AUDIO: WorkflowVenvType.EVALS_AUDIO,
     ModelType.EMBEDDING: WorkflowVenvType.EVALS_EMBEDDING,
 }
@@ -47,9 +47,9 @@ _V2_EVAL_VENV_BY_MODEL_TYPE = {
 # Model types that share LLM code path rather than a media runner.
 _LLM_LIKE_TYPES = frozenset({ModelType.LLM, ModelType.VLM})
 
-# Model types fully onboarded to v2. Every model of these types routes to v2 by
+# Model types fully onboarded to the workflow engine. Every model of these types routes to the workflow engine by
 # model_type — no per-name allowlist, so new models are picked up automatically.
-_V2_ROUTED_MODEL_TYPES = frozenset(
+_ENGINE_ROUTED_MODEL_TYPES = frozenset(
     {
         ModelType.IMAGE,
         ModelType.VIDEO,
@@ -62,8 +62,8 @@ _V2_ROUTED_MODEL_TYPES = frozenset(
 
 
 def is_engine_routed_model(model_spec) -> bool:
-    """True if the model routes to v2 purely by its model_type."""
-    return model_spec.model_type in _V2_ROUTED_MODEL_TYPES
+    """True if the model routes to the workflow engine purely by its model_type."""
+    return model_spec.model_type in _ENGINE_ROUTED_MODEL_TYPES
 
 
 def _is_prefix_cache_run(wf, runtime_config) -> bool:
@@ -79,7 +79,7 @@ def _is_spec_decode_run(wf, runtime_config) -> bool:
 
 
 def _is_llm_benchmark_run(wf, model_spec, runtime_config) -> bool:
-    """Any LLM/VLM model + ``--workflow benchmarks`` routes to v2's ``llm_module``;
+    """Any LLM/VLM model + ``--workflow benchmarks`` routes to the workflow engine's ``llm_module``;
     the ``--tools`` value selects the driver. The prefix-cache and spec-decode
     variants have their own dispatch and are handled separately.
     """
@@ -95,7 +95,7 @@ def _llm_release_includes_agentic(model_spec) -> bool:
     """True if an LLM release should also run agentic evals.
 
     Agentic evals (Terminal-Bench-2 / SWE-bench Verified) now run in-process as
-    a child of the v2 release engine: the harness binaries are resolved from the
+    a child of the workflow release engine: the harness binaries are resolved from the
     EVALS_AGENTIC venv explicitly (not from ``sys.executable``), so their Blocks
     land in the single release report. This predicate gates only the up-front
     provisioning of the EVALS_AGENTIC venv; the release engine itself decides
@@ -117,7 +117,7 @@ def _llm_release_includes_agentic(model_spec) -> bool:
 
 
 def _is_llm_eval_run(wf, model_spec) -> bool:
-    """LLM/VLM ``--workflow evals`` / ``--workflow release`` route to v2.
+    """LLM/VLM ``--workflow evals`` / ``--workflow release`` route to the workflow engine.
 
     Standard evals run lm-eval / lmms-eval through ``EvalsWorkflow`` (VLMs use
     the lmms-eval / EVALS_VISION tasks); release additionally runs the perf
@@ -141,8 +141,8 @@ def _is_llm_spec_test_run(wf, model_spec) -> bool:
 def can_dispatch_to_engine(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
     # Agentic evals, serving-bench benchmark suites, and the prefix-cache /
-    # spec-decode benchmarks are v2-only features with no v1 driver. They route
-    # to v2 for ANY model, regardless of model_type.
+    # spec-decode benchmarks are workflow-engine-only features with no v1 driver. They route
+    # to the workflow engine for ANY model, regardless of model_type.
     if (
         wf
         in (
@@ -161,11 +161,11 @@ def can_dispatch_to_engine(model_spec, runtime_config) -> bool:
     if _is_llm_spec_test_run(wf, model_spec):
         return True
     # IMAGE / VIDEO / AUDIO / TEXT_TO_SPEECH / CNN / EMBEDDING are fully
-    # onboarded to v2, so every model of those types routes by model_type — no
+    # onboarded to the workflow engine, so every model of those types routes by model_type — no
     # per-name allowlist, so new models (e.g. Qwen-Image) are picked up
     # automatically. The v1 eval/benchmark paths for these types are retired.
     if is_engine_routed_model(model_spec):
-        return wf in _V2_WORKFLOW_NAMES
+        return wf in _ENGINE_WORKFLOW_NAMES
     return False
 
 
@@ -180,21 +180,21 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
     Command shapes:
     - Agentic / prefix-cache / spec-decode / llm-bench run their launcher in the
       current interpreter (``venv_type=None``); the launchers re-exec into their
-      own venv (EVALS_AGENTIC / V2_PREFIX_CACHE / V2_SPEC_DECODE / tool venv).
+      own venv (EVALS_AGENTIC / PREFIX_CACHE / SPEC_DECODE / tool venv).
     - stress-tests runs in the STRESS_TESTS_RUN_SCRIPT venv.
-    - Everything else runs ``run_workflows.py`` in V2_RUN_SCRIPT (plus its
+    - Everything else runs ``run_workflows.py`` in WORKFLOW_RUN_SCRIPT (plus its
       dependency venvs, provisioned by the command).
     """
     wf = WorkflowType.from_string(runtime_config.workflow)
-    v2_workflow = _V2_WORKFLOW_NAMES.get(wf)
-    if v2_workflow is None:
+    engine_workflow = _ENGINE_WORKFLOW_NAMES.get(wf)
+    if engine_workflow is None:
         raise ValueError(
-            f"v2 bridge does not handle workflow {wf.name!r}. "
-            f"Supported: {sorted(_V2_WORKFLOW_NAMES.values())}"
+            f"workflow dispatch does not handle workflow {wf.name!r}. "
+            f"Supported: {sorted(_ENGINE_WORKFLOW_NAMES.values())}"
         )
 
     repo_root = Path(__file__).resolve().parent.parent
-    output_dir = get_default_workflow_root_log_dir() / "reports_output" / v2_workflow
+    output_dir = get_default_workflow_root_log_dir() / "reports_output" / engine_workflow
     ensure_readwriteable_dir(output_dir)
 
     if wf == WorkflowType.AGENTIC:
@@ -205,7 +205,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                     repo_root, model_spec, runtime_config, json_fpath, output_dir
                 ),
                 env=_engine_env(),
-                label=v2_workflow,
+                label=engine_workflow,
             )
         ]
     if _is_prefix_cache_run(wf, runtime_config):
@@ -216,7 +216,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                     repo_root, model_spec, runtime_config, json_fpath, output_dir
                 ),
                 env=_engine_env(),
-                label=v2_workflow,
+                label=engine_workflow,
             )
         ]
     if _is_spec_decode_run(wf, runtime_config):
@@ -227,7 +227,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                     repo_root, model_spec, runtime_config, json_fpath, output_dir
                 ),
                 env=_engine_env(),
-                label=v2_workflow,
+                label=engine_workflow,
             )
         ]
     if _is_llm_benchmark_run(wf, model_spec, runtime_config):
@@ -238,7 +238,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                     repo_root, model_spec, runtime_config, json_fpath, output_dir
                 ),
                 env=_engine_env(),
-                label=v2_workflow,
+                label=engine_workflow,
             )
         ]
     if wf == WorkflowType.STRESS_TESTS:
@@ -248,11 +248,11 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                 _stress_argv(repo_root, model_spec, runtime_config, json_fpath),
                 model_spec=model_spec,
                 env=_engine_env(),
-                label=v2_workflow,
+                label=engine_workflow,
             )
         ]
 
-    # Generic engine path: run_workflows.py in V2_RUN_SCRIPT + its dependency venvs.
+    # Generic engine path: run_workflows.py in WORKFLOW_RUN_SCRIPT + its dependency venvs.
     v2_run_py = repo_root / "run_workflows.py"
     if not v2_run_py.is_file():
         raise FileNotFoundError(
@@ -262,15 +262,15 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
     _warn_on_unsupported_args(runtime_config)
     return [
         VenvCommand(
-            WorkflowVenvType.V2_RUN_SCRIPT,
+            WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
             _engine_run_argv(
-                v2_run_py, model_spec, runtime_config, json_fpath, v2_workflow,
+                v2_run_py, model_spec, runtime_config, json_fpath, engine_workflow,
                 output_dir, wf,
             ),
             model_spec=model_spec,
             env=_engine_env(),
-            label=v2_workflow,
-            dependency_venvs=_v2_dependency_venv_types(model_spec, wf, runtime_config),
+            label=engine_workflow,
+            dependency_venvs=_engine_dependency_venv_types(model_spec, wf, runtime_config),
         )
     ]
 
@@ -283,17 +283,17 @@ def dispatch_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowR
     the engine command(s) on their own.
     """
     wf = WorkflowType.from_string(runtime_config.workflow)
-    v2_workflow = _V2_WORKFLOW_NAMES.get(wf, runtime_config.workflow)
+    engine_workflow = _ENGINE_WORKFLOW_NAMES.get(wf, runtime_config.workflow)
     commands = build_engine_commands(model_spec, runtime_config, json_fpath)
-    logger.info("Delegating workflow %r to v2 engine.", v2_workflow)
+    logger.info("Delegating workflow %r to workflow engine.", engine_workflow)
     return_code = WorkflowRunner(commands).run()
     if return_code != 0:
         logger.error(
-            f"⛔ v2 workflow: {v2_workflow}, failed with return code: {return_code}"
+            f"⛔ workflow: {engine_workflow}, failed with return code: {return_code}"
         )
     else:
-        logger.info(f"✅ Completed v2 workflow: {v2_workflow}")
-    return [WorkflowResult(workflow_name=v2_workflow, return_code=return_code)]
+        logger.info(f"✅ Completed workflow: {engine_workflow}")
+    return [WorkflowResult(workflow_name=engine_workflow, return_code=return_code)]
 
 
 def _engine_env() -> dict:
@@ -303,11 +303,11 @@ def _engine_env() -> dict:
 
 
 def _engine_run_argv(
-    v2_run_py, model_spec, runtime_config, json_fpath, v2_workflow, output_dir, wf
+    v2_run_py, model_spec, runtime_config, json_fpath, engine_workflow, output_dir, wf
 ) -> List[str]:
     """Build the ``run_workflows.py`` argv (interpreter-agnostic).
 
-    :class:`VenvCommand` prepends the V2_RUN_SCRIPT interpreter, so this returns
+    :class:`VenvCommand` prepends the WORKFLOW_RUN_SCRIPT interpreter, so this returns
     everything *after* it — the script path plus flags, mirroring what the old
     hand-rolled ``cmd`` carried minus its leading ``venv_python``.
     """
@@ -316,7 +316,7 @@ def _engine_run_argv(
         "--model",
         model_spec.model_name,
         "--workflow",
-        v2_workflow,
+        engine_workflow,
         "--device",
         runtime_config.device,
         "--service-port",
@@ -349,7 +349,7 @@ def _engine_run_argv(
 
 
 def _base_engine_argv(
-    launcher, model_spec, runtime_config, json_fpath, output_dir, v2_workflow
+    launcher, model_spec, runtime_config, json_fpath, output_dir, engine_workflow
 ):
     """Common launcher argv (interpreter-agnostic; VenvCommand prepends python)."""
     argv = [
@@ -357,7 +357,7 @@ def _base_engine_argv(
         "--model",
         model_spec.model_name,
         "--workflow",
-        v2_workflow,
+        engine_workflow,
         "--device",
         runtime_config.device,
         "--service-port",
@@ -514,7 +514,7 @@ def _extend_if_set(cmd, flag, value) -> None:
 
 # Standard LLM/VLM eval backends (mirrors llm_module.eval_configs). EVALS_AGENTIC
 # is provisioned by the agentic launcher, not here.
-_V2_LLM_STANDARD_EVAL_VENVS = frozenset(
+_ENGINE_LLM_STANDARD_EVAL_VENVS = frozenset(
     {
         WorkflowVenvType.EVALS_COMMON,
         WorkflowVenvType.EVALS_META,
@@ -583,29 +583,29 @@ def _llm_eval_venv_types(model_spec, runtime_config=None) -> List[WorkflowVenvTy
     seen = {
         t.workflow_venv_type
         for t in tasks
-        if t.workflow_venv_type in _V2_LLM_STANDARD_EVAL_VENVS
+        if t.workflow_venv_type in _ENGINE_LLM_STANDARD_EVAL_VENVS
     }
     return sorted(seen, key=lambda v: v.name)
 
 
-def _v2_dependency_venv_types(
+def _engine_dependency_venv_types(
     model_spec, wf, runtime_config=None
 ) -> List[WorkflowVenvType]:
     venv_types: List[WorkflowVenvType] = []
-    if wf in _V2_EVAL_WORKFLOWS:
-        eval_venv = _V2_EVAL_VENV_BY_MODEL_TYPE.get(model_spec.model_type)
+    if wf in _ENGINE_EVAL_WORKFLOWS:
+        eval_venv = _ENGINE_EVAL_VENV_BY_MODEL_TYPE.get(model_spec.model_type)
         if eval_venv is not None:
             venv_types.append(eval_venv)
         if model_spec.model_type in _LLM_LIKE_TYPES:
             venv_types.extend(_llm_eval_venv_types(model_spec, runtime_config))
     # The release benchmark child runs the default perf tool (vllm) in-process
-    # under V2_RUN_SCRIPT, so its tool venv must exist up front.
+    # under WORKFLOW_RUN_SCRIPT, so its tool venv must exist up front.
     if wf == WorkflowType.RELEASE and model_spec.model_type in _LLM_LIKE_TYPES:
-        venv_types.append(WorkflowVenvType.V2_LLM_VLLM)
+        venv_types.append(WorkflowVenvType.LLM_VLLM)
         if getattr(runtime_config, "prefix_cache", False):
-            venv_types.append(WorkflowVenvType.V2_PREFIX_CACHE)
+            venv_types.append(WorkflowVenvType.PREFIX_CACHE)
         if getattr(runtime_config, "spec_decode", False):
-            venv_types.append(WorkflowVenvType.V2_SPEC_DECODE)
+            venv_types.append(WorkflowVenvType.SPEC_DECODE)
         # The agentic release child resolves harbor/sweagent from the
         # EVALS_AGENTIC venv, so it must exist before the engine subprocess runs.
         if _llm_release_includes_agentic(model_spec):
@@ -625,7 +625,7 @@ def _warn_on_unsupported_args(runtime_config) -> None:
         unsupported.append("--test-name")
     if unsupported:
         logger.warning(
-            "v2 engine does not honor these v1 flags for image models; "
+            "workflow engine does not honor these v1 flags for image models; "
             "they will be ignored: %s",
             ", ".join(unsupported),
         )

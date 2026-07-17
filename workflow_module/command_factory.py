@@ -151,8 +151,8 @@ def _resolve_server_url(
 
     Prefers the explicit ``--server-url`` CLI flag, then delegates to the
     shared :func:`resolve_deploy_url` (``RuntimeConfig.server_url`` propagated
-    through the v2 bridge, then the ``DEPLOY_URL`` env var, then the localhost
-    default). This routes v2 through the same single source of truth as every
+    through the workflow dispatch, then the ``DEPLOY_URL`` env var, then the localhost
+    default). This routes the workflow engine through the same single source of truth as every
     v1 workflow rather than re-deriving the precedence here.
     """
     explicit = getattr(args, "server_url", None)
@@ -221,12 +221,12 @@ def _release_bench_venv_python(args: argparse.Namespace) -> Optional[str]:
 
     A standalone benchmarks run is already inside the tool venv (run_llm_bench.py
     re-execs there), so its driver uses ``sys.executable`` — return ``None``.
-    A release run executes in the V2_RUN_SCRIPT venv, so pin the default
-    perf-tool venv (V2_LLM_VLLM); the v2 bridge provisions it before run.py.
+    A release run executes in the WORKFLOW_RUN_SCRIPT venv, so pin the default
+    perf-tool venv (LLM_VLLM); the workflow dispatch provisions it before run.py.
     """
     from workflows.workflow_types import WorkflowVenvType
 
-    return _release_venv_python(args, WorkflowVenvType.V2_LLM_VLLM)
+    return _release_venv_python(args, WorkflowVenvType.LLM_VLLM)
 
 
 def _release_venv_python(args: argparse.Namespace, venv_type) -> Optional[str]:
@@ -279,7 +279,7 @@ def _build_prefix_cache_options(
         goodput=getattr(args, "prefix_cache_goodput", None),
         auth_token=_resolve_auth_token(args),
         metrics_urls=tuple(getattr(args, "prefix_cache_metrics_url", None) or ()),
-        venv_python=_release_venv_python(args, WorkflowVenvType.V2_PREFIX_CACHE),
+        venv_python=_release_venv_python(args, WorkflowVenvType.PREFIX_CACHE),
     )
 
 
@@ -301,7 +301,7 @@ def _build_spec_decode_options(
         preset=args.spec_decode_preset,
         warmup_requests=args.spec_decode_warmup_requests,
         auth_token=_resolve_auth_token(args),
-        venv_python=_release_venv_python(args, WorkflowVenvType.V2_SPEC_DECODE),
+        venv_python=_release_venv_python(args, WorkflowVenvType.SPEC_DECODE),
     )
 
 
