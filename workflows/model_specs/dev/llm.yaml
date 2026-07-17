@@ -326,26 +326,37 @@ templates:
       # 256K is device-measured and not asserted here.
       max_context: 262144  # 256 * 1024
       default_impl: true
+      # Env below is the VALIDATED production config (2026-07-17: served a GPQA-Diamond
+      # question to a full multi-block answer "The answer is (C)" = correct).
       env_vars:
         # QB2's 4 Blackhole chips launch as a P150x4 (1,4) mesh label; TP=4 is
-        # derived from mesh_device.shape[1]. (The cards are p300, not p150 -- this
-        # is a tt-metal mesh-shape label, matching the gemma-4 QB2 entries.)
+        # derived from mesh_device.shape[1]. (Cards are p300, not p150 -- mesh label.)
         MESH_DEVICE: "P150x4"
-        # DiffusionGemma denoise blocks are ~minutes each (110s+ at full depth), so
-        # the 900000 default RPC timeout is too tight; the live server used 1800000.
+        # denoise blocks are ~tens of seconds; 900000 default RPC timeout is too tight.
         VLLM_RPC_TIMEOUT: "1800000"
-        # Sampler memory strategy: argmax/chunked are the modes that fit the full
-        # 256K canvas; the live QB2 server ran DG_VLLM_GUMBEL_MODE=argmax.
-        DG_VLLM_GUMBEL_MODE: "argmax"
+        # Production Gumbel sampler: chunked = bounded-memory Gumbel WITH noise (fits
+        # 256K). NOT argmax (deterministic -> repetition/collapse "the the the").
+        DG_VLLM_GUMBEL_MODE: "chunked"
+        # Sparse tuned MoE -- ~4x faster than the dense 128-expert eager path.
+        DG_SPARSE_MOE: "1"
+        DG_SPARSE_MOE_TUNED: "1"
+        DG_VLLM_MAX_DENOISE_STEPS: "48"
+        # Trace OFF: chunked-Gumbel trace buffers exceed the 10 GiB DG_TRACE_REGION_SIZE
+        # -> TT_FATAL mesh_trace.cpp EngineDead. Re-enable only with tuned DRAM.
+        DG_VLLM_TRACE: "0"
       override_tt_config:
         # On-device canvas sampling (Gumbel-max -> entropy-budget accept -> renoise
-        # over all 256 positions, no host readback). The plugin declares
-        # model_capabilities[supports_sample_on_device]=True; the live serve used
-        # sample_on_device_mode=all.
+        # over all 256 positions, no host readback).
         sample_on_device_mode: all
-        # Block-diffusion warms lazily on the first prefill/decode; the AR two-phase
-        # trace warmup is skipped.
+        # Block-diffusion warms lazily on the first prefill/decode.
         enable_model_warmup: false
+      vllm_args:
+        # REQUIRED. Without it vLLM honors the model's generation_config.json
+        # max_new_tokens=256, capping EVERY request to one 256-token canvas block, so
+        # reasoning is truncated before the final answer (GPQA scored 0%). 'vllm' lets
+        # max_tokens drive multi-block decode -> answers complete. Validated 2026-07-17.
+        generation-config: vllm
+        max-num-batched-tokens: 8192
   status: EXPERIMENTAL
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
