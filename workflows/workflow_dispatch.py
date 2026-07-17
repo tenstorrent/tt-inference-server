@@ -25,6 +25,8 @@ from workflows.workflow_types import (
 )
 from workflows.workflow_venvs import VENV_CONFIGS
 
+from workflow_module import VenvCommand, WorkflowRunner
+
 logger = logging.getLogger("run_log")
 
 _V2_WORKFLOW_NAMES = {
@@ -211,52 +213,9 @@ def dispatch_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowR
         cmd = _build_stress_cmd(model_spec, runtime_config, json_fpath)
         delegate_desc = "stress-tests (run_stress_tests.py)"
     else:
-        v2_run_py = repo_root / "run_workflows.py"
-        if not v2_run_py.is_file():
-            raise FileNotFoundError(
-                f"Workflow entry point not found at {v2_run_py}. "
-                "run_workflows.py is required for image-model workflows."
-            )
-        venv_python = _ensure_v2_venv(model_spec)
-        _ensure_v2_dependency_venvs(model_spec, wf, runtime_config)
-
-        cmd = [
-            str(venv_python),
-            str(v2_run_py),
-            "--model",
-            model_spec.model_name,
-            "--workflow",
-            v2_workflow,
-            "--device",
-            runtime_config.device,
-            "--service-port",
-            str(runtime_config.service_port),
-            "--runtime-model-spec-json",
-            str(json_fpath),
-            "--output-dir",
-            str(output_dir),
-        ]
-        if runtime_config.docker_server:
-            cmd.append("--docker-server")
-        _extend_if_set(cmd, "--server-url", getattr(runtime_config, "server_url", None))
-        if wf == WorkflowType.SERVING_BENCH:
-            _extend_if_set(
-                cmd, "--serving-bench-suites", runtime_config.serving_bench_suites
-            )
-        elif _is_llm_eval_run(wf, model_spec) or _is_llm_spec_test_run(wf, model_spec):
-            # Standard evals/release and LLM/VLM parameter-conformance
-            # (spec_tests) need the bearer token to reach a JWT-protected
-            # server; run.py mints it from --jwt-secret/$JWT_SECRET.
-            _forward_jwt(cmd, runtime_config)
-            if wf == WorkflowType.RELEASE:
-                _forward_prefix_cache(cmd, runtime_config)
-                _forward_spec_decode(cmd, runtime_config)
-        else:
-            sdxl_n = getattr(runtime_config, "sdxl_num_prompts", None)
-            if sdxl_n not in (None, "", "0"):
-                cmd.extend(["--num-prompts", str(sdxl_n)])
-        _warn_on_unsupported_args(runtime_config)
-        delegate_desc = "run.py"
+        return _dispatch_via_engine_venv(
+            repo_root, model_spec, runtime_config, json_fpath, wf, v2_workflow, output_dir
+        )
 
     env = os.environ.copy()
     env["TT_V1_RUN_COMMAND"] = "python " + shlex.join(sys.argv)
@@ -274,6 +233,91 @@ def dispatch_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowR
     # Agentic evals run in-process as a release child (their Blocks are already
     # in the report the engine wrote). Parameter tests will be added here once
     # they are available on main as a v2 workflow.
+    return [WorkflowResult(workflow_name=v2_workflow, return_code=return_code)]
+
+
+def _engine_run_argv(
+    v2_run_py, model_spec, runtime_config, json_fpath, v2_workflow, output_dir, wf
+) -> List[str]:
+    """Build the ``run_workflows.py`` argv (interpreter-agnostic).
+
+    :class:`VenvCommand` prepends the V2_RUN_SCRIPT interpreter, so this returns
+    everything *after* it — the script path plus flags, mirroring what the old
+    hand-rolled ``cmd`` carried minus its leading ``venv_python``.
+    """
+    argv = [
+        str(v2_run_py),
+        "--model",
+        model_spec.model_name,
+        "--workflow",
+        v2_workflow,
+        "--device",
+        runtime_config.device,
+        "--service-port",
+        str(runtime_config.service_port),
+        "--runtime-model-spec-json",
+        str(json_fpath),
+        "--output-dir",
+        str(output_dir),
+    ]
+    if runtime_config.docker_server:
+        argv.append("--docker-server")
+    _extend_if_set(argv, "--server-url", getattr(runtime_config, "server_url", None))
+    if wf == WorkflowType.SERVING_BENCH:
+        _extend_if_set(
+            argv, "--serving-bench-suites", runtime_config.serving_bench_suites
+        )
+    elif _is_llm_eval_run(wf, model_spec) or _is_llm_spec_test_run(wf, model_spec):
+        # Standard evals/release and LLM/VLM parameter-conformance (spec_tests)
+        # need the bearer token to reach a JWT-protected server; run.py mints it
+        # from --jwt-secret/$JWT_SECRET.
+        _forward_jwt(argv, runtime_config)
+        if wf == WorkflowType.RELEASE:
+            _forward_prefix_cache(argv, runtime_config)
+            _forward_spec_decode(argv, runtime_config)
+    else:
+        sdxl_n = getattr(runtime_config, "sdxl_num_prompts", None)
+        if sdxl_n not in (None, "", "0"):
+            argv.extend(["--num-prompts", str(sdxl_n)])
+    return argv
+
+
+def _dispatch_via_engine_venv(
+    repo_root, model_spec, runtime_config, json_fpath, wf, v2_workflow, output_dir
+) -> List[WorkflowResult]:
+    """Execute the generic engine workflow as a :class:`VenvCommand`.
+
+    Provisions the V2_RUN_SCRIPT venv (via the command) plus any dependency
+    venvs, then runs ``run_workflows.py`` inside it through a WorkflowRunner.
+    Behavior-equivalent to the previous hand-rolled ``run_command`` path.
+    """
+    v2_run_py = repo_root / "run_workflows.py"
+    if not v2_run_py.is_file():
+        raise FileNotFoundError(
+            f"Workflow entry point not found at {v2_run_py}. "
+            "run_workflows.py is required for image-model workflows."
+        )
+    _ensure_v2_dependency_venvs(model_spec, wf, runtime_config)
+    argv = _engine_run_argv(
+        v2_run_py, model_spec, runtime_config, json_fpath, v2_workflow, output_dir, wf
+    )
+    _warn_on_unsupported_args(runtime_config)
+
+    command = VenvCommand(
+        WorkflowVenvType.V2_RUN_SCRIPT,
+        argv,
+        model_spec=model_spec,
+        env={"TT_V1_RUN_COMMAND": "python " + shlex.join(sys.argv)},
+        label=v2_workflow,
+    )
+    logger.info("Delegating workflow %r to v2 engine via run_workflows.py.", v2_workflow)
+    return_code = WorkflowRunner([command]).run()
+    if return_code != 0:
+        logger.error(
+            f"⛔ v2 workflow: {v2_workflow}, failed with return code: {return_code}"
+        )
+    else:
+        logger.info(f"✅ Completed v2 workflow: {v2_workflow}")
     return [WorkflowResult(workflow_name=v2_workflow, return_code=return_code)]
 
 
@@ -481,20 +525,6 @@ def _build_spec_decode_cmd(repo_root, model_spec, runtime_config, json_fpath, ou
 def _extend_if_set(cmd, flag, value) -> None:
     if value not in (None, ""):
         cmd.extend([flag, str(value)])
-
-
-def _ensure_v2_venv(model_spec) -> Path:
-    """Materialize the V2_RUN_SCRIPT venv and return its interpreter path.
-
-    Materializes a single venv (the v1 ``WorkflowSetup`` used to do this for
-    every task's ``workflow_venv_type``); v2 owns its own sub-workflow dispatch
-    and has no v1 task-config entries to pull in. ``VenvConfig.setup`` is
-    idempotent, so calling this on every dispatch is cheap once the venv exists.
-    """
-    venv_config = VENV_CONFIGS[WorkflowVenvType.V2_RUN_SCRIPT]
-    setup_completed = venv_config.setup(model_spec=model_spec)
-    assert setup_completed, "Failed to setup venv: V2_RUN_SCRIPT"
-    return venv_config.venv_python
 
 
 # Standard LLM/VLM eval backends (mirrors llm_module.eval_configs). EVALS_AGENTIC

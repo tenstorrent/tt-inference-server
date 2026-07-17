@@ -352,21 +352,35 @@ def test_llm_release_includes_agentic_false_for_non_llm(monkeypatch):
     assert workflow_dispatch._llm_release_includes_agentic(_spec(ModelType.IMAGE)) is False
 
 
-def test_release_dispatches_only_engine(monkeypatch, tmp_path):
-    spec, rc = _spec(ModelType.LLM), _rc(workflow="release")
-    calls = []
+class _FakeRunner:
+    """Captures the command list a WorkflowRunner would execute, returns rc=0."""
 
+    captured: list = []
+
+    def __init__(self, commands):
+        type(self).captured = list(commands)
+
+    def run(self):
+        return 0
+
+
+def _patch_engine_dispatch(monkeypatch, tmp_path):
+    """Stub the engine-venv dispatch side effects and capture the VenvCommand."""
+    monkeypatch.setattr(workflow_dispatch, "WorkflowRunner", _FakeRunner)
     monkeypatch.setattr(
-        workflow_dispatch,
-        "run_command",
-        lambda cmd, logger=None, env=None: calls.append(cmd) or 0,
+        workflow_dispatch, "_ensure_v2_dependency_venvs", lambda *a, **k: None
     )
-    monkeypatch.setattr(workflow_dispatch, "_ensure_v2_venv", lambda ms: Path("/fake/python"))
-    monkeypatch.setattr(workflow_dispatch, "_ensure_v2_dependency_venvs", lambda *a, **k: None)
     monkeypatch.setattr(
         workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
     )
     monkeypatch.setattr(workflow_dispatch, "ensure_readwriteable_dir", lambda p: None)
+
+
+def test_release_dispatches_only_engine(monkeypatch, tmp_path):
+    from workflows.workflow_types import WorkflowVenvType
+
+    spec, rc = _spec(ModelType.LLM), _rc(workflow="release")
+    _patch_engine_dispatch(monkeypatch, tmp_path)
 
     results = workflow_dispatch.dispatch_workflows(spec, rc, str(tmp_path / "spec.json"))
 
@@ -374,9 +388,14 @@ def test_release_dispatches_only_engine(monkeypatch, tmp_path):
     # subprocess for agentic, tests, or report merging.
     assert [r.workflow_name for r in results] == ["release"]
     assert all(r.return_code == 0 for r in results)
-    assert any("run_workflows.py" in c[1] for c in calls)
-    assert not any("run_agentic.py" in c[1] for c in calls)
-    assert not any("run_release_merge.py" in c[1] for c in calls)
+    # The generic path builds a single VenvCommand for run_workflows.py in the
+    # V2_RUN_SCRIPT venv, driven by the WorkflowRunner.
+    assert len(_FakeRunner.captured) == 1
+    engine_cmd = _FakeRunner.captured[0]
+    assert engine_cmd.venv_type == WorkflowVenvType.V2_RUN_SCRIPT
+    assert any("run_workflows.py" in a for a in engine_cmd.argv)
+    assert not any("run_agentic.py" in a for a in engine_cmd.argv)
+    assert not any("run_release_merge.py" in a for a in engine_cmd.argv)
 
 
 def test_release_forwards_prefix_cache_and_spec_decode_flags(monkeypatch, tmp_path):
@@ -395,36 +414,24 @@ def test_release_forwards_prefix_cache_and_spec_decode_flags(monkeypatch, tmp_pa
         spec_decode_preset="ci",
         spec_decode_warmup_requests=2,
     )
-    calls = []
-
-    monkeypatch.setattr(
-        workflow_dispatch,
-        "run_command",
-        lambda cmd, logger=None, env=None: calls.append(cmd) or 0,
-    )
-    monkeypatch.setattr(workflow_dispatch, "_ensure_v2_venv", lambda ms: Path("/fake/python"))
-    monkeypatch.setattr(workflow_dispatch, "_ensure_v2_dependency_venvs", lambda *a, **k: None)
-    monkeypatch.setattr(
-        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
-    )
-    monkeypatch.setattr(workflow_dispatch, "ensure_readwriteable_dir", lambda p: None)
+    _patch_engine_dispatch(monkeypatch, tmp_path)
 
     workflow_dispatch.dispatch_workflows(spec, rc, str(tmp_path / "spec.json"))
 
-    assert len(calls) == 1
-    cmd = calls[0]
-    assert "--prefix-cache" in cmd
-    assert cmd[cmd.index("--prefix-cache-preset") + 1] == "ci"
-    assert cmd[cmd.index("--prefix-cache-scenarios") + 1] == "multi_turn"
-    assert cmd[cmd.index("--prefix-cache-arrival") + 1] == "poisson"
-    assert cmd[cmd.index("--prefix-cache-request-rate") + 1] == "2.0"
+    assert len(_FakeRunner.captured) == 1
+    argv = _FakeRunner.captured[0].argv
+    assert "--prefix-cache" in argv
+    assert argv[argv.index("--prefix-cache-preset") + 1] == "ci"
+    assert argv[argv.index("--prefix-cache-scenarios") + 1] == "multi_turn"
+    assert argv[argv.index("--prefix-cache-arrival") + 1] == "poisson"
+    assert argv[argv.index("--prefix-cache-request-rate") + 1] == "2.0"
     assert (
-        cmd[cmd.index("--prefix-cache-metrics-url") + 1]
+        argv[argv.index("--prefix-cache-metrics-url") + 1]
         == "blaze-a29-server-ngrok.n.cloud.tenstorrent.com/metrics"
     )
-    assert "--spec-decode" in cmd
-    assert cmd[cmd.index("--spec-decode-preset") + 1] == "ci"
-    assert cmd[cmd.index("--spec-decode-warmup-requests") + 1] == "2"
+    assert "--spec-decode" in argv
+    assert argv[argv.index("--spec-decode-preset") + 1] == "ci"
+    assert argv[argv.index("--spec-decode-warmup-requests") + 1] == "2"
 
 
 if __name__ == "__main__":
