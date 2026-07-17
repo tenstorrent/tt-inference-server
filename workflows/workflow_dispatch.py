@@ -175,7 +175,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
     Pure builder: returns a list of :class:`VenvCommand`s with no subprocess and
     no venv provisioning (VenvCommand provisions on ``execute()``). ``run.py``
     prepends a ``ServerCommand`` and drives the combined list with a single
-    WorkflowRunner; 
+    WorkflowRunner;
 
     Command shapes:
     - Agentic / prefix-cache / spec-decode / llm-bench run their launcher in the
@@ -194,7 +194,9 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
         )
 
     repo_root = Path(__file__).resolve().parent.parent
-    output_dir = get_default_workflow_root_log_dir() / "reports_output" / engine_workflow
+    output_dir = (
+        get_default_workflow_root_log_dir() / "reports_output" / engine_workflow
+    )
     ensure_readwriteable_dir(output_dir)
 
     if wf == WorkflowType.AGENTIC:
@@ -264,13 +266,20 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
         VenvCommand(
             WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
             _engine_run_argv(
-                v2_run_py, model_spec, runtime_config, json_fpath, engine_workflow,
-                output_dir, wf,
+                v2_run_py,
+                model_spec,
+                runtime_config,
+                json_fpath,
+                engine_workflow,
+                output_dir,
+                wf,
             ),
             model_spec=model_spec,
             env=_engine_env(),
             label=engine_workflow,
-            dependency_venvs=_engine_dependency_venv_types(model_spec, wf, runtime_config),
+            dependency_venvs=_engine_dependency_venv_types(
+                model_spec, wf, runtime_config
+            ),
         )
     ]
 
@@ -453,7 +462,9 @@ def _build_agentic_cmd(repo_root, model_spec, runtime_config, json_fpath, output
     return cmd
 
 
-def _build_prefix_cache_cmd(repo_root, model_spec, runtime_config, json_fpath, output_dir):
+def _build_prefix_cache_cmd(
+    repo_root, model_spec, runtime_config, json_fpath, output_dir
+):
     launcher = _resolve_launcher(repo_root, "run_prefix_cache.py", "prefix-cache")
     cmd = _base_engine_argv(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"
@@ -493,7 +504,9 @@ def _build_llm_bench_cmd(repo_root, model_spec, runtime_config, json_fpath, outp
     return cmd
 
 
-def _build_spec_decode_cmd(repo_root, model_spec, runtime_config, json_fpath, output_dir):
+def _build_spec_decode_cmd(
+    repo_root, model_spec, runtime_config, json_fpath, output_dir
+):
     launcher = _resolve_launcher(repo_root, "run_spec_decode.py", "spec-decode")
     cmd = _base_engine_argv(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"

@@ -964,9 +964,7 @@ def main():
             model_spec.model_name,
             model_spec.model_type.name,
         )
-        commands.extend(
-            build_engine_commands(model_spec, runtime_config, json_fpath)
-        )
+        commands.extend(build_engine_commands(model_spec, runtime_config, json_fpath))
 
     main_return_code = WorkflowRunner(commands).run()
     if main_return_code == 0:

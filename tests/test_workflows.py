@@ -560,9 +560,7 @@ class TestMainWorkflowIntegration:
         ), patch(
             "workflows.run_docker_server.run_docker_server",
             side_effect=RuntimeError("docker start failed"),
-        ), patch(
-            "run.build_engine_commands", return_value=[engine_cmd]
-        ), patch(
+        ), patch("run.build_engine_commands", return_value=[engine_cmd]), patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
             assert main() != 0

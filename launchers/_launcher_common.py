@@ -40,9 +40,7 @@ def setup_venv_and_exec(venv_type, logger: logging.Logger, label: str) -> int:
     venv_python = venv_config.venv_python
 
     run_py = _REPO_ROOT / "run_workflows.py"
-    logger.info(
-        "Launching run_workflows.py for %s inside venv: %s", label, venv_python
-    )
+    logger.info("Launching run_workflows.py for %s inside venv: %s", label, venv_python)
     sys.stdout.flush()
     sys.stderr.flush()
     # exec (not subprocess) so the benchmark inherits this process's stdio and

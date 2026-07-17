@@ -40,7 +40,9 @@ VIDEO_JOB_STATUS_FAILED = "failed"
 VIDEO_JOB_STATUS_CANCELLED = "cancelled"
 DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
 DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
-ACCURACY_REFERENCE_PATH = "reference_config/evals/eval_targets/model_accuracy_reference.json"
+ACCURACY_REFERENCE_PATH = (
+    "reference_config/evals/eval_targets/model_accuracy_reference.json"
+)
 DATASET_DIR = "test_fixtures/datasets/videos"
 # accuracy_check codes returned by _check_accuracy.
 ACCURACY_CHECK_FAIL = 3

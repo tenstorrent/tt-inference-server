@@ -39,7 +39,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Constants
-ACCURACY_REFERENCE_PATH = "reference_config/evals/eval_targets/model_accuracy_reference.json"
+ACCURACY_REFERENCE_PATH = (
+    "reference_config/evals/eval_targets/model_accuracy_reference.json"
+)
 
 # Fixture is sourced from the test_fixtures datasets directory, which is
 # the canonical location used by other v2 vision tests as well

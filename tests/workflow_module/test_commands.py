@@ -230,7 +230,10 @@ class TestVenvCommand:
 
         cmd = VenvCommand(WorkflowVenvType.WORKFLOW_RUN_SCRIPT, ["x.py"])
         assert cmd.name == "venv[WORKFLOW_RUN_SCRIPT]"
-        assert VenvCommand(WorkflowVenvType.WORKFLOW_RUN_SCRIPT, ["x.py"], label="w").name == "w"
+        assert (
+            VenvCommand(WorkflowVenvType.WORKFLOW_RUN_SCRIPT, ["x.py"], label="w").name
+            == "w"
+        )
 
     def test_env_is_merged_over_os_environ(self, monkeypatch):
         from workflows.workflow_types import WorkflowVenvType

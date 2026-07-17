@@ -68,9 +68,7 @@ def main() -> int:
     args = _parse_launcher_args(sys.argv[1:])
     venv_python = _ensure_agentic_venv(args)
 
-    logger.info(
-        "Launching run_workflows.py inside EVALS_AGENTIC venv: %s", venv_python
-    )
+    logger.info("Launching run_workflows.py inside EVALS_AGENTIC venv: %s", venv_python)
     sys.stdout.flush()
     sys.stderr.flush()
     os.execv(str(venv_python), [str(venv_python), str(run_py), *sys.argv[1:]])

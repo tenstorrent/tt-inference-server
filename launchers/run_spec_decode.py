@@ -59,9 +59,7 @@ def main() -> int:
     run_py = _REPO_ROOT / "run_workflows.py"
     venv_python = _ensure_spec_decode_venv()
 
-    logger.info(
-        "Launching run_workflows.py inside SPEC_DECODE venv: %s", venv_python
-    )
+    logger.info("Launching run_workflows.py inside SPEC_DECODE venv: %s", venv_python)
     sys.stdout.flush()
     sys.stderr.flush()
     # exec (not subprocess) so the benchmark inherits this process's stdio and

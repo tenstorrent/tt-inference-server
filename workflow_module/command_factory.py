@@ -49,7 +49,7 @@ class CommandFactory:
 
     Emits the workflow command(s) for ``args`` and, when ``server_launch`` is
     supplied, prepends a :class:`ServerCommand` so the runner brings the server
-    up before running any workflow. 
+    up before running any workflow.
     """
 
     @staticmethod

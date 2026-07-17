@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
-from reference_config.benchmarking.benchmark_config import expand_concurrency_sweep_params
+from reference_config.benchmarking.benchmark_config import (
+    expand_concurrency_sweep_params,
+)
 from workflows.utils_report import BenchmarkTaskParams
 
 

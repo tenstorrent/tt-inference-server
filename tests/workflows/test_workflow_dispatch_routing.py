@@ -45,20 +45,28 @@ def _rc(workflow="benchmarks", **kw):
 
 def test_llm_benchmarks_routes_to_v2():
     spec, rc = _spec(ModelType.LLM), _rc()
-    assert workflow_dispatch._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is True
+    assert (
+        workflow_dispatch._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc)
+        is True
+    )
     assert workflow_dispatch.can_dispatch_to_engine(spec, rc) is True
 
 
 def test_prefix_cache_is_not_llm_bench_but_still_routes():
     spec, rc = _spec(ModelType.LLM), _rc(prefix_cache=True)
     # prefix-cache has its own dispatch; llm-bench must defer to it
-    assert workflow_dispatch._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is False
+    assert (
+        workflow_dispatch._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc)
+        is False
+    )
     assert workflow_dispatch.can_dispatch_to_engine(spec, rc) is True
 
 
 def test_llm_evals_routes_to_v2():
     spec, rc = _spec(ModelType.LLM), _rc(workflow="evals")
-    assert workflow_dispatch._is_llm_benchmark_run(WorkflowType.EVALS, spec, rc) is False
+    assert (
+        workflow_dispatch._is_llm_benchmark_run(WorkflowType.EVALS, spec, rc) is False
+    )
     assert workflow_dispatch._is_llm_eval_run(WorkflowType.EVALS, spec) is True
     assert workflow_dispatch.can_dispatch_to_engine(spec, rc) is True
 
@@ -79,12 +87,17 @@ def test_media_eval_run_is_not_llm_eval():
 @pytest.mark.parametrize("workflow", ["benchmarks", "evals", "release"])
 def test_vlm_routes_to_v2_like_llm(workflow):
     spec = _spec(ModelType.VLM, name="Qwen2.5-VL-7B-Instruct")
-    assert workflow_dispatch.can_dispatch_to_engine(spec, _rc(workflow=workflow)) is True
+    assert (
+        workflow_dispatch.can_dispatch_to_engine(spec, _rc(workflow=workflow)) is True
+    )
 
 
 def test_vlm_benchmarks_is_llm_benchmark_run():
     spec, rc = _spec(ModelType.VLM, name="Qwen2.5-VL-7B-Instruct"), _rc()
-    assert workflow_dispatch._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is True
+    assert (
+        workflow_dispatch._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc)
+        is True
+    )
 
 
 def test_vlm_evals_is_llm_eval_run():
@@ -130,10 +143,16 @@ def test_release_provisions_prefix_cache_and_spec_decode_venvs(monkeypatch):
 
     spec = _spec(ModelType.LLM)
     rc = _rc(workflow="release", prefix_cache=True, spec_decode=True)
-    monkeypatch.setattr(workflow_dispatch, "_llm_eval_venv_types", lambda ms, rc=None: [])
-    monkeypatch.setattr(workflow_dispatch, "_llm_release_includes_agentic", lambda ms: False)
+    monkeypatch.setattr(
+        workflow_dispatch, "_llm_eval_venv_types", lambda ms, rc=None: []
+    )
+    monkeypatch.setattr(
+        workflow_dispatch, "_llm_release_includes_agentic", lambda ms: False
+    )
 
-    venvs = workflow_dispatch._engine_dependency_venv_types(spec, WorkflowType.RELEASE, rc)
+    venvs = workflow_dispatch._engine_dependency_venv_types(
+        spec, WorkflowType.RELEASE, rc
+    )
 
     assert WorkflowVenvType.LLM_VLLM in venvs
     assert WorkflowVenvType.PREFIX_CACHE in venvs
@@ -207,7 +226,10 @@ def test_any_image_model_routes_to_v2(model_name, workflow):
     """All IMAGE models route to v2 purely by model_type — no per-name
     allowlist — so even an unlisted image model routes."""
     spec, rc = _spec(ModelType.IMAGE, name=model_name), _rc(workflow=workflow)
-    assert workflow_dispatch._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is False
+    assert (
+        workflow_dispatch._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc)
+        is False
+    )
     assert workflow_dispatch.is_engine_routed_model(spec) is True
     assert workflow_dispatch.can_dispatch_to_engine(spec, rc) is True
 
@@ -226,7 +248,10 @@ def test_any_image_model_routes_to_v2(model_name, workflow):
 @pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
 def test_wan_video_routes_to_v2(model_name, workflow):
     spec, rc = _spec(ModelType.VIDEO, name=model_name), _rc(workflow=workflow)
-    assert workflow_dispatch._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is False
+    assert (
+        workflow_dispatch._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc)
+        is False
+    )
     assert workflow_dispatch.is_engine_routed_model(spec) is True
     assert workflow_dispatch.can_dispatch_to_engine(spec, rc) is True
 
@@ -234,7 +259,10 @@ def test_wan_video_routes_to_v2(model_name, workflow):
 @pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
 def test_mochi_video_routes_to_v2(workflow):
     spec, rc = _spec(ModelType.VIDEO, name="mochi-1-preview"), _rc(workflow=workflow)
-    assert workflow_dispatch._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is False
+    assert (
+        workflow_dispatch._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc)
+        is False
+    )
     assert workflow_dispatch.is_engine_routed_model(spec) is True
     assert workflow_dispatch.can_dispatch_to_engine(spec, rc) is True
 
@@ -341,12 +369,16 @@ def test_llm_release_includes_agentic_true_when_agentic_task(monkeypatch):
 
 def test_llm_release_includes_agentic_false_without_agentic_task(monkeypatch):
     _patch_eval_configs(monkeypatch, agentic=False)
-    assert workflow_dispatch._llm_release_includes_agentic(_spec(ModelType.LLM)) is False
+    assert (
+        workflow_dispatch._llm_release_includes_agentic(_spec(ModelType.LLM)) is False
+    )
 
 
 def test_llm_release_includes_agentic_false_for_non_llm(monkeypatch):
     _patch_eval_configs(monkeypatch, agentic=True)
-    assert workflow_dispatch._llm_release_includes_agentic(_spec(ModelType.IMAGE)) is False
+    assert (
+        workflow_dispatch._llm_release_includes_agentic(_spec(ModelType.IMAGE)) is False
+    )
 
 
 class _FakeRunner:
@@ -380,7 +412,9 @@ def test_release_dispatches_only_engine(monkeypatch, tmp_path):
     spec, rc = _spec(ModelType.LLM), _rc(workflow="release")
     _patch_engine_dispatch(monkeypatch, tmp_path)
 
-    results = workflow_dispatch.dispatch_workflows(spec, rc, str(tmp_path / "spec.json"))
+    results = workflow_dispatch.dispatch_workflows(
+        spec, rc, str(tmp_path / "spec.json")
+    )
 
     # Agentic now runs in-process inside the release engine; no extra
     # subprocess for agentic, tests, or report merging.
