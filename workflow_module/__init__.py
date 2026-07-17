@@ -31,6 +31,7 @@ _LAZY_FROM_COMMANDS = {
     "ServerCommand",
     "ServerLaunchSpec",
     "SummaryCommand",
+    "VenvCommand",
     "WorkflowCommand",
 }
 

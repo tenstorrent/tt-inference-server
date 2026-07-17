@@ -8,7 +8,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
 
 if TYPE_CHECKING:
     # Annotation-only imports (``from __future__ import annotations`` keeps them
@@ -108,6 +108,64 @@ class ServerCommand(Command):
         return CommandResult(command_name=self.name, return_code=0, payload=payload)
 
 
+class VenvCommand(Command):
+    """Run an argv inside a declared workflow venv, as a subprocess."""
+
+    def __init__(
+        self,
+        venv_type: Any,
+        argv: Sequence[str],
+        *,
+        model_spec: Any = None,
+        env: Optional[Mapping[str, str]] = None,
+        label: Optional[str] = None,
+    ) -> None:
+        self.venv_type = venv_type
+        self.argv = list(argv)
+        self.model_spec = model_spec
+        self.env = dict(env) if env is not None else None
+        self.name = label or f"venv[{getattr(venv_type, 'name', venv_type)}]"
+
+    def execute(self) -> CommandResult:
+        import os
+
+        from workflows.utils import run_command
+        from workflows.workflow_venvs import VENV_CONFIGS
+
+        try:
+            venv_config = VENV_CONFIGS[self.venv_type]
+        except KeyError:
+            return CommandResult(
+                command_name=self.name,
+                return_code=1,
+                error=f"no venv config for {self.venv_type!r}",
+            )
+
+        if not venv_config.setup(model_spec=self.model_spec):
+            return CommandResult(
+                command_name=self.name,
+                return_code=1,
+                error=(
+                    f"failed to provision venv "
+                    f"{getattr(self.venv_type, 'name', self.venv_type)}"
+                ),
+            )
+
+        cmd = [str(venv_config.venv_python), *[str(a) for a in self.argv]]
+        env = {**os.environ, **self.env} if self.env else None
+        try:
+            return_code = run_command(cmd, logger=logger, env=env)
+        except Exception as e:
+            logger.exception("venv command failed: %s", e)
+            return CommandResult(command_name=self.name, return_code=1, error=str(e))
+
+        return CommandResult(
+            command_name=self.name,
+            return_code=return_code,
+            error=None if return_code == 0 else f"exit code {return_code}",
+        )
+
+
 class WorkflowCommand(Command):
     name = "workflow"
 
@@ -204,5 +262,6 @@ __all__ = [
     "ServerCommand",
     "ServerLaunchSpec",
     "SummaryCommand",
+    "VenvCommand",
     "WorkflowCommand",
 ]
