@@ -86,8 +86,8 @@ void resolveDecodeDestinationSlot(
           "{} taskId={} response-id MISS prevId={} → allocating new session",
           K_LOG_PREFIX, input.taskId, *input.previousResponseId);
     } catch (const SessionInFlightException& e) {
-      TT_LOG_WARN("{} taskId={} response-id busy: {}", K_LOG_PREFIX, input.taskId,
-                  e.what());
+      TT_LOG_WARN("{} taskId={} response-id busy: {}", K_LOG_PREFIX,
+                  input.taskId, e.what());
       onError(e.what());
       return;
     }
@@ -160,7 +160,8 @@ void resolveDecodeDestinationSlot(
 
         TT_LOG_INFO(
             "{} taskId={} new session sessionId={} slotId={} continuation={}",
-            K_LOG_PREFIX, taskId, slot.sessionId, slot.slotId, slot.continuation);
+            K_LOG_PREFIX, taskId, slot.sessionId, slot.slotId,
+            slot.continuation);
         onResolved(std::move(slot));
       },
       [onError, &sessionManager, slotToCopyFrom](std::string_view err) {
