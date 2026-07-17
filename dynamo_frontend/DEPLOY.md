@@ -201,7 +201,7 @@ This mode does **not** mean Dynamo owns prefill worker selection. It removes
 PrefillGateway from the deployment topology while preserving direct
 decode-to-prefill communication in `cpp_server`.
 
-For the native-routing feature flag, start with:
+For Dynamo routing, start with:
 
 ```bash
 ./deploy.sh --deepseek --dynamo-routing

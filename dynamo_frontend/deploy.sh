@@ -178,12 +178,7 @@ fi
 ROUTING_MODE_COUNT=$((PREFILL_GATEWAY_ENABLED + PREFILL_DIRECT_ENABLED + DYNAMO_ROUTING_ENABLED))
 [[ "$ROUTING_MODE_COUNT" -le 1 ]] || die "--prefill-direct, --prefill-gateway, and --dynamo-routing are mutually exclusive"
 if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
-    [[ "$PREFILL_DIRECT_ENABLED" == "0" ]] || die "--prefill-direct and --prefill-gateway are mutually exclusive"
-    [[ "$DYNAMO_ROUTING_ENABLED" == "0" ]] || die "--dynamo-routing and --prefill-gateway are mutually exclusive"
     ensure_prefill_gateway_image
-fi
-if [[ "$DYNAMO_ROUTING_ENABLED" == "1" ]]; then
-    [[ "$PREFILL_DIRECT_ENABLED" == "0" ]] || die "--dynamo-routing and --prefill-direct are mutually exclusive"
 fi
 
 require_host_port_free 2379 "etcd"
@@ -363,7 +358,6 @@ if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
     )
 elif [[ "$PREFILL_DIRECT_ENABLED" == "1" ]]; then
     WORKER_ROUTING_ENV+=(
-        -e LLM_MODE=decode
         -e USE_PREFILL_GATEWAY=0
         -e MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
         -e SOCKET_HOST=0.0.0.0
@@ -376,7 +370,6 @@ elif [[ "$DYNAMO_ROUTING_ENABLED" == "1" ]]; then
         -e DYNAMO_ENDPOINT_NAME=generate
         -e DYNAMO_MODEL_TYPE=Chat
         -e DYNAMO_WORKER_TYPE=decode
-        -e LLM_MODE=decode
         -e USE_PREFILL_GATEWAY=0
         -e DYNAMO_ROUTING=1
     )
@@ -516,7 +509,7 @@ if [[ "$PREFILL_GATEWAY_ENABLED" == "1" ]]; then
     log "PrefillGateway metrics on ${PREFILL_GATEWAY_NAME}:${PREFILL_GATEWAY_METRICS_PORT} inside ${NETWORK_NAME}"
 fi
 if [[ "$DYNAMO_ROUTING_ENABLED" == "1" ]]; then
-    log "Dynamo Dynamo routing enabled; Dynamo owns local-vs-remote prefill routing"
+    log "Dynamo routing enabled; Dynamo owns local-vs-remote prefill routing"
 fi
 log "tailing worker logs (Ctrl+C to tear down)"
 docker logs -f "$WORKER_NAME"
