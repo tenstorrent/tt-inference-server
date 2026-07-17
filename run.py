@@ -50,7 +50,7 @@ from workflows.utils import (
     load_dotenv,
     write_dotenv,
 )
-from workflows.workflow_dispatch import can_dispatch_to_engine, dispatch_workflows
+from workflows.workflow_dispatch import build_engine_commands, can_dispatch_to_engine
 from workflows.validate_setup import run_multihost_validation_subprocess, validate_setup
 from workflows.workflow_types import (
     DeviceTypes,
@@ -948,46 +948,32 @@ def main():
             json_fpath=json_fpath,
         )
 
+    commands = []
     if server_launch is not None:
-        server_rc = WorkflowRunner([ServerCommand(server_launch)]).run()
-        if server_rc != 0:
-            logger.error("Inference server bring-up failed (rc=%d).", server_rc)
-            return server_rc
+        commands.append(ServerCommand(server_launch))
 
-    main_return_code = 0
-
-    # step 5: run workflows
-    skip_workflows = {WorkflowType.SERVER}
-    if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
-        if can_dispatch_to_engine(model_spec, runtime_config):
-            logger.info(
-                "Model %s (model_type=%s) routes through v2 engine.",
-                model_spec.model_name,
-                model_spec.model_type.name,
-            )
-            workflow_results = dispatch_workflows(model_spec, runtime_config, json_fpath)
-        else:
+    if WorkflowType.from_string(runtime_config.workflow) != WorkflowType.SERVER:
+        if not can_dispatch_to_engine(model_spec, runtime_config):
             raise ValueError(
                 f"No workflow driver for --workflow {runtime_config.workflow} on "
                 f"{model_spec.model_name} ({model_spec.model_type.name}); all "
                 "supported workflows route to the v2 engine."
             )
-        if all(result.return_code == 0 for result in workflow_results):
-            logger.info("Completed run.py.")
-        else:
-            failed_workflows = [
-                f"{result.workflow_name} ({result.return_code})"
-                for result in workflow_results
-                if result.return_code != 0
-            ]
-            logger.error(
-                f"run.py failed workflows: {failed_workflows}. "
-                "See logs above for details."
-            )
-            main_return_code = 1
-    else:
         logger.info(
-            f"Completed {runtime_config.workflow} workflow, skipping workflow run."
+            "Model %s (model_type=%s) routes through v2 engine.",
+            model_spec.model_name,
+            model_spec.model_type.name,
+        )
+        commands.extend(
+            build_engine_commands(model_spec, runtime_config, json_fpath)
+        )
+
+    main_return_code = WorkflowRunner(commands).run()
+    if main_return_code == 0:
+        logger.info("Completed run.py.")
+    else:
+        logger.error(
+            "run.py failed (rc=%d). See logs above for details.", main_return_code
         )
 
     logger.info(

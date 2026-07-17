@@ -303,21 +303,19 @@ def test_build_llm_bench_cmd_forwards_tools_and_jwt():
     assert cmd_jwt[cmd_jwt.index("--jwt-secret") + 1] == "sek"
 
 
-def test_run_llm_benchmark_workflow_invokes_launcher(monkeypatch, tmp_path):
+def test_llm_benchmark_builds_launcher_command(monkeypatch, tmp_path):
     spec, rc = _spec(ModelType.LLM), _rc(server_url="https://console.example.com")
-    monkeypatch.setattr(workflow_dispatch, "WorkflowRunner", _FakeRunner)
     monkeypatch.setattr(
         workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
     )
 
-    result = workflow_dispatch.run_llm_benchmark_workflow(spec, rc, "/tmp/spec.json")
+    commands = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")
 
-    assert result.workflow_name == "benchmarks"
-    assert result.return_code == 0
-    # Runs the launcher in the current interpreter (venv_type=None) via a
-    # VenvCommand; argv[0] is the launcher script (VenvCommand prepends python).
-    assert len(_FakeRunner.captured) == 1
-    command = _FakeRunner.captured[0]
+    # LLM benchmarks run run_llm_bench.py in the current interpreter
+    # (venv_type=None); the launcher re-execs into its tool venv. argv[0] is the
+    # launcher script (VenvCommand prepends python).
+    assert len(commands) == 1
+    command = commands[0]
     assert command.venv_type is None
     assert "run_llm_bench.py" in command.argv[0]
     assert command.argv[command.argv.index("--server-url") + 1] == (
@@ -364,11 +362,12 @@ class _FakeRunner:
 
 
 def _patch_engine_dispatch(monkeypatch, tmp_path):
-    """Stub the engine-venv dispatch side effects and capture the VenvCommand."""
+    """Stub the dispatch side effects and capture the built command(s).
+
+    VenvCommand provisions venvs only on execute(), which the fake WorkflowRunner
+    never calls, so no venv setup needs stubbing.
+    """
     monkeypatch.setattr(workflow_dispatch, "WorkflowRunner", _FakeRunner)
-    monkeypatch.setattr(
-        workflow_dispatch, "_ensure_v2_dependency_venvs", lambda *a, **k: None
-    )
     monkeypatch.setattr(
         workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
     )
