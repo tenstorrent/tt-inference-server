@@ -281,6 +281,56 @@ struct PrefillCacheBlocksAddedMessage
   }
 };
 
+/**
+ * Prefill -> decode: reserve a decode KV slot before running prefill-first
+ * disaggregation. Transport is InterServerService (ZMQ); peer selection may
+ * still use etcd discovery under DYNAMO_ROUTING.
+ */
+struct SlotReservationRequestMessage
+    : SerializableMessage<SlotReservationRequestMessage> {
+  uint32_t taskId = 0;
+  std::string prefillServerId;
+  std::vector<uint64_t> registrationHashes;
+  bool hasPreviousResponseId = false;
+  std::string previousResponseId;
+  int promptTokenCount = 0;
+
+  template <class F>
+  void fields(F&& f) {
+    f(taskId, prefillServerId, registrationHashes, hasPreviousResponseId,
+      previousResponseId, promptTokenCount);
+  }
+  template <class F>
+  void fields(F&& f) const {
+    f(taskId, prefillServerId, registrationHashes, hasPreviousResponseId,
+      previousResponseId, promptTokenCount);
+  }
+};
+
+struct SlotReservationResponseMessage
+    : SerializableMessage<SlotReservationResponseMessage> {
+  uint32_t taskId = 0;
+  bool hasSlot = false;
+  uint32_t slotId = tt::domain::INVALID_SLOT_ID;
+  int decodePositionId = 0;
+  int decodeSkipTokens = 0;
+  bool continuation = false;
+  int accumulatedThinkTokens = 0;
+  bool error = false;
+  std::string errorText;
+
+  template <class F>
+  void fields(F&& f) {
+    f(taskId, hasSlot, slotId, decodePositionId, decodeSkipTokens, continuation,
+      accumulatedThinkTokens, error, errorText);
+  }
+  template <class F>
+  void fields(F&& f) const {
+    f(taskId, hasSlot, slotId, decodePositionId, decodeSkipTokens, continuation,
+      accumulatedThinkTokens, error, errorText);
+  }
+};
+
 namespace tags {
 constexpr std::string_view PREFILL_REQUEST = "prefill_request";
 constexpr std::string_view PREFILL_RESULT = "prefill_result";
@@ -288,6 +338,9 @@ constexpr std::string_view PREFILL_REGISTRATION = "prefill_registration";
 constexpr std::string_view PREFILL_CACHE_BLOCKS_ADDED = "prefill_cache_added";
 constexpr std::string_view REGISTRATION_PROBE = "registration_probe";
 constexpr std::string_view CANCEL_PREFILL = "cancel_prefill";
+constexpr std::string_view SLOT_RESERVATION_REQUEST = "slot_reservation_request";
+constexpr std::string_view SLOT_RESERVATION_RESPONSE =
+    "slot_reservation_response";
 constexpr std::string_view PREFILL_HEALTH_REQUEST = "prefill_health_request";
 constexpr std::string_view PREFILL_HEALTH_STATUS = "prefill_health_status";
 }  // namespace tags

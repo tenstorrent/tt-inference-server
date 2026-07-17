@@ -615,10 +615,6 @@ void DynamoEndpoint::start() {
   discovery_ = DiscoveryRegistration::create(dc);
   discovery_->registerSelf();
 
-  if (disaggregation_) {
-    disaggregation_->setLocalDecodeInstanceId(dc.instance_id_hex);
-  }
-
   TT_LOG_INFO(
       "[DynamoEndpoint] Ready: bind={}:{} advertise={} model={} "
       "discovery=etcd({})",

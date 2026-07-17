@@ -3,12 +3,8 @@
 
 #include "services/disaggregation_service.hpp"
 
-#include <chrono>
-#include <condition_variable>
 #include <json/json.h>
-#include <mutex>
 #include <sstream>
-#include <thread>
 
 #include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
@@ -33,9 +29,6 @@ using namespace tt::domain::llm;
 
 namespace {
 
-constexpr auto kEtcdSlotPollInterval = std::chrono::milliseconds(50);
-constexpr auto kEtcdSlotReservationTimeout = std::chrono::seconds(30);
-
 std::vector<uint64_t> blockHashes(
     const std::vector<tt::utils::BlockHashInfo>& blockInfos) {
   std::vector<uint64_t> hashes;
@@ -44,12 +37,6 @@ std::vector<uint64_t> blockHashes(
     hashes.push_back(block.hash);
   }
   return hashes;
-}
-
-std::string dumpJson(const Json::Value& value) {
-  Json::StreamWriterBuilder builder;
-  builder["indentation"] = "";
-  return Json::writeString(builder, value);
 }
 
 Json::Value parseJsonOrEmpty(const std::string& text) {
@@ -79,13 +66,13 @@ DisaggregationService::DisaggregationService(
       etcdClient = std::make_unique<tt::dynamo::EtcdClient>(
           tt::config::dynamoEtcdEndpoints());
       TT_LOG_INFO(
-          "[DisaggregationService] Etcd slot reservation enabled "
+          "[DisaggregationService] Etcd decode-peer discovery enabled "
           "(endpoints={})",
           tt::config::dynamoEtcdEndpoints());
     } catch (const std::exception& e) {
       TT_LOG_ERROR(
-          "[DisaggregationService] Failed to create etcd client for slot "
-          "reservation: {}",
+          "[DisaggregationService] Failed to create etcd client for decode "
+          "peer discovery: {}",
           e.what());
     }
   }
@@ -177,6 +164,14 @@ void DisaggregationService::setupSocketHandlers() {
           });
       streamCallbacks.clear();
     });
+
+    TT_LOG_INFO(
+        "[DisaggregationService] Registering SlotReservationRequest handler "
+        "on decode (ZMQ)");
+    socketService->onSlotReservationRequest(
+        [this](const tt::sockets::SlotReservationRequestMessage& message) {
+          handleSlotReservationRequest(message);
+        });
   }
 
   if (mode == tt::config::LLMMode::PREFILL_ONLY) {
@@ -210,6 +205,25 @@ void DisaggregationService::setupSocketHandlers() {
         [this](const tt::sockets::CancelPrefillMessage& message) {
           llmService->abortRequest(message.taskId);
         });
+
+    TT_LOG_INFO(
+        "[DisaggregationService] Registering SlotReservationResponse handler "
+        "on prefill (ZMQ)");
+    socketService->onSlotReservationResponse(
+        [this](const tt::sockets::SlotReservationResponseMessage& message) {
+          handleSlotReservationResponse(message);
+        });
+
+    socketService->setConnectionLostCallback([this]() {
+      std::vector<uint32_t> pendingTaskIds;
+      pendingSlotReservations.forEach(
+          [&pendingTaskIds](uint32_t taskId, const PrefillFirstPending&) {
+            pendingTaskIds.push_back(taskId);
+          });
+      for (uint32_t taskId : pendingTaskIds) {
+        failPrefillFirstPending(taskId, "connection lost");
+      }
+    });
   }
 }
 
@@ -219,14 +233,9 @@ void DisaggregationService::start() {
   if (socketService && socketService->isEnabled()) {
     socketService->start();
   }
-  if (tt::config::dynamoRoutingEnabled() &&
-      mode == tt::config::LLMMode::DECODE_ONLY) {
-    startEtcdSlotReservationListener();
-  }
 }
 
 void DisaggregationService::stop() {
-  stopEtcdSlotReservationListener();
   if (socketService) {
     socketService->stop();
   }
@@ -492,26 +501,22 @@ void DisaggregationService::enqueuePrefillFirst(
   pendingSlotReservations.insert(request.task_id, std::move(pending));
 
   TT_LOG_INFO(
-      "[DisaggregationService] Prefill-first etcd slot reservation taskId={} "
-      "hashes={} promptTokens={}",
+      "[DisaggregationService] Prefill-first slot reservation taskId={} "
+      "hashes={} promptTokens={} transport=zmq",
       request.task_id, registrationHashes.size(), request.prompt_tokens_count);
 
   try {
-    reserveDecodeSlotViaEtcd(request.task_id, registrationHashes, request);
+    reserveDecodeSlotViaSocket(request.task_id, registrationHashes, request);
   } catch (...) {
     pendingSlotReservations.erase(request.task_id);
     throw;
   }
 }
 
-void DisaggregationService::reserveDecodeSlotViaEtcd(
+void DisaggregationService::reserveDecodeSlotViaSocket(
     uint32_t taskId, const std::vector<uint64_t>& registrationHashes,
     const LLMRequest& request) {
-  if (!etcdClient) {
-    throw std::runtime_error(
-        "[DisaggregationService] Etcd client unavailable for slot reservation");
-  }
-
+  // Etcd discovers that a decode worker is registered; ZMQ carries the RPC.
   auto peers = discoverDecodePeers();
   auto peer = selectDecodePeer(peers);
   if (!peer.has_value()) {
@@ -529,84 +534,105 @@ void DisaggregationService::reserveDecodeSlotViaEtcd(
     }
   }
 
-  Json::Value body(Json::objectValue);
-  body["task_id"] = taskId;
-  body["prefill_server_id"] = tt::config::prefillServerId();
-  body["prompt_token_count"] = request.prompt_tokens_count;
-  Json::Value hashes(Json::arrayValue);
-  for (uint64_t hash : registrationHashes) {
-    hashes.append(Json::UInt64(hash));
+  if (!socketService || !socketService->isConnected()) {
+    throw std::runtime_error(
+        "[DisaggregationService] Decode socket unavailable for slot "
+        "reservation");
   }
-  body["registration_hashes"] = std::move(hashes);
+
+  tt::sockets::SlotReservationRequestMessage reservation;
+  reservation.taskId = taskId;
+  reservation.prefillServerId = tt::config::prefillServerId();
+  reservation.registrationHashes = registrationHashes;
+  reservation.promptTokenCount = request.prompt_tokens_count;
   if (request.previousResponseId.has_value() &&
       !request.previousResponseId->empty()) {
-    body["previous_response_id"] = *request.previousResponseId;
+    reservation.hasPreviousResponseId = true;
+    reservation.previousResponseId = *request.previousResponseId;
   }
-
-  const std::string requestKey =
-      etcdSlotRequestKey(peer->instanceIdHex, taskId);
-  const std::string responseKey =
-      etcdSlotResponseKey(peer->instanceIdHex, taskId);
-  try {
-    etcdClient->deleteRange(responseKey);
-  } catch (...) {
-  }
-  etcdClient->put(requestKey, dumpJson(body));
 
   TT_LOG_INFO(
-      "[DisaggregationService] Etcd slot reservation published taskId={} "
-      "decodeInstance={} key={}",
-      taskId, peer->instanceIdHex, requestKey);
+      "[DisaggregationService] ZMQ slot reservation request taskId={} "
+      "decodeInstance={} hashes={}",
+      taskId, peer->instanceIdHex, registrationHashes.size());
 
-  // Poll for the decode response on a background thread so we don't block
-  // the Dynamo request loop.
-  std::thread([this, taskId, requestKey, responseKey]() {
-    const auto deadline =
-        std::chrono::steady_clock::now() + kEtcdSlotReservationTimeout;
-    while (std::chrono::steady_clock::now() < deadline) {
-      try {
-        auto raw = etcdClient->get(responseKey);
-        if (raw.has_value()) {
-          try {
-            etcdClient->deleteRange(requestKey);
-            etcdClient->deleteRange(responseKey);
-          } catch (...) {
-          }
-          const Json::Value json = parseJsonOrEmpty(*raw);
-          SlotReservationResult response;
-          response.taskId = taskId;
-          response.error = json.get("error", false).asBool();
-          response.errorText = json.get("error_text", "").asString();
-          response.hasSlot = json.get("has_slot", false).asBool();
-          response.slotId = json.get("slot_id", tt::domain::INVALID_SLOT_ID)
-                                .asUInt();
-          response.decodePositionId = json.get("decode_position_id", 0).asInt();
-          response.decodeSkipTokens = json.get("decode_skip_tokens", 0).asInt();
-          response.continuation = json.get("continuation", false).asBool();
-          response.accumulatedThinkTokens =
-              json.get("accumulated_think_tokens", 0).asInt();
-          handleSlotReservationResponse(response);
-          return;
+  if (!socketService->sendSlotReservationRequest(reservation)) {
+    throw std::runtime_error(
+        "[DisaggregationService] Failed to send slot reservation for taskId=" +
+        std::to_string(taskId));
+  }
+}
+
+void DisaggregationService::handleSlotReservationRequest(
+    const tt::sockets::SlotReservationRequestMessage& message) {
+  auto sendResponse =
+      [this](const tt::sockets::SlotReservationResponseMessage& response) {
+        if (socketService) {
+          socketService->sendSlotReservationResponse(response);
         }
-      } catch (const std::exception& e) {
-        TT_LOG_WARN(
-            "[DisaggregationService] Etcd slot reservation poll error "
-            "taskId={}: {}",
-            taskId, e.what());
-      }
-      std::this_thread::sleep_for(kEtcdSlotPollInterval);
-    }
-    try {
-      etcdClient->deleteRange(requestKey);
-      etcdClient->deleteRange(responseKey);
-    } catch (...) {
-    }
-    failPrefillFirstPending(taskId, "etcd slot reservation timed out");
-  }).detach();
+      };
+
+  if (!sessionManager) {
+    TT_LOG_ERROR(
+        "[DisaggregationService] Slot reservation taskId={} rejected: no "
+        "session manager",
+        message.taskId);
+    tt::sockets::SlotReservationResponseMessage response;
+    response.taskId = message.taskId;
+    response.error = true;
+    response.errorText = "session manager unavailable";
+    sendResponse(response);
+    return;
+  }
+
+  TT_LOG_INFO(
+      "[DisaggregationService] Slot reservation request taskId={} "
+      "prefillServerId={} hashes={}",
+      message.taskId, message.prefillServerId,
+      message.registrationHashes.size());
+
+  decode_slot_reservation::ResolveInput input;
+  input.taskId = message.taskId;
+  input.registrationHashes = message.registrationHashes;
+  if (message.hasPreviousResponseId) {
+    input.previousResponseId = message.previousResponseId;
+  }
+
+  resolveDecodeDestinationSlot(
+      *sessionManager, input, eventLoopThread.getLoop(),
+      [this, taskId = message.taskId](
+          decode_slot_reservation::DecodeDestinationSlot slot) {
+        tt::sockets::SlotReservationResponseMessage response;
+        response.taskId = taskId;
+        response.hasSlot = slot.slotId != tt::domain::INVALID_SLOT_ID;
+        response.slotId = slot.slotId;
+        response.decodePositionId = slot.decodePositionId;
+        response.decodeSkipTokens = slot.decodeSkipTokens;
+        response.continuation = slot.continuation;
+        response.accumulatedThinkTokens = slot.accumulatedThinkTokens;
+
+        if (socketService &&
+            !socketService->sendSlotReservationResponse(response)) {
+          TT_LOG_WARN(
+              "[DisaggregationService] Failed to send slot reservation "
+              "response taskId={} sessionId={}",
+              taskId, slot.sessionId);
+          if (!slot.sessionId.empty()) {
+            sessionManager->releaseInFlight(slot.sessionId);
+          }
+        }
+      },
+      [taskId = message.taskId, sendResponse](std::string_view errorText) {
+        tt::sockets::SlotReservationResponseMessage response;
+        response.taskId = taskId;
+        response.error = true;
+        response.errorText = std::string(errorText);
+        sendResponse(response);
+      });
 }
 
 void DisaggregationService::handleSlotReservationResponse(
-    const SlotReservationResult& result) {
+    const tt::sockets::SlotReservationResponseMessage& result) {
   auto pending = pendingSlotReservations.take(result.taskId);
   if (!pending.has_value()) {
     TT_LOG_WARN(
@@ -620,7 +646,8 @@ void DisaggregationService::handleSlotReservationResponse(
 }
 
 void DisaggregationService::applySlotReservationAndLaunch(
-    PrefillFirstPending pending, const SlotReservationResult& result) {
+    PrefillFirstPending pending,
+    const tt::sockets::SlotReservationResponseMessage& result) {
   if (result.error || !result.hasSlot) {
     const std::string errorText =
         result.error ? result.errorText : "decode slot reservation denied";
@@ -939,22 +966,6 @@ void DisaggregationService::abortRequest(uint32_t taskId) {
   }
 }
 
-std::string DisaggregationService::etcdSlotRequestPrefix() const {
-  return "v1/tt/slot_reservation/" + tt::config::dynamoNamespace() + "/";
-}
-
-std::string DisaggregationService::etcdSlotRequestKey(
-    const std::string& decodeInstanceId, uint32_t taskId) const {
-  return etcdSlotRequestPrefix() + decodeInstanceId + "/" +
-         std::to_string(taskId) + "/req";
-}
-
-std::string DisaggregationService::etcdSlotResponseKey(
-    const std::string& decodeInstanceId, uint32_t taskId) const {
-  return etcdSlotRequestPrefix() + decodeInstanceId + "/" +
-         std::to_string(taskId) + "/resp";
-}
-
 std::vector<DisaggregationService::DecodePeer>
 DisaggregationService::discoverDecodePeers() const {
   std::vector<DecodePeer> peers;
@@ -1005,146 +1016,6 @@ DisaggregationService::selectDecodePeer(
     }
   }
   return peers.front();
-}
-
-void DisaggregationService::startEtcdSlotReservationListener() {
-  if (!etcdClient || etcdListenerRunning.exchange(true)) {
-    return;
-  }
-  TT_LOG_INFO(
-      "[DisaggregationService] Starting etcd slot-reservation listener "
-      "prefix={}",
-      etcdSlotRequestPrefix());
-  etcdListenerThread =
-      std::thread([this]() { etcdSlotReservationListenLoop(); });
-}
-
-void DisaggregationService::stopEtcdSlotReservationListener() {
-  if (!etcdListenerRunning.exchange(false)) {
-    return;
-  }
-  if (etcdListenerThread.joinable()) {
-    etcdListenerThread.join();
-  }
-}
-
-void DisaggregationService::etcdSlotReservationListenLoop() {
-  while (etcdListenerRunning.load()) {
-    if (localDecodeInstanceId.empty()) {
-      std::this_thread::sleep_for(kEtcdSlotPollInterval);
-      continue;
-    }
-    try {
-      const std::string prefix =
-          etcdSlotRequestPrefix() + localDecodeInstanceId + "/";
-      for (const auto& [key, value] : etcdClient->getPrefix(prefix)) {
-        if (key.size() < 4 || key.substr(key.size() - 4) != "/req") {
-          continue;
-        }
-        processEtcdSlotReservationRequest(key, value);
-      }
-    } catch (const std::exception& e) {
-      TT_LOG_WARN(
-          "[DisaggregationService] etcd slot-reservation listener error: {}",
-          e.what());
-    }
-    std::this_thread::sleep_for(kEtcdSlotPollInterval);
-  }
-}
-
-void DisaggregationService::processEtcdSlotReservationRequest(
-    const std::string& requestKey, const std::string& requestJson) {
-  const Json::Value json = parseJsonOrEmpty(requestJson);
-  const uint32_t taskId = json.get("task_id", 0).asUInt();
-  if (taskId == 0 || !sessionManager) {
-    return;
-  }
-
-  const std::string responseKey =
-      etcdSlotResponseKey(localDecodeInstanceId, taskId);
-
-  try {
-    if (etcdClient->get(responseKey).has_value()) {
-      return;
-    }
-  } catch (...) {
-  }
-
-  decode_slot_reservation::ResolveInput input;
-  input.taskId = taskId;
-  if (json.isMember("registration_hashes") &&
-      json["registration_hashes"].isArray()) {
-    for (const auto& hash : json["registration_hashes"]) {
-      input.registrationHashes.push_back(hash.asUInt64());
-    }
-  }
-  const std::string previousResponseId =
-      json.get("previous_response_id", "").asString();
-  if (!previousResponseId.empty()) {
-    input.previousResponseId = previousResponseId;
-  }
-
-  TT_LOG_INFO(
-      "[DisaggregationService] Etcd slot reservation request taskId={} "
-      "hashes={} key={}",
-      taskId, input.registrationHashes.size(), requestKey);
-
-  std::mutex mu;
-  std::condition_variable cv;
-  bool done = false;
-  SlotReservationResult response;
-  response.taskId = taskId;
-
-  resolveDecodeDestinationSlot(
-      *sessionManager, input, eventLoopThread.getLoop(),
-      [&](decode_slot_reservation::DecodeDestinationSlot slot) {
-        std::lock_guard<std::mutex> lock(mu);
-        response.hasSlot = slot.slotId != tt::domain::INVALID_SLOT_ID;
-        response.slotId = slot.slotId;
-        response.decodePositionId = slot.decodePositionId;
-        response.decodeSkipTokens = slot.decodeSkipTokens;
-        response.continuation = slot.continuation;
-        response.accumulatedThinkTokens = slot.accumulatedThinkTokens;
-        done = true;
-        cv.notify_one();
-      },
-      [&](std::string_view errorText) {
-        std::lock_guard<std::mutex> lock(mu);
-        response.error = true;
-        response.errorText = std::string(errorText);
-        done = true;
-        cv.notify_one();
-      });
-
-  {
-    std::unique_lock<std::mutex> lock(mu);
-    if (!cv.wait_for(lock, kEtcdSlotReservationTimeout,
-                     [&]() { return done; })) {
-      response.error = true;
-      response.errorText = "decode slot reservation timed out";
-    }
-  }
-
-  Json::Value out(Json::objectValue);
-  out["task_id"] = response.taskId;
-  out["error"] = response.error;
-  out["error_text"] = response.errorText;
-  out["has_slot"] = response.hasSlot;
-  out["slot_id"] = response.slotId;
-  out["decode_position_id"] = response.decodePositionId;
-  out["decode_skip_tokens"] = response.decodeSkipTokens;
-  out["continuation"] = response.continuation;
-  out["accumulated_think_tokens"] = response.accumulatedThinkTokens;
-
-  try {
-    etcdClient->put(responseKey, dumpJson(out));
-    etcdClient->deleteRange(requestKey);
-  } catch (const std::exception& e) {
-    TT_LOG_WARN(
-        "[DisaggregationService] Failed to publish etcd slot reservation "
-        "response taskId={}: {}",
-        taskId, e.what());
-  }
 }
 
 }  // namespace tt::services

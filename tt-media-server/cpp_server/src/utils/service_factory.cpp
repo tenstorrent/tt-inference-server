@@ -33,19 +33,17 @@ AuxiliaryServices buildAuxiliaryServices(
           std::dynamic_pointer_cast<services::LLMService>(activeService)) {
     const auto mode = tt::config::llmMode();
     if (mode != tt::config::LLMMode::REGULAR) {
-      if (tt::config::dynamoRoutingEnabled()) {
-        TT_LOG_INFO(
-            "[ServiceFactory] DYNAMO_ROUTING=1; constructing disaggregation "
-            "without cpp_server sockets (prefill-first uses etcd slot "
-            "reservation)");
-        auto disagg = std::make_shared<services::DisaggregationService>(
-            mode, llm, nullptr);
-        return {/*socket=*/nullptr, std::move(disagg)};
-      }
+      // Dynamo routing still needs InterServer ZMQ for prefill→decode slot
+      // reservation; etcd is only used to discover that a decode peer exists.
       auto socket = std::make_shared<sockets::InterServerService>();
       socket->initializeFromConfig();
       auto disagg =
           std::make_shared<services::DisaggregationService>(mode, llm, socket);
+      if (tt::config::dynamoRoutingEnabled()) {
+        TT_LOG_INFO(
+            "[ServiceFactory] DYNAMO_ROUTING=1; etcd discovery + ZMQ slot "
+            "reservation");
+      }
       return {std::move(socket), std::move(disagg)};
     }
   }
