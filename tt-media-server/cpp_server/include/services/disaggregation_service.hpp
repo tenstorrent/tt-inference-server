@@ -17,14 +17,13 @@
 #include "config/types.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
+#include "domain/sentinel_values.hpp"
 #include "sockets/socket_messages.hpp"
 #include "utils/concurrent_map.hpp"
 
 namespace tt::sockets {
 
 class InterServerService;
-struct SlotReservationRequestMessage;
-struct SlotReservationResponseMessage;
 }  // namespace tt::sockets
 
 namespace tt::dynamo {
@@ -69,7 +68,8 @@ class DisaggregationService {
       LLMRequest& request, const std::vector<uint64_t>& registrationHashes,
       std::function<void(const tt::sockets::PrefillResultMessage&)> callback);
 
-  /** Prefill-first path: reserve a decode slot, then run one prefill token. */
+  /** Prefill-first path: reserve a decode slot via etcd, then run one prefill
+   * token. Requires DYNAMO_ROUTING=1. */
   void handlePrefillFirstStreamingRequest(
       LLMRequest& request, const std::vector<uint64_t>& registrationHashes,
       const StreamCallback& callback);
@@ -104,6 +104,19 @@ class DisaggregationService {
     uint32_t registrationHashCount = 0;
   };
 
+  /** Decode slot grant returned over etcd (not InterServerService). */
+  struct SlotReservationResult {
+    uint32_t taskId = 0;
+    bool hasSlot = false;
+    uint32_t slotId = tt::domain::INVALID_SLOT_ID;
+    int decodePositionId = 0;
+    int decodeSkipTokens = 0;
+    bool continuation = false;
+    int accumulatedThinkTokens = 0;
+    bool error = false;
+    std::string errorText;
+  };
+
   struct PrefillFirstPending {
     PrefillWorkContext work;
     StreamCallback callback;
@@ -121,24 +134,17 @@ class DisaggregationService {
   };
 
   void setupSocketHandlers();
-  void handleSlotReservationRequest(
-      const tt::sockets::SlotReservationRequestMessage& message);
-  void handleSlotReservationResponse(
-      const tt::sockets::SlotReservationResponseMessage& message);
+  void handleSlotReservationResponse(const SlotReservationResult& result);
   void launchPrefillWork(PrefillWorkContext work,
                          std::function<void(const LLMStreamChunk&, bool)> onChunk);
   void failPrefillFirstPending(uint32_t taskId, std::string_view errorText);
 
-  bool useEtcdSlotReservation() const;
   void enqueuePrefillFirst(
       LLMRequest& request, const std::vector<uint64_t>& registrationHashes,
       StreamCallback streamCallback,
       std::optional<
           std::function<void(const tt::sockets::PrefillResultMessage&)>>
           resultCallback);
-  void reserveDecodeSlotViaSocket(
-      uint32_t taskId, const std::vector<uint64_t>& registrationHashes,
-      const LLMRequest& request);
   void reserveDecodeSlotViaEtcd(
       uint32_t taskId, const std::vector<uint64_t>& registrationHashes,
       const LLMRequest& request);
@@ -156,9 +162,8 @@ class DisaggregationService {
                                   uint32_t taskId) const;
   std::string etcdSlotRequestPrefix() const;
 
-  void applySlotReservationAndLaunch(
-      PrefillFirstPending pending,
-      const tt::sockets::SlotReservationResponseMessage& message);
+  void applySlotReservationAndLaunch(PrefillFirstPending pending,
+                                     const SlotReservationResult& result);
 
   tt::config::LLMMode mode;
   std::shared_ptr<LLMService> llmService;

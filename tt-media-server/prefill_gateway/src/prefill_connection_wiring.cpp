@@ -102,21 +102,6 @@ void registerZmqPrefillHandlers(ZmqPrefillRouter& zmqPrefillRouter,
                     const tt::sockets::PrefillCacheBlocksAddedMessage& msg) {
         dispatcher.onCacheBlocksAdded(msg);
       });
-
-  zmqPrefillRouter.registerHandler<tt::sockets::SlotReservationRequestMessage>(
-      tt::sockets::tags::SLOT_RESERVATION_REQUEST,
-      [&dispatcher, &zmqPrefillRouter](
-          const ZmqPrefillRouter::PeerIdentity& peerId,
-          const tt::sockets::SlotReservationRequestMessage& msg) {
-        auto serverId = zmqPrefillRouter.serverIdForPeer(peerId);
-        if (!serverId.has_value()) {
-          TT_LOG_WARN(
-              "[Gateway] Ignoring slot reservation request from unregistered "
-              "prefill");
-          return;
-        }
-        dispatcher.onSlotReservationRequest(*serverId, msg);
-      });
 }
 
 }  // namespace tt::gateway

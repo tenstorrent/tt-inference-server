@@ -351,32 +351,6 @@ int main(int argc, char** argv) {
     return decodeSm.sendObject(tt::sockets::tags::PREFILL_RESULT, msg);
   };
 
-  senders.sendSlotReservationToDecode =
-      [&decodeSm](const tt::sockets::SlotReservationRequestMessage& msg)
-      -> bool {
-    return decodeSm.sendObject(tt::sockets::tags::SLOT_RESERVATION_REQUEST,
-                               msg);
-  };
-
-  senders.sendSlotReservationToPrefill =
-      [&registry, &zmqPrefillRouter, useZmqPrefillRouter](
-          const std::string& serverId,
-          const tt::sockets::SlotReservationResponseMessage& msg) -> bool {
-    if (useZmqPrefillRouter) {
-      return zmqPrefillRouter.sendObject(
-          serverId, tt::sockets::tags::SLOT_RESERVATION_RESPONSE, msg);
-    }
-
-    auto* sm = registry.getSocketManager(serverId);
-    if (!sm) {
-      TT_LOG_WARN(
-          "[Gateway] sendSlotReservationToPrefill: no socket for '{}'",
-          serverId);
-      return false;
-    }
-    return sm->sendObject(tt::sockets::tags::SLOT_RESERVATION_RESPONSE, msg);
-  };
-
   tt::gateway::Dispatcher::Options dispatcherOptions{
       cfg.requestTimeout, cfg.timeoutWindow, cfg.timeoutCooldown,
       cfg.timeoutThreshold};
@@ -400,12 +374,6 @@ int main(int argc, char** argv) {
       tt::sockets::tags::CANCEL_PREFILL,
       [&dispatcherPtr](const tt::sockets::CancelPrefillMessage& msg) {
         dispatcherPtr->onPrefillCancel(msg);
-      });
-
-  decodeSm.registerHandler<tt::sockets::SlotReservationResponseMessage>(
-      tt::sockets::tags::SLOT_RESERVATION_RESPONSE,
-      [&dispatcherPtr](const tt::sockets::SlotReservationResponseMessage& msg) {
-        dispatcherPtr->onSlotReservationResponse(msg);
       });
 
   decodeSm.registerHandler<tt::sockets::PrefillHealthRequestMessage>(

@@ -264,62 +264,6 @@ struct RegistrationProbeMessage {
   }
 };
 
-/**
- * @brief Prefill -> decode (via gateway): ask decode to reserve a destination
- * KV slot for migration.
- *
- * Used by the prefill-first disaggregation flow (DYNAMO_ROUTING=1 uses etcd;
- * the socket path is for non-Dynamo / integration tests). Decode responds with
- * SlotReservationResponseMessage.
- */
-struct SlotReservationRequestMessage
-    : SerializableMessage<SlotReservationRequestMessage> {
-  uint32_t taskId = 0;
-  std::string prefillServerId;
-  std::vector<uint64_t> registrationHashes;
-  bool hasPreviousResponseId = false;
-  std::string previousResponseId;
-  int promptTokenCount = 0;
-
-  template <class F>
-  void fields(F&& f) {
-    f(taskId, prefillServerId, registrationHashes, hasPreviousResponseId,
-      previousResponseId, promptTokenCount);
-  }
-  template <class F>
-  void fields(F&& f) const {
-    f(taskId, prefillServerId, registrationHashes, hasPreviousResponseId,
-      previousResponseId, promptTokenCount);
-  }
-};
-
-/**
- * @brief Decode -> prefill (via gateway): grant or deny a decode-side slot.
- */
-struct SlotReservationResponseMessage
-    : SerializableMessage<SlotReservationResponseMessage> {
-  uint32_t taskId = 0;
-  bool hasSlot = false;
-  uint32_t slotId = tt::domain::INVALID_SLOT_ID;
-  int decodePositionId = 0;
-  int decodeSkipTokens = 0;
-  bool continuation = false;
-  int accumulatedThinkTokens = 0;
-  bool error = false;
-  std::string errorText;
-
-  template <class F>
-  void fields(F&& f) {
-    f(taskId, hasSlot, slotId, decodePositionId, decodeSkipTokens, continuation,
-      accumulatedThinkTokens, error, errorText);
-  }
-  template <class F>
-  void fields(F&& f) const {
-    f(taskId, hasSlot, slotId, decodePositionId, decodeSkipTokens, continuation,
-      accumulatedThinkTokens, error, errorText);
-  }
-};
-
 // Prefill -> gateway. Updates the gateway's per-prefill block-cache view
 // used by longest-prefix-match routing.
 struct PrefillCacheBlocksAddedMessage
@@ -344,9 +288,6 @@ constexpr std::string_view PREFILL_REGISTRATION = "prefill_registration";
 constexpr std::string_view PREFILL_CACHE_BLOCKS_ADDED = "prefill_cache_added";
 constexpr std::string_view REGISTRATION_PROBE = "registration_probe";
 constexpr std::string_view CANCEL_PREFILL = "cancel_prefill";
-constexpr std::string_view SLOT_RESERVATION_REQUEST = "slot_reservation_request";
-constexpr std::string_view SLOT_RESERVATION_RESPONSE =
-    "slot_reservation_response";
 constexpr std::string_view PREFILL_HEALTH_REQUEST = "prefill_health_request";
 constexpr std::string_view PREFILL_HEALTH_STATUS = "prefill_health_status";
 }  // namespace tags
