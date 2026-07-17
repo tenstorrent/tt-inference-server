@@ -835,6 +835,11 @@ def main():
 
     setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
 
+    wf_logger = logging.getLogger("workflow_module")
+    wf_logger.handlers = logger.handlers
+    wf_logger.setLevel(logger.level)
+    wf_logger.propagate = False
+
     # Log CLI arguments and runtime info
     version = Path("VERSION").read_text().strip()
     logger.info(f"TT-Inference version: {version}")
