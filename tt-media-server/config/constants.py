@@ -1364,6 +1364,18 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 1500,
     },
+    (ModelRunners.TRAINING_GEMMA_LORA, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TRAINING_GEMMA_LORA, DeviceTypes.P300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
 }
 
 for runner in [
