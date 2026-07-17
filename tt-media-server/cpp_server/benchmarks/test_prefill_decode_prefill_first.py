@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
-"""Prefill-first + Dynamo-native routing integration tests.
+"""Dynamo routing (prefill-first) integration tests.
 
 Bring the stack up with:
 
-    DYNAMO_NATIVE_ROUTING=1 USE_PREFILL_FIRST_DISAGGREGATION=1 \\
-        MODEL=deepseek-ai/DeepSeek-R1-0528 benchmarks/run_stack.sh up
+    DYNAMO_ROUTING=1 MODEL=deepseek-ai/DeepSeek-R1-0528 \\
+        benchmarks/run_stack.sh up
 
 Or via the harness default:
 
     benchmarks/run_tests.sh
 
 Asserts the orchestration path:
-  1. Dynamo hits prefill first (Native prefill-first log)
+  1. Dynamo hits prefill first (Prefill-first path log)
   2. Prefill reserves a decode slot over ZMQ
   3. Decode grants the slot
   4. Chat completes with distinct Dynamo worker ids and decode max_tokens budget
@@ -45,10 +45,9 @@ PREFILL_URL = os.environ.get("PREFILL_URL", "http://127.0.0.1:8002").rstrip("/")
 MODEL = os.environ.get("MODEL", "deepseek-ai/DeepSeek-R1-0528")
 API_KEY = os.environ.get("API_KEY", "")
 LOG_SETTLE_S = 0.8
-PREFILL_FIRST = os.environ.get("USE_PREFILL_FIRST_DISAGGREGATION", "0") == "1"
 
-_NATIVE_PREFILL_FIRST = re.compile(
-    r"\[DynamoEndpoint\] Native prefill-first path taskId=(\d+) tokens=(\d+)"
+_PREFILL_FIRST_PATH = re.compile(
+    r"\[DynamoEndpoint\] Prefill-first path taskId=(\d+) tokens=(\d+)"
 )
 _SLOT_RESERVE = re.compile(
     r"\[DisaggregationService\] Prefill-first slot reservation taskId=(\d+)"
@@ -101,21 +100,19 @@ def _wait_log(path, offset, pattern, deadline_s=15):
 
 
 def test_prefill_first_orchestration_via_dynamo():
-    mode = "prefill-first" if PREFILL_FIRST else "native"
-    _log("--------- Dynamo native route (%s) via :8080 ---------" % mode)
+    _log("--------- Dynamo routing (prefill-first) via :8080 ---------")
     _ensure_server()
 
     assert os.path.exists(PREFILL_LOG) and os.path.exists(DECODE_LOG), (
-        "missing worker logs; start with "
-        "DYNAMO_NATIVE_ROUTING=1 [USE_PREFILL_FIRST_DISAGGREGATION=1] run_stack.sh up"
+        "missing worker logs; start with DYNAMO_ROUTING=1 run_stack.sh up"
     )
 
     status, body = _worker_health(DECODE_URL)
     assert status == 200 and body.get("status") == "healthy", body
-    if PREFILL_FIRST:
-        assert "socket_status" in body, (
-            "decode missing inter-server socket (required for prefill-first): %s" % body
-        )
+    assert "socket_status" in body, (
+        "decode missing inter-server socket (required for Dynamo "
+        "prefill-first): %s" % body
+    )
 
     status, body = _worker_health(PREFILL_URL)
     assert status == 200 and body.get("status") == "healthy", body
@@ -147,44 +144,39 @@ def test_prefill_first_orchestration_via_dynamo():
     pre_tail = _since(PREFILL_LOG, pre_off)
     dec_tail = _since(DECODE_LOG, dec_off)
 
-    if PREFILL_FIRST:
-        m_pf = _NATIVE_PREFILL_FIRST.search(pre_tail) or _wait_log(
-            PREFILL_LOG, pre_off, _NATIVE_PREFILL_FIRST
-        )
-        assert m_pf, (
-            "expected Native prefill-first path in prefill log; recent:\n%s"
-            % pre_tail[-2000:]
-        )
-        _log(
-            "prefill-first path taskId=%s tokens=%s" % (m_pf.group(1), m_pf.group(2))
-        )
+    m_pf = _PREFILL_FIRST_PATH.search(pre_tail) or _wait_log(
+        PREFILL_LOG, pre_off, _PREFILL_FIRST_PATH
+    )
+    assert m_pf, (
+        "expected Prefill-first path in prefill log; recent:\n%s"
+        % pre_tail[-2000:]
+    )
+    _log("prefill-first path taskId=%s tokens=%s" % (m_pf.group(1), m_pf.group(2)))
 
-        assert _SLOT_RESERVE.search(pre_tail) or _wait_log(
-            PREFILL_LOG, pre_off, _SLOT_RESERVE
-        ), "expected Prefill-first slot reservation in prefill log"
+    assert _SLOT_RESERVE.search(pre_tail) or _wait_log(
+        PREFILL_LOG, pre_off, _SLOT_RESERVE
+    ), "expected Prefill-first slot reservation in prefill log"
 
-        assert _SLOT_REQUEST_DECODE.search(dec_tail) or _wait_log(
-            DECODE_LOG, dec_off, _SLOT_REQUEST_DECODE
-        ), "expected Slot reservation request in decode log"
+    assert _SLOT_REQUEST_DECODE.search(dec_tail) or _wait_log(
+        DECODE_LOG, dec_off, _SLOT_REQUEST_DECODE
+    ), "expected Slot reservation request in decode log"
 
-        m_grant = _SLOT_GRANTED.search(pre_tail) or _wait_log(
-            PREFILL_LOG, pre_off, _SLOT_GRANTED
-        )
-        assert m_grant, "expected Slot reservation granted in prefill log"
-        _log(
-            "slot granted taskId=%s slotId=%s" % (m_grant.group(1), m_grant.group(2))
-        )
+    m_grant = _SLOT_GRANTED.search(pre_tail) or _wait_log(
+        PREFILL_LOG, pre_off, _SLOT_GRANTED
+    )
+    assert m_grant, "expected Slot reservation granted in prefill log"
+    _log("slot granted taskId=%s slotId=%s" % (m_grant.group(1), m_grant.group(2)))
 
-        # Decode hop should honor client max_tokens, not prefill's forced 1.
-        m_budget = _DECODE_MAX_TOKENS.search(dec_tail)
-        if m_budget:
-            assert int(m_budget.group(1)) == max_tokens, m_budget.group(0)
-            _log("decode budget override max_tokens=%s" % m_budget.group(1))
-        assert usage.get("completion_tokens", 0) > 1, (
-            "expected >1 completion tokens with max_tokens=%s (got %s); "
-            "decode likely still stuck on remaining_tokens=1"
-            % (max_tokens, usage.get("completion_tokens"))
-        )
+    # Decode hop should honor client max_tokens, not prefill's forced 1.
+    m_budget = _DECODE_MAX_TOKENS.search(dec_tail)
+    if m_budget:
+        assert int(m_budget.group(1)) == max_tokens, m_budget.group(0)
+        _log("decode budget override max_tokens=%s" % m_budget.group(1))
+    assert usage.get("completion_tokens", 0) > 1, (
+        "expected >1 completion tokens with max_tokens=%s (got %s); "
+        "decode likely still stuck on remaining_tokens=1"
+        % (max_tokens, usage.get("completion_tokens"))
+    )
 
     prefill_id = workers.get("prefill_worker_id")
     decode_id = workers.get("decode_worker_id")

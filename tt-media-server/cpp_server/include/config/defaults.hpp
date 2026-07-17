@@ -38,11 +38,6 @@ constexpr size_t MAX_SESSIONS_COUNT = 128;
 constexpr unsigned SESSION_EVICTION_RATE = 90;
 constexpr size_t SESSION_EVICTION_COUNT = 10;
 constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 1000;
-// When true, prefill owns disaggregated request entry and reserves decode
-// destination slots via SlotReservationRequest/Response. Legacy flow
-// (decode allocates slot, then sends PrefillRequestMessage) is unchanged
-// when false.
-constexpr bool USE_PREFILL_FIRST_DISAGGREGATION = false;
 constexpr size_t MAX_CONTEXT_LENGTH = 65536;  // 64k
 constexpr size_t MAX_ISL = 256000;  // 2000k (max input sequence length)
 constexpr size_t MIN_TOKENS_TO_COPY =

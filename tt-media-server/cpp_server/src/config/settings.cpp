@@ -672,9 +672,8 @@ size_t maxTokensToPrefillOnDecode() {
 }
 
 bool usePrefillFirstDisaggregation() {
-  static const bool cached = envBool("USE_PREFILL_FIRST_DISAGGREGATION",
-                                     defaults::USE_PREFILL_FIRST_DISAGGREGATION);
-  return cached;
+  // Prefill-first slot reservation is always enabled with Dynamo routing.
+  return dynamoRoutingEnabled();
 }
 
 size_t maxContextLength() {

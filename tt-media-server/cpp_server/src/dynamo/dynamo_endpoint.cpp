@@ -258,22 +258,17 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           };
 
       try {
-        if (tt::config::usePrefillFirstDisaggregation()) {
-          // Prefill-first: reserve decode slot over inter-server socket, then
-          // return tt_prefill_result (including slot_id) for Dynamo to continue
-          // on decode.
-          TT_LOG_INFO(
-              "[DynamoEndpoint] Prefill-first path taskId={} tokens={}",
-              req->task_id, dynReq.token_ids.size());
-          const auto hashes =
-              tt::utils::computePrefixCachingInfoFromTokens(dynReq.token_ids)
-                  .hashes();
-          disaggregation->handlePrefillFirstRequest(*req, hashes,
-                                                    onPrefillResult);
-        } else {
-          auto prefillMessage = buildPrefillRequestMessage(dynReq);
-          disaggregation->handlePrefillRequest(prefillMessage, onPrefillResult);
-        }
+        // Prefill-first is always on with DYNAMO_ROUTING: reserve decode slot
+        // over the inter-server socket, then return tt_prefill_result
+        // (including slot_id) for Dynamo to continue on decode.
+        TT_LOG_INFO(
+            "[DynamoEndpoint] Prefill-first path taskId={} tokens={}",
+            req->task_id, dynReq.token_ids.size());
+        const auto hashes =
+            tt::utils::computePrefixCachingInfoFromTokens(dynReq.token_ids)
+                .hashes();
+        disaggregation->handlePrefillFirstRequest(*req, hashes,
+                                                  onPrefillResult);
       } catch (const std::exception& e) {
         sendErrorAndDone(e.what(), 500);
       }

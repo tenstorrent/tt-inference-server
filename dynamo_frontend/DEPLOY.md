@@ -126,14 +126,16 @@ Prometheus scrapes `prefill-gateway:9091`.
    `--prefill-workers` managed `LLM_MODE=prefill` workers with
    `DYNAMO_ENDPOINT_ENABLED=1`,
    `DYNAMO_WORKER_TYPE=prefill`, `DYNAMO_MODEL_TYPE=Prefill`, and endpoint
-   `dynamo.prefill.generate`. `worker_type=prefill` carries the actual role;
+   `dynamo.prefill.generate`. Decode and prefill also share a cpp_server
+   inter-server socket for prefill-first slot reservation (always enabled
+   with Dynamo routing). `worker_type=prefill` carries the actual role;
    `DYNAMO_MODEL_TYPE=Prefill` keeps the current released `ai-dynamo` frontend
    compatible until `Tokens+Empty` is accepted for prefill workers. Dynamo's
    integrated router owns the local-vs-remote prefill decision; when a
    request reaches decode, cpp_server prefills locally instead of reapplying
-   `MAX_TOKENS_TO_PREFILL_ON_DECODE`. When Dynamo routes remotely, the prefill
-   worker returns `disaggregated_params.tt_prefill_result`, carrying the same
-   `PrefillResultMessage` contract the ZMQ path used.
+   `MAX_TOKENS_TO_PREFILL_ON_DECODE`. When Dynamo routes remotely, prefill
+   reserves a decode slot over the socket, then returns
+   `disaggregated_params.tt_prefill_result` (including `slot_id`).
 
    To exercise Dynamo's upstream conditional-disaggregation policy from
    `ai-dynamo/dynamo#11357`, use a frontend image built from a Dynamo revision

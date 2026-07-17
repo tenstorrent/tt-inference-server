@@ -370,8 +370,11 @@ elif [[ "$DYNAMO_ROUTING_ENABLED" == "1" ]]; then
         -e DYNAMO_ENDPOINT_NAME=generate
         -e DYNAMO_MODEL_TYPE=Chat
         -e DYNAMO_WORKER_TYPE=decode
+        -e LLM_MODE=decode
         -e USE_PREFILL_GATEWAY=0
         -e DYNAMO_ROUTING=1
+        -e SOCKET_HOST=0.0.0.0
+        -e SOCKET_PORT="$PREFILL_DIRECT_SOCKET_PORT"
     )
 fi
 
@@ -425,6 +428,7 @@ if [[ "$DYNAMO_ROUTING_ENABLED" == "1" ]]; then
             -e DYNAMO_ENDPOINT_ENABLED=1 \
             -e DYNAMO_ROUTING=1 \
             -e USE_PREFILL_GATEWAY=0 \
+            -e LLM_MODE=prefill \
             -e DYNAMO_DISCOVERY_BACKEND=etcd \
             -e DYNAMO_ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
             -e DYNAMO_NAMESPACE="${DYNAMO_ROUTING_NAMESPACE:-dynamo}" \
@@ -433,6 +437,8 @@ if [[ "$DYNAMO_ROUTING_ENABLED" == "1" ]]; then
             -e DYNAMO_MODEL_TYPE=Prefill \
             -e DYNAMO_MODEL_INPUT=Tokens \
             -e DYNAMO_WORKER_TYPE=prefill \
+            -e SOCKET_HOST="$WORKER_NAME" \
+            -e SOCKET_PORT="$PREFILL_DIRECT_SOCKET_PORT" \
             -e TT_MEMORY_REQUEST_QUEUE="tt_mem_requests_prefill_${idx}" \
             -e TT_MEMORY_RESULT_QUEUE="tt_mem_results_prefill_${idx}" \
             -e TT_WORKER_METRICS_SHM="/tt_worker_metrics_prefill_${idx}"

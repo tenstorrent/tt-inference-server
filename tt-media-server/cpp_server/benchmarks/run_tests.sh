@@ -5,10 +5,9 @@
 # run_tests.sh — bring up the Dynamo stack, run the pytest suite, tear down.
 #
 # Routing modes (ROUTING_MODE):
-#   prefill-first  (default)  Dynamo routing + USE_PREFILL_FIRST_DISAGGREGATION
-#                             → Dynamo -> prefill -> slot ZMQ -> decode
-#   native                    Dynamo routing pools without prefill-first sockets
-#   direct                    classic decode-owned offload via MAX_TOKENS_...
+#   dynamo  (default)  DYNAMO_ROUTING=1 → Dynamo -> prefill -> slot ZMQ -> decode
+#                      (prefill-first is always included)
+#   direct             classic decode-owned offload via MAX_TOKENS_...
 #
 #   ./run_tests.sh
 #   ROUTING_MODE=direct ./run_tests.sh -x -k 03
@@ -21,7 +20,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_STACK="${SCRIPT_DIR}/run_stack.sh"
 PYTEST="${PYTEST:-pytest}"
-ROUTING_MODE="${ROUTING_MODE:-prefill-first}"
+ROUTING_MODE="${ROUTING_MODE:-dynamo}"
 export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.43}"
 export RESULT_LOG="${RESULT_LOG:-/tmp/tt_test_results.log}"
 export MODEL="${MODEL:-deepseek-ai/DeepSeek-R1-0528}"
@@ -40,23 +39,17 @@ guard_etcd() {
 
 configure_routing() {
     case "${ROUTING_MODE}" in
-        prefill-first)
+        dynamo|prefill-first|native)
+            # prefill-first/native kept as aliases for the Dynamo path.
             export DYNAMO_ROUTING=1
-            export USE_PREFILL_FIRST_DISAGGREGATION=1
-            TEST_FILE="${SCRIPT_DIR}/test_prefill_decode_prefill_first.py"
-            ;;
-        native)
-            export DYNAMO_ROUTING=1
-            export USE_PREFILL_FIRST_DISAGGREGATION=0
             TEST_FILE="${SCRIPT_DIR}/test_prefill_decode_prefill_first.py"
             ;;
         direct)
             export DYNAMO_ROUTING=0
-            export USE_PREFILL_FIRST_DISAGGREGATION=0
             TEST_FILE="${SCRIPT_DIR}/test_prefill_decode.py"
             ;;
         *)
-            log "unknown ROUTING_MODE=${ROUTING_MODE} (use prefill-first|native|direct)"
+            log "unknown ROUTING_MODE=${ROUTING_MODE} (use dynamo|direct)"
             exit 2
             ;;
     esac

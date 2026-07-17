@@ -339,11 +339,9 @@ bool LLMPipeline::willPrefillOnDecode(
   if (tt::config::dynamoRoutingEnabled()) {
     TT_LOG_INFO(
         "[LLMPipeline] DYNAMO_ROUTING=1 taskId={} deltaTokens={} "
-        "accepting Dynamo decode route; local prefill will run on decode{}",
-        request.task_id, deltaTokens,
-        tt::config::usePrefillFirstDisaggregation()
-            ? " (prefill-first enabled for remote prefills)"
-            : "");
+        "accepting Dynamo decode route; local prefill will run on decode "
+        "(remote prefills use prefill-first slot reservation)",
+        request.task_id, deltaTokens);
     return true;
   }
 
