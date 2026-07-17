@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
-# Dependencies for the V2_SPEC_DECODE workflow venv (Python 3.11).
+# Dependencies for the SPEC_DECODE workflow venv (Python 3.11).
 # Used by direct invocations of run_workflows.py when
 # --spec-decode is set (via the run_spec_decode.py launcher).
 #

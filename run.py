@@ -879,7 +879,12 @@ def main():
     # ServerCommand through the WorkflowRunner — the same runner that drives
     # workflows — so one runner owns "bring up the server, then run workflows"
     # (see docs/unified_runner_architecture.md).
-    from workflow_module import ServerCommand, ServerLaunchSpec, WorkflowRunner
+    from workflow_module import (
+        ServerCommand,
+        ServerLaunchSpec,
+        ServerMode,
+        WorkflowRunner,
+    )
 
     server_launch = None
     if runtime_config.docker_server:
@@ -932,7 +937,7 @@ def main():
                 )
             return 0
         server_launch = ServerLaunchSpec(
-            mode="docker",
+            mode=ServerMode.DOCKER,
             model_spec=model_spec,
             runtime_config=runtime_config,
             setup_config=setup_config,
@@ -941,7 +946,7 @@ def main():
     elif runtime_config.local_server:
         logger.info("Running inference server on localhost ...")
         server_launch = ServerLaunchSpec(
-            mode="local",
+            mode=ServerMode.LOCAL,
             model_spec=model_spec,
             runtime_config=runtime_config,
             setup_config=setup_config,
@@ -966,7 +971,17 @@ def main():
         )
         commands.extend(build_engine_commands(model_spec, runtime_config, json_fpath))
 
-    main_return_code = WorkflowRunner(commands).run()
+    if not commands:
+        # --workflow server without --docker-server/--local-server: host setup
+        # only, nothing for the runner to execute.
+        logger.info(
+            "No server bring-up and no workflow commands for --workflow %s; "
+            "nothing to run.",
+            runtime_config.workflow,
+        )
+        main_return_code = 0
+    else:
+        main_return_code = WorkflowRunner(commands).run()
     if main_return_code == 0:
         logger.info("Completed run.py.")
     else:

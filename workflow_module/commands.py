@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
 
@@ -41,6 +42,13 @@ class Command(ABC):
     def execute(self) -> CommandResult: ...
 
 
+class ServerMode(str, Enum):
+    """How :class:`ServerCommand` brings up the inference server."""
+
+    DOCKER = "docker"
+    LOCAL = "local"
+
+
 @dataclass(frozen=True)
 class ServerLaunchSpec:
     """Everything :class:`ServerCommand` needs to bring up an inference server.
@@ -49,18 +57,26 @@ class ServerLaunchSpec:
     ``setup_config``) that :func:`workflows.run_docker_server.run_docker_server`
     and :func:`workflows.run_local_server.run_local_server` expect. They are
     typed ``Any`` here so the command model stays free of a hard import
-    dependency on the launcher stack; Phase B can thread the real types through.
+    dependency on the launcher stack.
 
-    ``mode`` selects the launcher: ``"docker"`` or ``"local"``. ``json_fpath``
-    is the runtime model-spec JSON path the launchers persist / read (the docker
+    ``mode`` selects the launcher (:class:`ServerMode`). ``json_fpath`` is the
+    runtime model-spec JSON path the launchers persist / read (the docker
     launcher only forwards it in ``--dev-mode``).
     """
 
-    mode: str
+    mode: ServerMode
     model_spec: Any
     runtime_config: Any
     setup_config: Any
     json_fpath: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.mode, ServerMode):
+            return
+        try:
+            object.__setattr__(self, "mode", ServerMode(self.mode))
+        except ValueError as e:
+            raise ValueError(f"unknown server mode: {self.mode!r}") from e
 
 
 class ServerCommand(Command):
@@ -81,21 +97,21 @@ class ServerCommand(Command):
 
         spec = self.launch
         try:
-            if spec.mode == "docker":
+            if spec.mode is ServerMode.DOCKER:
                 payload = run_docker_server(
                     spec.model_spec,
                     spec.runtime_config,
                     spec.setup_config,
                     spec.json_fpath,
                 )
-            elif spec.mode == "local":
+            elif spec.mode is ServerMode.LOCAL:
                 payload = run_local_server(
                     spec.model_spec,
                     spec.runtime_config,
                     spec.json_fpath,
                     spec.setup_config,
                 )
-            else:
+            else:  # pragma: no cover - ServerLaunchSpec rejects unknown modes
                 return CommandResult(
                     command_name=self.name,
                     return_code=1,
@@ -276,6 +292,7 @@ __all__ = [
     "CommandResult",
     "ServerCommand",
     "ServerLaunchSpec",
+    "ServerMode",
     "SummaryCommand",
     "VenvCommand",
     "WorkflowCommand",

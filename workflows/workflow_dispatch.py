@@ -255,10 +255,10 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
         ]
 
     # Generic engine path: run_workflows.py in WORKFLOW_RUN_SCRIPT + its dependency venvs.
-    v2_run_py = repo_root / "run_workflows.py"
-    if not v2_run_py.is_file():
+    run_workflows_py = repo_root / "run_workflows.py"
+    if not run_workflows_py.is_file():
         raise FileNotFoundError(
-            f"Workflow entry point not found at {v2_run_py}. "
+            f"Workflow entry point not found at {run_workflows_py}. "
             "run_workflows.py is required for image-model workflows."
         )
     _warn_on_unsupported_args(runtime_config)
@@ -266,7 +266,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
         VenvCommand(
             WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
             _engine_run_argv(
-                v2_run_py,
+                run_workflows_py,
                 model_spec,
                 runtime_config,
                 json_fpath,
@@ -308,11 +308,17 @@ def dispatch_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowR
 def _engine_env() -> dict:
     """Env overrides forwarded to every engine subprocess (VenvCommand merges
     these over ``os.environ``)."""
-    return {"TT_V1_RUN_COMMAND": "python " + shlex.join(sys.argv)}
+    return {"TT_RUN_COMMAND": "python " + shlex.join(sys.argv)}
 
 
 def _engine_run_argv(
-    v2_run_py, model_spec, runtime_config, json_fpath, engine_workflow, output_dir, wf
+    run_workflows_py,
+    model_spec,
+    runtime_config,
+    json_fpath,
+    engine_workflow,
+    output_dir,
+    wf,
 ) -> List[str]:
     """Build the ``run_workflows.py`` argv (interpreter-agnostic).
 
@@ -321,7 +327,7 @@ def _engine_run_argv(
     hand-rolled ``cmd`` carried minus its leading ``venv_python``.
     """
     argv = [
-        str(v2_run_py),
+        str(run_workflows_py),
         "--model",
         model_spec.model_name,
         "--workflow",
@@ -638,7 +644,7 @@ def _warn_on_unsupported_args(runtime_config) -> None:
         unsupported.append("--test-name")
     if unsupported:
         logger.warning(
-            "workflow engine does not honor these v1 flags for image models; "
+            "workflow engine does not honor these flags for image models; "
             "they will be ignored: %s",
             ", ".join(unsupported),
         )

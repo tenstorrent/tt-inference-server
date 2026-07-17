@@ -14,11 +14,14 @@ from __future__ import annotations
 import sys
 from types import ModuleType, SimpleNamespace
 
+import pytest
+
 from workflow_module import workflows as workflows_mod
 from workflow_module.commands import (
     CommandResult,
     ServerCommand,
     ServerLaunchSpec,
+    ServerMode,
     SummaryCommand,
     VenvCommand,
     WorkflowCommand,
@@ -97,7 +100,7 @@ class TestServerCommand:
 
         _install_fake_launchers(monkeypatch, docker=fake_docker)
         spec = ServerLaunchSpec(
-            mode="docker",
+            mode=ServerMode.DOCKER,
             model_spec="ms",
             runtime_config="rc",
             setup_config="sc",
@@ -120,7 +123,7 @@ class TestServerCommand:
 
         _install_fake_launchers(monkeypatch, local=fake_local)
         spec = ServerLaunchSpec(
-            mode="local",
+            mode=ServerMode.LOCAL,
             model_spec="ms",
             runtime_config="rc",
             setup_config="sc",
@@ -130,17 +133,23 @@ class TestServerCommand:
         assert result.return_code == 0
         assert calls["args"] == ("ms", "rc", "/j.json", "sc")
 
-    def test_unknown_mode_returns_error(self, monkeypatch):
-        _install_fake_launchers(monkeypatch)
+    def test_string_mode_is_coerced_to_enum(self):
         spec = ServerLaunchSpec(
-            mode="bogus",
+            mode="docker",
             model_spec=None,
             runtime_config=None,
             setup_config=None,
         )
-        result = ServerCommand(spec).execute()
-        assert result.return_code == 1
-        assert "bogus" in result.error
+        assert spec.mode is ServerMode.DOCKER
+
+    def test_unknown_mode_raises_at_construction(self):
+        with pytest.raises(ValueError, match="unknown server mode"):
+            ServerLaunchSpec(
+                mode="bogus",
+                model_spec=None,
+                runtime_config=None,
+                setup_config=None,
+            )
 
     def test_launcher_exception_is_caught(self, monkeypatch):
         def boom(*a, **k):
@@ -148,7 +157,7 @@ class TestServerCommand:
 
         _install_fake_launchers(monkeypatch, docker=boom)
         spec = ServerLaunchSpec(
-            mode="docker",
+            mode=ServerMode.DOCKER,
             model_spec=None,
             runtime_config=None,
             setup_config=None,
@@ -248,9 +257,9 @@ class TestVenvCommand:
         VenvCommand(
             WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
             ["x.py"],
-            env={"TT_V1_RUN_COMMAND": "python run.py"},
+            env={"TT_RUN_COMMAND": "python run.py"},
         ).execute()
-        assert rec["env"]["TT_V1_RUN_COMMAND"] == "python run.py"
+        assert rec["env"]["TT_RUN_COMMAND"] == "python run.py"
         assert rec["env"]["PATH"] == "/usr/bin"  # inherited
 
     def test_setup_failure_skips_run(self, monkeypatch):

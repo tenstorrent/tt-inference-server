@@ -2,17 +2,17 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
-# Dependencies for the V2_LLM_AIPERF venv (Python 3.11): the standard
-# `--tools aiperf` LLM benchmark. Ships aiperf plus the v2 base deps the
+# Dependencies for the LLM_AIPERF venv (Python 3.11): the standard
+# `--tools aiperf` LLM benchmark. Ships aiperf plus the base deps the
 # orchestrator imports eagerly (aiohttp via
-# workflow_module -> test_module.context -> health_tests). Every other v2
+# workflow_module -> test_module.context -> health_tests). Every other
 # test runner is lazy-loaded via PEP 562 __getattr__ and is NEVER imported
 # on this code path -- so their transitive deps (torchvision, open-clip-torch,
 # pillow, scipy, numpy) intentionally do NOT appear below. pip will still
 # pull in numpy via transformers / aiperf, but we leave that to pip's
 # resolver instead of pinning it ourselves.
 #
-# The V2_PREFIX_CACHE venv builds on this base via `-r llm-aiperf.txt`.
+# The PREFIX_CACHE venv builds on this base via `-r llm-aiperf.txt`.
 
 -c constraints.txt
 --extra-index-url https://download.pytorch.org/whl/cpu

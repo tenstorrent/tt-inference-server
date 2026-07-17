@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 #
-# Dependencies for the V2_RUN_SCRIPT workflow venv.
+# Dependencies for the WORKFLOW_RUN_SCRIPT workflow venv.
 # Used by workflows/workflow_dispatch.py to launch run_workflows.py.
 #
 # Scope: everything the eager import chain rooted at

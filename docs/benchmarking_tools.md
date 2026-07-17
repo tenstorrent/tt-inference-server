@@ -306,8 +306,8 @@ python run_workflows.py \
   --prefix-cache
 ```
 
-On first use, `run.py` materializes the `V2_PREFIX_CACHE` venv
-(`.workflow_venvs/.venv_v2_prefix_cache`) and re-execs inside it so AIPerf and
+On first use, `run.py` materializes the `PREFIX_CACHE` venv
+(`.workflow_venvs/.venv_prefix_cache`) and re-execs inside it so AIPerf and
 its dependencies are available without manual setup.
 
 ### Scenarios

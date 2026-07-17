@@ -411,12 +411,16 @@ def _resolve_server_mode(
     return "docker" if args.docker_server else "API"
 
 
-_V1_RUN_COMMAND_ENV = "TT_V1_RUN_COMMAND"
+_RUN_COMMAND_ENV = "TT_RUN_COMMAND"
+# Pre-rename env name; still honored so older callers keep working.
+_LEGACY_RUN_COMMAND_ENV = "TT_V1_RUN_COMMAND"
 
 
 def _resolve_run_command() -> str:
     """Resolve the ``run_command`` recorded in the report metadata."""
-    propagated = os.environ.get(_V1_RUN_COMMAND_ENV)
+    propagated = os.environ.get(_RUN_COMMAND_ENV) or os.environ.get(
+        _LEGACY_RUN_COMMAND_ENV
+    )
     if propagated:
         return propagated
     return "python " + shlex.join(sys.argv)

@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
-# Dependencies for the V2_PREFIX_CACHE workflow venv (Python 3.11).
+# Dependencies for the PREFIX_CACHE workflow venv (Python 3.11).
 # Used by direct invocations of run_workflows.py when
 # --prefix-cache is set.
 #

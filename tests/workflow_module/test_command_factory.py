@@ -79,15 +79,23 @@ class TestResolveServerMode:
 
 class TestResolveRunCommand:
     def test_prefixes_python_and_quotes_from_argv(self, monkeypatch):
-        monkeypatch.delenv(cf._V1_RUN_COMMAND_ENV, raising=False)
+        monkeypatch.delenv(cf._RUN_COMMAND_ENV, raising=False)
+        monkeypatch.delenv(cf._LEGACY_RUN_COMMAND_ENV, raising=False)
         monkeypatch.setattr(cf.sys, "argv", ["run.py", "--model", "my model"])
         out = cf._resolve_run_command()
         assert out == "python run.py --model 'my model'"
 
     def test_env_override_takes_precedence(self, monkeypatch):
-        monkeypatch.setenv(cf._V1_RUN_COMMAND_ENV, "python run.py --from env")
+        monkeypatch.delenv(cf._LEGACY_RUN_COMMAND_ENV, raising=False)
+        monkeypatch.setenv(cf._RUN_COMMAND_ENV, "python run.py --from env")
         monkeypatch.setattr(cf.sys, "argv", ["ignored.py"])
         assert cf._resolve_run_command() == "python run.py --from env"
+
+    def test_legacy_env_still_honored(self, monkeypatch):
+        monkeypatch.delenv(cf._RUN_COMMAND_ENV, raising=False)
+        monkeypatch.setenv(cf._LEGACY_RUN_COMMAND_ENV, "python run.py --legacy")
+        monkeypatch.setattr(cf.sys, "argv", ["ignored.py"])
+        assert cf._resolve_run_command() == "python run.py --legacy"
 
 
 class TestLoadRuntimeConfig:

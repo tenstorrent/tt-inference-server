@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
-# Dependencies for the V2_LLM_VLLM workflow venv (Python 3.11).
+# Dependencies for the LLM_VLLM workflow venv (Python 3.11).
 # Used by launchers/run_llm_bench.py for --tools vllm and
 # --tools inferencemax, both of which drive the `vllm bench serve` CLI as a
 # client against an already-running inference server (no GPU needed locally).
