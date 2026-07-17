@@ -4821,6 +4821,61 @@ _eval_config_list = [
             ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="google/diffusiongemma-26B-A4B-it",
+        tasks=[
+            EvalTask(
+                # GPQA-Diamond, lightweight bring-up eval for the QB2 text path.
+                # DiffusionGemma is a discrete text-diffusion model with NO
+                # reasoning/thinking channel (unlike the gemma-4 backbone entry),
+                # so there is no enable_thinking and no reasoning-parser. Output is
+                # emitted in 256-token canvas blocks, so keep the generation budget
+                # small for a first run (block latency is ~minutes at full depth).
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    # No published / GPU reference baseline yet -- this run is to
+                    # SEE the raw score; the report's accuracy_check will be NA.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Chat endpoint so the server applies the DiffusionGemma chat template.
+                use_chat_api=True,
+                # GPQA prompts are small; cap client max_length modestly so a smoke
+                # run does not need the full 256K KV pool stood up.
+                model_kwargs={
+                    "max_length": 8192,
+                },
+                gen_kwargs={
+                    # lm-eval local-chat-completions streaming parser KeyErrors on
+                    # 'message'; non-streamed is required.
+                    "stream": "false",
+                    # A few canvas blocks (256/block) of answer headroom; raise if
+                    # answers truncate.
+                    "max_gen_toks": 2048,
+                    "until": [],
+                    "do_sample": "true",
+                    # The vLLM plugin maps TTSamplingParams (temperature/top_k/top_p)
+                    # onto the on-device canvas Gumbel-max draw.
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # Lightweight: 5-sample smoke; CI_NIGHTLY 0.05 (~10) mirrors gemma-4.
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                },
+            ),
+        ],
+    ),
 ]
 
 
