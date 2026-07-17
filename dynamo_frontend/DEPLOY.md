@@ -127,8 +127,8 @@ Prometheus scrapes `prefill-gateway:9091`.
    `DYNAMO_ENDPOINT_ENABLED=1`,
    `DYNAMO_WORKER_TYPE=prefill`, `DYNAMO_MODEL_TYPE=Prefill`, and endpoint
    `dynamo.prefill.generate`. Decode and prefill also share a cpp_server
-   inter-server socket for prefill-first slot reservation (always enabled
-   with Dynamo routing). `worker_type=prefill` carries the actual role;
+   inter-server socket used for slot reservation on remote prefills.
+   `worker_type=prefill` carries the actual role;
    `DYNAMO_MODEL_TYPE=Prefill` keeps the current released `ai-dynamo` frontend
    compatible until `Tokens+Empty` is accepted for prefill workers. Dynamo's
    integrated router owns the local-vs-remote prefill decision; when a

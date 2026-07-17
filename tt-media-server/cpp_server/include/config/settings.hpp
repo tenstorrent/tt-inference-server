@@ -150,9 +150,9 @@ size_t sessionEvictionCount();
 size_t maxTokensToPrefillOnDecode();
 
 /**
- * Prefill-first disaggregation is part of DYNAMO_ROUTING: prefill reserves a
- * decode slot via SlotReservationRequest/Response, then returns
- * tt_prefill_result. Equivalent to dynamoRoutingEnabled().
+ * True when DYNAMO_ROUTING is enabled. Remote prefills then reserve a decode
+ * slot via SlotReservationRequest/Response before returning tt_prefill_result.
+ * Equivalent to dynamoRoutingEnabled().
  */
 bool usePrefillFirstDisaggregation();
 
@@ -345,8 +345,8 @@ size_t memoryQueueCapacity();
  * DYNAMO_ENDPOINT_ENABLED. Default: defaults::DYNAMO_ENDPOINT_ENABLED. */
 bool dynamoEndpointEnabled();
 
-/** Experimental: Dynamo owns disaggregated prefill/decode routing and always
- * uses prefill-first slot reservation over the cpp_server inter-server socket.
+/** Experimental: Dynamo owns the local-vs-remote prefill decision. Remote
+ * prefills use slot reservation over the cpp_server inter-server socket.
  * From DYNAMO_ROUTING. Default: defaults::DYNAMO_ROUTING. */
 bool dynamoRoutingEnabled();
 

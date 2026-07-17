@@ -9,12 +9,12 @@
 #
 #   ./run_stack.sh up                      # direct cpp_server socket split
 #   DYNAMO_ROUTING=1 ./run_stack.sh up
-#                                          # Dynamo + prefill-first (1P1D sockets)
-#                                          # (also used by benchmarks/run_tests.sh default)
+#                                          # Dynamo decode/prefill pools + slot
+#                                          # sockets (also run_tests.sh default)
 #   ./run_stack.sh down                    # tear everything down
 #
 # This local mock stack supports the direct cpp_server split and Dynamo routing
-# (Dynamo routing always includes prefill-first slot reservation).
+# (with sockets for slot reservation when Dynamo sends work to prefill).
 # Use dynamo_frontend/deploy.sh when PrefillGateway is part of the test.
 #
 # Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; frontend -> /tmp/tt_frontend.log.
@@ -323,7 +323,7 @@ up() {
     ensure_etcd
 
     if [[ "${DYNAMO_ROUTING}" == "1" ]]; then
-        log "Dynamo routing + prefill-first: decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
+        log "Dynamo routing: decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
         start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
             $(worker_dynamo_env "${DYNAMO_ROUTING_NAMESPACE}" decode decode Chat) \
             $(worker_ipc_env dynamo_decode) \

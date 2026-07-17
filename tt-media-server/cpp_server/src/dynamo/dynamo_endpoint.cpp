@@ -258,9 +258,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           };
 
       try {
-        // Prefill-first is always on with DYNAMO_ROUTING: reserve decode slot
-        // over the inter-server socket, then return tt_prefill_result
-        // (including slot_id) for Dynamo to continue on decode.
+        // Remote-prefill entry under DYNAMO_ROUTING: reserve a decode slot over
+        // the inter-server socket, then return tt_prefill_result (with slot_id)
+        // for Dynamo to continue on decode.
         TT_LOG_INFO(
             "[DynamoEndpoint] Prefill-first path taskId={} tokens={}",
             req->task_id, dynReq.token_ids.size());

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
-"""Dynamo routing (prefill-first) integration tests.
+"""Dynamo routing integration tests (remote-prefill path).
 
 Bring the stack up with:
 
@@ -12,8 +12,8 @@ Or via the harness default:
 
     benchmarks/run_tests.sh
 
-Asserts the orchestration path:
-  1. Dynamo hits prefill first (Prefill-first path log)
+With --enforce-disagg, asserts the remote-prefill orchestration path:
+  1. Dynamo hits prefill (Prefill-first path log)
   2. Prefill reserves a decode slot over ZMQ
   3. Decode grants the slot
   4. Chat completes with distinct Dynamo worker ids and decode max_tokens budget
@@ -100,7 +100,7 @@ def _wait_log(path, offset, pattern, deadline_s=15):
 
 
 def test_prefill_first_orchestration_via_dynamo():
-    _log("--------- Dynamo routing (prefill-first) via :8080 ---------")
+    _log("--------- Dynamo routing (remote prefill) via :8080 ---------")
     _ensure_server()
 
     assert os.path.exists(PREFILL_LOG) and os.path.exists(DECODE_LOG), (

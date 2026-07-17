@@ -5,8 +5,8 @@
 # run_tests.sh — bring up the Dynamo stack, run the pytest suite, tear down.
 #
 # Routing modes (ROUTING_MODE):
-#   dynamo  (default)  DYNAMO_ROUTING=1 → Dynamo -> prefill -> slot ZMQ -> decode
-#                      (prefill-first is always included)
+#   dynamo  (default)  DYNAMO_ROUTING=1 — Dynamo chooses decode-local or remote
+#                      prefill; remote prefills use slot reservation over ZMQ
 #   direct             classic decode-owned offload via MAX_TOKENS_...
 #
 #   ./run_tests.sh

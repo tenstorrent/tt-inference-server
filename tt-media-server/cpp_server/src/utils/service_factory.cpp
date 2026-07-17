@@ -33,13 +33,12 @@ AuxiliaryServices buildAuxiliaryServices(
           std::dynamic_pointer_cast<services::LLMService>(activeService)) {
     const auto mode = tt::config::llmMode();
     if (mode != tt::config::LLMMode::REGULAR) {
-      // Dynamo routing uses prefill-first slot reservation over the cpp_server
-      // inter-server socket (1P1D via SOCKET_HOST for now), then returns
-      // tt_prefill_result on the Dynamo hop.
+      // Dynamo routing may send work to prefill; keep the inter-server socket
+      // ready for slot reservation on that path (1P1D via SOCKET_HOST for now).
       if (tt::config::dynamoRoutingEnabled()) {
         TT_LOG_INFO(
             "[ServiceFactory] DYNAMO_ROUTING=1; enabling sockets for "
-            "prefill-first slot reservation");
+            "remote-prefill slot reservation");
       }
       auto socket = std::make_shared<sockets::InterServerService>();
       socket->initializeFromConfig();

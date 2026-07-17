@@ -672,7 +672,7 @@ size_t maxTokensToPrefillOnDecode() {
 }
 
 bool usePrefillFirstDisaggregation() {
-  // Prefill-first slot reservation is always enabled with Dynamo routing.
+  // Slot-reservation path is gated by DYNAMO_ROUTING (used for remote prefills).
   return dynamoRoutingEnabled();
 }
 
