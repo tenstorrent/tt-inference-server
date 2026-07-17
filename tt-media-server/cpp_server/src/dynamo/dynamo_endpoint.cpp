@@ -320,6 +320,13 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                 *prefillResult, {.skip_apply_chat_template = true,
                                  .skip_text_decode = true,
                                  .populate_token_counts = true}));
+        // Dynamo sends the client completion budget on the decode hop
+        // (e.g. max_tokens=32). Prefill is invoked with max_tokens=1, so any
+        // remaining_tokens echoed in tt_prefill_result is not the decode
+        // budget — prefer the decode GenerateRequest's max_tokens.
+        if (dynReq.max_tokens.has_value()) {
+          decodeReq->max_tokens = *dynReq.max_tokens;
+        }
         const bool hasReservedDecodeSlot =
             prefillResult->slotId.has_value() &&
             *prefillResult->slotId != tt::domain::INVALID_SLOT_ID;

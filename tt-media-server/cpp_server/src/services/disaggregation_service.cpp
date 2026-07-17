@@ -657,7 +657,6 @@ void DisaggregationService::applySlotReservationAndLaunch(
   auto resultCallback = std::move(pending.resultCallback);
   const uint32_t taskId = result.taskId;
   const auto fullPromptTokenIds = work.fullPromptTokenIds;
-  const auto maxTokens = work.maxTokens;
   const auto temperature = work.request->temperature;
   const auto topP = work.request->top_p;
   const auto topK = work.request->top_k;
@@ -668,13 +667,12 @@ void DisaggregationService::applySlotReservationAndLaunch(
       work.request, registrationHashes,
       [this, work = std::move(work), streamCallback,
        resultCallback = std::move(resultCallback), taskId, fullPromptTokenIds,
-       maxTokens, temperature, topP, topK, fastMode,
-       slotId]() mutable {
+       temperature, topP, topK, fastMode, slotId]() mutable {
         const auto requestPtr = work.request;
         launchPrefillWork(
             std::move(work),
             [streamCallback, resultCallback, taskId, fullPromptTokenIds,
-             maxTokens, temperature, topP, topK, fastMode, slotId,
+             temperature, topP, topK, fastMode, slotId,
              requestPtr](const LLMStreamChunk& response, bool isFinal) {
               if (resultCallback.has_value()) {
                 if (!isFinal && !response.choices.empty() &&
@@ -707,10 +705,10 @@ void DisaggregationService::applySlotReservationAndLaunch(
                       tt::sockets::prefillErrorTextForReason(
                           reason, response.error.value_or("error"));
                 } else {
-                  prefillResult.remainingTokens =
-                      maxTokens.has_value()
-                          ? std::optional<int>(std::max(0, maxTokens.value()))
-                          : std::nullopt;
+                  // Dynamo invokes prefill with max_tokens=1 and sends the
+                  // real client budget on the decode hop; do not echo the
+                  // prefill-forced 1 as remaining_tokens.
+                  prefillResult.remainingTokens = std::nullopt;
                   prefillResult.tokenIds = fullPromptTokenIds;
                   if (!response.choices.empty()) {
                     prefillResult.generatedText = response.choices.back().text;
@@ -788,7 +786,10 @@ void DisaggregationService::resolvePrefillSession(
     // resident again when this prefill completes (see prefill result callback).
     sessionManager->shrinkResidentPrefixToMatchedTokens(
         acquired->sessionId, acquired->numberOfMatchedTokens);
-    socketService->sendPrefillCacheBlocksAdded(blockHashes(blockInfos));
+    // Optional under DYNAMO_ROUTING (no InterServerService / ZMQ gateway).
+    if (socketService) {
+      socketService->sendPrefillCacheBlocksAdded(blockHashes(blockInfos));
+    }
     onResolved();
   } else {
     // Check if there's a candidate slot worth copying from.
@@ -820,7 +821,10 @@ void DisaggregationService::resolvePrefillSession(
               "sessionId={} slotId={}",
               request->task_id, session.getSessionId(), session.getSlotId());
           sm->registerPrefixHash(session.getSessionId(), infos);
-          socketService->sendPrefillCacheBlocksAdded(blockHashes(infos));
+          // Optional under DYNAMO_ROUTING (no InterServerService / ZMQ gateway).
+          if (socketService) {
+            socketService->sendPrefillCacheBlocksAdded(blockHashes(infos));
+          }
           request->sessionId = session.getSessionId();
           request->prefillSlotId =
               sm->acquireInFlight(session.getSessionId(), nullptr);
