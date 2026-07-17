@@ -70,6 +70,18 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
                 "optimization_level": optimization_level,
                 "enable_trace": enable_trace,
             },
+            # Gemma-4 is multimodal but this Forge LLM path serves text-only;
+            # zeroing every modality keeps the vision/audio tower from ever
+            # precompiling. Without this, _precompile_mm_encoder's video path
+            # calls current_platform.mem_get_info(), which the TT platform
+            # doesn't implement -> TypeError: 'NoneType' object is not callable.
+            # Introduced by vLLM's own gemma4_mm.py rewrite between 0.20.2 and
+            # 0.22.1 (mem_get_info-based dynamic encoder-batch chunking added
+            # there; absent in 0.19.1/0.20.2) -- this Forge integration was last
+            # validated against 0.19.1 (tt-inference-server#4470), before that
+            # code path existed, so it was never hit until tt-xla's routine
+            # vLLM uplift caught up to 0.22.1 (tt-xla#5634).
+            limit_mm_per_prompt={"image": 0, "video": 0, "audio": 0},
         )
         self.logger.info(
             f"Device {self.device_id}: additional_config={engine_args.additional_config}"
