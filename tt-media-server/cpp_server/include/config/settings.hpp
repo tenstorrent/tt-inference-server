@@ -149,12 +149,6 @@ size_t sessionEvictionCount();
  * Default: defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE. */
 size_t maxTokensToPrefillOnDecode();
 
-/** Prefill-first disaggregation from USE_PREFILL_FIRST_DISAGGREGATION.
- * When true, prefill entry uses slot reservation against decode; when false,
- * the legacy decode-allocates-slot-first PrefillRequestMessage flow applies.
- * Default: defaults::USE_PREFILL_FIRST_DISAGGREGATION (false). */
-bool usePrefillFirstDisaggregation();
-
 /** Max context length (prompt + completion) from MAX_CONTEXT_LENGTH. Default:
  * defaults::MAX_CONTEXT_LENGTH. */
 size_t maxContextLength();
@@ -345,7 +339,8 @@ size_t memoryQueueCapacity();
 bool dynamoEndpointEnabled();
 
 /** Experimental: let Dynamo own disaggregated prefill routing instead of the
- * cpp_server socket/gateway path. From DYNAMO_ROUTING. Default:
+ * cpp_server socket/gateway path. Also enables prefill-first disaggregation
+ * (prefill reserves decode slots via etcd). From DYNAMO_ROUTING. Default:
  * defaults::DYNAMO_ROUTING. */
 bool dynamoRoutingEnabled();
 

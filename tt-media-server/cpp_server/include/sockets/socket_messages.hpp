@@ -268,8 +268,8 @@ struct RegistrationProbeMessage {
  * @brief Prefill -> decode (via gateway): ask decode to reserve a destination
  * KV slot for migration.
  *
- * Used by the prefill-first disaggregation flow when
- * USE_PREFILL_FIRST_DISAGGREGATION=1. Decode responds with
+ * Used by the prefill-first disaggregation flow (DYNAMO_ROUTING=1 uses etcd;
+ * the socket path is for non-Dynamo / integration tests). Decode responds with
  * SlotReservationResponseMessage.
  */
 struct SlotReservationRequestMessage

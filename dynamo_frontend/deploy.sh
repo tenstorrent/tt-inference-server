@@ -372,7 +372,6 @@ elif [[ "$DYNAMO_ROUTING_ENABLED" == "1" ]]; then
         -e DYNAMO_WORKER_TYPE=decode
         -e USE_PREFILL_GATEWAY=0
         -e DYNAMO_ROUTING=1
-        -e USE_PREFILL_FIRST_DISAGGREGATION=1
     )
 fi
 
@@ -425,7 +424,6 @@ if [[ "$DYNAMO_ROUTING_ENABLED" == "1" ]]; then
         start_prefill_worker "$(prefill_worker_name "$idx")" "Dynamo-registered prefill worker ${idx}" "$PREFILL_WORKER_PORT" \
             -e DYNAMO_ENDPOINT_ENABLED=1 \
             -e DYNAMO_ROUTING=1 \
-            -e USE_PREFILL_FIRST_DISAGGREGATION=1 \
             -e USE_PREFILL_GATEWAY=0 \
             -e DYNAMO_DISCOVERY_BACKEND=etcd \
             -e DYNAMO_ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \

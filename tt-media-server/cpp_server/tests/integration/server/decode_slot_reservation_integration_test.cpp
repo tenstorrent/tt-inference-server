@@ -56,7 +56,6 @@ void configureEnv() {
   setQueueEnv();
   setenv("LLM_DEVICE_BACKEND", "mock", 1);
   setenv("LLM_MODE", "decode", 1);
-  setenv("USE_PREFILL_FIRST_DISAGGREGATION", "1", 1);
   setenv("DEVICE_IDS", "(0)", 1);
   setenv("MAX_NUM_SESSIONS", "4", 1);
   setenv("MIN_TOKENS_TO_COPY", "32", 1);

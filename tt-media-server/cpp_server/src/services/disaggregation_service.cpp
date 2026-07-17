@@ -93,8 +93,7 @@ DisaggregationService::DisaggregationService(
 }
 
 bool DisaggregationService::useEtcdSlotReservation() const {
-  return tt::config::dynamoRoutingEnabled() &&
-         tt::config::usePrefillFirstDisaggregation();
+  return tt::config::dynamoRoutingEnabled();
 }
 
 void DisaggregationService::setupSocketHandlers() {
@@ -183,11 +182,10 @@ void DisaggregationService::setupSocketHandlers() {
       streamCallbacks.clear();
     });
 
-    if (tt::config::usePrefillFirstDisaggregation() &&
-        !useEtcdSlotReservation()) {
+    if (!useEtcdSlotReservation()) {
       TT_LOG_INFO(
-          "[DisaggregationService] Prefill-first disaggregation enabled on "
-          "decode: handling SlotReservationRequest (socket path)");
+          "[DisaggregationService] Registering SlotReservationRequest handler "
+          "on decode (socket path)");
       socketService->onSlotReservationRequest(
           [this](const tt::sockets::SlotReservationRequestMessage& message) {
             handleSlotReservationRequest(message);
@@ -227,11 +225,10 @@ void DisaggregationService::setupSocketHandlers() {
           llmService->abortRequest(message.taskId);
         });
 
-    if (tt::config::usePrefillFirstDisaggregation() &&
-        !useEtcdSlotReservation()) {
+    if (!useEtcdSlotReservation()) {
       TT_LOG_INFO(
-          "[DisaggregationService] Prefill-first disaggregation enabled on "
-          "prefill: handling SlotReservationResponse (socket path)");
+          "[DisaggregationService] Registering SlotReservationResponse handler "
+          "on prefill (socket path)");
       socketService->onSlotReservationResponse(
           [this](const tt::sockets::SlotReservationResponseMessage& message) {
             handleSlotReservationResponse(message);

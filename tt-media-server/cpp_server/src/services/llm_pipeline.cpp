@@ -84,7 +84,7 @@ void LLMPipeline::resolveSession(
       req->messages.size(), promptKind, tokens ? tokens->size() : 0);
 
   if (tt::config::llmMode() == tt::config::LLMMode::PREFILL_ONLY &&
-      tt::config::usePrefillFirstDisaggregation()) {
+      tt::config::dynamoRoutingEnabled()) {
     SessionInfo info;
     if (tokens) {
       info.registrationHashes =
@@ -296,7 +296,7 @@ void LLMPipeline::dispatchGeneration(
   }
 
   if (mode == tt::config::LLMMode::PREFILL_ONLY) {
-    if (!tt::config::usePrefillFirstDisaggregation()) {
+    if (!tt::config::dynamoRoutingEnabled()) {
       throw std::runtime_error(
           "LLM Mode must be regular or decode only for chat completions");
     }

@@ -61,9 +61,9 @@ class DisaggregationService {
       std::function<void(const tt::sockets::PrefillResultMessage&)> callback);
 
   /**
-   * Prefill-first path for Dynamo: reserve a decode slot (etcd when
-   * DYNAMO_ROUTING=1, else InterServerService), run one prefill token, and
-   * return a PrefillResultMessage for disaggregated_params.
+   * Prefill-first path for Dynamo (DYNAMO_ROUTING=1): reserve a decode slot
+   * via etcd, run one prefill token, and return a PrefillResultMessage for
+   * disaggregated_params.
    */
   void handlePrefillFirstRequest(
       LLMRequest& request, const std::vector<uint64_t>& registrationHashes,

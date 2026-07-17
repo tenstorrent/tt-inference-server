@@ -221,88 +221,48 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
         return;
       }
 
-      if (tt::config::usePrefillFirstDisaggregation()) {
-        auto prefillMessage = buildPrefillRequestMessage(dynReq);
-        auto prefillDone = std::make_shared<std::atomic<bool>>(false);
-        try {
-          disaggregation->handlePrefillFirstRequest(
-              *req, prefillMessage.registrationHashes,
-              [sendChunk, signalDone, prefillDone](
-                  const tt::sockets::PrefillResultMessage& result) {
-                bool expected = false;
-                if (!prefillDone->compare_exchange_strong(expected, true)) {
-                  return;
-                }
-                TokenChunk out;
-                if (result.error) {
-                  out.error = result.generatedText.empty()
-                                  ? "prefill error"
-                                  : result.generatedText;
-                  out.error_code = 500;
-                  sendChunk(out);
-                  signalDone();
-                  return;
-                }
-                auto resultForDynamo = result;
-                if (!resultForDynamo.slotId.has_value()) {
-                  resultForDynamo.slotId = tt::domain::INVALID_SLOT_ID;
-                }
-                Json::Value params(Json::objectValue);
-                params["tt_prefill_result"] =
-                    prefillResultMessageToJson(resultForDynamo);
-                out.disaggregated_params = std::move(params);
-                DynamoUsage du;
-                du.prompt_tokens =
-                    static_cast<int>(resultForDynamo.tokenIds.size());
-                du.completion_tokens = 0;
-                du.total_tokens = du.prompt_tokens;
-                du.cached_tokens = resultForDynamo.cachedTokens;
-                out.completion_usage = du;
-                sendChunk(out);
-                signalDone();
-              });
-        } catch (const std::exception& e) {
-          sendErrorAndDone(e.what(), 503);
-        }
-        return;
-      }
-
       auto prefillMessage = buildPrefillRequestMessage(dynReq);
       auto prefillDone = std::make_shared<std::atomic<bool>>(false);
-      disaggregation->handlePrefillRequest(
-          prefillMessage, [sendChunk, signalDone, prefillDone](
-                              const tt::sockets::PrefillResultMessage& result) {
-            bool expected = false;
-            if (!prefillDone->compare_exchange_strong(expected, true)) {
-              return;
-            }
-            TokenChunk out;
-            if (result.error) {
-              out.error = result.generatedText.empty() ? "prefill error"
-                                                       : result.generatedText;
-              out.error_code = 500;
+      try {
+        disaggregation->handlePrefillFirstRequest(
+            *req, prefillMessage.registrationHashes,
+            [sendChunk, signalDone, prefillDone](
+                const tt::sockets::PrefillResultMessage& result) {
+              bool expected = false;
+              if (!prefillDone->compare_exchange_strong(expected, true)) {
+                return;
+              }
+              TokenChunk out;
+              if (result.error) {
+                out.error = result.generatedText.empty()
+                                ? "prefill error"
+                                : result.generatedText;
+                out.error_code = 500;
+                sendChunk(out);
+                signalDone();
+                return;
+              }
+              auto resultForDynamo = result;
+              if (!resultForDynamo.slotId.has_value()) {
+                resultForDynamo.slotId = tt::domain::INVALID_SLOT_ID;
+              }
+              Json::Value params(Json::objectValue);
+              params["tt_prefill_result"] =
+                  prefillResultMessageToJson(resultForDynamo);
+              out.disaggregated_params = std::move(params);
+              DynamoUsage du;
+              du.prompt_tokens =
+                  static_cast<int>(resultForDynamo.tokenIds.size());
+              du.completion_tokens = 0;
+              du.total_tokens = du.prompt_tokens;
+              du.cached_tokens = resultForDynamo.cachedTokens;
+              out.completion_usage = du;
               sendChunk(out);
               signalDone();
-              return;
-            }
-            auto resultForDynamo = result;
-            if (!resultForDynamo.slotId.has_value()) {
-              resultForDynamo.slotId = tt::domain::INVALID_SLOT_ID;
-            }
-            Json::Value params(Json::objectValue);
-            params["tt_prefill_result"] =
-                prefillResultMessageToJson(resultForDynamo);
-            out.disaggregated_params = std::move(params);
-            DynamoUsage du;
-            du.prompt_tokens =
-                static_cast<int>(resultForDynamo.tokenIds.size());
-            du.completion_tokens = 0;
-            du.total_tokens = du.prompt_tokens;
-            du.cached_tokens = resultForDynamo.cachedTokens;
-            out.completion_usage = du;
-            sendChunk(out);
-            signalDone();
-          });
+            });
+      } catch (const std::exception& e) {
+        sendErrorAndDone(e.what(), 503);
+      }
       return;
     }
 

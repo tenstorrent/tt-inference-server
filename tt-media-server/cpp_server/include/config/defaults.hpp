@@ -38,11 +38,6 @@ constexpr size_t MAX_SESSIONS_COUNT = 128;
 constexpr unsigned SESSION_EVICTION_RATE = 90;
 constexpr size_t SESSION_EVICTION_COUNT = 10;
 constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 1000;
-// When true, prefill owns disaggregated request entry and reserves decode
-// destination slots via SlotReservationRequest/Response. Legacy flow
-// (decode allocates slot, then sends PrefillRequestMessage) is unchanged
-// when false.
-constexpr bool USE_PREFILL_FIRST_DISAGGREGATION = false;
 constexpr size_t MAX_CONTEXT_LENGTH = 65536;  // 64k
 constexpr size_t MAX_ISL = 256000;  // 2000k (max input sequence length)
 constexpr size_t MIN_TOKENS_TO_COPY =
@@ -143,6 +138,8 @@ constexpr int DECODE_MAX_TOKEN_IDS = 1;
 // frontends). All defaults are overridable via env vars; the endpoint is
 // off unless DYNAMO_ENDPOINT_ENABLED=1.
 constexpr bool DYNAMO_ENDPOINT_ENABLED = false;
+// When true, Dynamo owns prefill/decode routing and prefill-first
+// disaggregation is enabled (prefill reserves decode slots via etcd).
 constexpr bool DYNAMO_ROUTING = false;
 constexpr const char* DYNAMO_BIND_HOST = "0.0.0.0";
 constexpr uint16_t DYNAMO_BIND_PORT = 0;  // 0 = OS-assigned ephemeral port.
