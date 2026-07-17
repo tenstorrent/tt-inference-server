@@ -145,10 +145,18 @@ templates:
 
 - weights:
     # gemma-4-31b-it Forge LLM (tensor-parallel) on p300x2/QB2. Lowercase
-    # basename matches tt-media-server ModelNames.GEMMA_4_31B_IT. batch-16 / 4K
-    # is the best fitting balance (~76 tok/s aggregate). Dims are env-driven here
-    # (constants.py only carries the TP mesh topology), mirroring the single-chip
-    # forge LLMs above.
+    # basename matches tt-media-server ModelNames.GEMMA_4_31B_IT. Bumped to the
+    # b32/high-seq-len/chunked-prefill/b1-prefill config (mirrors the 5
+    # single-chip P150 Forge LLMs -- 50c54994e/58fd6283a), qualified locally
+    # against the full 128-65536 ctx ladder with bfp8 weights+KV: 32768 ctx at
+    # GMU=0.5 gives ~1.4x KV-cache headroom over one max-length request (KV
+    # cost ~440 KiB/token: 60 layers, 50 sliding_attention @ kv_heads=16/
+    # head_dim=256 + 10 full_attention @ kv_heads=4/head_dim=512, hybrid KV
+    # cache manager currently disabled so sliding-window layers still pay full
+    # ctx cost, and TP does not currently shard the KV cache across chips --
+    # 128K would need ~55 GiB/chip, over the ~32 GiB ceiling). Dims are
+    # env-driven here (constants.py only carries the TP mesh topology),
+    # mirroring the single-chip forge LLMs above.
     - google/gemma-4-31b-it
   impl: forge_vllm_plugin
   min_disk_gb: 80
@@ -159,8 +167,8 @@ templates:
   status: EXPERIMENTAL
   device_model_specs:
     - device: P300X2
-      max_concurrency: 16
-      max_context: 4096
+      max_concurrency: 32
+      max_context: 32768
       # gemma-4-31b-it on P300X2 also has a tt_transformers/vLLM spec (llm.yaml,
       # this model's Model Readiness path); that one is the default impl. Both
       # can't be default_impl or determine_server_type raises "Multiple default
@@ -168,12 +176,19 @@ templates:
       default_impl: false
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "4096"
-        MAX_NUM_SEQS: "16"
-        GPU_MEMORY_UTILIZATION: "0.9"
-        OPTIMIZATION_LEVEL: "0"
+        MAX_MODEL_LENGTH: "32768"
+        MAX_NUM_SEQS: "32"
+        GPU_MEMORY_UTILIZATION: "0.5"
+        # opt=1 does not reproduce the Blackhole P300 OpModel worker-grid abort
+        # (tt-xla#5204/tt-mlir#8767, fixed by tt-mlir#8769) on the current
+        # tt-xla build -- qualified clean across the full ctx ladder.
+        OPTIMIZATION_LEVEL: "1"
         ENABLE_TRACE: "true"
         CPU_SAMPLING: "false"
+        KV_CACHE_DTYPE: "bfp_bf8"
+        PREFILL_CHUNK_SIZE: "1024"
+        MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
+        PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
         # 4-chip (1,4) TP mesh: the runner doesn't auto-set this and the image
         # maps p300x2->p150, so pin the p300_x2 descriptor (else stablehlo
         # "unknown mesh: @mesh" at compile). -e overrides --env-file here.
@@ -181,8 +196,15 @@ templates:
 
 - weights:
     # Qwen3-32B Forge LLM (tensor-parallel) on p300x2/QB2, mirroring gemma-4-31b.
-    # basename "Qwen3-32B" matches ModelNames.QWEN_3_32B. batch-16 / 4K (same as
-    # gemma; not yet independently swept on Qwen -- local verify is the check).
+    # basename "Qwen3-32B" matches ModelNames.QWEN_3_32B. Bumped to the
+    # b32/high-seq-len/chunked-prefill/b1-prefill config alongside gemma-4-31b.
+    # Native 40960 ctx (Qwen3's max_position_embeddings, matching the
+    # single-chip Qwen3-8B/4B convention) at GMU=0.35 gives ~2.2x KV-cache
+    # headroom -- Qwen3-32B's KV cost (~128 KiB/token: 64 uniform full-attention
+    # layers, kv_heads=8, head_dim=128, no sliding window) is ~3.4x cheaper per
+    # token than gemma-4-31b's, so this is comfortably conservative rather than
+    # a tight fit. Not yet independently swept on Qwen -- local verify is the
+    # check.
     - Qwen/Qwen3-32B
   impl: forge_vllm_plugin
   min_disk_gb: 80
@@ -193,17 +215,21 @@ templates:
   status: EXPERIMENTAL
   device_model_specs:
     - device: P300X2
-      max_concurrency: 16
-      max_context: 4096
+      max_concurrency: 32
+      max_context: 40960
       default_impl: true
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "4096"
-        MAX_NUM_SEQS: "16"
-        GPU_MEMORY_UTILIZATION: "0.9"
-        OPTIMIZATION_LEVEL: "0"
+        MAX_MODEL_LENGTH: "40960"
+        MAX_NUM_SEQS: "32"
+        GPU_MEMORY_UTILIZATION: "0.35"
+        OPTIMIZATION_LEVEL: "1"
         ENABLE_TRACE: "true"
         CPU_SAMPLING: "false"
+        KV_CACHE_DTYPE: "bfp_bf8"
+        PREFILL_CHUNK_SIZE: "1024"
+        MIN_NUM_SEQS: "1"
+        PREFILL_BATCH_THRESHOLD: "16"
         TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
 
 - weights:

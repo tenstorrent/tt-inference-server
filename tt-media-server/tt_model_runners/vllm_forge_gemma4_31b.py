@@ -32,27 +32,66 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
             f"Device {self.device_id}: Loading VLLM Forge Gemma-4 31B model..."
         )
         prompt = "Hello, it's me"
-        # Tunable per-run via env vars (mirrors vllm_runner.py). Defaults are the
-        # measured-best for the gemma-4-31b TP config on p300x2 (4-chip (1,4)
-        # mesh, 512 seq len, bs1):
+        # Tunable per-run via env vars (mirrors vllm_runner.py). Defaults now
+        # match the validated b32/high-seq-len/chunked-prefill/b1-prefill
+        # config qualified for gemma-4-31b-it TP on qb2-blackhole (P300X2,
+        # 4-chip (1,4) mesh): 32768 ctx, bfp8 weights+KV, chunk 1024, opt=1.
         #   ENABLE_TRACE=true     decode-graph replay; the dominant lever
-        #                         (greedy 4.8 -> 8.1 tok/s, +71%). Trace-capture
-        #                         fits in DRAM at 512 seq len on the 4-chip mesh.
-        #   CPU_SAMPLING=false    on-device sampling; +13% greedy ON TOP of trace
-        #                         (8.1 -> 9.2 tok/s). Worth ~nothing without trace
-        #                         (4.8 -> 5.3). (TTConfig's own default is False;
-        #                         the old hardcoded True was the deviation.)
-        #   OPTIMIZATION_LEVEL=0  REQUIRED on the current (1.3.0) wheel: opt>=1
-        #                         aborts in tt-mlir OpModel worker-grid validation
-        #                         on Blackhole P300 (device {10,13} vs system-desc
-        #                         {10,11}; tt-xla#5204 / tt-mlir#8767). Fixed by
-        #                         tt-mlir#8769, which postdates this wheel -- flip
-        #                         to opt=1 once the forge wheel includes it.
+        #                         (greedy 4.8 -> 8.1 tok/s, +71% at small ctx).
+        #   CPU_SAMPLING=false    on-device sampling; +13% greedy ON TOP of trace.
+        #                         (TTConfig's own default is False; the old
+        #                         hardcoded True was the deviation.)
+        #   OPTIMIZATION_LEVEL=1  the tt-mlir OpModel worker-grid validation
+        #                         abort on Blackhole P300 (device {10,13} vs
+        #                         system-desc {10,11}; tt-xla#5204/tt-mlir#8767,
+        #                         fixed by tt-mlir#8769) does NOT reproduce on
+        #                         the current tt-xla build -- opt=1 qualified
+        #                         clean across the full 128-65536 ctx ladder.
+        #                         Override to 0 only if a fresh Blackhole crash
+        #                         with that signature reappears.
         # Weights stay bfp_bf8: measured FASTER than bf16 (greedy 9.2 vs 8.0),
         # since bf16 doubles per-token weight DRAM traffic.
-        optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
+        optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "false").lower() == "true"
         enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
+        # BFP8 KV cache ("bfp_bf8" halves the KV footprint vs bf16; "" -> bf16).
+        kv_cache_dtype = os.getenv("KV_CACHE_DTYPE", "bfp_bf8")
+        # On-device chunked-SDPA prefill chunk size: without it the full-context
+        # prefill SDPA buffer blows up compile time / OOMs DRAM at 32K/64K
+        # (tt-xla #4986). Only passed when set.
+        prefill_chunk_size = os.getenv("PREFILL_CHUNK_SIZE")
+        # "false" -> bf16 matmul dest accumulation (smaller buffers). Only
+        # passed when set, so other runs keep the plugin default.
+        fp32_dest_acc_en = os.getenv("FP32_DEST_ACC_EN")
+        # b1-prefill (tt-xla #5281): compile a small [min_num_seqs, n] prefill
+        # graph alongside b32 and route <= prefill_batch_threshold pending
+        # prefills to it (lower TTFT) while decode stays at max_num_seqs. Only
+        # passed when set.
+        min_num_seqs = os.getenv("MIN_NUM_SEQS")
+        prefill_batch_threshold = os.getenv("PREFILL_BATCH_THRESHOLD")
+        # Debug/testing only: truncate the model to N decoder layers.
+        num_hidden_layers = os.getenv("NUM_HIDDEN_LAYERS")
+        additional_config = {
+            "enable_const_eval": True,
+            "min_context_len": self.settings.vllm.min_context_length,
+            "enable_tensor_parallel": True,
+            "use_2d_mesh": False,
+            "experimental_weight_dtype": "bfp_bf8",
+            "experimental_kv_cache_dtype": kv_cache_dtype,
+            "cpu_sampling": cpu_sampling,
+            "optimization_level": optimization_level,
+            "enable_trace": enable_trace,
+        }
+        if prefill_chunk_size:
+            additional_config["prefill_chunk_size"] = int(prefill_chunk_size)
+        if fp32_dest_acc_en is not None:
+            additional_config["fp32_dest_acc_en"] = fp32_dest_acc_en.lower() == "true"
+        if min_num_seqs:
+            additional_config["min_num_seqs"] = int(min_num_seqs)
+        if prefill_batch_threshold:
+            additional_config["prefill_batch_threshold"] = int(prefill_batch_threshold)
+        if num_hidden_layers:
+            additional_config["num_hidden_layers"] = int(num_hidden_layers)
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
@@ -60,27 +99,12 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
             max_num_seqs=self.settings.vllm.max_num_seqs,
             enable_chunked_prefill=False,
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
-            additional_config={
-                "enable_const_eval": True,
-                "min_context_len": self.settings.vllm.min_context_length,
-                "enable_tensor_parallel": True,
-                "use_2d_mesh": False,
-                "experimental_weight_dtype": "bfp_bf8",
-                "cpu_sampling": cpu_sampling,
-                "optimization_level": optimization_level,
-                "enable_trace": enable_trace,
-            },
+            additional_config=additional_config,
             # Gemma-4 is multimodal but this Forge LLM path serves text-only;
             # zeroing every modality keeps the vision/audio tower from ever
             # precompiling. Without this, _precompile_mm_encoder's video path
             # calls current_platform.mem_get_info(), which the TT platform
             # doesn't implement -> TypeError: 'NoneType' object is not callable.
-            # Introduced by vLLM's own gemma4_mm.py rewrite between 0.20.2 and
-            # 0.22.1 (mem_get_info-based dynamic encoder-batch chunking added
-            # there; absent in 0.19.1/0.20.2) -- this Forge integration was last
-            # validated against 0.19.1 (tt-inference-server#4470), before that
-            # code path existed, so it was never hit until tt-xla's routine
-            # vLLM uplift caught up to 0.22.1 (tt-xla#5634).
             limit_mm_per_prompt={"image": 0, "video": 0, "audio": 0},
         )
         self.logger.info(
