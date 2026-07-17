@@ -14,7 +14,7 @@ description: Checklist for onboarding a new LLM to the cpp_server inference back
 | 2 | `src/config/settings.cpp` | `modelType()` resolver: HF id → `ModelType` (else silently falls back to DeepSeek) |
 | 3 | `scripts/fetch_tokenizers.sh` | download **all** needed files into `tokenizers/<hf-id>/` |
 | 4 | `src/utils/tokenizers/tokenizer.cpp` | `tokenizerDirForModel`, `createTokenizer` (defaults to `DeepseekTokenizer`), `staticInfoFor` + a `StaticTokenizerInfo` (eos/stop/think token ids) |
-| 5 | `src/dynamo/discovery/discovery.cpp` | `runtimeParsersForModelType` (reasoning + tool-call parser ids), `buildMdcJson` (publishes `generation_config.json`) |
+| 5 | `src/dynamo/discovery.cpp` | `runtimeParsersForModelType` (reasoning + tool-call parser ids), `buildMdcJson` (publishes `generation_config.json`) |
 | 6 | deploy + verify | `deploy.sh --hf-model-id <hf-id>`, confirm loads / registers / answers |
 
 Reference: [tenstorrent/tt-inference-server#4143](https://github.com/tenstorrent/tt-inference-server/pull/4143) (and the GPT-OSS/MiniMax onboarding commits).
@@ -25,7 +25,7 @@ The worker resolves behavior from `MODEL` (HF id) → `ModelType`
 (`settings.cpp::modelType`), which selects the tokenizer dir, the tokenizer impl
 (default `DeepseekTokenizer`), and the **static token info** (eos/stop/think ids).
 The Dynamo frontend, separately, reads the **MDC** the worker publishes in
-`src/dynamo/discovery/discovery.cpp` to learn the tokenizer files, the `generation_config.json`, and
+`src/dynamo/discovery.cpp` to learn the tokenizer files, the `generation_config.json`, and
 which **reasoning/tool-call parsers** to apply. Both halves must agree.
 
 The recurring failure mode: the model loads but a table wasn't updated — falls
@@ -66,7 +66,7 @@ the model because `eos_token_id` is absent (model carries it only in
      - for reasoning models, `thinkStartTokenId`/`thinkEndTokenId` (`<think>`/`</think>`);
        Harmony-style models (gpt-oss) have no think tokens.
 
-5. **Dynamo discovery** in `src/dynamo/discovery/discovery.cpp`:
+5. **Dynamo discovery** in `src/dynamo/discovery.cpp`:
    - `runtimeParsersForModelType` → return `{reasoning_parser, tool_call_parser}`
      id strings for the model — these tell the frontend which parsers to apply
      (e.g. `gpt_oss → {"gpt_oss","harmony"}`, `minimax_m2 → {"minimax_append_think","minimax_m2"}`;

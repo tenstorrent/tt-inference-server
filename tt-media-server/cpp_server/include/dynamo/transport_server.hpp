@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "dynamo/transport/protocol.hpp"
+#include "dynamo/transport_protocol.hpp"
 
 namespace trantor {
 class EventLoop;
@@ -23,7 +23,7 @@ class MsgBuffer;
 namespace tt::dynamo {
 
 // ---------------------------------------------------------------------------
-// High-level server
+// Transport server
 // ---------------------------------------------------------------------------
 
 /**
@@ -87,7 +87,7 @@ class DynamoStreamWriter
   std::atomic<bool> done_{false};
 };
 
-struct ServerConfig {
+struct TransportServerConfig {
   std::string bind_host = "0.0.0.0";
   uint16_t bind_port = 0;  // 0 = OS-assigned (recommended)
   std::string namespace_name = "default";
@@ -99,14 +99,14 @@ struct ServerConfig {
   uint64_t instance_id = 0;     // Auto-generated when zero.
 };
 
-class DynamoServer {
+class DynamoTransportServer {
  public:
-  DynamoServer(ServerConfig config, GenerateHandler handler,
-               trantor::EventLoopThreadPool* loopPool);
-  ~DynamoServer();
+  DynamoTransportServer(TransportServerConfig config, GenerateHandler handler,
+                        trantor::EventLoopThreadPool* loopPool);
+  ~DynamoTransportServer();
 
-  DynamoServer(const DynamoServer&) = delete;
-  DynamoServer& operator=(const DynamoServer&) = delete;
+  DynamoTransportServer(const DynamoTransportServer&) = delete;
+  DynamoTransportServer& operator=(const DynamoTransportServer&) = delete;
 
   /// Bind the listener on the supplied io loops and start serving.
   /// Non-blocking: the loops are driven by their own threads.
@@ -119,10 +119,10 @@ class DynamoServer {
   /// Bound port (valid after `start()`).
   uint16_t port() const { return actual_port_; }
 
-  const ServerConfig& config() const { return config_; }
+  const TransportServerConfig& config() const { return config_; }
 
  private:
-  ServerConfig config_;
+  TransportServerConfig config_;
   GenerateHandler handler_;
   trantor::EventLoopThreadPool* loop_pool_;
   std::unique_ptr<trantor::TcpServer> tcp_server_;

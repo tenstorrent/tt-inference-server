@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "dynamo/transport/server.hpp"
+#include "dynamo/transport_server.hpp"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -58,11 +58,12 @@ std::string framedString(const TwoPartMessage& tp) {
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// DynamoServer implementation
+// DynamoTransportServer implementation
 // ---------------------------------------------------------------------------
 
-DynamoServer::DynamoServer(ServerConfig config, GenerateHandler handler,
-                           trantor::EventLoopThreadPool* loopPool)
+DynamoTransportServer::DynamoTransportServer(
+    TransportServerConfig config, GenerateHandler handler,
+    trantor::EventLoopThreadPool* loopPool)
     : config_(std::move(config)),
       handler_(std::move(handler)),
       loop_pool_(loopPool) {
@@ -78,15 +79,15 @@ DynamoServer::DynamoServer(ServerConfig config, GenerateHandler handler,
   }
 }
 
-DynamoServer::~DynamoServer() { shutdown(); }
+DynamoTransportServer::~DynamoTransportServer() { shutdown(); }
 
-void DynamoServer::shutdown() {
+void DynamoTransportServer::shutdown() {
   running_.store(false);
   if (tcp_server_) tcp_server_->stop();
 }
 
-void DynamoServer::onMessage(const trantor::TcpConnectionPtr& conn,
-                             trantor::MsgBuffer* buf) {
+void DynamoTransportServer::onMessage(const trantor::TcpConnectionPtr& conn,
+                                      trantor::MsgBuffer* buf) {
   // Frame: [path_len:u16][path][headers_len:u16][headers][payload_len:u32]
   //        [payload]. Extract every complete frame the buffer holds; leave a
   // partial frame for the next callback.
@@ -124,8 +125,8 @@ void DynamoServer::onMessage(const trantor::TcpConnectionPtr& conn,
   }
 }
 
-void DynamoServer::process_request(const trantor::TcpConnectionPtr& conn,
-                                   const TcpRequestMessage& msg) {
+void DynamoTransportServer::process_request(
+    const trantor::TcpConnectionPtr& conn, const TcpRequestMessage& msg) {
   TwoPartMessage twoPart = decode_two_part(msg.payload);
   auto ctrl = parse_control_message(twoPart.header);
   auto connInfo = parse_connection_info(ctrl.connection_info);
@@ -139,7 +140,7 @@ void DynamoServer::process_request(const trantor::TcpConnectionPtr& conn,
     try {
       GenerateRequest genReq = parse_generate_request(body);
       TT_LOG_DEBUG(
-          "[DynamoServer] Request id={} input_tokens={} max_tokens={} "
+          "[DynamoTransportServer] Request id={} input_tokens={} max_tokens={} "
           "address={}",
           id, genReq.token_ids.size(),
           genReq.max_tokens.has_value() ? std::to_string(*genReq.max_tokens)
@@ -147,8 +148,8 @@ void DynamoServer::process_request(const trantor::TcpConnectionPtr& conn,
           connInfo.address);
       handler_(genReq, connInfo);
     } catch (const std::exception& e) {
-      TT_LOG_ERROR("[DynamoServer] request dispatch failed id={}: {}", id,
-                   e.what());
+      TT_LOG_ERROR("[DynamoTransportServer] request dispatch failed id={}: {}",
+                   id, e.what());
     }
   });
 }
@@ -303,11 +304,11 @@ void DynamoStreamWriter::finalize() {
   });
 }
 
-void DynamoServer::start() {
+void DynamoTransportServer::start() {
   const auto ioLoops =
       loop_pool_ ? loop_pool_->getLoops() : std::vector<trantor::EventLoop*>{};
   if (ioLoops.empty()) {
-    throw std::runtime_error("DynamoServer: no io loops provided");
+    throw std::runtime_error("DynamoTransportServer: no io loops provided");
   }
 
   running_.store(true);
@@ -315,7 +316,7 @@ void DynamoServer::start() {
   // Disable SO_REUSEPORT for fixed ports so a collision fails instead of
   // silently sharing the port; keep it for OS-assigned (port 0) binds.
   tcp_server_ = std::make_unique<trantor::TcpServer>(
-      ioLoops.front(), addr, "DynamoServer",
+      ioLoops.front(), addr, "DynamoTransportServer",
       /*reUseAddr=*/true, /*reUsePort=*/config_.bind_port == 0);
   tcp_server_->setIoLoops(ioLoops);
   // Port 0 is resolved during the acceptor's bind, which happens in the
@@ -325,7 +326,7 @@ void DynamoServer::start() {
   tcp_server_->setAfterAcceptSockOptCallback([](int fd) {
     int one = 1;
     if (::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) < 0) {
-      TT_LOG_WARN("[DynamoServer] Failed to set TCP_NODELAY: {}",
+      TT_LOG_WARN("[DynamoTransportServer] Failed to set TCP_NODELAY: {}",
                   strerror(errno));
     }
   });
@@ -335,9 +336,10 @@ void DynamoServer::start() {
       });
   tcp_server_->start();
 
-  TT_LOG_INFO("[DynamoServer] Listening on {}:{}  ({}.{}.{}, instance={})",
-              config_.bind_host, actual_port_, config_.namespace_name,
-              config_.component, config_.endpoint, config_.instance_id_hex);
+  TT_LOG_INFO(
+      "[DynamoTransportServer] Listening on {}:{}  ({}.{}.{}, instance={})",
+      config_.bind_host, actual_port_, config_.namespace_name,
+      config_.component, config_.endpoint, config_.instance_id_hex);
 }
 
 }  // namespace tt::dynamo

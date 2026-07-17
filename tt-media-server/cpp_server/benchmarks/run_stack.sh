@@ -162,24 +162,24 @@ ensure_binary() {
         for src in \
             "${CPP_DIR}/src/dynamo/worker_server.cpp" \
             "${CPP_DIR}/src/dynamo/request_handler.cpp" \
-            "${CPP_DIR}/src/dynamo/transport/protocol.cpp" \
-            "${CPP_DIR}/src/dynamo/transport/server.cpp" \
-            "${CPP_DIR}/src/dynamo/discovery/discovery.cpp" \
-            "${CPP_DIR}/src/dynamo/discovery/etcd_client.cpp" \
-            "${CPP_DIR}/src/dynamo/mapping/llm_mapping.cpp" \
-            "${CPP_DIR}/src/dynamo/mapping/prefill_result_mapping.cpp" \
+            "${CPP_DIR}/src/dynamo/transport_protocol.cpp" \
+            "${CPP_DIR}/src/dynamo/transport_server.cpp" \
+            "${CPP_DIR}/src/dynamo/discovery.cpp" \
+            "${CPP_DIR}/src/dynamo/etcd_client.cpp" \
+            "${CPP_DIR}/src/dynamo/llm_mapping.cpp" \
+            "${CPP_DIR}/src/dynamo/prefill_result_mapping.cpp" \
             "${CPP_DIR}/src/services/disaggregation_service.cpp" \
             "${CPP_DIR}/src/services/llm_pipeline.cpp" \
             "${CPP_DIR}/src/utils/service_factory.cpp" \
             "${CPP_DIR}/src/main.cpp" \
             "${CPP_DIR}/include/dynamo/worker_server.hpp" \
             "${CPP_DIR}/include/dynamo/request_handler.hpp" \
-            "${CPP_DIR}/include/dynamo/transport/protocol.hpp" \
-            "${CPP_DIR}/include/dynamo/transport/server.hpp" \
-            "${CPP_DIR}/include/dynamo/discovery/discovery.hpp" \
-            "${CPP_DIR}/include/dynamo/discovery/etcd_client.hpp" \
-            "${CPP_DIR}/include/dynamo/mapping/llm_mapping.hpp" \
-            "${CPP_DIR}/include/dynamo/mapping/prefill_result_mapping.hpp" \
+            "${CPP_DIR}/include/dynamo/transport_protocol.hpp" \
+            "${CPP_DIR}/include/dynamo/transport_server.hpp" \
+            "${CPP_DIR}/include/dynamo/discovery.hpp" \
+            "${CPP_DIR}/include/dynamo/etcd_client.hpp" \
+            "${CPP_DIR}/include/dynamo/llm_mapping.hpp" \
+            "${CPP_DIR}/include/dynamo/prefill_result_mapping.hpp" \
             "${CPP_DIR}/include/services/disaggregation_service.hpp" \
             "${CPP_DIR}/include/services/llm_pipeline.hpp"; do
             if [[ "${src}" -nt "${BIN}" ]]; then

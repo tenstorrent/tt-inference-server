@@ -151,7 +151,7 @@ void DynamoWorkerServer::start() {
       static_cast<size_t>(requestedLoops), "DynamoWorkerServerLoop");
   loop_pool_->start();
 
-  ServerConfig sc;
+  TransportServerConfig sc;
   sc.bind_host = options_.bind_host;
   sc.bind_port = options_.bind_port;  // 0 = OS-assigned; discovery
                                       // advertises the resolved port.
@@ -163,8 +163,8 @@ void DynamoWorkerServer::start() {
 
   // start() binds and listens on the pool loops synchronously; the resolved
   // port is available immediately afterwards.
-  server_ = std::make_unique<DynamoServer>(sc, makeGenerateHandler(),
-                                           loop_pool_.get());
+  server_ = std::make_unique<DynamoTransportServer>(sc, makeGenerateHandler(),
+                                                    loop_pool_.get());
   server_->start();
   if (server_->port() == 0) {
     running_ = false;

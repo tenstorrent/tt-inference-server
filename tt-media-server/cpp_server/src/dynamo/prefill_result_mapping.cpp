@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "dynamo/mapping/prefill_result_mapping.hpp"
+#include "dynamo/prefill_result_mapping.hpp"
 
 #include <utility>
 

@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "dynamo/transport/protocol.hpp"
+#include "dynamo/transport_protocol.hpp"
 
 namespace {
 

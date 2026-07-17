@@ -9,8 +9,8 @@
 #include <thread>
 #include <vector>
 
-#include "dynamo/discovery/discovery.hpp"
-#include "dynamo/transport/server.hpp"
+#include "dynamo/discovery.hpp"
+#include "dynamo/transport_server.hpp"
 
 namespace trantor {
 class EventLoopThreadPool;
@@ -102,7 +102,7 @@ class DynamoWorkerServer {
   std::shared_ptr<services::DisaggregationService> disaggregation_;
   Options options_;
 
-  std::unique_ptr<DynamoServer> server_;
+  std::unique_ptr<DynamoTransportServer> server_;
   std::thread keepalive_thread_;
   std::unique_ptr<trantor::EventLoopThreadPool> loop_pool_;
   std::atomic<bool> running_{false};

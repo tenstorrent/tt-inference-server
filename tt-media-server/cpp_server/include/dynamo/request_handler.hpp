@@ -5,7 +5,7 @@
 
 #include <memory>
 
-#include "dynamo/transport/protocol.hpp"
+#include "dynamo/transport_protocol.hpp"
 
 namespace trantor {
 class EventLoopThreadPool;

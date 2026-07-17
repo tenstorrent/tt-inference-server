@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "dynamo/discovery/etcd_client.hpp"
+#include "dynamo/etcd_client.hpp"
 
 #include <arpa/inet.h>
 #include <fcntl.h>

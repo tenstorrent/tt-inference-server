@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "dynamo/transport/protocol.hpp"
+#include "dynamo/transport_protocol.hpp"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
