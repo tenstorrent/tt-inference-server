@@ -32,9 +32,9 @@ DecodeDestinationSlot fromAcquiredPrefix(
   DecodeDestinationSlot slot;
   slot.slotId = acquired.slotId;
   slot.sessionId = acquired.sessionId;
-  const uint32_t deltaMatchedTokens =
-      acquired.numberOfMatchedTokens > 0 ? acquired.numberOfMatchedTokens - 1
-                                         : 0;
+  const uint32_t deltaMatchedTokens = acquired.numberOfMatchedTokens > 0
+                                          ? acquired.numberOfMatchedTokens - 1
+                                          : 0;
   const uint32_t kvPositionId =
       deltaMatchedTokens + acquired.accumulatedThinkTokens;
   setDecodePositionFields(slot, kvPositionId,
@@ -69,8 +69,8 @@ void resolveDecodeDestinationSlot(
         slot.slotId = acquired->slotId;
         slot.sessionId = acquired->sessionId;
         const uint32_t kvPositionId = matchedTokens - 1 + thinkTokens;
-        setDecodePositionFields(slot, kvPositionId, static_cast<int>(thinkTokens),
-                                true);
+        setDecodePositionFields(slot, kvPositionId,
+                                static_cast<int>(thinkTokens), true);
 
         TT_LOG_INFO(
             "{} taskId={} response-id HIT sessionId={} slotId={} "
@@ -86,8 +86,8 @@ void resolveDecodeDestinationSlot(
           "{} taskId={} response-id MISS prevId={} → allocating new session",
           kLogPrefix, input.taskId, *input.previousResponseId);
     } catch (const SessionInFlightException& e) {
-      TT_LOG_WARN("{} taskId={} response-id busy: {}", kLogPrefix,
-                  input.taskId, e.what());
+      TT_LOG_WARN("{} taskId={} response-id busy: {}", kLogPrefix, input.taskId,
+                  e.what());
       onError(e.what());
       return;
     }
@@ -96,8 +96,7 @@ void resolveDecodeDestinationSlot(
   std::optional<SessionManager::AcquiredSession> acquired;
   if (!useResponseId && !blockInfos.empty()) {
     try {
-      acquired =
-          sessionManager.tryAcquireByPrefixHash(blockInfos, cancelFn);
+      acquired = sessionManager.tryAcquireByPrefixHash(blockInfos, cancelFn);
       if (acquired.has_value() && acquired->sessionFound) {
         tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(true);
         sessionManager.registerPrefixHash(acquired->sessionId, blockInfos);
@@ -140,7 +139,8 @@ void resolveDecodeDestinationSlot(
       copyPlan.has_value() ? copyPlan->matchedTokens : 0;
 
   sessionManager.createSession(
-      [&sessionManager, blockInfos, slotToCopyFrom, copyMatchedTokens, onResolved,
+      [&sessionManager, blockInfos, slotToCopyFrom, copyMatchedTokens,
+       onResolved,
        taskId = input.taskId](const tt::domain::Session& session) mutable {
         if (slotToCopyFrom.has_value()) {
           sessionManager.unlockSlot(*slotToCopyFrom);
@@ -154,8 +154,8 @@ void resolveDecodeDestinationSlot(
 
         if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
           const uint32_t kvPositionId = copyMatchedTokens - 1;
-          setDecodePositionFields(slot, kvPositionId, /*accumulatedThinkTokens=*/0,
-                                  true);
+          setDecodePositionFields(slot, kvPositionId,
+                                  /*accumulatedThinkTokens=*/0, true);
         }
 
         TT_LOG_INFO(

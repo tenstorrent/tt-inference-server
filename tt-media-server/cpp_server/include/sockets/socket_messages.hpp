@@ -338,7 +338,8 @@ constexpr std::string_view PREFILL_REGISTRATION = "prefill_registration";
 constexpr std::string_view PREFILL_CACHE_BLOCKS_ADDED = "prefill_cache_added";
 constexpr std::string_view REGISTRATION_PROBE = "registration_probe";
 constexpr std::string_view CANCEL_PREFILL = "cancel_prefill";
-constexpr std::string_view SLOT_RESERVATION_REQUEST = "slot_reservation_request";
+constexpr std::string_view SLOT_RESERVATION_REQUEST =
+    "slot_reservation_request";
 constexpr std::string_view SLOT_RESERVATION_RESPONSE =
     "slot_reservation_response";
 constexpr std::string_view PREFILL_HEALTH_REQUEST = "prefill_health_request";

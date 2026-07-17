@@ -3,14 +3,14 @@
 
 #pragma once
 
+#include <trantor/net/EventLoop.h>
+
 #include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
-
-#include <trantor/net/EventLoop.h>
 
 #include "domain/sentinel_values.hpp"
 #include "services/session_manager.hpp"

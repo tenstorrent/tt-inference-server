@@ -482,8 +482,7 @@ std::optional<std::string> EtcdClient::get(const std::string& key) {
   body["key"] = base64Encode(key);
   auto resp = parseJson(
       httpPostJson(host_, port_, "/v3/kv/range", serialize(body), timeout_ms_));
-  if (!resp.isMember("kvs") || !resp["kvs"].isArray() ||
-      resp["kvs"].empty()) {
+  if (!resp.isMember("kvs") || !resp["kvs"].isArray() || resp["kvs"].empty()) {
     return std::nullopt;
   }
   const auto& kv = resp["kvs"][0];

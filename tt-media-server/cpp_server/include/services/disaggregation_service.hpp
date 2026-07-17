@@ -100,8 +100,7 @@ class DisaggregationService {
     PrefillWorkContext work;
     StreamCallback callback;
     std::vector<uint64_t> registrationHashes;
-    std::optional<
-        std::function<void(const tt::sockets::PrefillResultMessage&)>>
+    std::optional<std::function<void(const tt::sockets::PrefillResultMessage&)>>
         resultCallback;
     std::string decodeInstanceId;
   };
@@ -117,8 +116,9 @@ class DisaggregationService {
       const tt::sockets::SlotReservationRequestMessage& message);
   void handleSlotReservationResponse(
       const tt::sockets::SlotReservationResponseMessage& message);
-  void launchPrefillWork(PrefillWorkContext work,
-                         std::function<void(const LLMStreamChunk&, bool)> onChunk);
+  void launchPrefillWork(
+      PrefillWorkContext work,
+      std::function<void(const LLMStreamChunk&, bool)> onChunk);
   void failPrefillFirstPending(uint32_t taskId, std::string_view errorText);
 
   void enqueuePrefillFirst(

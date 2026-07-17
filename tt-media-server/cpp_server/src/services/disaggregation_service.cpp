@@ -4,6 +4,7 @@
 #include "services/disaggregation_service.hpp"
 
 #include <json/json.h>
+
 #include <sstream>
 
 #include "config/settings.hpp"
@@ -295,8 +296,8 @@ void DisaggregationService::handlePrefillRequest(
         launchPrefillWork(
             std::move(work),
             [message, requestPtr, slotId = message.slotId,
-             maxTokens = message.maxTokens, resultCallback](
-                const LLMStreamChunk& response, bool /*isFinal*/) {
+             maxTokens = message.maxTokens,
+             resultCallback](const LLMStreamChunk& response, bool /*isFinal*/) {
               auto prefillResult =
                   tt::sockets::PrefillResultMessage(message.taskId);
               prefillResult.slotId = slotId;
@@ -367,14 +368,13 @@ void DisaggregationService::launchPrefillWork(
   // (decode_skip_tokens) but that prefill does not have gets recomputed here
   // — it is not cached. Folding decode_skip_tokens in (e.g. via max) would
   // over-report cached_tokens by exactly the tokens prefill re-prefilled.
-  const int cachedTokens = static_cast<int>(
-      fullPromptTokens >= trimmedPromptTokens
-          ? fullPromptTokens - trimmedPromptTokens
-          : 0);
-  request->migrationStartPosition =
-      request->decode_skip_tokens < cachedTokens
-          ? 0u
-          : static_cast<uint32_t>(cachedTokens);
+  const int cachedTokens =
+      static_cast<int>(fullPromptTokens >= trimmedPromptTokens
+                           ? fullPromptTokens - trimmedPromptTokens
+                           : 0);
+  request->migrationStartPosition = request->decode_skip_tokens < cachedTokens
+                                        ? 0u
+                                        : static_cast<uint32_t>(cachedTokens);
   TT_LOG_DEBUG(
       "[DisaggregationService] taskId={} migrationStartPosition={} "
       "prefillMatchedTokens={} decodeSkipTokens={}",
@@ -388,9 +388,8 @@ void DisaggregationService::launchPrefillWork(
   const uint32_t registrationHashCount = work.registrationHashCount;
 
   request->migrationId = tt::utils::MigrationIDGenerator::generate();
-  TT_LOG_DEBUG(
-      "[DisaggregationService] Assigned migrationId={} for taskId={}",
-      request->migrationId.value_or(0), request->task_id);
+  TT_LOG_DEBUG("[DisaggregationService] Assigned migrationId={} for taskId={}",
+               request->migrationId.value_or(0), request->task_id);
 
   if (!request->migrationId.has_value() || request->migrationId.value() == 0) {
     TT_LOG_ERROR(
@@ -421,9 +420,9 @@ void DisaggregationService::launchPrefillWork(
         // and allocation eventually fails. Releasing to IDLE-but-cached also
         // lets the next turn's prefix cache match it.
         if (isFinal && !prefillSessionId.empty() && sessionManager) {
-          const auto finishReason =
-              response.choices.empty() ? std::optional<std::string>{}
-                                       : response.choices.back().finish_reason;
+          const auto finishReason = response.choices.empty()
+                                        ? std::optional<std::string>{}
+                                        : response.choices.back().finish_reason;
           const bool isError = finishReason.has_value() &&
                                isErrorFinishReason(finishReason.value());
           // The prefill computed the whole prompt prefix, so all of its blocks
@@ -439,8 +438,8 @@ void DisaggregationService::launchPrefillWork(
       });
 }
 
-void DisaggregationService::failPrefillFirstPending(uint32_t taskId,
-                                                    std::string_view errorText) {
+void DisaggregationService::failPrefillFirstPending(
+    uint32_t taskId, std::string_view errorText) {
   auto pending = pendingSlotReservations.take(taskId);
   if (!pending.has_value()) {
     return;
@@ -651,9 +650,8 @@ void DisaggregationService::applySlotReservationAndLaunch(
   if (result.error || !result.hasSlot) {
     const std::string errorText =
         result.error ? result.errorText : "decode slot reservation denied";
-    TT_LOG_WARN(
-        "[DisaggregationService] Slot reservation failed taskId={}: {}",
-        result.taskId, errorText);
+    TT_LOG_WARN("[DisaggregationService] Slot reservation failed taskId={}: {}",
+                result.taskId, errorText);
     if (pending.resultCallback.has_value()) {
       auto prefillResult = tt::sockets::PrefillResultMessage(result.taskId);
       prefillResult.error = true;
@@ -696,65 +694,63 @@ void DisaggregationService::applySlotReservationAndLaunch(
        resultCallback = std::move(resultCallback), taskId, fullPromptTokenIds,
        temperature, topP, topK, fastMode, slotId]() mutable {
         const auto requestPtr = work.request;
-        launchPrefillWork(
-            std::move(work),
-            [streamCallback, resultCallback, taskId, fullPromptTokenIds,
-             temperature, topP, topK, fastMode, slotId,
-             requestPtr](const LLMStreamChunk& response, bool isFinal) {
-              if (resultCallback.has_value()) {
-                if (!isFinal && !response.choices.empty() &&
-                    response.choices.back().finish_reason.has_value() &&
-                    isErrorFinishReason(
-                        *response.choices.back().finish_reason)) {
-                  // fall through to build error result below
-                } else if (!isFinal) {
-                  return;
-                }
-                auto prefillResult = tt::sockets::PrefillResultMessage(taskId);
-                prefillResult.slotId = slotId;
-                prefillResult.temperature = temperature;
-                prefillResult.topP = topP;
-                prefillResult.topK = topK;
-                prefillResult.fastMode = fastMode;
+        launchPrefillWork(std::move(work), [streamCallback, resultCallback,
+                                            taskId, fullPromptTokenIds,
+                                            temperature, topP, topK, fastMode,
+                                            slotId, requestPtr](
+                                               const LLMStreamChunk& response,
+                                               bool isFinal) {
+          if (resultCallback.has_value()) {
+            if (!isFinal && !response.choices.empty() &&
+                response.choices.back().finish_reason.has_value() &&
+                isErrorFinishReason(*response.choices.back().finish_reason)) {
+              // fall through to build error result below
+            } else if (!isFinal) {
+              return;
+            }
+            auto prefillResult = tt::sockets::PrefillResultMessage(taskId);
+            prefillResult.slotId = slotId;
+            prefillResult.temperature = temperature;
+            prefillResult.topP = topP;
+            prefillResult.topK = topK;
+            prefillResult.fastMode = fastMode;
 
-                const auto finishReason =
-                    response.choices.empty()
-                        ? std::optional<std::string>{}
-                        : response.choices.back().finish_reason;
-                const bool isError =
-                    finishReason.has_value() &&
-                    isErrorFinishReason(finishReason.value());
-                if (isError) {
-                  prefillResult.error = true;
-                  const auto reason =
-                      errorReasonFromFinishReason(finishReason.value());
-                  prefillResult.generatedText =
-                      tt::sockets::prefillErrorTextForReason(
-                          reason, response.error.value_or("error"));
-                } else {
-                  // Dynamo invokes prefill with max_tokens=1 and sends the
-                  // real client budget on the decode hop; do not echo the
-                  // prefill-forced 1 as remaining_tokens.
-                  prefillResult.remainingTokens = std::nullopt;
-                  prefillResult.tokenIds = fullPromptTokenIds;
-                  if (!response.choices.empty()) {
-                    prefillResult.generatedText = response.choices.back().text;
-                  }
-                  prefillResult.cachedTokens =
-                      response.cached_prompt_tokens.value_or(0);
-                  prefillResult.migrationId =
-                      requestPtr->migrationId.value_or(0);
-                }
-                (*resultCallback)(prefillResult);
-                return;
+            const auto finishReason =
+                response.choices.empty()
+                    ? std::optional<std::string>{}
+                    : response.choices.back().finish_reason;
+            const bool isError = finishReason.has_value() &&
+                                 isErrorFinishReason(finishReason.value());
+            if (isError) {
+              prefillResult.error = true;
+              const auto reason =
+                  errorReasonFromFinishReason(finishReason.value());
+              prefillResult.generatedText =
+                  tt::sockets::prefillErrorTextForReason(
+                      reason, response.error.value_or("error"));
+            } else {
+              // Dynamo invokes prefill with max_tokens=1 and sends the
+              // real client budget on the decode hop; do not echo the
+              // prefill-forced 1 as remaining_tokens.
+              prefillResult.remainingTokens = std::nullopt;
+              prefillResult.tokenIds = fullPromptTokenIds;
+              if (!response.choices.empty()) {
+                prefillResult.generatedText = response.choices.back().text;
               }
-              if (streamCallback) {
-                streamCallback(response, isFinal);
-              }
-            });
+              prefillResult.cachedTokens =
+                  response.cached_prompt_tokens.value_or(0);
+              prefillResult.migrationId = requestPtr->migrationId.value_or(0);
+            }
+            (*resultCallback)(prefillResult);
+            return;
+          }
+          if (streamCallback) {
+            streamCallback(response, isFinal);
+          }
+        });
       },
-      [taskId, streamCallback, resultCallback = std::move(resultCallback)](
-          std::string_view error) {
+      [taskId, streamCallback,
+       resultCallback = std::move(resultCallback)](std::string_view error) {
         TT_LOG_WARN(
             "[DisaggregationService] Prefill session resolution failed after "
             "slot reservation taskId={}: {}",
@@ -848,7 +844,8 @@ void DisaggregationService::resolvePrefillSession(
               "sessionId={} slotId={}",
               request->task_id, session.getSessionId(), session.getSlotId());
           sm->registerPrefixHash(session.getSessionId(), infos);
-          // Optional under DYNAMO_ROUTING (no InterServerService / ZMQ gateway).
+          // Optional under DYNAMO_ROUTING (no InterServerService / ZMQ
+          // gateway).
           if (socketService) {
             socketService->sendPrefillCacheBlocksAdded(blockHashes(infos));
           }

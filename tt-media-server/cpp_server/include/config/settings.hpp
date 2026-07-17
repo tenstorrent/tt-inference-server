@@ -340,8 +340,8 @@ bool dynamoEndpointEnabled();
 
 /** Experimental: let Dynamo own disaggregated prefill routing instead of the
  * cpp_server socket/gateway path. Also enables prefill-first disaggregation
- * (etcd discovers decode peers; ZMQ reserves decode slots). From DYNAMO_ROUTING.
- * Default: defaults::DYNAMO_ROUTING. */
+ * (etcd discovers decode peers; ZMQ reserves decode slots). From
+ * DYNAMO_ROUTING. Default: defaults::DYNAMO_ROUTING. */
 bool dynamoRoutingEnabled();
 
 /** Bind host for the Dynamo listener. From DYNAMO_BIND_HOST. Default:

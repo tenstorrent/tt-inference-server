@@ -226,17 +226,16 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       try {
         disaggregation->handlePrefillFirstRequest(
             *req, prefillMessage.registrationHashes,
-            [sendChunk, signalDone, prefillDone](
-                const tt::sockets::PrefillResultMessage& result) {
+            [sendChunk, signalDone,
+             prefillDone](const tt::sockets::PrefillResultMessage& result) {
               bool expected = false;
               if (!prefillDone->compare_exchange_strong(expected, true)) {
                 return;
               }
               TokenChunk out;
               if (result.error) {
-                out.error = result.generatedText.empty()
-                                ? "prefill error"
-                                : result.generatedText;
+                out.error = result.generatedText.empty() ? "prefill error"
+                                                         : result.generatedText;
                 out.error_code = 500;
                 sendChunk(out);
                 signalDone();
