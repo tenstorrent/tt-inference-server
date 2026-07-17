@@ -1784,7 +1784,7 @@ set(SOURCES
     src/runtime/worker/blaze_worker_metrics_renderer.cpp
     src/dynamo/transport/protocol.cpp
     src/dynamo/mapping/llm_mapping.cpp
-    src/dynamo/mapping/prefill_result_envelope.cpp
+    src/dynamo/mapping/prefill_result_mapping.cpp
     src/dynamo/discovery/discovery.cpp
     src/dynamo/discovery/etcd_client.cpp
     src/dynamo/worker_server.cpp

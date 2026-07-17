@@ -18,7 +18,7 @@
 #include "domain/llm/llm_response.hpp"
 #include "domain/session.hpp"
 #include "dynamo/mapping/llm_mapping.hpp"
-#include "dynamo/mapping/prefill_result_envelope.hpp"
+#include "dynamo/mapping/prefill_result_mapping.hpp"
 #include "dynamo/transport/server.hpp"
 #include "services/disaggregation_contract_mapping.hpp"
 #include "services/disaggregation_service.hpp"
@@ -142,8 +142,7 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
             resultForDynamo.slotId = tt::domain::INVALID_SLOT_ID;
           }
           Json::Value params(Json::objectValue);
-          params["tt_prefill_result"] =
-              prefillResultToEnvelopeJson(resultForDynamo);
+          params["tt_prefill_result"] = prefillResultToJson(resultForDynamo);
           out.disaggregated_params = std::move(params);
           DynamoUsage du;
           du.prompt_tokens = static_cast<int>(resultForDynamo.tokenIds.size());
@@ -159,7 +158,7 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
 
   if (tt::config::dynamoRoutingEnabled() &&
       tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY) {
-    if (auto prefillResult = prefillResultFromEnvelopeJson(dynReq.raw)) {
+    if (auto prefillResult = prefillResultFromJson(dynReq.raw)) {
       if (prefillResult->error) {
         sendErrorAndDone(prefillResult->generatedText.empty()
                              ? "prefill error"

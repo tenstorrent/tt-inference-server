@@ -11,10 +11,10 @@
 
 namespace tt::dynamo {
 
-Json::Value prefillResultToEnvelopeJson(
+Json::Value prefillResultToJson(
     const tt::sockets::PrefillResultMessage& message);
 
-std::optional<tt::sockets::PrefillResultMessage> prefillResultFromEnvelopeJson(
+std::optional<tt::sockets::PrefillResultMessage> prefillResultFromJson(
     const Json::Value& dynRaw);
 
 }  // namespace tt::dynamo
