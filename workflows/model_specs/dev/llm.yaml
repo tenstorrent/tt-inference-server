@@ -319,12 +319,12 @@ templates:
   device_model_specs:
     - device: P300X2  # QB2 (2x P300 dual-Blackhole cards, 4-chip TP mesh) -- near-term target HW
       max_concurrency: 1  # Functional milestone: batch 1 (--max-num-seqs 1)
-      # 256K = canvas_length(256) * max_blocks(1024); == HF max_position_embeddings
-      # (262144). This is the context contract; the 1024 in the serving doc was a
-      # bring-up-only KV shortcut. Backbone + batch-1 KV verified to fit QB2 DRAM
-      # (experts TP-sharded ~5.7GB/chip, measured 2026-06-22). batch>1 ceiling at
-      # 256K is device-measured and not asserted here.
-      max_context: 262144  # 256 * 1024
+      # Served context. The model's native contract is 256K (canvas_length 256 *
+      # max_blocks 1024 == HF max_position_embeddings 262144), but the VALIDATED
+      # serving config (2026-07-17, GPQA answered correctly) ran at 8192 with
+      # DG_VLLM_TRACE=0; 256K multi-block generation is not yet validated here.
+      # Keep 8192 so CI reproduces the validated config; raise once 256K is proven.
+      max_context: 8192  # 8 * 1024 (validated); native contract is 262144
       default_impl: true
       # Env below is the VALIDATED production config (2026-07-17: served a GPQA-Diamond
       # question to a full multi-block answer "The answer is (C)" = correct).
