@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     model_weights_path: str = ""
     training_model: Optional[str] = None
     chat_template_kwargs: dict = {}  # extra kwargs passed to apply_chat_template
+    tokenizer_type: str = ""  # AutoTokenizer tokenizer_type; "mistral" uses mistral_common (models whose template ships in tekken.json, not an HF chat_template). "" = HF default.
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
     download_weights_from_service: bool = True

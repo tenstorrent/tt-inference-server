@@ -60,6 +60,13 @@ class VLLMForgeMistralSmall31_24BRunner(BaseDeviceRunner):
             mesh_shape = [8, 4]
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
+            # Mistral-Small-3.1 ships its chat template via mistral_common
+            # (tekken.json), NOT as an HF chat_template (tokenizer_config.json
+            # has none). With tokenizer_mode="auto", transformers>=5.5 loads a
+            # templateless HF tokenizer and /v1/chat/completions raises
+            # "tokenizer.chat_template is not set". "mistral" uses mistral_common
+            # so chat rendering + tool tokens ([TOOL_CALLS]) are handled correctly.
+            tokenizer_mode="mistral",
             max_model_len=self.settings.vllm.max_model_length,
             max_num_batched_tokens=self.settings.vllm.max_num_batched_tokens,
             max_num_seqs=self.settings.vllm.max_num_seqs,
