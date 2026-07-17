@@ -30,8 +30,6 @@ constexpr const char* PREFILL_SERVER_ID = "";
 constexpr uint32_t PREFILL_MAX_IN_FLIGHT = 0;
 
 constexpr size_t MAX_QUEUE_SIZE = 1000;
-constexpr const char* SCHEDULING_POLICY =
-    "prefill_first";  // "prefill_first" or "max_occupancy"
 constexpr const char* LLM_DEVICE_BACKEND =
     "mock_scheduler";  // "mock_pipeline", "mock_scheduler", or
                        // "pipeline_manager"
@@ -49,11 +47,14 @@ constexpr size_t MAX_CONTEXT_LENGTH = 65536;  // 64k
 constexpr size_t MAX_ISL = 256000;  // 2000k (max input sequence length)
 constexpr size_t MIN_TOKENS_TO_COPY =
     1024;  // min matched tokens to justify slot copy
-constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
-constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
+constexpr size_t PREFIX_CACHE_BLOCK_SIZE = 32;
+constexpr size_t PREFIX_CACHE_FIRST_BLOCK_SIZE = 128;
 constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 40;
 constexpr bool USE_FAST_MODE = false;
 constexpr bool ENABLE_MIGRATION = false;
+// PrefillScheduler drives cross-endpoint (P->D) KV migration via the
+// Kafka-backed RemoteKVManagerAdapter
+constexpr bool PREFILL_USE_REMOTE_KV_MANAGER = false;
 constexpr const char* MIGRATION_CMD_QUEUE_NAME = "mig_ep0_cmd";
 constexpr const char* MIGRATION_TABLE_QUEUE_NAME = "mig_ep0_table";
 constexpr const char* MIGRATION_RESP_QUEUE_NAME = "mig_ep0_resp";
@@ -75,6 +76,9 @@ constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 
 constexpr const char* SPEC_DECODE_MODE = "none";
 constexpr size_t MTP_LEVEL = 1;
+
+// Number of pipeline stages of the Blaze Decode model.
+constexpr uint32_t BLAZE_NUMBER_OF_PIPELINE_STAGES = 64;
 
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
 constexpr const char* TT_RESULT_QUEUE = "tt_results";
@@ -139,8 +143,9 @@ constexpr int DECODE_MAX_TOKEN_IDS = 1;
 // frontends). All defaults are overridable via env vars; the endpoint is
 // off unless DYNAMO_ENDPOINT_ENABLED=1.
 constexpr bool DYNAMO_ENDPOINT_ENABLED = false;
-constexpr bool DYNAMO_NATIVE_ROUTING = false;
+constexpr bool DYNAMO_ROUTING = false;
 constexpr const char* DYNAMO_BIND_HOST = "0.0.0.0";
+constexpr uint16_t DYNAMO_BIND_PORT = 0;  // 0 = OS-assigned ephemeral port.
 constexpr const char* DYNAMO_NAMESPACE = "default";
 constexpr const char* DYNAMO_COMPONENT = "backend";
 constexpr const char* DYNAMO_ENDPOINT_NAME = "generate";

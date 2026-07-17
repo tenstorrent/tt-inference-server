@@ -35,7 +35,7 @@ from ..test_status import ImageGenerationTestStatus
 logger = logging.getLogger(__name__)
 
 
-SDXL_BENCHMARK_NUM_BATCHES = 3
+DEFAULT_IMAGE_BENCHMARK_NUM_BATCHES = 3
 
 SDXL_SD35_BENCHMARK_NUM_PROMPTS = 20
 SDXL_SD35_INFERENCE_STEPS = 20
@@ -466,11 +466,16 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
         max_concurrency = None
         if runner_in_use in _SDXL_BENCHMARK_RUNNERS:
             max_concurrency = ctx.model_spec.device_model_spec.max_concurrency
+            num_batches = getattr(
+                ctx.model_spec.device_model_spec,
+                "image_benchmark_num_batches",
+                DEFAULT_IMAGE_BENCHMARK_NUM_BATCHES,
+            )
             if max_concurrency and max_concurrency > 0:
-                num_calls = SDXL_BENCHMARK_NUM_BATCHES * max_concurrency
+                num_calls = num_batches * max_concurrency
                 logger.info(
                     f"Overriding num_calls for {runner_in_use} to {num_calls} prompts "
-                    f"({SDXL_BENCHMARK_NUM_BATCHES} batches x {max_concurrency} concurrent requests)"
+                    f"({num_batches} batches x {max_concurrency} concurrent requests)"
                 )
             else:
                 max_concurrency = None

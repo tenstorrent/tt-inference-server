@@ -70,9 +70,41 @@ def test_llm_release_routes_to_v2():
 
 
 def test_media_eval_run_is_not_llm_eval():
+    # An IMAGE model is not an LLM eval, but it still routes to v2 by model_type.
     spec = _spec(ModelType.IMAGE, name="not-a-routed-model")
     assert v2_bridge._is_llm_eval_run(WorkflowType.EVALS, spec) is False
-    assert v2_bridge.can_route_to_v2(spec, _rc(workflow="evals")) is False
+    assert v2_bridge.can_route_to_v2(spec, _rc(workflow="evals")) is True
+
+
+@pytest.mark.parametrize("workflow", ["benchmarks", "evals", "release"])
+def test_vlm_routes_to_v2_like_llm(workflow):
+    spec = _spec(ModelType.VLM, name="Qwen2.5-VL-7B-Instruct")
+    assert v2_bridge.can_route_to_v2(spec, _rc(workflow=workflow)) is True
+
+
+def test_vlm_benchmarks_is_llm_benchmark_run():
+    spec, rc = _spec(ModelType.VLM, name="Qwen2.5-VL-7B-Instruct"), _rc()
+    assert v2_bridge._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is True
+
+
+def test_vlm_evals_is_llm_eval_run():
+    spec = _spec(ModelType.VLM, name="Qwen2.5-VL-7B-Instruct")
+    assert v2_bridge._is_llm_eval_run(WorkflowType.EVALS, spec) is True
+    assert v2_bridge._is_llm_eval_run(WorkflowType.RELEASE, spec) is True
+
+
+def test_vlm_release_provisions_llm_venvs(monkeypatch):
+    from workflows.workflow_types import WorkflowVenvType
+
+    spec = _spec(ModelType.VLM, name="Qwen2.5-VL-7B-Instruct")
+    monkeypatch.setattr(
+        v2_bridge,
+        "_llm_eval_venv_types",
+        lambda ms, rc=None: [WorkflowVenvType.EVALS_VISION],
+    )
+    venvs = v2_bridge._v2_dependency_venv_types(spec, WorkflowType.RELEASE)
+    assert WorkflowVenvType.EVALS_VISION in venvs
+    assert WorkflowVenvType.V2_LLM_VLLM in venvs
 
 
 def test_release_provisions_eval_and_bench_venvs(monkeypatch):
@@ -160,10 +192,91 @@ def test_selected_eval_tasks_no_narrowing_returns_all():
     assert v2_bridge._selected_eval_tasks(tasks, rc) == tasks
 
 
-def test_non_routed_media_benchmarks_stays_on_v1():
-    spec, rc = _spec(ModelType.IMAGE, name="not-a-routed-model"), _rc()
+@pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "stable-diffusion-3.5-large",
+        "FLUX.1-dev",
+        "Qwen-Image",
+        "Qwen-Image-2512",
+        "some-unlisted-image-model",
+    ],
+)
+def test_any_image_model_routes_to_v2(model_name, workflow):
+    """All IMAGE models route to v2 purely by model_type — no per-name
+    allowlist — so even an unlisted image model routes."""
+    spec, rc = _spec(ModelType.IMAGE, name=model_name), _rc(workflow=workflow)
     assert v2_bridge._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is False
-    assert v2_bridge.can_route_to_v2(spec, rc) is False
+    assert v2_bridge.is_v2_routed_model(spec) is True
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "Wan2.2-T2V-A14B-Diffusers",
+        "Wan2.2-I2V-A14B-Diffusers",
+        "Wan2.2-I2V-A14B-Prodia",
+        "Wan2.2-I2V-AniSora-V3.2",
+        "Wan2.2-I2V-Distill-LightX2V",
+        "Wan2.2-I2V-LoRA",
+    ],
+)
+@pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
+def test_wan_video_routes_to_v2(model_name, workflow):
+    spec, rc = _spec(ModelType.VIDEO, name=model_name), _rc(workflow=workflow)
+    assert v2_bridge._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is False
+    assert v2_bridge.is_v2_routed_model(spec) is True
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
+
+
+@pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
+def test_mochi_video_routes_to_v2(workflow):
+    spec, rc = _spec(ModelType.VIDEO, name="mochi-1-preview"), _rc(workflow=workflow)
+    assert v2_bridge._is_llm_benchmark_run(WorkflowType.BENCHMARKS, spec, rc) is False
+    assert v2_bridge.is_v2_routed_model(spec) is True
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
+
+
+@pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
+def test_any_video_model_routes_to_v2(workflow):
+    """All VIDEO models route to v2 by model_type, not by a per-name allowlist."""
+    spec, rc = (
+        _spec(ModelType.VIDEO, name="some-unlisted-video-model"),
+        _rc(workflow=workflow),
+    )
+    assert v2_bridge.is_v2_routed_model(spec) is True
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
+
+
+@pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
+@pytest.mark.parametrize(
+    "model_type,model_name",
+    [
+        (ModelType.AUDIO, "whisper-large-v3"),
+        (ModelType.AUDIO, "distil-large-v3"),
+        (ModelType.AUDIO, "some-unlisted-audio-model"),
+        (ModelType.TEXT_TO_SPEECH, "speecht5_tts"),
+        (ModelType.TEXT_TO_SPEECH, "some-unlisted-tts-model"),
+    ],
+)
+def test_any_audio_tts_model_routes_to_v2(model_type, model_name, workflow):
+    """AUDIO / TEXT_TO_SPEECH models route to v2 by model_type — no per-name
+    allowlist — matching the IMAGE/VIDEO behavior."""
+    spec, rc = _spec(model_type, name=model_name), _rc(workflow=workflow)
+    assert v2_bridge.is_v2_routed_model(spec) is True
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
+
+
+@pytest.mark.parametrize("workflow", ["benchmarks", "evals", "spec_tests", "release"])
+@pytest.mark.parametrize("model_type", [ModelType.CNN, ModelType.EMBEDDING])
+def test_cnn_embedding_routes_to_v2(model_type, workflow):
+    """CNN / EMBEDDING models are fully onboarded to v2 and route by model_type
+    — no per-name allowlist — matching the IMAGE/VIDEO/AUDIO behavior."""
+    spec, rc = _spec(model_type, name="some-model"), _rc(workflow=workflow)
+    assert v2_bridge.is_v2_routed_model(spec) is True
+    assert v2_bridge.can_route_to_v2(spec, rc) is True
 
 
 def test_build_llm_bench_cmd_forwards_tools_and_jwt():

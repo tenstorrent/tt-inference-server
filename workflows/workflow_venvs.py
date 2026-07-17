@@ -365,7 +365,7 @@ STRUCTURED_OUTPUT_FETCH_FILES = (
 
 # Filename of the structured-output benchmark script downloaded into the
 # BENCHMARKS_VLLM venv work_dir by fetch_structured_output_scripts().
-# Imported by benchmarking/run_benchmarks.py to locate the script at run time.
+# Used to locate the structured-output benchmark script at run time.
 STRUCTURED_OUTPUT_SCRIPT_NAME = "benchmark_serving_structured_output.py"
 
 
@@ -712,11 +712,6 @@ _venv_config_list = [
     ),
     # Pip install + sub-directory
     VenvConfig(
-        venv_type=WorkflowVenvType.EVALS_VIDEO,
-        requirements_file="evals-video.txt",
-        extra_dirs=("work_dir",),
-    ),
-    VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_VLLM,
         requirements_file="benchmarks-vllm.txt",
         extra_dirs=("work_dir",),
@@ -731,11 +726,6 @@ _venv_config_list = [
         extra_dirs=("work_dir",),
         python_version="3.11",
         setup_function=fetch_structured_output_scripts_forge,
-    ),
-    # No pip; directory and/or runtime check
-    VenvConfig(
-        venv_type=WorkflowVenvType.BENCHMARKS_VIDEO,
-        extra_dirs=("work_dir",),
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_GENAI_PERF,

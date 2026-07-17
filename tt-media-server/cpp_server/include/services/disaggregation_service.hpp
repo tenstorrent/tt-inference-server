@@ -57,8 +57,8 @@ class DisaggregationService {
       const StreamCallback& callback);
 
   /**
-   * Prefill-first path for Dynamo native routing: reserve a decode slot, run
-   * one prefill token, then invoke callback with a PrefillResultMessage
+   * Prefill-first path for Dynamo routing: reserve a decode slot, run one
+   * prefill token, then invoke callback with a PrefillResultMessage
    * (same contract as handlePrefillRequest / tt_prefill_result).
    */
   void handlePrefillFirstRequest(

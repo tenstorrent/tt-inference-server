@@ -5,9 +5,9 @@
 # run_tests.sh — bring up the Dynamo stack, run the pytest suite, tear down.
 #
 # Routing modes (ROUTING_MODE):
-#   prefill-first  (default)  Dynamo-native + USE_PREFILL_FIRST_DISAGGREGATION
+#   prefill-first  (default)  Dynamo routing + USE_PREFILL_FIRST_DISAGGREGATION
 #                             → Dynamo -> prefill -> slot ZMQ -> decode
-#   native                    Dynamo-native pools without prefill-first sockets
+#   native                    Dynamo routing pools without prefill-first sockets
 #   direct                    classic decode-owned offload via MAX_TOKENS_...
 #
 #   ./run_tests.sh
@@ -41,17 +41,17 @@ guard_etcd() {
 configure_routing() {
     case "${ROUTING_MODE}" in
         prefill-first)
-            export DYNAMO_NATIVE_ROUTING=1
+            export DYNAMO_ROUTING=1
             export USE_PREFILL_FIRST_DISAGGREGATION=1
             TEST_FILE="${SCRIPT_DIR}/test_prefill_decode_prefill_first.py"
             ;;
         native)
-            export DYNAMO_NATIVE_ROUTING=1
+            export DYNAMO_ROUTING=1
             export USE_PREFILL_FIRST_DISAGGREGATION=0
             TEST_FILE="${SCRIPT_DIR}/test_prefill_decode_prefill_first.py"
             ;;
         direct)
-            export DYNAMO_NATIVE_ROUTING=0
+            export DYNAMO_ROUTING=0
             export USE_PREFILL_FIRST_DISAGGREGATION=0
             TEST_FILE="${SCRIPT_DIR}/test_prefill_decode.py"
             ;;

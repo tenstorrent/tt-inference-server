@@ -130,7 +130,7 @@ class LLMPipeline {
           cb) const;
 
   /// Submit a request that already resolved routing/session state outside the
-  /// normal pipeline flow, such as a Dynamo decode request carrying a native
+  /// normal pipeline flow, such as a Dynamo-routed decode request carrying a
   /// prefill result.
   void submitResolvedStreamingRequest(
       tt::domain::llm::LLMRequest& request,

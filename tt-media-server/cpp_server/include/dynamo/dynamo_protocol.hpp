@@ -202,7 +202,7 @@ struct GenerateRequest {
   std::vector<uint32_t> token_ids;
 
   // StopConditions ---------------------------------------------------------
-  int max_tokens = 128;
+  std::optional<int> max_tokens;
   std::optional<int> min_tokens;
   std::vector<int> stop_token_ids;
   std::vector<std::string> stop;

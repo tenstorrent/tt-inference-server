@@ -94,6 +94,10 @@ def run_llm_bench(
             auth_token=auth_token,
         )
     else:
+        # NOTE: vllm (default) / aiperf / genai use the text-only sweep. For a
+        # VLM this benchmarks the model as a text LLM — image params are dropped
+        # by get_llm_configs. To exercise the vision path (omni_modal_image),
+        # run --tools guidellm.
         limit_samples_mode = getattr(ctx.runtime_config, "limit_samples_mode", None)
         from llm_module.benchmark_configs import get_llm_configs
 

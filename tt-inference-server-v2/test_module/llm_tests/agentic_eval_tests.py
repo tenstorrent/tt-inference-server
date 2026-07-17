@@ -19,6 +19,7 @@ from llm_module import (
     make_agentic_driver,
 )
 from report_module.schema import Block
+from utils.auth_helpers import setup_tests_auth
 from workflows.workflow_types import WorkflowVenvType
 from workflow_module import accept_blocks
 
@@ -29,7 +30,16 @@ logger = logging.getLogger(__name__)
 
 
 def _select_agentic_tasks(ctx: MediaContext) -> list:
-    """Return only EVALS_AGENTIC tasks for the dedicated agentic workflow."""
+    """Return the EVALS_AGENTIC tasks for this model.
+
+    Standard (lm-eval) tasks in the same EvalConfig are owned by
+    ``--workflow evals`` (which conversely filters out agentic tasks), so the
+    agentic runner simply selects the agentic tasks and skips the rest. Mixed
+    configs are a normal pattern (e.g. a model with GPQA + Terminal-Bench +
+    SWE-bench), and ``--eval-samples`` cannot be combined with ``--ci-mode``
+    (they are mutually exclusive in run.py), so failing hard on mixed configs
+    would leave no way to run agentic evals in CI.
+    """
     tasks = getattr(ctx.all_params, "tasks", []) or []
     agentic = [
         t for t in tasks if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
@@ -39,7 +49,9 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
     ]
     if non_agentic:
         logger.info(
-            "Skipping non-agentic eval task(s) in v2 agentic workflow: %s",
+            "Skipping %d non-agentic task(s) under --workflow agentic "
+            "(run them via --workflow evals): %s",
+            len(non_agentic),
             [t.task_name for t in non_agentic],
         )
     return agentic
@@ -70,6 +82,19 @@ def _driver_context(ctx: MediaContext) -> DriverContext:
 
 def _configure_openai_env(ctx: MediaContext) -> None:
     base_url = f"{ctx.base_url}/v1"
+    # vLLM/tt-metal authorizes every /v1 request against a JWT minted from
+    # JWT_SECRET (payload {team_id, token_id}); /health is unauthenticated, so a
+    # missing/placeholder key passes the readiness probe and only surfaces as a
+    # 401 on the agent's first completion -- silently zeroing swe_bench_verified
+    # and terminal_bench_2. Mint the same token the standard-eval and
+    # server_tests paths use (setup_tests_auth) instead of sending "EMPTY".
+    rc = getattr(ctx, "runtime_config", None)
+    jwt_secret = (getattr(rc, "jwt_secret", None) if rc else None) or os.getenv(
+        "JWT_SECRET", ""
+    )
+    setup_tests_auth(jwt_secret, getattr(ctx, "remote_server", False), logger)
+    # --no-auth servers need no key, but the OpenAI/litellm client still requires
+    # a non-empty value; keep the historical placeholder as a final fallback.
     os.environ.setdefault("OPENAI_API_KEY", os.getenv("API_KEY", "EMPTY"))
     os.environ.setdefault("OPENAI_BASE_URL", base_url)
     os.environ.setdefault("OPENAI_API_BASE", base_url)

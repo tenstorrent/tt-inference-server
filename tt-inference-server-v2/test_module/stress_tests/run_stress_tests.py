@@ -20,8 +20,11 @@ project_root = Path(__file__).resolve().parents[3]
 # package (next to load_param_tests/, eval_tests/, …) rather than the v1 copy at repo root.
 test_module_dir = Path(__file__).resolve().parents[1]
 
+v2_root = Path(__file__).resolve().parents[2]
+
 # Order matters: test_module_dir first so the v2 stress_tests wins over the v1 one.
 sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(v2_root))
 sys.path.insert(0, str(test_module_dir))
 
 from stress_tests import StressTests
@@ -145,3 +148,39 @@ if __name__ == "__main__":
 
     run_stress_test.run()
     logger.info("✅ Completed stress tests")
+
+    # Generate the stress-test report through report_module — the same
+    # Block → ReportSchema → ReportGenerator pipeline every other workflow
+    # uses
+    from glob import glob
+    from datetime import datetime
+    from report_module import ReportGenerator
+    from report_module.schema import ReportSchema
+    from stress_tests.stress_tests_record_builder import to_block
+
+    output_path = Path(args.output_path)
+    result_files = sorted(
+        glob(str(output_path / f"stress_test_{model_spec.model_id}_*.json"))
+    )
+    if not result_files:
+        logger.warning(
+            "No stress-test result files found in %s; skipping report generation.",
+            output_path,
+        )
+    else:
+        generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        report_id = (
+            f"{model_spec.model_name.replace('/', '__')}_"
+            f"{generated_at.replace(' ', '_').replace(':', '')}"
+        )
+        schema = ReportSchema(
+            metadata={
+                "model_name": model_spec.model_name,
+                "device": device_str,
+                "generated_at": generated_at,
+                "report_id": report_id,
+            },
+            sections=[to_block(result_files)],
+        )
+        result = ReportGenerator().generate(schema, output_path)
+        logger.info("✅ Generated stress-test report: %s", result.markdown_path)

@@ -18,15 +18,15 @@ namespace tt::messaging {
     end). `end` is exclusive.
 */
 struct MigrationRequestMessage {
-  uint64_t migration_id;
-  uint32_t src_slot;
-  uint32_t dst_slot;
-  uint32_t layer_begin;
-  uint32_t layer_end;  // exclusive
-  uint32_t src_position_begin;
-  uint32_t src_position_end;  // exclusive
-  uint32_t dst_position_begin;
-  uint32_t dst_position_end;  // exclusive
+  uint64_t migration_id;  // Caller-assigned id, echoed back in the ack.
+  uint32_t src_slot;      // Prefill (source) slot.
+  uint32_t dst_slot;      // Decode (destination) slot.
+  uint32_t layer_begin;   // First layer, inclusive (shared by src and dst).
+  uint32_t layer_end;     // One past the last layer, exclusive.
+  uint32_t src_position_begin;  // Src token position start, inclusive.
+  uint32_t src_position_end;    // Src token position end, exclusive.
+  uint32_t dst_position_begin;  // Dst token position start, inclusive.
+  uint32_t dst_position_end;    // Dst token position end, exclusive.
 };
 
 struct MigrationResponseMessage {

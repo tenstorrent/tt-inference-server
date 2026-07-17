@@ -389,8 +389,8 @@ def _classify_blocker(
         return WorkflowType.EVALS, None
     if head == "parameter_support_tests":
         if len(parts) >= 2:
-            return WorkflowType.TESTS, parts[1]
-        return WorkflowType.TESTS, None
+            return WorkflowType.SPEC_TESTS, parts[1]
+        return WorkflowType.SPEC_TESTS, None
     if head == "server_tests":
         if len(parts) >= 2:
             return WorkflowType.SPEC_TESTS, parts[1]

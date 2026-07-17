@@ -19,7 +19,7 @@ class EventLoopThreadPool;
 namespace tt::services {
 class DisaggregationService;
 class LLMPipeline;
-}
+}  // namespace tt::services
 
 namespace tt::dynamo {
 
@@ -39,6 +39,8 @@ class DynamoEndpoint {
  public:
   struct Options {
     std::string bind_host = "0.0.0.0";
+    /// TCP port the listener binds to. 0 = OS-assigned ephemeral port
+    uint16_t bind_port = 0;
     /// Address the discovery store advertises. When empty, the local IP is
     /// auto-detected.
     std::string advertise_host;
@@ -71,9 +73,10 @@ class DynamoEndpoint {
     size_t num_loops = 0;
   };
 
-  DynamoEndpoint(std::shared_ptr<services::LLMPipeline> pipeline,
-                 std::shared_ptr<services::DisaggregationService> disaggregation,
-                 Options options);
+  DynamoEndpoint(
+      std::shared_ptr<services::LLMPipeline> pipeline,
+      std::shared_ptr<services::DisaggregationService> disaggregation,
+      Options options);
   ~DynamoEndpoint();
 
   DynamoEndpoint(const DynamoEndpoint&) = delete;

@@ -42,7 +42,6 @@ from workflows.run_docker_server import (
     run_docker_server,
 )
 from workflows.run_local_server import run_local_server
-from workflows.run_workflows import run_workflows
 from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import setup_host
 from workflows.utils import (
@@ -397,19 +396,19 @@ def parse_arguments():
         "--model-category",
         type=str,
         nargs="+",
-        help="Filter by model category (IMAGE, AUDIO, CNN)",
+        help="Filter by model category (CNN, EMBEDDING)",
         default=None,
     )
     spec_tests_group.add_argument(
         "--suite-category",
         type=str,
-        help="Load suites for a specific category (e.g., image, audio)",
+        help="Load suites for a specific category (e.g., cnn, embedding)",
         default=None,
     )
     spec_tests_group.add_argument(
         "--test-name",
         type=str,
-        help="Filter by specific test class name (e.g., ImageGenerationLoadTest)",
+        help="Filter by specific test class name (e.g., CnnLoadTest)",
         default=None,
     )
     spec_tests_group.add_argument(
@@ -639,9 +638,7 @@ def handle_secrets(runtime_config):
         WorkflowType.BENCHMARKS,
         WorkflowType.EVALS,
         WorkflowType.STRESS_TESTS,
-        WorkflowType.TESTS,
         WorkflowType.SPEC_TESTS,
-        WorkflowType.REPORTS,
         WorkflowType.SERVING_BENCH,
     }
     # --docker-server requires the HF_TOKEN env var to be available
@@ -950,7 +947,11 @@ def main():
             )
             workflow_results = run_v2_workflows(model_spec, runtime_config, json_fpath)
         else:
-            workflow_results = run_workflows(model_spec, runtime_config, json_fpath)
+            raise ValueError(
+                f"No workflow driver for --workflow {runtime_config.workflow} on "
+                f"{model_spec.model_name} ({model_spec.model_type.name}); all "
+                "supported workflows route to the v2 engine."
+            )
         if all(result.return_code == 0 for result in workflow_results):
             logger.info("Completed run.py.")
         else:
@@ -966,7 +967,7 @@ def main():
             main_return_code = 1
     else:
         logger.info(
-            f"Completed {runtime_config.workflow} workflow, skipping run_workflows()."
+            f"Completed {runtime_config.workflow} workflow, skipping workflow run."
         )
 
     logger.info(

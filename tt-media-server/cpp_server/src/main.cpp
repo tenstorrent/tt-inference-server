@@ -377,6 +377,7 @@ int main(int argc, char* argv[]) {
 
       tt::dynamo::DynamoEndpoint::Options opts;
       opts.bind_host = tt::config::dynamoBindHost();
+      opts.bind_port = tt::config::dynamoBindPort();
       opts.namespace_name = tt::config::dynamoNamespace();
       opts.component = tt::config::dynamoComponent();
       opts.endpoint = tt::config::dynamoEndpointName();
@@ -384,10 +385,10 @@ int main(int argc, char* argv[]) {
       opts.etcd_lease_ttl_secs = tt::config::dynamoEtcdLeaseTtlSecs();
       if (const char* v = std::getenv("DYNAMO_MODEL_TYPE"); v && *v) {
         opts.model_type = v;
-      } else if (tt::config::dynamoNativeRoutingEnabled() &&
+      } else if (tt::config::dynamoRoutingEnabled() &&
                  tt::config::llmMode() == tt::config::LLMMode::PREFILL_ONLY) {
-        // ai-dynamo 1.2.1 rejects Tokens+Empty during discovery; keep
-        // worker_type=Prefill while using the released-compatible capability.
+        // Released Dynamo rejects Tokens+Empty; advertise the compatible
+        // Prefill capability while still setting worker_type=prefill.
         opts.model_type = "Prefill";
       }
       if (const char* v = std::getenv("DYNAMO_MODEL_INPUT"); v && *v) {
@@ -395,26 +396,25 @@ int main(int argc, char* argv[]) {
       }
       if (const char* v = std::getenv("DYNAMO_WORKER_TYPE"); v && *v) {
         opts.worker_type = v;
-      } else if (tt::config::dynamoNativeRoutingEnabled()) {
+      } else if (tt::config::dynamoRoutingEnabled()) {
         switch (tt::config::llmMode()) {
           case tt::config::LLMMode::PREFILL_ONLY:
-            opts.worker_type = "Prefill";
-            opts.needs = {{"Decode"}};
+            opts.worker_type = "prefill";
+            opts.needs = {{"decode"}};
             break;
           case tt::config::LLMMode::DECODE_ONLY:
-            opts.worker_type = "Decode";
-            opts.needs = {{"Prefill"}};
+            opts.worker_type = "decode";
             break;
           case tt::config::LLMMode::REGULAR:
-            opts.worker_type = "Aggregated";
+            opts.worker_type = "aggregated";
             break;
         }
       }
 
       try {
         dynamoEndpoint = std::make_unique<tt::dynamo::DynamoEndpoint>(
-            pipeline, tt::services::ServiceContainer::instance().disaggregation(),
-            opts);
+            pipeline,
+            tt::services::ServiceContainer::instance().disaggregation(), opts);
         dynamoEndpoint->start();
       } catch (const std::exception& e) {
         TT_LOG_ERROR("[Main] Dynamo endpoint failed to start: {}", e.what());

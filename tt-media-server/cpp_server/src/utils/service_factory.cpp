@@ -33,23 +33,23 @@ AuxiliaryServices buildAuxiliaryServices(
           std::dynamic_pointer_cast<services::LLMService>(activeService)) {
     const auto mode = tt::config::llmMode();
     if (mode != tt::config::LLMMode::REGULAR) {
-      // Native routing without prefill-first uses Dynamo as the only hop and
+      // Dynamo routing without prefill-first uses Dynamo as the only hop and
       // assumes the decode slot is already present (or mocked). Prefill-first
       // still needs the cpp_server inter-server socket for
       // SlotReservationRequest/Response (1P1D via SOCKET_HOST for now).
-      if (tt::config::dynamoNativeRoutingEnabled() &&
+      if (tt::config::dynamoRoutingEnabled() &&
           !tt::config::usePrefillFirstDisaggregation()) {
         TT_LOG_INFO(
-            "[ServiceFactory] DYNAMO_NATIVE_ROUTING=1; constructing "
+            "[ServiceFactory] DYNAMO_ROUTING=1; constructing "
             "disaggregation contract service without cpp_server sockets");
         auto disagg = std::make_shared<services::DisaggregationService>(
             mode, llm, nullptr);
         return {/*socket=*/nullptr, std::move(disagg)};
       }
-      if (tt::config::dynamoNativeRoutingEnabled() &&
+      if (tt::config::dynamoRoutingEnabled() &&
           tt::config::usePrefillFirstDisaggregation()) {
         TT_LOG_INFO(
-            "[ServiceFactory] DYNAMO_NATIVE_ROUTING=1 + "
+            "[ServiceFactory] DYNAMO_ROUTING=1 + "
             "USE_PREFILL_FIRST_DISAGGREGATION=1; enabling sockets for slot "
             "reservation");
       }

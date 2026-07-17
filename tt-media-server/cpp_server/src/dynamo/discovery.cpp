@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -151,6 +152,9 @@ RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
   if (modelType == "minimax_m2") {
     return {"basic", "minimax_m2"};
   }
+  if (modelType == "minimax_m3_vl") {
+    return {"minimax_m3", "minimax_m3"};
+  }
   if (modelType == "glm_moe_dsa") {
     return {"glm45", "glm47"};
   }
@@ -254,7 +258,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
 
   card["context_length"] = static_cast<int>(tt::config::maxContextLength());
   card["kv_cache_block_size"] =
-      static_cast<int>(tt::config::kvCacheBlockSize());
+      static_cast<int>(tt::config::prefixCacheBlockSize());
   card["migration_limit"] = 0;
   card["model_type"] = c.model_type;
   card["model_input"] = c.model_input;
