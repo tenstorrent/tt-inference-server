@@ -8,11 +8,16 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from test_module import MediaContext
+if TYPE_CHECKING:
+    # Annotation-only imports (``from __future__ import annotations`` keeps them
+    # unevaluated at runtime). Kept out of the import path so lightweight callers
+    # — e.g. run.py constructing a ServerCommand — need not pull the heavy
+    # test_module.context / report_module stack.
+    from test_module import MediaContext
 
-from .execution import OrchestratorMetadata, WorkflowResult
+    from .execution import OrchestratorMetadata, WorkflowResult
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +76,6 @@ class ServerCommand(Command):
         self.launch = launch
 
     def execute(self) -> CommandResult:
-        # Lazy import: keep the command model free of a launcher import at
-        # module load, and avoid pulling the docker/local stack into workflow-
-        # only entry points that never construct a ServerCommand.
         from workflows.run_docker_server import run_docker_server
         from workflows.run_local_server import run_local_server
 

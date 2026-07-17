@@ -38,6 +38,10 @@ _LAZY_FROM_COMMAND_FACTORY = {
     "CommandFactory",
 }
 
+_LAZY_FROM_RUNNER = {
+    "WorkflowRunner",
+}
+
 
 def __getattr__(name):
     if name in _LAZY_FROM_EXECUTION:
@@ -56,6 +60,10 @@ def __getattr__(name):
         from . import command_factory
 
         return getattr(command_factory, name)
+    if name in _LAZY_FROM_RUNNER:
+        from . import runner
+
+        return getattr(runner, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -67,4 +75,5 @@ __all__ = [
     *sorted(_LAZY_FROM_WORKFLOWS),
     *sorted(_LAZY_FROM_COMMANDS),
     *sorted(_LAZY_FROM_COMMAND_FACTORY),
+    *sorted(_LAZY_FROM_RUNNER),
 ]

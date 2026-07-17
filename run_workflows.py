@@ -46,7 +46,6 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import List, Sequence
 
 _REPO_ROOT = Path(__file__).resolve().parent
 if str(_REPO_ROOT) not in sys.path:
@@ -55,11 +54,7 @@ if str(_REPO_ROOT) not in sys.path:
 from workflows.model_spec import MODEL_SPECS  # noqa: E402
 from workflows.workflow_types import DeviceTypes  # noqa: E402
 
-from workflow_module import (  # noqa: E402
-    Command,
-    CommandFactory,
-    CommandResult,
-)
+from workflow_module import CommandFactory, WorkflowRunner  # noqa: E402
 
 logger = logging.getLogger("tt_v2_runner")
 
@@ -69,34 +64,6 @@ _LOG_LEVELS = {
     "WARNING": logging.WARNING,
     "ERROR": logging.ERROR,
 }
-
-
-class WorkflowRunner:
-    """Thin executor of pre-built commands.
-
-    Iterates the command list, calls ``execute()`` on each, and collects
-    results. Has no knowledge of what any command actually does.
-    """
-
-    def __init__(self, commands: Sequence[Command]) -> None:
-        self.commands: List[Command] = list(commands)
-        self.results: List[CommandResult] = []
-
-    def run(self) -> int:
-        for cmd in self.commands:
-            logger.info("→ command=%s", cmd.name)
-            result = cmd.execute()
-            self.results.append(result)
-            if not result.succeeded:
-                logger.error(
-                    "❌ command=%s rc=%d error=%s",
-                    cmd.name,
-                    result.return_code,
-                    result.error,
-                )
-                return result.return_code
-            logger.info("✅ command=%s rc=0", cmd.name)
-        return 0
 
 
 def parse_args() -> argparse.Namespace:

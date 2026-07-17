@@ -39,9 +39,7 @@ from workflows.multihost_orchestrator import (
 from workflows.run_docker_server import (
     format_docker_command,
     generate_docker_run_command,
-    run_docker_server,
 )
-from workflows.run_local_server import run_local_server
 from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import setup_host
 from workflows.utils import (
@@ -872,7 +870,13 @@ def main():
             local_server=runtime_config.local_server,
         )
 
-    # step 4: optionally run inference server
+    # step 4: optionally run inference server. Server bring-up runs as a
+    # ServerCommand through the WorkflowRunner — the same runner that drives
+    # workflows — so one runner owns "bring up the server, then run workflows"
+    # (see docs/unified_runner_architecture.md).
+    from workflow_module import ServerCommand, ServerLaunchSpec, WorkflowRunner
+
+    server_launch = None
     if runtime_config.docker_server:
         docker_json_fpath = None
         if runtime_config.dev_mode:
@@ -922,10 +926,28 @@ def main():
                     f"Docker run command:\n\n{format_docker_command(docker_command)}\n"
                 )
             return 0
-        run_docker_server(model_spec, runtime_config, setup_config, docker_json_fpath)
+        server_launch = ServerLaunchSpec(
+            mode="docker",
+            model_spec=model_spec,
+            runtime_config=runtime_config,
+            setup_config=setup_config,
+            json_fpath=docker_json_fpath,
+        )
     elif runtime_config.local_server:
         logger.info("Running inference server on localhost ...")
-        run_local_server(model_spec, runtime_config, json_fpath, setup_config)
+        server_launch = ServerLaunchSpec(
+            mode="local",
+            model_spec=model_spec,
+            runtime_config=runtime_config,
+            setup_config=setup_config,
+            json_fpath=json_fpath,
+        )
+
+    if server_launch is not None:
+        server_rc = WorkflowRunner([ServerCommand(server_launch)]).run()
+        if server_rc != 0:
+            logger.error("Inference server bring-up failed (rc=%d).", server_rc)
+            return server_rc
 
     main_return_code = 0
 

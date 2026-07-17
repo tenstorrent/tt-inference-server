@@ -520,10 +520,16 @@ class TestMainWorkflowIntegration:
 
         assert not mock_dispatch_workflows.called
 
-    def test_main_release_raises_when_server_start_fails(
+    def test_main_release_aborts_when_server_start_fails(
         self, temp_dir, mock_env_vars, mock_version_file
     ):
-        """Test release propagates inference server startup exceptions."""
+        """Server bring-up failure aborts the run before workflows.
+
+        Bring-up runs as a ServerCommand through the WorkflowRunner, which
+        catches the launcher exception and surfaces it as a non-zero return
+        code (matching every other command) rather than propagating; main()
+        returns that code and never dispatches workflows.
+        """
         test_args = [
             "run.py",
             "--model",
@@ -539,13 +545,12 @@ class TestMainWorkflowIntegration:
             "run.setup_host",
             return_value=Namespace(),
         ), patch(
-            "run.run_docker_server",
+            "workflows.run_docker_server.run_docker_server",
             side_effect=RuntimeError("docker start failed"),
         ), patch("run.dispatch_workflows") as mock_dispatch_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
-            with pytest.raises(RuntimeError, match="docker start failed"):
-                main()
+            assert main() != 0
 
         assert not mock_dispatch_workflows.called
 
@@ -602,7 +607,7 @@ class TestMainWorkflowIntegration:
             "run.setup_host",
             return_value=Namespace(),
         ), patch(
-            "run.run_docker_server",
+            "workflows.run_docker_server.run_docker_server",
             return_value=mock_server_handle,
         ), patch(
             "run.dispatch_workflows",
