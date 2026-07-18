@@ -1,3 +1,11 @@
 # additional inference server and client script requirements
 pyjwt==2.7.0
 requests==2.32.3
+# DiffusionGemma (model_type=diffusion_gemma, arch DiffusionGemmaForBlockDiffusion)
+# is a NATIVE transformers model (auto_map=None -> trust_remote_code does not help);
+# it needs transformers>=5.8. vllm/requirements/common.txt only pins `>=5.5.3`, which
+# the image resolved to a <5.8 build without the architecture, so the server crashed
+# at startup: "Transformers does not recognize this architecture `diffusion_gemma`".
+# This file installs LAST in the runtime image, so pin the model-verified version here
+# (matches models/experimental/diffusion_gemma/requirements.txt; verified w/ vllm 0.13.0).
+transformers==5.12.1
