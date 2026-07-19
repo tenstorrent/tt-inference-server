@@ -65,6 +65,8 @@ def build_vllm_bench_serve_argv(
         "/v1/chat/completions",
         "--model",
         server.model,
+        "--tokenizer",
+        server.tokenizer,
         "--dataset-name",
         "random",
         "--max-concurrency",

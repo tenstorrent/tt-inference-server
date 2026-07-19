@@ -61,10 +61,20 @@ def run_llm_performance(
     exported as the bearer token); empty string disables auth.
     """
     server_base_url = ctx.server_url if ctx.remote_server else ctx.server_host
+    # Hardcoded local tokenizer path for Kimi-K2.7-Code: the custom tokenizer
+    # ships in the weights dir and vllm must load it from there (HF Hub is
+    # offline on the remote device). Other models fall back to ``hf_model_repo``.
+    hf_repo = ctx.model_spec.hf_model_repo
+    tokenizer = (
+        "/mnt/ttmodels/kimi/k2.7-weights"
+        if hf_repo == "moonshotai/Kimi-K2.7-Code"
+        else hf_repo
+    )
     server = ServerConnection(
         base_url=server_base_url,
         service_port=ctx.server_port,
-        model=ctx.model_spec.hf_model_repo,
+        model=hf_repo,
+        tokenizer=tokenizer,
         auth_token=auth_token,
         is_remote=ctx.remote_server,
     )

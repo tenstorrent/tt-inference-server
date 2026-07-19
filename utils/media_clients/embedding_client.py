@@ -116,6 +116,8 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             "serve",
             "--model",
             self.model,
+            "--tokenizer",
+            self.model,
             "--random-input-len",
             str(self.isl),
             "--num-prompts",
