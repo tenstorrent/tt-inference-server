@@ -20,17 +20,14 @@ DeviceMap loadDeviceMapStream(std::istream& input) {
   return deviceMap;
 }
 
-DeviceMap loadDeviceMapFile(const std::string& path) {
+std::optional<DeviceMap> loadDeviceMapFile(const std::string& path) {
   if (path.empty()) {
-    return {};
+    return DeviceMap{};
   }
   std::ifstream file(path);
   if (!file.good()) {
-    TT_LOG_WARN(
-        "[device_map_io] cannot open {}; using empty device map (placeholder "
-        "chip ids)",
-        path);
-    return {};
+    TT_LOG_ERROR("[device_map_io] cannot open device map file: {}", path);
+    return std::nullopt;
   }
   DeviceMap deviceMap = loadDeviceMapStream(file);
   TT_LOG_INFO("[device_map_io] loaded {} entries from {}", deviceMap.size(),

@@ -175,10 +175,12 @@ process, `--role prefill|decode`. The transport-lib pieces it composes:
   DeviceMap is separate: prefer `--engine-handoff-port N` (worker listens;
   co-located engine or `engine_handoff_sender` / deploy pushes the map only),
   else `--device-map` file (`device_map_io.*`, `mesh chip umd` lines). The raw
-  `.pb` blob is kept for peer `TABLE_EXCHANGE`. Device map is **required** when
-  a host's table spans multiple meshes — the `& 0xFFFF` placeholder collides
-  across meshes and is refused once a non-empty map is in play. Until the model
-  runner pushes the map itself:
+  `.pb` blob is kept for peer `TABLE_EXCHANGE`. Transfer path is fail-closed:
+  `engine_handoff_sender` exits non-zero on a missing/unreadable/empty map, and
+  socket resolve rejects an empty handoff (no silent placeholder push). Device
+  map is **required** when a host's table spans multiple meshes — the
+  `& 0xFFFF` placeholder collides across meshes and is refused once a non-empty
+  map is in play. Until the model runner pushes the map itself:
 
   ```bash
   mooncake_kv_migration_worker ... --table /tmp/local.pb --engine-handoff-port 18700

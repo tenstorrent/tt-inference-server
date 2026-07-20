@@ -4,6 +4,7 @@
 #pragma once
 
 #include <istream>
+#include <optional>
 #include <string>
 
 #include "transport/device_map.hpp"
@@ -19,7 +20,14 @@ namespace tt::transport {
  */
 DeviceMap loadDeviceMapStream(std::istream& input);
 
-/// Empty path => empty map. Unreadable path => empty map + warning log.
-DeviceMap loadDeviceMapFile(const std::string& path);
+/**
+ * @brief Load a device map from a file path.
+ *
+ * - Empty path => empty DeviceMap (discovery-only / map not configured).
+ * - Unreadable path => nullopt (hard error; never silently empty).
+ * - Readable path with zero parseable entries => empty DeviceMap; callers that
+ *   require a transfer map must reject emptiness themselves.
+ */
+std::optional<DeviceMap> loadDeviceMapFile(const std::string& path);
 
 }  // namespace tt::transport

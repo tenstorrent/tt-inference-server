@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "sockets/tcp_socket_transport.hpp"
@@ -38,7 +39,8 @@ void usage() {
   std::cerr
       << "usage: engine_handoff_sender --host HOST --port N\n"
          "  (--device-map PATH | --device-map-stdin)\n"
-         "  pushes DeviceMap only; worker loads .pb from --table /tmp path\n";
+         "  pushes DeviceMap only; worker loads .pb from --table /tmp path\n"
+         "  refuses empty/unreadable maps (exit non-zero)\n";
 }
 
 bool parseArgs(int argc, char** argv, SenderConfig& cfg) {
@@ -82,14 +84,35 @@ bool parseArgs(int argc, char** argv, SenderConfig& cfg) {
   return true;
 }
 
-tt::transport::DeviceMap loadDeviceMap(const SenderConfig& cfg) {
+std::optional<tt::transport::DeviceMap> loadDeviceMap(const SenderConfig& cfg) {
   if (cfg.deviceMapFromStdin) {
     auto deviceMap = tt::transport::loadDeviceMapStream(std::cin);
+    if (deviceMap.empty()) {
+      TT_LOG_ERROR(
+          "[engine_handoff_sender] stdin DeviceMap is empty — refusing to "
+          "push a placeholder map");
+      return std::nullopt;
+    }
     TT_LOG_INFO("[engine_handoff_sender] device-map: {} entries from stdin",
                 deviceMap.size());
     return deviceMap;
   }
-  return tt::transport::loadDeviceMapFile(cfg.deviceMapPath);
+  auto deviceMap = tt::transport::loadDeviceMapFile(cfg.deviceMapPath);
+  if (!deviceMap) {
+    TT_LOG_ERROR(
+        "[engine_handoff_sender] failed to load DeviceMap from '{}' — refusing "
+        "to push",
+        cfg.deviceMapPath);
+    return std::nullopt;
+  }
+  if (deviceMap->empty()) {
+    TT_LOG_ERROR(
+        "[engine_handoff_sender] DeviceMap file '{}' has no entries — refusing "
+        "to push an empty map",
+        cfg.deviceMapPath);
+    return std::nullopt;
+  }
+  return deviceMap;
 }
 
 }  // namespace
@@ -103,7 +126,10 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  const tt::transport::DeviceMap deviceMap = loadDeviceMap(cfg);
+  const auto deviceMap = loadDeviceMap(cfg);
+  if (!deviceMap) {
+    return 1;
+  }
 
   auto transport = std::make_shared<tt::sockets::TcpSocketTransport>();
   if (!transport->initializeAsClient(cfg.host, cfg.port)) {
@@ -113,7 +139,7 @@ int main(int argc, char** argv) {
   }
   transport->start();
 
-  if (!tt::transport::sendEngineHandoff(*transport, deviceMap)) {
+  if (!tt::transport::sendEngineHandoff(*transport, *deviceMap)) {
     TT_LOG_ERROR("[engine_handoff_sender] sendEngineHandoff failed");
     transport->stop();
     return 1;
@@ -122,7 +148,7 @@ int main(int argc, char** argv) {
   TT_LOG_INFO(
       "[engine_handoff_sender] sent DeviceMap handoff to {}:{} "
       "device_map_entries={}",
-      cfg.host, cfg.port, deviceMap.size());
+      cfg.host, cfg.port, deviceMap->size());
   transport->stop();
   return 0;
 }

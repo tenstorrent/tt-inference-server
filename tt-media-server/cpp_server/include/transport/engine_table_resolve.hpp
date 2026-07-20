@@ -33,6 +33,7 @@ using ListenTransportFactory =
     std::function<std::shared_ptr<sockets::ISocketTransport>(uint16_t port)>;
 
 /// Load .pb + optional device-map file (empty path => empty DeviceMap).
+/// Non-empty map path that is missing/unreadable/empty-entries => nullopt.
 std::optional<ResolvedEngineTables> resolveEngineTablesFromFiles(
     const std::string& tablePath, const std::string& deviceMapPath);
 
@@ -40,7 +41,8 @@ std::optional<ResolvedEngineTables> resolveEngineTablesFromFiles(
  * @brief Wait on an already-accepted peer for one DeviceMap handoff.
  *
  * Polls tryReceiveMessage (NO_DATA vs CLOSED). Wait-forever with WARN
- * heartbeats; returns nullopt on stop, CLOSED without data, or bad parse.
+ * heartbeats; returns nullopt on stop, CLOSED without data, bad parse, or an
+ * empty DeviceMap (socket path never accepts placeholder bring-up).
  */
 std::optional<DeviceMap> awaitEngineHandoffOnPeer(
     sockets::ISocketTransport& peer, const std::atomic<bool>& stop);
@@ -60,8 +62,10 @@ std::optional<DeviceMap> awaitEngineHandoffOnListen(
  * @brief Resolve table from @p tablePath; DeviceMap from socket and/or file.
  *
  * - Table is always loaded from @p tablePath (required).
- * - engineHandoffPort != 0: await DeviceMap on the listen port (preferred).
- * - Else: loadDeviceMapFile(deviceMapPath) (empty path => empty map).
+ * - engineHandoffPort != 0: await DeviceMap on the listen port (preferred);
+ *   empty handoff is rejected.
+ * - Else: loadDeviceMapFile(deviceMapPath) (empty path => empty map; non-empty
+ *   path must be readable and non-empty).
  * - If both handoff and deviceMapPath are set, handoff wins and the file is
  *   ignored (caller should WARN).
  */

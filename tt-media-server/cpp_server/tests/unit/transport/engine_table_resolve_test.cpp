@@ -71,6 +71,29 @@ TEST(DeviceMapIo, ParsesMeshChipUmdLines) {
   EXPECT_EQ(dm.umdChip(FabricNode{3, 4}), 200u);
 }
 
+TEST(DeviceMapIo, EmptyPathYieldsEmptyMap) {
+  const auto dm = loadDeviceMapFile("");
+  ASSERT_TRUE(dm.has_value());
+  EXPECT_TRUE(dm->empty());
+}
+
+TEST(DeviceMapIo, MissingFileReturnsNullopt) {
+  const auto dm =
+      loadDeviceMapFile("/tmp/definitely_missing_device_map_xyz.devmap");
+  EXPECT_FALSE(dm.has_value());
+}
+
+TEST(DeviceMapIo, EmptyFileYieldsEmptyMap) {
+  const std::string path = "/tmp/engine_table_resolve_empty.devmap";
+  {
+    std::ofstream out(path);
+    ASSERT_TRUE(out.good());
+  }
+  const auto dm = loadDeviceMapFile(path);
+  ASSERT_TRUE(dm.has_value());
+  EXPECT_TRUE(dm->empty());
+}
+
 TEST(EngineTableResolve, FileModeLoadsTableBlobAndDeviceMap) {
   if (!KvChunkAddressTableAdapter::available()) {
     GTEST_SKIP() << "ENABLE_KV_TABLE is OFF";
@@ -161,6 +184,53 @@ TEST(EngineTableResolve, PeerPollSeesSendThenClose) {
   ASSERT_TRUE(deviceMap.has_value());
   EXPECT_EQ(deviceMap->size(), 2u);
   EXPECT_EQ(deviceMap->umdChip(FabricNode{2, 0}), 0xAAAA000000000001ull);
+}
+
+TEST(EngineTableResolve, PeerRejectsEmptyDeviceMapHandoff) {
+  auto link = std::make_shared<test::Pipe>();
+  test::BlockingFakeTransport producer(std::make_shared<test::Pipe>(), link);
+  auto consumer = std::make_shared<test::BlockingFakeTransport>(
+      link, std::make_shared<test::Pipe>());
+
+  ASSERT_TRUE(sendEngineHandoff(producer, DeviceMap{}));
+  test::closePipe(link);
+
+  std::atomic<bool> stop{false};
+  auto deviceMap = awaitEngineHandoffOnPeer(*consumer, stop);
+  EXPECT_FALSE(deviceMap.has_value());
+}
+
+TEST(EngineTableResolve, FileModeRejectsEmptyDeviceMapFile) {
+  if (!KvChunkAddressTableAdapter::available()) {
+    GTEST_SKIP() << "ENABLE_KV_TABLE is OFF";
+  }
+  const std::string tablePath =
+      envOr("KV_TABLE_DECODE_PB", KV_TABLE_DECODE_PB_DEFAULT);
+  if (!readable(tablePath)) {
+    GTEST_SKIP() << "missing decode .pb (set KV_TABLE_DECODE_PB)";
+  }
+
+  const std::string mapPath = "/tmp/engine_table_resolve_empty_reject.devmap";
+  {
+    std::ofstream out(mapPath);
+    ASSERT_TRUE(out.good());
+  }
+  EXPECT_FALSE(resolveEngineTablesFromFiles(tablePath, mapPath).has_value());
+}
+
+TEST(EngineTableResolve, FileModeRejectsMissingDeviceMapFile) {
+  if (!KvChunkAddressTableAdapter::available()) {
+    GTEST_SKIP() << "ENABLE_KV_TABLE is OFF";
+  }
+  const std::string tablePath =
+      envOr("KV_TABLE_DECODE_PB", KV_TABLE_DECODE_PB_DEFAULT);
+  if (!readable(tablePath)) {
+    GTEST_SKIP() << "missing decode .pb (set KV_TABLE_DECODE_PB)";
+  }
+
+  EXPECT_FALSE(resolveEngineTablesFromFiles(
+                   tablePath, "/tmp/definitely_missing_device_map_xyz.devmap")
+                   .has_value());
 }
 
 }  // namespace

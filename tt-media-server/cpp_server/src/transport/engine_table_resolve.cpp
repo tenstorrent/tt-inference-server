@@ -20,6 +20,23 @@ namespace {
 constexpr auto kHandoffPoll = std::chrono::milliseconds(1000);
 constexpr auto kHandoffHeartbeat = std::chrono::milliseconds(30000);
 
+/// Empty path => empty map (ok). Non-empty path must open and yield ≥1 entry.
+std::optional<DeviceMap> loadRequiredOrOptionalDeviceMap(
+    const std::string& deviceMapPath) {
+  auto deviceMap = loadDeviceMapFile(deviceMapPath);
+  if (!deviceMap) {
+    return std::nullopt;
+  }
+  if (!deviceMapPath.empty() && deviceMap->empty()) {
+    TT_LOG_ERROR(
+        "[engine_table_resolve] device map file '{}' has no entries — refusing "
+        "empty map for transfer",
+        deviceMapPath);
+    return std::nullopt;
+  }
+  return deviceMap;
+}
+
 }  // namespace
 
 std::optional<ResolvedEngineTables> resolveEngineTablesFromFiles(
@@ -30,8 +47,12 @@ std::optional<ResolvedEngineTables> resolveEngineTablesFromFiles(
                  tablePath);
     return std::nullopt;
   }
+  auto deviceMap = loadRequiredOrOptionalDeviceMap(deviceMapPath);
+  if (!deviceMap) {
+    return std::nullopt;
+  }
   return ResolvedEngineTables{std::move(loaded->table), std::move(loaded->blob),
-                              loadDeviceMapFile(deviceMapPath)};
+                              std::move(*deviceMap)};
 }
 
 std::optional<DeviceMap> awaitEngineHandoffOnPeer(
@@ -46,6 +67,12 @@ std::optional<DeviceMap> awaitEngineHandoffOnPeer(
           TT_LOG_ERROR(
               "[engine_table_resolve] peer delivered malformed DeviceMap "
               "handoff");
+          return std::nullopt;
+        }
+        if (payload->device_map.empty()) {
+          TT_LOG_ERROR(
+              "[engine_table_resolve] peer delivered an empty DeviceMap "
+              "handoff — refusing placeholder bring-up on socket path");
           return std::nullopt;
         }
         TT_LOG_INFO(
@@ -175,7 +202,9 @@ std::optional<ResolvedEngineTables> resolveEngineTables(
     if (!handedOff) return std::nullopt;
     deviceMap = std::move(*handedOff);
   } else {
-    deviceMap = loadDeviceMapFile(deviceMapPath);
+    auto fromFile = loadRequiredOrOptionalDeviceMap(deviceMapPath);
+    if (!fromFile) return std::nullopt;
+    deviceMap = std::move(*fromFile);
   }
 
   return ResolvedEngineTables{std::move(loaded->table), std::move(loaded->blob),
