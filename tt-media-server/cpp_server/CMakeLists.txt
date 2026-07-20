@@ -1005,7 +1005,7 @@ endif()
 
 add_executable(dynamo_protocol_test
     tests/unit/dynamo/dynamo_protocol_test.cpp
-    src/dynamo/dynamo_protocol.cpp
+    src/dynamo/transport_protocol.cpp
     src/utils/logger.cpp
 )
 target_link_libraries(dynamo_protocol_test PRIVATE
@@ -1014,6 +1014,20 @@ target_link_libraries(dynamo_protocol_test PRIVATE
     spdlog::spdlog
     GTest::gtest_main)
 target_include_directories(dynamo_protocol_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(kube_discovery_test
+    tests/unit/dynamo/kube_discovery_test.cpp
+    src/dynamo/kube_client.cpp
+    src/utils/logger.cpp
+)
+target_link_libraries(kube_discovery_test PRIVATE
+    Drogon::Drogon
+    JsonCpp::JsonCpp
+    spdlog::spdlog
+    GTest::gtest_main)
+target_include_directories(kube_discovery_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -1285,10 +1299,15 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/zmq_socket_transport.cpp
-    src/dynamo/dynamo_endpoint.cpp
-    src/dynamo/dynamo_protocol.cpp
+    src/dynamo/transport_protocol.cpp
+    src/dynamo/llm_mapping.cpp
+    src/dynamo/prefill_result_mapping.cpp
     src/dynamo/discovery.cpp
     src/dynamo/etcd_client.cpp
+    src/dynamo/kube_client.cpp
+    src/dynamo/worker_server.cpp
+    src/dynamo/transport_server.cpp
+    src/dynamo/request_handler.cpp
 )
 
 add_executable(main_integration_test
@@ -1397,6 +1416,7 @@ set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2E
 )
 gtest_discover_tests(transport_test)
 gtest_discover_tests(dynamo_protocol_test)
+gtest_discover_tests(kube_discovery_test)
 gtest_discover_tests(kv_cache_addressing_test)
 gtest_discover_tests(worker_health_server_test)
 gtest_discover_tests(kv_table_adapter_test)
@@ -1789,12 +1809,15 @@ set(SOURCES
     src/runtime/worker/worker_metrics_shm.cpp
     src/runtime/worker/worker_metrics_aggregator.cpp
     src/runtime/worker/blaze_worker_metrics_renderer.cpp
-    src/dynamo/dynamo_protocol.cpp
-    src/dynamo/dynamo_llm_mapping.cpp
-    src/dynamo/dynamo_prefill_result_json.cpp
+    src/dynamo/transport_protocol.cpp
+    src/dynamo/llm_mapping.cpp
+    src/dynamo/prefill_result_mapping.cpp
     src/dynamo/discovery.cpp
     src/dynamo/etcd_client.cpp
-    src/dynamo/dynamo_endpoint.cpp
+    src/dynamo/kube_client.cpp
+    src/dynamo/worker_server.cpp
+    src/dynamo/transport_server.cpp
+    src/dynamo/request_handler.cpp
 )
 
 # Create executable

@@ -5,10 +5,10 @@
 // and a prefill server, connected via ZMQ sockets.
 //
 // Requests are routed through an external Dynamo frontend (HTTP → Dynamo →
-// TCP → DynamoEndpoint → LLMPipeline on decode server), which decides whether
-// to handle locally (prefill-on-decode) or forward to the prefill server based
-// on MAX_TOKENS_TO_PREFILL_ON_DECODE threshold. This tests the full routing
-// logic through the production Dynamo code path.
+// TCP → DynamoWorkerServer → LLMPipeline on decode server), which decides
+// whether to handle locally (prefill-on-decode) or forward to the prefill
+// server based on MAX_TOKENS_TO_PREFILL_ON_DECODE threshold. This tests the
+// full routing logic through the production Dynamo code path.
 //
 // IMPORTANT: This test requires external infrastructure to be running:
 //   cd dynamo_frontend && ./deploy.sh --local-build
@@ -35,7 +35,7 @@
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
 #include "domain/sentinel_values.hpp"
-#include "dynamo/dynamo_endpoint.hpp"
+#include "dynamo/worker_server.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/boost/boost_task_queue.hpp"
@@ -176,13 +176,14 @@ void configurePrefillEnv() {
     }
   });
 
-  // Start DynamoEndpoint for production traffic path.
+  // Start DynamoWorkerServer for production traffic path.
+  auto disaggregation =
+      tt::services::ServiceContainer::instance().disaggregation();
   auto pipeline = std::make_shared<tt::services::LLMPipeline>(
       llm, tt::services::ServiceContainer::instance().sessionManager(),
-      tt::services::ServiceContainer::instance().disaggregation(),
-      tt::services::ServiceContainer::instance().socket());
+      disaggregation, tt::services::ServiceContainer::instance().socket());
 
-  tt::dynamo::DynamoEndpoint::Options opts;
+  tt::dynamo::DynamoWorkerServer::Options opts;
   opts.bind_host = tt::config::dynamoBindHost();
   opts.namespace_name = tt::config::dynamoNamespace();
   opts.component = tt::config::dynamoComponent();
@@ -190,13 +191,14 @@ void configurePrefillEnv() {
   opts.etcd_endpoints = tt::config::dynamoEtcdEndpoints();
   opts.etcd_lease_ttl_secs = tt::config::dynamoEtcdLeaseTtlSecs();
 
-  auto dynamoEndpoint =
-      std::make_unique<tt::dynamo::DynamoEndpoint>(pipeline, opts);
-  dynamoEndpoint->start();
+  auto dynamoWorkerServer = std::make_unique<tt::dynamo::DynamoWorkerServer>(
+      pipeline, disaggregation, opts);
+  dynamoWorkerServer->start();
 
   std::ofstream(sentinelPath) << "ready";
   TT_LOG_INFO(
-      "[DecodeSubprocess] Ready with DynamoEndpoint, sentinel written to {}",
+      "[DecodeSubprocess] Ready with DynamoWorkerServer, sentinel written to "
+      "{}",
       sentinelPath);
 
   const std::string healthSentinel =
@@ -224,7 +226,8 @@ void configurePrefillEnv() {
   stopTaskResponder.store(true);
   autoResponder.join();
   taskResponder.join();
-  // Skip DynamoEndpoint::stop() — graceful shutdown can hang on open streams.
+  // Skip DynamoWorkerServer::stop() — graceful shutdown can hang on open
+  // streams.
   std::_Exit(0);
 }
 

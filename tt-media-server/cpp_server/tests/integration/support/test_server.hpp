@@ -9,11 +9,11 @@
 //      tt::test::runWorkerSubprocess (see test_worker_main.hpp).
 //   2. Wait for the worker subprocess to signal warmup.
 //   3. Open the IPC queues — the test process now plays the worker on those.
-//   4. Start DynamoEndpoint to accept requests from Dynamo frontend.
+//   4. Start DynamoWorkerServer to accept requests from Dynamo frontend.
 //
 // All requests are routed through the external Dynamo frontend (HTTP → Dynamo →
-// TCP → DynamoEndpoint → LLMPipeline). Start etcd + frontend without a worker:
-//   cd dynamo_frontend && ./deploy.sh --no-monitoring --no-worker
+// TCP → DynamoWorkerServer → LLMPipeline). Start etcd + frontend without a
+// worker: cd dynamo_frontend && ./deploy.sh --no-monitoring --no-worker
 
 #pragma once
 
@@ -28,7 +28,7 @@
 #include "../../support/worker_response.hpp"
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
-#include "dynamo/dynamo_endpoint.hpp"
+#include "dynamo/worker_server.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/boost/boost_task_queue.hpp"
@@ -54,9 +54,9 @@ class TestServer {
       memoryAutoResponderThread_.join();
     // Revoke etcd and stop accepting without joining in-flight Dynamo streams
     // (stop() can block until ctest's 300s timeout).
-    if (dynamoEndpoint_) {
-      dynamoEndpoint_->abandon();
-      dynamoEndpoint_.reset();
+    if (dynamoWorkerServer_) {
+      dynamoWorkerServer_->abandon();
+      dynamoWorkerServer_.reset();
     }
   }
 
@@ -84,8 +84,8 @@ class TestServer {
   // about memory. Turn OFF to assert on requests / inject custom responses.
   void setMemoryAutoRespond(bool on) { autoRespond_.store(on); }
 
-  // Returns true if DynamoEndpoint was started (DYNAMO_ENDPOINT_ENABLED=1).
-  bool hasDynamoEndpoint() const { return dynamoEndpoint_ != nullptr; }
+  // Returns true if DynamoWorkerServer was started (DYNAMO_ENDPOINT_ENABLED=1).
+  bool hasDynamoEndpoint() const { return dynamoWorkerServer_ != nullptr; }
 
  private:
   static constexpr std::chrono::seconds kStartupTimeout{30};
@@ -99,7 +99,7 @@ class TestServer {
   //   2. wait for that worker to signal warmup
   //   3. open the IPC queues — test now plays the worker on those queues
   //   4. start the memory auto-responder so most tests don't have to care
-  //   5. start DynamoEndpoint (required - DYNAMO_ENDPOINT_ENABLED must be 1)
+  //   5. start DynamoWorkerServer (required - DYNAMO_ENDPOINT_ENABLED must be 1)
   void init() {
     createWorkerMetricsShm();
     tt::utils::service_factory::initializeServices();
@@ -107,7 +107,7 @@ class TestServer {
     waitForLLMReady();
     openIpcQueues();
     startMemoryAutoResponder();
-    startDynamoEndpoint();
+    startDynamoWorkerServer();
   }
 
   // Create the WorkerMetricsShm that the worker subprocess will open.
@@ -170,10 +170,10 @@ class TestServer {
     });
   }
 
-  // Start the DynamoEndpoint to accept requests from Dynamo frontend. This
+  // Start the DynamoWorkerServer to accept requests from Dynamo frontend. This
   // creates an LLMPipeline and registers with etcd so the external Dynamo
   // frontend can discover and route requests to this backend.
-  void startDynamoEndpoint() {
+  void startDynamoWorkerServer() {
     if (!tt::config::dynamoEndpointEnabled()) {
       throw std::runtime_error(
           "TestServer: DYNAMO_ENDPOINT_ENABLED must be set to 1. "
@@ -185,15 +185,17 @@ class TestServer {
             tt::config::ModelService::LLM));
     if (!llmService) {
       throw std::runtime_error(
-          "TestServer: LLMService not registered, cannot start DynamoEndpoint");
+          "TestServer: LLMService not registered, cannot start "
+          "DynamoWorkerServer");
     }
 
+    auto disaggregation =
+        tt::services::ServiceContainer::instance().disaggregation();
     auto pipeline = std::make_shared<tt::services::LLMPipeline>(
         llmService, tt::services::ServiceContainer::instance().sessionManager(),
-        tt::services::ServiceContainer::instance().disaggregation(),
-        tt::services::ServiceContainer::instance().socket());
+        disaggregation, tt::services::ServiceContainer::instance().socket());
 
-    tt::dynamo::DynamoEndpoint::Options opts;
+    tt::dynamo::DynamoWorkerServer::Options opts;
     opts.bind_host = tt::config::dynamoBindHost();
     opts.namespace_name = tt::config::dynamoNamespace();
     opts.component = tt::config::dynamoComponent();
@@ -201,9 +203,9 @@ class TestServer {
     opts.etcd_endpoints = tt::config::dynamoEtcdEndpoints();
     opts.etcd_lease_ttl_secs = tt::config::dynamoEtcdLeaseTtlSecs();
 
-    dynamoEndpoint_ =
-        std::make_unique<tt::dynamo::DynamoEndpoint>(pipeline, opts);
-    dynamoEndpoint_->start();
+    dynamoWorkerServer_ = std::make_unique<tt::dynamo::DynamoWorkerServer>(
+        pipeline, disaggregation, opts);
+    dynamoWorkerServer_->start();
   }
 
   std::unique_ptr<worker::WorkerMetricsShm> workerMetricsShm_;
@@ -214,7 +216,7 @@ class TestServer {
   std::thread memoryAutoResponderThread_;
   std::atomic<bool> autoRespond_{true};
   std::atomic<bool> stopAutoResponder_{false};
-  std::unique_ptr<tt::dynamo::DynamoEndpoint> dynamoEndpoint_;
+  std::unique_ptr<tt::dynamo::DynamoWorkerServer> dynamoWorkerServer_;
 };
 
 }  // namespace tt::test
