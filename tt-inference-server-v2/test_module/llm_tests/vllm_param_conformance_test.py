@@ -246,6 +246,15 @@ class VLLMResponsesParamConformanceTest(VLLMParamConformanceTest):
     REPORT_TASK_NAME = "vllm_responses"
 
 
+class VLLMQwen3StreamingParamConformanceTest(VLLMParamConformanceTest):
+    """Run the Qwen3-32B streaming reasoning / tool-call regression suite."""
+
+    KIND = "vllm_qwen3_streaming"
+    PYTEST_FILENAME = "test_vllm_qwen3_streaming.py"
+    ENDPOINT_PATH = "/v1/chat/completions"
+    REPORT_TASK_NAME = "vllm_qwen3_streaming"
+
+
 def run_vllm_param_conformance(
     ctx: "MediaContext",
     targets: Optional[dict] = None,
