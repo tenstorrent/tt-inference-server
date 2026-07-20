@@ -4,6 +4,7 @@
 #include "transport/kv_migration_multi_host_sender.hpp"
 
 #include <utility>
+#include <vector>
 
 #include "transport/kv_migration_orchestrator.hpp"
 #include "utils/logger.hpp"
@@ -15,7 +16,7 @@ KvMigrationMultiHostSender::KvMigrationMultiHostSender(
     std::shared_ptr<const IKvTable> prefillTable,
     std::shared_ptr<const IKvTable> decodeTable, std::string prefillHost,
     std::unordered_map<std::string, std::shared_ptr<KvControlChannel>> channels,
-    WorkerHealth* health)
+    DeviceMapFn deviceMap, WorkerHealth* health)
     : engine_(std::move(engine)),
       device_(device),
       prefill_table_(std::move(prefillTable)),
@@ -23,11 +24,10 @@ KvMigrationMultiHostSender::KvMigrationMultiHostSender(
       prefill_host_(std::move(prefillHost)),
       health_(health),
       channels_(std::move(channels)) {
-  // One staging pool, registered once, shared by every per-host sender (safe
-  // because the fan-out in migrate() is serial).
-  staging_ = std::make_shared<KvStagingPool>(engine_);
-  // One per-host sender, built once: each holds the destination addressing for
-  // its decode host (whole-table-stable), reused across migrations.
+  // One staging pool shared by every per-host bounce sender (serial fan-out),
+  // double-pinned when a device map is supplied (DRISC).
+  staging_ = std::make_shared<KvStagingPool>(engine_, defaultStagingBytes(),
+                                             std::move(deviceMap));
   for (const auto& [host, channel] : channels_) {
     senders_[host] = std::make_unique<MooncakeKvSender>(
         engine_, device_, prefill_table_, decode_table_, prefill_host_, host,
@@ -51,12 +51,9 @@ bool KvMigrationMultiHostSender::addHost(
         engine_, device_, prefill_table_, decode_table_, prefill_host_, host,
         staging_, health_);
     TT_LOG_INFO(
-        "[KvMigrationMultiHostSender] added late decode host '{}' (hosts={})",
+        "[KvMigrationMultiHostSender] added late decode host '{}' "
+        "(hosts={})",
         host, senders_.size());
-  } else {
-    TT_LOG_INFO(
-        "[KvMigrationMultiHostSender] refreshed control channel for '{}'",
-        host);
   }
   return true;
 }
@@ -70,30 +67,31 @@ bool KvMigrationMultiHostSender::migrate(uint64_t uuid,
                                          const MigrationRequest& request) {
   if (!decode_table_) {
     TT_LOG_ERROR(
-        "[KvMigrationMultiHostSender] migrate(uuid={}): no decode table", uuid);
+        "[KvMigrationMultiHostSender] migrate(uuid={}): no decode "
+        "table",
+        uuid);
     return false;
   }
-  // Routing: the exact set of decode hosts this request lands on (sorted, so
-  // the fan-out order is deterministic).
+  // Routing: the exact decode hosts this request lands on, sorted so the
+  // fan-out order is deterministic.
   const std::vector<std::string> hosts =
       hostsForRequest(*decode_table_, request.dstSlice());
   if (hosts.empty()) {
     TT_LOG_ERROR(
         "[KvMigrationMultiHostSender] migrate(uuid={}): request touches no "
-        "decode "
-        "hosts",
+        "decode hosts",
         uuid);
     return false;
   }
 
-  // Snapshot host → channel/sender under the lock so a concurrent addHost()
-  // cannot invalidate iterators mid-fan-out. Shared_ptr keeps each channel
-  // alive if the connector replaceChannel()s during this migrate().
   struct HostLeg {
     std::string host;
     std::shared_ptr<KvControlChannel> channel;
     MooncakeKvSender* sender = nullptr;
   };
+  // Snapshot host -> channel/sender under the lock so a concurrent addHost()
+  // cannot invalidate the map mid-fan-out; the shared_ptr keeps each channel
+  // alive even if the connector replaces it during this migrate().
   std::vector<HostLeg> legs;
   legs.reserve(hosts.size());
   bool ok = true;

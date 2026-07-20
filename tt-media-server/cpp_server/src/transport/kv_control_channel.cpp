@@ -122,7 +122,8 @@ KvControlChannel::ReceiveOutcome KvControlChannel::receiveMessageLocked(
       case sockets::ReceiveStatus::CLOSED:
         return ReceiveOutcome::Closed;  // connection closed
       case sockets::ReceiveStatus::NO_DATA:
-        // The peer hasn't replied yet (e.g. still preparing the mirror). Wait
+        // The peer hasn't replied yet (e.g. still registering the bounce
+        // buffer). Wait
         // and retry rather than aborting a healthy migration on a normal
         // few-millisecond response delay. This is the whole reason the
         // transport reports NO_DATA distinctly instead of an ambiguous empty
@@ -150,7 +151,7 @@ std::optional<KvControlMessage> KvControlChannel::receive(
     case ReceiveOutcome::Message:
       return msg;
     case ReceiveOutcome::TimedOut:
-      // A bounded wait (the sender awaiting MirrorReady/Ack) that expires is an
+      // A bounded wait (the sender awaiting BounceReady/Ack) that expires is an
       // error for that caller; log it here, where the timeout is unexpected.
       TT_LOG_ERROR("[KvControlChannel] receive timed out after {} ms",
                    ioTimeout.count());

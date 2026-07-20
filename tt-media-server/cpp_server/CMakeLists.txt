@@ -589,35 +589,41 @@ if(SANITIZE_ADDRESS)
     target_link_options(llm_runner_lib PUBLIC -fsanitize=address)
 endif()
 
-# Transport layer placeholder (#3890, "Custom backend for DRAM access via UMD").
-# Models the Transfer Engine's two mechanisms at the cpp_server level:
-#   - storage  : IStorageBackend + host/device-DRAM backends, the device one
-#                being the custom UMD backend (umd_device_access wrapper);
+# Transport layer (#3890). Models the Transfer Engine's two mechanisms at the
+# cpp_server level:
+#   - storage  : IStorageBackend + a host-DRAM backend;
 #   - transport: the Mooncake Transfer Engine wrapper (TCP/RDMA).
-# Plus the migration-worker spike (write-on-sender / transfer / verify-on-
-# receiver). Self-contained stubs with no Mooncake/tt-metal deps, so this builds
-# in every configuration; the real backends land behind the pimpls.
+# Device DRAM is moved by the migrators' IDeviceIo (DriscDeviceIo), not a storage
+# backend. Self-contained without Mooncake/tt-metal deps, so this builds in every
+# configuration; the real backends land behind the pimpls.
 add_library(transport_lib
     src/transport/host_dram_storage_backend.cpp
-    src/transport/device_dram_storage_backend.cpp
-    src/transport/umd_device_access.cpp
     src/transport/mooncake_transfer_engine.cpp
     src/transport/worker_health.cpp
     src/transport/worker_health_server.cpp
-    # Real KV-cache addressing: physical mirror layout + sender/receiver views +
-    # multi-device UMD I/O. Dependency-free host code (no tt-metal/Mooncake), so
-    # transport_lib still builds in every configuration.
-    src/transport/kv_cache_layout.cpp
-    src/transport/kv_cache_mirror.cpp
-    src/transport/remote_region.cpp
-    src/transport/multi_device_umd.cpp
+    # DRISC NOC-DMA device I/O: the migration data plane's IDeviceIo (and
+    # enumerateDevicesByUniqueId). Real impl under USE_METAL_CPP_LIB (wraps the
+    # disaggregation DriscSocketLink, added to this target in the coexistence
+    # block below); no-op fallback otherwise, so this TU builds in every
+    # configuration.
+    src/transport/drisc_device_io.cpp
     src/transport/kv_table_adapter.cpp
     src/transport/kv_chunk_address_table_adapter.cpp
     src/transport/kv_control_message.cpp
     src/transport/kv_control_channel.cpp
-    src/transport/mooncake_kv_sender.cpp
+    # Shared staging pool (double-pinned host buffers), used by the bounce sender.
+    src/transport/kv_staging_pool.cpp
+    # RDMA-over-host (the KV data plane): a small double-pinned bounce buffer; the
+    # sender streams a slot through it a window at a time (windowed + credit-
+    # based, pipelined).
+    src/transport/kv_bounce_buffer.cpp
+    # Phase B3: one host buffer pinned for BOTH transports — engine ibv_reg_mr
+    # (NIC) + device NOC-map (DRISC). Dependency-free (device map is injected).
+    src/transport/double_pinned_buffer.cpp
     src/transport/mooncake_kv_receiver.cpp
+    src/transport/mooncake_kv_sender.cpp
     src/transport/kv_migration_orchestrator.cpp
+    # Bounce n->m fan-out across the decode hosts a slot spans.
     src/transport/kv_migration_multi_host_sender.cpp
     # The real IMigrationExecutor: bridges the Kafka trigger (tt::worker /
     # tt::services, header-only here) to the multi-host data plane.
@@ -646,16 +652,16 @@ target_link_libraries(transport_lib PUBLIC spdlog::spdlog prometheus-cpp::core)
 if(USE_EXTERNAL_FMT)
     target_link_libraries(transport_lib PUBLIC fmt::fmt)
 endif()
-# Real UMD device-DRAM backend (umd_device_access.cpp). Uses the coexistence
-# UmdDevice from tt-llm-engine/disaggregation (raw UMD Cluster, NO start_device
-# / NO CHIP_IN_USE flock / NO dispatch firmware), so the migration worker shares
-# device DRAM with a live inference engine. We compile the two sources it needs
-# directly (device_io.cpp + tt-metal's metal_soc_descriptor.cpp) and link UMD —
-# NOT libtt_metal (which would take exclusive chip ownership and JIT-build
-# dispatch kernels; see the device-mode failures this replaces). Requires a
-# BUILT tt-metal (UMD .so + yaml-cpp); a headers-only / unbuilt tree leaves
-# USE_METAL_CPP_LIB undefined so umd_device_access.cpp uses its no-op fallback
-# and transport_lib still builds in every configuration.
+# Coexistence device-DRAM path for DRISC. Uses the coexistence UmdDevice from
+# tt-llm-engine/disaggregation (raw UMD Cluster, NO start_device / NO
+# CHIP_IN_USE flock / NO dispatch firmware) to open the chip, so the migration
+# worker shares device DRAM with a live inference engine. We compile the sources
+# it needs directly (device_io.cpp + tt-metal's metal_soc_descriptor.cpp) and
+# link UMD — NOT libtt_metal (which would take exclusive chip ownership and
+# JIT-build dispatch kernels). Requires a BUILT tt-metal (UMD .so + yaml-cpp); a
+# headers-only / unbuilt tree leaves USE_METAL_CPP_LIB undefined so
+# drisc_device_io.cpp uses its no-op fallback and transport_lib still builds in
+# every configuration.
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     set(_TTM_BUILD "")
     if(EXISTS "${TT_METAL_HOME}/build_Release/lib")
@@ -675,15 +681,33 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
         target_include_directories(transport_lib PUBLIC ${TT_METAL_INCLUDE_DIRS})
 
         # device_io.cpp (UmdDevice) + metal_soc_descriptor.cpp compiled directly.
+        # Plus the DRISC socket backend: drisc_device_io.cpp (the DRISC-RISC
+        # device-DRAM<->host NOC-DMA mover) and the MultiDevice reader/writer TUs
+        # its factories construct. This enables DriscDeviceIo (the migration data
+        # plane's IDeviceIo) over the coexistence UMD path (raw Cluster, no
+        # libtt_metal). The DRISC service kernel is a RUNTIME ELF
+        # (MIGRATION_DRISC_SERVICE_ELF), not a link dep.
         set(_KV_MIG "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration")
         target_sources(transport_lib PRIVATE
             ${_KV_MIG}/src/worker/device_io.cpp
-            ${TT_METAL_HOME}/tt_metal/llrt/metal_soc_descriptor.cpp)
+            ${_KV_MIG}/src/worker/drisc_device_io.cpp
+            ${_KV_MIG}/src/multi_device_reader.cpp
+            ${_KV_MIG}/src/multi_device_writer.cpp
+            ${TT_METAL_HOME}/tt_metal/llrt/metal_soc_descriptor.cpp
+            # FabricNodeId operator==/hash the MultiDevice reader/writer need.
+            # Compiled directly (as with metal_soc_descriptor.cpp) so a non-blaze
+            # coexistence build resolves them without linking libtt_metal.
+            ${TT_METAL_HOME}/tt_metal/fabric/fabric_types.cpp)
+        target_compile_definitions(transport_lib PUBLIC TT_TRANSPORT_WITH_DRISC)
         # Third-party TUs: silence tt-metal/UMD header warnings (we're not -Werror,
         # but keep the log clean) without relaxing diagnostics on our own code.
         set_source_files_properties(
             ${_KV_MIG}/src/worker/device_io.cpp
+            ${_KV_MIG}/src/worker/drisc_device_io.cpp
+            ${_KV_MIG}/src/multi_device_reader.cpp
+            ${_KV_MIG}/src/multi_device_writer.cpp
             ${TT_METAL_HOME}/tt_metal/llrt/metal_soc_descriptor.cpp
+            ${TT_METAL_HOME}/tt_metal/fabric/fabric_types.cpp
             PROPERTIES COMPILE_OPTIONS "-w")
 
         # device_io.hpp + the tt-metal-internal headers metal_soc_descriptor.cpp
@@ -833,7 +857,8 @@ target_compile_options(transport_lib PRIVATE -Wall -Wextra -Wpedantic)
 # KAFKA_ENABLED block, because it links kv_migration_worker for the Kafka
 # request loop. See `if(KAFKA_ENABLED)` further down.
 if(TARGET transfer_engine)
-    # Real KV-cache migration (table-addressed mirror + orchestration over a
+    # Real KV-cache migration (table-addressed bounce-buffer data plane +
+    # orchestration over a
     # TCP control channel). Self-contained TCP control transport, links only
     # transport_lib. host mode runs with no hardware; device mode needs --blaze;
     # real-table (--table <pb>) needs -DENABLE_KV_TABLE=ON.
@@ -886,19 +911,11 @@ target_include_directories(transport_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# KV-cache addressing unit tests: mirror layout / offset math, sender-receiver
-# offset parity, multi-device UMD dispatch. Host-only, runs in any build config.
+# Worker health / readiness HTTP server. Host-only, runs in any build config.
 add_executable(worker_health_server_test
     tests/unit/transport/worker_health_server_test.cpp)
 target_link_libraries(worker_health_server_test PRIVATE transport_lib GTest::gtest_main)
 target_include_directories(worker_health_server_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-add_executable(kv_cache_addressing_test
-    tests/unit/transport/kv_cache_addressing_test.cpp)
-target_link_libraries(kv_cache_addressing_test PRIVATE transport_lib GTest::gtest_main)
-target_include_directories(kv_cache_addressing_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -911,8 +928,8 @@ target_include_directories(kv_table_adapter_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# Control-plane message codec + channel (table exchange, request, mirror name,
-# done-marker, ack). Host-only loopback, runs in any build config.
+# Control-plane message codec + channel (table exchange, request, bounce segment
+# name, done-marker, ack). Host-only loopback, runs in any build config.
 add_executable(kv_control_channel_test
     tests/unit/transport/kv_control_channel_test.cpp)
 target_link_libraries(kv_control_channel_test PRIVATE transport_lib GTest::gtest_main)
@@ -920,8 +937,17 @@ target_include_directories(kv_control_channel_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# End-to-end KV migration data plane (sender -> simulated one-sided wire ->
-# receiver -> device) with in-memory fakes. Host-only, runs in any build config.
+
+# RDMA-over-host (Phase A): bounce-buffer geometry/allocator + wire codec.
+add_executable(kv_bounce_buffer_test
+    tests/unit/transport/kv_bounce_buffer_test.cpp)
+target_link_libraries(kv_bounce_buffer_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(kv_bounce_buffer_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# RDMA-over-host (Phase A): bounce data plane (sender -> bounce buffer -> receiver ->
+# device), single- and multi-window; in-memory fakes, host-only.
 add_executable(mooncake_kv_migration_test
     tests/unit/transport/mooncake_kv_migration_test.cpp)
 target_link_libraries(mooncake_kv_migration_test PRIVATE transport_lib GTest::gtest_main)
@@ -929,12 +955,32 @@ target_include_directories(mooncake_kv_migration_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# Control-channel orchestration: drives BeginMigration/MirrorReady/DoneMarker/Ack
-# end to end over a blocking loopback channel (receiver on its own thread).
+# RDMA-over-host (Phase A): bounce orchestration end to end over a loopback
+# channel (BounceReady -> WindowReady/WindowAck* -> DoneMarker/Ack).
 add_executable(kv_migration_orchestrator_test
     tests/unit/transport/kv_migration_orchestrator_test.cpp)
 target_link_libraries(kv_migration_orchestrator_test PRIVATE transport_lib GTest::gtest_main)
 target_include_directories(kv_migration_orchestrator_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# RDMA-over-host (Phase B): DriscDeviceIo build/link + no-hardware graceful
+# degradation (the DRISC data path itself is the Phase B6 HW gate). Linking this
+# also verifies the DRISC TUs resolve with no undefined symbols.
+add_executable(drisc_device_io_test
+    tests/unit/transport/drisc_device_io_test.cpp)
+target_link_libraries(drisc_device_io_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(drisc_device_io_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# RDMA-over-host (Phase B3): the double-pinned buffer (engine ibv_reg_mr + device
+# NOC-map on one aligned arena) + KvStagingPool adoption, with a recording device
+# map (no HW).
+add_executable(double_pinned_buffer_test
+    tests/unit/transport/double_pinned_buffer_test.cpp)
+target_link_libraries(double_pinned_buffer_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(double_pinned_buffer_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -1414,12 +1460,14 @@ set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2E
 gtest_discover_tests(transport_test)
 gtest_discover_tests(dynamo_protocol_test)
 gtest_discover_tests(kube_discovery_test)
-gtest_discover_tests(kv_cache_addressing_test)
 gtest_discover_tests(worker_health_server_test)
 gtest_discover_tests(kv_table_adapter_test)
 gtest_discover_tests(kv_control_channel_test)
+gtest_discover_tests(kv_bounce_buffer_test)
 gtest_discover_tests(mooncake_kv_migration_test)
 gtest_discover_tests(kv_migration_orchestrator_test)
+gtest_discover_tests(drisc_device_io_test)
+gtest_discover_tests(double_pinned_buffer_test)
 gtest_discover_tests(mooncake_migration_executor_test)
 gtest_discover_tests(kv_migration_endpoints_test)
 gtest_discover_tests(engine_table_handoff_test)

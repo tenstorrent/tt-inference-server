@@ -102,7 +102,7 @@ TEST(KvControlMessage, RoundTripsAllKinds) {
   kinds.push_back(table);
 
   KvControlMessage ready;
-  ready.type = KvControlType::MIRROR_READY;
+  ready.type = KvControlType::BOUNCE_READY;
   ready.uuid = 7;
   ready.segment_name = "decode-A:127.0.0.1:18632";
   kinds.push_back(ready);
@@ -153,7 +153,7 @@ TEST(KvControlChannel, LoopbackDeliversMessage) {
 
   // A reply flows back the other way.
   KvControlMessage ready;
-  ready.type = KvControlType::MIRROR_READY;
+  ready.type = KvControlType::BOUNCE_READY;
   ready.uuid = beginMsg().uuid;
   ready.segment_name = "seg-1";
   ASSERT_TRUE(receiverCh.send(ready));
@@ -284,7 +284,7 @@ TEST(KvControlChannel, IdleTimeoutDoesNotDisconnect) {
 TEST(KvControlChannel, ReceiveWaitsThroughNoDataThenDelivers) {
   Queue inbox, peer;
   KvControlMessage ready;
-  ready.type = KvControlType::MIRROR_READY;
+  ready.type = KvControlType::BOUNCE_READY;
   ready.uuid = beginMsg().uuid;
   ready.segment_name = "seg-after-delay";
   inbox.emplace_back(ready.serialize());
@@ -295,7 +295,7 @@ TEST(KvControlChannel, ReceiveWaitsThroughNoDataThenDelivers) {
 
   const auto got = ch.receive();
   ASSERT_TRUE(got.has_value());
-  EXPECT_EQ(got->type, KvControlType::MIRROR_READY);
+  EXPECT_EQ(got->type, KvControlType::BOUNCE_READY);
   EXPECT_EQ(got->segment_name, "seg-after-delay");
 }
 

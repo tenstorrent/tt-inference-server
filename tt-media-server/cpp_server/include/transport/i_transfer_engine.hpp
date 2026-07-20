@@ -73,9 +73,10 @@ class ITransferEngine {
    *        buffers[0]), or nullptr if none.
    *
    * Remote WRITEs resolve against the peer's buffers[0]
-   * (`mooncake_transfer_engine.cpp`). Table exchange + KV mirror both rely on
-   * that slot: exchange registers the recv region first, unregisters it, then
-   * the mirror must become buffers[0]. Engines that track registration order
+   * (`mooncake_transfer_engine.cpp`). Table exchange + the bounce buffer both
+   * rely on that slot: exchange registers the recv region first, unregisters
+   * it, then the bounce buffer must become buffers[0]. Engines that track
+   * registration order
    * override this; the default returns nullptr (unknown).
    */
   virtual void* firstRegisteredLocalBuffer() const { return nullptr; }

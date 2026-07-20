@@ -23,8 +23,9 @@ namespace tt::transport {
  * generic ITransferEngine interface (init → installTransport →
  * registerLocalMemory → openSegment → submit), and composes it with an
  * IStorageBackend so the two mechanisms #3890 calls out — transport (Mooncake
- * TCP/RDMA) and storage (host/device DRAM) — are wired together here. Passing a
- * DeviceDramStorageBackend yields the custom UMD-backed device-DRAM path.
+ * TCP/RDMA) and storage (host DRAM) — are wired together here. Device DRAM is
+ * addressed on the data plane by the migrators' IDeviceIo (DriscDeviceIo), not
+ * through a storage backend.
  *
  * The wrapped engine lives behind a pimpl so this header stays free of Mooncake
  * includes; the real type is pulled in only by the .cpp.
@@ -83,7 +84,7 @@ class MooncakeTransferEngine : public ITransferEngine {
  private:
   std::shared_ptr<IStorageBackend> storage_;
   // Mirrors Mooncake's local buffer list order (append / erase-by-addr) so we
-  // can assert buffers[0] after table-exchange → mirror handoff.
+  // can assert buffers[0] after the table-exchange → bounce-buffer handoff.
   std::vector<void*> registeredLocalBuffers_;
 
   // Hides the underlying mooncake::TransferEngine from this header.

@@ -3,8 +3,10 @@
 
 #include "transport/kv_control_message.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
+#include <utility>
 
 namespace tt::transport {
 
@@ -65,6 +67,10 @@ class Reader {
     return true;
   }
 
+  /// Bytes not yet consumed. Used to cap reservations against an
+  /// attacker-controlled count before reading its elements.
+  std::size_t remaining() const { return bytes.size() - pos; }
+
  private:
   std::span<const uint8_t> bytes;
   std::size_t pos = 0;
@@ -96,6 +102,20 @@ std::vector<uint8_t> KvControlMessage::serialize() const {
   putU8(out, ok ? 1 : 0);
   putU8(out, role);
   putBytes(out, table_blob.data(), static_cast<uint32_t>(table_blob.size()));
+  // Bounce trailing fields (zero/empty on message types that don't use them).
+  putU32(out, bounce_section_count);
+  putU64(out, bounce_section_size);
+  putU32(out, credits);
+  putU32(out, static_cast<uint32_t>(window.size()));
+  for (const BounceSectionDescriptor& d : window) {
+    putU64(out, d.section_offset);
+    putU64(out, d.size);
+    putU32(out, static_cast<uint32_t>(d.targets.size()));
+    for (const DrainTarget& t : d.targets) {
+      putU32(out, t.device);
+      putU64(out, t.noc_addr);
+    }
+  }
   return out;
 }
 
@@ -106,7 +126,7 @@ std::optional<KvControlMessage> KvControlMessage::deserialize(
   uint8_t type = 0;
   if (!r.getU8(type)) return std::nullopt;
   if (type < static_cast<uint8_t>(KvControlType::TABLE_EXCHANGE) ||
-      type > static_cast<uint8_t>(KvControlType::ACK)) {
+      type > static_cast<uint8_t>(KvControlType::WINDOW_ACK)) {
     return std::nullopt;
   }
   m.type = static_cast<KvControlType>(type);
@@ -122,6 +142,38 @@ std::optional<KvControlMessage> KvControlMessage::deserialize(
   m.ok = ok != 0;
   if (!r.getU8(m.role)) return std::nullopt;
   if (!r.getBytes(m.table_blob)) return std::nullopt;
+  if (!r.getU32(m.bounce_section_count)) return std::nullopt;
+  if (!r.getU64(m.bounce_section_size)) return std::nullopt;
+  if (!r.getU32(m.credits)) return std::nullopt;
+  uint32_t windowLen = 0;
+  if (!r.getU32(windowLen)) return std::nullopt;
+  // Cap the reservation at what the remaining bytes could actually hold: a
+  // descriptor is >= 20 wire bytes (u64 offset + u64 size + u32 target count),
+  // so a count larger than remaining/20 is malformed. Without this, an
+  // attacker-controlled uint32 count triggers a multi-GB reserve() (bad_alloc)
+  // before any element is read. The loop below still enforces the true bound.
+  constexpr std::size_t kMinDescriptorBytes = 20;
+  m.window.reserve(
+      std::min<std::size_t>(windowLen, r.remaining() / kMinDescriptorBytes));
+  for (uint32_t i = 0; i < windowLen; ++i) {
+    BounceSectionDescriptor d;
+    if (!r.getU64(d.section_offset)) return std::nullopt;
+    if (!r.getU64(d.size)) return std::nullopt;
+    uint32_t targetLen = 0;
+    if (!r.getU32(targetLen)) return std::nullopt;
+    // Same cap for the per-descriptor target list: a DrainTarget is 12 wire
+    // bytes (u32 device + u64 noc_addr).
+    constexpr std::size_t kMinTargetBytes = 12;
+    d.targets.reserve(
+        std::min<std::size_t>(targetLen, r.remaining() / kMinTargetBytes));
+    for (uint32_t j = 0; j < targetLen; ++j) {
+      DrainTarget t;
+      if (!r.getU32(t.device)) return std::nullopt;
+      if (!r.getU64(t.noc_addr)) return std::nullopt;
+      d.targets.push_back(t);
+    }
+    m.window.push_back(std::move(d));
+  }
   return m;
 }
 

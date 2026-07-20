@@ -105,10 +105,37 @@ bool MooncakeTransferEngine::init(const EngineConfig& config) {
     return true;
   }
 
-  // auto_discover=false: topology discovery is for RDMA NIC selection and not
-  // needed for the TCP PoC.
+  // auto_discover drives Mooncake's RDMA NIC topology discovery (which NICs are
+  // present and how they map to CPUs/segments). RDMA needs it so
+  // installTransport("rdma", nullptr) can pick a NIC without a hand-supplied
+  // topology matrix; TCP doesn't use it, so leave it off there to skip the
+  // discovery probe at startup.
+  const bool autoDiscover = (config.protocol == TransportProtocol::RDMA);
+  // NIC filter (Mooncake's discovery allowlist of device names, e.g. "mlx5_0").
+  // Empty => discover every present NIC (single-NIC hosts get their one NIC).
+  // Non-empty => restrict discovery to exactly these devices, for multi-NIC
+  // hosts. Only the auto-discover (RDMA) path consumes it; warn if set for TCP.
+  if (!config.rdma_nic_filter.empty() && !autoDiscover) {
+    TT_LOG_WARN(
+        "[MooncakeTransferEngine] rdma_nic_filter set but protocol is TCP; "
+        "the NIC filter is ignored (it only applies to RDMA discovery)");
+  }
   impl_->engine =
-      std::make_unique<mooncake::TransferEngine>(/*auto_discover=*/false);
+      (autoDiscover && !config.rdma_nic_filter.empty())
+          ? std::make_unique<mooncake::TransferEngine>(autoDiscover,
+                                                       config.rdma_nic_filter)
+          : std::make_unique<mooncake::TransferEngine>(autoDiscover);
+  if (autoDiscover && !config.rdma_nic_filter.empty()) {
+    std::string nics;
+    for (const auto& n : config.rdma_nic_filter) {
+      if (!nics.empty()) nics += ",";
+      nics += n;
+    }
+    TT_LOG_INFO(
+        "[MooncakeTransferEngine] RDMA NIC filter active: discovery limited to "
+        "[{}]",
+        nics);
+  }
 
   const auto hostPort =
       mooncake::parseHostNameWithPort(config.local_server_name);

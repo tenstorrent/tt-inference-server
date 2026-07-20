@@ -31,7 +31,13 @@ worker path (Kafka).
 | 1→1, 1 galaxy (HW) | `MODE=device bash tests/e2e/scripts/run_transport_kv_migration_e2e.sh` |
 | 2 galaxies, 1→1 (HW) | `ROLE`-split single-host script — see §7.5 |
 | N galaxies, 1→N (HW) | `ROLE=receiver` per decode host + `ROLE=sender` — see §7.6 |
+| 1→1 or 1→N over **RDMA** (HW) | add `PROTOCOL=rdma` to the §7.5 / §7.6 split — see §7.8 |
 | Production worker, 2 galaxies, Kafka | `mooncake_kv_migration_worker` + `kv_seed_verify` — see §13 |
+
+The **Mooncake wire transport defaults to TCP**; `PROTOCOL=rdma` (harness) /
+`--protocol rdma` (worker) switches the per-window data WRITEs to one-sided RDMA.
+RDMA needs a real RNIC and is a cross-host path (§7.8) — the no-HW host-mode
+rows above stay TCP.
 
 Every run ends with `RESULT: PASS` (or `FAIL`) and prints `[migration] …`
 timing lines. `verification: PASS` means the bytes arrived correct.
@@ -50,9 +56,11 @@ Pick the build for the scenario. From `tt-media-server/cpp_server/`:
 export TT_METAL_HOME="$PWD/tt-llm-engine/tt-metal"     # absolute path
 ./build.sh --mooncake --kv-table
 
-# device mode (real device DRAM via coexistence UMD) — needs tt-metal + HW:
+# device mode (real device DRAM via DRISC NOC-DMA) — needs tt-metal + HW:
 export TT_METAL_HOME="$PWD/tt-llm-engine/tt-metal"
 ./build.sh --blaze --mooncake --kv-table
+# device mode also needs the DRISC service-kernel ELF at run time:
+export MIGRATION_DRISC_SERVICE_ELF=/path/to/drisc_service.elf
 
 # add the Kafka trigger (only needed for --trigger kafka):
 ./build.sh --blaze --mooncake --kv-table --kafka
@@ -69,16 +77,18 @@ Notes:
 
 ---
 
-## 2. Modes, tables, triggers (what the knobs mean)
+## 2. Modes, tables, transport, triggers (what the knobs mean)
 
 **`--mode`**
 - `host` — device I/O is an in-process host-memory store. **No hardware.** The
   bytes still flow over real Mooncake TCP between processes, so it exercises
   addressing + transport + orchestration + byte-verify, but the numbers are
   loopback memcpy, **not** a real transfer-time.
-- `device` — device I/O is the coexistence UMD (`read_dram`/`write_dram` on real
-  chip DRAM, no `start_device`, no flock). **Needs hardware** and a `--blaze`
-  build. This is the only mode that gives a real transfer-time.
+- `device` — device I/O is DRISC NOC-DMA over the coexistence UMD path (opens
+  the chip via the raw UMD Cluster, no `start_device`, no flock; the transfer
+  itself is the on-device DRISC service kernel). **Needs hardware**, a `--blaze`
+  build, and `MIGRATION_DRISC_SERVICE_ELF` set. This is the only mode that gives
+  a real transfer-time.
 
 **`--table`**
 - `builtin` — tiny reduced single-host table (2 layers, 64 B chunks, 512 B
@@ -90,6 +100,25 @@ Notes:
 - `<prefill.pb>` (+ `--decode-table <decode.pb>`) — the real
   `KvChunkAddressTable`s. Real addresses, real 19584 B chunks. Needs
   `--kv-table`.
+
+**`--transport`** — the KV data plane. `bounce` is the only path: a small
+double-pinned bounce buffer on the decode side, filled window-by-window by the
+sender and drained to device (the "RDMA-over-host" architecture, so named
+whether the wire is TCP or RDMA). There is no full-table mirror; each window's
+`WindowReady` carries the section descriptors telling the receiver where to
+drain. Scripts default `TRANSPORT=bounce`.
+
+**`--protocol`** — the Mooncake **wire** underneath the bounce data plane.
+- `tcp` (**default**) — per-window WRITEs go over Mooncake TCP. Works with no
+  RNIC, including single-box loopback; this is what every host-mode path uses.
+- `rdma` — per-window WRITEs are one-sided RDMA. The double-pinned staging /
+  bounce buffers become the `ibv_reg_mr`'d MRs the NIC targets (still NOC-mapped
+  for device DMA). **Needs a real RNIC + libibverbs**, and is effectively a
+  **cross-host** path (loopback RDMA generally won't work). RDMA is always
+  compiled into a `--mooncake` build — there is no separate build flag. See §7.8.
+  On a host with no RNIC it fails fast with `RdmaTransport: No available RNIC →
+  installTransport(rdma) failed`. The bounce data plane code is identical either
+  way — only the installed transport differs. Scripts: `PROTOCOL=tcp|rdma`.
 
 **`--trigger`** (sender)
 - `cli` (default) — the sender calls `migrate()` directly. `migrate_total` =
@@ -106,7 +135,8 @@ by default (`SEED_VERIFY=1`). Set `SEED_VERIFY=0` for a real table against a
 **live model** (don't overwrite real KV).
 
 **`--device-map FILE`** — device mode only. Lines `mesh chip umd_chip_id`. Maps
-each table `FabricNode` to the UMD chip to open. Omit it to use the placeholder
+each table `FabricNode` to the chip to open, by 64-bit ASIC unique_id (resolved
+to a local device index at open). Omit it to use the placeholder
 `chip = table_chip_id`; if the placeholder is wrong on your cluster the
 byte-verify FAILS — that's your signal to supply the map. See §9.
 
@@ -151,11 +181,16 @@ sender:
 1. **Control channel** — a TCP port the *receiver* listens on and the *sender*
    connects to (`--control-port` on the receiver; `--control-host` +
    `--control-port` on the sender, or `--peer-control HOST=ip:port` per decode
-   host). Carries Begin/MirrorReady/Done/Ack.
-2. **Mooncake segment name** — `--mooncake-name ip:port`. The harness uses
-   `P2PHANDSHAKE` (no metadata server), so the sender opens the receiver's
-   segment by **connecting to that `ip:port`**. It must be a **routable** address
-   and an **open port**, distinct per process.
+   host). Carries Begin/BounceReady/[WindowReady/WindowAck]*/Done/Ack.
+2. **Mooncake segment name** — `--mooncake-name ip:port`. The harness defaults
+   to `P2PHANDSHAKE` (`METADATA=P2PHANDSHAKE`), so the sender opens the
+   receiver's segment by **connecting to that `ip:port`** — it must be a
+   **routable** address and an **open port**, distinct per process. To resolve
+   segments through a metadata service instead, pass `METADATA=<uri>` (e.g.
+   `http://HOST:PORT/metadata`) to every process; the receiver registers its
+   segment there and the sender resolves it by name. This only changes
+   data-plane segment discovery — the control channel is still the direct
+   `--control-host`/`--peer-control` dial above.
 
 So per decode host you need: a control port and a Mooncake port, both reachable
 from the prefill host. On loopback (one box) use `127.0.0.1` and distinct ports.
@@ -346,6 +381,53 @@ one layer:
 --layer-begin 0 --layer-end 1 --pos-begin 0 --pos-end 3424
 ```
 
+### 7.8 Running over RDMA (`PROTOCOL=rdma`)
+
+The bounce data plane is transport-agnostic; `rdma` only changes the Mooncake
+wire (one-sided RDMA instead of TCP for the per-window WRITEs). It is an
+**overlay on the §7.5 / §7.6 cross-host runs** — same commands, plus
+`PROTOCOL=rdma`.
+
+**Prerequisites**
+- **Build:** any `--mooncake` build (RDMA is always compiled in — no extra flag).
+  `libibverbs` must be present at run time (it enumerates the NIC).
+- **NIC:** a real RDMA NIC (RNIC, e.g. `mlx5_0`) visible to libibverbs on each
+  host. No RNIC ⇒ `RdmaTransport: No available RNIC` and the engine init fails.
+- **Fabric:** RDMA reachability **between the two hosts** (same RoCE/IB fabric).
+  RDMA is a cross-host path — single-box loopback generally won't work, so keep
+  the no-HW / one-box smoke runs on TCP.
+- The Mooncake handshake/metadata bootstrap still goes over TCP even under RDMA,
+  so `MC_TCP_BIND_ADDRESS` / the routable `--mooncake-name ip:port` still apply
+  (§5); only the data WRITEs move to RDMA.
+
+**Harness (2 galaxies, 1→1)** — the §7.5 commands with `PROTOCOL=rdma` on both
+sides. The harness auto-discovers the single present NIC (it has no
+NIC-selection flag):
+```bash
+# decode host, FIRST:
+ROLE=receiver MODE=device PROTOCOL=rdma \
+  TABLE=/path/decoder.pb DECODE_HOST=<decode-tag> \
+  RECV_NAME="${DECODE_IP}:17777" CONTROL_PORT=18650 \
+  LAYER_BEGIN=0 LAYER_END=1 POS_BEGIN=0 POS_END=3424 \
+  bash tests/e2e/scripts/run_transport_kv_migration_e2e.sh
+# prefill host:
+ROLE=sender MODE=device PROTOCOL=rdma \
+  TABLE=/path/prefill.pb DECODE_TABLE=/path/decoder.pb \
+  PREFILL_HOST=<prefill-tag> DECODE_HOST=<decode-tag> \
+  SEND_NAME="${PREFILL_IP}:17778" \
+  CONTROL_HOST="${DECODE_IP}" CONTROL_PORT=18650 \
+  LAYER_BEGIN=0 LAYER_END=1 POS_BEGIN=0 POS_END=3424 \
+  bash tests/e2e/scripts/run_transport_kv_migration_e2e.sh
+```
+**Harness (N galaxies, 1→N)** — the §7.6 `ROLE=receiver`/`ROLE=sender` commands
+with `PROTOCOL=rdma` added to every command.
+
+**Production worker** — pass `--protocol rdma` (or `MIGRATION_MOONCAKE_PROTOCOL=rdma`)
+to every worker (§13.6). On a multi-NIC host, pin the NIC(s) with repeatable
+`--rdma-nic mlx5_0` (or `MIGRATION_RDMA_NICS=mlx5_0,mlx5_1`); the default (no
+filter) auto-discovers the single present NIC. The NIC filter is a **worker-only**
+knob — the e2e harness always auto-discovers.
+
 ---
 
 ## 8. Reading the timing / performance
@@ -361,7 +443,7 @@ Each run prints, per side:
     **data-plane transfer time**. Use this for "how long to move X".
   - `--trigger kafka`: also includes Kafka produce/consume/ack → the **deployed
     worker latency**.
-- `serve_total` (receiver) = prepareMirror + drain (its share).
+- `serve_total` (receiver) = bounce-buffer register + windowed drain (its share).
 - `GB/s` = `bytes / time`. Real tables use **2-replica** device groups, so the
   wire actually carries ~2× `bytes` (each chunk written to both replicas);
   interpret throughput accordingly.
@@ -379,9 +461,9 @@ reflects that (not a pipelined ideal).
 ## 9. Device map: do you need it?
 
 Each worker only opens its **own host's local chips** (cross-host movement is
-Mooncake, not device fabric). The placeholder passes `chip = table_chip_id` to
-the UMD. That is correct **iff** each worker host owns chips from **one mesh**
-and the UMD local index equals the table's chip id.
+Mooncake, not device fabric). The placeholder opens `chip = table_chip_id`
+directly as a device index. That is correct **iff** each worker host owns chips
+from **one mesh** and the local device index equals the table's chip id.
 
 **Detector:** run `--mode device --seed-verify`. If `verification: PASS`, you do
 **not** need a device map. If it byte-mismatches while host mode passes, supply
@@ -422,13 +504,17 @@ printed `bytes=`. (Verify your table's `chunk_size_bytes`/`chunk_n_tokens` — t
 ## 11. Script env-var reference
 
 **`run_transport_kv_migration_e2e.sh`** (1→1):
-`ROLE` (both|receiver|sender), `MODE`, `TABLE`, `DECODE_TABLE`, `CONTROL_HOST`,
+`ROLE` (both|receiver|sender), `MODE`, `PROTOCOL` (tcp|rdma, default tcp),
+`TRANSPORT` (bounce, the only path), `METADATA` (default P2PHANDSHAKE; a service
+URI resolves segments via that service), `TABLE`, `DECODE_TABLE`, `CONTROL_HOST`,
 `CONTROL_PORT` (18650), `RECV_NAME`/`SEND_NAME` (127.0.0.1:17777/17778),
 `SLOT`, `LAYER_BEGIN`/`LAYER_END`, `POS_BEGIN`/`POS_END`, `TIMEOUT_SEC`,
 `SEED_VERIFY` (1), `DEVICE_MAP`.
 
 **`run_transport_kv_migration_e2e_multihost.sh`** (1→N):
-`ROLE` (both|receiver|sender), `MODE`, `SEED_VERIFY` (1), `DEVICE_MAP`,
+`ROLE` (both|receiver|sender), `MODE`, `PROTOCOL` (tcp|rdma, default tcp),
+`TRANSPORT` (bounce, the only path), `METADATA` (default P2PHANDSHAKE; a service
+URI resolves segments via that service), `SEED_VERIFY` (1), `DEVICE_MAP`,
 `SLOT`/`LAYER_*`/`POS_*`, `TIMEOUT_SEC`, `TRIGGER` (cli|kafka),
 `KAFKA_BROKERS` (localhost:9092). Then per role:
 - **both** (one box): `TABLE` (builtin2|prefill.pb), `DECODE_TABLE`,
@@ -465,6 +551,12 @@ Note `PEERS` differs by role: `both` uses `tag:cport:mport` (shared `HOST_IP`);
   wrong; supply `DEVICE_MAP` (§9).
 - **`Local segment descriptor not found`** (Mooncake) → benign P2PHANDSHAKE
   bootstrap log, not a failure; check the final `RESULT:` line.
+- **`RdmaTransport: No available RNIC` / `installTransport(rdma) failed`** (only
+  under `PROTOCOL=rdma` / `--protocol rdma`) → no RDMA NIC visible to libibverbs
+  on this host. Use a host with an RNIC (and a cross-host run — loopback RDMA
+  won't work), or drop back to TCP (`PROTOCOL=tcp`, the default). On a multi-NIC
+  host where discovery picks the wrong NIC, pin it with the worker's
+  `--rdma-nic` / `MIGRATION_RDMA_NICS` (§13.6). See §7.8.
 
 ---
 
@@ -533,8 +625,9 @@ python3 scripts/migration_cli.py status && python3 scripts/migration_cli.py setu
 
 Prefill `PREFILL_IP`, decode `DECODE_IP` (routable LAN IPs, both containers
 `--network host` — see §5). Every device binary needs `TT_METAL_HOME` +
-`TT_METAL_RUNTIME_ROOT`; the CLI and prefill worker need `KAFKA_BROKERS`. Keep
-these in a `~/env.sh` and `source` it in each shell.
+`TT_METAL_RUNTIME_ROOT` + `MIGRATION_DRISC_SERVICE_ELF` (the DRISC service
+kernel); the CLI and prefill worker need `KAFKA_BROKERS`. Keep these in a
+`~/env.sh` and `source` it in each shell.
 
 **Decode worker (`DECODE_IP`) — start first:**
 ```bash
@@ -564,7 +657,7 @@ hosts):
 python3 scripts/migration_cli.py produce --migration-id 702 \
   --src-slot 5 --dst-slot 5 --layer-begin 32 --layer-end 36 \
   --src-pos-begin 0 --src-pos-end 61408 --dst-pos-begin 0 --dst-pos-end 61408
-#   decode worker: prepareMirror(...) ready -> drain -> OK
+#   decode worker: bounce buffer ready -> windowed drain -> OK
 #   prefill worker: migrate(...) complete + SUCCESSFUL ack
 
 # decode: verify AFTER the ack
@@ -585,19 +678,24 @@ aliasing (only `kv_seed_verify` would). Prefill is typically single-mesh → no
 map. Pass the **same** map to the decode worker and to `kv_seed_verify --mode
 verify`. Build it by listing the host's `(mesh, chip)` nodes from the table and
 giving each its chip's 64-bit ASIC `umd_chip_id` (the same value as §9 /
-`print_local_device_map`), which the worker resolves to the local UMD device
-index at open — do **not** hand-assign a small local index.
+`print_local_device_map`), which the worker resolves to the local device index
+at open — do **not** hand-assign a small local index.
 
 ### 13.6 Worker CLI reference
 
 `mooncake_kv_migration_worker --role prefill|decode --metadata URI --name NAME
---host TAG [--device-map FILE]`
+--host TAG [--device-map FILE] [--protocol tcp|rdma] [--rdma-nic NAME]…`
 - **prefill:** `--prefill-table P.pb --decode-table D.pb --peer-control
   NAME=host:port` (repeatable). Kafka via env: `KAFKA_BROKERS`,
   `KAFKA_MIGRATION_REQUEST_TOPIC`, `KAFKA_MIGRATION_ACK_TOPIC`, `KAFKA_GROUP_ID`.
 - **decode:** `--table D.pb --control-port N [--segment NAME]`. Leave `--segment`
   unset under P2PHANDSHAKE — it defaults to the engine's live server name (the
   auto-assigned RPC endpoint the sender must open).
+- **both roles (transport):** `--protocol tcp|rdma` (default `tcp`; env fallback
+  `MIGRATION_MOONCAKE_PROTOCOL`, flag wins). Under `rdma`, pin the NIC(s) on a
+  multi-NIC host with repeatable `--rdma-nic mlx5_0` (env fallback
+  `MIGRATION_RDMA_NICS=mlx5_0,mlx5_1`); default (no filter) auto-discovers the
+  single present NIC. Pass the **same** `--protocol` to every worker. See §7.8.
 
 ### 13.7 Worker gotchas
 
@@ -610,7 +708,8 @@ index at open — do **not** hand-assign a small local index.
   `--role decode`.
 - `migration_cli.py --brokers` is a **global** flag (before the subcommand);
   simplest is `export KAFKA_BROKERS=localhost:9092`.
-- Throughput is latency-bound (serial per-chunk one-sided writes); the decode
-  mirror registration (seconds, proportional to the full host KV region) is a
-  one-time startup cost, separate from per-migration transfer time.
+- Throughput is latency-bound (serial per-chunk one-sided writes). The decode
+  bounce buffer is a small fixed-size registration (tens of MiB, independent of
+  the host KV size) done once at startup, separate from per-migration transfer
+  time.
 - Decode replicas are 2-way, so the wire carries ~2× the logical bytes (§8).

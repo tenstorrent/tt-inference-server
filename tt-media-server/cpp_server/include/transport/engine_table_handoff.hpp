@@ -47,7 +47,8 @@ bool sendEngineHandoff(sockets::ISocketTransport& transport,
 std::optional<DeviceMap> receiveEngineHandoff(
     sockets::ISocketTransport& transport);
 
-/// Seam: where the worker gets its DeviceMap from the engine / deploy bridge.
+/// Interface: where the worker gets its DeviceMap from the engine / deploy
+/// bridge.
 class IEngineDeviceMapSource {
  public:
   virtual ~IEngineDeviceMapSource() = default;
