@@ -3121,6 +3121,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+
             ),
             EvalTask(
                 task_name="longbench_fewshot_e",
@@ -3139,6 +3140,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_multi_e",
+                apply_chat_template=False,
                 min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
@@ -3154,6 +3156,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_single_e",
+                apply_chat_template=False,
                 min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
@@ -3169,6 +3172,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_summarization_e",
+                apply_chat_template=False,
                 min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
@@ -3184,6 +3188,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_synthetic_e",
+                apply_chat_template=False,
                 min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
@@ -3285,6 +3290,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_code_e",
+                apply_chat_template=False,
                 min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
@@ -3300,6 +3306,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_fewshot_e",
+                apply_chat_template=False,
                 min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
