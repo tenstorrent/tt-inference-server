@@ -48,6 +48,7 @@ enum class ModelType {
   KIMI_K2_7_CODE,
   GPT_OSS_120B,
   MINIMAX_M2_7,
+  MINIMAX_M3,
   GLM_5_1,
   GLM_5_2,
   DEEPSEEK_V4_PRO,
@@ -82,6 +83,7 @@ inline LLMMode llmModeFromString(const std::string& v) {
 enum class ModelRunnerType {
   MOCK,
   MOCK_PIPELINE,
+  MOCK_SCHEDULER,
   PIPELINE_MANAGER,
   TT_SDXL_GENERATE,
   TT_SDXL_IMAGE_TO_IMAGE,
@@ -95,6 +97,7 @@ enum class Model {
   KIMI_K2_7_CODE,
   GPT_OSS_120B,
   MINIMAX_M2_7,
+  MINIMAX_M3,
   GLM_5_1,
   GLM_5_2,
   DEEPSEEK_V4_PRO,
@@ -112,6 +115,7 @@ static constexpr ModelMapping MODEL_MAPPINGS[] = {
     {Model::KIMI_K2_7_CODE, "moonshotai/Kimi-K2.7-Code"},
     {Model::GPT_OSS_120B, "openai/gpt-oss-120b"},
     {Model::MINIMAX_M2_7, "MiniMaxAI/MiniMax-M2.7"},
+    {Model::MINIMAX_M3, "MiniMaxAI/MiniMax-M3"},
     {Model::GLM_5_1, "zai-org/GLM-5.1"},
     {Model::GLM_5_2, "zai-org/GLM-5.2"},
     {Model::DEEPSEEK_V4_PRO, "deepseek-ai/DeepSeek-V4-Pro"},
@@ -130,6 +134,8 @@ inline std::string toString(ModelRunnerType m) {
       return "mock";
     case ModelRunnerType::MOCK_PIPELINE:
       return "mock_pipeline";
+    case ModelRunnerType::MOCK_SCHEDULER:
+      return "mock_scheduler";
     case ModelRunnerType::PIPELINE_MANAGER:
       return "pipeline_manager";
     case ModelRunnerType::TT_SDXL_GENERATE:
@@ -153,6 +159,7 @@ inline std::string toClientRunnerName(ModelRunnerType m) {
       return "tt-sdxl-edit";
     case ModelRunnerType::MOCK:
     case ModelRunnerType::MOCK_PIPELINE:
+    case ModelRunnerType::MOCK_SCHEDULER:
     case ModelRunnerType::PIPELINE_MANAGER:
       return "";
   }
@@ -171,17 +178,5 @@ enum class ResponseFormatType : uint8_t {
   JSON_OBJECT = 1,
   JSON_SCHEMA = 2
 };
-
-enum class SchedulingPolicy {
-  PREFILL_FIRST,
-  MAX_OCCUPANCY,
-};
-
-/** Parse SCHEDULING_POLICY; empty or unknown -> PREFILL_FIRST. Expects
- * lowercase input. */
-inline SchedulingPolicy schedulingPolicyFromString(const std::string& v) {
-  if (v == "max_occupancy") return SchedulingPolicy::MAX_OCCUPANCY;
-  return SchedulingPolicy::PREFILL_FIRST;
-}
 
 }  // namespace tt::config

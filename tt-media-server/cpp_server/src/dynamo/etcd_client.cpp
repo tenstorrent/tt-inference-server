@@ -64,7 +64,7 @@ std::string base64Encode(const std::string& in) {
 
 // ---------------------------------------------------------------------------
 // URL parsing for etcd endpoints lives in include/utils/net.hpp (parseUrl) so
-// the DynamoEndpoint advertise-host detection can share it.
+// the DynamoWorkerServer advertise-host detection can share it.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

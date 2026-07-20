@@ -25,7 +25,7 @@ The worker resolves behavior from `MODEL` (HF id) → `ModelType`
 (`settings.cpp::modelType`), which selects the tokenizer dir, the tokenizer impl
 (default `DeepseekTokenizer`), and the **static token info** (eos/stop/think ids).
 The Dynamo frontend, separately, reads the **MDC** the worker publishes in
-`discovery.cpp` to learn the tokenizer files, the `generation_config.json`, and
+`src/dynamo/discovery.cpp` to learn the tokenizer files, the `generation_config.json`, and
 which **reasoning/tool-call parsers** to apply. Both halves must agree.
 
 The recurring failure mode: the model loads but a table wasn't updated — falls
@@ -45,6 +45,8 @@ the model because `eos_token_id` is absent (model carries it only in
    id in `src/config/settings.cpp` `modelType()`
    (`if (m == "<hf-id>") return ModelType::X;`) — without it the worker silently
    serves as DeepSeek.
+   In src/config/settings.cpp, in resolveBlazeNumberOfPipelineStages, add the case for the model
+   Ask the user for the number of stages, if he did not already specify this
 
 3. **Fetch tokenizer files** in `scripts/fetch_tokenizers.sh` so
    `tokenizers/<hf-id>/` has **tokenizer.json, tokenizer_config.json, config.json,

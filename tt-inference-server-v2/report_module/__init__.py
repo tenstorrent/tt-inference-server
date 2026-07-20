@@ -7,6 +7,7 @@ from report_module.acceptance_criteria import (
     acceptance_criteria_check,
     build_acceptance_export,
     format_acceptance_summary_markdown,
+    task_failure_blockers,
 )
 from report_module.generator import (
     GenerateResult,
@@ -25,6 +26,7 @@ __all__ = [
     "SchemaLike",
     "ACCEPTANCE_EXPORT_KEYS",
     "acceptance_criteria_check",
+    "task_failure_blockers",
     "build_acceptance_export",
     "format_acceptance_summary_markdown",
     "generate_report",

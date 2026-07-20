@@ -30,10 +30,20 @@ class AgenticEvalDriver(LLMDriver):
     def __init__(self, task: Any, *, runtime_config: Any = None) -> None:
         self.task = task
         self.runtime_config = runtime_config
-        self._parser = AgenticEvalParser(task_name=task.task_name, score=task.score)
+        self.venv_python = _agentic_venv_python()
+        self._parser = AgenticEvalParser(
+            task_name=task.task_name,
+            score=task.score,
+            limit_mode=_get_limit_mode(runtime_config),
+        )
 
     def result_path(self, server: ServerConnection, context: DriverContext) -> Path:
-        output_dir = _agentic_output_dir(context.output_dir, server.model, self.task)
+        output_dir = _agentic_output_dir(
+            context.output_dir,
+            server.model,
+            self.task,
+            release_layout=context.agentic_release_layout,
+        )
         return output_dir / "result.json"
 
     def failure_block(self, *, return_code: int, device: str = ""):
@@ -57,6 +67,7 @@ class AgenticEvalDriver(LLMDriver):
             task_name=self.task.task_name,
             score=self.task.score,
             result_path=result_path,
+            limit_mode=_get_limit_mode(self.runtime_config),
         )
         return DriverResult(return_code=rc, raw=raw, raw_path=result_path)
 
@@ -83,6 +94,7 @@ class SWEbenchAgenticDriver(AgenticEvalDriver):
             context,
             runtime_config=self.runtime_config,
             n_tasks=n_tasks,
+            venv_python=self.venv_python,
         )
         rc = run_swebench(run_config)
         return self._load_result(rc, self.result_path(server, context))
@@ -110,9 +122,29 @@ class TerminalBenchAgenticDriver(AgenticEvalDriver):
             context,
             runtime_config=self.runtime_config,
             n_tasks=n_tasks,
+            venv_python=self.venv_python,
         )
         rc = run_terminal_bench(run_config)
         return self._load_result(rc, self.result_path(server, context))
+
+
+def _agentic_venv_python() -> Optional[Path]:
+    """Interpreter of the EVALS_AGENTIC venv whose bin/ holds harbor/sweagent.
+
+    Returned to the harness so it can locate its CLI even when the agentic
+    driver runs as a child of the V2_RUN_SCRIPT engine (release path) rather
+    than after ``run_agentic.py`` re-execs into the agentic venv. Resolution
+    failures fall back to ``None`` (current interpreter), preserving standalone
+    behavior.
+    """
+    try:
+        from workflows.workflow_types import WorkflowVenvType
+        from workflows.workflow_venvs import VENV_CONFIGS
+
+        return VENV_CONFIGS[WorkflowVenvType.EVALS_AGENTIC].venv_python
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("Could not resolve EVALS_AGENTIC venv python (%s).", e)
+        return None
 
 
 def make_agentic_driver(task: Any, *, runtime_config: Any = None) -> AgenticEvalDriver:
@@ -133,6 +165,7 @@ def build_swebench_config(
     *,
     runtime_config: Any = None,
     n_tasks: Optional[int] = None,
+    venv_python: Optional[Path] = None,
 ) -> SWEbenchRunConfig:
     cfg = task.swebench_eval_config
     return SWEbenchRunConfig(
@@ -143,7 +176,12 @@ def build_swebench_config(
         agent_backend=cfg.agent_backend,
         model_name=cfg.model or f"openai/{server.model}",
         api_base=f"{server.url_with_port}/v1",
-        output_dir=_agentic_output_dir(context.output_dir, server.model, task),
+        output_dir=_agentic_output_dir(
+            context.output_dir,
+            server.model,
+            task,
+            release_layout=context.agentic_release_layout,
+        ),
         sweagent_config=cfg.sweagent_config,
         mini_config=cfg.mini_config,
         mini_model_class=cfg.mini_model_class,
@@ -161,6 +199,7 @@ def build_swebench_config(
         random_delay_multiplier=cfg.random_delay_multiplier,
         score_existing_predictions=False,
         instance_ids=resolve_instance_ids(task, runtime_config),
+        venv_python=venv_python,
     )
 
 
@@ -171,9 +210,15 @@ def build_terminal_bench_config(
     *,
     runtime_config: Any = None,
     n_tasks: Optional[int] = None,
+    venv_python: Optional[Path] = None,
 ) -> TerminalBenchRunConfig:
     cfg = task.agentic_eval_config
-    jobs_dir = _agentic_output_dir(context.output_dir, server.model, task).parent
+    jobs_dir = _agentic_output_dir(
+        context.output_dir,
+        server.model,
+        task,
+        release_layout=context.agentic_release_layout,
+    ).parent
     return TerminalBenchRunConfig(
         task_name=task.task_name,
         dataset=cfg.dataset,
@@ -194,6 +239,10 @@ def build_terminal_bench_config(
         exclude_task_names=cfg.exclude_task_names,
         quiet=cfg.quiet,
         yes=cfg.yes,
+        agent_import_path=cfg.agent_import_path,
+        environment_env=cfg.environment_env,
+        verifier_env=cfg.verifier_env,
+        venv_python=venv_python,
     )
 
 
@@ -243,8 +292,20 @@ def _get_limit_mode(runtime_config: Any = None) -> Optional[EvalLimitMode]:
     return EvalLimitMode.from_string(runtime_config.limit_samples_mode)
 
 
-def _agentic_output_dir(output_root: Path, model_id: str, task: Any) -> Path:
+def _agentic_output_dir(
+    output_root: Path,
+    model_id: str,
+    task: Any,
+    *,
+    release_layout: bool = False,
+) -> Path:
     safe_model_id = model_id.replace("/", "__")
+    if release_layout:
+        # release run: group all agentic results under a single top-level
+        # ``agentic/`` dir (sibling of ``llm/`` / ``prefix_cache/``) so the
+        # tree mirrors the LLM layout: agentic/eval_<hf>/<task>.
+        return Path(output_root) / "agentic" / f"eval_{safe_model_id}" / task.task_name
+    # standalone agentic run: eval_<hf>/agentic/<task>.
     return Path(output_root) / f"eval_{safe_model_id}" / "agentic" / task.task_name
 
 

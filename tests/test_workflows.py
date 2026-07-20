@@ -3,7 +3,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-import importlib
 import json
 import os
 import tempfile
@@ -14,13 +13,11 @@ from unittest.mock import mock_open, patch
 import pytest
 
 from run import main
-from server_tests.test_config import TEST_CONFIGS
 from workflows.model_spec import (
     MODEL_SPECS,
     get_model_id,
 )
-from workflows.run_workflows import WorkflowResult, run_workflows
-from workflows.runtime_config import RuntimeConfig
+from workflows.workflow_result import WorkflowResult
 from workflows.setup_host import HostSetupManager
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -101,7 +98,6 @@ class TestWorkflowConfigurationValidation:
             WorkflowType.BENCHMARKS,
             WorkflowType.EVALS,
             WorkflowType.SERVER,
-            WorkflowType.REPORTS,
         ]
 
         for workflow_type in required_workflows:
@@ -134,7 +130,6 @@ class TestWorkflowVenvValidation:
         workflows_requiring_venv = [
             WorkflowType.BENCHMARKS,
             WorkflowType.EVALS,
-            WorkflowType.REPORTS,
         ]
 
         for workflow_type in workflows_requiring_venv:
@@ -152,149 +147,6 @@ class TestWorkflowVenvValidation:
 
         # This test documents that server workflow is a special case
         # The code should be updated to handle this gracefully
-
-
-class TestWorkflowExecution:
-    """Test workflow execution with minimal but strategic mocking."""
-
-    @pytest.fixture
-    def temp_workspace(self):
-        """Create a temporary workspace for testing."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            (workspace / "venvs").mkdir()
-            (workspace / "logs").mkdir()
-            (workspace / "persistent_volume").mkdir()
-            yield workspace
-
-    def test_release_workflow_sequence(self):
-        """Test release workflow sequence logic."""
-        configured_model_name = next(iter(TEST_CONFIGS))
-        model_spec = Namespace(
-            model_name=configured_model_name,
-        )
-        runtime_config = RuntimeConfig(
-            model=configured_model_name,
-            workflow="release",
-            device="n150",
-            impl="tt-transformers",
-            disable_trace_capture=False,
-        )
-
-        # Track workflow calls in order
-        workflow_calls = []
-
-        def mock_run_single(model_spec_arg, runtime_config_arg, json_fpath):
-            workflow_type = WorkflowType.from_string(runtime_config_arg.workflow)
-            workflow_calls.append(workflow_type.name)
-            return WorkflowResult(
-                workflow_name=workflow_type.name.lower(),
-                return_code=len(workflow_calls) - 1,
-            )
-
-        # Mock run_single_workflow to return ordered named results
-        with patch(
-            "workflows.run_workflows.has_spec_tests_configured", return_value=True
-        ), patch(
-            "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
-        ) as mock_run_single:
-            workflow_results = run_workflows(
-                model_spec, runtime_config, "test_json_path.json"
-            )
-
-            expected_results = [
-                WorkflowResult(workflow_name="evals", return_code=0),
-                WorkflowResult(workflow_name="benchmarks", return_code=1),
-                WorkflowResult(workflow_name="spec_tests", return_code=2),
-                WorkflowResult(workflow_name="tests", return_code=3),
-                WorkflowResult(workflow_name="reports", return_code=4),
-            ]
-
-            assert workflow_results == expected_results
-            assert mock_run_single.call_count == 5
-
-            expected_order = ["EVALS", "BENCHMARKS", "SPEC_TESTS", "TESTS", "REPORTS"]
-            assert workflow_calls == expected_order, (
-                f"Expected {expected_order}, got {workflow_calls}"
-            )
-
-            # Check trace capture logic by examining args modifications
-            # Note: The args object is modified in place, so we rely on the implementation details
-            # First workflow should start without trace capture disabled
-            # Subsequent workflows should have trace capture disabled
-
-    def test_release_workflow_omits_optional_tests_when_unconfigured(self):
-        """Test release skips optional workflows (pytest, spec_tests) when the model lacks config."""
-        model_spec = Namespace(
-            model_name="missing-model",
-        )
-        runtime_config = RuntimeConfig(
-            model="MissingModel",
-            workflow="release",
-            device="n150",
-            impl="tt-transformers",
-            disable_trace_capture=False,
-        )
-        workflow_calls = []
-
-        def mock_run_single(model_spec_arg, runtime_config_arg, json_fpath):
-            workflow_type = WorkflowType.from_string(runtime_config_arg.workflow)
-            workflow_calls.append(workflow_type.name)
-            return WorkflowResult(
-                workflow_name=workflow_type.name.lower(),
-                return_code=len(workflow_calls) - 1,
-            )
-
-        with patch(
-            "workflows.run_workflows.has_spec_tests_configured", return_value=False
-        ), patch(
-            "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
-        ):
-            workflow_results = run_workflows(
-                model_spec, runtime_config, "test_json_path.json"
-            )
-
-        assert workflow_calls == ["EVALS", "BENCHMARKS", "REPORTS"]
-        assert workflow_results == [
-            WorkflowResult(workflow_name="evals", return_code=0),
-            WorkflowResult(workflow_name="benchmarks", return_code=1),
-            WorkflowResult(workflow_name="reports", return_code=2),
-        ]
-
-    def test_non_release_workflow_includes_reports_result(self):
-        """Test non-release workflows preserve result order and append reports."""
-        model_spec = Namespace(
-            model_name="meta-llama/Llama-3.1-8B-Instruct",
-        )
-        runtime_config = RuntimeConfig(
-            model="Llama-3.1-8B-Instruct",
-            workflow="benchmarks",
-            device="n150",
-            impl="tt-transformers",
-            disable_trace_capture=False,
-        )
-        workflow_calls = []
-
-        def mock_run_single(model_spec_arg, runtime_config_arg, json_fpath):
-            workflow_type = WorkflowType.from_string(runtime_config_arg.workflow)
-            workflow_calls.append(workflow_type.name)
-            return WorkflowResult(
-                workflow_name=workflow_type.name.lower(),
-                return_code=len(workflow_calls),
-            )
-
-        with patch(
-            "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
-        ):
-            workflow_results = run_workflows(
-                model_spec, runtime_config, "test_json_path.json"
-            )
-
-        assert workflow_calls == ["BENCHMARKS", "REPORTS"]
-        assert workflow_results == [
-            WorkflowResult(workflow_name="benchmarks", return_code=1),
-            WorkflowResult(workflow_name="reports", return_code=2),
-        ]
 
 
 class TestHostSetupIntegration:
@@ -575,15 +427,12 @@ class TestMainWorkflowIntegration:
             "run.run_v2_workflows",
             return_value=[WorkflowResult(workflow_name="benchmarks", return_code=0)],
         ) as mock_run_v2_workflows, patch(
-            "run.run_workflows"
-        ) as mock_run_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
             # Run main
             result = main()
 
             assert mock_run_v2_workflows.called
-            assert not mock_run_workflows.called
             assert result == 0
 
     def test_main_returns_one_when_any_workflow_fails(
@@ -613,14 +462,11 @@ class TestMainWorkflowIntegration:
                 WorkflowResult(workflow_name="reports", return_code=0),
             ],
         ) as mock_run_v2_workflows, patch(
-            "run.run_workflows"
-        ) as mock_run_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
             result = main()
 
             assert mock_run_v2_workflows.called
-            assert not mock_run_workflows.called
             assert result == 1
 
     def test_main_release_raises_when_validate_setup_fails(
@@ -640,13 +486,13 @@ class TestMainWorkflowIntegration:
         with patch("sys.argv", test_args), patch(
             "run.validate_setup",
             side_effect=RuntimeError("validation failed"),
-        ), patch("run.run_workflows") as mock_run_workflows, patch(
+        ), patch("run.run_v2_workflows") as mock_run_v2_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
             with pytest.raises(RuntimeError, match="validation failed"):
                 main()
 
-        assert not mock_run_workflows.called
+        assert not mock_run_v2_workflows.called
 
     def test_main_release_raises_when_server_setup_fails(
         self, temp_dir, mock_env_vars, mock_version_file
@@ -666,13 +512,13 @@ class TestMainWorkflowIntegration:
         with patch("sys.argv", test_args), patch("run.validate_setup"), patch(
             "run.setup_host",
             side_effect=RuntimeError("host setup failed"),
-        ), patch("run.run_workflows") as mock_run_workflows, patch(
+        ), patch("run.run_v2_workflows") as mock_run_v2_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
             with pytest.raises(RuntimeError, match="host setup failed"):
                 main()
 
-        assert not mock_run_workflows.called
+        assert not mock_run_v2_workflows.called
 
     def test_main_release_raises_when_server_start_fails(
         self, temp_dir, mock_env_vars, mock_version_file
@@ -695,13 +541,13 @@ class TestMainWorkflowIntegration:
         ), patch(
             "run.run_docker_server",
             side_effect=RuntimeError("docker start failed"),
-        ), patch("run.run_workflows") as mock_run_workflows, patch(
+        ), patch("run.run_v2_workflows") as mock_run_v2_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
             with pytest.raises(RuntimeError, match="docker start failed"):
                 main()
 
-        assert not mock_run_workflows.called
+        assert not mock_run_v2_workflows.called
 
     def test_main_release_raises_when_run_workflows_raises(
         self, temp_dir, mock_env_vars, mock_version_file
@@ -792,96 +638,6 @@ class TestMainWorkflowIntegration:
         with patch("sys.argv", test_args):
             with pytest.raises(SystemExit):  # argparse should exit on invalid choice
                 main()
-
-
-class TestSpecTestsBehavior:
-    """Test spec-tests return codes for missing config and interruption."""
-
-    def test_spec_tests_no_matching_suites_returns_one(self):
-        spec_tests_run = importlib.import_module("server_tests.run_spec_tests")
-        args = Namespace(
-            runtime_model_spec_json="runtime.json",
-            model="missing-model",
-            device="n150",
-            model_category=None,
-            markers=None,
-            match_all_markers=False,
-            exclude_markers=None,
-            test_name=None,
-            suite_category=None,
-            skip_prerequisites=False,
-            list_markers=False,
-            list_tests=False,
-            output_path=None,
-            hf_token="",
-        )
-
-        with patch.object(spec_tests_run, "_configure_logging"), patch.object(
-            spec_tests_run, "parse_args", return_value=args
-        ), patch.object(
-            spec_tests_run.TestFrameworkRunner, "apply_filters", return_value=[]
-        ):
-            result = spec_tests_run.main()
-
-        assert result == 1
-
-    def test_spec_tests_keyboard_interrupt_returns_130(self):
-        spec_tests_run = importlib.import_module("server_tests.run_spec_tests")
-        args = Namespace(
-            runtime_model_spec_json="runtime.json",
-            model="stable-diffusion-xl-base-1.0",
-            device="n150",
-            model_category=None,
-            markers=None,
-            match_all_markers=False,
-            exclude_markers=None,
-            test_name=None,
-            suite_category=None,
-            skip_prerequisites=False,
-            list_markers=False,
-            list_tests=False,
-            output_path=None,
-            hf_token="",
-        )
-
-        fake_suite = {
-            "id": "fake",
-            "weights": ["fake"],
-            "device": "n150",
-            "test_cases": [
-                {
-                    "name": "FakeCase",
-                    "module": "fake_server_tests_module",
-                    "test_config": {},
-                    "targets": {},
-                    "markers": [],
-                    "description": "",
-                    "enabled": True,
-                }
-            ],
-        }
-
-        class FakeCase:
-            def __init__(self, config, targets):
-                self.config = config
-                self.targets = targets
-                self.description = ""
-
-        fake_module = Namespace(FakeCase=FakeCase)
-
-        with patch.object(spec_tests_run, "_configure_logging"), patch.object(
-            spec_tests_run, "parse_args", return_value=args
-        ), patch.object(
-            spec_tests_run.TestFrameworkRunner,
-            "apply_filters",
-            return_value=[fake_suite],
-        ), patch.object(
-            spec_tests_run.importlib, "import_module", return_value=fake_module
-        ), patch.object(spec_tests_run, "ServerRunner") as mock_runner:
-            mock_runner.return_value.run.side_effect = KeyboardInterrupt
-            result = spec_tests_run.main()
-
-        assert result == 130
 
 
 if __name__ == "__main__":

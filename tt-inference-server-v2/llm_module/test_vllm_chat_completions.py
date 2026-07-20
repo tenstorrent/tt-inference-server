@@ -95,7 +95,7 @@ def test_max_tokens(report_test, api_client, max_val, request):
 def test_stop(report_test, api_client, stop_seq, request):
     """Tests the 'stop' parameter."""
     prompt = [{"role": "user", "content": "Count to 5 and then say 'StopIt'."}]
-    payload = {"messages": prompt, "stop": stop_seq, "max_tokens": 20}
+    payload = {"messages": prompt, "stop": stop_seq, "max_tokens": 1024}
     response = api_client(payload)
 
     output_text = response["choices"][0]["message"]["content"]
@@ -114,6 +114,38 @@ def test_seed_reproducibility(report_test, api_client, request):
     output2 = response2["choices"][0]["message"]["content"]
     assert output1 and output1 == output2, (
         f"Seed did not produce reproducible results. Output 1: '{output1}', Output 2: '{output2}'"
+    )
+
+
+def test_coherence_verbatim_echo(report_test, api_client, request):
+    """Coherence guard: the model must echo an exact sentence verbatim.
+
+    The other tests here only check structural/determinism properties (n,
+    max_tokens, stop, seed, logprobs, penalties). A backend regression that
+    corrupts the forward pass (e.g. a broken on-device decode trace) still
+    emits deterministic, well-formed-but-garbage tokens, so all of those pass
+    while the model is actually producing gibberish. Requiring a verbatim echo
+    catches that class of bug directly: a model that cannot reproduce a simple
+    sentence is not generating coherent text.
+    """
+    sentence = "The quick brown fox jumps over the lazy dog."
+    prompt = [
+        {
+            "role": "user",
+            "content": (
+                "Repeat the following sentence exactly, with no extra words, "
+                f"no quotes, and no commentary: {sentence}"
+            ),
+        }
+    ]
+    payload = {"messages": prompt, "max_tokens": 32, "temperature": 0}
+    response = api_client(payload)
+
+    output_text = response["choices"][0]["message"]["content"]
+    assert sentence in output_text, (
+        "Coherence guard failed: model did not echo the sentence verbatim "
+        "(likely gibberish from a corrupted forward pass). Expected to find "
+        f"{sentence!r} in output, got: {output_text!r}"
     )
 
 

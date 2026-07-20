@@ -16,7 +16,7 @@ Subcommands:
 
 Examples:
     python migration_cli.py setup
-    python migration_cli.py produce --src-slot 0 --dst-slot 1 --pos-end 32
+    python migration_cli.py produce --src-slot 0 --dst-slot 1 --layer-end 1 --src-pos-end 32 --dst-pos-end 32
     python migration_cli.py produce --count 100 --rate 50 --random
     python migration_cli.py tail acks
     python migration_cli.py tail requests --from-beginning --max 10
@@ -79,22 +79,30 @@ def _wait_for_broker(admin: AdminClient, timeout_s: float = 30.0) -> None:
 
 def _build_request(args: argparse.Namespace, index: int) -> dict[str, Any]:
     if args.random:
+        layer = random.randint(0, 63)
+        pos_end = random.choice([16, 32, 64, 128, 256])
         return {
             "migration_id": random.getrandbits(63),
             "src_slot": random.randint(0, 31),
             "dst_slot": random.randint(0, 31),
-            "layer_id": random.randint(0, 95),
-            "position_start": 0,
-            "position_end": random.choice([16, 32, 64, 128, 256]),
+            "layer_begin": layer,
+            "layer_end": layer + 1,
+            "src_position_begin": 0,
+            "src_position_end": pos_end,
+            "dst_position_begin": 0,
+            "dst_position_end": pos_end,
         }
     base_id = args.migration_id if args.migration_id is not None else time.time_ns()
     return {
         "migration_id": base_id + index,
         "src_slot": args.src_slot,
         "dst_slot": args.dst_slot,
-        "layer_id": args.layer_id,
-        "position_start": args.position_start,
-        "position_end": args.position_end,
+        "layer_begin": args.layer_begin,
+        "layer_end": args.layer_end,
+        "src_position_begin": args.src_pos_begin,
+        "src_position_end": args.src_pos_end,
+        "dst_position_begin": args.dst_pos_begin,
+        "dst_position_end": args.dst_pos_end,
     }
 
 
@@ -306,9 +314,24 @@ def _add_produce_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--src-slot", type=int, default=0)
     p.add_argument("--dst-slot", type=int, default=1)
-    p.add_argument("--layer-id", type=int, default=0)
-    p.add_argument("--position-start", type=int, default=0)
-    p.add_argument("--position-end", type=int, default=16)
+    p.add_argument(
+        "--layer-begin", type=int, default=0, help="layer range start, inclusive"
+    )
+    p.add_argument(
+        "--layer-end", type=int, default=1, help="layer range end, exclusive"
+    )
+    p.add_argument(
+        "--src-pos-begin", type=int, default=0, help="src token pos start, inclusive"
+    )
+    p.add_argument(
+        "--src-pos-end", type=int, default=16, help="src token pos end, exclusive"
+    )
+    p.add_argument(
+        "--dst-pos-begin", type=int, default=0, help="dst token pos start, inclusive"
+    )
+    p.add_argument(
+        "--dst-pos-end", type=int, default=16, help="dst token pos end, exclusive"
+    )
     p.add_argument("-v", "--verbose", action="store_true")
 
 

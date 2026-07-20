@@ -655,7 +655,7 @@ class TestRuntimeValidation:
         [
             ("benchmarks", True),
             ("evals", True),  # Mistral-7B-Instruct-v0.3 is in EVAL_CONFIGS
-            ("reports", True),
+            ("agentic", True),
             ("release", True),  # Mistral-7B-Instruct-v0.3 is in both configs
             ("stress_tests", True),
         ],
@@ -718,7 +718,7 @@ class TestRuntimeValidation:
     ):
         """A supplied runtime spec is the source of truth for model/device support."""
         mock_model_spec.model_id = "id_autoport_Mistral-7B-Instruct-v0.3_n150"
-        mock_runtime_config.workflow = "reports"
+        mock_runtime_config.workflow = "agentic"
         mock_runtime_config.runtime_model_spec_json = "/tmp/custom-runtime-spec.json"
 
         with patch.dict("workflows.validate_setup.MODEL_SPECS", {}):
@@ -1073,6 +1073,19 @@ class TestMediaServerDockerEnvVars:
         assert env_vars["MODEL_RUNNER_TYPE"] == "tt_sdxl_generate"
         assert env_vars["DEVICE_IDS"].replace(" ", "").count("(") > 1
 
+    def test_non_cpp_media_persists_hf_cache_on_cache_root(self):
+        """Whisper (uvicorn media server) must place HF_HOME on the cache_root
+        volume so weights survive container restarts."""
+        model_spec, _, _ = get_runtime_model_spec(
+            model="whisper-large-v3",
+            device="n150",
+        )
+
+        env_vars = get_media_server_docker_env_vars(model_spec)
+
+        assert env_vars.get("SERVER_MODE") != "cpp"
+        assert env_vars["HF_HOME"] == "/home/container_app_user/cache_root/huggingface"
+
 
 class TestSecretsHandling:
     """Tests for secrets handling functionality."""
@@ -1087,7 +1100,7 @@ class TestSecretsHandling:
             ("server", True, True, False, False, False),  # Interactive mode
             ("server", True, False, True, False, True),  # Server with docker + no-auth
             ("release", False, False, False, False, True),  # Non-client workflow
-            ("reports", False, False, False, False, True),  # Non-client workflow
+            ("agentic", False, False, False, False, True),  # Non-client workflow
         ],
     )
     def test_secrets_requirements(

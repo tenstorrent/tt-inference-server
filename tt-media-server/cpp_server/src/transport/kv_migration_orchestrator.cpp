@@ -3,7 +3,10 @@
 
 #include "transport/kv_migration_orchestrator.hpp"
 
+#include <utility>
+
 #include "transport/kv_control_message.hpp"
+#include "transport/kv_table_provisioning.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::transport {
@@ -41,22 +44,17 @@ KvMigrationSender::KvMigrationSender(KvControlChannel& channel,
 
 std::optional<std::vector<uint8_t>> KvMigrationSender::exchangeTables(
     const std::vector<uint8_t>& localTableBlob) {
-  KvControlMessage out;
-  out.type = KvControlType::TABLE_EXCHANGE;
-  out.role = 0;  // prefill/sender
-  out.table_blob = localTableBlob;
-  if (!channel_.send(out)) return std::nullopt;
-
-  const auto peer = channel_.receive();
-  if (!peer || peer->type != KvControlType::TABLE_EXCHANGE) {
-    TT_LOG_ERROR("[KvMigrationSender] exchangeTables: bad/absent peer table");
-    return std::nullopt;
-  }
-  return peer->table_blob;
+  return exchangeTableBlob(channel_, TableExchangeRole::Sender, localTableBlob);
 }
 
 bool KvMigrationSender::migrate(uint64_t uuid,
                                 const MigrationRequest& request) {
+  // Hold the prefill-side channel transaction for the full control sequence so
+  // mesh-watch TABLE_EXCHANGE cannot steal MirrorReady/Ack on this channel.
+  // (Decode uses a separate KvControlChannel/mutex on its end of the TCP link,
+  // so this does not block the receiver's run() loop.)
+  KvControlChannel::Transaction txn(channel_);
+
   if (!channel_.send(beginMessage(uuid, request.dstSlice()))) {
     TT_LOG_ERROR(
         "[KvMigrationSender] migrate(uuid={}): send BeginMigration failed",
@@ -64,24 +62,39 @@ bool KvMigrationSender::migrate(uint64_t uuid,
     return false;
   }
 
-  const auto ready = channel_.receive();
-  if (!ready || ready->type != KvControlType::MIRROR_READY ||
-      ready->uuid != uuid) {
+  KvControlMessage ready;
+  switch (channel_.receiveMessage(ready)) {
+    case KvControlChannel::ReceiveOutcome::TimedOut:
+      TT_LOG_ERROR(
+          "[KvMigrationSender] migrate(uuid={}): timed out waiting for "
+          "MirrorReady ({} ms)",
+          uuid, channel_.receiveTimeout().count());
+      return false;
+    case KvControlChannel::ReceiveOutcome::Closed:
+      TT_LOG_ERROR(
+          "[KvMigrationSender] migrate(uuid={}): control channel closed while "
+          "waiting for MirrorReady",
+          uuid);
+      return false;
+    case KvControlChannel::ReceiveOutcome::Message:
+      break;
+  }
+  if (ready.type != KvControlType::MIRROR_READY || ready.uuid != uuid) {
     TT_LOG_ERROR(
         "[KvMigrationSender] migrate(uuid={}): expected MirrorReady, got "
-        "something else",
-        uuid);
+        "type={} uuid={}",
+        uuid, static_cast<int>(ready.type), ready.uuid);
     return false;
   }
-  if (!ready->ok || ready->segment_name.empty()) {
+  if (!ready.ok || ready.segment_name.empty()) {
     TT_LOG_ERROR(
         "[KvMigrationSender] migrate(uuid={}): receiver failed to prepare "
         "mirror (ok={}, segment empty={})",
-        uuid, ready->ok, ready->segment_name.empty());
+        uuid, ready.ok, ready.segment_name.empty());
     return false;
   }
 
-  if (!sender_.transferSlot(request, ready->segment_name)) {
+  if (!sender_.transferSlot(request, ready.segment_name)) {
     TT_LOG_ERROR("[KvMigrationSender] migrate(uuid={}): transferSlot failed",
                  uuid);
     return false;
@@ -96,12 +109,31 @@ bool KvMigrationSender::migrate(uint64_t uuid,
     return false;
   }
 
-  const auto ack = channel_.receive();
-  if (!ack || ack->type != KvControlType::ACK || ack->uuid != uuid) {
-    TT_LOG_ERROR("[KvMigrationSender] migrate(uuid={}): expected Ack", uuid);
+  KvControlMessage ack;
+  switch (channel_.receiveMessage(ack)) {
+    case KvControlChannel::ReceiveOutcome::TimedOut:
+      TT_LOG_ERROR(
+          "[KvMigrationSender] migrate(uuid={}): timed out waiting for Ack "
+          "({} ms)",
+          uuid, channel_.receiveTimeout().count());
+      return false;
+    case KvControlChannel::ReceiveOutcome::Closed:
+      TT_LOG_ERROR(
+          "[KvMigrationSender] migrate(uuid={}): control channel closed while "
+          "waiting for Ack",
+          uuid);
+      return false;
+    case KvControlChannel::ReceiveOutcome::Message:
+      break;
+  }
+  if (ack.type != KvControlType::ACK || ack.uuid != uuid) {
+    TT_LOG_ERROR(
+        "[KvMigrationSender] migrate(uuid={}): expected Ack, got type={} "
+        "uuid={}",
+        uuid, static_cast<int>(ack.type), ack.uuid);
     return false;
   }
-  if (!ack->ok) {
+  if (!ack.ok) {
     TT_LOG_ERROR(
         "[KvMigrationSender] migrate(uuid={}): receiver reported drain failure",
         uuid);
@@ -113,30 +145,77 @@ bool KvMigrationSender::migrate(uint64_t uuid,
 
 // --- Receiver --------------------------------------------------------------
 
-KvMigrationReceiver::KvMigrationReceiver(KvControlChannel& channel,
-                                         MooncakeKvReceiver& receiver)
-    : channel_(channel), receiver_(receiver) {}
+KvMigrationReceiver::KvMigrationReceiver(
+    KvControlChannel& channel, MooncakeKvReceiver& receiver,
+    std::shared_ptr<const std::vector<uint8_t>> localTableBlob)
+    : channel_(channel),
+      receiver_(receiver),
+      local_table_blob_(std::move(localTableBlob)) {}
+
+void KvMigrationReceiver::storePeerTable(std::vector<uint8_t> blob) {
+  peer_table_blob_ = std::move(blob);
+  peer_table_ = deserializeKvTable(peer_table_blob_);
+  if (!peer_table_ && !peer_table_blob_.empty()) {
+    TT_LOG_WARN(
+        "[KvMigrationReceiver] stored peer table blob ({} B) but parse failed "
+        "(bad .pb or ENABLE_KV_TABLE OFF)",
+        peer_table_blob_.size());
+  }
+}
+
+bool KvMigrationReceiver::handleTableExchange(const KvControlMessage& msg) {
+  if (msg.table_blob.empty()) {
+    TT_LOG_ERROR(
+        "[KvMigrationReceiver] TABLE_EXCHANGE missing peer (prefill) table "
+        "blob");
+    return false;
+  }
+  if (!local_table_blob_ || local_table_blob_->empty()) {
+    TT_LOG_ERROR(
+        "[KvMigrationReceiver] TABLE_EXCHANGE with no local table blob "
+        "configured");
+    return false;
+  }
+  storePeerTable(msg.table_blob);
+
+  KvControlMessage out;
+  out.type = KvControlType::TABLE_EXCHANGE;
+  out.role = static_cast<uint8_t>(TableExchangeRole::Receiver);
+  out.table_blob = *local_table_blob_;
+  // Large decode .pb reply — use the exchange budget, not a short migrate
+  // default if the channel was constructed that way.
+  if (!channel_.send(out, kDefaultTableExchangeTimeout)) {
+    TT_LOG_ERROR("[KvMigrationReceiver] TABLE_EXCHANGE reply failed");
+    return false;
+  }
+  TT_LOG_INFO(
+      "[KvMigrationReceiver] TABLE_EXCHANGE: stored peer table ({} B), "
+      "replied with local ({} B)",
+      peer_table_blob_.size(), local_table_blob_->size());
+  return true;
+}
 
 std::optional<std::vector<uint8_t>> KvMigrationReceiver::exchangeTables(
     const std::vector<uint8_t>& localTableBlob) {
-  const auto peer = channel_.receive();
-  if (!peer || peer->type != KvControlType::TABLE_EXCHANGE) {
-    TT_LOG_ERROR("[KvMigrationReceiver] exchangeTables: bad/absent peer table");
-    return std::nullopt;
+  auto peer =
+      exchangeTableBlob(channel_, TableExchangeRole::Receiver, localTableBlob);
+  if (peer) {
+    storePeerTable(*peer);
   }
-  KvControlMessage out;
-  out.type = KvControlType::TABLE_EXCHANGE;
-  out.role = 1;  // decode/receiver
-  out.table_blob = localTableBlob;
-  if (!channel_.send(out)) return std::nullopt;
-  return peer->table_blob;
+  return peer;
 }
 
 bool KvMigrationReceiver::serveOne() {
   const auto msg = channel_.receive();
-  if (!msg) return false;  // channel closed
+  if (!msg) return false;  // channel closed or timed out
+  return handle(*msg);
+}
 
+bool KvMigrationReceiver::handle(const KvControlMessage& in) {
+  const KvControlMessage* msg = &in;
   switch (msg->type) {
+    case KvControlType::TABLE_EXCHANGE:
+      return handleTableExchange(*msg);
     case KvControlType::BEGIN_MIGRATION: {
       const auto segment = receiver_.prepareMirror(sliceOf(*msg), msg->uuid);
       KvControlMessage ready;
@@ -178,7 +257,22 @@ bool KvMigrationReceiver::serveOne() {
 }
 
 void KvMigrationReceiver::run() {
-  while (serveOne()) {
+  // A long-lived decode server: the control channel is opened when the peer
+  // (prefill worker) starts, but BeginMigration only arrives when a request is
+  // triggered — an unbounded idle gap. Treat a receive timeout as "keep
+  // waiting" and stop only on a real close (or a failed reply). serveOne()'s
+  // timeout-as-close semantics are wrong here, so run() uses the tri-state.
+  for (;;) {
+    KvControlMessage msg;
+    switch (channel_.receiveMessage(msg)) {
+      case KvControlChannel::ReceiveOutcome::Closed:
+        return;
+      case KvControlChannel::ReceiveOutcome::TimedOut:
+        continue;  // idle between requests — wait for the next one
+      case KvControlChannel::ReceiveOutcome::Message:
+        if (!handle(msg)) return;
+        break;
+    }
   }
 }
 

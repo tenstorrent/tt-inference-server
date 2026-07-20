@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -57,27 +58,61 @@ class KvMigrationSender {
  * @brief Drives the receiver (decode) side of a migration over the control
  *        channel.
  *
- * Reacts to inbound control messages: BeginMigration -> prepareMirror +
+ * Reacts to inbound control messages: TABLE_EXCHANGE (store peer prefill table
+ * + reply with local decode table); BeginMigration -> prepareMirror +
  * MirrorReady; DoneMarker -> drain + Ack. run() services messages until the
- * channel closes; serveOne() handles a single message (for stepwise tests).
+ * channel closes, waiting indefinitely (idle) between requests; serveOne()
+ * handles a single message with a bounded wait (for stepwise tests).
  */
 class KvMigrationReceiver {
  public:
-  KvMigrationReceiver(KvControlChannel& channel, MooncakeKvReceiver& receiver);
+  /// @param localTableBlob this decode's serialized `.pb` (replied on
+  ///        TABLE_EXCHANGE). Shared across multi-accept sessions — immutable
+  ///        and identical for every prefill peer. Empty/null disables table
+  ///        provisioning on this channel.
+  KvMigrationReceiver(
+      KvControlChannel& channel, MooncakeKvReceiver& receiver,
+      std::shared_ptr<const std::vector<uint8_t>> localTableBlob = nullptr);
 
   /// Init-time table exchange: receive the peer's table, then send ours.
+  /// Also stores the peer blob via peerTableBlob() / peerTable().
   std::optional<std::vector<uint8_t>> exchangeTables(
       const std::vector<uint8_t>& localTableBlob);
 
-  /// Handle one inbound message. @return false when the channel has closed.
+  /// Prefill `.pb` bytes from the last successful TABLE_EXCHANGE (empty until
+  /// then).
+  const std::vector<uint8_t>& peerTableBlob() const { return peer_table_blob_; }
+
+  /// Parsed peer (prefill) table when the blob deserializes; nullptr otherwise.
+  std::shared_ptr<const IKvTable> peerTable() const { return peer_table_; }
+
+  /// Handle one inbound message (bounded wait). @return false when the channel
+  /// has closed OR the wait times out — so a long idle gap ends serving. Kept
+  /// for stepwise tests where the peer sends immediately; run() is the
+  /// long-lived path that tolerates idle timeouts.
   bool serveOne();
 
-  /// Service messages until the channel closes.
+  /// Service messages until the channel closes. Unlike serveOne(), an idle
+  /// receive timeout is not a close: run() keeps waiting for the next request.
   void run();
 
  private:
+  /// Dispatch a received message (TABLE_EXCHANGE, prepareMirror/MirrorReady,
+  /// drain/Ack). @return false only if a reply send fails (peer would wedge —
+  /// stop).
+  bool handle(const KvControlMessage& msg);
+
+  /// Keep the peer's TABLE_EXCHANGE blob (and parse when possible).
+  void storePeerTable(std::vector<uint8_t> blob);
+
+  /// Reply to an inbound TABLE_EXCHANGE after storing the peer blob.
+  bool handleTableExchange(const KvControlMessage& msg);
+
   KvControlChannel& channel_;
   MooncakeKvReceiver& receiver_;
+  std::shared_ptr<const std::vector<uint8_t>> local_table_blob_;
+  std::vector<uint8_t> peer_table_blob_;
+  std::shared_ptr<const IKvTable> peer_table_;
 };
 
 }  // namespace tt::transport
