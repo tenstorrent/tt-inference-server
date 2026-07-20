@@ -17,6 +17,11 @@
           "devices": [
             "P150"
           ]
+        },
+        "release": {
+          "devices": [
+            "P150"
+          ]
         }
       }
     },
@@ -32,7 +37,6 @@
                 "N300",
                 "P100",
                 "P150",
-                "P300",
                 "P150X4",
                 "P300X2",
                 "T3K"
@@ -45,7 +49,7 @@
             },
             "release": {
               "devices": [
-                "P300"
+                "P150"
               ]
             }
           }
@@ -267,11 +271,6 @@
                 "T3K"
               ]
             },
-            "release": {
-                "devices": [
-                "GALAXY"
-              ]
-            },            
             "weekly": {
               "devices": [
                 "GALAXY"
@@ -454,6 +453,11 @@
             "P150X4",
             "T3K"
           ]
+        },
+        "release": {
+            "devices": [
+            "P300X2"
+          ]
         }
       }
     },
@@ -509,24 +513,33 @@
       }
     },
     "gemma-4-31B-it": {
-      "inference_engine": "vLLM",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "P300X2"
-          ]
+      "implementations": [
+        {
+          "inference_engine": "vLLM",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ]
+            },
+            "release": {
+              "devices": [
+                "P300X2"
+              ]
+            }
+          }
+        },
+        {
+          "inference_engine": "FORGE",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ]
+            }
+          }
         }
-      }
-    },
-    "gemma-4-31b-it": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "P300X2"
-          ]
-        }
-      }
+      ]
     },
     "gemma-4-12B-it": {
       "inference_engine": "vLLM",
@@ -575,6 +588,11 @@
       "inference_engine": "FORGE",
       "ci": {
         "nightly": {
+          "devices": [
+            "P150"
+          ]
+        },
+        "release": {
           "devices": [
             "P150"
           ]
