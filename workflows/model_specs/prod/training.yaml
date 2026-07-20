@@ -9,6 +9,7 @@ templates:
     - google/gemma-1.1-2b-it
   version: "0.18.0"
   tt_metal_commit: "25891d3"
+  docker_image: "tt-media-server-forge:local"
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
