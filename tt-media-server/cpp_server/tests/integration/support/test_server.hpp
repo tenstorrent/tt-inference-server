@@ -99,7 +99,8 @@ class TestServer {
   //   2. wait for that worker to signal warmup
   //   3. open the IPC queues — test now plays the worker on those queues
   //   4. start the memory auto-responder so most tests don't have to care
-  //   5. start DynamoWorkerServer (required - DYNAMO_ENDPOINT_ENABLED must be 1)
+  //   5. start DynamoWorkerServer (required - DYNAMO_ENDPOINT_ENABLED must be
+  //   1)
   void init() {
     createWorkerMetricsShm();
     tt::utils::service_factory::initializeServices();
