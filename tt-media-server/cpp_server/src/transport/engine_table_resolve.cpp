@@ -17,8 +17,8 @@
 namespace tt::transport {
 namespace {
 
-constexpr auto kHandoffPoll = std::chrono::milliseconds(1000);
-constexpr auto kHandoffHeartbeat = std::chrono::milliseconds(30000);
+constexpr auto K_HANDOFF_POLL = std::chrono::milliseconds(1000);
+constexpr auto K_HANDOFF_HEARTBEAT = std::chrono::milliseconds(30000);
 
 /// Empty path => empty map (ok). Non-empty path must open and yield ≥1 entry.
 std::optional<DeviceMap> loadRequiredOrOptionalDeviceMap(
@@ -91,13 +91,13 @@ std::optional<DeviceMap> awaitEngineHandoffOnPeer(
     }
 
     const auto now = std::chrono::steady_clock::now();
-    if (now - lastWarn >= kHandoffHeartbeat) {
+    if (now - lastWarn >= K_HANDOFF_HEARTBEAT) {
       TT_LOG_WARN(
           "[engine_table_resolve] still waiting for DeviceMap handoff bytes on "
           "accepted peer (readyz stays not-ready)");
       lastWarn = now;
     }
-    std::this_thread::sleep_for(kHandoffPoll);
+    std::this_thread::sleep_for(K_HANDOFF_POLL);
   }
   TT_LOG_WARN(
       "[engine_table_resolve] cancelled while waiting for DeviceMap handoff on "
@@ -151,7 +151,7 @@ std::optional<DeviceMap> awaitEngineHandoffOnListen(
   while (!stop.load(std::memory_order_relaxed)) {
     {
       std::unique_lock<std::mutex> lock(peerMutex);
-      peerCv.wait_for(lock, kHandoffPoll, [&] {
+      peerCv.wait_for(lock, K_HANDOFF_POLL, [&] {
         return static_cast<bool>(acceptedPeer) ||
                stop.load(std::memory_order_relaxed);
       });
@@ -161,7 +161,7 @@ std::optional<DeviceMap> awaitEngineHandoffOnListen(
       }
     }
     const auto now = std::chrono::steady_clock::now();
-    if (now - lastWarn >= kHandoffHeartbeat) {
+    if (now - lastWarn >= K_HANDOFF_HEARTBEAT) {
       TT_LOG_WARN(
           "[engine_table_resolve] still waiting for DeviceMap sender on port "
           "{} (readyz stays not-ready)",
