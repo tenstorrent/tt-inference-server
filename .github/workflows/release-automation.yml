@@ -63,9 +63,10 @@ on:
     branches:
       - test-release-automation-for-v0180
 
-# The pipeline commits generated files and pushes a tag back to the branch.
+# The pipeline commits generated files + a tag to the branch and opens a draft PR.
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: release-automation-${{ github.ref }}
@@ -264,9 +265,12 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Creating '${NEW_BRANCH}' from main, carrying VERSION + models-ci-config.json from '${SRC_REF}'."
 
-          # Stash the two files outside the repo before switching branches.
+          # Stash the carried files + the PR script (the post-release branch is
+          # main-based and won't contain this script) outside the repo before
+          # switching branches.
           cp VERSION "${RUNNER_TEMP}/VERSION.carry"
           cp .github/workflows/models-ci-config.json "${RUNNER_TEMP}/models-ci-config.json.carry"
+          cp scripts/release/create_post_release_pr.py "${RUNNER_TEMP}/create_post_release_pr.py"
 
           # Branch off the latest main, then overlay the carried files.
           git fetch origin main
@@ -303,3 +307,21 @@ jobs:
           fi
           git push -f origin "${POST_RELEASE_BRANCH}"
           echo "Pushed '${POST_RELEASE_BRANCH}'."
+
+      # ----- FINAL step: open the draft "Post release v<version>" PR
+      #       (post-release branch -> main) in the PR #4398 format. The
+      #       post-release branch is main-based and does not carry this script,
+      #       so restore it from RUNNER_TEMP first. It renders the Model Spec
+      #       Release Updates table from this branch's prod (new) vs origin/main
+      #       (old). CI Job Links need TMP_ACVEJICTT_PAT (tt-shield read access);
+      #       when it is absent or lacks access they render as UNKNOWN. -----
+      - name: "Post-release: open draft PR -> main"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TMP_ACVEJICTT_PAT: ${{ secrets.TMP_ACVEJICTT_PAT }}
+        run: |
+          cp "${RUNNER_TEMP}/create_post_release_pr.py" scripts/release/create_post_release_pr.py
+          python3 scripts/release/create_post_release_pr.py \
+            --tt-shield-run-id "${TT_SHIELD_RUN_ID}" \
+            --head-branch "${POST_RELEASE_BRANCH}" \
+            --base main
