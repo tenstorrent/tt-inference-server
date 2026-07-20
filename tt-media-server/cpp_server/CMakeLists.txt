@@ -1466,6 +1466,20 @@ target_include_directories(prefix_cache_e2e_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# DYNAMO_ROUTING=1 big-ISL routing E2E test (requires external Dynamo server
+# fronting one prefill + one decode worker, both DYNAMO_ROUTING=1). Reuses the
+# DynamoClient / SSE-parsing helpers from dynamo_test_helpers.hpp.
+add_executable(dynamo_routing_big_isl_test
+    tests/e2e/dynamo_routing_big_isl_test.cpp)
+target_link_libraries(dynamo_routing_big_isl_test PRIVATE
+    JsonCpp::JsonCpp
+    GTest::gtest
+)
+target_include_directories(dynamo_routing_big_isl_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e
+)
+
 # Tokenizer benchmark
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)
 target_link_libraries(tokenizer_benchmark PRIVATE llm_runner_lib)
