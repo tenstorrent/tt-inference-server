@@ -267,6 +267,12 @@ speecht5_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/experimental/speecht5_tts",
 )
+kokoro_impl = ImplSpec(
+    impl_id="kokoro_tts",
+    impl_name="kokoro-tts",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/audio/kokoro",
+)
 forge_vllm_plugin_impl = ImplSpec(
     impl_id="forge_vllm_plugin",
     impl_name="forge-vllm-plugin",
@@ -302,6 +308,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "deepseek_r1_galaxy": deepseek_r1_galaxy_impl,
     "whisper": whisper_impl,
     "speecht5_tts": speecht5_impl,
+    "kokoro_tts": kokoro_impl,
     "forge_vllm_plugin": forge_vllm_plugin_impl,
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,

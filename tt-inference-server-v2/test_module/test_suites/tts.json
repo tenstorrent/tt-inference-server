@@ -1,5 +1,5 @@
 {
-    "_description": "Test suites for TTS model category (SpeechT5)",
+    "_description": "Test suites for TTS model category (SpeechT5, Kokoro-82M)",
     "_category": "TTS",
     "test_matrices": [
         {
@@ -20,6 +20,36 @@
                     "template": "TTSLoadTest",
                     "enabled": true,
                     "description": "TTS load test",
+                    "targets": {
+                        "tts_generation_time": 10,
+                        "sample_count": 10,
+                        "compare_audio": true
+                    }
+                },
+                {
+                    "template": "TTSParamTest",
+                    "enabled": true,
+                    "description": "TTS parameter variations test"
+                },
+                {
+                    "template": "TTSIntegrationTest",
+                    "enabled": true,
+                    "description": "TTS error handling and validation test"
+                }
+            ]
+        },
+        {
+            "models": [
+                "kokoro"
+            ],
+            "devices": [
+                "p150"
+            ],
+            "test_cases": [
+                {
+                    "template": "TestTTSServerHealth",
+                    "enabled": true,
+                    "description": "TTS server health test",
                     "targets": {
                         "tts_generation_time": 10,
                         "sample_count": 10,

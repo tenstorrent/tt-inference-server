@@ -91,6 +91,7 @@
             "bge": "BGE embedding model tests",
             "qwen3_emb": "Qwen3 embedding model tests",
             "speecht5": "SpeechT5 TTS model tests",
+            "kokoro": "Kokoro-82M TTS model tests",
             "wan": "Wan video generation model tests",
             "wan_i2v": "Wan image-to-video generation model tests",
             "mochi": "Mochi video generation model tests",
@@ -361,6 +362,15 @@
             "category": "TTS",
             "compatible_devices": [
                 "n150",
+                "p150"
+            ]
+        },
+        "kokoro": {
+            "weights": [
+                "kokoro_tts"
+            ],
+            "category": "TTS",
+            "compatible_devices": [
                 "p150"
             ]
         },

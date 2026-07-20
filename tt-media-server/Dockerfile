@@ -50,6 +50,7 @@ RUN apt-get update && apt-get install -y \
     gosu \
     libgl1 \
     libsndfile1 \
+    espeak-ng \
     wget \
     git-lfs \
     nano \

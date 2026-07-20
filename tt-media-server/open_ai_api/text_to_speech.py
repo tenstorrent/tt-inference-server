@@ -3,9 +3,12 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 
+import json
+
 from config.constants import AUDIO_RESPONSE_FORMATS
 from domain.text_to_speech_request import TextToSpeechRequest
 from fastapi import APIRouter, Depends, HTTPException, Response, Security
+from fastapi.responses import StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
@@ -22,9 +25,25 @@ TTS_MEDIA_TYPES = {
 async def handle_tts_request(tts_request, service):
     """
     Runner returns base64; post_process converts to requested format.
-    Here we return result.output_bytes (WAV/MP3/OGG) or JSON with base64.
+
+    Non-streaming: return result.output_bytes (WAV/MP3/OGG) or JSON with base64.
+    Streaming (``stream=true``): return an NDJSON StreamingResponse, one JSON
+    object per synthesized chunk (each with a base64 WAV of that chunk), as the
+    runner produces them on device (mirrors the Whisper streaming endpoint).
     """
     try:
+        if getattr(tts_request, "stream", False):
+            try:
+                service.scheduler.check_is_model_ready()
+            except Exception:
+                raise HTTPException(status_code=405, detail="Model is not ready")
+
+            async def result_stream():
+                async for partial in service.process_streaming_request(tts_request):
+                    yield json.dumps(get_dict_response(partial)) + "\n"
+
+            return StreamingResponse(result_stream(), media_type="application/x-ndjson")
+
         result = await service.process_request(tts_request)
         fmt = tts_request.response_format.lower()
         if fmt in AUDIO_RESPONSE_FORMATS:

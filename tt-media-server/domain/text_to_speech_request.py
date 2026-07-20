@@ -42,6 +42,10 @@ class TextToSpeechRequest(BaseRequest):
     # Response format: wav (default), mp3, ogg, json, or verbose_json
     response_format: str = "wav"
 
+    # When true, stream audio chunk-by-chunk as an NDJSON StreamingResponse
+    # (one JSON object per synthesized chunk) instead of one finished file.
+    stream: bool = False
+
     @field_validator("response_format", mode="before")
     @classmethod
     def validate_response_format(cls, v):

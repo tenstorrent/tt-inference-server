@@ -52,6 +52,14 @@ class TextToSpeechService(BaseService):
             warmup_task_data=(minimal_wav_base64, "wav"),
         )
 
+    def handle_streaming_chunk(self, chunk):
+        """Extract the per-chunk TextToSpeechResponse from a streaming_chunk dict.
+
+        The runner emits ``{"type": "streaming_chunk", "chunk": <TextToSpeechResponse>}``
+        for each on-device chunk; unlike the text-based base implementation there is
+        no ``.text`` to gate on, so pass the audio response through as-is."""
+        return chunk.get("chunk")
+
     async def _set_result_to_wav(self, result: TextToSpeechResponse) -> None:
         """Encode result.audio to WAV and set result.output_bytes and result.format."""
         result.output_bytes = await self._cpu_workload_handler.execute_task(
@@ -72,12 +80,16 @@ class TextToSpeechService(BaseService):
 
     @log_execution_time("TTS post-processing")
     async def post_process(
-        self, result: TextToSpeechResponse, input_request: TextToSpeechRequest
+        self, result: TextToSpeechResponse, input_request: TextToSpeechRequest = None
     ) -> TextToSpeechResponse:
         """
         Convert result.audio (base64 WAV from runner) to requested format.
         If mp3/ogg requested but ffmpeg is unavailable or encoding fails, fall back to WAV.
         """
+        # Streaming path (base_service.process_streaming_request calls post_process
+        # with no input_request): each chunk is already a base64 WAV — pass through.
+        if input_request is None:
+            return result
         fmt = input_request.response_format.lower()
         if fmt not in AUDIO_RESPONSE_FORMATS:
             return result

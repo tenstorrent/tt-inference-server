@@ -41,6 +41,7 @@ class SupportedModels(Enum):
     QWEN_3_8B = "Qwen/Qwen3-8B"
     QWEN_3_32B = "Qwen/Qwen3-32B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
+    KOKORO_82M = "hexgrad/Kokoro-82M"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "google/gemma-4-31B-it"
     FALCON3_7B_INSTRUCT = "tiiuae/Falcon3-7B-Instruct"
@@ -91,6 +92,7 @@ class ModelNames(Enum):
     QWEN_3_8B = "Qwen3-8B"
     QWEN_3_32B = "Qwen3-32B"
     SPEECHT5_TTS = "speecht5_tts"
+    KOKORO_82M = "Kokoro-82M"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "gemma-4-31b-it"
     FALCON3_7B_INSTRUCT = "Falcon3-7B-Instruct"
@@ -141,6 +143,7 @@ class ModelRunners(Enum):
     LLM_TEST = "llm_test"
     LLAMA_RUNNER = "llama_runner"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
+    TT_KOKORO_82M = "tt-kokoro-tts"
     TT_XLA_SDXL = "tt-xla-sdxl"
     TT_Z_IMAGE_TURBO = "tt-z-image-turbo"
 
@@ -215,6 +218,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.TEXT_TO_SPEECH: {
         ModelRunners.TT_SPEECHT5_TTS,
+        ModelRunners.TT_KOKORO_82M,
     },
 }
 
@@ -270,6 +274,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.FALCON3_7B_INSTRUCT,
     },
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
+    ModelRunners.TT_KOKORO_82M: {ModelNames.KOKORO_82M},
     ModelRunners.TT_XLA_SDXL: {
         ModelNames.STABLE_DIFFUSION_XL_BASE,
         ModelNames.STABLE_DIFFUSION_XL_512,
@@ -973,6 +978,15 @@ ModelConfigs = {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
+    # Kokoro-82M: single-chip P150, full pipeline on device (TT plbert, StyleTTS2
+    # predictor, text encoder, ISTFTNet vocoder; no ring fabric, no CCL). See
+    # models/demos/audio/kokoro (KokoroGenerator).
+    (ModelRunners.TT_KOKORO_82M, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {

@@ -626,6 +626,16 @@
         }
       }
     },
+    "kokoro_tts": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P150"
+          ]
+        }
+      }
+    },
     "speecht5_tts": {
       "inference_engine": "MEDIA",
       "ci": {

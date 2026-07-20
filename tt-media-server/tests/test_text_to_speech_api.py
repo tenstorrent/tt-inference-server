@@ -211,6 +211,7 @@ class TestRealImplementation:
         mock_service.process_request = AsyncMock(return_value=mock_response)
 
         mock_request = MagicMock()
+        mock_request.stream = False
         mock_format = MagicMock()
         mock_format.lower.return_value = "wav"
         mock_request.response_format = mock_format
@@ -228,6 +229,7 @@ class TestRealImplementation:
         mock_service.process_request = AsyncMock(return_value=mock_response)
 
         mock_request = MagicMock()
+        mock_request.stream = False
         mock_format = MagicMock()
         mock_format.lower.return_value = "wav"
         mock_request.response_format = mock_format
@@ -245,6 +247,7 @@ class TestRealImplementation:
         mock_service.process_request = AsyncMock(return_value=mock_response)
 
         mock_request = MagicMock()
+        mock_request.stream = False
         mock_format = MagicMock()
         mock_format.lower.return_value = "mp3"
         mock_request.response_format = mock_format
@@ -264,6 +267,7 @@ class TestRealImplementation:
         mock_service.process_request = AsyncMock(return_value=mock_response)
 
         mock_request = MagicMock()
+        mock_request.stream = False
         mock_format = MagicMock()
         mock_format.lower.return_value = "ogg"
         mock_request.response_format = mock_format
@@ -282,6 +286,7 @@ class TestRealImplementation:
         mock_service.process_request = AsyncMock(return_value=mock_response)
 
         mock_request = MagicMock()
+        mock_request.stream = False
         mock_format = MagicMock()
         mock_format.lower.return_value = "mp3"
         mock_request.response_format = mock_format
@@ -302,6 +307,7 @@ class TestRealImplementation:
         mock_service.process_request = AsyncMock(return_value=mock_response)
 
         mock_request = MagicMock()
+        mock_request.stream = False
         mock_format = MagicMock()
         mock_format.lower.return_value = "verbose_json"
         mock_request.response_format = mock_format
@@ -318,6 +324,7 @@ class TestRealImplementation:
         mock_service.process_request = AsyncMock(return_value=mock_response)
 
         mock_request = MagicMock()
+        mock_request.stream = False
         mock_format = MagicMock()
         mock_format.lower.return_value = "wav"
         mock_request.response_format = mock_format
