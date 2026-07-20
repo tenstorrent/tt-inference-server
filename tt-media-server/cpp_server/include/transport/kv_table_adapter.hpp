@@ -42,8 +42,8 @@ struct KvSlice {
  *
  * srcSlice()/dstSlice() project the per-side coordinates the table walk uses:
  * the sender reads with srcSlice() against the prefill table and computes
- * destination offsets with dstSlice() against the decode table; the receiver
- * builds its mirror/drain with dstSlice() against its local (decode) table.
+ * destination device targets with dstSlice() against the decode table; the
+ * receiver drains from the sender's per-window descriptors (it holds no table).
  */
 struct MigrationRequest {
   uint32_t src_slot = 0;
@@ -84,9 +84,9 @@ struct ChunkPlan {
  * @brief A migration plan restricted to one host.
  *
  * `chunks` keeps the logical (slot, layer, position) coordinates and their
- * per-device targets (for the data plane: the sender computes mirror offsets,
- * the receiver drains to device). `locations` is the same targets flattened,
- * ready to build a KvCacheLayout / KvCacheMirror / RemoteRegion.
+ * per-device targets (for the data plane: the sender fills bounce sections, the
+ * receiver drains each to its device target). `locations` is the same targets
+ * flattened (used for emptiness checks and iteration).
  */
 struct HostKvPlan {
   std::vector<ChunkPlan> chunks;
@@ -104,9 +104,9 @@ struct HostKvPlan {
  * device-group fan-out) keyed by encodeDevice. Chunks absent from the table or
  * with no replica on `host` are skipped.
  *
- * Run it on the decode table for the decode host to size/lay out the receiver
- * mirror (and the sender's RemoteRegion); run it on the prefill table for the
- * prefill host to find the source addresses to read.
+ * Run it on the decode table for the decode host to get the destination device
+ * targets; run it on the prefill table for the prefill host to find the source
+ * addresses to read.
  */
 HostKvPlan buildHostPlan(const IKvTable& table, const std::string& host,
                          const KvSlice& slice);
@@ -141,13 +141,9 @@ std::vector<std::string> hostsForRequest(const IKvTable& table,
  * @brief Every KvChunkLocation `table` places on `host`, across the *whole*
  *        table (all slots/layers/positions), with device-group fan-out.
  *
- * Built once at init to size+register the receiver's KvCacheMirror and the
- * sender's destination KvCacheLayout. Because both sides feed the
- * byte-identical exchanged table through this same deterministic walk, the
- * resulting offsets are stable across migrations and identical on both ends —
- * so one Mooncake segment, registered once, addresses every migration.
- * (Contrast buildHostPlan, which is the per-request *subset* used to drive
- * reads/writes/drains.)
+ * Used at worker startup to enumerate the host's local devices to open (each
+ * distinct `LocalDeviceId` this host owns). (Contrast buildHostPlan, which is
+ * the per-request *subset* used to drive reads/writes/drains.)
  */
 std::vector<KvChunkLocation> allHostLocations(const IKvTable& table,
                                               const std::string& host);
