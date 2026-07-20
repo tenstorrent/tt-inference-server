@@ -277,6 +277,39 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      # ----- Resolve the source dev images (vllm/media/forge) built by the
+      #       tt-shield run, and expose them as STEP OUTPUTS for later steps
+      #       (e.g. a future publish step) plus a run-summary table. A family
+      #       with no build job resolves to "None". Reuses
+      #       scripts/release/resolve_release_source_images.py (also runnable
+      #       locally). gh needs tt-shield read access -> GH_TOKEN is the PAT. -----
+      - name: "Resolve release source images (vllm/media/forge)"
+        id: source-images
+        env:
+          GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+        run: |
+          python3 scripts/release/resolve_release_source_images.py \
+            --run-id "${TT_SHIELD_RUN_ID}" --json > "${RUNNER_TEMP}/source_images.json"
+          cat "${RUNNER_TEMP}/source_images.json"
+
+          # Expose one output per engine family (value or the literal "None").
+          for fam in vllm media forge; do
+            val=$(python3 -c "import json;print(json.load(open('${RUNNER_TEMP}/source_images.json'))['images']['$fam'] or 'None')")
+            echo "${fam}=${val}" >> "$GITHUB_OUTPUT"
+          done
+
+          # Human-readable summary on the run page.
+          {
+            echo "## Release source images (tt-shield run ${TT_SHIELD_RUN_ID})"
+            echo
+            echo "| Engine | Source dev image |"
+            echo "|--------|------------------|"
+            for fam in vllm media forge; do
+              val=$(python3 -c "import json;print(json.load(open('${RUNNER_TEMP}/source_images.json'))['images']['$fam'] or 'None')")
+              echo "| ${fam} | \`${val}\` |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # ----- Post-release branch off main (README_MANUAL "Create post-release
       #       branch"). Branches from origin/main, carries this branch's VERSION
       #       + models-ci-config.json onto it, RE-RUNS the same four generators
