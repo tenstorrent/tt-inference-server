@@ -30,7 +30,7 @@ export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.43}"
 MODEL="${MODEL:-moonshotai/Kimi-K2.6}"
 MODEL_NAME="${MODEL_NAME:-tt-cpp-server}"
 HTTP_PORT="${HTTP_PORT:-8080}"
-SERVER_PORT="${SERVER_PORT:-8001}"       # decode/regular REST + dynamo endpoint
+SERVER_PORT="${SERVER_PORT:-8001}"       # decode/regular REST + Dynamo worker server
 PREFILL_PORT="${PREFILL_PORT:-8002}"     # prefill REST
 SOCKET_PORT="${SOCKET_PORT:-9000}"       # decode<->prefill inter-server socket
 MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
@@ -160,14 +160,26 @@ ensure_binary() {
     else
         local src
         for src in \
-            "${CPP_DIR}/src/dynamo/dynamo_endpoint.cpp" \
+            "${CPP_DIR}/src/dynamo/worker_server.cpp" \
+            "${CPP_DIR}/src/dynamo/request_handler.cpp" \
+            "${CPP_DIR}/src/dynamo/transport_protocol.cpp" \
+            "${CPP_DIR}/src/dynamo/transport_server.cpp" \
             "${CPP_DIR}/src/dynamo/discovery.cpp" \
+            "${CPP_DIR}/src/dynamo/etcd_client.cpp" \
+            "${CPP_DIR}/src/dynamo/llm_mapping.cpp" \
+            "${CPP_DIR}/src/dynamo/prefill_result_mapping.cpp" \
             "${CPP_DIR}/src/services/disaggregation_service.cpp" \
             "${CPP_DIR}/src/services/llm_pipeline.cpp" \
             "${CPP_DIR}/src/utils/service_factory.cpp" \
             "${CPP_DIR}/src/main.cpp" \
-            "${CPP_DIR}/include/dynamo/dynamo_endpoint.hpp" \
+            "${CPP_DIR}/include/dynamo/worker_server.hpp" \
+            "${CPP_DIR}/include/dynamo/request_handler.hpp" \
+            "${CPP_DIR}/include/dynamo/transport_protocol.hpp" \
+            "${CPP_DIR}/include/dynamo/transport_server.hpp" \
             "${CPP_DIR}/include/dynamo/discovery.hpp" \
+            "${CPP_DIR}/include/dynamo/etcd_client.hpp" \
+            "${CPP_DIR}/include/dynamo/llm_mapping.hpp" \
+            "${CPP_DIR}/include/dynamo/prefill_result_mapping.hpp" \
             "${CPP_DIR}/include/services/disaggregation_service.hpp" \
             "${CPP_DIR}/include/services/llm_pipeline.hpp"; do
             if [[ "${src}" -nt "${BIN}" ]]; then

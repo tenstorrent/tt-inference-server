@@ -106,7 +106,7 @@ std::string prefixRangeEnd(const std::string& prefix) {
 
 // ---------------------------------------------------------------------------
 // URL parsing for etcd endpoints lives in include/utils/net.hpp (parseUrl) so
-// the DynamoEndpoint advertise-host detection can share it.
+// the DynamoWorkerServer advertise-host detection can share it.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

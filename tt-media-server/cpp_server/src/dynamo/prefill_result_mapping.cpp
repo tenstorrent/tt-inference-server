@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "dynamo/dynamo_prefill_result_json.hpp"
+#include "dynamo/prefill_result_mapping.hpp"
 
 #include <utility>
 
@@ -29,7 +29,7 @@ std::optional<int> optionalInt(const Json::Value& value) {
 
 }  // namespace
 
-Json::Value prefillResultMessageToJson(
+Json::Value prefillResultToJson(
     const tt::sockets::PrefillResultMessage& message) {
   Json::Value out(Json::objectValue);
   out["task_id"] = message.taskId;
@@ -61,7 +61,7 @@ Json::Value prefillResultMessageToJson(
   return out;
 }
 
-std::optional<tt::sockets::PrefillResultMessage> prefillResultMessageFromJson(
+std::optional<tt::sockets::PrefillResultMessage> prefillResultFromJson(
     const Json::Value& dynRaw) {
   const Json::Value* ttResult = nullptr;
   auto tryParams = [&ttResult](const Json::Value& params) {

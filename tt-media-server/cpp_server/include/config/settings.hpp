@@ -373,6 +373,36 @@ std::string dynamoComponent();
  * defaults::DYNAMO_ENDPOINT_NAME. */
 std::string dynamoEndpointName();
 
+/** Discovery backend selector: "etcd" (default) or "kubernetes". From
+ * DYNAMO_DISCOVERY_BACKEND. Default: defaults::DYNAMO_DISCOVERY_BACKEND. */
+std::string dynamoDiscoveryBackend();
+
+/** Kubernetes API server base URL for the kubernetes discovery backend. From
+ * DYNAMO_KUBE_API_SERVER, else derived from the in-cluster
+ * KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT env vars, else
+ * https://kubernetes.default.svc. */
+std::string dynamoKubeApiServer();
+
+/** Path to the ServiceAccount bearer token. From DYNAMO_KUBE_TOKEN_PATH.
+ * Default: defaults::DYNAMO_KUBE_TOKEN_PATH. */
+std::string dynamoKubeTokenPath();
+
+/** Whether to validate the API server TLS certificate. From
+ * DYNAMO_KUBE_VALIDATE_CERT. Default: defaults::DYNAMO_KUBE_VALIDATE_CERT. */
+bool dynamoKubeValidateCert();
+
+/** Kubernetes namespace the worker's CR is created in. From POD_NAMESPACE, else
+ * the in-cluster ServiceAccount namespace file. */
+std::string dynamoPodNamespace();
+
+/** Pod name (downward API), used as the CR name in pod mode and in the CR's
+ * owner reference. From POD_NAME. Empty if unset. */
+std::string dynamoPodName();
+
+/** Pod UID (downward API), used in the CR's owner reference for GC. From
+ * POD_UID. Empty if unset. */
+std::string dynamoPodUid();
+
 /** Prefill completion latency for MockSchedulers. From
  * MOCK_PREFILL_CHUNK_LATENCY_MS. Default:
  * defaults::MOCK_PREFILL_CHUNK_LATENCY_MS. */
