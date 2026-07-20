@@ -4144,8 +4144,15 @@ _eval_config_list = [
             EvalTask(
                 task_name="ifeval",
                 score=EvalTaskScore(
-                    published_score=None,
+                    # tiiuae internal lm-eval-harness run (chat template +
+                    # fewshot_as_multiturn) reports IFEval 76.5; the Open LLM
+                    # Leaderboard column shows 76.12. Compared against
+                    # result_keys[0] (prompt_level_strict_acc), so the card's
+                    # headline IFEval may differ slightly from this metric.
+                    published_score=76.5,
                     published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
+                    gpu_reference_score=72.64,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4090",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4156,16 +4163,22 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.05,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.50,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
                 },
             ),
             EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
                 num_fewshot=5,
                 score=EvalTaskScore(
+                    # No matching published reference: the Falcon3 card reports
+                    # GPQA-main 0-shot (31.9 raw / 8.05 Open LLM Leaderboard),
+                    # not GPQA-Diamond at 5-shot with flexible-extract as run
+                    # here. Left None to avoid an apples-to-oranges target.
                     published_score=None,
                     published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
+                    gpu_reference_score=43.43,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4090",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4175,8 +4188,8 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.05,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
+                    EvalLimitMode.CI_NIGHTLY: 0.50,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
                 },
             ),
         ],
