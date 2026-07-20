@@ -200,11 +200,19 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
                   if (isFinal) {
                     if (sessionManager && !sessionIdToRelease.empty()) {
                       sessionManager->releaseInFlight(sessionIdToRelease);
+                      TT_LOG_INFO(
+                          "[DynamoRequestHandler] Released decode session "
+                          "taskId={} sessionId={}",
+                          decodeReq->task_id, sessionIdToRelease);
                     }
                     signalDone();
                   } else if (!sent) {
                     if (sessionManager && !sessionIdToRelease.empty()) {
                       sessionManager->releaseInFlight(sessionIdToRelease);
+                      TT_LOG_INFO(
+                          "[DynamoRequestHandler] Released decode session "
+                          "(aborted) taskId={} sessionId={}",
+                          decodeReq->task_id, sessionIdToRelease);
                     }
                     pipeline->abortRequest(decodeReq->task_id);
                   }

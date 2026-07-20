@@ -35,6 +35,12 @@
 //
 //   4. Decode responds successfully.
 //      usage.completion_tokens > 0 on the streamed response.
+//
+//   5. Decode releases the session after the final chunk.
+//      Marker: "[DynamoRequestHandler] Released decode session taskId=<T>
+//      sessionId=<S>" in DECODE_LOG. Emitted by the isFinal branch of the
+//      DYNAMO_ROUTING=1 decode path once SessionManager::releaseInFlight has
+//      moved the session IN_FLIGHT → IDLE.
 
 #include <gtest/gtest.h>
 
@@ -121,6 +127,21 @@ std::optional<uint32_t> findSlotReservationGranted(const std::string& log,
   std::smatch m;
   if (!std::regex_search(log, m, re)) return std::nullopt;
   return static_cast<uint32_t>(std::stoul(m[1].str()));
+}
+
+// Match "[DynamoRequestHandler] Released decode session taskId=<T>
+// sessionId=<S>" and return the sessionId string. The log line is emitted by
+// the isFinal branch of the DYNAMO_ROUTING=1 decode path once
+// SessionManager::releaseInFlight has moved the session IN_FLIGHT → IDLE.
+std::optional<std::string> findDecodeSessionReleased(const std::string& log,
+                                                     uint32_t taskId) {
+  const std::string pattern =
+      R"(\[DynamoRequestHandler\] Released decode session taskId=)" +
+      std::to_string(taskId) + R"( sessionId=(\S+))";
+  const std::regex re(pattern);
+  std::smatch m;
+  if (!std::regex_search(log, m, re)) return std::nullopt;
+  return m[1].str();
 }
 
 // Poll `predicate` (returning true on success) up to timeoutSec. Sleeps
@@ -245,9 +266,36 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
   // received the reservation for this same taskId. This combination proves
   // the full prefill → slot-reserve → decode → response chain executed for
   // one request.
+
+  // (5) Decode released the session after the final chunk. The
+  // DYNAMO_ROUTING=1 isFinal branch of the decode request handler calls
+  // SessionManager::releaseInFlight, moving the session IN_FLIGHT → IDLE so
+  // the slot can be reused by a follow-up turn. Without this, a hang in the
+  // release path would leak in-flight state under repeated big-ISL traffic.
+  std::optional<std::string> releasedSessionId;
+  ASSERT_TRUE(waitFor(
+      [&] {
+        releasedSessionId =
+            findDecodeSessionReleased(readFile(decodeLog), *taskId);
+        return releasedSessionId.has_value();
+      },
+      K_LOG_ASSERTION_TIMEOUT_SEC, K_LOG_POLL_INTERVAL_MS))
+      << "decode worker never logged 'Released decode session taskId="
+      << *taskId
+      << " sessionId=…' — the session was not released after the final chunk "
+         "(log="
+      << decodeLog << ")";
+  EXPECT_FALSE(releasedSessionId->empty())
+      << "decode released a session but the logged sessionId was empty "
+         "(taskId="
+      << *taskId << ")";
+  std::cout << "[test] decode released session: taskId=" << *taskId
+            << " sessionId=" << *releasedSessionId << std::endl;
+
   std::cout << "[test] PASS: DYNAMO_ROUTING=1 big-ISL routed prefill→decode "
             << "(taskId=" << *taskId << " slotId=" << *slotId
-            << " completion_tokens=" << resp.usage.completionTokens << ")"
+            << " completion_tokens=" << resp.usage.completionTokens
+            << " released_session_id=" << *releasedSessionId << ")"
             << std::endl;
 }
 
