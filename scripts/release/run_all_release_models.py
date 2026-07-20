@@ -6,10 +6,8 @@
 import sys
 import argparse
 import subprocess
-from pathlib import Path
 
-# Add project root to path for imports
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+import _bootstrap  # noqa: F401,E402  (sets sys.path for imports below)
 
 from workflows.model_spec import MODEL_SPECS
 from reference_config.evals.eval_config import EVAL_CONFIGS
