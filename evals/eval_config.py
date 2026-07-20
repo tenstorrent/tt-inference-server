@@ -2260,7 +2260,11 @@ _eval_config_list = [
                 num_fewshot=0,
                 use_chat_api=True,
                 max_concurrent=8,
-                gen_kwargs={"max_gen_toks": "1024", "do_sample": "false", "stream": "false"},
+                gen_kwargs={
+                    "max_gen_toks": "1024",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
                 score=EvalTaskScore(
                     published_score=45.96,
                     published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503#instruction-evals",

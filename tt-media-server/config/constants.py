@@ -43,7 +43,9 @@ class SupportedModels(Enum):
     SPEECHT5_TTS = "microsoft/speecht5_tts"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "google/gemma-4-31B-it"
-    MISTRAL_SMALL_3_1_24B_INSTRUCT_2503 = "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
+    MISTRAL_SMALL_3_1_24B_INSTRUCT_2503 = (
+        "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
+    )
     FALCON3_7B_INSTRUCT = "tiiuae/Falcon3-7B-Instruct"
     Z_IMAGE_TURBO = "Tongyi-MAI/Z-Image-Turbo"
     YOLOX_NANO = "Megvii-BaseDetection/YOLOX-Nano"

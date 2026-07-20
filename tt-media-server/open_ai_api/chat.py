@@ -26,9 +26,10 @@ logger = TTLogger()
 def _get_tokenizer():
     model_name = settings.model_weights_path
     logger.info(f"Loading tokenizer for chat template: {model_name}")
-    kwargs = {"tokenizer_type": settings.tokenizer_type} if settings.tokenizer_type else {}
+    kwargs = (
+        {"tokenizer_type": settings.tokenizer_type} if settings.tokenizer_type else {}
+    )
     return AutoTokenizer.from_pretrained(model_name, **kwargs)
-
 
 
 # Chat templates render in one of two modes depending on the last message:
