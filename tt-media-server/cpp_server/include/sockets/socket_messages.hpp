@@ -294,7 +294,6 @@ struct SlotReservationRequestMessage
   bool hasPreviousResponseId = false;
   std::string previousResponseId;
 
-
   template <class F>
   void fields(F&& f) {
     f(taskId, prefillServerId, registrationHashes, hasPreviousResponseId,
