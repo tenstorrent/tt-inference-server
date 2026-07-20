@@ -7,10 +7,9 @@ templates:
 # =============================================================================
 - weights:
     - google/gemma-1.1-2b-it
-  tt_metal_commit: "25891d3"
   version: "0.18.0"
+  tt_metal_commit: "25891d3"
   impl: tt_transformers
-  docker_image: "tt-media-server-forge:local"
   min_disk_gb: 15
   min_ram_gb: 6
   model_type: TRAINING
@@ -25,11 +24,9 @@ templates:
       max_concurrency: 1
       max_context: 1024
       default_impl: true
-    # P300 board with a single visible Blackhole chip: tt-metal would classify
-    # it as a CUSTOM cluster and require a fabric mesh graph descriptor. The
-    # runner (setup_runner_environment) supplies the 1-chip (p150) descriptor
-    # automatically for training runners, so no explicit TT_MESH_GRAPH_DESC_PATH
-    # is needed here.
+    # P300 single-chip: the training runner supplies the p150 mesh graph
+    # descriptor automatically (see utils/runner_utils.py), so no explicit
+    # TT_MESH_GRAPH_DESC_PATH is needed here.
     - device: P300
       max_concurrency: 1
       max_context: 1024
