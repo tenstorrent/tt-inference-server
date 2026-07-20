@@ -293,17 +293,17 @@ struct SlotReservationRequestMessage
   std::vector<uint64_t> registrationHashes;
   bool hasPreviousResponseId = false;
   std::string previousResponseId;
-  int promptTokenCount = 0;
+
 
   template <class F>
   void fields(F&& f) {
     f(taskId, prefillServerId, registrationHashes, hasPreviousResponseId,
-      previousResponseId, promptTokenCount);
+      previousResponseId);
   }
   template <class F>
   void fields(F&& f) const {
     f(taskId, prefillServerId, registrationHashes, hasPreviousResponseId,
-      previousResponseId, promptTokenCount);
+      previousResponseId);
   }
 };
 

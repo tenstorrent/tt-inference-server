@@ -543,7 +543,6 @@ void DisaggregationService::reserveDecodeSlotViaSocket(
   reservation.taskId = taskId;
   reservation.prefillServerId = tt::config::prefillServerId();
   reservation.registrationHashes = registrationHashes;
-  reservation.promptTokenCount = request.prompt_tokens_count;
   if (request.previousResponseId.has_value() &&
       !request.previousResponseId->empty()) {
     reservation.hasPreviousResponseId = true;
@@ -590,7 +589,7 @@ void DisaggregationService::handleSlotReservationRequest(
       message.taskId, message.prefillServerId,
       message.registrationHashes.size());
 
-  decode_slot_reservation::ResolveInput input;
+  decode_slot_reservation::DecodeSlotReservationInput input;
   input.taskId = message.taskId;
   input.registrationHashes = message.registrationHashes;
   if (message.hasPreviousResponseId) {

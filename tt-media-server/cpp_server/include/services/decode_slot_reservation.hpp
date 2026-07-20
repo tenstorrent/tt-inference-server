@@ -27,7 +27,7 @@ struct DecodeDestinationSlot {
   int accumulatedThinkTokens = 0;
 };
 
-struct ResolveInput {
+struct DecodeSlotReservationInput {
   uint32_t taskId = 0;
   std::vector<uint64_t> registrationHashes;
   std::optional<std::string> previousResponseId;
@@ -44,7 +44,7 @@ struct ResolveInput {
  * the disaggregated request completes or is cancelled.
  */
 void resolveDecodeDestinationSlot(
-    SessionManager& sessionManager, const ResolveInput& input,
+    SessionManager& sessionManager, const DecodeSlotReservationInput& input,
     trantor::EventLoop* eventLoop,
     std::function<void(DecodeDestinationSlot)> onResolved,
     std::function<void(std::string_view)> onError,

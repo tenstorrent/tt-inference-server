@@ -46,7 +46,7 @@ DecodeDestinationSlot fromAcquiredPrefix(
 }  // namespace
 
 void resolveDecodeDestinationSlot(
-    SessionManager& sessionManager, const ResolveInput& input,
+    SessionManager& sessionManager, const DecodeSlotReservationInput& input,
     trantor::EventLoop* eventLoop,
     std::function<void(DecodeDestinationSlot)> onResolved,
     std::function<void(std::string_view)> onError,
