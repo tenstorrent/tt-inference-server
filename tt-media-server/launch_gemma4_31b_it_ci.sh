@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
 #
-# gemma-4-31b-it TP (4-chip, (1,4) mesh) forge LLM launcher that mirrors the
-# CI / production config (workflows/model_specs/dev/cnn.yaml, gemma-4-31b-it
+# gemma-4-31B-it TP (4-chip, (1,4) mesh) forge LLM launcher that mirrors the
+# CI / production config (workflows/model_specs/dev/cnn.yaml, gemma-4-31B-it
 # FORGE spec on P300X2): b32, 32768 context, chunk 1024, gmu 0.5, bfp8
 # weights+KV, opt=1, device sampling, trace, b1-prefill (min_num_seqs=1 /
 # prefill_batch_threshold=16). Pinned to all 4 chips as a single TP group.
@@ -16,14 +16,14 @@
 export TT_MESH_GRAPH_DESC_PATH="/home/kmabee/tt-xla-2/third_party/tt-mlir/src/tt-mlir/third_party/tt-metal/src/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
 #export TTXLA_LOGGER_LEVEL=DEBUG
 
-export MODEL=${MODEL:-gemma-4-31b-it}
+export MODEL=${MODEL:-gemma-4-31B-it}
 export DEVICE=${DEVICE:-p300x2}
 export API_KEY=${API_KEY:-your-secret-key}
 export ENVIRONMENT=development
 export TT_METAL_HOME=${TT_METAL_HOME:-$(pwd)/tt-metal}
 export IS_GALAXY=${IS_GALAXY:-False}
 
-# --- gemma-4-31b-it FORGE spec, verbatim from cnn.yaml ---
+# --- gemma-4-31B-it FORGE spec, verbatim from cnn.yaml ---
 export MAX_MODEL_LENGTH=${MAX_MODEL_LENGTH:-32768}
 export MAX_NUM_SEQS=${MAX_NUM_SEQS:-32}
 export GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.5}
