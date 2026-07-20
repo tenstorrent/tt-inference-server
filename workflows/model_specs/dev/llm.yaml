@@ -1424,3 +1424,39 @@ templates:
       # Kimi ships a custom tokenizer; AIPerf-driven sweeps (prefix-cache,
       # spec-decode) must trust remote code to load it.
       tokenizer_trust_remote_code: true
+
+- weights:
+    - zai-org/GLM-5.2-FP8
+  impl: tt_transformers
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 64
+      max_context: 524288  # 512 * 1024; 
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.2-FP8:
+      remote_api_model: zai-org/GLM-5.2-FP8
+      reasoning_parser_name: minimax_m2
+      tool_call_parser_name: minimax_m2
+
+- weights:
+    - deepseek-ai/DeepSeek-R1-0528
+  impl: tt_transformers
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 32
+      max_context: 65536  # 64 * 1024; 
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    deepseek-ai/DeepSeek-R1-0528:
+      remote_api_model: deepseek-ai/DeepSeek-R1-0528
+      reasoning_parser_name: minimax_m2
+      tool_call_parser_name: minimax_m2
