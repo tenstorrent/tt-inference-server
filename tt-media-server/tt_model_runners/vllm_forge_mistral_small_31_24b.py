@@ -32,40 +32,19 @@ class VLLMForgeMistralSmall31_24BRunner(BaseDeviceRunner):
             f"Device {self.device_id}: Loading VLLM Forge Mistral-Small-3.1 24B model..."
         )
         prompt = "Hello, it's me"
-        # additional_config mirrors the tt-xla Stage 1 vLLM benchmark
-        # (_mistral_small_31_tp_config in tests/benchmark/test_vllm_benchmarks.py):
-        # WH-galaxy 8x4 TP mesh, bfp8 weights + KV cache, const eval, and the
-        # b1-prefill optimization (min_num_seqs=1 + prefill_batch_threshold=16 ->
-        # small prefills served serially instead of a wasted b32 batch).
-        # Tunable per-run via env vars (mirrors vllm_forge_gemma4_31b.py):
-        #   ENABLE_TRACE=true      decode-graph replay; dominant throughput lever.
-        #   OPTIMIZATION_LEVEL=1   validated in Stage 1 on WH galaxy (the gemma
-        #                          opt=0 pin is a Blackhole-P300-only workaround).
-        #   CPU_SAMPLING=true      opt>=1 + trace requires CPU sampling (TTConfig
-        #                          rejects opt>=1 AND trace AND cpu_sampling=false),
-        #                          same as the Stage 1 opt=1 path. Flip to on-device
-        #                          (false) only together with OPTIMIZATION_LEVEL=0.
+        # opt>=1 + trace requires cpu_sampling=true (TTConfig rejects opt>=1 AND
+        # trace AND cpu_sampling=false); flip to on-device sampling only with opt=0.
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "true").lower() == "true"
         enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
-        # Explicit TP mesh is REQUIRED on the 32-device galaxy. From
-        # ModelConfigs (device_mesh_shape=(8,4) for GALAXY/BLACKHOLE_GALAXY):
-        # [8,4] = 4-way TP x 8-way data, matching Stage 1 and Mistral's GQA (8 KV
-        # heads -> 2/device). Without it the plugin auto-picks (4,8) -> 1 KV
-        # head/device (GQA-degenerate), which fails the stablehlo pipeline with
-        # "tensor sharding is incompatible with tensor shape" (and trips SDPA
-        # tree-reduction). See tt-metal#43210 for the MGD (4,8) reshape warning.
+        # [8,4] = 4-way TP x 8-way data; without an explicit mesh the plugin picks
+        # (4,8) -> 1 KV head/device (GQA-degenerate) and the stablehlo pipeline fails.
         mesh_shape = list(getattr(self.settings, "device_mesh_shape", ()) or ())
         if len(mesh_shape) != 2 or mesh_shape[0] * mesh_shape[1] < 2:
             mesh_shape = [8, 4]
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
-            # Mistral-Small-3.1 ships its chat template via mistral_common
-            # (tekken.json), NOT as an HF chat_template (tokenizer_config.json
-            # has none). With tokenizer_mode="auto", transformers>=5.5 loads a
-            # templateless HF tokenizer and /v1/chat/completions raises
-            # "tokenizer.chat_template is not set". "mistral" uses mistral_common
-            # so chat rendering + tool tokens ([TOOL_CALLS]) are handled correctly.
+            # Native tekken tokenizer; Mistral-Small-3.1 has no HF chat_template.
             tokenizer_mode="mistral",
             max_model_len=self.settings.vllm.max_model_length,
             max_num_batched_tokens=self.settings.vllm.max_num_batched_tokens,
@@ -73,7 +52,7 @@ class VLLMForgeMistralSmall31_24BRunner(BaseDeviceRunner):
             enable_chunked_prefill=False,
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
             # Pixtral-based multimodal model served text-only: zero the image cap
-            # so the vision tower never compiles (mirrors Stage 1).
+            # so the vision tower never compiles.
             limit_mm_per_prompt={"image": 0},
             additional_config={
                 "enable_const_eval": True,

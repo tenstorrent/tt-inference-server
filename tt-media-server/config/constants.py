@@ -1423,10 +1423,6 @@ for runner in [
 MODEL_NAME_OVERRIDES = {
     ModelNames.QWEN_3_4B: {"chat_template_kwargs": {"enable_thinking": False}},
     ModelNames.QWEN_3_8B: {"chat_template_kwargs": {"enable_thinking": False}},
-    # Mistral-Small-3.1 ships its chat template via mistral_common (tekken.json),
-    # not an HF chat_template; load the tokenizer with tokenizer_type="mistral"
-    # so apply_chat_template works (the plain HF tokenizer has no template under
-    # transformers>=5.5 and raises "tokenizer.chat_template is not set").
     ModelNames.MISTRAL_SMALL_3_1_24B_INSTRUCT_2503: {"tokenizer_type": "mistral"},
 }
 

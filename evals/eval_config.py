@@ -1547,9 +1547,11 @@ _eval_config_list = [
         hf_model_repo="mistralai/Mistral-Small-3.1-24B-Instruct-2503",
         tasks=[
             EvalTask(
-                task_name="gpqa_diamond_generative_n_shot",
-                num_fewshot=5,
+                task_name="gpqa_diamond_cot_zeroshot",
+                num_fewshot=0,
                 use_chat_api=True,
+                max_concurrent=8,
+                gen_kwargs={"max_gen_toks": "1024", "do_sample": "false", "stream": "false"},
                 score=EvalTaskScore(
                     published_score=45.96,
                     published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503#instruction-evals",
@@ -1585,10 +1587,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                apply_chat_template=False,
-                max_concurrent=32,
+                apply_chat_template=True,
+                max_concurrent=8,
                 gen_kwargs={
-                    "max_gen_toks": "256",
+                    "max_gen_toks": "512",
                     "do_sample": "false",
                     "stream": "false",
                 },
