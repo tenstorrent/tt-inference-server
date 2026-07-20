@@ -604,6 +604,7 @@ void DisaggregationService::handleSlotReservationRequest(
         response.taskId = taskId;
         response.hasSlot = slot.slotId != tt::domain::INVALID_SLOT_ID;
         response.slotId = slot.slotId;
+        response.sessionId = slot.sessionId;
         response.decodePositionId = slot.decodePositionId;
         response.decodeSkipTokens = slot.decodeSkipTokens;
         response.continuation = slot.continuation;
@@ -686,17 +687,20 @@ void DisaggregationService::applySlotReservationAndLaunch(
   const auto topK = work.request->top_k;
   const bool fastMode = work.request->fast_mode;
   const auto slotId = work.request->slotId;
+  const std::string decodeSessionId = result.sessionId;
 
   resolvePrefillSession(
       work.request, registrationHashes,
       [this, work = std::move(work), streamCallback,
        resultCallback = std::move(resultCallback), taskId, fullPromptTokenIds,
-       temperature, topP, topK, fastMode, slotId]() mutable {
+       temperature, topP, topK, fastMode, slotId,
+       decodeSessionId]() mutable {
         const auto requestPtr = work.request;
         launchPrefillWork(std::move(work), [streamCallback, resultCallback,
                                             taskId, fullPromptTokenIds,
                                             temperature, topP, topK, fastMode,
-                                            slotId, requestPtr](
+                                            slotId, decodeSessionId,
+                                            requestPtr](
                                                const LLMStreamChunk& response,
                                                bool isFinal) {
           if (resultCallback.has_value()) {
@@ -709,6 +713,7 @@ void DisaggregationService::applySlotReservationAndLaunch(
             }
             auto prefillResult = tt::sockets::PrefillResultMessage(taskId);
             prefillResult.slotId = slotId;
+            prefillResult.sessionId = decodeSessionId;
             prefillResult.temperature = temperature;
             prefillResult.topP = topP;
             prefillResult.topK = topK;
