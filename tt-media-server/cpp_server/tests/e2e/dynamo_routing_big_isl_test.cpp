@@ -130,18 +130,32 @@ std::optional<uint32_t> findSlotReservationGranted(const std::string& log,
 }
 
 // Match "[DynamoRequestHandler] Released decode session taskId=<T>
-// sessionId=<S>" and return the sessionId string. The log line is emitted by
-// the isFinal branch of the DYNAMO_ROUTING=1 decode path once
+// sessionId=<S>" and return (decodeTaskId, sessionId). The log line is emitted
+// by the isFinal branch of the DYNAMO_ROUTING=1 decode path once
 // SessionManager::releaseInFlight has moved the session IN_FLIGHT → IDLE.
-std::optional<std::string> findDecodeSessionReleased(const std::string& log,
-                                                     uint32_t taskId) {
-  const std::string pattern =
-      R"(\[DynamoRequestHandler\] Released decode session taskId=)" +
-      std::to_string(taskId) + R"( sessionId=(\S+))";
-  const std::regex re(pattern);
+//
+// Note: the taskId in this log is the DECODE worker's task_id, generated
+// locally by TaskIDGenerator on the decode side — it is NOT the same value as
+// the prefill worker's task_id from the "Prefill-first slot reservation" line
+// (each worker's TaskIDGenerator counts independently). So we don't correlate
+// by taskId here — we rely on the fact that only DYNAMO_ROUTING=1 decode
+// requests with a prefill_result exercise this path, and this test only sends
+// one such request.
+struct DecodeSessionReleaseLog {
+  uint32_t decodeTaskId = 0;
+  std::string sessionId;
+};
+
+std::optional<DecodeSessionReleaseLog> findDecodeSessionReleased(
+    const std::string& log) {
+  static const std::regex re(
+      R"(\[DynamoRequestHandler\] Released decode session taskId=(\d+) sessionId=(\S+))");
   std::smatch m;
   if (!std::regex_search(log, m, re)) return std::nullopt;
-  return m[1].str();
+  DecodeSessionReleaseLog out;
+  out.decodeTaskId = static_cast<uint32_t>(std::stoul(m[1].str()));
+  out.sessionId = m[2].str();
+  return out;
 }
 
 // Poll `predicate` (returning true on success) up to timeoutSec. Sleeps
@@ -272,31 +286,37 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
   // SessionManager::releaseInFlight, moving the session IN_FLIGHT → IDLE so
   // the slot can be reused by a follow-up turn. Without this, a hang in the
   // release path would leak in-flight state under repeated big-ISL traffic.
-  std::optional<std::string> releasedSessionId;
+  //
+  // Note: the taskId in this log line is the DECODE worker's task_id (its
+  // TaskIDGenerator counts independently from prefill's), so we cannot key
+  // off *taskId. We rely on the fact that only DYNAMO_ROUTING=1 decode
+  // requests carrying a prefill_result exercise this path, and this test
+  // only sends one such request — so the first (and only) release log line
+  // in DECODE_LOG belongs to our request.
+  std::optional<DecodeSessionReleaseLog> release;
   ASSERT_TRUE(waitFor(
       [&] {
-        releasedSessionId =
-            findDecodeSessionReleased(readFile(decodeLog), *taskId);
-        return releasedSessionId.has_value();
+        release = findDecodeSessionReleased(readFile(decodeLog));
+        return release.has_value();
       },
       K_LOG_ASSERTION_TIMEOUT_SEC, K_LOG_POLL_INTERVAL_MS))
-      << "decode worker never logged 'Released decode session taskId="
-      << *taskId
-      << " sessionId=…' — the session was not released after the final chunk "
+      << "decode worker never logged '[DynamoRequestHandler] Released decode "
+         "session …' — the session was not released after the final chunk "
          "(log="
       << decodeLog << ")";
-  EXPECT_FALSE(releasedSessionId->empty())
+  EXPECT_FALSE(release->sessionId.empty())
       << "decode released a session but the logged sessionId was empty "
-         "(taskId="
-      << *taskId << ")";
-  std::cout << "[test] decode released session: taskId=" << *taskId
-            << " sessionId=" << *releasedSessionId << std::endl;
+         "(decodeTaskId="
+      << release->decodeTaskId << ")";
+  std::cout << "[test] decode released session: decodeTaskId="
+            << release->decodeTaskId << " sessionId=" << release->sessionId
+            << std::endl;
 
   std::cout << "[test] PASS: DYNAMO_ROUTING=1 big-ISL routed prefill→decode "
-            << "(taskId=" << *taskId << " slotId=" << *slotId
+            << "(prefillTaskId=" << *taskId << " slotId=" << *slotId
             << " completion_tokens=" << resp.usage.completionTokens
-            << " released_session_id=" << *releasedSessionId << ")"
-            << std::endl;
+            << " released_session_id=" << release->sessionId
+            << " decodeTaskId=" << release->decodeTaskId << ")" << std::endl;
 }
 
 int main(int argc, char** argv) {
