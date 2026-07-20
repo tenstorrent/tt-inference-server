@@ -1631,8 +1631,10 @@ templates:
       default_impl: true
 
 - weights:
-    # gemma-4-31b-it Forge LLM (tensor-parallel) on p300x2/QB2. Lowercase
-    # basename matches tt-media-server ModelNames.GEMMA_4_31B_IT. Bumped to the
+    # gemma-4-31B-it Forge LLM (tensor-parallel) on p300x2/QB2. Capital-B
+    # basename matches ModelNames.GEMMA_4_31B_IT and eval_config.py's
+    # EVAL_CONFIGS key (#4331) -- a lowercase basename here silently excluded
+    # this model from evals. Bumped to the
     # b32/high-seq-len/chunked-prefill/b1-prefill config (mirrors the 5
     # single-chip P150 Forge LLMs -- 50c54994e/58fd6283a), qualified locally
     # against the full 128-65536 ctx ladder with bfp8 weights+KV: 32768 ctx at
@@ -1644,7 +1646,7 @@ templates:
     # 128K would need ~55 GiB/chip, over the ~32 GiB ceiling). Dims are
     # env-driven here (constants.py only carries the TP mesh topology),
     # mirroring the single-chip forge LLMs above.
-    - google/gemma-4-31b-it
+    - google/gemma-4-31B-it
   impl: forge_vllm_plugin
   min_disk_gb: 80
   min_ram_gb: 32
@@ -1656,7 +1658,7 @@ templates:
     - device: P300X2
       max_concurrency: 32
       max_context: 32768
-      # gemma-4-31b-it on P300X2 also has a tt_transformers/vLLM spec (llm.yaml,
+      # gemma-4-31B-it on P300X2 also has a tt_transformers/vLLM spec (llm.yaml,
       # this model's Model Readiness path); that one is the default impl. Both
       # can't be default_impl or determine_server_type raises "Multiple default
       # impls". This EXPERIMENTAL forge path stays selectable via explicit impl.

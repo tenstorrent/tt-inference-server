@@ -34,7 +34,7 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
         prompt = "Hello, it's me"
         # Tunable per-run via env vars (mirrors vllm_runner.py). Defaults now
         # match the validated b32/high-seq-len/chunked-prefill/b1-prefill
-        # config qualified for gemma-4-31b-it TP on qb2-blackhole (P300X2,
+        # config qualified for gemma-4-31B-it TP on qb2-blackhole (P300X2,
         # 4-chip (1,4) mesh): 32768 ctx, bfp8 weights+KV, chunk 1024, opt=1.
         #   ENABLE_TRACE=true     decode-graph replay; the dominant lever
         #                         (greedy 4.8 -> 8.1 tok/s, +71% at small ctx).
