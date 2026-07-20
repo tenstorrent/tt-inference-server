@@ -248,6 +248,35 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      # ----- Build the release-artifacts zip (README_MANUAL "Downloading
+      #       workflow artifacts"). Reuses scripts/release/build_release_artifacts.py
+      #       (unchanged; still runnable locally) to download the tt-shield
+      #       Release run's per-model/device bundles and pack them into
+      #       v<version>-release_artifacts.zip. The model/device scope is read
+      #       automatically from this branch's models-ci-config.json release list.
+      #       Runs on the base-branch working tree, BEFORE the post-release branch
+      #       switch; output goes to RUNNER_TEMP (outside the repo) so it never
+      #       lands in a git commit. gh needs tt-shield read access -> GH_TOKEN is
+      #       the tt-shield PAT (GITHUB_TOKEN cannot read another repo). -----
+      - name: "Build release artifacts zip (download from tt-shield)"
+        env:
+          GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/release_artifacts"
+          python3 scripts/release/build_release_artifacts.py \
+            --run-id "${TT_SHIELD_RUN_ID}" \
+            --version "v${RELEASE_VERSION}" \
+            --output-dir "${RUNNER_TEMP}/release_artifacts"
+
+      - name: "Upload release artifacts zip"
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-artifacts-v${{ env.RELEASE_VERSION }}
+          path: ${{ runner.temp }}/release_artifacts/*.zip
+          if-no-files-found: warn
+          retention-days: 7
+
       # ----- Post-release branch off main (README_MANUAL "Create post-release
       #       branch"). Branches from origin/main, carries this branch's VERSION
       #       + models-ci-config.json onto it, RE-RUNS the same four generators
