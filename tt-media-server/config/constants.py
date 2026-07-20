@@ -1127,6 +1127,10 @@ ModelConfigs = {
         # only carries the TP mesh topology (batch-16/4K lives in cnn.yaml).
         "max_batch_size": 1,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
+        # Default (1000s) is too short for do_sample reasoning evals (e.g.
+        # r1_aime24) at this max_context -- see request_processing_timeout_seconds
+        # on the Qwen3-32B entry below.
+        "request_processing_timeout_seconds": 3000,
     },
     (ModelRunners.VLLMForge_QWEN_32B, DeviceTypes.P300X2): {
         "device_mesh_shape": (1, 4),
@@ -1135,6 +1139,7 @@ ModelConfigs = {
         # Dims env-driven via dev/cnn.yaml env_vars (see gemma entry above).
         "max_batch_size": 1,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
+        "request_processing_timeout_seconds": 3000,
     },
     (ModelRunners.VLLMForge_MISTRAL_SMALL_31_24B, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (8, 4),
