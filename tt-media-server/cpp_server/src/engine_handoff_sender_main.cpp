@@ -6,7 +6,8 @@
 // The worker already has its KV table from a .pb file (often under /tmp); this
 // sender only supplies the live (or synthesized) chip map.
 //
-// Links transport_lib only (no Metal). For live maps, pipe print_local_device_map:
+// Links transport_lib only (no Metal). For live maps, pipe
+// print_local_device_map:
 //
 //   print_local_device_map | engine_handoff_sender --host 127.0.0.1 --port N \
 //       --device-map-stdin

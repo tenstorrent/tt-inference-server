@@ -114,8 +114,8 @@ struct WorkerConfig {
   std::string name;             // this worker's Mooncake server/segment name.
   std::string host;             // this node's host tag in the table.
   std::string device_map_path;  // FabricNode->UMD file fallback; empty => empty
-                                // map (placeholder only if single-mesh). Ignored
-                                // when engine_handoff_port != 0.
+                                // map (placeholder only if single-mesh).
+                                // Ignored when engine_handoff_port != 0.
   // When non-zero, listen for one DeviceMap handoff after loading the .pb file.
   uint16_t engine_handoff_port = 0;
 
@@ -337,7 +337,8 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
 
   if (cfg.role == Role::PREFILL) {
     if (cfg.prefill_table_path.empty()) {
-      std::cerr << "prefill needs --prefill-table (engine .pb path, e.g. /tmp)\n";
+      std::cerr
+          << "prefill needs --prefill-table (engine .pb path, e.g. /tmp)\n";
       return false;
     }
     if (cfg.peers.empty() && cfg.discover_peers.empty() &&
@@ -373,7 +374,8 @@ std::shared_ptr<MooncakeTransferEngine> makeEngine(const WorkerConfig& cfg) {
 }
 
 // One UmdDeviceAccess per device this host owns in `table`.
-// - Non-empty deviceMap: every local device must be present (hard error if not).
+// - Non-empty deviceMap: every local device must be present (hard error if
+// not).
 // - Empty deviceMap: single-mesh hosts may use the & 0xFFFF placeholder; a
 //   multi-mesh host with no map is a hard error (cross-mesh collision).
 std::unique_ptr<MultiDeviceUmd> buildDeviceIo(const IKvTable& table,
@@ -455,8 +457,9 @@ std::optional<ResolvedEngineTables> resolveWorkerTables(
   warnIgnoredDeviceMapFile(cfg);
   const std::string& tablePath =
       (cfg.role == Role::PREFILL) ? cfg.prefill_table_path : cfg.table_path;
-  return resolveEngineTables(cfg.engine_handoff_port, makeHandoffListenTransport,
-                             tablePath, cfg.device_map_path, gStop);
+  return resolveEngineTables(cfg.engine_handoff_port,
+                             makeHandoffListenTransport, tablePath,
+                             cfg.device_map_path, gStop);
 }
 
 // Bring up the optional HTTP health surface (/healthz /readyz /metrics) before
@@ -743,8 +746,7 @@ int runPrefill(const WorkerConfig& cfg) {
   std::shared_ptr<const IKvTable> decodeTable;
   const bool wantsExchange = configuredPeers > 0;
   if (wantsExchange) {
-    decodeTable =
-        awaitDecodeTableFromControl(connector, resolved->blob, gStop);
+    decodeTable = awaitDecodeTableFromControl(connector, resolved->blob, gStop);
     if (!decodeTable) {
       TT_LOG_WARN("[worker] prefill '{}' shutting down during TABLE_EXCHANGE",
                   cfg.name);

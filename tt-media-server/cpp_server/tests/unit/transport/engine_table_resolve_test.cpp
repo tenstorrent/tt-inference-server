@@ -139,8 +139,8 @@ TEST(EngineTableResolve, TableFromFileDeviceMapFromSocket) {
 
   std::optional<ResolvedEngineTables> resolved;
   std::thread listener([&] {
-    resolved = resolveEngineTables(kPort, factory, tablePath, /*deviceMapPath=*/"",
-                                   stop);
+    resolved = resolveEngineTables(kPort, factory, tablePath,
+                                   /*deviceMapPath=*/"", stop);
   });
 
   std::shared_ptr<sockets::TcpSocketTransport> client;
