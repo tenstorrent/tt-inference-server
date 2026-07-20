@@ -15,6 +15,7 @@ from workflows.workflow_result import WorkflowResult
 from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
+    get_repo_root_path,
 )
 from workflows.workflow_types import (
     ModelType,
@@ -193,7 +194,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
             f"Supported: {sorted(_ENGINE_WORKFLOW_NAMES.values())}"
         )
 
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = get_repo_root_path()
     output_dir = (
         get_default_workflow_root_log_dir() / "reports_output" / engine_workflow
     )

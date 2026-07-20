@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from workflows import workflow_dispatch
+from workflows.utils import get_repo_root_path
 from workflows.workflow_types import ModelType, WorkflowType
 
 
@@ -308,7 +309,7 @@ def test_cnn_embedding_routes_to_v2(model_type, workflow):
 
 
 def test_build_llm_bench_cmd_forwards_tools_and_jwt():
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = get_repo_root_path()
     cmd = workflow_dispatch._build_llm_bench_cmd(
         repo_root,
         _spec(ModelType.LLM),

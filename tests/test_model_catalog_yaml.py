@@ -2,8 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-from pathlib import Path
-
+from workflows.utils import get_repo_root_path
 from workflows.model_spec import (
     DeviceModelSpec,
     KnownIssue,
@@ -220,7 +219,7 @@ def test_dev_catalog_without_pinning_fields_loads(tmp_path):
     assert spec.code_link is None
 
 
-MODEL_SPECS_DIR = Path(__file__).resolve().parent.parent / "workflows" / "model_specs"
+MODEL_SPECS_DIR = get_repo_root_path() / "workflows" / "model_specs"
 EXPECTED_CATALOG_ENVS = ("prod", "dev")
 EXPECTED_CATALOG_FILES = (
     "llm.yaml",

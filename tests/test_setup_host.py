@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
+from workflows.utils import get_repo_root_path
 from workflows.runtime_config import RuntimeConfig
 from workflows.validate_setup import validate_runtime_args
 from workflows.model_spec import (
@@ -749,10 +750,7 @@ class TestVllmOverrideCliArgs:
         becomes silently overridable via --vllm-override-args. Scrapes the
         source so it tracks the actual parser without importing vLLM deps."""
         src_path = (
-            Path(__file__).resolve().parents[1]
-            / "vllm-tt-metal"
-            / "src"
-            / "run_vllm_api_server.py"
+            get_repo_root_path() / "vllm-tt-metal" / "src" / "run_vllm_api_server.py"
         )
         if not src_path.exists():
             pytest.skip(f"run_vllm_api_server.py not found at {src_path}")

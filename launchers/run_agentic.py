@@ -19,14 +19,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
-from pathlib import Path
 
-# launchers/<this file> -> parent is launchers/, parent.parent is the repo root.
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+from _launcher_common import setup_venv_and_exec
 
 logger = logging.getLogger("tt_agentic_launcher")
 
@@ -46,32 +41,23 @@ def _parse_launcher_args(argv: list[str]) -> argparse.Namespace:
     return args
 
 
-def _ensure_agentic_venv(args: argparse.Namespace) -> Path:
-    """Materialize ``EVALS_AGENTIC`` and return its interpreter path."""
-    from workflows.model_spec import get_runtime_model_spec
-    from workflows.workflow_types import WorkflowVenvType
-    from workflows.workflow_venvs import VENV_CONFIGS
-
-    model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
-    venv_config = VENV_CONFIGS[WorkflowVenvType.EVALS_AGENTIC]
-    setup_completed = venv_config.setup(model_spec=model_spec)
-    assert setup_completed, "Failed to setup venv: EVALS_AGENTIC"
-    return venv_config.venv_python
-
-
 def main() -> int:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    run_py = _REPO_ROOT / "run_workflows.py"
-    args = _parse_launcher_args(sys.argv[1:])
-    venv_python = _ensure_agentic_venv(args)
+    from workflows.model_spec import get_runtime_model_spec
+    from workflows.workflow_types import WorkflowVenvType
 
-    logger.info("Launching run_workflows.py inside EVALS_AGENTIC venv: %s", venv_python)
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os.execv(str(venv_python), [str(venv_python), str(run_py), *sys.argv[1:]])
+    args = _parse_launcher_args(sys.argv[1:])
+    # EVALS_AGENTIC setup depends on the model, so resolve the spec first.
+    model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+    return setup_venv_and_exec(
+        WorkflowVenvType.EVALS_AGENTIC,
+        logger,
+        "agentic evals",
+        model_spec=model_spec,
+    )
 
 
 if __name__ == "__main__":

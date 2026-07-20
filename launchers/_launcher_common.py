@@ -23,7 +23,9 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 
-def setup_venv_and_exec(venv_type, logger: logging.Logger, label: str) -> int:
+def setup_venv_and_exec(
+    venv_type, logger: logging.Logger, label: str, model_spec=None
+) -> int:
     """Materialize ``venv_type`` and re-exec ``run_workflows.py`` inside it.
 
     Imports only the lightweight ``workflows.*`` helpers so the launcher
@@ -31,11 +33,15 @@ def setup_venv_and_exec(venv_type, logger: logging.Logger, label: str) -> int:
     ``run_workflows.py`` and the perf-tool subprocess actually need.
     ``VenvConfig.setup`` is idempotent, so repeated launches are cheap once
     the venv exists.
+
+    ``model_spec`` is forwarded to ``VenvConfig.setup``; pass ``None`` for
+    venvs whose setup does not depend on a model (e.g. requirements-only
+    venvs like ``SPEC_DECODE``).
     """
     from workflows.workflow_venvs import VENV_CONFIGS
 
     venv_config = VENV_CONFIGS[venv_type]
-    setup_completed = venv_config.setup(model_spec=None)
+    setup_completed = venv_config.setup(model_spec=model_spec)
     assert setup_completed, f"Failed to setup venv: {venv_type.name}"
     venv_python = venv_config.venv_python
 

@@ -15,7 +15,8 @@ Covers:
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
+
+from workflows.utils import get_repo_root_path
 
 from llm_module.parsers.aiperf_prefix_cache import (
     SLA_HIT_RATE_MIN,
@@ -26,12 +27,7 @@ from llm_module.parsers.aiperf_prefix_cache import (
     _compute_sla_checks,
 )
 
-_TRACE_DIR = (
-    Path(__file__).resolve().parents[2]
-    / "llm_module"
-    / "prefix_cache"
-    / "sample_traces"
-)
+_TRACE_DIR = get_repo_root_path() / "llm_module" / "prefix_cache" / "sample_traces"
 
 
 def _passing_metrics() -> dict:
