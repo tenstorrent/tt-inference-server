@@ -310,6 +310,68 @@ jobs:
             done
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # ----- Map each source dev image to the tt-inference-server RELEASE image
+      #       to publish, and emit the publish plan (source -> destination) as
+      #       step outputs + a crane-copy preview. Destination repo/tag mirror
+      #       workflows/model_spec.py generate_default_docker_link: the source
+      #       tag is discarded and the destination tag is built from the release
+      #       INPUTS (version-tt_metal[-vllm]) — so the published version is the
+      #       run's `version` input, NOT whatever version the dev image carries.
+      #         vllm  -> ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:<ver>-<ttm>-<vllm>
+      #         media -> ghcr.io/tenstorrent/tt-media-inference-server:<ver>-<ttm>
+      #         forge -> ghcr.io/tenstorrent/tt-media-inference-server-forge:<ver>-<ttm>
+      #       A family whose source image is "None" maps to "None" (nothing to
+      #       publish). This PREPARES the plan only; it does not run crane. -----
+      - name: "Map source -> release images to publish (publish plan)"
+        id: image-mapping
+        env:
+          SRC_VLLM: ${{ steps.source-images.outputs.vllm }}
+          SRC_MEDIA: ${{ steps.source-images.outputs.media }}
+          SRC_FORGE: ${{ steps.source-images.outputs.forge }}
+        run: |
+          # Destination tags built from the release inputs (mirrors
+          # generate_default_docker_link; commits truncated to 12 like it does).
+          VER="${RELEASE_VERSION}"
+          TTM="${TT_METAL_COMMIT:0:12}"
+          VLL="${VLLM_COMMIT:0:12}"
+          DST_VLLM="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:${VER}-${TTM}-${VLL}"
+          DST_MEDIA="ghcr.io/tenstorrent/tt-media-inference-server:${VER}-${TTM}"
+          DST_FORGE="ghcr.io/tenstorrent/tt-media-inference-server-forge:${VER}-${TTM}"
+
+          # No source built for a family -> nothing to publish for it.
+          [ "$SRC_VLLM" = "None" ] && DST_VLLM="None"
+          [ "$SRC_MEDIA" = "None" ] && DST_MEDIA="None"
+          [ "$SRC_FORGE" = "None" ] && DST_FORGE="None"
+
+          # Publish plan as step outputs (source + destination per family).
+          {
+            echo "vllm_source=$SRC_VLLM";   echo "vllm_dest=$DST_VLLM"
+            echo "media_source=$SRC_MEDIA"; echo "media_dest=$DST_MEDIA"
+            echo "forge_source=$SRC_FORGE"; echo "forge_dest=$DST_FORGE"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "vllm : $SRC_VLLM -> $DST_VLLM"
+          echo "media: $SRC_MEDIA -> $DST_MEDIA"
+          echo "forge: $SRC_FORGE -> $DST_FORGE"
+
+          # Summary table + crane-copy preview (NOT executed here).
+          {
+            echo "## Release image publish plan (v${VER})"
+            echo
+            echo "| Engine | Source (tt-shield dev) | Destination (tt-inference-server release) |"
+            echo "|--------|------------------------|-------------------------------------------|"
+            echo "| vllm  | \`$SRC_VLLM\` | \`$DST_VLLM\` |"
+            echo "| media | \`$SRC_MEDIA\` | \`$DST_MEDIA\` |"
+            echo "| forge | \`$SRC_FORGE\` | \`$DST_FORGE\` |"
+            echo
+            echo "### crane copy commands (preview — not executed)"
+            echo '```bash'
+            [ "$DST_VLLM"  != "None" ] && echo "crane copy $SRC_VLLM $DST_VLLM"
+            [ "$DST_MEDIA" != "None" ] && echo "crane copy $SRC_MEDIA $DST_MEDIA"
+            [ "$DST_FORGE" != "None" ] && echo "crane copy $SRC_FORGE $DST_FORGE"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # ----- Post-release branch off main (README_MANUAL "Create post-release
       #       branch"). Branches from origin/main, carries this branch's VERSION
       #       + models-ci-config.json onto it, RE-RUNS the same four generators
