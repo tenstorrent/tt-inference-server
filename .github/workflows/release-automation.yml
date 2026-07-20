@@ -247,37 +247,59 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      # ----- Create the post-release branch off main (README_MANUAL "Create
-      #       post-release branch"). Branches from origin/main and carries this
-      #       pipeline branch's VERSION + models-ci-config.json onto it. Runs
-      #       LAST so switching the working tree to main does not disturb the
-      #       generate / commit / artifact steps above. -----
-      - name: "Create post-release branch from main"
+      # ----- Post-release branch off main (README_MANUAL "Create post-release
+      #       branch"). Branches from origin/main, carries this branch's VERSION
+      #       + models-ci-config.json onto it, RE-RUNS the same four generators
+      #       there, then commits everything in ONE commit and pushes. Runs LAST
+      #       so the working-tree switch to main does not disturb the base-branch
+      #       steps above. -----
+      - name: "Post-release: branch from main + carry VERSION/config"
         env:
           SRC_REF: ${{ github.ref_name }}
         run: |
           NEW_BRANCH="post-release-v${RELEASE_VERSION}${POST_RELEASE_SUFFIX}"
+          {
+            echo "POST_RELEASE_BRANCH=${NEW_BRANCH}"
+            echo "POST_RELEASE_SRC_REF=${SRC_REF}"
+          } >> "$GITHUB_ENV"
           echo "Creating '${NEW_BRANCH}' from main, carrying VERSION + models-ci-config.json from '${SRC_REF}'."
 
-          # Capture the two files from THIS branch's tree before switching away.
+          # Stash the two files outside the repo before switching branches.
           cp VERSION "${RUNNER_TEMP}/VERSION.carry"
           cp .github/workflows/models-ci-config.json "${RUNNER_TEMP}/models-ci-config.json.carry"
 
-          # Branch off the latest main.
+          # Branch off the latest main, then overlay the carried files.
           git fetch origin main
           git checkout -b "${NEW_BRANCH}" FETCH_HEAD
-
-          # Overlay the carried files onto main's tree.
           cp "${RUNNER_TEMP}/VERSION.carry" VERSION
           cp "${RUNNER_TEMP}/models-ci-config.json.carry" .github/workflows/models-ci-config.json
 
-          git add VERSION .github/workflows/models-ci-config.json
-          if git diff --cached --quiet; then
-            echo "VERSION + models-ci-config.json already match main — branch sits at main's tip."
-          else
-            git commit -m "post-release v${RELEASE_VERSION}${POST_RELEASE_SUFFIX}: carry VERSION + models-ci-config.json from ${SRC_REF}"
-          fi
+      - name: "Post-release: regenerate artifacts (same 4 steps, on this branch)"
+        # Now on the post-release branch (main + carried files). Re-run the same
+        # four generators against main's scripts + dev catalogue with the carried
+        # release list. Re-install deps in case main's requirements-dev.txt differs.
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python3 scripts/release/promote_dev_spec_to_prod.py \
+            --version "${RELEASE_VERSION}" \
+            --tt-metal-commit "${TT_METAL_COMMIT}" \
+            --vllm-commit "${VLLM_COMMIT}"
+          python3 scripts/release/export_model_spec.py
+          python -m workflows.helm_generator
+          helm-docs \
+            --chart-search-root=charts/tt-inference-server \
+            --template-files=_supportedModels.gotmpl \
+            --template-files=README.md.gotmpl
 
-          # Force so re-runs replace the throwaway branch instead of failing.
-          git push -f origin "${NEW_BRANCH}"
-          echo "Pushed '${NEW_BRANCH}'."
+      - name: "Post-release: commit + push the branch"
+        # ONE commit: carried VERSION/config + all regenerated artifacts.
+        # Force so re-runs replace the throwaway branch instead of failing.
+        run: |
+          git add .
+          if git diff --cached --quiet; then
+            echo "No changes vs main — pushing '${POST_RELEASE_BRANCH}' at main's tip."
+          else
+            git commit -m "post-release v${RELEASE_VERSION}${POST_RELEASE_SUFFIX}: carry VERSION/models-ci-config.json + regenerate prod specs, docs & helm (from ${POST_RELEASE_SRC_REF})"
+          fi
+          git push -f origin "${POST_RELEASE_BRANCH}"
+          echo "Pushed '${POST_RELEASE_BRANCH}'."
