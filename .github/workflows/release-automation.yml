@@ -14,10 +14,14 @@ run-name: >-
 # then, from the runner:
 #   git add . && git commit -m "v<version><suffix>" && git push
 #   git tag v<version><suffix> && git push origin v<version><suffix>
+# finally:
+#   create branch post-release-v<version><post-suffix> off main, carrying this
+#   branch's VERSION + models-ci-config.json onto it, and push it.
 #
 # The commit/push/tag run only if the four generators succeeded, and the commit
-# is skipped if they produced no changes. `tag-suffix` defaults to "-temp" for
-# safe testing (clear it on a workflow_dispatch run to cut a real "v<version>").
+# is skipped if they produced no changes. `tag-suffix` (default "-temp") and
+# `post-release-suffix` (default "-test") mark testing artifacts — clear them on
+# a workflow_dispatch run to cut a real "v<version>" / "post-release-v<version>".
 # Pushing uses the default GITHUB_TOKEN, whose pushes do NOT re-trigger this
 # workflow, so there is no push -> run -> push loop.
 # ---------------------------------------------------------------------------
@@ -49,6 +53,11 @@ on:
         description: "Suffix appended to the commit message & tag. Keep '-temp' while testing; clear it for a real release."
         required: false
         default: "-temp"
+        type: string
+      post-release-suffix:
+        description: "Suffix for the post-release branch (post-release-v<version><suffix>). Keep '-test' while testing; clear it for a real release."
+        required: false
+        default: "-test"
         type: string
   push:
     branches:
@@ -120,6 +129,7 @@ jobs:
           IN_VLLM_COMMIT: ${{ github.event.inputs['vllm-commit'] }}
           IN_TT_SHIELD_RUN_ID: ${{ github.event.inputs['tt-shield-run-id'] }}
           IN_TAG_SUFFIX: ${{ github.event.inputs['tag-suffix'] }}
+          IN_POST_RELEASE_SUFFIX: ${{ github.event.inputs['post-release-suffix'] }}
         run: |
           {
             echo "RELEASE_VERSION=${IN_VERSION:-0.18.0}"
@@ -127,12 +137,14 @@ jobs:
             echo "VLLM_COMMIT=${IN_VLLM_COMMIT:-6b4a3a7}"
             echo "TT_SHIELD_RUN_ID=${IN_TT_SHIELD_RUN_ID:-29037835062}"
           } >> "$GITHUB_ENV"
-          # Tag suffix: on dispatch use the input verbatim (may be empty for a
-          # real release); on push default to -temp for safe testing.
+          # Suffixes: on dispatch use the inputs verbatim (may be empty for a
+          # real release); on push default to the testing suffixes.
           if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
             echo "TAG_SUFFIX=${IN_TAG_SUFFIX}" >> "$GITHUB_ENV"
+            echo "POST_RELEASE_SUFFIX=${IN_POST_RELEASE_SUFFIX}" >> "$GITHUB_ENV"
           else
             echo "TAG_SUFFIX=-temp" >> "$GITHUB_ENV"
+            echo "POST_RELEASE_SUFFIX=-test" >> "$GITHUB_ENV"
           fi
 
       - name: Show effective parameters
@@ -142,6 +154,7 @@ jobs:
           echo "vllm-commit      = ${VLLM_COMMIT}"
           echo "tt-shield-run-id = ${TT_SHIELD_RUN_ID}  (not used here)"
           echo "commit/tag       = v${RELEASE_VERSION}${TAG_SUFFIX}"
+          echo "post-release br  = post-release-v${RELEASE_VERSION}${POST_RELEASE_SUFFIX} (from main)"
 
       # ----- Step 1: promote dev model specs -> prod (release-scoped only) -----
       - name: "Step 1 — promote dev specs to prod"
@@ -233,3 +246,38 @@ jobs:
             README.md
           if-no-files-found: warn
           retention-days: 7
+
+      # ----- Create the post-release branch off main (README_MANUAL "Create
+      #       post-release branch"). Branches from origin/main and carries this
+      #       pipeline branch's VERSION + models-ci-config.json onto it. Runs
+      #       LAST so switching the working tree to main does not disturb the
+      #       generate / commit / artifact steps above. -----
+      - name: "Create post-release branch from main"
+        env:
+          SRC_REF: ${{ github.ref_name }}
+        run: |
+          NEW_BRANCH="post-release-v${RELEASE_VERSION}${POST_RELEASE_SUFFIX}"
+          echo "Creating '${NEW_BRANCH}' from main, carrying VERSION + models-ci-config.json from '${SRC_REF}'."
+
+          # Capture the two files from THIS branch's tree before switching away.
+          cp VERSION "${RUNNER_TEMP}/VERSION.carry"
+          cp .github/workflows/models-ci-config.json "${RUNNER_TEMP}/models-ci-config.json.carry"
+
+          # Branch off the latest main.
+          git fetch origin main
+          git checkout -b "${NEW_BRANCH}" FETCH_HEAD
+
+          # Overlay the carried files onto main's tree.
+          cp "${RUNNER_TEMP}/VERSION.carry" VERSION
+          cp "${RUNNER_TEMP}/models-ci-config.json.carry" .github/workflows/models-ci-config.json
+
+          git add VERSION .github/workflows/models-ci-config.json
+          if git diff --cached --quiet; then
+            echo "VERSION + models-ci-config.json already match main — branch sits at main's tip."
+          else
+            git commit -m "post-release v${RELEASE_VERSION}${POST_RELEASE_SUFFIX}: carry VERSION + models-ci-config.json from ${SRC_REF}"
+          fi
+
+          # Force so re-runs replace the throwaway branch instead of failing.
+          git push -f origin "${NEW_BRANCH}"
+          echo "Pushed '${NEW_BRANCH}'."
