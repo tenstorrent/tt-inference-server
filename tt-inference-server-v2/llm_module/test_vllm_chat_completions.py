@@ -109,11 +109,11 @@ JSON_OBJECT_MESSAGES = [
     {
         "role": "user",
         "content": (
-            'Return ONLY a minified JSON object with EXACTLY these keys and '
+            "Return ONLY a minified JSON object with EXACTLY these keys and "
             'constraints: {"location":string, "temperature":integer '
             '[-100..100], "conditions":"sunny|cloudy|rainy|snowy", '
             '"unit":"celsius", "readings":[{t:integer, ts:ISO-8601 UTC Z} x '
-            '3]}. No code fences, no extra text, no newlines. Example shape '
+            "3]}. No code fences, no extra text, no newlines. Example shape "
             "only; fill realistic values for Boston."
         ),
     }
@@ -648,7 +648,10 @@ def _stream_one_run_with_backoff(api_client, base_payload, run_idx, prev_start):
         try:
             result = _stream_chat_completion(api_client, base_payload)
             return result, start_ts
-        except (requests.exceptions.HTTPError, requests.exceptions.ChunkedEncodingError) as e:
+        except (
+            requests.exceptions.HTTPError,
+            requests.exceptions.ChunkedEncodingError,
+        ) as e:
             if _is_rate_limit_error(e):
                 if attempt >= _JSON_STREAMING_MAX_RETRIES:
                     pytest.skip(
