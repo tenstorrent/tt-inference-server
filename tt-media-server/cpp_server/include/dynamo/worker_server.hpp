@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "dynamo/discovery.hpp"
-#include "dynamo/dynamo_protocol.hpp"
+#include "dynamo/transport_server.hpp"
 
 namespace trantor {
 class EventLoopThreadPool;
@@ -24,7 +24,7 @@ class LLMPipeline;
 namespace tt::dynamo {
 
 /**
- * Dedicated Dynamo `generate` endpoint.
+ * Worker-side Dynamo `generate` server.
  *
  * Hosts a TCP listener that speaks the Dynamo wire protocol and dispatches
  * each inbound request through the same `LLMPipeline` used by HTTP
@@ -35,7 +35,7 @@ namespace tt::dynamo {
  * One instance per process. Construct in main.cpp once the LLMPipeline /
  * SessionManager are ready, call `start()` after the worker manager is up.
  */
-class DynamoEndpoint {
+class DynamoWorkerServer {
  public:
   struct Options {
     std::string bind_host = "0.0.0.0";
@@ -48,12 +48,24 @@ class DynamoEndpoint {
     std::string component = "backend";
     std::string endpoint = "generate";
 
-    /// Discovery backend ("file" or "etcd"). Must match the frontend's
-    /// DYN_DISCOVERY_BACKEND.
+    /// Discovery backend. Must match the frontend's DYN_DISCOVERY_BACKEND.
+    DiscoveryBackend backend = DiscoveryBackend::ETCD;
+
     /// Etcd backend: endpoint URL (or comma-separated list).
     std::string etcd_endpoints = "http://localhost:2379";
     /// Etcd backend: lease TTL in seconds (keep-alive runs at half this).
     int64_t etcd_lease_ttl_secs = 10;
+
+    /// Kubernetes backend: API server base URL and ServiceAccount token path.
+    std::string kube_api_server;
+    std::string kube_token_path =
+        "/var/run/secrets/kubernetes.io/serviceaccount/token";
+    bool kube_validate_cert = true;
+    /// Kubernetes backend: namespace + pod identity (downward API). In pod mode
+    /// the CR name equals pod_name.
+    std::string pod_namespace;
+    std::string pod_name;
+    std::string pod_uid;
 
     /// Slug shown in /v1/models. When empty, the active tokenizer's
     /// modelName() is used.
@@ -73,14 +85,14 @@ class DynamoEndpoint {
     size_t num_loops = 0;
   };
 
-  DynamoEndpoint(
+  DynamoWorkerServer(
       std::shared_ptr<services::LLMPipeline> pipeline,
       std::shared_ptr<services::DisaggregationService> disaggregation,
       Options options);
-  ~DynamoEndpoint();
+  ~DynamoWorkerServer();
 
-  DynamoEndpoint(const DynamoEndpoint&) = delete;
-  DynamoEndpoint& operator=(const DynamoEndpoint&) = delete;
+  DynamoWorkerServer(const DynamoWorkerServer&) = delete;
+  DynamoWorkerServer& operator=(const DynamoWorkerServer&) = delete;
 
   /// Bind, register discovery, and start serving. Blocks until the listener
   /// is bound; the actual accept loop runs on a background thread.
@@ -102,7 +114,7 @@ class DynamoEndpoint {
   std::shared_ptr<services::DisaggregationService> disaggregation_;
   Options options_;
 
-  std::unique_ptr<DynamoServer> server_;
+  std::unique_ptr<DynamoTransportServer> server_;
   std::thread keepalive_thread_;
   std::unique_ptr<trantor::EventLoopThreadPool> loop_pool_;
   std::atomic<bool> running_{false};
