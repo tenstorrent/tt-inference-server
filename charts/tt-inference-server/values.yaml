@@ -7664,6 +7664,35 @@ models:
                 value: '900000'
               - name: VLLM_TARGET_DEVICE
                 value: tt
+      gpu:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.18.0-c49bb76-6b4a3a7
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 77Gi
+            env:
+              - name: MESH_DEVICE
+                value: GPU
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
     defaultEngine: vllm
   Qwen3.6-27B:
     vllm:
