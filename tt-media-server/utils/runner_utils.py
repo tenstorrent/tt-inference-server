@@ -57,7 +57,6 @@ def setup_runner_environment(
         # CUSTOM cluster type and asserts that a fabric mesh graph descriptor
         # path is set. Providing the BH mesh descriptor avoids that.
         ModelRunners.TRAINING_GEMMA_LORA.value,
-        ModelRunners.TRAINING_LORA.value,
     }
     if settings.model_runner in _RUNNERS_REQUIRING_MESH_DESCRIPTOR:
         if settings.is_galaxy:

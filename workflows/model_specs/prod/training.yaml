@@ -24,9 +24,6 @@ templates:
       max_concurrency: 1
       max_context: 1024
       default_impl: true
-    # P300 single-chip: the training runner supplies the p150 mesh graph
-    # descriptor automatically (see utils/runner_utils.py), so no explicit
-    # TT_MESH_GRAPH_DESC_PATH is needed here.
     - device: P300
       max_concurrency: 1
       max_context: 1024
