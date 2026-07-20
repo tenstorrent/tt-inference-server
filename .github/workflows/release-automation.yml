@@ -313,12 +313,12 @@ jobs:
       #       post-release branch is main-based and does not carry this script,
       #       so restore it from RUNNER_TEMP first. It renders the Model Spec
       #       Release Updates table from this branch's prod (new) vs origin/main
-      #       (old). CI Job Links need TMP_ACVEJICTT_PAT (tt-shield read access);
+      #       (old). CI Job Links need TMP_VMAKSIMOVICTT_PAT (tt-shield read access);
       #       when it is absent or lacks access they render as UNKNOWN. -----
       - name: "Post-release: open draft PR -> main"
         env:
           GH_TOKEN: ${{ github.token }}
-          TMP_ACVEJICTT_PAT: ${{ secrets.TMP_ACVEJICTT_PAT }}
+          TMP_VMAKSIMOVICTT_PAT: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
         run: |
           cp "${RUNNER_TEMP}/create_post_release_pr.py" scripts/release/create_post_release_pr.py
           python3 scripts/release/create_post_release_pr.py \
