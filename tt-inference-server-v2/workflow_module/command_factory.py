@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from workflows.model_spec import get_runtime_model_spec
+from workflows.model_spec import ModelSpec, get_runtime_model_spec
 from workflows.runtime_config import RuntimeConfig
 from workflows.workflow_types import DeviceTypes, InferenceEngine
 
@@ -97,7 +97,25 @@ def _build_repeated_commands(
 def _build_context(
     args: argparse.Namespace, output_path: Optional[Path] = None
 ) -> MediaContext:
-    model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+    # Prefer the impl-resolved spec from --runtime-model-spec-json (this v2 entry
+    # point has no --impl/--engine flags, so re-resolving from the catalog picks
+    # whichever candidate has default_impl=True -- wrong for dual-catalog models
+    # where forge isn't the default). Mirrors _resolve_auth_token below.
+    model_spec = None
+    runtime_model_spec_json = getattr(args, "runtime_model_spec_json", None)
+    if runtime_model_spec_json:
+        try:
+            model_spec = ModelSpec.from_json(runtime_model_spec_json)
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
+            logger.warning(
+                "Could not load runtime_model_spec_json=%r (%s); falling back to "
+                "catalog re-resolution (may pick the wrong spec for dual-catalog "
+                "models).",
+                runtime_model_spec_json,
+                e,
+            )
+    if model_spec is None:
+        model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
     model_spec.cli_args["device"] = args.device
     if args.num_prompts is not None:
         model_spec.cli_args["sdxl_num_prompts"] = max(2, args.num_prompts)
