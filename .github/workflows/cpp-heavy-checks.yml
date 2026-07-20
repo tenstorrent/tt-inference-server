@@ -323,7 +323,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "ZMQ direct split prefill"
           cd cpp_server/build
           NS=zmq_prefill
-          SOCKET_TRANSPORT=zmq LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          SOCKET_TRANSPORT=zmq LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_scheduler SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
