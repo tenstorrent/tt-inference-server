@@ -144,6 +144,7 @@ constexpr uint16_t DYNAMO_BIND_PORT = 0;  // 0 = OS-assigned ephemeral port.
 constexpr const char* DYNAMO_NAMESPACE = "default";
 constexpr const char* DYNAMO_COMPONENT = "backend";
 constexpr const char* DYNAMO_ENDPOINT_NAME = "generate";
+constexpr const char* DYNAMO_DISCOVERY_BACKEND = "etcd";
 
 // Discovery: etcd endpoint for Dynamo's KVStoreDiscovery.
 constexpr const char* DYNAMO_ETCD_ENDPOINTS = "http://etcd:2379/";
@@ -151,6 +152,14 @@ constexpr const char* DYNAMO_ETCD_ENDPOINTS = "http://etcd:2379/";
 // refreshes the lease at half this interval so a missed tick doesn't trip
 // the reaper.
 constexpr int64_t DYNAMO_ETCD_LEASE_TTL_SECS = 10;
+
+// Standard in-cluster ServiceAccount mount paths.
+constexpr const char* DYNAMO_KUBE_TOKEN_PATH =
+    "/var/run/secrets/kubernetes.io/serviceaccount/token";
+constexpr const char* DYNAMO_KUBE_NAMESPACE_PATH =
+    "/var/run/secrets/kubernetes.io/serviceaccount/namespace";
+// Validate the API server's TLS certificate using mounted ServiceAccount CA.
+constexpr bool DYNAMO_KUBE_VALIDATE_CERT = true;
 
 constexpr unsigned MOCK_PREFILL_CHUNK_LATENCY_MS = 1353;
 constexpr unsigned MOCK_STAGE_LATENCY_US = 44;
