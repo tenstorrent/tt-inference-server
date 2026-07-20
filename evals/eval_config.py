@@ -3121,7 +3121,6 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-
             ),
             EvalTask(
                 task_name="longbench_fewshot_e",
