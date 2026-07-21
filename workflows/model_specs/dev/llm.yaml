@@ -1712,3 +1712,21 @@ templates:
         VLLM__MAX_NUM_BATCHED_TOKENS: "32768"
         VLLM__MAX_MODEL_LENGTH: "131072"
         VLLM__MIN_CONTEXT_LENGTH: "1024"
+
+- weights:
+    - zai-org/GLM-5.2
+  impl: tt_transformers
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 64
+      max_context: 1048576  # 1024 * 1024;
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.2:
+      remote_api_model: zai-org/GLM-5.2
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47
