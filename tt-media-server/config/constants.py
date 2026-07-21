@@ -43,6 +43,7 @@ class SupportedModels(Enum):
     SPEECHT5_TTS = "microsoft/speecht5_tts"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "google/gemma-4-31B-it"
+    DEVSTRAL_2_123B = "mistralai/Devstral-2-123B-Instruct-2512"
     FALCON3_7B_INSTRUCT = "tiiuae/Falcon3-7B-Instruct"
     Z_IMAGE_TURBO = "Tongyi-MAI/Z-Image-Turbo"
     YOLOX_NANO = "Megvii-BaseDetection/YOLOX-Nano"
@@ -93,6 +94,9 @@ class ModelNames(Enum):
     SPEECHT5_TTS = "speecht5_tts"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "gemma-4-31b-it"
+    # Basename must match the dev/cnn.yaml `weights:` basename (mirrors Qwen3-32B,
+    # which keeps exact HF-repo case). See workflows/model_specs/dev/cnn.yaml.
+    DEVSTRAL_2_123B = "Devstral-2-123B-Instruct-2512"
     FALCON3_7B_INSTRUCT = "Falcon3-7B-Instruct"
     YOLOX_NANO = "yolox_nano"
     Z_IMAGE_TURBO = "Z-Image-Turbo"
@@ -122,6 +126,7 @@ class ModelRunners(Enum):
     VLLMForge_LLAMA_70B = "vllm_forge_llama_70b"
     VLLMForge_GEMMA4_31B = "vllm_forge_gemma4_31b"
     VLLMForge_QWEN_32B = "vllm_forge_qwen_32b"
+    VLLMForge_DEVSTRAL_123B = "vllm_forge_devstral_123b"
     QWEN_EMBEDDING_8B = "qwen_embedding_8b"
     BGELargeEN_V1_5 = "bge_large_en_v1_5"
     BGEM3 = "bge-m3"
@@ -175,6 +180,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.VLLMForge_LLAMA_70B,
         ModelRunners.VLLMForge_GEMMA4_31B,
         ModelRunners.VLLMForge_QWEN_32B,
+        ModelRunners.VLLMForge_DEVSTRAL_123B,
         ModelRunners.LLM_TEST,
         ModelRunners.LLAMA_RUNNER,
         ModelRunners.LORA_SINGLE_CHIP,
@@ -258,6 +264,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.VLLMForge_LLAMA_70B: {ModelNames.LLAMA_3_1_70B},
     ModelRunners.VLLMForge_GEMMA4_31B: {ModelNames.GEMMA_4_31B_IT},
     ModelRunners.VLLMForge_QWEN_32B: {ModelNames.QWEN_3_32B},
+    ModelRunners.VLLMForge_DEVSTRAL_123B: {ModelNames.DEVSTRAL_2_123B},
     ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
     ModelRunners.BGEM3: {ModelNames.BGE_M3},
@@ -1101,6 +1108,23 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         # Dims env-driven via dev/cnn.yaml env_vars (see gemma entry above).
+        "max_batch_size": 1,
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
+    },
+    (ModelRunners.VLLMForge_DEVSTRAL_123B, DeviceTypes.BLACKHOLE_GALAXY): {
+        # Devstral-2-123B on the BH Galaxy (32 chips) as a 4x8 DP+TP mesh:
+        # device_mesh_shape=(DP=4, TP=8), matching tt-xla's mesh_shape=[4,8] on
+        # branch ssalice/devstral-qwen-wip-07-13-2026 (same (DP,TP) axis order as gemma's
+        # (1,4)). The forge vLLM plugin performs the 2D DP+TP split internally, so
+        # tt-media-server hands it ONE worker owning all 32 devices (a single
+        # DEVICE_IDS_32_GROUP), exactly like gemma hands its runner one group of 4.
+        # is_galaxy=False (like gemma) + static device_ids => bypasses
+        # settings._set_device_pairs_overrides(), which has no (4,8) discovery
+        # branch (only (1,1)/(2,1)/(2,4)). Dims (batch/context/GMU/dtypes/DP keys)
+        # are set in dev/cnn.yaml env_vars + the dedicated runner module.
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },

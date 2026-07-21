@@ -207,6 +207,54 @@ templates:
         TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
 
 - weights:
+    # Devstral-2-123B Forge LLM (DP+TP) on the BH Galaxy (32 chips, 4x8 DP+TP
+    # mesh), mirroring the gemma-4-31b / Qwen3-32B forge blocks above. Basename
+    # "Devstral-2-123B-Instruct-2512" matches ModelNames.DEVSTRAL_2_123B. Validated
+    # standalone in tt-xla (branch ssalice/devstral-qwen-wip-07-13-2026, benchmark id
+    # "devstral-123b-galaxy-tp"). The DP+TP additional_config keys live in the
+    # dedicated runner (tt_model_runners/vllm_forge_devstral_123b.py); this spec
+    # carries the served dims + env.
+    - mistralai/Devstral-2-123B-Instruct-2512
+  impl: forge_vllm_plugin
+  min_disk_gb: 300  # TODO(verify): 123B fp8 checkpoint on-disk footprint
+  min_ram_gb: 64    # TODO(verify)
+  model_type: LLM
+  inference_engine: FORGE
+  uses_tensor_model_cache: false
+  status: EXPERIMENTAL
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      # max_concurrency = served aggregate batch = 128 (dp-batch128: 4 DP replicas
+      # x 32 seqs/replica). max_context = 128 is the ONLY context tt-xla actually
+      # validated for this model: the devstral-123b-galaxy-tp benchmark runs at the
+      # TT_BENCHMARK_MAX_MODEL_LEN default (128) with NO override, and the DP+TP
+      # generation test uses max_model_len=128. This is deliberately the safe
+      # first-light value -- b128 x 4096 was never proven and is a prime DRAM-OOM
+      # candidate at trace capture (max_num_batched_tokens = ctx*b = 524288, large
+      # KV at GMU 0.3). TODO(tune): raise max_context/MAX_MODEL_LENGTH toward model
+      # max for real serving/evals, adjusting GPU_MEMORY_UTILIZATION together; an
+      # OOM when raising it is a fit problem to tune, NOT a wiring regression.
+      max_concurrency: 128
+      max_context: 128
+      default_impl: true
+      eval_max_retries: 1
+      env_vars:
+        MAX_MODEL_LENGTH: "128"         # validated first-light value; raise for real evals (see above)
+        MAX_NUM_SEQS: "128"
+        GPU_MEMORY_UTILIZATION: "0.3"   # tt-xla benchmark value (gen-test used 0.1); TODO(tune)
+        OPTIMIZATION_LEVEL: "0"
+        ENABLE_TRACE: "true"
+        CPU_SAMPLING: "true"            # REQUIRED on the 2D DP+TP mesh (tt-inference-server#4440)
+        # BH Galaxy runtime: TT_RUNTIME_USING_BH_GALAXY selects the galaxy fabric.
+        # The tt-xla standalone run sets only this (no explicit descriptor pin).
+        TT_RUNTIME_USING_BH_GALAXY: "1"
+        # TODO(verify): a BH-galaxy mesh_graph_descriptor may need pinning in the
+        # forge image analogous to gemma's p300_x2 pin (if compile hits
+        # "unknown mesh: @mesh"). The in-image path is unknown; leave unset unless
+        # that error appears, then set e.g. .../mesh_graph_descriptors/<bh_galaxy_4x8>.textproto
+        # TT_MESH_GRAPH_DESC_PATH: "..."
+
+- weights:
     - resnet-50
   impl: tt_transformers
   min_disk_gb: 15
