@@ -125,11 +125,6 @@ void LLMPipeline::resolveSession(
           req->accumulated_think_tokens =
               static_cast<int>(result.accumulatedThinkTokens);
         } else {
-          // New session: no prefix matched, so the first free KV index is 0.
-          // Set it explicitly rather than leaving it unset — kv_position_id is
-          // the "first free index" for every request, and downstream consumers
-          // (disaggregated dispatch, the decode runner's position_id override)
-          // expect it to always carry a value.
           req->kv_position_id = 0;
         }
 
