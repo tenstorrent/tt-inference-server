@@ -75,8 +75,7 @@ inline void verifyMultiTurnPrefixGrowth(
     ASSERT_NE(seq, nullptr) << "turn " << turn;
 
     if (turn == 0) {
-      // First turn: fresh allocation, nothing to match. The first free KV
-      // index is 0, so kv_position_id is set to 0 (never left unset).
+      // First turn: fresh allocation, nothing to match.
       EXPECT_FALSE(seq->isContinuation()) << "turn 0 must allocate a session";
       ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 0";
       EXPECT_EQ(*seq->getKVPositionId(), 0u) << "turn 0 first free KV index";

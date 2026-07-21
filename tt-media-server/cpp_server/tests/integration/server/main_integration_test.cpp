@@ -348,6 +348,7 @@ TEST_F(MainIntegrationTest, MultiTurn_MatchedTokensEqualPriorPromptBlocks) {
     ASSERT_NE(seq, nullptr) << "turn " << turn;
 
     if (turn == 0) {
+      // First turn: fresh allocation, nothing to match.
       EXPECT_FALSE(seq->isContinuation()) << "turn 0 must allocate";
       ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 0";
       EXPECT_EQ(*seq->getKVPositionId(), 0u) << "turn 0 first free KV index";
