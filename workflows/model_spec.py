@@ -353,6 +353,8 @@ class DeviceModelSpec:
     device: DeviceTypes
     max_concurrency: int
     max_context: int
+    # Explicit device KV-pool token budget for benchmark concurrency; set only when the pool is decoupled from max_context*max_num_seqs (does NOT affect max_context). None => derived from max_context.
+    max_tokens_all_users_override: Optional[int] = None
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     default_impl: bool = False
     perf_reference: List[BenchmarkTaskParams] = field(default_factory=list)
@@ -389,6 +391,9 @@ class DeviceModelSpec:
             # DP engines without needing to know about DP rank.
             max_concurrency = max_concurrency // data_parallel_size
             max_tokens_all_users = max_tokens_all_users * data_parallel_size
+        # An explicit override is the true total device pool: used verbatim (no data_parallel scaling).
+        if self.max_tokens_all_users_override is not None:
+            max_tokens_all_users = self.max_tokens_all_users_override
         object.__setattr__(self, "max_tokens_all_users", max_tokens_all_users)
         # TODO: we should get max_num_batched_tokens from DeviceModelSpec in the future
         default_vllm_args = {
@@ -999,6 +1004,7 @@ class ModelSpecTemplate:
                     device=device_model_spec.device,
                     max_concurrency=device_model_spec.max_concurrency,
                     max_context=device_model_spec.max_context,
+                    max_tokens_all_users_override=device_model_spec.max_tokens_all_users_override,
                     perf_targets_map=device_model_spec.perf_targets_map,
                     default_impl=device_model_spec.default_impl,
                     perf_reference=perf_reference,
