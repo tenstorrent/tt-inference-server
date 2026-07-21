@@ -271,9 +271,9 @@ void LLMPipeline::dispatchGeneration(
           request.sessionId.value_or("none"));
       // WARNING - TEMP CHANGE - PREFILL WILL OVERRIDE THINKING TOKENS
       uint32_t matchedTokens =
-          *request.kv_position_id -
+          request.kv_position_id.value_or(0) -
           static_cast<uint32_t>(request.accumulated_think_tokens);
-      *request.kv_position_id = matchedTokens;
+      request.kv_position_id = matchedTokens;
       if (sessionManager_ && request.session) {
         sessionManager_->clearSessionBlockThinkTokens(
             request.session->getSessionId());
