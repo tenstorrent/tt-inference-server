@@ -75,6 +75,7 @@ concurrency:
 env:
   PYTHON_VERSION: "3.12"
   HELM_DOCS_VERSION: "1.14.2"
+  CRANE_VERSION: "0.21.5"
 
 jobs:
   release-prep:
@@ -369,6 +370,96 @@ jobs:
             [ "$DST_VLLM"  != "None" ] && echo "crane copy $SRC_VLLM $DST_VLLM"
             [ "$DST_MEDIA" != "None" ] && echo "crane copy $SRC_MEDIA $DST_MEDIA"
             [ "$DST_FORGE" != "None" ] && echo "crane copy $SRC_FORGE $DST_FORGE"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ----- Install crane (google/go-containerregistry) — used to promote the
+      #       release images from tt-shield to tt-inference-server. Not present
+      #       on ubuntu-latest. -----
+      - name: "Install crane"
+        run: |
+          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
+            | sudo tar -xzf - -C /usr/local/bin crane
+          crane version
+
+      # ----- REAL crane login to ghcr.io (README_MANUAL pattern), as
+      #       vmaksimovicTT with the TMP_VMAKSIMOVICTT_PAT secret. Login is real
+      #       (the crane copy below is only simulated). Verifies the login and,
+      #       if a source image resolved, that the token can actually PULL it
+      #       (needs read:packages) — a read failure is warned, not fatal, since
+      #       this iteration only simulates the copy. -----
+      - name: "crane login to ghcr.io (real) + verify"
+        env:
+          CRANE_USER: vmaksimovicTT
+          CRANE_PAT: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+          SRC_VLLM: ${{ steps.image-mapping.outputs.vllm_source }}
+          SRC_MEDIA: ${{ steps.image-mapping.outputs.media_source }}
+          SRC_FORGE: ${{ steps.image-mapping.outputs.forge_source }}
+        run: |
+          # Password via stdin so the token is never in the process args.
+          printf '%s' "$CRANE_PAT" | crane auth login ghcr.io -u "$CRANE_USER" --password-stdin
+          echo "✅ crane auth login ghcr.io succeeded as ${CRANE_USER}"
+
+          # Prove the token can pull a real source image (needs read:packages).
+          for src in "$SRC_VLLM" "$SRC_MEDIA" "$SRC_FORGE"; do
+            [ "$src" = "None" ] && continue
+            if crane manifest "$src" >/dev/null 2>&1; then
+              echo "✅ verified authed pull: $src"
+            else
+              echo "::warning::crane could not pull '$src' — the PAT likely lacks read:packages; crane copy would fail."
+            fi
+            break
+          done
+
+      # ----- SIMULATION: print the crane copy commands that WOULD publish the
+      #       release images, gated by which ENGINE FAMILIES the current release
+      #       actually ships (from models-ci-config.json release entries, via the
+      #       InferenceEngine enum — same rule as generate_default_docker_link).
+      #       A family is copied only if it is in the release AND a source image
+      #       was built. Nothing is executed (dry-run). -----
+      - name: "crane copy simulation (release-scoped publish plan, dry-run)"
+        env:
+          SRC_VLLM: ${{ steps.image-mapping.outputs.vllm_source }}
+          DST_VLLM: ${{ steps.image-mapping.outputs.vllm_dest }}
+          SRC_MEDIA: ${{ steps.image-mapping.outputs.media_source }}
+          DST_MEDIA: ${{ steps.image-mapping.outputs.media_dest }}
+          SRC_FORGE: ${{ steps.image-mapping.outputs.forge_source }}
+          DST_FORGE: ${{ steps.image-mapping.outputs.forge_dest }}
+        run: |
+          # Engine families the current release ships (reuses InferenceEngine).
+          # Single-line python so YAML block indentation can't corrupt it.
+          RELEASE_FAMS=$(python3 -c "import json,sys; sys.path.insert(0,'.'); from workflows.workflow_types import InferenceEngine as E; c=json.load(open('.github/workflows/models-ci-config.json')); print(' '.join(sorted({E.from_string(i['inference_engine']).value.lower() for _n,e in c['models'].items() for i in e.get('implementations',[e]) if i.get('ci',{}).get('release')})))")
+          echo "Release engine families: ${RELEASE_FAMS:-<none>}"
+          echo
+
+          in_release() { for f in $RELEASE_FAMS; do [ "$f" = "$1" ] && return 0; done; return 1; }
+
+          copy_cmds=""
+          for fam in vllm media forge; do
+            case "$fam" in
+              vllm)  src="$SRC_VLLM";  dst="$DST_VLLM";;
+              media) src="$SRC_MEDIA"; dst="$DST_MEDIA";;
+              forge) src="$SRC_FORGE"; dst="$DST_FORGE";;
+            esac
+            if ! in_release "$fam"; then
+              echo "# skip ${fam}: no ${fam} models in this release"
+            elif [ "$src" = "None" ] || [ -z "$src" ] || [ "$dst" = "None" ]; then
+              echo "# skip ${fam}: release ships ${fam} models but no source image was built (UNKNOWN)"
+            else
+              cmd="crane copy ${src} ${dst}"
+              echo "${cmd}"
+              copy_cmds="${copy_cmds}${cmd}"$'\n'
+            fi
+          done
+
+          {
+            echo "## crane copy simulation — release-scoped (v${RELEASE_VERSION}, DRY-RUN)"
+            echo
+            echo "Release engine families: \`${RELEASE_FAMS:-<none>}\`"
+            echo
+            echo "Commands that WOULD run (not executed):"
+            echo '```bash'
+            if [ -n "$copy_cmds" ]; then printf '%s' "$copy_cmds"; else echo "# (nothing to publish)"; fi
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
