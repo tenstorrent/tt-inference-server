@@ -276,11 +276,13 @@ def _audio_target_checks(
     rtr_value: Optional[float],
 ) -> tuple[dict, ReportCheckTypes]:
     logger.info("Computing 3-tier target checks for TTFT, T/S/U (tput_user), RTR")
+    # ttft is captured in seconds; targets.ttft_ms is ms.
+    ttft_ms = ttft_value * 1000 if ttft_value else None
     return run_tiered_check(
         ctx,
         [
             MetricSpec(
-                "TTFT", ttft_value, "ttft_ms", lower_is_better=True, field_name="ttft"
+                "TTFT", ttft_ms, "ttft_ms", lower_is_better=True, field_name="ttft"
             ),
             MetricSpec(
                 "T/S/U",
