@@ -464,6 +464,29 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # ===== TEMPORARY — REMOVE AFTER A SUCCESSFUL TEST RUN ==================
+      # One REAL crane copy (actually pushes) of the media source image to a
+      # throwaway tt-inference-server test repo, purely to confirm crane copy /
+      # write:packages works end-to-end. It uses the login from the crane-login
+      # step above (persisted in ~/.docker/config.json within this job). It does
+      # NOT read or change the real media mapping/simulation — the destination is
+      # hardcoded here. Delete this whole step once the copy is verified.
+      - name: "TEMP: real crane copy test (media -> tt-media-server-dev test repo)"
+        env:
+          SRC_MEDIA: ${{ steps.image-mapping.outputs.media_source }}
+        run: |
+          if [ -z "$SRC_MEDIA" ] || [ "$SRC_MEDIA" = "None" ]; then
+            echo "No media source image resolved — skipping crane copy test."
+            exit 0
+          fi
+          DST_TEST="ghcr.io/tenstorrent/tt-inference-server/tt-media-server-dev-ubuntu-22.04-amd64:${RELEASE_VERSION}-${TT_METAL_COMMIT}"
+          echo "TEST crane copy:"
+          echo "  src: ${SRC_MEDIA}"
+          echo "  dst: ${DST_TEST}"
+          crane copy "${SRC_MEDIA}" "${DST_TEST}"
+          echo "✅ crane copy test succeeded -> ${DST_TEST}"
+      # ===== END TEMPORARY ==================================================
+
       # ----- Post-release branch off main (README_MANUAL "Create post-release
       #       branch"). Branches from origin/main, carries this branch's VERSION
       #       + models-ci-config.json onto it, RE-RUNS the same four generators
