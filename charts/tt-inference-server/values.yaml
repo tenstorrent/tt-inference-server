@@ -6906,6 +6906,42 @@ models:
                 value: '1'
               - name: VLLM__MIN_CONTEXT_LENGTH
                 value: '32'
+      blackhole_galaxy:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
+              tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: DEFAULT_THROTTLE_LEVEL
+                value: '0'
+              - name: MAX_BATCH_SIZE
+                value: '1'
+              - name: MESH_DEVICE
+                value: BH-Galaxy
+              - name: TT_METAL_INSPECTOR_RPC
+                value: '0'
+              - name: VLLM__MAX_MODEL_LENGTH
+                value: '128'
+              - name: VLLM__MAX_NUM_BATCHED_TOKENS
+                value: '128'
+              - name: VLLM__MAX_NUM_SEQS
+                value: '1'
+              - name: VLLM__MIN_CONTEXT_LENGTH
+                value: '32'
     defaultEngine: forge
   Qwen3-4B:
     forge:
@@ -7707,3 +7743,83 @@ models:
               - name: VLLM_TARGET_DEVICE
                 value: tt
     defaultEngine: vllm
+  Qwen3-Embedding-0.6B:
+    forge:
+      blackhole_galaxy:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
+              tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: DEFAULT_THROTTLE_LEVEL
+                value: '0'
+              - name: MAX_BATCH_SIZE
+                value: '1'
+              - name: MESH_DEVICE
+                value: BH-Galaxy
+              - name: TT_METAL_INSPECTOR_RPC
+                value: '0'
+              - name: VLLM__MAX_MODEL_LENGTH
+                value: '128'
+              - name: VLLM__MAX_NUM_BATCHED_TOKENS
+                value: '128'
+              - name: VLLM__MAX_NUM_SEQS
+                value: '1'
+              - name: VLLM__MIN_CONTEXT_LENGTH
+                value: '32'
+    defaultEngine: forge
+  bge-m3:
+    forge:
+      blackhole_galaxy:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
+              tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: DEFAULT_THROTTLE_LEVEL
+                value: '0'
+              - name: MAX_BATCH_SIZE
+                value: '1'
+              - name: MESH_DEVICE
+                value: BH-Galaxy
+              - name: MODEL_RUNNER
+                value: vllmforge_bge_m3
+              - name: TT_METAL_INSPECTOR_RPC
+                value: '0'
+              - name: VLLM__MAX_MODEL_LENGTH
+                value: '512'
+              - name: VLLM__MAX_NUM_BATCHED_TOKENS
+                value: '512'
+              - name: VLLM__MAX_NUM_SEQS
+                value: '1'
+              - name: VLLM__MIN_CONTEXT_LENGTH
+                value: '32'
+    defaultEngine: forge
