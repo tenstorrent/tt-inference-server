@@ -213,3 +213,69 @@ templates:
         VLLM__MAX_NUM_SEQS: "1"
         MAX_BATCH_SIZE: "1"
         DEFAULT_THROTTLE_LEVEL: "0"
+    - device: BLACKHOLE_GALAXY
+      # Data-parallel across the BH galaxy (32x P150): 32 single-chip workers
+      # (max_concurrency = 32). Config validated standalone in tt-xla.
+      max_concurrency: 32
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      env_vars:
+        VLLM__MAX_NUM_BATCHED_TOKENS: "128"
+        VLLM__MAX_MODEL_LENGTH: "128"
+        VLLM__MIN_CONTEXT_LENGTH: "32"
+        VLLM__MAX_NUM_SEQS: "1"
+        MAX_BATCH_SIZE: "1"
+        DEFAULT_THROTTLE_LEVEL: "0"
+        # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
+        TT_METAL_INSPECTOR_RPC: "0"
+
+- weights:
+    - Qwen/Qwen3-Embedding-0.6B
+  impl: forge_vllm_plugin
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: EMBEDDING
+  inference_engine: FORGE
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      # Data-parallel across the BH galaxy (32x P150): 32 single-chip workers.
+      # Config validated standalone in tt-xla.
+      max_concurrency: 32
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      env_vars:
+        VLLM__MAX_NUM_BATCHED_TOKENS: "128"
+        VLLM__MAX_MODEL_LENGTH: "128"
+        VLLM__MIN_CONTEXT_LENGTH: "32"
+        VLLM__MAX_NUM_SEQS: "1"
+        MAX_BATCH_SIZE: "1"
+        DEFAULT_THROTTLE_LEVEL: "0"
+        # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
+        TT_METAL_INSPECTOR_RPC: "0"
+
+- weights:
+    - BAAI/bge-m3
+  impl: forge_vllm_plugin
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: EMBEDDING
+  inference_engine: FORGE
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      # Forge data-parallel bge-m3 -- distinct from the MEDIA (tt_vllm_plugin)
+      # bge-m3 template above. bge-m3 shares its model name across both runners,
+      # so the forge path selects its runner explicitly via MODEL_RUNNER.
+      # Config validated standalone in tt-xla (seq len 512).
+      max_concurrency: 32
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      env_vars:
+        MODEL_RUNNER: "vllmforge_bge_m3"
+        VLLM__MAX_NUM_BATCHED_TOKENS: "512"
+        VLLM__MAX_MODEL_LENGTH: "512"
+        VLLM__MIN_CONTEXT_LENGTH: "32"
+        VLLM__MAX_NUM_SEQS: "1"
+        MAX_BATCH_SIZE: "1"
+        DEFAULT_THROTTLE_LEVEL: "0"
+        # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
+        TT_METAL_INSPECTOR_RPC: "0"

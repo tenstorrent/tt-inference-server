@@ -2,8 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import os
+
 import vllm
-from config.settings import SupportedModels
 from domain.embedding_response import EmbeddingResponse
 from domain.text_embedding_request import TextEmbeddingRequest
 from transformers import AutoTokenizer
@@ -17,34 +18,51 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         self.num_tokens_in_batch = 0
         self.dimensions_in_batch = None
 
+    @property
+    def model_name(self) -> str:
+        return self.settings.vllm.model
+
     @log_execution_time("Model warmup")
     async def warmup(self) -> bool:
-        self.logger.info(f"Device {self.device_id}: Loading model...")
+        model_name = self.model_name
+        self.logger.info(f"Device {self.device_id}: Loading model {model_name}...")
 
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            SupportedModels.QWEN_3_EMBEDDING_4B.value
-        )
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+        # Production knobs validated standalone in tt-xla (mirrors the forge LLM
+        # runners): opt>=1 for meaningful max_model_len, trace for decode-graph
+        # replay, bfp_bf8 weights (faster than bf16, halves weight DRAM traffic).
+        optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
+        enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
 
         prompts = [
             "The capital of France is Paris",
         ]
+        additional_config = {
+            "enable_const_eval": False,
+            "batch_size": self.settings.max_batch_size,
+            "min_context_len": self.settings.vllm.min_context_length,
+            "experimental_weight_dtype": "bfp_bf8",
+            "optimization_level": optimization_level,
+            "enable_trace": enable_trace,
+        }
         llm_args = {
-            "model": SupportedModels.QWEN_3_EMBEDDING_4B.value,
+            "model": model_name,
             "dtype": "bfloat16",
             "disable_sliding_window": True,
             "enable_prefix_caching": False,
             "max_model_len": self.settings.vllm.max_model_length,
             "max_num_batched_tokens": self.settings.vllm.max_num_batched_tokens,
             "max_num_seqs": self.settings.vllm.max_num_seqs,
-            "additional_config": {
-                "enable_const_eval": False,
-                "batch_size": self.settings.max_batch_size,
-                "min_context_len": self.settings.vllm.min_context_length,
-            },
-            "hf_overrides": {
-                "is_matryoshka": True,
-            },
+            "additional_config": additional_config,
         }
+        # Matryoshka (variable output dimensions) is Qwen3-Embedding-specific;
+        # bge-m3 does not support it.
+        if "Qwen3-Embedding" in model_name:
+            llm_args["hf_overrides"] = {"is_matryoshka": True}
+        self.logger.info(
+            f"Device {self.device_id}: additional_config={additional_config}"
+        )
         self.llm = vllm.LLM(**llm_args)
 
         self.llm.embed(prompts)
@@ -72,7 +90,7 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
             self.num_tokens_in_batch + num_tokens
             > self.settings.vllm.max_num_batched_tokens
             or request.dimensions != self.dimensions_in_batch
-            or request.model != SupportedModels.QWEN_3_EMBEDDING_4B.value
+            or request.model != self.model_name
             or (batch is not None and request.model != batch[0].model)
         ):
             return False
@@ -87,7 +105,7 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
 
         # if only one request in batch, validate and set dimensions
         if self.num_tokens_in_batch == 0:
-            if requests[0].model != SupportedModels.QWEN_3_EMBEDDING_4B.value:
+            if requests[0].model != self.model_name:
                 raise ValueError(
                     f"Model {requests[0].model} is not supported by VLLMForgeEmbeddingQwenRunner"
                 )
