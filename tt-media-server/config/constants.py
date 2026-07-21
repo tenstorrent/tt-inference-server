@@ -20,6 +20,7 @@ class SupportedModels(Enum):
     QWEN_IMAGE_2512 = "Qwen/Qwen-Image-2512"
     MOCHI_1 = "genmo/mochi-1-preview"
     WAN_2_2 = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+    WAN_2_2_T2V_PRODIA = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
     WAN_2_2_I2V = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_PRODIA = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_ANISORA = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
@@ -63,6 +64,7 @@ class ModelNames(Enum):
     QWEN_IMAGE_2512 = "Qwen-Image-2512"
     MOCHI_1 = "mochi-1-preview"
     WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
+    WAN_2_2_T2V_PRODIA = "Wan2.2-T2V-A14B-Prodia"
     WAN_2_2_I2V = "Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_PRODIA = "Wan2.2-I2V-A14B-Prodia"
     WAN_2_2_I2V_ANISORA = "Wan2.2-I2V-AniSora-V3.2"
@@ -110,6 +112,7 @@ class ModelRunners(Enum):
     TT_QWEN_IMAGE_2512 = "tt-qwen-image-2512"
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
+    TT_WAN_2_2_T2V_PRODIA = "tt-wan2.2-t2v-prodia"
     TT_WAN_2_2_I2V = "tt-wan2.2-i2v"
     TT_WAN_2_2_I2V_PRODIA = "tt-wan2.2-i2v-prodia"
     TT_WAN_2_2_I2V_ANISORA = "tt-wan2.2-i2v-anisora"
@@ -202,6 +205,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.VIDEO: {
         ModelRunners.TT_MOCHI_1,
         ModelRunners.TT_WAN_2_2,
+        ModelRunners.TT_WAN_2_2_T2V_PRODIA,
         ModelRunners.TT_WAN_2_2_I2V,
         ModelRunners.TT_WAN_2_2_I2V_PRODIA,
         ModelRunners.TT_WAN_2_2_I2V_ANISORA,
@@ -231,6 +235,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
+    ModelRunners.TT_WAN_2_2_T2V_PRODIA: {ModelNames.WAN_2_2_T2V_PRODIA},
     ModelRunners.TT_WAN_2_2_I2V: {ModelNames.WAN_2_2_I2V},
     ModelRunners.TT_WAN_2_2_I2V_PRODIA: {ModelNames.WAN_2_2_I2V_PRODIA},
     ModelRunners.TT_WAN_2_2_I2V_ANISORA: {ModelNames.WAN_2_2_I2V_ANISORA},
@@ -238,6 +243,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_WAN_2_2_I2V_LORA: {ModelNames.WAN_2_2_I2V_LORA},
     ModelRunners.SP_RUNNER: {
         ModelNames.WAN_2_2,
+        ModelNames.WAN_2_2_T2V_PRODIA,
         ModelNames.WAN_2_2_I2V,
         ModelNames.WAN_2_2_I2V_PRODIA,
         ModelNames.MOCHI_1,
@@ -887,6 +893,14 @@ ModelConfigs = {
         "max_batch_size": 1,
         "download_weights_from_service": False,
         "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_T2V_PRODIA, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+        "num_inference_steps": 3,
     },
     (ModelRunners.TT_WAN_2_2_I2V_PRODIA, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),

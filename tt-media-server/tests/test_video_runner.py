@@ -109,7 +109,11 @@ class TestWriteErrorToShm:
 class TestCreateDitRunner:
     @staticmethod
     def _make_dit_module(
-        mock_mochi, mock_wan, mock_wan_i2v=None, mock_wan_i2v_prodia=None
+        mock_mochi,
+        mock_wan,
+        mock_wan_i2v=None,
+        mock_wan_i2v_prodia=None,
+        mock_wan_t2v_prodia=None,
     ):
         mock_mochi.__name__ = "TTMochi1Runner"
         mock_wan.__name__ = "TTWan22Runner"
@@ -122,6 +126,9 @@ class TestCreateDitRunner:
         if mock_wan_i2v_prodia is not None:
             mock_wan_i2v_prodia.__name__ = "TTWan22I2VProdiaRunner"
             mod.TTWan22I2VProdiaRunner = mock_wan_i2v_prodia
+        if mock_wan_t2v_prodia is not None:
+            mock_wan_t2v_prodia.__name__ = "TTWan22T2VProdiaRunner"
+            mod.TTWan22T2VProdiaRunner = mock_wan_t2v_prodia
         return {"tt_model_runners.dit_runners": mod}
 
     def test_creates_mochi_runner(self):
@@ -176,6 +183,26 @@ class TestCreateDitRunner:
             _create_dit_runner("tt-wan2.2-i2v-prodia", 0)
             mock_wan_i2v_prodia.assert_called_once_with("")
             mock_wan_i2v.assert_not_called()
+            mock_wan.assert_not_called()
+            mock_mochi.assert_not_called()
+
+    def test_creates_wan_t2v_prodia_runner(self):
+        """``tt-wan2.2-t2v-prodia`` must resolve to ``TTWan22T2VProdiaRunner``."""
+        mock_mochi = Mock()
+        mock_wan = Mock()
+        mock_wan_i2v = Mock()
+        mock_wan_t2v_prodia = Mock()
+        with patch.dict(
+            sys.modules,
+            self._make_dit_module(
+                mock_mochi,
+                mock_wan,
+                mock_wan_i2v,
+                mock_wan_t2v_prodia=mock_wan_t2v_prodia,
+            ),
+        ):
+            _create_dit_runner("tt-wan2.2-t2v-prodia", 0)
+            mock_wan_t2v_prodia.assert_called_once_with("")
             mock_wan.assert_not_called()
             mock_mochi.assert_not_called()
 
