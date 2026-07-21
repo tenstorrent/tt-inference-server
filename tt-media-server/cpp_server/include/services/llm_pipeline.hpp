@@ -39,7 +39,7 @@ namespace tt::services {
  * disaggregated prefill path.
  *
  * Both `LLMController` (HTTP /v1/chat/completions) and
- * `tt::dynamo::DynamoEndpoint` (TCP `generate`) drive the same pipeline so
+ * `tt::dynamo::DynamoWorkerServer` (TCP `generate`) drive the same pipeline so
  * Dynamo requests benefit from the same session/prefix-cache reuse and
  * disaggregation routing as HTTP traffic.
  *
