@@ -99,7 +99,10 @@ def template_devices(template: dict) -> set:
 
 
 def template_model_names(template: dict) -> set:
-    return {model_name_from_weight(w) for w in template.get("weights", [])}
+    # models-ci-config.json keys are full HF repo ids (e.g.
+    # "meta-llama/Llama-3.1-8B-Instruct"), so match against the full weight
+    # repos rather than their basenames.
+    return set(template.get("weights", []))
 
 
 def template_matches(template: dict, combo: ReleaseCombo) -> bool:

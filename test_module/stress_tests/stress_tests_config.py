@@ -128,7 +128,7 @@ class StressTestParamSpace:
             self.model_spec = None
             for model_id, config in MODEL_SPECS.items():
                 if (
-                    config.model_name == self.model_name
+                    config.hf_model_repo == self.model_name
                     and config.device_type.name.lower() == self.device.lower()
                     and config.device_model_spec.default_impl
                 ):
@@ -140,7 +140,7 @@ class StressTestParamSpace:
                 # Fall back to first matching model/device combination
                 for model_id, config in MODEL_SPECS.items():
                     if (
-                        config.model_name == self.model_name
+                        config.hf_model_repo == self.model_name
                         and config.device_type.name.lower() == self.device.lower()
                     ):
                         self.model_id = model_id

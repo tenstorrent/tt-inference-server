@@ -61,15 +61,16 @@ class PerformanceTargets:
 
 
 def get_performance_targets(
-    model_name: str, device_str: str, model_type: str = None
+    hf_model_repo: str, device_str: str, model_type: str = None
 ) -> PerformanceTargets:
     """Extract device-specific performance targets for a model.
 
-    Handles model name mapping (e.g., distil-whisper variants) and returns
-    parsed performance targets in a type-safe format.
+    Returns parsed performance targets in a type-safe format.
 
     Args:
-        model_name: Name of the model
+        hf_model_repo: Full HF repo id of the model, e.g.
+            'meta-llama/Llama-3.1-8B-Instruct' (matches the keys in
+            model_performance_reference.json)
         device_str: Device string (e.g., 'galaxy', 't3k', 'n150')
         model_type: Model type (e.g., 'AUDIO', 'TEXT', 'CNN') - optional for backward compatibility
 
@@ -82,18 +83,18 @@ def get_performance_targets(
     from workflows.model_spec import model_performance_reference
 
     # Get model performance targets
-    model_data = model_performance_reference.get(model_name, {})
+    model_data = model_performance_reference.get(hf_model_repo, {})
     device_json_list = model_data.get(device_str, [])
 
     # Return first config if available
     if device_json_list:
         logger.info(
-            f"Found performance targets for model '{model_name}' on device '{device_str}'"
+            f"Found performance targets for model '{hf_model_repo}' on device '{device_str}'"
         )
         return PerformanceTargets.from_device_config(device_json_list[0])
 
     logger.warning(
-        f"No performance targets found for model '{model_name}' on device '{device_str}'"
+        f"No performance targets found for model '{hf_model_repo}' on device '{device_str}'"
     )
     return PerformanceTargets()
 

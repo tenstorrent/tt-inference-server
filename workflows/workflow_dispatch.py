@@ -109,7 +109,7 @@ def _llm_release_includes_agentic(model_spec) -> bool:
     except Exception as e:  # pragma: no cover - defensive
         logger.warning("Could not import EVAL_CONFIGS (%s); skipping agentic.", e)
         return False
-    cfg = EVAL_CONFIGS.get(model_spec.model_name)
+    cfg = EVAL_CONFIGS.get(model_spec.hf_model_repo)
     if cfg is None:
         return False
     return any(
@@ -330,7 +330,7 @@ def _engine_run_argv(
     argv = [
         str(run_workflows_py),
         "--model",
-        model_spec.model_name,
+        model_spec.hf_model_repo,
         "--workflow",
         engine_workflow,
         "--device",
@@ -371,7 +371,7 @@ def _base_engine_argv(
     argv = [
         str(launcher),
         "--model",
-        model_spec.model_name,
+        model_spec.hf_model_repo,
         "--workflow",
         engine_workflow,
         "--device",
@@ -454,7 +454,7 @@ def _stress_argv(repo_root, model_spec, runtime_config, json_fpath):
         "--output-path",
         str(output_path),
         "--model",
-        model_spec.model_name,
+        model_spec.hf_model_repo,
         "--device",
         runtime_config.device,
     ]
@@ -596,7 +596,7 @@ def _llm_eval_venv_types(model_spec, runtime_config=None) -> List[WorkflowVenvTy
     except Exception as e:  # pragma: no cover - defensive
         logger.warning("Could not import EVAL_CONFIGS (%s); skipping eval venvs.", e)
         return []
-    cfg = EVAL_CONFIGS.get(model_spec.model_name)
+    cfg = EVAL_CONFIGS.get(model_spec.hf_model_repo)
     if cfg is None:
         return []
     tasks = _selected_eval_tasks(cfg.tasks, runtime_config)

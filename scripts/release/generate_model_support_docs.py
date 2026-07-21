@@ -471,7 +471,6 @@ def generate_model_page_group_page(
     # Supported weights (only show if multiple weights are supported)
     if first_template.weights and len(first_template.weights) > 1:
         default_weights = first_template.weights[0]
-        default_weights_name = default_weights.split("/")[-1]
 
         lines.append("Supported weights variants for this model implementation are:")
         lines.append("")
@@ -488,7 +487,7 @@ def generate_model_page_group_page(
 
         lines.append("")
         lines.append(
-            f"To use non-default weights, replace `{default_weights_name}` in commands below."
+            f"To use non-default weights, replace `{default_weights}` in commands below."
         )
         lines.append("")
 
@@ -533,6 +532,10 @@ def generate_model_page_group_page(
     for idx, device in enumerate(supported_devices_in_group):
         target_template, target_dev_spec = device_template_map[device]
         product_name = device.to_product_str()
+        # Full HF repo id (e.g. "meta-llama/Llama-3.1-8B-Instruct") is the
+        # canonical --model value shown in commands. model_name (basename)
+        # remains the volume id / filename / heading token.
+        model_cli_arg = target_template.weights[0]
 
         # Section header for secondary devices
         if idx > 0:
@@ -600,7 +603,7 @@ def generate_model_page_group_page(
                         "  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \\",
                         f"  --volume volume_id_{model_name}:/home/container_app_user/cache_root \\",
                         f"  {docker_image} \\",
-                        f"  --model {model_name} \\",
+                        f"  --model {model_cli_arg} \\",
                         f"  --tt-device {device.name.lower()}",
                     ]
                 )
@@ -613,7 +616,7 @@ def generate_model_page_group_page(
         device_arg = device.name.lower()
         lines.append("```bash")
         lines.append(
-            f"python3 run.py --model {model_name} --device {device_arg} --workflow server --docker-server"
+            f"python3 run.py --model {model_cli_arg} --device {device_arg} --workflow server --docker-server"
         )
         lines.append("```")
         if idx == 0:

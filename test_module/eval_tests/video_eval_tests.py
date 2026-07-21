@@ -31,7 +31,9 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
         VideoGenerationEvalsTestRequest,
     )
 
-    model_name = ctx.model_spec.model_name
+    # Full HF repo id: keys the accuracy reference (full-repo keys). Routing
+    # (is_i2v/endpoint) matches the "-I2V-" substring, which is preserved.
+    model_name = ctx.model_spec.hf_model_repo
     generation_mode = "I2V" if is_i2v_video_model(model_name) else "T2V"
     logger.info(
         "Running video generation eval for %s using %s endpoint.",
