@@ -15,7 +15,7 @@ from test_module.benchmark_tests import video_benchmark_tests as mod
 
 def _ctx(model_name):
     return SimpleNamespace(
-        model_spec=SimpleNamespace(model_name=model_name),
+        model_spec=SimpleNamespace(model_name=model_name, hf_model_repo=model_name),
         device=SimpleNamespace(name="t3k"),
     )
 
@@ -32,7 +32,7 @@ def test_unsupported_video_model_raises_skip():
 def test_i2v_model_has_inference_step_profile():
     # I2V benchmarks are implemented: the model must carry a step profile so it
     # is not skipped, mirroring model_performance_reference.json.
-    assert "Wan2.2-I2V-A14B-Diffusers" in mod.VIDEO_INFERENCE_STEPS
+    assert "Wan-AI/Wan2.2-I2V-A14B-Diffusers" in mod.VIDEO_INFERENCE_STEPS
 
 
 def test_i2v_generation_routes_to_i2v_endpoint_and_payload(monkeypatch):

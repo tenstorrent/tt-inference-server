@@ -61,7 +61,7 @@ def test_iter_implementations_array_shape():
 def test_collect_release_combos_array_and_flat_shapes():
     ci_config = {
         "models": {
-            "Llama-3.1-8B-Instruct": {
+            "meta-llama/Llama-3.1-8B-Instruct": {
                 "implementations": [
                     {
                         "inference_engine": "vLLM",
@@ -76,11 +76,11 @@ def test_collect_release_combos_array_and_flat_shapes():
                     },
                 ]
             },
-            "whisper-large-v3": {
+            "openai/whisper-large-v3": {
                 "inference_engine": "MEDIA",
                 "ci": {"release": {"devices": ["P150"]}},
             },
-            "Falcon3-7B-Instruct": {
+            "tiiuae/Falcon3-7B-Instruct": {
                 "inference_engine": "FORGE",
                 "ci": {"nightly": {"devices": ["P150"]}},
             },
@@ -88,9 +88,19 @@ def test_collect_release_combos_array_and_flat_shapes():
     }
     combos = collect_release_combos(ci_config)
     assert combos == {
-        ReleaseCombo("Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.GALAXY),
-        ReleaseCombo("Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.P300X2),
-        ReleaseCombo("whisper-large-v3", InferenceEngine.MEDIA, DeviceTypes.P150),
+        ReleaseCombo(
+            "meta-llama/Llama-3.1-8B-Instruct",
+            InferenceEngine.VLLM,
+            DeviceTypes.GALAXY,
+        ),
+        ReleaseCombo(
+            "meta-llama/Llama-3.1-8B-Instruct",
+            InferenceEngine.VLLM,
+            DeviceTypes.P300X2,
+        ),
+        ReleaseCombo(
+            "openai/whisper-large-v3", InferenceEngine.MEDIA, DeviceTypes.P150
+        ),
     }
 
 
@@ -122,21 +132,23 @@ def _llama_template():
     }
 
 
-def test_template_matches_on_basename_engine_and_device():
+def test_template_matches_on_full_repo_engine_and_device():
     combo = ReleaseCombo(
-        "Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.GALAXY
+        "meta-llama/Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.GALAXY
     )
     assert template_matches(_llama_template(), combo) is True
 
 
 def test_template_does_not_match_wrong_device():
-    combo = ReleaseCombo("Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.T3K)
+    combo = ReleaseCombo(
+        "meta-llama/Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.T3K
+    )
     assert template_matches(_llama_template(), combo) is False
 
 
 def test_template_does_not_match_wrong_engine():
     combo = ReleaseCombo(
-        "Llama-3.1-8B-Instruct", InferenceEngine.FORGE, DeviceTypes.GALAXY
+        "meta-llama/Llama-3.1-8B-Instruct", InferenceEngine.FORGE, DeviceTypes.GALAXY
     )
     assert template_matches(_llama_template(), combo) is False
 
@@ -187,7 +199,11 @@ def test_find_matches_picks_whole_template_and_reports_unmatched(tmp_path):
         """,
     )
     combos = {
-        ReleaseCombo("Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.GALAXY),
+        ReleaseCombo(
+            "meta-llama/Llama-3.1-8B-Instruct",
+            InferenceEngine.VLLM,
+            DeviceTypes.GALAXY,
+        ),
         ReleaseCombo("nonexistent", InferenceEngine.VLLM, DeviceTypes.GALAXY),
     }
     matches_by_file, unmatched = find_matches(dev, combos)
@@ -221,8 +237,16 @@ def test_find_matches_dedups_template_matched_by_two_combos(tmp_path):
         """,
     )
     combos = {
-        ReleaseCombo("Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.GALAXY),
-        ReleaseCombo("Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.P300X2),
+        ReleaseCombo(
+            "meta-llama/Llama-3.1-8B-Instruct",
+            InferenceEngine.VLLM,
+            DeviceTypes.GALAXY,
+        ),
+        ReleaseCombo(
+            "meta-llama/Llama-3.1-8B-Instruct",
+            InferenceEngine.VLLM,
+            DeviceTypes.P300X2,
+        ),
     }
     matches_by_file, unmatched = find_matches(dev, combos)
     assert len(matches_by_file["llm.yaml"]) == 1
@@ -382,7 +406,7 @@ def _build_tree(tmp_path):
         json.dumps(
             {
                 "models": {
-                    "Llama-3.1-8B-Instruct": {
+                    "meta-llama/Llama-3.1-8B-Instruct": {
                         "inference_engine": "vLLM",
                         "ci": {"release": {"devices": ["GALAXY"]}},
                     }
@@ -452,7 +476,7 @@ def test_promote_injects_pins_and_result_passes_prod_enforcement(tmp_path):
         json.dumps(
             {
                 "models": {
-                    "Llama-3.1-8B-Instruct": {
+                    "meta-llama/Llama-3.1-8B-Instruct": {
                         "inference_engine": "vLLM",
                         "ci": {"release": {"devices": ["GALAXY"]}},
                     }
@@ -587,7 +611,7 @@ def test_promote_appends_new_release_template_and_stays_valid_yaml(tmp_path):
         json.dumps(
             {
                 "models": {
-                    "Llama-3.1-8B-Instruct": {
+                    "meta-llama/Llama-3.1-8B-Instruct": {
                         "inference_engine": "vLLM",
                         "ci": {"release": {"devices": ["P300X2"]}},
                     }

@@ -45,7 +45,7 @@ def mock_audio_performance_targets():
     "model_name,device_str,model_type,expected_targets_dict",
     [
         (
-            "distil-large-v3",
+            "distil-whisper/distil-large-v3",
             "n150",
             "AUDIO",
             {
@@ -71,7 +71,7 @@ def test_get_performance_targets(
 
     # Act
     actual_targets = get_performance_targets(
-        model_name=model_name, device_str=device_str, model_type=model_type
+        hf_model_repo=model_name, device_str=device_str, model_type=model_type
     )
 
     # Assert

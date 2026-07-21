@@ -33,7 +33,7 @@ Every workflow generates its own summary report automatically when it finishes, 
 For example, start the vLLM server in a Docker container and run client-side benchmarks against it:
 
 ```bash
-python3 run.py --model Llama-3.2-1B-Instruct --tt-device n150 --workflow benchmarks --docker-server
+python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n150 --workflow benchmarks --docker-server
 ```
 
 ## Table of Contents
@@ -170,7 +170,7 @@ The `server` workflow runs the vLLM inference server for the model as a detached
 To run the inference server with Docker, use the `--docker-server` flag:
 
 ```bash
-python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow server --docker-server
+python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow server --docker-server
 ```
 
 The `--tt-device` flag can be omitted -- `run.py` will auto-detect the device from host hardware via `tt-smi`.
@@ -178,13 +178,13 @@ The `--tt-device` flag can be omitted -- `run.py` will auto-detect the device fr
 Add `--dev-mode` to bind mount source code into the container for live editing:
 
 ```bash
-python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow server --docker-server --dev-mode
+python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow server --docker-server --dev-mode
 ```
 
 Use `--print-docker-cmd` to inspect the generated Docker command without starting the server:
 
 ```bash
-python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow server --docker-server --print-docker-cmd
+python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow server --docker-server --print-docker-cmd
 ```
 
 On successful start, log output includes the container ID and log file path:
@@ -203,7 +203,7 @@ The running container can be viewed with `docker ps -a` and stopped with `docker
 To run the vLLM server directly on the host, use `--local-server` and point `--tt-metal-home` at a built tt-metal checkout containing `python_env/` and `build/lib/`:
 
 ```bash
-python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow server \
+python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow server \
   --local-server --tt-metal-home /opt/tt-metal
 ```
 
@@ -288,13 +288,13 @@ This is a convenience so that a single run on device executes all workflows requ
 The `benchmarks` workflow sends random data prompts to the inference server and profiles throughput and latency.
 
 ```bash
-python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow benchmarks
+python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow benchmarks
 ```
 
 For a quick development smoke test, add `--limit-samples-mode smoke-test`:
 
 ```bash
-python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow benchmarks --limit-samples-mode smoke-test
+python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow benchmarks --limit-samples-mode smoke-test
 ```
 
 In smoke-test mode, `benchmarks` selects a reduced single benchmark target and ignores `--concurrency-sweeps`.
@@ -330,13 +330,13 @@ See [benchmarking docs](../benchmarking/README.md) for more detail on code.
 The `evals` workflow follows the same pattern as the `benchmarks` workflow: it sets up its own venv, waits for the inference server to be ready, then sends HTTP requests to it. Each evaluation task uses a dedicated venv, which allows multiple different eval repos and different versions of e.g. https://github.com/EleutherAI/lm-evaluation-harness.
 
 ```bash
-python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow evals
+python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow evals
 ```
 
 For a quick development smoke test, add `--limit-samples-mode smoke-test`:
 
 ```bash
-python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow evals --limit-samples-mode smoke-test
+python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow evals --limit-samples-mode smoke-test
 ```
 
 In smoke-test mode, `evals` runs only the first configured eval task and limits it to 3 samples.
@@ -362,7 +362,7 @@ See [Logs](#logs) section below for example format of the report files generated
 The `spec_tests` workflow runs server/model integration tests against the inference server. For media models these are device-liveness and load tests (e.g. `DeviceLivenessTest`, `CnnLoadTest`); for LLM/VLM models it runs the vLLM API parameter-conformance suite (see [API Parameter Tests](#api-parameter-tests) below). Tests are matched by model name and device and executed by the v2 test engine (`tt-inference-server-v2/`), which emits the report in-process.
 
 ```bash
-python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow spec_tests
+python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --tt-device n150 --workflow spec_tests
 ```
 
 Test suites and cases are defined in `tt-inference-server-v2/test_module/` (`server_tests_config.json` and `test_suites/*.json`). Each test case entry specifies:
@@ -380,7 +380,7 @@ Output is written as JSON and Markdown reports to `workflow_logs/reports_output/
 For LLM/VLM models, `--workflow spec_tests` runs pytest-based tests that exercise vLLM API sampling parameters (`n`, `max_tokens`, `stop`, `seed`, `logprobs`, `temperature`, `top_k`, `top_p`, penalty parameters, and a coherence check). The suites live in `tt-inference-server-v2/llm_module/` and are mapped to models via `tt-inference-server-v2/test_module/test_suites/llm.json`; models without an entry produce no results.
 
 ```bash
-python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow spec_tests
+python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --tt-device n150 --workflow spec_tests
 ```
 
 The run routes to the v2 test engine, which emits the report in-process to `workflow_logs/reports_output/spec_tests/`.
@@ -392,13 +392,13 @@ The run routes to the v2 test engine, which emits the report in-process to `work
 The `stress_tests` workflow runs sustained load tests against the inference server to measure server stability and throughput over time. The run script is `tt-inference-server-v2/test_module/stress_tests/run_stress_tests.py`, and it generates its report in-process via `report_module`.
 
 ```bash
-python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow stress_tests
+python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --tt-device n150 --workflow stress_tests
 ```
 
 Endurance mode (repeat the sweep for 24h) and other knobs are passed via `--workflow-args`:
 
 ```bash
-python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow stress_tests \
+python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --tt-device n150 --workflow stress_tests \
   --workflow-args "endurance-mode=true max-context-length=4096"
 ```
 

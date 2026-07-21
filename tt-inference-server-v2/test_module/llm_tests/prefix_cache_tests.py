@@ -240,7 +240,7 @@ def run_prefix_cache(
     accept_blocks(
         result.blocks,
         envelope={
-            "model_name": getattr(spec, "model_name", "") or model_repo,
+            "model_name": getattr(spec, "hf_model_repo", "") or model_repo,
             "device": device_label,
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         },

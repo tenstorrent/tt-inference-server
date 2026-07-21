@@ -170,12 +170,12 @@ if __name__ == "__main__":
     else:
         generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         report_id = (
-            f"{model_spec.model_name.replace('/', '__')}_"
+            f"{model_spec.hf_model_repo.replace('/', '__')}_"
             f"{generated_at.replace(' ', '_').replace(':', '')}"
         )
         schema = ReportSchema(
             metadata={
-                "model_name": model_spec.model_name,
+                "model_name": model_spec.hf_model_repo,
                 "device": device_str,
                 "generated_at": generated_at,
                 "report_id": report_id,

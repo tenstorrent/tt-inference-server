@@ -24,7 +24,7 @@ from test_module._test_common.target_check import (
     "model_name,device_str,expected",
     [
         (
-            "stable-diffusion-xl-base-1.0",
+            "stabilityai/stable-diffusion-xl-base-1.0",
             "n150",
             PerformanceTargets(
                 ttft_ms=12500,
@@ -35,7 +35,7 @@ from test_module._test_common.target_check import (
             ),
         ),
         (
-            "FLUX.1-dev",
+            "black-forest-labs/FLUX.1-dev",
             "t3k",
             PerformanceTargets(
                 ttft_ms=11000,
@@ -47,7 +47,7 @@ from test_module._test_common.target_check import (
     ],
 )
 def test_get_performance_targets_image_models(model_name, device_str, expected):
-    actual = get_performance_targets(model_name=model_name, device_str=device_str)
+    actual = get_performance_targets(hf_model_repo=model_name, device_str=device_str)
     assert actual == expected, (
         f"Performance targets mismatch for {model_name} on {device_str}:\n"
         f"Expected: {expected}\nActual: {actual}"
@@ -57,6 +57,6 @@ def test_get_performance_targets_image_models(model_name, device_str, expected):
 def test_get_performance_targets_unknown_model_returns_empty():
     """Unknown model/device yields all-None defaults (callers treat as NA)."""
     assert (
-        get_performance_targets(model_name="nonexistent-model", device_str="n150")
+        get_performance_targets(hf_model_repo="nonexistent-model", device_str="n150")
         == PerformanceTargets()
     )

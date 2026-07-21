@@ -1,6 +1,6 @@
 {
   "models": {
-    "DeepSeek-R1-0528": {
+    "deepseek-ai/DeepSeek-R1-0528": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -10,7 +10,7 @@
         }
       }
     },
-    "Falcon3-7B-Instruct": {
+    "tiiuae/Falcon3-7B-Instruct": {
       "inference_engine": "FORGE",
       "ci": {
         "nightly": {
@@ -20,7 +20,7 @@
         }
       }
     },
-    "Llama-3.1-8B-Instruct": {
+    "meta-llama/Llama-3.1-8B-Instruct": {
       "implementations": [
         {
           "inference_engine": "vLLM",
@@ -62,7 +62,7 @@
         }
       ]
     },
-    "Llama-3.2-11B-Vision-Instruct": {
+    "meta-llama/Llama-3.2-11B-Vision-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -73,7 +73,7 @@
         }
       }
     },
-    "Llama-3.2-1B-Instruct": {
+    "meta-llama/Llama-3.2-1B-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -85,7 +85,7 @@
         }
       }
     },
-    "Llama-3.2-3B-Instruct": {
+    "meta-llama/Llama-3.2-3B-Instruct": {
       "implementations": [
         {
           "inference_engine": "vLLM",
@@ -111,7 +111,7 @@
         }
       ]
     },
-    "Llama-3.2-90B-Vision-Instruct": {
+    "meta-llama/Llama-3.2-90B-Vision-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -121,7 +121,7 @@
         }
       }
     },
-    "Llama-3.3-70B-Instruct": {
+    "meta-llama/Llama-3.3-70B-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -140,7 +140,7 @@
         }
       }
     },
-    "Mistral-7B-Instruct-v0.3": {
+    "mistralai/Mistral-7B-Instruct-v0.3": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -151,7 +151,7 @@
         }
       }
     },
-    "Mistral-Small-3.1-24B-Instruct-2503": {
+    "mistralai/Mistral-Small-3.1-24B-Instruct-2503": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -161,7 +161,7 @@
         }
       }
     },
-    "QwQ-32B": {
+    "Qwen/QwQ-32B": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -177,7 +177,7 @@
         }
       }
     },
-    "Qwen2.5-72B-Instruct": {
+    "Qwen/Qwen2.5-72B-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -193,7 +193,7 @@
         }
       }
     },
-    "Qwen2.5-7B-Instruct": {
+    "Qwen/Qwen2.5-7B-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -203,7 +203,7 @@
         }
       }
     },
-    "Qwen3-VL-32B-Instruct": {
+    "Qwen/Qwen3-VL-32B-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -213,7 +213,7 @@
         }
       }
     },
-    "Qwen2.5-VL-32B-Instruct": {
+    "Qwen/Qwen2.5-VL-32B-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -223,7 +223,7 @@
         }
       }
     },
-    "Qwen2.5-VL-3B-Instruct": {
+    "Qwen/Qwen2.5-VL-3B-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -234,7 +234,7 @@
         }
       }
     },
-    "Qwen2.5-VL-72B-Instruct": {
+    "Qwen/Qwen2.5-VL-72B-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -244,7 +244,7 @@
         }
       }
     },
-    "Qwen2.5-VL-7B-Instruct": {
+    "Qwen/Qwen2.5-VL-7B-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -254,7 +254,7 @@
         }
       }
     },
-    "Qwen3-32B": {
+    "Qwen/Qwen3-32B": {
       "implementations": [
         {
           "inference_engine": "vLLM",
@@ -291,7 +291,7 @@
         }
       ]
     },
-    "Qwen3-8B": {
+    "Qwen/Qwen3-8B": {
       "implementations": [
         {
           "inference_engine": "vLLM",
@@ -323,7 +323,7 @@
         }
       ]
     },
-    "Qwen3.6-27B": {
+    "Qwen/Qwen3.6-27B": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -338,7 +338,7 @@
         }
       }
     },
-    "Qwen3-4B": {
+    "Qwen/Qwen3-4B": {
       "inference_engine": "FORGE",
       "ci": {
         "nightly": {
@@ -348,7 +348,7 @@
         }
       }
     },
-    "Qwen3-Embedding-4B": {
+    "Qwen/Qwen3-Embedding-4B": {
       "inference_engine": "FORGE",
       "ci": {
         "nightly": {
@@ -358,7 +358,7 @@
         }
       }
     },
-    "Qwen3-Embedding-8B": {
+    "Qwen/Qwen3-Embedding-8B": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
@@ -369,7 +369,7 @@
         }
       }
     },
-    "bge-m3": {
+    "BAAI/bge-m3": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
@@ -382,7 +382,7 @@
         }
       }
     },
-    "Wan2.2-T2V-A14B-Diffusers": {
+    "Wan-AI/Wan2.2-T2V-A14B-Diffusers": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
@@ -396,7 +396,7 @@
         }
       }
     },
-    "Wan2.2-I2V-A14B-Diffusers": {
+    "Wan-AI/Wan2.2-I2V-A14B-Diffusers": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
@@ -410,7 +410,7 @@
         }
       }
     },
-    "bge-large-en-v1.5": {
+    "BAAI/bge-large-en-v1.5": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
@@ -431,7 +431,7 @@
         }
       }
     },
-    "FLUX.1-dev": {
+    "black-forest-labs/FLUX.1-dev": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
@@ -444,7 +444,7 @@
         }
       }
     },
-    "FLUX.1-schnell": {
+    "black-forest-labs/FLUX.1-schnell": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
@@ -457,7 +457,7 @@
         }
       }
     },
-    "Motif-Image-6B-Preview": {
+    "Motif-Technologies/Motif-Image-6B-Preview": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
@@ -469,7 +469,7 @@
         }
       }
     },
-    "gemma-3-1b-it": {
+    "google/gemma-3-1b-it": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -479,7 +479,7 @@
         }
       }
     },
-    "gemma-3-27b-it": {
+    "google/gemma-3-27b-it": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -495,7 +495,7 @@
         }
       }
     },
-    "gemma-3-4b-it": {
+    "google/gemma-3-4b-it": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -508,7 +508,7 @@
         }
       }
     },
-    "gemma-4-31B-it": {
+    "google/gemma-4-31B-it": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -518,7 +518,7 @@
         }
       }
     },
-    "gemma-4-31b-it": {
+    "google/gemma-4-31b-it": {
       "inference_engine": "FORGE",
       "ci": {
         "nightly": {
@@ -528,7 +528,7 @@
         }
       }
     },
-    "gemma-4-12B-it": {
+    "google/gemma-4-12B-it": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -538,7 +538,7 @@
         }
       }
     },
-    "gpt-oss-120b": {
+    "openai/gpt-oss-120b": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -550,7 +550,7 @@
         }
       }
     },
-    "gpt-oss-20b": {
+    "openai/gpt-oss-20b": {
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
@@ -581,7 +581,7 @@
         }
       }
     },
-    "mochi-1-preview": {
+    "genmo/mochi-1-preview": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
@@ -595,7 +595,7 @@
         }
       }
     },
-    "distil-large-v3": {
+    "distil-whisper/distil-large-v3": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
@@ -626,7 +626,7 @@
         }
       }
     },
-    "speecht5_tts": {
+    "microsoft/speecht5_tts": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
@@ -639,7 +639,7 @@
         }
       }
     },
-    "stable-diffusion-3.5-large": {
+    "stabilityai/stable-diffusion-3.5-large": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
@@ -655,7 +655,7 @@
         }
       }
     },
-    "stable-diffusion-xl-base-1.0": {
+    "stabilityai/stable-diffusion-xl-base-1.0": {
       "implementations": [
         {
           "inference_engine": "MEDIA",
@@ -730,7 +730,7 @@
         }
       }
     },
-    "whisper-large-v3": {
+    "openai/whisper-large-v3": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
@@ -748,7 +748,7 @@
         }
       }
     },
-    "Z-Image-Turbo": {
+    "Tongyi-MAI/Z-Image-Turbo": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {

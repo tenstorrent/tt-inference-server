@@ -143,7 +143,8 @@ def run_serving_bench(ctx, suites: Optional[str] = None) -> List[ServingBenchRes
     accept_blocks(
         blocks,
         envelope={
-            "model_name": getattr(ctx.model_spec, "model_name", ""),
+            "model_name": getattr(ctx.model_spec, "hf_model_repo", "")
+            or getattr(ctx.model_spec, "model_name", ""),
             "device": ctx.device.name
             if hasattr(ctx.device, "name")
             else str(ctx.device),

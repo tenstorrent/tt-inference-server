@@ -5,7 +5,7 @@ Supported weights variants for this model implementation are:
 - `whisper-large-v3`: [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3) **(default)** 
 - `distil-large-v3`: [distil-whisper/distil-large-v3](https://huggingface.co/distil-whisper/distil-large-v3)
 
-To use non-default weights, replace `whisper-large-v3` in commands below.
+To use non-default weights, replace `openai/whisper-large-v3` in commands below.
 
 #### Useful links
 
@@ -30,7 +30,7 @@ This model is supported by [tt-media-server](../../../tt-media-server/README.md)
 **via run.py command**
 
 ```bash
-python3 run.py --model whisper-large-v3 --device n300 --workflow server --docker-server
+python3 run.py --model openai/whisper-large-v3 --device n300 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 

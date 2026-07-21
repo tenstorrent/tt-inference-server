@@ -27,14 +27,14 @@ docker run \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_gpt-oss-20b:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e867533-8f36910 \
-  --model gpt-oss-20b \
+  --model openai/gpt-oss-20b \
   --tt-device galaxy
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model gpt-oss-20b --device galaxy --workflow server --docker-server
+python3 run.py --model openai/gpt-oss-20b --device galaxy --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -68,14 +68,14 @@ docker run \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_gpt-oss-20b:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e867533-8f36910 \
-  --model gpt-oss-20b \
+  --model openai/gpt-oss-20b \
   --tt-device galaxy_t3k
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model gpt-oss-20b --device galaxy_t3k --workflow server --docker-server
+python3 run.py --model openai/gpt-oss-20b --device galaxy_t3k --workflow server --docker-server
 ```
 
 ### Model Parameters

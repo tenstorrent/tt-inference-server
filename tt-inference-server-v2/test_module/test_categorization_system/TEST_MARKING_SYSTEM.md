@@ -143,7 +143,7 @@ tests = filter.filter_by_model_category(["IMAGE", "AUDIO"]) \
 
 ```bash
 # SDXL load tests on N150
-python run.py --model stable-diffusion-xl-base-1.0 --device n150 --markers load
+python run.py --model stabilityai/stable-diffusion-xl-base-1.0 --device n150 --markers load
 
 # Programmatically
 filter = TestFilter()
@@ -157,7 +157,7 @@ tests = filter.filter_by_model("stable-diffusion-xl-base-1.0") \
 
 ```bash
 # Specific test class for SDXL on N150
-python run.py --model stable-diffusion-xl-base-1.0 --device n150 --markers load --test-name ImageGenerationLoadTest
+python run.py --model stabilityai/stable-diffusion-xl-base-1.0 --device n150 --markers load --test-name ImageGenerationLoadTest
 
 # Programmatically
 filter = TestFilter()

@@ -5,7 +5,7 @@ Supported weights variants for this model implementation are:
 - `stable-diffusion-xl-base-1.0`: [stabilityai/stable-diffusion-xl-base-1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0) **(default)** 
 - `stable-diffusion-xl-base-1.0-img-2-img`: [stabilityai/stable-diffusion-xl-base-1.0-img-2-img](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0-img-2-img)
 
-To use non-default weights, replace `stable-diffusion-xl-base-1.0` in commands below.
+To use non-default weights, replace `stabilityai/stable-diffusion-xl-base-1.0` in commands below.
 
 #### Useful links
 
@@ -28,7 +28,7 @@ This model is supported by [tt-media-server](../../../tt-media-server/README.md)
 **via run.py command**
 
 ```bash
-python3 run.py --model stable-diffusion-xl-base-1.0 --device n300 --workflow server --docker-server
+python3 run.py --model stabilityai/stable-diffusion-xl-base-1.0 --device n300 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 

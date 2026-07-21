@@ -72,7 +72,7 @@
                     "description": "LoRA eval: ColoringBookRedmond-V2",
                     "targets": {
                         "request": {
-                            "model_name": "stable-diffusion-xl-base-1.0-lora",
+                            "model_name": "stabilityai/stable-diffusion-xl-base-1.0-lora",
                             "num_prompts": 100,
                             "num_inference_steps": 20,
                             "lora_path": "artificialguybr/ColoringBookRedmond-V2",
@@ -338,7 +338,7 @@
         {
             "id": "sdxl-n300",
             "weights": [
-                "stable-diffusion-xl-base-1.0"
+                "stabilityai/stable-diffusion-xl-base-1.0"
             ],
             "device": "n300",
             "num_of_devices": 1,
@@ -384,7 +384,7 @@
         {
             "id": "sdxl-p150x8",
             "weights": [
-                "stable-diffusion-xl-base-1.0"
+                "stabilityai/stable-diffusion-xl-base-1.0"
             ],
             "device": "p150x8",
             "num_of_devices": 4,
@@ -430,7 +430,7 @@
         {
             "id": "sdxl-p300x2",
             "weights": [
-                "stable-diffusion-xl-base-1.0"
+                "stabilityai/stable-diffusion-xl-base-1.0"
             ],
             "device": "p300x2",
             "num_of_devices": 2,

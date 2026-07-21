@@ -184,7 +184,7 @@ def _now_timestamp() -> str:
 def common_report_metadata(ctx: MediaContext, task_type: str) -> dict:
     """Metadata block shared by every benchmark report."""
     return {
-        "model": ctx.model_spec.model_name,
+        "model": ctx.model_spec.hf_model_repo,
         "device": ctx.device.name,
         "timestamp": _now_timestamp(),
         "task_type": task_type,
@@ -198,7 +198,7 @@ def common_eval_metadata(ctx: MediaContext, task_type: str) -> dict:
     lowercases ``device`` to match the legacy eval contract.
     """
     return {
-        "model": ctx.model_spec.model_name,
+        "model": ctx.model_spec.hf_model_repo,
         "device": ctx.device.name.lower(),
         "timestamp": _now_timestamp(),
         "task_type": task_type,

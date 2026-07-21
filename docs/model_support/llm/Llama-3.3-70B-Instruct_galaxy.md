@@ -7,7 +7,7 @@ Supported weights variants for this model implementation are:
 - `Llama-3.1-70B-Instruct`: [meta-llama/Llama-3.1-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct)
 - `DeepSeek-R1-Distill-Llama-70B`: [deepseek-ai/DeepSeek-R1-Distill-Llama-70B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B)
 
-To use non-default weights, replace `Llama-3.3-70B-Instruct` in commands below.
+To use non-default weights, replace `meta-llama/Llama-3.3-70B-Instruct` in commands below.
 
 #### Useful links
 
@@ -39,14 +39,14 @@ docker run \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Llama-3.3-70B-Instruct:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e867533-8f36910 \
-  --model Llama-3.3-70B-Instruct \
+  --model meta-llama/Llama-3.3-70B-Instruct \
   --tt-device galaxy
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model Llama-3.3-70B-Instruct --device galaxy --workflow server --docker-server
+python3 run.py --model meta-llama/Llama-3.3-70B-Instruct --device galaxy --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -80,14 +80,14 @@ docker run \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Llama-3.3-70B-Instruct:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.2.0-v0.62.0-rc33-e7c329b \
-  --model Llama-3.3-70B-Instruct \
+  --model meta-llama/Llama-3.3-70B-Instruct \
   --tt-device galaxy_t3k
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model Llama-3.3-70B-Instruct --device galaxy_t3k --workflow server --docker-server
+python3 run.py --model meta-llama/Llama-3.3-70B-Instruct --device galaxy_t3k --workflow server --docker-server
 ```
 
 ### Model Parameters

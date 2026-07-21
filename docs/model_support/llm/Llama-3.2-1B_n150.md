@@ -5,7 +5,7 @@ Supported weights variants for this model implementation are:
 - `Llama-3.2-1B`: [meta-llama/Llama-3.2-1B](https://huggingface.co/meta-llama/Llama-3.2-1B) **(default)** 
 - `Llama-3.2-1B-Instruct`: [meta-llama/Llama-3.2-1B-Instruct](https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct)
 
-To use non-default weights, replace `Llama-3.2-1B` in commands below.
+To use non-default weights, replace `meta-llama/Llama-3.2-1B` in commands below.
 
 #### Useful links
 
@@ -35,14 +35,14 @@ docker run \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Llama-3.2-1B:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-84b4c53-222ee06 \
-  --model Llama-3.2-1B \
+  --model meta-llama/Llama-3.2-1B \
   --tt-device n150
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model Llama-3.2-1B --device n150 --workflow server --docker-server
+python3 run.py --model meta-llama/Llama-3.2-1B --device n150 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
