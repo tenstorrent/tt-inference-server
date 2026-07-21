@@ -142,8 +142,6 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   ASSERT_NE(seq, nullptr);
   EXPECT_GT(seq->getNumPromptTokens(), 0u);
   EXPECT_FALSE(seq->isContinuation());
-  // A brand-new session matches no prefix, so its first free KV index is 0.
-  // kv_position_id must always be set (never surface as "none" downstream).
   ASSERT_TRUE(seq->getKVPositionId().has_value())
       << "new session must set kv_position_id (first free KV index)";
   EXPECT_EQ(*seq->getKVPositionId(), 0u)
@@ -350,8 +348,6 @@ TEST_F(MainIntegrationTest, MultiTurn_MatchedTokensEqualPriorPromptBlocks) {
     ASSERT_NE(seq, nullptr) << "turn " << turn;
 
     if (turn == 0) {
-      // First turn: fresh allocation, nothing to match. The first free KV
-      // index is 0, so kv_position_id is set to 0 (never left unset).
       EXPECT_FALSE(seq->isContinuation()) << "turn 0 must allocate";
       ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 0";
       EXPECT_EQ(*seq->getKVPositionId(), 0u) << "turn 0 first free KV index";

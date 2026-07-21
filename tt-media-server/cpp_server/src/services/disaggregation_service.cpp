@@ -422,6 +422,8 @@ void DisaggregationService::resolvePrefillSession(
                 {.skipUnlessRegularMode = false,
                  .setKvPositionId = false,
                  .logPrefix = "[DisaggregationService]"});
+          } else {
+            request->kv_position_id = 0;
           }
           onResolved();
         },
