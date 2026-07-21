@@ -4163,6 +4163,7 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.75,
                     EvalLimitMode.SMOKE_TEST: 0.05,
                 },
             ),
@@ -4187,6 +4188,7 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.75,
                     EvalLimitMode.SMOKE_TEST: 0.05,
                 },
             ),
