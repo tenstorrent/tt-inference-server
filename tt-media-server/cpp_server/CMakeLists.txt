@@ -1005,7 +1005,7 @@ endif()
 
 add_executable(dynamo_protocol_test
     tests/unit/dynamo/dynamo_protocol_test.cpp
-    src/dynamo/dynamo_protocol.cpp
+    src/dynamo/transport_protocol.cpp
     src/utils/logger.cpp
 )
 target_link_libraries(dynamo_protocol_test PRIVATE
@@ -1797,13 +1797,15 @@ set(SOURCES
     src/runtime/worker/worker_metrics_shm.cpp
     src/runtime/worker/worker_metrics_aggregator.cpp
     src/runtime/worker/blaze_worker_metrics_renderer.cpp
-    src/dynamo/dynamo_protocol.cpp
-    src/dynamo/dynamo_llm_mapping.cpp
-    src/dynamo/dynamo_prefill_result_json.cpp
+    src/dynamo/transport_protocol.cpp
+    src/dynamo/llm_mapping.cpp
+    src/dynamo/prefill_result_mapping.cpp
     src/dynamo/discovery.cpp
     src/dynamo/etcd_client.cpp
     src/dynamo/kube_client.cpp
-    src/dynamo/dynamo_endpoint.cpp
+    src/dynamo/worker_server.cpp
+    src/dynamo/transport_server.cpp
+    src/dynamo/request_handler.cpp
 )
 
 # Create executable
