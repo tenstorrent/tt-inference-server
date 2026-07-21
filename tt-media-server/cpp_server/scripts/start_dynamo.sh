@@ -11,7 +11,7 @@
 # Usage:
 #   ./scripts/start_dynamo.sh                              # default file store
 #   DYN_DISCOVERY_BACKEND=etcd ./scripts/start_dynamo.sh   # use etcd
-#   DYNAMO_DISCOVERY_PATH=/tmp/dyn HTTP_PORT=9000 ./scripts/start_dynamo.sh
+#   DYN_DISCOVERY_PATH=/tmp/dyn HTTP_PORT=9000 ./scripts/start_dynamo.sh
 
 set -euo pipefail
 
@@ -40,15 +40,12 @@ export DYN_REQUEST_PLANE="${DYN_REQUEST_PLANE:-tcp}"
 export DYN_EVENT_PLANE="${DYN_EVENT_PLANE:-zmq}"
 export DYN_FILE_STORE="${DYN_FILE_STORE:-/tmp/dynamo_store_kv}"
 export ETCD_ENDPOINTS="${ETCD_ENDPOINTS:-http://localhost:2379}"
-export DYNAMO_ENDPOINT_ENABLED=1
-# Mirror the Dynamo-side env into cpp_server's namespace so the C++ accessors
-# (which key off DYNAMO_*) see the same values without duplicating exports.
-export DYNAMO_DISCOVERY_BACKEND="${DYN_DISCOVERY_BACKEND:-etcd}"
-export DYNAMO_DISCOVERY_PATH="${DYNAMO_DISCOVERY_PATH:-${DYN_FILE_STORE}}"
-export DYNAMO_ETCD_ENDPOINTS="${DYNAMO_ETCD_ENDPOINTS:-${ETCD_ENDPOINTS}}"
-export DYNAMO_NAMESPACE="${DYNAMO_NAMESPACE:-default}"
-export DYNAMO_COMPONENT="${DYNAMO_COMPONENT:-backend}"
-export DYNAMO_ENDPOINT_NAME="${DYNAMO_ENDPOINT_NAME:-generate}"
+export DYN_ENDPOINT_ENABLED=1
+export DYN_DISCOVERY_PATH="${DYN_DISCOVERY_PATH:-${DYN_FILE_STORE}}"
+export DYN_ETCD_ENDPOINTS="${DYN_ETCD_ENDPOINTS:-${ETCD_ENDPOINTS}}"
+export DYN_NAMESPACE="${DYN_NAMESPACE:-default}"
+export DYN_COMPONENT="${DYN_COMPONENT:-backend}"
+export DYN_ENDPOINT_NAME="${DYN_ENDPOINT_NAME:-generate}"
 
 # Quick sanity check: when running with etcd, fail fast if the gateway isn't
 # reachable so we don't waste a minute booting cpp_server only to crash on
@@ -122,7 +119,7 @@ FRONTEND_PID=$!
 
 sleep 2
 
-echo "Starting cpp_server (DYNAMO_ENDPOINT_ENABLED=1)..."
+echo "Starting cpp_server (DYN_ENDPOINT_ENABLED=1)..."
 "${BIN}" -p "${SERVER_PORT}" &
 BACKEND_PID=$!
 

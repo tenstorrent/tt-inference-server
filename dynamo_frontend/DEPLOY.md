@@ -65,7 +65,7 @@ frontend host port `8080`,
 `LLM_DEVICE_BACKEND=pipeline_manager`, `MODEL_NAME=tt-cpp-server`.
 `PREFILL_DIRECT_SOCKET_PORT` defaults to `9000` when `--prefill-direct` is used.
 `PREFILL_WORKER_COUNT` can set the same value as `--prefill-workers`.
-`DYNAMO_ROUTING_NAMESPACE` defaults to `dynamo` when
+`DYN_ROUTING_NAMESPACE` defaults to `dynamo` when
 `--dynamo-routing` is used, producing the documented Dynamo endpoints
 `dynamo.decode.generate` and `dynamo.prefill.generate`.
 
@@ -95,7 +95,7 @@ Prometheus scrapes `prefill-gateway:9091`.
 2. **etcd** — starts it (publishing `:2379`) and waits until
   `etcdctl endpoint health` passes.
 3. **Worker** — starts cpp_server with etcd discovery
-  (`DYNAMO_ETCD_ENDPOINTS=http://etcd:2379`), the model-specific env, and
+  (`DYN_ETCD_ENDPOINTS=http://etcd:2379`), the model-specific env, and
    `--device /dev/tenstorrent` when the card is present. Waits up to 60s for it
    to register `v1/instances/…`; on failure it dumps the worker logs and exits.
    With `--local-build`, the entrypoint runs the bind-mounted binary
@@ -122,12 +122,12 @@ Prometheus scrapes `prefill-gateway:9091`.
    requests route prefill work through the gateway.
 7. **Dynamo routing (experimental)** — with
    `--dynamo-routing`, starts the worker as `LLM_MODE=decode` with
-   `DYNAMO_ROUTING=1` on `dynamo.decode.generate`, then starts
+   `DYN_ROUTING=1` on `dynamo.decode.generate`, then starts
    `--prefill-workers` managed `LLM_MODE=prefill` workers with
-   `DYNAMO_ENDPOINT_ENABLED=1`,
-   `DYNAMO_WORKER_TYPE=prefill`, `DYNAMO_MODEL_TYPE=Prefill`, and endpoint
+   `DYN_ENDPOINT_ENABLED=1`,
+   `DYN_WORKER_TYPE=prefill`, `DYN_MODEL_TYPE=Prefill`, and endpoint
    `dynamo.prefill.generate`. `worker_type=prefill` carries the actual role;
-   `DYNAMO_MODEL_TYPE=Prefill` keeps the current released `ai-dynamo` frontend
+   `DYN_MODEL_TYPE=Prefill` keeps the current released `ai-dynamo` frontend
    compatible until `Tokens+Empty` is accepted for prefill workers. Dynamo's
    integrated router owns the local-vs-remote prefill decision; when a
    request reaches decode, cpp_server prefills locally instead of reapplying

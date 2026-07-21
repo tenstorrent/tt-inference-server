@@ -114,7 +114,7 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
       tt::config::llmMode() == tt::config::LLMMode::PREFILL_ONLY) {
     if (!disaggregation) {
       sendErrorAndDone(
-          "DYNAMO_ROUTING=1: prefill worker has no disaggregation "
+          "DYN_ROUTING=1: prefill worker has no disaggregation "
           "contract service",
           500);
       return;
@@ -228,7 +228,7 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
           *prefillResult->slotId != tt::domain::INVALID_SLOT_ID;
       if (!hasReservedDecodeSlot) {
         sendErrorAndDone(
-            "DYNAMO_ROUTING=1: prefill result did not include a "
+            "DYN_ROUTING=1: prefill result did not include a "
             "reserved decode slot_id; slot reservation must complete "
             "before decode can continue",
             500);

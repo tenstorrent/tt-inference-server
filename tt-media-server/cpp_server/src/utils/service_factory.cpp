@@ -41,7 +41,7 @@ AuxiliaryServices buildAuxiliaryServices(
           std::make_shared<services::DisaggregationService>(mode, llm, socket);
       if (tt::config::dynamoRoutingEnabled()) {
         TT_LOG_INFO(
-            "[ServiceFactory] DYNAMO_ROUTING=1; etcd discovery + ZMQ slot "
+            "[ServiceFactory] DYN_ROUTING=1; etcd discovery + ZMQ slot "
             "reservation");
       }
       return {std::move(socket), std::move(disagg)};

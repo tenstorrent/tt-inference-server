@@ -284,7 +284,7 @@ struct PrefillCacheBlocksAddedMessage
 /**
  * Prefill -> decode: reserve a decode KV slot before running prefill-first
  * disaggregation. Transport is InterServerService (ZMQ); peer selection may
- * still use etcd discovery under DYNAMO_ROUTING.
+ * still use etcd discovery under DYN_ROUTING.
  */
 struct SlotReservationRequestMessage
     : SerializableMessage<SlotReservationRequestMessage> {

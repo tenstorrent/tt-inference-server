@@ -481,7 +481,7 @@ void DisaggregationService::enqueuePrefillFirst(
   if (!tt::config::dynamoRoutingEnabled()) {
     throw std::runtime_error(
         "[DisaggregationService] Prefill-first slot reservation requires "
-        "DYNAMO_ROUTING=1");
+        "DYN_ROUTING=1");
   }
 
   auto tokenIds = std::get<std::vector<uint32_t>>(request.prompt);
@@ -808,7 +808,7 @@ void DisaggregationService::resolvePrefillSession(
     // resident again when this prefill completes (see prefill result callback).
     sessionManager->shrinkResidentPrefixToMatchedTokens(
         acquired->sessionId, acquired->numberOfMatchedTokens);
-    // Optional under DYNAMO_ROUTING (no InterServerService / ZMQ gateway).
+    // Optional under DYN_ROUTING (no InterServerService / ZMQ gateway).
     if (socketService) {
       socketService->sendPrefillCacheBlocksAdded(blockHashes(blockInfos));
     }
@@ -843,7 +843,7 @@ void DisaggregationService::resolvePrefillSession(
               "sessionId={} slotId={}",
               request->task_id, session.getSessionId(), session.getSlotId());
           sm->registerPrefixHash(session.getSessionId(), infos);
-          // Optional under DYNAMO_ROUTING (no InterServerService / ZMQ
+          // Optional under DYN_ROUTING (no InterServerService / ZMQ
           // gateway).
           if (socketService) {
             socketService->sendPrefillCacheBlocksAdded(blockHashes(infos));
