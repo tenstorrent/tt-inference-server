@@ -36,7 +36,8 @@
         "VIDEO": [
             "Wan2.2-T2V-A14B-Diffusers",
             "Wan2.2-I2V-A14B-Diffusers",
-            "mochi-1-preview"
+            "mochi-1-preview",
+            "LTX-2.3"
         ],
         "LLM": [
             "Qwen3-32B",
@@ -94,6 +95,7 @@
             "wan": "Wan video generation model tests",
             "wan_i2v": "Wan image-to-video generation model tests",
             "mochi": "Mochi video generation model tests",
+            "ltx": "LTX-2.3 distilled audio-video generation model tests",
             "mobilenetv2": "MobileNetV2 CNN model tests",
             "bge_m3": "BGE-M3 embedding model tests"
         }
@@ -228,6 +230,17 @@
                 "p150x4",
                 "p150x8",
                 "p300x2"
+            ]
+        },
+        "ltx": {
+            "id_name": "ltx-2.3",
+            "weights": [
+                "LTX-2.3"
+            ],
+            "category": "VIDEO",
+            "compatible_devices": [
+                "p150x8",
+                "blackhole_galaxy"
             ]
         },
         "sdxl": {
