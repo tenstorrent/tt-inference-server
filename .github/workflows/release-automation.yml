@@ -383,15 +383,16 @@ jobs:
           crane version
 
       # ----- REAL crane login to ghcr.io (README_MANUAL pattern), as
-      #       vmaksimovicTT with the TMP_VMAKSIMOVICTT_PAT secret. Login is real
-      #       (the crane copy below is only simulated). Verifies the login and,
-      #       if a source image resolved, that the token can actually PULL it
-      #       (needs read:packages) — a read failure is warned, not fatal, since
-      #       this iteration only simulates the copy. -----
+      #       vcankovicTT with the TMP_VCANKOVIC_SHIELD_CRANE_PAT secret (a PAT
+      #       with read:packages for tt-shield + write:packages for
+      #       tt-inference-server). Login is real (the crane copy below is only
+      #       simulated). Verifies the login and, if a source image resolved,
+      #       that the token can actually PULL it (needs read:packages) — a read
+      #       failure is warned, not fatal, since this iteration only simulates. -----
       - name: "crane login to ghcr.io (real) + verify"
         env:
-          CRANE_USER: vmaksimovicTT
-          CRANE_PAT: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+          CRANE_USER: vcankovicTT
+          CRANE_PAT: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
           SRC_VLLM: ${{ steps.image-mapping.outputs.vllm_source }}
           SRC_MEDIA: ${{ steps.image-mapping.outputs.media_source }}
           SRC_FORGE: ${{ steps.image-mapping.outputs.forge_source }}
