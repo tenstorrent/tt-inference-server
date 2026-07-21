@@ -353,7 +353,8 @@ def render_table(rows) -> str:
 def render_body(version: str, rows) -> str:
     return (
         "# Summary of Changes\n\n"
-        "<!-- Fill in the summary of changes manually. -->\n\n\n"
+        "<!-- Fill in the summary of changes manually. -->\n"
+        "- placeholder\n\n\n"
         + STATIC_SW_VERSIONS
         + "\n"
         + render_table(rows)
