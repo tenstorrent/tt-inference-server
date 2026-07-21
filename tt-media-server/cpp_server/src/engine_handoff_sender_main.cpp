@@ -16,11 +16,13 @@
 //
 //   engine_handoff_sender --host 127.0.0.1 --port N --device-map tag.devmap
 
+#include <chrono>
 #include <cstdint>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 
 #include "sockets/tcp_socket_transport.hpp"
 #include "transport/device_map_io.hpp"
@@ -139,6 +141,22 @@ int main(int argc, char** argv) {
     return 1;
   }
   transport->start();
+  // initializeAsClient only stores host/port; connect runs on start()'s
+  // background thread. Wait until the socket is up before sendRawData.
+  constexpr int kConnectTimeoutMs = 5000;
+  constexpr int kPollMs = 10;
+  int waitedMs = 0;
+  while (!transport->isConnected() && waitedMs < kConnectTimeoutMs) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(kPollMs));
+    waitedMs += kPollMs;
+  }
+  if (!transport->isConnected()) {
+    TT_LOG_ERROR(
+        "[engine_handoff_sender] timed out waiting for TCP connect to {}:{}",
+        cfg.host, cfg.port);
+    transport->stop();
+    return 1;
+  }
 
   if (!tt::transport::sendEngineHandoff(*transport, *deviceMap)) {
     TT_LOG_ERROR("[engine_handoff_sender] sendEngineHandoff failed");
