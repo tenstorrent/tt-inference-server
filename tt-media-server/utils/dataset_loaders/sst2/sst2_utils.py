@@ -16,5 +16,5 @@ RESPONSE_TEMPLATE = Template("Deduced sentiment: $label")
 LBL2VALUE = {0: "Negative", 1: "Positive"}
 VALUE2LBL = {"Negative": 0, "Positive": 1}
 
-DATASET_BENCHMARK = "nyu-mll/glue"
+DATASET_BENCHMARK = "glue"
 DATASET_NAME = "sst2"
