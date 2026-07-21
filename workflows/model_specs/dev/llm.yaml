@@ -392,6 +392,8 @@ templates:
         fabric_config: FABRIC_1D
         trace_region_size: 1073741824
         l1_small_size: 24576
+        # TODO: turn this back on after the model supports this
+        # sample_on_device_mode: decode_only
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
