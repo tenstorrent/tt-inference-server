@@ -16,11 +16,13 @@
 //
 //   engine_handoff_sender --host 127.0.0.1 --port N --device-map tag.devmap
 
+#include <chrono>
 #include <cstdint>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 
 #include "sockets/tcp_socket_transport.hpp"
 #include "transport/device_map_io.hpp"
@@ -29,12 +31,26 @@
 
 namespace {
 
+constexpr auto K_CONNECT_POLL = std::chrono::milliseconds(10);
+constexpr auto K_CONNECT_TIMEOUT = std::chrono::seconds(30);
+
 struct SenderConfig {
   std::string host = "127.0.0.1";
   uint16_t port = 0;
   std::string deviceMapPath;
   bool deviceMapFromStdin = false;
 };
+
+bool awaitClientConnected(tt::sockets::ISocketTransport& transport) {
+  const auto deadline = std::chrono::steady_clock::now() + K_CONNECT_TIMEOUT;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (transport.isConnected()) {
+      return true;
+    }
+    std::this_thread::sleep_for(K_CONNECT_POLL);
+  }
+  return false;
+}
 
 void usage() {
   std::cerr
@@ -138,7 +154,16 @@ int main(int argc, char** argv) {
                  cfg.port);
     return 1;
   }
+  // start() dials asynchronously in clientLoop; wait until the socket is up
+  // before sendRawData (otherwise every push races and fails closed).
   transport->start();
+  if (!awaitClientConnected(*transport)) {
+    TT_LOG_ERROR(
+        "[engine_handoff_sender] timed out waiting for TCP connect to {}:{}",
+        cfg.host, cfg.port);
+    transport->stop();
+    return 1;
+  }
 
   if (!tt::transport::sendEngineHandoff(*transport, *deviceMap)) {
     TT_LOG_ERROR("[engine_handoff_sender] sendEngineHandoff failed");

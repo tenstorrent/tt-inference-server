@@ -158,6 +158,16 @@ TEST(EngineTableResolve, TableFromFileDeviceMapFromSocket) {
     GTEST_SKIP() << "could not bind/connect handoff port " << kPort;
   }
   client->start();
+  // start() dials asynchronously; wait like engine_handoff_sender.
+  bool isConnected = false;
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    if (client->isConnected()) {
+      isConnected = true;
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(isConnected) << "client never connected to handoff port";
   ASSERT_TRUE(sendEngineHandoff(*client, deviceMap));
   client->stop();
 
