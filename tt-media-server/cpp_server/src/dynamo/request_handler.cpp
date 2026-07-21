@@ -242,6 +242,11 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
             500);
         return;
       }
+      TT_LOG_INFO(
+          "[DynamoRequestHandler] decode prefill_result parsed: taskId={} "
+          "slotId={} sessionId='{}'",
+          decodeReq->task_id, prefillResult->slotId.value_or(0),
+          prefillResult->sessionId);
       submitDecode(decodeReq, pipeline->sessionManager(),
                    prefillResult->sessionId);
       return;

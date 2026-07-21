@@ -1457,7 +1457,7 @@ jobs:
         env:
           DYNAMO_HOST: '127.0.0.1'
           DYNAMO_PORT: '8000'
-          DYNAMO_MODEL: deepseek-ai/DeepSeek-R1-0528
+          DYNAMO_MODEL: 'deepseek-ai/DeepSeek-R1-0528'
           PREFILL_LOG: ${{ github.workspace }}/tt-media-server/prefill.log
           DECODE_LOG: ${{ github.workspace }}/tt-media-server/decode.log
         run: |

@@ -666,8 +666,8 @@ void DisaggregationService::applySlotReservationAndLaunch(
 
   TT_LOG_INFO(
       "[DisaggregationService] Slot reservation granted taskId={} slotId={} "
-      "decodePositionId={} continuation={} decodeInstance={}",
-      result.taskId, result.slotId, result.decodePositionId,
+      "sessionId='{}' decodePositionId={} continuation={} decodeInstance={}",
+      result.taskId, result.slotId, result.sessionId, result.decodePositionId,
       result.continuation, pending.decodeInstanceId);
 
   PrefillWorkContext work = std::move(pending.work);
