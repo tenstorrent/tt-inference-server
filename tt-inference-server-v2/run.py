@@ -123,9 +123,7 @@ def parse_args() -> argparse.Namespace:
         epilog="Available models:\n  " + "\n  ".join(full_repo_models),
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument(
-        "--model", required=True, choices=valid_models, metavar="MODEL"
-    )
+    parser.add_argument("--model", required=True, choices=valid_models, metavar="MODEL")
     parser.add_argument("--workflow", required=True, choices=valid_workflows)
     parser.add_argument("--device", required=True, choices=valid_devices)
     parser.add_argument("--service-port", type=int, default=8000)
