@@ -7703,3 +7703,58 @@ models:
               - name: VLLM_TARGET_DEVICE
                 value: tt
     defaultEngine: vllm
+  gemma-1.1-2b-it:
+    forge:
+      p150:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: tt-media-server-forge
+              tag: local
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: P150
+              - name: MODEL_RUNNER
+                value: training-gemma-lora
+              - name: TRAINING_MODEL
+                value: gemma-1.1-2b-it
+      p300:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: tt-media-server-forge
+              tag: local
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: P300
+              - name: MODEL_RUNNER
+                value: training-gemma-lora
+              - name: TRAINING_MODEL
+                value: gemma-1.1-2b-it
+    defaultEngine: forge
