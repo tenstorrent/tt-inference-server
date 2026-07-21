@@ -1381,6 +1381,7 @@ jobs:
           DYNAMO_COMPONENT=prefill \
           DYNAMO_WORKER_TYPE=prefill \
           DYNAMO_MODEL_TYPE=Prefill \
+          DYNAMO_MODEL_INPUT=Tokens \
           USE_PREFILL_GATEWAY=0 \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9500 \
           PREFILL_SERVER_ID=dyn-routing-prefill \
