@@ -131,8 +131,7 @@ def aggregate_benchmark_runs(
         # the model identity shown in the summary report. Fall back to the
         # basename "model_name" only if the full repo is absent.
         model = str(
-            schema.metadata.get("model_repo")
-            or schema.metadata.get("model_name", "")
+            schema.metadata.get("model_repo") or schema.metadata.get("model_name", "")
         )
         device = str(schema.metadata.get("device", ""))
         for block in schema.sections:
