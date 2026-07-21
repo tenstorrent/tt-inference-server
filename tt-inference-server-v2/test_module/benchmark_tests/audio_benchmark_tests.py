@@ -30,6 +30,7 @@ from .._test_common import (
     MetricSpec,
     ReportCheckTypes,
     block_id,
+    load_targets,
     run_tiered_check,
 )
 from ..context import MediaContext, count_tokens, require_health
@@ -278,11 +279,21 @@ def _audio_target_checks(
     logger.info("Computing 3-tier target checks for TTFT, T/S/U (tput_user), RTR")
     # ttft is captured in seconds; targets.ttft_ms is ms.
     ttft_ms = ttft_value * 1000 if ttft_value else None
+    # Streaming runs are gated against the streaming TTFT target when the device
+    # defines one
+    targets = load_targets(ctx)
+    ttft_target_attr = "ttft_ms"
+    if is_streaming_enabled_for_whisper(ctx) and targets.ttft_streaming_ms is not None:
+        ttft_target_attr = "ttft_streaming_ms"
     return run_tiered_check(
         ctx,
         [
             MetricSpec(
-                "TTFT", ttft_ms, "ttft_ms", lower_is_better=True, field_name="ttft"
+                "TTFT",
+                ttft_ms,
+                ttft_target_attr,
+                lower_is_better=True,
+                field_name="ttft",
             ),
             MetricSpec(
                 "T/S/U",
