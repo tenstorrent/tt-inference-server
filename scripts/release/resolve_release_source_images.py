@@ -13,27 +13,6 @@ images produced by the run's build jobs, grouped by engine family:
     media  <- build job "build-media-inference-server"
     forge  <- build job "build-forge-media-inference-server"
 
-(The middle segment of the job name — e.g. ``_ / build-media-inference-server /
-build-inference-server`` — is the reusable-workflow caller and identifies the
-family. ``build-blaze-media-inference-server`` is a separate variant and is
-ignored.)
-
-For each family the dev image tag is read from that build job's log, which emits
-a line like::
-
-    dev-image-tag=ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.17.0-<sha>-<vllm>-<jobid>
-
-Any family whose build job is absent (or whose tag can't be read) is reported as
-``None`` — that is expected when a release doesn't build every engine.
-
-This only resolves the SOURCE (tt-shield dev) images. Deciding which of them to
-promote/publish to the tt-inference-server production repos (based on which
-models/devices are actually in the release) is a separate, later step.
-
-Auth: uses the GitHub CLI ``gh`` (same as build_release_artifacts.py), so it
-runs locally with your ``gh auth`` and in CI with ``GH_TOKEN`` set to a PAT that
-can read tt-shield Actions (e.g. the TMP_VCANKOVIC_SHIELD_CRANE_PAT secret).
-
 Usage
 -----
     # human-readable

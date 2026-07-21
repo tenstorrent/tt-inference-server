@@ -6,9 +6,7 @@
 create_post_release_pr.py
 =========================
 
-Open a DRAFT "Post release v<version>" pull request from the post-release branch
-into ``main``, with a body in the exact format of
-https://github.com/tenstorrent/tt-inference-server/pull/4398.
+Open a DRAFT "Post release v<version>" PR from the post-release branch into ``main``
 
 The body has four sections:
 
@@ -34,27 +32,6 @@ entries), matched to its ``workflows/model_specs/prod/*.yaml`` block. Columns:
 
 Any value that cannot be computed is rendered as ``UNKNOWN``.
 
-"old" vs "new" is a pure catalogue diff: ``new`` = this (post-release) branch's
-working-tree prod, ``old`` = the base branch's prod (``--base-ref``, default
-``origin/main``) — i.e. exactly what the PR itself changes.
-
-CI links need read access to tenstorrent/tt-shield Actions. The token is taken
-from --token or, failing that, the env vars TMP_VCANKOVIC_SHIELD_CRANE_PAT / GH_PAT /
-GITHUB_TOKEN. If no token works (or --tt-shield-run-id is omitted), CI Job Link
-cells fall back to UNKNOWN.
-
-The PR is created with ``gh pr create --draft`` (gh uses its own auth /
-GH_TOKEN / GITHUB_TOKEN; this must be able to open PRs on --repo). Use --dry-run
-to print the body without opening a PR.
-
-Usage (typically the final step of the release-automation pipeline, run while
-checked out on the post-release branch):
-
-    python3 scripts/release/create_post_release_pr.py \
-        --tt-shield-run-id 29037835062
-
-    # preview only, no PR:
-    python3 scripts/release/create_post_release_pr.py --tt-shield-run-id ... --dry-run
 """
 
 from __future__ import annotations
