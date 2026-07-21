@@ -86,7 +86,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -169,7 +170,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -291,7 +293,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -415,7 +418,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -553,7 +557,8 @@
                   "task_name": "gpqa_diamond_cot_zeroshot"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -691,7 +696,8 @@
                   "task_name": "gpqa_diamond_cot_zeroshot"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -777,7 +783,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -854,7 +861,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -934,7 +942,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -1056,7 +1065,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -1179,7 +1189,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -1301,7 +1312,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -1384,7 +1396,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -1508,7 +1521,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -1586,7 +1600,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -1723,7 +1738,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -1858,7 +1874,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -1984,7 +2001,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -2070,7 +2088,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -2155,7 +2174,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -2287,7 +2307,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -2419,7 +2440,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -2495,7 +2517,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -2572,7 +2595,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -2692,7 +2716,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -2815,7 +2840,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -2901,7 +2927,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -3070,7 +3097,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -3235,7 +3263,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -3322,7 +3351,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -3492,7 +3522,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -3657,7 +3688,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -3744,7 +3776,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -3874,7 +3907,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -3954,7 +3988,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -4077,7 +4112,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -4157,7 +4193,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -4284,7 +4321,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -4421,7 +4459,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -4563,7 +4602,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -4702,7 +4742,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -4838,7 +4879,8 @@
                   "task_name": "test_penalties"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -4932,7 +4974,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -5074,7 +5117,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -5211,7 +5255,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -5353,7 +5398,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -5492,7 +5538,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -5628,7 +5675,8 @@
                   "task_name": "test_penalties"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -5722,7 +5770,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -5864,7 +5913,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -6001,7 +6051,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -6143,7 +6194,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -6282,7 +6334,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -6418,7 +6471,8 @@
                   "task_name": "test_penalties"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -6512,7 +6566,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -6654,7 +6709,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -6792,7 +6848,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -6935,7 +6992,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -7075,7 +7133,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -7212,7 +7271,8 @@
                   "task_name": "test_penalties"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -7307,7 +7367,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -7402,7 +7463,8 @@
               "tensor_cache_timeout": 6400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -7487,7 +7549,8 @@
               "tensor_cache_timeout": 6400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -7579,7 +7642,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -7706,7 +7770,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -7825,7 +7890,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -7945,7 +8011,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8066,7 +8133,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8185,7 +8253,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8305,7 +8374,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8428,7 +8498,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8548,7 +8619,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8663,7 +8735,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8783,7 +8856,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8899,7 +8973,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9021,7 +9096,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9141,7 +9217,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9260,7 +9337,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9382,7 +9460,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9504,7 +9583,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9667,7 +9747,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9745,7 +9826,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9863,7 +9945,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -10010,7 +10093,8 @@
                   "task_name": "longbench_code_e"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -10132,7 +10216,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -10255,7 +10340,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -10412,7 +10498,8 @@
                   "task_name": "longbench_summarization_e"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -10503,7 +10590,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -10677,7 +10765,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -10772,7 +10861,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -10908,7 +10998,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -11030,7 +11121,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -11193,7 +11285,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -11271,7 +11364,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -11389,7 +11483,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -11536,7 +11631,8 @@
                   "task_name": "longbench_code_e"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -11658,7 +11754,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -11781,7 +11878,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -11938,7 +12036,8 @@
                   "task_name": "longbench_summarization_e"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -12029,7 +12128,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -12203,7 +12303,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -12298,7 +12399,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -12435,7 +12537,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -12520,7 +12623,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -12614,7 +12718,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -12645,6 +12750,83 @@
               "trace_region_size": 200000000,
               "sample_on_device_mode": "decode_only"
             },
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": true,
+            "metadata": {
+              "reasoning_parser_name": "gemma4",
+              "tool_call_parser_name": "gemma4"
+            },
+            "cli_args": {}
+          }
+        }
+      },
+      "GPU": {
+        "vLLM": {
+          "tt_transformers": {
+            "model_id": "id_tt-transformers_gemma-4-31B-it_gpu",
+            "impl": {
+              "impl_id": "tt_transformers",
+              "impl_name": "tt-transformers",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/tt_transformers"
+            },
+            "hf_model_repo": "google/gemma-4-31B-it",
+            "model_name": "gemma-4-31B-it",
+            "inference_engine": "vLLM",
+            "device_type": "GPU",
+            "device_model_spec": {
+              "device": "GPU",
+              "max_concurrency": 32,
+              "max_context": 204800,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [],
+              "vllm_args": {
+                "model": "google/gemma-4-31B-it",
+                "block_size": "64",
+                "max_model_len": "204800",
+                "max_num_seqs": "32",
+                "max_num_batched_tokens": "204800",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "MESH_DEVICE": "GPU"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "VLLM_CONFIGURE_LOGGING": "1",
+              "VLLM_RPC_TIMEOUT": "900000",
+              "VLLM_TARGET_DEVICE": "tt",
+              "TORCHDYNAMO_DISABLE": "1",
+              "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+              "MESH_DEVICE": "GPU"
+            },
+            "tt_metal_commit": "c49bb76",
+            "vllm_commit": "6b4a3a7",
+            "hf_weights_repo": "google/gemma-4-31B-it",
+            "param_count": 31,
+            "min_disk_gb": 82,
+            "min_ram_gb": 77.5,
+            "model_type": "LLM",
+            "repacked": 0,
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/tt_transformers",
+            "override_tt_config": {},
             "supported_modalities": [
               "text"
             ],
@@ -12710,7 +12892,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -12841,7 +13024,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -12966,7 +13150,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13093,7 +13278,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13218,7 +13404,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13347,7 +13534,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13436,7 +13624,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13567,7 +13756,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13697,7 +13887,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13786,7 +13977,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13917,7 +14109,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14042,7 +14235,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14162,7 +14356,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14282,7 +14477,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14404,7 +14600,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14527,7 +14724,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14653,7 +14851,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14779,7 +14978,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14904,7 +15104,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15022,7 +15223,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15142,7 +15344,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15260,7 +15463,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15381,7 +15585,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15503,7 +15708,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15624,7 +15830,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15736,7 +15943,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15849,7 +16057,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15964,7 +16173,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16079,7 +16289,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16195,7 +16406,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16307,7 +16519,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16420,7 +16633,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16535,7 +16749,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16650,7 +16865,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16766,7 +16982,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16878,7 +17095,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16991,7 +17209,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17103,7 +17322,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17216,7 +17436,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17328,7 +17549,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17441,7 +17663,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17553,7 +17776,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17667,7 +17891,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17779,7 +18004,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17892,7 +18118,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18004,7 +18231,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18117,7 +18345,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18229,7 +18458,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18343,7 +18573,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18455,7 +18686,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18566,7 +18798,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18677,7 +18910,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18788,7 +19022,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18901,7 +19136,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19017,7 +19253,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19129,7 +19366,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19240,7 +19478,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19351,7 +19590,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19462,7 +19702,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19575,7 +19816,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19691,7 +19933,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19803,7 +20046,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19914,7 +20158,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19984,7 +20229,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20058,7 +20304,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20130,7 +20377,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20204,7 +20452,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20276,7 +20525,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20389,7 +20639,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20502,7 +20753,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20573,7 +20825,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20685,7 +20938,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20797,7 +21051,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20910,7 +21165,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21023,7 +21279,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21137,7 +21394,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21208,7 +21466,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21320,7 +21579,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21432,7 +21692,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21545,7 +21806,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21658,7 +21920,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21772,7 +22035,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21884,7 +22148,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21956,7 +22221,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22028,7 +22294,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22148,7 +22415,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22272,7 +22540,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22397,7 +22666,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22522,7 +22792,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22646,7 +22917,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22766,7 +23038,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22887,7 +23160,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23007,7 +23281,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23130,7 +23405,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23254,7 +23530,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23379,7 +23656,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23503,7 +23781,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23625,7 +23904,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23743,7 +24023,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23860,7 +24141,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23972,7 +24254,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24086,7 +24369,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24198,7 +24482,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24312,7 +24597,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24424,7 +24710,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24538,7 +24825,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24650,7 +24938,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24764,7 +25053,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24876,7 +25166,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24990,7 +25281,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -25102,7 +25394,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -25216,7 +25509,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -25328,7 +25622,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -25453,7 +25748,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": 1
+              "eval_max_retries": 1,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -25577,7 +25873,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -25688,7 +25985,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
