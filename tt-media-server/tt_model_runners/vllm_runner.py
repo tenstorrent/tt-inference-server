@@ -57,8 +57,14 @@ class VLLMForgeRunner(BaseDeviceRunner):
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "true").lower() == "true"
         enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
-        # BFP8 KV cache ("bfp_bf8" halves the KV footprint vs bf16; "" -> bf16).
-        kv_cache_dtype = os.getenv("KV_CACHE_DTYPE", "")
+        # BFP8 KV cache ("bfp_bf8" halves the KV footprint vs bf16; "none" ->
+        # bf16). Must be "none", not "" -- PJRT validates this against
+        # {none, bfp_bf8, bfp_bf4} and rejects "".
+        kv_cache_dtype = os.getenv("KV_CACHE_DTYPE", "none")
+        # Weight dtype for on-device conversion ("bfp_bf8"/"bfp_bf4" quantize;
+        # "" -> bf16, the natural loaded precision). Defaults to "bfp_bf8" to
+        # preserve prior (previously hardcoded) behavior for all models.
+        weight_dtype = os.getenv("WEIGHT_DTYPE", "bfp_bf8")
         # On-device chunked-SDPA prefill chunk size: without it the full-context
         # prefill SDPA buffer OOMs the DRAM banks at 32K/64K. Only passed when set.
         prefill_chunk_size = os.getenv("PREFILL_CHUNK_SIZE")
@@ -78,7 +84,7 @@ class VLLMForgeRunner(BaseDeviceRunner):
         additional_config = {
             "enable_const_eval": True,
             "min_context_len": self.settings.vllm.min_context_length,
-            "experimental_weight_dtype": "bfp_bf8",
+            "experimental_weight_dtype": weight_dtype,
             "experimental_kv_cache_dtype": kv_cache_dtype,
             "cpu_sampling": cpu_sampling,
             "optimization_level": optimization_level,
