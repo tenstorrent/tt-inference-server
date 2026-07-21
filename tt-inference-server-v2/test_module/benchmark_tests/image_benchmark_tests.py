@@ -440,7 +440,7 @@ def _image_target_checks(
         ctx,
         [
             MetricSpec(
-                "TTFT", ttft_ms, "ttft_ms", lower_is_better=True, field_name="ttft_ms"
+                "TTFT", ttft_ms, "ttft_ms", lower_is_better=True, field_name="ttft"
             ),
             MetricSpec(
                 "tput_user",
