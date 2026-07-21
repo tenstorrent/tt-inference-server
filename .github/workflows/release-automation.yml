@@ -261,7 +261,7 @@ jobs:
       #       the tt-shield PAT (GITHUB_TOKEN cannot read another repo). -----
       - name: "Build release artifacts zip (download from tt-shield)"
         env:
-          GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
         run: |
           mkdir -p "${RUNNER_TEMP}/release_artifacts"
           python3 scripts/release/build_release_artifacts.py \
@@ -287,7 +287,7 @@ jobs:
       - name: "Resolve release source images (vllm/media/forge)"
         id: source-images
         env:
-          GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
         run: |
           python3 scripts/release/resolve_release_source_images.py \
             --run-id "${TT_SHIELD_RUN_ID}" --json > "${RUNNER_TEMP}/source_images.json"
@@ -529,12 +529,12 @@ jobs:
       #       post-release branch is main-based and does not carry this script,
       #       so restore it from RUNNER_TEMP first. It renders the Model Spec
       #       Release Updates table from this branch's prod (new) vs origin/main
-      #       (old). CI Job Links need TMP_VMAKSIMOVICTT_PAT (tt-shield read access);
+      #       (old). CI Job Links need TMP_VCANKOVIC_SHIELD_CRANE_PAT (tt-shield read access);
       #       when it is absent or lacks access they render as UNKNOWN. -----
       - name: "Post-release: open draft PR -> main"
         env:
           GH_TOKEN: ${{ github.token }}
-          TMP_VMAKSIMOVICTT_PAT: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+          TMP_VCANKOVIC_SHIELD_CRANE_PAT: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
         run: |
           cp "${RUNNER_TEMP}/create_post_release_pr.py" scripts/release/create_post_release_pr.py
           python3 scripts/release/create_post_release_pr.py \

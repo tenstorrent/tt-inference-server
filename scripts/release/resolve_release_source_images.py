@@ -32,7 +32,7 @@ models/devices are actually in the release) is a separate, later step.
 
 Auth: uses the GitHub CLI ``gh`` (same as build_release_artifacts.py), so it
 runs locally with your ``gh auth`` and in CI with ``GH_TOKEN`` set to a PAT that
-can read tt-shield Actions (e.g. the TMP_VMAKSIMOVICTT_PAT secret).
+can read tt-shield Actions (e.g. the TMP_VCANKOVIC_SHIELD_CRANE_PAT secret).
 
 Usage
 -----

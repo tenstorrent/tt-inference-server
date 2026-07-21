@@ -39,7 +39,7 @@ working-tree prod, ``old`` = the base branch's prod (``--base-ref``, default
 ``origin/main``) — i.e. exactly what the PR itself changes.
 
 CI links need read access to tenstorrent/tt-shield Actions. The token is taken
-from --token or, failing that, the env vars TMP_VMAKSIMOVICTT_PAT / GH_PAT /
+from --token or, failing that, the env vars TMP_VCANKOVIC_SHIELD_CRANE_PAT / GH_PAT /
 GITHUB_TOKEN. If no token works (or --tt-shield-run-id is omitted), CI Job Link
 cells fall back to UNKNOWN.
 
@@ -80,7 +80,7 @@ DEFAULT_PROD_DIR = REPO_ROOT / "workflows" / "model_specs" / "prod"
 DEFAULT_VERSION_FILE = REPO_ROOT / "VERSION"
 DEFAULT_REPO = "tenstorrent/tt-inference-server"
 DEFAULT_TT_SHIELD_REPO = "tenstorrent/tt-shield"
-TOKEN_ENV_VARS = ("TMP_VMAKSIMOVICTT_PAT", "GH_PAT", "GITHUB_TOKEN")
+TOKEN_ENV_VARS = ("TMP_VCANKOVIC_SHIELD_CRANE_PAT", "GH_PAT", "GITHUB_TOKEN")
 UNKNOWN = "UNKNOWN"
 
 STATIC_SW_VERSIONS = (
@@ -448,7 +448,7 @@ def main() -> None:
     ap.add_argument(
         "--token",
         default=None,
-        help="Token for tt-shield reads (default: env TMP_VMAKSIMOVICTT_PAT/GH_PAT/GITHUB_TOKEN)",
+        help="Token for tt-shield reads (default: env TMP_VCANKOVIC_SHIELD_CRANE_PAT/GH_PAT/GITHUB_TOKEN)",
     )
     ap.add_argument(
         "--dry-run", action="store_true", help="Print the body; do not open a PR"
@@ -483,7 +483,7 @@ def main() -> None:
                 )
         else:
             print(
-                "WARNING: no token (TMP_VMAKSIMOVICTT_PAT/GH_PAT/GITHUB_TOKEN); "
+                "WARNING: no token (TMP_VCANKOVIC_SHIELD_CRANE_PAT/GH_PAT/GITHUB_TOKEN); "
                 "CI Job Link cells will be UNKNOWN.",
                 file=sys.stderr,
             )
