@@ -7674,7 +7674,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.18.0-0f3fd89-6b4a3a7
+              tag: 0.18.0-c49bb76-6b4a3a7
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -7690,8 +7690,6 @@ models:
                 value: Qwen/Qwen3.6-27B
               - name: MESH_DEVICE
                 value: (1, 4)
-              - name: QWEN36_MAX_TOKENS_ALL_USERS
-                value: '524288'
               - name: TORCHDYNAMO_DISABLE
                 value: '1'
               - name: TT_MESH_GRAPH_DESC_PATH
