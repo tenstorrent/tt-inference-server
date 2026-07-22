@@ -689,19 +689,26 @@ void DisaggregationService::applySlotReservationAndLaunch(
   const auto slotId = work.request->slotId;
   const std::string decodeSessionId = result.sessionId;
   const auto request = work.request;
+  auto resultCallbackShared =
+      resultCallback.has_value()
+          ? std::make_shared<std::function<void(
+                const tt::sockets::PrefillResultMessage&)>>(
+                std::move(*resultCallback))
+          : std::shared_ptr<std::function<void(
+                const tt::sockets::PrefillResultMessage&)>>{};
 
   resolvePrefillSession(
       request, registrationHashes,
-      [this, work = std::move(work), streamCallback,
-       resultCallback = std::move(resultCallback), taskId, fullPromptTokenIds,
-       temperature, topP, topK, fastMode, slotId, decodeSessionId]() mutable {
+      [this, work = std::move(work), streamCallback, resultCallbackShared,
+       taskId, fullPromptTokenIds, temperature, topP, topK, fastMode, slotId,
+       decodeSessionId]() mutable {
         const auto requestPtr = work.request;
         launchPrefillWork(
             std::move(work),
-            [streamCallback, resultCallback, taskId, fullPromptTokenIds,
+            [streamCallback, resultCallbackShared, taskId, fullPromptTokenIds,
              temperature, topP, topK, fastMode, slotId, decodeSessionId,
              requestPtr](const LLMStreamChunk& response, bool isFinal) {
-              if (resultCallback.has_value()) {
+              if (resultCallbackShared && *resultCallbackShared) {
                 if (!isFinal && !response.choices.empty() &&
                     response.choices.back().finish_reason.has_value() &&
                     isErrorFinishReason(
@@ -745,7 +752,7 @@ void DisaggregationService::applySlotReservationAndLaunch(
                   prefillResult.migrationId =
                       requestPtr->migrationId.value_or(0);
                 }
-                (*resultCallback)(prefillResult);
+                (*resultCallbackShared)(prefillResult);
                 return;
               }
               if (streamCallback) {
@@ -754,16 +761,16 @@ void DisaggregationService::applySlotReservationAndLaunch(
             });
       },
       [taskId, streamCallback,
-       resultCallback = std::move(resultCallback)](std::string_view error) {
+       resultCallbackShared](std::string_view error) {
         TT_LOG_WARN(
             "[DisaggregationService] Prefill session resolution failed after "
             "slot reservation taskId={}: {}",
             taskId, error);
-        if (resultCallback.has_value()) {
+        if (resultCallbackShared && *resultCallbackShared) {
           auto result = tt::sockets::PrefillResultMessage(taskId);
           result.error = true;
           result.generatedText = std::string(error);
-          (*resultCallback)(result);
+          (*resultCallbackShared)(result);
         } else if (streamCallback) {
           streamCallback(makeErrorChunk(taskId, std::string(error)),
                          /*isFinal=*/true);
