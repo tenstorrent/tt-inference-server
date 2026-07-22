@@ -6840,6 +6840,22 @@
             }
         ]
     },
+    "kokoro_tts": {
+        "p150": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "tts",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 3800,
+                        "rtr": 2.0,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ]
+    },
     "speecht5_tts": {
         "n150": [
             {

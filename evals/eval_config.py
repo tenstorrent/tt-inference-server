@@ -3926,6 +3926,39 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Kokoro-82M TTS quality eval. Metric (run_tts_eval, tt-inference-server-v2):
+    # synthesize -> whisper-base ASR -> word-level WER over LibriTTS-R test.clean,
+    # reported as intelligibility % (100 - WER%); PASS when avg WER <= 0.20.
+    # model_type TEXT_TO_SPEECH auto-routes here, so no v2 change is needed; the
+    # score_func below is a no-op (the v1 lm-eval path is unused for TTS).
+    EvalConfig(
+        hf_model_repo="hexgrad/Kokoro-82M",
+        tasks=[
+            EvalTask(
+                task_name="tts_generation",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=92.95,
+                    published_score_ref=(
+                        "No official published intelligibility benchmark for "
+                        "hexgrad/Kokoro-82M; uses the measured reference below."
+                    ),
+                    gpu_reference_score=92.95,
+                    gpu_reference_score_ref=(
+                        "Reference (CPU torch) Kokoro-82M via the run_tts_eval WER "
+                        "round-trip (whisper-base ASR) on LibriTTS-R test.clean, "
+                        "10 samples: avg WER 7.05% -> 92.95% intelligibility "
+                        "(100 - WER%). CPU/GPU are accuracy-equivalent for the "
+                        "reference model. 2026-07-20."
+                    ),
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="openai/gpt-oss-20b",
         tasks=[

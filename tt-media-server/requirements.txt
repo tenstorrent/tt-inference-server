@@ -22,6 +22,17 @@ torch==2.7.1+cpu
 torchaudio==2.7.1+cpu
 requests
 num2words
+# --- Kokoro-82M TTS host deps (kokoro itself is installed --no-deps in
+# install_requirements.sh to avoid misaki[en] -> spaCy). Versions are pinned to
+# tt-metal's numpy-1.26 env: scipy/transformers releases that do NOT require
+# numpy>=2, and phonemizer-fork (NOT phonemizer) whose EspeakWrapper API
+# misaki.espeak expects. Validated to import together under numpy 1.26.4.
+misaki
+soundfile
+phonemizer-fork==3.3.2
+espeakng-loader==0.2.4
+scipy==1.17.1
+transformers==5.10.2
 
 
 --extra-index-url https://download.pytorch.org/whl/cpu

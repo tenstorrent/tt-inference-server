@@ -29,3 +29,10 @@ uv pip install \
     --overrides "${SCRIPT_DIR}/uv-overrides.txt" \
     -r "${SCRIPT_DIR}/requirements.txt" \
     "$@"
+
+# Kokoro-82M TTS: install without deps so `misaki[en]` -> spaCy is not pulled in.
+# spaCy requires numpy 2.x and would break tt-metal's numpy<2 pin. The media
+# runner uses the espeak G2P path (misaki.espeak) and stubs spaCy, so the [en]
+# extra is not needed; kokoro's runtime deps (torch, numpy, transformers,
+# huggingface_hub, misaki, soundfile) are provided by requirements.txt / the env.
+uv pip install --no-deps "kokoro>=0.9.4"
