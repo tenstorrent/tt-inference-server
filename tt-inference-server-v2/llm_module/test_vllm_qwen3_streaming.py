@@ -199,29 +199,23 @@ def test_streaming_tool_call_with_thinking(report_test, api_client, request):
         "chat_template_kwargs": {"thinking": True, "enable_thinking": True},
     }
 
-    # If the server/model does not support thinking via chat_template_kwargs,
-    # this scenario is not applicable — skip rather than fail. Auth failures
-    # (401/403) are a configuration problem, not "unsupported", so let them
-    # surface.
-    try:
-        first = _stream_chat_completion(api_client, base_payload)
-    except requests.exceptions.HTTPError as e:
-        # The api_client fixture re-raises a new HTTPError without .response, so
-        # detect auth failures from the message (requests uses "<code> Client
-        # Error"). Auth is a config problem — surface it instead of skipping.
-        msg = str(e)
-        if "401" in msg or "403" in msg:
-            raise
-        pytest.skip(
-            "Server rejected the streaming tools + enable_thinking payload; "
-            f"model likely does not support chat_template_kwargs thinking: {e}"
+    # Route every run through the shared backoff helper so a transient ingress
+    # rate-limit (404 / mid-stream ChunkedEncodingError) is retried rather than
+    # misread as "model does not support this payload". The helper distinguishes
+    # rate-limits from genuine rejections: it retries the former, skips on a
+    # non-auth HTTP error (real unsupported-payload signal), and re-raises auth
+    # errors. Gap-aware spacing keeps us under the ingress limit.
+    results = []
+    prev_start = None
+    for i in range(_TOOL_THINKING_RUNS):
+        result, prev_start = _stream_one_run_with_backoff(
+            api_client, base_payload, i, prev_start
         )
+        results.append(result)
+
+    first = results[0]
 
     failures = []
-    results = [first]
-    for _ in range(_TOOL_THINKING_RUNS - 1):
-        results.append(_stream_chat_completion(api_client, base_payload))
-
     for i, result in enumerate(results):
         has_tool_call = any(slot["name"] for slot in result["tool_calls"].values())
         if result["finish_reason"] != "tool_calls" or not has_tool_call:
@@ -401,10 +395,10 @@ def test_streaming_json_object_no_reasoning_leak(report_test, api_client, reques
     """Issue 1: streaming response_format json_object must not leak reasoning.
 
     Reproduces the Qwen3-32B streaming reasoning-parser bug: with
-    ``response_format: {"type": "json_object"}`` and ``stream: true`` the
-    trailing reasoning tokens and the literal ``</think>`` close tag are emitted
-    as *content* deltas instead of ``reasoning_content``, so the accumulated
-    content is not valid JSON (observed 4/4 in the issue). Non-streaming is
+    ``response_format: {"type": "json_object"}``, ``stream: true``, ``temperature = 1``
+    and  ``top_p = 1``, the trailing reasoning tokens and the literal ``</think>``
+    close tag are emitted as *content* deltas instead of ``reasoning_content``,
+    so the accumulated content is not valid JSON (observed 4/4 in the issue). Non-streaming is
     clean, isolating the defect to ``extract_reasoning_content_streaming``.
 
     Payload matches the issue's issue-1 repro verbatim; the test fails if ANY
