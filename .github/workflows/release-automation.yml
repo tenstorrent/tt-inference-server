@@ -374,12 +374,7 @@ jobs:
             echo "| media | \`$SRC_MEDIA\` | \`$DST_MEDIA\` |"
             echo "| forge | \`$SRC_FORGE\` | \`$DST_FORGE\` |"
             echo
-            echo "### crane copy commands (preview — not executed)"
-            echo '```bash'
-            [ "$DST_VLLM"  != "None" ] && echo "crane copy $SRC_VLLM $DST_VLLM"
-            [ "$DST_MEDIA" != "None" ] && echo "crane copy $SRC_MEDIA $DST_MEDIA"
-            [ "$DST_FORGE" != "None" ] && echo "crane copy $SRC_FORGE $DST_FORGE"
-            echo '```'
+            echo "_Release-scoped crane copy commands are shown by the 'crane copy simulation' step below._"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # ----- Install crane (google/go-containerregistry) — used to promote the
