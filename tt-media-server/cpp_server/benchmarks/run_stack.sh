@@ -7,8 +7,9 @@
 # a host ai-dynamo venv; etcd runs as the public quay image (or a local no-docker
 # etcd); workers run as the locally-built Blaze binary with the mock_scheduler
 # backend (real Blaze prefill and decode schedulers). The binary must be built
-# with --blaze; otherwise the backend silently falls back to LLMRunner's legacy
-# mock path. See benchmarks/test_prefill_decode.py.
+# with --blaze; otherwise the mock_scheduler LLM runner factory isn't compiled
+# in and the worker aborts at startup with "No runner registered for the
+# requested service".
 #
 #   ./run_stack.sh up                      # direct cpp_server socket split
 #   DYNAMO_ROUTING=1 ./run_stack.sh up
