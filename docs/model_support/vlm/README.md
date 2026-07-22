@@ -21,6 +21,7 @@ Models with EXPERIMENTAL status are under active development and may have stabil
 
 | Model Name | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) | [N150](https://tenstorrent.com/hardware/wormhole) | [N300](https://tenstorrent.com/hardware/wormhole) |
 | --- | --- | --- | --- | --- |
+| [dots.ocr](dots.ocr_t3k.md) | - | [🛠️ Experimental](dots.ocr_t3k.md) | - | - |
 | [gemma-3-27b-it](gemma-3-27b-it_galaxy.md) | [🛠️ Experimental](gemma-3-27b-it_galaxy.md) | [🛠️ Experimental](gemma-3-27b-it_t3k.md) | - | - |
 | [gemma-3-4b-it](gemma-3-4b-it_n150.md) | - | - | [🛠️ Experimental](gemma-3-4b-it_n150.md) | [🛠️ Experimental](gemma-3-4b-it_n300.md) |
 | [Qwen2.5-VL-32B-Instruct](Qwen2.5-VL-32B-Instruct_t3k.md) | - | [🛠️ Experimental](Qwen2.5-VL-32B-Instruct_t3k.md) | - | - |

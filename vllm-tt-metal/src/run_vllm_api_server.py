@@ -378,6 +378,21 @@ def register_tt_models(impl_id=None):
         "models.tt_transformers.tt.generator_vllm:TTArceeForCausalLM",
     )
 
+    # tt_symbiote-ported models. The generic tiered serving adapter lives in
+    # tt-inference-server (vllm-tt-metal/src/tt_symbiote_generators.py, on
+    # ${APP_DIR}/src in PYTHONPATH) and wraps the HuggingFace-shaped tt_symbiote
+    # library. One registry row per model is derived from tt_symbiote's
+    # RUNTIME_PINS serving metadata, so scaling to 100+ models adds no code here.
+    if impl_id == "tt_symbiote":
+        try:
+            from tt_symbiote_generators import registration_entries
+
+            for tt_arch, import_path in registration_entries().items():
+                ModelRegistry.register_model(tt_arch, import_path)
+                logger.info(f"Registered tt_symbiote model: {tt_arch} -> {import_path}")
+        except Exception as e:
+            logging.warning(f"Failed to register tt_symbiote models: {e}")
+
 
 def model_setup(model_spec_json):
     # step 1: validate env vars passed in

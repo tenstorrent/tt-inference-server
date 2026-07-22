@@ -271,3 +271,77 @@ templates:
   supported_modalities:
     - text
     - image
+
+# =============================================================================
+# tt_symbiote-ported VLM templates
+# -----------------------------------------------------------------------------
+# Served via the tt_symbiote library (HuggingFace-shaped TTNN package), wrapped
+# by the vLLM Generator adapter in vllm-tt-metal/src/tt_symbiote_generators.py.
+# The pinned tt_metal_commit MUST match tt_symbiote RUNTIME_PINS for the model's
+# HF architecture; ttnn is source-built from that commit and the tt_symbiote pip
+# package (version in `metadata`, read by build_docker_images.py) installed atop.
+# =============================================================================
+- weights:
+    - rednote-hilab/dots.ocr
+  impl: tt_symbiote
+  inference_engine: VLLM
+  model_type: VLM
+  version: "0.17.0"
+  # == tt_symbiote RUNTIME_PINS["DotsOCRForCausalLM"]["tt_metal_commit"] ==
+  tt_metal_commit: c09f09c35a1a59a428f0e1b5cdaa8fe59fb1b195
+  # Tenstorrent vLLM fork commit that registers the tt_symbiote model in the
+  # `register_tt_models` hook (runs in the vLLM v1 engine-core subprocess too).
+  vllm_commit: cdb395febdc9caaeba6d82e283329366ac9c2d89
+  device_model_specs:
+    - device: T3K
+      # S2_PAGED continuous batching: 8 T3K DP streams, one independent vLLM
+      # sequence per chip. Ceiling is KV-budget bound; lower if KV OOMs.
+      max_concurrency: 8
+      # max_context drives max_model_len AND max_num_batched_tokens (the adapter's
+      # prefill chunk budget). 11264 = 1408 x 8 mesh rows = the padded vision
+      # sequence for the validated 1848x1176 -> (84,132) patch grid.
+      max_context: 11264
+      default_impl: true
+      env_vars:
+        # dots.ocr is data-parallel; its @run_on_devices(T3K, (8,1)) guard needs the
+        # live mesh to be (8,1) (vLLM's default "T3K" is (1,8) tensor-parallel).
+        MESH_DEVICE: "(8, 1)"
+        # Reset-on-prefill paged cache cannot honor prefix hits; generator also
+        # advertises supports_prefix_caching=False. Off for clarity.
+        TT_ENABLE_PREFIX_CACHING: "0"
+        # TRACED = warmup->capture->replay, the ~10x faster production decode path.
+        TT_SYMBIOTE_RUN_MODE: "TRACED"
+        # DP => pipeline batch = num_devices = 8 (one sequence per chip), which the
+        # S2 adapter drives one row per DP stream.
+        DOTS_OCR_PARALLELISM: "DP"
+        # Pin S2_PAGED explicitly (the package default may be the S0 single-stream
+        # bridge, which would mismatch the batch=8 DP pipeline).
+        TT_SYMBIOTE_SERVING_TIER: "DotsOCRForCausalLM=S2_PAGED"
+      vllm_args:
+        trust-remote-code: true          # dots.ocr ships custom HF modeling code
+        mm-processor-cache-gb: 0
+        limit-mm-per-prompt: '{"image": 1}'
+        max-num-seqs: 8                  # in-flight sequence budget = DP-stream count
+        block-size: 64                   # match the pipeline paged-cache block size
+        enable-prefix-caching: false
+      override_tt_config:
+        trace_region_size: 200000000     # large prefill+decode traces
+        # On-device sampling intentionally unset: the S2 logits path returns host
+        # logits and vLLM samples on host every step (enables anti-repetition
+        # penalties; greedy at temperature 0 == validated single-stream parity).
+  status: EXPERIMENTAL
+  # Skip the generic background trace-capture sweep: it feeds arbitrary image
+  # resolutions, but the vision tower is tuned only for the validated (84,132)
+  # grid (1848x1176); off-grid resolutions overflow L1 and crash EngineCore during
+  # warmup. tt_symbiote captures traces lazily on the first real request instead.
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  supported_modalities:
+    - text
+    - image
+  metadata:
+    rednote-hilab/dots.ocr:
+      # tt_symbiote pip version installed into the image (build_docker_images.py
+      # reads this; default index is the production PyPI).
+      tt_symbiote_version: "0.1.7"

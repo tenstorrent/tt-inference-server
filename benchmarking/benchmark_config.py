@@ -573,7 +573,41 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     # optionally skip the benchmark sweeps and only run the perf reference targets
     if not bool(os.getenv("ONLY_BENCHMARK_TARGETS")):
         # Make benchmark sweeps table for this device
-        if model_spec.model_type == ModelType.CNN:
+        if model_spec.model_name == "dots.ocr":
+            # dots.ocr (tt_symbiote S2_PAGED OCR adapter): cap the text sweep at
+            # isl <= 2048 (the validated input range; max_context is 11264) and use
+            # ONLY the validated image geometry 1848x1176 -> patch grid (84,132).
+            # The generic VLM image resolutions select an untuned vision-SDPA program
+            # config that overflows L1 and crashes EngineCore (see prod/vlm.yaml note).
+            DOTS_OCR_MAX_SEQ_LEN = 2048
+            dots_ocr_text_params = [
+                expanded_params
+                for isl, osl in BENCHMARK_ISL_OSL_PAIRS
+                if isl <= DOTS_OCR_MAX_SEQ_LEN and isl + osl <= max_context
+                for expanded_params in _expand_text_sweep_params(
+                    isl=isl,
+                    osl=osl,
+                    max_context=max_context,
+                    max_tokens_all_users=max_tokens_all_users,
+                    model_max_concurrency=model_max_concurrency,
+                )
+            ]
+            dots_ocr_image_params = _expand_image_sweep_params(
+                isl=128,
+                osl=128,
+                image_height=1176,
+                image_width=1848,
+                images_per_prompt=1,
+                max_context=max_context,
+                max_tokens_all_users=max_tokens_all_users,
+                model_max_concurrency=model_max_concurrency,
+                model_name=model_spec.model_name,
+            )
+            benchmark_task_runs = BenchmarkTask(
+                param_map={device: dots_ocr_text_params + dots_ocr_image_params},
+                workflow_venv_type=vllm_benchmark_venv,
+            )
+        elif model_spec.model_type == ModelType.CNN:
             benchmark_task_runs = BenchmarkTaskCNN(
                 param_map={
                     device: [
@@ -643,7 +677,12 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
         tasks.append(benchmark_task_runs)
 
     # Structured-output benchmarks: llms and vlms, can be extended
-    structured_output_eligible = model_spec.model_type in (ModelType.LLM, ModelType.VLM)
+    # dots.ocr is excluded: structured/guided decoding is incompatible with the
+    # tt_symbiote on-device sampling bridge.
+    structured_output_eligible = (
+        model_spec.model_type in (ModelType.LLM, ModelType.VLM)
+        and model_spec.model_name != "dots.ocr"
+    )
     if structured_output_eligible:
         tasks.append(
             BenchmarkTaskStructuredOutput(

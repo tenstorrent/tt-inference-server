@@ -13,3 +13,12 @@ git+https://github.com/EvolvingLMMs-Lab/lmms-eval.git@v0.4.1
 pyjwt
 pillow
 qwen_vl_utils
+# ocrbench_v2 metric deps (TEDS table-tree edit distance + the spotting/vqa
+# helpers). lmms-eval's ocrbench_v2 task imports these at module load; without
+# them the task errors out and the score reports as N/A.
+# Import name -> PyPI package: distance -> Distance.
+apted
+Distance
+editdistance
+jieba
+Levenshtein
